@@ -15,5 +15,6 @@ shift
 IFS='	'
 
 OUTPUTSTRING="$TIMESTAMP\t$*"
+echo -e "$OUTPUTSTRING"
 echo -e "$OUTPUTSTRING" >> $FILE
 
