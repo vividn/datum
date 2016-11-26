@@ -1,0 +1,20 @@
+#!/bin/bash
+
+# This program is to collect time stamped data quickly and efficiently
+
+# First, collect a timestamp as soon as possible:
+TIMESTAMP=$(date "+%Y-%m-%d\t%H:%M:%S") 
+
+DATADIR=~/OneDrive/Data
+
+# The first argument speifies the file
+FILE="$DATADIR/$1"
+shift
+
+#Separate everything by tabs
+IFS="	"
+
+OUTPUTSTRING="$TIMESTAMP\t$*"
+
+echo -e $OUTPUTSTRING >> $FILE
+
