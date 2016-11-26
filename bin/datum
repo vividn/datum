@@ -3,7 +3,7 @@
 # This program is to collect time stamped data quickly and efficiently
 
 # First, collect a timestamp as soon as possible:
-TIMESTAMP=$(date "+%Y-%m-%d\t%H:%M:%S") 
+TIMESTAMP=$(date "+%Y-%m-%d\t%H:%M:%S.%3N") 
 
 DATADIR=~/OneDrive/Data
 
