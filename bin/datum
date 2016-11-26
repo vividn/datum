@@ -12,9 +12,8 @@ FILE="$DATADIR/$1"
 shift
 
 #Separate everything by tabs
-IFS="	"
+IFS='	'
 
 OUTPUTSTRING="$TIMESTAMP\t$*"
-
-echo -e $OUTPUTSTRING >> $FILE
+echo -e "$OUTPUTSTRING" >> $FILE
 
