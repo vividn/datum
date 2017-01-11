@@ -3,9 +3,33 @@
 # This program is to collect time stamped data quickly and efficiently
 
 # First, collect a timestamp as soon as possible:
-TIMESTAMP=$(date "+%Y-%m-%d\t%H:%M:%S.%3N") 
+TIMESTR=$(date "+%H:%M:%S.%3N")
+DATESTR=$(date "+%Y-%m-%d")
 
 DATADIR=~/Data
+
+# Get options
+while getopts "d:t:" opt; do
+  case $opt in
+    d)  # Specify date
+      
+        # Allow relative dates (p1 = yesterday, etc.)
+        if [ "${OPTARG:0:1}" = "-" ]; then
+            DATESTR=$(date --date "${OPTARG:1} days ago" '+%Y-%m-%d')
+        else
+            DATESTR=$(date --date $OPTARG "+%Y-%m-%d")
+        fi
+    ;;
+    
+    t) # Specify time
+        TIMESTR=$(date --date $OPTARG "+%H:%M:%S.%3N")
+    ;;
+    esac
+done
+
+shift "$((OPTIND - 1))"
+
+TIMESTAMP=$DATESTR"\t"$TIMESTR 
 
 # The first argument speifies the file
 FILE="$DATADIR/$1"
