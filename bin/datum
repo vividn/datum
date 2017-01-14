@@ -51,9 +51,6 @@ fi
 #Separate everything by tabs
 IFS='	'
 
-echo 'TIMESTAMP = '\'$TIMESTAMP\'
-echo 'AFLAGDATA = '\'$AFLAGDATA\'
-
 # If no additional arguments are given don't add the trailing tab
 if [ -z $* ]; then
     OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA"
