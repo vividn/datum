@@ -8,9 +8,15 @@ DATESTR=$(date "+%Y-%m-%d")
 
 DATADIR=~/Data
 
+AFLAGDATA=''
+
 # Get options
-while getopts "d:t:" opt; do
+while getopts "f:d:t:a:" opt; do
   case $opt in
+    f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
+        FILE="$DATADIR/$OPTARG"
+    ;;
+    
     d)  # Specify date
       
         # Allow relative dates (p1 = yesterday, etc.)
@@ -24,6 +30,11 @@ while getopts "d:t:" opt; do
     t) # Specify time
         TIMESTR=$(date --date $OPTARG "+%H:%M:%S.%3N")
     ;;
+    
+    a) # Flag to include tab separated data earlier in the list. Useful for aliases
+        AFLAGDATA="$AFLAGDATA\t$OPTARG"
+    ;;
+        
     esac
 done
 
@@ -31,14 +42,25 @@ shift "$((OPTIND - 1))"
 
 TIMESTAMP=$DATESTR"\t"$TIMESTR 
 
-# The first argument speifies the file
-FILE="$DATADIR/$1"
-shift
+# The first argument speifies the file (if not specified via -f)
+if [ -z "$FILE" ]; then
+    FILE="$DATADIR/$1"
+    shift
+fi
 
 #Separate everything by tabs
 IFS='	'
 
-OUTPUTSTRING="$TIMESTAMP\t$*"
+echo 'TIMESTAMP = '\'$TIMESTAMP\'
+echo 'AFLAGDATA = '\'$AFLAGDATA\'
+
+# If no additional arguments are given don't add the trailing tab
+if [ -z $* ]; then
+    OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA"
+else
+    OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA""\t$*"
+fi
+
 echo -e "$OUTPUTSTRING"
 echo -e "$OUTPUTSTRING" >> $FILE
 
