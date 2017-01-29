@@ -6,7 +6,7 @@
 TIMESTR=$(date "+%H:%M:%S.%3N")
 DATESTR=$(date "+%Y-%m-%d")
 
-DATADIR=~/Data
+DATADIR=~/Data/datum
 
 AFLAGDATA=''
 
