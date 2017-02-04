@@ -11,7 +11,7 @@ DATADIR=~/Data/datum
 AFLAGDATA=''
 
 # Get options
-while getopts "f:d:t:a:" opt; do
+while getopts "f:d:t:a:u" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG"
@@ -34,6 +34,27 @@ while getopts "f:d:t:a:" opt; do
     a) # Flag to include tab separated data earlier in the list. Useful for aliases
         AFLAGDATA="$AFLAGDATA\t$OPTARG"
     ;;
+    u) # Undo the last data point made
+	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 5 minutes ago
+	  if test $(find $FILE -mmin -5); then
+		DELETEDLINE=$(tail -n 1 $FILE)
+		TMPFILE=$(mktemp)
+		
+		# Delete the last line
+		head -n +1 $FILE > $TMPFILE
+		mv $TMPFILE $FILE
+		echo "Deleted line: $DELETEDLINE"
+		
+		# Change modified time to stop more deletions happening
+		touch -m -t $(date -d 'now - 5 minutes' +%Y%m%d%H%M) $FILE
+		exit 0
+		
+	  else
+		echo "Nothing deleted. File older than 5 minutes."
+		exit 1
+	  fi
+    ;;
+    
         
     esac
 done
