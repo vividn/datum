@@ -73,7 +73,7 @@ fi
 IFS='	'
 
 # If no additional arguments are given don't add the trailing tab
-if [ -z $* ]; then
+if [ -z "$*" ]; then
     OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA"
 else
     OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA""\t$*"
