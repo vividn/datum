@@ -43,7 +43,7 @@ while getopts "f:d:t:a:u" opt; do
 		# Delete the last line
 		head -n +1 $FILE > $TMPFILE
 		mv $TMPFILE $FILE
-		echo "Deleted line: $DELETEDLINE"
+		echo "Deleted line [$FILE]: $DELETEDLINE"
 		
 		# Change modified time to stop more deletions happening
 		touch -m -t $(date -d 'now - 5 minutes' +%Y%m%d%H%M) $FILE
