@@ -19,12 +19,15 @@ while getopts "f:d:t:a:u" opt; do
     
     d)  # Specify date
       
-        # Allow relative dates (p1 = yesterday, etc.)
         if [ "${OPTARG:0:1}" = "-" ]; then
+			# Allow relative dates by starting with a minus sign (-1 = yesterday, etc.)
             DATESTR=$(date --date "${OPTARG:1} days ago" '+%Y-%m-%d')
-        else
+        
+		else
+			# Otherwise, feed the date into the linux date utility 
             DATESTR=$(date --date $OPTARG "+%Y-%m-%d")
-        fi
+        
+		fi
     ;;
     
     t) # Specify time
