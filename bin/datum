@@ -14,7 +14,7 @@ AFLAGDATA=''
 while getopts "f:d:t:a:ui" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
-        FILE="$DATADIR/$OPTARG"
+        FILE="$DATADIR/$OPTARG.tsv"
     ;;
     
     d)  # Specify date
@@ -74,7 +74,7 @@ TIMESTAMP=$DATESTR"\t"$TIMESTR
 
 # The first argument speifies the file (if not specified via -f)
 if [ -z "$FILE" ]; then
-    FILE="$DATADIR/$1"
+    FILE="$DATADIR/$1.tsv"
     shift
 fi
 
