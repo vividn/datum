@@ -44,7 +44,7 @@ while getopts "f:d:t:a:ui" opt; do
 		TMPFILE=$(mktemp)
 		
 		# Delete the last line
-		head -n +1 $FILE > $TMPFILE
+		head -n -1 $FILE > $TMPFILE
 		mv $TMPFILE $FILE
 		echo "Deleted line [$FILE]: $DELETEDLINE"
 		
