@@ -11,7 +11,7 @@ DATADIR=~/Data/datum
 AFLAGDATA=''
 
 # Get options
-while getopts "f:d:t:a:ui" opt; do
+while getopts "f:d:t:TDa:ui" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG.tsv"
@@ -34,6 +34,15 @@ while getopts "f:d:t:a:ui" opt; do
         TIMESTR=$(date --date $OPTARG "+%H:%M:%S.%3N")
     ;;
     
+    T) # Shortcut for -t 11:59:59.999
+        TIMESTR="11:59:59.999"
+    ;;
+
+    D) # Shortcut for -d -1 -T
+        DATESTR=$(date --date yesterday '+%Y-%m-%d')
+        TIMESTR="11:59:59.999"
+    ;;
+
     a) # Flag to include tab separated data earlier in the list. Useful for aliases
         AFLAGDATA="$AFLAGDATA\t$OPTARG"
     ;;
