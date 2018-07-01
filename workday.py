@@ -6,15 +6,18 @@
 
 import pandas as pd
 import datetime
-
+import re
+from operator import xor
 
 def count_time(ts):
     # If no entries exist for a day, 0 minutes were logged
     if len(ts) == 0:
-        return 0
+        return 0.0
 
-    total_minutes = 0
-    in_block = False
+    total_minutes = 0.0
+    in_block = None
+
+    # day_begin is her
 
     # Iterate through entries on day
     for timestamp, entry in ts.iteritems():
@@ -25,23 +28,62 @@ def count_time(ts):
         # Numbers add directly to the total.
 
         if entry == 'start':
+            # 'start' should never occur while already in a block
+            if in_block:
+                raise ValueError('start cannot occur after another start: ' + str(timestamp) + str(entry))
+
             in_block = True
             block_start = timestamp
+            continue
 
         elif entry == 'end':
+            # 'end' should never occur outside of a block
+            if not(in_block):
+                # Special case, if end occurs as the first entry in the day, start a virtual block at midnight
+                if in_block == None:
+                    block_start = timestamp.floor('D')
+                else:
+                    raise ValueError('end cannot occur after another end: ' + str(timestamp) + str(entry))
+
             in_block = False
             block_end = timestamp
 
-        # Number
-        if entry.isdigit():
-            total_minutes += int(entry)
+            block_minutes = (block_end - block_start).seconds / 60.0
+            total_minutes += block_minutes
+            continue
 
         else:
-            print(entry)
-            # TODO: start, stop, throw error if something else.
-            # TODO: caught errors should resolve as X
+            # Determine if entry is a number
+            m = re.search('(-?)[0-9]+(\.[0-9]+)?', entry)
 
-    print(type(ts))
+            if m:
+
+                # Positive times can only be added outside of blocks because
+                # work being done inside of a block is already being counted
+                # Similarly, negative times can only occur inside blocks, representing
+                # a short time during a work block that was spent not working.
+                if bool(m.group(1)) ^ bool(in_block):
+                    raise ValueError('Number not correctly associated with blocks')
+
+                total_minutes += float(entry)
+                continue
+
+            else:
+                raise ValueError('Entry not properly formed:' + str(timestamp) + str(' , ') + str(entry))
+
+    # Being within a block at the end of a day means count to end of day (midnight)
+    # One exception to this is if the date is today, then the block extends to right now.
+    if in_block:
+        if timestamp.date() == pd.Timestamp.now().date():
+            block_end = timestamp.now()
+        else:
+            block_end = timestamp.ceil('D')
+
+        block_minutes = (block_end - block_start).seconds / 60.0
+        total_minutes += block_minutes
+
+    # Finally, return the total number of minutes recorded on the day
+    return total_minutes
 
 
 # Load in the workday file, combining the date and time columns
@@ -52,5 +94,7 @@ data = pd.read_csv(workday_file, delimiter='\t', parse_dates=[[0, 1]], index_col
 data.index = pd.to_datetime(data.index)
 
 # Resample using a custom resample algorithm that includes ranges of minutes between start and end tags
-ts = data.resample('D').apply(count_time)
-# print(ts)
+ts = data['Minutes']
+daily = ts.resample('D').apply(count_time)
+
+print(daily / 60)
