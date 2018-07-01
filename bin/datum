@@ -40,7 +40,7 @@ while getopts "f:d:t:TDa:ui" opt; do
 
     D) # Shortcut for -d -1 -T
         DATESTR=$(date --date yesterday '+%Y-%m-%d')
-        TIMESTR="11:59:59.999"
+        TIMESTR="23:59:59.999"
     ;;
 
     a) # Flag to include tab separated data earlier in the list. Useful for aliases
