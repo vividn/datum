@@ -7,7 +7,6 @@
 import pandas as pd
 import datetime
 import re
-from operator import xor
 
 def count_time(ts):
     # If no entries exist for a day, 0 minutes were logged
@@ -87,7 +86,7 @@ def count_time(ts):
 
 
 # Load in the workday file, combining the date and time columns
-workday_file = '/home/vividn/Data/datum/workday.tsv'
+workday_file = '/home/vividn/Data/datum/hw.tsv'
 data = pd.read_csv(workday_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
 # Convert the date_time column into datetime format
