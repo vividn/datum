@@ -11,8 +11,10 @@ def main():
     datum_dir = '/home/vividn/Data/datum/'
 
     # Which data to draw
-    dfiles     = ['sleep.tsv', 'hw.tsv', 'workday.tsv', 'berlin.tsv']
-    bar_colors = [(0,80,160)  , (255,0,0),(160,255,0),   (0,200,0)]
+    block_files = ['sleep', 'hw', 'workday', 'berlin']
+    point_files = ['coffee']
+
+    data_colors = {'sleep': (0, 80, 160), 'hw': (255, 0, 0), 'coffee': (100, 50, 0)}
 
     # Other colors
     text_color = (255,255,255)
@@ -44,6 +46,9 @@ def main():
     max_bar_x = xsize - image_padding
     day_lenx = max_bar_x - min_bar_x
 
+    # Point properties
+    point_r = 10
+
     #####################################
     # Get the dates and then draw the date text
     # For now dates are hardcoded to be the previous week including today
@@ -73,10 +78,11 @@ def main():
     ################################################
     # Load and iterate through the data
 
-    for dfile, bar_color in zip(dfiles, bar_colors):
-        datum_file = datum_dir + dfile
 
+    # First, draw all the data that represent blocks of time as colored rectangles
+    for block_file in block_files:
         # Load in the datum file, combining the date and time columns
+        datum_file = datum_dir + block_file + '.tsv'
         data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
         # Convert the date_time column into datetime format
@@ -84,6 +90,8 @@ def main():
 
         ts = data['Minutes']
 
+        # Get the appropriate data color
+        data_color = data_colors[block_file]
 
         #########################################
         # Plot the data day by day
@@ -96,8 +104,6 @@ def main():
                 # If no data exist for a given date, don't draw anything and continue to the next date
                 continue
 
-            bar_height = ( ysize - 2*image_padding - 2*text_height - 2*text_padding - (nDays -1)*bar_padding ) / nDays
-
             min_bar_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay
             max_bar_y = min_bar_y + bar_height
 
@@ -107,13 +113,54 @@ def main():
                 xmin = dayperc(block_start.time()) * day_lenx  +  min_bar_x
                 xmax = dayperc(block_end.time()) * day_lenx  +  min_bar_x
 
-                draw.rectangle([xmin, min_bar_y, xmax, max_bar_y], fill = bar_color)
+                draw.rectangle([xmin, min_bar_y, xmax, max_bar_y], fill = data_color)
 
             # Increase iDay by 1 for the next iteration
             iDay += 1
 
 
-    # Draw the times and lines (draw every three hours) #TODO: make this depend on image width
+    # Next draw all the single timestamp data as colored points
+    for point_file in point_files:
+        datum_file = datum_dir + point_file + '.tsv'
+        data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+
+        # Convert the date_time column into datetime format
+        data.index = pd.to_datetime(data.index)
+
+        # Get the appropriate data color
+        data_color = data_colors[point_file]
+
+        #########################################
+        # Plot the data day by day
+        iDay = 0
+
+        for date_str in all_date_strs:
+            try:
+                 dd = data[date_str]
+            except KeyError:
+                # This error occurs if the date is after the last actual entry, e.g. today when whatever hasn't happened today.
+                # Don't draw anything and just continue.
+                continue
+
+            # # If no data exists for the day, continue
+            # if len(dd) == 0:
+            #     continue
+
+            point_y = image_padding  +  text_height  +  text_padding  +  ( bar_height + bar_padding ) * iDay  +  bar_height / 2
+
+            for timestamp in dd.index:
+                point_x = dayperc(timestamp.time()) * day_lenx  +  min_bar_x
+
+                # Get the bounding box of the dot
+                point_xy = [point_x - point_r, point_y - point_r, point_x + point_r, point_y + point_r]
+
+                # Draw the dots
+                draw.ellipse(point_xy, fill=data_color)
+
+            iDay += 1
+
+
+    # Draw the times and lines (draw every three hours)
     for i in range(0, 25, 1):
         text_str = str(i)
         text_width = imfont.getsize(text_str)[0]
