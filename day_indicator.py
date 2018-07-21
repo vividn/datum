@@ -7,13 +7,25 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 def main():
+    # Where the data are
+    datum_dir = '/home/vividn/Data/datum/'
+
+    # Which data to draw
+    dfiles     = ['sleep.tsv', 'hw.tsv', 'workday.tsv', 'berlin.tsv']
+    bar_colors = [(0,80,160)  , (255,0,0),(160,255,0),   (0,200,0)]
+
+    # Other colors
+    text_color = (255,255,255)
+    line_color = (255,255,255)
+    bg_color = (0,0,0)
+
     # Create the output image
     # Image properties
     # Total size of the whole image
     xsize = 1500
-    ysize = 1000
+    ysize = 800
 
-    im = Image.new("RGB", size=(xsize, ysize), color=(255, 255, 255))
+    im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
     imageout = '/home/vividn/Analysis/dayview.png'
 
@@ -31,70 +43,90 @@ def main():
     min_bar_x = image_padding + text_width + text_padding
     max_bar_x = xsize - image_padding
     day_lenx = max_bar_x - min_bar_x
-    bar_color = (255, 0, 0)
+
+    #####################################
+    # Get the dates and then draw the date text
+    # For now dates are hardcoded to be the previous week including today
+    nDays = 7
+    end_date = datetime.date.today()
+
+    # Calculate the bar height now for easy centering of the date text
+    bar_height = (ysize - 2 * image_padding - 2 * text_height - 2 * text_padding - (nDays - 1) * bar_padding) / nDays
+
+    # Create an array of strings for indexing of the datum data by date
+    all_date_strs = []
+
+    for iDay in range(0,nDays):
+        date_dt = (datetime.date.today() - datetime.timedelta(days=(nDays-iDay-1)))
+
+        date_str = date_dt.strftime("%Y-%m-%d")
+        all_date_strs += [date_str]
+
+        # Create and draw the label
+        date_label = date_dt.strftime("%A\n%Y-%m-%d")
+        date_width, date_height = draw.multiline_textsize(date_label, font=imfont)
+        date_x = min_bar_x - text_padding - date_width
+        date_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay + bar_height / 2.0 - date_height / 2.0
+        draw.multiline_text(xy=(date_x, date_y), text=date_label, font=imfont, fill=text_color, align='right')
+
 
     ################################################
-    # Load the data
-    # Load in the workday file, combining the date and time columns
-    workday_file = '/home/vividn/Data/datum/hw.tsv'
-    data = pd.read_csv(workday_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+    # Load and iterate through the data
 
-    # Convert the date_time column into datetime format
-    data.index = pd.to_datetime(data.index)
+    for dfile, bar_color in zip(dfiles, bar_colors):
+        datum_file = datum_dir + dfile
 
-    # For now, do the past week TODO: allow specification from commandline
-    today = datetime.date.today()
-    weekago = today - datetime.timedelta(days=6)
-    ts = data['Minutes'][weekago.strftime('%Y-%m-%d'):today.strftime('%Y-%m-%d')]
+        # Load in the datum file, combining the date and time columns
+        data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
-    data_by_day = ts.groupby(pd.Grouper(freq='D'))
-    nDays = len(data_by_day)
+        # Convert the date_time column into datetime format
+        data.index = pd.to_datetime(data.index)
 
-    #########################################
-    # Plot the data day by day
-    iDay = 0
+        ts = data['Minutes']
 
-    for dd in data_by_day:
-        all_blocks = get_all_blocks(dd[1])
 
-        bar_height = ( ysize - 2*image_padding - 2*text_height - 2*text_padding - (nDays -1)*bar_padding ) / nDays
+        #########################################
+        # Plot the data day by day
+        iDay = 0
 
-        min_bar_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay
-        max_bar_y = min_bar_y + bar_height
+        for date_str in all_date_strs:
+            try:
+                all_blocks = get_all_blocks(ts[date_str])
+            except KeyError:
+                # If no data exist for a given date, don't draw anything and continue to the next date
+                continue
 
-        # Draw the date
-        date_str = dd[1].index[0].strftime("%A\n%Y-%m-%d")
-        date_width, date_height = draw.multiline_textsize(date_str, font=imfont)
-        date_x = min_bar_x - text_padding - date_width
-        date_y = min_bar_y + bar_height/2.0 - date_height/2.0
-        draw.multiline_text( xy = (date_x, date_y),  text = date_str, font=imfont, fill=(0,0,0), align = 'right')
+            bar_height = ( ysize - 2*image_padding - 2*text_height - 2*text_padding - (nDays -1)*bar_padding ) / nDays
 
-        # Draw the blocks
-        for block_start, block_end in zip(all_blocks["start"],all_blocks["end"]):
-            # Figure out where the block starts and ends in the day on the image
-            xmin = dayperc(block_start.time()) * day_lenx  +  min_bar_x
-            xmax = dayperc(block_end.time()) * day_lenx  +  min_bar_x
+            min_bar_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay
+            max_bar_y = min_bar_y + bar_height
 
-            draw.rectangle([xmin, min_bar_y, xmax, max_bar_y], fill = bar_color)
+            # Draw the blocks
+            for block_start, block_end in zip(all_blocks["start"],all_blocks["end"]):
+                # Figure out where the block starts and ends in the day on the image
+                xmin = dayperc(block_start.time()) * day_lenx  +  min_bar_x
+                xmax = dayperc(block_end.time()) * day_lenx  +  min_bar_x
 
-        # Increase iDay by 1 for the next iteration
-        iDay += 1
+                draw.rectangle([xmin, min_bar_y, xmax, max_bar_y], fill = bar_color)
+
+            # Increase iDay by 1 for the next iteration
+            iDay += 1
 
 
     # Draw the times and lines (draw every three hours) #TODO: make this depend on image width
-    for i in range(0, 25, 3):
+    for i in range(0, 25, 1):
         text_str = str(i)
         text_width = imfont.getsize(text_str)[0]
 
         # Calculate where to draw the text
         time_x = i / 24.0 * day_lenx + min_bar_x
         text_x = time_x - text_width / 2
-        text_y_top = image_padding;
+        text_y_top = image_padding
         text_y_bottom = ysize - image_padding - text_height
 
         # Draw the text on the top and bottom of the display
-        draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=(0, 0, 0))
-        draw.text(xy=(text_x, text_y_bottom), text=text_str, font=imfont, fill=(0, 0, 0))
+        draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, color=text_color)
+        draw.text(xy=(text_x, text_y_bottom), text=text_str, font=imfont, color=text_color)
 
         # Draw a line between the top and bottom
         line_top = text_y_top + text_height + 2
@@ -103,10 +135,12 @@ def main():
         # Make the 0,6,12,18,24 lines a bit bolder
         if (i % 6) == 0:
             line_width = 3
-        else:
+        elif (i % 6) == 3:
             line_width = 0
+        else:
+            continue
 
-        draw.line((time_x, line_top, time_x, line_bottom), fill=(0, 0, 0), width=line_width)
+        draw.line((time_x, line_top, time_x, line_bottom), fill=line_color, width=line_width)
 
     im.save(imageout)
 
