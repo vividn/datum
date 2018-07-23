@@ -12,6 +12,8 @@ def main():
 
     # Which data to draw
     block_files = ['sleep', 'hw', 'workday', 'berlin']
+
+    # Point files are shown on 3 different tracks to help differentiate data
     point_files = ['coffee']
 
     data_colors = {'sleep': (0, 80, 160), 'hw': (255, 0, 0), 'coffee': (100, 50, 0)}
@@ -24,8 +26,8 @@ def main():
     # Create the output image
     # Image properties
     # Total size of the whole image
-    xsize = 1500
-    ysize = 800
+    xsize = 1080
+    ysize = 960
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
@@ -37,7 +39,7 @@ def main():
     text_padding = 10  # Space between text and bars
 
     # Font
-    fontsize = 22
+    fontsize = 18
     imfont = ImageFont.truetype('/home/vividn/.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
     text_width, text_height = imfont.getsize('8888-88-88')
 
@@ -52,7 +54,7 @@ def main():
     #####################################
     # Get the dates and then draw the date text
     # For now dates are hardcoded to be the previous week including today
-    nDays = 7
+    nDays = 8
     end_date = datetime.date.today()
 
     # Calculate the bar height now for easy centering of the date text
