@@ -47,24 +47,7 @@ while getopts "f:d:t:TDa:ui" opt; do
         AFLAGDATA="$AFLAGDATA\t$OPTARG"
     ;;
     u) # Undo the last data point made
-	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 5 minutes ago
-	  if test $(find $FILE -mmin -5); then
-		DELETEDLINE=$(tail -n 1 $FILE)
-		TMPFILE=$(mktemp)
-		
-		# Delete the last line
-		head -n -1 $FILE > $TMPFILE
-		mv $TMPFILE $FILE
-		echo "Deleted line [$FILE]: $DELETEDLINE"
-		
-		# Change modified time to stop more deletions happening
-		touch -m -t $(date -d 'now - 5 minutes' +%Y%m%d%H%M) $FILE
-		exit 0
-		
-	  else
-		echo "Nothing deleted. File older than 5 minutes."
-		exit 1
-	  fi
+        UNDOLAST=true
     ;;
 
     i) # Interactive mode. Records timings of keystrokes for on the fly data collection
@@ -89,6 +72,29 @@ fi
 
 #Separate everything by tabs
 IFS='	'
+
+if [ ! -z "$UNDOLAST" ]; then
+    # Undo the last data point made
+
+	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 5 minutes ago
+	  if test $(find $FILE -mmin -5); then
+		    DELETEDLINE=$(tail -n 1 $FILE)
+		    TMPFILE=$(mktemp)
+		    
+		    # Delete the last line
+		    head -n -1 $FILE > $TMPFILE
+		    mv $TMPFILE $FILE
+		    echo "Deleted line [$FILE]: $DELETEDLINE"
+		    
+		    # Change modified time to stop more deletions happening
+		    touch -m -t $(date -d 'now - 5 minutes' +%Y%m%d%H%M) $FILE
+		    exit 0
+		    
+	  else
+		    echo "Nothing deleted. File older than 5 minutes."
+		    exit 1
+	  fi
+fi
 
 
 if [ -z "$INTERACTIVE" ]; then
