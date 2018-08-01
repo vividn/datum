@@ -27,11 +27,11 @@ def main():
     # Image properties
     # Total size of the whole image
     xsize = 1080
-    ysize = 960
+    ysize = 600
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
-    imageout = '/home/vividn/Analysis/dayview.png'
+    imageout = '/home/vividn/Analysis/Pictures/dayview.png'
 
     # Padding (in pixels)
     image_padding = 20  # outer border
@@ -41,7 +41,8 @@ def main():
     # Font
     fontsize = 18
     imfont = ImageFont.truetype('/home/vividn/.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
-    text_width, text_height = imfont.getsize('8888-88-88')
+    # Find the width of the date text on the left of the date, in the format Jan 08, so use M's for maximum size
+    text_width, text_height = imfont.getsize('Dec 88')
 
     # Bar properties
     min_bar_x = image_padding + text_width + text_padding
@@ -49,7 +50,7 @@ def main():
     day_lenx = max_bar_x - min_bar_x
 
     # Point properties
-    point_r = 10
+    point_r = 6
 
     #####################################
     # Get the dates and then draw the date text
@@ -70,7 +71,7 @@ def main():
         all_date_strs += [date_str]
 
         # Create and draw the label
-        date_label = date_dt.strftime("%A\n%Y-%m-%d")
+        date_label = date_dt.strftime("%a\n%b %d")
         date_width, date_height = draw.multiline_textsize(date_label, font=imfont)
         date_x = min_bar_x - text_padding - date_width
         date_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay + bar_height / 2.0 - date_height / 2.0
@@ -183,7 +184,7 @@ def main():
 
         # Make the 0,6,12,18,24 lines a bit bolder
         if (i % 6) == 0:
-            line_width = 3
+            line_width = 2
         elif (i % 6) == 3:
             line_width = 0
         else:
