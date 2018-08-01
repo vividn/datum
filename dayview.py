@@ -23,6 +23,10 @@ def main():
     line_color = (255,255,255)
     bg_color = (0,0,0)
 
+    # The Now Line
+    now_color = (255,255,0)
+    now_width = 1
+
     # Create the output image
     # Image properties
     # Total size of the whole image
@@ -191,6 +195,10 @@ def main():
             continue
 
         draw.line((time_x, line_top, time_x, line_bottom), fill=line_color, width=line_width)
+
+    # Draw a Yellow line that represents now
+    now_x = dayperc(datetime.datetime.now().time()) * day_lenx + min_bar_x
+    draw.line((now_x, min_bar_y, now_x, max_bar_y), fill=now_color, width=now_width)
 
     im.save(imageout)
 
