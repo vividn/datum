@@ -15,6 +15,7 @@ while getopts "f:d:t:TDa:ui" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG.tsv"
+        BASENAME="$OPTARG"
     ;;
     
     d)  # Specify date
@@ -67,6 +68,7 @@ TIMESTAMP=$DATESTR"\t"$TIMESTR
 # The first argument speifies the file (if not specified via -f)
 if [ -z "$FILE" ]; then
     FILE="$DATADIR/$1.tsv"
+    BASENAME="$1"
     shift
 fi
 
@@ -84,7 +86,7 @@ if [ ! -z "$UNDOLAST" ]; then
 		    # Delete the last line
 		    head -n -1 $FILE > $TMPFILE
 		    mv $TMPFILE $FILE
-		    echo "Deleted line [$FILE]: $DELETEDLINE"
+		    echo "DELETED $(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $DELETEDLINE"
 		    
 		    # Change modified time to stop more deletions happening
 		    touch -m -t $(date -d 'now - 5 minutes' +%Y%m%d%H%M) $FILE
@@ -109,7 +111,7 @@ if [ -z "$INTERACTIVE" ]; then
 	    OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA""\t$*"
 	fi
 
-	echo -e "$OUTPUTSTRING"
+	echo -e "$(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $OUTPUTSTRING"
 	echo -e "$OUTPUTSTRING" >> $FILE
 
 
