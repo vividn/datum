@@ -138,6 +138,9 @@ def main():
         # Convert the date_time column into datetime format
         data.index = pd.to_datetime(data.index)
 
+        # Get into chronological order
+        data.sort_index(inplace=True)
+
         ts = data['Minutes']
 
         # Get the appropriate data color
