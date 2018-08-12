@@ -7,21 +7,62 @@ from PIL import Image, ImageDraw, ImageFont
 
 
 def main():
+    """
+
+    Data come in a few different varieties which are plotted differently
+    All data entries have a timestamp (with date and time), and then an optional tab separated list of values
+    The format of the extra data is listed here.
+
+    Point data: simple data consisting of only a timestamp
+
+    Block data: Blocks of time with a start and end
+        'start' - start of a block
+        'end'   - end of a block
+        +N      - end of an N minute block
+        -N      - end of an N minute whole inside of a block
+
+    Category data: Discrete non-overlapping categories that take place until ended or another category begins
+        <name>  - Start of a block of <name>, also ends the preceding block if it exists
+        'end'   - end of a block
+        -N      - end of an N minute whole inside of a block
+
+    Pixel Coefficient (px_coeff) data: blocks whose width in pixels scales with their data
+        V       - end of a block of time that is N pixels wide, where N = V * coeff
+
+    Time Coefficient (tm_coeff) data: blocks whose width in minutes scales with their data
+        V       - end of a block of time that is N minutes wide, where N = V * coeff
+    """
     # Where the data are
     datum_dir = '/home/vividn/Data/datum/'
 
-    # Which data to draw
-    block_files = ['sleep', 'hw', 'workday', 'berlin']
-
-    # Point files are shown on 3 different tracks to help differentiate data
+    # Point data: simple data consisting of only a timestamp
     point_files = ['coffee']
 
-    data_colors = {'sleep': (0, 80, 160), 'hw': (255, 0, 0), 'coffee': (100, 50, 0)}
+    # Block data: Blocks of time with a start and end
+    block_files = ['sleep', 'hw', 'workday', 'berlin']
+
+    # Category data: Discrete non-overlapping categories that take place until ended or another category begins
+    category_files = ['environment', 'project']
+
+    data_colors = {'sleep': (10, 80, 160), 'hw': (255, 0, 0), 'coffee': (100, 50, 0), 'environment': {'outside': (139, 195, 74), 'inside': (117, 117, 117), 'home': (69, 90, 100)}}
 
     # Other colors
     text_color = (255,255,255)
     line_color = (255,255,255)
     bg_color = (0,0,0)
+
+    # Specify the bar height classes, which can be referred to later by name
+    bar_span = {'full': (0,1),
+                'level1': (0.15, 1),
+                'level2': (0.3, 1),
+                'level3': (0.45, 1),
+
+                'upper': (0.1, 0.3),
+                'mid' : (0.4, 0.6),
+                'lower': (0.7, 0.9)
+                }
+
+
 
     # The Now Line
     now_color = (255,255,0)
@@ -39,7 +80,7 @@ def main():
 
     # Padding (in pixels)
     image_padding = 20  # outer border
-    bar_padding = 15  # space between bars
+    bar_padding = 12  # space between bars
     text_padding = 10  # Space between text and bars
 
     # Font
@@ -54,7 +95,7 @@ def main():
     day_lenx = max_bar_x - min_bar_x
 
     # Point properties
-    point_r = 6
+    point_r = 4
 
     #####################################
     # Get the dates and then draw the date text
@@ -88,6 +129,8 @@ def main():
 
     # First, draw all the data that represent blocks of time as colored rectangles
     for block_file in block_files:
+        print(block_file)
+
         # Load in the datum file, combining the date and time columns
         datum_file = datum_dir + block_file + '.tsv'
         data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
@@ -128,6 +171,8 @@ def main():
 
     # Next draw all the single timestamp data as colored points
     for point_file in point_files:
+        print(point_file)
+
         datum_file = datum_dir + point_file + '.tsv'
         data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
