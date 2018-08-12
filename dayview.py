@@ -317,7 +317,7 @@ def get_all_blocks(ts):
                 # Similarly, negative times can only occur inside blocks, representing
                 # a short time during a work block that was spent not working.
                 if bool(m.group(1)) ^ bool(in_block):
-                    raise ValueError('Number not correctly associated with blocks')
+                    raise ValueError("Number not correctly associated with blocks\n{timestamp}, {entry}")
 
                 mini_block_minutes = float(entry)
 
