@@ -246,7 +246,9 @@ def main():
 
     # Draw a Yellow line that represents now
     now_x = dayperc(datetime.datetime.now().time()) * day_lenx + min_bar_x
-    draw.line((now_x, min_bar_y, now_x, max_bar_y), fill=now_color, width=now_width)
+    now_bottom = ysize - image_padding;
+    now_top = now_bottom - text_height - text_padding - bar_height
+    draw.line((now_x, now_top, now_x, now_bottom), fill=now_color, width=now_width)
 
     im.save(imageout)
 
