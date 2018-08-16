@@ -3,47 +3,25 @@
 import pandas as pd
 import datetime
 import re
+import os
 from PIL import Image, ImageDraw, ImageFont
+
+# Custom class for analyzing datum files
+from datumdata import Datumdata
 
 
 def main():
     """
-    Data come in a few different varieties which are plotted differently
-    All data entries have a timestamp (with date and time), and then an optional tab separated list of values
-    The format of the extra data is listed here.
-
-    Point data: simple data consisting of only a timestamp
-
-    Block data: Blocks of time with a start and end
-        'start' - start of a block
-        'end'   - end of a block
-        +N      - end of an N minute block
-        -N      - end of an N minute whole inside of a block
-
-    Category data: Discrete non-overlapping categories that take place until ended or another category begins
-        <name>  - Start of a block of <name>, also ends the preceding block if it exists
-        'end'   - end of a block
-        -N      - end of an N minute whole inside of a block
-
-    Pixel Coefficient (px_coeff) data: blocks whose width in pixels scales with their data
-        V       - end of a block of time that is N pixels wide, where N = V * coeff
-
-    Time Coefficient (tm_coeff) data: blocks whose width in minutes scales with their data
-        V       - end of a block of time that is N minutes wide, where N = V * coeff
+    Loads in specified datum files and plots them according to their type to create the dayview graphic
     """
-    # Where the data are
-    datum_dir = '/home/vividn/Data/datum/'
 
-    # Point data: simple data consisting of only a timestamp
-    point_files = ['coffee']
+    # Load in the data to plot from the dayview_table.
+    # It includes name, type, and span (vertical bar span) of the data
+    table_file = os.path.join(os.path.dirname(__file__), 'dayview_table.csv')
+    all_datum_files = pd.read_csv(table_file)
 
-    # Block data: Blocks of time with a start and end
-    block_files = ['sleep', 'hw', 'workday']
-
-    # Category data: Discrete non-overlapping categories that take place until ended or another category begins
-    category_files = ['environment', 'project']
-
-    data_colors = {'sleep': (10, 80, 160), 'hw': (255, 0, 0), 'coffee': (100, 50, 0), 'environment': {'outside': (139, 195, 74), 'inside': (117, 117, 117), 'home': (69, 90, 100)}}
+    # The colors with which to draw the data
+    data_colors = {'environment': {'outside': (139, 195, 74), 'inside': (117, 117, 117), 'home': (69, 90, 100)}, 'sleep': (10, 80, 160), 'hw': (255, 0, 0), 'coffee': (100, 50, 0), 'default': (200, 200, 128)}
 
     # Other colors
     text_color = (255,255,255)
@@ -123,52 +101,27 @@ def main():
 
     ################################################
     # Load and iterate through the data
+    for datum_file in all_datum_files.itertuples():
+        name = datum_file.Name
+        datum_type = datum_file.Type
+        span = datum_file.Span
 
-
-    # First, draw all the data that represent blocks of time as colored rectangles
-    for block_file in block_files:
-        print(block_file)
-
-        # Load in the datum file, combining the date and time columns
-        datum_file = datum_dir + block_file + '.tsv'
-        data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
-
-        # Convert the date_time column into datetime format
-        data.index = pd.to_datetime(data.index)
-
-        # Get into chronological order
-        data.sort_index(inplace=True)
-
-        ts = data['Minutes']
-
-        # Get the appropriate data color
-        data_color = data_colors[block_file]
+        # Use the Datumdata class to load in this data
+        data = Datumdata(name, datum_type)
 
         #########################################
         # Plot the data day by day
         iDay = 0
-
-
         for date in dates_to_plot:
 
-            # For some reason these pandas timeseries and dataframe objects can't take a date object as an index, so convert to a string
-            date_str = date.strftime("%Y-%m-%d")
-            yesterday_str = (date - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
-
-            try:
-                # Determine how this day should begin based on how the previous day ended
-                start_value = next_day_start(ts[yesterday_str])
-            except KeyError:
-                start_value = None
-
-            try:
-                all_blocks = get_all_blocks(ts[date_str], start_value=start_value)
-            except KeyError:
-                # If no data exist for a given date, don't draw anything and continue to the next date
-                continue
+            # Load the blocks for the given day
+            data.get_day(date)
 
             min_bar_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay
             max_bar_y = min_bar_y + bar_height
+
+            # Get the appropriate data color
+            data_color = data_colors[block_file]
 
             # Draw the blocks
             for block_start, block_end in zip(all_blocks["start"],all_blocks["end"]):

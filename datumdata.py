@@ -83,7 +83,12 @@ class Datumdata:
 
         # For block data, all entries are stored in the column, 'Minutes'
         # Load the data for the given date
-        ts = self.data['Minutes'][date_str]
+        ts = self.data['Minutes']
+        try:
+            ts_date = ts[date_str]
+        except KeyError:
+            # If no data exist for a given date, return empty list
+            return []
 
         # Initialize empty arrays to store the start times and end times
         start_times = []
@@ -96,11 +101,11 @@ class Datumdata:
 
         # If starting in a block, add midnight to the start list
         if start_value:
-            block_start = ts.index[0].floor('D')
+            block_start = ts_date.index[0].floor('D')
             start_times += [block_start]
 
         # Iterate through entries on day
-        for timestamp, entry in ts.iteritems():
+        for timestamp, entry in ts_date.iteritems():
 
             # Entries are either 'start', 'end', or a number.
             # 'start' and 'end' should form blocks of time whose minutes
