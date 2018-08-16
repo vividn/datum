@@ -8,7 +8,6 @@ from PIL import Image, ImageDraw, ImageFont
 
 def main():
     """
-
     Data come in a few different varieties which are plotted differently
     All data entries have a timestamp (with date and time), and then an optional tab separated list of values
     The format of the extra data is listed here.
@@ -39,7 +38,7 @@ def main():
     point_files = ['coffee']
 
     # Block data: Blocks of time with a start and end
-    block_files = ['sleep', 'hw', 'workday', 'berlin']
+    block_files = ['sleep', 'hw', 'workday']
 
     # Category data: Discrete non-overlapping categories that take place until ended or another category begins
     category_files = ['environment', 'project']
@@ -106,17 +105,16 @@ def main():
     # Calculate the bar height now for easy centering of the date text
     bar_height = (ysize - 2 * image_padding - 2 * text_height - 2 * text_padding - (nDays - 1) * bar_padding) / nDays
 
-    # Create an array of strings for indexing of the datum data by date
-    all_date_strs = []
+    # Create an array of dates to analyze
+    dates_to_plot = []
 
     for iDay in range(0,nDays):
-        date_dt = (datetime.date.today() - datetime.timedelta(days=(nDays-iDay-1)))
-
-        date_str = date_dt.strftime("%Y-%m-%d")
-        all_date_strs += [date_str]
+        # Starting with the beginning date, add the dates to the array
+        date = (datetime.date.today() - datetime.timedelta(days=(nDays-iDay-1)))
+        dates_to_plot += [date]
 
         # Create and draw the label
-        date_label = date_dt.strftime("%a\n%b %d")
+        date_label = date.strftime("%a\n%b %d")
         date_width, date_height = draw.multiline_textsize(date_label, font=imfont)
         date_x = min_bar_x - text_padding - date_width
         date_y = image_padding + text_height + text_padding + ( bar_height + bar_padding ) * iDay + bar_height / 2.0 - date_height / 2.0
@@ -150,9 +148,21 @@ def main():
         # Plot the data day by day
         iDay = 0
 
-        for date_str in all_date_strs:
+
+        for date in dates_to_plot:
+
+            # For some reason these pandas timeseries and dataframe objects can't take a date object as an index, so convert to a string
+            date_str = date.strftime("%Y-%m-%d")
+            yesterday_str = (date - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+
             try:
-                all_blocks = get_all_blocks(ts[date_str])
+                # Determine how this day should begin based on how the previous day ended
+                start_value = next_day_start(ts[yesterday_str])
+            except KeyError:
+                start_value = None
+
+            try:
+                all_blocks = get_all_blocks(ts[date_str], start_value=start_value)
             except KeyError:
                 # If no data exist for a given date, don't draw anything and continue to the next date
                 continue
@@ -189,7 +199,10 @@ def main():
         # Plot the data day by day
         iDay = 0
 
-        for date_str in all_date_strs:
+        for date in dates_to_plot:
+            # For some reason these pandas timeseries and dataframe objects can't take a date object as an index, so convert to a string
+            date_str = date.strftime("%Y-%m-%d")
+
             try:
                  dd = data[date_str]
             except KeyError:
@@ -252,7 +265,7 @@ def main():
 
     im.save(imageout)
 
-def get_all_blocks(ts):
+def get_all_blocks(ts, start_value=None):
     # Takes the timeseries and extracts when blocks start and end, for the purposes of drawing these blocks to the screen
 
     # Create a dictionary to store the start and end times of each block of time
@@ -261,8 +274,13 @@ def get_all_blocks(ts):
 
 
     # in_block tracks whether or not the data parser is inside of a start...end block
-    # it starts with None, because it is uncertain if in block from previous day at midnight
-    in_block=None
+    # default is None, because it is uncertain if in block from previous day at midnight
+    in_block=start_value
+
+    # If starting in a block, add midnight to the start list
+    if start_value:
+        block_start = ts.index[0].floor('D')
+        all_blocks["start"] += [block_start]
 
     # Iterate through entries on day
     for timestamp, entry in ts.iteritems():
@@ -288,7 +306,7 @@ def get_all_blocks(ts):
         elif entry == 'end':
             # 'end' should never occur outside of a block
             if not (in_block):
-                # Special case, if end occurs as the first entry in the day, start a virtual block at midnight
+                # Special case, if end occurs as the first entry in the day, and the previous day is unknown, start a virtual block at midnight
                 if in_block == None:
                     block_start = timestamp.floor('D')
                     all_blocks["start"] += [block_start]
@@ -349,14 +367,48 @@ def get_all_blocks(ts):
         all_blocks["end"] += [block_end]
 
     # Each block in all_blocks should have a start and an end now, therefore start and end should be the same length
-    if len(all_blocks["start"]) != len(all_blocks["end"]):
-        raise RuntimeError('start and end arrays don\'t align')
+    # if len(all_blocks["start"]) != len(all_blocks["end"]):
+    #     raise RuntimeError('start and end arrays don\'t align')
 
     return all_blocks
 
 def dayperc(time):
     # Returns the percentage through the day that a certain time is
     return time.hour / 24.0  +  time.minute / (24.0 * 60)  +  time.second / (24.0 * 60 * 60)
+
+def next_day_start(ts):
+    """
+    Uses the last chronological value in a time series to determine how the next day should start at midnight
+    :param ts:
+    :return next_day_start_str:
+    """
+
+    # Ensure that data is chronological
+    ts.sort_index(inplace=True)
+
+    # Next day start is based upon how this day ends, so use the last value recorded
+    # If last value is ambiguous, keep iterating backwards
+    tail_ind = -1
+    while abs(tail_ind) <= len(ts):
+        val = ts[tail_ind]
+
+        if val == 'start':
+            # In a generic block
+            return True
+
+        if val == 'end':
+            # Not in any block
+            return False
+
+        # If the value is a not a number, then next day starts in a category block.
+        if not(re.match('^-?[0-9]', val)):
+            return val
+
+        # If value is a number (or some other invalid value), just move back to previous entry
+        tail_ind -= 1
+
+    # If no data exists on the day
+    return None
 
 
 main()
