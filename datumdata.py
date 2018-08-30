@@ -45,6 +45,7 @@ class Datumdata:
         self.coeff = coeff
 
         # Load in the datum file, combining the date and time columns
+        print(name)
         datum_file = datum_dir + name + '.tsv'
         self.data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
@@ -53,6 +54,11 @@ class Datumdata:
 
         # Get into chronological order
         self.data.sort_index(inplace=True)
+
+        # Data of block type should have their Minutes column be strings (because of 'start' and 'end')
+        # However, if no 'start' or 'end' exist, it will be read as a float. So convert.
+        if self.type == 'block':
+            self.data['Minutes'] = self.data['Minutes'].astype(str)
 
     def get_day(self, date):
         """
@@ -66,7 +72,10 @@ class Datumdata:
 
         elif self.type == 'point':
             date_str = date.strftime("%Y-%m-%d")
-            return self.data[date_str].index
+            try:
+                return self.data[date_str].index
+            except:
+                return []
 
         else:
             raise RuntimeError('Data type is invalid or not supported yet')
@@ -178,7 +187,7 @@ class Datumdata:
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
         # One exception to this is if the date is today, then the block extends to right now.
         if in_block:
-            if date.date() == pd.Timestamp.now().date():
+            if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()
             else:
                 block_end = dt.datetime.combine(date, dt.time(23,59,59,999999))
@@ -204,7 +213,10 @@ class Datumdata:
 
         # For category data, entries are stored in 2 columns
         # Load the data for the given date
-        df = self.data.iloc[:,0:2][date_str]
+        try:
+            df = self.data.iloc[:,0:2][date_str]
+        except KeyError:
+            df = pd.DataFrame()
 
         # Initialize empty dicts to store the start times and end times for each category
         start_times = {}
@@ -217,8 +229,8 @@ class Datumdata:
 
         # If starting in a block, add midnight to the start list
         if start_value:
-            block_start = df.index[0].floor('D')
-            start_times[start_value] += [block_start]
+            block_start = dt.datetime.combine(date,dt.time())
+            start_times.setdefault(start_value, []).append(block_start)
 
         # Iterate through entries on day
         for timestamp, col1, col2 in df.itertuples():
@@ -238,13 +250,13 @@ class Datumdata:
             elif col1 == 'end':
                 if in_block:
                     # End the currently active block
-                    end_times[in_block] += [timestamp]
+                    end_times.setdefault(in_block, []).append(timestamp)
                     in_block = False
 
                 # Don't do anything if not in a block
                 continue
 
-            elif col1 == '[end]' or col2 == '[start]':
+            elif col1 == '[end]' or col1 == '[start]':
                 # These are commands relating to starting and stopping data collection as a whole just skip these
                 continue
 
@@ -252,7 +264,7 @@ class Datumdata:
                 # number must be negative in col1
                 col1_num = float(col1)
                 if col1_num > 0:
-                    raise ValueError('Positve number in col1 not allowed')
+                    raise ValueError('Positive number in col1 not allowed')
 
                 # Whole must occur inside of a block
                 if not(in_block):
@@ -262,8 +274,8 @@ class Datumdata:
                 whole_start = timestamp - dt.timedelta(minutes=abs(col1_num))
                 whole_end = timestamp
 
-                end_times[in_block] += [whole_start]
-                start_times[in_block] += [whole_end]
+                end_times.setdefault(in_block, []).append(whole_start)
+                start_times.setdefault(in_block, []).append(whole_end)
 
 
             else:
@@ -278,26 +290,31 @@ class Datumdata:
 
                     # End the current category
                     if in_block:
-                        end_times[in_block] += [timestamp]
+                        end_times.setdefault(in_block, []).append(timestamp)
 
                     # Start the new category
                     in_block = col1
-                    start_times[col1] += [timestamp]
+                    start_times.setdefault(col1, []).append(timestamp)
 
                 elif col2 >= 0:
-                    # Create a block of size col2 in the middle the currently active block and then resume the active block
-
-                    # Category should not be the same as the active
-                    if in_block == col1:
-                        raise ValueError('Category block cannot be created within itself')
+                    # Create a block of size col2
 
                     mini_block_start = timestamp - dt.timedelta(minutes=col2)
                     mini_block_end = timestamp
 
-                    end_times[in_block] += [mini_block_start]
-                    start_times[col1] += [mini_block_start]
-                    end_times[col1] += [mini_block_end]
-                    start_times[in_block] += [mini_block_end]
+                    # If another block is currently active, create a whole in it to fit this momentary block of another category
+                    if in_block:
+                        # Category should not be the same as the active
+                        if in_block == col1:
+                            raise ValueError('Category block cannot be created within itself')
+
+                        end_times.setdefault(in_block, []).append(mini_block_start)
+                        start_times.setdefault(in_block, []).append(mini_block_end)
+
+
+                    start_times.setdefault(col1, []).append(mini_block_start)
+                    end_times.setdefault(col1, []).append(mini_block_end)
+
 
                 elif col2 < 0:
                     # Special case allowed where the category is listed with a negative number after it
@@ -307,8 +324,8 @@ class Datumdata:
                         whole_start = timestamp - dt.timedelta(minutes=abs(col1_num))
                         whole_end = timestamp
 
-                        end_times[in_block] += [whole_start]
-                        start_times[in_block] += [whole_end]
+                        end_times.setdefault(in_block, []).append(whole_start)
+                        start_times.setdefault(in_block, []).append(whole_end)
 
                 else:
                     raise ValueError('Improperly formated category data')
@@ -316,12 +333,12 @@ class Datumdata:
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
         # One exception to this is if the date is today, then the block extends to right now.
         if in_block:
-            if date.date() == pd.Timestamp.now().date():
+            if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()
             else:
                 block_end = dt.datetime.combine(date, dt.time(23, 59, 59, 999999))
 
-            end_times[in_block] += [block_end]
+            end_times.setdefault(in_block, []).append(block_end)
 
         # Final dict to return
         day_cats = {}
@@ -355,28 +372,47 @@ class Datumdata:
 
         # How a day starts is dependent upon how the last day ended,
         # Turn the date into a datetime at midnight
-        midnight = dt.combine(date, dt.time())
+        midnight = dt.datetime.combine(date, dt.time())
 
         # Find the index of the entry most recent before the given date
-        prev_ind = self.data.index.get_loc(midnight, method='')
-        while prev_ind >= 0:
-            val = self.data[prev_ind]
+        try:
+            prev_ind = self.data.index.get_loc(midnight, method='ffill')
+        except KeyError:
+            # If no data exists before the day
+            return False
 
-            if val == 'start':
-                # In a generic block
-                return True
+        if self.type == 'block':
+            while prev_ind >= 0:
+                val = self.data.iloc[prev_ind]['Minutes']
 
-            if val == 'end':
-                # Not in any block
-                return False
+                if val == 'start':
+                    # In a generic block
+                    return True
 
-            # If the value is a not a number, then next day starts in a category block.
-            if not (re.match('^-?[0-9]', val)):
-                return val
+                if val == 'end':
+                    # Not in any block
+                    return False
 
-            prev_ind -= 1
+                prev_ind -= 1
 
-        # If no data exists before the day, then assume not in a block
+        elif self.type == 'category':
+            while prev_ind >= 0:
+                col1 = self.data.iloc[prev_ind,0]
+                col2 = self.data.iloc[prev_ind,1]
+
+                # Next starts off if category ended previous day
+                if col1 == 'end':
+                    return False
+
+                # If the col1 is a not a number and col2 is also NaN, then next day starts in a category block.
+                if (not is_number(col1)) and np.isnan(col2):
+                    return col1
+
+                prev_ind -= 1
+
+
+
+        # If data is of another type, then assume not in a block
         return False
 
     def infer_data_type(self):
