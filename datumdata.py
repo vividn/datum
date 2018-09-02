@@ -266,9 +266,9 @@ class Datumdata:
                 if col1_num > 0:
                     raise ValueError('Positive number in col1 not allowed')
 
-                # Whole must occur inside of a block
+                # Whole must occur inside of a block, if it is not inside a block, just ignore it
                 if not(in_block):
-                    raise ValueError('Whole can only occur inside an active block')
+                    next
 
                 # Create a num sized whole in the active block
                 whole_start = timestamp - dt.timedelta(minutes=abs(col1_num))
