@@ -11,7 +11,7 @@ from datumdata import Datumdata
 
 # Constants and globals
 # The colors with which to draw the data
-data_colors = {'environment': {'outside': (135, 163, 102), 'inside': (117, 117, 117), 'home': (20, 20, 20)}, 'sleep': (10, 30, 100), 'hw': (200, 50, 50), 'coffee': (100, 50, 0), 'default': (255, 255, 0)}
+data_colors = {'environment': {'outside': (135, 163, 102), 'inside': (117, 117, 117), 'home': (20, 20, 20)}, 'sleep': (20, 40, 120), 'hw': (200, 50, 50), 'coffee': (100, 50, 0), 'default': (255, 255, 0)}
 
 # Other colors
 text_color = (255,255,255)
