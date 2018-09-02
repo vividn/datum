@@ -331,7 +331,7 @@ class Datumdata:
                     raise ValueError('Improperly formated category data')
 
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
-        # One exception to this is if the date is today, then the block extends to right now.
+        # One exception to this is if the date is today, in which case the block extends to right now.
         if in_block:
             if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()

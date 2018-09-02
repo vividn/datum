@@ -352,3 +352,5 @@ def dayperc(time):
 
 main()
 main(nDays=30, imageout='/home/vividn/Analysis/Pictures/30dayview.png', ysize=1920)
+main(nDays=1, imageout='/home/vividn/Analysis/Pictures/singledayview.png',
+     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0)
