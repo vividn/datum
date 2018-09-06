@@ -78,8 +78,8 @@ IFS='	'
 if [ ! -z "$UNDOLAST" ]; then
     # Undo the last data point made
 
-	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 5 minutes ago
-	  if test $(find $FILE -mmin -5); then
+	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 15 minutes ago
+	  if test $(find $FILE -mmin -15); then
 		    DELETEDLINE=$(tail -n 1 $FILE)
 		    TMPFILE=$(mktemp)
 		    
@@ -89,11 +89,11 @@ if [ ! -z "$UNDOLAST" ]; then
 		    echo "DELETED $(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $DELETEDLINE"
 		    
 		    # Change modified time to stop more deletions happening
-		    touch -m -t $(date -d 'now - 5 minutes' +%Y%m%d%H%M) $FILE
+		    touch -m -t $(date -d 'now - 15 minutes' +%Y%m%d%H%M) $FILE
 		    exit 0
 		    
 	  else
-		    echo "Nothing deleted. File older than 5 minutes."
+		    echo "Nothing deleted. File older than 15 minutes."
 		    exit 1
 	  fi
 fi
