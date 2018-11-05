@@ -9,9 +9,11 @@ DATESTR=$(date "+%Y-%m-%d")
 DATADIR=~/Data/datum
 
 AFLAGDATA=''
+FORCE=
+NEGATIVE=
 
 # Get options
-while getopts "f:d:t:TDa:ui" opt; do
+while getopts "f:d:t:TDa:uUin" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG.tsv"
@@ -51,10 +53,18 @@ while getopts "f:d:t:TDa:ui" opt; do
         UNDOLAST=true
     ;;
 
+    U) # Force undo (no time limit)
+        UNDOLAST=true
+        FORCE=true
+    ;;
+
     i) # Interactive mode. Records timings of keystrokes for on the fly data collection
 		INTERACTIVE=true
+    ;;
 
-	;;
+    n) # Negate numbers in the data
+    NEGATIVE=true
+	  ;;
 
     
         
@@ -78,11 +88,9 @@ IFS='	'
 if [ ! -z "$UNDOLAST" ]; then
     # Undo the last data point made
 
-	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 15 minutes ago
-	  if test $(find $FILE -mmin -15); then
-		    DELETEDLINE=$(tail -n 1 $FILE)
-		    TMPFILE=$(mktemp)
-		    
+	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 15 minutes ago 
+	  if [ ! -z "$FORCE" -o $(find $FILE -mmin -15) ]; then
+	  DELETEDLINE=$(tail -n 1 $FILE) TMPFILE=$(mktemp)
 		    # Delete the last line
 		    head -n -1 $FILE > $TMPFILE
 		    mv $TMPFILE $FILE
