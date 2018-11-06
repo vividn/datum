@@ -89,13 +89,18 @@ if [ ! -z "$UNDOLAST" ]; then
     # Undo the last data point made
 
 	  # To avoid accidental data loss, undo is allowed only if last entry was made less than 15 minutes ago 
-	  if [ ! -z "$FORCE" -o $(find $FILE -mmin -15) ]; then
-	  DELETEDLINE=$(tail -n 1 $FILE) TMPFILE=$(mktemp)
+	  if [ ! -z "$FORCE" ] || [ $(find $FILE -mmin -15) ]; then
+	      DELETEDLINE=$(tail -n 1 $FILE)
+        TMPFILE=$(mktemp)
+
 		    # Delete the last line
 		    head -n -1 $FILE > $TMPFILE
 		    mv $TMPFILE $FILE
 		    echo "DELETED $(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $DELETEDLINE"
 		    
+        # Record the deleted line in undo datum file
+        echo -e "$BASENAME\t$DELETEDLINE" >> $DATADIR/undo.tsv
+
 		    # Change modified time to stop more deletions happening
 		    touch -m -t $(date -d 'now - 15 minutes' +%Y%m%d%H%M) $FILE
 		    exit 0
