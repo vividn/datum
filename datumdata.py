@@ -286,7 +286,7 @@ class Datumdata:
                 if np.isnan(col2):
                     # Same category should not be started twice in a row
                     if in_block == col1:
-                        raise ValueError('Same category started twice in a row')
+                        raise ValueError('Same category started twice in a row' + str(timestamp))
 
                     # End the current category
                     if in_block:
@@ -306,7 +306,7 @@ class Datumdata:
                     if in_block:
                         # Category should not be the same as the active
                         if in_block == col1:
-                            raise ValueError('Category block cannot be created within itself')
+                            raise ValueError('Category block cannot be created within itself' + str(timestamp))
 
                         end_times.setdefault(in_block, []).append(mini_block_start)
                         start_times.setdefault(in_block, []).append(mini_block_end)
