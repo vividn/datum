@@ -44,8 +44,8 @@ Dir.glob("#{data_dir}*.md") do |notebook|
             
             words_output << sprintf("%s\t%s\t%d\t%s",endDate,endTime,entryWordCount,name)
         else
-            # If there is no END_OF_ENTRY, then, just put a 1 minute block of time in as an approximation
-            blocks_output << sprintf("%s\t%s\t%d\t%s",entryDate,entryTime,1,name)
+            # If there is no END_OF_ENTRY, still record the entry, but time will be considered 0
+            blocks_output << sprintf("%s\t%s\t%d\t%s",entryDate,entryTime,0,name)
             
             words_output << sprintf("%s\t%s\t%d\t%s",entryDate,entryTime,entryWordCount,name)
         end
