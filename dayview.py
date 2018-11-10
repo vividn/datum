@@ -354,3 +354,5 @@ main()
 main(nDays=30, imageout='/home/vividn/Analysis/Pictures/30dayview.png', ysize=1920)
 main(nDays=1, imageout='/home/vividn/Analysis/Pictures/singledayview.png',
      xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0)
+main(nDays=1, imageout='/home/vividn/Analysis/Pictures/phoneday.png',
+     xsize=1080, ysize=200, image_padding=6, bar_padding=0, text_padding=0, now_width=2)
