@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # When datum files diverge on different computers, it is important to resync them, but lose no data.
-# Datum files are append-only, so merge-datum finds the first line of difference in the two files and then concatenates the unified head and both of the tails for the two files.
+# Datum files are append-only, so merge-datum use comm to pair up lines until a diference is found and then cats the unison and the two differences into a single output stream.
 
-# Get the line number of the first difference
-line=$(cmp "$1" "$2" | awk '{print $NF}')
-linebefore=$(( line - 1 ))
+# Output all the similar lines between the two files
+comm -21 "$1" "$2"
 
-head -n $linebefore $1
-tail -n +$line $1
-tail -n +$line $2
+# Now output the lines just in $1
+comm -32 "$1" "$2"
+# And just in $2
+comm -31 "$1" "$2"
