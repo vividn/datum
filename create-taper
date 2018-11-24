@@ -1,0 +1,156 @@
+#!/usr/bin/python3
+
+# create-token uses analysis of datum files to figure out the current frequency of a certain set of data.
+# A taper is then created to change that frequency to a target frequency by some target date.
+# Then, it constructs time-series of 'tokens' in its own datum file.
+# This file can then be read by view-token, which will show the difference between reality and the token system.
+
+
+import pandas as pd
+import argparse
+import subprocess
+import os
+import sys
+
+from dateutil import parser as dtparse
+
+from datumdata import Datumdata
+
+import datetime as dt
+now = dt.datetime.now()
+
+iso_fmt="%Y-%m-%d\t%H:%M:%S"
+date_compatible_fmt="%H:%M:%S %Y-%m-%d"
+
+def parse_date(dt_str, reference=now):
+    try:
+        # Try to parse the string as an absolute datetime first
+        return dtparse.parse(dt_str, ignoretz=True)
+
+    except ValueError:
+        # Otherwise parse as a duration relative to reference (e.g., 30 days, 5 months, etc.)
+
+        # Transform reference into a formated string if it isn't already
+        if type(reference) != str:
+            reference = reference.strftime(date_compatible_fmt)
+
+        target_str = subprocess.check_output(["date", "-d", reference + " + " + dt_str, "+%s" % iso_fmt])
+        return dtparse.parse(target_str, ignoretz=True)
+
+parse_date('1week')
+
+def parse_duration(dur_str):
+    # Parses phrases like "1week", "3 hours", etc. using POSIX-date's parser
+    # Returns a dt.timedelta object
+    return dtparse.parse(subprocess.check_output(["date", "-d", "now + " + dur_str]), ignoretz=True) - now
+
+parser = argparse.ArgumentParser(description='create a token based taper for a datum file')
+parser.add_argument('dname', metavar='datum_name', type=str, help='name of the datum file to taper')
+parser.add_argument('tfreq', metavar='target_freq', type=float, help='the target value per PERIOD (set with -T, default:30days)')
+parser.add_argument('period', metavar='period', type=parse_duration, help='the period corresponding to the target-freq', default=dt.timedelta(30))
+parser.add_argument('tdate', metavar='target_date', type=parse_date, help='the date at which the target_freq should be reached, ' +
+                                                                          'can also be a duration (eg "30 days"), for relative goals')
+
+parser.add_argument('--sustain', dest='sustain', type=str, help='how long to maintain target-freq after target-date is reached (can be dur or absolute time)', default="30days")
+parser.add_argument('--start-freq', dest='sfreq', type=float, help='Use a manual starting frequency rather than calculating from the datum file')
+parser.add_argument('--column', type=str, help='column in the datum file to taper. The default column is based upon datatype')
+parser.add_argument('--datatype', type=str, help='Datum data type. Defaults to "point"')
+parser.add_argument('--clobber', action='store_true', help='Overwrite existing taper file without prompt')
+parser.add_argument('--window', type=parse_duration, help='The time window of the recent past for which to calculate start-freq', default=dt.timedelta(14))
+
+args = parser.parse_args()
+
+dname = args.dname
+tfreq = args.tfreq
+period = args.period
+tdate = args.tdate
+sfreq = args.sfreq
+
+
+# Transform sustain into the proper date. This must be done after all arguments are read because it rely's on computations using them
+end_date = parse_date(args.sustain, tdate)
+
+##############################
+# Load datum files
+
+datum_dir = '/home/vividn/Data/datum/'
+# Check to make sure that there exists a datum file with this name
+datum_file = datum_dir + dname + '.tsv'
+if not os.path.isfile(datum_file):
+    raise ValueError(dname + ' is not a valid datum file')
+
+# taper_file is the output of this function, essentially a mock datum file that maps
+# what the base datum file should look like in order to follow the taper.
+taper_file = datum_dir + 'taper-' + dname + '.tsv'
+
+# Ask for confirmation before clobbering existing taper file
+# if os.path.isfile(taper_file) and not args.clobber:
+#     print("Taper currently active for " + dname + ". Overwrite? [y/N]:")
+#     if not input().lower()[0] == 'y':
+#         exit(2)
+
+# Load the data
+data = Datumdata(dname, type=args.datatype)
+
+#######################
+# Determine what the current frequency is from collected data
+window_begin = now - args.window
+
+count = data.count_entries(window_begin, now)
+
+# Calculate the starting frequency per period
+sfreq = count / args.window.total_seconds() * period.total_seconds()
+print(sfreq)
+
+####################
+# Build the taper
+
+# Length in seconds of the tapering timeframe
+taper_timeframe = tdate - now
+
+with open(taper_file, 'w') as f:
+    # Header line
+    f.write("Date\tTime\tITI\tPhase\n")
+
+    # Create the taper, shifting gradually from sfreq to tfreq from now until the target_date
+    next_entry = now
+    iti = dt.timedelta(0)
+
+    phase='[start]'
+
+    while next_entry <= end_date:
+        date_str = next_entry.strftime("%Y-%m-%d")
+        time_str = next_entry.strftime("%H:%M:%S.%f")[0:-3]
+        iti_str = '%.2f' % (iti.total_seconds() / 60.0 / 60.0 / 24.0)
+        out_str =  "\t".join([date_str, time_str, iti_str, phase]) + "\n"
+        print(out_str,end='')
+        f.write(out_str)
+
+
+        if next_entry <= tdate:
+            # Before target date is reached, taper frequency from sfreq to tfreq
+            phase = 'taper'
+
+            # Scale the inter-time-interval (ITI) linearly with the proprotion of the way through the taper timeframe
+            # TODO: Allow for non-linear tapers
+            proportion_done = (next_entry - now) / taper_timeframe
+            cur_freq = sfreq + (proportion_done * (tfreq - sfreq))
+
+            # Use cur_freq and period to determine the correct ITI
+            iti = period / cur_freq
+            next_entry += iti
+
+        else:
+            # After the target date, just maintain tfreq for the sustain period
+            phase = 'sustain'
+            iti = period / tfreq
+            next_entry += iti
+
+    # Write the end date as the last entry of the taper file
+    phase = '[end]'
+
+    date_str = end_date.strftime("%Y-%m-%d")
+    time_str = end_date.strftime("%H:%M:%S.%f")[0:-3]
+    out_str = "\t".join([date_str, time_str, "NaN", phase]) + "\n"
+    print(out_str)
+    f.write(out_str)
