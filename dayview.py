@@ -8,6 +8,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 # Custom class for analyzing datum files
 from datumdata import Datumdata
+from miscfunc import *
 
 # Constants and globals
 # The colors with which to draw the data

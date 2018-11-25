@@ -1,14 +1,15 @@
 import pandas as pd
 import numpy as np
 import datetime as dt
+
 import re
 import os
+
+from miscfunc import *
 
 datum_dir=os.getenv("HOME")+'/Data/datum/'
 
 
-def is_number(s):
-    return s.lstrip('-').replace('.', '', 1).isdigit()
 
 
 class Datumdata:
