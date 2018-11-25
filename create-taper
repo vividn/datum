@@ -11,38 +11,44 @@ import argparse
 import subprocess
 import os
 import sys
+import math
+from math import log2
 
 from dateutil import parser as dtparse
 
 from datumdata import Datumdata
 
 import datetime as dt
-now = dt.datetime.now()
 
 iso_fmt="%Y-%m-%d\t%H:%M:%S"
-date_compatible_fmt="%H:%M:%S %Y-%m-%d"
+posix_fmt= "%H:%M:%S %Y-%m-%d"
 
-def parse_date(dt_str, reference=now):
+now = dt.datetime.now().replace(microsecond=0)
+posix_now = now.strftime(posix_fmt)
+
+
+
+def parse_duration(dur_str):
+    # Parses phrases like "1week", "3 hours", etc. using POSIX-date's parser
+    # I'm doing this for consistency with other programs in the interconnected system.
+    # Returns a dt.timedelta object
+    dur = dtparse.parse(subprocess.check_output(["date", "-d", posix_now + " + " + dur_str]), ignoretz=True) - now
+    return dur
+
+def parse_date(dt_str, reference=posix_now):
     try:
         # Try to parse the string as an absolute datetime first
         return dtparse.parse(dt_str, ignoretz=True)
 
     except ValueError:
         # Otherwise parse as a duration relative to reference (e.g., 30 days, 5 months, etc.)
+        delta_dur = parse_duration(dt_str).check_output(["date", "-d", reference + " + " + dt_str, "+%s" % iso_fmt])
 
-        # Transform reference into a formated string if it isn't already
+        # Transform reference into a well formatted string if it isn't already
         if type(reference) != str:
-            reference = reference.strftime(date_compatible_fmt)
+            reference = reference.strftime(posix_fmt)
 
-        target_str = subprocess.check_output(["date", "-d", reference + " + " + dt_str, "+%s" % iso_fmt])
-        return dtparse.parse(target_str, ignoretz=True)
-
-parse_date('1week')
-
-def parse_duration(dur_str):
-    # Parses phrases like "1week", "3 hours", etc. using POSIX-date's parser
-    # Returns a dt.timedelta object
-    return dtparse.parse(subprocess.check_output(["date", "-d", "now + " + dur_str]), ignoretz=True) - now
+        return reference + delta_dur
 
 parser = argparse.ArgumentParser(description='create a token based taper for a datum file')
 parser.add_argument('dname', metavar='datum_name', type=str, help='name of the datum file to taper')
