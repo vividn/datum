@@ -33,11 +33,19 @@ taper = Datumdata(taper_name)
 rdata = real.data
 tdata = taper.data
 
+
+
 # When the most recent taper began
 sdate = tdata.loc[tdata['Mode'] == '[start]'].index.to_pydatetime()[0]
 
-# The surrounding tokens
+# The most recent token
 recent_token = tdata.loc[tdata.index < qdate].iloc[-1]
+
+# Detect no taper currently active
+if recent_token['Mode'] == '[end]':
+    exit(2)
+
+# The next token
 next_token = tdata.loc[tdata.index > qdate].iloc[0]
 
 # The difference between real and taper data
