@@ -92,6 +92,70 @@ class Datumdata:
 
         self.data = data
 
+    def process_header(self):
+        '''
+        The header of datum files can communicate a lot of extra information which can be useful in analyzing
+        For a given column name, it can look like this
+
+        n*NAME(units)[default]
+
+        all are optional except NAME
+
+        * - represents the primary column for analysis. If preceded by a number, it will be assigned as the coefficient
+            n*Date - Will be counted as true if at least n entries are made on the Date TODO
+            *Time - Shorthand to just count the entries, type='point'
+            *Minutes - type='block'
+
+        :return:
+        '''
+
+
+
+        # TODO: Units
+        # TODO: Defaults
+        # TODO: *Primary
+        header = self.raw_text.split("\n",1)[0].split("\t")
+        if header[0] != "Date":
+            raise RuntimeError('No header for "' + self.name + '". Please create one')
+
+
+        header_re = re.compile('^([0-9.]*\*)')
+        #for col in header:
+
+    ##########################################3
+    # Analysis functions
+
+    def filter_data(self, dataset=None, begin_dt=None, end_dt=None, column=None):
+        if type(dataset) == None:
+            dataset = self.data
+
+        # Returns a subset of dataset to match given criteria
+        filtered_data = dataset
+
+        # Time Filter
+        if begin_dt != None or end_dt != None:
+            begin_dt = dataset.index[0] if begin_dt is None else begin_dt
+            end_dt = dataset.index[-1] if end_dt is None else end_dt
+
+            # If dates are given, convert them to datetimes
+            if type(begin_dt) == dt.date:
+                begin_dt = midnight(begin_dt)
+
+            if type(end_dt) == dt.date:
+                end_dt = eod(end_dt)
+
+            # Get the total entries within this time window
+            filtered_data = self.data.loc[(self.data.index >= begin_dt) & (self.data.index <= end_dt)]
+
+ #       if column != None:
+            # Column should be a 3-tuple (column_name,
+
+        return filtered_data
+
+    def count_entries(self, *args, **kwargs):
+        # Counts the total number of data points between two datetimes
+        fdata = self.filter_data(self.data, *args, **kwargs)
+        return len(fdata)
 
     def get_timings(self, date):
         if not date in self.timings:
