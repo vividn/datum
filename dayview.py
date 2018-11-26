@@ -144,7 +144,7 @@ def main(**kwargs):
         for date in dates_to_plot:
 
             # Load the blocks for the given day
-            data.get_day(date)
+            data.calculate_day(date)
 
             min_block_y = day0s[iDay] + bar_span[span][0] * day_height
             max_block_y = day0s[iDay] + bar_span[span][1] * day_height
@@ -167,8 +167,7 @@ def main(**kwargs):
 
             elif datum_type == 'category':
                 # Load the data for the given day
-                data.get_day(date)
-                all_blocks = data.timings[date]
+                all_blocks = data.get_timings(date)
 
                 for cat in all_blocks:
                     # Get the color for the category
