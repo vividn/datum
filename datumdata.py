@@ -40,48 +40,108 @@ class Datumdata:
         V       - end of a block of time that is N minutes wide, where N = V * coeff
     """
 
+    # TODO: Transition this whole thing to using dataframes more, like systematically building a dataframe with the calculated data
     def __init__(self, name, type=None, coeff=1):
         self.name = name
         self.type = type
         self.coeff = coeff
 
-        # Load in the datum file, combining the date and time columns
-        print(name)
-        datum_file = datum_dir + name + '.tsv'
-        self.data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+        # Memory of calculated timings and quantities (hashed by day)
+        self.timings = {}
+        self.minutes = {}
+
+        # Any columns that specify units will store them in this dict
+        self.units = {}
+
+        # Initialize data variable. This is used to compare new data to old data when (re)loading data
+        # If differences are found, the appropriate days will be flagged for recalculation in memory
+        self.data = None
+
+        self.load_data()
+
+        self.process_header()
+
+    def load_data(self):
+
+        # Store a copy of the current data, to compare fr differences in the incoming data
+        old_data = self.data
+
+        # Load in the datum filecombining the date and time columns
+        datum_file = datum_dir + self.name + '.tsv'
+        # As raw text
+        with open(datum_file, 'r') as f:
+            self.raw_text = f.read()
+        # As a pandas dataframe, with the date and time combined into one field, and set as the index
+        data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
         # Convert the date_time column into datetime format
-        self.data.index = pd.to_datetime(self.data.index)
+        data.index = pd.to_datetime(data.index)
 
         # Get into chronological order
-        self.data.sort_index(inplace=True)
+        data.sort_index(inplace=True)
 
-        # Data of block type should have their Minutes column be strings (because of 'start' and 'end')
+        # Data of 'block' type should have their Minutes column be strings (because of 'start' and 'end')
         # However, if no 'start' or 'end' exist, it will be read as a float. So convert.
         if self.type == 'block':
-            self.data['Minutes'] = self.data['Minutes'].astype(str)
+            data['Minutes'] = data['Minutes'].astype(str)
 
-    def get_day(self, date):
+        # Search for new or changed entries, and flag that these should be recalculated rather than rely on the stored memory
+        if old_data != None:
+            new_or_changed = data[~data.isin(old_data).all(1)]
+            # TODO: write file that removes entries for a day
+
+        self.data = data
+
+
+    def get_timings(self, date):
+        if not date in self.timings:
+            self.calculate_day(date)
+
+        return self.timings[date]
+
+    def get_minutes(self, date):
+        if not date in self.minutes:
+            self.calculate_day(date)
+
+        return self.minutes[date]
+
+    def calculate_day(self, date):
         """
-        Data type independent function to get blocks for the day
+        Data type independent function to get timings and totals for the day
         """
+
+        # This class uses memory to avoid repetitious look ups of data
+        # If data has already been calculated, don't recalculate
+        if date != dt.date.today() and date in self.timings:
+            return
+
+
         if self.type == 'block':
-            return self.get_day_blocks(date)
+            day_timing = self.day_timing_blockdata(date)
+            day_minutes = self.day_minutes_blockdata(day_timing)
 
         elif self.type == 'category':
-            return self.get_day_cats(date)
+            day_timing = self.day_timing_catdata(date)
+            day_minutes = self.day_minutes_catdata(day_timing)
 
         elif self.type == 'point':
             date_str = date.strftime("%Y-%m-%d")
             try:
-                return self.data[date_str].index
-            except:
-                return []
+                day_timing = self.data[date_str].index
+                day_minutes = 0
+            except KeyError:
+                day_timing = []
+                day_minutes = 0
 
         else:
             raise RuntimeError('Data type is invalid or not supported yet')
 
-    def get_day_blocks(self, date):
+        # Store the calculations for easy access later
+        self.timings[date] = day_timing
+        self.minutes[date] = day_minutes
+
+
+    def day_timing_blockdata(self, date):
         """
         Gets the start and end times of each block on a given date
         :param date:
@@ -93,12 +153,11 @@ class Datumdata:
 
         # For block data, all entries are stored in the column, 'Minutes'
         # Load the data for the given date
-        ts = self.data['Minutes']
         try:
-            ts_date = ts[date_str]
+            ts = self.data['Minutes'][date_str]
         except KeyError:
             # If no data exist for a given date, return empty list
-            return []
+            ts = pd.Series()
 
         # Initialize empty arrays to store the start times and end times
         start_times = []
@@ -111,11 +170,11 @@ class Datumdata:
 
         # If starting in a block, add midnight to the start list
         if start_value:
-            block_start = ts_date.index[0].floor('D')
+            block_start = dt.datetime.combine(date, dt.time.min)
             start_times += [block_start]
 
         # Iterate through entries on day
-        for timestamp, entry in ts_date.iteritems():
+        for timestamp, entry in ts.iteritems():
 
             # Entries are either 'start', 'end', or a number.
             # 'start' and 'end' should form blocks of time whose minutes
@@ -200,9 +259,18 @@ class Datumdata:
             raise RuntimeError('start and end arrays don\'t have the same length')
 
         # Zip the two lists together into a list of tuples, (start_time, end_time)
-        return zip(start_times, end_times)
+        return list(zip(start_times, end_times))
 
-    def get_day_cats(self, date):
+    def day_minutes_blockdata(self, day_timing):
+        total_minutes = 0
+
+        # Each block looks like (start, end), so subtract to find total length of each block
+        for block in day_timing:
+            total_minutes += (block[1] - block[0]).seconds / 60.0
+
+        return total_minutes
+
+    def day_timing_catdata(self, date):
         """
         Gets the start and end times for each category block on a given date
         :param date:
@@ -352,9 +420,16 @@ class Datumdata:
                 raise RuntimeError('start and end arrays don\'t have the same length')
 
             # Zip the two lists together into a list of tuples, (start_time, end_time)
-            day_cats[category] = zip(start_times[category], end_times[category])
+            day_cats[category] = list(zip(start_times[category], end_times[category]))
 
         return day_cats
+
+    def day_minutes_catdata(self, day_timing):
+        total_minutes_by_cat = {}
+
+        # day_timing is a hash with each category as its keys, each value is standard looking block data
+        for cat in day_timing:
+            total_minutes_by_cat[cat] = self.day_minutes_blockdata(day_timing[cat])
 
     def day_start_val(self, date):
         """
@@ -425,5 +500,6 @@ class Datumdata:
         :return:
         """
         # TODO: make this function
+
 
 

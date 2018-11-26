@@ -158,7 +158,7 @@ def main(**kwargs):
                     data_color = data_colors['default']
 
                 # Draw the blocks
-                for block_start, block_end in data.get_day(date):
+                for block_start, block_end in data.timings[date]:
                     # Figure out where the block starts and ends in the day on the image
                     xmin = dayperc(block_start.time()) * day_lenx  +  l_midnight
                     xmax = dayperc(block_end.time()) * day_lenx  +  l_midnight
@@ -166,7 +166,10 @@ def main(**kwargs):
                     draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill = data_color)
 
             elif datum_type == 'category':
-                all_blocks = data.get_day(date)
+                # Load the data for the given day
+                data.get_day(date)
+                all_blocks = data.timings[date]
+
                 for cat in all_blocks:
                     # Get the color for the category
                     try:
@@ -192,7 +195,7 @@ def main(**kwargs):
                 # Center the point in the span
                 point_y = (min_block_y + max_block_y) / 2
 
-                for timestamp in data.get_day(date):
+                for timestamp in data.timings[date]:
                     point_x = dayperc(timestamp.time()) * day_lenx + l_midnight
 
                     # Get the bounding box of the dot
