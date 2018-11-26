@@ -70,6 +70,9 @@ def main(**kwargs):
     for key, value in kwargs.items():
         globals()[key] = value
 
+    # Display info about what is being processed
+    print("\n#####################\n" + imageout.split("/")[-1])
+
     # Load in the data to plot from the dayview_table.
     # It includes name, type, and span (vertical bar span) of the data
     table_file = os.path.join(os.path.dirname(__file__), 'dayview_table.csv')
@@ -128,6 +131,7 @@ def main(**kwargs):
     # Load and iterate through the data
     for datum_file in all_datum_files.itertuples():
         name = datum_file.Name
+        print(name)
         datum_type = datum_file.Type
         span = datum_file.Span
 
