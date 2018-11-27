@@ -57,22 +57,25 @@ class Datumdata:
         # If differences are found, the appropriate days will be flagged for recalculation in memory
         self.data = None
 
-        self.load_data()
+        self.load_raw()
 
         self.process_header()
 
+        self.load_data()
+
+    def load_raw(self):
+        # Load in the datum filecombining the date and time columns
+        self.datum_file = datum_dir + self.name + '.tsv'
+        # As raw text
+        with open(self.datum_file, 'r') as f:
+            self.raw_text = f.read()
     def load_data(self):
 
         # Store a copy of the current data, to compare fr differences in the incoming data
         old_data = self.data
 
-        # Load in the datum filecombining the date and time columns
-        datum_file = datum_dir + self.name + '.tsv'
-        # As raw text
-        with open(datum_file, 'r') as f:
-            self.raw_text = f.read()
         # As a pandas dataframe, with the date and time combined into one field, and set as the index
-        data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+        data = pd.read_csv(self.datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
 
         # Convert the date_time column into datetime format
         data.index = pd.to_datetime(data.index)
@@ -99,12 +102,15 @@ class Datumdata:
 
         n*NAME(units)[default]
 
-        all are optional except NAME
+        all are optional except NAME, the name of the column
 
         * - represents the primary column for analysis. If preceded by a number, it will be assigned as the coefficient
             n*Date - Will be counted as true if at least n entries are made on the Date TODO
             *Time - Shorthand to just count the entries, type='point'
             *Minutes - type='block'
+
+        (units) - for specifying units of the column, is stored in self.units["Column"]
+        [default] - what to fill in for blank spaces in the column
 
         :return:
         '''
@@ -118,9 +124,20 @@ class Datumdata:
         if header[0] != "Date":
             raise RuntimeError('No header for "' + self.name + '". Please create one')
 
+        header_re = re.compile('^(([0-9.]*)(\*?))?([^[(]+)(\[[^\]]*\]|\([^\)]*\)){0,2}$')
+        for col in header:
+            m = header_re.match(col)
 
-        header_re = re.compile('^([0-9.]*\*)')
-        #for col in header:
+            # Rename to base name
+            self.name =
+            # Get coefficient
+            if m[2]:
+                self.coeff = float(m[2])
+
+            ## Get *
+
+
+
 
     ##########################################3
     # Analysis functions
@@ -314,7 +331,7 @@ class Datumdata:
             if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()
             else:
-                block_end = dt.datetime.combine(date, dt.time(23,59,59,999999))
+                block_end = dt.datetime.combine(date, dt.time.max)
 
             end_times += [block_end]
 
@@ -566,4 +583,5 @@ class Datumdata:
         # TODO: make this function
 
 
-
+if __name__ == '__main__':
+    hw = Datumdata('hw')
