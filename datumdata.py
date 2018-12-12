@@ -516,7 +516,7 @@ class Datumdata:
 
         # Find the index of the entry most recent before the given date
         try:
-            prev_ind = self.data.index.get_loc(midnight, method='ffill')
+            prev_ind = self.data.index.get_loc(midnight - dt.timedelta(0,0,1), method='ffill')
         except KeyError:
             # If no data exists before the day
             return False
