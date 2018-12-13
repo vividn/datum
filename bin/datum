@@ -13,7 +13,7 @@ FORCE=
 NEGATIVE=
 
 # Get options
-while getopts "f:d:t:TDa:uUin" opt; do
+while getopts "f:d:t:TDa:uUin-" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG.tsv"
@@ -41,9 +41,8 @@ while getopts "f:d:t:TDa:uUin" opt; do
         TIMESTR="23:59:59.999"
     ;;
 
-    D) # Shortcut for -d -1 -T
+    D) # Shortcut for -d -1
         DATESTR=$(date --date yesterday '+%Y-%m-%d')
-        TIMESTR="23:59:59.999"
     ;;
 
     a) # Flag to include tab separated data earlier in the list. Useful for aliases
@@ -66,7 +65,10 @@ while getopts "f:d:t:TDa:uUin" opt; do
     NEGATIVE=true
 	  ;;
 
-    
+    -) # -- no more arguments
+        break;
+        ;;
+
         
     esac
 done
