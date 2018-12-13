@@ -2,4 +2,3 @@ Name,Type,Span
 environment,category,full
 sleep,block,level1
 hw,block,level1
-coffee,point,lower

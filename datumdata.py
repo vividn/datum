@@ -32,19 +32,19 @@ class Datumdata:
         <name>  - Start of a block of <name>, also ends the preceding block if it exists
         'end'   - end of a block
         -N      - end of an N minute whole inside of a block
-
-    Pixel Coefficient (px_coeff) data: blocks whose width in pixels scales with their data
-        V       - end of a block of time that is N pixels wide, where N = V * coeff
-
-    Time Coefficient (tm_coeff) data: blocks whose width in minutes scales with their data
-        V       - end of a block of time that is N minutes wide, where N = V * coeff
     """
 
     # TODO: Transition this whole thing to using dataframes more, like systematically building a dataframe with the calculated data
-    def __init__(self, name, type=None, coeff=1):
-        self.name = name
+    def __init__(self, name, column=None, type=None):
+        # As a shorthand for column, name can have column listed after a colon, e.g., 'activity:project'
+        if len(name.split(':',maxsplit=1)) == 2 and column == None:
+            self.name, self.column = name.split(':', maxsplit=1)
+        else:
+            self.name = name
+            self.column = column
+
+
         self.type = type
-        self.coeff = coeff
 
         # Memory of calculated timings and quantities (hashed by day)
         self.timings = {}
@@ -100,14 +100,15 @@ class Datumdata:
         The header of datum files can communicate a lot of extra information which can be useful in analyzing
         For a given column name, it can look like this
 
-        n*NAME(units)[default]
+        *NAME(units)[default]
 
         all are optional except NAME, the name of the column
 
-        * - represents the primary column for analysis. If preceded by a number, it will be assigned as the coefficient
-            n*Date - Will be counted as true if at least n entries are made on the Date TODO
+        * - represents the primary column for analysis.
+            *Date - Will be counted as true if any entry is made on the date, type=date TODO
             *Time - Shorthand to just count the entries, type='point'
             *Minutes - type='block'
+            *{others} =
 
         (units) - for specifying units of the column, is stored in self.units["Column"]
         [default] - what to fill in for blank spaces in the column
@@ -120,6 +121,8 @@ class Datumdata:
         # TODO: Units
         # TODO: Defaults
         # TODO: *Primary
+
+        # Split the header into an array of strings, the title of each column
         header = self.raw_text.split("\n",1)[0].split("\t")
         if header[0] != "Date":
             raise RuntimeError('No header for "' + self.name + '". Please create one')
@@ -138,8 +141,7 @@ class Datumdata:
 
 
 
-
-    ##########################################3
+    ##########################################
     # Analysis functions
 
     def filter_data(self, dataset=None, begin_dt=None, end_dt=None, column=None):
@@ -533,7 +535,7 @@ class Datumdata:
 
         # Find the index of the entry most recent before the given date
         try:
-            prev_ind = self.data.index.get_loc(midnight, method='ffill')
+            prev_ind = self.data.index.get_loc(midnight - dt.timedelta(0,0,1), method='ffill')
         except KeyError:
             # If no data exists before the day
             return False

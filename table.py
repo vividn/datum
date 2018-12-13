@@ -47,5 +47,5 @@ start_date = today - timedelta(days=delta_start)
 
 # Iterate through all these days and display the value in a formatted calendar
 # Header row
-printf(
+printf()
 

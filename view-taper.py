@@ -19,6 +19,7 @@ parser = argparse.ArgumentParser(description='create a token based taper for a d
 parser.add_argument('dname', metavar='datum', type=str, help='name of the datum file to taper')
 parser.add_argument('--date', dest='qdate', type=parse_date, default=dt.datetime.now())
 parser.add_argument('--datatype', type=str, help='Datum data type. Defaults to "point"', default="point")
+parser.add_argument('--balance', action="store_true" , help='report relative balance compared to taper and exit')
 
 args = parser.parse_args()
 
@@ -48,7 +49,14 @@ if recent_token['Mode'] == '[end]':
 # The next token
 next_token = tdata.loc[tdata.index > qdate].iloc[0]
 
+# How long until the next token
+next_timer =  next_token.name - dt.datetime.now()
+
 # The difference between real and taper data
 real_count = real.count_entries(sdate,qdate)
 taper_count = taper.count_entries(sdate,qdate)
 print(real_count - taper_count)
+if not args.balance:
+    print(next_timer)
+    print(recent_token)
+
