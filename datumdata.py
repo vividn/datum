@@ -50,25 +50,28 @@ class Datumdata:
         self.timings = {}
         self.minutes = {}
 
-        # Any columns that specify units will store them in this dict
+        # Any columns that specify units or defaults will store them in these dicts
         self.units = {}
+        self.defaults = {}
 
         # Initialize data variable. This is used to compare new data to old data when (re)loading data
         # If differences are found, the appropriate days will be flagged for recalculation in memory
         self.data = None
 
+        # Load in the data and raw text
+        self.datum_file = datum_dir + self.name + '.tsv'
+        self.load_data()
         self.load_raw()
 
+        # Process the header to get appropriate column names
         self.process_header()
 
-        self.load_data()
+
 
     def load_raw(self):
-        # Load in the datum filecombining the date and time columns
-        self.datum_file = datum_dir + self.name + '.tsv'
-        # As raw text
         with open(self.datum_file, 'r') as f:
             self.raw_text = f.read()
+
     def load_data(self):
 
         # Store a copy of the current data, to compare fr differences in the incoming data
@@ -115,29 +118,39 @@ class Datumdata:
 
         :return:
         '''
-
-
-
-        # TODO: Units
-        # TODO: Defaults
-        # TODO: *Primary
+        # TODO: Use symbols to indicate proper combination method
 
         # Split the header into an array of strings, the title of each column
         header = self.raw_text.split("\n",1)[0].split("\t")
         if header[0] != "Date":
             raise RuntimeError('No header for "' + self.name + '". Please create one')
 
-        header_re = re.compile('^(([0-9.]*)(\*?))?([^[(]+)(\[[^\]]*\]|\([^\)]*\)){0,2}$')
+        header_re = re.compile('^(\*)?([^[(]+)((\[[^\]]*\])|(\([^\)]*\))){0,2}$')
         for col in header:
             m = header_re.match(col)
+            if not m:
+                raise ValueError('Badly named column in data. {}: {}'.format(self.name, col))
 
-            # Rename to base name
-            self.name =
-            # Get coefficient
-            if m[2]:
-                self.coeff = float(m[2])
+            # Rename column to base name in dataframe
+            base_name = m[2]
+            self.data.rename(index=str, columns={m[0]: base_name})
 
-            ## Get *
+            # Set primary column if it has not been set yet
+            if m[1] and self.column == None:
+                self.column = base_name
+
+            # Set default '[]'
+            if m[4]:
+                col_default = m[4][1:-1]
+                # Convert to float if appropriate
+                try:
+                    self.defaults[base_name] = float(col_default)
+                except ValueError:
+                    self.defaults[base_name] = col_default
+
+            # Set units '()'
+            if m[5]:
+                self.units[base_name] = m[5][1:-1]
 
 
 
@@ -586,4 +599,4 @@ class Datumdata:
 
 
 if __name__ == '__main__':
-    hw = Datumdata('hw')
+    coffee = Datumdata('coffee')
