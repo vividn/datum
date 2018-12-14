@@ -136,7 +136,7 @@ def main(**kwargs):
         span = datum_file.Span
 
         # Use the Datumdata class to load in this data
-        data = Datumdata(name, datum_type)
+        data = Datumdata(name)
 
         #########################################
         # Plot the data day by day
