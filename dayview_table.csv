@@ -1,4 +1,4 @@
-Name,Type,Span
-environment,category,full
-sleep,block,level1
-hw,block,level1
+Name,Span
+environment,full
+sleep,level1
+hw,level1

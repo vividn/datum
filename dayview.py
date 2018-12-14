@@ -132,11 +132,10 @@ def main(**kwargs):
     for datum_file in all_datum_files.itertuples():
         name = datum_file.Name
         print(name)
-        datum_type = datum_file.Type
         span = datum_file.Span
 
         # Use the Datumdata class to load in this data
-        data = Datumdata(name, datum_type)
+        data = Datumdata(name)
 
         #########################################
         # Plot the data day by day
@@ -149,7 +148,7 @@ def main(**kwargs):
             min_block_y = day0s[iDay] + bar_span[span][0] * day_height
             max_block_y = day0s[iDay] + bar_span[span][1] * day_height
 
-            if datum_type == 'block':
+            if data.type == 'block':
 
                 # Get the appropriate data color
                 try:
@@ -165,7 +164,7 @@ def main(**kwargs):
 
                     draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill = data_color)
 
-            elif datum_type == 'category':
+            elif data.type == 'category':
                 # Load the data for the given day
                 all_blocks = data.get_timings(date)
 
@@ -184,7 +183,7 @@ def main(**kwargs):
 
                         draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill=data_color)
 
-            elif datum_type == 'point':
+            elif data.type == 'point':
                 # Get the appropriate data color
                 try:
                     data_color = data_colors[name]

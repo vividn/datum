@@ -11,7 +11,6 @@ datum_dir=os.getenv("HOME")+'/Data/datum/'
 
 
 
-
 class Datumdata:
     """
     Class for loading and processing datum data
@@ -35,7 +34,7 @@ class Datumdata:
     """
 
     # TODO: Transition this whole thing to using dataframes more, like systematically building a dataframe with the calculated data
-    def __init__(self, name, column=None, type=None):
+    def __init__(self, name, type=None, column=None):
         # As a shorthand for column, name can have column listed after a colon, e.g., 'activity:project'
         if len(name.split(':',maxsplit=1)) == 2 and column == None:
             self.name, self.column = name.split(':', maxsplit=1)
@@ -58,14 +57,9 @@ class Datumdata:
         # If differences are found, the appropriate days will be flagged for recalculation in memory
         self.data = None
 
-        # Load in the data and raw text
+        # Load in the data
         self.datum_file = datum_dir + self.name + '.tsv'
         self.load_data()
-        self.load_raw()
-
-        # Process the header to get appropriate column names
-        self.process_header()
-
 
 
     def load_raw(self):
@@ -77,26 +71,47 @@ class Datumdata:
         # Store a copy of the current data, to compare fr differences in the incoming data
         old_data = self.data
 
-        # As a pandas dataframe, with the date and time combined into one field, and set as the index
-        data = pd.read_csv(self.datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+        # Load in the raw text of the datum file
+        self.load_raw()
 
-        # Convert the date_time column into datetime format
-        data.index = pd.to_datetime(data.index)
+        # Make pandas dataframe from datum file, with the date and time combined into one field and set as the index
+        self.data = pd.read_csv(self.datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+
+        # Ensure the date_time column is in datetime format
+        self.data.index = pd.to_datetime(self.data.index)
+
+        # Process the header to get appropriate column names (as well as primary column, units, etc.)
+        self.process_header()
 
         # Get into chronological order
-        data.sort_index(inplace=True)
+        self.data.sort_index(inplace=True)
+
+        # If no column has been designated either explicitly or via the header, then do the following in order of precedence
+        # or the first column after Date and Time
+        # or "Time" column only "Date" and "Time" exist
+        if self.column == None:
+            if len(self.data.columns) > 0:
+                self.column = self.data.columns[0]
+            else:
+                self.column = 'Time'
+
+        # Infer data type based on contents of column
+        if self.type == None:
+            self.infer_type()
 
         # Data of 'block' type should have their Minutes column be strings (because of 'start' and 'end')
         # However, if no 'start' or 'end' exist, it will be read as a float. So convert.
         if self.type == 'block':
-            data['Minutes'] = data['Minutes'].astype(str)
+            self.data['Minutes'] = self.data['Minutes'].astype(str)
 
         # Search for new or changed entries, and flag that these should be recalculated rather than rely on the stored memory
         if old_data != None:
-            new_or_changed = data[~data.isin(old_data).all(1)]
-            # TODO: write file that removes entries for a day
+            new_or_changed = self.data[~self.data.isin(old_data).all(1)]
 
-        self.data = data
+            # Delete the stored memory for all the days with changes
+            for date_with_changes in new_or_changed.resample('D').index:
+                self.timings[date_with_changes] = None
+                self.minutes[date_with_changes] = None
 
     def process_header(self):
         '''
@@ -133,7 +148,7 @@ class Datumdata:
 
             # Rename column to base name in dataframe
             base_name = m[2]
-            self.data.rename(index=str, columns={m[0]: base_name})
+            self.data = self.data.rename(columns={m[0]: base_name})
 
             # Set primary column if it has not been set yet
             if m[1] and self.column == None:
@@ -152,12 +167,42 @@ class Datumdata:
             if m[5]:
                 self.units[base_name] = m[5][1:-1]
 
+    def infer_type(self):
+        if self.column == None:
+            raise RuntimeError('Column must be defined before data type can be inferred')
+
+        elif self.column == 'Date':
+            self.type = 'bool'
+
+        elif self.column == 'Time':
+            self.type = 'point'
+
+        elif self.column == 'Minutes':
+            self.type = 'block'
+
+        else:
+            # If column consists of numbers, it is most likely something irrelevant to the timing
+            # Thus, consider it point data
+            if self.data[self.column].dtype in ['float64', 'int64']:
+                self.type = 'point'
+
+            # Column values are interpreted as strings
+            elif self.data[self.column].dtype == 'object':
+                # If first value is a number, or a comma separated list of numbers, assume it is point data
+                if re.match('^[0-9,. ]+$', self.data[self.column][0]):
+                    self.type = 'point'
+                else:
+                    # The column consists of strings, so assume it's categorical data
+                    self.type = 'category'
+
+            else:
+                raise ValueError('Unimplemented column type')
 
 
     ##########################################
     # Analysis functions
 
-    def filter_data(self, dataset=None, begin_dt=None, end_dt=None, column=None):
+    def filter_data(self, dataset=None, begin_dt=None, end_dt=None):
         if type(dataset) == None:
             dataset = self.data
 
@@ -190,7 +235,7 @@ class Datumdata:
         return len(fdata)
 
     def get_timings(self, date):
-        if not date in self.timings:
+        if not date in self.timings.keys() or self.timings[date] == None:
             self.calculate_day(date)
 
         return self.timings[date]
