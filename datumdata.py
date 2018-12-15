@@ -42,6 +42,9 @@ class Datumdata:
             self.name = name
             self.column = column
 
+        # Ensure column starts with capital letter
+        if self.column != None:
+            self.column = self.column.title()
 
         self.type = type
 
@@ -147,7 +150,7 @@ class Datumdata:
                 raise ValueError('Badly named column in data. {}: {}'.format(self.name, col))
 
             # Rename column to base name in dataframe
-            base_name = m[2]
+            base_name = m[2].title()
             self.data = self.data.rename(columns={m[0]: base_name})
 
             # Set primary column if it has not been set yet
@@ -192,8 +195,12 @@ class Datumdata:
                 if re.match('^[0-9,. ]+$', self.data[self.column][0]):
                     self.type = 'point'
                 else:
-                    # The column consists of strings, so assume it's categorical data
-                    self.type = 'category'
+                    # The column consists of strings
+                    # Assume it's categorical data, if a "Minutes" column exists in the dataframe
+                    if "Minutes" in self.data.columns:
+                        self.type = 'category'
+                    else:
+                        self.type = 'point'
 
             else:
                 raise ValueError('Unimplemented column type')
@@ -421,12 +428,12 @@ class Datumdata:
         # For some reason, pandas needs time based indexing of time series to be a string
         date_str = date.strftime("%Y-%m-%d")
 
-        # For category data, entries are stored in 2 columns
+        # For category data, entries may be made temporary by using numbers in the Minutes column
         # Load the data for the given date
         try:
-            df = self.data.iloc[:,0:2][date_str]
+            df = self.data[date_str]
         except KeyError:
-            df = pd.DataFrame()
+            df = pd.DataFrame(columns=self.data.columns)
 
         # Initialize empty dicts to store the start times and end times for each category
         start_times = {}
@@ -442,94 +449,94 @@ class Datumdata:
             block_start = dt.datetime.combine(date,dt.time())
             start_times.setdefault(start_value, []).append(block_start)
 
+        # A new data entry into categorical data should always be changing something (even if it is another column than self.column)
+        # Therefore, if two chronologically consecutive, non-temporary entries are doing the same thing, throw an error
+        perms = df[pd.isna(df['Minutes'])].drop(['Minutes'], axis=1)
+        conflicts = (perms == perms.shift()).all(axis=1)
+        if conflicts.any() and False:
+            raise ValueError("Redundant category data: {} {}".format(self.name, conflicts[conflicts].index[0]))
+
         # Iterate through entries on day
-        for timestamp, col1, col2 in df.itertuples():
+        for timestamp, col, minutes in df[[self.column, "Minutes"]].itertuples():
 
-            # col1 can have 3 different values:
-            # <category> - starts a block of that category (N.B. see col2 below)
-            # end - ends the active category, or does nothing if no category is active
-            # -N  - creates a whole of N minutes in the active category, ending at timestamp
+            # col can either start or change to a block of a new category or if 'end' ends the active category
             #
-            # if col1 is <category>, then col2 can be:
-            # NaN - starts a block of category
-            # N - creates a category block that is N minutes long, ending at timestamp
+            # if minutes has a value, then rather than starting or ending a block,
+            # create a tempoary block or whole that ends at the timestamp
 
-            if col1 == 'start':
+            if col == 'start':
                 raise ValueError('start should not occur in category file')
 
-            elif col1 == 'end':
-                if in_block:
-                    # End the currently active block
-                    end_times.setdefault(in_block, []).append(timestamp)
-                    in_block = False
+            elif col == 'end':
 
-                # Don't do anything if not in a block
+                # If nothing is in the minutes column, end the current block (if one is active)
+                if pd.isna(minutes):
+                    if in_block:
+                        end_times.setdefault(in_block, []).append(timestamp)
+                        in_block = False
+
+                    continue
+
+                # If minutes is a number, indicates only a temporary end, or a 'whole'
+                elif is_number(minutes):
+                    # Needs to be a whole in an active block
+                    # TODO ensure that block is big enough to subtract
+                    if not in_block:
+                        raise ValueError("Whole must occur within a block: {} {}".format(self.name, timestamp))
+
+                    # Make the whole
+                    whole_start = timestamp - dt.timedelta(minutes=abs(minutes))
+                    whole_end = timestamp
+
+                    end_times.setdefault(in_block, []).append(whole_start)
+                    start_times.setdefault(in_block, []).append(whole_end)
+                    continue
+
+                else:
+                    # Unexpected value in the Minutes column
+                    raise ValueError("Unexpected value in minutes column: {} {}".format(self.name, timestamp))
+
+            elif col == '[end]' or col == '[start]':
+                # These are commands relating to starting and stopping data collection as a whole just skip these for now
                 continue
 
-            elif col1 == '[end]' or col1 == '[start]':
-                # These are commands relating to starting and stopping data collection as a whole just skip these
-                continue
-
-            if is_number(col1):
-                # number must be negative in col1
-                col1_num = float(col1)
-                if col1_num > 0:
-                    raise ValueError('Positive number in col1 not allowed')
-
-                # Whole must occur inside of a block, if it is not inside a block, just ignore it
-                if not(in_block):
-                    next
-
-                # Create a num sized whole in the active block
-                whole_start = timestamp - dt.timedelta(minutes=abs(col1_num))
-                whole_end = timestamp
-
-                end_times.setdefault(in_block, []).append(whole_start)
-                start_times.setdefault(in_block, []).append(whole_end)
-
+            if is_number(col):
+                # Using a negative number in the category column is no longer supported, instead use 'end' and number in the Minutes column
+                raise ValueError('Number should not be in a category column: {} {}'.format(self.name, timestamp))
 
             else:
                 # Otherwise, treat the entry as a category name
 
-                # Behavior in this instance is dependant on col2
-                # If col2 is NaN, start a new category
-                if np.isnan(col2):
-                    # Same category should not be started twice in a row
-                    if in_block == col1:
-                        raise ValueError('Same category started twice in a row' + str(timestamp))
-
+                # Behavior in this instance is dependant on minutes
+                # If minutes is NaN, start a new category
+                if pd.isna(minutes):
                     # End the current category
                     if in_block:
                         end_times.setdefault(in_block, []).append(timestamp)
 
                     # Start the new category
-                    in_block = col1
-                    start_times.setdefault(col1, []).append(timestamp)
+                    in_block = col
+                    start_times.setdefault(col, []).append(timestamp)
 
-                elif col2 >= 0:
-                    # Create a block of size col2
+                elif minutes >= 0:
+                    # Create a block of size minutes
 
-                    mini_block_start = timestamp - dt.timedelta(minutes=col2)
+                    mini_block_start = timestamp - dt.timedelta(minutes=minutes)
                     mini_block_end = timestamp
 
                     # If another block is currently active, create a whole in it to fit this momentary block of another category
                     if in_block:
-                        # Category should not be the same as the active
-                        if in_block == col1:
-                            raise ValueError('Category block cannot be created within itself' + str(timestamp))
-
                         end_times.setdefault(in_block, []).append(mini_block_start)
                         start_times.setdefault(in_block, []).append(mini_block_end)
 
+                    start_times.setdefault(col, []).append(mini_block_start)
+                    end_times.setdefault(col, []).append(mini_block_end)
 
-                    start_times.setdefault(col1, []).append(mini_block_start)
-                    end_times.setdefault(col1, []).append(mini_block_end)
 
-
-                elif col2 < 0:
+                elif minutes < 0:
                     # Special case allowed where the category is listed with a negative number after it
                     # The project MUST match the currently active project though
-                    if col1 == in_block:
+                    if col == in_block:
                         # Create a num sized whole in the active block
                         whole_start = timestamp - dt.timedelta(minutes=abs(col1_num))
                         whole_end = timestamp
@@ -537,8 +544,11 @@ class Datumdata:
                         end_times.setdefault(in_block, []).append(whole_start)
                         start_times.setdefault(in_block, []).append(whole_end)
 
+                    else:
+                        raise ValueError("Negative number used on non active category: {} {}".format(self.name, timestamp))
+
                 else:
-                    raise ValueError('Improperly formated category data')
+                    raise ValueError("Improperly formatted category data: {} {}".format(self.name, timestamp))
 
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
         # One exception to this is if the date is today, in which case the block extends to right now.
@@ -614,20 +624,15 @@ class Datumdata:
 
         elif self.type == 'category':
             while prev_ind >= 0:
-                col1 = self.data.iloc[prev_ind,0]
-                col2 = self.data.iloc[prev_ind,1]
+                catcol = self.data[[self.column]].iloc[prev_ind][0]
+                minutes = self.data[["Minutes"]].iloc[prev_ind][0]
 
-                # Next starts off if category ended previous day
-                if col1 == 'end':
-                    return False
+                # Day does not start in_block if category ended the previous day
+                if pd.isna(minutes):
+                    return False if catcol in ['end', '[start]', '[end]'] else catcol
 
-                # If the col1 is a not a number and col2 is also NaN, then next day starts in a category block.
-                if (not is_number(col1)) and np.isnan(col2):
-                    return col1
-
+                # If last entry on the previous day was a temporary entry, continue to previous entry and so on
                 prev_ind -= 1
-
-
 
         # If data is of another type, then assume not in a block
         return False
@@ -644,4 +649,5 @@ class Datumdata:
 
 
 if __name__ == '__main__':
-    coffee = Datumdata('coffee')
+    testact = Datumdata('testact')
+    testact.calculate_day(dt.date.today())

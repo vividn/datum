@@ -36,7 +36,12 @@ def eod(qdate=dt.date.today()):
 
 
 def is_number(s):
-    return s.lstrip('-').replace('.', '', 1).isdigit()
+    if type(s) in [float, int]:
+        return True
+    elif type(s) == str:
+        return s.lstrip('-').replace('.', '', 1).isdigit()
+    else:
+        return False
 
 
 def parse_duration(dur_str):
