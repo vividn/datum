@@ -61,6 +61,10 @@ end_date = datetime.date.today()
 # Where to save the image
 imageout = '/home/vividn/Analysis/Pictures/dayview.png'
 
+def dayperc(time):
+    # Returns the percentage through the day that a certain time is
+    return time.hour / 24.0  +  time.minute / (24.0 * 60)  +  time.second / (24.0 * 60 * 60)
+
 def main(**kwargs):
     """
     Loads in specified datum files and plots them according to their type to create the dayview graphic
@@ -98,7 +102,6 @@ def main(**kwargs):
     l_midnight = image_padding + text_width + text_padding
     r_midnight = xsize - image_padding
     day_lenx = r_midnight - l_midnight
-
 
 
     #####################################
@@ -243,118 +246,11 @@ def main(**kwargs):
     now_top = day0s[-1]
     draw.line((now_x, now_top, now_x, now_bottom), fill=now_color, width=now_width)
 
+
+
+
     im.save(imageout)
 
-def get_all_blocks(ts, start_value=None):
-    # Takes the timeseries and extracts when blocks start and end, for the purposes of drawing these blocks to the screen
-
-    # Create a dictionary to store the start and end times of each block of time
-    # If no entries exist for the day, just this will be returned
-    all_blocks = dict(start=[], end=[])
-
-
-    # in_block tracks whether or not the data parser is inside of a start...end block
-    # default is None, because it is uncertain if in block from previous day at midnight
-    in_block=start_value
-
-    # If starting in a block, add midnight to the start list
-    if start_value:
-        block_start = ts.index[0].floor('D')
-        all_blocks["start"] += [block_start]
-
-    # Iterate through entries on day
-    for timestamp, entry in ts.iteritems():
-
-        # Entries are either 'start', 'end', or a number.
-        # 'start' and 'end' should form blocks of time whose minutes
-        # should be counted towards the total number of minutes.
-        # Numbers add directly to the total.
-
-        if entry == 'start':
-            # 'start' should never occur while already in a block
-            if in_block:
-                raise ValueError('start cannot occur after another start: ' + str(timestamp) + str(entry))
-
-            in_block = True
-            block_start = timestamp
-
-            # Add this to the block dict
-            all_blocks["start"] += [block_start]
-
-            continue
-
-        elif entry == 'end':
-            # 'end' should never occur outside of a block
-            if not (in_block):
-                # Special case, if end occurs as the first entry in the day, and the previous day is unknown, start a virtual block at midnight
-                if in_block == None:
-                    block_start = timestamp.floor('D')
-                    all_blocks["start"] += [block_start]
-                else:
-                    raise ValueError('end cannot occur after another end: ' + str(timestamp) + str(entry))
-
-            in_block = False
-            block_end = timestamp
-
-            # Add this to the block dict
-            all_blocks["end"] += [block_end]
-
-            continue
-
-        elif entry == '[end]' or entry == '[start]':
-            # These are commands relating to starting and stopping data collection as a whole just skip these dates
-            continue
-        else:
-            # Determine if entry is a number
-            m = re.search('(-?)[0-9]+(\.[0-9]+)?', entry)
-
-            if m:
-
-                # Positive times can only be added outside of blocks because
-                # work being done inside of a block is already being counted
-                # Similarly, negative times can only occur inside blocks, representing
-                # a short time during a work block that was spent not working.
-                if bool(m.group(1)) ^ bool(in_block):
-                    raise ValueError("Number not correctly associated with blocks\n{timestamp}, {entry}")
-
-                mini_block_minutes = float(entry)
-
-                # Assuming the number record was made at the end of when it occurred, calculate the beginning
-                mini_block_start = timestamp - datetime.timedelta(minutes=abs(mini_block_minutes))
-                mini_block_end = timestamp
-
-                # Add these to the appropriate arrays in all_blocks
-                if mini_block_minutes >= 0:
-                    all_blocks["start"] += [mini_block_start]
-                    all_blocks["end"]   += [mini_block_end]
-                else:
-                    all_blocks["start"] += [mini_block_end]
-                    all_blocks["end"] += [mini_block_start]
-
-                continue
-
-            else:
-                raise ValueError('Entry not properly formed:' + str(timestamp) + str(' , ') + str(entry))
-
-    # Being within a block at the end of a day means count to end of day (midnight)
-    # One exception to this is if the date is today, then the block extends to right now.
-    if in_block:
-        if timestamp.date() == pd.Timestamp.now().date():
-            block_end = timestamp.now()
-        else:
-            block_end = timestamp.ceil('D') - datetime.timedelta(microseconds=1)
-
-        all_blocks["end"] += [block_end]
-
-    # Each block in all_blocks should have a start and an end now, therefore start and end should be the same length
-    # if len(all_blocks["start"]) != len(all_blocks["end"]):
-    #     raise RuntimeError('start and end arrays don\'t align')
-
-    return all_blocks
-
-def dayperc(time):
-    # Returns the percentage through the day that a certain time is
-    return time.hour / 24.0  +  time.minute / (24.0 * 60)  +  time.second / (24.0 * 60 * 60)
 
 main()
 main(nDays=30, imageout='/home/vividn/Analysis/Pictures/30dayview.png', ysize=1920)
