@@ -4,6 +4,7 @@ import pandas as pd
 import datetime
 import re
 import os
+import sys
 from PIL import Image, ImageDraw, ImageFont
 
 # Custom class for analyzing datum files
@@ -38,6 +39,12 @@ point_r = 4
 # The Now Line
 now_color = (255, 255, 0)
 now_width = 1
+
+# Error symbol
+error_bgcolor = (255, 0, 0)
+error_fgcolor = (0, 0, 0)
+error_symbol = '!'
+
 
 # Image properties
 # Total size of the whole image
@@ -132,13 +139,24 @@ def main(**kwargs):
 
     ################################################
     # Load and iterate through the data
+    error_has_occurred = False
+    datum_with_error = []
+    exception_text = ''
+
     for datum_file in all_datum_files.itertuples():
         name = datum_file.Name
         print(name)
         span = datum_file.Span
 
         # Use the Datumdata class to load in this data
-        data = Datumdata(name)
+        try:
+            data = Datumdata(name)
+        except Exception as e:
+            # If an error occurs, continue on, but later draw the error symbol as indication
+            error_has_occurred = True
+            datum_with_error += [(name, date)]
+            exception_text += str(e) + "\n"
+            continue
 
         #########################################
         # Plot the data day by day
@@ -146,8 +164,17 @@ def main(**kwargs):
         for date in dates_to_plot:
 
             # Load the blocks for the given day
-            data.calculate_day(date)
+            try:
+                data.calculate_day(date)
+            except Exception as e:
+                # If an error occurs, continue on, but later draw the error symbol as indication
+                error_has_occurred = True
+                datum_with_error += [(name, date)]
+                exception_text += str(e) + "\n"
+                continue
 
+
+            # The upper and lower y values of where to draw the data
             min_block_y = day0s[iDay] + bar_span[span][0] * day_height
             max_block_y = day0s[iDay] + bar_span[span][1] * day_height
 
@@ -246,8 +273,19 @@ def main(**kwargs):
     now_top = day0s[-1]
     draw.line((now_x, now_top, now_x, now_bottom), fill=now_color, width=now_width)
 
+    # Display error symbol if error has occured
+    if error_has_occurred:
+        ex = image_padding
+        ey = ysize - image_padding - text_height
 
+        # Display the error symbol plus the first 3 characters of the datum name
+        error_text = error_symbol + ' ' + datum_with_error[0][0][0:3]
 
+        # To make the error more visible, put it on a bright background color
+        esize = draw.textsize(error_text,font=imfont)
+        draw.rectangle([ex, ey + 3, ex + esize[0], ey + esize[1] + 3], fill=error_bgcolor)
+        draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
+        print(exception_text, file=sys.stderr)
 
     im.save(imageout)
 
