@@ -34,7 +34,14 @@ while getopts "f:d:t:TDa:uUin-" opt; do
     ;;
     
     t) # Specify time
-        TIMESTR=$(date --date $OPTARG "+%H:%M:%S.%3N")
+        if [ "${OPTARG:0:1}" = "-" ]; then
+            # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
+            TIMESTR=$(date --date "${OPTARG:1} minutes ago" '+%H:%M')
+            TIMESTR=$(date --date $TIMESTR "+%H:%M:%S.%3N")
+        else
+            TIMESTR=$(date --date $OPTARG "+%H:%M:%S.%3N")
+        fi
+
     ;;
     
     T) # Shortcut for -t 11:59:59.999
