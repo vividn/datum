@@ -15,6 +15,30 @@ from miscfunc import *
 # The colors with which to draw the data
 data_colors = {'environment': {'outside': (135, 163, 102), 'inside': (117, 117, 117), 'home': (20, 20, 20)}, 'sleep': (20, 40, 120), 'hw': (200, 50, 50), 'work': (160, 255, 0), 'activity': {'hw': (200, 50, 50)}, 'default': (255, 255, 0)}
 
+def get_color(datum_name,category=None):
+    if category == None:
+        try:
+            return data_colors[datum_name]
+        except KeyError:
+            return data_colors['default']
+
+    else:
+        try:
+            return data_colors[datum_name][category]
+        except KeyError:
+            # If the category has subprojects attached (e.g., category:subcategory), get the color for the super category
+            if ':' in category:
+                super_category = ':'.join(category.split(':')[0:-1])
+                return get_color(datum_name, super_category)
+
+            # Categorical data can have it's own default
+            try:
+                return data_colors[datum_name]['default']
+            except KeyError:
+                return data_colors['default']
+
+
+
 # Other colors
 text_color = (255,255,255)
 line_color = (255,255,255)
@@ -181,10 +205,7 @@ def main(**kwargs):
             if data.type == 'block':
 
                 # Get the appropriate data color
-                try:
-                    data_color = data_colors[name]
-                except KeyError:
-                    data_color = data_colors['default']
+                data_color = get_color(name)
 
                 # Draw the blocks
                 for block_start, block_end in data.timings[date]:
@@ -200,10 +221,7 @@ def main(**kwargs):
 
                 for cat in all_blocks:
                     # Get the color for the category
-                    try:
-                        data_color = data_colors[name][cat]
-                    except KeyError:
-                        data_color = data_colors['default']
+                    data_color = get_color(name, cat)
 
                     # Draw the blocks
                     for block_start, block_end in all_blocks[cat]:
@@ -215,10 +233,7 @@ def main(**kwargs):
 
             elif data.type == 'point':
                 # Get the appropriate data color
-                try:
-                    data_color = data_colors[name]
-                except KeyError:
-                    data_color = data_colors['default']
+                data_color = get_color(name)
 
                 # Center the point in the span
                 point_y = (min_block_y + max_block_y) / 2
