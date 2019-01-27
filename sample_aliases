@@ -1,0 +1,225 @@
+
+# Function that lets me scale the input value
+function dmult {
+    datum_file="$1"
+    mult="$2"
+    shift; shift
+
+    # Undo if a -u is given
+    if [ "$1" = "-u" ]; then
+        datum -f "$datum_file" -u
+        return 0
+    elif [ "$1" = "-U" ]; then
+        datum -f "$datum_file" - U
+        return 0
+    fi
+
+    # Multiply the last argument by the multiplier
+    last_arg="${@: -1}"
+    let 'last_arg *= mult'
+    # Remove trailing decimal point if an integer
+    last_arg=$(echo "$last_arg" | bc)
+
+    datum -f "$datum_file" ${@:1:-1} "$last_arg"
+}
+
+## Night routine
+alias anx='anxiety'
+
+# Sleep
+function resleep {
+    if in-block sleep; then
+        datum -f sleep -U
+        asleep
+    else
+        echo "You are not asleep" >&2
+        return 1
+    fi
+}
+
+
+function alarm {
+    # For easy undos
+    if [ "$1" = "-u" ]; then
+        datum -f alarm -u
+        return
+    fi
+
+    if [[ "$1" =~ "\+[0-9]+" ]]; then
+        args="now $1 minutes"
+    else
+        args="$*"
+    fi
+
+    # In order to determine if the time is in the future use the current time as a basis
+    now=$(date +%s)
+    alarmseconds=$(date -d "$args" +%s)
+    alarmtime=$(date -d "$args" +%H:%M:%S)
+    if [ $alarmseconds -gt $now ]; then
+        alarmdate=$(date -d "$args" +%Y-%m-%d)
+    else
+        alarmdate=$(date -d "$args + 1 day" +%Y-%m-%d)
+    fi
+
+    datum -f alarm -d $alarmdate -t $alarmtime
+}
+
+# Drug Consumption
+
+
+
+
+
+# Planning
+
+
+# Exercise
+
+# Media Consumption
+
+alias slo='selfloveo'
+
+
+# Life Events
+
+# Environment
+
+# Activities
+alias act=activity
+
+function react {
+    activity -u
+    if [ $? -eq 0 ]; then
+        activity $*
+    else
+        return $?
+    fi
+}
+
+alias rest='activity -a end -a end'
+alias hwe=rest
+
+alias hw='activity -a hw -a end'
+
+function project {
+    if [ $# -eq 0 ]; then
+        iba
+    fi
+
+    # First argument is optional and can set the activity type
+    case $1 in
+        hw)
+            act=hw
+            shift
+            ;;
+        work|w)
+            act=work
+            shift
+            ;;
+        volunteer|vol|v)
+            act=volunteer
+            shift
+            ;;
+        *)
+            # If no activity is specified, use currently active activity
+            act=$(iba 1)
+            if [ -z $act ]; then
+                # hw is default activity
+                act=hw
+            fi
+    esac
+
+    if [ $# -eq 0 ]; then
+        datum -f activity -a $act -a end
+    else
+        datum -f activity -a $act $*
+    fi
+
+}
+
+# Work
+
+
+# Volunteering
+
+
+function dget () {
+    # Extrapolates from the first few characters if possible
+    # Also adds the file extension if needed
+    dname=$1
+
+    dfile=(~/Data/datum/$dname*)
+
+    # If that matches more than one file name, exit with error
+    if [ $#dfile -gt 1 ]; then
+        return 2
+    fi
+
+    echo $dfile
+}
+
+function dtail () {
+    name="$1"
+    dfile=$(dget $1)
+    if [ $? -gt 0 ]; then
+        return $?
+    fi
+    shift
+
+    # If a -d flag is next, use dgrep to grab the entries for a particular day
+    if [[ "$1" == "-d" ]]; then
+        shift
+        date=$(date -d "$*" '+%Y-%m-%d')
+        dgrep $name $date
+    else
+        # Use tail to print the last few entries
+        # Print header line first
+        (head $dfile -n1; (sort $dfile | head -n-1 | tail $* )) | column -t -s $'\t' -n
+    fi
+
+}
+
+function dhead () {
+    dfile=$(dget $1)
+    if [ $? -gt 0 ]; then
+        return $?
+    fi
+    shift
+
+    # Print header line first
+    (head $dfile -n1; (head $dfile $* | sed '1d' | sort)) | column -t -s $'\t' -n
+}
+
+function dgrep () {
+    dfile=$(dget $1)
+    if [ $? -gt 0 ]; then
+        return $?
+    fi
+    shift
+
+    # Print header line first
+    (head $dfile -n1; (grep -i $* $dfile | sort)) | column -t -s $'\t' -n
+
+}
+
+function dless () {
+    dfile=$(dget $1)
+    if [ $? -gt 0 ]; then
+        return $?
+    fi
+    shift
+
+    # Print header line and feed into nice columns
+    (head $dfile -n1; (cat $dfile $* | sed '1d' | sort)) | column -t -s $'\t' -n | less
+}
+
+
+function dedit () {
+    dfile=$(dget $1)
+    if [ $? -gt 0 ]; then
+        return $?
+    fi
+    shift
+
+    vim $dfile
+}
