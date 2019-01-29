@@ -223,3 +223,27 @@ function dedit () {
 
     vim $dfile
 }
+
+
+# Undo last command
+function add-flag {
+    flag=-"$1"
+    command="$2"
+    shift; shift;
+
+    echo -n "$command $flag $*"
+}
+
+function undo {
+         LASTCOMMAND="$(fc -nl -1)"
+
+         # Load the arguments
+         set -- $=LASTCOMMAND
+         if [[ "$1" == "task" ]] || [[ "$1" == "ta" ]]; then
+             UNDOCOMMAND="task undo"
+         else
+             UNDOCOMMAND="$(add-flag u $=LASTCOMMAND)"
+         fi
+
+         eval "$UNDOCOMMAND"
+}
