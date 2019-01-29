@@ -44,7 +44,7 @@ while getopts "f:d:t:TDa:uUin-" opt; do
 
     ;;
     
-    T) # Shortcut for -t 11:59:59.999
+    T) # Shortcut for -t 23:59:59.999
         TIMESTR="23:59:59.999"
     ;;
 
