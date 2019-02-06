@@ -11,8 +11,10 @@ DATADIR=~/Data/datum
 AFLAGDATA=''
 FORCE=
 
+mode=normal
+
 # Get options
-while getopts "f:d:t:TDa:uUi-" opt; do
+while getopts "f:d:t:TDa:uUis-" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG.tsv"
@@ -64,8 +66,12 @@ while getopts "f:d:t:TDa:uUi-" opt; do
     ;;
 
     i) # Interactive mode. Records timings of keystrokes for on the fly data collection
-		INTERACTIVE=true
+		mode=interactive
     ;;
+
+    s) # state mode, load in the last datum entry into a text editor for manual editing in order to create the next entry. Useful for slowly changing multistate systems, e.g., list of health conditions
+        mode=state
+        ;;
 
 
     -) # -- no more arguments
@@ -116,93 +122,108 @@ if [ ! -z "$UNDOLAST" ]; then
 	  fi
 fi
 
+case $mode in
 
-if [ -z "$INTERACTIVE" ]; then
-	# In non-interactive mode a single entry is recorded into the data file
-	# with the time stamp and whatever other arguments are specified on the
-	# command line separated by tabs
+    normal)
+        # In normal mode a single entry is recorded into the data file
+        # with the time stamp and whatever other arguments are specified on the
+        # command line separated by tabs
 
-	# If no additional arguments are given don't add the trailing tab
-	if [ -z "$*" ]; then
-	    OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA"
-	else
-	    OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA""\t$*"
-	fi
+        # If no additional arguments are given don't add the trailing tab
+        if [ -z "$*" ]; then
+            OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA"
+        else
+            OUTPUTSTRING="$TIMESTAMP""$AFLAGDATA""\t$*"
+        fi
 
-	echo -e "$(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $OUTPUTSTRING"
-	echo -e "$OUTPUTSTRING" >> $FILE
+        echo -e "$(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $OUTPUTSTRING"
+	      echo -e "$OUTPUTSTRING" >> $FILE
+        ;;
 
+    state)
+        # In state mode, the last entry's columns (except for Date and Time) are loaded as individual lines in vim
+        # The user can edit this and then a new entry is create from the lines.
+        # This is useful for slow-changing multistate data, such as health conditions.
 
-else
-	# In interactive mode, key presses cause data entries until Ctrl-C is received
-	# Arguments can be passed on the command line. Format should be a single letter
-	# followed by whatever that letter should be recorded as. For example:
-	# datum -f car-colors -i r red b blue k black
-	
-	# Clear the screen and hide the cursor
-	tput clear
-	tput civis
+        # Create a temporary file to do all these edits in
+        tmpfile=$(mktmp)
 
-	# Declare an associative array to reference the keystrokes to later
-	declare -A letters
-
-	# Load the arguments in
-	while [ "$#" -gt 0 ]; do
-		# Make sure each pair starts with a single character
-		case "$1" in
-			?)
-				# Then store the paired argument into the associative array
-				letters["$1"]="$2"
-
-				# Show the matching at the top of the screen
-				echo -n "$1=$2  "
-
-				shift 2
-			;;
-
-			*)
-				# Otherwise, shift that argument away and record that some argument was skipped
-				echo -n "{ERR}  "
-				shift 1
-			;;
-		esac
-	done
+        # Get the last entry
+        lastEntry=$()
 
 
+    interactive)
+        # In interactive mode, key presses cause data entries until Ctrl-C is received
+        # Arguments can be passed on the command line. Format should be a single letter
+        # followed by whatever that letter should be recorded as. For example:
+        # datum -f car-colors -i r red b blue k black
 
-	# Write the output file at the top
-	echo -e "\n$(tput smul)Interactive: $FILE$(tput rmul)"
+        # Clear the screen and hide the cursor
+        tput clear
+        tput civis
 
-	# Record the start time
-	TIMESTR=$(date "+%H:%M:%S.%3N")
-	DATESTR=$(date "+%Y-%m-%d")
-	echo -e "$DATESTR\t$TIMESTR\t[start]$AFLAGDATA" | tee -a $FILE
+        # Declare an associative array to reference the keystrokes to later
+        declare -A letters
 
-	# Set up a trap so that when the function exits, the finish time is recorded
-	function finish {
-		TIMESTR=$(date "+%H:%M:%S.%3N")
-		DATESTR=$(date "+%Y-%m-%d")
-		echo -e "$DATESTR\t$TIMESTR\t[end]" | tee -a $FILE
-		tput cnorm
-	}
-	trap finish EXIT
+        # Load the arguments in
+        while [ "$#" -gt 0 ]; do
+            # Make sure each pair starts with a single character
+            case "$1" in
+                ?)
+                # Then store the paired argument into the associative array
+                letters["$1"]="$2"
 
-	# Now, loop reading one character at a time until the program is stopped with Ctrl-C
-	while true; do
-		read -s -n 1 key
+                # Show the matching at the top of the screen
+                echo -n "$1=$2  "
 
-		# Immediately get the timestamp
-		TIMESTR=$(date "+%H:%M:%S.%3N")
-		DATESTR=$(date "+%Y-%m-%d")
+                shift 2
+                ;;
 
-		# Reference the key against the associative array generated earlier
-		DATAVAL="${letters[$key]}"
+                *)
+                    # Otherwise, shift that argument away and record that some argument was skipped
+                    echo -n "{ERR}  "
+                    shift 1
+                    ;;
+            esac
+        done
 
-		if [ -z "$DATAVAL" ]; then
-			# Just record the letter if no match is found
-			DATAVAL=$key
-		fi
 
-		echo -e "$DATESTR\t$TIMESTR\t$DATAVAL" | tee -a $FILE
-	done
-fi
+
+        # Write the output file at the top
+        echo -e "\n$(tput smul)Interactive: $FILE$(tput rmul)"
+
+        # Record the start time
+        TIMESTR=$(date "+%H:%M:%S.%3N")
+        DATESTR=$(date "+%Y-%m-%d")
+        echo -e "$DATESTR\t$TIMESTR\t[start]$AFLAGDATA" | tee -a $FILE
+
+        # Set up a trap so that when the function exits, the finish time is recorded
+        function finish {
+            TIMESTR=$(date "+%H:%M:%S.%3N")
+            DATESTR=$(date "+%Y-%m-%d")
+            echo -e "$DATESTR\t$TIMESTR\t[end]" | tee -a $FILE
+            tput cnorm
+        }
+        trap finish EXIT
+
+        # Now, loop reading one character at a time until the program is stopped with Ctrl-C
+        while true; do
+            read -s -n 1 key
+
+            # Immediately get the timestamp
+		        TIMESTR=$(date "+%H:%M:%S.%3N")
+		        DATESTR=$(date "+%Y-%m-%d")
+
+		        # Reference the key against the associative array generated earlier
+		        DATAVAL="${letters[$key]}"
+
+		        if [ -z "$DATAVAL" ]; then
+			          # Just record the letter if no match is found
+			          DATAVAL=$key
+		        fi
+
+		        echo -e "$DATESTR\t$TIMESTR\t$DATAVAL" | tee -a $FILE
+	      done
+        ;;
+esac
+
