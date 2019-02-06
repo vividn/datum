@@ -10,10 +10,9 @@ DATADIR=~/Data/datum
 
 AFLAGDATA=''
 FORCE=
-NEGATIVE=
 
 # Get options
-while getopts "f:d:t:TDa:uUin-" opt; do
+while getopts "f:d:t:TDa:uUi-" opt; do
   case $opt in
     f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
         FILE="$DATADIR/$OPTARG.tsv"
@@ -68,9 +67,6 @@ while getopts "f:d:t:TDa:uUin-" opt; do
 		INTERACTIVE=true
     ;;
 
-    n) # Negate numbers in the data
-    NEGATIVE=true
-	  ;;
 
     -) # -- no more arguments
         break;
