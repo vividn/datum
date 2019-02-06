@@ -4,9 +4,9 @@
 # Datum files are append-only, so merge-datum use comm to pair up lines until a diference is found and then cats the unison and the two differences into a single output stream.
 
 # Output all the similar lines between the two files
-comm -21 "$1" "$2"
+comm --nocheck-order -21 "$1" "$2"
 
 # Now output the lines just in $1
-comm -32 "$1" "$2"
+comm --nocheck-order -32 "$1" "$2"
 # And just in $2
-comm -31 "$1" "$2"
+comm --nocheck-order -31 "$1" "$2"
