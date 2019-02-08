@@ -146,10 +146,30 @@ case $mode in
         # This is useful for slow-changing multistate data, such as health conditions.
 
         # Create a temporary file to do all these edits in
-        tmpfile=$(mktmp)
+        tmpfile=$(mktemp)
 
         # Get the last entry
-        lastEntry=$()
+        # Remove header line at top of file to avoid sorting problems
+        if [ $(wc -l < $FILE) -gt 1 ]; then
+            tail -n +2 $FILE | sort | tail -n1 | cut -f 3- | tr "\t" "\n" > $tmpfile
+        else
+            tail -n1 $FILE | cut -f 3- | tr "\t" "\n" > $tmpfile
+        fi
+
+        # Open up the file for editing
+        sensible-editor $tmpfile
+
+        # Process the datum file into a datum formatted line
+        tabdata="$(tr '\n' '\t' <$tmpfile | sed -E 's|\t$||')"
+        OUTPUTSTRING="$TIMESTAMP\t$tabdata"
+
+        # Write to file
+        echo -e "$(tput smul; tput setaf 3)$BASENAME$(tput sgr0): $OUTPUTSTRING"
+	      echo -e "$OUTPUTSTRING" >> $FILE
+
+        # Remove tmpfile
+        rm $tmpfile
+        ;;
 
 
     interactive)
