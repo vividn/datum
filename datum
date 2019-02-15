@@ -22,6 +22,7 @@ while getopts "f:d:t:TDa:uUis-" opt; do
     ;;
     
     d)  # Specify date
+        DATEFLAG=true
       
         if [ "${OPTARG:0:1}" = "-" ]; then
 			# Allow relative dates by starting with a minus sign (-1 = yesterday, etc.)
@@ -35,6 +36,7 @@ while getopts "f:d:t:TDa:uUis-" opt; do
     ;;
     
     t) # Specify time
+        TIMEFLAG=true
         if [ "${OPTARG:0:1}" = "-" ]; then
             # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
             TIMESTR=$(date --date "${OPTARG:1} minutes ago" '+%H:%M')
@@ -46,10 +48,12 @@ while getopts "f:d:t:TDa:uUis-" opt; do
     ;;
     
     T) # Shortcut for -t 23:59:59.999
+        TIMEFLAG=true
         TIMESTR="23:59:59.999"
     ;;
 
     D) # Shortcut for -d -1
+        DATEFLAG=true
         DATESTR=$(date --date yesterday '+%Y-%m-%d')
     ;;
 
@@ -84,7 +88,10 @@ done
 
 shift "$((OPTIND - 1))"
 
-TIMESTAMP=$DATESTR"\t"$TIMESTR 
+function makeTimestamp {
+    TIMESTAMP=$DATESTR"\t"$TIMESTR 
+}
+makeTimestamp
 
 # The first argument speifies the file (if not specified via -f)
 if [ -z "$FILE" ]; then
@@ -159,7 +166,16 @@ case $mode in
         # Open up the file for editing
         sensible-editor $tmpfile
 
-        # Process the datum file into a datum formatted line
+        # Reget timestamp unless it was specified
+        if [ -z $TIMEFLAG ]; then
+            TIMESTR=$(date "+%H:%M:%S.%3N")
+        fi
+        if [ -z $DATEFLAG ]; then
+            DATESTR=$(date "+%Y-%m-%d")
+        fi
+        makeTimestamp
+
+        # Process the  tmpfile into a datum formatted line
         tabdata="$(tr '\n' '\t' <$tmpfile | sed -E 's|\t$||')"
         OUTPUTSTRING="$TIMESTAMP\t$tabdata"
 
