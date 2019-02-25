@@ -110,7 +110,7 @@ def main(**kwargs):
 
     # Load in the data to plot from the dayview_table.
     # It includes name, type, and span (vertical bar span) of the data
-    table_file = os.path.join(os.path.dirname(__file__), 'dayview_table.csv')
+    table_file = os.path.join(os.path.dirname(__file__), 'standardSet.csv')
     all_datum_files = pd.read_csv(table_file)
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
