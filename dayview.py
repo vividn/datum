@@ -12,73 +12,96 @@ from PIL import Image, ImageDraw, ImageFont
 from datumdata import Datumdata
 from miscfunc import *
 
-# Constants and globals
-data_set = 'standardSet'
+def set_constants():
+    # Constants and globals
+    global data_set
+    data_set = 'standardSet'
 
-# Default data color
-default_color = (255,255,255)
+    # Default data color
+    global default_color
+    default_color = (255,255,255)
 
-# Other colors
-text_color = (255,255,255)
-line_color = (255,255,255)
-bg_color = (0,0,0)
-
-
-# Specify the bar height classes, which can be referred to later by name
-# 0 is the top of the bar, 1 is the bottom
-bar_span = {'full': (0,1),
-            'level1': (0.15, 1),
-            'level2': (0.4, 1),
-            'level3': (0.6, 1),
-
-            'upper': (0.1, 0.3),
-            'mid' : (0.4, 0.6),
-            'lower': (0.7, 0.9)
-            }
-
-# Point properties
-point_r = 4
-
-# The Now Line
-now_color = (255, 255, 0)
-now_width = 1
-
-# Error symbol
-error_bgcolor = (255, 0, 0)
-error_fgcolor = (0, 0, 0)
-error_symbol = '!'
+    # Other colors
+    global text_color
+    text_color = (255,255,255)
+    global line_color
+    line_color = (255,255,255)
+    global bg_color
+    bg_color = (0,0,0)
 
 
-# Image properties
-# Total size of the whole image
-xsize = 1080
-ysize = 600
+    # Specify the bar height classes, which can be referred to later by name
+    # 0 is the top of the bar, 1 is the bottom
+    global bar_span
+    bar_span = {'full': (0,1),
+                'level1': (0.15, 1),
+                'level2': (0.4, 1),
+                'level3': (0.6, 1),
 
-# Font
-fontsize = 18
-imfont = ImageFont.truetype('/home/vividn/.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
+                'upper': (0.1, 0.3),
+                'mid' : (0.4, 0.6),
+                'lower': (0.7, 0.9)
+                }
+
+    # Point properties
+    global point_r
+    point_r = 4
+
+    # The Now Line
+    global now_color
+    now_color = (255, 255, 0)
+    global now_width
+    now_width = 1
+
+    # Error symbol
+    global error_bgcolor
+    error_bgcolor = (255, 0, 0)
+    global error_fgcolor
+    error_fgcolor = (0, 0, 0)
+    global error_symbol
+    error_symbol = '!'
 
 
-# Padding (in pixels)
-image_padding = 20  # outer border
-bar_padding = 8  # space between bars
-text_padding = 10  # Space between text and bars
+    # Image properties
+    # Total size of the whole image
+    global xsize
+    xsize = 1080
+    global ysize
+    ysize = 600
 
-# For now dates are hardcoded to be the previous week including today
-nDays = 8
-end_date = datetime.date.today()
+    # Font
+    global fontsize
+    fontsize = 18
+    global imfont
+    imfont = ImageFont.truetype('/home/vividn/.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
 
-# Where to save the image
-imageout = '/home/vividn/Analysis/Pictures/dayview.png'
 
-def dayperc(time):
-    # Returns the percentage through the day that a certain time is
-    return time.hour / 24.0  +  time.minute / (24.0 * 60)  +  time.second / (24.0 * 60 * 60)
+    # Padding (in pixels)
+    global image_padding
+    image_padding = 20  # outer border
+    global bar_padding
+    bar_padding = 8  # space between bars
+    global text_padding
+    text_padding = 10  # Space between text and bars
+
+    # For now dates are hardcoded to be the previous week including today
+    global nDays
+    nDays = 8
+    global end_date
+    end_date = datetime.date.today()
+
+    # Where to save the image
+    global imageout
+    imageout = '/home/vividn/Analysis/Pictures/dayview.png'
+
+#########################################
+#########################################
 
 def main(**kwargs):
     """
     Loads in specified datum files and plots them according to their type to create the dayview graphic
     """
+    set_constants()
 
     # For each of the kwargs, change the specified variable to the new value
     for key, value in kwargs.items():
@@ -312,6 +335,14 @@ def main(**kwargs):
         print(exception_text, file=sys.stderr)
 
     im.save(imageout)
+
+
+###########################################################
+###########################################################
+
+def dayperc(time):
+    # Returns the percentage through the day that a certain time is
+    return time.hour / 24.0  +  time.minute / (24.0 * 60)  +  time.second / (24.0 * 60 * 60)
 
 def get_color(datum_name,datum_colors,category=None):
     if category == None:
