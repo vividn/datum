@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 
 import pandas as pd
+import numpy as np
 import datetime
 import re
 import os
@@ -12,32 +13,10 @@ from datumdata import Datumdata
 from miscfunc import *
 
 # Constants and globals
-# The colors with which to draw the data
-data_colors = {'environment': {'outside': (135, 163, 102), 'inside': (90, 90, 90), 'home': (20, 20, 20)}, 'sleep': (20, 40, 120), 'hw': (200, 50, 50), 'work': (160, 255, 0), 'activity': {'hw': (200, 50, 50)}, 'default': (255, 255, 0)}
+data_set = 'standardSet'
 
-def get_color(datum_name,category=None):
-    if category == None:
-        try:
-            return data_colors[datum_name]
-        except KeyError:
-            return data_colors['default']
-
-    else:
-        try:
-            return data_colors[datum_name][category]
-        except KeyError:
-            # If the category has subprojects attached (e.g., category:subcategory), get the color for the super category
-            if ':' in category:
-                super_category = ':'.join(category.split(':')[0:-1])
-                return get_color(datum_name, super_category)
-
-            # Categorical data can have it's own default
-            try:
-                return data_colors[datum_name]['default']
-            except KeyError:
-                return data_colors['default']
-
-
+# Default data color
+default_color = (255,255,255)
 
 # Other colors
 text_color = (255,255,255)
@@ -110,8 +89,39 @@ def main(**kwargs):
 
     # Load in the data to plot from the dayview_table.
     # It includes name, type, and span (vertical bar span) of the data
-    table_file = os.path.join(os.path.dirname(__file__), 'standardSet.csv')
-    all_datum_files = pd.read_csv(table_file)
+    table_file = os.path.join(os.path.dirname(__file__), data_set + '.csv')
+    datum_table = pd.read_csv(table_file,comment="#")
+
+    # Extract the names, spans and colors
+    datum_names = []
+    datum_spans = {}
+    datum_colors = {}
+    prevRow = None
+    for row in datum_table.itertuples():
+        if row.Name != ':':
+            datum_names += [row.Name]
+            datum_spans[row.Name] = row.Span
+
+            # Don't assign a color if one is not entered
+            if not any(np.isnan([row.R, row.G, row.B])):
+                datum_colors[row.Name] = (int(row.R), int(row.G), int(row.B))
+            else:
+                datum_colors[row.Name] = default_color
+            prevRow = row.Name
+
+        else:
+            # Color categorical data
+            # TODO: Allow further nesting with multiple colons
+
+            # If this is the first category, change the color for this data to be a hash, with the proper default
+            if datum_colors[prevRow].__class__ != dict:
+                datum_colors[prevRow] = {'default':datum_colors[prevRow]}
+            # Category name is in the span column
+            if not any(np.isnan([row.R, row.G, row.B])):
+                datum_colors[prevRow][row.Span] = (int(row.R), int(row.G), int(row.B))
+            else:
+                datum_colors[prevRow][row.Span] = datum_colors[prevRow]['default']
+
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
@@ -167,10 +177,9 @@ def main(**kwargs):
     datum_with_error = []
     exception_text = ''
 
-    for datum_file in all_datum_files.itertuples():
-        name = datum_file.Name
+    for name in datum_names:
         print(name)
-        span = datum_file.Span
+        span = datum_spans[name]
 
         # Use the Datumdata class to load in this data
         try:
@@ -205,7 +214,7 @@ def main(**kwargs):
             if data.type == 'block':
 
                 # Get the appropriate data color
-                data_color = get_color(name)
+                data_color = get_color(name, datum_colors)
 
                 # Draw the blocks
                 for block_start, block_end in data.timings[date]:
@@ -221,7 +230,7 @@ def main(**kwargs):
 
                 for cat in all_blocks:
                     # Get the color for the category
-                    data_color = get_color(name, cat)
+                    data_color = get_color(name, datum_colors, cat)
 
                     # Draw the blocks
                     for block_start, block_end in all_blocks[cat]:
@@ -233,7 +242,7 @@ def main(**kwargs):
 
             elif data.type == 'point':
                 # Get the appropriate data color
-                data_color = get_color(name)
+                data_color = get_color(name, datum_colors)
 
                 # Center the point in the span
                 point_y = (min_block_y + max_block_y) / 2
@@ -284,7 +293,7 @@ def main(**kwargs):
 
     # Draw a Yellow line that represents now
     now_x = dayperc(datetime.datetime.now().time()) * day_lenx + l_midnight
-    now_bottom = ysize - image_padding;
+    now_bottom = ysize - image_padding
     now_top = day0s[-1]
     draw.line((now_x, now_top, now_x, now_bottom), fill=now_color, width=now_width)
 
@@ -304,6 +313,27 @@ def main(**kwargs):
 
     im.save(imageout)
 
+def get_color(datum_name,datum_colors,category=None):
+    if category == None:
+        try:
+            return datum_colors[datum_name]
+        except KeyError:
+            return default_color
+
+    else:
+        try:
+            return datum_colors[datum_name][category]
+        except KeyError:
+            # If the category has subprojects attached (e.g., category:subcategory), get the color for the super category
+            if ':' in category:
+                super_category = ':'.join(category.split(':')[0:-1])
+                return get_color(datum_name, datum_colors, super_category)
+
+            # Categorical data can have it's own default
+            try:
+                return datum_colors[datum_name]['default']
+            except KeyError:
+                return default_color
 
 main()
 main(nDays=30, imageout='/home/vividn/Analysis/Pictures/30dayview.png', ysize=1920)
