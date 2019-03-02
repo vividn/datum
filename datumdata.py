@@ -7,8 +7,7 @@ import os
 
 from miscfunc import *
 
-datum_dir=os.getenv("HOME")+'/Data/datum/'
-
+datum_dir = os.getenv("HOME") + '/Data/datum/'
 
 
 class Datumdata:
@@ -33,20 +32,22 @@ class Datumdata:
         -N      - end of an N minute whole inside of a block
     """
 
-    # TODO: Transition this whole thing to using dataframes more, like systematically building a dataframe with the calculated data
-    def __init__(self, name, type=None, column=None):
+    # TODO: Transition this whole thing to using dataframes more, \
+    #  like systematically building a dataframe with the calculated data
+    def __init__(self, name, column=None, data_type=None):
         # As a shorthand for column, name can have column listed after a colon, e.g., 'activity:project'
-        if len(name.split(':',maxsplit=1)) == 2 and column == None:
+        if len(name.split(':', maxsplit=1)) == 2 and column is None:
             self.name, self.column = name.split(':', maxsplit=1)
         else:
             self.name = name
             self.column = column
 
         # Ensure column starts with capital letter
-        if self.column != None:
+        if self.column is not None:
             self.column = self.column.title()
 
-        self.type = type
+        # Set dataType if explicitly given (will be automatically inferred later if it is not)
+        self.data_type = data_type
 
         # Memory of calculated timings and quantities (hashed by day)
         self.timings = {}
@@ -58,12 +59,12 @@ class Datumdata:
 
         # Initialize data variable. This is used to compare new data to old data when (re)loading data
         # If differences are found, the appropriate days will be flagged for recalculation in memory
+        self.raw_text = None
         self.data = None
 
         # Load in the data
         self.datum_file = datum_dir + self.name + '.tsv'
         self.load_data()
-
 
     def load_raw(self):
         with open(self.datum_file, 'r') as f:
@@ -89,26 +90,27 @@ class Datumdata:
         # Get into chronological order
         self.data.sort_index(inplace=True)
 
-        # If no column has been designated either explicitly or via the header, then do the following in order of precedence
-        # or the first column after Date and Time
-        # or "Time" column only "Date" and "Time" exist
-        if self.column == None:
+        # If no column has been designated either explicitly or via the header,
+        # then use:
+        # The first column after Date and Time
+        # or, the "Time" column if only "Date" and "Time" exist
+        if self.column is None:
             if len(self.data.columns) > 0:
                 self.column = self.data.columns[0]
             else:
                 self.column = 'Time'
 
-        # Infer data type based on contents of column
-        if self.type == None:
+        # Infer data type based on contents of column, if not explicitly given
+        if self.data_type is None:
             self.infer_type()
 
         # Data of 'block' type should have their Minutes column be strings (because of 'start' and 'end')
         # However, if no 'start' or 'end' exist, it will be read as a float. So convert.
-        if self.type == 'block':
+        if self.data_type == 'block':
             self.data['Minutes'] = self.data['Minutes'].astype(str)
 
-        # Search for new or changed entries, and flag that these should be recalculated rather than rely on the stored memory
-        if old_data != None:
+        # If reloading data, flag new or changed entries to be recalculated rather than rely on the stored memory
+        if old_data is not None:
             new_or_changed = self.data[~self.data.isin(old_data).all(1)]
 
             # Delete the stored memory for all the days with changes
@@ -117,7 +119,7 @@ class Datumdata:
                 self.minutes[date_with_changes] = None
 
     def process_header(self):
-        '''
+        """
         The header of datum files can communicate a lot of extra information which can be useful in analyzing
         For a given column name, it can look like this
 
@@ -135,15 +137,15 @@ class Datumdata:
         [default] - what to fill in for blank spaces in the column
 
         :return:
-        '''
+        """
         # TODO: Use symbols to indicate proper combination method
 
         # Split the header into an array of strings, the title of each column
-        header = self.raw_text.split("\n",1)[0].split("\t")
+        header = self.raw_text.split("\n", 1)[0].split("\t")
         if header[0] != "Date":
             raise RuntimeError('No header for "' + self.name + '". Please create one')
 
-        header_re = re.compile('^(\*)?([^[(]+)((\[[^\]]*\])|(\([^\)]*\))){0,2}$')
+        header_re = re.compile(r'^(\*)?([^[(]+)((\[[^\]]*\])|(\([^)]*\))){0,2}$')
         for col in header:
             m = header_re.match(col)
             if not m:
@@ -154,7 +156,7 @@ class Datumdata:
             self.data = self.data.rename(columns={m[0]: base_name})
 
             # Set primary column if it has not been set yet
-            if m[1] and self.column == None:
+            if m[1] and self.column is None:
                 self.column = base_name
 
             # Set default '[]'
@@ -171,53 +173,52 @@ class Datumdata:
                 self.units[base_name] = m[5][1:-1]
 
     def infer_type(self):
-        if self.column == None:
+        if self.column is None:
             raise RuntimeError('Column must be defined before data type can be inferred')
 
         elif self.column == 'Date':
-            self.type = 'bool'
+            self.data_type = 'bool'
 
         elif self.column == 'Time':
-            self.type = 'point'
+            self.data_type = 'point'
 
         elif self.column == 'Minutes':
-            self.type = 'block'
+            self.data_type = 'block'
 
         else:
             # If column consists of numbers, it is most likely something irrelevant to the timing
             # Thus, consider it point data
             if self.data[self.column].dtype in ['float64', 'int64']:
-                self.type = 'point'
+                self.data_type = 'point'
 
             # Column values are interpreted as strings
             elif self.data[self.column].dtype == 'object':
                 # If first value is a number, or a comma separated list of numbers, assume it is point data
                 if re.match('^[0-9,. ]+$', self.data[self.column][0]):
-                    self.type = 'point'
+                    self.data_type = 'point'
                 else:
                     # The column consists of strings
                     # Assume it's categorical data, if a "Minutes" column exists in the dataframe
                     if "Minutes" in self.data.columns:
-                        self.type = 'category'
+                        self.data_type = 'category'
                     else:
-                        self.type = 'point'
+                        self.data_type = 'point'
 
             else:
                 raise ValueError('Unimplemented column type')
-
 
     ##########################################
     # Analysis functions
 
     def filter_data(self, dataset=None, begin_dt=None, end_dt=None):
-        if type(dataset) == None:
+        if type(dataset) is None:
             dataset = self.data
 
         # Returns a subset of dataset to match given criteria
         filtered_data = dataset
 
         # Time Filter
-        if begin_dt != None or end_dt != None:
+        if begin_dt is not None or end_dt is not None:
             begin_dt = dataset.index[0] if begin_dt is None else begin_dt
             end_dt = dataset.index[-1] if end_dt is None else end_dt
 
@@ -231,8 +232,8 @@ class Datumdata:
             # Get the total entries within this time window
             filtered_data = self.data.loc[(self.data.index >= begin_dt) & (self.data.index <= end_dt)]
 
- #       if column != None:
-            # Column should be a 3-tuple (column_name,
+        #       if column != None:
+        # Column should be a 3-tuple (column_name,
 
         return filtered_data
 
@@ -242,13 +243,13 @@ class Datumdata:
         return len(fdata)
 
     def get_timings(self, date):
-        if not date in self.timings.keys() or self.timings[date] == None:
+        if date not in self.timings.keys() or self.timings[date] is None:
             self.calculate_day(date)
 
         return self.timings[date]
 
     def get_minutes(self, date):
-        if not date in self.minutes:
+        if date not in self.minutes:
             self.calculate_day(date)
 
         return self.minutes[date]
@@ -263,16 +264,15 @@ class Datumdata:
         if date != dt.date.today() and date in self.timings:
             return
 
-
-        if self.type == 'block':
+        if self.data_type == 'block':
             day_timing = self.day_timing_blockdata(date)
             day_minutes = self.day_minutes_blockdata(day_timing)
 
-        elif self.type == 'category':
+        elif self.data_type == 'category':
             day_timing = self.day_timing_catdata(date)
             day_minutes = self.day_minutes_catdata(day_timing)
 
-        elif self.type == 'point':
+        elif self.data_type == 'point':
             date_str = date.strftime("%Y-%m-%d")
             try:
                 day_timing = self.data[date_str].index
@@ -287,7 +287,6 @@ class Datumdata:
         # Store the calculations for easy access later
         self.timings[date] = day_timing
         self.minutes[date] = day_minutes
-
 
     def day_timing_blockdata(self, date):
         """
@@ -344,9 +343,10 @@ class Datumdata:
 
             elif entry == 'end':
                 # 'end' should never occur outside of a block
-                if not (in_block):
-                    # Special case, if end occurs as the first entry in the day, and the previous day is unknown, start a virtual block at midnight
-                    if in_block == None:
+                if not in_block:
+                    # Special case: if end occurs as the first entry in the day, and the previous day is unknown
+                    # Start a virtual block at midnight
+                    if in_block is None:
                         block_start = timestamp.floor('D')
                         start_times += [block_start]
                     else:
@@ -446,10 +446,10 @@ class Datumdata:
 
         # If starting in a block, add midnight to the start list
         if start_value:
-            block_start = dt.datetime.combine(date,dt.time())
+            block_start = dt.datetime.combine(date, dt.time())
             start_times.setdefault(start_value, []).append(block_start)
 
-        # A new data entry into categorical data should always be changing something (even if it is another column than self.column)
+        # A new data entry into categorical data should always change something (even if in another column)
         # Therefore, if two chronologically consecutive, non-temporary entries are doing the same thing, throw an error
         perms = df[pd.isna(df['Minutes'])].drop(['Minutes'], axis=1)
         conflicts = (perms == perms.shift()).all(axis=1)
@@ -497,11 +497,13 @@ class Datumdata:
                     raise ValueError("Unexpected value in minutes column: {} {}".format(self.name, timestamp))
 
             elif col == '[end]' or col == '[start]':
-                # These are commands relating to starting and stopping data collection as a whole just skip these for now
+                # These are commands relating to starting and stopping data collection as a whole
+                # For now, just skip
                 continue
 
             if is_number(col):
-                # Using a negative number in the category column is no longer supported, instead use 'end' and number in the Minutes column
+                # Using a negative number in the category column is no longer supported
+                # Instead, use 'end' and a positive number in the Minutes column
                 raise ValueError('Number should not be in a category column: {} {}'.format(self.name, timestamp))
 
             else:
@@ -524,7 +526,7 @@ class Datumdata:
                     mini_block_start = timestamp - dt.timedelta(minutes=minutes)
                     mini_block_end = timestamp
 
-                    # If another block is currently active, create a whole in it to fit this momentary block of another category
+                    # If another block is currently active, stop it for the duration of this new category
                     if in_block:
                         end_times.setdefault(in_block, []).append(mini_block_start)
                         start_times.setdefault(in_block, []).append(mini_block_end)
@@ -532,20 +534,20 @@ class Datumdata:
                     start_times.setdefault(col, []).append(mini_block_start)
                     end_times.setdefault(col, []).append(mini_block_end)
 
-
                 elif minutes < 0:
                     # Special case allowed where the category is listed with a negative number after it
                     # The project MUST match the currently active project though
                     if col == in_block:
                         # Create a num sized whole in the active block
-                        whole_start = timestamp - dt.timedelta(minutes=abs(col1_num))
+                        whole_start = timestamp - dt.timedelta(minutes=abs(minutes))
                         whole_end = timestamp
 
                         end_times.setdefault(in_block, []).append(whole_start)
                         start_times.setdefault(in_block, []).append(whole_end)
 
                     else:
-                        raise ValueError("Negative number used on non active category: {} {}".format(self.name, timestamp))
+                        raise ValueError(
+                            "Negative number used on non active category: {} {}".format(self.name, timestamp))
 
                 else:
                     raise ValueError("Improperly formatted category data: {} {}".format(self.name, timestamp))
@@ -556,7 +558,7 @@ class Datumdata:
             if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()
             else:
-                block_end = dt.datetime.combine(date, dt.time(23, 59, 59, 999999))
+                block_end = dt.datetime.combine(date, dt.time.max)
 
             end_times.setdefault(in_block, []).append(block_end)
 
@@ -582,6 +584,8 @@ class Datumdata:
         for cat in day_timing:
             total_minutes_by_cat[cat] = self.day_minutes_blockdata(day_timing[cat])
 
+        return total_minutes_by_cat
+
     def day_start_val(self, date):
         """
         Figure out how a given day should start and midnight when calculating its blocks
@@ -598,17 +602,15 @@ class Datumdata:
         """
 
         # How a day starts is dependent upon how the last day ended,
-        # Turn the date into a datetime at midnight
-        midnight = dt.datetime.combine(date, dt.time())
 
         # Find the index of the entry most recent before the given date
         try:
-            prev_ind = self.data.index.get_loc(midnight - dt.timedelta(0,0,1), method='ffill')
+            prev_ind = self.data.index.get_loc(midnight(date) - dt.timedelta(0, 0, 1), method='ffill')
         except KeyError:
             # If no data exists before the day
             return False
 
-        if self.type == 'block':
+        if self.data_type == 'block':
             while prev_ind >= 0:
                 val = self.data.iloc[prev_ind]['Minutes']
 
@@ -622,7 +624,7 @@ class Datumdata:
 
                 prev_ind -= 1
 
-        elif self.type == 'category':
+        elif self.data_type == 'category':
             while prev_ind >= 0:
                 catcol = self.data[[self.column]].iloc[prev_ind][0]
                 minutes = self.data[["Minutes"]].iloc[prev_ind][0]

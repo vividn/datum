@@ -2,8 +2,8 @@ import datetime as dt
 from dateutil import parser as dtparse
 import subprocess
 
-iso_fmt="%Y-%m-%d\t%H:%M:%S"
-posix_fmt= "%H:%M:%S %Y-%m-%d"
+iso_fmt = "%Y-%m-%d\t%H:%M:%S"
+posix_fmt = "%H:%M:%S %Y-%m-%d"
 
 now = dt.datetime.now().replace(microsecond=0)
 posix_now = now.strftime(posix_fmt)
@@ -68,7 +68,7 @@ def parse_date(dt_str, reference=now):
         return reference + delta_dur
 
 
-def human_dur_str(dur,printzero=False):
+def human_dur_str(dur, printzero=False):
     # Print dur in this format: {}d{}h{}m{}s
     d = {"days": dur.days}
     d["hours"], rem = divmod(dur.seconds, 3600)

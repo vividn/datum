@@ -12,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 from datumdata import Datumdata
 from miscfunc import *
 
+
 def set_constants():
     # Constants and globals
     global data_set
@@ -19,27 +20,26 @@ def set_constants():
 
     # Default data color
     global default_color
-    default_color = (255,255,255)
+    default_color = (255, 255, 255)
 
     # Other colors
     global text_color
-    text_color = (255,255,255)
+    text_color = (255, 255, 255)
     global line_color
-    line_color = (255,255,255)
+    line_color = (255, 255, 255)
     global bg_color
-    bg_color = (0,0,0)
-
+    bg_color = (0, 0, 0)
 
     # Specify the bar height classes, which can be referred to later by name
     # 0 is the top of the bar, 1 is the bottom
     global bar_span
-    bar_span = {'full': (0,1),
+    bar_span = {'full': (0, 1),
                 'level1': (0.15, 1),
                 'level2': (0.4, 1),
                 'level3': (0.6, 1),
 
                 'upper': (0.1, 0.3),
-                'mid' : (0.4, 0.6),
+                'mid': (0.4, 0.6),
                 'lower': (0.7, 0.9)
                 }
 
@@ -61,7 +61,6 @@ def set_constants():
     global error_symbol
     error_symbol = '!'
 
-
     # Image properties
     # Total size of the whole image
     global xsize
@@ -74,7 +73,6 @@ def set_constants():
     fontsize = 18
     global imfont
     imfont = ImageFont.truetype('/home/vividn/.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
-
 
     # Padding (in pixels)
     global image_padding
@@ -93,6 +91,7 @@ def set_constants():
     # Where to save the image
     global imageout
     imageout = '/home/vividn/Analysis/Pictures/dayview.png'
+
 
 #########################################
 #########################################
@@ -113,13 +112,13 @@ def main(**kwargs):
     # Load in the data to plot from the dayview_table.
     # It includes name, type, and span (vertical bar span) of the data
     table_file = os.path.join(os.path.dirname(__file__), data_set + '.csv')
-    datum_table = pd.read_csv(table_file,comment="#")
+    datum_table = pd.read_csv(table_file, comment="#")
 
     # Extract the names, spans and colors
     datum_names = []
     datum_spans = {}
     datum_colors = {}
-    prevRow = None
+    prev_row = None
     for row in datum_table.itertuples():
         if row.Name != ':':
             datum_names += [row.Name]
@@ -130,25 +129,23 @@ def main(**kwargs):
                 datum_colors[row.Name] = (int(row.R), int(row.G), int(row.B))
             else:
                 datum_colors[row.Name] = default_color
-            prevRow = row.Name
+            prev_row = row.Name
 
         else:
             # Color categorical data
             # TODO: Allow further nesting with multiple colons
 
             # If this is the first category, change the color for this data to be a hash, with the proper default
-            if datum_colors[prevRow].__class__ != dict:
-                datum_colors[prevRow] = {'default':datum_colors[prevRow]}
+            if datum_colors[prev_row].__class__ != dict:
+                datum_colors[prev_row] = {'default': datum_colors[prev_row]}
             # Category name is in the span column
             if not any(np.isnan([row.R, row.G, row.B])):
-                datum_colors[prevRow][row.Span] = (int(row.R), int(row.G), int(row.B))
+                datum_colors[prev_row][row.Span] = (int(row.R), int(row.G), int(row.B))
             else:
-                datum_colors[prevRow][row.Span] = datum_colors[prevRow]['default']
-
+                datum_colors[prev_row][row.Span] = datum_colors[prev_row]['default']
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
-
 
     # Find the width of the date text on the left of the date,
     date_label_fmt = "%a, %b %d"
@@ -167,7 +164,6 @@ def main(**kwargs):
     r_midnight = xsize - image_padding
     day_lenx = r_midnight - l_midnight
 
-
     #####################################
     # Get the dates and then draw the date text
 
@@ -177,22 +173,22 @@ def main(**kwargs):
     # day0s is an array of the ymin position of each of the days
     day0s = []
 
-    for iDay in range(0,nDays):
+    for iDay in range(0, nDays):
         # Starting with the beginning date, add the dates to the array
-        date = (datetime.date.today() - datetime.timedelta(days=(nDays-iDay-1)))
+        date = (datetime.date.today() - datetime.timedelta(days=(nDays - iDay - 1)))
         dates_to_plot += [date]
 
         # Record where the day is in the image
-        day0 = image_padding + text_height + text_padding + ( day_height + bar_padding ) * iDay
+        day0 = image_padding + text_height + text_padding + (day_height + bar_padding) * iDay
         day0s += [day0]
 
         # Create and draw the label
         date_label = date.strftime(date_label_fmt)
         date_width, date_height = draw.multiline_textsize(date_label, font=imfont)
         date_x = l_midnight - text_padding - date_width
-        date_y = image_padding + text_height + text_padding + ( day_height + bar_padding ) * iDay + day_height / 2.0 - date_height / 2.0
+        date_y = image_padding + text_height + text_padding + (
+                    day_height + bar_padding) * iDay + day_height / 2.0 - date_height / 2.0
         draw.multiline_text(xy=(date_x, date_y), text=date_label, font=imfont, fill=text_color, align='right')
-
 
     ################################################
     # Load and iterate through the data
@@ -210,7 +206,7 @@ def main(**kwargs):
         except Exception as e:
             # If an error occurs, continue on, but later draw the error symbol as indication
             error_has_occurred = True
-            datum_with_error += [(name, date)]
+            datum_with_error += [(name, "Load")]
             exception_text += str(e) + "\n"
             continue
 
@@ -229,12 +225,11 @@ def main(**kwargs):
                 exception_text += str(e) + "\n"
                 continue
 
-
             # The upper and lower y values of where to draw the data
             min_block_y = day0s[iDay] + bar_span[span][0] * day_height
             max_block_y = day0s[iDay] + bar_span[span][1] * day_height
 
-            if data.type == 'block':
+            if data.data_type == 'block':
 
                 # Get the appropriate data color
                 data_color = get_color(name, datum_colors)
@@ -242,12 +237,12 @@ def main(**kwargs):
                 # Draw the blocks
                 for block_start, block_end in data.timings[date]:
                     # Figure out where the block starts and ends in the day on the image
-                    xmin = dayperc(block_start.time()) * day_lenx  +  l_midnight
-                    xmax = dayperc(block_end.time()) * day_lenx  +  l_midnight
+                    xmin = dayperc(block_start.time()) * day_lenx + l_midnight
+                    xmax = dayperc(block_end.time()) * day_lenx + l_midnight
 
-                    draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill = data_color)
+                    draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill=data_color)
 
-            elif data.type == 'category':
+            elif data.data_type == 'category':
                 # Load the data for the given day
                 all_blocks = data.get_timings(date)
 
@@ -263,7 +258,7 @@ def main(**kwargs):
 
                         draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill=data_color)
 
-            elif data.type == 'point':
+            elif data.data_type == 'point':
                 # Get the appropriate data color
                 data_color = get_color(name, datum_colors)
 
@@ -279,10 +274,8 @@ def main(**kwargs):
                     # Draw the dots
                     draw.ellipse(point_xy, fill=data_color)
 
-
             # Increase iDay by 1 for the next iteration
             iDay += 1
-
 
     # All data is now drawn
     # Draw the times and lines (draw every three hours)
@@ -329,7 +322,7 @@ def main(**kwargs):
         error_text = error_symbol + ' ' + datum_with_error[0][0][0:3]
 
         # To make the error more visible, put it on a bright background color
-        esize = draw.textsize(error_text,font=imfont)
+        esize = draw.textsize(error_text, font=imfont)
         draw.rectangle([ex, ey + 3, ex + esize[0], ey + esize[1] + 3], fill=error_bgcolor)
         draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
         print(exception_text, file=sys.stderr)
@@ -342,10 +335,11 @@ def main(**kwargs):
 
 def dayperc(time):
     # Returns the percentage through the day that a certain time is
-    return time.hour / 24.0  +  time.minute / (24.0 * 60)  +  time.second / (24.0 * 60 * 60)
+    return time.hour / 24.0 + time.minute / (24.0 * 60) + time.second / (24.0 * 60 * 60)
 
-def get_color(datum_name,datum_colors,category=None):
-    if category == None:
+
+def get_color(datum_name, datum_colors, category=None):
+    if category is None:
         try:
             return datum_colors[datum_name]
         except KeyError:
@@ -355,7 +349,7 @@ def get_color(datum_name,datum_colors,category=None):
         try:
             return datum_colors[datum_name][category]
         except KeyError:
-            # If the category has subprojects attached (e.g., category:subcategory), get the color for the super category
+            # If the category has subprojects attached (e.g., category:subcategory), get the color of the super category
             if ':' in category:
                 super_category = ':'.join(category.split(':')[0:-1])
                 return get_color(datum_name, datum_colors, super_category)
@@ -365,6 +359,7 @@ def get_color(datum_name,datum_colors,category=None):
                 return datum_colors[datum_name]['default']
             except KeyError:
                 return default_color
+
 
 main()
 main(imageout='/home/vividn/Analysis/Pictures/reduced.png', data_set='reducedSet')
