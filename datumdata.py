@@ -266,11 +266,11 @@ class Datumdata:
 
         if self.data_type == 'block':
             day_timing = self.day_timing_blockdata(date)
-            day_minutes = self.day_minutes_blockdata(day_timing)
+            day_minutes = self.timings_to_minutes(day_timing)
 
         elif self.data_type == 'category':
             day_timing = self.day_timing_catdata(date)
-            day_minutes = self.day_minutes_catdata(day_timing)
+            day_minutes = self.timings_to_minutes(day_timing)
 
         elif self.data_type == 'point':
             date_str = date.strftime("%Y-%m-%d")
@@ -408,15 +408,6 @@ class Datumdata:
 
         # Zip the two lists together into a list of tuples, (start_time, end_time)
         return list(zip(start_times, end_times))
-
-    def day_minutes_blockdata(self, day_timing):
-        total_minutes = 0
-
-        # Each block looks like (start, end), so subtract to find total length of each block
-        for block in day_timing:
-            total_minutes += (block[1] - block[0]).seconds / 60.0
-
-        return total_minutes
 
     def day_timing_catdata(self, date):
         """
@@ -577,14 +568,26 @@ class Datumdata:
 
         return day_cats
 
-    def day_minutes_catdata(self, day_timing):
-        total_minutes_by_cat = {}
+    def timings_to_minutes(self, timings):
+        if type(timings) == list:
+            total_minutes = 0
 
-        # day_timing is a hash with each category as its keys, each value is standard looking block data
-        for cat in day_timing:
-            total_minutes_by_cat[cat] = self.day_minutes_blockdata(day_timing[cat])
+            # Each block looks like (start, end), so subtract to find total length of each block
+            for block in timings:
+                total_minutes += (block[1] - block[0]).seconds / 60.0
 
-        return total_minutes_by_cat
+        elif type(timings) == dict:
+            # Timings of mulitple categories
+            total_minutes = {}
+
+            # day_timing is a hash with each category as its keys, each value is standard looking block data
+            for cat in timings:
+                total_minutes[cat] = self.timings_to_minutes(timings[cat])
+
+        else:
+            raise RuntimeError('Unexpected timings received')
+
+        return total_minutes
 
     def day_start_val(self, date):
         """
