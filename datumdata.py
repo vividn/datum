@@ -18,7 +18,11 @@ class Datumdata:
     All data entries have a timestamp (with date and time), and then an optional tab separated list of values
     The format of the extra data is listed here.
 
-    Point data: simple data consisting of only a timestamp
+    Point data: totals reflect a count of timestamped entries
+
+    Sum data: totals are calculated by summing the data
+
+    Mean data: totals are calculated by averaging the data TODO
 
     Block data: Blocks of time with a start and end
         'start' - start of a block
@@ -186,10 +190,9 @@ class Datumdata:
             self.data_type = 'block'
 
         else:
-            # If column consists of numbers, it is most likely something irrelevant to the timing
-            # Thus, consider it point data
+            # If column consists of numbers, sum by default
             if self.data[self.column].dtype in ['float64', 'int64']:
-                self.data_type = 'point'
+                self.data_type = 'sum'
 
             # Column values are interpreted as strings
             elif self.data[self.column].dtype == 'object':
@@ -266,27 +269,29 @@ class Datumdata:
 
         if self.data_type == 'block':
             day_timing = self.day_timing_blockdata(date)
-            day_minutes = self.timings_to_minutes(day_timing)
+            day_total = self.timings_to_minutes(day_timing)
 
         elif self.data_type == 'category':
             day_timing = self.day_timing_catdata(date)
-            day_minutes = self.timings_to_minutes(day_timing)
+            day_total = self.timings_to_minutes(day_timing)
 
-        elif self.data_type == 'point':
+        elif self.data_type in ['point', 'sum']:
             date_str = date.strftime("%Y-%m-%d")
             try:
                 day_timing = self.data[date_str].index
-                day_minutes = 0
+                day_total = len(day_timing)
             except KeyError:
                 day_timing = []
-                day_minutes = 0
+                day_total = 0
 
         else:
             raise RuntimeError('Data type is invalid or not supported yet')
 
         # Store the calculations for easy access later
         self.timings[date] = day_timing
-        self.totals[date] = day_minutes
+        self.totals[date] = day_total
+
+###################################################
 
     def day_timing_blockdata(self, date):
         """
@@ -419,7 +424,7 @@ class Datumdata:
         # For some reason, pandas needs time based indexing of time series to be a string
         date_str = date.strftime("%Y-%m-%d")
 
-        # For category data, entries may be made temporary by using numbers in the Minutes column
+
         # Load the data for the given date
         try:
             df = self.data[date_str]
@@ -451,9 +456,7 @@ class Datumdata:
         for timestamp, col, minutes in df[[self.column, "Minutes"]].itertuples():
 
             # col can either start or change to a block of a new category or if 'end' ends the active category
-            #
-            # if minutes has a value, then rather than starting or ending a block,
-            # create a tempoary block or whole that ends at the timestamp
+            # For category data, entries may be made temporary by using numbers in the Minutes column
 
             if col == 'start':
                 raise ValueError('start should not occur in category file')
@@ -589,6 +592,8 @@ class Datumdata:
 
         return total_minutes
 
+##############################################
+
     def day_start_val(self, date):
         """
         Figure out how a given day should start and midnight when calculating its blocks
@@ -641,16 +646,6 @@ class Datumdata:
 
         # If data is of another type, then assume not in a block
         return False
-
-    def infer_data_type(self):
-        """
-        Examines the data to determine if it is
-        Block data
-        Category data
-        or Timestamp data
-        :return:
-        """
-        # TODO: make this function
 
 
 if __name__ == '__main__':

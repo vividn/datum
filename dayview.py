@@ -266,7 +266,7 @@ def main(**kwargs):
 
                         draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill=data_color)
 
-            elif data.data_type == 'point':
+            else:
                 # Get the appropriate data color
                 data_color = get_color(name, datum_colors)
 
