@@ -8,6 +8,9 @@ import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
 
+from pathlib import Path
+home = str(Path.home()) + '/'
+
 # Custom class for analyzing datum files
 from datumdata import Datumdata
 from miscfunc import *
@@ -72,7 +75,7 @@ def set_constants():
     global fontsize
     fontsize = 18
     global imfont
-    imfont = ImageFont.truetype('/home/vividn/.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
+    imfont = ImageFont.truetype(home + '.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
 
     # Padding (in pixels)
     global image_padding
@@ -89,8 +92,10 @@ def set_constants():
     end_date = datetime.date.today()
 
     # Where to save the image
-    global imageout
-    imageout = '/home/vividn/Analysis/Pictures/dayview.png'
+    global imagedir
+    imagedir = home + 'Analysis/Pictures/'
+    global imagename
+    imagename = 'dayview'
 
 
 #########################################
@@ -105,6 +110,9 @@ def main(**kwargs):
     # For each of the kwargs, change the specified variable to the new value
     for key, value in kwargs.items():
         globals()[key] = value
+
+    # Set where image is saved
+    imageout = imagedir + imagename + '.png'
 
     # Display info about what is being processed
     print("\n#####################\n" + imageout.split("/")[-1])
@@ -362,9 +370,9 @@ def get_color(datum_name, datum_colors, category=None):
 
 
 main()
-main(imageout='/home/vividn/Analysis/Pictures/reduced.png', data_set='reducedSet')
-main(nDays=30, imageout='/home/vividn/Analysis/Pictures/30dayview.png', ysize=1920)
-main(nDays=1, imageout='/home/vividn/Analysis/Pictures/singledayview.png',
+main(imagename='reduced', data_set='reducedSet')
+main(nDays=30, imagename='30dayview', ysize=1920)
+main(nDays=1, imagename='singledayview',
      xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0)
-main(nDays=1, imageout='/home/vividn/Analysis/Pictures/phoneday.png',
+main(nDays=1, imagename='phoneday',
      xsize=1080, ysize=200, image_padding=6, bar_padding=0, text_padding=0, now_width=2)
