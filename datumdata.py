@@ -51,7 +51,7 @@ class Datumdata:
 
         # Memory of calculated timings and quantities (hashed by day)
         self.timings = {}
-        self.minutes = {}
+        self.totals = {}
 
         # Any columns that specify units or defaults will store them in these dicts
         self.units = {}
@@ -116,7 +116,7 @@ class Datumdata:
             # Delete the stored memory for all the days with changes
             for date_with_changes in new_or_changed.resample('D').index:
                 self.timings[date_with_changes] = None
-                self.minutes[date_with_changes] = None
+                self.totals[date_with_changes] = None
 
     def process_header(self):
         """
@@ -248,11 +248,11 @@ class Datumdata:
 
         return self.timings[date]
 
-    def get_minutes(self, date):
-        if date not in self.minutes:
+    def get_total(self, date):
+        if date not in self.totals:
             self.calculate_day(date)
 
-        return self.minutes[date]
+        return self.totals[date]
 
     def calculate_day(self, date):
         """
@@ -286,7 +286,7 @@ class Datumdata:
 
         # Store the calculations for easy access later
         self.timings[date] = day_timing
-        self.minutes[date] = day_minutes
+        self.totals[date] = day_minutes
 
     def day_timing_blockdata(self, date):
         """
