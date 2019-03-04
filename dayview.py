@@ -15,6 +15,8 @@ home = str(Path.home()) + '/'
 from datumdata import Datumdata
 from miscfunc import *
 
+global all_datumdatas
+all_datumdatas = {}
 
 def set_constants():
     # Constants and globals
@@ -208,15 +210,19 @@ def main(**kwargs):
         print(name)
         span = datum_spans[name]
 
-        # Use the Datumdata class to load in this data
-        try:
-            data = Datumdata(name)
-        except Exception as e:
-            # If an error occurs, continue on, but later draw the error symbol as indication
-            error_has_occurred = True
-            datum_with_error += [(name, "Load")]
-            exception_text += str(e) + "\n"
-            continue
+        # Get the data if it has already been loaded, otherwise use the Datumdata class to load in the data
+        if name in all_datumdatas.keys():
+            data = all_datumdatas[name]
+        else:
+            try:
+                data = Datumdata(name)
+                all_datumdatas[name] = data
+            except Exception as e:
+                # If an error occurs, continue on, but later draw the error symbol as indication
+                error_has_occurred = True
+                datum_with_error += [(name, "Load")]
+                exception_text += str(e) + "\n"
+                continue
 
         #########################################
         # Plot the data day by day
