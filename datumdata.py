@@ -275,11 +275,25 @@ class Datumdata:
             day_timing = self.day_timing_catdata(date)
             day_total = self.timings_to_minutes(day_timing)
 
-        elif self.data_type in ['point', 'sum']:
+        elif self.data_type == 'point':
             date_str = date.strftime("%Y-%m-%d")
             try:
                 day_timing = self.data[date_str].index
                 day_total = len(day_timing)
+            except KeyError:
+                day_timing = []
+                day_total = 0
+
+        elif self.data_type == 'sum':
+            date_str = date.strftime("%Y-%m-%d")
+            try:
+                day_timing = self.data[date_str].index
+                # Fill in blanks with a default value if specified in the header
+                if self.column in self.defaults.keys():
+                    day_total = self.data[date_str].fillna(self.defaults[self.column]).sum()
+                else:
+                    day_total = self.data[date_str].sum()
+
             except KeyError:
                 day_timing = []
                 day_total = 0

@@ -117,10 +117,10 @@ def main(**kwargs):
     imageout = imagedir + imagename + '.png'
 
     # Display info about what is being processed
-    print("\n#####################\n" + imageout.split("/")[-1])
+    print("\n#####################\n" + imagename)
 
     # Load in the data to plot from the dayview_table.
-    # It includes name, type, and span (vertical bar span) of the data
+    # It includes name, span (vertical bar span), and color of the data
     table_file = os.path.join(os.path.dirname(__file__), data_set + '.csv')
     datum_table = pd.read_csv(table_file, comment="#")
 
@@ -291,7 +291,10 @@ def main(**kwargs):
             # Increase iDay by 1 for the next iteration
             iDay += 1
 
-    # All data is now drawn
+    # All data are now drawn
+
+    #
+
     # Draw the times and lines (draw every three hours)
     for i in range(0, 25, 1):
         text_str = str(i)
