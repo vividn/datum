@@ -23,6 +23,9 @@ def set_constants():
     global data_set
     data_set = 'standardSet'
 
+    global quantifier_set
+    quantifier_set = 'quants'
+
     # Default data color
     global default_color
     default_color = (255, 255, 255)
@@ -75,7 +78,7 @@ def set_constants():
 
     # Font
     global fontsize
-    fontsize = 18
+    fontsize = 16
     global imfont
     imfont = ImageFont.truetype(home + '.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
 
@@ -86,6 +89,8 @@ def set_constants():
     bar_padding = 8  # space between bars
     global text_padding
     text_padding = 10  # Space between text and bars
+    global quant_padding
+    quant_padding = 5
 
     # For now dates are hardcoded to be the previous week including today
     global nDays
@@ -169,9 +174,22 @@ def main(**kwargs):
         date_label_fmt = "%a\n%b %d"
         text_width, text_height = imfont.getsize('Dec 88')
 
+    # Load in the data to quantify (i.e., display the total on the right side of the day)
+    # For now, only + is allowed. TODO: Build in other operations for quantification such as AND and OR
+    quant_file = os.path.join(os.path.dirname(__file__), quantifier_set)
+    quants = []
+    with open(quant_file) as f:
+        quants = f.read().splitlines()
+
+    # Use 88.8 a maximal width example, to allocate space
+    quant_width, quant_height = imfont.getsize('18.1')
+    quant_rows = int(np.floor_divide(day_height, quant_height))
+    quant_cols = int(np.ceil(len(quants) / quant_rows))
+    total_quant_width = quant_cols * quant_width
+
     # Bar properties
     l_midnight = image_padding + text_width + text_padding
-    r_midnight = xsize - image_padding
+    r_midnight = xsize - image_padding - total_quant_width - quant_padding
     day_lenx = r_midnight - l_midnight
 
     #####################################
@@ -288,12 +306,43 @@ def main(**kwargs):
                     # Draw the dots
                     draw.ellipse(point_xy, fill=data_color)
 
-            # Increase iDay by 1 for the next iteration
-            iDay += 1
+        # Increase iDay by 1 for the next iteration
+        iDay += 1
+
+    ####################################
+    # Show the quantifications on the right side
+    iDay = 0
+    for date in dates_to_plot:
+        # The upper and lower y values of the entire day
+        min_day_y = day0s[iDay]
+        max_day_y = day0s[iDay] + day_height
+
+        iQuant = 0
+        for quant in quants:
+            quant_color = get_quant_color(quant, datum_colors)
+            quant_row = np.mod(iQuant, quant_rows)
+            quant_col = np.floor_divide(iQuant, quant_rows)
+
+            # The actual quantification
+            quant_num = quantify_day(quant, date)
+            # Convert to a nice string
+            if type(quant_num) == int:
+                quant_str = '{:d}'.format(quant_num)
+            else:
+                quant_str = '{:.1f}'.format(quant_num)
+
+            # To get the x and y, divide the total height of the day into equal sections
+            # and then center the number in that section
+            quant_x = r_midnight + quant_padding + (quant_width * quant_col)
+            quant_y = min_day_y + ((0.5 + quant_row) * day_height / quant_rows) - (quant_height / 2)
+
+            draw.text(xy=(quant_x, quant_y), text=quant_str, font=imfont, fill=quant_color)
+            iQuant += 1
+
+        # Increase iDay by 1 for the next iteration
+        iDay += 1
 
     # All data are now drawn
-
-    #
 
     # Draw the times and lines (draw every three hours)
     for i in range(0, 25, 1):
@@ -307,8 +356,8 @@ def main(**kwargs):
         text_y_bottom = ysize - image_padding - text_height
 
         # Draw the text on the top and bottom of the display
-        draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, color=text_color)
-        draw.text(xy=(text_x, text_y_bottom), text=text_str, font=imfont, color=text_color)
+        draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color)
+        draw.text(xy=(text_x, text_y_bottom), text=text_str, font=imfont, fill=text_color)
 
         # Draw a line between the top and bottom
         line_top = text_y_top + text_height + 2
@@ -349,6 +398,47 @@ def main(**kwargs):
 
 ###########################################################
 ###########################################################
+
+def quantify_day(quant_str, date):
+    '''
+    Quantifies a given day based on a mathematical string including the various variables
+    For now, can only handle addition
+    :param quant_str:
+    :param date:
+    :return: quantity
+    '''
+
+    grand_total = 0
+    data_names = [x.strip() for x in quant_str.split("+")]
+
+    for component in data_names:
+        if ':' in component:
+            name, cat = component.split(':',1)
+            if cat in all_datumdatas[name].totals[date].keys():
+                total = all_datumdatas[name].totals[date][cat]
+            else:
+                total = 0
+        else:
+            name = component
+            total = all_datumdatas[name].totals[date]
+
+        # If these data are in minutes, divide to hours
+        if all_datumdatas[name].data_type in ['block', 'category']:
+            total = total/ 60.0
+
+        grand_total += total
+
+    return grand_total
+
+def get_quant_color(quant_str, datum_colors):
+    # Uses the color of the first defined datum name in the quant_str
+    name = quant_str.split("+")[0].strip()
+    if ':' in name:
+        name, cat = name.split(':',1)
+    else:
+        cat = None
+
+    return get_color(name, datum_colors, cat)
 
 def dayperc(time):
     # Returns the percentage through the day that a certain time is
