@@ -77,10 +77,19 @@ def set_constants():
     ysize = 600
 
     # Font
+    global fontpath
+    fontpath = home + '.fonts/typecatcher/'
+
     global fontsize
-    fontsize = 16
-    global imfont
-    imfont = ImageFont.truetype(home + '.fonts/typecatcher/Open Sans_regular.ttf', fontsize)
+    fontsize = 18
+    global imfontname
+    imfontname = 'Open Sans_regular.ttf'
+
+    global quantfontsize
+    quantfontsize = 16
+    global quantfontname
+    quantfontname = 'Open Sans_800.ttf'
+
 
     # Padding (in pixels)
     global image_padding
@@ -120,6 +129,10 @@ def main(**kwargs):
 
     # Set where image is saved
     imageout = imagedir + imagename + '.png'
+
+    # Generate the fonts
+    imfont = ImageFont.truetype(fontpath + imfontname, fontsize)
+    quantfont = ImageFont.truetype(fontpath + quantfontname, quantfontsize)
 
     # Display info about what is being processed
     print("\n#####################\n" + imagename)
@@ -182,10 +195,13 @@ def main(**kwargs):
         quants = f.read().splitlines()
 
     # Use 88.8 a maximal width example, to allocate space
-    quant_width, quant_height = imfont.getsize('18.1')
+    quant_width, quant_height = quantfont.getsize('11.1')
     quant_rows = int(np.floor_divide(day_height, quant_height))
     quant_cols = int(np.ceil(len(quants) / quant_rows))
     total_quant_width = quant_cols * quant_width
+
+    # If there are less quants than rows, reduce the rows to match
+    quant_rows = min(quant_rows, len(quants))
 
     # Bar properties
     l_midnight = image_padding + text_width + text_padding
@@ -306,8 +322,8 @@ def main(**kwargs):
                     # Draw the dots
                     draw.ellipse(point_xy, fill=data_color)
 
-        # Increase iDay by 1 for the next iteration
-        iDay += 1
+            # Increase iDay by 1 for the next iteration
+            iDay += 1
 
     ####################################
     # Show the quantifications on the right side
@@ -336,7 +352,7 @@ def main(**kwargs):
             quant_x = r_midnight + quant_padding + (quant_width * quant_col)
             quant_y = min_day_y + ((0.5 + quant_row) * day_height / quant_rows) - (quant_height / 2)
 
-            draw.text(xy=(quant_x, quant_y), text=quant_str, font=imfont, fill=quant_color)
+            draw.text(xy=(quant_x, quant_y), text=quant_str, font=quantfont, fill=quant_color)
             iQuant += 1
 
         # Increase iDay by 1 for the next iteration
@@ -438,7 +454,13 @@ def get_quant_color(quant_str, datum_colors):
     else:
         cat = None
 
-    return get_color(name, datum_colors, cat)
+    quant_color = get_color(name, datum_colors, cat)
+
+    # Dark colors can be hard to see with just text, so lighten them
+    while np.sum(quant_color) < 255:
+        quant_color = tuple(map(lambda x: min(x+1, 255), quant_color))
+
+    return quant_color
 
 def dayperc(time):
     # Returns the percentage through the day that a certain time is
@@ -474,4 +496,5 @@ main(nDays=30, imagename='30dayview', ysize=1920)
 main(nDays=1, imagename='singledayview',
      xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0)
 main(nDays=1, imagename='phoneday',
-     xsize=1080, ysize=200, image_padding=6, bar_padding=0, text_padding=0, now_width=2)
+     xsize=1080, ysize=200, image_padding=6, bar_padding=0, text_padding=0, now_width=2,
+     quantfontsize=30)
