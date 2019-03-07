@@ -494,7 +494,7 @@ main()
 main(imagename='reduced', data_set='reducedSet')
 main(nDays=30, imagename='30dayview', ysize=1920)
 main(nDays=1, imagename='singledayview',
-     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0)
+     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0, quantfontsize=18)
 main(nDays=1, imagename='phoneday',
      xsize=1080, ysize=200, image_padding=6, bar_padding=0, text_padding=0, now_width=2,
      quantfontsize=30)
