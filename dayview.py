@@ -428,19 +428,23 @@ def quantify_day(quant_str, date):
     data_names = [x.strip() for x in quant_str.split("+")]
 
     for component in data_names:
-        if ':' in component:
-            name, cat = component.split(':',1)
-            if cat in all_datumdatas[name].totals[date].keys():
-                total = all_datumdatas[name].totals[date][cat]
+        try:
+            if ':' in component:
+                name, cat = component.split(':',1)
+                if cat in all_datumdatas[name].totals[date].keys():
+                    total = all_datumdatas[name].totals[date][cat]
+                else:
+                    total = 0
             else:
-                total = 0
-        else:
-            name = component
-            total = all_datumdatas[name].totals[date]
+                name = component
+                total = all_datumdatas[name].totals[date]
+                
+            # If these data are in minutes, divide to hours
+            if all_datumdatas[name].data_type in ['block', 'category']:
+                total = total/ 60.0
 
-        # If these data are in minutes, divide to hours
-        if all_datumdatas[name].data_type in ['block', 'category']:
-            total = total/ 60.0
+        except KeyError:
+            total = 0
 
         grand_total += total
 
