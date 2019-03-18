@@ -489,7 +489,8 @@ class Datumdata:
                     # Needs to be a whole in an active block
                     # TODO ensure that block is big enough to subtract
                     if not in_block:
-                        raise ValueError("Whole must occur within a block: {} {}".format(self.name, timestamp))
+                        continue
+                        # raise ValueError("Whole must occur within a block: {} {}".format(self.name, timestamp))
 
                     # Make the whole
                     whole_start = timestamp - dt.timedelta(minutes=abs(minutes))
@@ -604,6 +605,11 @@ class Datumdata:
             raise RuntimeError('Unexpected timings received')
 
         return total_minutes
+
+
+
+
+
 
 ##############################################
 
