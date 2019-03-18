@@ -305,7 +305,6 @@ class Datumdata:
         self.timings[date] = day_timing
         self.totals[date] = day_total
 
-###################################################
 
     def day_timing_blockdata(self, date):
         """
@@ -463,7 +462,7 @@ class Datumdata:
         # Therefore, if two chronologically consecutive, non-temporary entries are doing the same thing, throw an error
         perms = df[pd.isna(df['Minutes'])].drop(['Minutes'], axis=1)
         conflicts = (perms == perms.shift()).all(axis=1)
-        if conflicts.any() and False:
+        if conflicts.any():
             raise ValueError("Redundant category data: {} {}".format(self.name, conflicts[conflicts].index[0]))
 
         # Iterate through entries on day
