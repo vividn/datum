@@ -257,6 +257,33 @@ class Datumdata:
 
         return self.totals[date]
 
+    def total_in_range(self, begin_dt, end_dt):
+        # Sums up the totals across a range of dates.
+        # Consistent with other ranges: extends to, but does not include end_dt
+
+        # begin_ and end_dt can be a date, in which case just use midnight of that date
+        if type(begin_dt) == dt.date:
+            begin_date = begin_dt
+            begin_dt = dt.datetime.combine(begin_date, dt.time.min())
+        else:
+            begin_date = begin_dt.date()
+
+        if type(end_dt) == dt.date:
+            end_date = end_dt
+            end_dt = dt.datetime.combine(end_date, dt.time.min())
+        else:
+            end_date = end_dt.date()
+
+
+        ## Process the total for the begin and end dates explicitly since they may have partial days
+
+        # begin_date
+
+
+
+
+###################################################
+
     def calculate_day(self, date):
         """
         Data type independent function to get timings and totals for the day
