@@ -101,11 +101,14 @@ def set_constants():
     global quant_padding
     quant_padding = 5
 
-    # For now dates are hardcoded to be the previous week including today
+    # If neither begin_date nor end_date is specified, then end_date will be set to today (late in code)
+    # If both are specified, then they take precedence over nDays
     global nDays
     nDays = 8
+    global begin_date
+    begin_date = None
     global end_date
-    end_date = datetime.date.today()
+    end_date = None
 
     # Where to save the image
     global imagedir
@@ -136,6 +139,24 @@ def main(**kwargs):
 
     # Display info about what is being processed
     print("\n#####################\n" + imagename)
+
+    # Calculate the begin and end dates
+    global begin_date, end_date, nDays
+    if begin_date is None:
+        if end_date is None:
+            # If end_date is not specified, use today
+            end_date = dt.date.today()
+
+        begin_date = end_date - dt.timedelta(days=nDays - 1)
+
+    else:
+        if end_date is None:
+            end_date = begin_date + dt.timedelta(days=nDays - 1)
+
+        else:
+            # Overide nDays
+            nDays = (end_date - begin_date).days + 1
+
 
     # Load in the data to plot from the dayview_table.
     # It includes name, span (vertical bar span), and color of the data
@@ -219,7 +240,7 @@ def main(**kwargs):
 
     for iDay in range(0, nDays):
         # Starting with the beginning date, add the dates to the array
-        date = (datetime.date.today() - datetime.timedelta(days=(nDays - iDay - 1)))
+        date = begin_date + datetime.timedelta(days=iDay)
         dates_to_plot += [date]
 
         # Record where the day is in the image
@@ -502,3 +523,5 @@ main(nDays=1, imagename='singledayview',
 main(nDays=1, imagename='phoneday',
      xsize=1080, ysize=200, image_padding=6, bar_padding=0, text_padding=0, now_width=2,
      quantfontsize=30)
+main(begin_date=dt.date(2018,12,9), end_date=dt.date(2018,12,15), imagename='interview', data_set='reducedSet',
+     xsize =1920, ysize=1080, fontsize=24, quantfontsize=30, point_r=7)
