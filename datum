@@ -13,80 +13,97 @@ FORCE=
 
 mode=normal
 
-# Get options
-while getopts "f:d:t:TDa:uUis-" opt; do
-  case $opt in
-    f)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
-        FILE="$DATADIR/$OPTARG.tsv"
-        BASENAME="$OPTARG"
-    ;;
-    
-    d)  # Specify date
-        DATEFLAG=true
-      
-        if [ "${OPTARG:0:1}" = "-" ]; then
-			# Allow relative dates by starting with a minus sign (-1 = yesterday, etc.)
-            DATESTR=$(date --date "${OPTARG:1} days ago" '+%Y-%m-%d')
+# Parse arguments using getopt
+args=$(getopt -n datum -o f:d:t:TDa:uUis \
+              --long "file:,date:,time:,undo,force-undo,interactive,state" \
+              -- "$@")
+if [ $? -ne 0 ]; then
+    exit 1
+fi
+eval set -- "$args"
+
+while true; do
+    case "$1" in
+        -f|--file)  # Specify the file to put the data in, if this flag is not set, the first argument will be the file
+            FILE="$DATADIR/$2.tsv"
+            BASENAME="$2"
+            shift 2
+            ;;
         
-		else
-			# Otherwise, feed the date into the linux date utility 
-            DATESTR=$(date --date $OPTARG "+%Y-%m-%d")
+        -d|--date)  # Specify date
+            DATEFLAG=true
+            
+            if [ "${2:0:1}" = "-" ]; then
+                # Allow relative dates by starting with a minus sign (-1 = yesterday, etc.)
+                DATESTR=$(date --date "${2:1} days ago" '+%Y-%m-%d')
+                
+            else
+                # Otherwise, feed the date into the linux date utility 
+                DATESTR=$(date --date $2 "+%Y-%m-%d")
+                
+            fi
+            shift 2
+            ;;
         
-		fi
-    ;;
-    
-    t) # Specify time
-        TIMEFLAG=true
-        if [ "${OPTARG:0:1}" = "-" ]; then
-            # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
-            TIMESTR=$(date --date "${OPTARG:1} minutes ago" '+%H:%M')
-            TIMESTR=$(date --date $TIMESTR "+%H:%M:%S.%3N")
-        else
-            TIMESTR=$(date --date $OPTARG "+%H:%M:%S.%3N")
-        fi
+        -t|--time) # Specify time
+            TIMEFLAG=true
+            if [ "${2:0:1}" = "-" ]; then
+                # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
+                TIMESTR=$(date --date "${2:1} minutes ago" '+%H:%M')
+                TIMESTR=$(date --date $TIMESTR "+%H:%M:%S.%3N")
+            else
+                TIMESTR=$(date --date $2 "+%H:%M:%S.%3N")
+            fi
 
-    ;;
-    
-    T) # Shortcut for -t 23:59:59.999
-        TIMEFLAG=true
-        TIMESTR="23:59:59.999"
-    ;;
-
-    D) # Shortcut for -d -1
-        DATEFLAG=true
-        DATESTR=$(date --date yesterday '+%Y-%m-%d')
-    ;;
-
-    a) # Flag to include tab separated data earlier in the list. Useful for aliases
-        AFLAGDATA="$AFLAGDATA\t$OPTARG"
-    ;;
-    u) # Undo the last data point made
-        UNDOLAST=true
-    ;;
-
-    U) # Force undo (no time limit)
-        UNDOLAST=true
-        FORCE=true
-    ;;
-
-    i) # Interactive mode. Records timings of keystrokes for on the fly data collection
-		mode=interactive
-    ;;
-
-    s) # state mode, load in the last datum entry into a text editor for manual editing in order to create the next entry. Useful for slowly changing multistate systems, e.g., list of health conditions
-        mode=state
-        ;;
-
-
-    -) # -- no more arguments
-        break;
-        ;;
-
+            shift 2
+            ;;
         
-    esac
+        -T) # Shortcut for -t 23:59:59.999
+            TIMEFLAG=true
+            TIMESTR="23:59:59.999"
+            shift
+            ;;
+
+        -D) # Shortcut for -d -1
+            DATEFLAG=true
+            DATESTR=$(date --date yesterday '+%Y-%m-%d')
+            shift
+            ;;
+
+        -a) # Flag to include tab separated data earlier in the list. Useful for aliases. This flag is no longer necessary after the migration to getopt, but left for compatibility
+            AFLAGDATA="$AFLAGDATA\t$2"
+            shift 2
+            ;;
+        -u|--undo) # Undo the last data point made
+            UNDOLAST=true
+            shift
+            ;;
+
+        -U|--force-undo) # Force undo (no time limit)
+            UNDOLAST=true
+            FORCE=true
+            shift
+            ;;
+
+        -i|--interactive) # Interactive mode. Records timings of keystrokes for on the fly data collection
+            mode=interactive
+            shift
+            ;;
+
+        -s|--state-mode) # state mode, load in the last datum entry into a text editor for manual editing in order to create the next entry. Useful for slowly changing multistate systems, e.g., list of health conditions
+            mode=state
+            shift
+            ;;
+
+        --)
+            shift
+            break
+            ;;
+	  esac
 done
 
-shift "$((OPTIND - 1))"
+
+######
 
 function makeTimestamp {
     TIMESTAMP=$DATESTR"\t"$TIMESTR 
