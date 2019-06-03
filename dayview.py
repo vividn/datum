@@ -48,7 +48,8 @@ def set_constants():
 
                 'upper': (0.1, 0.3),
                 'mid': (0.4, 0.6),
-                'lower': (0.7, 0.9)
+                'lower': (0.7, 0.9),
+                'floor': (0.9, 1.0),
                 }
 
     # Point properties
