@@ -405,6 +405,13 @@ class Datumdata:
 
                 continue
 
+            elif pd.isna(entry) or entry == 'nan':
+                # No time data for this entry (but other data might be available)
+                # Just record the start and end times as being the same
+                # TODO: Maybe change how this is represented in the data
+                start_times += [timestamp]
+                end_times += [timestamp]
+
             elif entry == '[end]' or entry == '[start]':
                 # These are commands relating to starting and stopping data collection as a whole just skip these dates
                 continue

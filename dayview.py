@@ -299,6 +299,9 @@ def main(**kwargs):
             min_block_y = day0s[iDay] + bar_span[span][0] * day_height
             max_block_y = day0s[iDay] + bar_span[span][1] * day_height
 
+            # If data are points, center within the span
+            point_y = (min_block_y + max_block_y) / 2
+
             if data.data_type == 'block':
 
                 # Get the appropriate data color
@@ -306,11 +309,24 @@ def main(**kwargs):
 
                 # Draw the blocks
                 for block_start, block_end in data.timings[date]:
-                    # Figure out where the block starts and ends in the day on the image
-                    xmin = dayperc(block_start.time()) * day_lenx + l_midnight
-                    xmax = dayperc(block_end.time()) * day_lenx + l_midnight
+                    if block_start != block_end:
 
-                    draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill=data_color)
+                        # Figure out where the block starts and ends in the day on the image
+                        xmin = dayperc(block_start.time()) * day_lenx + l_midnight
+                        xmax = dayperc(block_end.time()) * day_lenx + l_midnight
+
+                        draw.rectangle([xmin, min_block_y, xmax, max_block_y], fill=data_color)
+
+                    else:
+                        # If block_start and block_end are the same, there is no duration data for this entry,
+                        # So, just draw a point
+                        point_x = dayperc(block_end.time()) * day_lenx + l_midnight
+
+                        # Get the bounding box of the dot
+                        point_xy = [point_x - point_r, point_y - point_r, point_x + point_r, point_y + point_r]
+
+                        draw.ellipse(point_xy, fill=data_color)
+
 
             elif data.data_type == 'category':
                 # Load the data for the given day
@@ -331,9 +347,6 @@ def main(**kwargs):
             else:
                 # Get the appropriate data color
                 data_color = get_color(name, datum_colors)
-
-                # Center the point in the span
-                point_y = (min_block_y + max_block_y) / 2
 
                 for timestamp in data.timings[date]:
                     point_x = dayperc(timestamp.time()) * day_lenx + l_midnight
