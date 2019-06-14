@@ -317,9 +317,9 @@ class Datumdata:
                 day_timing = self.data[date_str].index
                 # Fill in blanks with a default value if specified in the header
                 if self.column in self.defaults.keys():
-                    day_total = self.data[date_str].fillna(self.defaults[self.column]).sum()
+                    day_total = self.data[date_str].fillna(self.defaults[self.column]).sum()[self.column]
                 else:
-                    day_total = self.data[date_str].sum()
+                    day_total = self.data[date_str].sum()[self.column]
 
             except KeyError:
                 day_timing = []
