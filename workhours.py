@@ -1,3 +1,4 @@
+#!python3
 from datumdata import Datumdata
 import datetime as dt
 import pandas as pd
