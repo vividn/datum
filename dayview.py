@@ -539,3 +539,5 @@ main(nDays=1, imagename='phoneday',
      quantfontsize=30)
 main(begin_date=dt.date(2018,12,9), end_date=dt.date(2018,12,15), imagename='interview', data_set='reducedSet',
      xsize =1920, ysize=1080, fontsize=24, quantfontsize=30, point_r=7)
+#main(nDays=1, imagename='sampleAct', data_set='actSample', begin_date=dt.date(2019,1,28),
+#     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0, quantfontsize=18)
