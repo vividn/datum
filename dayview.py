@@ -283,8 +283,7 @@ def main(**kwargs):
 
         #########################################
         # Plot the data day by day
-        iDay = 0
-        for date in dates_to_plot:
+        for iDay, date in enumerate(dates_to_plot):
 
             # Load the blocks for the given day
             try:
@@ -358,19 +357,14 @@ def main(**kwargs):
                     # Draw the dots
                     draw.ellipse(point_xy, fill=data_color)
 
-            # Increase iDay by 1 for the next iteration
-            iDay += 1
-
     ####################################
     # Show the quantifications on the right side
-    iDay = 0
-    for date in dates_to_plot:
+    for iDay, date in enumerate(dates_to_plot):
         # The upper and lower y values of the entire day
         min_day_y = day0s[iDay]
         max_day_y = day0s[iDay] + day_height
 
-        iQuant = 0
-        for quant in quants:
+        for iQuant, quant in enumerate(quants):
             quant_color = get_quant_color(quant, datum_colors)
             quant_row = np.mod(iQuant, quant_rows)
             quant_col = np.floor_divide(iQuant, quant_rows)
@@ -389,10 +383,6 @@ def main(**kwargs):
             quant_y = min_day_y + ((0.5 + quant_row) * day_height / quant_rows) - (quant_height / 2)
 
             draw.text(xy=(quant_x, quant_y), text=quant_str, font=quantfont, fill=quant_color)
-            iQuant += 1
-
-        # Increase iDay by 1 for the next iteration
-        iDay += 1
 
     # All data are now drawn
 
