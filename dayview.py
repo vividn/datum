@@ -42,7 +42,7 @@ def set_constants():
     # 0 is the top of the bar, 1 is the bottom
     global bar_span
     bar_span = {'full': (0, 1),
-                'level1': (0.15, 1),
+                'level1': (0.20, 1),
                 'level2': (0.4, 1),
                 'level3': (0.6, 1),
 
@@ -50,6 +50,7 @@ def set_constants():
                 'mid': (0.4, 0.6),
                 'lower': (0.7, 0.9),
                 'floor': (0.9, 1.0),
+                'ceiling': (0, 0.07),
                 }
 
     # Point properties
