@@ -7,7 +7,7 @@ import os
 
 from miscfunc import *
 
-datum_dir = os.getenv("HOME") + '/Data/datum/'
+datum_dir = os.getenv("HOME") + "/Data/datum/"
 
 
 class Datumdata:
@@ -40,8 +40,8 @@ class Datumdata:
     #  like systematically building a dataframe with the calculated data
     def __init__(self, name, column=None, data_type=None):
         # As a shorthand for column, name can have column listed after a colon, e.g., 'activity:project'
-        if len(name.split(':', maxsplit=1)) == 2 and column is None:
-            self.name, self.column = name.split(':', maxsplit=1)
+        if len(name.split(":", maxsplit=1)) == 2 and column is None:
+            self.name, self.column = name.split(":", maxsplit=1)
         else:
             self.name = name
             self.column = column
@@ -67,11 +67,11 @@ class Datumdata:
         self.data = None
 
         # Load in the data
-        self.datum_file = datum_dir + self.name + '.tsv'
+        self.datum_file = datum_dir + self.name + ".tsv"
         self.load_data()
 
     def load_raw(self):
-        with open(self.datum_file, 'r') as f:
+        with open(self.datum_file, "r") as f:
             self.raw_text = f.read()
 
     def load_data(self):
@@ -83,7 +83,9 @@ class Datumdata:
         self.load_raw()
 
         # Make pandas dataframe from datum file, with the date and time combined into one field and set as the index
-        self.data = pd.read_csv(self.datum_file, delimiter='\t', parse_dates=[[0, 1]], index_col=[0])
+        self.data = pd.read_csv(
+            self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
+        )
 
         # Ensure the date_time column is in datetime format
         self.data.index = pd.to_datetime(self.data.index)
@@ -102,7 +104,7 @@ class Datumdata:
             if len(self.data.columns) > 0:
                 self.column = self.data.columns[0]
             else:
-                self.column = 'Time'
+                self.column = "Time"
 
         # Infer data type based on contents of column, if not explicitly given
         if self.data_type is None:
@@ -110,15 +112,15 @@ class Datumdata:
 
         # Data of 'block' type should have their Minutes column be strings (because of 'start' and 'end')
         # However, if no 'start' or 'end' exist, it will be read as a float. So convert.
-        if self.data_type == 'block':
-            self.data['Minutes'] = self.data['Minutes'].astype(str)
+        if self.data_type == "block":
+            self.data["Minutes"] = self.data["Minutes"].astype(str)
 
         # If reloading data, flag new or changed entries to be recalculated rather than rely on the stored memory
         if old_data is not None:
             new_or_changed = self.data[~self.data.isin(old_data).all(1)]
 
             # Delete the stored memory for all the days with changes
-            for date_with_changes in new_or_changed.resample('D').index:
+            for date_with_changes in new_or_changed.resample("D").index:
                 self.timings[date_with_changes] = None
                 self.totals[date_with_changes] = None
 
@@ -149,11 +151,13 @@ class Datumdata:
         if header[0] != "Date":
             raise RuntimeError('No header for "' + self.name + '". Please create one')
 
-        header_re = re.compile(r'^(\*)?([^[(]+)((\[[^\]]*\])|(\([^)]*\))){0,2}$')
+        header_re = re.compile(r"^(\*)?([^[(]+)((\[[^\]]*\])|(\([^)]*\))){0,2}$")
         for col in header:
             m = header_re.match(col)
             if not m:
-                raise ValueError('Badly named column in data. {}: {}'.format(self.name, col))
+                raise ValueError(
+                    "Badly named column in data. {}: {}".format(self.name, col)
+                )
 
             # Rename column to base name in dataframe
             base_name = m[2].title()
@@ -178,37 +182,39 @@ class Datumdata:
 
     def infer_type(self):
         if self.column is None:
-            raise RuntimeError('Column must be defined before data type can be inferred')
+            raise RuntimeError(
+                "Column must be defined before data type can be inferred"
+            )
 
-        elif self.column == 'Date':
-            self.data_type = 'bool'
+        elif self.column == "Date":
+            self.data_type = "bool"
 
-        elif self.column == 'Time':
-            self.data_type = 'point'
+        elif self.column == "Time":
+            self.data_type = "point"
 
-        elif self.column == 'Minutes':
-            self.data_type = 'block'
+        elif self.column == "Minutes":
+            self.data_type = "block"
 
         else:
             # If column consists of numbers, sum by default
-            if self.data[self.column].dtype in ['float64', 'int64']:
-                self.data_type = 'sum'
+            if self.data[self.column].dtype in ["float64", "int64"]:
+                self.data_type = "sum"
 
             # Column values are interpreted as strings
-            elif self.data[self.column].dtype == 'object':
+            elif self.data[self.column].dtype == "object":
                 # If first value is a number, or a comma separated list of numbers, assume it is point data
-                if re.match('^[0-9,. ]+$', self.data[self.column][0]):
-                    self.data_type = 'point'
+                if re.match("^[0-9,. ]+$", self.data[self.column][0]):
+                    self.data_type = "point"
                 else:
                     # The column consists of strings
                     # Assume it's categorical data, if a "Minutes" column exists in the dataframe
                     if "Minutes" in self.data.columns:
-                        self.data_type = 'category'
+                        self.data_type = "category"
                     else:
-                        self.data_type = 'point'
+                        self.data_type = "point"
 
             else:
-                raise ValueError('Unimplemented column type')
+                raise ValueError("Unimplemented column type")
 
     ##########################################
     # Analysis functions
@@ -233,7 +239,9 @@ class Datumdata:
                 end_dt = eod(end_dt)
 
             # Get the total entries within this time window
-            filtered_data = self.data.loc[(self.data.index >= begin_dt) & (self.data.index <= end_dt)]
+            filtered_data = self.data.loc[
+                (self.data.index >= begin_dt) & (self.data.index <= end_dt)
+            ]
 
         #       if column != None:
         # Column should be a 3-tuple (column_name,
@@ -274,15 +282,11 @@ class Datumdata:
         else:
             end_date = end_dt.date()
 
-
         ## Process the total for the begin and end dates explicitly since they may have partial days
 
         # begin_date
 
-
-
-
-###################################################
+    ###################################################
 
     def calculate_day(self, date):
         """
@@ -294,15 +298,15 @@ class Datumdata:
         if date != dt.date.today() and date in self.timings:
             return
 
-        if self.data_type == 'block':
+        if self.data_type == "block":
             day_timing = self.day_timing_blockdata(date)
             day_total = self.timings_to_minutes(day_timing)
 
-        elif self.data_type == 'category':
+        elif self.data_type == "category":
             day_timing = self.day_timing_catdata(date)
             day_total = self.timings_to_minutes(day_timing)
 
-        elif self.data_type == 'point':
+        elif self.data_type == "point":
             date_str = date.strftime("%Y-%m-%d")
             try:
                 day_timing = self.data[date_str].index
@@ -311,13 +315,17 @@ class Datumdata:
                 day_timing = []
                 day_total = 0
 
-        elif self.data_type == 'sum':
+        elif self.data_type == "sum":
             date_str = date.strftime("%Y-%m-%d")
             try:
                 day_timing = self.data[date_str].index
                 # Fill in blanks with a default value if specified in the header
                 if self.column in self.defaults.keys():
-                    day_total = self.data[date_str].fillna(self.defaults[self.column]).sum()[self.column]
+                    day_total = (
+                        self.data[date_str]
+                        .fillna(self.defaults[self.column])
+                        .sum()[self.column]
+                    )
                 else:
                     day_total = self.data[date_str].sum()[self.column]
 
@@ -326,12 +334,11 @@ class Datumdata:
                 day_total = 0
 
         else:
-            raise RuntimeError('Data type is invalid or not supported yet')
+            raise RuntimeError("Data type is invalid or not supported yet")
 
         # Store the calculations for easy access later
         self.timings[date] = day_timing
         self.totals[date] = day_total
-
 
     def day_timing_blockdata(self, date):
         """
@@ -346,7 +353,7 @@ class Datumdata:
         # For block data, all entries are stored in the column, 'Minutes'
         # Load the data for the given date
         try:
-            ts = self.data['Minutes'][date_str]
+            ts = self.data["Minutes"][date_str]
         except KeyError:
             # If no data exist for a given date, return empty list
             ts = pd.Series()
@@ -373,10 +380,14 @@ class Datumdata:
             # should be counted towards the total number of minutes.
             # Numbers add directly to the total.
 
-            if entry == 'start':
+            if entry == "start":
                 # 'start' should never occur while already in a block
                 if in_block:
-                    raise ValueError('start cannot occur after another start: ' + str(timestamp) + str(entry))
+                    raise ValueError(
+                        "start cannot occur after another start: "
+                        + str(timestamp)
+                        + str(entry)
+                    )
 
                 in_block = True
                 block_start = timestamp
@@ -386,16 +397,20 @@ class Datumdata:
 
                 continue
 
-            elif entry == 'end':
+            elif entry == "end":
                 # 'end' should never occur outside of a block
                 if not in_block:
                     # Special case: if end occurs as the first entry in the day, and the previous day is unknown
                     # Start a virtual block at midnight
                     if in_block is None:
-                        block_start = timestamp.floor('D')
+                        block_start = timestamp.floor("D")
                         start_times += [block_start]
                     else:
-                        raise ValueError('end cannot occur after another end: ' + str(timestamp) + str(entry))
+                        raise ValueError(
+                            "end cannot occur after another end: "
+                            + str(timestamp)
+                            + str(entry)
+                        )
 
                 in_block = False
                 block_end = timestamp
@@ -405,14 +420,14 @@ class Datumdata:
 
                 continue
 
-            elif pd.isna(entry) or entry == 'nan':
+            elif pd.isna(entry) or entry == "nan":
                 # No time data for this entry (but other data might be available)
                 # Just record the start and end times as being the same
                 # TODO: Maybe change how this is represented in the data
                 start_times += [timestamp]
                 end_times += [timestamp]
 
-            elif entry == '[end]' or entry == '[start]':
+            elif entry == "[end]" or entry == "[start]":
                 # These are commands relating to starting and stopping data collection as a whole just skip these dates
                 continue
 
@@ -425,10 +440,14 @@ class Datumdata:
                 mini_block_minutes = float(entry)
 
                 if not ((mini_block_minutes >= 0) ^ bool(in_block)):
-                    raise ValueError("Number not correctly associated with blocks\n{timestamp}, {entry}")
+                    raise ValueError(
+                        "Number not correctly associated with blocks\n{timestamp}, {entry}"
+                    )
 
                 # Assuming the number record was made at the end of when it occurred, calculate the beginning
-                mini_block_start = timestamp - dt.timedelta(minutes=abs(mini_block_minutes))
+                mini_block_start = timestamp - dt.timedelta(
+                    minutes=abs(mini_block_minutes)
+                )
                 mini_block_end = timestamp
 
                 # Add these to the appropriate arrays in day_blocks
@@ -442,7 +461,12 @@ class Datumdata:
                 continue
 
             else:
-                raise ValueError('Entry not properly formed:' + str(timestamp) + str(' , ') + str(entry))
+                raise ValueError(
+                    "Entry not properly formed:"
+                    + str(timestamp)
+                    + str(" , ")
+                    + str(entry)
+                )
 
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
         # One exception to this is if the date is today, then the block extends to right now.
@@ -456,7 +480,7 @@ class Datumdata:
 
         # Each block should have a start and an end, therefore start_times and end_times should be the same length
         if len(start_times) != len(end_times):
-            raise RuntimeError('start and end arrays don\'t have the same length')
+            raise RuntimeError("start and end arrays don't have the same length")
 
         # Zip the two lists together into a list of tuples, (start_time, end_time)
         return list(zip(start_times, end_times))
@@ -470,7 +494,6 @@ class Datumdata:
 
         # For some reason, pandas needs time based indexing of time series to be a string
         date_str = date.strftime("%Y-%m-%d")
-
 
         # Load the data for the given date
         try:
@@ -494,10 +517,14 @@ class Datumdata:
 
         # A new data entry into categorical data should always change something (even if in another column)
         # Therefore, if two chronologically consecutive, non-temporary entries are doing the same thing, throw an error
-        perms = df[pd.isna(df['Minutes'])].drop(['Minutes'], axis=1)
+        perms = df[pd.isna(df["Minutes"])].drop(["Minutes"], axis=1)
         conflicts = (perms == perms.shift()).all(axis=1)
         if conflicts.any():
-            raise ValueError("Redundant category data: {} {}".format(self.name, conflicts[conflicts].index[0]))
+            raise ValueError(
+                "Redundant category data: {} {}".format(
+                    self.name, conflicts[conflicts].index[0]
+                )
+            )
 
         # Iterate through entries on day
         for timestamp, col, minutes in df[[self.column, "Minutes"]].itertuples():
@@ -505,10 +532,10 @@ class Datumdata:
             # col can either start or change to a block of a new category or if 'end' ends the active category
             # For category data, entries may be made temporary by using numbers in the Minutes column
 
-            if col == 'start':
-                raise ValueError('start should not occur in category file')
+            if col == "start":
+                raise ValueError("start should not occur in category file")
 
-            elif col == 'end':
+            elif col == "end":
 
                 # If nothing is in the minutes column, end the current block (if one is active)
                 if pd.isna(minutes):
@@ -536,9 +563,13 @@ class Datumdata:
 
                 else:
                     # Unexpected value in the Minutes column
-                    raise ValueError("Unexpected value in minutes column: {} {}".format(self.name, timestamp))
+                    raise ValueError(
+                        "Unexpected value in minutes column: {} {}".format(
+                            self.name, timestamp
+                        )
+                    )
 
-            elif col == '[end]' or col == '[start]':
+            elif col == "[end]" or col == "[start]":
                 # These are commands relating to starting and stopping data collection as a whole
                 # For now, just skip
                 continue
@@ -546,7 +577,11 @@ class Datumdata:
             if is_number(col):
                 # Using a negative number in the category column is no longer supported
                 # Instead, use 'end' and a positive number in the Minutes column
-                raise ValueError('Number should not be in a category column: {} {}'.format(self.name, timestamp))
+                raise ValueError(
+                    "Number should not be in a category column: {} {}".format(
+                        self.name, timestamp
+                    )
+                )
 
             else:
                 # Otherwise, treat the entry as a category name
@@ -589,10 +624,17 @@ class Datumdata:
 
                     else:
                         raise ValueError(
-                            "Negative number used on non active category: {} {}".format(self.name, timestamp))
+                            "Negative number used on non active category: {} {}".format(
+                                self.name, timestamp
+                            )
+                        )
 
                 else:
-                    raise ValueError("Improperly formatted category data: {} {}".format(self.name, timestamp))
+                    raise ValueError(
+                        "Improperly formatted category data: {} {}".format(
+                            self.name, timestamp
+                        )
+                    )
 
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
         # One exception to this is if the date is today, in which case the block extends to right now.
@@ -612,7 +654,7 @@ class Datumdata:
 
             # Each block should have a start and an end, therefore start_times and end_times should be the same length
             if len(start_times[category]) != len(end_times[category]):
-                raise RuntimeError('start and end arrays don\'t have the same length')
+                raise RuntimeError("start and end arrays don't have the same length")
 
             # Zip the two lists together into a list of tuples, (start_time, end_time)
             day_cats[category] = list(zip(start_times[category], end_times[category]))
@@ -636,16 +678,11 @@ class Datumdata:
                 total_minutes[cat] = self.timings_to_minutes(timings[cat])
 
         else:
-            raise RuntimeError('Unexpected timings received')
+            raise RuntimeError("Unexpected timings received")
 
         return total_minutes
 
-
-
-
-
-
-##############################################
+    ##############################################
 
     def day_start_val(self, date):
         """
@@ -666,33 +703,35 @@ class Datumdata:
 
         # Find the index of the entry most recent before the given date
         try:
-            prev_ind = self.data.index.get_loc(midnight(date) - dt.timedelta(0, 0, 1), method='ffill')
+            prev_ind = self.data.index.get_loc(
+                midnight(date) - dt.timedelta(0, 0, 1), method="ffill"
+            )
         except KeyError:
             # If no data exists before the day
             return False
 
-        if self.data_type == 'block':
+        if self.data_type == "block":
             while prev_ind >= 0:
-                val = self.data.iloc[prev_ind]['Minutes']
+                val = self.data.iloc[prev_ind]["Minutes"]
 
-                if val == 'start':
+                if val == "start":
                     # In a generic block
                     return True
 
-                if val == 'end':
+                if val == "end":
                     # Not in any block
                     return False
 
                 prev_ind -= 1
 
-        elif self.data_type == 'category':
+        elif self.data_type == "category":
             while prev_ind >= 0:
                 catcol = self.data[[self.column]].iloc[prev_ind][0]
                 minutes = self.data[["Minutes"]].iloc[prev_ind][0]
 
                 # Day does not start in_block if category ended the previous day
                 if pd.isna(minutes):
-                    return False if catcol in ['end', '[start]', '[end]'] else catcol
+                    return False if catcol in ["end", "[start]", "[end]"] else catcol
 
                 # If last entry on the previous day was a temporary entry, continue to previous entry and so on
                 prev_ind -= 1
@@ -701,6 +740,6 @@ class Datumdata:
         return False
 
 
-if __name__ == '__main__':
-    testact = Datumdata('testact')
+if __name__ == "__main__":
+    testact = Datumdata("testact")
     testact.calculate_day(dt.date.today())
