@@ -47,9 +47,9 @@ while true; do
         
         -t|--time) # Specify time
             TIMEFLAG=true
-            if [ "${2:0:1}" = "-" ]; then
+            if [[ $2 =~ ^[-+][0-9]+ ]]; then
                 # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
-                rel_time="${2:1} minutes ago"
+                rel_time="$2 minutes"
                 TIMESTR=$(date --date "$rel_time" '+%H:%M')
                 TIMESTR=$(date --date $TIMESTR "+%H:%M:%S.%3N")
 
