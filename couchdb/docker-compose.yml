@@ -15,10 +15,10 @@ services:
     volumes:
       - '${HOME}/.couchdb:/opt/couchdb/data'
     environment:
-      - COUCHDB_USER: 'admin'
-      - COUCHDB_PASSWORD: '***REMOVED***'
-      - COUCHDB_SECRET: 'secret secret secret'
-      - NODENAME
+      COUCHDB_USER: 'admin'
+      COUCHDB_PASSWORD: '***REMOVED***'
+      COUCHDB_SECRET: 'secret secret secret'
+      NODENAME:
 
 
 
