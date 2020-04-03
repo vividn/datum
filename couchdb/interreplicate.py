@@ -9,7 +9,7 @@ from cloudant.document import Document
 username = "admin"
 password = "***REMOVED***"
 
-couch = CouchDB(username, password, url="http://localhost:5984")
+l_couch = CouchDB(username, password, url="http://localhost:5984")
 w_couch = CouchDB(username, password, url="http://couchdb.example.com:5984")
 
 
@@ -104,12 +104,12 @@ def generate_ids(db_name: str, server_url: str, local_replicator_repl=False):
 
 
 if __name__ == "__main__":
-    couch.connect()
+    l_couch.connect()
     w_couch.connect()
 
-    resync_replicator(couch, w_couch)
-    replicate_all_dbs(couch, w_couch)
-    create_local_replicator_repl(couch)
+    resync_replicator(l_couch, w_couch)
+    replicate_all_dbs(l_couch, w_couch)
+    create_local_replicator_repl(l_couch)
 
-    couch.disconnect()
+    l_couch.disconnect()
     w_couch.disconnect()
