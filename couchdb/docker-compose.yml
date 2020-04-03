@@ -2,7 +2,7 @@ version: '3'
 
 services:
   couchdb:
-    image: 'couchdb:2.3.1'
+    image: 'couchdb:3.0.0'
     logging:
       options:
         max-size: '100m'
