@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 
 # create-token uses analysis of datum files to figure out the current frequency of a certain set of data.
 # A taper is then created to change that frequency to a target frequency by some target date.
