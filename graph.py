@@ -16,7 +16,7 @@ import ipywidgets as widgets
 from matplotlib.pylab import rcParams
 
 # Hard coded variables TODO: Remove these in favor of arguments
-datum_dir = '/home/vividn/Data/datum/'
+datum_dir = "/home/vividn/Data/datum/"
 
 # Get arguments from the command line
 parser = argparse.ArgumentParser()
@@ -25,27 +25,26 @@ args = parser.parse_args()
 
 # Determine the proper path of the data file
 name = args.datum_file
-if '.' not in name:
-    name = name + '.tsv'
+if "." not in name:
+    name = name + ".tsv"
 
 datum_file = datum_dir + name
 
 
-data = pd.read_csv(datum_file, delimiter='\t', parse_dates=[[0,1]], index_col=[0])
+data = pd.read_csv(datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0])
 
 # Fill in the NaNs with 1s for now. Will get the default value later
 data = data.fillna(1)
 
 # Resample to daily using sum method
-data = data.resample('D').sum()
+data = data.resample("D").sum()
 
 # Days that don't have any activity should be marked as 0
 data = data.fillna(0)
 
+
 def rollplot(win):
-    data.rolling(window = win).sum().plot()
-
-#interact(rollplot, win=7)
+    data.rolling(window=win).sum().plot()
 
 
-
+# interact(rollplot, win=7)
