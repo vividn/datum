@@ -55,9 +55,7 @@ def bidirectional_replication(
     local_replicator_repl=False,
 ):
     replicator = Replicator(local_couch)
-    existing_repl_ids = list(
-        map(lambda doc: doc["_id"], replicator.list_replications())
-    )
+    existing_repl_ids = map(lambda doc: doc["_id"], replicator.list_replications())
 
     db_a = local_couch.create_database(db_name, throw_on_exists=False)
 
