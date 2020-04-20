@@ -1,4 +1,6 @@
 import datetime as dt
+import random
+from typing import Tuple
 
 
 def date_range(start, stop, step=1, inclusive=False):
@@ -16,4 +18,6 @@ def date_range(start, stop, step=1, inclusive=False):
     for i in range(*range_args):
         yield start + dt.timedelta(days=i)
 
+
 def random_color() -> Tuple[int, int, int]:
+    return (random.randrange(0, 256) for _ in range(3))
