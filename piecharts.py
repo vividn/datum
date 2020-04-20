@@ -6,12 +6,12 @@ from PIL import ImageDraw
 from datumdata import Datumdata
 import datetime as dt
 
-from utils import date_range
+from utils import date_range, random_color
 
 
 def get_imdraw(
     win_xsize=1000, win_ysize=1000, bg_color=(0, 0, 0), **kwargs
-) -> ImageDraw.Draw:
+) -> ImageDraw.ImageDraw:
     im = Image.new("RGB", size=(win_xsize, win_ysize), color=bg_color)
     return ImageDraw.Draw(im)
 
@@ -39,7 +39,7 @@ def datum_piechart(datum_name: str, **kwargs):
 
 
 def draw_piechart(
-    draw: ImageDraw.Draw,
+    draw: ImageDraw.ImageDraw,
     data_seq: Sequence[float],
     colors: Optional[Sequence[Tuple[int, int, int]]] = None,
     p_radius: float = 1,
@@ -50,11 +50,21 @@ def draw_piechart(
                 "If colors are specified, they must match the length of the data"
             )
     else:
-        colors = ()
+        colors = (random_color() for _ in range(len(data_seq)))
+
     if p_radius < 0 or p_radius > 1:
         raise ValueError("p_radius must be between 0 and 1")
 
-    pass
+    im: Image.Image = draw.im
+    xsize, ysize = im.size
+
+
+def donut_slice(start_angle, end_angle, span, hole_size, color, im_size=1000):
+    im = Image.new("RGBA", size=(im_size, im_size), color=(0, 0, 0, 0))
+    draw = ImageDraw.Draw(im)
+    xy = [(0, 0), (im_size, im_size)]
+
+    draw.pieslice(xy, start=start_angle, end=end_angle, fill=color)
 
 
 if __name__ == "__main__":
