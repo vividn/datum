@@ -17,7 +17,10 @@ def resync_replicator(local_couch: CouchDB, server_couch: CouchDB):
     remote_db = server_couch["master_replicator"]
 
     if "_replicator" in local_couch.all_dbs():
+        print("Deleting _replicator")
         local_couch.delete_database("_replicator")
+
+    print("creating _replicator and syncing with master_replicator on server")
     local_db = local_couch.create_database("_replicator")
 
     replicator = Replicator(local_couch)
@@ -35,6 +38,7 @@ def resync_replicator(local_couch: CouchDB, server_couch: CouchDB):
 
     repl_doc.fetch()
     repl_doc.delete()
+    print("Synced _replicator")
 
 
 def replicate_all_dbs(local_couch: CouchDB, server_couch: CouchDB):
@@ -69,6 +73,7 @@ def bidirectional_replication(
     repl_ids = generate_ids(db_name, server_couch.server_url, local_replicator_repl)
 
     if repl_ids["to_id"] not in existing_repl_ids:
+        print(f"Creating replication document: {repl_ids['to_id']}")
         replicator.create_replication(
             source_db=db_a,
             target_db=db_b,
@@ -76,8 +81,11 @@ def bidirectional_replication(
             create_target=True,
             continuous=True,
         )
+    else:
+        print(f"{repl_ids['to_id']} already exists")
 
     if repl_ids["from_id"] not in existing_repl_ids:
+        print(f"Creating replication document: {repl_ids['from_id']}")
         replicator.create_replication(
             source_db=db_b,
             target_db=db_a,
@@ -85,6 +93,8 @@ def bidirectional_replication(
             create_target=True,
             continuous=True,
         )
+    else:
+        print(f"{repl_ids['from_id']} already exists")
 
 
 def create_local_replicator_repl(local_couch: CouchDB):
