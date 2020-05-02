@@ -384,10 +384,7 @@ class Datumdata:
                 # 'start' should never occur while already in a block
                 if in_block:
                     raise ValueError(
-                        "start cannot occur after another start: "
-                        + str(timestamp)
-                        + str(entry)
-                    )
+                        f"Redundant start: {self.name} {timestamp}")
 
                 in_block = True
                 block_start = timestamp
@@ -407,10 +404,7 @@ class Datumdata:
                         start_times += [block_start]
                     else:
                         raise ValueError(
-                            "end cannot occur after another end: "
-                            + str(timestamp)
-                            + str(entry)
-                        )
+                            f"Redundant end: {self.name} {timestamp}")
 
                 in_block = False
                 block_end = timestamp
@@ -521,7 +515,7 @@ class Datumdata:
         conflicts = (perms == perms.shift()).all(axis=1)
         if conflicts.any():
             raise ValueError(
-                "Redundant category data: {} {}".format(
+                "Redundant category: {} {}".format(
                     self.name, conflicts[conflicts].index[0]
                 )
             )
