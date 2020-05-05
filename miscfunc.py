@@ -39,7 +39,7 @@ def is_number(s):
     if type(s) in [float, int]:
         return True
     elif type(s) == str:
-        return s.lstrip('-').replace('.', '', 1).isdigit()
+        return s.lstrip("-").replace(".", "", 1).isdigit()
     else:
         return False
 
@@ -48,7 +48,13 @@ def parse_duration(dur_str):
     # Parses phrases like "1week", "3 hours", etc. using POSIX-date's parser
     # I'm doing this for consistency with other programs in the interconnected system.
     # Returns a dt.timedelta object
-    dur = dtparse.parse(subprocess.check_output(["date", "-d", posix_now + " + " + dur_str]), ignoretz=True) - now
+    dur = (
+        dtparse.parse(
+            subprocess.check_output(["date", "-d", posix_now + " + " + dur_str]),
+            ignoretz=True,
+        )
+        - now
+    )
     return dur
 
 
@@ -74,14 +80,14 @@ def human_dur_str(dur, printzero=False):
     d["hours"], rem = divmod(dur.seconds, 3600)
     d["minutes"], d["seconds"] = divmod(rem, 60)
 
-    ret_str = ''
+    ret_str = ""
     if d["days"] > 0 or printzero:
-        ret_str += str(d["days"]) + 'd'
+        ret_str += str(d["days"]) + "d"
     if d["hours"] > 0 or printzero:
-        ret_str += str(d["hours"]) + 'h'
+        ret_str += str(d["hours"]) + "h"
     if d["minutes"] > 0 or printzero:
-        ret_str += str(d["minutes"]) + 'm'
+        ret_str += str(d["minutes"]) + "m"
     if d["seconds"] > 0 or printzero:
-        ret_str += str(d["seconds"]) + 's'
+        ret_str += str(d["seconds"]) + "s"
 
     return ret_str

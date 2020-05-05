@@ -25,7 +25,7 @@ def resync_replicator(local_couch: CouchDB, server_couch: CouchDB):
 
     replicator = Replicator(local_couch)
     repl_doc: Document = replicator.create_replication(
-        remote_db, local_db, continuous=False,
+        remote_db, local_db, continuous=False
     )
     id = repl_doc["_id"]
 
