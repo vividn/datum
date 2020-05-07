@@ -1,0 +1,6 @@
+#!/usr/bin/env python3
+
+from cloudant.client import CouchDB
+from datum.couchdb.intereplicate import l_couch as couch
+
+print(couch.all_dbs)
