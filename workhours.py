@@ -13,14 +13,18 @@ activity = Datumdata(name="activity", column="Activity", data_type="category")
 today = dt.date.today()
 start_of_week = today - dt.timedelta(today.weekday())
 
-days_to_calculate = pd.date_range(start=start_of_week, end=today, freq='D').to_pydatetime()
+days_to_calculate = pd.date_range(
+    start=start_of_week, end=today, freq="D"
+).to_pydatetime()
+
 
 def dayhours(date):
     try:
-        return activity.get_total(date)['work'] / 60
+        return activity.get_total(date)["work"] / 60
     except KeyError:
         return 0
 
+
 hours_worked = map(lambda date: dayhours(date.date()), days_to_calculate)
 
-print(reduce((lambda x, y: x+y), hours_worked))
+print(reduce((lambda x, y: x + y), hours_worked))

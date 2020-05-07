@@ -383,8 +383,7 @@ class Datumdata:
             if entry == "start":
                 # 'start' should never occur while already in a block
                 if in_block:
-                    raise ValueError(
-                        f"Redundant start: {self.name} {timestamp}")
+                    raise ValueError(f"Redundant start: {self.name} {timestamp}")
 
                 in_block = True
                 block_start = timestamp
@@ -403,8 +402,7 @@ class Datumdata:
                         block_start = timestamp.floor("D")
                         start_times += [block_start]
                     else:
-                        raise ValueError(
-                            f"Redundant end: {self.name} {timestamp}")
+                        raise ValueError(f"Redundant end: {self.name} {timestamp}")
 
                 in_block = False
                 block_end = timestamp
