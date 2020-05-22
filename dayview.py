@@ -506,7 +506,7 @@ def quantify_day(quant_str, date):
     for component in data_names:
         try:
             if ":" in component:
-                name, cat = component.split(":", 1)
+                name, cat = component.rsplit(":", 1)
                 if cat in all_datumdatas[name].totals[date].keys():
                     total = all_datumdatas[name].totals[date][cat]
                 else:
@@ -531,7 +531,7 @@ def get_quant_color(quant_str, datum_colors):
     # Uses the color of the first defined datum name in the quant_str
     name = quant_str.split("+")[0].strip()
     if ":" in name:
-        name, cat = name.split(":", 1)
+        name, cat = name.rsplit(":", 1)
     else:
         cat = None
 
