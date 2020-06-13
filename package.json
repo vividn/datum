@@ -2,7 +2,7 @@
   "name": "datum",
   "version": "2.0.0",
   "description": "collect personal time stamped data on couchdb",
-  "main": "index.js",
+  "main": "bin/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -15,12 +15,15 @@
     "couchdb"
   ],
   "author": "Nate Faber",
-  "license": "ISC",
+  "license": "UNLICENSED",
   "bugs": {
     "url": "https://github.com/vividn/datum/issues"
   },
   "homepage": "https://github.com/vividn/datum#readme",
   "dependencies": {
     "nano": "^8.2.2"
+  },
+  "bin" : {
+    "dtm": "./bin/index.js"
   }
 }
