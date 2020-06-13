@@ -19,5 +19,8 @@
   "bugs": {
     "url": "https://github.com/vividn/datum/issues"
   },
-  "homepage": "https://github.com/vividn/datum#readme"
+  "homepage": "https://github.com/vividn/datum#readme",
+  "dependencies": {
+    "nano": "^8.2.2"
+  }
 }
