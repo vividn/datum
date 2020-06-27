@@ -75,10 +75,10 @@ console.log(argv);
 
 const { date, time, fullDay, yesterday } = argv
 
-const eventDate = date ?? yesterday 
-const isFullDay = fullDay ?? (date && time === undefined)
+const eventDate = date ?? (yesterday && 'yesterday');
+const isFullDay = fullDay ?? (date && time === undefined);
 
 const creationTime = currentTime;
-const eventTime = isFullDay ?
+const eventTime = isFullDay;
 
 const payload = {};
