@@ -21,17 +21,20 @@ let argv = require('yargs')
             describe: 'specify date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
             alias: 'date',
             nargs: 1,
+            type: 'string'
         },
         'D': {
             describe: 'use yesterday\'s date. Equivalent to `-d -1`',
             alias: "yesterday",
             type: "boolean",
-            conflicts: "date"
+            conflicts: "date",
+            coerce: (arg) => 'yesterday'
         },
         't': {
             describe: "specify time of the timestamp, use `+n` or `-n` for a timestamp n minutes relative to now",
             alias: 'time',
-            nargs: 1
+            nargs: 1,
+            type: 'string',
         },
         'T': {
             describe: "make an entry for the full day, without a specific timestamp",
@@ -70,15 +73,18 @@ let argv = require('yargs')
     .argv
 
 
+const parseDate = function(dateStr: string) {
+    
+}
 
 console.log(argv);
-
+console.log(chrono.parseDate('330'))
 const { date, time, fullDay, yesterday } = argv
 
-const eventDate = date ?? (yesterday && 'yesterday');
-const isFullDay = fullDay ?? (date && time === undefined);
+// const eventDate = date ?? (yesterday && 'yesterday');
+// const isFullDay = fullDay ?? (date && time === undefined);
 
-const creationTime = currentTime;
-const eventTime = isFullDay;
-
-const payload = {};
+// const creationTime = currentTime;
+// const eventTime = isFullDay;
+//
+// const payload = {};
