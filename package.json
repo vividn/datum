@@ -27,5 +27,9 @@
   },
   "bin": {
     "dtm": "./bin/index.js"
+  },
+  "devDependencies": {
+    "eslint": "^7.3.1",
+    "typescript": "^3.9.5"
   }
 }
