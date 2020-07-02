@@ -15,11 +15,11 @@ let argv = require('yargs')
       nargs: 1,
       demandOption: true,
     },
-      db: {
-        describe: 'The database to use',
-        alias: 'database',
-        default: 'datum'
-      },
+    db: {
+      describe: 'The database to use',
+      alias: 'database',
+      default: 'datum',
+    },
     d: {
       describe:
         'specify date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
