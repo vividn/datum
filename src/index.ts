@@ -15,6 +15,11 @@ let argv = require('yargs')
       nargs: 1,
       demandOption: true,
     },
+      db: {
+        describe: 'The database to use',
+        alias: 'database',
+        default: 'datum'
+      },
     d: {
       describe:
         'specify date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
@@ -88,7 +93,7 @@ const fs = require('fs');
 
 const auth = JSON.parse(fs.readFileSync('credentials.json'));
 const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
-const db = nano.use('datum');
+const db = nano.use(argv.db);
 
 const parseArgDate = function(dateStr: string) {
   return chrono.parseDate(dateStr);
