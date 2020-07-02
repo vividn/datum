@@ -102,4 +102,8 @@ dist
 
 # TernJS port file
 .tern-port
-credentials
+
+# Authentication
+credentials.json
+
+
