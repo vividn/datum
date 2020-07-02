@@ -3,14 +3,6 @@
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
 
-const fs = require('fs');
-const auth = JSON.parse(fs.readFileSync('credentials.json'));
-
-const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
-const db = nano.use('datum');
-
-const chrono = require('chrono-node');
-
 let argv = require('yargs')
   .command('datum', 'quickly insert timestamped data into couchdb')
   .help('h')
@@ -90,6 +82,13 @@ let argv = require('yargs')
     "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
+
+const chrono = require('chrono-node');
+const fs = require('fs');
+
+const auth = JSON.parse(fs.readFileSync('credentials.json'));
+const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
+const db = nano.use('datum');
 
 const parseArgDate = function(dateStr: string) {
   return chrono.parseDate(dateStr);
