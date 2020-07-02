@@ -61,9 +61,18 @@ let argv = require('yargs')
       alias: 'force-undo',
       type: 'boolean',
     },
-    A: {
+    K: {
       describe: 'The keys to use for additional data, useful for aliases',
-      alias: 'additional-data',
+      alias: 'keys',
+      type: 'array',
+    },
+    k: {
+      describe: 'Terminate the -K array',
+      type: 'boolean',
+    },
+    A: {
+      describe: 'Enter in array data for a key. `-A KEY DATA1 DATA2 ... -a`',
+      alias: 'array',
       type: 'array',
     },
     a: {
@@ -78,7 +87,7 @@ let argv = require('yargs')
     },
   })
   .example(
-    "alias foobar='datum -f abc -A foo bar -a'; foobar 3 6",
+    "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
 
@@ -89,11 +98,11 @@ const parseArgDate = function(dateStr: string) {
 console.log(argv);
 
 const creationTime = currentTime.toISOString();
-const dataTime = creationTime;
+const datumTime = creationTime;
 
-const dataDocument = { creationTime, time: dataTime };
-
-db.insert(dataDocument).then((body: any) => console.log(body));
+const dataDocument = { creationTime, time: datumTime };
+console.log(dataDocument);
+db.insert(dataDocument, creationTime).then((body: any) => console.log(body));
 
 // const eventDate = date ?? (yesterday && 'yesterday');
 // const isFullDay = fullDay ?? (date && time === undefined);
