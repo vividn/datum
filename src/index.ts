@@ -3,7 +3,10 @@
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
 
-const nano = require('nano')('http://localhost:5984');
+const fs = require('fs');
+const auth = JSON.parse(fs.readFileSync('credentials.json'));
+
+const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
 const db = nano.use('datum');
 
 const chrono = require('chrono-node');
