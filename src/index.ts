@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-const { relTimeStr } = require('./time-utils');
+const { relTimeStr, combineDateTime } = require('./time-utils');
 
 // Take a timestamp as soon as possible for accuracy
-// const currentTime = new Date();
+const currentTime = new Date();
 
 // Separated out from yargs to extract key names later to find extra keys not explicityly included in the options
 const yargsOptions = {
@@ -68,11 +68,13 @@ const yargsOptions = {
     coerce: (n: number) =>
       n === undefined ? undefined : relTimeStr(-5 * n, 'minutes'),
   },
-  T: {
-    describe: 'make an entry for the full day, without a specific timestamp',
+  F: {
+    describe:
+      'make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t',
     alias: 'full-day',
     type: 'boolean',
     conflicts: 't',
+    coerce: (b: boolean) => (b ? 'today' : undefined), // essentially used to alias `-d today` if no -d flag is specified,
   },
   u: {
     describe: 'undoes the last datum entry, can be combined with -f',
@@ -125,72 +127,39 @@ let argv = require('yargs')
 
 console.log(argv);
 
-// const chrono = require('chrono-node');
-// const fs = require('fs');
-//
-// const auth = JSON.parse(fs.readFileSync('credentials.json'));
-// const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
-// const db = nano.use(argv.db);
-//
-// const getExtraOptions: object = function(argv: object, options: object) {
-//   for (const option in options) {
-//     delete argv[option];
-//     let aliases = [].concat(options[option].alias ?? [])
-//     if argv[option][alias]
-//   }
-// };
-// const buildDataPayload;
+const fs = require('fs');
 
-//
-// // Must use toString here because the coerce in yargs is run before count turns the args back into numbers
-// const argDate: string | undefined = argv.date ?? argv.yesterday?.toString();
-// const argTime: string | undefined = argv.time ?? argv.quick?.toString();
-//
-// const parseDateStr: string = function(dateStr?: string) {
-//   if (dateStr === undefined) {
-//     return undefined;
-//   }
-//
-//   if (/[+-][0-9]+/.matchAll(dateStr)) {
-//     const relativeDays = Number(dateStr);
-//     const fullDateTime =
-//       relativeDays > 0
-//         ? chrono.parseDate(`${relativeDays} from now`)
-//         : chrono.parseDate(`${relativeDays} ago`);
-//   }
-// };
-//
-// const parseDataTime = function(
-//   dateStr?: string,
-//   timeStr?: string,
-//   isFullDay?: boolean
-// ) {
-//   const onlyDay = isFullDay || (dateStr !== undefined && timeStr === undefined);
-//   if (dateStr === undefined && timeStr === undefined) {
-//     return onlyDay
-//       ? chrono
-//           .parseDate('today')
-//           .toISOString()
-//           .split('T')[0]
-//       : currentTime.toISOString();
-//   }
-//   if (dateStr !== undefined) {
-//   }
-//   // Just a placeholder for now
-//   return chrono.parseDate(dateStr || timeStr);
-// };
-//
-// const creationTime = currentTime.toISOString();
-// const datumTime = parseDataTime;
-//
-// const dataDocument = { creationTime, time: datumTime };
-// console.log(dataDocument);
-// db.insert(dataDocument, creationTime).then((body: any) => console.log(body));
+const auth = JSON.parse(fs.readFileSync('credentials.json'));
+const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
+const db = nano.use(argv.db);
 
-// const eventDate = date ?? (yesterday && 'yesterday');
-// const isFullDay = fullDay ?? (date && time === undefined);
+type strIndObj = { [index: string]: any };
+const getExtraOptions = function(
+  args: strIndObj,
+  options: strIndObj
+): strIndObj {
+  // delete any keys that are explicitly options in yargs
+  for (const option in options) {
+    delete args[option];
+    const aliases: string[] = [].concat(options[option].alias ?? []);
+    for (const alias of aliases) {
+      delete args[alias];
+    }
+  }
+  // And the built in ones
+  delete args['_'];
+  delete args['$0'];
 
-// const creationTime = currentTime;
-// const eventTime = isFullDay;
-//
-// const payload = {};
+  return args;
+};
+const extraOptions = getExtraOptions(argv, yargsOptions);
+
+const argDate: string | undefined = argv.date ?? argv.yesterday ?? argv.fullDay;
+const argTime: string | undefined = argv.time ?? argv.quick;
+
+const creationTime = currentTime.toISOString();
+const datumTime = combineDateTime(argDate, argTime, currentTime);
+
+const dataDocument = { creationTime, time: datumTime };
+console.log(dataDocument);
+db.insert(dataDocument, creationTime).then((body: any) => console.log(body));
