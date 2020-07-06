@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 
+const { relTimeStr } = require('./time-utils');
+
 // Take a timestamp as soon as possible for accuracy
-const currentTime = new Date();
+// const currentTime = new Date();
 
 // Separated out from yargs to extract key names later to find extra keys not explicityly included in the options
 const yargsOptions = {
@@ -22,6 +24,12 @@ const yargsOptions = {
     alias: 'date',
     nargs: 1,
     type: 'string',
+    coerce: (arg: string) => {
+      if (/^[+-][0-9.]+$/.test(arg)) {
+        return relTimeStr(Number(arg), 'days');
+      }
+      return arg;
+    },
   },
   y: {
     describe:
@@ -30,7 +38,8 @@ const yargsOptions = {
     type: 'count',
     conflicts: 'date',
     default: undefined,
-    coerce: (n?: number) => (n === undefined ? undefined : (-1 * n).toString()),
+    coerce: (n?: number) =>
+      n === undefined ? undefined : relTimeStr(-n, 'days'),
   },
   t: {
     describe:
@@ -38,6 +47,16 @@ const yargsOptions = {
     alias: 'time',
     nargs: 1,
     type: 'string',
+    coerce: (arg: string) => {
+      if (/^[+-][0-9.]+$/.test(arg)) {
+        return relTimeStr(Number(arg), 'minutes');
+      }
+      if (/^[0-9]{3,4}$/.test(arg)) {
+        // quick shortcut to turn just numbers into times. ex. 330->3:30, 1745->17:45
+        return arg.slice(0, -2) + ':' + arg.slice(-2);
+      }
+      return arg;
+    },
   },
   q: {
     describe:
@@ -46,7 +65,8 @@ const yargsOptions = {
     type: 'count',
     conflicts: 'time',
     default: undefined,
-    coerce: (n?: number) => (n === undefined ? undefined : (-5 * n).toString()),
+    coerce: (n: number) =>
+      n === undefined ? undefined : relTimeStr(-5 * n, 'minutes'),
   },
   T: {
     describe: 'make an entry for the full day, without a specific timestamp',
@@ -105,30 +125,67 @@ let argv = require('yargs')
 
 console.log(argv);
 
-const chrono = require('chrono-node');
-const fs = require('fs');
-
-const auth = JSON.parse(fs.readFileSync('credentials.json'));
-const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
-const db = nano.use(argv.db);
-
-// const getExtraOptions = function(argv, options) {
+// const chrono = require('chrono-node');
+// const fs = require('fs');
+//
+// const auth = JSON.parse(fs.readFileSync('credentials.json'));
+// const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
+// const db = nano.use(argv.db);
+//
+// const getExtraOptions: object = function(argv: object, options: object) {
 //   for (const option in options) {
+//     delete argv[option];
+//     let aliases = [].concat(options[option].alias ?? [])
+//     if argv[option][alias]
 //   }
 // };
 // const buildDataPayload;
 
-const parseDataTime = function(dateStr: string, timeStr: string) {
-  // Just a placeholder for now
-  return chrono.parseDate(dateStr || timeStr);
-};
-
-const creationTime = currentTime.toISOString();
-const datumTime = parseDataTime;
-
-const dataDocument = { creationTime, time: datumTime };
-console.log(dataDocument);
-db.insert(dataDocument, creationTime).then((body: any) => console.log(body));
+//
+// // Must use toString here because the coerce in yargs is run before count turns the args back into numbers
+// const argDate: string | undefined = argv.date ?? argv.yesterday?.toString();
+// const argTime: string | undefined = argv.time ?? argv.quick?.toString();
+//
+// const parseDateStr: string = function(dateStr?: string) {
+//   if (dateStr === undefined) {
+//     return undefined;
+//   }
+//
+//   if (/[+-][0-9]+/.matchAll(dateStr)) {
+//     const relativeDays = Number(dateStr);
+//     const fullDateTime =
+//       relativeDays > 0
+//         ? chrono.parseDate(`${relativeDays} from now`)
+//         : chrono.parseDate(`${relativeDays} ago`);
+//   }
+// };
+//
+// const parseDataTime = function(
+//   dateStr?: string,
+//   timeStr?: string,
+//   isFullDay?: boolean
+// ) {
+//   const onlyDay = isFullDay || (dateStr !== undefined && timeStr === undefined);
+//   if (dateStr === undefined && timeStr === undefined) {
+//     return onlyDay
+//       ? chrono
+//           .parseDate('today')
+//           .toISOString()
+//           .split('T')[0]
+//       : currentTime.toISOString();
+//   }
+//   if (dateStr !== undefined) {
+//   }
+//   // Just a placeholder for now
+//   return chrono.parseDate(dateStr || timeStr);
+// };
+//
+// const creationTime = currentTime.toISOString();
+// const datumTime = parseDataTime;
+//
+// const dataDocument = { creationTime, time: datumTime };
+// console.log(dataDocument);
+// db.insert(dataDocument, creationTime).then((body: any) => console.log(body));
 
 // const eventDate = date ?? (yesterday && 'yesterday');
 // const isFullDay = fullDay ?? (date && time === undefined);
