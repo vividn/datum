@@ -14,6 +14,7 @@
     "noFallthroughCasesInSwitch": true,
     "moduleResolution": "node",
     "baseUrl": "./",
+    "ignore": ["dist/*"],
     "paths": {
       "*": ["src/*", "node_modules/*"]
     },
