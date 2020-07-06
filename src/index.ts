@@ -15,6 +15,7 @@ const yargsOptions = {
     alias: 'database',
     default: 'datum',
   },
+
   d: {
     describe:
       'date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
@@ -22,12 +23,14 @@ const yargsOptions = {
     nargs: 1,
     type: 'string',
   },
-  D: {
-    describe: "use yesterday's date. Equivalent to `-d yesterday`",
-    alias: 'yesterday',
-    type: 'boolean',
+  y: {
+    describe:
+        "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
+    alias: ['yesterday', 'D'],
+    type: 'count',
     conflicts: 'date',
-    coerce: () => 'yesterday',
+    default: undefined,
+    coerce: (n?: number) => n === undefined ? undefined : (-1 * n).toString(),
   },
   t: {
     describe:
@@ -35,6 +38,14 @@ const yargsOptions = {
     alias: 'time',
     nargs: 1,
     type: 'string',
+  },
+  q: {
+    describe: 'quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.',
+    alias: 'quick',
+    type: 'count',
+    conflicts: 'time',
+    default: undefined,
+    coerce: (n?: number) => n === undefined ? undefined : (-5 * n).toString()
   },
   T: {
     describe: 'make an entry for the full day, without a specific timestamp',
@@ -91,6 +102,8 @@ let argv = require('yargs')
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
 
+console.log(argv)
+
 const chrono = require('chrono-node');
 const fs = require('fs');
 
@@ -104,14 +117,13 @@ const db = nano.use(argv.db);
 // };
 // const buildDataPayload;
 
-// const parseDataTime = function(dateStr: string, timeStr: string) {
-//   return chrono.parseDate(dateStr);
-// };
-
-console.log(argv);
+const parseDataTime = function(dateStr: string, timeStr: string) {
+  // Just a placeholder for now
+  return chrono.parseDate(dateStr || timeStr);
+};
 
 const creationTime = currentTime.toISOString();
-const datumTime = creationTime;
+const datumTime = parseDataTime;
 
 const dataDocument = { creationTime, time: datumTime };
 console.log(dataDocument);
