@@ -25,12 +25,12 @@ const yargsOptions = {
   },
   y: {
     describe:
-        "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
+      "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
     alias: ['yesterday', 'D'],
     type: 'count',
     conflicts: 'date',
     default: undefined,
-    coerce: (n?: number) => n === undefined ? undefined : (-1 * n).toString(),
+    coerce: (n?: number) => (n === undefined ? undefined : (-1 * n).toString()),
   },
   t: {
     describe:
@@ -40,12 +40,13 @@ const yargsOptions = {
     type: 'string',
   },
   q: {
-    describe: 'quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.',
+    describe:
+      'quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.',
     alias: 'quick',
     type: 'count',
     conflicts: 'time',
     default: undefined,
-    coerce: (n?: number) => n === undefined ? undefined : (-5 * n).toString()
+    coerce: (n?: number) => (n === undefined ? undefined : (-5 * n).toString()),
   },
   T: {
     describe: 'make an entry for the full day, without a specific timestamp',
@@ -102,7 +103,7 @@ let argv = require('yargs')
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
 
-console.log(argv)
+console.log(argv);
 
 const chrono = require('chrono-node');
 const fs = require('fs');
