@@ -127,8 +127,6 @@ let argv = require('yargs')
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
 
-console.log(argv);
-
 const fs = require('fs');
 
 const auth = JSON.parse(fs.readFileSync('credentials.json'));
@@ -166,7 +164,7 @@ const parsePositional = function(
   const positionals: string[] = argv._ ?? [];
   const [withKey, withoutKey] = positionals.reduce(
     (result, element) => {
-      result[element.includes('=') ? 1 : 0].push(element);
+      result[element.includes('=') ? 0 : 1].push(element);
       return result;
     },
     [[] as string[], [] as string[]]
@@ -203,6 +201,9 @@ const parsePositional = function(
       noMoreRequiredPositionals = true;
     }
     payload[dataKey] = positionalValue ?? (defaultValue || undefined);
+  }
+  if (withoutKey.length > 0) {
+    throw 'some data unassigned keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
   }
 
   return payload;
