@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 const { relTimeStr, combineDateTime } = require('./time-utils');
+const _ = require('lodash');
 
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
@@ -91,7 +92,7 @@ const yargsOptions = {
     describe:
       'The keys to use for additional data, useful for aliases. Keys can be used with equals signs for optionality or default values.' +
       '`datum -K KEY1 KEY2= KEY3=default -k` can then take 1-3 positional args, with KEY3 being set to default if <3 are given',
-    alias: 'keys',
+    alias: 'extra-keys',
     type: 'array',
   },
   k: {
@@ -144,6 +145,8 @@ const getExtraOptions = function(
     const aliases: string[] = [].concat(options[option].alias ?? []);
     for (const alias of aliases) {
       delete args[alias];
+      delete args[_.camelCase(alias)];
+      delete args[_.snakeCase(alias)];
     }
   }
   // And the built in ones
@@ -154,6 +157,56 @@ const getExtraOptions = function(
 };
 const extraOptions = getExtraOptions(argv, yargsOptions);
 
+const parsePositional = function(
+  argv: strIndObj,
+  currentPayload?: strIndObj
+): strIndObj {
+  const payload: strIndObj = currentPayload ?? {};
+  const positionals: string[] = argv._;
+  const [withKey, withoutKey] = positionals.reduce(
+    (result, element) => {
+      result[element.includes('=') ? 1 : 0].push(element);
+      return result;
+    },
+    [[] as string[], [] as string[]]
+  );
+
+  for (const arg of withKey) {
+    const [key, value] = arg.split('=');
+    payload[key] = value;
+  }
+
+  let noMoreRequiredPositionals = false;
+  for (const extraKey of argv.extraKeys) {
+    const [dataKey, defaultValue, tooManyEquals] = extraKey.split('=');
+    if (tooManyEquals !== undefined) {
+      throw 'Too many equals signs in a key in --extra-keys';
+    }
+
+    // the data key might be manually specified
+    if (dataKey in payload) {
+      continue;
+    }
+
+    const positionalValue = withoutKey.pop();
+    if (defaultValue === undefined) {
+      if (noMoreRequiredPositionals) {
+        throw 'All required extra keys must come before all optional keys';
+      }
+      if (positionalValue === undefined) {
+        throw `No data given for the required key '${dataKey}`;
+      }
+    }
+    // default value is '' when nothing is given after the =
+    if (defaultValue !== undefined) {
+      noMoreRequiredPositionals = true;
+    }
+    payload[dataKey] = positionalValue ?? (defaultValue || undefined);
+  }
+
+  return payload;
+};
+
 const argDate: string | undefined = argv.date ?? argv.yesterday ?? argv.fullDay;
 const argTime: string | undefined = argv.time ?? argv.quick;
 
@@ -162,4 +215,4 @@ const datumTime = combineDateTime(argDate, argTime, currentTime);
 
 const dataDocument = { creationTime, time: datumTime };
 console.log(dataDocument);
-db.insert(dataDocument, creationTime).then((body: any) => console.log(body));
+db.insert(dataDocument, datumTime).then((body: any) => console.log(body));
