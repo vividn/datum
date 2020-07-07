@@ -10,10 +10,10 @@ exports.combineDateTime = function(
   dateStr?: string,
   timeStr?: string,
   currentTime?: Date
-) {
+): string {
   if (!dateStr && !timeStr) {
     const now = currentTime ?? new Date();
-    now.toISOString();
+    return now.toISOString();
   } else if (dateStr && !timeStr) {
     return chrono
       .parseDate(dateStr)

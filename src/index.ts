@@ -94,6 +94,7 @@ const yargsOptions = {
       '`datum -K KEY1 KEY2= KEY3=default -k` can then take 1-3 positional args, with KEY3 being set to default if <3 are given',
     alias: 'extra-keys',
     type: 'array',
+    default: [],
   },
   k: {
     describe: 'Terminate the -K array',
@@ -135,10 +136,11 @@ const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
 const db = nano.use(argv.db);
 
 type strIndObj = { [index: string]: any };
-const getExtraOptions = function(
-  args: strIndObj,
+const getLongOptionData = function(
+  argv: strIndObj,
   options: strIndObj
 ): strIndObj {
+  const args = { ...argv };
   // delete any keys that are explicitly options in yargs
   for (const option in options) {
     delete args[option];
@@ -155,14 +157,13 @@ const getExtraOptions = function(
 
   return args;
 };
-const extraOptions = getExtraOptions(argv, yargsOptions);
 
 const parsePositional = function(
   argv: strIndObj,
   currentPayload?: strIndObj
 ): strIndObj {
   const payload: strIndObj = currentPayload ?? {};
-  const positionals: string[] = argv._;
+  const positionals: string[] = argv._ ?? [];
   const [withKey, withoutKey] = positionals.reduce(
     (result, element) => {
       result[element.includes('=') ? 1 : 0].push(element);
@@ -207,12 +208,24 @@ const parsePositional = function(
   return payload;
 };
 
+const longOptionData = getLongOptionData(argv, yargsOptions);
+const payload = parsePositional(argv, longOptionData);
+
 const argDate: string | undefined = argv.date ?? argv.yesterday ?? argv.fullDay;
 const argTime: string | undefined = argv.time ?? argv.quick;
 
-const creationTime = currentTime.toISOString();
-const datumTime = combineDateTime(argDate, argTime, currentTime);
+const timings = {
+  datumTime: combineDateTime(argDate, argTime, currentTime),
+  creationTime: currentTime.toISOString(),
+};
 
-const dataDocument = { creationTime, time: datumTime };
-console.log(dataDocument);
-db.insert(dataDocument, datumTime).then((body: any) => console.log(body));
+const dataDocument = argv.field
+  ? { ...timings, [argv.field]: payload }
+  : { ...timings, ...payload };
+
+const primaryKey = dataDocument.datumTime; // TODO: Make this flexible
+console.log(primaryKey);
+db.insert(dataDocument, primaryKey)
+  .then(() => db.get(primaryKey))
+  .then((body: any) => console.log(body))
+  .catch((err: any) => console.log(err));
