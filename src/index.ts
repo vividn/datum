@@ -128,8 +128,9 @@ let argv = require('yargs')
   ).argv;
 
 const fs = require('fs');
+const path = require('path');
 
-const auth = JSON.parse(fs.readFileSync('credentials.json'));
+const auth = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../credentials.json')));
 const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
 const db = nano.use(argv.db);
 
