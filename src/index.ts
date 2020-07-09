@@ -126,7 +126,7 @@ let argv = require('yargs')
     "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
-
+console.log(argv);
 const fs = require('fs');
 const path = require('path');
 
@@ -162,18 +162,22 @@ const parsePositional = function(
   currentPayload?: strIndObj
 ): strIndObj {
   const payload: strIndObj = currentPayload ?? {};
-  const positionals: string[] = argv._ ?? [];
+  const positionals: (string | number)[] = argv._ ?? [];
   const [withKey, withoutKey] = positionals.reduce(
     (result, element) => {
-      result[element.includes('=') ? 0 : 1].push(element);
+      if (typeof element === 'string' && element.includes('=')) {
+        result[0].push(element)
+      } else {
+        result[1].push(element)
+      }
       return result;
     },
-    [[] as string[], [] as string[]]
+    [[] as string[], [] as (string | number)[]]
   );
 
   for (const arg of withKey) {
     const [key, value] = arg.split('=');
-    payload[key] = value;
+    payload[key] = Number(value) || value;
   }
 
   let noMoreRequiredPositionals = false;
@@ -231,3 +235,4 @@ db.insert(dataDocument, primaryKey)
   .then(() => db.get(primaryKey))
   .then((body: any) => console.log(body))
   .catch((err: any) => console.log(err));
+
