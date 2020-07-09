@@ -201,14 +201,14 @@ const parsePositional = function(
         throw `No data given for the required key '${dataKey}`;
       }
     }
-    // default value is '' when nothing is given after the =
     if (defaultValue !== undefined) {
       noMoreRequiredPositionals = true;
     }
-    payload[dataKey] = positionalValue ?? (defaultValue || undefined);
+    // default value is '' when nothing is given after the =
+    payload[dataKey] = positionalValue ?? (defaultValue === '' ? undefined : (Number(defaultValue) || defaultValue));
   }
   if (withoutKey.length > 0) {
-    throw 'some data unassigned keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
+    throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
   }
 
   return payload;
