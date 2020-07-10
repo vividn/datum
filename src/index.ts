@@ -126,7 +126,7 @@ let argv = require('yargs')
     "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
-console.log(argv);
+// console.log(argv);
 const fs = require('fs');
 const path = require('path');
 
@@ -234,7 +234,7 @@ const dataDocument = argv.field
   : { ...timings, ...payload };
 
 const primaryKey = dataDocument.datumTime; // TODO: Make this flexible
-console.log(primaryKey);
+
 db.insert(dataDocument, primaryKey)
   .then(() => db.get(primaryKey))
   .then((body: any) => console.log(body))
