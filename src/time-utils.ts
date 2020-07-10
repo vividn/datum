@@ -1,12 +1,12 @@
-const pluralize = require('pluralize');
-const chrono = require('chrono-node');
+import pluralize from 'pluralize';
+import * as chrono from 'chrono-node';
 
-exports.relTimeStr = function(n: number, unit = 'days'): string {
+export const relTimeStr = function(n: number, unit = 'days'): string {
   const unitStr = pluralize(unit, Math.abs(n));
   return n < 0 ? `${Math.abs(n)} ${unitStr} ago` : `${n} ${unitStr} from now`;
 };
 
-exports.combineDateTime = function(
+export const combineDateTime = function(
   dateStr?: string,
   timeStr?: string,
   currentTime?: Date

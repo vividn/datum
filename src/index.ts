@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
-const { relTimeStr, combineDateTime } = require('./time-utils');
-const _ = require('lodash');
+import { relTimeStr, combineDateTime } from './time-utils';
+import { camelCase, snakeCase } from 'lodash';
 
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
@@ -130,7 +130,9 @@ console.log(argv);
 const fs = require('fs');
 const path = require('path');
 
-const auth = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../credentials.json')));
+const auth = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../credentials.json'))
+);
 const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
 const db = nano.use(argv.db);
 
@@ -146,8 +148,8 @@ const getLongOptionData = function(
     const aliases: string[] = [].concat(options[option].alias ?? []);
     for (const alias of aliases) {
       delete args[alias];
-      delete args[_.camelCase(alias)];
-      delete args[_.snakeCase(alias)];
+      delete args[camelCase(alias)];
+      delete args[snakeCase(alias)];
     }
   }
   // And the built in ones
@@ -166,9 +168,9 @@ const parsePositional = function(
   const [withKey, withoutKey] = positionals.reduce(
     (result, element) => {
       if (typeof element === 'string' && element.includes('=')) {
-        result[0].push(element)
+        result[0].push(element);
       } else {
-        result[1].push(element)
+        result[1].push(element);
       }
       return result;
     },
@@ -205,7 +207,9 @@ const parsePositional = function(
       noMoreRequiredPositionals = true;
     }
     // default value is '' when nothing is given after the =
-    payload[dataKey] = positionalValue ?? (defaultValue === '' ? undefined : (Number(defaultValue) || defaultValue));
+    payload[dataKey] =
+      positionalValue ??
+      (defaultValue === '' ? undefined : Number(defaultValue) || defaultValue);
   }
   if (withoutKey.length > 0) {
     throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
@@ -235,4 +239,3 @@ db.insert(dataDocument, primaryKey)
   .then(() => db.get(primaryKey))
   .then((body: any) => console.log(body))
   .catch((err: any) => console.log(err));
-
