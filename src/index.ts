@@ -18,7 +18,11 @@ const yargsOptions = {
     alias: 'database',
     default: 'datum',
   },
-
+  id: {
+    describe: 'What to use for the _id field in the document',
+    alias: ['pk', 'primary', '_id'],
+    default: '${time}',
+  },
   d: {
     describe:
       'date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
@@ -225,7 +229,7 @@ const argDate: string | undefined = argv.date ?? argv.yesterday ?? argv.fullDay;
 const argTime: string | undefined = argv.time ?? argv.quick;
 
 const timings = {
-  datumTime: combineDateTime(argDate, argTime, currentTime),
+  time: combineDateTime(argDate, argTime, currentTime),
   creationTime: currentTime.toISOString(),
 };
 
@@ -233,9 +237,24 @@ const dataDocument = argv.field
   ? { ...timings, [argv.field]: payload }
   : { ...timings, ...payload };
 
-const primaryKey = dataDocument.datumTime; // TODO: Make this flexible
+const calculateId = function(idStr: string, data: strIndObj): string {
+  // Substitute out ${varName} to build a custom _id value
+  return idStr.replace(/\${([^}]+)}/g, (p1: string) => {
+    const varName = p1;
+    console.log({ varName, data });
+    if (!(varName in data)) {
+      throw 'Data required by _id is not present';
+    }
+    return data[varName];
+  });
+};
+const _id = calculateId(argv.id, dataDocument); // TODO: Make this flexible
 
-db.insert(dataDocument, primaryKey)
-  .then(() => db.get(primaryKey))
+db.insert(dataDocument, _id)
+  .then(() => db.get(_id))
   .then((body: any) => console.log(body))
   .catch((err: any) => console.log(err));
+
+// TODO: parse JSON arguments as Objects
+// TODO: allow for an array of ids for easy assembly
+// TODO: handle conflicts
