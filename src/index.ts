@@ -239,9 +239,8 @@ const dataDocument = argv.field
 
 const calculateId = function(idStr: string, data: strIndObj): string {
   // Substitute out ${varName} to build a custom _id value
-  return idStr.replace(/\${([^}]+)}/g, (p1: string) => {
-    const varName = p1;
-    console.log({ varName, data });
+  return idStr.replace(/\${[^}]+}/g, (match: string) => {
+    const varName = match.slice(2, -1); // the match groups aren't working right :/;
     if (!(varName in data)) {
       throw 'Data required by _id is not present';
     }
