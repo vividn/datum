@@ -19,9 +19,17 @@ const yargsOptions = {
     default: 'datum',
   },
   id: {
-    describe: 'What to use for the _id field in the document',
+    describe:
+      'Which field(s) to use for the _id field in the document.' +
+      ' Can either be a single string with fields delimited by --id-delimiter' +
+      ' or can be used multiple times to progressively assemble an id delimited by --id-delimiter',
     alias: ['pk', 'primary', '_id'],
-    default: '${time}',
+    default: 'time',
+  },
+  'id-delimiter': {
+    describe: 'spacer between fields in the id',
+    default: '_',
+    type: 'string',
   },
   d: {
     describe:
@@ -237,17 +245,28 @@ const dataDocument = argv.field
   ? { ...timings, [argv.field]: payload }
   : { ...timings, ...payload };
 
-const calculateId = function(idStr: string, data: strIndObj): string {
-  // Substitute out ${varName} to build a custom _id value
-  return idStr.replace(/\${[^}]+}/g, (match: string) => {
-    const varName = match.slice(2, -1); // the match groups aren't working right :/;
-    if (!(varName in data)) {
+const calculateId = function(
+  argId: string | string[],
+  delimiter: string,
+  data: strIndObj
+): string {
+  function fieldNameToValue(name: string) {
+    if (!(name in data)) {
       throw 'Data required by _id is not present';
     }
-    return data[varName];
-  });
+    return String(data[name]);
+  }
+
+  if (typeof argId === 'string') {
+    return argId
+      .split(delimiter)
+      .map(fieldNameToValue)
+      .join(delimiter);
+  }
+  // string[]
+  return argId.map(fieldNameToValue).join(delimiter);
 };
-const _id = calculateId(argv.id, dataDocument); // TODO: Make this flexible
+const _id = calculateId(argv.id, argv['id-delimiter'], dataDocument); // TODO: Make this flexible
 
 db.insert(dataDocument, _id)
   .then(() => db.get(_id))
@@ -255,5 +274,5 @@ db.insert(dataDocument, _id)
   .catch((err: any) => console.log(err));
 
 // TODO: parse JSON arguments as Objects
-// TODO: allow for an array of ids for easy assembly
+// TODO: parse array strings as arrays
 // TODO: handle conflicts
