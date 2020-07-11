@@ -2,6 +2,10 @@
 
 import { relTimeStr, combineDateTime } from './time-utils';
 import { camelCase, snakeCase } from 'lodash';
+import Nano from 'nano';
+import fs from 'fs';
+import path from 'path';
+import yargs from 'yargs';
 
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
@@ -127,8 +131,8 @@ const yargsOptions = {
     alias: 'interactive',
     conflicts: ['d', 't', 'D', 'T'],
   },
-};
-let argv = require('yargs')
+} as const; // as const needed to get yargs typing to work
+let argv = yargs
   .command('datum', 'quickly insert timestamped data into couchdb')
   .help('h')
   .alias('h', 'help')
@@ -139,13 +143,11 @@ let argv = require('yargs')
     'creates a document with the abc field {foo: 3, bar: 6}'
   ).argv;
 // console.log(argv);
-const fs = require('fs');
-const path = require('path');
 
 const auth = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../credentials.json'))
+  fs.readFileSync(path.resolve(__dirname, '../credentials.json')).toString()
 );
-const nano = require('nano')(`http://${auth.user}:${auth.pass}@localhost:5984`);
+const nano = Nano(`http://${auth.user}:${auth.pass}@localhost:5984`);
 const db = nano.use(argv.db);
 
 type strIndObj = { [index: string]: any };
