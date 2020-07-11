@@ -206,7 +206,7 @@ const parsePositional = function(
       continue;
     }
 
-    const positionalValue = withoutKey.pop();
+    const positionalValue = withoutKey.shift();
     if (defaultValue === undefined) {
       if (noMoreRequiredPositionals) {
         throw 'All required extra keys must come before all optional keys';
