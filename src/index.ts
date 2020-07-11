@@ -160,6 +160,8 @@ const getLongOptionData = function(
   // delete any keys that are explicitly options in yargs
   for (const option in options) {
     delete args[option];
+    delete args[camelCase(option)];
+    delete args[snakeCase(option)];
     const aliases: string[] = [].concat(options[option].alias ?? []);
     for (const alias of aliases) {
       delete args[alias];
