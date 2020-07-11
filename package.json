@@ -50,6 +50,7 @@
   "devDependencies": {
     "@types/lodash": "^4.14.157",
     "@types/pluralize": "^0.0.29",
+    "@types/yargs": "^15.0.5",
     "@typescript-eslint/eslint-plugin": "^3.5.0",
     "babel": "^6.23.0",
     "eslint": "^7.4.0",
