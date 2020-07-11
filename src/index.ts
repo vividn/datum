@@ -12,10 +12,11 @@ const currentTime = new Date();
 
 // Separated out from yargs to extract key names later to find extra keys not explicityly included in the options
 const yargsOptions = {
-  f: {
+  field: {
     describe: 'the primary field of the data',
-    alias: 'field',
+    alias: 'f',
     nargs: 1,
+    type: 'string',
   },
   db: {
     describe: 'The database to use',
@@ -35,10 +36,10 @@ const yargsOptions = {
     default: '_',
     type: 'string',
   },
-  d: {
+  date: {
     describe:
       'date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
-    alias: 'date',
+    alias: 'd',
     nargs: 1,
     type: 'string',
     coerce: (arg: string) => {
@@ -48,20 +49,20 @@ const yargsOptions = {
       return arg;
     },
   },
-  y: {
+  yesterday: {
     describe:
       "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
-    alias: ['yesterday', 'D'],
+    alias: ['y', 'D'],
     type: 'count',
     conflicts: 'date',
     default: undefined,
     coerce: (n?: number) =>
       n === undefined ? undefined : relTimeStr(-n, 'days'),
   },
-  t: {
+  time: {
     describe:
       'specify time of the timestamp, use `+n` or `-n` for a timestamp n minutes relative to now',
-    alias: 'time',
+    alias: 't',
     nargs: 1,
     type: 'string',
     coerce: (arg: string) => {
@@ -75,33 +76,33 @@ const yargsOptions = {
       return arg;
     },
   },
-  q: {
+  quick: {
     describe:
       'quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.',
-    alias: 'quick',
+    alias: 'q',
     type: 'count',
     conflicts: 'time',
     default: undefined,
     coerce: (n: number) =>
       n === undefined ? undefined : relTimeStr(-5 * n, 'minutes'),
   },
-  F: {
+  'full-day': {
     describe:
       'make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t',
-    alias: 'full-day',
+    alias: 'f',
     type: 'boolean',
     conflicts: 't',
     coerce: (b: boolean) => (b ? 'today' : undefined), // essentially used to alias `-d today` if no -d flag is specified,
   },
-  u: {
+  undo: {
     describe: 'undoes the last datum entry, can be combined with -f',
-    alias: 'undo',
+    alias: 'u',
     type: 'boolean',
   },
-  U: {
+  'force-undo': {
     describe:
       'forces an undo, even if the datapoint was entered more than 15 minutes ago',
-    alias: 'force-undo',
+    alias: 'U',
     type: 'boolean',
   },
   K: {
@@ -125,10 +126,10 @@ const yargsOptions = {
     describe: 'Terminate the -A array',
     type: 'boolean',
   },
-  i: {
+  interactive: {
     describe:
       'Interactive mode. Responds to key presses on the keyboard for rapid data collection',
-    alias: 'interactive',
+    alias: 'i',
     conflicts: ['d', 't', 'D', 'T'],
   },
 } as const; // as const needed to get yargs typing to work
@@ -235,8 +236,12 @@ const parsePositional = function(
 const longOptionData = getLongOptionData(argv, yargsOptions);
 const payload = parsePositional(argv, longOptionData);
 
-const argDate: string | undefined = argv.date ?? argv.yesterday ?? argv.fullDay;
-const argTime: string | undefined = argv.time ?? argv.quick;
+const argDate =
+  argv.date ??
+  (argv.yesterday as string | undefined) ??
+  (argv['full-day'] as string | undefined);
+const argTime: string | undefined =
+  argv.time ?? (argv.quick as string | undefined);
 
 const timings = {
   time: combineDateTime(argDate, argTime, currentTime),
