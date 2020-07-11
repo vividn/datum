@@ -2,7 +2,7 @@
 
 import { relTimeStr, combineDateTime } from './time-utils';
 import { camelCase, snakeCase } from 'lodash';
-import Nano from 'nano';
+import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
 import path from 'path';
 import yargs from 'yargs';
@@ -275,7 +275,7 @@ const calculateId = function(
 };
 const _id = calculateId(argv.id, argv['id-delimiter'], dataDocument); // TODO: Make this flexible
 
-db.insert(dataDocument, _id)
+db.insert(dataDocument as MaybeDocument, _id)
   .then(() => db.get(_id))
   .then((body: any) => console.log(body))
   .catch((err: any) => console.log(err));
