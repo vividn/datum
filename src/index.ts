@@ -6,6 +6,7 @@ import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
 import path from 'path';
 import yargs from 'yargs';
+import RJSON from 'relaxed-json';
 
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
@@ -165,7 +166,7 @@ const getLongOptionData = function(
     delete args[camelCase(key)];
     delete args[snakeCase(key)];
 
-    const aliases: string[] = [].concat(value ?? []);
+    const aliases: string[] = [].concat(value.alias ?? []);
     for (const alias of aliases) {
       delete args[alias];
       delete args[camelCase(alias)];
@@ -240,6 +241,15 @@ const parsePositional = function(
 
 const longOptionData = getLongOptionData(argv, yargsOptions);
 const payload = parsePositional(argv, longOptionData);
+
+const parseArraysAndJSON = function(payload: strIndObj) {
+  Object.entries(payload).forEach(entry => {
+    const [key, value] = entry;
+    if (/^({|\[)/.test(String(value))) {
+      payload[key] = RJSON.parse(value);
+    }
+  });
+};
 
 const argDate =
   argv.date ??
