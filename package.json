@@ -44,6 +44,7 @@
     "lodash": "^4.17.15",
     "nano": "^8.2.2",
     "pluralize": "^8.0.0",
+    "relaxed-json": "^1.0.3",
     "tslib": "^2.0.0",
     "yargs": "^15.3.1"
   },
