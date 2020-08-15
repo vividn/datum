@@ -1,17 +1,8 @@
-#!/usr/bin/env node
-
-import { relTimeStr, combineDateTime } from './time-utils';
-import Nano, { MaybeDocument } from 'nano';
-import fs from 'fs';
-import path from 'path';
+import { relTimeStr } from 'time-utils';
 import yargs from 'yargs';
-import { strIndObj } from 'utils';
-// import RJSON from 'relaxed-json';
+import { camelCase, snakeCase } from 'lodash';
+import {strIndObj} from "utils";
 
-// Take a timestamp as soon as possible for accuracy
-const currentTime = new Date();
-
-// Separated out from yargs to extract key names later to find extra keys not explicityly included in the options
 const yargsOptions = {
   field: {
     describe: 'the primary field of the data',
@@ -90,7 +81,7 @@ const yargsOptions = {
   'full-day': {
     describe:
       'make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t',
-    alias: 'F',
+    alias: 'f',
     type: 'boolean',
     conflicts: 't',
     coerce: (b: boolean) => (b ? 'today' : undefined), // essentially used to alias `-d today` if no -d flag is specified,
@@ -118,6 +109,15 @@ const yargsOptions = {
     describe: 'Terminate the -K array',
     type: 'boolean',
   },
+  A: {
+    describe: 'Enter in array data for a key. `-A KEY DATA1 DATA2 ... -a`',
+    alias: 'array',
+    type: 'array',
+  },
+  a: {
+    describe: 'Terminate the -A array',
+    type: 'boolean',
+  },
   interactive: {
     describe:
       'Interactive mode. Responds to key presses on the keyboard for rapid data collection',
@@ -125,7 +125,8 @@ const yargsOptions = {
     conflicts: ['d', 't', 'D', 'T'],
   },
 } as const; // as const needed to get yargs typing to work
-let argv = yargs
+
+export const configuredYargs = yargs
   .command('datum', 'quickly insert timestamped data into couchdb')
   .help('h')
   .alias('h', 'help')
@@ -134,62 +135,106 @@ let argv = yargs
   .example(
     "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
     'creates a document with the abc field {foo: 3, bar: 6}'
-  ).argv;
-// console.log(argv);
+  );
 
-const auth = JSON.parse(
-  fs.readFileSync(path.resolve(__dirname, '../credentials.json')).toString()
-);
-const nano = Nano(`http://${auth.user}:${auth.pass}@localhost:5984`);
-const db = nano.use(argv.db);
+const getLongOptionData = function(
+  argv: strIndObj,
+): strIndObj {
+  const args = { ...argv };
+  // delete any keys that are explicitly options in yargs
+  Object.entries(yargsOptions).forEach(entry => {
+    const [key, value] = entry;
 
-const longOptionData = getLongOptionData(argv, yargsOptions);
-const payload = parsePositional(argv, longOptionData);
+    delete args[key];
+    delete args[camelCase(key)];
+    delete args[snakeCase(key)];
 
-const argDate =
-  argv.date ??
-  (argv.yesterday as string | undefined) ??
-  (argv['full-day'] as string | undefined);
-const argTime: string | undefined =
-  argv.time ?? (argv.quick as string | undefined);
-
-const timings = {
-  time: combineDateTime(argDate, argTime, currentTime),
-  creationTime: currentTime.toISOString(),
-};
-
-const dataDocument = argv.field
-  ? { ...timings, [argv.field]: payload }
-  : { ...timings, ...payload };
-
-const calculateId = function(
-  argId: string | string[],
-  delimiter: string,
-  data: strIndObj
-): string {
-  function fieldNameToValue(name: string) {
-    if (!(name in data)) {
-      throw 'Data required by _id is not present';
+    // @ts-ignore
+    const aliases: string[] = [].concat(value.alias ?? []);
+    for (const alias of aliases) {
+      delete args[alias];
+      delete args[camelCase(alias)];
+      delete args[snakeCase(alias)];
     }
-    return String(data[name]);
-  }
+  });
+  // And the built in ones
+  delete args['_'];
+  delete args['$0'];
 
-  if (typeof argId === 'string') {
-    return argId
-      .split(delimiter)
-      .map(fieldNameToValue)
-      .join(delimiter);
-  }
-  // string[]
-  return argId.map(fieldNameToValue).join(delimiter);
+  return args;
 };
-const _id = calculateId(argv.id, argv['id-delimiter'], dataDocument); // TODO: Make this flexible
 
-db.insert(dataDocument as MaybeDocument, _id)
-  .then(() => db.get(_id))
-  .then((body: any) => console.log(body))
-  .catch((err: any) => console.log(err));
+const parsePositional = function(
+  argv: strIndObj,
+  currentPayload?: strIndObj
+): strIndObj {
+  const payload: strIndObj = currentPayload ?? {};
+  const positionals: (string | number)[] = argv._ ?? [];
+  const [withKey, withoutKey] = positionals.reduce(
+    (result, element) => {
+      if (typeof element === 'string' && element.includes('=')) {
+        result[0].push(element);
+      } else {
+        result[1].push(element);
+      }
+      return result;
+    },
+    [[] as string[], [] as (string | number)[]]
+  );
 
-// TODO: parse JSON arguments as Objects
-// TODO: parse array strings as arrays
-// TODO: handle conflicts
+  for (const arg of withKey) {
+    const [key, value] = arg.split('=');
+    payload[key] = Number(value) || value;
+  }
+
+  let noMoreRequiredPositionals = false;
+  for (const extraKey of argv.extraKeys) {
+    const [dataKey, defaultValue, tooManyEquals] = extraKey.split('=');
+    if (tooManyEquals !== undefined) {
+      throw 'Too many equals signs in a key in --extra-keys';
+    }
+
+    // the data key might be manually specified
+    if (dataKey in payload) {
+      continue;
+    }
+
+    const positionalValue = withoutKey.shift();
+    if (defaultValue === undefined) {
+      if (noMoreRequiredPositionals) {
+        throw 'All required extra keys must come before all optional keys';
+      }
+      if (positionalValue === undefined) {
+        throw `No data given for the required key '${dataKey}`;
+      }
+    }
+    if (defaultValue !== undefined) {
+      noMoreRequiredPositionals = true;
+    }
+    // default value is '' when nothing is given after the =
+    payload[dataKey] =
+      positionalValue ??
+      (defaultValue === '' ? undefined : Number(defaultValue) || defaultValue);
+  }
+  if (withoutKey.length > 0) {
+    throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
+  }
+
+  return payload;
+};
+
+const parseArraysAndJSON = function(payload: strIndObj) {
+  Object.entries(payload).forEach(entry => {
+    const [key, value] = entry;
+    if (/^({|\[)/.test(String(value))) {
+      payload[key] = RJSON.parse(value);
+    }
+  });
+};
+
+
+export const buildPayloadFromInput(argv: strIndObj): strIndObj {
+    const longOptionData = getLongOptionData(argv, yargsOptions)
+    const allInputData = parsePositional(argv, longOptionData);
+    
+}
