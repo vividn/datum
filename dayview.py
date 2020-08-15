@@ -596,6 +596,7 @@ main(
     now_width=2,
     quantfontsize=30,
 )
+main(nDays=14, imagename="2week", ysize=1200)
 main(
     begin_date=dt.date(2018, 12, 9),
     end_date=dt.date(2018, 12, 15),
