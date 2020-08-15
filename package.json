@@ -19,6 +19,7 @@
   "engines": {
     "node": ">=10"
   },
+  "type": "module",
   "scripts": {
     "start": "tsdx watch",
     "build": "tsdx build",
@@ -47,6 +48,7 @@
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
     "tslib": "^2.0.0",
+    "esm": "^3.2.25",
     "yargs": "^15.3.1"
   },
   "devDependencies": {
