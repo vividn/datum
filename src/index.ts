@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 
 import { relTimeStr, combineDateTime } from './time-utils';
-import { camelCase, snakeCase } from 'lodash';
 import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
 import path from 'path';
 import yargs from 'yargs';
-import RJSON from 'relaxed-json';
+import { strIndObj } from 'utils';
+// import RJSON from 'relaxed-json';
 
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
@@ -90,7 +90,7 @@ const yargsOptions = {
   'full-day': {
     describe:
       'make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t',
-    alias: 'f',
+    alias: 'F',
     type: 'boolean',
     conflicts: 't',
     coerce: (b: boolean) => (b ? 'today' : undefined), // essentially used to alias `-d today` if no -d flag is specified,
@@ -118,15 +118,6 @@ const yargsOptions = {
     describe: 'Terminate the -K array',
     type: 'boolean',
   },
-  A: {
-    describe: 'Enter in array data for a key. `-A KEY DATA1 DATA2 ... -a`',
-    alias: 'array',
-    type: 'array',
-  },
-  a: {
-    describe: 'Terminate the -A array',
-    type: 'boolean',
-  },
   interactive: {
     describe:
       'Interactive mode. Responds to key presses on the keyboard for rapid data collection',
@@ -152,104 +143,8 @@ const auth = JSON.parse(
 const nano = Nano(`http://${auth.user}:${auth.pass}@localhost:5984`);
 const db = nano.use(argv.db);
 
-type strIndObj = { [index: string]: any };
-const getLongOptionData = function(
-  argv: strIndObj,
-  options: strIndObj
-): strIndObj {
-  const args = { ...argv };
-  // delete any keys that are explicitly options in yargs
-  Object.entries(options).forEach(entry => {
-    const [key, value] = entry;
-
-    delete args[key];
-    delete args[camelCase(key)];
-    delete args[snakeCase(key)];
-
-    const aliases: string[] = [].concat(value.alias ?? []);
-    for (const alias of aliases) {
-      delete args[alias];
-      delete args[camelCase(alias)];
-      delete args[snakeCase(alias)];
-    }
-  });
-  // And the built in ones
-  delete args['_'];
-  delete args['$0'];
-
-  return args;
-};
-
-const parsePositional = function(
-  argv: strIndObj,
-  currentPayload?: strIndObj
-): strIndObj {
-  const payload: strIndObj = currentPayload ?? {};
-  const positionals: (string | number)[] = argv._ ?? [];
-  const [withKey, withoutKey] = positionals.reduce(
-    (result, element) => {
-      if (typeof element === 'string' && element.includes('=')) {
-        result[0].push(element);
-      } else {
-        result[1].push(element);
-      }
-      return result;
-    },
-    [[] as string[], [] as (string | number)[]]
-  );
-
-  for (const arg of withKey) {
-    const [key, value] = arg.split('=');
-    payload[key] = Number(value) || value;
-  }
-
-  let noMoreRequiredPositionals = false;
-  for (const extraKey of argv.extraKeys) {
-    const [dataKey, defaultValue, tooManyEquals] = extraKey.split('=');
-    if (tooManyEquals !== undefined) {
-      throw 'Too many equals signs in a key in --extra-keys';
-    }
-
-    // the data key might be manually specified
-    if (dataKey in payload) {
-      continue;
-    }
-
-    const positionalValue = withoutKey.shift();
-    if (defaultValue === undefined) {
-      if (noMoreRequiredPositionals) {
-        throw 'All required extra keys must come before all optional keys';
-      }
-      if (positionalValue === undefined) {
-        throw `No data given for the required key '${dataKey}`;
-      }
-    }
-    if (defaultValue !== undefined) {
-      noMoreRequiredPositionals = true;
-    }
-    // default value is '' when nothing is given after the =
-    payload[dataKey] =
-      positionalValue ??
-      (defaultValue === '' ? undefined : Number(defaultValue) || defaultValue);
-  }
-  if (withoutKey.length > 0) {
-    throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
-  }
-
-  return payload;
-};
-
 const longOptionData = getLongOptionData(argv, yargsOptions);
 const payload = parsePositional(argv, longOptionData);
-
-const parseArraysAndJSON = function(payload: strIndObj) {
-  Object.entries(payload).forEach(entry => {
-    const [key, value] = entry;
-    if (/^({|\[)/.test(String(value))) {
-      payload[key] = RJSON.parse(value);
-    }
-  });
-};
 
 const argDate =
   argv.date ??

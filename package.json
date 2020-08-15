@@ -40,6 +40,7 @@
   },
   "module": "dist/datum.esm.js",
   "dependencies": {
+    "@types/relaxed-json": "^1.0.0",
     "chrono-node": "^1.4.6",
     "lodash": "^4.17.15",
     "nano": "^8.2.2",
