@@ -1,7 +1,8 @@
 import { relTimeStr } from 'time-utils';
 import yargs from 'yargs';
 import { camelCase, snakeCase } from 'lodash';
-import {strIndObj} from "utils";
+import { strIndObj } from 'utils';
+import RJSON from 'relaxed-json';
 
 const yargsOptions = {
   field: {
@@ -81,7 +82,7 @@ const yargsOptions = {
   'full-day': {
     describe:
       'make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t',
-    alias: 'f',
+    alias: 'T',
     type: 'boolean',
     conflicts: 't',
     coerce: (b: boolean) => (b ? 'today' : undefined), // essentially used to alias `-d today` if no -d flag is specified,
@@ -109,20 +110,16 @@ const yargsOptions = {
     describe: 'Terminate the -K array',
     type: 'boolean',
   },
-  A: {
-    describe: 'Enter in array data for a key. `-A KEY DATA1 DATA2 ... -a`',
-    alias: 'array',
-    type: 'array',
-  },
-  a: {
-    describe: 'Terminate the -A array',
-    type: 'boolean',
-  },
   interactive: {
     describe:
       'Interactive mode. Responds to key presses on the keyboard for rapid data collection',
     alias: 'i',
     conflicts: ['d', 't', 'D', 'T'],
+  },
+  lenient: {
+    describe:
+      'extra data without keys is just given in an array rather than erroring out',
+    type: 'boolean',
   },
 } as const; // as const needed to get yargs typing to work
 
@@ -137,9 +134,7 @@ export const configuredYargs = yargs
     'creates a document with the abc field {foo: 3, bar: 6}'
   );
 
-const getLongOptionData = function(
-  argv: strIndObj,
-): strIndObj {
+const getLongOptionData = function(argv: strIndObj): strIndObj {
   const args = { ...argv };
   // delete any keys that are explicitly options in yargs
   Object.entries(yargsOptions).forEach(entry => {
@@ -217,7 +212,11 @@ const parsePositional = function(
       (defaultValue === '' ? undefined : Number(defaultValue) || defaultValue);
   }
   if (withoutKey.length > 0) {
-    throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
+    if (argv.lenient) {
+      payload.extraData = withoutKey;
+    } else {
+      throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
+    }
   }
 
   return payload;
@@ -226,15 +225,15 @@ const parsePositional = function(
 const parseArraysAndJSON = function(payload: strIndObj) {
   Object.entries(payload).forEach(entry => {
     const [key, value] = entry;
-    if (/^({|\[)/.test(String(value))) {
+    if (/^([{[])/.test(String(value))) {
       payload[key] = RJSON.parse(value);
     }
   });
+  return payload;
 };
 
-
-export const buildPayloadFromInput(argv: strIndObj): strIndObj {
-    const longOptionData = getLongOptionData(argv, yargsOptions)
-    const allInputData = parsePositional(argv, longOptionData);
-    
-}
+export const buildPayloadFromInput = function(argv: strIndObj): strIndObj {
+  const longOptionData = getLongOptionData(argv);
+  const allInputData = parsePositional(argv, longOptionData);
+  return parseArraysAndJSON(allInputData);
+};
