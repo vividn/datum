@@ -14,7 +14,7 @@ FORCE=
 mode=normal
 
 # Parse arguments using getopt
-args=$(getopt -n datum -o f:d:t:TDa:uUis \
+args=$(getopt -n datum -o f:d:t:qTDya:uUisK:k \
               --long "file:,date:,time:,undo,force-undo,interactive,state" \
               -- "$@")
 if [ $? -ne 0 ]; then
@@ -51,7 +51,7 @@ while true; do
                 # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
                 rel_time="$2 minutes"
                 TIMESTR=$(date --date "$rel_time" '+%H:%M')
-                TIMESTR=$(date --date $TIMESTR "+%H:%M:%S.%3N")
+                TIMESTR=$(date --date "$TIMESTR" "+%H:%M:%S.%3N")
 
                 # Need to adjust the date if close to midnight
                 rel_date=$(date --date "$rel_time" '+%Y-%m-%d')
@@ -69,7 +69,7 @@ while true; do
             shift
             ;;
 
-        -D) # Shortcut for -d -1
+        -D|-y) # Shortcut for -d -1
             DATEFLAG=true
             DATESTR=$(date --date yesterday '+%Y-%m-%d')
             shift
@@ -97,6 +97,10 @@ while true; do
 
         -s|--state-mode) # state mode, load in the last datum entry into a text editor for manual editing in order to create the next entry. Useful for slowly changing multistate systems, e.g., list of health conditions
             mode=state
+            shift
+            ;;
+
+        -q|-k|-K) # Extra flags ignored for this version of datumm
             shift
             ;;
 
