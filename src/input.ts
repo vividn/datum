@@ -138,14 +138,14 @@ const getLongOptionData = function(argv: strIndObj): strIndObj {
   const args = { ...argv };
   // delete any keys that are explicitly options in yargs
   Object.entries(yargsOptions).forEach(entry => {
-    const [key, value] = entry;
+    const [key, yargOptions] = entry;
 
     delete args[key];
     delete args[camelCase(key)];
     delete args[snakeCase(key)];
 
-    // @ts-ignore
-    const aliases: string[] = [].concat(value.alias ?? []);
+    const { alias: definedAliases } = yargOptions as any;
+    const aliases: string[] = [].concat(definedAliases ?? []);
     for (const alias of aliases) {
       delete args[alias];
       delete args[camelCase(alias)];
