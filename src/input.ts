@@ -3,6 +3,7 @@ import yargs from 'yargs';
 import { camelCase, snakeCase } from 'lodash';
 import { strIndObj } from './utils';
 import RJSON from 'relaxed-json';
+import { performance } from 'perf_hooks';
 
 const yargsOptions = {
   field: {
@@ -233,7 +234,21 @@ const parseArraysAndJSON = function(payload: strIndObj) {
 };
 
 export const buildPayloadFromInput = function(argv: strIndObj): strIndObj {
+  const timings: strIndObj = {};
+  timings.a = performance.now();
+
   const longOptionData = getLongOptionData(argv);
+  timings.b = performance.now();
+
   const allInputData = parsePositional(argv, longOptionData);
-  return parseArraysAndJSON(allInputData);
+  timings.c = performance.now();
+
+  const payload = parseArraysAndJSON(allInputData);
+  timings.d = performance.now();
+
+  timings.ab = timings.b - timings.a;
+  timings.bc = timings.c - timings.b;
+  timings.cd = timings.d - timings.c;
+  console.log(timings);
+  return payload;
 };

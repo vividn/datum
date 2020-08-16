@@ -61,6 +61,4 @@ db.insert(dataDocument as MaybeDocument, _id)
   .then((body: any) => console.log(body))
   .catch((err: any) => console.log(err));
 
-// TODO: parse JSON arguments as Objects
-// TODO: parse array strings as arrays
 // TODO: handle conflicts
