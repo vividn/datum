@@ -2,12 +2,14 @@
   "name": "datum",
   "version": "2.0.0",
   "description": "collect personal time stamped data on couchdb",
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/vividn/datum.git"
+  "engines": {
+    "node": ">=10"
   },
   "license": "UNLICENSED",
   "main": "dist/index.js",
+  "scripts": {
+    "build": "npx tsc"
+  },
   "bin": {
     "dtm": "./dist/index.js"
   },
@@ -16,23 +18,7 @@
     "dist",
     "src"
   ],
-  "engines": {
-    "node": ">=10"
-  },
-  "type": "module",
-  "scripts": {
-    "start": "tsdx watch",
-    "build": "tsdx build",
-    "test": "tsdx test",
-    "lint": "tsdx lint",
-    "prepare": "tsdx build"
-  },
   "peerDependencies": {},
-  "husky": {
-    "hooks": {
-      "pre-commit": "tsdx lint --fix"
-    }
-  },
   "prettier": {
     "printWidth": 80,
     "semi": true,
@@ -43,12 +29,13 @@
   "dependencies": {
     "@types/relaxed-json": "^1.0.0",
     "chrono-node": "^1.4.6",
+    "esm": "^3.2.25",
     "lodash": "^4.17.15",
+    "lodash-es": "^4.17.15",
     "nano": "^8.2.2",
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
-    "tslib": "^2.0.0",
-    "esm": "^3.2.25",
+    "tslib": "^2.0.1",
     "yargs": "^15.3.1"
   },
   "devDependencies": {
@@ -60,9 +47,7 @@
     "eslint": "^7.4.0",
     "eslint-plugin-prettier": "^3.1.4",
     "eslint-plugin-sort-imports-es6-autofix": "^0.5.0",
-    "husky": "^4.2.5",
     "prettier-eslint": "^11.0.0",
-    "tsdx": "^0.13.2",
     "typescript": "^3.9.5",
     "typescript-eslint": "^0.0.1-alpha.0"
   }
