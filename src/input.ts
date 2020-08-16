@@ -1,7 +1,7 @@
-import { relTimeStr } from 'time-utils';
+import { relTimeStr } from './time-utils';
 import yargs from 'yargs';
 import { camelCase, snakeCase } from 'lodash';
-import { strIndObj } from 'utils';
+import { strIndObj } from './utils';
 import RJSON from 'relaxed-json';
 
 const yargsOptions = {

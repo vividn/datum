@@ -1,9 +1,9 @@
-import { combineDateTime } from 'time-utils';
+import { combineDateTime } from './time-utils';
 import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
 import path from 'path';
-import { strIndObj } from 'utils';
-import { buildPayloadFromInput, configuredYargs } from 'input';
+import { strIndObj } from './utils';
+import { buildPayloadFromInput, configuredYargs } from './input';
 
 // Take a timestamp as soon as possible for accuracy
 const currentTime = new Date();
