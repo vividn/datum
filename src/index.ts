@@ -1,5 +1,3 @@
-#!/usr/bin/env node
-
 import { combineDateTime } from 'time-utils';
 import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
