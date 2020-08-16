@@ -48,6 +48,7 @@
     "eslint": "^7.4.0",
     "eslint-plugin-prettier": "^3.1.4",
     "eslint-plugin-sort-imports-es6-autofix": "^0.5.0",
+    "perf_hooks": "^0.0.1",
     "prettier-eslint": "^11.0.0",
     "typescript": "^3.9.5",
     "typescript-eslint": "^0.0.1-alpha.0"
