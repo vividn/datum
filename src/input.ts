@@ -124,6 +124,23 @@ const yargsOptions = {
   },
 } as const; // as const needed to get yargs typing to work
 
+const keysFromYargs: string[] = [];
+Object.entries(yargsOptions).forEach(entry => {
+  const [key, yargOptions] = entry;
+
+  keysFromYargs.push(key);
+  keysFromYargs.push(camelCase(key));
+  keysFromYargs.push(snakeCase(key));
+
+  const { alias: definedAliases } = yargOptions as any;
+  const aliases: string[] = [].concat(definedAliases ?? []);
+  for (const alias of aliases) {
+    keysFromYargs.push(alias);
+    keysFromYargs.push(camelCase(alias));
+    keysFromYargs.push(snakeCase(alias));
+  }
+});
+
 export const configuredYargs = yargs
   .command('datum', 'quickly insert timestamped data into couchdb')
   .help('h')
@@ -138,21 +155,9 @@ export const configuredYargs = yargs
 const getLongOptionData = function(argv: strIndObj): strIndObj {
   const args = { ...argv };
   // delete any keys that are explicitly options in yargs
-  Object.entries(yargsOptions).forEach(entry => {
-    const [key, yargOptions] = entry;
-
+  for (const key of keysFromYargs) {
     delete args[key];
-    delete args[camelCase(key)];
-    delete args[snakeCase(key)];
-
-    const { alias: definedAliases } = yargOptions as any;
-    const aliases: string[] = [].concat(definedAliases ?? []);
-    for (const alias of aliases) {
-      delete args[alias];
-      delete args[camelCase(alias)];
-      delete args[snakeCase(alias)];
-    }
-  });
+  }
   // And the built in ones
   delete args['_'];
   delete args['$0'];
