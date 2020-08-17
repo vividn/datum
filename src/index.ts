@@ -53,7 +53,7 @@ const _id = calculateId(argv.id, argv['id-delimiter'], dataDocument); // TODO: M
 const auth = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, '../credentials.json')).toString()
 );
-const nano = Nano(`http://${auth.user}:${auth.pass}@localhost:5984`);
+const nano = Nano(`http://${auth.user}:${auth.pass}@couchdb:5984`);
 const db = nano.use(argv.db);
 
 db.insert(dataDocument as MaybeDocument, _id)
