@@ -54,6 +54,12 @@ const auth = JSON.parse(
   fs.readFileSync(path.resolve(__dirname, '../credentials.json')).toString()
 );
 const nano = Nano(`http://${auth.user}:${auth.pass}@couchdb:5984`);
+
+nano.db.create(argv.db).catch((err) => {
+  if (!err) {
+    console.log(`Database ${argv.db} created`);
+  }
+});
 const db = nano.use(argv.db);
 
 db.insert(dataDocument as MaybeDocument, _id)
