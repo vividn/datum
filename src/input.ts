@@ -124,7 +124,7 @@ const yargsOptions = {
 } as const; // as const needed to get yargs typing to work
 
 const keysFromYargs: string[] = [];
-Object.entries(yargsOptions).forEach(entry => {
+Object.entries(yargsOptions).forEach((entry) => {
   const [key, yargOptions] = entry;
 
   keysFromYargs.push(key);
@@ -151,7 +151,7 @@ export const configuredYargs = yargs
     'creates a document with the abc field {foo: 3, bar: 6}'
   );
 
-const getLongOptionData = function(argv: strIndObj): strIndObj {
+const getLongOptionData = function (argv: strIndObj): strIndObj {
   const args = { ...argv };
   // delete any keys that are explicitly options in yargs
   for (const key of keysFromYargs) {
@@ -164,7 +164,7 @@ const getLongOptionData = function(argv: strIndObj): strIndObj {
   return args;
 };
 
-const parsePositional = function(
+const parsePositional = function (
   argv: strIndObj,
   currentPayload?: strIndObj
 ): strIndObj {
@@ -227,8 +227,8 @@ const parsePositional = function(
   return payload;
 };
 
-const parseArraysAndJSON = function(payload: strIndObj) {
-  Object.entries(payload).forEach(entry => {
+const parseArraysAndJSON = function (payload: strIndObj) {
+  Object.entries(payload).forEach((entry) => {
     const [key, value] = entry;
     if (/^([{[])/.test(String(value))) {
       payload[key] = RJSON.parse(value);
@@ -237,13 +237,10 @@ const parseArraysAndJSON = function(payload: strIndObj) {
   return payload;
 };
 
-export const buildPayloadFromInput = function(argv: strIndObj): strIndObj {
-
+export const buildPayloadFromInput = function (argv: strIndObj): strIndObj {
   const longOptionData = getLongOptionData(argv);
 
   const allInputData = parsePositional(argv, longOptionData);
 
-  const payload = parseArraysAndJSON(allInputData);
-
-  return payload;
+  return parseArraysAndJSON(allInputData);
 };
