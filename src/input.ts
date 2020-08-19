@@ -1,6 +1,5 @@
 import { relTimeStr } from './time-utils';
 import yargs from 'yargs';
-import { camelCase, snakeCase } from 'lodash';
 import { strIndObj } from './utils';
 import RJSON from 'relaxed-json';
 
@@ -123,52 +122,18 @@ const yargsOptions = {
   },
 } as const; // as const needed to get yargs typing to work
 
-const keysFromYargs: string[] = [];
-Object.entries(yargsOptions).forEach((entry) => {
-  const [key, yargOptions] = entry;
-
-  keysFromYargs.push(key);
-  keysFromYargs.push(camelCase(key));
-  keysFromYargs.push(snakeCase(key));
-
-  const { alias: definedAliases } = yargOptions as any;
-  const aliases: string[] = [].concat(definedAliases ?? []);
-  for (const alias of aliases) {
-    keysFromYargs.push(alias);
-    keysFromYargs.push(camelCase(alias));
-    keysFromYargs.push(snakeCase(alias));
-  }
-});
-
 export const configuredYargs = yargs
   .command('datum', 'quickly insert timestamped data into couchdb')
   .help('h')
   .alias('h', 'help')
-
   .options(yargsOptions)
   .example(
     "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
     'creates a document with the abc field {foo: 3, bar: 6}'
   );
 
-const getLongOptionData = function (argv: strIndObj): strIndObj {
-  const args = { ...argv };
-  // delete any keys that are explicitly options in yargs
-  for (const key of keysFromYargs) {
-    delete args[key];
-  }
-  // And the built in ones
-  delete args['_'];
-  delete args['$0'];
-
-  return args;
-};
-
-const parsePositional = function (
-  argv: strIndObj,
-  currentPayload?: strIndObj
-): strIndObj {
-  const payload: strIndObj = currentPayload ?? {};
+const parsePositional = function (argv: strIndObj): strIndObj {
+  const payload: strIndObj = {};
   const positionals: (string | number)[] = argv._ ?? [];
   const [withKey, withoutKey] = positionals.reduce(
     (result, element) => {
@@ -238,9 +203,6 @@ const parseArraysAndJSON = function (payload: strIndObj) {
 };
 
 export const buildPayloadFromInput = function (argv: strIndObj): strIndObj {
-  const longOptionData = getLongOptionData(argv);
-
-  const allInputData = parsePositional(argv, longOptionData);
-
+  const allInputData = parsePositional(argv);
   return parseArraysAndJSON(allInputData);
 };
