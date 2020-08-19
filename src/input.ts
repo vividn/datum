@@ -3,7 +3,6 @@ import yargs from 'yargs';
 import { camelCase, snakeCase } from 'lodash';
 import { strIndObj } from './utils';
 import RJSON from 'relaxed-json';
-import { performance } from 'perf_hooks';
 
 const yargsOptions = {
   field: {
