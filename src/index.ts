@@ -27,7 +27,7 @@ const dataDocument = argv.field
   ? { ...timings, [argv.field]: payload }
   : { ...timings, ...payload };
 
-const calculateId = function(
+const calculateId = function (
   argId: string | string[],
   delimiter: string,
   data: strIndObj
@@ -40,10 +40,7 @@ const calculateId = function(
   }
 
   if (typeof argId === 'string') {
-    return argId
-      .split(delimiter)
-      .map(fieldNameToValue)
-      .join(delimiter);
+    return argId.split(delimiter).map(fieldNameToValue).join(delimiter);
   }
   // string[]
   return argId.map(fieldNameToValue).join(delimiter);
