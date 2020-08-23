@@ -106,12 +106,6 @@ const yargsOptions = {
     nargs: 1,
     default: [],
   },
-  interactive: {
-    describe:
-      'Interactive mode. Responds to key presses on the keyboard for rapid data collection',
-    alias: 'i',
-    conflicts: ['d', 't', 'D', 'T'],
-  },
   lenient: {
     describe:
       'extra data without keys is just given in an array rather than erroring out',
