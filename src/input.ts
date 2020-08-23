@@ -100,14 +100,11 @@ const yargsOptions = {
   K: {
     describe:
       'The keys to use for additional data, useful for aliases. Keys can be used with equals signs for optionality or default values.' +
-      '`datum -K KEY1 KEY2= KEY3=default -k` can then take 1-3 positional args, with KEY3 being set to default if <3 are given',
+      '`datum -K KEY1 -K KEY2= -K KEY3=default` can then take 1-3 positional args, with KEY3 being set to default if < 3 are given',
     alias: 'extra-keys',
-    type: 'array',
+    type: 'string',
+    nargs: 1,
     default: [],
-  },
-  k: {
-    describe: 'Terminate the -K array',
-    type: 'boolean',
   },
   interactive: {
     describe:
