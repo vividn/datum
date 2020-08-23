@@ -1,4 +1,4 @@
-import { relTimeStr } from './time-utils';
+import { relTimeStr } from 'time.ts';
 import yargs from 'yargs';
 import { strIndObj } from './utils';
 import RJSON from 'relaxed-json';
