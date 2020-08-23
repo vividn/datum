@@ -1,4 +1,4 @@
-import { combineDateTime } from './time-utils';
+import { combineDateTime } from 'time.ts';
 import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
 import path from 'path';
