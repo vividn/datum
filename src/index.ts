@@ -1,27 +1,14 @@
-import { combineDateTime } from 'time.ts';
+import { processTimeArgs } from './time';
 import Nano, { MaybeDocument } from 'nano';
 import fs from 'fs';
 import path from 'path';
 import { strIndObj } from './utils';
 import { buildPayloadFromInput, configuredYargs } from './input';
 
-// Take a timestamp as soon as possible for accuracy
-const currentTime = new Date();
-
 const argv = configuredYargs.argv;
 const payload = buildPayloadFromInput(argv);
 
-const argDate =
-  argv.date ??
-  (argv.yesterday as string | undefined) ??
-  (argv['full-day'] as string | undefined);
-const argTime: string | undefined =
-  argv.time ?? (argv.quick as string | undefined);
-
-const timings = {
-  time: combineDateTime(argDate, argTime, currentTime),
-  creationTime: currentTime.toISOString(),
-};
+const timings = processTimeArgs(argv);
 
 const dataDocument = argv.field
   ? { ...timings, [argv.field]: payload }
@@ -45,6 +32,7 @@ const calculateId = function (
   // string[]
   return argId.map(fieldNameToValue).join(delimiter);
 };
+
 const _id = calculateId(argv.id, argv['id-delimiter'], dataDocument); // TODO: Make this flexible
 
 const auth = JSON.parse(
