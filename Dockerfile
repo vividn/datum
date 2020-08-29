@@ -5,7 +5,8 @@ WORKDIR /usr/src/app
 
 # Install app dependencies
 COPY package.json ./
-RUN yarn install
+COPY yarn.lock ./
+RUN yarn install --network-timeout 100000
 
 # COPY files
 COPY . .
