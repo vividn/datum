@@ -9,12 +9,12 @@
     "inlineSources": true,
     "outDir": "build",
     "declarationDir": "build/types",
-    "rootDir": "src",
     "strict": true,
     "types": ["node"],
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
+  "include": ["src/**/*"],
   "exclude": [
     "old-src",
     "node_modules"
