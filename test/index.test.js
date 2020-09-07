@@ -1,9 +1,5 @@
 const main = require('../src/index');
 const nock = require('nock');
-const chai = require('chai');
-const chaiNock = require('chai-nock');
-
-chai.use(chaiNock);
 
 const couchNock = nock('http://localhost:5984')
 .post('/datum')
