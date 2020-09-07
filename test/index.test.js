@@ -1,32 +1,36 @@
-const main = require('../src/index');
-const nock = require('nock');
-
-const couchNock = nock('http://localhost:5984')
-.post('/datum')
-.reply(200, (uri, requestBody) => ({
-    "ok": true,
-    "id": requestBody["_id"] || "nock_generated_id",
-    "rev": "nock_generated_revision"
-}));
+const main = require("../src/index");
+const nano = require("nano")("http://admin:password@localhost:5983");
 
 describe("main", () => {
-    beforeEach(() => {
-        nock.cleanAll();
+  beforeAll( async () => {
+    await nano.db.destroy('datum').catch((err) => undefined);
+  });
+  
+  beforeEach( async () => {
+    await nano.db.create('datum')
+    .catch((err) => undefined);
+  });
+
+  afterEach( async () => {
+    await nano.db.destroy('datum').catch(err => undefined);
+  });
+
+  it("inserts documents into couchdb", async () => {
+    await main();
+
+    const db = nano.use('datum');
+    await db.info().then((info) => {
+      expect(info.doc_count).toEqual(1);
     });
 
-    test("main logs hello world", () => {
-        const mockLog = jest.fn();
-        console.log = mockLog;
+  });
 
-        main();
-
-        expect(mockLog).toBeCalledTimes(1);
-        expect(mockLog.mock.calls[0][0]).toEqual("Hello World!");
+  it("creates the database if it doesn't exist", async () => {
+    await nano.db.destroy('datum').catch(() => {});
+    
+    await main();
+    nano.db.list().then(body => {
+      expect(body.includes ('datum'));
     });
-
-    it("makes an entry into couchdb", () => {
-        main();
-
-        expect(couchNock.isDone()).toEqual(true);
-    });
+  });
 });
