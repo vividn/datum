@@ -1,22 +1,20 @@
 #!/usr/bin/env node
 
 async function main() {
-  
-  const dbName = 'datum';
-  
+  const dbName = "datum";
+
   const nano = require("nano")("http://admin:password@localhost:5983");
-  
+
   // Create database if it doesn't exist
   await nano.db.create(dbName).catch((err: any) => undefined);
- 
-  const db = nano.use(dbName);
+
+  const db = await nano.use(dbName);
 
   const _id = new Date().toISOString();
 
-  await db.insert({"_id": _id})
-    .then(() => db.get(_id))
-    .then((body: any) => console.log(body))
-    .catch((err: any) => console.error(err));
+  await db.insert({ _id: _id });
+  const doc = await db.get(_id);
+  console.log(doc);
 }
 
 if (require.main === module) {
