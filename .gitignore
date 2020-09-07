@@ -110,3 +110,5 @@ credentials.json
 .idea/
 
 build/
+.gitsecret/keys/random_seed
+!*.secret
