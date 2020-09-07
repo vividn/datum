@@ -1,17 +1,6 @@
 version: '3'
 services:
-  cli:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    volumes:
-      - .:/usr/src/app
-    depends_on:
-      - couchdb
-    links:
-      - couchdb:couchdb
-
-  couchdb:
+  test-couch:
     image: 'couchdb:3.0.0'
     logging:
       driver: 'json-file'
@@ -19,6 +8,8 @@ services:
         max-size: '100m'
     environment:
       COUCHDB_USER: 'admin'
-      COUCHDB_PASSWORD: '-pbkdf2-d051a2a6b0993112299d8cacdbf39b78754aa985,3a8908906b24ddd4ae4fe0a8cb0e8bca,10'
+      COUCHDB_PASSWORD: 'password'
       COUCHDB_SECRET: 'secret secret secret'
       NODENAME:
+    ports:
+      - '5983:5984'
