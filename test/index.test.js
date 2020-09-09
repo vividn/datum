@@ -1,17 +1,18 @@
 const main = require("../src/index");
 const nano = require("nano")("http://admin:password@localhost:5983");
+const pass = () => {};
 
 describe("main", () => {
   beforeAll(async () => {
-    await nano.db.destroy("datum").catch((err) => undefined);
+    await nano.db.destroy("datum").catch(pass);
   });
 
   beforeEach(async () => {
-    await nano.db.create("datum").catch((err) => undefined);
+    await nano.db.create("datum").catch(pass);
   });
 
   afterEach(async () => {
-    await nano.db.destroy("datum").catch((err) => undefined);
+    await nano.db.destroy("datum").catch(pass);
   });
 
   it("inserts documents into couchdb", async () => {
@@ -24,7 +25,7 @@ describe("main", () => {
   });
 
   it("creates the database if it doesn't exist", async () => {
-    await nano.db.destroy("datum").catch(() => {});
+    await nano.db.destroy("datum").catch(pass);
 
     await main();
     nano.db.list().then((body) => {
