@@ -593,8 +593,8 @@ main(
     image_padding=2,
     bar_padding=0,
     text_padding=0,
-    quantfontsize=16,
-    fontsize=8
+    quantfontsize=14,
+    fontsize=12
 )
 main(
     nDays=1,
