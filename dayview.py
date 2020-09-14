@@ -587,6 +587,17 @@ main(
 )
 main(
     nDays=1,
+    imagename="singledayviewtiny",
+    xsize=1920,
+    ysize=80,
+    image_padding=2,
+    bar_padding=0,
+    text_padding=0,
+    quantfontsize=16,
+    fontsize=8
+)
+main(
+    nDays=1,
     imagename="phoneday",
     xsize=1080,
     ysize=200,
