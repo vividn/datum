@@ -7,7 +7,27 @@ const {processTimeArgs, combineDateTime, relTimeStr } = require('../src/timings'
 
 describe("processTimeArgs", () => {
   it("returns current time when no arguments are given", () => {
-    const result = processTimeArgs();
-    expect(result).toBe("2020-05-10T15:25:30.000Z");
+    expect(processTimeArgs({})).toBe("2020-05-10T15:25:30.000Z");
   });
+
+  it("handles absolute time strings", () => {
+    const testCases = [
+      [{time: "3:15"}, "2020-05-10T03:15:00.000Z"],
+      [{time: "15:15"}, "2020-05-10T15:15:00.000Z"],
+      [{time: "3:15am"}, "2020-05-10T03:15:00.000Z"],
+      [{time: "3:15pm"}, "2020-05-10T15:15:00.000Z"],
+      [{time: "315"}, "2020-05-10T03:15:00.000Z"],
+      [{time: "0315"}, "2020-05-10T03:15:00.000Z"],  
+      [{time: "10"}, "2020-05-10T10:00:00.000Z"],
+      [{time: "0"}, "2020-05-10T00:00:00.000Z"],
+      [{time: "24"}, "2020-05-11T00:00:00.000Z"]
+      [{time: "16:25:20.555"}, "2020-05-10T16:25:20.555Z"],
+      [{time: "2010-05-20T10:00:00Z"}, "2010-05-20T10:00:00Z"],
+      [{time: "3:15"}, "2020-05-10T03:15:00.000Z"],
+      [{time: "3:15"}, "2020-05-10T03:15:00.000Z"],
+    ]
+    testCases.forEach((testCase) => {
+      expect(processTimeArgs(testCase[0])).toBe(testCase[1])
+    })
+  })
 });
