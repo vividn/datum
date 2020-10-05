@@ -7,13 +7,20 @@ type isoDate = string;
 
 const currentTime = DateTime.local();
 
-const processTimeArgs = function (
+type ProcessTimeArgsType = {
   date?: string,
   time?: string,
   yesterday?: number,
   fullDay?: boolean,
   quick?: number
-): isoDatetime | isoDate {
+}
+const processTimeArgs = function ({
+  date,
+  time,
+  yesterday,
+  fullDay,
+  quick,
+}: ProcessTimeArgsType): isoDatetime | isoDate {
   
   // This happens often because data is collected as it happens. It needs to be fast so checked first
   if (!date && !time && !yesterday && !quick) {
