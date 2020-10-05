@@ -82,7 +82,7 @@ const parseTimeStr = function({
     return dateTimeParsed
   }
 
-  // As a last resort, use chrono to parse the time, but this is relatively slow
+  // As a last resort, use chrono to parse the time
   const chrono = require("chrono-node");
   return DateTime.fromISO(chrono.parseDate(timeStr, referenceTime.toJSDate()).toISOString())
 }
