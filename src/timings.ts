@@ -1,62 +1,90 @@
 const pluralize = require("pluralize");
-const chrono = require("chrono-node");
-var { DateTime } = require("luxon");
+const { DateTime } = require("luxon");
 
 type isoDatetime = string;
 type isoDate = string;
+type DateTime = any;
 
-const currentTime = DateTime.local();
+const currentTime = DateTime.local() as DateTime;
 
 type ProcessTimeArgsType = {
-  date?: string,
-  time?: string,
-  yesterday?: number,
-  fullDay?: boolean,
-  quick?: number
-}
+  date?: string;
+  time?: string;
+  yesterday?: number;
+  quick?: number;
+  fullDay?: boolean;
+  referenceTime?: DateTime;
+};
 const processTimeArgs = function ({
   date,
   time,
   yesterday,
-  fullDay,
   quick,
+  fullDay,
+  referenceTime = currentTime,
 }: ProcessTimeArgsType): isoDatetime | isoDate {
-  
   // This happens often because data is collected as it happens. It needs to be fast so checked first
   if (!date && !time && !yesterday && !quick) {
-    return currentTime.toUTC().toString();
+    return referenceTime.toUTC().toString();
   }
 
-  const dateStr =
-    date ??
-    (yesterday ? relTimeStr(-1 * yesterday, "days") : undefined) ??
-    (fullDay ? "today" : undefined);
-  const timeStr =
-    time ?? (quick ? relTimeStr(-5 * quick, "minutes") : undefined);
+  // quick should theoretically never coincide with time from yargs
+  const timeStr = time ?? (quick ? (-5 * quick).toString() : undefined);
+  // likewise with yesterday and day
+  const dateStr = date ?? (yesterday ? (-1 * yesterday).toString() : undefined);
 
-  return combineDateTime(dateStr, timeStr);
-};
-
-const combineDateTime = function (
-  dateStr?: string,
-  timeStr?: string
-): isoDatetime | isoDate {
-  if (!dateStr && !timeStr) {
-    return currentTime.toISOString() as isoDatetime;
-  } else if (dateStr && !timeStr) {
-    return chrono.parseDate(dateStr).toISOString().split("T")[0] as isoDate;
-  } else if (!dateStr && timeStr) {
-    return chrono.parseDate(timeStr).toISOString() as isoDatetime;
-  } else {
-    const fullTimeString = `${dateStr} at ${timeStr}`;
-    return chrono.parseDate(fullTimeString).toISOString() as isoDatetime;
+  if (timeStr) {
+    referenceTime = parseTimeStr({timeStr, referenceTime})
   }
+
+  return referenceTime.toUTC().toString();
 };
 
-const relTimeStr = function (n: number, unit = "days"): string {
-  const nAbs = Math.abs(n);
-  const unitStr = pluralize(unit, nAbs);
-  return n < 0 ? `${nAbs} ${unitStr} ago` : `${n} ${unitStr} from now`;
-};
 
-module.exports = { processTimeArgs, currentTime, combineDateTime, relTimeStr };
+type ParseTimeStrType = {
+  timeStr: string;
+  referenceTime: DateTime
+}
+const parseTimeStr = function({
+  timeStr,
+  referenceTime
+}: ParseTimeStrType): DateTime {
+  // This custom regex is to match a few extra strings not recognized by chrono, particularly short
+  // E.g, 10 for 10:00, 1513 for 15:13, etc.
+  const matches = timeStr.match(
+    /^(?<hour>\d{1,2})(:?(?<minute>\d{2})(:?(?<second>\d{2})(\.(?<milli>\d{1,3}))?)?)?(?<meridian>am?|pm?)?$/i
+  );
+  if (matches?.groups) {
+    const {
+      hour = "0",
+      minute = "0",
+      second = "0",
+      milli = "0",
+      meridian,
+    } = matches.groups;
+    const correctedHour = // fairly dirty implementation, but built for speed
+      meridian?.toLowerCase() === "pm" ? parseInt(hour) + 12 : parseInt(hour);
+
+    // if less than all three milliseconds are given, fill the remaining zeroes
+    const millisecond = (milli + "000").substring(0, 3);
+
+    return referenceTime.set({
+      hour: correctedHour,
+      minute,
+      second,
+      millisecond,
+    });
+  }
+
+  // DateTime can parse some extra ISO type strings
+  const dateTimeParsed = DateTime.fromISO(timeStr)
+  if (dateTimeParsed.invalid === null) {
+    return dateTimeParsed
+  }
+
+  // As a last resort, use chrono to parse the time, but this is relatively slow
+  const chrono = require("chrono-node");
+  return DateTime.fromISO(chrono.parseDate(timeStr, referenceTime.toJSDate()).toISOString())
+}
+
+module.exports = { processTimeArgs, currentTime }
