@@ -1,5 +1,7 @@
 import { Settings, DateTime, Zone } from "luxon";
-Settings.defaultZoneName = "utc";
+// Settings.defaultZoneName = "utc";
+const timezone_mock = require('timezone-mock');
+timezone_mock.register('UTC');
 const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
 Settings.now = () => mockNow;
 
@@ -30,6 +32,7 @@ describe("processTimeArgs", () => {
       [{ time: "16:45:04" }, "2020-05-10T16:45:04.000Z"],
       [{ time: "3:45:04pm" }, "2020-05-10T15:45:04.000Z"],
       [{ time: "2010-05-20T10:00:00Z" }, "2010-05-20T10:00:00.000Z"],
+      [{ time: "yesterday at 10:17" }, "2020-05-09T10:17:00.000Z"]
     ];
     testCases.forEach((testCase) => {
       expect(processTimeArgs(testCase[0])).toBe(testCase[1]);
