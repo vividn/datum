@@ -1,5 +1,5 @@
 const pluralize = require("pluralize");
-const { DateTime } = require("luxon");
+const { DateTime, Duration } = require("luxon");
 
 type isoDatetime = string;
 type isoDate = string;
@@ -27,18 +27,20 @@ const processTimeArgs = function ({
   if (!date && !time && !yesterday && !quick) {
     return referenceTime.toUTC().toString();
   }
-
-  // quick should theoretically never coincide with time from yargs
-  const timeStr = time ?? (quick ? (-5 * quick).toString() : undefined);
   // likewise with yesterday and day
   const dateStr = date ?? (yesterday ? (-1 * yesterday).toString() : undefined);
 
-  if (timeStr) {
-    referenceTime = parseTimeStr({ timeStr, referenceTime });
+  if (time) {
+    referenceTime = parseTimeStr({ timeStr: time, referenceTime });
+  }
+
+  if (quick) {
+    referenceTime = referenceTime.minus({ minutes: 5 * quick });
   }
 
   return referenceTime.toUTC().toString();
 };
+
 
 type ParseTimeStrType = {
   timeStr: string;
@@ -75,6 +77,34 @@ const parseTimeStr = function ({
     });
   }
 
+  // Also supports relative time strings, e.g., -5min
+  const relTimeMatches = timeStr.match(
+    /^(?<sign>\+|-)(?<value>\d+(\.\d)?) ?(?<units>s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)?$/
+  );
+  if (relTimeMatches?.groups) {
+    const { sign, value, units } = relTimeMatches?.groups;
+    const durationUnit =
+      units === undefined
+        ? "minutes"
+        : units[0] === "s"
+        ? "seconds"
+        : units[0] === "m"
+        ? "minutes"
+        : units[0] === "h"
+        ? "hours"
+        : "minutes";
+
+    const durationObject: { [index: string]: number } = {};
+    durationObject[durationUnit] = Number(value);
+    
+    console.log(durationObject)
+    if (sign === "+") {
+      return referenceTime.plus(Duration.fromObject(durationObject));
+    } else {
+      return referenceTime.minus(Duration.fromObject(durationObject));
+    }
+  }
+
   // DateTime can parse some extra ISO type strings
   const dateTimeParsed = DateTime.fromISO(timeStr);
   if (dateTimeParsed.invalid === null) {
@@ -83,9 +113,18 @@ const parseTimeStr = function ({
 
   // As a last resort, use chrono to parse the time
   const chrono = require("chrono-node");
-  return DateTime.fromISO(
-    chrono.parseDate(timeStr, referenceTime.toJSDate()).toISOString()
-  );
+  const chronoParsed = chrono.parseDate(timeStr, referenceTime.toJSDate());
+  if (chronoParsed) {
+    return DateTime.fromISO(chronoParsed.toISOString());
+  }
+
+  class BadTimeArgError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = this.constructor.name;
+    }
+  }
+  throw BadTimeArgError;
 };
 
 module.exports = { processTimeArgs, currentTime };
