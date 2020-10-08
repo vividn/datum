@@ -135,7 +135,7 @@ const parseTimeStr = function ({
       this.name = this.constructor.name;
     }
   }
-  throw BadTimeArgError("time not parsable");
+  throw new BadTimeArgError("time not parsable");
 };
 
 type ParseDateStrType = {
@@ -178,7 +178,7 @@ const parseDateStr = function ({
       this.name = this.constructor.name;
     }
   }
-  throw BadDateArgError("date not parsable");
+  throw new BadDateArgError("date not parsable");
 }
 
 module.exports = { processTimeArgs, currentTime };
