@@ -34,20 +34,19 @@ const processTimeArgs = function ({
   const dateStr = date ?? (yesterday ? (-1 * yesterday).toString() : undefined);
 
   if (timeStr) {
-    referenceTime = parseTimeStr({timeStr, referenceTime})
+    referenceTime = parseTimeStr({ timeStr, referenceTime });
   }
 
   return referenceTime.toUTC().toString();
 };
 
-
 type ParseTimeStrType = {
   timeStr: string;
-  referenceTime: DateTime
-}
-const parseTimeStr = function({
+  referenceTime: DateTime;
+};
+const parseTimeStr = function ({
   timeStr,
-  referenceTime
+  referenceTime,
 }: ParseTimeStrType): DateTime {
   // This custom regex is to match a few extra strings not recognized by chrono, particularly short
   // E.g, 10 for 10:00, 1513 for 15:13, etc.
@@ -77,14 +76,16 @@ const parseTimeStr = function({
   }
 
   // DateTime can parse some extra ISO type strings
-  const dateTimeParsed = DateTime.fromISO(timeStr)
+  const dateTimeParsed = DateTime.fromISO(timeStr);
   if (dateTimeParsed.invalid === null) {
-    return dateTimeParsed
+    return dateTimeParsed;
   }
 
   // As a last resort, use chrono to parse the time
   const chrono = require("chrono-node");
-  return DateTime.fromISO(chrono.parseDate(timeStr, referenceTime.toJSDate()).toISOString())
-}
+  return DateTime.fromISO(
+    chrono.parseDate(timeStr, referenceTime.toJSDate()).toISOString()
+  );
+};
 
-module.exports = { processTimeArgs, currentTime }
+module.exports = { processTimeArgs, currentTime };
