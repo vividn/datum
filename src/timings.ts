@@ -25,11 +25,12 @@ const processTimeArgs = function ({
 }: ProcessTimeArgsType): isoDatetime | isoDate {
   // This happens often because data is collected as it happens. It needs to be fast so checked first
   if (!date && !time && !yesterday && !quick) {
+    if (fullDay) {
+      return referenceTime.toISODate()
+    }
     return referenceTime.toUTC().toString();
   }
-  // likewise with yesterday and day
-  const dateStr = date ?? (yesterday ? (-1 * yesterday).toString() : undefined);
-
+  
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
   }
@@ -38,9 +39,20 @@ const processTimeArgs = function ({
     referenceTime = referenceTime.minus({ minutes: 5 * quick });
   }
 
+  if (date) {
+    referenceTime = parseDateStr({ dateStr: date, referenceTime })
+  }
+
+  if (yesterday) {
+    referenceTime = referenceTime.minus({ days: yesterday })
+  }
+
+  if (fullDay || ( (date || yesterday) && (!time && !quick) )) {
+    return referenceTime.toISODate()
+  }
+
   return referenceTime.toUTC().toString();
 };
-
 
 type ParseTimeStrType = {
   timeStr: string;
@@ -66,7 +78,7 @@ const parseTimeStr = function ({
     const correctedHour = // fairly dirty implementation, but built for speed
       meridian?.toLowerCase() === "pm" ? parseInt(hour) + 12 : parseInt(hour);
 
-    // if less than all three milliseconds are given, fill the remaining zeroes
+    // if less than all three millisecond digits are given, fill the remaining zeroes
     const millisecond = (milli + "000").substring(0, 3);
 
     return referenceTime.set({
@@ -96,8 +108,7 @@ const parseTimeStr = function ({
 
     const durationObject: { [index: string]: number } = {};
     durationObject[durationUnit] = Number(value);
-    
-    console.log(durationObject)
+
     if (sign === "+") {
       return referenceTime.plus(Duration.fromObject(durationObject));
     } else {
@@ -124,7 +135,50 @@ const parseTimeStr = function ({
       this.name = this.constructor.name;
     }
   }
-  throw BadTimeArgError;
+  throw BadTimeArgError("time not parsable");
 };
+
+type ParseDateStrType = {
+  dateStr: string;
+  referenceTime: DateTime;
+};
+const parseDateStr = function ({
+  dateStr,
+  referenceTime = currentTime,
+}: ParseDateStrType): DateTime {
+  
+  // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
+  const relDateMatches = dateStr.match(
+    /^(\+|-)\d+$/
+  )
+  if (relDateMatches) {
+    return currentTime.plus(Duration.fromObject({days: relDateMatches[0]}))
+  }
+
+  // DateTime can parse some extra ISO type strings
+  const dateTimeParsed = DateTime.fromISO(dateStr);
+  if (dateTimeParsed.invalid === null) {
+    // Only want to change the date on the relative time
+    const { year, month, day } = dateTimeParsed.c
+    return referenceTime.set({ year, month, day })
+  }
+
+  // Finally, use chrono to parse the time if all else fails
+  const chrono = require("chrono-node");
+  // The keeplocal time is to aovid timezone shenanigans
+  const chronoParsed = chrono.parseDate(dateStr, referenceTime.toUTC(0,{keepLocalTime: true}).toJSDate());
+  if (chronoParsed) {
+    const { year, month, day } = DateTime.fromISO(chronoParsed.toISOString()).c;
+    return referenceTime.set({ year, month, day })
+  }
+  
+  class BadDateArgError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = this.constructor.name;
+    }
+  }
+  throw BadDateArgError("date not parsable");
+}
 
 module.exports = { processTimeArgs, currentTime };
