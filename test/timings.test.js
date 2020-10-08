@@ -33,8 +33,46 @@ describe("processTimeArgs", () => {
       [{ time: "16:45:04" }, "2020-05-10T16:45:04.000Z"],
       [{ time: "3:45:04pm" }, "2020-05-10T15:45:04.000Z"],
       [{ time: "2010-05-20T10:00:00Z" }, "2010-05-20T10:00:00.000Z"],
-      [{ time: "yesterday at 10:17" }, "2020-05-09T10:17:00.000Z"]
+      [{ time: "yesterday at 10:17" }, "2020-05-09T10:17:00.000Z"],
     ];
+    testCases.forEach((testCase) => {
+      expect(processTimeArgs(testCase[0]), `${testCase[0]}`).toBe(testCase[1]);
+    });
+  });
+
+  it("handles relative time strings", () => {
+    const testCases = [
+      [{ time: "+1" }, dtMockNow.plus(Duration.fromObject({ minutes: 1 }))],
+      [{ time: "+10m" }, dtMockNow.plus(Duration.fromObject({ minutes: 10 }))],
+      [
+        { time: "+100min" },
+        dtMockNow.plus(Duration.fromObject({ minutes: 100 })),
+      ],
+      [
+        { time: "+87.3" },
+        dtMockNow.plus(Duration.fromObject({ minutes: 87, seconds: 18 })),
+      ],
+      [{ time: "-1" }, dtMockNow.minus(Duration.fromObject({ minutes: 1 }))],
+      [{ time: "-10" }, dtMockNow.minus(Duration.fromObject({ minutes: 10 }))],
+      [
+        { time: "-30 minutes" },
+        dtMockNow.minus(Duration.fromObject({ minutes: 30 })),
+      ],
+      [{ time: "+3h" }, dtMockNow.plus(Duration.fromObject({ hours: 3 }))],
+      [{ time: "-1hr" }, dtMockNow.minus(Duration.fromObject({ hours: 1 }))],
+      [{ time: "-3hrs" }, dtMockNow.minus(Duration.fromObject({ hours: 1 }))],
+      [
+        { time: "+8.5hours" },
+        dtMockNow.plus(Duration.fromObject({ minutes: 1 })),
+      ],
+      [
+        { time: "+8 hours" },
+        dtMockNow.plus(Duration.fromObject({ minutes: 1 })),
+      ],
+      [{ time: "+100s" }, dtMockNow.plus(Duration.fromObject({ hours: 3 }))],
+      [{ time: "+3sec" }, dtMockNow.plus(Duration.fromObject({ hours: 3 }))],
+    ];
+
     testCases.forEach((testCase) => {
       expect(processTimeArgs(testCase[0]), `${testCase[0]}`).toBe(testCase[1]);
     });
