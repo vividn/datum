@@ -1,9 +1,10 @@
-import { Settings, DateTime, Zone } from "luxon";
+import { Settings, DateTime, Zone, Duration } from "luxon";
 // Settings.defaultZoneName = "utc";
-const timezone_mock = require('timezone-mock');
-timezone_mock.register('UTC');
+const timezone_mock = require("timezone-mock");
+timezone_mock.register("UTC");
 const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
 Settings.now = () => mockNow;
+const dtMockNow = DateTime.utc();
 
 const {
   processTimeArgs,
