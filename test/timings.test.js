@@ -35,7 +35,7 @@ describe("processTimeArgs", () => {
       [{ time: "yesterday at 10:17" }, "2020-05-09T10:17:00.000Z"]
     ];
     testCases.forEach((testCase) => {
-      expect(processTimeArgs(testCase[0])).toBe(testCase[1]);
+      expect(processTimeArgs(testCase[0]), `${testCase[0]}`).toBe(testCase[1]);
     });
   });
 });
