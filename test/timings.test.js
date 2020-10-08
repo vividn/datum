@@ -79,7 +79,7 @@ describe("processTimeArgs", () => {
   it("handles absolute dates", () => {
     const testCases = [
       [{ date: "2018-06-30" }, "2018-06-30"],
-      [{ date: "06/30" }, "2018-06-30"],
+      [{ date: "06/30" }, "2020-06-30"],
       [{ date: "may1" }, "2020-05-01"],
       [{ date: "june 18" }, "2020-06-18"],
     ];
@@ -95,7 +95,7 @@ describe("processTimeArgs", () => {
         [{ date: "-2" }, "2020-05-08"],
         [{ date: "yesterday" }, "2020-05-09"],
         [{ date: "2 days ago" }, "2020-05-08"],
-        [{ date: "a week from now" }, "2020-05-10"],
+        [{ date: "a week from now" }, "2020-05-17"],
       ];
       testCases.forEach((testCase) => {
         expect(processTimeArgs(testCase[0]), `${JSON.stringify(testCase[0])}`).toBe(testCase[1]);
@@ -107,7 +107,7 @@ describe("processTimeArgs", () => {
         [{ yesterday: 1 }, "2020-05-09"],
         [{ yesterday: 2 }, "2020-05-08"],
         [{ yesterday: 5 }, "2020-05-05"],
-        [{ date: "2010-09-01", yesterday: 1 }, "2010-08-30"],
+        [{ date: "2010-09-01", yesterday: 1 }, "2010-08-31"],
       ];
       testCases.forEach((testCase) => {
         expect(processTimeArgs(testCase[0]), `${JSON.stringify(testCase[0])}`).toBe(testCase[1]);
