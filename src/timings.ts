@@ -24,11 +24,11 @@ const processTimeArgs = function ({
   // This happens often because data is collected as it happens. It needs to be fast so checked first
   if (!date && !time && !yesterday && !quick) {
     if (fullDay) {
-      return referenceTime.toISODate()
+      return referenceTime.toISODate();
     }
     return referenceTime.toUTC().toString();
   }
-  
+
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
   }
@@ -38,15 +38,15 @@ const processTimeArgs = function ({
   }
 
   if (date) {
-    referenceTime = parseDateStr({ dateStr: date, referenceTime })
+    referenceTime = parseDateStr({ dateStr: date, referenceTime });
   }
 
   if (yesterday) {
-    referenceTime = referenceTime.minus({ days: yesterday })
+    referenceTime = referenceTime.minus({ days: yesterday });
   }
 
-  if (fullDay || ( (date || yesterday) && (!time && !quick) )) {
-    return referenceTime.toISODate()
+  if (fullDay || ((date || yesterday) && !time && !quick)) {
+    return referenceTime.toISODate();
   }
 
   return referenceTime.toUTC().toString();
@@ -144,32 +144,32 @@ const parseDateStr = function ({
   dateStr,
   referenceTime,
 }: ParseDateStrType): DateTime {
-  
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
-  const relDateMatches = dateStr.match(
-    /^(\+|-)\d+$/
-  )
+  const relDateMatches = dateStr.match(/^(\+|-)\d+$/);
   if (relDateMatches) {
-    return referenceTime.plus(Duration.fromObject({days: relDateMatches[0]}))
+    return referenceTime.plus(Duration.fromObject({ days: relDateMatches[0] }));
   }
 
   // DateTime can parse some extra ISO type strings
   const dateTimeParsed = DateTime.fromISO(dateStr);
   if (dateTimeParsed.invalid === null) {
     // Only want to change the date on the relative time
-    const { year, month, day } = dateTimeParsed.c
-    return referenceTime.set({ year, month, day })
+    const { year, month, day } = dateTimeParsed.c;
+    return referenceTime.set({ year, month, day });
   }
 
   // Finally, use chrono to parse the time if all else fails
   const chrono = require("chrono-node");
   // The keeplocal time is to aovid timezone shenanigans
-  const chronoParsed = chrono.parseDate(dateStr, referenceTime.toUTC(0,{keepLocalTime: true}).toJSDate());
+  const chronoParsed = chrono.parseDate(
+    dateStr,
+    referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate()
+  );
   if (chronoParsed) {
     const { year, month, day } = DateTime.fromISO(chronoParsed.toISOString()).c;
-    return referenceTime.set({ year, month, day })
+    return referenceTime.set({ year, month, day });
   }
-  
+
   class BadDateArgError extends Error {
     constructor(message: string) {
       super(message);
@@ -177,6 +177,6 @@ const parseDateStr = function ({
     }
   }
   throw new BadDateArgError("date not parsable");
-}
+};
 
 module.exports = { processTimeArgs };
