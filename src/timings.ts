@@ -5,8 +5,6 @@ type isoDatetime = string;
 type isoDate = string;
 type DateTime = any;
 
-const currentTime = DateTime.local() as DateTime;
-
 type ProcessTimeArgsType = {
   date?: string;
   time?: string;
@@ -21,7 +19,7 @@ const processTimeArgs = function ({
   yesterday,
   quick,
   fullDay,
-  referenceTime = currentTime,
+  referenceTime = DateTime.local() as DateTime,
 }: ProcessTimeArgsType): isoDatetime | isoDate {
   // This happens often because data is collected as it happens. It needs to be fast so checked first
   if (!date && !time && !yesterday && !quick) {
@@ -144,7 +142,7 @@ type ParseDateStrType = {
 };
 const parseDateStr = function ({
   dateStr,
-  referenceTime = currentTime,
+  referenceTime,
 }: ParseDateStrType): DateTime {
   
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
@@ -152,7 +150,7 @@ const parseDateStr = function ({
     /^(\+|-)\d+$/
   )
   if (relDateMatches) {
-    return currentTime.plus(Duration.fromObject({days: relDateMatches[0]}))
+    return referenceTime.plus(Duration.fromObject({days: relDateMatches[0]}))
   }
 
   // DateTime can parse some extra ISO type strings
@@ -181,4 +179,4 @@ const parseDateStr = function ({
   throw new BadDateArgError("date not parsable");
 }
 
-module.exports = { processTimeArgs, currentTime };
+module.exports = { processTimeArgs };

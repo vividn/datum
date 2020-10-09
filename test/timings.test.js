@@ -1,18 +1,21 @@
 import { Settings, DateTime, Zone, Duration } from "luxon";
-// Settings.defaultZoneName = "utc";
 const timezone_mock = require("timezone-mock");
-timezone_mock.register("UTC");
-const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
-Settings.now = () => mockNow;
-const dtMockNow = DateTime.utc();
-
 const {
   processTimeArgs,
-  combineDateTime,
-  relTimeStr,
 } = require("../src/timings");
 
 describe("processTimeArgs", () => {
+  beforeEach(() => {
+    timezone_mock.register("UTC");
+    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
+    Settings.now = () => mockNow;
+  })
+
+  afterEach(() => {
+    timezone_mock.unregister();
+    Settings.resetCaches();
+  })
+  
   it("returns current time when no arguments are given", () => {
     expect(processTimeArgs({})).toBe("2020-05-10T15:25:30.000Z");
   });
@@ -41,7 +44,7 @@ describe("processTimeArgs", () => {
   });
 
   it("handles relative time strings", () => {
-    // prettier: ignore
+    const dtMockNow = DateTime.utc();
     const testCases = [
       [{ time: "+1" }, dtMockNow.plus(Duration.fromObject({ minutes: 1 })).toString()],
       [{ time: "+10m" }, dtMockNow.plus(Duration.fromObject({ minutes: 10 })).toString()],
@@ -65,6 +68,7 @@ describe("processTimeArgs", () => {
   });
 
   it("handles quick args", () => {
+    const dtMockNow = DateTime.utc();
     const testCases = [
       [{ quick: 1 }, dtMockNow.minus(Duration.fromObject({ minutes: 5 })).toString()],
       [{ quick: 2 }, dtMockNow.minus(Duration.fromObject({ minutes: 10 })).toString()],
@@ -102,17 +106,17 @@ describe("processTimeArgs", () => {
       });
     });
 
-    it("handles yesterday arg", () => {
-      const testCases = [
-        [{ yesterday: 1 }, "2020-05-09"],
-        [{ yesterday: 2 }, "2020-05-08"],
-        [{ yesterday: 5 }, "2020-05-05"],
-        [{ date: "2010-09-01", yesterday: 1 }, "2010-08-31"],
-      ];
-      testCases.forEach((testCase) => {
-        expect(processTimeArgs(testCase[0]), `${JSON.stringify(testCase[0])}`).toBe(testCase[1]);
-      });
+  it("handles yesterday arg", () => {
+    const testCases = [
+      [{ yesterday: 1 }, "2020-05-09"],
+      [{ yesterday: 2 }, "2020-05-08"],
+      [{ yesterday: 5 }, "2020-05-05"],
+      [{ date: "2010-09-01", yesterday: 1 }, "2010-08-31"],
+    ];
+    testCases.forEach((testCase) => {
+      expect(processTimeArgs(testCase[0]), `${JSON.stringify(testCase[0])}`).toBe(testCase[1]);
     });
+  });
 
 it("can handle date and time together", () => {
     const testCases = [
