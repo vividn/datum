@@ -2,6 +2,14 @@ import { Settings, DateTime, Zone, Duration } from "luxon";
 const timezone_mock = require("timezone-mock");
 const { processTimeArgs } = require("../src/timings");
 
+const expectCases = (testCases) => {
+  testCases.forEach((testCase) => {
+    expect(processTimeArgs(testCase[0]), `${JSON.stringify(testCase[0])}`).toBe(
+      testCase[1]
+    );
+  });
+};
+
 describe("processTimeArgs", () => {
   beforeEach(() => {
     timezone_mock.register("UTC");
@@ -36,12 +44,7 @@ describe("processTimeArgs", () => {
       [{ time: "2010-05-20T10:00:00Z" }, "2010-05-20T10:00:00.000Z"],
       [{ time: "yesterday at 10:17" }, "2020-05-09T10:17:00.000Z"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("handles relative time strings", () => {
@@ -106,13 +109,7 @@ describe("processTimeArgs", () => {
         dtMockNow.minus(Duration.fromObject({ seconds: 3 })).toString(),
       ],
     ];
-
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("handles quick args", () => {
@@ -132,12 +129,7 @@ describe("processTimeArgs", () => {
       ],
       [{ quick: 3, time: "10:15" }, "2020-05-10T10:00:00.000Z"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("handles absolute dates", () => {
@@ -147,12 +139,7 @@ describe("processTimeArgs", () => {
       [{ date: "may1" }, "2020-05-01"],
       [{ date: "june 18" }, "2020-06-18"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("handles relative dates", () => {
@@ -164,12 +151,7 @@ describe("processTimeArgs", () => {
       [{ date: "2 days ago" }, "2020-05-08"],
       [{ date: "a week from now" }, "2020-05-17"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("handles yesterday arg", () => {
@@ -179,12 +161,7 @@ describe("processTimeArgs", () => {
       [{ yesterday: 5 }, "2020-05-05"],
       [{ date: "2010-09-01", yesterday: 1 }, "2010-08-31"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("can handle date and time together", () => {
@@ -193,12 +170,7 @@ describe("processTimeArgs", () => {
       [{ date: "may1", time: "10" }, "2020-05-01T10:00:00.000Z"],
       [{ date: "june 18", time: "4pm" }, "2020-06-18T16:00:00.000Z"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("only returns date when fullDay is given", () => {
@@ -206,12 +178,7 @@ describe("processTimeArgs", () => {
       [{ date: "2020-05-20", time: "15:18", fullDay: true }, "2020-05-20"],
       [{ fullDay: true }, "2020-05-10"],
     ];
-    testCases.forEach((testCase) => {
-      expect(
-        processTimeArgs(testCase[0]),
-        `${JSON.stringify(testCase[0])}`
-      ).toBe(testCase[1]);
-    });
+    expectCases(testCases);
   });
 
   it("gives local date, not utc date", () => {
@@ -220,5 +187,23 @@ describe("processTimeArgs", () => {
     Settings.now = () => mockNow;
 
     expect(processTimeArgs({ fullDay: true })).toBe("2020-05-09");
+  });
+
+  it("adjust datetime appropriately for timezone", () => {
+    const testCases = [
+      // Before DST, UTC-6
+      [
+        { timezone: "America/Chicago", date: "2018-03-10", time: "10:00" },
+        "2018-03-10T16:00:00.000Z",
+      ],
+      // After DST, UTC-5
+      [
+        { timezone: "America/Chicago", date: "2018-03-12", time: "10:00" },
+        "2018-03-12T15:00:00.000Z",
+      ],
+      [{ timezone: "+4", time: "10:00" }, "2020-05-10T06:00:00.000Z"],
+      [{ timezone: "-4", time: "10:00" }, "2020-05-10T14:00:00.000Z"],
+    ];
+    expectCases(testCases);
   });
 });
