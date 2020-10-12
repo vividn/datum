@@ -7,10 +7,10 @@ type DateTime = any;
 
 type TimingData = {
   occurTime: isoDatetime | isoDate;
-  createTime: isoDatetime
-  modifyTime: isoDatetime
+  createTime: isoDatetime;
+  modifyTime: isoDatetime;
   utcOffset: number;
-}
+};
 
 type ProcessTimeArgsType = {
   date?: string;
@@ -29,26 +29,19 @@ const processTimeArgs = function ({
   fullDay,
   referenceTime,
   timezone,
-}: ProcessTimeArgsType): isoDatetime | isoDate {
+}: ProcessTimeArgsType): TimingData {
   if (timezone) {
     if (isNaN(Number(timezone))) {
       // timezone is a named zone
-      DateTimeSettings.defaultZoneName = timezone
+      DateTimeSettings.defaultZoneName = timezone;
     } else {
       // timezone is a utc offset "+6"
-      DateTimeSettings.defaultZoneName = `UTC${timezone}`
+      DateTimeSettings.defaultZoneName = `UTC${timezone}`;
     }
   }
-  
-  referenceTime = referenceTime ?? DateTime.local() as DateTime
 
-  // This happens often because data is collected as it happens. It needs to be fast so checked first
-  if (!date && !time && !yesterday && !quick) {
-    if (fullDay) {
-      return referenceTime.toISODate();
-    }
-    return referenceTime.toUTC().toString();
-  }
+  const now = DateTime.local() as DateTime;
+  referenceTime = referenceTime ?? now;
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
@@ -66,11 +59,18 @@ const processTimeArgs = function ({
     referenceTime = referenceTime.minus({ days: yesterday });
   }
 
-  if (fullDay || ((date || yesterday) && !time && !quick)) {
-    return referenceTime.toISODate();
-  }
+  // if only date information is given (or marked fullDay), only record the date
+  const occurTime =
+    fullDay || ((date || yesterday) && !time && !quick)
+      ? (referenceTime.toISODate() as isoDate)
+      : (referenceTime.toUTC().toString() as isoDatetime);
 
-  return referenceTime.toUTC().toString();
+  return {
+    occurTime,
+    createTime: now.toUTC().toString(),
+    modifyTime: now.toUTC().toString(),
+    utcOffset: referenceTime.offset / 60,
+  };
 };
 
 type ParseTimeStrType = {
