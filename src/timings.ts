@@ -1,9 +1,16 @@
 const pluralize = require("pluralize");
-const { DateTime, Duration } = require("luxon");
+const { DateTime, Duration, Settings: DateTimeSettings } = require("luxon");
 
 type isoDatetime = string;
 type isoDate = string;
 type DateTime = any;
+
+type TimingData = {
+  occurTime: isoDatetime | isoDate;
+  createTime: isoDatetime
+  modifyTime: isoDatetime
+  utcOffset: number;
+}
 
 type ProcessTimeArgsType = {
   date?: string;
@@ -12,6 +19,7 @@ type ProcessTimeArgsType = {
   quick?: number;
   fullDay?: boolean;
   referenceTime?: DateTime;
+  timezone?: string;
 };
 const processTimeArgs = function ({
   date,
@@ -19,8 +27,21 @@ const processTimeArgs = function ({
   yesterday,
   quick,
   fullDay,
-  referenceTime = DateTime.local() as DateTime,
+  referenceTime,
+  timezone,
 }: ProcessTimeArgsType): isoDatetime | isoDate {
+  if (timezone) {
+    if (isNaN(Number(timezone))) {
+      // timezone is a named zone
+      DateTimeSettings.defaultZoneName = timezone
+    } else {
+      // timezone is a utc offset "+6"
+      DateTimeSettings.defaultZoneName = `UTC${timezone}`
+    }
+  }
+  
+  referenceTime = referenceTime ?? DateTime.local() as DateTime
+
   // This happens often because data is collected as it happens. It needs to be fast so checked first
   if (!date && !time && !yesterday && !quick) {
     if (fullDay) {
