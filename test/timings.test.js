@@ -200,4 +200,25 @@ describe("processTimeArgs", () => {
       ).toBe(testCase[1]);
     });
   });
+
+  it("only returns date when fullDay is given", () => {
+    const testCases = [
+      [{ date: "2020-05-20", time: "15:18", fullDay: true }, "2020-05-20"],
+      [{ fullDay: true }, "2020-05-10"],
+    ];
+    testCases.forEach((testCase) => {
+      expect(
+        processTimeArgs(testCase[0]),
+        `${JSON.stringify(testCase[0])}`
+      ).toBe(testCase[1]);
+    });
+  });
+
+  it("gives local date, not utc date", () => {
+    timezone_mock.register("Brazil/East");
+    const mockNow = DateTime.utc(2020, 5, 10, 2, 0, 0).toMillis(); // 23:00 May 9, Brazil time
+    Settings.now = () => mockNow;
+
+    expect(processTimeArgs({ fullDay: true })).toBe("2020-05-09");
+  });
 });
