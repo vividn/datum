@@ -1,8 +1,16 @@
 #!/usr/bin/env node
 
 async function main() {
-  const dbName = "datum";
+  // Load command line arguments
+  const { configuredYargs } = require('./input')
+  const args = configuredYargs.parse(process.argv.slice(2))
 
+  // Process timing
+  const {processTimeArgs} = require('./timings')
+  const { date, time, quick, yesterday, fullDay, timezone } = args;
+  const timings = processTimeArgs({date, time, quick, yesterday, fullDay, timezone})
+
+  const dbName = args.db;
   const nano = require("nano")("http://admin:password@localhost:5983");
 
   // Create database if it doesn't exist
@@ -12,7 +20,7 @@ async function main() {
 
   const _id = new Date().toISOString();
 
-  await db.insert({ _id: _id });
+  await db.insert({ _id: _id, ...timings });
   const doc = await db.get(_id);
   console.log(doc);
 }
