@@ -1,3 +1,5 @@
+const RJSON = require('relaxed-json')
+
 type parseDataType = {
   posArgs: (string | number)[];
   extraKeys?: string | string[];
@@ -21,7 +23,7 @@ const parseData = function ({ posArgs, extraKeys }: parseDataType) {
   // Processing the args with keys is easy enough
   for (const arg of withKey) {
     const [key, value] = arg.split('=');
-    payload[key] = Number(value) || value;
+    payload[key] = RJSON.parse(value);
   }
 
   return payload

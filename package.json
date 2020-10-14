@@ -16,7 +16,7 @@
     "system": "yarn global add $PWD",
     "pipeline": "yarn test && yarn build && yarn system",
     "refresh": "rm -rf ./node_modules && yarn install",
-	"lint": "prettier src test --write"
+    "lint": "prettier src test --write"
   },
   "devDependencies": {
     "@babel/core": "^7.11.6",
@@ -46,6 +46,7 @@
     "luxon": "^1.25.0",
     "nano": "^8.2.2",
     "pluralize": "^8.0.0",
+    "relaxed-json": "^1.0.3",
     "yargs": "^15.4.1"
   }
 }
