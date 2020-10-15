@@ -51,10 +51,21 @@ describe("parseData", () => {
 
   it("convert JSON looking data", () => {
     const testCases = [
-      [{ posArgs: ["empty={}"]}, { empty: {}}],
-      [{ posArgs: ["two41={a: bcd, d: 3}"]}, {two41: {d: 3, a: "bcd"}}],
-      [{ posArgs: ["turtles={all: {the: {way: down}}}", "flat={earth: [or, turtle, shell]}"]}, {turtles: {all: {the: {way: "down"}}}, flat: {earth: ["or", "turtle", "shell"]}}]
-    ]
-    expectFromCases(testCases)
-  })
+      [{ posArgs: ["empty={}"] }, { empty: {} }],
+      [{ posArgs: ["two41={a: bcd, d: 3}"] }, { two41: { d: 3, a: "bcd" } }],
+      [
+        {
+          posArgs: [
+            "turtles={all: {the: {way: down}}}",
+            "flat={earth: [or, 1, turtle, shell]}",
+          ],
+        },
+        {
+          turtles: { all: { the: { way: "down" } } },
+          flat: { earth: ["or", 1, "turtle", "shell"] },
+        },
+      ],
+    ];
+    expectFromCases(testCases);
+  });
 });
