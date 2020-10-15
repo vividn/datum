@@ -148,12 +148,6 @@ const parseTimeStr = function ({
     return DateTime.fromISO(chronoParsed.toISOString());
   }
 
-  class BadTimeArgError extends Error {
-    constructor(message: string) {
-      super(message);
-      this.name = this.constructor.name;
-    }
-  }
   throw new BadTimeArgError("time not parsable");
 };
 
@@ -191,13 +185,21 @@ const parseDateStr = function ({
     return referenceTime.set({ year, month, day });
   }
 
-  class BadDateArgError extends Error {
-    constructor(message: string) {
-      super(message);
-      this.name = this.constructor.name;
-    }
-  }
   throw new BadDateArgError("date not parsable");
 };
 
-module.exports = { processTimeArgs };
+class BadTimeArgError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+class BadDateArgError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+module.exports = { processTimeArgs, BadTimeArgError, BadDateArgError };
