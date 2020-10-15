@@ -19,14 +19,21 @@ const parseData = function ({ posArgs, extraKeys }: parseDataType) {
     },
     [[] as string[], [] as (string | number)[]]
   );
-  
+
   // Processing the args with keys is easy enough
   for (const arg of withKey) {
-    const [key, value] = arg.split('=');
+    const [key, value] = arg.split("=");
     payload[key] = RJSON.parse(value);
   }
 
-  return payload
+  return payload;
 };
 
-module.exports = { parseData }
+class DataError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+module.exports = { parseData, DataError };
