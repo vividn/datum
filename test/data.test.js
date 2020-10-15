@@ -1,4 +1,4 @@
-const { parseData } = require("../src/data");
+const { parseData, DataError } = require("../src/data");
 
 const expectFromCases = (testCases) => {
   testCases.forEach((testCase) => {
@@ -68,4 +68,19 @@ describe("parseData", () => {
     ];
     expectFromCases(testCases);
   });
+
+  it("throws error with extra data and no leniency", () => {
+    expect(() => parseData({posArgs: ["keyless"]})).toThrowError(DataError)
+    expect(() => parseData({posArgs: ["these", "data", "have", "no", "keys"]})).toThrowError(DataError)
+    expect(() => parseData({extraKeys: ["key1"], posArgs: ["hasKey", "noKey"]})).toThrowError(DataError)
+  })
+
+  it("saves extra data when lenient", () => {
+    const testCases = [
+      [{lenient: true, posArgs: ["keyless"]}, {extraData: ["keyless"]}],
+      [{lenient: true, posArgs: [3, "[1, 2, three]", "{a: bcd}"]}, {extraData: [3, [1, 2, "three"], {a: "bcd"}]}],
+      [{lenient: true, posArgs: ["extra=Data", "can", "be=interspersed", "with", "keyed=data"]}, {extra: "Data", be: "interspersed", keyed: "data", extraData: ["can", "with"]}]
+    ]
+    expectFromCases(testCases)
+  })
 });
