@@ -112,6 +112,8 @@ def set_constants():
     begin_date = None
     global end_date
     end_date = None
+    global date_array
+    date_array = None
 
     # Where to save the image
     global imagedir
@@ -144,22 +146,31 @@ def main(**kwargs):
     # Display info about what is being processed
     print("\n#####################\n" + imagename)
 
-    # Calculate the begin and end dates
-    global begin_date, end_date, nDays
-    if begin_date is None:
-        if end_date is None:
-            # If end_date is not specified, use today
-            end_date = dt.date.today()
+    # Calculate the dates to draw
+    global begin_date, end_date, nDays, date_array
+    if date_array is None:
+        if begin_date is None:
+            if end_date is None:
+                # If end_date is not specified, use today
+                end_date = dt.date.today()
 
-        begin_date = end_date - dt.timedelta(days=nDays - 1)
-
-    else:
-        if end_date is None:
-            end_date = begin_date + dt.timedelta(days=nDays - 1)
+            begin_date = end_date - dt.timedelta(days=nDays - 1)
 
         else:
-            # Overide nDays
-            nDays = (end_date - begin_date).days + 1
+            if end_date is None:
+                end_date = begin_date + dt.timedelta(days=nDays - 1)
+
+            else:
+                # Overide nDays
+                nDays = (end_date - begin_date).days + 1
+        
+        date_array = []
+        for iDay in range(0, nDays):
+            # Starting with the beginning date, add the dates to the array
+            date = begin_date + datetime.timedelta(days=iDay)
+            date_array += [date]
+    else:
+        nDays = len(date_array)
 
     # Load in the data to plot from the dayview_table.
     # It includes name, span (vertical bar span), and color of the data
@@ -216,6 +227,9 @@ def main(**kwargs):
     if day_height >= 2 * text_height:
         date_label_fmt = "%a\n%b %d"
         text_width, text_height = imfont.getsize("Dec 88")
+    if day_height >= 3 * text_height:
+        date_label_fmt = "%a\n%b %d\n%Y"
+        text_width, text_height = imfont.getsize("Dec 88")
 
     # Load in the data to quantify (i.e., display the total on the right side of the day)
     # For now, only + is allowed. TODO: Build in other operations for quantification such as AND and OR
@@ -241,16 +255,11 @@ def main(**kwargs):
     #####################################
     # Get the dates and then draw the date text
 
-    # Create an array of dates to analyze
-    dates_to_plot = []
-
     # day0s is an array of the ymin position of each of the days
     day0s = []
 
     for iDay in range(0, nDays):
-        # Starting with the beginning date, add the dates to the array
-        date = begin_date + datetime.timedelta(days=iDay)
-        dates_to_plot += [date]
+        date = date_array[iDay]
 
         # Record where the day is in the image
         day0 = (
@@ -307,7 +316,7 @@ def main(**kwargs):
 
         #########################################
         # Plot the data day by day
-        for iDay, date in enumerate(dates_to_plot):
+        for iDay, date in enumerate(date_array):
 
             # Load the blocks for the given day
             try:
@@ -396,7 +405,7 @@ def main(**kwargs):
 
     ####################################
     # Show the quantifications on the right side
-    for iDay, date in enumerate(dates_to_plot):
+    for iDay, date in enumerate(date_array):
         # The upper and lower y values of the entire day
         min_day_y = day0s[iDay]
         max_day_y = day0s[iDay] + day_height
@@ -571,53 +580,54 @@ def get_color(datum_name, datum_colors, category=None):
             except KeyError:
                 return default_color
 
-
-main()
-main(imagename="reduced", data_set="reducedSet")
-main(nDays=30, imagename="30dayview", ysize=1920)
-main(
-    nDays=1,
-    imagename="singledayview",
-    xsize=1920,
-    ysize=120,
-    image_padding=6,
-    bar_padding=0,
-    text_padding=0,
-    quantfontsize=18,
-)
-main(
-    nDays=1,
-    imagename="singledayviewtiny",
-    xsize=1920,
-    ysize=80,
-    image_padding=2,
-    bar_padding=0,
-    text_padding=0,
-    quantfontsize=14,
-    fontsize=12
-)
-main(
-    nDays=1,
-    imagename="phoneday",
-    xsize=1080,
-    ysize=200,
-    image_padding=6,
-    bar_padding=0,
-    text_padding=0,
-    now_width=2,
-    quantfontsize=30,
-)
-main(nDays=14, imagename="2week", ysize=1200)
-main(
-    begin_date=dt.date(2018, 12, 9),
-    end_date=dt.date(2018, 12, 15),
-    imagename="interview",
-    data_set="reducedSet",
-    xsize=1920,
-    ysize=1080,
-    fontsize=24,
-    quantfontsize=30,
-    point_r=7,
-)
-# main(nDays=1, imagename='sampleAct', data_set='actSample', begin_date=dt.date(2019,1,28),
-#     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0, quantfontsize=18)
+if __name__ == "__main__":
+    main()
+    main(imagename="reduced", data_set="reducedSet")
+    main(nDays=30, imagename="30dayview", ysize=1920)
+    main(
+        nDays=1,
+        imagename="singledayview",
+        xsize=1920,
+        ysize=120,
+        image_padding=6,
+        bar_padding=0,
+        text_padding=0,
+        quantfontsize=18,
+    )
+    main(
+        nDays=1,
+        imagename="singledayviewtiny",
+        xsize=1920,
+        ysize=80,
+        image_padding=2,
+        bar_padding=0,
+        text_padding=0,
+        quantfontsize=14,
+        fontsize=12
+    )
+    main(
+        nDays=1,
+        imagename="phoneday",
+        xsize=1080,
+        ysize=200,
+        image_padding=6,
+        bar_padding=0,
+        text_padding=0,
+        now_width=2,
+        quantfontsize=30,
+    )
+    main(nDays=14, imagename="2week", ysize=1200)
+    main(
+        begin_date=dt.date(2018, 12, 9),
+        end_date=dt.date(2018, 12, 15),
+        imagename="interview",
+        data_set="reducedSet",
+        xsize=1920,
+        ysize=1080,
+        fontsize=24,
+        quantfontsize=30,
+        point_r=7,
+    )
+    main(date_array=[dt.date(2019,3,4), dt.date(2020,4,5), dt.date(2019,1,3)], imagename="selectedDates")
+    # main(nDays=1, imagename='sampleAct', data_set='actSample', begin_date=dt.date(2019,1,28),
+    #     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0, quantfontsize=18)
