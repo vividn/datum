@@ -5,6 +5,7 @@
 # First, collect a timestamp as soon as possible:
 TIMESTR=$(date "+%H:%M:%S.%3N")
 DATESTR=$(date "+%Y-%m-%d")
+TZSTR=$(date "+%z")
 
 DATADIR=~/Data/datum
 
@@ -104,6 +105,11 @@ while true; do
             shift
             ;;
 
+		-z) # Set the timezone explicitly
+			TZSTR=$1
+			shift
+			;;
+
         --)
             shift
             break
@@ -121,7 +127,7 @@ done
 ######
 
 function makeTimestamp {
-    TIMESTAMP=$DATESTR"\t"$TIMESTR 
+    TIMESTAMP=$DATESTR"\t"$TIMESTR"\t"$TZSTR
 }
 makeTimestamp
 
@@ -263,13 +269,15 @@ case $mode in
         # Record the start time
         TIMESTR=$(date "+%H:%M:%S.%3N")
         DATESTR=$(date "+%Y-%m-%d")
-        echo -e "$DATESTR\t$TIMESTR\t[start]$AFLAGDATA" | tee -a $FILE
+		TZSTR=$(date "+%z")
+        echo -e "$DATESTR\t$TIMESTR\t$TZSTR\t[start]$AFLAGDATA" | tee -a $FILE
 
         # Set up a trap so that when the function exits, the finish time is recorded
         function finish {
             TIMESTR=$(date "+%H:%M:%S.%3N")
             DATESTR=$(date "+%Y-%m-%d")
-            echo -e "$DATESTR\t$TIMESTR\t[end]" | tee -a $FILE
+			TZSTR=$(date "+%z")
+            echo -e "$DATESTR\t$TIMESTR\t$TZSTR\t[end]" | tee -a $FILE
             tput cnorm
         }
         trap finish EXIT
@@ -281,6 +289,7 @@ case $mode in
             # Immediately get the timestamp
 		        TIMESTR=$(date "+%H:%M:%S.%3N")
 		        DATESTR=$(date "+%Y-%m-%d")
+				TZSTR=$(date "+%z")
 
 		        # Reference the key against the associative array generated earlier
 		        DATAVAL="${letters[$key]}"
@@ -290,7 +299,7 @@ case $mode in
 			          DATAVAL=$key
 		        fi
 
-		        echo -e "$DATESTR\t$TIMESTR\t$DATAVAL" | tee -a $FILE
+		        echo -e "$DATESTR\t$TIMESTR\t$TZSTR\t$DATAVAL" | tee -a $FILE
 	      done
         ;;
 esac

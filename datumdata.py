@@ -87,6 +87,8 @@ class Datumdata:
             self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
         )
 
+        self.data.drop(columns=["Offset"], inplace=True)
+
         # Ensure the date_time column is in datetime format
         self.data.index = pd.to_datetime(self.data.index)
 
