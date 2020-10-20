@@ -3,16 +3,16 @@ require 'date'
 
 # Process all my notebook files to track the amount that I write
 
-data_dir = '/home/vividn/Notebooks/'
-words_file = '/home/vividn/Data/datum/words.tsv'
-blocks_file = '/home/vividn/Data/datum/write.tsv'
+data_dir = File.expand_path('~/Notebooks')
+words_file = File.expand_path('~/Data/datum/words.tsv')
+blocks_file = File.expand_path('~/Data/datum/write.tsv')
 
 # Save the datum data in an array first to allow for sorting before writing
 words_output = []
 blocks_output = []
 
 # Go through each notebook and extract number of words written per day
-Dir.glob("#{data_dir}*.md") do |notebook|
+Dir.glob("#{data_dir}/*.md") do |notebook|
   # Get the name of the notebook without the rest of the filename and .md
   name = notebook.split('/')[-1].chomp('.md')
   print("Processing: #{name}\n")
@@ -20,6 +20,7 @@ Dir.glob("#{data_dir}*.md") do |notebook|
   # Initialize date, time, and word variables
   entryDate,newEntryDate,endDate = nil
   entryTime,newEntryTime,endTime = nil
+  entryZone,newEntryZone,endZone = nil
   entryWordCount = 0;
   
   # Count the number of lines in the file so that on the last line, one final entry can be made
@@ -39,15 +40,15 @@ Dir.glob("#{data_dir}*.md") do |notebook|
         # If there is an END_OF_ENTRY, record an appropriate start...end block
         # Record number of words at the end of the block
         if endTime
-            blocks_output << sprintf("%s\t%s\t%s\t%s",entryDate,entryTime,"start",name)
-            blocks_output << sprintf("%s\t%s\t%s\t%s",endDate,endTime,"end",name)
+            blocks_output << "#{entryDate}\t#{entryTime}\t#{entryZone}\tstart\t#{name}"
+            blocks_output << "#{endDate}\t#{endTime}\t#{endZone}\tend\t#{name}"
             
-            words_output << sprintf("%s\t%s\t%d\t%s",endDate,endTime,entryWordCount,name)
+            words_output << "#{endDate}\t#{endTime}\t#{endZone}\t#{entryWordCount}\t#{name}"
         else
             # If there is no END_OF_ENTRY, still record the entry, but time will be considered 0
-            blocks_output << sprintf("%s\t%s\t%d\t%s",entryDate,entryTime,0,name)
+            blocks_output << "#{entryDate}\t#{entryTime}\t#{entryZone}\t0\t#{name}"
             
-            words_output << sprintf("%s\t%s\t%d\t%s",entryDate,entryTime,entryWordCount,name)
+            words_output << "#{entryDate}\t#{entryTime}\t#{entryZone}\t#{entryWordCount}\t#{name}"
         end
       end
 
@@ -106,7 +107,7 @@ blocks_output.sort!
 File.open(words_file,'w') do |f|
 
   # Header line
-  f.puts("Date\tTime\tWords\tNotebook")
+  f.puts("Date\tTime\tOffset\tWords\tNotebook")
 
   # Data
   words_output.each { |line| f.puts(line) }
@@ -115,7 +116,7 @@ end
 File.open(blocks_file, 'w') do |f|
     
     # Header line
-    f.puts("Date\tTime\tMinutes\tNotebook")
+    f.puts("Date\tTime\tOffset\tMinutes\tNotebook")
     
     # Data
     blocks_output.each { |line| f.puts(line) }
