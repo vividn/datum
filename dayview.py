@@ -117,7 +117,7 @@ def set_constants():
 
     # Where to save the image
     global imagedir
-    imagedir = home + "Analysis/Pictures/"
+    imagedir = home + "Analysis/Pictures"
     global imagename
     imagename = "dayview"
 
@@ -137,7 +137,7 @@ def main(**kwargs):
         globals()[key] = value
 
     # Set where image is saved
-    imageout = imagedir + imagename + ".png"
+    imageout = imagedir + '/' + imagename + ".png"
 
     # Generate the fonts
     imfont = ImageFont.truetype(fontpath + imfontname, fontsize)
