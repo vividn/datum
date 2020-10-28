@@ -23,16 +23,14 @@ const parseData = function ({
     [[] as string[], [] as (string | number)[]]
   );
 
-  // Processing the args with keys is easy enough
   for (const arg of withKey) {
-    const [key, value] = arg.split("=");
-    payload[key] = inferType(value);
+    const [key, ...eqSepValue] = arg.split("=");
+    payload[key] = inferType(eqSepValue.join('='));
   }
 
   if (withoutKey.length > 0) {
     if (lenient) {
       payload["extraData"] = withoutKey.map((arg) => {
-        console.log(arg)
         return inferType(arg)});
     } else {
       throw new DataError('some data do not have keys. Assign keys with equals signs `key=value`, key args `-K key1 -K key2 value1 value2`, or use --lenient');
@@ -52,6 +50,9 @@ const inferType = (value: (number | string)) => {
   if(/^nan$/i.test(value)) {
     return Number.NaN
   }
+  if(/^-?inf(inity)?/i.test(value)) {
+    return value[0] === '-' ? Number.NEGATIVE_INFINITY : Number.POSITIVE_INFINITY
+  }
   try {
     const RJSON = require("relaxed-json");
     return RJSON.parse(value);
@@ -66,4 +67,11 @@ class DataError extends Error {
   }
 }
 
-module.exports = { parseData, DataError };
+class KeysError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = this.constructor.name;
+  }
+}
+
+module.exports = { parseData, DataError, inferType, KeysError };
