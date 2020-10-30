@@ -1,5 +1,12 @@
 const dataImports = require("../src/data");
-const { parseData, inferType, DataError, KeysError, __RewireAPI__ } = dataImports;
+const {
+  parseData,
+  inferType,
+  DataError,
+  KeysError,
+  __RewireAPI__,
+  splitFirstEquals,
+} = dataImports;
 
 const expectFromCases = (testCases) => {
   testCases.forEach((testCase) => {
@@ -205,18 +212,21 @@ describe("parseData", () => {
       [{ posArgs: ["extraArg"], lenient: true }, 1],
       [{ posArgs: ["withKey=data"] }, 1],
       [{ extraKeys: ["keyIs"], posArgs: ["given"] }, 1],
-      [{ posArgs: []}, 0],
-      [{ extraKeys: ["onlyFinalData=goesThrough"], posArgs: ["inferType"]}, 1]
+      [{ posArgs: [] }, 0],
+      [{ extraKeys: ["onlyFinalData=goesThrough"], posArgs: ["inferType"] }, 1],
     ];
 
     testCases.forEach((testCase) => {
-      const parseDataArgs = testCase[0]
-      const inferTypeCalls = testCase[1]
+      const parseDataArgs = testCase[0];
+      const inferTypeCalls = testCase[1];
 
       const mockedInferType = jest.fn(() => "returnData");
       dataImports.__Rewire__({ inferType: mockedInferType });
       parseData(parseDataArgs);
-      expect(mockedInferType, `${JSON.stringify(testCase)}`).toHaveBeenCalledTimes(inferTypeCalls);
+      expect(
+        mockedInferType,
+        `${JSON.stringify(testCase)}`
+      ).toHaveBeenCalledTimes(inferTypeCalls);
     });
   });
 });
@@ -274,5 +284,24 @@ describe("inferType", () => {
     );
     expect(inferType("(1,2,33)")).toEqual("(1,2,33)");
     expect(inferType("NAN/null")).toEqual("NAN/null");
+  });
+});
+
+describe("splitFirstEquals", () => {
+  it("returns [str, null] if there are no equals signs", () => {
+    expect(splitFirstEquals("")).toStrictEqual(["", null]);
+    expect(splitFirstEquals("a")).toStrictEqual(["a", null]);
+    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual(["a,bsdflkj3", null]);
+  });
+
+  it("returns key value pair when there is one equals", () => {
+    expect(splitFirstEquals("a=b")).toStrictEqual(["a", "b"]);
+    expect(splitFirstEquals("a=")).toStrictEqual(["a", ""]);
+    expect(splitFirstEquals("abc=def")).toStrictEqual(["abc", "def"]);
+  });
+
+  it("puts any extra equals signs into the value of the pair", () => {
+    expect(splitFirstEquals("a=b=c")).toStrictEqual(["a", "b=c"]);
+    expect(splitFirstEquals("a====")).toStrictEqual(["a", "==="]);
   });
 });
