@@ -50,9 +50,9 @@ const parseData = function ({
 
     // data remains, but no extraKeys left
     if (lenient) {
-      payload.extraData = (payload.extraData || []).concat(
-        [inferType(dataValue)]
-      );
+      payload.extraData = (payload.extraData || []).concat([
+        inferType(dataValue),
+      ]);
       continue;
     }
     throw new DataError(
@@ -64,26 +64,29 @@ const parseData = function ({
   while (keyArray.length > 0) {
     const [dataKey, defaultValue] = splitFirstEquals(keyArray.shift()!);
 
-    if (defaultValue === undefined) {
-      if (hasEncounteredOptionalKey) {
-        throw new KeysError(
-          "All required extra keys must come before all optional keys"
-        ); // TODO: sort required extraKeys first
-      }
-      throw new DataError(`No data given for the required key '${dataKey}`)
+    if (defaultValue === undefined && hasEncounteredOptionalKey) {
+      throw new KeysError(
+        "All required extra keys must come before all optional keys"
+      ); // TODO: sort required extraKeys first
     }
 
-    if (defaultValue === '') {
+    if (dataKey in payload) {
       continue
     }
 
-    payload[dataKey] = inferType(defaultValue)
+    if (defaultValue === undefined) {
+    throw new DataError(`No data given for the required key '${dataKey}`);
+    }
+    
+    if (defaultValue === "") {
+      continue;
+    }
+
+    payload[dataKey] = inferType(defaultValue);
   }
 
   return payload;
 };
-
-
 
 const splitFirstEquals = (str: string): [string, string | undefined] => {
   const [first, ...eqSepValue] = str.split("=");
