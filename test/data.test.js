@@ -153,6 +153,14 @@ describe("parseData", () => {
     expectFromCases(testCases);
   });
 
+  it("assigns data to required keys", () => {
+    expect(true).toBe(false)
+  })
+
+  it("throws if not enough data is given for all required keys", () => {
+    expect(true).toBe(false)
+  })
+
   it("handles optional extra keys", () => {
     const testCases = [
       [{ extraKeys: "abc=", posArgs: ["cde"] }, { abc: "cde" }],
@@ -173,7 +181,7 @@ describe("parseData", () => {
         posArgs: ["withTwo", "arguments"],
       })
     ).toThrowError(KeysError);
-    expect(
+    expect(() =>
       parseData({
         extraKeys: ["req1", "opt1=", "req2"],
         posArgs: ["also", "with", "three"],
@@ -282,16 +290,16 @@ describe("inferType", () => {
     expect(inferType("{what: even is this)) ]}")).toEqual(
       "{what: even is this)) ]}"
     );
-    expect(inferType("(1,2,33)")).toEqual("(1,2,33)");
+    expect(inferType("(1,2,3)")).toEqual("(1,2,3)");
     expect(inferType("NAN/null")).toEqual("NAN/null");
   });
 });
 
 describe("splitFirstEquals", () => {
-  it("returns [str, null] if there are no equals signs", () => {
-    expect(splitFirstEquals("")).toStrictEqual(["", null]);
-    expect(splitFirstEquals("a")).toStrictEqual(["a", null]);
-    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual(["a,bsdflkj3", null]);
+  it("returns [str, undefined] if there are no equals signs", () => {
+    expect(splitFirstEquals("")).toStrictEqual(["", undefined]);
+    expect(splitFirstEquals("a")).toStrictEqual(["a", undefined]);
+    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual(["a,bsdflkj3", undefined]);
   });
 
   it("returns key value pair when there is one equals", () => {
