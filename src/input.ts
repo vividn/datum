@@ -70,19 +70,20 @@ const configuredYargs = yargs
     //   alias: "U",
     //   type: "boolean",
     // },
-    // K: {
-    //   describe:
-    //     "The keys to use for additional data, useful for aliases. Keys can be used with equals signs for optionality or default values." +
-    //     "`datum -K KEY1 -K KEY2= -K KEY3=default` can then take 1-3 positional args, with KEY3 being set to default if < 3 are given",
-    //   alias: "extra-keys",
-    //   type: "string",
-    //   nargs: 1,
-    //   default: [],
-    // },
-    // lenient: {
-    //   describe: "Allow extra data without defined keys",
-    //   type: "boolean",
-    // },
+    extraKeys: {
+      describe:
+        "The keys to use for additional data, useful for aliases. Use multiple times for multiple keys. " +
+        "Keys can be used with equals signs for optionality or default values. " +
+        "`datum -k KEY1 -k KEY2= -k KEY3=default` can then take 1-3 positional args, with KEY3 being set to default if < 3 are given",
+      alias: "k",
+      type: "string",
+      nargs: 1,
+    },
+    lenient: {
+      describe: "Allow extra data without defined keys",
+      type: "boolean",
+      alias: "l"
+    },
   })
   .help("h")
   .alias("h", "help")
