@@ -2,13 +2,14 @@ type parseDataType = {
   posArgs: (string | number)[];
   extraKeys?: string | string[];
   lenient?: boolean;
+  payload?: {[key: string]: any}
 };
 const parseData = function ({
   posArgs,
   extraKeys,
   lenient = false,
+  payload = {},
 }: parseDataType) {
-  const payload: { [key: string]: any } = {};
 
   // save the arguments with explicit keys into the payload leaving only the keyless
   const withoutKey = posArgs.reduce((result, arg) => {
@@ -35,6 +36,45 @@ const parseData = function ({
 
   return payload;
 };
+
+const combineExtraKeysWithArgs = function ({posArgs, extraKeys = [], lenient, payload = {}}: parseDataType) {
+  for (const extraKey of extraKeys) {
+    const [dataKey, defaultValue, tooManyEquals] = extraKey.split('=');
+    if (tooManyEquals !== undefined) {
+      throw 'Too many equals signs in a key in --extra-keys';
+    }
+
+    // the data key might be already explicityly specified
+    if (dataKey in payload) {
+      continue;
+    }
+
+    const positionalValue = withoutKey.shift();
+    if (defaultValue === undefined) {
+      if (noMoreRequiredPositionals) {
+        throw 'All required extra keys must come before all optional keys';
+      }
+      if (positionalValue === undefined) {
+        throw `No data given for the required key '${dataKey}`;
+      }
+    }
+    if (defaultValue !== undefined) {
+      noMoreRequiredPositionals = true;
+    }
+    // default value is '' when nothing is given after the =
+    payload[dataKey] =
+      positionalValue ??
+      (defaultValue === '' ? undefined : Number(defaultValue) || defaultValue);
+  }
+}
+
+const splitFirstEquals = (str: string): [string, string | null] => {
+  const [first, ...eqSepValue] = str.split("=");
+  if (eqSepValue.length === 0) {
+    return [first, null]
+  }
+  return [first, eqSepValue.join("=")]
+}
 
 const inferType = (value: number | string) => {
   if (typeof value === "number") {
@@ -72,4 +112,4 @@ class KeysError extends Error {
   }
 }
 
-module.exports = { parseData, DataError, inferType, KeysError };
+module.exports = { parseData, DataError, inferType, splitFirstEquals, KeysError };
