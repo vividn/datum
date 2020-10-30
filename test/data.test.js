@@ -35,77 +35,6 @@ describe("parseData", () => {
     expectFromCases(testCases);
   });
 
-  it("automatically converts data into numbers", () => {
-    const testCases = [
-      [{ posArgs: ["abc=3"] }, { abc: 3 }],
-      [{ posArgs: ["def=-7"] }, { def: -7 }],
-      [{ posArgs: ["ghi=79.31"] }, { ghi: 79.31 }],
-    ];
-    expectFromCases(testCases);
-  });
-
-  it("converts array looking data", () => {
-    const testCases = [
-      [{ posArgs: ["abc=[3, 4, 5]"] }, { abc: [3, 4, 5] }],
-      [{ posArgs: ["def=[a, b ,c]"] }, { def: ["a", "b", "c"] }],
-      [{ posArgs: ["empty=[]"] }, { empty: [] }],
-      [
-        { posArgs: ["nested=[a, 3, [mixed, [2], nested]]"] },
-        { nested: ["a", 3, ["mixed", [2], "nested"]] },
-      ],
-    ];
-    expectFromCases(testCases);
-  });
-
-  it("convert JSON looking data", () => {
-    const testCases = [
-      [{ posArgs: ["empty={}"] }, { empty: {} }],
-      [{ posArgs: ["two41={a: bcd, d: 3}"] }, { two41: { d: 3, a: "bcd" } }],
-      [
-        {
-          posArgs: [
-            "turtles={all: {the: {way: down}}}",
-            "flat={earth: [or, 1, turtle, shell]}",
-          ],
-        },
-        {
-          turtles: { all: { the: { way: "down" } } },
-          flat: { earth: ["or", 1, "turtle", "shell"] },
-        },
-      ],
-    ];
-    expectFromCases(testCases);
-  });
-
-  it("parses null values", () => {
-    const testCases = [
-      [{ posArgs: ["abc=null"] }, { abc: null }],
-      [{ posArgs: ["abc=NULL"] }, { abc: null }],
-    ];
-    expectFromCases(testCases);
-  });
-
-  it("parses NaN values", () => {
-    const testCases = [
-      [{ posArgs: ["abc=nan"] }, { abc: Number.NaN }],
-      [{ posArgs: ["abc=NaN"] }, { abc: Number.NaN }],
-      [{ posArgs: ["abc=NAN"] }, { abc: Number.NaN }],
-    ];
-    expectFromCases(testCases);
-  });
-
-  it("parses weird looking things as strings", () => {
-    const testCases = [
-      [
-        { posArgs: ["abc={what: even is this)) ]}"] },
-        { abc: "{what: even is this)) ]}" },
-      ],
-      [{ posArgs: ["abc=(1,2,33)"] }, { abc: "(1,2,33)" }],
-      [{ posArgs: ["abc=NAN/null"] }, { abc: "NAN/null" }],
-    ];
-    expectFromCases(testCases);
-  });
-
   it("keeps extra equals signs in the value string", () => {
     const testCases = [
       [{ posArgs: ["equation=1+2=3"] }, { equation: "1+2=3" }],
@@ -154,12 +83,39 @@ describe("parseData", () => {
   });
 
   it("assigns data to required keys", () => {
-    expect(true).toBe(false)
-  })
+    const testCases = [
+      [{ extraKeys: "abc", posArgs: ["value"] }, { abc: "value" }],
+      [
+        { extraKeys: ["a", "b"], posArgs: ["first", "second"] },
+        { a: "first", b: "second" },
+      ],
+      [
+        {
+          extraKeys: ["a", "b"],
+          posArgs: ["first", "second", "third"],
+          lenient: true,
+        },
+        { a: "first", b: "second", extraData: ["third"] },
+      ],
+    ];
+    expectFromCases(testCases);
+  });
 
   it("throws if not enough data is given for all required keys", () => {
-    expect(true).toBe(false)
-  })
+    expect(() => parseData({ extraKeys: "a", posArgs: [] })).toThrowError(
+      DataError
+    );
+    expect(() =>
+      parseData({ extraKeys: ["a", "b"], posArgs: ["onlyOne"] })
+    ).toThrowError(DataError);
+    expect(() =>
+      parseData({
+        extraKeys: ["a", "b"],
+        posArgs: ["lenientDoesNotHelp"],
+        lenient: true,
+      })
+    ).toThrowError(DataError);
+  });
 
   it("handles optional extra keys", () => {
     const testCases = [
@@ -198,10 +154,10 @@ describe("parseData", () => {
       [
         {
           extraKeys: "abc=123",
-          posArgs: ["cde", "abc=fromPosArgs"],
+          posArgs: ["replacesAbc", "abc=replacesAgain"],
           lenient: true,
         },
-        { abc: "fromPosArgs", extraData: ["cde"] },
+        { abc: "replacesAgain" },
       ],
       [
         {
@@ -299,7 +255,10 @@ describe("splitFirstEquals", () => {
   it("returns [str, undefined] if there are no equals signs", () => {
     expect(splitFirstEquals("")).toStrictEqual(["", undefined]);
     expect(splitFirstEquals("a")).toStrictEqual(["a", undefined]);
-    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual(["a,bsdflkj3", undefined]);
+    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual([
+      "a,bsdflkj3",
+      undefined,
+    ]);
   });
 
   it("returns key value pair when there is one equals", () => {
