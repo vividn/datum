@@ -2,13 +2,26 @@
 
 async function main() {
   // Load command line arguments
-  const { configuredYargs } = require('./input')
-  const args = configuredYargs.parse(process.argv.slice(2))
+  const { configuredYargs } = require("./input");
+  const args = configuredYargs.parse(process.argv.slice(2));
 
   // Process timing
-  const {processTimeArgs} = require('./timings')
+  const { processTimeArgs } = require("./timings");
   const { date, time, quick, yesterday, fullDay, timezone } = args;
-  const timings = processTimeArgs({date, time, quick, yesterday, fullDay, timezone})
+  const timings = processTimeArgs({
+    date,
+    time,
+    quick,
+    yesterday,
+    fullDay,
+    timezone,
+  });
+
+  const { parseData } = require("./data");
+  const { _: posArgs, extraKeys, lenient } = args
+  const payload = parseData({posArgs, extraKeys, lenient })
+
+  payload.meta = timings
 
   const dbName = args.db;
   const nano = require("nano")("http://admin:password@localhost:5983");
@@ -20,7 +33,7 @@ async function main() {
 
   const _id = new Date().toISOString();
 
-  await db.insert({ _id: _id, ...timings });
+  await db.insert({ _id: _id, ...payload });
   const doc = await db.get(_id);
   console.log(doc);
 }

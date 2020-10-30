@@ -167,6 +167,13 @@ describe("parseData", () => {
         },
         { first: 54, second: [3] },
       ],
+      [
+        {
+          extraKeys: ["first=123", "second=42"],
+          posArgs: ["second=54"],
+        },
+        { first: 123, second: 54 },
+      ],
     ];
     expectFromCases(testCases);
   });
