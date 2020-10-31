@@ -1,6 +1,10 @@
 import { Settings, DateTime, Zone, Duration } from "luxon";
 const timezone_mock = require("timezone-mock");
-const { processTimeArgs, BadTimeArgError, BadDateArgError } = require("../src/timings");
+const {
+  processTimeArgs,
+  BadTimeArgError,
+  BadDateArgError,
+} = require("../src/timings");
 
 const expectTimingFromCases = (testCases) => {
   testCases.forEach((testCase) => {
@@ -235,9 +239,17 @@ describe("processTimeArgs", () => {
   });
 
   it("throws on unparsable times and dates", () => {
-    expect(() => processTimeArgs({ time: "absolute rubbish" })).toThrowError(BadTimeArgError)
-    expect(() => processTimeArgs({ date: "before" })).toThrowError(BadDateArgError)
-    expect(() => processTimeArgs({ time: "3am", date: "the end of the universe" })).toThrowError(BadDateArgError)
-    expect(() => processTimeArgs({ time: "half past nothing", yesterday: 1 })).toThrowError(BadTimeArgError)
-  })
+    expect(() => processTimeArgs({ time: "absolute rubbish" })).toThrowError(
+      BadTimeArgError
+    );
+    expect(() => processTimeArgs({ date: "before" })).toThrowError(
+      BadDateArgError
+    );
+    expect(() =>
+      processTimeArgs({ time: "3am", date: "the end of the universe" })
+    ).toThrowError(BadDateArgError);
+    expect(() =>
+      processTimeArgs({ time: "half past nothing", yesterday: 1 })
+    ).toThrowError(BadTimeArgError);
+  });
 });

@@ -82,7 +82,7 @@ const configuredYargs = yargs
     lenient: {
       describe: "Allow extra data without defined keys",
       type: "boolean",
-      alias: "l"
+      alias: "l",
     },
   })
   .help("h")

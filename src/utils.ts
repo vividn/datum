@@ -28,4 +28,4 @@ export const splitFirstEquals = (str: string): [string, string | undefined] => {
   return [first, eqSepValue.join("=")];
 };
 
-module.exports = { inferType, splitFirstEquals }
+module.exports = { inferType, splitFirstEquals };
