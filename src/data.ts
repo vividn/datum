@@ -1,3 +1,5 @@
+const { inferType, splitFirstEquals } = require("./utils");
+
 type parseDataType = {
   posArgs: (string | number)[];
   extraKeys?: string | string[];
@@ -71,13 +73,13 @@ const parseData = function ({
     }
 
     if (dataKey in payload) {
-      continue
+      continue;
     }
 
     if (defaultValue === undefined) {
-    throw new DataError(`No data given for the required key '${dataKey}`);
+      throw new DataError(`No data given for the required key '${dataKey}`);
     }
-    
+
     if (defaultValue === "") {
       continue;
     }
@@ -86,36 +88,6 @@ const parseData = function ({
   }
 
   return payload;
-};
-
-const splitFirstEquals = (str: string): [string, string | undefined] => {
-  const [first, ...eqSepValue] = str.split("=");
-  if (eqSepValue.length === 0) {
-    return [first, undefined];
-  }
-  return [first, eqSepValue.join("=")];
-};
-
-const inferType = (value: number | string) => {
-  if (typeof value === "number") {
-    return value;
-  }
-  if (/^null$/i.test(value)) {
-    return null;
-  }
-  if (/^nan$/i.test(value)) {
-    return Number.NaN;
-  }
-  if (/^-?inf(inity)?/i.test(value)) {
-    return value[0] === "-"
-      ? Number.NEGATIVE_INFINITY
-      : Number.POSITIVE_INFINITY;
-  }
-  try {
-    const RJSON = require("relaxed-json");
-    return RJSON.parse(value);
-  } catch {}
-  return value;
 };
 
 class DataError extends Error {
@@ -135,7 +107,5 @@ class KeysError extends Error {
 module.exports = {
   parseData,
   DataError,
-  inferType,
-  splitFirstEquals,
   KeysError,
 };
