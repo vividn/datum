@@ -1,4 +1,4 @@
-const {inferType, splitFirstEquals} = require('../src/utils')
+const { inferType, splitFirstEquals } = require("../src/utils");
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {

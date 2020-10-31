@@ -18,10 +18,10 @@ async function main() {
   });
 
   const { parseData } = require("./data");
-  const { _: posArgs, extraKeys, lenient } = args
-  const payload = parseData({posArgs, extraKeys, lenient })
+  const { _: posArgs, extraKeys, lenient } = args;
+  const payload = parseData({ posArgs, extraKeys, lenient });
 
-  payload.meta = timings
+  payload.meta = timings;
 
   const dbName = args.db;
   const nano = require("nano")("http://admin:password@localhost:5983");

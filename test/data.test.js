@@ -1,5 +1,5 @@
-import * as utilsModule from '../src/utils'
-import { parseData, DataError, KeysError } from "../src/data"
+import * as utilsModule from "../src/utils";
+import { parseData, DataError, KeysError } from "../src/data";
 
 const expectFromCases = (testCases) => {
   testCases.forEach((testCase) => {
@@ -184,7 +184,7 @@ describe("parseData", () => {
       const parseDataArgs = testCase[0];
       const inferTypeCalls = testCase[1];
 
-      const mockedInferType = jest.spyOn(utilsModule, "inferType")
+      const mockedInferType = jest.spyOn(utilsModule, "inferType");
 
       expect(
         mockedInferType,
