@@ -43,6 +43,7 @@
   },
   "dependencies": {
     "chrono-node": "^2.1.8",
+    "dotenv": "^8.2.0",
     "luxon": "^1.25.0",
     "nano": "^8.2.2",
     "pluralize": "^8.0.0",
