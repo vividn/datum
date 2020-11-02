@@ -14,6 +14,22 @@ const configuredYargs = yargs
       alias: "database",
       default: "datum",
     },
+    host: {
+      describe: "Host and port to use, defaults to 'localhost:5984'",
+      nargs: 1,
+    },
+    username: {
+      describe: "couchdb username to use'",
+      nargs: 1,
+    },
+    password: {
+      describe: "couchdb password to use'",
+      nargs: 1,
+    },
+    env: {
+      describe: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
+      nargs: 1,
+    },
     // id: {
     //   describe:
     //     "Which field(s) to use for the _id field in the document." +
