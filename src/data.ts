@@ -1,4 +1,4 @@
-const { inferType, splitFirstEquals } = require("./utils");
+const utils = require("./utils");
 
 type parseDataType = {
   posArgs: (string | number)[];
@@ -16,11 +16,11 @@ const parseData = function ({
   let hasEncounteredOptionalKey = false;
 
   posArgsLoop: for (const arg of posArgs) {
-    const [first, rest] = splitFirstEquals(String(arg));
+    const [first, rest] = utils.splitFirstEquals(String(arg));
 
     if (rest !== undefined) {
       // explicit key is given e.g., 'key=value'
-      payload[first] = inferType(rest);
+      payload[first] = utils.inferType(rest);
       continue posArgsLoop;
     }
 
@@ -28,7 +28,7 @@ const parseData = function ({
     const dataValue = first;
 
     extraKeyLoop: while (keyArray.length > 0) {
-      const [dataKey, defaultValue] = splitFirstEquals(keyArray.shift()!);
+      const [dataKey, defaultValue] = utils.splitFirstEquals(keyArray.shift()!);
 
       // All required arguments must come before optional argument
       if (defaultValue === undefined) {
@@ -46,14 +46,14 @@ const parseData = function ({
         continue extraKeyLoop;
       }
 
-      payload[dataKey] = inferType(dataValue);
+      payload[dataKey] = utils.inferType(dataValue);
       continue posArgsLoop;
     }
 
     // data remains, but no extraKeys left
     if (lenient) {
       payload.extraData = (payload.extraData || []).concat([
-        inferType(dataValue),
+        utils.inferType(dataValue),
       ]);
       continue;
     }
@@ -64,7 +64,7 @@ const parseData = function ({
 
   // If extraKeys are left assign default values
   while (keyArray.length > 0) {
-    const [dataKey, defaultValue] = splitFirstEquals(keyArray.shift()!);
+    const [dataKey, defaultValue] = utils.splitFirstEquals(keyArray.shift()!);
 
     if (defaultValue === undefined && hasEncounteredOptionalKey) {
       throw new KeysError(
@@ -84,7 +84,7 @@ const parseData = function ({
       continue;
     }
 
-    payload[dataKey] = inferType(defaultValue);
+    payload[dataKey] = utils.inferType(defaultValue);
   }
 
   return payload;
