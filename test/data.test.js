@@ -1,4 +1,4 @@
-import * as utilsModule from "../src/utils";
+const utils = require("../src/utils");
 import { parseData, DataError, KeysError } from "../src/data";
 
 const expectFromCases = (testCases) => {
@@ -13,6 +13,10 @@ const expectFromCases = (testCases) => {
 };
 
 describe("parseData", () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+  })
+
   it("returns an empty object with just a blank positional array", () => {
     expect(parseData({ posArgs: [] })).toEqual({});
   });
@@ -171,7 +175,7 @@ describe("parseData", () => {
     expectFromCases(testCases);
   });
 
-  it.skip("calls inferType for all kinds of data entry", () => {
+  it("calls inferType for all kinds of data entry", () => {
     const testCases = [
       [{ posArgs: ["withKey=data"] }, 1],
       [{ posArgs: ["extraArg"], lenient: true }, 1],
@@ -184,7 +188,9 @@ describe("parseData", () => {
       const parseDataArgs = testCase[0];
       const inferTypeCalls = testCase[1];
 
-      const mockedInferType = jest.spyOn(utilsModule, "inferType");
+      jest.clearAllMocks();
+      const mockedInferType = jest.spyOn(utils, "inferType");
+      parseData(parseDataArgs)
 
       expect(
         mockedInferType,
