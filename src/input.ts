@@ -3,12 +3,7 @@ const yargs = require("yargs");
 const configuredYargs = yargs
   .command("datum", "quickly insert timestamped data into couchdb")
   .options({
-    // field: {
-    //   describe: "the primary field of the data",
-    //   alias: "f",
-    //   nargs: 1,
-    //   type: "string",
-    // },
+    // couchdb options
     db: {
       describe: "The database to use",
       alias: "database",
@@ -30,19 +25,8 @@ const configuredYargs = yargs
       describe: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
       nargs: 1,
     },
-    // id: {
-    //   describe:
-    //     "Which field(s) to use for the _id field in the document." +
-    //     " Can either be a single string with fields delimited by --id-delimiter" +
-    //     " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
-    //   alias: ["pk", "primary", "_id"],
-    //   default: "occurTime",
-    // },
-    // "id-delimiter": {
-    //   describe: "spacer between fields in the id",
-    //   default: "__",
-    //   type: "string",
-    // },
+
+    // timing
     date: {
       describe:
         "date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.",
@@ -74,6 +58,30 @@ const configuredYargs = yargs
         "make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t",
       alias: "D",
       type: "boolean",
+    },
+
+    // data
+    field: {
+      describe: "field specifying what is being tracked",
+      alias: "f",
+      nargs: 1,
+      type: "string",
+    },
+
+    // id
+    idField: {
+      describe:
+        "Which field(s) to use for the _id field in the document." +
+        " Can either be a single string with fields delimited by --id-delimiter" +
+        " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
+      alias: ["id", "pk", "primary", "_id"],
+      type: "string",
+      default: "meta.occurTime",
+    },
+    "id-delimiter": {
+      describe: "spacer between fields in the id",
+      default: "__",
+      type: "string",
     },
     // undo: {
     //   describe: "undoes the last datum entry, can be combined with -f",
