@@ -62,7 +62,7 @@ const configuredYargs = yargs
 
     // data
     field: {
-      describe: "field specifying what is being tracked",
+      describe: "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
       alias: "f",
       nargs: 1,
       type: "string",

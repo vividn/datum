@@ -3,12 +3,14 @@ const utils = require("./utils");
 type parseDataType = {
   posArgs: (string | number)[];
   extraKeys?: string | string[];
+  field?: string | string[];
   lenient?: boolean;
   payload?: { [key: string]: any };
 };
 const parseData = function ({
   posArgs,
   extraKeys = [],
+  field,
   lenient = false,
   payload = {},
 }: parseDataType) {
@@ -85,6 +87,12 @@ const parseData = function ({
     }
 
     payload[dataKey] = utils.inferType(defaultValue);
+  }
+
+  // put in field, overwriting if necessary
+  if (field) {
+    const rawValue = typeof field === "string" ? field : field.slice(-1)[0]
+    payload.field = utils.inferType(rawValue)
   }
 
   return payload;
