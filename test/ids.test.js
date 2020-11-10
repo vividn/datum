@@ -137,9 +137,10 @@ describe("assembleId", () => {
   it("handles this example", () => {
     expectAssembleIdReturns(
       {
-        idComponents: ["foo", "occurTime", "'rawString'"],
+        idField: ["foo", "meta.occurTime", "'rawString'"],
         idDelimiter: "__",
         partitionField: "field",
+        payload: testPayloadWithPartition
       },
       "main:abc__2020-11-09T00:35:10.000Z__rawString"
     );
