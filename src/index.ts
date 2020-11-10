@@ -33,8 +33,8 @@ async function main() {
   });
 
   const { parseData } = require("./data");
-  const { _: posArgs, extraKeys, lenient } = args;
-  const payload = parseData({ posArgs, extraKeys, lenient });
+  const { _: posArgs, field, extraKeys, lenient } = args;
+  const payload = parseData({ posArgs, field, extraKeys, lenient });
 
   payload.meta = timings;
 

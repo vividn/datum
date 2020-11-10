@@ -12,6 +12,12 @@ const expectFromCases = (testCases) => {
   });
 };
 
+const expectParseDataToReturn = (inputProps, expectedOutput) => {
+  expect(parseData(inputProps), `${JSON.stringify(inputProps)}`).toEqual(
+    expectedOutput
+  );
+}
+
 describe("parseData", () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -182,6 +188,7 @@ describe("parseData", () => {
       [{ extraKeys: ["keyIs"], posArgs: ["given"] }, 1],
       [{ posArgs: [] }, 0],
       [{ extraKeys: ["onlyFinalData=goesThrough"], posArgs: ["inferType"] }, 1],
+      [{ field: "[1,2,3]", posArgs: []}, 1]
     ];
 
     testCases.forEach((testCase) => {
@@ -198,4 +205,14 @@ describe("parseData", () => {
       ).toHaveBeenCalledTimes(inferTypeCalls);
     });
   });
+
+  it("uses the field prop to populate the field key, overwriting manual spec", () => {
+    expectParseDataToReturn({ field: "fromProps", posArgs: [] }, { field: "fromProps"})
+    expectParseDataToReturn({ posArgs: ["field=fromExtra"] }, { field: "fromExtra"})
+    expectParseDataToReturn({ field: "fromProps", posArgs: ["field=fromExtra"] }, { field: "fromProps"})
+  })
+
+  it("only uses the last field specified", () => {
+    expectParseDataToReturn( {field: ["fromProps1", "fromProps2"], posArgs: ["field=fromExtra"]}, { field: "fromProps2" })
+  })
 });
