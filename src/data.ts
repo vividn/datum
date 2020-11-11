@@ -15,7 +15,7 @@ const parseData = function ({
   comment,
   lenient = false,
   payload = {},
-}: parseDataType): { [key: string]: any} {
+}: parseDataType): { [key: string]: any } {
   const keyArray = typeof extraKeys === "string" ? [extraKeys] : extraKeys;
   let hasEncounteredOptionalKey = false;
 
@@ -93,15 +93,15 @@ const parseData = function ({
 
   // put in field, overwriting if necessary
   if (field) {
-    const rawValue = typeof field === "string" ? field : field.slice(-1)[0]
-    payload.field = utils.inferType(rawValue)
+    const rawValue = typeof field === "string" ? field : field.slice(-1)[0];
+    payload.field = utils.inferType(rawValue);
   }
 
   if (comment) {
     if ("comment" in payload) {
-      payload.comment = [payload.comment].concat(utils.inferType(comment))
+      payload.comment = [payload.comment].concat(utils.inferType(comment));
     } else {
-      payload.comment = utils.inferType(comment)
+      payload.comment = utils.inferType(comment);
     }
   }
 

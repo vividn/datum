@@ -53,7 +53,7 @@ const buildDelimitedFromFields = function ({
             // retrieve deeper values with dot notation
             const extractedValue = strPart
               .split(".")
-              .reduce((o, i) => o === undefined ? undefined : o[i], payload);
+              .reduce((o, i) => (o === undefined ? undefined : o[i]), payload);
             if (extractedValue !== undefined) {
               const valueAsString =
                 typeof extractedValue === "string"
