@@ -7,6 +7,7 @@ import re
 import os
 import sys
 from PIL import Image, ImageDraw, ImageFont
+import traceback
 
 from pathlib import Path
 
@@ -53,6 +54,7 @@ def set_constants():
         "lower": (0.7, 0.9),
         "floor": (0.9, 1.0),
         "ceiling": (0, 0.07),
+        "foundation": (0.94, 1.0)
     }
 
     # Point properties
@@ -294,7 +296,6 @@ def main(**kwargs):
     # Load and iterate through the data
     error_has_occurred = False
     datum_with_error = []
-    exception_text = ""
 
     for name in datum_names:
         print(name)
@@ -311,7 +312,8 @@ def main(**kwargs):
                 # If an error occurs, continue on, but later draw the error symbol as indication
                 error_has_occurred = True
                 datum_with_error += [(name, "Load")]
-                exception_text += str(e) + "\n"
+                print(traceback.format_exc(),file=sys.stderr)
+                print(e,file=sys.stderr)
                 continue
 
         #########################################
@@ -325,7 +327,8 @@ def main(**kwargs):
                 # If an error occurs, continue on, but later draw the error symbol as indication
                 error_has_occurred = True
                 datum_with_error += [(name, date)]
-                exception_text += str(e) + "\n"
+                print(traceback.format_exc(),file=sys.stderr)
+                print(e,file=sys.stderr)
                 continue
 
             # The upper and lower y values of where to draw the data
@@ -491,7 +494,6 @@ def main(**kwargs):
             [ex, ey + 3, ex + esize[0], ey + esize[1] + 3], fill=error_bgcolor
         )
         draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
-        print(exception_text, file=sys.stderr)
 
     im.save(imageout)
 
