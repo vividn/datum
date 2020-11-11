@@ -69,12 +69,12 @@ const configuredYargs = yargs
     },
 
     // id
-    idField: {
+    "id-field": {
       describe:
         "Which field(s) to use for the _id field in the document." +
         " Can either be a single string with fields delimited by --id-delimiter" +
         " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
-      alias: ["id", "pk", "primary", "_id"],
+      alias: ["id", "pk", "_id"],
       type: "string",
       default: "meta.occurTime",
     },
@@ -82,6 +82,13 @@ const configuredYargs = yargs
       describe: "spacer between fields in the id",
       default: "__",
       type: "string",
+    },
+    "partition": {
+      describe: "field to use for the partition (default: field, specified with -f)." +
+       " Can be fields of data or raw strings surrounded by single quotes." +
+       " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
+       type: "string",
+       default: "field"
     },
     // undo: {
     //   describe: "undoes the last datum entry, can be combined with -f",

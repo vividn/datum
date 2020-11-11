@@ -19,6 +19,10 @@ async function main() {
       hostname: args.host ?? process.env.COUCHDB_HOSTNAME ?? defaultHost
     };
   const nano = require("nano")(`http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`);
+
+  const { parseData } = require("./data");
+  const { _: posArgs, field, extraKeys, lenient } = args;
+  const payload = parseData({ posArgs, field, extraKeys, lenient });
   
   // Process timing
   const { processTimeArgs } = require("./timings");
@@ -31,12 +35,11 @@ async function main() {
     fullDay,
     timezone,
   });
-
-  const { parseData } = require("./data");
-  const { _: posArgs, field, extraKeys, lenient } = args;
-  const payload = parseData({ posArgs, field, extraKeys, lenient });
-
   payload.meta = timings;
+
+  const { assembleId } = require("./ids");
+  const { idField, idDelimiter, partition } = args
+  const _id = assembleId({idField, delimiter: idDelimiter, partitionField: partition, payload})
 
   const dbName = args.db;
 
@@ -44,8 +47,6 @@ async function main() {
   await nano.db.create(dbName).catch((err: any) => undefined);
 
   const db = await nano.use(dbName);
-
-  const _id = new Date().toISOString();
 
   await db.insert({ _id: _id, ...payload });
   const doc = await db.get(_id);
