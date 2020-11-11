@@ -85,14 +85,14 @@ describe("assembleId", () => {
       testPayload.meta.createTime
     );
     expectAssembleIdReturns({ idField: "complex.data" }, "structure");
-    expectAssembleIdReturns({ idField: ["foo", "complex.notAKey"]}, "abc__")
-    expectAssembleIdReturns({ idField: "not.real.keys"}, "")
+    expectAssembleIdReturns({ idField: ["foo", "complex.notAKey"] }, "abc__");
+    expectAssembleIdReturns({ idField: "not.real.keys" }, "");
   });
 
   it("serializes numbers, objects, and arrays", () => {
     expectAssembleIdReturns({ idField: "num" }, "3");
     expectAssembleIdReturns({ idField: "complex" }, '{"data":"structure"}');
-    expectAssembleIdReturns({ idField: "array"}, '["various",2,"data"]')
+    expectAssembleIdReturns({ idField: "array" }, '["various",2,"data"]');
   });
 
   it("prepends the partition field if provided", () => {
@@ -140,7 +140,7 @@ describe("assembleId", () => {
         idField: ["foo", "meta.occurTime", "'rawString'"],
         delimiter: "__",
         partitionField: "field",
-        payload: testPayloadWithPartition
+        payload: testPayloadWithPartition,
       },
       "main:abc__2020-11-09T00:35:10.000Z__rawString"
     );

@@ -16,12 +16,12 @@ const expectParseDataToReturn = (inputProps, expectedOutput) => {
   expect(parseData(inputProps), `${JSON.stringify(inputProps)}`).toEqual(
     expectedOutput
   );
-}
+};
 
 describe("parseData", () => {
   beforeEach(() => {
-    jest.clearAllMocks()
-  })
+    jest.clearAllMocks();
+  });
 
   it("returns an empty object with just a blank positional array", () => {
     expect(parseData({ posArgs: [] })).toEqual({});
@@ -188,9 +188,9 @@ describe("parseData", () => {
       [{ extraKeys: ["keyIs"], posArgs: ["given"] }, 1],
       [{ posArgs: [] }, 0],
       [{ extraKeys: ["onlyFinalData=goesThrough"], posArgs: ["inferType"] }, 1],
-      [{ field: "[1,2,3]", posArgs: []}, 1],
-      [{ comment: "comment", posArgs: []}, 1],
-      [{ comment: "comment1", posArgs: ["comment=[123]"]}, 2]
+      [{ field: "[1,2,3]", posArgs: [] }, 1],
+      [{ comment: "comment", posArgs: [] }, 1],
+      [{ comment: "comment1", posArgs: ["comment=[123]"] }, 2],
     ];
 
     testCases.forEach((testCase) => {
@@ -199,7 +199,7 @@ describe("parseData", () => {
 
       jest.clearAllMocks();
       const mockedInferType = jest.spyOn(utils, "inferType");
-      parseData(parseDataArgs)
+      parseData(parseDataArgs);
 
       expect(
         mockedInferType,
@@ -209,23 +209,52 @@ describe("parseData", () => {
   });
 
   it("uses the field prop to populate the field key, overwriting manual spec", () => {
-    expectParseDataToReturn({ field: "fromProps", posArgs: [] }, { field: "fromProps"})
-    expectParseDataToReturn({ posArgs: ["field=fromExtra"] }, { field: "fromExtra"})
-    expectParseDataToReturn({ field: "fromProps", posArgs: ["field=fromExtra"] }, { field: "fromProps"})
-  })
+    expectParseDataToReturn(
+      { field: "fromProps", posArgs: [] },
+      { field: "fromProps" }
+    );
+    expectParseDataToReturn(
+      { posArgs: ["field=fromExtra"] },
+      { field: "fromExtra" }
+    );
+    expectParseDataToReturn(
+      { field: "fromProps", posArgs: ["field=fromExtra"] },
+      { field: "fromProps" }
+    );
+  });
 
   it("only uses the last field specified", () => {
-    expectParseDataToReturn( {field: ["fromProps1", "fromProps2"], posArgs: ["field=fromExtra"]}, { field: "fromProps2" })
-  })
+    expectParseDataToReturn(
+      { field: ["fromProps1", "fromProps2"], posArgs: ["field=fromExtra"] },
+      { field: "fromProps2" }
+    );
+  });
 
   it("saves comments from args", () => {
-    expectParseDataToReturn( { comment: "this is a comment.", posArgs: [] }, { comment: "this is a comment." })
-    expectParseDataToReturn( { comment: ["this is a comment.", "more comments get added in array"], posArgs: [] }, { comment: ["this is a comment.", "more comments get added in array"] })   
-  })
+    expectParseDataToReturn(
+      { comment: "this is a comment.", posArgs: [] },
+      { comment: "this is a comment." }
+    );
+    expectParseDataToReturn(
+      {
+        comment: ["this is a comment.", "more comments get added in array"],
+        posArgs: [],
+      },
+      { comment: ["this is a comment.", "more comments get added in array"] }
+    );
+  });
 
   it("concats data comments to arg comments", () => {
-    expectParseDataToReturn( { comment: "argComment", posArgs: ["comment=dataComment"]}, { comment: ["dataComment", "argComment"]})
-    expectParseDataToReturn( { comment: ["argComment1", "argComment2"], posArgs: ["comment=dataComment"]}, { comment: ["dataComment", "argComment1", "argComment2"]})
-  })
-
+    expectParseDataToReturn(
+      { comment: "argComment", posArgs: ["comment=dataComment"] },
+      { comment: ["dataComment", "argComment"] }
+    );
+    expectParseDataToReturn(
+      {
+        comment: ["argComment1", "argComment2"],
+        posArgs: ["comment=dataComment"],
+      },
+      { comment: ["dataComment", "argComment1", "argComment2"] }
+    );
+  });
 });

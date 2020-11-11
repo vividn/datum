@@ -22,7 +22,8 @@ const configuredYargs = yargs
       nargs: 1,
     },
     env: {
-      describe: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
+      describe:
+        "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
       nargs: 1,
     },
 
@@ -62,7 +63,8 @@ const configuredYargs = yargs
 
     // data
     field: {
-      describe: "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
+      describe:
+        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
       alias: "f",
       nargs: 1,
       type: "string",
@@ -71,7 +73,7 @@ const configuredYargs = yargs
       describe: "comment to include in the data",
       alias: "c",
       nargs: 1,
-      type: "string"
+      type: "string",
     },
 
     // id
@@ -89,12 +91,13 @@ const configuredYargs = yargs
       default: "__",
       type: "string",
     },
-    "partition": {
-      describe: "field to use for the partition (default: field, specified with -f)." +
-       " Can be fields of data or raw strings surrounded by single quotes." +
-       " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
-       type: "string",
-       default: "field"
+    partition: {
+      describe:
+        "field to use for the partition (default: field, specified with -f)." +
+        " Can be fields of data or raw strings surrounded by single quotes." +
+        " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
+      type: "string",
+      default: "field",
     },
     // undo: {
     //   describe: "undoes the last datum entry, can be combined with -f",
