@@ -24,6 +24,7 @@ describe("parseData", () => {
   })
 
   it("returns an empty object with just a blank positional array", () => {
+    expect(parseData()).toEqual({})
     expect(parseData({ posArgs: [] })).toEqual({});
   });
 
@@ -215,4 +216,15 @@ describe("parseData", () => {
   it("only uses the last field specified", () => {
     expectParseDataToReturn( {field: ["fromProps1", "fromProps2"], posArgs: ["field=fromExtra"]}, { field: "fromProps2" })
   })
+
+  it("saves comments from args", () => {
+    expectParseDataToReturn( { comment: "this is a comment.", posArgs: [] }, { comment: "this is a comment." })
+    expectParseDataToReturn( { comment: ["this is a comment.", "more comments get added in array"] }, { comment: ["this is a comment.", "more comments get added in array"] })   
+  })
+
+  it("concats data comments to arg comments", () => {
+    expectParseDataToReturn( { comment: "argComment", posArgs: ["comment=dataComment"]}, { comment: ["dataComment", "argComment"]})
+    expectParseDataToReturn( { comment: ["argComment1", "argComment2"], posArgs: ["comment=dataComment"]}, { comment: ["dataComment", "argComment1", "argComment2"]})
+  })
+
 });

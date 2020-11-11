@@ -67,6 +67,12 @@ const configuredYargs = yargs
       nargs: 1,
       type: "string",
     },
+    comment: {
+      describe: "comment to include in the data",
+      alias: "c",
+      nargs: 1,
+      type: "string"
+    },
 
     // id
     "id-field": {
