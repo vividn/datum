@@ -29,3 +29,7 @@ activity,level1
 
 
 
+
+
+tz_notpossible,ceiling,255,0,0
+tz_ambiguous,ceiling,0,200,200
