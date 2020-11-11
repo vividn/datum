@@ -61,11 +61,11 @@ describe("assembleId", () => {
   it("combines multiple components with the id_delimiter", () => {
     expectAssembleIdReturns({ idField: ["foo", "bar"] }, "abc__def");
     expectAssembleIdReturns(
-      { idField: ["foo", "bar"], idDelimiter: "@" },
+      { idField: ["foo", "bar"], delimiter: "@" },
       "abc@def"
     );
     expectAssembleIdReturns(
-      { idField: ["foo", "bar"], idDelimiter: "" },
+      { idField: ["foo", "bar"], delimiter: "" },
       "abcdef"
     );
     expectAssembleIdReturns({ idField: ["foo", "'raw'"] }, "abc__raw");
@@ -128,7 +128,7 @@ describe("assembleId", () => {
       {
         partitionField: ["foo", "bar"],
         idField: ["'some'", "'strings'"],
-        idDelimiter: "!",
+        delimiter: "!",
       },
       "abc!def:some!strings"
     );
@@ -138,7 +138,7 @@ describe("assembleId", () => {
     expectAssembleIdReturns(
       {
         idField: ["foo", "meta.occurTime", "'rawString'"],
-        idDelimiter: "__",
+        delimiter: "__",
         partitionField: "field",
         payload: testPayloadWithPartition
       },

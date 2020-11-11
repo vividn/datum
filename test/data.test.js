@@ -24,7 +24,6 @@ describe("parseData", () => {
   })
 
   it("returns an empty object with just a blank positional array", () => {
-    expect(parseData()).toEqual({})
     expect(parseData({ posArgs: [] })).toEqual({});
   });
 
@@ -189,7 +188,9 @@ describe("parseData", () => {
       [{ extraKeys: ["keyIs"], posArgs: ["given"] }, 1],
       [{ posArgs: [] }, 0],
       [{ extraKeys: ["onlyFinalData=goesThrough"], posArgs: ["inferType"] }, 1],
-      [{ field: "[1,2,3]", posArgs: []}, 1]
+      [{ field: "[1,2,3]", posArgs: []}, 1],
+      [{ comment: "comment", posArgs: []}, 1],
+      [{ comment: "comment1", posArgs: ["comment=[123]"]}, 2]
     ];
 
     testCases.forEach((testCase) => {
@@ -219,7 +220,7 @@ describe("parseData", () => {
 
   it("saves comments from args", () => {
     expectParseDataToReturn( { comment: "this is a comment.", posArgs: [] }, { comment: "this is a comment." })
-    expectParseDataToReturn( { comment: ["this is a comment.", "more comments get added in array"] }, { comment: ["this is a comment.", "more comments get added in array"] })   
+    expectParseDataToReturn( { comment: ["this is a comment.", "more comments get added in array"], posArgs: [] }, { comment: ["this is a comment.", "more comments get added in array"] })   
   })
 
   it("concats data comments to arg comments", () => {

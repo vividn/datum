@@ -1,7 +1,7 @@
 const utils = require("./utils");
 
 type parseDataType = {
-  posArgs?: (string | number)[];
+  posArgs: (string | number)[];
   extraKeys?: string | string[];
   field?: string | string[];
   comment?: string | string[];
@@ -9,13 +9,13 @@ type parseDataType = {
   payload?: { [key: string]: any };
 };
 const parseData = function ({
-  posArgs = [],
+  posArgs,
   extraKeys = [],
   field,
   comment,
   lenient = false,
   payload = {},
-}: parseDataType) {
+}: parseDataType): { [key: string]: any} {
   const keyArray = typeof extraKeys === "string" ? [extraKeys] : extraKeys;
   let hasEncounteredOptionalKey = false;
 
@@ -99,9 +99,9 @@ const parseData = function ({
 
   if (comment) {
     if ("comment" in payload) {
-      payload.comment = [payload.comment].concat(comment)
+      payload.comment = [payload.comment].concat(utils.inferType(comment))
     } else {
-      payload.comment = comment
+      payload.comment = utils.inferType(comment)
     }
   }
 
