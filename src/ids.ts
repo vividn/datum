@@ -1,22 +1,22 @@
 const assembleId = function ({
   idField = "meta.occurTime",
-  idDelimiter = "__",
+  delimiter = "__",
   partitionField = "field",
   payload,
 }: {
   idField?: string | string[];
-  idDelimiter?: string;
+  delimiter?: string;
   partitionField?: string | string[];
   payload: { [key: string]: any };
 }): string {
   const idSection = buildDelimitedFromFields({
     fields: idField,
-    delimiter: idDelimiter,
+    delimiter,
     payload,
   });
   const partitionSection = buildDelimitedFromFields({
     fields: partitionField,
-    delimiter: idDelimiter,
+    delimiter,
     payload,
   });
 
