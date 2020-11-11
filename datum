@@ -15,8 +15,8 @@ FORCE=
 mode=normal
 
 # Parse arguments using getopt
-args=$(getopt -n datum -o f:d:t:qTDya:uUisK:k \
-              --long "file:,date:,time:,undo,force-undo,interactive,state" \
+args=$(getopt -n datum -o f:d:t:qTDya:uUisK:kz: \
+              --long "file:,date:,time:,undo,force-undo,interactive,state,zone" \
               -- "$@")
 if [ $? -ne 0 ]; then
     exit 1
@@ -105,9 +105,9 @@ while true; do
             shift
             ;;
 
-		-z) # Set the timezone explicitly
-			TZSTR=$1
-			shift
+		-z|-zone) # Set the timezone explicitly
+			TZSTR=$2
+			shift 2
 			;;
 
         --)
@@ -196,9 +196,9 @@ case $mode in
         # Get the last entry
         # Remove header line at top of file to avoid sorting problems
         if [ $(wc -l < $FILE) -gt 1 ]; then
-            tail -n +2 $FILE | sort | tail -n1 | cut -f 3- | tr "\t" "\n" > $tmpfile
+            tail -n +2 $FILE | sort | tail -n1 | cut -f 4- | tr "\t" "\n" > $tmpfile
         else
-            tail -n1 $FILE | cut -f 3- | tr "\t" "\n" > $tmpfile
+            tail -n1 $FILE | cut -f 4- | tr "\t" "\n" > $tmpfile
         fi
 
         # Open up the file for editing
