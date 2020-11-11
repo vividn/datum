@@ -21,8 +21,8 @@ async function main() {
   const nano = require("nano")(`http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`);
 
   const { parseData } = require("./data");
-  const { _: posArgs, field, extraKeys, lenient } = args;
-  const payload = parseData({ posArgs, field, extraKeys, lenient });
+  const { _: posArgs, field, comment, extraKeys, lenient } = args;
+  const payload = parseData({ posArgs, field, comment, extraKeys, lenient });
   
   // Process timing
   const { processTimeArgs } = require("./timings");
