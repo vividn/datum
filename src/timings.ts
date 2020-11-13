@@ -44,15 +44,15 @@ const processTimeArgs = function ({
 
   const now = DateTime.local() as DateTime;
   referenceTime = referenceTime ?? now;
-  
+
   const baseMetadata = {
     createTime: now.toUTC().toString(),
     modifyTime: now.toUTC().toString(),
     utcOffset: referenceTime.offset / 60,
-  }
+  };
 
   if (noTimestamp) {
-    return baseMetadata
+    return baseMetadata;
   }
 
   if (time) {
