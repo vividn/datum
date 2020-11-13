@@ -60,7 +60,16 @@ const configuredYargs = yargs
       alias: "D",
       type: "boolean",
     },
-
+    "no-timestamp": {
+      describe: "omit the occurTime from the data",
+      alias: "T",
+      type: "boolean"
+    },
+    "no-metadata": {
+      describe: "do not include meta data in document",
+      alias: "M",
+      type: "boolean"
+    },
     // data
     field: {
       describe:

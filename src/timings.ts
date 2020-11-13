@@ -6,7 +6,7 @@ type isoDate = string;
 type DateTime = any;
 
 type TimingData = {
-  occurTime: isoDatetime | isoDate;
+  occurTime?: isoDatetime | isoDate;
   createTime: isoDatetime;
   modifyTime: isoDatetime;
   utcOffset: number;
@@ -18,6 +18,7 @@ type ProcessTimeArgsType = {
   yesterday?: number;
   quick?: number;
   fullDay?: boolean;
+  noTimestamp?: boolean;
   referenceTime?: DateTime;
   timezone?: string;
 };
@@ -27,6 +28,7 @@ const processTimeArgs = function ({
   yesterday,
   quick,
   fullDay,
+  noTimestamp,
   referenceTime,
   timezone,
 }: ProcessTimeArgsType): TimingData {
@@ -42,6 +44,16 @@ const processTimeArgs = function ({
 
   const now = DateTime.local() as DateTime;
   referenceTime = referenceTime ?? now;
+  
+  const baseMetadata = {
+    createTime: now.toUTC().toString(),
+    modifyTime: now.toUTC().toString(),
+    utcOffset: referenceTime.offset / 60,
+  }
+
+  if (noTimestamp) {
+    return baseMetadata
+  }
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
@@ -67,9 +79,7 @@ const processTimeArgs = function ({
 
   return {
     occurTime,
-    createTime: now.toUTC().toString(),
-    modifyTime: now.toUTC().toString(),
-    utcOffset: referenceTime.offset / 60,
+    ...baseMetadata
   };
 };
 
