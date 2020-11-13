@@ -27,19 +27,30 @@ async function main() {
   const { _: posArgs, field, comment, extraKeys, lenient } = args;
   const payload = parseData({ posArgs, field, comment, extraKeys, lenient });
 
-  // Process timing
-  const { processTimeArgs } = require("./timings");
-  const { date, time, quick, yesterday, fullDay, noTimestamp, timezone } = args;
-  const timings = processTimeArgs({
-    date,
-    time,
-    quick,
-    yesterday,
-    fullDay,
-    noTimestamp,
-    timezone,
-  });
-  payload.meta = timings;
+  // Process timing/metadata
+  const { noMetadata } = args;
+  if (!noMetadata) {
+    const { processTimeArgs } = require("./timings");
+    const {
+      date,
+      time,
+      quick,
+      yesterday,
+      fullDay,
+      noTimestamp,
+      timezone,
+    } = args;
+    const timings = processTimeArgs({
+      date,
+      time,
+      quick,
+      yesterday,
+      fullDay,
+      noTimestamp,
+      timezone,
+    });
+    payload.meta = timings;
+  }
 
   const { assembleId } = require("./ids");
   const { idField, idDelimiter, partition } = args;
