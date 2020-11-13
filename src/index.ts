@@ -29,13 +29,14 @@ async function main() {
 
   // Process timing
   const { processTimeArgs } = require("./timings");
-  const { date, time, quick, yesterday, fullDay, timezone } = args;
+  const { date, time, quick, yesterday, fullDay, noTimestamp, timezone } = args;
   const timings = processTimeArgs({
     date,
     time,
     quick,
     yesterday,
     fullDay,
+    noTimestamp,
     timezone,
   });
   payload.meta = timings;
