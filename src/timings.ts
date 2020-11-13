@@ -78,8 +78,9 @@ const processTimeArgs = function ({
       : (referenceTime.toUTC().toString() as isoDatetime);
 
   return {
+    ...baseMetadata,
     occurTime,
-    ...baseMetadata
+    utcOffset: referenceTime.offset / 60, // utc offset needs to be recalculated because DST could be different for the specified time, for example.
   };
 };
 
