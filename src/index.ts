@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { DatumYargsType } from './input';
+import { DatumYargsType } from "./input";
 
 async function main(args: DatumYargsType) {
   // Get a timestamp as soon as possible
-  
+
   if (args.env !== undefined) {
     require("dotenv").config({ path: args.env });
   }
@@ -64,9 +64,24 @@ async function main(args: DatumYargsType) {
 
   const db = await nano.use(dbName);
 
+  const { undo } = args;
+  if (undo) {
+    try {
+      const doc = await db.get(_id);
+      const { _rev } = doc;
+      const resp = await db.destroy(_id, _rev);
+      return resp;
+    } catch (err) {
+      console.log(err);
+      return;
+    }
+  }
+
   await db.insert({ _id: _id, ...payload });
   const doc = await db.get(_id);
   console.log(doc);
+
+  return doc;
 }
 
 if (require.main === module) {
