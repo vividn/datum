@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import { DatumYargsType } from "./input";
+const chalk = require('chalk')
+const emoji = require('node-emoji')
 
 async function main(args: DatumYargsType) {
   // Get a timestamp as soon as possible
@@ -70,7 +72,8 @@ async function main(args: DatumYargsType) {
       const doc = await db.get(_id);
       const { _rev } = doc;
       const resp = await db.destroy(_id, _rev);
-      return resp;
+      console.log(emoji.get('x') + chalk.red(_id));
+      return
     } catch (err) {
       console.log(err);
       return;
