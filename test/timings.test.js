@@ -239,12 +239,22 @@ describe("processTimeArgs", () => {
   });
 
   it("omits occurTime when no-timestamp is specified", () => {
-    expect(processTimeArgs({noTimestamp: true})).not.toHaveProperty("occurTime")
-    expect(processTimeArgs({noTimestamp: true, date: "2020-10-10"})).not.toHaveProperty("occurTime")
-    expect(processTimeArgs({noTimestamp: true, time: "3pm"})).not.toHaveProperty("occurTime")
-    expect(processTimeArgs({noTimestamp: true, yesterday: 1})).not.toHaveProperty("occurTime")
-    expect(processTimeArgs({noTimestamp: true, quick: 3})).not.toHaveProperty("occurTime")
-  })
+    expect(processTimeArgs({ noTimestamp: true })).not.toHaveProperty(
+      "occurTime"
+    );
+    expect(
+      processTimeArgs({ noTimestamp: true, date: "2020-10-10" })
+    ).not.toHaveProperty("occurTime");
+    expect(
+      processTimeArgs({ noTimestamp: true, time: "3pm" })
+    ).not.toHaveProperty("occurTime");
+    expect(
+      processTimeArgs({ noTimestamp: true, yesterday: 1 })
+    ).not.toHaveProperty("occurTime");
+    expect(processTimeArgs({ noTimestamp: true, quick: 3 })).not.toHaveProperty(
+      "occurTime"
+    );
+  });
 
   it("throws on unparsable times and dates", () => {
     expect(() => processTimeArgs({ time: "absolute rubbish" })).toThrowError(

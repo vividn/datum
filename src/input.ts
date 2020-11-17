@@ -10,7 +10,7 @@ export type DatumYargsType = {
   yesterday?: number;
   time?: string;
   quick?: number;
-  timezone?: string
+  timezone?: string;
   fullDay?: boolean;
   noTimestamp?: boolean;
   noMetadata?: boolean;
@@ -23,7 +23,7 @@ export type DatumYargsType = {
   extraKeys?: string | string[];
   lenient?: boolean;
   _?: (string | number | boolean)[];
-}
+};
 
 const configuredYargs = yargs
   .options({
@@ -80,7 +80,8 @@ const configuredYargs = yargs
       type: "count",
     },
     timezone: {
-      describe: "Set the timezone to use instead of local time. Accepts both timezone names (America/Chicago) and utc offsets '-7'",
+      describe:
+        "Set the timezone to use instead of local time. Accepts both timezone names (America/Chicago) and utc offsets '-7'",
       alias: "z",
       type: "string",
     },
@@ -93,12 +94,12 @@ const configuredYargs = yargs
     "no-timestamp": {
       describe: "omit the occurTime from the data",
       alias: "T",
-      type: "boolean"
+      type: "boolean",
     },
     "no-metadata": {
       describe: "do not include meta data in document",
       alias: "M",
-      type: "boolean"
+      type: "boolean",
     },
     // data
     field: {
