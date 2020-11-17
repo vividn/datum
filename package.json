@@ -47,7 +47,6 @@
     "dotenv": "^8.2.0",
     "luxon": "^1.25.0",
     "nano": "^8.2.2",
-    "node-emoji": "^1.10.0",
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
     "yargs": "^15.4.1"
