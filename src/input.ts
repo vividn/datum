@@ -1,13 +1,36 @@
 const yargs = require("yargs");
 
+export type DatumYargsType = {
+  db?: string;
+  host?: string;
+  username?: string;
+  password?: string;
+  env?: string;
+  date?: string;
+  yesterday?: number;
+  time?: string;
+  quick?: number;
+  timezone?: string
+  fullDay?: boolean;
+  noTimestamp?: boolean;
+  noMetadata?: boolean;
+  field?: string;
+  comment?: string | string[];
+  idField?: string | string[];
+  idDelimiter?: string;
+  partition?: string;
+  extraKeys?: string | string[];
+  lenient?: boolean;
+  _?: (string | number | boolean)[];
+}
+
 const configuredYargs = yargs
-  .command("datum", "quickly insert timestamped data into couchdb")
   .options({
     // couchdb options
     db: {
-      describe: "The database to use",
+      describe: "The database to use, defaults to datum",
       alias: "database",
-      default: "datum",
+      nargs: 1,
     },
     host: {
       describe: "Host and port to use, defaults to 'localhost:5984'",
@@ -25,6 +48,7 @@ const configuredYargs = yargs
       describe:
         "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
       nargs: 1,
+      normalize: true,
     },
 
     // timing
@@ -53,6 +77,11 @@ const configuredYargs = yargs
         "quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.",
       alias: "q",
       type: "count",
+    },
+    timezone: {
+      describe: "Set the timezone to use instead of local time. Accepts both timezone names (America/Chicago) and utc offsets '-7'",
+      alias: "z",
+      type: "string",
     },
     "full-day": {
       describe:
@@ -93,11 +122,9 @@ const configuredYargs = yargs
         " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
       alias: ["id", "pk", "_id"],
       type: "string",
-      default: "meta.occurTime",
     },
     "id-delimiter": {
       describe: "spacer between fields in the id",
-      default: "__",
       type: "string",
     },
     partition: {
@@ -106,7 +133,6 @@ const configuredYargs = yargs
         " Can be fields of data or raw strings surrounded by single quotes." +
         " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
       type: "string",
-      default: "field",
     },
     // undo: {
     //   describe: "undoes the last datum entry, can be combined with -f",
