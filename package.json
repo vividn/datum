@@ -14,7 +14,7 @@
     "build": "tsc -p .",
     "start": "tsc -p . -w",
     "system": "yarn global add $PWD",
-    "pipeline": "yarn test && yarn build && yarn system",
+    "pipeline": "yarn install && yarn test && yarn build && yarn system",
     "refresh": "rm -rf ./node_modules && yarn install",
     "lint": "prettier src test --write"
   },
