@@ -16,7 +16,7 @@ describe("main", () => {
   });
 
   it("inserts documents into couchdb", async () => {
-    await main();
+    await main({});
 
     const db = nano.use("datum");
     await db.info().then((info) => {
@@ -27,7 +27,7 @@ describe("main", () => {
   it("creates the database if it doesn't exist", async () => {
     await nano.db.destroy("datum").catch(pass);
 
-    await main();
+    await main({});
     nano.db.list().then((body) => {
       expect(body.includes("datum"));
     });
