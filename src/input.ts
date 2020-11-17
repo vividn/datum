@@ -19,6 +19,7 @@ export type DatumYargsType = {
   idField?: string | string[];
   idDelimiter?: string;
   partition?: string;
+  undo?: boolean;
   extraKeys?: string | string[];
   lenient?: boolean;
   _?: (string | number | boolean)[];
@@ -134,11 +135,11 @@ const configuredYargs = yargs
         " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
       type: "string",
     },
-    // undo: {
-    //   describe: "undoes the last datum entry, can be combined with -f",
-    //   alias: "u",
-    //   type: "boolean",
-    // },
+    undo: {
+      describe: "undoes the last datum entry, can be combined with -f",
+      alias: "u",
+      type: "boolean",
+    },
     // "force-undo": {
     //   describe:
     //     "forces an undo, even if the datapoint was entered more than 15 minutes ago",
