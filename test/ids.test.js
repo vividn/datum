@@ -34,28 +34,31 @@ describe("assembleId", () => {
     expectAssembleIdReturns({ idField: "bar" }, "def");
   });
 
-  it("interprets single quotes as raw strings", () => {
-    expectAssembleIdReturns({ idField: "'foo'" }, "foo");
-    expectAssembleIdReturns({ idField: "'manual_raw$id'" }, "manual_raw$id");
+  it("strips out raw strings", () => {
+    expectAssembleIdReturns({ idField: "%foo%" }, "foo");
+    expectAssembleIdReturns({ idField: "%manual_raw$id%" }, "manual_raw$id");
     expectAssembleIdReturns(
-      { idField: "'missing_ending_quote_ignored" },
-      "missing_ending_quote_ignored"
+      { idField: "%missing_ending_sign_ignored" },
+      "missing_ending_sign_ignored"
+    );
+  });
+
+  it("can use a different symbol for raw strings", () => {
+    expectAssembleIdReturns(
+      { idField: "@this@foo", rawDelimiter: "@" },
+      "thisabc"
+    );
+    expectAssembleIdReturns(
+      { idField: "#@Multiple Characters#@", rawDelimiter: "#@" },
+      "Multiple Characters"
     );
   });
 
   it("can interpolate raw strings and field names", () => {
-    expectAssembleIdReturns({ idField: "'foo'foo" }, "fooabc");
-    expectAssembleIdReturns({ idField: "foo'_:)_'bar" }, "abc_:)_def");
-    expectAssembleIdReturns({ idField: "foo'raw" }, "abcraw");
-    expectAssembleIdReturns({ idField: "foo''bar" }, "abcdef");
-  });
-
-  it("escapes single quotes properly", () => {
-    expectAssembleIdReturns(
-      { idField: "'raw with \\'escaped quotes\\''" },
-      "raw with 'escaped quotes'"
-    );
-    expectAssembleIdReturns({ idField: "wei\\'rd" }, "da'ta");
+    expectAssembleIdReturns({ idField: "%foo%foo" }, "fooabc");
+    expectAssembleIdReturns({ idField: "foo%_:)_%bar" }, "abc_:)_def");
+    expectAssembleIdReturns({ idField: "foo%raw" }, "abcraw");
+    expectAssembleIdReturns({ idField: "foo%%bar" }, "abcdef");
   });
 
   it("combines multiple components with the id_delimiter", () => {
@@ -68,7 +71,7 @@ describe("assembleId", () => {
       { idField: ["foo", "bar"], delimiter: "" },
       "abcdef"
     );
-    expectAssembleIdReturns({ idField: ["foo", "'raw'"] }, "abc__raw");
+    expectAssembleIdReturns({ idField: ["foo", "%raw%"] }, "abc__raw");
   });
 
   it("omits fields that do not exist", () => {
@@ -117,17 +120,17 @@ describe("assembleId", () => {
       "def:def"
     );
     expectAssembleIdReturns(
-      { partitionField: "'rawString'", idField: ["foo", "'raw'"] },
+      { partitionField: "%rawString%", idField: ["foo", "%raw%"] },
       "rawString:abc__raw"
     );
     expectAssembleIdReturns(
-      { partitionField: ["foo", "bar'-with-extra'"], idField: "'id'" },
+      { partitionField: ["foo", "bar%-with-extra%"], idField: "%id%" },
       "abc__def-with-extra:id"
     );
     expectAssembleIdReturns(
       {
         partitionField: ["foo", "bar"],
-        idField: ["'some'", "'strings'"],
+        idField: ["%some%", "%strings%"],
         delimiter: "!",
       },
       "abc!def:some!strings"
@@ -137,7 +140,7 @@ describe("assembleId", () => {
   it("handles this example", () => {
     expectAssembleIdReturns(
       {
-        idField: ["foo", "meta.occurTime", "'rawString'"],
+        idField: ["foo", "meta.occurTime", "%rawString%"],
         delimiter: "__",
         partitionField: "field",
         payload: testPayloadWithPartition,
