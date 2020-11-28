@@ -21,8 +21,24 @@ async function main(args: DatumYargsType) {
   );
 
   const { parseData } = require("./data");
-  const { _: posArgs = [], field, comment, required, optional, remainder, lenient } = args;
-  const payload = parseData({ posArgs, field, comment, required, optional, remainder, lenient });
+  const {
+    _: posArgs = [],
+    field,
+    comment,
+    required,
+    optional,
+    remainder,
+    lenient,
+  } = args;
+  const payload = parseData({
+    posArgs,
+    field,
+    comment,
+    required,
+    optional,
+    remainder,
+    lenient,
+  });
 
   // Process timing/metadata
   const { noMetadata } = args;

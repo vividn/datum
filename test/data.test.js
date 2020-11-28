@@ -249,9 +249,9 @@ describe("parseData", () => {
 
   it("uses the remainder key for any extra data", () => {
     expectParseDataToReturn(
-      { remainder: "rem", posArgs: ["oneArgHasNoArray"]},
+      { remainder: "rem", posArgs: ["oneArgHasNoArray"] },
       { rem: "oneArgHasNoArray" }
-    )
+    );
     expectParseDataToReturn(
       { remainder: "rem", posArgs: ["abc", "otherKey=def", "hij"] },
       { rem: ["abc", "hij"], otherKey: "def" }
@@ -264,18 +264,26 @@ describe("parseData", () => {
 
   it("appends to the remainder key if previously specified", () => {
     expectParseDataToReturn(
-      { remainder: "rem", posArgs: ["rem=abc", "def"]},
-      { rem: ["abc", "def"]}
-    )
+      { remainder: "rem", posArgs: ["rem=abc", "def"] },
+      { rem: ["abc", "def"] }
+    );
     expectParseDataToReturn(
-      { remainder: "rem", required: ["rem", "other"], posArgs: ["first", "second", "third"]},
-      { other: "second", rem: ["first", "third"]}
-    )
+      {
+        remainder: "rem",
+        required: ["rem", "other"],
+        posArgs: ["first", "second", "third"],
+      },
+      { other: "second", rem: ["first", "third"] }
+    );
     expectParseDataToReturn(
-      { remainder: "rem", optional: ["rem", "other"], posArgs: ["first", "second", "third"]},
-      { other: "second", rem: ["first", "third"]}
-    )
-  })
+      {
+        remainder: "rem",
+        optional: ["rem", "other"],
+        posArgs: ["first", "second", "third"],
+      },
+      { other: "second", rem: ["first", "third"] }
+    );
+  });
 
   it("fills all required keys before the optional keys", () => {
     expectParseDataToReturn(

@@ -1,4 +1,4 @@
-import { inferType } from './utils';
+import { inferType } from "./utils";
 const utils = require("./utils");
 
 type parseDataType = {
@@ -49,7 +49,9 @@ const parseData = function ({
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [dataKey, defaultValue] = utils.splitFirstEquals(optionalKeys.shift()!);
+      const [dataKey, defaultValue] = utils.splitFirstEquals(
+        optionalKeys.shift()!
+      );
 
       if (dataKey in payload) {
         continue optionalKeysLoop;
@@ -61,7 +63,10 @@ const parseData = function ({
 
     // data remains, but no extraKeys left
     if (remainderKey !== undefined) {
-      payload[remainderKey] = utils.createOrAppend(payload[remainderKey], utils.inferType(dataValue));
+      payload[remainderKey] = utils.createOrAppend(
+        payload[remainderKey],
+        utils.inferType(dataValue)
+      );
       continue;
     }
     throw new DataError(
@@ -70,12 +75,16 @@ const parseData = function ({
   }
 
   if (requiredKeys.length > 0) {
-    throw new DataError(`No data given for the required key(s) '${requiredKeys}`);
+    throw new DataError(
+      `No data given for the required key(s) '${requiredKeys}`
+    );
   }
-  
+
   // If extraKeys are left assign default values
   while (optionalKeys.length > 0) {
-    const [dataKey, defaultValue] = utils.splitFirstEquals(optionalKeys.shift()!);
+    const [dataKey, defaultValue] = utils.splitFirstEquals(
+      optionalKeys.shift()!
+    );
 
     if (dataKey in payload || defaultValue === undefined) {
       continue;
@@ -91,8 +100,13 @@ const parseData = function ({
   }
 
   if (comment) {
-    const inferredComments = (Array.isArray(comment) ? comment.map((comm) => utils.inferType(comm)) : [utils.inferType(comment)]) as any[]
-    payload.comment = inferredComments.reduce((accumulator, current) => utils.createOrAppend(accumulator, current), payload["comment"])
+    const inferredComments = (Array.isArray(comment)
+      ? comment.map((comm) => utils.inferType(comm))
+      : [utils.inferType(comment)]) as any[];
+    payload.comment = inferredComments.reduce(
+      (accumulator, current) => utils.createOrAppend(accumulator, current),
+      payload["comment"]
+    );
   }
 
   return payload;
