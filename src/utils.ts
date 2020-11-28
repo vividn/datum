@@ -8,7 +8,7 @@ export const inferType = (value: number | string) => {
   if (/^nan$/i.test(value)) {
     return Number.NaN;
   }
-  if (/^-?inf(inity)?/i.test(value)) {
+  if (/^-?inf(inity)?$/i.test(value)) {
     return value[0] === "-"
       ? Number.NEGATIVE_INFINITY
       : Number.POSITIVE_INFINITY;
