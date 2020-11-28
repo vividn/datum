@@ -177,6 +177,6 @@ const configuredYargs = yargs
     },
   })
   .help("h")
-  .alias("h", "help")
+  .alias("h", "help");
 
 module.exports = { configuredYargs };

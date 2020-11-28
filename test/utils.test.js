@@ -80,14 +80,8 @@ describe("splitFirstEquals", () => {
 
 describe("createOrAppend", () => {
   it("appends if existing is array", () => {
-    expect(createOrAppend(["a", 2], "c")).toStrictEqual([
-      "a",
-      2,
-      "c"
-    ]);
-    expect(createOrAppend([], "newValue")).toStrictEqual([
-      "newValue"
-    ]);
+    expect(createOrAppend(["a", 2], "c")).toStrictEqual(["a", 2, "c"]);
+    expect(createOrAppend([], "newValue")).toStrictEqual(["newValue"]);
     expect(createOrAppend(["not", "flattened"], [])).toStrictEqual([
       "not",
       "flattened",
@@ -108,11 +102,10 @@ describe("createOrAppend", () => {
   });
   it("uses the new value if the existing is undefined", () => {
     expect(createOrAppend(undefined, "right side")).toStrictEqual("right side");
-    expect(createOrAppend(undefined, ["a","b","c"])).toStrictEqual([
+    expect(createOrAppend(undefined, ["a", "b", "c"])).toStrictEqual([
       "a",
       "b",
       "c",
     ]);
   });
-
 });
