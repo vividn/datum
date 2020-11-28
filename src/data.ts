@@ -1,8 +1,11 @@
+import { inferType } from './utils';
 const utils = require("./utils");
 
 type parseDataType = {
   posArgs: (string | number)[];
-  extraKeys?: string | string[];
+  required?: string | string[];
+  optional?: string | string[];
+  remainder?: string;
   field?: string | string[];
   comment?: string | string[];
   lenient?: boolean;
@@ -10,14 +13,17 @@ type parseDataType = {
 };
 const parseData = function ({
   posArgs,
-  extraKeys = [],
+  required = [],
+  optional = [],
+  remainder,
   field,
   comment,
   lenient = false,
   payload = {},
 }: parseDataType): { [key: string]: any } {
-  const keyArray = typeof extraKeys === "string" ? [extraKeys] : extraKeys;
-  let hasEncounteredOptionalKey = false;
+  const requiredKeys = typeof required === "string" ? [required] : required;
+  const optionalKeys = typeof optional === "string" ? [optional] : optional;
+  const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
 
   posArgsLoop: for (const arg of posArgs) {
     const [first, rest] = utils.splitFirstEquals(String(arg));
@@ -31,23 +37,22 @@ const parseData = function ({
     // no explicit key given
     const dataValue = first;
 
-    extraKeyLoop: while (keyArray.length > 0) {
-      const [dataKey, defaultValue] = utils.splitFirstEquals(keyArray.shift()!);
+    requiredKeysLoop: while (requiredKeys.length > 0) {
+      const dataKey = requiredKeys.shift()!;
 
-      // All required arguments must come before optional argument
-      if (defaultValue === undefined) {
-        if (hasEncounteredOptionalKey) {
-          throw new KeysError(
-            "All required extra keys must come before all optional keys"
-          ); // TODO: sort required extraKeys first
-        }
-      } else {
-        hasEncounteredOptionalKey = true;
+      if (dataKey in payload) {
+        continue requiredKeysLoop;
       }
 
-      // Skip to next extraKey if the value has already been explicityly provided
+      payload[dataKey] = utils.inferType(dataValue);
+      continue posArgsLoop;
+    }
+
+    optionalKeysLoop: while (optionalKeys.length > 0) {
+      const [dataKey, defaultValue] = utils.splitFirstEquals(optionalKeys.shift()!);
+
       if (dataKey in payload) {
-        continue extraKeyLoop;
+        continue optionalKeysLoop;
       }
 
       payload[dataKey] = utils.inferType(dataValue);
@@ -55,36 +60,24 @@ const parseData = function ({
     }
 
     // data remains, but no extraKeys left
-    if (lenient) {
-      payload.extraData = (payload.extraData || []).concat([
-        utils.inferType(dataValue),
-      ]);
+    if (remainderKey !== undefined) {
+      payload[remainderKey] = utils.createOrAppend(payload[remainderKey], utils.inferType(dataValue));
       continue;
     }
     throw new DataError(
-      "some data do not have keys. Assign keys with equals signs `key=value`, key args `-K key1 -K key2 value1 value2`, or use --lenient"
+      "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient"
     );
   }
 
+  if (requiredKeys.length > 0) {
+    throw new DataError(`No data given for the required key(s) '${requiredKeys}`);
+  }
+  
   // If extraKeys are left assign default values
-  while (keyArray.length > 0) {
-    const [dataKey, defaultValue] = utils.splitFirstEquals(keyArray.shift()!);
+  while (optionalKeys.length > 0) {
+    const [dataKey, defaultValue] = utils.splitFirstEquals(optionalKeys.shift()!);
 
-    if (defaultValue === undefined && hasEncounteredOptionalKey) {
-      throw new KeysError(
-        "All required extra keys must come before all optional keys"
-      ); // TODO: sort required extraKeys first
-    }
-
-    if (dataKey in payload) {
-      continue;
-    }
-
-    if (defaultValue === undefined) {
-      throw new DataError(`No data given for the required key '${dataKey}`);
-    }
-
-    if (defaultValue === "") {
+    if (dataKey in payload || defaultValue === undefined) {
       continue;
     }
 
@@ -98,11 +91,8 @@ const parseData = function ({
   }
 
   if (comment) {
-    if ("comment" in payload) {
-      payload.comment = [payload.comment].concat(utils.inferType(comment));
-    } else {
-      payload.comment = utils.inferType(comment);
-    }
+    const inferredComments = (Array.isArray(comment) ? comment.map((comm) => utils.inferType(comm)) : [utils.inferType(comment)]) as any[]
+    payload.comment = inferredComments.reduce((accumulator, current) => utils.createOrAppend(accumulator, current), payload["comment"])
   }
 
   return payload;

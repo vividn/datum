@@ -28,4 +28,13 @@ export const splitFirstEquals = (str: string): [string, string | undefined] => {
   return [first, eqSepValue.join("=")];
 };
 
-module.exports = { inferType, splitFirstEquals };
+const createOrAppend = (existing: any, toAppend: any ): any => {
+  if ( existing === undefined ) {
+    return toAppend
+  }
+  const existingArr = (Array.isArray(existing ?? []) ? (existing ?? []) : [existing])
+  existingArr.push(toAppend)
+  return existingArr
+}
+
+module.exports = { inferType, splitFirstEquals, createOrAppend };

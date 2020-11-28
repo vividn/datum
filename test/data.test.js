@@ -34,6 +34,7 @@ describe("parseData", () => {
         { posArgs: ["first=arg", "second=another"] },
         { first: "arg", second: "another" },
       ],
+      [{ posArgs: ["blank="] }, { blank: "" }],
     ];
     expectFromCases(testCases);
   });
@@ -52,13 +53,13 @@ describe("parseData", () => {
       parseData({ posArgs: ["these", "data", "have", "no", "keys"] })
     ).toThrowError(DataError);
     expect(() =>
-      parseData({ extraKeys: ["key1"], posArgs: ["hasKey", "noKey"] })
+      parseData({ required: ["key1"], posArgs: ["hasKey", "noKey"] })
     ).toThrowError(DataError);
   });
 
   it("saves extra data when lenient", () => {
     const testCases = [
-      [{ lenient: true, posArgs: ["keyless"] }, { extraData: ["keyless"] }],
+      [{ lenient: true, posArgs: ["keyless"] }, { extraData: "keyless" }],
       [
         { lenient: true, posArgs: [3, "[1, 2, three]", "{a: bcd}"] },
         { extraData: [3, [1, 2, "three"], { a: "bcd" }] },
@@ -86,34 +87,34 @@ describe("parseData", () => {
   });
 
   it("assigns data to required keys", () => {
-    const testCases = [
-      [{ extraKeys: "abc", posArgs: ["value"] }, { abc: "value" }],
-      [
-        { extraKeys: ["a", "b"], posArgs: ["first", "second"] },
-        { a: "first", b: "second" },
-      ],
-      [
-        {
-          extraKeys: ["a", "b"],
-          posArgs: ["first", "second", "third"],
-          lenient: true,
-        },
-        { a: "first", b: "second", extraData: ["third"] },
-      ],
-    ];
-    expectFromCases(testCases);
+    expectParseDataToReturn(
+      { required: "abc", posArgs: ["value"] },
+      { abc: "value" }
+    );
+    expectParseDataToReturn(
+      { required: ["a", "b"], posArgs: ["first", "second"] },
+      { a: "first", b: "second" }
+    );
+    expectParseDataToReturn(
+      {
+        required: ["a", "b"],
+        posArgs: ["first", "second", "third"],
+        lenient: true,
+      },
+      { a: "first", b: "second", extraData: "third" }
+    );
   });
 
   it("throws if not enough data is given for all required keys", () => {
-    expect(() => parseData({ extraKeys: "a", posArgs: [] })).toThrowError(
+    expect(() => parseData({ required: "a", posArgs: [] })).toThrowError(
       DataError
     );
     expect(() =>
-      parseData({ extraKeys: ["a", "b"], posArgs: ["onlyOne"] })
+      parseData({ required: ["a", "b"], posArgs: ["onlyOne"] })
     ).toThrowError(DataError);
     expect(() =>
       parseData({
-        extraKeys: ["a", "b"],
+        required: ["a", "b"],
         posArgs: ["lenientDoesNotHelp"],
         lenient: true,
       })
@@ -122,57 +123,44 @@ describe("parseData", () => {
 
   it("handles optional extra keys", () => {
     const testCases = [
-      [{ extraKeys: "abc=", posArgs: ["cde"] }, { abc: "cde" }],
-      [{ extraKeys: "optional=", posArgs: [] }, {}],
-      [{ extraKeys: "optWithDefault=3", posArgs: [] }, { optWithDefault: 3 }],
+      [{ optional: "abc", posArgs: ["cde"] }, { abc: "cde" }],
+      [{ optional: "optional", posArgs: [] }, {}],
+      [{ optional: "withDefault=3", posArgs: [] }, { withDefault: 3 }],
       [
-        { extraKeys: "optWithDefault=3", posArgs: ["replacement"] },
-        { optWithDefault: "replacement" },
+        { optional: "withBlankDefault=", posArgs: [] },
+        { withBlankDefault: "" },
+      ],
+      [
+        { optional: "withDefault=3", posArgs: ["replacement"] },
+        { withDefault: "replacement" },
       ],
     ];
     expectFromCases(testCases);
   });
 
-  it("must have all required keys before optional keys", () => {
-    expect(() =>
-      parseData({
-        extraKeys: ["req1", "opt1=", "req2"],
-        posArgs: ["withTwo", "arguments"],
-      })
-    ).toThrowError(KeysError);
-    expect(() =>
-      parseData({
-        extraKeys: ["req1", "opt1=", "req2"],
-        posArgs: ["also", "with", "three"],
-      })
-    ).toThrowError(KeysError);
-  });
-
-  it("replaces extra keys if explicitly specified", () => {
+  it("replaces default value on optional keys if explicitly specified", () => {
     const testCases = [
       [
-        { extraKeys: "abc=", posArgs: ["abc=cde", "ghi"], lenient: true },
-        { abc: "cde", extraData: ["ghi"] },
+        { optional: "abc", posArgs: ["abc=cde", "ghi"], lenient: true },
+        { abc: "cde", extraData: "ghi" },
       ],
       [
         {
-          extraKeys: "abc=123",
+          optional: "abc=123",
           posArgs: ["replacesAbc", "abc=replacesAgain"],
-          lenient: true,
         },
         { abc: "replacesAgain" },
       ],
       [
         {
-          extraKeys: ["first=", "second=42"],
+          optional: ["first", "second=42"],
           posArgs: ["first=54", "[3]"],
-          lenient: true,
         },
         { first: 54, second: [3] },
       ],
       [
         {
-          extraKeys: ["first=123", "second=42"],
+          optional: ["first=123", "second=42"],
           posArgs: ["second=54"],
         },
         { first: 123, second: 54 },
@@ -185,9 +173,10 @@ describe("parseData", () => {
     const testCases = [
       [{ posArgs: ["withKey=data"] }, 1],
       [{ posArgs: ["extraArg"], lenient: true }, 1],
-      [{ extraKeys: ["keyIs"], posArgs: ["given"] }, 1],
+      [{ required: ["keyIs"], posArgs: ["given"] }, 1],
       [{ posArgs: [] }, 0],
-      [{ extraKeys: ["onlyFinalData=goesThrough"], posArgs: ["inferType"] }, 1],
+      [{ optional: "has=defaultValue", posArgs: [] }, 1],
+      [{ optional: ["onlyFinalData=goesThrough"], posArgs: ["inferType"] }, 1],
       [{ field: "[1,2,3]", posArgs: [] }, 1],
       [{ comment: "comment", posArgs: [] }, 1],
       [{ comment: "comment1", posArgs: ["comment=[123]"] }, 2],
@@ -255,6 +244,47 @@ describe("parseData", () => {
         posArgs: ["comment=dataComment"],
       },
       { comment: ["dataComment", "argComment1", "argComment2"] }
+    );
+  });
+
+  it("uses the remainder key for any extra data", () => {
+    expectParseDataToReturn(
+      { remainder: "rem", posArgs: ["oneArgHasNoArray"]},
+      { rem: "oneArgHasNoArray" }
+    )
+    expectParseDataToReturn(
+      { remainder: "rem", posArgs: ["abc", "otherKey=def", "hij"] },
+      { rem: ["abc", "hij"], otherKey: "def" }
+    );
+    expectParseDataToReturn(
+      { required: ["keyA"], remainder: "rem", posArgs: ["abc", "def", "hij"] },
+      { keyA: "abc", rem: ["def", "hij"] }
+    );
+  });
+
+  it("appends to the remainder key if previously specified", () => {
+    expectParseDataToReturn(
+      { remainder: "rem", posArgs: ["rem=abc", "def"]},
+      { rem: ["abc", "def"]}
+    )
+    expectParseDataToReturn(
+      { remainder: "rem", required: ["rem", "other"], posArgs: ["first", "second", "third"]},
+      { other: "second", rem: ["first", "third"]}
+    )
+    expectParseDataToReturn(
+      { remainder: "rem", optional: ["rem", "other"], posArgs: ["first", "second", "third"]},
+      { other: "second", rem: ["first", "third"]}
+    )
+  })
+
+  it("fills all required keys before the optional keys", () => {
+    expectParseDataToReturn(
+      {
+        required: ["req1", "req2"],
+        optional: ["opt1", "opt2=defaultValue"],
+        posArgs: ["value1", "value2", "value3", "value4"],
+      },
+      { req1: "value1", req2: "value2", opt1: "value3", opt2: "value4" }
     );
   });
 });
