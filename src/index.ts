@@ -72,7 +72,6 @@ async function main(args: DatumYargsType) {
     rawDelimiter = "%",
     partition = "field",
   } = args;
-  console.log(args);
   const _id = assembleId({
     idField,
     delimiter: idDelimiter,
