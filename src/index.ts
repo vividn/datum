@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { DatumYargsType } from "./input";
-const chalk = require('chalk')
+const chalk = require("chalk");
 
 async function main(args: DatumYargsType) {
   // Get a timestamp as soon as possible
@@ -21,8 +21,8 @@ async function main(args: DatumYargsType) {
   );
 
   const { parseData } = require("./data");
-  const { _: posArgs = [], field, comment, extraKeys, lenient } = args;
-  const payload = parseData({ posArgs, field, comment, extraKeys, lenient });
+  const { _: posArgs = [], field, comment, required, optional, remainder, lenient } = args;
+  const payload = parseData({ posArgs, field, comment, required, optional, remainder, lenient });
 
   // Process timing/metadata
   const { noMetadata } = args;
@@ -72,7 +72,7 @@ async function main(args: DatumYargsType) {
       const { _rev } = doc;
       const resp = await db.destroy(_id, _rev);
       console.log(chalk.grey("DELETE: ") + chalk.red(_id));
-      return
+      return;
     } catch (err) {
       console.log(err);
       return;

@@ -20,7 +20,9 @@ export type DatumYargsType = {
   idDelimiter?: string;
   partition?: string;
   undo?: boolean;
-  extraKeys?: string | string[];
+  required?: string | string[];
+  optional?: string | string[];
+  remainder?: string;
   lenient?: boolean;
   _?: (string | number | boolean)[];
 };
@@ -147,14 +149,26 @@ const configuredYargs = yargs
     //   alias: "U",
     //   type: "boolean",
     // },
-    extraKeys: {
+    required: {
       describe:
-        "The keys to use for additional data, useful for aliases. Use multiple times for multiple keys. " +
-        "Keys can be used with equals signs for optionality or default values. " +
-        "`datum -k KEY1 -k KEY2= -k KEY3=default` can then take 1-3 positional args, with KEY3 being set to default if < 3 are given",
-      alias: "k",
+        "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown",
+      alias: ["K", "req"],
       type: "string",
       nargs: 1,
+    },
+    optional: {
+      describe:
+        "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
+      alias: ["k", "opt"],
+      type: "string",
+      nargs: 1,
+    },
+    remainder: {
+      describe:
+        "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
+      alias: ["rem", "R"],
+      type: "string",
+      narags: 1,
     },
     lenient: {
       describe: "Allow extra data without defined keys",
@@ -164,9 +178,5 @@ const configuredYargs = yargs
   })
   .help("h")
   .alias("h", "help")
-  .example(
-    "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
-    "creates a document with the abc field {foo: 3, bar: 6}"
-  );
 
 module.exports = { configuredYargs };
