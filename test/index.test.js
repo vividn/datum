@@ -1,11 +1,13 @@
 const main = require("../src/index");
 const nano = require("nano")("http://admin:password@localhost:5983");
 const pass = () => {};
-const fail = () => {throw Error}
-const originalLog = console.log
+const fail = () => {
+  throw Error;
+};
+const originalLog = console.log;
 
 describe("main", () => {
-  const mockedLog = jest.fn()
+  const mockedLog = jest.fn();
 
   beforeAll(async () => {
     await nano.db.destroy("datum").catch(pass);
@@ -13,13 +15,13 @@ describe("main", () => {
 
   beforeEach(async () => {
     await nano.db.create("datum").catch(pass);
-    console.log = mockedLog
+    console.log = mockedLog;
   });
 
   afterEach(async () => {
     await nano.db.destroy("datum").catch(pass);
-    console.log = originalLog
-    mockedLog.mockReset()
+    console.log = originalLog;
+    mockedLog.mockReset();
   });
 
   it("inserts documents into couchdb", async () => {
@@ -43,7 +45,7 @@ describe("main", () => {
   it("can undo adding documents with a known id", async () => {
     await main({ idField: "'this_one_should_be_deleted'" });
     await main({ idField: "'kept" });
-    
+
     const db = nano.use("datum");
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(2);
@@ -51,10 +53,10 @@ describe("main", () => {
     await db.get("this_one_should_be_deleted");
     await db.get("kept");
 
-    mockedLog.mockReset()
+    mockedLog.mockReset();
     await main({ idField: "'this_one_should_be_deleted'", undo: true });
-    
-    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"))
+
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
     });
@@ -66,18 +68,22 @@ describe("main", () => {
 
   it.skip("Can remove metadata entirely", () => {
     // TODO
-    fail()
-  })
+    fail();
+  });
 
   it("tells the user if the document already exists", async () => {
-    await main({ idField: "'my name is bob'"})
-    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining('CREATE'))
-    expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining('EXISTS'))
+    await main({ idField: "'my name is bob'" });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("EXISTS")
+    );
 
-    mockedLog.mockReset()
+    mockedLog.mockReset();
 
-    await main({ idField: "'my name is bob'"})
-    expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining('CREATE'))
-    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining('EXISTS'))
-  })
+    await main({ idField: "'my name is bob'" });
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("CREATE")
+    );
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+  });
 });

@@ -1,22 +1,26 @@
 const assembleId = function ({
   idField = "meta.occurTime",
   delimiter = "__",
+  rawDelimiter = "%",
   partitionField = "field",
   payload,
 }: {
   idField?: string | string[];
   delimiter?: string;
+  rawDelimiter?: string;
   partitionField?: string | string[];
   payload: { [key: string]: any };
 }): string {
   const idSection = buildDelimitedFromFields({
     fields: idField,
     delimiter,
+    rawDelimiter,
     payload,
   });
   const partitionSection = buildDelimitedFromFields({
     fields: partitionField,
     delimiter,
+    rawDelimiter,
     payload,
   });
 
@@ -30,22 +34,21 @@ const assembleId = function ({
 const buildDelimitedFromFields = function ({
   fields,
   delimiter,
+  rawDelimiter,
   payload,
 }: {
   fields: string | string[];
   delimiter: string;
+  rawDelimiter: string;
   payload: { [key: string]: any };
 }) {
   const arrFields = typeof fields === "string" ? [fields] : fields;
   const allComponents = arrFields.reduce(
     (result: string[], fieldName: string) => {
-      const splitNonEscapedQuotes = fieldName
-        .replace(/(?<!\\)'/g, "\xff\x00")
-        .replace(/\\'/g, "'")
-        .split("\xff\x00");
+      const splitOutRawStrings = fieldName.split(rawDelimiter);
 
       // field names are even numbered indices, raw strings are odd
-      const joinedRawStringsAndFields = splitNonEscapedQuotes
+      const joinedRawStringsAndFields = splitOutRawStrings
         .reduce((combined: string[], strPart: string, index: number) => {
           if (index % 2 === 1) {
             combined.push(strPart);
