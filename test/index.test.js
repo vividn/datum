@@ -66,9 +66,9 @@ describe("main", () => {
     );
   });
 
-  it.skip("Can remove metadata entirely", () => {
-    // TODO
-    fail();
+  it("Can remove metadata entirely", async () => {
+    expect(await main({ idField: "%hasMetadata" })).toHaveProperty("meta");
+    expect(await main({ idField: "%noMeta", noMetadata: true })).not.toHaveProperty("meta")
   });
 
   it("tells the user if the document already exists", async () => {
@@ -85,5 +85,9 @@ describe("main", () => {
       expect.stringContaining("CREATE")
     );
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+  });
+
+  it("inserts id structure into the metadata", async () => {
+    expect(await main({ idField: "%rawString"})).toMatchObject({meta: {idStructure: "%rawString"}})
   });
 });
