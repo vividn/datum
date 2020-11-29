@@ -107,8 +107,9 @@ async function main(args: DatumYargsType) {
     console.log(doc);
     return;
   } catch (err) {
-    if (err.reason === "missing") {
+    if (err.reason === "missing" || err.reason === "deleted") {
     } else {
+	  console.log(err)
       throw err;
     }
   }
