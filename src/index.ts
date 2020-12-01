@@ -75,6 +75,10 @@ async function main(args: DatumYargsType) {
     payload,
   });
 
+  if (!noMetadata) {
+    payload.meta.idStructure = idStructure;
+  }
+
   const { db: dbName = "datum" } = args;
 
   // Create database if it doesn't exist

@@ -90,8 +90,8 @@ describe("main", () => {
   });
 
   it("inserts id structure into the metadata", async () => {
-    expect(await main({ idField: "%rawString" })).toMatchObject({
-      meta: { idStructure: "%rawString" },
+    expect(await main({ idField: ["rawString", "%foo%!!"], _:["foo=abc"] })).toMatchObject({
+      meta: { idStructure: "rawString__%foo%!!" },
     });
   });
 });
