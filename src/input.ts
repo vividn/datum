@@ -16,9 +16,8 @@ export type DatumYargsType = {
   noMetadata?: boolean;
   field?: string;
   comment?: string | string[];
-  idField?: string | string[];
+  idPart?: string | string[];
   idDelimiter?: string;
-  rawDelimiter?: string;
   partition?: string;
   undo?: boolean;
   required?: string | string[];
@@ -130,11 +129,6 @@ const configuredYargs = yargs
     },
     "id-delimiter": {
       describe: "spacer between fields in the id",
-      type: "string",
-    },
-    "raw-delimiter": {
-      describe:
-        "Denote raw text in the idFields by surrounding with this delimeter (default: %)",
       type: "string",
     },
     partition: {
