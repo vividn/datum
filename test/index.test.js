@@ -68,7 +68,9 @@ describe("main", () => {
 
   it("Can remove metadata entirely", async () => {
     expect(await main({ idField: "hasMetadata" })).toHaveProperty("meta");
-    expect(await main({ idField: "noMeta", noMetadata: true })).not.toHaveProperty("meta")
+    expect(
+      await main({ idField: "noMeta", noMetadata: true })
+    ).not.toHaveProperty("meta");
   });
 
   it("tells the user if the document already exists", async () => {
@@ -88,6 +90,8 @@ describe("main", () => {
   });
 
   it("inserts id structure into the metadata", async () => {
-    expect(await main({ idField: "%rawString"})).toMatchObject({meta: {idStructure: "%rawString"}})
+    expect(await main({ idField: "%rawString" })).toMatchObject({
+      meta: { idStructure: "%rawString" },
+    });
   });
 });

@@ -2,7 +2,8 @@
 import { DatumYargsType } from "./input";
 const chalk = require("chalk");
 
-async function main(args: DatumYargsType) { //TODO: put document type here
+async function main(args: DatumYargsType) {
+  //TODO: put document type here
   // Get a timestamp as soon as possible
 
   if (args.env !== undefined) {
@@ -66,12 +67,8 @@ async function main(args: DatumYargsType) { //TODO: put document type here
   }
 
   const { assembleId } = require("./ids");
-  const {
-    idField,
-    idDelimiter = "__",
-    partition = "%field",
-  } = args;
-  const {id: _id, structure: idStructure} = assembleId({
+  const { idField, idDelimiter = "__", partition = "%field" } = args;
+  const { id: _id, structure: idStructure } = assembleId({
     idField,
     delimiter: idDelimiter,
     partitionField: partition,
@@ -107,7 +104,7 @@ async function main(args: DatumYargsType) { //TODO: put document type here
   } catch (err) {
     if (err.reason === "missing" || err.reason === "deleted") {
     } else {
-	  console.log(err)
+      console.log(err);
       throw err;
     }
   }
