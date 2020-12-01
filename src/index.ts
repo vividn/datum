@@ -3,6 +3,7 @@ import { DatumYargsType } from "./input";
 const chalk = require("chalk");
 
 async function main(args: DatumYargsType) {
+  //TODO: put document type here
   // Get a timestamp as soon as possible
 
   if (args.env !== undefined) {
@@ -66,19 +67,17 @@ async function main(args: DatumYargsType) {
   }
 
   const { assembleId } = require("./ids");
-  const {
-    idField,
-    idDelimiter = "__",
-    rawDelimiter = "%",
-    partition = "field",
-  } = args;
-  const _id = assembleId({
-    idField,
+  const { idPart, idDelimiter = "__", partition = "%field" } = args;
+  const { id: _id, structure: idStructure } = assembleId({
+    idPart,
     delimiter: idDelimiter,
-    rawDelimiter,
-    partitionField: partition,
+    partition,
     payload,
   });
+
+  if (!noMetadata) {
+    payload.meta.idStructure = idStructure;
+  }
 
   const { db: dbName = "datum" } = args;
 
@@ -94,7 +93,7 @@ async function main(args: DatumYargsType) {
       const { _rev } = doc;
       const resp = await db.destroy(_id, _rev);
       console.log(chalk.grey("DELETE: ") + chalk.red(_id));
-      return;
+      return doc;
     } catch (err) {
       console.log(err);
       return;
@@ -105,11 +104,11 @@ async function main(args: DatumYargsType) {
     const doc = await db.get(_id);
     console.log(chalk.grey("EXISTS: ") + chalk.yellow(doc["_id"]));
     console.log(doc);
-    return;
+    return doc;
   } catch (err) {
     if (err.reason === "missing" || err.reason === "deleted") {
     } else {
-	  console.log(err)
+      console.log(err);
       throw err;
     }
   }
