@@ -9,10 +9,10 @@ const testPayload = {
   },
   foo: "abc",
   bar: "def",
-  complex: { data: "structure" },
+  complex: { data: "nested" },
   array: ["various", 2, "data"],
   num: 3,
-  "wei'rd": "da'ta",
+  "wei%rd": "da%ta",
 };
 
 const testPayloadWithPartition = { ...testPayload, field: "main" };
@@ -21,131 +21,202 @@ const expectAssembleIdReturns = (props, expectedReturn) => {
   expect(
     assembleId({ payload: testPayload, ...props }),
     JSON.stringify(props)
-  ).toBe(expectedReturn);
+  ).toMatchObject(expectedReturn);
 };
 
 describe("assembleId", () => {
   it("returns the occurTime as a default id", () => {
-    expectAssembleIdReturns({}, testPayload.meta.occurTime);
+    expectAssembleIdReturns(
+      {},
+      { id: testPayload.meta.occurTime, structure: "%meta.occurTime%" }
+    );
   });
 
   it("can assemble single component ids", () => {
-    expectAssembleIdReturns({ idField: "foo" }, "abc");
-    expectAssembleIdReturns({ idField: "bar" }, "def");
-  });
-
-  it("strips out raw strings", () => {
-    expectAssembleIdReturns({ idField: "%foo%" }, "foo");
-    expectAssembleIdReturns({ idField: "%manual_raw$id%" }, "manual_raw$id");
     expectAssembleIdReturns(
-      { idField: "%missing_ending_sign_ignored" },
-      "missing_ending_sign_ignored"
+      { idField: "%foo%" },
+      { id: "abc", structure: "%foo%" }
+    );
+    expectAssembleIdReturns(
+      { idField: "%bar%" },
+      { id: "def", structure: "%bar%" }
     );
   });
 
-  it("can use a different symbol for raw strings", () => {
+  it("can use raw strings", () => {
     expectAssembleIdReturns(
-      { idField: "@this@foo", rawDelimiter: "@" },
-      "thisabc"
+      { idField: "foo" },
+      { id: "foo", structure: "foo" }
     );
     expectAssembleIdReturns(
-      { idField: "#@Multiple Characters#@", rawDelimiter: "#@" },
-      "Multiple Characters"
+      { idField: "manual_raw$id" },
+      { id: "manual_raw$id", structure: "manual_raw$id" }
     );
   });
 
   it("can interpolate raw strings and field names", () => {
-    expectAssembleIdReturns({ idField: "%foo%foo" }, "fooabc");
-    expectAssembleIdReturns({ idField: "foo%_:)_%bar" }, "abc_:)_def");
-    expectAssembleIdReturns({ idField: "foo%raw" }, "abcraw");
-    expectAssembleIdReturns({ idField: "foo%%bar" }, "abcdef");
+    expectAssembleIdReturns(
+      { idField: "foo%foo%" },
+      { id: "fooabc", structure: "foo%foo%" }
+    );
+    expectAssembleIdReturns(
+      { idField: "%foo%_:)_%bar%" },
+      { id: "abc_:)_def", structure: "%foo%_:)_%bar%" }
+    );
+    expectAssembleIdReturns(
+      { idField: "raw%foo" },
+      { id: "rawabc", structure: "raw%foo%" }
+    );
+  });
+
+  it("automatically infers a missing trailing %", () => {
+    expectAssembleIdReturns(
+      { idField: "%foo" },
+      { id: "abc", structure: "%foo%" }
+    );
+    expectAssembleIdReturns(
+      { idField: "raw%foo" },
+      { id: "rawabc", structure: "raw%foo%" }
+    );
+    expectAssembleIdReturns(
+      { idField: ["%foo", "%bar"] },
+      { id: "abc__def", structure: "%foo%__%bar%" }
+    );
   });
 
   it("combines multiple components with the id_delimiter", () => {
-    expectAssembleIdReturns({ idField: ["foo", "bar"] }, "abc__def");
     expectAssembleIdReturns(
-      { idField: ["foo", "bar"], delimiter: "@" },
-      "abc@def"
+      { idField: ["%foo", "%bar"] },
+      { id: "abc__def", structure: "%foo%__%bar%" }
     );
     expectAssembleIdReturns(
-      { idField: ["foo", "bar"], delimiter: "" },
-      "abcdef"
+      { idField: ["%foo%", "raw", "%bar"] },
+      { id: "abc__raw__def", structure: "%foo%__raw__%bar%" }
     );
-    expectAssembleIdReturns({ idField: ["foo", "%raw%"] }, "abc__raw");
+    expectAssembleIdReturns(
+      { idField: ["%foo", "%bar"], delimiter: "@" },
+      { id: "abc@def", structure: "%foo%@%bar%" }
+    );
+    expectAssembleIdReturns(
+      { idField: ["%foo", "%bar"], delimiter: "" },
+      { id: "abcdef", structure: "%foo%%bar%" }
+    );
+    expectAssembleIdReturns(
+      { idField: ["%foo", "%bar", "rawString"], delimiter: "%" },
+      { id: "abc%def%rawString", structure: "%foo%\\%%bar%\\%rawString" }
+    );
   });
 
   it("omits fields that do not exist", () => {
-    expectAssembleIdReturns({ idField: "notAField" }, "");
     expectAssembleIdReturns(
-      { idField: ["foo", "notAField", "bar"] },
-      "abc____def"
+      { idField: "%notAField" },
+      { id: "", structure: "%notAField%" }
+    );
+    expectAssembleIdReturns(
+      { idField: ["%foo", "%notAField", "%bar"] },
+      { id: "abc____def", structure: "%foo%__%notAField%__%bar%" }
     );
   });
 
   it("can retrieve deeper values", () => {
     expectAssembleIdReturns(
-      { idField: "meta.createTime" },
-      testPayload.meta.createTime
+      { idField: "%meta.createTime" },
+      { id: testPayload.meta.createTime, structure: "%meta.createTime%" }
     );
-    expectAssembleIdReturns({ idField: "complex.data" }, "structure");
-    expectAssembleIdReturns({ idField: ["foo", "complex.notAKey"] }, "abc__");
-    expectAssembleIdReturns({ idField: "not.real.keys" }, "");
+    expectAssembleIdReturns(
+      { idField: "%complex.data" },
+      { id: "nested", structure: "%complex.data%" }
+    );
+    expectAssembleIdReturns(
+      { idField: ["%foo", "%complex.notAKey"] },
+      { id: "abc__", structure: "%foo%__%complex.notAKey%" }
+    );
+    expectAssembleIdReturns(
+      { idField: "%not.real.keys" },
+      { id: "", structure: "%not.real.keys%" }
+    );
   });
 
   it("serializes numbers, objects, and arrays", () => {
-    expectAssembleIdReturns({ idField: "num" }, "3");
-    expectAssembleIdReturns({ idField: "complex" }, '{"data":"structure"}');
-    expectAssembleIdReturns({ idField: "array" }, '["various",2,"data"]');
+    expectAssembleIdReturns({ idField: "%num" }, { id: "3" });
+    expectAssembleIdReturns(
+      { idField: "%complex" },
+      { id: '{"data":"nested"}' }
+    );
+    expectAssembleIdReturns(
+      { idField: "%array" },
+      { id: '["various",2,"data"]' }
+    );
+  });
+
+  it("escapes percent signs properly", () => {
+    expectAssembleIdReturns(
+      { idField: "raw with escaped \\%foo" },
+      { id: "raw with escaped %foo", structure: "raw with escaped \\%foo" }
+    );
+    expectAssembleIdReturns(
+      { idField: "%wei\\%rd" },
+      { id: "da%ta", structure: "%wei\\%rd%" }
+    );
   });
 
   it("prepends the partition field if provided", () => {
     expectAssembleIdReturns(
       { payload: testPayloadWithPartition },
-      "main:" + testPayload.meta.occurTime
+      {
+        id: "main:" + testPayload.meta.occurTime,
+        structure: "%field%:%meta.occurTime%",
+      }
     );
     expectAssembleIdReturns(
-      { idField: "foo", payload: { ...testPayload, field: "otherName" } },
-      "otherName:abc"
+      { idField: "%foo", payload: { ...testPayload, field: "otherName" } },
+      { id: "otherName:abc", structure: "%field%:%foo%" }
     );
-    expectAssembleIdReturns({ payload: { field: "onlyField" } }, "onlyField:");
+    expectAssembleIdReturns(
+      { payload: { field: "onlyField" } },
+      { id: "onlyField:", structure: "%field%:%meta.occurTime%" }
+    );
   });
 
   it("can use other fields, strings, and combinations as partition", () => {
     expectAssembleIdReturns(
-      { partitionField: "foo", idField: "bar" },
-      "abc:def"
+      { partitionField: "%foo", idField: "%bar" },
+      { id: "abc:def", structure: "%foo%:%bar%" }
     );
     expectAssembleIdReturns(
-      { partitionField: "bar", idField: "bar" },
-      "def:def"
+      { partitionField: "%bar", idField: "%bar" },
+      { id: "def:def", structure: "%bar%:%bar%" }
     );
     expectAssembleIdReturns(
-      { partitionField: "%rawString%", idField: ["foo", "%raw%"] },
-      "rawString:abc__raw"
+      { partitionField: "rawString", idField: ["%foo", "raw"] },
+      { id: "rawString:abc__raw", structure: "rawString:%foo%__raw" }
     );
     expectAssembleIdReturns(
-      { partitionField: ["foo", "bar%-with-extra%"], idField: "%id%" },
-      "abc__def-with-extra:id"
+      { partitionField: ["%foo", "%bar%-with-extra"], idField: "id" },
+      { id: "abc__def-with-extra:id", structure: "%foo%__%bar%-with-extra:id" }
     );
     expectAssembleIdReturns(
       {
-        partitionField: ["foo", "bar"],
-        idField: ["%some%", "%strings%"],
+        partitionField: ["%foo", "%bar"],
+        idField: ["some", "strings"],
         delimiter: "!",
       },
-      "abc!def:some!strings"
+      { id: "abc!def:some!strings", structure: "%foo%!%bar%:some!strings" }
     );
   });
 
   it("handles this example", () => {
     expectAssembleIdReturns(
       {
-        idField: ["foo", "meta.occurTime", "%rawString%"],
+        idField: ["%foo", "%meta.occurTime", "rawString"],
         delimiter: "__",
-        partitionField: "field",
+        partitionField: "%field",
         payload: testPayloadWithPartition,
       },
-      "main:abc__2020-11-09T00:35:10.000Z__rawString"
+      {
+        id: "main:abc__2020-11-09T00:35:10.000Z__rawString",
+        structure: "%field%:%foo%__%meta.occurTime%__rawString",
+      }
     );
   });
 });

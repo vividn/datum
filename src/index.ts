@@ -69,13 +69,11 @@ async function main(args: DatumYargsType) { //TODO: put document type here
   const {
     idField,
     idDelimiter = "__",
-    rawDelimiter = "%",
-    partition = "field",
+    partition = "%field",
   } = args;
-  const _id = assembleId({
+  const {id: _id, structure: idStructure} = assembleId({
     idField,
     delimiter: idDelimiter,
-    rawDelimiter,
     partitionField: partition,
     payload,
   });

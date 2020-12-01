@@ -43,8 +43,8 @@ describe("main", () => {
   });
 
   it("can undo adding documents with a known id", async () => {
-    await main({ idField: "%this_one_should_be_deleted%" });
-    await main({ idField: "%kept" });
+    await main({ idField: "this_one_should_be_deleted" });
+    await main({ idField: "kept" });
 
     const db = nano.use("datum");
     await db.info().then((info) => {
@@ -54,7 +54,7 @@ describe("main", () => {
     await db.get("kept");
 
     mockedLog.mockReset();
-    await main({ idField: "%this_one_should_be_deleted%", undo: true });
+    await main({ idField: "this_one_should_be_deleted", undo: true });
 
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
     await db.info().then((info) => {
@@ -67,12 +67,12 @@ describe("main", () => {
   });
 
   it("Can remove metadata entirely", async () => {
-    expect(await main({ idField: "%hasMetadata" })).toHaveProperty("meta");
-    expect(await main({ idField: "%noMeta", noMetadata: true })).not.toHaveProperty("meta")
+    expect(await main({ idField: "hasMetadata" })).toHaveProperty("meta");
+    expect(await main({ idField: "noMeta", noMetadata: true })).not.toHaveProperty("meta")
   });
 
   it("tells the user if the document already exists", async () => {
-    await main({ idField: "%my name is bob%" });
+    await main({ idField: "my name is bob" });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS")
@@ -80,7 +80,7 @@ describe("main", () => {
 
     mockedLog.mockReset();
 
-    await main({ idField: "%my name is bob%" });
+    await main({ idField: "my name is bob" });
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("CREATE")
     );
