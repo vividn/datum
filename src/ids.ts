@@ -12,14 +12,14 @@ const assembleId = function ({
   const partitionStructure = buildIdStructure(partition, delimiter);
   const idStructure = buildIdStructure(idPart, delimiter);
 
-  const partition = idFromStructure(partitionStructure, payload);
-  const subId = idFromStructure(idStructure, payload);
+  const partitionSection = idFromStructure(partitionStructure, payload);
+  const idSection = idFromStructure(idStructure, payload);
   if (partition.length > 0) {
     const structure = `${partitionStructure}:${idStructure}`;
-    const id = `${partition}:${subId}`;
+    const id = `${partitionSection}:${idPart}`;
     return { id, structure };
   } else {
-    return { id: subId, structure: idStructure };
+    return { id: idSection, structure: idStructure };
   }
 };
 
