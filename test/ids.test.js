@@ -177,24 +177,24 @@ describe("assembleId", () => {
 
   it("can use other fields, strings, and combinations as partition", () => {
     expectAssembleIdReturns(
-      { partitionField: "%foo", idPart: "%bar" },
+      { partition: "%foo", idPart: "%bar" },
       { id: "abc:def", structure: "%foo%:%bar%" }
     );
     expectAssembleIdReturns(
-      { partitionField: "%bar", idPart: "%bar" },
+      { partition: "%bar", idPart: "%bar" },
       { id: "def:def", structure: "%bar%:%bar%" }
     );
     expectAssembleIdReturns(
-      { partitionField: "rawString", idPart: ["%foo", "raw"] },
+      { partition: "rawString", idPart: ["%foo", "raw"] },
       { id: "rawString:abc__raw", structure: "rawString:%foo%__raw" }
     );
     expectAssembleIdReturns(
-      { partitionField: ["%foo", "%bar%-with-extra"], idPart: "id" },
+      { partition: ["%foo", "%bar%-with-extra"], idPart: "id" },
       { id: "abc__def-with-extra:id", structure: "%foo%__%bar%-with-extra:id" }
     );
     expectAssembleIdReturns(
       {
-        partitionField: ["%foo", "%bar"],
+        partition: ["%foo", "%bar"],
         idPart: ["some", "strings"],
         delimiter: "!",
       },
@@ -207,7 +207,7 @@ describe("assembleId", () => {
       {
         idPart: ["%foo", "%meta.occurTime", "rawString"],
         delimiter: "__",
-        partitionField: "%field",
+        partition: "%field",
         payload: testPayloadWithPartition,
       },
       {

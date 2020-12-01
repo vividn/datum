@@ -9,7 +9,7 @@ const assembleId = function ({
   partition?: string | string[];
   payload: { [key: string]: any };
 }): { id: string; structure: string } {
-  const partitionStructure = buildIdStructure(partitionField, delimiter);
+  const partitionStructure = buildIdStructure(partition, delimiter);
   const idStructure = buildIdStructure(idPart, delimiter);
 
   const partition = idFromStructure(partitionStructure, payload);
