@@ -1,16 +1,16 @@
 const assembleId = function ({
-  idField = "%meta.occurTime%",
+  idPart = "%meta.occurTime%",
   delimiter = "__",
-  partitionField = "%field%",
+  partition = "%field%",
   payload,
 }: {
-  idField?: string | string[];
+  idPart?: string | string[];
   delimiter?: string;
-  partitionField?: string | string[];
+  partition?: string | string[];
   payload: { [key: string]: any };
 }): { id: string; structure: string } {
   const partitionStructure = buildIdStructure(partitionField, delimiter);
-  const idStructure = buildIdStructure(idField, delimiter);
+  const idStructure = buildIdStructure(idPart, delimiter);
 
   const partition = idFromStructure(partitionStructure, payload);
   const subId = idFromStructure(idStructure, payload);
