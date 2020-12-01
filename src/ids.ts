@@ -14,9 +14,9 @@ const assembleId = function ({
 
   const partitionSection = idFromStructure(partitionStructure, payload);
   const idSection = idFromStructure(idStructure, payload);
-  if (partition.length > 0) {
+  if (partitionSection.length > 0) {
     const structure = `${partitionStructure}:${idStructure}`;
-    const id = `${partitionSection}:${idPart}`;
+    const id = `${partitionSection}:${idSection}`;
     return { id, structure };
   } else {
     return { id: idSection, structure: idStructure };

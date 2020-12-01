@@ -44,7 +44,10 @@ describe("assembleId", () => {
   });
 
   it("can use raw strings", () => {
-    expectAssembleIdReturns({ idPart: "foo" }, { id: "foo", structure: "foo" });
+    expectAssembleIdReturns(
+      { idPart: "foo" },
+      { id: "foo", structure: "foo" }
+    );
     expectAssembleIdReturns(
       { idPart: "manual_raw$id" },
       { id: "manual_raw$id", structure: "manual_raw$id" }
