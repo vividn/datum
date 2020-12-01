@@ -67,11 +67,11 @@ async function main(args: DatumYargsType) {
   }
 
   const { assembleId } = require("./ids");
-  const { idField, idDelimiter = "__", partition = "%field" } = args;
+  const { idPart, idDelimiter = "__", partition = "%field" } = args;
   const { id: _id, structure: idStructure } = assembleId({
-    idField,
+    idPart,
     delimiter: idDelimiter,
-    partitionField: partition,
+    partition,
     payload,
   });
 

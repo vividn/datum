@@ -16,7 +16,7 @@ export type DatumYargsType = {
   noMetadata?: boolean;
   field?: string;
   comment?: string | string[];
-  idField?: string | string[];
+  idPart?: string | string[];
   idDelimiter?: string;
   partition?: string;
   undo?: boolean;
