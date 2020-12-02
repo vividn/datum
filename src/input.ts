@@ -119,7 +119,7 @@ const configuredYargs = yargs
     },
 
     // id
-    "id-field": {
+    "id-part": {
       describe:
         "Which field(s) to use for the _id field in the document." +
         " Can either be a single string with fields delimited by --id-delimiter" +
