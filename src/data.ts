@@ -1,5 +1,5 @@
 import { inferType } from "./utils";
-import { GenericObject } from './types';
+import { GenericObject } from "./types";
 const utils = require("./utils");
 
 type parseDataType = {
