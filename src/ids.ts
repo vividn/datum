@@ -1,7 +1,7 @@
-import { CouchDocument, GenericObject } from './types';
-const deepGet = require('lodash.get')
-const deepSet = require('lodash.set')
-const deepUnset = require('lodash.unset')
+import { CouchDocument, GenericObject } from "./types";
+const deepGet = require("lodash.get");
+const deepSet = require("lodash.set");
+const deepUnset = require("lodash.unset");
 
 const assembleId = function ({
   idPart = "%meta.occurTime%",
@@ -47,38 +47,44 @@ const buildIdStructure = function (
   return appendedTrailingPercent.join(delimiter);
 };
 
-const destructureIdKeys = (doc: CouchDocument, idStructure?: string): {onlyFields: GenericObject, noFields: GenericObject} => {
+const destructureIdKeys = (
+  doc: CouchDocument,
+  idStructure?: string
+): { onlyFields: GenericObject; noFields: GenericObject } => {
   const noFields = JSON.parse(JSON.stringify(doc));
   const onlyFields = {} as GenericObject;
-  
-  idStructure = idStructure ?? doc.meta?.idStructure
-  if (idStructure === undefined) {
-    return {onlyFields, noFields}
-  }
-  
-  const fieldNames = splitRawAndFields(idStructure).filter((_,index) => index % 2 == 1)
-  
-  fieldNames.forEach((fieldName) => {
-    const extractedValue = deepGet(doc, fieldName) 
-    deepSet(onlyFields, fieldName, extractedValue)
-    deepUnset(noFields, fieldName)
-  })
 
-  return {onlyFields, noFields}
-}
+  idStructure = idStructure ?? doc.meta?.idStructure;
+  if (idStructure === undefined) {
+    return { onlyFields, noFields };
+  }
+
+  const fieldNames = splitRawAndFields(idStructure).filter(
+    (_, index) => index % 2 == 1
+  );
+
+  fieldNames.forEach((fieldName) => {
+    const extractedValue = deepGet(doc, fieldName);
+    deepSet(onlyFields, fieldName, extractedValue);
+    deepUnset(noFields, fieldName);
+  });
+
+  return { onlyFields, noFields };
+};
 
 const splitRawAndFields = (str: string): string[] => {
   // split apart and also replace the escaped %s with normal percents
-  return str.replace(/(?<!\\)%/g, "\xff\x00")
-  .replace(/\\%/g, "%")
-  .split("\xff\x00");
-}
+  return str
+    .replace(/(?<!\\)%/g, "\xff\x00")
+    .replace(/\\%/g, "%")
+    .split("\xff\x00");
+};
 
 const idFromStructure = function (
   structure: string,
   payload: GenericObject
 ): string {
-  const rawEvenFieldOdd = splitRawAndFields(structure)
+  const rawEvenFieldOdd = splitRawAndFields(structure);
 
   const interpolatedFields = rawEvenFieldOdd
     .reduce((combined: string[], strPart: string, index: number) => {

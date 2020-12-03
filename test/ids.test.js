@@ -219,7 +219,7 @@ describe("assembleId", () => {
 });
 
 describe("destructureIdKeys", () => {
-  const obj = { a: 1, b: 2, c: 3 }
+  const obj = { a: 1, b: 2, c: 3 };
   it("can pull out individual keys", () => {
     expect(destructureIdKeys(obj, "%b%")).toMatchObject({
       onlyFields: { b: 2 },
@@ -235,7 +235,7 @@ describe("destructureIdKeys", () => {
   });
 
   it("does not treat raw strings as keys", () => {
-    expect(destructureIdKeys( obj, "a")).toMatchObject({
+    expect(destructureIdKeys(obj, "a")).toMatchObject({
       onlyFields: {},
       noFields: { a: 1, b: 2, c: 3 },
     });
@@ -246,32 +246,40 @@ describe("destructureIdKeys", () => {
   });
 
   it("shows missing keys as undefined", () => {
-    expect(destructureIdKeys(obj, "%notAKey%")).toMatchObject({onlyFields: {notAKey: undefined}, noFields: obj})
-  })
+    expect(destructureIdKeys(obj, "%notAKey%")).toMatchObject({
+      onlyFields: { notAKey: undefined },
+      noFields: obj,
+    });
+  });
 
   it("handles nested objects", () => {
-    const nestedObj = { a: {nested1: "one", nested2: "two"}, b: 2}
-    
-    expect(destructureIdKeys(nestedObj, "%a%")).toMatchObject({
-      onlyFields: {a: {nested1: "one", nested2: "two"}},
-      noFields: {b: 2}
-    })
-    expect(destructureIdKeys(nestedObj, "%a.nested1%")).toMatchObject({
-      onlyFields: {a: {nested1: "one"}},
-      noFields: {a: {nested2: "two"}, b: 2}
-    })
-    expect(destructureIdKeys(nestedObj, "%a.nested1%__%a.nested2%")).toMatchObject({
-      onlyFields: {a: {nested1: "one", nested2: "two"}},
-      noFields: {a: {}, b: 2}
-    })
+    const nestedObj = { a: { nested1: "one", nested2: "two" }, b: 2 };
 
+    expect(destructureIdKeys(nestedObj, "%a%")).toMatchObject({
+      onlyFields: { a: { nested1: "one", nested2: "two" } },
+      noFields: { b: 2 },
+    });
+    expect(destructureIdKeys(nestedObj, "%a.nested1%")).toMatchObject({
+      onlyFields: { a: { nested1: "one" } },
+      noFields: { a: { nested2: "two" }, b: 2 },
+    });
+    expect(
+      destructureIdKeys(nestedObj, "%a.nested1%__%a.nested2%")
+    ).toMatchObject({
+      onlyFields: { a: { nested1: "one", nested2: "two" } },
+      noFields: { a: {}, b: 2 },
+    });
   });
 
   it("can use meta.idStructure to grab keys if idStructure not explicit", () => {
-    const objWithMeta = {a: {b: 2, bb: 55}, c: 3, meta: {idStructure: '%a.bb%%c%'}}
+    const objWithMeta = {
+      a: { b: 2, bb: 55 },
+      c: 3,
+      meta: { idStructure: "%a.bb%%c%" },
+    };
     expect(destructureIdKeys(objWithMeta)).toMatchObject({
-      onlyFields: {a: {bb: 55}, c: 3},
-      noFields: {a: {b: 2}, meta: {idStructure: '%a.bb%%c%'}}
-    })
-  })
+      onlyFields: { a: { bb: 55 }, c: 3 },
+      noFields: { a: { b: 2 }, meta: { idStructure: "%a.bb%%c%" } },
+    });
+  });
 });

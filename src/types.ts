@@ -7,9 +7,9 @@ export type CouchDocument = {
     modifyTime?: string;
     utcOffset?: number;
     idStructure?: string;
-  }
-} & GenericObject
+  };
+} & GenericObject;
 
 export type GenericObject = {
   [key: string]: any;
-}
+};
