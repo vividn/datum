@@ -45,10 +45,14 @@
     "chalk": "^4.1.0",
     "chrono-node": "^2.1.8",
     "dotenv": "^8.2.0",
+    "lodash.get": "^4.4.2",
+    "lodash.set": "^4.3.2",
+    "lodash.unset": "^4.5.2",
     "luxon": "^1.25.0",
     "nano": "^8.2.2",
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
+    "string.ify": "^1.0.64",
     "yargs": "^15.4.1"
   }
 }

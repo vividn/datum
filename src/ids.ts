@@ -1,3 +1,8 @@
+import { CouchDocument, GenericObject } from './types';
+const deepGet = require('lodash.get')
+const deepSet = require('lodash.set')
+const deepUnset = require('lodash.unset')
+
 const assembleId = function ({
   idPart = "%meta.occurTime%",
   delimiter = "__",
@@ -7,7 +12,7 @@ const assembleId = function ({
   idPart?: string | string[];
   delimiter?: string;
   partition?: string | string[];
-  payload: { [key: string]: any };
+  payload: GenericObject;
 }): { id: string; structure: string } {
   const partitionStructure = buildIdStructure(partition, delimiter);
   const idStructure = buildIdStructure(idPart, delimiter);
@@ -27,6 +32,7 @@ const buildIdStructure = function (
   idOrPartition: string | string[],
   delimiter: string
 ): string {
+  // % is reserved for field names, escape it
   delimiter = delimiter === "%" ? "\\%" : delimiter;
   const inputArray =
     typeof idOrPartition === "string" ? [idOrPartition] : idOrPartition;
@@ -41,18 +47,40 @@ const buildIdStructure = function (
   return appendedTrailingPercent.join(delimiter);
 };
 
+const destructureIdKeys = (doc: CouchDocument, idStructure?: string): {onlyFields: GenericObject, noFields: GenericObject} => {
+  const noFields = JSON.parse(JSON.stringify(doc));
+  const onlyFields = {} as GenericObject;
+  
+  idStructure = idStructure ?? doc.meta?.idStructure
+  if (idStructure === undefined) {
+    return {onlyFields, noFields}
+  }
+  
+  const fieldNames = splitRawAndFields(idStructure).filter((_,index) => index % 2 == 1)
+  
+  fieldNames.forEach((fieldName) => {
+    const extractedValue = deepGet(doc, fieldName) 
+    deepSet(onlyFields, fieldName, extractedValue)
+    deepUnset(noFields, fieldName)
+  })
+
+  return {onlyFields, noFields}
+}
+
+const splitRawAndFields = (str: string): string[] => {
+  // split apart and also replace the escaped %s with normal percents
+  return str.replace(/(?<!\\)%/g, "\xff\x00")
+  .replace(/\\%/g, "%")
+  .split("\xff\x00");
+}
+
 const idFromStructure = function (
   structure: string,
-  payload: { [key: string]: any }
+  payload: GenericObject
 ): string {
-  // split apart and also replace the escaped %s with normal percents
-  const splitOutRawStrings = structure
-    .replace(/(?<!\\)%/g, "\xff\x00")
-    .replace(/\\%/g, "%")
-    .split("\xff\x00");
+  const rawEvenFieldOdd = splitRawAndFields(structure)
 
-  // raw strings are even numbered indices, field names are odd
-  const interpolatedFields = splitOutRawStrings
+  const interpolatedFields = rawEvenFieldOdd
     .reduce((combined: string[], strPart: string, index: number) => {
       if (index % 2 === 0) {
         combined.push(strPart);
@@ -76,4 +104,4 @@ const idFromStructure = function (
   return interpolatedFields;
 };
 
-module.exports = { assembleId };
+module.exports = { assembleId, destructureIdKeys };
