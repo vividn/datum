@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { DatumYargsType } from "./input";
 const chalk = require("chalk");
+const { displayDoc } = require("./output");
 
 async function main(args: DatumYargsType) {
   //TODO: put document type here
@@ -102,8 +103,7 @@ async function main(args: DatumYargsType) {
 
   try {
     const doc = await db.get(_id);
-    console.log(chalk.grey("EXISTS: ") + chalk.yellow(doc["_id"]));
-    console.log(doc);
+    displayDoc(doc, "EXISTS");
     return doc;
   } catch (err) {
     if (err.reason === "missing" || err.reason === "deleted") {
@@ -115,8 +115,7 @@ async function main(args: DatumYargsType) {
 
   await db.insert({ _id: _id, ...payload });
   const doc = await db.get(_id);
-  console.log(chalk.grey("CREATE: " + chalk.green(doc["_id"])));
-  console.log(doc);
+  displayDoc(doc, "CREATE");
 
   return doc;
 }

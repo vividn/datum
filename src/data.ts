@@ -1,4 +1,5 @@
 import { inferType } from "./utils";
+import { GenericObject } from './types';
 const utils = require("./utils");
 
 type parseDataType = {
@@ -9,7 +10,7 @@ type parseDataType = {
   field?: string | string[];
   comment?: string | string[];
   lenient?: boolean;
-  payload?: { [key: string]: any };
+  payload?: GenericObject;
 };
 const parseData = function ({
   posArgs,
@@ -20,7 +21,7 @@ const parseData = function ({
   comment,
   lenient = false,
   payload = {},
-}: parseDataType): { [key: string]: any } {
+}: parseDataType): GenericObject {
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
