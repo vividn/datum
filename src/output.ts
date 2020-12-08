@@ -20,10 +20,10 @@ const displayDoc = (doc: CouchDocument, action?: string) => {
   console.log(actionText + color(doc._id));
 
   const maxLength = process.stdout.columns;
-  const { noFields: filteredDoc } = destructureIdKeys(doc);
-  delete filteredDoc._id;
-  delete filteredDoc._rev;
-  delete filteredDoc.meta;
+  const docClone = JSON.parse(JSON.stringify(doc));
+  delete docClone._id;
+  delete docClone._rev;
+  delete docClone.meta;
   console.log(
     stringify.configure({
       formatter: (x: any) =>
@@ -33,7 +33,7 @@ const displayDoc = (doc: CouchDocument, action?: string) => {
           ? chalk.bold(color(x))
           : undefined,
       maxLength: maxLength,
-    })(filteredDoc)
+    })(docClone)
   );
 };
 
