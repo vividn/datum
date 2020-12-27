@@ -1,5 +1,6 @@
 const utils = require("../src/utils");
-import { parseData, DataError } from "../src/data";
+import { parseData } from "../src/data";
+import { DataError } from "../src/errors"
 
 const expectFromCases = (testCases) => {
   testCases.forEach((testCase) => {
