@@ -2,8 +2,8 @@
 import { DatumYargsType } from "./input";
 const chalk = require("chalk");
 const { displayDoc } = require("./output");
-const { inferType } = require("./utils")
-const { PayloadError } = require("./errors")
+const { inferType } = require("./utils");
+const { PayloadError } = require("./errors");
 
 async function main(args: DatumYargsType) {
   //TODO: put document type here
@@ -36,11 +36,11 @@ async function main(args: DatumYargsType) {
     payload: payloadArg,
   } = args;
 
-  const basePayload = payloadArg ? inferType(payloadArg) : {}
-  if (typeof basePayload !== 'object' || basePayload === null) {
-    throw PayloadError("base payload not a valid object")
+  const basePayload = payloadArg ? inferType(payloadArg) : {};
+  if (typeof basePayload !== "object" || basePayload === null) {
+    throw PayloadError("base payload not a valid object");
   }
-  
+
   const payload = parseData({
     posArgs,
     field,
@@ -49,7 +49,7 @@ async function main(args: DatumYargsType) {
     optional,
     remainder,
     lenient,
-    payload: basePayload
+    payload: basePayload,
   });
 
   // Process timing/metadata

@@ -98,15 +98,25 @@ describe("main", () => {
   });
 
   it("can use a custom payload as a base", async () => {
-    expect(await main({ payload: '{a: 1, b:2, c:3 }', idPart: 'payload-doc1'})).toMatchObject({a:1, b:2, c:3, _id: "payload-doc1"})
-  })
+    expect(
+      await main({ payload: "{a: 1, b:2, c:3 }", idPart: "payload-doc1" })
+    ).toMatchObject({ a: 1, b: 2, c: 3, _id: "payload-doc1" });
+  });
 
   it("throws a payload error if payload is malformed", async () => {
-    expect(async () => await main({ payload: 'string'})).toThrowError
-  })
+    expect(async () => await main({ payload: "string" })).toThrowError;
+  });
 
   it("uses the payload _id if specified", async () => {
-    expect(await main({ payload: '{ _id: payload-id }', idPart: 'argument-id'})).toMatchObject({_id: 'payload-id'})
-    expect(await main({ payload: '{ _id: payload-id-2 }', idPart: '%keyId%', posArgs: ['keyId=key-id']})).toMatchObject({_id: 'payload-id-2'})
-  })
+    expect(
+      await main({ payload: "{ _id: payload-id }", idPart: "argument-id" })
+    ).toMatchObject({ _id: "payload-id" });
+    expect(
+      await main({
+        payload: "{ _id: payload-id-2 }",
+        idPart: "%keyId%",
+        posArgs: ["keyId=key-id"],
+      })
+    ).toMatchObject({ _id: "payload-id-2" });
+  });
 });

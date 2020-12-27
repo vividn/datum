@@ -12,4 +12,4 @@ class PayloadError extends Error {
   }
 }
 
-module.exports = { DataError, PayloadError }
+module.exports = { DataError, PayloadError };

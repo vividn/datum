@@ -15,9 +15,9 @@ const assembleId = function ({
   payload: GenericObject;
 }): { id: string; structure: string } {
   if ("_id" in payload) {
-    return { id: payload["_id"], structure: payload["_id"]}
+    return { id: payload["_id"], structure: payload["_id"] };
   }
-  
+
   const partitionStructure = buildIdStructure(partition, delimiter);
   const idStructure = buildIdStructure(idPart, delimiter);
 
