@@ -216,6 +216,16 @@ describe("assembleId", () => {
       }
     );
   });
+
+  it("prefers to use the _id in the payload", () => {
+    expectAssembleIdReturns(
+      {
+        idPart: "%foo",
+        payload: { foo: "fooId", _id: "_idId" },
+      },
+      { id: "_idId" }
+    );
+  });
 });
 
 describe("destructureIdKeys", () => {
