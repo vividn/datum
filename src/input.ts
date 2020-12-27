@@ -59,6 +59,7 @@ const configuredYargs = yargs
       describe:
         "Base payload to add keys to, or used for raw document input into couchdb. Use with --no-metadata for unmodified entry. Default: {}",
       nargs: 1,
+      alias: "p",
       type: "string",
     },
 
