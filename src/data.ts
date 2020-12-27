@@ -114,5 +114,5 @@ const parseData = function ({
 };
 
 module.exports = {
-  parseData
+  parseData,
 };
