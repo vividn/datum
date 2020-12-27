@@ -113,22 +113,6 @@ const parseData = function ({
   return payload;
 };
 
-class DataError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-class KeysError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
 module.exports = {
-  parseData,
-  DataError,
-  KeysError,
+  parseData
 };

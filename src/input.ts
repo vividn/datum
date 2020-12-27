@@ -6,6 +6,7 @@ export type DatumYargsType = {
   username?: string;
   password?: string;
   env?: string;
+  payload?: string;
   date?: string;
   yesterday?: number;
   time?: string;
@@ -52,6 +53,13 @@ const configuredYargs = yargs
         "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
       nargs: 1,
       normalize: true,
+    },
+
+    payload: {
+      describe:
+        "Base payload to add keys to, or used for raw document input into couchdb. Use with --no-metadata for unmodified entry. Default: {}",
+      nargs: 1,
+      type: "string",
     },
 
     // timing
