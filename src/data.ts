@@ -1,6 +1,7 @@
 import { inferType } from "./utils";
 import { GenericObject } from "./types";
 const utils = require("./utils");
+const { DataError } = require("./errors");
 
 type parseDataType = {
   posArgs: (string | number)[];
