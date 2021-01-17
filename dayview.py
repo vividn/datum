@@ -618,18 +618,28 @@ if __name__ == "__main__":
         now_width=2,
         quantfontsize=30,
     )
-    main(nDays=14, imagename="2week", ysize=1200)
     main(
-        begin_date=dt.date(2018, 12, 9),
-        end_date=dt.date(2018, 12, 15),
-        imagename="interview",
-        data_set="reducedSet",
-        xsize=1920,
-        ysize=1080,
-        fontsize=24,
-        quantfontsize=30,
-        point_r=7,
+        nDays=12,
+        imagename="phoneweek",
+        xsize=1080,
+        ysize=1600,
+        quantfontsize=25,
+        now_width=2,
+        point_r=6,
+        fontsize=23
     )
-    main(date_array=[dt.date(2019,3,4), dt.date(2020,4,5), dt.date(2019,1,3)], imagename="selectedDates")
+    main(nDays=14, imagename="2week", ysize=1200)
+    # main(
+    #     begin_date=dt.date(2018, 12, 9),
+    #     end_date=dt.date(2018, 12, 15),
+    #     imagename="interview",
+    #     data_set="reducedSet",
+    #     xsize=1920,
+    #     ysize=1080,
+    #     fontsize=24,
+    #     quantfontsize=30,
+    #     point_r=7,
+    # )
+    # main(date_array=[dt.date(2019,3,4), dt.date(2020,4,5), dt.date(2019,1,3)], imagename="selectedDates")
     # main(nDays=1, imagename='sampleAct', data_set='actSample', begin_date=dt.date(2019,1,28),
     #     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0, quantfontsize=18)
