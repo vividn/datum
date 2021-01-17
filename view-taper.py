@@ -34,7 +34,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 dname = args.dname
-taper_name = "taper-" + dname
+taper_name = "tapers/taper-" + dname
 qdate = args.qdate
 
 

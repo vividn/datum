@@ -14,6 +14,7 @@ import sys
 import math
 from math import log2
 
+from pathlib import Path
 from dateutil import parser as dtparse
 
 from datumdata import Datumdata
@@ -154,7 +155,7 @@ if not os.path.isfile(datum_file):
 
 # taper_file is the output of this function, essentially a mock datum file that maps
 # what the base datum file should look like in order to follow the taper.
-taper_file = datum_dir + "taper-" + dname + ".tsv"
+taper_file = datum_dir + "tapers/taper-" + dname + ".tsv"
 
 # Ask for confirmation before clobbering existing taper file
 if os.path.isfile(taper_file) and not args.clobber:
@@ -164,7 +165,7 @@ if os.path.isfile(taper_file) and not args.clobber:
         exit(2)
 
 # Load the data
-data = Datumdata(dname, type=args.datatype)
+data = Datumdata(dname, data_type=args.datatype)
 
 #######################
 # Determine what the current frequency is from collected data
@@ -191,13 +192,14 @@ def get_out_str(
 ):
     # With no arguments, this builds the header string
     if entry_time == None:
-        return "Date\tTime\tValue\tITI(days)\tMode\tFreq\tPer\tUntil\tTfreq\n"
+        return "Date\tTime\tOffset\tValue\tITI(days)\tMode\tFreq\tPer\tUntil\tTfreq\n"
 
     # Otherwise, must include all the following elements in kwargs
     # entry_time, value, mode, freq, period_str, tfreq, until, iti
 
     date_str = entry_time.strftime("%Y-%m-%d")
     time_str = entry_time.strftime("%H:%M:%S.%f")[0:-3]
+    offset_str = "+0100"
     value_str = "{:.4g}".format(value)
     mode_str = mode
     freq_str = "{:.2f}".format(freq)
@@ -210,6 +212,7 @@ def get_out_str(
             [
                 date_str,
                 time_str,
+                offset_str,
                 value_str,
                 iti_str,
                 mode_str,
