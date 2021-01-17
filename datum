@@ -15,8 +15,8 @@ FORCE=
 mode=normal
 
 # Parse arguments using getopt
-args=$(getopt -n datum -o f:d:t:qTDya:uUisK:kz: \
-              --long "file:,date:,time:,undo,force-undo,interactive,state,zone" \
+args=$(getopt -n datum -o f:d:t:qTDya:uUisp:K:kz:c: \
+              --long "file:,date:,time:,undo,force-undo,interactive,state,zone,id:" \
               -- "$@")
 if [ $? -ne 0 ]; then
     exit 1
@@ -46,11 +46,20 @@ while true; do
             shift 2
             ;;
         
-        -t|--time) # Specify time
+        -t|--time|-q) # Specify time
+            if [[ $1 == '-q' ]]; then
+                input_time="-5"
+                shift
+            else
+                input_time="$2"
+                shift 2
+            fi
+
             TIMEFLAG=true
-            if [[ $2 =~ ^[-+][0-9]+ ]]; then
+            if [[ $input_time =~ ^[-+][0-9]+ ]]; then
                 # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
-                rel_time="$2 minutes"
+                rel_time="$input_time minutes"
+                echo "$rel_time"
                 TIMESTR=$(date --date "$rel_time" '+%H:%M')
                 TIMESTR=$(date --date "$TIMESTR" "+%H:%M:%S.%3N")
 
@@ -58,10 +67,8 @@ while true; do
                 rel_date=$(date --date "$rel_time" '+%Y-%m-%d')
                 DATESTR=$rel_date
             else
-                TIMESTR=$(date --date $2 "+%H:%M:%S.%3N")
+                TIMESTR=$(date --date "$input_time" "+%H:%M:%S.%3N")
             fi
-
-            shift 2
             ;;
         
         -T) # Shortcut for -t 23:59:59.999
@@ -101,9 +108,10 @@ while true; do
             shift
             ;;
 
-        -q|-k|-K) # Extra flags ignored for this version of datumm
-            shift
+        -k|-K|-c|-R|--id) # Extra flags ignored for this version of datumm
+            shift 2
             ;;
+        
 
 		-z|-zone) # Set the timezone explicitly
 			TZSTR=$2
@@ -202,7 +210,7 @@ case $mode in
         fi
 
         # Open up the file for editing
-        sensible-editor $tmpfile
+        vim $tmpfile
 
         # Reget timestamp unless it was specified
         if [ -z $TIMEFLAG ]; then
