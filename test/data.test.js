@@ -1,6 +1,6 @@
 const utils = require("../src/utils");
 import { parseData } from "../src/data";
-import { DataError } from "../src/errors"
+import { DataError } from "../src/errors";
 
 const expectFromCases = (testCases) => {
   testCases.forEach((testCase) => {
@@ -283,6 +283,42 @@ describe("parseData", () => {
         posArgs: ["first", "second", "third"],
       },
       { other: "second", rem: ["first", "third"] }
+    );
+  });
+
+  it("can interpret remainder data as a single string with the stringRemainder option", () => {
+    expectParseDataToReturn(
+      {
+        stringRemainder: true,
+        remainder: "rem",
+        optional: "firstKey",
+        posArgs: [
+          "firstArg",
+          "Additional",
+          "arguments",
+          "get",
+          "made",
+          "into",
+          "a",
+          "single",
+          "string.",
+        ],
+      },
+      {
+        firstKey: "firstArg",
+        rem: "Additional arguments get made into a single string.",
+      }
+    );
+  });
+
+  it("appends remaining postArgs as a single string to an array of the remainder key if previously specified", () => {
+    expectParseDataToReturn(
+      {
+        stringRemainder: true,
+        remainder: "rem",
+        posArgs: ["rem=elementInArray", "Rest", "as", "string"],
+      },
+      { rem: ["elementInArray", "Rest as string"] }
     );
   });
 
