@@ -32,6 +32,7 @@ async function main(args: DatumYargsType) {
     required,
     optional,
     remainder,
+    stringRemainder,
     lenient,
     payload: payloadArg,
   } = args;
@@ -48,6 +49,7 @@ async function main(args: DatumYargsType) {
     required,
     optional,
     remainder,
+    stringRemainder,
     lenient,
     payload: basePayload,
   });

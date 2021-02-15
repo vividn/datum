@@ -24,6 +24,7 @@ export type DatumYargsType = {
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
+  stringRemainder?: boolean;
   lenient?: boolean;
   _?: (string | number | boolean)[];
 };
@@ -178,6 +179,12 @@ const configuredYargs = yargs
       alias: ["rem", "R"],
       type: "string",
       narags: 1,
+    },
+    "string-remainder": {
+      describe:
+        "Remainder data will be a space concatenated string rather than an array",
+      alias: "S",
+      type: "boolean",
     },
     lenient: {
       describe: "Allow extra data without defined keys",

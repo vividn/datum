@@ -8,6 +8,7 @@ type parseDataType = {
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
+  stringRemainder?: boolean;
   field?: string | string[];
   comment?: string | string[];
   lenient?: boolean;
@@ -18,6 +19,7 @@ const parseData = function ({
   required = [],
   optional = [],
   remainder,
+  stringRemainder,
   field,
   comment,
   lenient = false,
@@ -26,6 +28,7 @@ const parseData = function ({
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
+  const remainderData = [];
 
   posArgsLoop: for (const arg of posArgs) {
     const [first, rest] = utils.splitFirstEquals(String(arg));
@@ -63,17 +66,29 @@ const parseData = function ({
       continue posArgsLoop;
     }
 
-    // data remains, but no extraKeys left
-    if (remainderKey !== undefined) {
+    remainderData.push(dataValue);
+  }
+
+  if (remainderData.length > 0) {
+    if (remainderKey === undefined) {
+      throw new DataError(
+        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient"
+      );
+    }
+
+    if (stringRemainder) {
       payload[remainderKey] = utils.createOrAppend(
         payload[remainderKey],
-        utils.inferType(dataValue)
+        remainderData.join(" ")
       );
-      continue;
+    } else {
+      for (const remainer of remainderData) {
+        payload[remainderKey] = utils.createOrAppend(
+          payload[remainderKey],
+          utils.inferType(remainer)
+        );
+      }
     }
-    throw new DataError(
-      "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient"
-    );
   }
 
   if (requiredKeys.length > 0) {
@@ -82,7 +97,7 @@ const parseData = function ({
     );
   }
 
-  // If extraKeys are left assign default values
+  // If extra keys are left assign default values
   while (optionalKeys.length > 0) {
     const [dataKey, defaultValue] = utils.splitFirstEquals(
       optionalKeys.shift()!
