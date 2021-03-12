@@ -77,6 +77,8 @@ async function main(args: DatumYargsType) {
       timezone,
     });
     payload.meta = timings;
+    payload.meta.random = Math.random()
+    payload.meta.humanId = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
   }
 
   const { assembleId } = require("./ids");
