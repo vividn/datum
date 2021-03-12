@@ -119,4 +119,14 @@ describe("main", () => {
       })
     ).toMatchObject({ _id: "payload-id-2" });
   });
+
+  it("contains random identifiers in the metadata", async () => {
+    const doc = await main({})
+    expect(
+      doc.meta
+    ).toMatchObject({
+      random: expect.toBeWithin(0, 1),
+      humanId: expect.stringMatching(/^[0-9a-z]+$/)
+    })
+  })
 });
