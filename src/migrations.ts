@@ -1,6 +1,6 @@
 import { DocumentScope, ViewDocument } from "nano";
-const tmp = require("tmp");
-const fs = require("fs");
+const { file } = require("tmp-promise");
+const fs = require("fs").promises;
 const child_process = require("child_process");
 
 const template_migration = `(doc) => {
@@ -16,19 +16,21 @@ const migrationEditor = async (mapFn: string): Promise<string | undefined> => {
   const child_process = require("child_process");
   const editor = process.env.EDITOR || "vi";
 
-  return new Promise((resolve, reject) => {
-    tmp.file((err: Error, path: string) => {
-      if (err) throw err;
-      fs.writeFileSync(path, mapFn);
+  const { path, cleanup } = await file();
+  await fs.writeFile(path, mapFn);
 
-      const child = child_process.spawn(editor, [path], {
-        stdio: "inherit",
-      });
-      child.on("exit", (code: number) => {
-        if (code !== 0) resolve(undefined);
-        const newMapFn = fs.readFileSync(path, "utf8");
+  return new Promise((resolve, reject) => {
+    const child = child_process.spawn(editor, [path], {
+      stdio: "inherit",
+    });
+    child.on("exit", async (code: number) => {
+      if (code !== 0) {
+        resolve(undefined);
+      } else {
+        const newMapFn = await fs.readFile(path, "utf8");
         resolve(newMapFn);
-      });
+      }
+      cleanup()
     });
   });
 };
@@ -52,8 +54,9 @@ exports.createMigration = async ({
 
   const currentOrTemplate = (designDoc.views[migrationName]?.map ??
     template_migration) as string;
-  
-  const mapFn = mapFnStr ?? (await migrationEditor(currentOrTemplate)) ?? "nothing";
+
+  const mapFn =
+    mapFnStr ?? (await migrationEditor(currentOrTemplate)) ?? "nothing";
   if (mapFn === undefined) return;
 
   designDoc.views[migrationName] = { map: mapFn };

@@ -54,7 +54,7 @@
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
     "string.ify": "^1.0.64",
-    "tmp": "^0.2.1",
+    "tmp-promise": "^3.0.2",
     "yargs": "^15.4.1"
   }
 }
