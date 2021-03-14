@@ -10,9 +10,15 @@ const migrationRenameA2B = `(doc) => {
   if (doc.a) {
     doc.b = doc.a
     delete doc.a
-    emit(1, doc)
+    emit("replace", doc)
   }
 }`;
+const migAddField = `(doc) => {
+  if (!doc.field) {
+    doc.field = "field"
+    emit("replace", doc)
+  }
+}`
 
 let db;
 describe("createMigration", () => {
@@ -63,5 +69,18 @@ describe("createMigration", () => {
     expect(mockedEditInTerminal).toBeCalledTimes(1)
     const designDoc = await db.get("_design/migrate").catch(fail);
     expect(designDoc.views.manuallyEditedMigration.map).toBe(migrationRenameA2B);
+  })
+
+  it("loads the current migration map for editing if one exists and no mapFn is supplied", async () => {
+    const mockedEditInTerminal = jest.spyOn(utils, "editInTerminal").mockImplementation(() => migAddField)
+
+    await createMigration({db: db, migrationName: "savedMigration", mapFnStr: migrationRenameA2B})
+    await createMigration({db: db, migrationName: "savedMigration"})
+    
+    expect(mockedEditInTerminal).toBeCalledTimes(1);
+    expect(mockedEditInTerminal).toHaveBeenCalledWith(migrationRenameA2B)
+    
+    const designDoc = await db.get("_design/migrate").catch(fail);
+    expect(designDoc.views.savedMigration.map).toBe(migAddField)
   })
 });
