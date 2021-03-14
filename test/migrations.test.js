@@ -1,3 +1,4 @@
+const utils = require("../src/utils");
 const { createMigration, runMigration } = require("../src/migrations");
 const nano = require("nano")("http://admin:password@localhost:5983");
 const pass = () => {};
@@ -20,11 +21,13 @@ describe("createMigration", () => {
   });
 
   beforeEach(async () => {
+    jest.clearAllMocks();
     await nano.db.create("test_migrations").catch(fail);
     db = nano.use("test_migrations");
   });
 
   afterEach(async () => {
+    jest.clearAllMocks();
     await nano.db.destroy("test_migrations").catch(pass)
   })
 
@@ -49,4 +52,16 @@ describe("createMigration", () => {
     await db.view("migrate", "rename_a_to_b").catch(fail);
     await db.view("migrate", "rename2").catch(fail);
   });
+
+  it("opens a terminal editor if no mapFn is supplied", async () => {
+    const mockedEditInTerminal = jest.spyOn(utils, "editInTerminal").mockImplementation(() => migrationRenameA2B)
+
+    await createMigration({db: db, migrationName: "nonEditedMigration", mapFnStr: migrationRenameA2B})
+    expect(mockedEditInTerminal).not.toHaveBeenCalled()
+
+    await createMigration({db: db, migrationName: "manuallyEditedMigration"})
+    expect(mockedEditInTerminal).toBeCalledTimes(1)
+    const designDoc = await db.get("_design/migrate").catch(fail);
+    expect(designDoc.views.manuallyEditedMigration.map).toBe(migrationRenameA2B);
+  })
 });
