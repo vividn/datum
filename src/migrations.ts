@@ -1,4 +1,4 @@
-import { DocumentScope, ViewDocument } from "nano";
+import { DocumentScope, ViewDocument, MaybeDocument, Document } from "nano";
 const utils = require("./utils");
 
 const template_migration = `(doc) => {
@@ -40,9 +40,22 @@ exports.createMigration = async ({
   await db.insert(designDoc);
 };
 
-exports.runMigration = ({ db, migrationName }: baseMigrationType) => {
-  return;
+exports.runMigration = async ({ db, migrationName }: baseMigrationType) => {
+  const rows = (await db.view("migrate", migrationName)).rows
+  rows.forEach(async (row) => {
+    switch(row.key) {
+      case "overwrite":
+        await db.insert(row.value as Document)
+        break;
+      default:
+        throw MigrationError
+        break
+    }
+    
+  })
 };
+
+
 
 if (require.main === module) {
   const nano = require("nano")("http://admin:password@localhost:5983");
