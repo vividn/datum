@@ -10,8 +10,6 @@ const template_migration = `(doc) => {
   }
 }`;
 
-
-
 type baseMigrationType = {
   db: DocumentScope<{}>;
   migrationName: string;
@@ -32,30 +30,35 @@ exports.createMigration = async ({
   const currentOrTemplate = (designDoc.views[migrationName]?.map ??
     template_migration) as string;
 
-  const mapFn =
-    mapFnStr ?? (await utils.editInTerminal(currentOrTemplate));
+  const mapFn = mapFnStr ?? (await utils.editInTerminal(currentOrTemplate));
   if (mapFn === undefined) return;
 
   designDoc.views[migrationName] = { map: mapFn };
   await db.insert(designDoc);
 };
 
-exports.runMigration = async ({ db, migrationName }: baseMigrationType) => {
-  const rows = (await db.view("migrate", migrationName)).rows
-  rows.forEach(async (row) => {
-    switch(row.key) {
+exports.runMigration = async ({ db, migrationName }: baseMigrationType): Promise<{pass: string[], fail: [string, Error][]}> => {
+  const rows = (await db.view("migrate", migrationName)).rows;
+  const updateResults = await Promise.allSettled(rows.map(async (row) => {
+    switch (row.key) {
       case "overwrite":
-        await db.insert(row.value as Document)
-        break;
+        try {
+          await db.insert(row.value as Document);
+          return Promise.resolve(row.id)
+        } catch (err) {
+          return Promise.reject([row.id, err])
+        }
       default:
-        throw MigrationError
-        break
+        return Promise.reject([row.id, new MigrationError("unrecognized operation")]);
     }
-    
-  })
+  }))
+  
+  return updateResults.reduce((retVal, result) => {if (result.status == "fulfilled") {
+    retVal.pass.push(result.value)
+  } else {
+    retVal.fail.push(result.reason as [string, Error])
+  }}, {pass: [] as string[], fail: [] as [string, Error][]}
 };
-
-
 
 if (require.main === module) {
   const nano = require("nano")("http://admin:password@localhost:5983");

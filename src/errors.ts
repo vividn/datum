@@ -19,4 +19,4 @@ class MigrationError extends Error {
   }
 }
 
-module.exports = { DataError, PayloadError };
+module.exports = { DataError, PayloadError, MigrationError };

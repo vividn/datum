@@ -12,9 +12,10 @@ const fail = (e) => {
 
 const migA2B = `(doc) => {
   if (doc.a) {
-    doc.b = doc.a
-    delete doc.a
-    emit("overwrite", doc)
+    newDoc = JSON.parse(JSON.stringify(doc))
+    newDoc.b = newDoc.a
+    delete newDoc.a
+    emit("overwrite", newDoc)
   }
 }`;
 const migAddField = `(doc) => {
@@ -149,10 +150,11 @@ describe("runMigration", () => {
     expect(viewBefore.total_rows).toBe(1);
 
     await runMigration({ db: db, migrationName: "A2B" });
-    expect({a: 1, b: "abc"}).toMatchObject({b: "abc", c: undefined})
     const viewAfter = await db.view("migrate", "A2B");
     const newDoc = await db.get("docA");
-    expect(newDoc).toEqual(docAA2B);
+    console.log(newDoc)
+    expect(newDoc).toMatchObject(docAA2B);
+    expect(newDoc.a).toBeUndefined();
     expect(viewAfter.total_rows).toBe(0);
   });
 });
