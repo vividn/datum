@@ -16,7 +16,7 @@ async function main(args: DatumYargsType) {
   const defaultHost =
     env === "production" ? "localhost:5984" : "localhost:5983";
   const couchConfig = {
-    username: args.username ?? process.env.COUCHDB_USERNAME ?? "admin",
+    username: args.username ?? process.env.COUCHDB_USER ?? "admin",
     password: args.password ?? process.env.COUCHDB_PASSWORD ?? "password",
     hostname: args.host ?? process.env.COUCHDB_HOSTNAME ?? defaultHost,
   };
