@@ -1,26 +1,19 @@
 {
-  "include": ["src/**/*.ts", "types"],
   "compilerOptions": {
-    "module": "esnext",
     "target": "es5",
-    "lib": ["dom", "esnext"],
-    "importHelpers": true,
-    "experimentalDecorators": true,
+    "module": "commonjs",
+    "lib": ["es6", "es2015", "esnext", "dom"],
     "declaration": true,
-    "sourceMap": true,
-    "rootDir": "./src",
+    "declarationMap": true,
+    "inlineSourceMap": true,
+    "inlineSources": true,
+    "outDir": "build",
+    "declarationDir": "build/types",
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true,
-    "moduleResolution": "node",
-    "baseUrl": "./src",
-    "paths": {
-      "*": ["src/*", "node_modules/*"]
-    },
-    "jsx": "react",
+    "types": ["node"],
     "esModuleInterop": true,
-    "outDir": "dist"
-  }
+    "resolveJsonModule": true
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": ["old-src", "node_modules"]
 }

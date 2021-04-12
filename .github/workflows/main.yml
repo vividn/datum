@@ -30,7 +30,12 @@ jobs:
         run: yarn lint
         env:
           CI: true
-
+      
+      - name: Setup Test Database
+        run: docker-compose up -d
+        env:
+          CI: true
+      
       - name: Test
         run: yarn test --ci --coverage --maxWorkers=2
         env:
