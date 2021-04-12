@@ -1,196 +1,198 @@
-import { relTimeStr } from './time';
-import yargs from 'yargs';
-import { strIndObj } from './utils';
-import RJSON from 'relaxed-json';
+const yargs = require("yargs");
 
-export const configuredYargs = yargs
-  .command('datum', 'quickly insert timestamped data into couchdb')
+export type DatumYargsType = {
+  db?: string;
+  host?: string;
+  username?: string;
+  password?: string;
+  env?: string;
+  payload?: string;
+  date?: string;
+  yesterday?: number;
+  time?: string;
+  quick?: number;
+  timezone?: string;
+  fullDay?: boolean;
+  noTimestamp?: boolean;
+  noMetadata?: boolean;
+  field?: string;
+  comment?: string | string[];
+  idPart?: string | string[];
+  idDelimiter?: string;
+  partition?: string;
+  undo?: boolean;
+  required?: string | string[];
+  optional?: string | string[];
+  remainder?: string;
+  stringRemainder?: boolean;
+  lenient?: boolean;
+  _?: (string | number | boolean)[];
+};
+
+const configuredYargs = yargs
   .options({
-    field: {
-      describe: 'the primary field of the data',
-      alias: 'f',
-      nargs: 1,
-      type: 'string',
-    },
+    // couchdb options
     db: {
-      describe: 'The database to use',
-      alias: 'database',
-      default: 'datum',
+      describe: "The database to use, defaults to datum",
+      alias: "database",
+      nargs: 1,
     },
-    id: {
+    host: {
+      describe: "Host and port to use, defaults to 'localhost:5984'",
+      nargs: 1,
+    },
+    username: {
+      describe: "couchdb username to use'",
+      nargs: 1,
+    },
+    password: {
+      describe: "couchdb password to use'",
+      nargs: 1,
+    },
+    env: {
       describe:
-        'Which field(s) to use for the _id field in the document.' +
-        ' Can either be a single string with fields delimited by --id-delimiter' +
-        ' or can be used multiple times to progressively assemble an id delimited by --id-delimiter',
-      alias: ['pk', 'primary', '_id'],
-      default: 'occurTime',
+        "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
+      nargs: 1,
+      normalize: true,
     },
-    'id-delimiter': {
-      describe: 'spacer between fields in the id',
-      default: '__',
-      type: 'string',
+
+    payload: {
+      describe:
+        "Base payload to add keys to, or used for raw document input into couchdb. Use with --no-metadata for unmodified entry. Default: {}",
+      nargs: 1,
+      alias: "p",
+      type: "string",
     },
+
+    // timing
     date: {
       describe:
-        'date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.',
-      alias: 'd',
+        "date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.",
+      alias: "d",
       nargs: 1,
-      type: 'string',
-      coerce: (arg: string) => {
-        if (/^[+-][0-9.]+$/.test(arg)) {
-          return relTimeStr(Number(arg), 'days');
-        }
-        return arg;
-      },
+      type: "string",
     },
     yesterday: {
       describe:
         "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
-      alias: ['y', 'D'],
-      type: 'count',
-      conflicts: 'date',
-      default: undefined,
-      coerce: (n?: number) =>
-        n === undefined ? undefined : relTimeStr(-n, 'days'),
+      alias: "y",
+      type: "count",
     },
     time: {
       describe:
-        'specify time of the timestamp, use `+n` or `-n` for a timestamp n minutes relative to now',
-      alias: 't',
+        "specify time of the timestamp, use `+n` or `-n` for a timestamp n minutes relative to now",
+      alias: "t",
       nargs: 1,
-      type: 'string',
-      coerce: (arg: string) => {
-        if (/^[+-][0-9.]+$/.test(arg)) {
-          return relTimeStr(Number(arg), 'minutes');
-        }
-        if (/^[0-9]{3,4}$/.test(arg)) {
-          // quick shortcut to turn just numbers into times. ex. 330->3:30, 1745->17:45
-          return arg.slice(0, -2) + ':' + arg.slice(-2);
-        }
-        return arg;
-      },
+      type: "string",
     },
     quick: {
       describe:
-        'quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.',
-      alias: 'q',
-      type: 'count',
-      conflicts: 'time, date, full-day',
-      default: undefined,
-      coerce: (n: number) =>
-        n === undefined ? undefined : relTimeStr(-5 * n, 'minutes'),
+        "quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.",
+      alias: "q",
+      type: "count",
     },
-    'full-day': {
+    timezone: {
       describe:
-        'make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t',
-      alias: 'T',
-      type: 'boolean',
-      conflicts: 'time',
-      coerce: (b: boolean) => (b ? 'today' : undefined), // essentially used to alias `-d today` if no -d flag is specified,
+        "Set the timezone to use instead of local time. Accepts both timezone names (America/Chicago) and utc offsets '-7'",
+      alias: "z",
+      type: "string",
+    },
+    "full-day": {
+      describe:
+        "make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t",
+      alias: "D",
+      type: "boolean",
+    },
+    "no-timestamp": {
+      describe: "omit the occurTime from the data",
+      alias: "T",
+      type: "boolean",
+    },
+    "no-metadata": {
+      describe: "do not include meta data in document",
+      alias: "M",
+      type: "boolean",
+    },
+    // data
+    field: {
+      describe:
+        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
+      alias: "f",
+      nargs: 1,
+      type: "string",
+    },
+    comment: {
+      describe: "comment to include in the data",
+      alias: "c",
+      nargs: 1,
+      type: "string",
+    },
+
+    // id
+    "id-part": {
+      describe:
+        "Which field(s) to use for the _id field in the document." +
+        " Can either be a single string with fields delimited by --id-delimiter" +
+        " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
+      alias: ["id", "pk", "_id"],
+      type: "string",
+    },
+    "id-delimiter": {
+      describe: "spacer between fields in the id",
+      type: "string",
+    },
+    partition: {
+      describe:
+        "field to use for the partition (default: field, specified with -f)." +
+        " Can be fields of data or raw strings surrounded by single quotes." +
+        " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
+      type: "string",
     },
     undo: {
-      describe: 'undoes the last datum entry, can be combined with -f',
-      alias: 'u',
-      type: 'boolean',
+      describe: "undoes the last datum entry, can be combined with -f",
+      alias: "u",
+      type: "boolean",
     },
-    'force-undo': {
+    // "force-undo": {
+    //   describe:
+    //     "forces an undo, even if the datapoint was entered more than 15 minutes ago",
+    //   alias: "U",
+    //   type: "boolean",
+    // },
+    required: {
       describe:
-        'forces an undo, even if the datapoint was entered more than 15 minutes ago',
-      alias: 'U',
-      type: 'boolean',
-    },
-    K: {
-      describe:
-        'The keys to use for additional data, useful for aliases. Keys can be used with equals signs for optionality or default values.' +
-        '`datum -K KEY1 -K KEY2= -K KEY3=default` can then take 1-3 positional args, with KEY3 being set to default if < 3 are given',
-      alias: 'extra-keys',
-      type: 'string',
+        "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown",
+      alias: ["K", "req"],
+      type: "string",
       nargs: 1,
-      default: [],
+    },
+    optional: {
+      describe:
+        "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
+      alias: ["k", "opt"],
+      type: "string",
+      nargs: 1,
+    },
+    remainder: {
+      describe:
+        "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
+      alias: ["rem", "R"],
+      type: "string",
+      narags: 1,
+    },
+    "string-remainder": {
+      describe:
+        "Remainder data will be a space concatenated string rather than an array",
+      alias: "S",
+      type: "boolean",
     },
     lenient: {
-      describe: 'Allow extra data without defined keys',
-      type: 'boolean',
+      describe: "Allow extra data without defined keys",
+      type: "boolean",
+      alias: "l",
     },
   })
-  .help('h')
-  .alias('h', 'help')
-  .example(
-    "alias foobar='datum -f abc -K foo bar -k'\nfoobar 3 6",
-    'creates a document with the abc field {foo: 3, bar: 6}'
-  );
+  .help("h")
+  .alias("h", "help");
 
-const parsePositional = function (argv: strIndObj): strIndObj {
-  const payload: strIndObj = {};
-  const positionals: (string | number)[] = argv._ ?? [];
-  const [withKey, withoutKey] = positionals.reduce(
-    (result, element) => {
-      if (typeof element === 'string' && element.includes('=')) {
-        result[0].push(element);
-      } else {
-        result[1].push(element);
-      }
-      return result;
-    },
-    [[] as string[], [] as (string | number)[]]
-  );
-
-  for (const arg of withKey) {
-    const [key, value] = arg.split('=');
-    payload[key] = Number(value) || value;
-  }
-
-  let noMoreRequiredPositionals = false;
-  for (const extraKey of argv.extraKeys) {
-    const [dataKey, defaultValue, tooManyEquals] = extraKey.split('=');
-    if (tooManyEquals !== undefined) {
-      throw 'Too many equals signs in a key in --extra-keys';
-    }
-
-    // the data key might be manually specified
-    if (dataKey in payload) {
-      continue;
-    }
-
-    const positionalValue = withoutKey.shift();
-    if (defaultValue === undefined) {
-      if (noMoreRequiredPositionals) {
-        throw 'All required extra keys must come before all optional keys';
-      }
-      if (positionalValue === undefined) {
-        throw `No data given for the required key '${dataKey}`;
-      }
-    }
-    if (defaultValue !== undefined) {
-      noMoreRequiredPositionals = true;
-    }
-    // default value is '' when nothing is given after the =
-    payload[dataKey] =
-      positionalValue ??
-      (defaultValue === '' ? undefined : Number(defaultValue) || defaultValue);
-  }
-  if (withoutKey.length > 0) {
-    if (argv.lenient) {
-      payload.extraData = withoutKey;
-    } else {
-      throw 'some data do not have keys. Either use long options `--key value`, equals signs `key=value`, assign predefined keys in the alias `-K key1 key2 -k value1 value2`, or use -A to pull an array into a single key `-A key value1 value2 value3 -a';
-    }
-  }
-
-  return payload;
-};
-
-const parseArraysAndJSON = function (payload: strIndObj) {
-  Object.entries(payload).forEach((entry) => {
-    const [key, value] = entry;
-    if (/^([{[])/.test(String(value))) {
-      payload[key] = RJSON.parse(value);
-    }
-  });
-  return payload;
-};
-
-export const buildPayloadFromInput = function (argv: strIndObj): strIndObj {
-  const allInputData = parsePositional(argv);
-  return parseArraysAndJSON(allInputData);
-};
+module.exports = { configuredYargs };
