@@ -37,14 +37,19 @@ exports.createMigration = async ({
   await db.insert(designDoc);
 };
 
-exports.runMigration = async ({ db, migrationName }: baseMigrationType): Promise<{pass: string[], fail: [string, Error][]}> => {
+type overwriteMigrationValueType = {
+
+}
+
+exports.runMigration = async ({ db, migrationName }: baseMigrationType): Promise<string[]> => {
   const rows = (await db.view("migrate", migrationName)).rows;
   const updateResults = await Promise.allSettled(rows.map(async (row) => {
     switch (row.key) {
       case "overwrite":
+        const newDocument = row.value as MaybeDocument
         try {
           await db.insert(row.value as Document);
-          return Promise.resolve(row.id)
+          return Promise.resolve(row.value._id)
         } catch (err) {
           return Promise.reject([row.id, err])
         }
@@ -53,7 +58,7 @@ exports.runMigration = async ({ db, migrationName }: baseMigrationType): Promise
     }
   }))
   
-  return updateResults.reduce((retVal, result) => {if (result.status == "fulfilled") {
+  updateResults.reduce((retVal, result) => {if (result.status == "fulfilled") {
     retVal.pass.push(result.value)
   } else {
     retVal.fail.push(result.reason as [string, Error])
