@@ -1,16 +1,22 @@
 #!/usr/bin/env node
-import { DatumYargsType } from "./input";
-const chalk = require("chalk");
-const { displayDoc } = require("./output");
-const { inferType } = require("./utils");
-const { PayloadError } = require("./errors");
+import { configuredYargs, DatumYargsType } from "./input";
+import chalk from "chalk";
+import { displayDoc } from "./output";
+import { PayloadError } from "./errors";
+import dotenv from "dotenv";
+import Nano from "nano";
+import { parseData } from "./parseData";
+import inferType from "./utils/inferType";
+import { processTimeArgs } from "./timings";
+import { assembleId } from "./ids";
+import pass from "./utils/pass";
 
-async function main(args: DatumYargsType) {
+export async function main(args: DatumYargsType) {
   //TODO: put document type here
   // Get a timestamp as soon as possible
 
   if (args.env !== undefined) {
-    require("dotenv").config({ path: args.env });
+    dotenv.config({ path: args.env });
   }
   const env = process.env.NODE_ENV || "production";
   const defaultHost =
@@ -20,11 +26,10 @@ async function main(args: DatumYargsType) {
     password: args.password ?? process.env.COUCHDB_PASSWORD ?? "password",
     hostname: args.host ?? process.env.COUCHDB_HOSTNAME ?? defaultHost,
   };
-  const nano = require("nano")(
+  const nano = Nano(
     `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`
   );
 
-  const { parseData } = require("./data");
   const {
     _: posArgs = [],
     field,
@@ -39,7 +44,7 @@ async function main(args: DatumYargsType) {
 
   const basePayload = payloadArg ? inferType(payloadArg) : {};
   if (typeof basePayload !== "object" || basePayload === null) {
-    throw PayloadError("base payload not a valid object");
+    throw new PayloadError("base payload not a valid object");
   }
 
   const payload = parseData({
@@ -57,7 +62,6 @@ async function main(args: DatumYargsType) {
   // Process timing/metadata
   const { noMetadata } = args;
   if (!noMetadata) {
-    const { processTimeArgs } = require("./timings");
     const {
       date,
       time,
@@ -77,11 +81,11 @@ async function main(args: DatumYargsType) {
       timezone,
     });
     payload.meta = timings;
-    payload.meta.random = Math.random()
-    payload.meta.humanId = Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)
+    payload.meta.random = Math.random();
+    payload.meta.humanId =
+      Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2);
   }
 
-  const { assembleId } = require("./ids");
   const { idPart, idDelimiter = "__", partition = "%field" } = args;
   const { id: _id, structure: idStructure } = assembleId({
     idPart,
@@ -97,7 +101,7 @@ async function main(args: DatumYargsType) {
   const { db: dbName = "datum" } = args;
 
   // Create database if it doesn't exist
-  await nano.db.create(dbName).catch((err: any) => undefined);
+  await nano.db.create(dbName).catch(pass);
 
   const db = await nano.use(dbName);
 
@@ -121,6 +125,7 @@ async function main(args: DatumYargsType) {
     return doc;
   } catch (err) {
     if (err.reason === "missing" || err.reason === "deleted") {
+      // pass
     } else {
       console.log(err);
       throw err;
@@ -136,9 +141,6 @@ async function main(args: DatumYargsType) {
 
 if (require.main === module) {
   // Load command line arguments
-  const { configuredYargs } = require("./input");
-  const args = configuredYargs.parse(process.argv.slice(2));
+  const args = configuredYargs.parse(process.argv.slice(2)) as DatumYargsType;
   main(args);
 }
-
-module.exports = main;

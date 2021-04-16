@@ -1,6 +1,15 @@
-const utils = require("../src/utils");
-import { parseData } from "../src/data";
+import { beforeEach, describe, it } from "@jest/globals";
+import { parseData } from "../src/parseData";
 import { DataError } from "../src/errors";
+import inferType from "../src/utils/inferType";
+
+jest.mock("../src/utils/inferType", () => {
+  const original = jest.requireActual("../src/utils/inferType");
+  return {
+    __esModule: true,
+    default: jest.fn(original.default),
+  };
+});
 
 const expectFromCases = (testCases) => {
   testCases.forEach((testCase) => {
@@ -188,13 +197,11 @@ describe("parseData", () => {
       const inferTypeCalls = testCase[1];
 
       jest.clearAllMocks();
-      const mockedInferType = jest.spyOn(utils, "inferType");
       parseData(parseDataArgs);
 
-      expect(
-        mockedInferType,
-        `${JSON.stringify(testCase)}`
-      ).toHaveBeenCalledTimes(inferTypeCalls);
+      expect(inferType, `${JSON.stringify(testCase)}`).toHaveBeenCalledTimes(
+        inferTypeCalls
+      );
     });
   });
 

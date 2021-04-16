@@ -1,7 +1,8 @@
-import { inferType } from "./utils";
-import { GenericObject } from "./types";
-const utils = require("./utils");
-const { DataError } = require("./errors");
+import { GenericObject } from "./GenericObject";
+import { DataError } from "./errors";
+import inferType from "./utils/inferType";
+import { splitFirstEquals } from "./utils/splitFirstEquals";
+import { createOrAppend } from "./utils/createOrAppend";
 
 type parseDataType = {
   posArgs: (string | number)[];
@@ -14,7 +15,7 @@ type parseDataType = {
   lenient?: boolean;
   payload?: GenericObject;
 };
-const parseData = function ({
+export const parseData = function ({
   posArgs,
   required = [],
   optional = [],
@@ -31,11 +32,11 @@ const parseData = function ({
   const remainderData = [];
 
   posArgsLoop: for (const arg of posArgs) {
-    const [first, rest] = utils.splitFirstEquals(String(arg));
+    const [first, rest] = splitFirstEquals(String(arg));
 
     if (rest !== undefined) {
       // explicit key is given e.g., 'key=value'
-      payload[first] = utils.inferType(rest);
+      payload[first] = inferType(rest);
       continue posArgsLoop;
     }
 
@@ -49,20 +50,18 @@ const parseData = function ({
         continue requiredKeysLoop;
       }
 
-      payload[dataKey] = utils.inferType(dataValue);
+      payload[dataKey] = inferType(dataValue);
       continue posArgsLoop;
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [dataKey, defaultValue] = utils.splitFirstEquals(
-        optionalKeys.shift()!
-      );
+      const [dataKey, defaultValue] = splitFirstEquals(optionalKeys.shift()!);
 
       if (dataKey in payload) {
         continue optionalKeysLoop;
       }
 
-      payload[dataKey] = utils.inferType(dataValue);
+      payload[dataKey] = inferType(dataValue);
       continue posArgsLoop;
     }
 
@@ -77,15 +76,15 @@ const parseData = function ({
     }
 
     if (stringRemainder) {
-      payload[remainderKey] = utils.createOrAppend(
+      payload[remainderKey] = createOrAppend(
         payload[remainderKey],
         remainderData.join(" ")
       );
     } else {
-      for (const remainer of remainderData) {
-        payload[remainderKey] = utils.createOrAppend(
+      for (const remainder of remainderData) {
+        payload[remainderKey] = createOrAppend(
           payload[remainderKey],
-          utils.inferType(remainer)
+          inferType(remainder)
         );
       }
     }
@@ -99,36 +98,30 @@ const parseData = function ({
 
   // If extra keys are left assign default values
   while (optionalKeys.length > 0) {
-    const [dataKey, defaultValue] = utils.splitFirstEquals(
-      optionalKeys.shift()!
-    );
+    const [dataKey, defaultValue] = splitFirstEquals(optionalKeys.shift()!);
 
     if (dataKey in payload || defaultValue === undefined) {
       continue;
     }
 
-    payload[dataKey] = utils.inferType(defaultValue);
+    payload[dataKey] = inferType(defaultValue);
   }
 
   // put in field, overwriting if necessary
   if (field) {
     const rawValue = typeof field === "string" ? field : field.slice(-1)[0];
-    payload.field = utils.inferType(rawValue);
+    payload.field = inferType(rawValue);
   }
 
   if (comment) {
     const inferredComments = (Array.isArray(comment)
-      ? comment.map((comm) => utils.inferType(comm))
-      : [utils.inferType(comment)]) as any[];
+      ? comment.map((comm) => inferType(comm))
+      : [inferType(comment)]) as any[];
     payload.comment = inferredComments.reduce(
-      (accumulator, current) => utils.createOrAppend(accumulator, current),
+      (accumulator, current) => createOrAppend(accumulator, current),
       payload["comment"]
     );
   }
 
   return payload;
-};
-
-module.exports = {
-  parseData,
 };

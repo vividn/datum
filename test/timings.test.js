@@ -1,10 +1,11 @@
 import { Settings, DateTime, Zone, Duration } from "luxon";
-const timezone_mock = require("timezone-mock");
-const {
+import { afterEach, beforeEach, describe, it } from "@jest/globals";
+import timezone_mock from "timezone-mock";
+import {
   processTimeArgs,
   BadTimeArgError,
   BadDateArgError,
-} = require("../src/timings");
+} from "../src/timings";
 
 const expectTimingFromCases = (testCases) => {
   testCases.forEach((testCase) => {

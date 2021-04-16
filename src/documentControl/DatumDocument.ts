@@ -1,4 +1,6 @@
-export type CouchDocument = {
+import { GenericObject } from "../GenericObject";
+
+export type DatumDocument = {
   _id: string;
   _rev: string;
   meta?: {
@@ -9,7 +11,3 @@ export type CouchDocument = {
     idStructure?: string;
   };
 } & GenericObject;
-
-export type GenericObject = {
-  [key: string]: any;
-};
