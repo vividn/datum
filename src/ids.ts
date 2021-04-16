@@ -1,9 +1,10 @@
-import { CouchDocument, GenericObject } from "./types";
-const deepGet = require("lodash.get");
-const deepSet = require("lodash.set");
-const deepUnset = require("lodash.unset");
+import { DatumDocument } from "./documentControl/DatumDocument";
+import { GenericObject } from "./GenericObject";
+import deepGet from "lodash.get";
+import deepSet from "lodash.set";
+import deepUnset from "lodash.unset";
 
-const assembleId = function ({
+export const assembleId = function ({
   idPart = "%meta.occurTime%",
   delimiter = "__",
   partition = "%field%",
@@ -51,8 +52,8 @@ const buildIdStructure = function (
   return appendedTrailingPercent.join(delimiter);
 };
 
-const destructureIdKeys = (
-  doc: CouchDocument,
+export const destructureIdKeys = (
+  doc: DatumDocument,
   idStructure?: string
 ): { onlyFields: GenericObject; noFields: GenericObject } => {
   const noFields = JSON.parse(JSON.stringify(doc));
@@ -64,7 +65,7 @@ const destructureIdKeys = (
   }
 
   const fieldNames = splitRawAndFields(idStructure).filter(
-    (_, index) => index % 2 == 1
+    (_, index) => index % 2 === 1
   );
 
   fieldNames.forEach((fieldName) => {
@@ -76,7 +77,7 @@ const destructureIdKeys = (
   return { onlyFields, noFields };
 };
 
-const splitRawAndFields = (str: string): string[] => {
+export const splitRawAndFields = (str: string): string[] => {
   // split apart and also replace the escaped %s with normal percents
   return str
     .replace(/(?<!\\)%/g, "\xff\x00")
@@ -84,7 +85,7 @@ const splitRawAndFields = (str: string): string[] => {
     .split("\xff\x00");
 };
 
-const idFromStructure = function (
+export const idFromStructure = function (
   structure: string,
   payload: GenericObject
 ): string {
@@ -113,5 +114,3 @@ const idFromStructure = function (
 
   return interpolatedFields;
 };
-
-module.exports = { assembleId, destructureIdKeys };

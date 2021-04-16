@@ -1,9 +1,8 @@
-const main = require("../src/index");
-const nano = require("nano")("http://admin:password@localhost:5983");
-const pass = () => {};
-const fail = () => {
-  throw Error;
-};
+import { afterEach, beforeAll, beforeEach, describe, it } from "@jest/globals";
+import { pass } from "./test-utils";
+import { main } from "../src";
+import Nano from "nano";
+const nano = Nano("http://admin:password@localhost:5983");
 const originalLog = console.log;
 
 describe("main", () => {
@@ -121,12 +120,10 @@ describe("main", () => {
   });
 
   it("contains random identifiers in the metadata", async () => {
-    const doc = await main({})
-    expect(
-      doc.meta
-    ).toMatchObject({
+    const doc = await main({});
+    expect(doc.meta).toMatchObject({
       random: expect.toBeWithin(0, 1),
-      humanId: expect.stringMatching(/^[0-9a-z]+$/)
-    })
-  })
+      humanId: expect.stringMatching(/^[0-9a-z]+$/),
+    });
+  });
 });

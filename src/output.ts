@@ -1,8 +1,6 @@
-import { CouchDocument } from "./types";
-const chalk = require("chalk");
-const { destructureIdKeys } = require("./ids");
-
-const stringify = require("string.ify");
+import { DatumDocument } from "./documentControl/DatumDocument";
+import chalk from "chalk";
+import stringify from "string.ify";
 
 const ACTION_CHALK: { [key: string]: (val: any) => string } = {
   CREATE: chalk.green,
@@ -11,7 +9,7 @@ const ACTION_CHALK: { [key: string]: (val: any) => string } = {
   default: chalk.white,
 };
 
-const displayDoc = (doc: CouchDocument, action?: string) => {
+export const displayDoc = (doc: DatumDocument, action?: string): void => {
   const color = action
     ? ACTION_CHALK[action] ?? ACTION_CHALK.default
     : ACTION_CHALK.default;
@@ -36,5 +34,3 @@ const displayDoc = (doc: CouchDocument, action?: string) => {
     })(docClone)
   );
 };
-
-module.exports = { displayDoc };

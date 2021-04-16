@@ -1,3 +1,5 @@
+import { describe, it } from "@jest/globals";
+
 const { assembleId, destructureIdKeys } = require("../src/ids");
 
 const testPayload = {

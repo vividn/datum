@@ -1,4 +1,7 @@
-const { inferType, splitFirstEquals, createOrAppend } = require("../src/utils");
+import { describe, it } from "@jest/globals";
+import inferType from "../src/utils/inferType";
+import { splitFirstEquals } from "../src/utils/splitFirstEquals";
+import { createOrAppend } from "../src/utils/createOrAppend";
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {

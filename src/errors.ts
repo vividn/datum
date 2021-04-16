@@ -1,15 +1,13 @@
-class DataError extends Error {
+export class DataError extends Error {
   constructor(message: string) {
     super(message);
     this.name = this.constructor.name;
   }
 }
 
-class PayloadError extends Error {
+export class PayloadError extends Error {
   constructor(message: string) {
     super(message);
     this.name = this.constructor.name;
   }
 }
-
-module.exports = { DataError, PayloadError };

@@ -1,4 +1,4 @@
-const yargs = require("yargs");
+import yargs from "yargs";
 
 export type DatumYargsType = {
   db?: string;
@@ -26,10 +26,10 @@ export type DatumYargsType = {
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
-  _?: (string | number | boolean)[];
+  _?: (string | number)[];
 };
 
-const configuredYargs = yargs
+export const configuredYargs = yargs
   .options({
     // couchdb options
     db: {
@@ -194,5 +194,3 @@ const configuredYargs = yargs
   })
   .help("h")
   .alias("h", "help");
-
-module.exports = { configuredYargs };
