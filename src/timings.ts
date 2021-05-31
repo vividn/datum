@@ -1,17 +1,18 @@
 import { DateTime, Duration, Settings as DateTimeSettings } from "luxon";
 import * as chrono from "chrono-node";
+import { BadDateArgError, BadTimeArgError } from "./errors";
 
-type isoDatetime = string;
-type isoDate = string;
+export type isoDatetime = string;
+export type isoDate = string;
 
-type TimingData = {
+export type TimingData = {
   occurTime?: isoDatetime | isoDate;
   createTime: isoDatetime;
   modifyTime: isoDatetime;
   utcOffset: number;
 };
 
-type ProcessTimeArgsType = {
+export type ProcessTimeArgsType = {
   date?: string;
   time?: string;
   yesterday?: number;
@@ -201,17 +202,3 @@ const parseDateStr = function ({
 
   throw new BadDateArgError("date not parsable");
 };
-
-export class BadTimeArgError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-export class BadDateArgError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}

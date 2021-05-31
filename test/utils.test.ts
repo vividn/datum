@@ -1,6 +1,6 @@
-import { describe, it } from "@jest/globals";
+import { describe, expect, it } from "@jest/globals";
 import inferType from "../src/utils/inferType";
-import { splitFirstEquals } from "../src/utils/splitFirstEquals";
+import { splitFirst } from "../src/utils/splitFirst";
 import { createOrAppend } from "../src/utils/createOrAppend";
 
 describe("inferType", () => {
@@ -29,7 +29,7 @@ describe("inferType", () => {
   });
 
   it("converts array looking data", () => {
-    expect(inferType([3, 4, 5])).toEqual([3, 4, 5]);
+    expect(inferType("[3, 4, 5]")).toEqual([3, 4, 5]);
     expect(inferType("[a, b ,c]")).toEqual(["a", "b", "c"]);
     expect(inferType("[]")).toEqual([]);
     expect(inferType("[a, 3, [mixed, [2], nested]]")).toEqual([
@@ -59,14 +59,12 @@ describe("inferType", () => {
   });
 });
 
-describe("splitFirstEquals", () => {
-  it("returns [str, undefined] if there are no equals signs", () => {
-    expect(splitFirstEquals("")).toStrictEqual(["", undefined]);
-    expect(splitFirstEquals("a")).toStrictEqual(["a", undefined]);
-    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual([
-      "a,bsdflkj3",
-      undefined,
-    ]);
+describe("splitFirst", () => {
+  const splitFirstEquals = (str: string) => splitFirst("=", str);
+  it("returns [str] if there are no equals signs", () => {
+    expect(splitFirstEquals("")).toStrictEqual([""]);
+    expect(splitFirstEquals("a")).toStrictEqual(["a"]);
+    expect(splitFirstEquals("a,bsdflkj3")).toStrictEqual(["a,bsdflkj3"]);
   });
 
   it("returns key value pair when there is one equals", () => {
@@ -78,6 +76,13 @@ describe("splitFirstEquals", () => {
   it("puts any extra equals signs into the value of the pair", () => {
     expect(splitFirstEquals("a=b=c")).toStrictEqual(["a", "b=c"]);
     expect(splitFirstEquals("a====")).toStrictEqual(["a", "==="]);
+  });
+
+  it("can also use other separators", () => {
+    expect(splitFirst(":", "no_colons_here")).toStrictEqual(["no_colons_here"]);
+    expect(splitFirst(":", "a:b:c")).toStrictEqual(["a", "b:c"]);
+    expect(splitFirst(":", "a:::::")).toStrictEqual(["a", "::::"]);
+    expect(splitFirst("/", "a/b/c")).toStrictEqual(["a", "b/c"]);
   });
 });
 

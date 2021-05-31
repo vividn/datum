@@ -1,6 +1,6 @@
 import RJSON from "relaxed-json";
 
-export default (value: number | string): any => {
+const inferType = (value: number | string): any => {
   if (typeof value === "number") {
     return value;
   }
@@ -22,3 +22,5 @@ export default (value: number | string): any => {
   }
   return value;
 };
+
+export default inferType;

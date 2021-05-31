@@ -11,9 +11,10 @@
     "declarationDir": "build/types",
     "strict": true,
     "types": ["node"],
+    "typeRoots": ["./node_modules/@types", "./typings"],
     "esModuleInterop": true,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*.ts", "./typings"],
   "exclude": ["node_modules"]
 }

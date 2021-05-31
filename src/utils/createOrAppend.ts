@@ -1,4 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
+/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 export const createOrAppend = (
   existing: any[] | any,
   toAppend: any
@@ -12,3 +12,4 @@ export const createOrAppend = (
   existingArr.push(toAppend);
   return existingArr;
 };
+/* eslint-enable @typescript-eslint/explicit-module-boundary-types */
