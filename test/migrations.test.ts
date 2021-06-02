@@ -1,18 +1,20 @@
-import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from "@jest/globals";
+import { DocumentScope } from "nano";
 
 import { createMigration, runMigration } from "../src/migrations";
+import { fail, pass, testNano } from "./test-utils";
+import { GenericObject } from "../src/GenericObject";
+import * as editInTerminal from "../src/utils/editInTerminal";
 
-const utils = require("../src/utils");
-
-const nano = require("nano")("http://admin:password@localhost:5983");
-const pass = () => {};
-const fail = (e) => {
-  if (e) {
-    throw e;
-  } else {
-    throw Error;
-  }
-};
+const nano = testNano;
 
 const migA2B = `(doc) => {
   if (doc.a) {
@@ -41,14 +43,14 @@ const docAA2B = {
   _id: "docA",
   b: "someData",
 };
-const docAWithField = {
-  _id: "docA",
-  a: "someData",
-  field: "field",
-};
+// const docAWithField = {
+//   _id: "docA",
+//   a: "someData",
+//   field: "field",
+// };
 
 describe("createMigration", () => {
-  let db;
+  let db: DocumentScope<GenericObject>;
   beforeAll(async () => {
     await nano.db.destroy("test_create_migration").catch(pass);
   });
@@ -92,8 +94,8 @@ describe("createMigration", () => {
 
   it("opens a terminal editor if no mapFn is supplied", async () => {
     const mockedEditInTerminal = jest
-      .spyOn(utils, "editInTerminal")
-      .mockImplementation(() => migA2B);
+      .spyOn(editInTerminal, "default")
+      .mockImplementation(async () => migA2B);
 
     await createMigration({
       db: db,
@@ -110,8 +112,8 @@ describe("createMigration", () => {
 
   it("loads the current migration map for editing if one exists and no mapFn is supplied", async () => {
     const mockedEditInTerminal = jest
-      .spyOn(utils, "editInTerminal")
-      .mockImplementation(() => migAddField);
+      .spyOn(editInTerminal, "default")
+      .mockImplementation(async () => migAddField);
 
     await createMigration({
       db: db,
@@ -129,7 +131,7 @@ describe("createMigration", () => {
 });
 
 describe("runMigration", () => {
-  let db;
+  let db: DocumentScope<GenericObject>;
   beforeAll(async () => {
     await nano.db.destroy("test_run_migration").catch(pass);
   });
@@ -156,13 +158,11 @@ describe("runMigration", () => {
     await runMigration({ db: db, migrationName: "A2B" });
     const viewAfter = await db.view("migrate", "A2B");
     const newDoc = await db.get("docA");
-    console.log(newDoc)
+    console.log(newDoc);
     expect(newDoc).toMatchObject(docAA2B);
     expect(newDoc.a).toBeUndefined();
     expect(viewAfter.total_rows).toBe(0);
   });
 
-  it("uses the _id of the emitting doc if none is in the provided doc", fail)
-
-  
+  it("uses the _id of the emitting doc if none is in the provided doc", fail);
 });
