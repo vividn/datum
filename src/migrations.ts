@@ -1,5 +1,6 @@
 import { DocumentScope, ViewDocument, MaybeDocument, Document } from "nano";
-const utils = require("./utils");
+import { MigrationError } from "./errors";
+import editInTerminal from "./utils/editInTerminal";
 
 const template_migration = `(doc) => {
   // Conditional to check if the document should be migrate
@@ -30,7 +31,7 @@ exports.createMigration = async ({
   const currentOrTemplate = (designDoc.views[migrationName]?.map ??
     template_migration) as string;
 
-  const mapFn = mapFnStr ?? (await utils.editInTerminal(currentOrTemplate));
+  const mapFn = mapFnStr ?? (await editInTerminal(currentOrTemplate));
   if (mapFn === undefined) return;
 
   designDoc.views[migrationName] = { map: mapFn };
@@ -41,7 +42,7 @@ type overwriteMigrationValueType = {
 
 }
 
-exports.runMigration = async ({ db, migrationName }: baseMigrationType): Promise<string[]> => {
+export const runMigration = async ({ db, migrationName }: baseMigrationType): Promise<string[]> => {
   const rows = (await db.view("migrate", migrationName)).rows;
   const updateResults = await Promise.allSettled(rows.map(async (row) => {
     switch (row.key) {
@@ -49,7 +50,7 @@ exports.runMigration = async ({ db, migrationName }: baseMigrationType): Promise
         const newDocument = row.value as MaybeDocument
         try {
           await db.insert(row.value as Document);
-          return Promise.resolve(row.value._id)
+          return Promise.resolve(newDocument._id)
         } catch (err) {
           return Promise.reject([row.id, err])
         }

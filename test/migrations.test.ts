@@ -1,5 +1,9 @@
+import { afterEach, beforeAll, beforeEach, describe, expect, it, jest } from "@jest/globals";
+
+import { createMigration, runMigration } from "../src/migrations";
+
 const utils = require("../src/utils");
-const { createMigration, runMigration } = require("../src/migrations");
+
 const nano = require("nano")("http://admin:password@localhost:5983");
 const pass = () => {};
 const fail = (e) => {

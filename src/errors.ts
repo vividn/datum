@@ -44,7 +44,7 @@ export class BadDateArgError extends MyError {
   }
 }
 
-class MigrationError extends MyError {
+export class MigrationError extends MyError {
   constructor(m: unknown) {
     super(m);
     Object.setPrototypeOf(this, MigrationError.prototype);
