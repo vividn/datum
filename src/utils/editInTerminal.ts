@@ -1,13 +1,17 @@
-const editInTerminal = async (initialText: string): Promise<string | undefined> => {
-  const { file: tmpFile } = require("tmp-promise");
-  const fs = require("fs").promises;
-  const child_process = require("child_process");
+import { file as tmpFile } from "tmp-promise";
+import { promises as fs } from "fs";
+
+import child_process from "child_process";
+
+const editInTerminal = async (
+  initialText: string
+): Promise<string | undefined> => {
   const editor = process.env.EDITOR || "vi";
 
   const { path, cleanup } = await tmpFile();
   await fs.writeFile(path, initialText);
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const child = child_process.spawn(editor, [path], {
       stdio: "inherit",
     });
@@ -17,7 +21,7 @@ const editInTerminal = async (initialText: string): Promise<string | undefined> 
       } else {
         resolve(await fs.readFile(path, "utf8"));
       }
-      cleanup();
+      await cleanup();
     });
   });
 };
