@@ -1,29 +1,34 @@
-import { CouchDocument } from "./types";
-const chalk = require("chalk");
-const { destructureIdKeys } = require("./ids");
+import {
+  DataOnlyDocument,
+  DatumData,
+  DatumDocument,
+  isDatumDocument,
+} from "./documentControl/DatumDocument";
+import chalk from "chalk";
+import stringify from "string.ify";
 
-const stringify = require("string.ify");
-
-const ACTION_CHALK: { [key: string]: (val: any) => string } = {
+enum ACTIONS {
+  Create = "CREATE",
+  Delete = "DELETE",
+  Exists = "EXISTS",
+}
+const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   CREATE: chalk.green,
   DELETE: chalk.red,
   EXISTS: chalk.yellow,
-  default: chalk.white,
 };
 
-const displayDoc = (doc: CouchDocument, action?: string) => {
-  const color = action
-    ? ACTION_CHALK[action] ?? ACTION_CHALK.default
-    : ACTION_CHALK.default;
+const actionId = (action: ACTIONS, id: string): string => {
+  const color = ACTION_CHALK[action];
+  const actionText = chalk.grey(action + ": ");
+  return actionText + color(id);
+};
 
-  const actionText = action ? chalk.grey(action + ": ") : "";
-  console.log(actionText + color(doc._id));
-
+export const displayData = (
+  data: DatumData,
+  color: (val: any) => string
+): void => {
   const maxLength = process.stdout.columns;
-  const docClone = JSON.parse(JSON.stringify(doc));
-  delete docClone._id;
-  delete docClone._rev;
-  delete docClone.meta;
   console.log(
     stringify.configure({
       formatter: (x: any) =>
@@ -33,8 +38,30 @@ const displayDoc = (doc: CouchDocument, action?: string) => {
           ? chalk.bold(color(x))
           : undefined,
       maxLength: maxLength,
-    })(docClone)
+    })(data)
   );
 };
 
-module.exports = { displayDoc };
+export const showCreate = (
+  doc: DatumDocument | DataOnlyDocument,
+  showAll = false
+): void => {
+  console.log(actionId(ACTIONS.Create, doc._id));
+  if (isDatumDocument(doc) && !showAll) {
+    displayData(doc.data, ACTION_CHALK["CREATE"]);
+  } else {
+    displayData(doc, ACTION_CHALK["CREATE"]);
+  }
+};
+
+export const showExists = (
+  doc: DatumDocument | DataOnlyDocument,
+  showAll = false
+): void => {
+  console.log(actionId(ACTIONS.Exists, doc._id));
+  if (isDatumDocument(doc) && !showAll) {
+    displayData(doc.data, ACTION_CHALK["EXISTS"]);
+  } else {
+    displayData(doc, ACTION_CHALK["EXISTS"]);
+  }
+};

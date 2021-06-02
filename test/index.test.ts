@@ -1,9 +1,19 @@
-const main = require("../src/index");
-const nano = require("nano")("http://admin:password@localhost:5983");
-const pass = () => {};
-const fail = () => {
-  throw Error;
-};
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  jest,
+} from "@jest/globals";
+import { pass } from "./test-utils";
+import { main } from "../src";
+import Nano from "nano";
+import { BaseDataError } from "../src/errors";
+import { DatumDocument } from "../src/documentControl/DatumDocument";
+
+const nano = Nano("http://admin:password@localhost:5983");
 const originalLog = console.log;
 
 describe("main", () => {
@@ -97,36 +107,85 @@ describe("main", () => {
     });
   });
 
-  it("can use a custom payload as a base", async () => {
+  it("can use custom base data", async () => {
     expect(
-      await main({ payload: "{a: 1, b:2, c:3 }", idPart: "payload-doc1" })
-    ).toMatchObject({ a: 1, b: 2, c: 3, _id: "payload-doc1" });
+      await main({ baseData: "{a: 1, b:2, c:3 }", idPart: "basedata-doc1" })
+    ).toMatchObject({ data: { a: 1, b: 2, c: 3 }, _id: "basedata-doc1" });
   });
 
-  it("throws a payload error if payload is malformed", async () => {
-    expect(async () => await main({ payload: "string" })).toThrowError;
+  it("can write payloads directly by specifying base-data and no-metadata", async () => {
+    expect(
+      await main({
+        noMetadata: true,
+        baseData: "{a: 1, b:2, c:3}",
+        idPart: "basedata-doc2",
+      })
+    ).toMatchObject({
+      _id: "basedata-doc2",
+      a: 1,
+      b: 2,
+      c: 3,
+    });
   });
 
-  it("uses the payload _id if specified", async () => {
+  it("throws a BaseDataError if baseData is malformed", async () => {
+    await expect(main({ baseData: "string" })).rejects.toThrowError(
+      BaseDataError
+    );
+  });
+
+  it("prefers the _id specified when in no-metadata mode", async () => {
     expect(
-      await main({ payload: "{ _id: payload-id }", idPart: "argument-id" })
+      await main({
+        noMetadata: true,
+        baseData: "{ _id: payload-id }",
+        idPart: "argument-id",
+      })
     ).toMatchObject({ _id: "payload-id" });
     expect(
       await main({
-        payload: "{ _id: payload-id-2 }",
+        noMetadata: true,
+        baseData: "{ _id: payload-id-2 }",
         idPart: "%keyId%",
-        posArgs: ["keyId=key-id"],
+        _: ["keyId=key-id"],
       })
     ).toMatchObject({ _id: "payload-id-2" });
+    expect(
+      await main({
+        noMetadata: true,
+        _: ["_id=posArgs-id"],
+        idPart: "idPart-id",
+      })
+    ).toMatchObject({ _id: "posArgs-id" });
+  });
+
+  it("does not contain idStructure in the metadata if id does not depend on values from data", async () => {
+    const returnDoc = (await main({ idPart: "notAField" })) as DatumDocument;
+    expect(returnDoc._id).toBe("notAField");
+    expect(returnDoc.meta).not.toHaveProperty("idStructure");
   });
 
   it("contains random identifiers in the metadata", async () => {
-    const doc = await main({})
-    expect(
-      doc.meta
-    ).toMatchObject({
-      random: expect.toBeWithin(0, 1),
-      humanId: expect.stringMatching(/^[0-9a-z]+$/)
-    })
-  })
+    const doc = await main({});
+    const { random, humanId } = doc?.meta;
+
+    expect(random).toBeGreaterThanOrEqual(0);
+    expect(random).toBeLessThanOrEqual(1);
+    expect(humanId).toEqual(expect.stringMatching(/^[0-9a-z]+$/));
+  });
+
+  it("can display just the data of documents or the whole documents", async () => {
+    const matchExtraKeysInAnyOrder = /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
+    await main({ idPart: "this-id" });
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringMatching(matchExtraKeysInAnyOrder)
+    );
+
+    mockedLog.mockClear();
+
+    await main({ idPart: "that-id", showAll: true });
+    expect(mockedLog).toHaveBeenCalledWith(
+      expect.stringMatching(matchExtraKeysInAnyOrder)
+    );
+  });
 });

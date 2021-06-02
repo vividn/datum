@@ -1,4 +1,4 @@
-const yargs = require("yargs");
+import yargs from "yargs";
 
 export type DatumYargsType = {
   db?: string;
@@ -6,7 +6,7 @@ export type DatumYargsType = {
   username?: string;
   password?: string;
   env?: string;
-  payload?: string;
+  baseData?: string;
   date?: string;
   yesterday?: number;
   time?: string;
@@ -26,10 +26,11 @@ export type DatumYargsType = {
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
-  _?: (string | number | boolean)[];
+  showAll?: boolean;
+  _?: (string | number)[];
 };
 
-const configuredYargs = yargs
+export const configuredYargs = yargs
   .options({
     // couchdb options
     db: {
@@ -56,11 +57,11 @@ const configuredYargs = yargs
       normalize: true,
     },
 
-    payload: {
+    "base-data": {
       describe:
-        "Base payload to add keys to, or used for raw document input into couchdb. Use with --no-metadata for unmodified entry. Default: {}",
+        "base object on which additional keys are added. Fed through relaxed-json, but should still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
       nargs: 1,
-      alias: "p",
+      alias: "b",
       type: "string",
     },
 
@@ -145,7 +146,7 @@ const configuredYargs = yargs
       describe:
         "field to use for the partition (default: field, specified with -f)." +
         " Can be fields of data or raw strings surrounded by single quotes." +
-        " Like --id-field, can be used  mulitple times to assemble a partition separated by --id-delimiter",
+        " Like --id-field, can be used  multiple times to assemble a partition separated by --id-delimiter",
       type: "string",
     },
     undo: {
@@ -178,7 +179,7 @@ const configuredYargs = yargs
         "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
       alias: ["rem", "R"],
       type: "string",
-      narags: 1,
+      nargs: 1,
     },
     "string-remainder": {
       describe:
@@ -191,8 +192,11 @@ const configuredYargs = yargs
       type: "boolean",
       alias: "l",
     },
+    "show-all": {
+      describe: "Show complete document when displaying, not just data",
+      type: "boolean",
+      alias: "A",
+    },
   })
   .help("h")
   .alias("h", "help");
-
-module.exports = { configuredYargs };

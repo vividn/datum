@@ -1,18 +1,18 @@
-const pluralize = require("pluralize");
-const { DateTime, Duration, Settings: DateTimeSettings } = require("luxon");
+import { DateTime, Duration, Settings as DateTimeSettings } from "luxon";
+import * as chrono from "chrono-node";
+import { BadDateArgError, BadTimeArgError } from "./errors";
 
-type isoDatetime = string;
-type isoDate = string;
-type DateTime = any;
+export type isoDatetime = string;
+export type isoDate = string;
 
-type TimingData = {
+export type TimingData = {
   occurTime?: isoDatetime | isoDate;
   createTime: isoDatetime;
   modifyTime: isoDatetime;
   utcOffset: number;
 };
 
-type ProcessTimeArgsType = {
+export type ProcessTimeArgsType = {
   date?: string;
   time?: string;
   yesterday?: number;
@@ -22,7 +22,7 @@ type ProcessTimeArgsType = {
   referenceTime?: DateTime;
   timezone?: string;
 };
-const processTimeArgs = function ({
+export const processTimeArgs = function ({
   date,
   time,
   yesterday,
@@ -88,7 +88,7 @@ type ParseTimeStrType = {
   timeStr: string;
   referenceTime: DateTime;
 };
-const parseTimeStr = function ({
+export const parseTimeStr = function ({
   timeStr,
   referenceTime,
 }: ParseTimeStrType): DateTime {
@@ -106,22 +106,24 @@ const parseTimeStr = function ({
       meridian,
     } = matches.groups;
     const correctedHour = // fairly dirty implementation, but built for speed
-      meridian?.toLowerCase() === "pm" ? parseInt(hour) + 12 : parseInt(hour);
+      meridian?.toLowerCase() === "pm"
+        ? parseInt(hour, 10) + 12
+        : parseInt(hour, 10);
 
     // if less than all three millisecond digits are given, fill the remaining zeroes
-    const millisecond = (milli + "000").substring(0, 3);
+    const millisecond = parseInt((milli + "000").substring(0, 3), 10);
 
     return referenceTime.set({
       hour: correctedHour,
-      minute,
-      second,
+      minute: parseInt(minute, 10),
+      second: parseInt(second, 10),
       millisecond,
     });
   }
 
   // Also supports relative time strings, e.g., -5min
   const relTimeMatches = timeStr.match(
-    /^(?<sign>\+|-)(?<value>\d+(\.\d)?) ?(?<units>s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)?$/
+    /^(?<sign>[+-])(?<value>\d+(\.\d)?) ?(?<units>s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)?$/
   );
   if (relTimeMatches?.groups) {
     const { sign, value, units } = relTimeMatches?.groups;
@@ -148,12 +150,11 @@ const parseTimeStr = function ({
 
   // DateTime can parse some extra ISO type strings
   const dateTimeParsed = DateTime.fromISO(timeStr);
-  if (dateTimeParsed.invalid === null) {
+  if (dateTimeParsed.isValid) {
     return dateTimeParsed;
   }
 
   // As a last resort, use chrono to parse the time
-  const chrono = require("chrono-node");
   const chronoParsed = chrono.parseDate(timeStr, referenceTime.toJSDate());
   if (chronoParsed) {
     return DateTime.fromISO(chronoParsed.toISOString());
@@ -171,46 +172,33 @@ const parseDateStr = function ({
   referenceTime,
 }: ParseDateStrType): DateTime {
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
-  const relDateMatches = dateStr.match(/^(\+|-)\d+$/);
+  const relDateMatches = dateStr.match(/^([+-])\d+$/);
   if (relDateMatches) {
-    return referenceTime.plus(Duration.fromObject({ days: relDateMatches[0] }));
+    return referenceTime.plus(
+      Duration.fromObject({ days: parseInt(relDateMatches[0], 10) })
+    );
   }
 
   // DateTime can parse some extra ISO type strings
   const dateTimeParsed = DateTime.fromISO(dateStr);
-  if (dateTimeParsed.invalid === null) {
+  if (dateTimeParsed.isValid) {
     // Only want to change the date on the relative time
-    const { year, month, day } = dateTimeParsed.c;
+    const { year, month, day } = dateTimeParsed.toObject();
     return referenceTime.set({ year, month, day });
   }
 
   // Finally, use chrono to parse the time if all else fails
-  const chrono = require("chrono-node");
-  // The keeplocal time is to aovid timezone shenanigans
+  // The keepLocalTime is to avoid timezone shenanigans
   const chronoParsed = chrono.parseDate(
     dateStr,
     referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate()
   );
   if (chronoParsed) {
-    const { year, month, day } = DateTime.fromISO(chronoParsed.toISOString()).c;
+    const { year, month, day } = DateTime.fromISO(
+      chronoParsed.toISOString()
+    ).toObject();
     return referenceTime.set({ year, month, day });
   }
 
   throw new BadDateArgError("date not parsable");
 };
-
-class BadTimeArgError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-class BadDateArgError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = this.constructor.name;
-  }
-}
-
-module.exports = { processTimeArgs, BadTimeArgError, BadDateArgError };

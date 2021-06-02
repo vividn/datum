@@ -3,7 +3,7 @@ env:
   commonjs: true
   es6: true
   node: true
-extends: ["eslint:recommended", "prettier"]
+extends: ["eslint:recommended", "prettier", "plugin:@typescript-eslint/eslint-recommended", "plugin:@typescript-eslint/recommended"]
 globals:
   Atomics: readonly
   SharedArrayBuffer: readonly
@@ -14,11 +14,11 @@ parserOptions:
     experimentalDecorators: true
     jsx: true
   sourceType: module
-  project: "./tsconfig.json"
+  project: "./tsconfig.withTests.json"
   ecmaVersion: 2018
 rules:
   radix: error
   eqeqeq: error
   "@typescript-eslint/no-explicit-any": off
+  "@typescript-eslint/no-non-null-assertion": off
   semi: ["error", "always"]
-  no-undef: off

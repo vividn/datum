@@ -1,22 +1,14 @@
-const utils = require("../src/utils");
-import { parseData } from "../src/data";
+import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { parseData, parseDataType } from "../src/parseData";
 import { DataError } from "../src/errors";
+import * as inferType from "../src/utils/inferType";
+import { GenericObject } from "../src/GenericObject";
 
-const expectFromCases = (testCases) => {
-  testCases.forEach((testCase) => {
-    const params = testCase[0];
-    const expectedOutput = testCase[1];
-
-    expect(parseData(params), `${JSON.stringify(params)}`).toEqual(
-      expectedOutput
-    );
-  });
-};
-
-const expectParseDataToReturn = (inputProps, expectedOutput) => {
-  expect(parseData(inputProps), `${JSON.stringify(inputProps)}`).toEqual(
-    expectedOutput
-  );
+const expectParseDataToReturn = (
+  inputProps: parseDataType,
+  expectedOutput: GenericObject
+) => {
+  expect(parseData(inputProps)).toEqual(expectedOutput);
 };
 
 describe("parseData", () => {
@@ -29,23 +21,20 @@ describe("parseData", () => {
   });
 
   it("parses data that is paired with keys into the return payload", () => {
-    const testCases = [
-      [{ posArgs: ["abc=def"] }, { abc: "def" }],
-      [
-        { posArgs: ["first=arg", "second=another"] },
-        { first: "arg", second: "another" },
-      ],
-      [{ posArgs: ["blank="] }, { blank: "" }],
-    ];
-    expectFromCases(testCases);
+    expectParseDataToReturn({ posArgs: ["abc=def"] }, { abc: "def" });
+    expectParseDataToReturn(
+      { posArgs: ["first=arg", "second=another"] },
+      { first: "arg", second: "another" }
+    );
+    expectParseDataToReturn({ posArgs: ["blank="] }, { blank: "" });
   });
 
   it("keeps extra equals signs in the value string", () => {
-    const testCases = [
-      [{ posArgs: ["equation=1+2=3"] }, { equation: "1+2=3" }],
-      [{ posArgs: ["eqSep====="] }, { eqSep: "====" }],
-    ];
-    expectFromCases(testCases);
+    expectParseDataToReturn(
+      { posArgs: ["equation=1+2=3"] },
+      { equation: "1+2=3" }
+    );
+    expectParseDataToReturn({ posArgs: ["eqSep====="] }, { eqSep: "====" });
   });
 
   it("throws error with extra data and no leniency", () => {
@@ -59,32 +48,26 @@ describe("parseData", () => {
   });
 
   it("saves extra data when lenient", () => {
-    const testCases = [
-      [{ lenient: true, posArgs: ["keyless"] }, { extraData: "keyless" }],
-      [
-        { lenient: true, posArgs: [3, "[1, 2, three]", "{a: bcd}"] },
-        { extraData: [3, [1, 2, "three"], { a: "bcd" }] },
-      ],
-      [
-        {
-          lenient: true,
-          posArgs: [
-            "extra=Data",
-            "can",
-            "be=interspersed",
-            "with",
-            "keyed=data",
-          ],
-        },
-        {
-          extra: "Data",
-          be: "interspersed",
-          keyed: "data",
-          extraData: ["can", "with"],
-        },
-      ],
-    ];
-    expectFromCases(testCases);
+    expectParseDataToReturn(
+      { lenient: true, posArgs: ["keyless"] },
+      { extraData: "keyless" }
+    );
+    expectParseDataToReturn(
+      { lenient: true, posArgs: [3, "[1, 2, three]", "{a: bcd}"] },
+      { extraData: [3, [1, 2, "three"], { a: "bcd" }] }
+    );
+    expectParseDataToReturn(
+      {
+        lenient: true,
+        posArgs: ["extra=Data", "can", "be=interspersed", "with", "keyed=data"],
+      },
+      {
+        extra: "Data",
+        be: "interspersed",
+        keyed: "data",
+        extraData: ["can", "with"],
+      }
+    );
   });
 
   it("assigns data to required keys", () => {
@@ -123,55 +106,55 @@ describe("parseData", () => {
   });
 
   it("handles optional extra keys", () => {
-    const testCases = [
-      [{ optional: "abc", posArgs: ["cde"] }, { abc: "cde" }],
-      [{ optional: "optional", posArgs: [] }, {}],
-      [{ optional: "withDefault=3", posArgs: [] }, { withDefault: 3 }],
-      [
-        { optional: "withBlankDefault=", posArgs: [] },
-        { withBlankDefault: "" },
-      ],
-      [
-        { optional: "withDefault=3", posArgs: ["replacement"] },
-        { withDefault: "replacement" },
-      ],
-    ];
-    expectFromCases(testCases);
+    expectParseDataToReturn(
+      { optional: "abc", posArgs: ["cde"] },
+      { abc: "cde" }
+    );
+    expectParseDataToReturn({ optional: "optional", posArgs: [] }, {});
+    expectParseDataToReturn(
+      { optional: "withDefault=3", posArgs: [] },
+      { withDefault: 3 }
+    );
+    expectParseDataToReturn(
+      { optional: "withBlankDefault=", posArgs: [] },
+      { withBlankDefault: "" }
+    );
+    expectParseDataToReturn(
+      { optional: "withDefault=3", posArgs: ["replacement"] },
+      { withDefault: "replacement" }
+    );
   });
 
   it("replaces default value on optional keys if explicitly specified", () => {
-    const testCases = [
-      [
-        { optional: "abc", posArgs: ["abc=cde", "ghi"], lenient: true },
-        { abc: "cde", extraData: "ghi" },
-      ],
-      [
-        {
-          optional: "abc=123",
-          posArgs: ["replacesAbc", "abc=replacesAgain"],
-        },
-        { abc: "replacesAgain" },
-      ],
-      [
-        {
-          optional: ["first", "second=42"],
-          posArgs: ["first=54", "[3]"],
-        },
-        { first: 54, second: [3] },
-      ],
-      [
-        {
-          optional: ["first=123", "second=42"],
-          posArgs: ["second=54"],
-        },
-        { first: 123, second: 54 },
-      ],
-    ];
-    expectFromCases(testCases);
+    expectParseDataToReturn(
+      { optional: "abc", posArgs: ["abc=cde", "ghi"], lenient: true },
+      { abc: "cde", extraData: "ghi" }
+    );
+    expectParseDataToReturn(
+      {
+        optional: "abc=123",
+        posArgs: ["replacesAbc", "abc=replacesAgain"],
+      },
+      { abc: "replacesAgain" }
+    );
+    expectParseDataToReturn(
+      {
+        optional: ["first", "second=42"],
+        posArgs: ["first=54", "[3]"],
+      },
+      { first: 54, second: [3] }
+    );
+    expectParseDataToReturn(
+      {
+        optional: ["first=123", "second=42"],
+        posArgs: ["second=54"],
+      },
+      { first: 123, second: 54 }
+    );
   });
 
   it("calls inferType for all kinds of data entry", () => {
-    const testCases = [
+    const testCases: [parseDataType, number][] = [
       [{ posArgs: ["withKey=data"] }, 1],
       [{ posArgs: ["extraArg"], lenient: true }, 1],
       [{ required: ["keyIs"], posArgs: ["given"] }, 1],
@@ -184,17 +167,14 @@ describe("parseData", () => {
     ];
 
     testCases.forEach((testCase) => {
-      const parseDataArgs = testCase[0];
+      const parseDataArgs: parseDataType = testCase[0];
       const inferTypeCalls = testCase[1];
 
-      jest.clearAllMocks();
-      const mockedInferType = jest.spyOn(utils, "inferType");
+      const spy = jest.spyOn(inferType, "default");
       parseData(parseDataArgs);
 
-      expect(
-        mockedInferType,
-        `${JSON.stringify(testCase)}`
-      ).toHaveBeenCalledTimes(inferTypeCalls);
+      expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
+      spy.mockClear();
     });
   });
 
