@@ -6,6 +6,4 @@ export const fail = (): never => {
   throw Error;
 };
 
-export const testNano = Nano(
-    `http://admin:password@localhost:5983`
-  );
+export const testNano = Nano(`http://admin:password@localhost:5983`);

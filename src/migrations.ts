@@ -29,7 +29,9 @@ export const createMigration = async ({
 }: createMigrationType): Promise<void> => {
   const designDoc = (await db
     .get("_design/migrate")
-    .catch(() => ({ _id: "_design/migrate", views: {} }))) as ViewDocument<GenericObject>;
+    .catch(() => ({ _id: "_design/migrate", views: {} }))) as ViewDocument<
+    GenericObject
+  >;
 
   const currentOrTemplate = (designDoc.views[migrationName]?.map ??
     template_migration) as string;
@@ -44,7 +46,7 @@ export const createMigration = async ({
 export const runMigration = async ({
   db,
   migrationName,
-}: baseMigrationType): Promise<{pass: string[], fail: [string, Error][]}> => {
+}: baseMigrationType): Promise<{ pass: string[]; fail: [string, Error][] }> => {
   const rows = (await db.view("migrate", migrationName)).rows;
   const updateResults = await Promise.allSettled(
     rows.map(async (row) => {
@@ -82,10 +84,7 @@ export const runMigration = async ({
 };
 
 if (require.main === module) {
-  testNano.db
-    .create("test")
-    .catch(pass)
-    .then(pass);
+  testNano.db.create("test").catch(pass).then(pass);
   const db = testNano.use("test");
   exports.createMigration({ db: db, migrationName: "test-migration" });
 }
