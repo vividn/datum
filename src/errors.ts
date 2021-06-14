@@ -43,3 +43,10 @@ export class BadDateArgError extends MyError {
     Object.setPrototypeOf(this, BadDateArgError.prototype);
   }
 }
+
+export class MigrationError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, MigrationError.prototype);
+  }
+}
