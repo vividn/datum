@@ -26,4 +26,4 @@ const addDoc = async ({
   }
 };
 
-export default addDoc
+export default addDoc;

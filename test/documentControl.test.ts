@@ -61,9 +61,10 @@ describe("addDoc", () => {
     const payload = { a: 1, c: "dataString" };
     const id = "dataOnlyPayloadId";
 
-    await addDoc({ db, payload, id });
-
-    expect(await db.get(id)).toMatchObject({ _id: id, ...payload });
+    const returnedDoc = await addDoc({ db, payload, id });
+    const dbDoc = (await db.get(id)) as DataOnlyDocument;
+    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(dbDoc).toMatchObject({ _id: id, ...payload });
   });
 
   it("throws error if trying to add dataOnly payload without id", async () => {
@@ -73,8 +74,11 @@ describe("addDoc", () => {
 
   it("adds a datum payload to the database with its calculated id", async () => {
     const payload = testDatumPayload;
-    await addDoc({ db, payload });
-    expect(await db.get(testDatumPayloadId)).toMatchObject(testDatumPayload);
+    const returnedDoc = await addDoc({ db, payload });
+    const dbDoc = (await db.get(testDatumPayloadId)) as DatumDocument;
+
+    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(dbDoc).toMatchObject(testDatumPayload);
   });
 
   it("adds a datum payload of calculated and given id match", async () => {
@@ -95,9 +99,8 @@ describe("addDoc", () => {
 
   it("adds createTime and modifyTime to metadata of datumPayload", async () => {
     const payload = testDatumPayload;
-    await addDoc({db, payload});
+    const newDoc = await addDoc({db, payload});
 
-    const newDoc = await db.get(testDatumPayloadId) as DatumDocument;
     expect(newDoc.meta).toMatchObject({createTime: mockNow.toUTC().toString(), modifyTime: mockNow.toUTC().toString()});
   });
 
@@ -110,10 +113,11 @@ describe("addDoc", () => {
 
     await expect(addDoc({db, payload: attemptedNewPayload, id})).toThrowError();
     expect(await db.get(id)).toMatchObject(existingData);
+  });
 
-    const existingDatumDataId = testDatumPayloadId;
-    await db.insert(existingData, existingDatumDataId);
-    await expect(addDoc({db, payload: testDatumPayload, id: testDatumPayloadId})).toThrowError();
+  it("fails if called twice because of duplicate id", async () => {
+    await addDoc({db, payload: testDatumPayload});
+    await expect(addDoc({db, payload: testDatumPayload})).toThrowError();
   });
 
   it.skip("calls another document control method if id already exists and conflict strategy is given", async () => {
