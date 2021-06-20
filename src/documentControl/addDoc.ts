@@ -9,12 +9,12 @@ import {
 import { DocumentScope } from "nano";
 
 type addDocType = {
-  db: DocumentScope<DatumDocument | DataOnlyDocument>;
+  db: DocumentScope<DatumPayload | DataOnlyPayload>;
   payload: DatumPayload | DataOnlyPayload;
   id?: string;
 };
 
-export default async ({
+const addDoc = async ({
   db,
   payload,
   id,
@@ -25,3 +25,5 @@ export default async ({
     return payload as DataOnlyDocument;
   }
 };
+
+export default addDoc
