@@ -6,12 +6,12 @@ export type DatumData = {
 
 export type DatumMetadata = {
   occurTime?: isoDate | isoDatetime;
-  utcOffset: number;
-  createTime: isoDatetime;
-  modifyTime: isoDatetime;
+  utcOffset?: number;
+  createTime?: isoDatetime;
+  modifyTime?: isoDatetime;
   idStructure?: string;
-  random: number;
-  humanId: string;
+  random?: number;
+  humanId?: string;
   // [key: string]: any;
 };
 
@@ -43,5 +43,14 @@ export const isDatumDocument = (
   return (
     (doc as DatumDocument).data !== undefined &&
     (doc as DatumDocument).meta !== undefined
+  );
+};
+
+export const isDatumPayload = (
+  payload: DatumPayload | DataOnlyPayload
+): payload is DatumPayload => {
+  return (
+    (payload as DatumPayload).data !== undefined &&
+    (payload as DatumPayload).meta !== undefined
   );
 };

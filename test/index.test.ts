@@ -7,13 +7,13 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { pass } from "./test-utils";
+import { pass, testNano } from "./test-utils";
 import { main } from "../src";
 import Nano from "nano";
 import { BaseDataError } from "../src/errors";
 import { DatumDocument } from "../src/documentControl/DatumDocument";
 
-const nano = Nano("http://admin:password@localhost:5983");
+const nano = testNano;
 const originalLog = console.log;
 
 describe("main", () => {
