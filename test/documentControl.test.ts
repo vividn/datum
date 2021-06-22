@@ -17,6 +17,8 @@ import {
 } from "../src/documentControl/DatumDocument";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
+import { IdError } from "../src/errors";
+import { DocumentScope } from "nano";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -96,11 +98,11 @@ describe("addDoc", () => {
 
   it("prefers to use the id calculated from structure", async () => {
     const payload = testDatumPayload;
-    const id = testDatumPayloadId;
 
-    await addDoc({ db, payload });
-
-    expect(await db.get(testDatumPayloadId)).toMatchObject(testDatumPayload);
+    const returnedDoc = await addDoc({ db, payload });
+    const dbDoc = (await db.get(testDatumPayloadId)) as DatumDocument;
+    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(dbDoc).toMatchObject(testDatumPayload);
   });
 
   it("adds createTime and modifyTime to metadata of datumPayload", async () => {
