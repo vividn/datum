@@ -21,7 +21,7 @@ const addDoc = async ({
   payload,
 }: addDocType): Promise<DatumDocument | DataOnlyDocument> => {
   if (isDatumPayload(payload)) {
-    const now = DateTime.utc.toString();
+    const now = DateTime.utc().toString();
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;
 
@@ -37,7 +37,13 @@ const addDoc = async ({
     const addedDoc = await db.get(id) as DatumDocument;
     return addedDoc;
   } else {
-    return payload as DataOnlyDocument;
+    const id = payload._id;
+    if (id === undefined) {
+      throw new IdError("id could not be determined");
+    }
+    await db.insert(payload);
+    const addedDoc = await db.get(id) as DataOnlyDocument;
+    return addedDoc;
   }
 };
 
