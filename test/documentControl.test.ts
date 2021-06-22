@@ -38,7 +38,7 @@ const testDatumPayloadId = "bar__rawString";
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
 
 describe("addDoc", () => {
-  const dbName = "addDocTest";
+  const dbName = "add_doc_test";
   const db = testNano.db.use<DatumPayload | DataOnlyPayload>(dbName);
 
   beforeAll(async () => {
