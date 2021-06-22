@@ -69,7 +69,7 @@ describe("addDoc", () => {
 
   it("throws error if trying to add dataOnly payload without _id", async () => {
     const payload = { a: 1, c: "dataString" };
-    await expect(addDoc({ db, payload })).toThrowError();
+    await expect(addDoc({ db, payload })).rejects.toThrowError(IdError);
   });
 
   it("adds a datum payload to db with _id if there is no idStructure", async () => {
@@ -105,6 +105,11 @@ describe("addDoc", () => {
     expect(dbDoc).toMatchObject(testDatumPayload);
   });
 
+  it("throws if datumPayload has neither id nor idStructure", async () => {
+    const payload = {data: {abc: "123"}, meta: {humanId: "ndke4ms9"}} as DatumPayload;
+    await expect(addDoc({db, payload})).rejects.toThrowError(IdError);
+  })
+
   it("adds createTime and modifyTime to metadata of datumPayload", async () => {
     const payload = testDatumPayload;
     const newDoc = await addDoc({ db, payload });
@@ -124,7 +129,7 @@ describe("addDoc", () => {
 
     await expect(
       addDoc({ db, payload: attemptedNewPayload })
-    ).toThrowError();
+    ).rejects.toThrowError();
     const dbDoc = await db.get(id);
     expect(dbDoc).toMatchObject(existingData);
     expect(dbDoc).not.toHaveProperty("newData");
@@ -132,7 +137,7 @@ describe("addDoc", () => {
 
   it("fails if called twice because of duplicate id", async () => {
     await addDoc({ db, payload: testDatumPayload });
-    await expect(addDoc({ db, payload: testDatumPayload })).toThrowError();
+    await expect(addDoc({ db, payload: testDatumPayload })).rejects.toThrowError();
   });
 
   it.skip("calls another document control method if id already exists and conflict strategy is given", async () => {
