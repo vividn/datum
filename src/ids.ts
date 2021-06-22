@@ -71,22 +71,16 @@ export const splitRawAndFields = (str: string): string[] => {
     .split("\xff\x00");
 };
 
-type dataWithMetaOrId =
-  | {
-      data: DatumData;
-      meta: DatumMetadata;
-      idStructure?: string;
-    }
-  | {
-      data: DatumData;
-      meta?: DatumMetadata;
-      idStructure: string;
-    };
+type assembleIdType = {
+  data: DatumData;
+  meta?: DatumMetadata;
+  idStructure?: string;
+};
 export const assembleId = function ({
   data,
   meta,
   idStructure,
-}: dataWithMetaOrId): string {
+}: assembleIdType): string {
   if (meta === undefined && data["_id"] !== undefined) {
     // in no metadata mode, a manually specified _id takes precedence
     return data["_id"];
@@ -94,8 +88,12 @@ export const assembleId = function ({
   if (meta?.idStructure && idStructure && meta.idStructure !== idStructure) {
     throw new IdError("idStructure in meta and argument do not match");
   }
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const structure = idStructure ?? meta!.idStructure!;
+
+  const structure = idStructure ?? meta?.idStructure;
+
+  if (structure === undefined) {
+    throw new IdError("Cannot determine the id");
+  }
 
   const rawEvenFieldOdd = splitRawAndFields(structure);
 

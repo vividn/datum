@@ -8,6 +8,7 @@ import {
   defaultIdComponents,
   destructureIdKeys,
 } from "../src/ids";
+import { IdError } from "../src/errors";
 
 const exampleData: DatumData = {
   foo: "abc",
@@ -436,3 +437,10 @@ describe("defaultIdComponents", () => {
     ).toMatchObject({ defaultPartitionParts: undefined });
   });
 });
+
+describe("assembleId", () => {
+  it("throws error if it cannot find an idStructure in the metadata and idStructure is not provided", () => {
+    expect(() => assembleId({data: {abc: "123"}, meta: {occurTime: "2020-11-09T00:40:12.544Z"}})).toThrowError(IdError);
+    expect(() => assembleId({data: {abc: "123"}})).toThrowError(IdError);
+  });
+})
