@@ -5,19 +5,18 @@ import {
   describe,
   expect,
   it,
-  jest,
 } from "@jest/globals";
 
 import { fail, pass, testNano } from "./test-utils";
 import addDoc from "../src/documentControl/addDoc";
 import {
-  DataOnlyDocument, DataOnlyPayload,
+  DataOnlyDocument,
+  DataOnlyPayload,
   DatumDocument,
   DatumPayload,
 } from "../src/documentControl/DatumDocument";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
-import { GenericObject } from "../src/GenericObject";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -35,7 +34,6 @@ const testDatumPayload: DatumPayload = {
 
 const testDatumPayloadId = "bar__rawString";
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
-
 
 describe("addDoc", () => {
   const dbName = "addDocTest";
@@ -57,19 +55,34 @@ describe("addDoc", () => {
     Settings.resetCaches();
   });
 
-  it("it adds dataOnly payloads to the given database with the given id", async () => {
-    const payload = { a: 1, c: "dataString" };
+  it("it adds dataOnly payloads with _id to the given database", async () => {
     const id = "dataOnlyPayloadId";
+    const payload = { _id: id, a: 1, c: "dataString" };
 
-    const returnedDoc = await addDoc({ db, payload, id });
+    const returnedDoc = await addDoc({ db, payload });
     const dbDoc = (await db.get(id)) as DataOnlyDocument;
     expect(returnedDoc).toMatchObject(dbDoc);
-    expect(dbDoc).toMatchObject({ _id: id, ...payload });
+    expect(dbDoc).toMatchObject(payload);
   });
 
-  it("throws error if trying to add dataOnly payload without id", async () => {
+  it("throws error if trying to add dataOnly payload without _id", async () => {
     const payload = { a: 1, c: "dataString" };
     await expect(addDoc({ db, payload })).toThrowError();
+  });
+
+  it("adds a datum payload to db with _id if there is no idStructure", async () => {
+    const payload = {
+      _id: "DatumData_with_no_structure",
+      data: { abc: "abc" },
+      meta: { humanId: "abc" },
+    } as DatumPayload;
+
+    const returnedDoc = await addDoc({ db, payload });
+    const dbDoc = (await db.get(
+      "DatumData_with_no_structure"
+    )) as DatumDocument;
+    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(dbDoc).toMatchObject(payload);
   });
 
   it("adds a datum payload to the database with its calculated id", async () => {
@@ -81,43 +94,43 @@ describe("addDoc", () => {
     expect(dbDoc).toMatchObject(testDatumPayload);
   });
 
-  it("adds a datum payload of calculated and given id match", async () => {
+  it("prefers to use the id calculated from structure", async () => {
     const payload = testDatumPayload;
     const id = testDatumPayloadId;
 
-    await addDoc({ db, payload, id });
+    await addDoc({ db, payload });
 
     expect(await db.get(testDatumPayloadId)).toMatchObject(testDatumPayload);
   });
 
-  it("throws an error if calculated id does not match a given id for a datum payload", async () => {
-    const payload = testDatumPayload;
-    const id = "non-matching-id";
-
-    await expect(addDoc({ db, payload, id })).toThrowError();
-  });
-
   it("adds createTime and modifyTime to metadata of datumPayload", async () => {
     const payload = testDatumPayload;
-    const newDoc = await addDoc({db, payload});
+    const newDoc = await addDoc({ db, payload });
 
-    expect(newDoc.meta).toMatchObject({createTime: mockNow.toUTC().toString(), modifyTime: mockNow.toUTC().toString()});
+    expect(newDoc.meta).toMatchObject({
+      createTime: mockNow.toUTC().toString(),
+      modifyTime: mockNow.toUTC().toString(),
+    });
   });
 
   it("throws error if document with id already exists", async () => {
     const id = "existingId";
-    const existingData = {abc: 123} as DataOnlyPayload;
+    const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
     await db.insert(existingData, id);
 
-    const attemptedNewPayload = {newData: "but this won't get inserted"};
+    const attemptedNewPayload = { _id: id, newData: "but this won't get inserted" };
 
-    await expect(addDoc({db, payload: attemptedNewPayload, id})).toThrowError();
-    expect(await db.get(id)).toMatchObject(existingData);
+    await expect(
+      addDoc({ db, payload: attemptedNewPayload })
+    ).toThrowError();
+    const dbDoc = await db.get(id);
+    expect(dbDoc).toMatchObject(existingData);
+    expect(dbDoc).not.toHaveProperty("newData");
   });
 
   it("fails if called twice because of duplicate id", async () => {
-    await addDoc({db, payload: testDatumPayload});
-    await expect(addDoc({db, payload: testDatumPayload})).toThrowError();
+    await addDoc({ db, payload: testDatumPayload });
+    await expect(addDoc({ db, payload: testDatumPayload })).toThrowError();
   });
 
   it.skip("calls another document control method if id already exists and conflict strategy is given", async () => {
