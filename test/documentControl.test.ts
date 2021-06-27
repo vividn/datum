@@ -13,7 +13,7 @@ import {
   DataOnlyDocument,
   DataOnlyPayload,
   DatumDocument,
-  DatumPayload,
+  DatumPayload, EitherPayload,
 } from "../src/documentControl/DatumDocument";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
@@ -38,7 +38,7 @@ const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
-  const db = testNano.db.use<DatumPayload | DataOnlyPayload>(dbName);
+  const db = testNano.db.use<EitherPayload>(dbName);
 
   beforeAll(async () => {
     await testNano.db.destroy(dbName).catch(pass);

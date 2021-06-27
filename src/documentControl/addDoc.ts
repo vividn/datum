@@ -2,7 +2,7 @@ import {
   DataOnlyDocument,
   DataOnlyPayload,
   DatumDocument,
-  DatumPayload,
+  DatumPayload, EitherDocument, EitherPayload,
   isDatumPayload,
 } from "./DatumDocument";
 import { DocumentScope } from "nano";
@@ -11,14 +11,14 @@ import { assembleId } from "../ids";
 import { IdError } from "../errors";
 
 type addDocType = {
-  db: DocumentScope<DatumPayload | DataOnlyPayload>;
+  db: DocumentScope<EitherPayload>;
   payload: DatumPayload | DataOnlyPayload;
 };
 
 const addDoc = async ({
   db,
   payload,
-}: addDocType): Promise<DatumDocument | DataOnlyDocument> => {
+}: addDocType): Promise<EitherDocument> => {
   if (isDatumPayload(payload)) {
     const now = DateTime.utc().toString();
     payload.meta.createTime = now;

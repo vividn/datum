@@ -37,6 +37,9 @@ export type DataOnlyDocument = DataOnlyPayload & {
   _rev: string;
 };
 
+export type EitherPayload = DatumPayload | DataOnlyPayload;
+export type EitherDocument = DatumDocument | DataOnlyDocument;
+
 export const isDatumDocument = (
   doc: DatumDocument | DataOnlyDocument
 ): doc is DatumDocument => {

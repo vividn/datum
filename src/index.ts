@@ -11,10 +11,8 @@ import { assembleId, buildIdStructure, defaultIdComponents } from "./ids";
 import pass from "./utils/pass";
 import { GenericObject } from "./GenericObject";
 import {
-  DataOnlyDocument,
-  DatumDocument,
   DatumMetadata,
-  DatumPayload,
+  DatumPayload, EitherDocument, EitherPayload,
 } from "./documentControl/DatumDocument";
 import newHumanId from "./meta/newHumanId";
 import { defaults } from "./input/defaults";
@@ -22,7 +20,7 @@ import { showCreate, showExists } from "./output";
 
 export async function main(
   args: DatumYargsType
-): Promise<DatumDocument | DataOnlyDocument> {
+): Promise<EitherDocument> {
   //TODO: put document type here
   // Get a timestamp as soon as possible
 
@@ -128,7 +126,7 @@ export async function main(
   // Create database if it doesn't exist
   await nano.db.create(dbName).catch(pass);
 
-  const db: DocumentScope<DatumPayload | GenericObject> = await nano.use(
+  const db: DocumentScope<EitherPayload> = await nano.use(
     dbName
   );
 
