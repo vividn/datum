@@ -13,7 +13,8 @@ import {
   DataOnlyDocument,
   DataOnlyPayload,
   DatumDocument,
-  DatumPayload, EitherPayload,
+  DatumPayload,
+  EitherPayload,
 } from "../src/documentControl/DatumDocument";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";

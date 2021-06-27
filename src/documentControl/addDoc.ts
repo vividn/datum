@@ -2,7 +2,9 @@ import {
   DataOnlyDocument,
   DataOnlyPayload,
   DatumDocument,
-  DatumPayload, EitherDocument, EitherPayload,
+  DatumPayload,
+  EitherDocument,
+  EitherPayload,
   isDatumPayload,
 } from "./DatumDocument";
 import { DocumentScope } from "nano";
@@ -15,10 +17,7 @@ type addDocType = {
   payload: DatumPayload | DataOnlyPayload;
 };
 
-const addDoc = async ({
-  db,
-  payload,
-}: addDocType): Promise<EitherDocument> => {
+const addDoc = async ({ db, payload }: addDocType): Promise<EitherDocument> => {
   if (isDatumPayload(payload)) {
     const now = DateTime.utc().toString();
     payload.meta.createTime = now;

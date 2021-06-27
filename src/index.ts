@@ -9,10 +9,8 @@ import inferType from "./utils/inferType";
 import { processTimeArgs } from "./timings";
 import { assembleId, buildIdStructure, defaultIdComponents } from "./ids";
 import pass from "./utils/pass";
-import { GenericObject } from "./GenericObject";
 import {
   DatumMetadata,
-  DatumPayload,
   EitherDocument,
   EitherPayload,
 } from "./documentControl/DatumDocument";
@@ -93,21 +91,24 @@ export async function main(args: DatumYargsType): Promise<EitherDocument> {
       noTimestamp,
       timezone,
     } = args;
-    const metaTimings = processTimeArgs({
-      date,
-      time,
-      quick,
-      yesterday,
-      fullDay,
-      noTimestamp,
-      timezone,
-    });
 
     meta = {
-      ...metaTimings,
-      random: Math.random(),
       humanId: newHumanId(),
+      random: Math.random(),
     };
+
+    if (!noTimestamp) {
+      const { timeStr: occurTime, utcOffset } = processTimeArgs({
+        date,
+        time,
+        quick,
+        yesterday,
+        fullDay,
+        timezone,
+      });
+      meta.occurTime = occurTime;
+      meta.utcOffset = utcOffset;
+    }
 
     // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same
