@@ -152,3 +152,56 @@ describe("addDoc", () => {
     fail();
   });
 });
+
+describe("overwriteDoc", () => {
+  const dbName = "overwrite_doc_test";
+  const db = testNano.db.use<EitherPayload>(dbName);
+
+  beforeAll(async () => {
+    await testNano.db.destroy(dbName).catch(pass);
+  });
+
+  beforeEach(async () => {
+    await testNano.db.create(dbName).catch(pass);
+    timezone_mock.register("UTC");
+    Settings.now = () => mockNow.toMillis();
+  });
+
+  afterEach(async () => {
+    await testNano.db.destroy(dbName).catch(pass);
+    timezone_mock.unregister();
+    Settings.resetCaches();
+  });
+
+  it("fails if id to be overwritten does not exist in db", async () => {
+    fail();
+  });
+
+  it("replaces the existing document if the new id is the same", async () => {
+    fail();
+  });
+
+  it("if new document does not have id, it replaces the doc at the old id", async () => {
+    fail();
+  });
+
+  it("deletes the old document if the new document has a different id", async () => {
+    fail();
+  });
+
+  it("updates modifiedTime to now for DatumPayloads", async () => {
+    fail();
+  });
+
+  it("if metadata exists on both documents it uses the createTime of the old document, but otherwise all other metadata from the new document", async () => {
+    fail();
+  });
+
+  it("if new doc is dataOnly, no metadata is saved from old doc", async () => {
+    fail();
+  });
+
+  it("if createTime or metadata does not exist on old document, new document does not have a createTime because it is unknown", async () => {
+    fail();
+  });
+});
