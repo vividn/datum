@@ -9,7 +9,6 @@ import {
 } from "@jest/globals";
 import { pass, testNano } from "./test-utils";
 import { main } from "../src";
-import Nano from "nano";
 import { BaseDataError } from "../src/errors";
 import { DatumDocument } from "../src/documentControl/DatumDocument";
 

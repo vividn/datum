@@ -18,7 +18,6 @@ import {
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 import { IdError } from "../src/errors";
-import { DocumentScope } from "nano";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -106,9 +105,12 @@ describe("addDoc", () => {
   });
 
   it("throws if datumPayload has neither id nor idStructure", async () => {
-    const payload = {data: {abc: "123"}, meta: {humanId: "ndke4ms9"}} as DatumPayload;
-    await expect(addDoc({db, payload})).rejects.toThrowError(IdError);
-  })
+    const payload = {
+      data: { abc: "123" },
+      meta: { humanId: "ndke4ms9" },
+    } as DatumPayload;
+    await expect(addDoc({ db, payload })).rejects.toThrowError(IdError);
+  });
 
   it("adds createTime and modifyTime to metadata of datumPayload", async () => {
     const payload = testDatumPayload;
@@ -125,7 +127,10 @@ describe("addDoc", () => {
     const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
     await db.insert(existingData, id);
 
-    const attemptedNewPayload = { _id: id, newData: "but this won't get inserted" };
+    const attemptedNewPayload = {
+      _id: id,
+      newData: "but this won't get inserted",
+    };
 
     await expect(
       addDoc({ db, payload: attemptedNewPayload })
@@ -137,7 +142,9 @@ describe("addDoc", () => {
 
   it("fails if called twice because of duplicate id", async () => {
     await addDoc({ db, payload: testDatumPayload });
-    await expect(addDoc({ db, payload: testDatumPayload })).rejects.toThrowError();
+    await expect(
+      addDoc({ db, payload: testDatumPayload })
+    ).rejects.toThrowError();
   });
 
   it.skip("calls another document control method if id already exists and conflict strategy is given", async () => {

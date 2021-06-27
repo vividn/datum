@@ -3,7 +3,6 @@ import {
   DataOnlyPayload,
   DatumDocument,
   DatumPayload,
-  isDatumDocument,
   isDatumPayload,
 } from "./DatumDocument";
 import { DocumentScope } from "nano";
@@ -34,7 +33,7 @@ const addDoc = async ({
     payload._id = id;
 
     await db.insert(payload);
-    const addedDoc = await db.get(id) as DatumDocument;
+    const addedDoc = (await db.get(id)) as DatumDocument;
     return addedDoc;
   } else {
     const id = payload._id;
@@ -42,7 +41,7 @@ const addDoc = async ({
       throw new IdError("id could not be determined");
     }
     await db.insert(payload);
-    const addedDoc = await db.get(id) as DataOnlyDocument;
+    const addedDoc = (await db.get(id)) as DataOnlyDocument;
     return addedDoc;
   }
 };
