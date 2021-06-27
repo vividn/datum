@@ -12,15 +12,16 @@ import pass from "./utils/pass";
 import { GenericObject } from "./GenericObject";
 import {
   DatumMetadata,
-  DatumPayload, EitherDocument, EitherPayload,
+  DatumPayload,
+  EitherDocument,
+  EitherPayload,
 } from "./documentControl/DatumDocument";
 import newHumanId from "./meta/newHumanId";
 import { defaults } from "./input/defaults";
 import { showCreate, showExists } from "./output";
+import addDoc from "./documentControl/addDoc";
 
-export async function main(
-  args: DatumYargsType
-): Promise<EitherDocument> {
+export async function main(args: DatumYargsType): Promise<EitherDocument> {
   //TODO: put document type here
   // Get a timestamp as soon as possible
 
@@ -126,9 +127,7 @@ export async function main(
   // Create database if it doesn't exist
   await nano.db.create(dbName).catch(pass);
 
-  const db: DocumentScope<EitherPayload> = await nano.use(
-    dbName
-  );
+  const db: DocumentScope<EitherPayload> = await nano.use(dbName);
 
   const { undo } = args;
   if (undo) {
@@ -157,8 +156,7 @@ export async function main(
       ? { _id: _id, data: payloadData, meta: meta }
       : { _id: _id, ...payloadData };
 
-  await db.insert(payload);
-  const doc = await db.get(_id);
+  const doc = await addDoc({ db, payload });
   showCreate(doc, args.showAll);
 
   return doc;
