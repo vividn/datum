@@ -7,17 +7,19 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { pass } from "./test-utils";
+import { pass, testNano } from "./test-utils";
 import { main } from "../src";
 import Nano from "nano";
 import { BaseDataError } from "../src/errors";
 import { DatumDocument } from "../src/documentControl/DatumDocument";
+import { DateTime } from "luxon";
 
-const nano = Nano("http://admin:password@localhost:5983");
+const nano = testNano;
 const originalLog = console.log;
 
 describe("main", () => {
   const mockedLog = jest.fn();
+  const db = nano.use("datum");
 
   beforeAll(async () => {
     await nano.db.destroy("datum").catch(pass);
@@ -75,6 +77,19 @@ describe("main", () => {
       "deleted"
     );
   });
+
+  it("undoes a document with a time in the past if it contains occurTime", async () => {
+    const now = "2021-06-28T06:30:00.000Z";
+    const inAMinute = "2021-06-28T06:31:00.000Z";
+    await main({ time: now });
+    const insertedDoc = (await db.get(now)) as DatumDocument;
+    expect(insertedDoc.meta.idStructure).toMatch(/%?occurTime%/);
+
+    await main({ time: inAMinute, undo: true });
+    await expect(db.get(now)).rejects.toThrowError("deleted");
+  });
+
+  // TODO: Make undo system more robust and more tested
 
   it("Can remove metadata entirely", async () => {
     expect(await main({ idPart: "hasMetadata" })).toHaveProperty("meta");
