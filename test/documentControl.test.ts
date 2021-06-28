@@ -19,6 +19,7 @@ import {
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 import { IdError } from "../src/errors";
+import overwriteDoc from "../src/documentControl/overwriteDoc";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -174,7 +175,10 @@ describe("overwriteDoc", () => {
   });
 
   it("fails if id to be overwritten does not exist in db", async () => {
-    fail();
+    await expect(overwriteDoc({db, id: "does-not-exist", payload: {valid: "data"} })).rejects.toThrowError();
+    await expect(overwriteDoc({db, id: "does-not-exist", payload: {_id: "does-not-exist", data: "data"} })).rejects.toThrowError();
+    await expect(overwriteDoc({db, id: "does-not-exist", payload: {_id: "some-other-id", data: "data" } })).rejects.toThrowError();
+    await expect(overwriteDoc({db, id: "does-not-exist", payload: {data: {foo: "bar"}, meta: {idStructure: "%foo%"} }})).rejects.toThrowError();
   });
 
   it("replaces the existing document if the new id is the same", async () => {

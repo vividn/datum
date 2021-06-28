@@ -14,7 +14,7 @@ import { IdError } from "../errors";
 
 type addDocType = {
   db: DocumentScope<EitherPayload>;
-  payload: DatumPayload | DataOnlyPayload;
+  payload: EitherPayload;
 };
 
 const addDoc = async ({ db, payload }: addDocType): Promise<EitherDocument> => {
