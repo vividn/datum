@@ -136,17 +136,26 @@ export async function main(
   if (undo) {
     let doc;
     try {
-    doc = await db.get(_id);
+      doc = await db.get(_id);
     } catch (e) {
       // if the id involves a time, then there could be some slight difference in the id
-      if (e.reason === "missing" && idStructure.match(/%?(create|modify|occur)Time%/)) {
+      if (
+        e.reason === "missing" &&
+        idStructure.match(/%?(create|modify|occur)Time%/)
+      ) {
         // just get the next lowest id
-        doc = (await db.list({start_key: _id, descending: true, limit: 1, include_docs: true})).rows[0]?.doc;
+        doc = (
+          await db.list({
+            start_key: _id,
+            descending: true,
+            limit: 1,
+            include_docs: true,
+          })
+        ).rows[0]?.doc;
         if (doc === undefined) {
           throw e;
         }
-      }
-      else {
+      } else {
         throw e;
       }
     }
