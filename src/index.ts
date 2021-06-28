@@ -134,10 +134,33 @@ export async function main(
 
   const { undo } = args;
   if (undo) {
-    const doc = await db.get(_id);
-    const { _rev } = doc;
-    await db.destroy(_id, _rev);
-    console.log(chalk.grey("DELETE: ") + chalk.red(_id));
+    let doc;
+    try {
+      doc = await db.get(_id);
+    } catch (e) {
+      // if the id involves a time, then there could be some slight difference in the id
+      if (
+        e.reason === "missing" &&
+        idStructure.match(/%?(create|modify|occur)Time%/)
+      ) {
+        // just get the next lowest id
+        doc = (
+          await db.list({
+            start_key: _id,
+            descending: true,
+            limit: 1,
+            include_docs: true,
+          })
+        ).rows[0]?.doc;
+        if (doc === undefined) {
+          throw e;
+        }
+      } else {
+        throw e;
+      }
+    }
+    await db.destroy(doc._id, doc._rev);
+    console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
     return doc;
   }
 
