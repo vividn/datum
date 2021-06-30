@@ -64,7 +64,7 @@ describe("addDoc", () => {
 
     const returnedDoc = await addDoc({ db, payload });
     const dbDoc = (await db.get(id)) as DataOnlyDocument;
-    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(returnedDoc).toEqual(dbDoc);
     expect(dbDoc).toMatchObject(payload);
   });
 
@@ -84,7 +84,7 @@ describe("addDoc", () => {
     const dbDoc = (await db.get(
       "DatumData_with_no_structure"
     )) as DatumDocument;
-    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(returnedDoc).toEqual(dbDoc);
     expect(dbDoc).toMatchObject(payload);
   });
 
@@ -93,7 +93,7 @@ describe("addDoc", () => {
     const returnedDoc = await addDoc({ db, payload });
     const dbDoc = (await db.get(testDatumPayloadId)) as DatumDocument;
 
-    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(returnedDoc).toEqual(dbDoc);
     expect(dbDoc).toMatchObject(testDatumPayload);
   });
 
@@ -102,7 +102,7 @@ describe("addDoc", () => {
 
     const returnedDoc = await addDoc({ db, payload });
     const dbDoc = (await db.get(testDatumPayloadId)) as DatumDocument;
-    expect(returnedDoc).toMatchObject(dbDoc);
+    expect(returnedDoc).toEqual(dbDoc);
     expect(dbDoc).toMatchObject(testDatumPayload);
   });
 
@@ -175,14 +175,66 @@ describe("overwriteDoc", () => {
   });
 
   it("fails if id to be overwritten does not exist in db", async () => {
-    await expect(overwriteDoc({db, id: "does-not-exist", payload: {valid: "data"} })).rejects.toThrowError();
-    await expect(overwriteDoc({db, id: "does-not-exist", payload: {_id: "does-not-exist", data: "data"} })).rejects.toThrowError();
-    await expect(overwriteDoc({db, id: "does-not-exist", payload: {_id: "some-other-id", data: "data" } })).rejects.toThrowError();
-    await expect(overwriteDoc({db, id: "does-not-exist", payload: {data: {foo: "bar"}, meta: {idStructure: "%foo%"} }})).rejects.toThrowError();
+    await expect(
+      overwriteDoc({ db, id: "does-not-exist", payload: { valid: "data" } })
+    ).rejects.toThrowError();
+    await expect(
+      overwriteDoc({
+        db,
+        id: "does-not-exist",
+        payload: { _id: "does-not-exist", data: "data" },
+      })
+    ).rejects.toThrowError();
+    await expect(
+      overwriteDoc({
+        db,
+        id: "does-not-exist",
+        payload: { _id: "some-other-id", data: "data" },
+      })
+    ).rejects.toThrowError();
+    await expect(
+      overwriteDoc({
+        db,
+        id: "does-not-exist",
+        payload: { data: { foo: "bar" }, meta: { idStructure: "%foo%" } },
+      })
+    ).rejects.toThrowError();
   });
 
   it("replaces the existing document if the new id is the same", async () => {
-    fail();
+    await db.insert({ _id: "existing-id", oldKey: "oldData" });
+
+    const newDoc1 = await overwriteDoc({
+      db,
+      id: "existing-id",
+      payload: { _id: "existing-id", newKey1: "newData1" },
+    });
+    const dbDoc1 = await db.get("existing-id");
+    expect(dbDoc1).toEqual(newDoc1);
+    expect(newDoc1).toHaveProperty("newKey1", "newData1");
+    expect(newDoc1).not.toHaveProperty("oldKey");
+
+    const payload2 = {_id: "existing-id", data: { newKey2: "newData2"}, meta: {humanId: "abcdefg"}};
+    const newDoc2 = await overwriteDoc({
+      db,
+      id: "existing-id",
+      payload: payload2
+    });
+    const dbDoc2 = await db.get("existing-id");
+    expect(dbDoc2).toEqual(newDoc2);
+    expect(newDoc2).toMatchObject(payload2);
+    expect(newDoc2).not.toHaveProperty("newKey1");
+
+    const payload3 = {data: { newKey3: "newData3", idKey: "existing-id"}, meta: {idStructure: "%idKey%"}};
+    const newDoc3 = await overwriteDoc({
+      db,
+      id: "existing-id",
+      payload: payload3
+    });
+    const dbDoc3 = await db.get("existing-id");
+    expect(dbDoc3).toEqual(newDoc3);
+    expect(newDoc3).toMatchObject(payload3);
+    expect(newDoc3).not.toHaveProperty("data.newKey2");
   });
 
   it("if new document does not have id, it replaces the doc at the old id", async () => {
