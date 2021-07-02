@@ -344,7 +344,41 @@ describe("overwriteDoc", () => {
   });
 
   it("if metadata exists on both documents it uses the createTime of the old document, but otherwise all other metadata from the new document", async () => {
-    fail();
+    const timeA = DateTime.utc(2010,11, 12, 13, 14, 15).toString();
+    const timeB = DateTime.utc(2013,12,11,10,9,8).toString();
+    const oldDoc = {
+      _id: "doc-id",
+      data: {},
+      meta: {
+        occurTime: timeA,
+        utcOffset: 1,
+        createTime: timeA,
+        humanId: "olddoc"
+      }
+    };
+    const newPayload = {
+      _id: "doc-id",
+      data: {},
+      meta: {
+        occurTime: timeB,
+        utcOffset: 2,
+        createTime: timeB,
+        humanId: "newdoc"
+      }
+    };
+    const expectedNewDoc = {
+      _id: "doc-id",
+      data: {},
+      meta: {
+        occurTime: timeB,
+        utcOffset: 2,
+        createTime: timeA,
+        humanId: "newdoc"
+      }
+    };
+    await db.insert(oldDoc);
+    const newDoc = await overwriteDoc({db, id: "doc-id", payload: newPayload});
+    expect(newDoc).toMatchObject(expectedNewDoc);
   });
 
   it("if new doc is dataOnly, no metadata is saved from old doc", async () => {
