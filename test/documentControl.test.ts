@@ -214,22 +214,29 @@ describe("overwriteDoc", () => {
     expect(newDoc1).toHaveProperty("newKey1", "newData1");
     expect(newDoc1).not.toHaveProperty("oldKey");
 
-    const payload2 = {_id: "existing-id", data: { newKey2: "newData2"}, meta: {humanId: "abcdefg"}};
+    const payload2 = {
+      _id: "existing-id",
+      data: { newKey2: "newData2" },
+      meta: { humanId: "abcdefg" },
+    };
     const newDoc2 = await overwriteDoc({
       db,
       id: "existing-id",
-      payload: payload2
+      payload: payload2,
     });
     const dbDoc2 = await db.get("existing-id");
     expect(dbDoc2).toEqual(newDoc2);
     expect(newDoc2).toMatchObject(payload2);
     expect(newDoc2).not.toHaveProperty("newKey1");
 
-    const payload3 = {data: { newKey3: "newData3", idKey: "existing-id"}, meta: {idStructure: "%idKey%"}};
+    const payload3 = {
+      data: { newKey3: "newData3", idKey: "existing-id" },
+      meta: { idStructure: "%idKey%" },
+    };
     const newDoc3 = await overwriteDoc({
       db,
       id: "existing-id",
-      payload: payload3
+      payload: payload3,
     });
     const dbDoc3 = await db.get("existing-id");
     expect(dbDoc3).toEqual(newDoc3);
@@ -238,19 +245,26 @@ describe("overwriteDoc", () => {
   });
 
   it("if new document does not have id, it replaces the doc at the old id", async () => {
-    await db.insert({_id: "existing-id", oldKey: "oldData"});
+    await db.insert({ _id: "existing-id", oldKey: "oldData" });
 
-    const newDoc1 = await overwriteDoc({db, id: "existing-id", payload: {newKey: "newData"}});
+    const newDoc1 = await overwriteDoc({
+      db,
+      id: "existing-id",
+      payload: { newKey: "newData" },
+    });
     const dbDoc1 = await db.get("existing-id");
     expect(dbDoc1).toEqual(newDoc1);
     expect(newDoc1).toHaveProperty("newKey1", "newData1");
     expect(newDoc1).not.toHaveProperty("oldKey");
 
-    const payload2 = {data: { newKey2: "newData2"}, meta: {humanId: "abcdefg"}};
+    const payload2 = {
+      data: { newKey2: "newData2" },
+      meta: { humanId: "abcdefg" },
+    };
     const newDoc2 = await overwriteDoc({
       db,
       id: "existing-id",
-      payload: payload2
+      payload: payload2,
     });
     const dbDoc2 = await db.get("existing-id");
     expect(dbDoc2).toEqual(newDoc2);
@@ -259,18 +273,26 @@ describe("overwriteDoc", () => {
   });
 
   it("deletes the old document if the new document has a different id", async () => {
-    await db.insert({_id: "old-id", oldKey: "oldData"});
+    await db.insert({ _id: "old-id", oldKey: "oldData" });
 
-    const payload1 = {_id: "new-id-1", newKey1: "newData1"};
-    const newDoc1 = await overwriteDoc({db, id: "old-id", payload: payload1});
+    const payload1 = { _id: "new-id-1", newKey1: "newData1" };
+    const newDoc1 = await overwriteDoc({ db, id: "old-id", payload: payload1 });
     await expect(db.get("old-id")).rejects.toThrow("deleted");
     const dbDoc1 = await db.get("new-id-1");
     expect(dbDoc1).toEqual(newDoc1);
     expect(newDoc1).toMatchObject(payload1);
     expect(newDoc1).not.toHaveProperty("oldKey");
 
-    const payload2 = {_id: "new-id-2", data: {newKey2: "newData2"}, meta: {humanId: "abcdefgh"}};
-    const newDoc2 = await overwriteDoc({db, id: "new-id-1", payload: payload2});
+    const payload2 = {
+      _id: "new-id-2",
+      data: { newKey2: "newData2" },
+      meta: { humanId: "abcdefgh" },
+    };
+    const newDoc2 = await overwriteDoc({
+      db,
+      id: "new-id-1",
+      payload: payload2,
+    });
     await expect(db.get("new-id-1")).rejects.toThrow("deleted");
     const dbDoc2 = await db.get("new-id-2");
     expect(dbDoc2).toEqual(newDoc2);
@@ -278,9 +300,15 @@ describe("overwriteDoc", () => {
     expect(newDoc2).not.toHaveProperty("newKey1");
     expect(newDoc2).not.toHaveProperty("data.newKey1");
 
-
-    const payload3 = {data: {newKey3: "newData3", idKey: "new-id-3"}, meta: {idStructure: "%idKey%"}};
-    const newDoc3 = await overwriteDoc({db, id: "new-id-2", payload: payload3});
+    const payload3 = {
+      data: { newKey3: "newData3", idKey: "new-id-3" },
+      meta: { idStructure: "%idKey%" },
+    };
+    const newDoc3 = await overwriteDoc({
+      db,
+      id: "new-id-2",
+      payload: payload3,
+    });
     await expect(db.get("new-id-2")).rejects.toThrow("deleted");
     const dbDoc3 = await db.get("new-id-3");
     expect(dbDoc3).toEqual(newDoc3);
@@ -326,4 +354,8 @@ describe("overwriteDoc", () => {
   it("if createTime or metadata does not exist on old document, new document does not have a createTime because it is unknown", async () => {
     fail();
   });
+
+  it("fails if new id clashes with a different document in the database", async () => {
+    fail();
+  })
 });
