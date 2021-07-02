@@ -288,8 +288,31 @@ describe("overwriteDoc", () => {
     expect(newDoc3).not.toHaveProperty("data.newKey2");
   });
 
-  it("updates modifiedTime to now for DatumPayloads", async () => {
-    fail();
+  it("updates modifyTime to now for DatumPayloads", async () => {
+    const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
+    const now = mockNow.toString();
+    const payloadWithoutModified = {data: {foo: "bar"}, meta: {occurTime: notNow}};
+    const payloadWithModified = {data: {foo: "bar"}, meta: {occurTime: notNow, modifyTime: notNow}};
+
+
+    await db.insert({_id: "data-only-payload-1", foo: "bar"});
+    const newDoc1 = overwriteDoc({db, id: "data-only-payload-1", payload: payloadWithoutModified});
+    await db.insert({_id: "data-only-payload-2", foo: "bar"});
+    const newDoc2 = overwriteDoc({db, id: "data-only-payload-2", payload: payloadWithModified});
+
+    await db.insert({_id: "datum-without-modifyTime-1", ...payloadWithoutModified});
+    const newDoc3 = overwriteDoc({db, id: "datum-without-modifyTime-1", payload: payloadWithoutModified});
+    await db.insert({_id: "datum-without-modifyTime-2", ...payloadWithoutModified});
+    const newDoc4 = overwriteDoc({db, id: "datum-without-modifyTime-2", payload: payloadWithModified});
+
+    await db.insert({_id: "datum-with-modifyTime-1", ...payloadWithModified});
+    const newDoc5 = overwriteDoc({db, id: "datum-with-modifyTime-1", payload: payloadWithoutModified});
+    await db.insert({_id: "datum-with-modifyTime-2", ...payloadWithModified});
+    const newDoc6 = overwriteDoc({db, id: "datum-with-modifyTime-2", payload: payloadWithModified});
+
+    for (const doc in [newDoc1, newDoc2, newDoc3, newDoc4, newDoc5, newDoc6]) {
+      expect(doc).toHaveProperty("meta.modifyTime", now);
+    }
   });
 
   it("if metadata exists on both documents it uses the createTime of the old document, but otherwise all other metadata from the new document", async () => {
