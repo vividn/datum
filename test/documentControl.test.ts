@@ -19,7 +19,9 @@ import {
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 import { IdError } from "../src/errors";
-import overwriteDoc from "../src/documentControl/overwriteDoc";
+import overwriteDoc, {
+  OverwriteDocError,
+} from "../src/documentControl/overwriteDoc";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -201,6 +203,39 @@ describe("overwriteDoc", () => {
     ).rejects.toThrowError();
   });
 
+  it("fails if new id clashes with a different document in the database", async () => {
+    const oldId = "id-to-replace";
+    const clashingId = "preexisting-clashing-id";
+    await db.insert({ _id: oldId });
+    await db.insert({ _id: clashingId });
+
+    await expect(
+      overwriteDoc({ db, id: oldId, payload: { _id: clashingId, foo: "bar" } })
+    ).rejects.toThrowError(OverwriteDocError);
+    await db.get(oldId); // original doc is not deleted
+
+    await expect(
+      overwriteDoc({
+        db,
+        id: oldId,
+        payload: { _id: clashingId, data: {}, meta: {} },
+      })
+    ).rejects.toThrowError(OverwriteDocError);
+    await db.get(oldId);
+
+    await expect(
+      overwriteDoc({
+        db,
+        id: oldId,
+        payload: {
+          data: { idField: clashingId },
+          meta: { idStructure: "%idField%" },
+        },
+      })
+    ).rejects.toThrowError(OverwriteDocError);
+    await db.get(oldId);
+  });
+
   it("replaces the existing document if the new id is the same", async () => {
     await db.insert({ _id: "existing-id", oldKey: "oldData" });
 
@@ -319,24 +354,59 @@ describe("overwriteDoc", () => {
   it("updates modifyTime to now for DatumPayloads", async () => {
     const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
     const now = mockNow.toString();
-    const payloadWithoutModified = {data: {foo: "bar"}, meta: {occurTime: notNow}};
-    const payloadWithModified = {data: {foo: "bar"}, meta: {occurTime: notNow, modifyTime: notNow}};
+    const payloadWithoutModified = {
+      data: { foo: "bar" },
+      meta: { occurTime: notNow },
+    };
+    const payloadWithModified = {
+      data: { foo: "bar" },
+      meta: { occurTime: notNow, modifyTime: notNow },
+    };
 
+    await db.insert({ _id: "data-only-payload-1", foo: "bar" });
+    const newDoc1 = overwriteDoc({
+      db,
+      id: "data-only-payload-1",
+      payload: payloadWithoutModified,
+    });
+    await db.insert({ _id: "data-only-payload-2", foo: "bar" });
+    const newDoc2 = overwriteDoc({
+      db,
+      id: "data-only-payload-2",
+      payload: payloadWithModified,
+    });
 
-    await db.insert({_id: "data-only-payload-1", foo: "bar"});
-    const newDoc1 = overwriteDoc({db, id: "data-only-payload-1", payload: payloadWithoutModified});
-    await db.insert({_id: "data-only-payload-2", foo: "bar"});
-    const newDoc2 = overwriteDoc({db, id: "data-only-payload-2", payload: payloadWithModified});
+    await db.insert({
+      _id: "datum-without-modifyTime-1",
+      ...payloadWithoutModified,
+    });
+    const newDoc3 = overwriteDoc({
+      db,
+      id: "datum-without-modifyTime-1",
+      payload: payloadWithoutModified,
+    });
+    await db.insert({
+      _id: "datum-without-modifyTime-2",
+      ...payloadWithoutModified,
+    });
+    const newDoc4 = overwriteDoc({
+      db,
+      id: "datum-without-modifyTime-2",
+      payload: payloadWithModified,
+    });
 
-    await db.insert({_id: "datum-without-modifyTime-1", ...payloadWithoutModified});
-    const newDoc3 = overwriteDoc({db, id: "datum-without-modifyTime-1", payload: payloadWithoutModified});
-    await db.insert({_id: "datum-without-modifyTime-2", ...payloadWithoutModified});
-    const newDoc4 = overwriteDoc({db, id: "datum-without-modifyTime-2", payload: payloadWithModified});
-
-    await db.insert({_id: "datum-with-modifyTime-1", ...payloadWithModified});
-    const newDoc5 = overwriteDoc({db, id: "datum-with-modifyTime-1", payload: payloadWithoutModified});
-    await db.insert({_id: "datum-with-modifyTime-2", ...payloadWithModified});
-    const newDoc6 = overwriteDoc({db, id: "datum-with-modifyTime-2", payload: payloadWithModified});
+    await db.insert({ _id: "datum-with-modifyTime-1", ...payloadWithModified });
+    const newDoc5 = overwriteDoc({
+      db,
+      id: "datum-with-modifyTime-1",
+      payload: payloadWithoutModified,
+    });
+    await db.insert({ _id: "datum-with-modifyTime-2", ...payloadWithModified });
+    const newDoc6 = overwriteDoc({
+      db,
+      id: "datum-with-modifyTime-2",
+      payload: payloadWithModified,
+    });
 
     for (const doc in [newDoc1, newDoc2, newDoc3, newDoc4, newDoc5, newDoc6]) {
       expect(doc).toHaveProperty("meta.modifyTime", now);
@@ -344,8 +414,8 @@ describe("overwriteDoc", () => {
   });
 
   it("if metadata exists on both documents it uses the createTime of the old document, but otherwise all other metadata from the new document", async () => {
-    const timeA = DateTime.utc(2010,11, 12, 13, 14, 15).toString();
-    const timeB = DateTime.utc(2013,12,11,10,9,8).toString();
+    const timeA = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
+    const timeB = DateTime.utc(2013, 12, 11, 10, 9, 8).toString();
     const oldDoc = {
       _id: "doc-id",
       data: {},
@@ -353,8 +423,8 @@ describe("overwriteDoc", () => {
         occurTime: timeA,
         utcOffset: 1,
         createTime: timeA,
-        humanId: "olddoc"
-      }
+        humanId: "olddoc",
+      },
     };
     const newPayload = {
       _id: "doc-id",
@@ -363,8 +433,8 @@ describe("overwriteDoc", () => {
         occurTime: timeB,
         utcOffset: 2,
         createTime: timeB,
-        humanId: "newdoc"
-      }
+        humanId: "newdoc",
+      },
     };
     const expectedNewDoc = {
       _id: "doc-id",
@@ -373,23 +443,62 @@ describe("overwriteDoc", () => {
         occurTime: timeB,
         utcOffset: 2,
         createTime: timeA,
-        humanId: "newdoc"
-      }
+        humanId: "newdoc",
+      },
     };
     await db.insert(oldDoc);
-    const newDoc = await overwriteDoc({db, id: "doc-id", payload: newPayload});
+    const newDoc = await overwriteDoc({
+      db,
+      id: "doc-id",
+      payload: newPayload,
+    });
     expect(newDoc).toMatchObject(expectedNewDoc);
   });
 
   it("if new doc is dataOnly, no metadata is saved from old doc", async () => {
-    fail();
+    await db.insert({
+      _id: "document",
+      data: {
+        foo: "bar",
+      },
+      meta: {
+        occurTime: mockNow.toString(),
+        humanId: "abcdef",
+      },
+    });
+    const newDoc = await overwriteDoc({
+      db,
+      id: "document",
+      payload: { bar: "baz" },
+    });
+    expect(newDoc).not.toHaveProperty("meta");
+    expect(newDoc).not.toHaveProperty("occurTime");
   });
 
   it("if createTime or metadata does not exist on old document, new document does not have a createTime because it is unknown", async () => {
-    fail();
-  });
+    await db.insert({ _id: "doc-without-meta", foo: "bar" });
+    await db.insert({
+      _id: "doc-without-createTime",
+      data: { bar: "baz" },
+      meta: { occurTime: mockNow.toString() },
+    });
+    const newPayload = {
+      data: { foobar: "barbaz" },
+      meta: { humanId: "abcdef" },
+    };
 
-  it("fails if new id clashes with a different document in the database", async () => {
-    fail();
-  })
+    const newDoc1 = await overwriteDoc({
+      db,
+      id: "doc-without-meta",
+      payload: newPayload,
+    });
+    const newDoc2 = await overwriteDoc({
+      db,
+      id: "doc-without-createTime",
+      payload: newPayload,
+    });
+
+    expect(newDoc1).not.toHaveProperty("meta.createTime");
+    expect(newDoc2).not.toHaveProperty("meta.createTime");
+  });
 });
