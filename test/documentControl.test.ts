@@ -8,7 +8,7 @@ import {
   test,
 } from "@jest/globals";
 
-import { fail, pass, testNano } from "./test-utils";
+import { pass, testNano } from "./test-utils";
 import addDoc from "../src/documentControl/addDoc";
 import {
   DataOnlyDocument,
@@ -155,7 +155,9 @@ describe("addDoc", () => {
 
   it.todo("can still insert if _rev is given in the payload");
   it.todo("does not alter the payload");
-  it.todo("calls another document control method if id already exists and conflict strategy is given");
+  it.todo(
+    "calls another document control method if id already exists and conflict strategy is given"
+  );
 });
 
 describe("overwriteDoc", () => {

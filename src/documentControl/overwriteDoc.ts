@@ -1,11 +1,6 @@
 import { DocumentScope } from "nano";
-import {
-  EitherDocument,
-  EitherPayload,
-  isDatumDocument,
-  isDatumPayload,
-} from "./DatumDocument";
-import { IdError, MyError } from "../errors";
+import { EitherDocument, EitherPayload, isDatumPayload } from "./DatumDocument";
+import { MyError } from "../errors";
 import { assembleId } from "../ids";
 import { DateTime } from "luxon";
 import jClone from "../utils/jClone";
@@ -55,8 +50,8 @@ const overwriteDoc = async ({
     }
 
     const calculatedId = payload.meta.idStructure
-        ? assembleId({ data: payload.data, meta: payload.meta })
-        : payload._id;
+      ? assembleId({ data: payload.data, meta: payload.meta })
+      : payload._id;
     newId = calculatedId ?? id;
   } else {
     newId = payload._id ?? id;

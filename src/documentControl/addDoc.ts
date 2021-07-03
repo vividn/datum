@@ -1,8 +1,6 @@
 import {
   DataOnlyDocument,
-  DataOnlyPayload,
   DatumDocument,
-  DatumPayload,
   EitherDocument,
   EitherPayload,
   isDatumPayload,
