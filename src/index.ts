@@ -10,7 +10,9 @@ import { processTimeArgs } from "./timings";
 import { assembleId, buildIdStructure, defaultIdComponents } from "./ids";
 import pass from "./utils/pass";
 import {
+  DataOnlyPayload,
   DatumMetadata,
+  DatumPayload,
   EitherDocument,
   EitherPayload,
 } from "./documentControl/DatumDocument";
@@ -20,8 +22,7 @@ import { showCreate, showExists } from "./output";
 import addDoc from "./documentControl/addDoc";
 
 export async function main(args: DatumYargsType): Promise<EitherDocument> {
-  //TODO: put document type here
-  // Get a timestamp as soon as possible
+  // TODO: Get a timestamp as soon as possible
 
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
@@ -117,11 +118,16 @@ export async function main(args: DatumYargsType): Promise<EitherDocument> {
     }
   }
 
+  const payload: EitherPayload =
+    meta !== undefined
+      ? ({ data: payloadData, meta: meta } as DatumPayload)
+      : ({ ...payloadData } as DataOnlyPayload);
+
   const _id = assembleId({
-    data: payloadData,
-    meta: meta,
+    payload,
     idStructure: idStructure,
   });
+  payload._id = _id;
 
   const { db: dbName = "datum" } = args;
 
@@ -151,11 +157,6 @@ export async function main(args: DatumYargsType): Promise<EitherDocument> {
       throw err;
     }
   }
-
-  const payload =
-    meta !== undefined
-      ? { _id: _id, data: payloadData, meta: meta }
-      : { _id: _id, ...payloadData };
 
   const doc = await addDoc({ db, payload });
   showCreate(doc, args.showAll);

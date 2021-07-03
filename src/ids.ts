@@ -1,4 +1,9 @@
-import { DatumData, DatumMetadata } from "./documentControl/DatumDocument";
+import {
+  DatumData,
+  DatumMetadata,
+  EitherPayload,
+  isDatumPayload,
+} from "./documentControl/DatumDocument";
 import { GenericObject } from "./GenericObject";
 import deepGet from "lodash.get";
 import deepSet from "lodash.set";
@@ -73,15 +78,22 @@ export const splitRawAndFields = (str: string): string[] => {
 
 //TODO: Refactor assemble Id to handle EitherPayloads directly
 type assembleIdType = {
-  data: DatumData;
-  meta?: DatumMetadata;
+  payload: EitherPayload;
   idStructure?: string;
 };
 export const assembleId = function ({
-  data,
-  meta,
+  payload,
   idStructure,
 }: assembleIdType): string {
+  let data: DatumData;
+  let meta: DatumMetadata | undefined;
+  if (isDatumPayload(payload)) {
+    data = payload.data;
+    meta = payload.meta;
+  } else {
+    data = payload as DatumData;
+  }
+
   if (meta === undefined && data["_id"] !== undefined) {
     // in no metadata mode, a manually specified _id takes precedence
     return data["_id"];
@@ -93,6 +105,9 @@ export const assembleId = function ({
   const structure = idStructure ?? meta?.idStructure;
 
   if (structure === undefined) {
+    if (payload._id !== undefined) {
+      return payload._id;
+    }
     throw new IdError("Cannot determine the id");
   }
 

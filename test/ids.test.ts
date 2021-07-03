@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@jest/globals";
-import { DatumData, DatumMetadata } from "../src/documentControl/DatumDocument";
+import {
+  DatumData,
+  DatumMetadata,
+  EitherPayload,
+} from "../src/documentControl/DatumDocument";
 
 import {
   assembleId,
@@ -45,6 +49,9 @@ const expectStructureAndId = (
     data: testData,
     hasOccurTime,
   });
+  const payload: EitherPayload = testMeta
+    ? { data: testData, meta: testMeta }
+    : { ...testData };
 
   const buildIdStructureProps: buildIdStructureType = {
     idParts: props.idParts ?? defaultIdParts,
@@ -55,8 +62,7 @@ const expectStructureAndId = (
   expect(idStructure).toStrictEqual(expectedStructure);
 
   const id = assembleId({
-    data: testData,
-    meta: testMeta || undefined,
+    payload,
     idStructure: idStructure,
   });
   expect(id).toStrictEqual(expectedIdOnTestData);
@@ -442,11 +448,13 @@ describe("assembleId", () => {
   it("throws error if it cannot find an idStructure in the metadata and idStructure is not provided", () => {
     expect(() =>
       assembleId({
-        data: { abc: "123" },
-        meta: { occurTime: "2020-11-09T00:40:12.544Z" },
+        payload: {
+          data: { abc: "123" },
+          meta: { occurTime: "2020-11-09T00:40:12.544Z" },
+        },
       })
     ).toThrowError(IdError);
-    expect(() => assembleId({ data: { abc: "123" } })).toThrowError(IdError);
+    expect(() => assembleId({ payload: { abc: "123" } })).toThrowError(IdError);
   });
 
   it.todo("doesn't allow recursive %?idStructure% as a part of the id");

@@ -23,12 +23,8 @@ const addDoc = async ({ db, payload }: addDocType): Promise<EitherDocument> => {
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;
 
-    const id = payload.meta.idStructure
-      ? assembleId({ data: payload.data, meta: payload.meta })
-      : payload._id ?? undefined;
-    if (id === undefined) {
-      throw new IdError("id could not be determined");
-    }
+    const id = assembleId({ payload });
+
     payload._id = id;
 
     await db.insert(payload);
