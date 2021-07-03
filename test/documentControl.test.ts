@@ -5,7 +5,7 @@ import {
   describe,
   expect,
   it,
-  test
+  test,
 } from "@jest/globals";
 
 import { fail, pass, testNano } from "./test-utils";
@@ -155,9 +155,7 @@ describe("addDoc", () => {
 
   it.todo("can still insert if _rev is given in the payload");
 
-  it.skip("calls another document control method if id already exists and conflict strategy is given", async () => {
-    fail();
-  });
+  it.todo("calls another document control method if id already exists and conflict strategy is given");
 });
 
 describe("overwriteDoc", () => {
@@ -289,7 +287,7 @@ describe("overwriteDoc", () => {
     const newDoc1 = await overwriteDoc({
       db,
       id: "existing-id",
-      payload: { newKey: "newData" },
+      payload: { newKey1: "newData1" },
     });
     const dbDoc1 = await db.get("existing-id");
     expect(dbDoc1).toEqual(newDoc1);
@@ -368,53 +366,58 @@ describe("overwriteDoc", () => {
     };
 
     await db.insert({ _id: "data-only-payload-1", foo: "bar" });
-    const newDoc1 = overwriteDoc({
+    const newDoc1 = await overwriteDoc({
       db,
       id: "data-only-payload-1",
       payload: payloadWithoutModified,
     });
+    expect(newDoc1).toHaveProperty("meta.modifyTime", now);
+
     await db.insert({ _id: "data-only-payload-2", foo: "bar" });
-    const newDoc2 = overwriteDoc({
+    const newDoc2 = await overwriteDoc({
       db,
       id: "data-only-payload-2",
       payload: payloadWithModified,
     });
+    expect(newDoc2).toHaveProperty("meta.modifyTime", now);
 
     await db.insert({
       _id: "datum-without-modifyTime-1",
       ...payloadWithoutModified,
     });
-    const newDoc3 = overwriteDoc({
+    const newDoc3 = await overwriteDoc({
       db,
       id: "datum-without-modifyTime-1",
       payload: payloadWithoutModified,
     });
+    expect(newDoc3).toHaveProperty("meta.modifyTime", now);
+
     await db.insert({
       _id: "datum-without-modifyTime-2",
       ...payloadWithoutModified,
     });
-    const newDoc4 = overwriteDoc({
+    const newDoc4 = await overwriteDoc({
       db,
       id: "datum-without-modifyTime-2",
       payload: payloadWithModified,
     });
+    expect(newDoc4).toHaveProperty("meta.modifyTime", now);
 
     await db.insert({ _id: "datum-with-modifyTime-1", ...payloadWithModified });
-    const newDoc5 = overwriteDoc({
+    const newDoc5 = await overwriteDoc({
       db,
       id: "datum-with-modifyTime-1",
       payload: payloadWithoutModified,
     });
+    expect(newDoc5).toHaveProperty("meta.modifyTime", now);
+
     await db.insert({ _id: "datum-with-modifyTime-2", ...payloadWithModified });
-    const newDoc6 = overwriteDoc({
+    const newDoc6 = await overwriteDoc({
       db,
       id: "datum-with-modifyTime-2",
       payload: payloadWithModified,
     });
-
-    for (const doc in [newDoc1, newDoc2, newDoc3, newDoc4, newDoc5, newDoc6]) {
-      expect(doc).toHaveProperty("meta.modifyTime", now);
-    }
+    expect(newDoc6).toHaveProperty("meta.modifyTime", now);
   });
 
   it("if metadata exists on both documents it uses the createTime of the old document, but otherwise all other metadata from the new document", async () => {
@@ -506,6 +509,8 @@ describe("overwriteDoc", () => {
     expect(newDoc2).not.toHaveProperty("meta.createTime");
   });
 
-  test.todo("if payload specified a _rev, then it must match the _rev on the old document");
+  test.todo(
+    "if payload specified a _rev, then it must match the _rev on the old document"
+  );
   it.todo("can still insert if _rev is given");
 });

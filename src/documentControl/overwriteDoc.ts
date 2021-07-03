@@ -70,7 +70,7 @@ const overwriteDoc = async ({
   } else {
     delete payload._rev;
     await db.insert(payload).catch((e) => {
-      if (e.reason === "conflicts") {
+      if (e.error === "conflict") {
         throw new OverwriteDocError("id conflict with another document");
       } else {
         throw e;
