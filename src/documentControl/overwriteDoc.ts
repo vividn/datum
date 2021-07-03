@@ -8,6 +8,7 @@ import {
 import { IdError, MyError } from "../errors";
 import { assembleId } from "../ids";
 import { DateTime } from "luxon";
+import jClone from "../utils/jClone";
 
 type overwriteDocType = {
   db: DocumentScope<EitherPayload>;
@@ -34,6 +35,7 @@ const overwriteDoc = async ({
   id,
   payload,
 }: overwriteDocType): Promise<EitherDocument> => {
+  payload = jClone(payload);
   const oldDoc = await db.get(id).catch((e) => {
     if (["missing", "deleted"].includes(e.reason)) {
       throw new NoDocToOverwriteError(

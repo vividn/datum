@@ -11,6 +11,7 @@ import { DocumentScope } from "nano";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
 import { IdError } from "../errors";
+import jClone from "../utils/jClone";
 
 type addDocType = {
   db: DocumentScope<EitherPayload>;
@@ -18,6 +19,7 @@ type addDocType = {
 };
 
 const addDoc = async ({ db, payload }: addDocType): Promise<EitherDocument> => {
+  payload = jClone(payload);
   if (isDatumPayload(payload)) {
     const now = DateTime.utc().toString();
     payload.meta.createTime = now;
