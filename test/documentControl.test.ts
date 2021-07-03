@@ -154,7 +154,7 @@ describe("addDoc", () => {
   });
 
   it.todo("can still insert if _rev is given in the payload");
-
+  it.todo("does not alter the payload");
   it.todo("calls another document control method if id already exists and conflict strategy is given");
 });
 
@@ -513,4 +513,5 @@ describe("overwriteDoc", () => {
     "if payload specified a _rev, then it must match the _rev on the old document"
   );
   it.todo("can still insert if _rev is given");
+  it.todo("does not alter the payload");
 });
