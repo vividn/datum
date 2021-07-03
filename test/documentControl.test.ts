@@ -5,6 +5,7 @@ import {
   describe,
   expect,
   it,
+  test
 } from "@jest/globals";
 
 import { fail, pass, testNano } from "./test-utils";
@@ -20,6 +21,7 @@ import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 import { IdError } from "../src/errors";
 import overwriteDoc, {
+  NoDocToOverwriteError,
   OverwriteDocError,
 } from "../src/documentControl/overwriteDoc";
 
@@ -151,6 +153,8 @@ describe("addDoc", () => {
     ).rejects.toThrowError();
   });
 
+  it.todo("can still insert if _rev is given in the payload");
+
   it.skip("calls another document control method if id already exists and conflict strategy is given", async () => {
     fail();
   });
@@ -179,28 +183,28 @@ describe("overwriteDoc", () => {
   it("fails if id to be overwritten does not exist in db", async () => {
     await expect(
       overwriteDoc({ db, id: "does-not-exist", payload: { valid: "data" } })
-    ).rejects.toThrowError();
+    ).rejects.toThrowError(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { _id: "does-not-exist", data: "data" },
       })
-    ).rejects.toThrowError();
+    ).rejects.toThrowError(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { _id: "some-other-id", data: "data" },
       })
-    ).rejects.toThrowError();
+    ).rejects.toThrowError(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { data: { foo: "bar" }, meta: { idStructure: "%foo%" } },
       })
-    ).rejects.toThrowError();
+    ).rejects.toThrowError(NoDocToOverwriteError);
   });
 
   it("fails if new id clashes with a different document in the database", async () => {
@@ -501,4 +505,7 @@ describe("overwriteDoc", () => {
     expect(newDoc1).not.toHaveProperty("meta.createTime");
     expect(newDoc2).not.toHaveProperty("meta.createTime");
   });
+
+  test.todo("if payload specified a _rev, then it must match the _rev on the old document");
+  it.todo("can still insert if _rev is given");
 });

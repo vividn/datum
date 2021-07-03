@@ -448,4 +448,6 @@ describe("assembleId", () => {
     ).toThrowError(IdError);
     expect(() => assembleId({ data: { abc: "123" } })).toThrowError(IdError);
   });
+
+  it.todo("doesn't allow recursive %?idStructure% as a part of the id");
 });
