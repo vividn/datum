@@ -153,7 +153,12 @@ describe("addDoc", () => {
     ).rejects.toThrowError();
   });
 
-  it.todo("can still insert if _rev is given in the payload");
+  it("can still insert if _rev is given in the payload", async () => {
+    const rev = "1-974bb250edb4c7da3b2f6459b2411873";
+    const newDoc = await addDoc({db, payload: {...testDatumPayload, _rev: rev}});
+    expect(newDoc).toMatchObject(testDatumPayload);
+    expect(newDoc._rev).not.toEqual(rev);
+  });
   it.todo("does not alter the payload");
   it.todo(
     "calls another document control method if id already exists and conflict strategy is given"

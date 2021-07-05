@@ -26,6 +26,9 @@ const addDoc = async ({ db, payload }: addDocType): Promise<EitherDocument> => {
     const id = assembleId({ payload });
 
     payload._id = id;
+    
+    // Don't care about _rev for adding, will detect and redirect conflicts manually
+    delete payload._rev;
 
     await db.insert(payload);
     const addedDoc = (await db.get(id)) as DatumDocument;
