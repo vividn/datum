@@ -156,7 +156,10 @@ describe("addDoc", () => {
 
   it("can still insert if _rev is given in the payload", async () => {
     const rev = "1-974bb250edb4c7da3b2f6459b2411873";
-    const newDoc = await addDoc({db, payload: {...testDatumPayload, _rev: rev}});
+    const newDoc = await addDoc({
+      db,
+      payload: { ...testDatumPayload, _rev: rev },
+    });
     expect(newDoc).toMatchObject(testDatumPayload);
     expect(newDoc._rev).not.toEqual(rev);
   });
@@ -172,12 +175,12 @@ describe("addDoc", () => {
       meta: {
         occurTime: "2021-06-20T14:00:00Z",
         utcOffset: 2,
-      }
+      },
     };
     const payload2 = jClone(payload1);
     expect(payload1).toEqual(payload2);
 
-    await addDoc({db, payload: payload1});
+    await addDoc({ db, payload: payload1 });
 
     expect(payload1).toEqual(payload2);
   });
@@ -538,29 +541,47 @@ describe("overwriteDoc", () => {
     expect(newDoc2).not.toHaveProperty("meta.createTime");
   });
 
-  test(
-    "if payload specified a _rev, then it must match the _rev on the old document", async () => {
-      await db.insert({_id: "abc", foo: "bar"});
-      const oldDoc = await db.get("abc");
-      const wrongRev = "1-38748349796ad6a60a11c0f63d10186a";
+  test("if payload specified a _rev, then it must match the _rev on the old document", async () => {
+    await db.insert({ _id: "abc", foo: "bar" });
+    const oldDoc = await db.get("abc");
+    const wrongRev = "1-38748349796ad6a60a11c0f63d10186a";
 
-      await expect(overwriteDoc({db, id: "abc", payload: {_id: "abc", _rev: wrongRev, foo2: "bar2"}})).rejects.toThrowError(OverwriteDocError);
-      const stillOldDoc = await db.get("abc");
-      expect(oldDoc).toEqual(stillOldDoc);
+    await expect(
+      overwriteDoc({
+        db,
+        id: "abc",
+        payload: { _id: "abc", _rev: wrongRev, foo2: "bar2" },
+      })
+    ).rejects.toThrowError(OverwriteDocError);
+    const stillOldDoc = await db.get("abc");
+    expect(oldDoc).toEqual(stillOldDoc);
 
-      await overwriteDoc({db, id: "abc", payload: {_id: "abc", _rev: oldDoc._rev, foo3: "bar3" }});
+    await overwriteDoc({
+      db,
+      id: "abc",
+      payload: { _id: "abc", _rev: oldDoc._rev, foo3: "bar3" },
+    });
 
-      const newDoc = await db.get("abc");
-      expect(newDoc).toHaveProperty("foo3", "bar3");
+    const newDoc = await db.get("abc");
+    expect(newDoc).toHaveProperty("foo3", "bar3");
 
-      await expect(overwriteDoc({db, id: "abc", payload: {_rev: wrongRev, ...testDatumPayload}})).rejects.toThrowError(OverwriteDocError);
-      await overwriteDoc({db, id: "abc", payload: {_rev: newDoc._rev, ...testDatumPayload}});
-      await expect(db.get("abc")).rejects.toThrowError("deleted");
-    }
-  );
+    await expect(
+      overwriteDoc({
+        db,
+        id: "abc",
+        payload: { _rev: wrongRev, ...testDatumPayload },
+      })
+    ).rejects.toThrowError(OverwriteDocError);
+    await overwriteDoc({
+      db,
+      id: "abc",
+      payload: { _rev: newDoc._rev, ...testDatumPayload },
+    });
+    await expect(db.get("abc")).rejects.toThrowError("deleted");
+  });
 
   it("does not alter the payload", async () => {
-    await db.insert({_id: "abcd", foo: "bar"});
+    await db.insert({ _id: "abcd", foo: "bar" });
     const oldDoc = await db.get("abcd");
     const payload1 = {
       _id: "abcd",
@@ -572,12 +593,12 @@ describe("overwriteDoc", () => {
       meta: {
         occurTime: "2021-06-20T14:00:00Z",
         utcOffset: 2,
-      }
+      },
     };
     const payload2 = jClone(payload1);
     expect(payload1).toEqual(payload2);
 
-    await overwriteDoc({db, id: "abcd", payload: payload1});
+    await overwriteDoc({ db, id: "abcd", payload: payload1 });
 
     expect(payload1).toEqual(payload2);
   });
