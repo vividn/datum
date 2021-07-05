@@ -76,7 +76,6 @@ export const splitRawAndFields = (str: string): string[] => {
     .split("\xff\x00");
 };
 
-//TODO: Refactor assemble Id to handle EitherPayloads directly
 type assembleIdType = {
   payload: EitherPayload;
   idStructure?: string;

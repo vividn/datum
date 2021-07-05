@@ -445,7 +445,8 @@ describe("defaultIdComponents", () => {
 });
 
 describe("assembleId", () => {
-  it("throws error if it cannot find an idStructure in the metadata and idStructure is not provided", () => {
+  it.todo("uses the _id in the payload if no idStructure is provided or found in metadata");
+  it("throws error if no idStructure provided or found, and no _id is in payload", () => {
     expect(() =>
       assembleId({
         payload: {
