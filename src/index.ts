@@ -9,22 +9,20 @@ import inferType from "./utils/inferType";
 import { processTimeArgs } from "./timings";
 import { assembleId, buildIdStructure, defaultIdComponents } from "./ids";
 import pass from "./utils/pass";
-import { GenericObject } from "./GenericObject";
 import {
-  DataOnlyDocument,
-  DatumDocument,
+  DataOnlyPayload,
   DatumMetadata,
   DatumPayload,
+  EitherDocument,
+  EitherPayload,
 } from "./documentControl/DatumDocument";
 import newHumanId from "./meta/newHumanId";
 import { defaults } from "./input/defaults";
 import { showCreate, showExists } from "./output";
+import addDoc from "./documentControl/addDoc";
 
-export async function main(
-  args: DatumYargsType
-): Promise<DatumDocument | DataOnlyDocument> {
-  //TODO: put document type here
-  // Get a timestamp as soon as possible
+export async function main(args: DatumYargsType): Promise<EitherDocument> {
+  // TODO: Get a timestamp as soon as possible
 
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
@@ -94,21 +92,24 @@ export async function main(
       noTimestamp,
       timezone,
     } = args;
-    const metaTimings = processTimeArgs({
-      date,
-      time,
-      quick,
-      yesterday,
-      fullDay,
-      noTimestamp,
-      timezone,
-    });
 
     meta = {
-      ...metaTimings,
-      random: Math.random(),
       humanId: newHumanId(),
+      random: Math.random(),
     };
+
+    if (!noTimestamp) {
+      const { timeStr: occurTime, utcOffset } = processTimeArgs({
+        date,
+        time,
+        quick,
+        yesterday,
+        fullDay,
+        timezone,
+      });
+      meta.occurTime = occurTime;
+      meta.utcOffset = utcOffset;
+    }
 
     // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same
@@ -117,20 +118,23 @@ export async function main(
     }
   }
 
+  const payload: EitherPayload =
+    meta !== undefined
+      ? ({ data: payloadData, meta: meta } as DatumPayload)
+      : ({ ...payloadData } as DataOnlyPayload);
+
   const _id = assembleId({
-    data: payloadData,
-    meta: meta,
+    payload,
     idStructure: idStructure,
   });
+  payload._id = _id;
 
   const { db: dbName = "datum" } = args;
 
   // Create database if it doesn't exist
   await nano.db.create(dbName).catch(pass);
 
-  const db: DocumentScope<DatumPayload | GenericObject> = await nano.use(
-    dbName
-  );
+  const db: DocumentScope<EitherPayload> = await nano.use(dbName);
 
   const { undo } = args;
   if (undo) {
@@ -177,13 +181,7 @@ export async function main(
     }
   }
 
-  const payload =
-    meta !== undefined
-      ? { _id: _id, data: payloadData, meta: meta }
-      : { _id: _id, ...payloadData };
-
-  await db.insert(payload);
-  const doc = await db.get(_id);
+  const doc = await addDoc({ db, payload });
   showCreate(doc, args.showAll);
 
   return doc;

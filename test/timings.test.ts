@@ -10,12 +10,12 @@ import { BadDateArgError, BadTimeArgError } from "../src/errors";
 
 const expectTiming = (
   props: ProcessTimeArgsType,
-  expectedOccurTimeOrTimings: string | Partial<TimingData>
+  expectedTimeStrOrTimings: string | Partial<TimingData>
 ) => {
   const expectedOutput =
-    typeof expectedOccurTimeOrTimings === "string"
-      ? { occurTime: expectedOccurTimeOrTimings }
-      : expectedOccurTimeOrTimings;
+    typeof expectedTimeStrOrTimings === "string"
+      ? { timeStr: expectedTimeStrOrTimings }
+      : expectedTimeStrOrTimings;
 
   expect(processTimeArgs(props)).toMatchObject(expectedOutput);
 };
@@ -32,8 +32,8 @@ describe("processTimeArgs", () => {
     Settings.resetCaches();
   });
 
-  it("returns occurTime as current time when no arguments are given", () => {
-    expect(processTimeArgs({}).occurTime).toBe("2020-05-10T15:25:30.000Z");
+  it("returns timeStr as current time when no arguments are given", () => {
+    expect(processTimeArgs({}).timeStr).toBe("2020-05-10T15:25:30.000Z");
   });
 
   it("handles absolute time strings", () => {
@@ -179,56 +179,27 @@ describe("processTimeArgs", () => {
     Settings.now = () => mockNow;
 
     const result = processTimeArgs({ fullDay: true });
-    expect(result.occurTime).toBe("2020-05-09");
+    expect(result.timeStr).toBe("2020-05-09");
   });
 
   it("adjust datetime appropriately for timezone", () => {
     // Before DST, UTC-6
     expectTiming(
       { timezone: "America/Chicago", date: "2018-03-10", time: "10:00" },
-      { occurTime: "2018-03-10T16:00:00.000Z", utcOffset: -6 }
+      { timeStr: "2018-03-10T16:00:00.000Z", utcOffset: -6 }
     );
     // After DST, UTC-5
     expectTiming(
       { timezone: "America/Chicago", date: "2018-03-12", time: "10:00" },
-      { occurTime: "2018-03-12T15:00:00.000Z", utcOffset: -5 }
+      { timeStr: "2018-03-12T15:00:00.000Z", utcOffset: -5 }
     );
     expectTiming(
       { timezone: "+4", time: "10:00" },
-      { occurTime: "2020-05-10T06:00:00.000Z", utcOffset: 4 }
+      { timeStr: "2020-05-10T06:00:00.000Z", utcOffset: 4 }
     );
     expectTiming(
       { timezone: "-4", time: "10:00" },
-      { occurTime: "2020-05-10T14:00:00.000Z", utcOffset: -4 }
-    );
-  });
-
-  it("always sets createTime and modifyTime to now", () => {
-    const correctMetaTimes = {
-      createTime: DateTime.utc().toString(),
-      modifyTime: DateTime.utc().toString(),
-    };
-    expectTiming({ timezone: "+4", time: "10:00" }, correctMetaTimes);
-    expectTiming({ date: "june 18", time: "4pm" }, correctMetaTimes);
-    expectTiming({ time: "16:25:20.555" }, correctMetaTimes);
-    expectTiming({ yesterday: 5 }, correctMetaTimes);
-  });
-
-  it("omits occurTime when no-timestamp is specified", () => {
-    expect(processTimeArgs({ noTimestamp: true })).not.toHaveProperty(
-      "occurTime"
-    );
-    expect(
-      processTimeArgs({ noTimestamp: true, date: "2020-10-10" })
-    ).not.toHaveProperty("occurTime");
-    expect(
-      processTimeArgs({ noTimestamp: true, time: "3pm" })
-    ).not.toHaveProperty("occurTime");
-    expect(
-      processTimeArgs({ noTimestamp: true, yesterday: 1 })
-    ).not.toHaveProperty("occurTime");
-    expect(processTimeArgs({ noTimestamp: true, quick: 3 })).not.toHaveProperty(
-      "occurTime"
+      { timeStr: "2020-05-10T14:00:00.000Z", utcOffset: -4 }
     );
   });
 
