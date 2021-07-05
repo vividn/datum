@@ -41,6 +41,10 @@ const overwriteDoc = async ({
     }
   });
 
+  if (payload._rev !== undefined && oldDoc._rev !== payload._rev) {
+    throw new OverwriteDocError("_rev does not match document to overwrite");
+  }
+
   if (isDatumPayload(payload)) {
     const now = DateTime.utc().toString();
     payload.meta.modifyTime = now;
