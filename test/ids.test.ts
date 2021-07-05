@@ -445,9 +445,20 @@ describe("defaultIdComponents", () => {
 });
 
 describe("assembleId", () => {
-  it.todo(
-    "uses the _id in the payload if no idStructure is provided or found in metadata"
-  );
+  it("uses the _id in the payload if no idStructure is provided or found in metadata", () => {
+    expect(assembleId({ payload: { _id: "dataOnlyId", foo: "bar" } })).toEqual(
+      "dataOnlyId"
+    );
+    expect(
+      assembleId({
+        payload: {
+          _id: "datumId",
+          data: { foo: "bar" },
+          meta: { humanId: "does-not-have-id-Structure" },
+        },
+      })
+    );
+  });
   it("throws error if no idStructure provided or found, and no _id is in payload", () => {
     expect(() =>
       assembleId({
