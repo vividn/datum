@@ -1,4 +1,9 @@
-import { DatumData, DatumMetadata } from "./documentControl/DatumDocument";
+import {
+  DatumData,
+  DatumMetadata,
+  EitherPayload,
+  isDatumPayload,
+} from "./documentControl/DatumDocument";
 import { GenericObject } from "./GenericObject";
 import deepGet from "lodash.get";
 import deepSet from "lodash.set";
@@ -71,22 +76,23 @@ export const splitRawAndFields = (str: string): string[] => {
     .split("\xff\x00");
 };
 
-type dataWithMetaOrId =
-  | {
-      data: DatumData;
-      meta: DatumMetadata;
-      idStructure?: string;
-    }
-  | {
-      data: DatumData;
-      meta?: DatumMetadata;
-      idStructure: string;
-    };
+type assembleIdType = {
+  payload: EitherPayload;
+  idStructure?: string;
+};
 export const assembleId = function ({
-  data,
-  meta,
+  payload,
   idStructure,
-}: dataWithMetaOrId): string {
+}: assembleIdType): string {
+  let data: DatumData;
+  let meta: DatumMetadata | undefined;
+  if (isDatumPayload(payload)) {
+    data = payload.data;
+    meta = payload.meta;
+  } else {
+    data = payload as DatumData;
+  }
+
   if (meta === undefined && data["_id"] !== undefined) {
     // in no metadata mode, a manually specified _id takes precedence
     return data["_id"];
@@ -94,8 +100,15 @@ export const assembleId = function ({
   if (meta?.idStructure && idStructure && meta.idStructure !== idStructure) {
     throw new IdError("idStructure in meta and argument do not match");
   }
-  // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-  const structure = idStructure ?? meta!.idStructure!;
+
+  const structure = idStructure ?? meta?.idStructure;
+
+  if (structure === undefined) {
+    if (payload._id !== undefined) {
+      return payload._id;
+    }
+    throw new IdError("Cannot determine the id");
+  }
 
   const rawEvenFieldOdd = splitRawAndFields(structure);
 

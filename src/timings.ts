@@ -6,9 +6,7 @@ export type isoDatetime = string;
 export type isoDate = string;
 
 export type TimingData = {
-  occurTime?: isoDatetime | isoDate;
-  createTime: isoDatetime;
-  modifyTime: isoDatetime;
+  timeStr: isoDatetime | isoDate;
   utcOffset: number;
 };
 
@@ -18,7 +16,6 @@ export type ProcessTimeArgsType = {
   yesterday?: number;
   quick?: number;
   fullDay?: boolean;
-  noTimestamp?: boolean;
   referenceTime?: DateTime;
   timezone?: string;
 };
@@ -28,7 +25,6 @@ export const processTimeArgs = function ({
   yesterday,
   quick,
   fullDay,
-  noTimestamp,
   referenceTime,
   timezone,
 }: ProcessTimeArgsType): TimingData {
@@ -44,16 +40,6 @@ export const processTimeArgs = function ({
 
   const now = DateTime.local() as DateTime;
   referenceTime = referenceTime ?? now;
-
-  const baseMetadata = {
-    createTime: now.toUTC().toString(),
-    modifyTime: now.toUTC().toString(),
-    utcOffset: referenceTime.offset / 60,
-  };
-
-  if (noTimestamp) {
-    return baseMetadata;
-  }
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
@@ -72,14 +58,13 @@ export const processTimeArgs = function ({
   }
 
   // if only date information is given (or marked fullDay), only record the date
-  const occurTime =
+  const timeStr =
     fullDay || ((date || yesterday) && !time && !quick)
       ? (referenceTime.toISODate() as isoDate)
       : (referenceTime.toUTC().toString() as isoDatetime);
 
   return {
-    ...baseMetadata,
-    occurTime,
+    timeStr,
     utcOffset: referenceTime.offset / 60, // utc offset needs to be recalculated because DST could be different for the specified time, for example.
   };
 };

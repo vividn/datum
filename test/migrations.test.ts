@@ -158,7 +158,6 @@ describe("runMigration", () => {
     await runMigration({ db: db, migrationName: "A2B" });
     const viewAfter = await db.view("migrate", "A2B");
     const newDoc = await db.get("docA");
-    console.log(newDoc);
     expect(newDoc).toMatchObject(docAA2B);
     expect(newDoc.a).toBeUndefined();
     expect(viewAfter.total_rows).toBe(0);

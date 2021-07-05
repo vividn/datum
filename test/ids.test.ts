@@ -1,5 +1,9 @@
 import { describe, expect, it } from "@jest/globals";
-import { DatumData, DatumMetadata } from "../src/documentControl/DatumDocument";
+import {
+  DatumData,
+  DatumMetadata,
+  EitherPayload,
+} from "../src/documentControl/DatumDocument";
 
 import {
   assembleId,
@@ -8,6 +12,7 @@ import {
   defaultIdComponents,
   destructureIdKeys,
 } from "../src/ids";
+import { IdError } from "../src/errors";
 
 const exampleData: DatumData = {
   foo: "abc",
@@ -44,6 +49,9 @@ const expectStructureAndId = (
     data: testData,
     hasOccurTime,
   });
+  const payload: EitherPayload = testMeta
+    ? { data: testData, meta: testMeta }
+    : { ...testData };
 
   const buildIdStructureProps: buildIdStructureType = {
     idParts: props.idParts ?? defaultIdParts,
@@ -54,8 +62,7 @@ const expectStructureAndId = (
   expect(idStructure).toStrictEqual(expectedStructure);
 
   const id = assembleId({
-    data: testData,
-    meta: testMeta || undefined,
+    payload,
     idStructure: idStructure,
   });
   expect(id).toStrictEqual(expectedIdOnTestData);
@@ -435,4 +442,34 @@ describe("defaultIdComponents", () => {
       })
     ).toMatchObject({ defaultPartitionParts: undefined });
   });
+});
+
+describe("assembleId", () => {
+  it("uses the _id in the payload if no idStructure is provided or found in metadata", () => {
+    expect(assembleId({ payload: { _id: "dataOnlyId", foo: "bar" } })).toEqual(
+      "dataOnlyId"
+    );
+    expect(
+      assembleId({
+        payload: {
+          _id: "datumId",
+          data: { foo: "bar" },
+          meta: { humanId: "does-not-have-id-Structure" },
+        },
+      })
+    );
+  });
+  it("throws error if no idStructure provided or found, and no _id is in payload", () => {
+    expect(() =>
+      assembleId({
+        payload: {
+          data: { abc: "123" },
+          meta: { occurTime: "2020-11-09T00:40:12.544Z" },
+        },
+      })
+    ).toThrowError(IdError);
+    expect(() => assembleId({ payload: { abc: "123" } })).toThrowError(IdError);
+  });
+
+  it.todo("doesn't allow recursive %?idStructure% as a part of the id");
 });
