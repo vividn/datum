@@ -24,6 +24,7 @@ import overwriteDoc, {
   NoDocToOverwriteError,
   OverwriteDocError,
 } from "../src/documentControl/overwriteDoc";
+import jClone from "../src/utils/jClone";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -159,7 +160,28 @@ describe("addDoc", () => {
     expect(newDoc).toMatchObject(testDatumPayload);
     expect(newDoc._rev).not.toEqual(rev);
   });
-  it.todo("does not alter the payload");
+
+  it("does not alter the payload", async () => {
+    const payload1 = {
+      _id: "abcd",
+      _rev: "1-974bb250edb4c7da3b2f6459b2411873",
+      data: {
+        foo: "bar",
+        abc: 123,
+      },
+      meta: {
+        occurTime: "2021-06-20T14:00:00Z",
+        utcOffset: 2,
+      }
+    };
+    const payload2 = jClone(payload1);
+    expect(payload1).toEqual(payload2);
+
+    await addDoc({db, payload: payload1});
+
+    expect(payload1).toEqual(payload2);
+  });
+
   it.todo(
     "calls another document control method if id already exists and conflict strategy is given"
   );
