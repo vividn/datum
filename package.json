@@ -11,7 +11,7 @@
   },
   "scripts": {
     "test": "jest",
-    "testwatch": "jest --watch",
+    "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json",
     "typewatch": "tsc -p tsconfig.withTests.json -w",
     "build": "tsc -p .",
