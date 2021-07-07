@@ -603,3 +603,90 @@ describe("overwriteDoc", () => {
     expect(payload1).toEqual(payload2);
   });
 });
+
+describe("updateDoc", () => {
+  test.todo("updates modifyTime if oldDoc has metadata");
+
+  test.todo("does not add metadata if oldDoc does not have metadata");
+
+  test.todo("keeps all the metadata in oldDoc (except modifyTime), and does not add anything from the payload");
+  
+  test.todo("each combination of dataOnly and datum for oldDoc and payload call the appropriate combine function on just the data component");
+
+  test.todo("if the new document has a different calculated or explicit id, then the doc is moved there");
+
+  test.todo("it does not modify the input payload");
+});
+
+describe("combine functions", () => {
+  const aData = {
+    justA: "aaa",
+    bothSame: "same",
+    different: "Aa",
+  };
+  const bData = {
+    justB: "bbb",
+    bothSame: "same",
+    different: "bB",
+    
+  };
+  test.todo("useOld only returns oldData", () => {
+    const ret = useOld(aData, bData);
+    expect(ret).toEqual(aData);
+  });
+  
+  test.todo("useNew only returns newData", () => {
+    const ret = useNew(aData, bData);
+    expect(ret).toEqual(bData);
+  });
+  
+  test.todo("preferOld keeps non conflicting keys in new, but prefers the old values", () => {
+    const ret = preferOld(aData, bData);
+    expect(ret).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: "Aa",
+    });
+  });
+  
+  test.todo("preferNew keeps non-conflicting keys in old, but perfers the new values", () => {
+    const ret = preferNew(aData, bData);
+    expect(ret).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: "bB"
+    });
+  });
+
+  test.todo("intersection only keeps keys that are in both and agree", () => {
+    const ret = intersection(aData, bData);
+    expect(ret).toEqual({
+      bothSame: "same"
+    });
+  });
+  
+  test.todo("removeConflicting only keeps non-conflicting keys from both", () => {
+    const ret = removeConflicting(aData, bData);
+    expect(ret).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same"
+    });
+  });
+
+  test.todo("xor keeps keys that appear in one or the other but not in both", () => {
+    const ret = xor(aData, bData);
+    expect(ret).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+    });
+  });
+  
+  test.todo("all update functions do not mutate or return original data");
+  
+  describe ("merge", () => {
+    test.todo("fields that appear in one but not in the other appear with their value in the output");
+  });
+});
