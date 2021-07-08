@@ -605,9 +605,14 @@ describe("overwriteDoc", () => {
 });
 
 describe("updateDoc", () => {
+  test.todo("it returns the updated document in the db")
   test.todo("updates modifyTime if oldDoc has metadata");
 
-  test.todo("does not add metadata if oldDoc does not have metadata");
+  test.todo("does not add metadata if oldDoc does not have metadata", () => {
+    await db.insert({_id: "docWithoutMeta", key: "data"});
+    const newDoc = await updateDoc({db, id: "docWithoutMeta", payload: testDatumPayload});
+    expect(newDoc).not.toHaveProperty("meta");
+  });
 
   test.todo("keeps all the metadata in oldDoc (except modifyTime), and does not add anything from the payload");
   
