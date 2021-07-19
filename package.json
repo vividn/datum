@@ -35,7 +35,7 @@
     "@types/pluralize": "^0.0.29",
     "@types/relaxed-json": "^1.0.0",
     "@types/tmp": "^0.2.0",
-    "@types/yargs": "^15.0.9",
+    "@types/yargs": "^17.0.2",
     "@typescript-eslint/eslint-plugin": "^3.10.1",
     "@typescript-eslint/parser": "^3.10.1",
     "babel-jest": "^26.3.0",
@@ -64,6 +64,6 @@
     "relaxed-json": "^1.0.3",
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.2",
-    "yargs": "^15.4.1"
+    "yargs": "^17.0.1"
   }
 }
