@@ -7,6 +7,7 @@ export type BaseDatumArgs = {
   password?: string;
   env?: string;
   showAll?: boolean;
+  _: string[];
 }
 
 export const configuredYargs = yargs
@@ -41,6 +42,7 @@ export const configuredYargs = yargs
       alias: "A",
     },
   })
+  .commandDir("commands")
   .command("hello [dataa..]", "hello world message")
   .help("h")
   .alias("h", "help")
