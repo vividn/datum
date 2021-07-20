@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { configuredYargs, DatumYargsType } from "./input";
+import { BaseDatumArgs, configuredYargs } from "./input";
 import chalk from "chalk";
 import { BaseDataError } from "./errors";
 import dotenv from "dotenv";
@@ -20,8 +20,9 @@ import newHumanId from "./meta/newHumanId";
 import { defaults } from "./input/defaults";
 import { showCreate, showExists } from "./output";
 import addDoc from "./documentControl/addDoc";
+import { AddCmdArgs } from "./commands/addCmd";
 
-export async function main(args: DatumYargsType): Promise<EitherDocument> {
+export async function main(args: AddCmdArgs): Promise<EitherDocument> {
   // TODO: Get a timestamp as soon as possible
 
   if (args.env !== undefined) {
@@ -40,7 +41,7 @@ export async function main(args: DatumYargsType): Promise<EitherDocument> {
   );
 
   const {
-    _: posArgs = [],
+    data: argData = [],
     field,
     comment,
     required,
@@ -56,7 +57,7 @@ export async function main(args: DatumYargsType): Promise<EitherDocument> {
   }
 
   const payloadData = parseData({
-    posArgs,
+    argData,
     field,
     comment,
     required,
@@ -189,8 +190,10 @@ export async function main(args: DatumYargsType): Promise<EitherDocument> {
 
 if (require.main === module) {
   // Load command line arguments
-  const args = configuredYargs.parse(process.argv.slice(2)) as DatumYargsType;
-  main(args).catch((err) => {
-    console.error(err);
-  });
+  const args = configuredYargs.parse(process.argv.slice(2)) as BaseDatumArgs;
+  console.log(args);
+  process.exit(0);
+  // main(args).catch((err) => {
+  //   console.error(err);
+  // });
 }

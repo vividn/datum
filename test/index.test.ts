@@ -114,7 +114,7 @@ describe("main", () => {
 
   it("inserts id structure into the metadata", async () => {
     expect(
-      await main({ idPart: ["rawString", "%foo%!!"], _: ["foo=abc"] })
+      await main({ idPart: ["rawString", "%foo%!!"], data: ["foo=abc"] })
     ).toMatchObject({
       meta: { idStructure: "rawString__%foo%!!" },
     });
@@ -160,13 +160,13 @@ describe("main", () => {
         noMetadata: true,
         baseData: "{ _id: payload-id-2 }",
         idPart: "%keyId%",
-        _: ["keyId=key-id"],
+        data: ["keyId=key-id"],
       })
     ).toMatchObject({ _id: "payload-id-2" });
     expect(
       await main({
         noMetadata: true,
-        _: ["_id=posArgs-id"],
+        data: ["_id=posArgs-id"],
         idPart: "idPart-id",
       })
     ).toMatchObject({ _id: "posArgs-id" });

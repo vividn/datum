@@ -6,7 +6,7 @@ import { createOrAppend } from "./utils/createOrAppend";
 import { DatumData } from "./documentControl/DatumDocument";
 
 export type parseDataType = {
-  posArgs: (string | number)[];
+  argData: (string | number)[];
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
@@ -17,7 +17,7 @@ export type parseDataType = {
   baseData?: GenericObject;
 };
 export const parseData = function ({
-  posArgs,
+  argData,
   required = [],
   optional = [],
   remainder,
@@ -34,7 +34,7 @@ export const parseData = function ({
 
   const data: DatumData = baseData;
 
-  posArgsLoop: for (const arg of posArgs) {
+  posArgsLoop: for (const arg of argData) {
     const [first, rest] = splitFirst("=", String(arg));
 
     if (rest !== undefined) {
