@@ -198,9 +198,7 @@ export function builder(yargs: Argv): Argv {
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   // TODO: Get a timestamp as soon as possible
-
   const db = await connectDb(args);
-
   const {
     data: argData = [],
     field,

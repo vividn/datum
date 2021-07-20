@@ -23,10 +23,13 @@ export const connectDb = async (
   );
 
   const { db: dbName = "datum" } = args;
-  // Create database if it doesn't exist
-  // TODO: Remove this
-  await nano.db.create(dbName).catch(pass);
 
-  const db: DocumentScope<EitherPayload> = await nano.use(dbName);
+  if (args.autoCreateDb) {
+    // Create database if it doesn't exist
+    // TODO: Remove this
+    await nano.db.create(dbName).catch(pass);
+  }
+
+  const db: DocumentScope<EitherPayload> = nano.use(dbName);
   return db;
 };

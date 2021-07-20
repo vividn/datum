@@ -33,10 +33,8 @@ if (require.main === module) {
       console.log(doc);
     }).catch((err) => {
       console.error(err);
-      process.exit(1);
     });
   } else {
     console.log(args);
   }
-  process.exit(0);
 }
