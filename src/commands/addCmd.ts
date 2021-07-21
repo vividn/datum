@@ -298,7 +298,7 @@ export async function handler(args: AddCmdArgs): Promise<EitherDocument> {
       // if the id involves a time, then there could be some slight difference in the id
       if (
         e.reason === "missing" &&
-        idStructure.match(/%?(create|modify|occur)Time%/)
+        idStructure.match(/%\?(create|modify|occur)Time%/)
       ) {
         // just get the next lowest id
         doc = (
