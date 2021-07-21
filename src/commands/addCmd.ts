@@ -7,7 +7,7 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
-import { connectDb } from "../auth";
+import connectDb from "../auth/connectDb";
 import inferType from "../utils/inferType";
 import { BaseDataError } from "../errors";
 import { parseData } from "../parseData";
@@ -198,7 +198,7 @@ export function builder(yargs: Argv): Argv {
 
 export async function handler(args: AddCmdArgs): Promise<EitherDocument> {
   // TODO: Get a timestamp as soon as possible
-  const db = await connectDb(args);
+  const db = connectDb(args);
   const {
     data: argData = [],
     field,

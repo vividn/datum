@@ -1,12 +1,12 @@
-import pass from "./utils/pass";
+import pass from "../utils/pass";
 import Nano, { DocumentScope } from "nano";
-import { EitherPayload } from "./documentControl/DatumDocument";
+import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
-import { BaseDatumArgs } from "./input";
+import { BaseDatumArgs } from "../input";
 
-export const connectDb = async (
+const connectDb = (
   args: BaseDatumArgs
-): Promise<DocumentScope<EitherPayload>> => {
+): DocumentScope<EitherPayload> => {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
   }
@@ -24,12 +24,8 @@ export const connectDb = async (
 
   const { db: dbName = "datum" } = args;
 
-  if (args.autoCreateDb) {
-    // Create database if it doesn't exist
-    // TODO: Remove this
-    await nano.db.create(dbName).catch(pass);
-  }
-
   const db: DocumentScope<EitherPayload> = nano.use(dbName);
   return db;
 };
+
+export default connectDb;

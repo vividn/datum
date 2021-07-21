@@ -9,27 +9,30 @@ import {
 } from "@jest/globals";
 import { pass, testNano } from "./test-utils";
 import { BaseDataError } from "../src/errors";
-import { DatumDocument } from "../src/documentControl/DatumDocument";
+import { DatumDocument, EitherPayload } from "../src/documentControl/DatumDocument";
 import addCmd from "../src/commands/addCmd";
+import * as connectDb from "../src/auth/connectDb";
+import { DocumentScope } from "nano";
 
-const nano = testNano;
 const originalLog = console.log;
 
 describe("addCmd", () => {
   const mockedLog = jest.fn();
-  const db = nano.use("datum");
+  const dbName = "add_cmd_test";
+  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
+  jest.spyOn(connectDb, "default").mockImplementation(() => db);
 
   beforeAll(async () => {
-    await nano.db.destroy("datum").catch(pass);
+    await testNano.db.destroy(dbName).catch(pass);
   });
 
   beforeEach(async () => {
-    await nano.db.create("datum").catch(pass);
+    await testNano.db.create(dbName).catch(pass);
     console.log = mockedLog;
   });
 
   afterEach(async () => {
-    await nano.db.destroy("datum").catch(pass);
+    await testNano.db.destroy(dbName).catch(pass);
     console.log = originalLog;
     mockedLog.mockReset();
   });
@@ -37,18 +40,8 @@ describe("addCmd", () => {
   it("inserts documents into couchdb", async () => {
     await addCmd({});
 
-    const db = nano.use("datum");
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
-    });
-  });
-
-  it("creates the database if it doesn't exist", async () => {
-    await nano.db.destroy("datum").catch(pass);
-
-    await addCmd({});
-    nano.db.list().then((body) => {
-      expect(body.includes("datum"));
     });
   });
 
@@ -56,7 +49,6 @@ describe("addCmd", () => {
     await addCmd({ idPart: "this_one_should_be_deleted" });
     await addCmd({ idPart: "kept" });
 
-    const db = nano.use("datum");
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(2);
     });

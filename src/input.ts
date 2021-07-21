@@ -8,7 +8,6 @@ export type BaseDatumArgs = {
   env?: string;
   showAll?: boolean;
   _?: string[];
-  autoCreateDb?: boolean;
 };
 
 export const configuredYargs = yargs
@@ -41,12 +40,7 @@ export const configuredYargs = yargs
       describe: "Show complete document when displaying, not just data",
       type: "boolean",
       alias: "A",
-    },
-    "auto-create-db": {
-      describe: "Create db if it does not exist",
-      type: "boolean",
-      hidden: true,
-    },
+    }
   })
   .commandDir("commands")
   .command("hello [dataa..]", "hello world message")
