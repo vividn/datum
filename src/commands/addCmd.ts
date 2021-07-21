@@ -5,7 +5,7 @@ import {
   DatumMetadata,
   DatumPayload,
   EitherDocument,
-  EitherPayload
+  EitherPayload,
 } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth";
 import inferType from "../utils/inferType";
@@ -196,7 +196,7 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
+export async function handler(args: AddCmdArgs): Promise<EitherDocument> {
   // TODO: Get a timestamp as soon as possible
   const db = await connectDb(args);
   const {
@@ -340,5 +340,4 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   return doc;
 }
 
-// TODO: Possibly change addCmd to handler to get args to automatically run this
-export default addCmd;
+export default handler;
