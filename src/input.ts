@@ -40,7 +40,7 @@ export const configuredYargs = yargs
       describe: "Show complete document when displaying, not just data",
       type: "boolean",
       alias: "A",
-    }
+    },
   })
   .commandDir("commands")
   .command("hello [dataa..]", "hello world message")

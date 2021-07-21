@@ -9,7 +9,10 @@ import {
 } from "@jest/globals";
 import { pass, testNano } from "./test-utils";
 import { BaseDataError } from "../src/errors";
-import { DatumDocument, EitherPayload } from "../src/documentControl/DatumDocument";
+import {
+  DatumDocument,
+  EitherPayload,
+} from "../src/documentControl/DatumDocument";
 import addCmd from "../src/commands/addCmd";
 import * as connectDb from "../src/auth/connectDb";
 import { DocumentScope } from "nano";

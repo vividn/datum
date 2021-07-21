@@ -1,12 +1,9 @@
-import pass from "../utils/pass";
 import Nano, { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
 import { BaseDatumArgs } from "../input";
 
-const connectDb = (
-  args: BaseDatumArgs
-): DocumentScope<EitherPayload> => {
+const connectDb = (args: BaseDatumArgs): DocumentScope<EitherPayload> => {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
   }
