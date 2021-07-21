@@ -23,7 +23,7 @@ export const command = "add [data..]";
 export const desc = "add a document";
 
 export type AddCmdArgs = BaseDatumArgs & {
-  data: (string | number)[];
+  data?: (string | number)[];
   baseData?: string;
   date?: string;
   yesterday?: number;

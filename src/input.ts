@@ -7,7 +7,7 @@ export type BaseDatumArgs = {
   password?: string;
   env?: string;
   showAll?: boolean;
-  _: string[];
+  _?: string[];
   autoCreateDb?: boolean;
 };
 
