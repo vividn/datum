@@ -128,3 +128,4 @@ export const parseData = function ({
 
   return data;
 };
+// TODO: Keys that end in -Time or -Date should be parsed as such

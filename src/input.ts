@@ -53,3 +53,4 @@ export const configuredYargs = yargs
   .help("h")
   .alias("h", "help")
   .strict();
+// TODO: Middleware to enforce proper non array types
