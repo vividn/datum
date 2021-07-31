@@ -18,7 +18,7 @@ import {
   EitherPayload,
 } from "../src/documentControl/DatumDocument";
 import timezone_mock from "timezone-mock";
-import { DateTime, Settings } from "luxon";
+import { DateTime, Settings, Duration } from "luxon";
 import { IdError } from "../src/errors";
 import overwriteDoc, {
   NoDocToOverwriteError,
@@ -42,6 +42,8 @@ const testDatumPayload: DatumPayload = {
 
 const testDatumPayloadId = "bar__rawString";
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
+const now = mockNow.toString();
+const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
@@ -386,8 +388,6 @@ describe("overwriteDoc", () => {
   });
 
   it("updates modifyTime to now for DatumPayloads", async () => {
-    const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
-    const now = mockNow.toString();
     const payloadWithoutModified = {
       data: { foo: "bar" },
       meta: { occurTime: notNow },
@@ -605,8 +605,38 @@ describe("overwriteDoc", () => {
 });
 
 describe("updateDoc", () => {
-  test.todo("it returns the updated document in the db")
-  test.todo("updates modifyTime if oldDoc has metadata");
+  const dbName = "update_doc_test";
+  const db = testNano.db.use<EitherPayload>(dbName);
+
+  beforeAll(async () => {
+    await testNano.db.destroy(dbName).catch(pass);
+  });
+
+  beforeEach(async () => {
+    await testNano.db.create(dbName).catch(pass);
+  });
+
+  afterEach(async () => {
+    await testNano.db.destroy(dbName).catch(pass);
+  });
+
+  test.todo("it returns the updated document in the db");
+
+  test.todo("updates modifyTime if oldDoc has metadata", async () => {
+    timezone_mock.register("UTC");
+    Settings.now = () => mockNow.toMillis();
+
+    const docWithModify = {_id: "doc-to-update", data: {abc: "def"}, meta: {modifyTime: notNow}};
+    await db.insert(docWithModify);
+
+    const newDoc = await updateDoc("doc-to-update", {newKey: "newData"});
+
+    expect(newDoc).toHaveProperty("meta.modifyTime", now);
+    
+    timezone_mock.unregister();
+    Settings.resetCaches();
+  });
+
 
   test.todo("does not add metadata if oldDoc does not have metadata", () => {
     await db.insert({_id: "docWithoutMeta", key: "data"});
