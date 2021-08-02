@@ -620,25 +620,43 @@ describe("updateDoc", () => {
     await testNano.db.destroy(dbName).catch(pass);
   });
 
-  test.todo("it returns the updated document in the db");
+  test("it returns the updated document in the db", async () => {
+    const oldDoc1 = {_id: "docId1", data: {abc: "123"}, meta: {}};
+    const returnedDoc1 = await updateDoc({ db, id: "docId1",
+    payload: {
+      newKey: "newData"
+    }
+  });
+    const dbDoc1 = await db.get("docId1");
+    expect(returnedDoc1).toEqual(dbDoc1);
 
-  test.todo("updates modifyTime if oldDoc has metadata", async () => {
+    const oldDoc2 = {_id: "docId2", def: "456"};
+    const returnedDoc2 = await updateDoc("docId2", {newKey: "newData"});
+    const dbDoc2 = await db.get("docId2");
+    expect(returnedDoc2).toEqual(dbDoc2);
+  });
+
+  test("updates modifyTime if oldDoc has metadata", async () => {
     timezone_mock.register("UTC");
     Settings.now = () => mockNow.toMillis();
 
     const docWithModify = {_id: "doc-to-update", data: {abc: "def"}, meta: {modifyTime: notNow}};
     await db.insert(docWithModify);
 
-    const newDoc = await updateDoc("doc-to-update", {newKey: "newData"});
+    const newDoc = await updateDoc({db, id: "doc-to-update", payload:
+    {
+      newKey: "newData"
+    }
+  });
 
     expect(newDoc).toHaveProperty("meta.modifyTime", now);
-    
+
     timezone_mock.unregister();
     Settings.resetCaches();
   });
 
 
-  test.todo("does not add metadata if oldDoc does not have metadata", () => {
+  test("does not add metadata if oldDoc does not have metadata", () => {
     await db.insert({_id: "docWithoutMeta", key: "data"});
     const newDoc = await updateDoc({db, id: "docWithoutMeta", payload: testDatumPayload});
     expect(newDoc).not.toHaveProperty("meta");
@@ -648,7 +666,12 @@ describe("updateDoc", () => {
   
   test.todo("each combination of dataOnly and datum for oldDoc and payload call the appropriate combine function on just the data component");
 
-  test.todo("if the new document has a different calculated or explicit id, then the doc is moved there");
+  test("if the new document has a different calculated or explicit id, then the doc is moved there", async () => {
+    await db.insert({_id: "old-id", foo: "bar"});
+    const newDoc = await updateDoc({db, id: "old-id", payload: {_id: "new-id", other: "data"}, updateStrategy: "preferNew"});
+    await expect(db.get("old-id")).rejects.toThrow("deleted");
+    expect(newDoc).toMatchObject({_id: "new-id", foo: "bar", other: "data"});
+  });
 
   test.todo("it does not modify the input payload");
 });
