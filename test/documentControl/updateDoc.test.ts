@@ -60,7 +60,7 @@ describe("updateDoc", () => {
   });
 
   test("it returns the updated document in the db", async () => {
-    const oldDoc1 = { _id: "docId1", data: { abc: "123" }, meta: {} };
+    await db.insert({ _id: "docId1", data: { abc: "123" }, meta: {} });
     const returnedDoc1 = await updateDoc({
       db,
       id: "docId1",
@@ -71,7 +71,7 @@ describe("updateDoc", () => {
     const dbDoc1 = await db.get("docId1");
     expect(returnedDoc1).toEqual(dbDoc1);
 
-    const oldDoc2 = { _id: "docId2", def: "456" };
+    await db.insert({ _id: "docId2", def: "456" });
     const returnedDoc2 = await updateDoc({
       db,
       id: "docId2",
@@ -138,15 +138,13 @@ describe("updateDoc", () => {
     })) as DatumDocument;
 
     const oldDocMeta = { ...oldDoc.meta };
-    const oldModifyTime = oldDocMeta.modifyTime;
     delete oldDocMeta.modifyTime;
     expect(newDoc.meta).toMatchObject(oldDocMeta);
-    expect(newDoc.meta).not.toHaveProperty("modifyTime", oldModifyTime);
 
     await expect(db.get("newData")).rejects.toThrow("missing");
   });
 
-  test("different combination of dataOnly and datum for oldDoc and payload call the combineData function with appropriate arguments data component", async () => {
+  test.only("different combination of dataOnly and datum for oldDoc and payload call the combineData function with appropriate arguments data component", async () => {
     const data1 = { abc: 123 };
     const data2 = { def: 456 };
     const data3 = { two: "fields", andTwo: "data" };
@@ -362,4 +360,6 @@ describe("updateDoc", () => {
       anotherMutual: ["fromOld", null],
     });
   });
+
+  test.todo("how does it handle _ids for dataonly docs?");
 });
