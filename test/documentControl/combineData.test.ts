@@ -1,5 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import { combineData, conflictStrategies } from "../../src/documentControl/updateDoc";
+import jClone from "../../src/utils/jClone";
 
 describe("combineData", () => {
   const aData = {
@@ -72,18 +73,18 @@ describe("combineData", () => {
     }
   }
 
-  test.todo("useOld only returns oldData", () => {
-    const ret = useOld(aData, bData);
+  test("useOld only returns oldData", () => {
+    const ret = combineData(aData, bData, "useOld");
     expect(ret).toEqual(aData);
   });
 
-  test.todo("useNew only returns newData", () => {
-    const ret = useNew(aData, bData);
+  test("useNew only returns newData", () => {
+    const ret = combineData(aData, bData, "useNew");
     expect(ret).toEqual(bData);
   });
 
-  test.todo("preferOld keeps non conflicting keys in new, but prefers the old values", () => {
-    const ret = preferOld(aData, bData);
+  test("preferOld keeps non conflicting keys in new, but prefers the old values", () => {
+    const ret = combineData(aData, bData, "preferOld");
     expect(ret).toEqual({
       justA: "aaa",
       justB: "bbb",
@@ -92,8 +93,8 @@ describe("combineData", () => {
     });
   });
 
-  test.todo("preferNew keeps non-conflicting keys in old, but perfers the new values", () => {
-    const ret = preferNew(aData, bData);
+  test("preferNew keeps non-conflicting keys in old, but perfers the new values", () => {
+    const ret = combineData(aData, bData, "preferNew");
     expect(ret).toEqual({
       justA: "aaa",
       justB: "bbb",
@@ -102,15 +103,15 @@ describe("combineData", () => {
     });
   });
 
-  test.todo("intersection only keeps keys that are in both and agree", () => {
-    const ret = intersection(aData, bData);
+  test("intersection only keeps keys that are in both and agree", () => {
+    const ret = combineData(aData, bData, "intersection");
     expect(ret).toEqual({
       bothSame: "same"
     });
   });
 
-  test.todo("removeConflicting only keeps non-conflicting keys from both", () => {
-    const ret = removeConflicting(aData, bData);
+  test("removeConflicting only keeps non-conflicting keys from both", () => {
+    const ret = combineData(aData, bData, "removeConflicting");
     expect(ret).toEqual({
       justA: "aaa",
       justB: "bbb",
@@ -118,15 +119,27 @@ describe("combineData", () => {
     });
   });
 
-  test.todo("xor keeps keys that appear in one or the other but not in both", () => {
-    const ret = xor(aData, bData);
+  test("xor keeps keys that appear in one or the other but not in both", () => {
+    const ret = combineData(aData, bData, "xor");
     expect(ret).toEqual({
       justA: "aaa",
       justB: "bbb",
     });
   });
 
-  test.todo("all update functions do not mutate or return original data");
+  test("does not mutate or return original data", () => {
+    const aClone = jClone(aData);
+    const bClone = jClone(bData);
+    const ret = combineData(aData, bData, "useOld");
+    expect(aData).toEqual(aClone);
+    expect(bData).toEqual(bClone);
+    ret["newField"] = "newData";
+    expect(aData).not.toHaveProperty("newField");
+
+    combineData(aData, bData, "merge");
+    expect(aData).toEqual(aClone);
+    expect(bData).toEqual(bClone);
+  });
 
 
   describe ("merge", () => {
