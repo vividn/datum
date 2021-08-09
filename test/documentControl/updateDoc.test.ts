@@ -1,4 +1,5 @@
 import {
+  DatumDocument,
   DatumPayload,
   EitherPayload,
 } from "../../src/documentControl/DatumDocument";
@@ -18,6 +19,7 @@ import {
   conflictStrategies,
 } from "../../src/documentControl/combineData";
 import updateDoc from "../../src/documentControl/updateDoc";
+import addDoc from "../../src/documentControl/addDoc";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -67,7 +69,11 @@ describe("updateDoc", () => {
     expect(returnedDoc1).toEqual(dbDoc1);
 
     const oldDoc2 = { _id: "docId2", def: "456" };
-    const returnedDoc2 = await updateDoc("docId2", { newKey: "newData" });
+    const returnedDoc2 = await updateDoc({
+      db,
+      id: "docId2",
+      payload: { newKey: "newData" },
+    });
     const dbDoc2 = await db.get("docId2");
     expect(returnedDoc2).toEqual(dbDoc2);
   });
@@ -107,8 +113,30 @@ describe("updateDoc", () => {
     expect(newDoc).not.toHaveProperty("meta");
   });
 
-  test.todo(
-    "keeps all the metadata in oldDoc (except modifyTime), and does not add anything from the payload"
+  test(
+    "keeps all the metadata in oldDoc (except modifyTime), and does not add anything from the payload",
+    async () => {
+      const oldDoc = await addDoc({ db, payload: testDatumPayload }) as DatumDocument;
+      const newPayload = {
+        data: { newKey: "newData" },
+        meta: {
+          occurTime: "2021-08-09T14:13:00Z",
+          utcOffset: 1,
+          idStructure: "%newKey%",
+          random: 0.666,
+          humanId: "noneOfThisShouldBeIncluded",
+        },
+      } as DatumPayload;
+      const newDoc = await updateDoc({db, id: testDatumPayloadId, payload: newPayload}) as DatumDocument;
+
+      const oldDocMeta = {...oldDoc.meta};
+      const oldModifyTime = oldDocMeta.modifyTime;
+      delete oldDocMeta.modifyTime;
+      expect(newDoc.meta).toMatchObject(oldDocMeta);
+      expect(newDoc.meta).not.toHaveProperty("modifyTime", oldModifyTime);
+
+      await expect(db.get("newData")).rejects.toThrow("missing");
+    }
   );
 
   test.todo(
@@ -129,12 +157,16 @@ describe("updateDoc", () => {
   });
 
   test("if the new document has a different calculated id, then the doc is moved there", async () => {
-    await db.insert({ _id: "calculated-id", data: {foo: "calculated-id"}, meta: {idStructure: "%foo%"}});
+    await db.insert({
+      _id: "calculated-id",
+      data: { foo: "calculated-id" },
+      meta: { idStructure: "%foo%" },
+    });
     const newDoc = await updateDoc({
       db,
       id: "calculated-id",
-      payload: {foo: "new-calculated-id"},
-      updateStrategy: "preferNew"
+      payload: { foo: "new-calculated-id" },
+      updateStrategy: "preferNew",
     });
     await expect(db.get("calculated-id")).rejects.toThrow("deleted");
     expect(newDoc._id).toEqual("new-calculated-id");
@@ -144,5 +176,5 @@ describe("updateDoc", () => {
 
   test.todo("it does not modify the input payload");
 
-  test.todo("it merges the new data into the existing data by default")
+  test.todo("it merges the new data into the existing data by default");
 });
