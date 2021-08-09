@@ -1,6 +1,6 @@
 import {
   DataOnlyDocument,
-  DatumDocument,
+  DatumDocument, DatumMetadata,
   DatumPayload,
   EitherPayload,
 } from "../../src/documentControl/DatumDocument";
@@ -144,12 +144,13 @@ describe("updateDoc", () => {
     await expect(db.get("newData")).rejects.toThrow("missing");
   });
 
-  test.only("different combination of dataOnly and datum for oldDoc and payload call the combineData function with appropriate arguments data component", async () => {
+  test("different combination of dataOnly and datum for oldDoc and payload call the combineData function with appropriate arguments data component", async () => {
     const data1 = { abc: 123 };
     const data2 = { def: 456 };
     const data3 = { two: "fields", andTwo: "data" };
     const data4 = { another: null, set: "ofData" };
-    const metadata = { ...testDatumPayload.meta };
+    const metadata = { ...testDatumPayload.meta } as DatumMetadata;
+    delete metadata.idStructure;
 
     const spy = jest.spyOn(combineData, "default");
 
@@ -337,7 +338,7 @@ describe("updateDoc", () => {
 
   test("it successfully merges new data into the existing data", async () => {
     await db.insert({
-      id: "doc-id",
+      _id: "doc-id",
       oldKey: "oldData",
       mutualKey: ["merge", "basis"],
       anotherMutual: "fromOld",
