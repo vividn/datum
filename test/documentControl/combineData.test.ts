@@ -26,6 +26,7 @@ describe("combineData", () => {
           "A",
           "B",
           "merge",
+          "append",
           false,
         ] as conflictStrategies[]) {
           const testCaseDescription = `(${justAVal},${justBVal},${sameVal},${conflictVal})`;
@@ -74,7 +75,7 @@ describe("combineData", () => {
             test(`conflicting fields use the value in B with ${testCaseDescription}`, () => {
               expect(combined).toHaveProperty("different", "bB");
             });
-          } else if (conflictVal === "merge") {
+          } else if (conflictVal === "merge" || conflictVal === "append") {
             test(`conflicting fields merge into single array with ${testCaseDescription}`, () => {
               expect(combined).toHaveProperty("different", ["Aa", "bB"]);
             });
@@ -108,7 +109,7 @@ describe("combineData", () => {
     });
   });
 
-  test("preferNew keeps non-conflicting keys in old, but perfers the new values", () => {
+  test("preferNew keeps non-conflicting keys in old, but prefers the new values", () => {
     const ret = combineData(aData, bData, "preferNew");
     expect(ret).toEqual({
       justA: "aaa",
@@ -139,6 +140,30 @@ describe("combineData", () => {
     expect(ret).toEqual({
       justA: "aaa",
       justB: "bbb",
+    });
+  });
+
+  test("merge combines conflicting fields into arrays removing duplicates", () => {
+    const aMerge = {...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = {...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    expect(combineData(aMerge, bMerge, "merge")).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: ["Aa", "bB"],
+      someDataDuplicated: ["unique1", "duplicate", "unique2"]
+    });
+  });
+
+  test("append combines conflicting fields into arrays keeping duplicates", () => {
+    const aMerge = {...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = {...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    expect(combineData(aMerge, bMerge, "append")).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: ["Aa", "bB"],
+      someDataDuplicated: ["unique1", "duplicate", "unique2", "duplicate"]
     });
   });
 
