@@ -19,6 +19,7 @@ import timezone_mock from "timezone-mock";
 import updateDoc from "../../src/documentControl/updateDoc";
 import addDoc from "../../src/documentControl/addDoc";
 import * as combineData from "../../src/documentControl/combineData";
+import jClone from "../../src/utils/jClone";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -198,9 +199,17 @@ describe("updateDoc", () => {
     spy.mockRestore();
   });
 
-  test.todo(
-    "if updated dataonly payload does not have id, then it uses the old id"
-  );
+  test("if updated dataonly payload does not have id, then it uses the old id", async () => {
+    await db.insert({ _id: "data-id", dataKey: "abc" });
+    const newDoc = await updateDoc({
+      db,
+      id: "data-id",
+      payload: { newKey: "newData" },
+      updateStrategy: "useNew",
+    });
+    expect(newDoc._id).toEqual("data-id");
+    expect(newDoc).not.toHaveProperty("dataKey");
+  });
 
   test("if the new document has a different explicit id, then the doc is moved there", async () => {
     await db.insert({ _id: "old-id", foo: "bar" });
@@ -233,7 +242,38 @@ describe("updateDoc", () => {
     expect(newDoc).toHaveProperty("data.foo", "new-calculated-id");
   });
 
-  test.todo("it does not modify the input payload");
+  test("it does not modify the input payload", async () => {
+    await db.insert({ _id: "ididid", abc: 123 });
+    const payload = { key1: "data1", key2: "data2" };
+    const payloadClone = jClone(payload);
 
-  test.todo("it merges the new data into the existing data by default");
+    await updateDoc({ db, id: "ididid", payload: payload });
+    expect(payload).toEqual(payloadClone);
+  });
+
+  test("it successfully merges new data into the existing data", async () => {
+    await db.insert({
+      id: "doc-id",
+      oldKey: "oldData",
+      mutualKey: ["merge", "basis"],
+      anotherMutual: "fromOld",
+    });
+    const newDoc = await updateDoc({
+      db,
+      id: "doc-id",
+      payload: {
+        newKey: "newData",
+        mutualKey: ["will", "merge", "without", "duplicates"],
+        anotherMutual: null,
+      },
+      updateStrategy: "merge",
+    });
+    expect(newDoc).toMatchObject({
+      _id: "doc-id",
+      oldKey: "oldData",
+      newKey: "newData",
+      mutualKey: ["merge", "basis", "will", "without", "duplicates"],
+      anotherMutual: ["fromOld", null]
+    });
+  });
 });
