@@ -17,6 +17,7 @@ import {
   combineData,
   conflictStrategies,
 } from "../../src/documentControl/combineData";
+import updateDoc from "../../src/documentControl/updateDoc";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -96,7 +97,7 @@ describe("updateDoc", () => {
     Settings.resetCaches();
   });
 
-  test("does not add metadata if oldDoc does not have metadata", () => {
+  test("does not add metadata if oldDoc does not have metadata", async () => {
     await db.insert({ _id: "docWithoutMeta", key: "data" });
     const newDoc = await updateDoc({
       db,
@@ -114,7 +115,7 @@ describe("updateDoc", () => {
     "each combination of dataOnly and datum for oldDoc and payload call the appropriate combine function on just the data component"
   );
 
-  test("if the new document has a different calculated or explicit id, then the doc is moved there", async () => {
+  test("if the new document has a different explicit id, then the doc is moved there", async () => {
     await db.insert({ _id: "old-id", foo: "bar" });
     const newDoc = await updateDoc({
       db,
@@ -123,8 +124,25 @@ describe("updateDoc", () => {
       updateStrategy: "preferNew",
     });
     await expect(db.get("old-id")).rejects.toThrow("deleted");
+    expect(await db.get("new-id")).toEqual(newDoc);
     expect(newDoc).toMatchObject({ _id: "new-id", foo: "bar", other: "data" });
   });
 
+  test("if the new document has a different calculated id, then the doc is moved there", async () => {
+    await db.insert({ _id: "calculated-id", data: {foo: "calculated-id"}, meta: {idStructure: "%foo%"}});
+    const newDoc = await updateDoc({
+      db,
+      id: "calculated-id",
+      payload: {foo: "new-calculated-id"},
+      updateStrategy: "preferNew"
+    });
+    await expect(db.get("calculated-id")).rejects.toThrow("deleted");
+    expect(newDoc._id).toEqual("new-calculated-id");
+    expect(await db.get("new-calculated-id")).toEqual(newDoc);
+    expect(newDoc).toHaveProperty("data.foo", "new-calculated-id");
+  });
+
   test.todo("it does not modify the input payload");
+
+  test.todo("it merges the new data into the existing data by default")
 });
