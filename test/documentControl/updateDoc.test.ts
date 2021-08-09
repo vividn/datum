@@ -286,6 +286,48 @@ describe("updateDoc", () => {
     expect(newDoc).toHaveProperty("data.foo", "new-calculated-id");
   });
 
+  test("if payload specified a _rev, then it must match the _rev on the old document", async () => {
+    await db.insert({ _id: "abc", foo: "bar" });
+    const oldDoc = await db.get("abc");
+    const wrongRev = "1-38748349796ad6a60a11c0f63d10186a";
+
+    await expect(
+      updateDoc({
+        db,
+        id: "abc",
+        payload: { _id: "abc", _rev: wrongRev, foo2: "bar2" },
+        updateStrategy: "useNew",
+      })
+    ).rejects.toThrowError(UpdateDocError);
+    const stillOldDoc = await db.get("abc");
+    expect(oldDoc).toEqual(stillOldDoc);
+
+    await updateDoc({
+      db,
+      id: "abc",
+      payload: { _id: "abc", _rev: oldDoc._rev, foo3: "bar3" },
+      updateStrategy: "useNew",
+    });
+
+    const newDoc = await db.get("abc");
+    expect(newDoc).toHaveProperty("foo3", "bar3");
+
+    await expect(
+      updateDoc({
+        db,
+        id: "abc",
+        payload: { _rev: wrongRev, ...testDatumPayload },
+        updateStrategy: "useNew",
+      })
+    ).rejects.toThrowError(UpdateDocError);
+    await updateDoc({
+      db,
+      id: "abc",
+      payload: { _rev: newDoc._rev, ...testDatumPayload },
+      updateStrategy: "useNew",
+    });
+  });
+
   test("it does not modify the input payload", async () => {
     await db.insert({ _id: "ididid", abc: 123 });
     const payload = { key1: "data1", key2: "data2" };
