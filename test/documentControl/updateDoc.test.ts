@@ -273,7 +273,7 @@ describe("updateDoc", () => {
       oldKey: "oldData",
       newKey: "newData",
       mutualKey: ["merge", "basis", "will", "without", "duplicates"],
-      anotherMutual: ["fromOld", null]
+      anotherMutual: ["fromOld", null],
     });
   });
 });

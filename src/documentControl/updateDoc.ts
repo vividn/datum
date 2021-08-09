@@ -9,8 +9,11 @@ type updateDocType = {
   updateStrategy?: UpdateStrategyNames;
 };
 
-const updateDoc = async ({db, id, payload, updateStrategy = "merge"}: updateDocType): EitherDocument => {
-
-}
+const updateDoc = async ({
+  db,
+  id,
+  payload,
+  updateStrategy = "merge",
+}: updateDocType): EitherDocument => {};
 
 export default updateDoc;
