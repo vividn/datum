@@ -30,11 +30,15 @@ const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   merge: { justA: true, justB: true, same: true, conflict: "merge" },
 };
 
+export type conflictStrategies = "A" | "B" | "merge" | false;
+
 type CombiningType = {
   justA: boolean;
   justB: boolean;
   same: boolean;
-  conflict: "A" | "B" | "merge" | false;
+  conflict: conflictStrategies;
 };
 
-// const combineData = (aData: GenericObject, bData: GenericObject)
+export const combineData = (aData: GenericObject, bData: GenericObject, how: UpdateStrategyNames | CombiningType): GenericObject => {
+
+}
