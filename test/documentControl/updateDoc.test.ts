@@ -3,7 +3,7 @@ import { DateTime, Settings } from "luxon";
 import { afterEach, beforeAll, beforeEach, describe, expect, test } from "@jest/globals";
 import { pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
-import { combineData, conflictStrategies } from "../../src/documentControl/updateDoc";
+import { combineData, conflictStrategies } from "../../src/documentControl/combineData";
 
 const testDatumPayload: DatumPayload = {
   data: {

@@ -1,9 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
-import {
-  combineData,
-  conflictStrategies,
-} from "../../src/documentControl/updateDoc";
 import jClone from "../../src/utils/jClone";
+import { combineData, conflictStrategies } from "../../src/documentControl/combineData";
 
 describe("combineData", () => {
   const aData = {
@@ -188,5 +185,11 @@ describe("combineData", () => {
 });
 
 describe("mergeValues", () => {
-  test.todo("");
+  test.todo("if a value is undefined it returns the other value");
+  test.todo("combines two singleton strings, numbers, or nulls into an array");
+  test.todo("can append singleton value to array");
+  test.todo("can prepend singleton value to array");
+  test.todo("appends two arrays");
+  test.todo("removes duplicate values from array if doing unique merge");
+  test.todo("throws error if trying to merge an object with a singleton value or array");
 });
