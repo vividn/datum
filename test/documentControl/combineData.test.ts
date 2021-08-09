@@ -159,19 +159,19 @@ describe("combineData", () => {
       outerKey: {
         innerA: "aaa",
         innerSame: "samesame",
-        innerDifferent: "fromA"
+        innerDifferent: "fromA",
       },
       onlyObjForA: {
-        someKey: "someValue"
-      }
+        someKey: "someValue",
+      },
     };
     const deepB = {
       outerKey: {
         innerB: "bbb",
         innerSame: "samesame",
-        innerDifferent: "fromB"
+        innerDifferent: "fromB",
       },
-      onlyObjForA: "bHasAString"
+      onlyObjForA: "bHasAString",
     };
 
     const combined = combineData(deepA, deepB, "preferNew");
@@ -180,15 +180,13 @@ describe("combineData", () => {
         innerA: "aaa",
         innerB: "bbb",
         innerSame: "samesame",
-        innerDifferent: "fromB"
+        innerDifferent: "fromB",
       },
-      onlyObjForA: "bHasAString"
+      onlyObjForA: "bHasAString",
     });
-  })
+  });
 });
 
-describe("merge", () => {
-  test.todo(
-    "fields that appear in one but not in the other appear with their value in the output"
-  );
+describe("mergeValues", () => {
+  test.todo("");
 });
