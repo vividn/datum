@@ -113,31 +113,35 @@ describe("updateDoc", () => {
     expect(newDoc).not.toHaveProperty("meta");
   });
 
-  test(
-    "keeps all the metadata in oldDoc (except modifyTime), and does not add anything from the payload",
-    async () => {
-      const oldDoc = await addDoc({ db, payload: testDatumPayload }) as DatumDocument;
-      const newPayload = {
-        data: { newKey: "newData" },
-        meta: {
-          occurTime: "2021-08-09T14:13:00Z",
-          utcOffset: 1,
-          idStructure: "%newKey%",
-          random: 0.666,
-          humanId: "noneOfThisShouldBeIncluded",
-        },
-      } as DatumPayload;
-      const newDoc = await updateDoc({db, id: testDatumPayloadId, payload: newPayload}) as DatumDocument;
+  test("keeps all the metadata in oldDoc (except modifyTime), and does not add anything from the payload", async () => {
+    const oldDoc = (await addDoc({
+      db,
+      payload: testDatumPayload,
+    })) as DatumDocument;
+    const newPayload = {
+      data: { newKey: "newData" },
+      meta: {
+        occurTime: "2021-08-09T14:13:00Z",
+        utcOffset: 1,
+        idStructure: "%newKey%",
+        random: 0.666,
+        humanId: "noneOfThisShouldBeIncluded",
+      },
+    } as DatumPayload;
+    const newDoc = (await updateDoc({
+      db,
+      id: testDatumPayloadId,
+      payload: newPayload,
+    })) as DatumDocument;
 
-      const oldDocMeta = {...oldDoc.meta};
-      const oldModifyTime = oldDocMeta.modifyTime;
-      delete oldDocMeta.modifyTime;
-      expect(newDoc.meta).toMatchObject(oldDocMeta);
-      expect(newDoc.meta).not.toHaveProperty("modifyTime", oldModifyTime);
+    const oldDocMeta = { ...oldDoc.meta };
+    const oldModifyTime = oldDocMeta.modifyTime;
+    delete oldDocMeta.modifyTime;
+    expect(newDoc.meta).toMatchObject(oldDocMeta);
+    expect(newDoc.meta).not.toHaveProperty("modifyTime", oldModifyTime);
 
-      await expect(db.get("newData")).rejects.toThrow("missing");
-    }
-  );
+    await expect(db.get("newData")).rejects.toThrow("missing");
+  });
 
   test.todo(
     "each combination of dataOnly and datum for oldDoc and payload call the appropriate combine function on just the data component"
