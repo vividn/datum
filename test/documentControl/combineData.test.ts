@@ -1,7 +1,6 @@
 import { describe, expect, test } from "@jest/globals";
 import jClone from "../../src/utils/jClone";
-import {
-  combineData,
+import combineData,{
   conflictStrategies,
   mergeValues,
 } from "../../src/documentControl/combineData";

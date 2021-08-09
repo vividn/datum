@@ -35,7 +35,7 @@ type CombiningType = {
   conflict: conflictStrategies;
 };
 
-export const combineData = (
+const combineData = (
   aData: GenericObject,
   bData: GenericObject,
   how: UpdateStrategyNames | CombiningType
@@ -128,3 +128,5 @@ export const mergeValues = (aVal: any, bVal: any, unique = true): any => {
     return appended;
   }
 };
+
+export default combineData;

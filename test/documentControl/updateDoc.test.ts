@@ -1,4 +1,5 @@
 import {
+  DataOnlyDocument,
   DatumDocument,
   DatumPayload,
   EitherPayload,
@@ -10,16 +11,14 @@ import {
   beforeEach,
   describe,
   expect,
+  jest,
   test,
 } from "@jest/globals";
 import { pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
-import {
-  combineData,
-  conflictStrategies,
-} from "../../src/documentControl/combineData";
 import updateDoc from "../../src/documentControl/updateDoc";
 import addDoc from "../../src/documentControl/addDoc";
+import * as combineData from "../../src/documentControl/combineData";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -143,8 +142,64 @@ describe("updateDoc", () => {
     await expect(db.get("newData")).rejects.toThrow("missing");
   });
 
+  test("different combination of dataOnly and datum for oldDoc and payload call the combineData function with appropriate arguments data component", async () => {
+    const data1 = { abc: 123 };
+    const data2 = { def: 456 };
+    const data3 = { two: "fields", andTwo: "data" };
+    const data4 = { another: null, set: "ofData" };
+    const metadata = { ...testDatumPayload.meta };
+
+    const spy = jest.spyOn(combineData, "default");
+
+    await db.insert({ _id: "data-doc-1", ...data1 });
+    await updateDoc({ db, id: "data-doc-1", payload: data2 });
+    expect(spy).toHaveBeenCalledWith(
+      { _id: "data-doc-1", ...data1 },
+      data2,
+      "merge"
+    );
+    spy.mockClear();
+
+    await db.insert({ _id: "data-doc-2", ...data3 });
+    const datumPayload2 = { data: data4, meta: metadata } as DatumPayload;
+    await updateDoc({
+      db,
+      id: "data-doc-2",
+      payload: datumPayload2,
+      updateStrategy: "removeConflicting",
+    });
+    expect(spy).toHaveBeenCalledWith(
+      { _id: "data-doc-2", ...data3 },
+      data4,
+      "removeConflicting"
+    );
+    spy.mockClear();
+
+    await db.insert({ _id: "datum-doc-3", data: data2, meta: metadata });
+    await updateDoc({
+      db,
+      id: "datum-doc-3",
+      payload: data3,
+      updateStrategy: "intersection",
+    });
+    expect(spy).toHaveBeenCalledWith(data2, data3, "intersection");
+    spy.mockClear();
+
+    await db.insert({ _id: "datum-doc-4", data: data4, meta: metadata });
+    await updateDoc({
+      db,
+      id: "datum-doc-4",
+      payload: { data: data1, meta: metadata },
+      updateStrategy: "append",
+    });
+    expect(spy).toHaveBeenCalledWith(data4, data1, "append");
+    spy.mockClear();
+
+    spy.mockRestore();
+  });
+
   test.todo(
-    "each combination of dataOnly and datum for oldDoc and payload call the appropriate combine function on just the data component"
+    "if updated dataonly payload does not have id, then it uses the old id"
   );
 
   test("if the new document has a different explicit id, then the doc is moved there", async () => {
