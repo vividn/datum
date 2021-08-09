@@ -1,6 +1,7 @@
 import {
   DataOnlyDocument,
-  DatumDocument, DatumMetadata,
+  DatumDocument,
+  DatumMetadata,
   DatumPayload,
   EitherPayload,
 } from "../../src/documentControl/DatumDocument";

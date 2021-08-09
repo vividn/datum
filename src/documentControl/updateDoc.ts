@@ -3,7 +3,8 @@ import {
   DataOnlyPayload,
   EitherDocument,
   EitherPayload,
-  isDatumDocument, isDatumPayload,
+  isDatumDocument,
+  isDatumPayload,
 } from "./DatumDocument";
 import combineData, { UpdateStrategyNames } from "./combineData";
 import jClone from "../utils/jClone";
@@ -61,7 +62,7 @@ const updateDoc = async ({
     const updatedData = combineData(oldData, newData, updateStrategy);
     const meta = oldDoc.meta;
     meta.modifyTime = DateTime.utc().toString();
-    updatedPayload = {data: updatedData, meta: meta};
+    updatedPayload = { data: updatedData, meta: meta };
   } else {
     const oldData = jClone(oldDoc) as DataOnlyPayload;
     delete oldData._rev;
