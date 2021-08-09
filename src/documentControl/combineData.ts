@@ -85,6 +85,6 @@ export const combineData = (
   return combined;
 };
 
-const mergeValues = (aVal: any, bVal: any, unique=false): any => {
+export const mergeValues = (aVal: any, bVal: any, unique=true): any => {
 
 }

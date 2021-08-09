@@ -1,6 +1,11 @@
 import { describe, expect, test } from "@jest/globals";
 import jClone from "../../src/utils/jClone";
-import { combineData, conflictStrategies } from "../../src/documentControl/combineData";
+import {
+  combineData,
+  conflictStrategies,
+  mergeValues,
+} from "../../src/documentControl/combineData";
+import { MergeError } from "../../src/errors";
 
 describe("combineData", () => {
   const aData = {
@@ -185,11 +190,88 @@ describe("combineData", () => {
 });
 
 describe("mergeValues", () => {
-  test.todo("if a value is undefined it returns the other value");
-  test.todo("combines two singleton strings, numbers, or nulls into an array");
-  test.todo("can append singleton value to array");
-  test.todo("can prepend singleton value to array");
-  test.todo("appends two arrays");
-  test.todo("removes duplicate values from array if doing unique merge");
-  test.todo("throws error if trying to merge an object with a singleton value or array");
+  test("if a value is undefined it returns the other value", () => {
+    expect(mergeValues("string", undefined)).toEqual("string");
+    expect(mergeValues(undefined, 3)).toEqual(3);
+    expect(mergeValues(null, undefined)).toEqual(null);
+    expect(mergeValues(undefined, ["abc", 123])).toEqual(["abc", 123]);
+    expect(mergeValues({ abc: 123 }, undefined)).toEqual({ abc: 123 });
+    expect(mergeValues(undefined, undefined)).toEqual(undefined);
+  });
+
+  test("combines two singleton strings, numbers, or nulls into an array", () => {
+    expect(mergeValues("string1", "string2")).toEqual(["string1", "string2"]);
+    expect(mergeValues("string", 3)).toEqual(["string", 3]);
+    expect(mergeValues(3, "string")).toEqual([3, "string"]);
+    expect(mergeValues(null, "string")).toEqual([null, "string"]);
+    expect(mergeValues(5, null)).toEqual([5, null]);
+    expect(mergeValues(5, 25)).toEqual([5, 25]);
+  });
+
+  test("can append singleton value to array", () => {
+    expect(mergeValues(["string1", "string2"], "string3")).toEqual([
+      "string1",
+      "string2",
+      "string3",
+    ]);
+    expect(mergeValues([3, "string"], null)).toEqual([3, "string", null]);
+    expect(mergeValues(["justOneInArray"], 2)).toEqual(["justOneInArray", 2]);
+  });
+
+  test("can prepend singleton value to array", () => {
+    expect(mergeValues("string1", ["string2", "string3"])).toEqual([
+      "string1",
+      "string2",
+      "string3",
+    ]);
+    expect(mergeValues(null, [3, "string"])).toEqual([null, 3, "string"]);
+    expect(mergeValues(2, ["justOneInArray"])).toEqual([2, "justOneInArray"]);
+  });
+
+  test("appends two arrays", () => {
+    expect(mergeValues(["string", 3, null], ["string2", 7])).toEqual([
+      "string",
+      3,
+      null,
+      "string2",
+      7,
+    ]);
+  });
+
+  test("removes duplicate values from array if doing unique merge", () => {
+    expect(
+      mergeValues(
+        [1, "uniqueString", "duplicatedString", 2],
+        [2, "anotherUnique", "duplicatedString", 5],
+        true
+      )
+    ).toEqual([1, "uniqueString", "duplicatedString", 2, "anotherUnique", 5]);
+  });
+
+  test("keeps duplicate values if not doing unique merge", () => {
+    expect(
+      mergeValues(
+        [1, "uniqueString", "duplicatedString", 2],
+        [2, "anotherUnique", "duplicatedString", 5],
+        false
+      )
+    ).toEqual([
+      1,
+      "uniqueString",
+      "duplicatedString",
+      2,
+      2,
+      "anotherUnique",
+      "duplicatedString",
+      5,
+    ]);
+  });
+
+  test("throws error if trying to merge an object with anything (except undefined)", () => {
+    expect(() => mergeValues({abc: 123}, "string")).toThrowError(MergeError);
+    expect(() => mergeValues(3, {abc: 123})).toThrowError(MergeError);
+    expect(() => mergeValues({someKey: "someData"}, null)).toThrowError(MergeError);
+    expect(() => mergeValues([1, 2, 3], {"qwerty": "asdf"})).toThrowError(MergeError);
+    expect(() => mergeValues({even: "two"}, {objects: "fail"})).toThrowError(MergeError);
+  });
 });
