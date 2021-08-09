@@ -16,7 +16,10 @@ import {
 } from "@jest/globals";
 import { pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
-import updateDoc from "../../src/documentControl/updateDoc";
+import updateDoc, {
+  NoDocToUpdateError,
+  UpdateDocError,
+} from "../../src/documentControl/updateDoc";
 import addDoc from "../../src/documentControl/addDoc";
 import * as combineData from "../../src/documentControl/combineData";
 import jClone from "../../src/utils/jClone";
@@ -197,6 +200,47 @@ describe("updateDoc", () => {
     spy.mockClear();
 
     spy.mockRestore();
+  });
+
+  test("fails if id to be updated does not exist in db", async () => {
+    await expect(
+      updateDoc({ db, id: "does-not-exist", payload: { valid: "data" } })
+    ).rejects.toThrowError(NoDocToUpdateError);
+  });
+
+  test("fails if new id clashes with a different document in the database", async () => {
+    const oldId = "id-to-replace";
+    const clashingId = "preexisting-clashing-id";
+    await db.insert({ _id: oldId });
+    await db.insert({ _id: clashingId });
+
+    await expect(
+      updateDoc({
+        db,
+        id: oldId,
+        payload: { _id: clashingId, foo: "bar" },
+        updateStrategy: "useNew",
+      })
+    ).rejects.toThrowError(UpdateDocError);
+    await db.get(oldId); // original doc is not deleted
+
+    const oldCalculatedId = "old-calc-id";
+    await db.insert({
+      _id: oldCalculatedId,
+      data: { foo: oldCalculatedId },
+      meta: { idStructure: "%foo%" },
+    });
+    await expect(
+      updateDoc({
+        db,
+        id: oldCalculatedId,
+        payload: {
+          foo: clashingId,
+        },
+        updateStrategy: "useNew",
+      })
+    ).rejects.toThrowError(UpdateDocError);
+    await db.get(oldCalculatedId);
   });
 
   test("if updated dataonly payload does not have id, then it uses the old id", async () => {
