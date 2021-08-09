@@ -144,26 +144,26 @@ describe("combineData", () => {
   });
 
   test("merge combines conflicting fields into arrays removing duplicates", () => {
-    const aMerge = {...aData, someDataDuplicated: ["unique1", "duplicate"] };
-    const bMerge = {...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    const aMerge = { ...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = { ...bData, someDataDuplicated: ["unique2", "duplicate"] };
     expect(combineData(aMerge, bMerge, "merge")).toEqual({
       justA: "aaa",
       justB: "bbb",
       bothSame: "same",
       different: ["Aa", "bB"],
-      someDataDuplicated: ["unique1", "duplicate", "unique2"]
+      someDataDuplicated: ["unique1", "duplicate", "unique2"],
     });
   });
 
   test("append combines conflicting fields into arrays keeping duplicates", () => {
-    const aMerge = {...aData, someDataDuplicated: ["unique1", "duplicate"] };
-    const bMerge = {...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    const aMerge = { ...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = { ...bData, someDataDuplicated: ["unique2", "duplicate"] };
     expect(combineData(aMerge, bMerge, "append")).toEqual({
       justA: "aaa",
       justB: "bbb",
       bothSame: "same",
       different: ["Aa", "bB"],
-      someDataDuplicated: ["unique1", "duplicate", "unique2", "duplicate"]
+      someDataDuplicated: ["unique1", "duplicate", "unique2", "duplicate"],
     });
   });
 
@@ -293,10 +293,16 @@ describe("mergeValues", () => {
   });
 
   test("throws error if trying to merge an object with anything (except undefined)", () => {
-    expect(() => mergeValues({abc: 123}, "string")).toThrowError(MergeError);
-    expect(() => mergeValues(3, {abc: 123})).toThrowError(MergeError);
-    expect(() => mergeValues({someKey: "someData"}, null)).toThrowError(MergeError);
-    expect(() => mergeValues([1, 2, 3], {"qwerty": "asdf"})).toThrowError(MergeError);
-    expect(() => mergeValues({even: "two"}, {objects: "fail"})).toThrowError(MergeError);
+    expect(() => mergeValues({ abc: 123 }, "string")).toThrowError(MergeError);
+    expect(() => mergeValues(3, { abc: 123 })).toThrowError(MergeError);
+    expect(() => mergeValues({ someKey: "someData" }, null)).toThrowError(
+      MergeError
+    );
+    expect(() => mergeValues([1, 2, 3], { qwerty: "asdf" })).toThrowError(
+      MergeError
+    );
+    expect(() =>
+      mergeValues({ even: "two" }, { objects: "fail" })
+    ).toThrowError(MergeError);
   });
 });

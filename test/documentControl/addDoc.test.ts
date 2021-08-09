@@ -3,10 +3,17 @@ import {
   DataOnlyPayload,
   DatumDocument,
   DatumPayload,
-  EitherPayload
+  EitherPayload,
 } from "../../src/documentControl/DatumDocument";
 import { DateTime, Settings } from "luxon";
-import { afterEach, beforeAll, beforeEach, describe, expect, it } from "@jest/globals";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "@jest/globals";
 import { pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
 import addDoc from "../../src/documentControl/addDoc";

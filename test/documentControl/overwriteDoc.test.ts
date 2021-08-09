@@ -1,9 +1,23 @@
-import { DatumPayload, EitherPayload } from "../../src/documentControl/DatumDocument";
+import {
+  DatumPayload,
+  EitherPayload,
+} from "../../src/documentControl/DatumDocument";
 import { DateTime, Settings } from "luxon";
-import { afterEach, beforeAll, beforeEach, describe, expect, it, test } from "@jest/globals";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  test,
+} from "@jest/globals";
 import { pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
-import overwriteDoc, { NoDocToOverwriteError, OverwriteDocError } from "../../src/documentControl/overwriteDoc";
+import overwriteDoc, {
+  NoDocToOverwriteError,
+  OverwriteDocError,
+} from "../../src/documentControl/overwriteDoc";
 import jClone from "../../src/utils/jClone";
 
 const testDatumPayload: DatumPayload = {

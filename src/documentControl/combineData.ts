@@ -23,7 +23,7 @@ const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   removeConflicting: { justA: true, justB: true, same: true, conflict: false },
   xor: { justA: true, justB: true, same: false, conflict: false },
   merge: { justA: true, justB: true, same: true, conflict: "merge" },
-  append: {justA: true, justB: true, same: true, conflict: "append"}
+  append: { justA: true, justB: true, same: true, conflict: "append" },
 };
 
 export type conflictStrategies = "A" | "B" | "merge" | "append" | false;

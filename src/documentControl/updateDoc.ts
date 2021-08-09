@@ -8,4 +8,3 @@ type updateDocType = {
   payload: EitherPayload;
   updateStrategy: UpdateStrategyNames;
 };
-
