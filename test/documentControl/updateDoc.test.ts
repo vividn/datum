@@ -1,5 +1,4 @@
 import {
-  DataOnlyDocument,
   DatumDocument,
   DatumMetadata,
   DatumPayload,

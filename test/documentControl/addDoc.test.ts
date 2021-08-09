@@ -37,7 +37,6 @@ const testDatumPayload: DatumPayload = {
 const testDatumPayloadId = "bar__rawString";
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
 const now = mockNow.toString();
-const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
@@ -120,8 +119,8 @@ describe("addDoc", () => {
     const newDoc = await addDoc({ db, payload });
 
     expect(newDoc.meta).toMatchObject({
-      createTime: mockNow.toUTC().toString(),
-      modifyTime: mockNow.toUTC().toString(),
+      createTime: now,
+      modifyTime: now,
     });
   });
 
