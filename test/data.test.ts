@@ -174,7 +174,7 @@ describe("parseData", () => {
       parseData(parseDataArgs);
 
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
-      spy.mockClear();
+      spy.mockRestore();
     });
   });
 

@@ -50,3 +50,10 @@ export class MigrationError extends MyError {
     Object.setPrototypeOf(this, MigrationError.prototype);
   }
 }
+
+export class MergeError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, MergeError.prototype);
+  }
+}
