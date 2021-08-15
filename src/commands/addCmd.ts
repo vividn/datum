@@ -18,7 +18,7 @@ import { processTimeArgs } from "../timings";
 import chalk from "chalk";
 import { showCreate, showExists } from "../output";
 import addDoc from "../documentControl/addDoc";
-import { updateStrategies } from "../documentControl/combineData";
+import { updateStrategies, UpdateStrategyNames } from "../documentControl/combineData";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -40,6 +40,8 @@ export type AddCmdArgs = BaseDatumArgs & {
   idDelimiter?: string;
   partition?: string;
   undo?: boolean;
+  merge?: boolean;
+  update?: UpdateStrategyNames;
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
@@ -150,10 +152,24 @@ export function builder(yargs: Argv): Argv {
           " Like --id-field, can be used  multiple times to assemble a partition separated by --id-delimiter",
         type: "string",
       },
+
+      // Change behavior
       undo: {
         describe: "undoes the last datum entry, can be combined with -f",
         alias: "u",
         type: "boolean",
+      },
+      merge: {
+        describe: "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
+        alias: "x",
+        type: "boolean",
+        conflicts: "update"
+      },
+      update: {
+        describe: `on conflict, update with given strategy.`,
+        alias: "X",
+        type: "string",
+        choices: Object.keys(updateStrategies),
       },
       // "force-undo": {
       //   describe:
@@ -161,6 +177,8 @@ export function builder(yargs: Argv): Argv {
       //   alias: "U",
       //   type: "boolean",
       // },
+
+      // Data
       required: {
         describe:
           "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown",

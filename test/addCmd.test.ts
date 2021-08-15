@@ -1,4 +1,5 @@
 import {
+  afterAll,
   afterEach,
   beforeAll,
   beforeEach,
@@ -15,6 +16,7 @@ import {
 } from "../src/documentControl/DatumDocument";
 import addCmd from "../src/commands/addCmd";
 import * as connectDb from "../src/auth/connectDb";
+import * as addDoc from "../src/documentControl/addDoc";
 import { DocumentScope } from "nano";
 
 const originalLog = console.log;
@@ -23,7 +25,8 @@ describe("addCmd", () => {
   const mockedLog = jest.fn();
   const dbName = "add_cmd_test";
   const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  jest.spyOn(connectDb, "default").mockImplementation(() => db);
+  const connectDbSpy = jest.spyOn(connectDb, "default").mockImplementation(() => db);
+  const addDocSpy = jest.spyOn(addDoc, "default");
 
   beforeAll(async () => {
     await testNano.db.destroy(dbName).catch(pass);
@@ -32,6 +35,7 @@ describe("addCmd", () => {
   beforeEach(async () => {
     await testNano.db.create(dbName).catch(pass);
     console.log = mockedLog;
+    addDocSpy.mockClear();
   });
 
   afterEach(async () => {
@@ -40,12 +44,23 @@ describe("addCmd", () => {
     mockedLog.mockReset();
   });
 
+  afterAll(async () => {
+    addDocSpy.mockRestore();
+    connectDbSpy.mockRestore();
+  });
+
   it("inserts documents into couchdb", async () => {
     await addCmd({});
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
     });
+  });
+
+  it("calls addDoc", async () => {
+    await addCmd({idPart: "%foo%", data: ["foo=abc"]});
+    const spyCall = addDocSpy.mock.calls[0][0];
+    expect(spyCall).toMatchObject({db: db, payload: {data: {foo: "abc"}, meta: {idStructure: "%foo%"}}});
   });
 
   it("can undo adding documents with a known id", async () => {
@@ -196,4 +211,20 @@ describe("addCmd", () => {
       expect.stringMatching(matchExtraKeysInAnyOrder)
     );
   });
+
+  it("can merge into an existing document with --merge", async () => {
+    await addCmd({idPart: "doc-id", data: ["foo=abc"]});
+    const newDoc = await addCmd({idPart: "doc-id", data: ["foo=def"], merge: true});
+    expect(newDoc).toMatchObject({data: {foo: ["abc", "def"]}});
+    expect(addDocSpy.mock.calls[0][0].conflictStrategy).toEqual("merge");
+  });
+
+  it("can update and existing document with --update", async () => {
+    await addCmd({idPart: "doc-id", data: ["foo=abc"]});
+    const newDoc = await addCmd({idPart: "doc-id", data: ["foo=def"], update: "preferNew"});
+    expect(newDoc).toMatchObject({data: {foo: "def"}});
+    expect(addDocSpy.mock.calls[0][0].conflictStrategy).toEqual("preferNew");
+  });
+
+  // TODO: write tests for all of the various options
 });
