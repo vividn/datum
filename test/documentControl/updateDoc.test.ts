@@ -364,5 +364,5 @@ describe("updateDoc", () => {
 
   test.todo("how does it handle _ids for dataonly docs?");
 
-  test.todo("it does not write to database if updated document is identical")
+  test.todo("it does not write to database if updated document is identical");
 });

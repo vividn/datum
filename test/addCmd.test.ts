@@ -25,7 +25,9 @@ describe("addCmd", () => {
   const mockedLog = jest.fn();
   const dbName = "add_cmd_test";
   const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  const connectDbSpy = jest.spyOn(connectDb, "default").mockImplementation(() => db);
+  const connectDbSpy = jest
+    .spyOn(connectDb, "default")
+    .mockImplementation(() => db);
   const addDocSpy = jest.spyOn(addDoc, "default");
 
   beforeAll(async () => {
@@ -58,9 +60,12 @@ describe("addCmd", () => {
   });
 
   it("calls addDoc", async () => {
-    await addCmd({idPart: "%foo%", data: ["foo=abc"]});
+    await addCmd({ idPart: "%foo%", data: ["foo=abc"] });
     const spyCall = addDocSpy.mock.calls[0][0];
-    expect(spyCall).toMatchObject({db: db, payload: {data: {foo: "abc"}, meta: {idStructure: "%foo%"}}});
+    expect(spyCall).toMatchObject({
+      db: db,
+      payload: { data: { foo: "abc" }, meta: { idStructure: "%foo%" } },
+    });
   });
 
   it("can undo adding documents with a known id", async () => {
@@ -213,16 +218,24 @@ describe("addCmd", () => {
   });
 
   it("can merge into an existing document with --merge", async () => {
-    await addCmd({idPart: "doc-id", data: ["foo=abc"]});
-    const newDoc = await addCmd({idPart: "doc-id", data: ["foo=def"], merge: true});
-    expect(newDoc).toMatchObject({data: {foo: ["abc", "def"]}});
+    await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
+    const newDoc = await addCmd({
+      idPart: "doc-id",
+      data: ["foo=def"],
+      merge: true,
+    });
+    expect(newDoc).toMatchObject({ data: { foo: ["abc", "def"] } });
     expect(addDocSpy.mock.calls[0][0].conflictStrategy).toEqual("merge");
   });
 
   it("can update and existing document with --update", async () => {
-    await addCmd({idPart: "doc-id", data: ["foo=abc"]});
-    const newDoc = await addCmd({idPart: "doc-id", data: ["foo=def"], update: "preferNew"});
-    expect(newDoc).toMatchObject({data: {foo: "def"}});
+    await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
+    const newDoc = await addCmd({
+      idPart: "doc-id",
+      data: ["foo=def"],
+      update: "preferNew",
+    });
+    expect(newDoc).toMatchObject({ data: { foo: "def" } });
     expect(addDocSpy.mock.calls[0][0].conflictStrategy).toEqual("preferNew");
   });
 

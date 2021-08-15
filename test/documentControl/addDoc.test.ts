@@ -20,7 +20,7 @@ import timezone_mock from "timezone-mock";
 import addDoc, { AddDocError } from "../../src/documentControl/addDoc";
 import { IdError } from "../../src/errors";
 import jClone from "../../src/utils/jClone";
-import * as updateDoc from "../../src/documentControl/updateDoc"
+import * as updateDoc from "../../src/documentControl/updateDoc";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -182,19 +182,25 @@ describe("addDoc", () => {
     expect(payload1).toEqual(payload2);
   });
 
-  it(
-    "calls another document control method if id already exists and conflict strategy is given", async () => {
-      const originalPayload = {_id: "docId", foo: "bar", anotherKey: "data"};
-      const updatePayload = {_id: "docId", foo: "baz"};
-      const conflictStrategy = "merge";
-      const expectedResult = {_id: "docId", foo: ["bar", "baz"], anotherKey: "data"};
-      const spy = jest.spyOn(updateDoc, "default");
+  it("calls another document control method if id already exists and conflict strategy is given", async () => {
+    const originalPayload = { _id: "docId", foo: "bar", anotherKey: "data" };
+    const updatePayload = { _id: "docId", foo: "baz" };
+    const conflictStrategy = "merge";
+    const expectedResult = {
+      _id: "docId",
+      foo: ["bar", "baz"],
+      anotherKey: "data",
+    };
+    const spy = jest.spyOn(updateDoc, "default");
 
-      await addDoc({db, payload: originalPayload});
-      const newDoc = await addDoc({db, payload: updatePayload, conflictStrategy: conflictStrategy});
+    await addDoc({ db, payload: originalPayload });
+    const newDoc = await addDoc({
+      db,
+      payload: updatePayload,
+      conflictStrategy: conflictStrategy,
+    });
 
-      expect(newDoc).toMatchObject(expectedResult);
-      expect(spy).toHaveBeenCalled();
-    }
-  );
+    expect(newDoc).toMatchObject(expectedResult);
+    expect(spy).toHaveBeenCalled();
+  });
 });

@@ -18,7 +18,10 @@ import { processTimeArgs } from "../timings";
 import chalk from "chalk";
 import { showCreate, showExists } from "../output";
 import addDoc from "../documentControl/addDoc";
-import { updateStrategies, UpdateStrategyNames } from "../documentControl/combineData";
+import {
+  updateStrategies,
+  UpdateStrategyNames,
+} from "../documentControl/combineData";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -160,10 +163,11 @@ export function builder(yargs: Argv): Argv {
         type: "boolean",
       },
       merge: {
-        describe: "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
+        describe:
+          "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
         alias: "x",
         type: "boolean",
-        conflicts: "update"
+        conflicts: "update",
       },
       update: {
         describe: `on conflict, update with given strategy.`,
