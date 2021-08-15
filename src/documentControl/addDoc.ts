@@ -57,6 +57,7 @@ const addDoc = async ({
       if (conflictStrategy === undefined) {
         if (showOutput) {
           showExists(existingDoc, showAll);
+          return existingDoc;
         } else {
           throw new AddDocError(`conflict: doc with ${id} already exists`);
         }
