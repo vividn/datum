@@ -14,7 +14,7 @@ export type UpdateStrategyNames =
   | "merge"
   | "append";
 
-const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
+export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   useOld: { justA: true, justB: false, same: true, conflict: "A" },
   useNew: { justA: false, justB: true, same: true, conflict: "B" },
   preferOld: { justA: true, justB: true, same: true, conflict: "A" },

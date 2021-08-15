@@ -18,6 +18,7 @@ import { processTimeArgs } from "../timings";
 import chalk from "chalk";
 import { showCreate, showExists } from "../output";
 import addDoc from "../documentControl/addDoc";
+import { updateStrategies } from "../documentControl/combineData";
 
 export const command = "add [data..]";
 export const desc = "add a document";

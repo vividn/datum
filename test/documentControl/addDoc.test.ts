@@ -13,12 +13,14 @@ import {
   describe,
   expect,
   it,
+  jest,
 } from "@jest/globals";
 import { pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
-import addDoc from "../../src/documentControl/addDoc";
+import addDoc, { AddDocError } from "../../src/documentControl/addDoc";
 import { IdError } from "../../src/errors";
 import jClone from "../../src/utils/jClone";
+import * as updateDoc from "../../src/documentControl/updateDoc"
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -136,7 +138,7 @@ describe("addDoc", () => {
 
     await expect(
       addDoc({ db, payload: attemptedNewPayload })
-    ).rejects.toThrowError();
+    ).rejects.toThrowError(AddDocError);
     const dbDoc = await db.get(id);
     expect(dbDoc).toMatchObject(existingData);
     expect(dbDoc).not.toHaveProperty("newData");
@@ -146,7 +148,7 @@ describe("addDoc", () => {
     await addDoc({ db, payload: testDatumPayload });
     await expect(
       addDoc({ db, payload: testDatumPayload })
-    ).rejects.toThrowError();
+    ).rejects.toThrowError(AddDocError);
   });
 
   it("can still insert if _rev is given in the payload", async () => {
@@ -180,7 +182,19 @@ describe("addDoc", () => {
     expect(payload1).toEqual(payload2);
   });
 
-  it.todo(
-    "calls another document control method if id already exists and conflict strategy is given"
+  it(
+    "calls another document control method if id already exists and conflict strategy is given", async () => {
+      const originalPayload = {_id: "docId", foo: "bar", anotherKey: "data"};
+      const updatePayload = {_id: "docId", foo: "baz"};
+      const conflictStrategy = "merge";
+      const expectedResult = {_id: "docId", foo: ["bar", "baz"], anotherKey: "data"};
+      const spy = jest.spyOn(updateDoc, "default");
+
+      await addDoc({db, payload: originalPayload});
+      const newDoc = await addDoc({db, payload: updatePayload, conflictStrategy: conflictStrategy});
+
+      expect(newDoc).toMatchObject(expectedResult);
+      expect(spy).toHaveBeenCalled();
+    }
   );
 });
