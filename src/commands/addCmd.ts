@@ -344,22 +344,14 @@ export async function handler(args: AddCmdArgs): Promise<EitherDocument> {
     return doc;
   }
 
-  try {
-    const doc = await db.get(_id);
-    showExists(doc, args.showAll);
-    return doc;
-  } catch (err) {
-    if (err.reason === "missing" || err.reason === "deleted") {
-      // pass
-    } else {
-      console.log(err);
-      throw err;
-    }
-  }
-
-  const doc = await addDoc({ db, payload });
-  showCreate(doc, args.showAll);
-
+  const conflictStrategy = args.update ?? (args.merge ? "merge" : undefined);
+  const doc = await addDoc({
+    db,
+    payload,
+    conflictStrategy,
+    showOutput: true,
+    showAll: args.showAll,
+  });
   return doc;
 }
 

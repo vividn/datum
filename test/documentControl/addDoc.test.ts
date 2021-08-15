@@ -13,6 +13,7 @@ import {
   describe,
   expect,
   it,
+  test,
   jest,
 } from "@jest/globals";
 import { pass, testNano } from "../test-utils";
@@ -203,4 +204,7 @@ describe("addDoc", () => {
     expect(newDoc).toMatchObject(expectedResult);
     expect(spy).toHaveBeenCalled();
   });
+
+  test.todo("it displays the document if showOutput");
+  test.todo("It does not throw an AddDocError if conflict and showOutput");
 });

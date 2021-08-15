@@ -225,7 +225,8 @@ describe("addCmd", () => {
       merge: true,
     });
     expect(newDoc).toMatchObject({ data: { foo: ["abc", "def"] } });
-    expect(addDocSpy.mock.calls[0][0].conflictStrategy).toEqual("merge");
+    expect(addDocSpy).toHaveBeenCalledTimes(2);
+    expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("merge");
   });
 
   it("can update and existing document with --update", async () => {
@@ -235,8 +236,9 @@ describe("addCmd", () => {
       data: ["foo=def"],
       update: "preferNew",
     });
+    expect(addDocSpy).toHaveBeenCalledTimes(2);
+    expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
-    expect(addDocSpy.mock.calls[0][0].conflictStrategy).toEqual("preferNew");
   });
 
   // TODO: write tests for all of the various options
