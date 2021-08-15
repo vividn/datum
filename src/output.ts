@@ -1,7 +1,5 @@
 import {
-  DataOnlyDocument,
   DatumData,
-  DatumDocument,
   EitherDocument,
   isDatumDocument,
 } from "./documentControl/DatumDocument";

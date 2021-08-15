@@ -16,7 +16,6 @@ import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
 import { processTimeArgs } from "../timings";
 import chalk from "chalk";
-import { showCreate, showExists } from "../output";
 import addDoc from "../documentControl/addDoc";
 import {
   updateStrategies,
