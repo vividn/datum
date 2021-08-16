@@ -311,7 +311,7 @@ class Datumdata:
         elif self.data_type == "point":
             date_str = date.strftime("%Y-%m-%d")
             try:
-                day_timing = self.data[date_str].index
+                day_timing = self.data.loc[date_str].index
                 day_total = len(day_timing)
             except KeyError:
                 day_timing = []
@@ -320,16 +320,16 @@ class Datumdata:
         elif self.data_type == "sum":
             date_str = date.strftime("%Y-%m-%d")
             try:
-                day_timing = self.data[date_str].index
+                day_timing = self.data.loc[date_str].index
                 # Fill in blanks with a default value if specified in the header
                 if self.column in self.defaults.keys():
                     day_total = (
-                        self.data[date_str]
+                        self.data.loc[date_str]
                         .fillna(self.defaults[self.column])
                         .sum()[self.column]
                     )
                 else:
-                    day_total = self.data[date_str].sum()[self.column]
+                    day_total = self.data.loc[date_str].sum()[self.column]
 
             except KeyError:
                 day_timing = []
@@ -491,7 +491,7 @@ class Datumdata:
 
         # Load the data for the given date
         try:
-            df = self.data[date_str]
+            df = self.data.loc[date_str]
         except KeyError:
             df = pd.DataFrame(columns=self.data.columns)
 
