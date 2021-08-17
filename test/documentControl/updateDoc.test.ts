@@ -364,5 +364,42 @@ describe("updateDoc", () => {
 
   test.todo("how does it handle _ids for dataonly docs?");
 
-  test.todo("it does not write to database if updated document is identical");
+  test.skip("it does not write to database if updated document is identical", async () => {
+    // Data only
+    await db.insert({ _id: "datadoc-id", foo: "abc" });
+    const currentDoc = await db.get("datadoc-id");
+    const nDocsBefore = (await db.info()).doc_count;
+
+    const newDoc = await updateDoc({
+      db,
+      id: "datadoc-id",
+      payload: { foo: "abc" },
+      updateStrategy: "preferNew",
+    });
+    expect(newDoc._rev).toEqual(currentDoc._rev);
+    const nDocsAfter = (await db.info()).doc_count;
+    expect(nDocsBefore).toEqual(nDocsAfter);
+
+    // Datum
+    await db.insert({
+      _id: "datum-id",
+      data: { abc: "foo" },
+      meta: { humanId: "datumDatum" },
+    });
+    const currentDDoc = await db.get("datum-id");
+    const nDocsBefore2 = (await db.info()).doc_count;
+
+    const newDDoc = await updateDoc({
+      db,
+      id: "datum-id",
+      payload: {
+        data: { keys: "that", will: "be ignored" },
+        meta: { random: 0.010101 },
+      },
+      updateStrategy: "useOld",
+    });
+    expect(newDDoc._rev).toEqual(currentDDoc._rev);
+    const nDocsAfter2 = (await db.info()).doc_count;
+    expect(nDocsBefore2).toEqual(nDocsAfter2);
+  });
 });

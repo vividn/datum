@@ -11,6 +11,7 @@ import jClone from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
+import { showUpdate } from "../output";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -31,6 +32,8 @@ type updateDocType = {
   id: string;
   payload: EitherPayload;
   updateStrategy?: UpdateStrategyNames;
+  showOutput?: boolean;
+  showAll?: boolean;
 };
 
 const updateDoc = async ({
@@ -38,6 +41,8 @@ const updateDoc = async ({
   id,
   payload,
   updateStrategy = "merge",
+  showOutput,
+  showAll,
 }: updateDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
@@ -97,6 +102,9 @@ const updateDoc = async ({
   }
 
   const newDoc = await db.get(newId);
+  if (showOutput) {
+    showUpdate(oldDoc, newDoc, showAll);
+  }
   return newDoc;
 };
 

@@ -57,10 +57,8 @@ const addDoc = async ({
       if (conflictStrategy === undefined) {
         if (showOutput) {
           showExists(existingDoc, showAll);
-          return existingDoc;
-        } else {
-          throw new AddDocError(`conflict: doc with ${id} already exists`);
         }
+        throw new AddDocError(`conflict: doc with ${id} already exists`);
       }
       const updatedDoc = await updateDoc({
         db,
@@ -68,9 +66,6 @@ const addDoc = async ({
         payload,
         updateStrategy: conflictStrategy,
       });
-      if (showOutput) {
-        showUpdate(existingDoc, updatedDoc, showAll);
-      }
       return updatedDoc;
     }
     throw e;

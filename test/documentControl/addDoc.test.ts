@@ -205,6 +205,5 @@ describe("addDoc", () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  test.todo("it displays the document if showOutput");
-  test.todo("It does not throw an AddDocError if conflict and showOutput");
+  test.todo("It still throws an AddDocError if conflict and showOutput");
 });
