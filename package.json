@@ -16,11 +16,12 @@
     "typewatch": "tsc -p tsconfig.withTests.json -w",
     "build": "tsc -p .",
     "buildwatch": "tsc -p . -w",
-    "system": "yarn global add $PWD",
+    "system": "NODE_ENV=production yarn global add $PWD",
     "pipeline": "yarn install && yarn test && yarn build && yarn system",
     "refresh": "rm -rf ./node_modules && yarn install",
     "lint": "prettier src test --check && eslint src test",
-    "fmt": "prettier src test --write && eslint src test --fix"
+    "fmt": "prettier src test --write && eslint src test --fix",
+    "postinstall": "yarn cache clean datum"
   },
   "devDependencies": {
     "@babel/core": "^7.11.6",
