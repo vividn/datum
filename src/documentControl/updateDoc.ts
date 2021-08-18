@@ -11,7 +11,8 @@ import jClone from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
-import { showUpdate } from "../output";
+import { showNoDiff, showUpdate } from "../output";
+import isEqual from "lodash.isequal";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -65,6 +66,12 @@ const updateDoc = async ({
   if (isDatumDocument(oldDoc)) {
     const oldData = oldDoc.data;
     const updatedData = combineData(oldData, newData, updateStrategy);
+    if (isEqual(oldData, updatedData)) {
+      if (showOutput) {
+        showNoDiff(oldDoc, showAll);
+      }
+      return oldDoc;
+    }
     const meta = oldDoc.meta;
     meta.modifyTime = DateTime.utc().toString();
     updatedPayload = { data: updatedData, meta: meta };
@@ -72,6 +79,14 @@ const updateDoc = async ({
     const oldData = jClone(oldDoc) as DataOnlyPayload;
     delete oldData._rev;
     updatedPayload = combineData(oldData, newData, updateStrategy);
+
+    if (isEqual(oldData, updatedPayload)) {
+      FIGURE OUT HOW TO PROPERLY DEAL WITH _ID, maybe move this down below and change meta right before inserting and then check right before that.
+      if (showOutput) {
+        showNoDiff(oldDoc, showAll);
+      }
+      return oldDoc;
+    }
   }
 
   let newId: string;

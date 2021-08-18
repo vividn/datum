@@ -11,12 +11,14 @@ enum ACTIONS {
   Delete = "DELETE",
   Exists = "EXISTS",
   Update = "UPDATE",
+  NoDiff = "NODIFF"
 }
 const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   CREATE: chalk.green,
   DELETE: chalk.red,
   EXISTS: chalk.yellow,
   UPDATE: chalk.cyan,
+  NODIFF: chalk.hex("#ffa500")
 };
 
 const actionId = (action: ACTIONS, id: string): string => {
@@ -81,3 +83,15 @@ export const showUpdate = (
     displayData(afterDoc, ACTION_CHALK["UPDATE"]);
   }
 };
+
+export const showNoDiff = (
+  doc: EitherDocument,
+  showAll = false
+): void => {
+  console.log(actionId(ACTIONS.NoDiff, doc._id));
+  if (isDatumDocument(doc) && !showAll) {
+    displayData(doc.data, ACTION_CHALK["NODIFF"]);
+  } else {
+    displayData(doc, ACTION_CHALK["NODIFF"]);
+  }
+}

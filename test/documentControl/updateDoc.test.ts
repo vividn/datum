@@ -364,8 +364,7 @@ describe("updateDoc", () => {
 
   test.todo("how does it handle _ids for dataonly docs?");
 
-  test.skip("it does not write to database if updated document is identical", async () => {
-    // Data only
+  test("it does not write to database if updated data document is identical", async () => {
     await db.insert({ _id: "datadoc-id", foo: "abc" });
     const currentDoc = await db.get("datadoc-id");
     const nDocsBefore = (await db.info()).doc_count;
@@ -374,12 +373,14 @@ describe("updateDoc", () => {
       db,
       id: "datadoc-id",
       payload: { foo: "abc" },
-      updateStrategy: "preferNew",
+      updateStrategy: "useNew",
     });
     expect(newDoc._rev).toEqual(currentDoc._rev);
     const nDocsAfter = (await db.info()).doc_count;
     expect(nDocsBefore).toEqual(nDocsAfter);
+  });
 
+  test("it does not write to db if updated datum document is identical", async () => {
     // Datum
     await db.insert({
       _id: "datum-id",

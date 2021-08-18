@@ -32,7 +32,11 @@ afterEach(async () => {
 });
 
 test("addDoc displays a CREATE: message and the document if showOutput", async () => {
-  await addDoc({ db, payload: { abc: "def" }, showOutput: true });
+  await addDoc({
+    db,
+    payload: { _id: "added-doc", abc: "def" },
+    showOutput: true,
+  });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
 });
 
@@ -48,7 +52,12 @@ test("addDoc displays an EXISTS: message and the document if showOuput and conlf
 
 test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
   await db.insert({ _id: "name", foo: "bar" });
-  await updateDoc({ db, id: "name", payload: { foo2: "abc2" } });
+  await updateDoc({
+    db,
+    id: "name",
+    payload: { foo2: "abc2" },
+    showOutput: true,
+  });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 });
 
@@ -59,6 +68,7 @@ test("updateDoc outputs a NODIFF: message if showing output and no update needed
     id: "name",
     payload: { foo2: "abc2" },
     updateStrategy: "useOld",
+    showOutput: true,
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 });
