@@ -279,5 +279,14 @@ describe("addDoc", () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  test.todo("It still throws an AddDocError if conflict and showOutput");
+  test("It still throws an DocExistsError if conflict and showOutput", async () => {
+    const id = "conflictId";
+    await db.insert({ _id: id, foo: "abc" });
+    try {
+      await addDoc({ db, payload: { _id: id, foo: "different" }, showOutput: true });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+  });
 });
