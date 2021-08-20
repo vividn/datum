@@ -7,6 +7,7 @@ import {
   test,
 } from "@jest/globals";
 import updateDoc from "../../src/documentControl/updateDoc";
+import * as updateDocModule from "../../src/documentControl/updateDoc";
 import { pass, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import addDoc from "../../src/documentControl/addDoc";
@@ -48,6 +49,27 @@ test("addDoc displays an EXISTS: message and the document if showOuput and conlf
     showOutput: true,
   }).catch(pass);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+});
+
+test("addDoc calls updateDoc with showOutput", async () => {
+  const spy = jest.spyOn(updateDocModule, "default");
+  const payload = {_id: "docId", foo: "abce"};
+  await addDoc({db, payload, showOutput: true, conflictStrategy: "merge"});
+  expect(spy).not.toHaveBeenCalled();
+
+  mockedLog.mockClear();
+
+  await addDoc({db, payload, showOutput: true, conflictStrategy: "merge"});
+  expect(spy.mock.calls[0][0].showOutput).toEqual(true);
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
+
+  mockedLog.mockClear();
+
+  await addDoc({db, payload: {...payload, extraKey: 123}, showOutput: true, conflictStrategy: "merge" });
+  expect(spy.mock.calls[1][0].showOutput).toEqual(true);
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
+
+  spy.mockRestore();
 });
 
 test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {

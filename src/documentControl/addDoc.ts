@@ -95,6 +95,8 @@ const addDoc = async ({
         id,
         payload,
         updateStrategy: conflictStrategy,
+        showOutput,
+        showAll
       });
       return updatedDoc;
     }
