@@ -21,6 +21,7 @@ import {
   updateStrategies,
   UpdateStrategyNames,
 } from "../documentControl/combineData";
+import { DocExistsError } from "../documentControl/base";
 
 export const command = "add [data..]";
 export const desc = "add a document";

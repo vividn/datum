@@ -8,7 +8,7 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { pass, testNano } from "./test-utils";
+import { fail, pass, testNano } from "./test-utils";
 import { BaseDataError } from "../src/errors";
 import {
   DatumDocument,
@@ -18,6 +18,7 @@ import addCmd from "../src/commands/addCmd";
 import * as connectDb from "../src/auth/connectDb";
 import * as addDoc from "../src/documentControl/addDoc";
 import { DocumentScope } from "nano";
+import { DocExistsError } from "../src/documentControl/base";
 
 const originalLog = console.log;
 
@@ -111,8 +112,8 @@ describe("addCmd", () => {
     ).not.toHaveProperty("meta");
   });
 
-  it("tells the user if the document already exists", async () => {
-    await addCmd({ idPart: "my name is bob" });
+  it("tells the user if the document already exists with identical data", async () => {
+    await addCmd({ idPart: "my name is bob", noTimestamp: true, data: ["foo=bar"] });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS")
@@ -120,10 +121,29 @@ describe("addCmd", () => {
 
     mockedLog.mockReset();
 
-    await addCmd({ idPart: "my name is bob" });
+    await addCmd({ idPart: "my name is bob", noTimestamp: true, data: ["foo=bar"] });
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("CREATE")
     );
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+  });
+
+  it("fails if addedDocument conflicts with different data", async () => {
+    await addCmd({ idPart: "my name is doug", noTimestamp: true, data: ["foo=bar"] });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("EXISTS")
+    );
+
+    mockedLog.mockReset();
+
+    try {
+      await addCmd({ idPart: "my name is doug", noTimestamp: true, data: ["different=data"]});
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
   });
 

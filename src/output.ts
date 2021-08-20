@@ -1,6 +1,6 @@
 import {
   DatumData,
-  EitherDocument,
+  EitherDocument, EitherPayload,
   isDatumDocument,
 } from "./documentControl/DatumDocument";
 import chalk from "chalk";
@@ -11,14 +11,16 @@ enum ACTIONS {
   Delete = "DELETE",
   Exists = "EXISTS",
   Update = "UPDATE",
-  NoDiff = "NODIFF"
+  NoDiff = "NODIFF",
+  Failed = "FAILED",
 }
 const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   CREATE: chalk.green,
   DELETE: chalk.red,
   EXISTS: chalk.yellow,
   UPDATE: chalk.cyan,
-  NODIFF: chalk.hex("#ffa500")
+  NODIFF: chalk.hex("#ffa500"),
+  FAILED: chalk.red,
 };
 
 const actionId = (action: ACTIONS, id: string): string => {
@@ -94,4 +96,23 @@ export const showNoDiff = (
   } else {
     displayData(doc, ACTION_CHALK["NODIFF"]);
   }
+};
+
+export const showFailed = (
+  doc: EitherPayload,
+  showAll = false
+): void => {
+  console.log(actionId(ACTIONS.Failed, doc._id));
+  if (isDatumDocument(doc) && !showAll) {
+    displayData(doc.data, ACTION_CHALK["FAILED"]);
+  } else {
+    displayData(doc, ACTION_CHALK["FAILED"]);
+  }
+};
+
+export enum Show {
+  None,
+  Minimal,
+  Standard,
+  All
 }

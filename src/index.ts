@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { configuredYargs } from "./input";
+import { DocExistsError } from "./documentControl/base";
 
 async function main(cliInput: string | string[]): Promise<void> {
   await configuredYargs.parseAsync(cliInput);
@@ -7,6 +8,10 @@ async function main(cliInput: string | string[]): Promise<void> {
 
 if (require.main === module) {
   main(process.argv.slice(2)).catch((err) => {
-    console.error(err);
+    if (err instanceof DocExistsError) {
+      process.exitCode = 11;
+    } else {
+      console.error(err);
+    }
   });
 }

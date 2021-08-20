@@ -80,8 +80,8 @@ const updateDoc = async ({
     delete oldData._rev;
     updatedPayload = combineData(oldData, newData, updateStrategy);
 
-    if (isEqual(oldData, updatedPayload)) {
-      FIGURE OUT HOW TO PROPERLY DEAL WITH _ID, maybe move this down below and change meta right before inserting and then check right before that.
+    const updatedPayloadWithDefaultId = {_id: id, ...updatedPayload};
+    if (isEqual(oldData, updatedPayloadWithDefaultId)) {
       if (showOutput) {
         showNoDiff(oldDoc, showAll);
       }
