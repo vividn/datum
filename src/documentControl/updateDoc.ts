@@ -80,7 +80,7 @@ const updateDoc = async ({
     delete oldData._rev;
     updatedPayload = combineData(oldData, newData, updateStrategy);
 
-    const updatedPayloadWithDefaultId = {_id: id, ...updatedPayload};
+    const updatedPayloadWithDefaultId = { _id: id, ...updatedPayload };
     if (isEqual(oldData, updatedPayloadWithDefaultId)) {
       if (showOutput) {
         showNoDiff(oldDoc, showAll);

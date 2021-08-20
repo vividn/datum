@@ -113,7 +113,11 @@ describe("addCmd", () => {
   });
 
   it("tells the user if the document already exists with identical data", async () => {
-    await addCmd({ idPart: "my name is bob", noTimestamp: true, data: ["foo=bar"] });
+    await addCmd({
+      idPart: "my name is bob",
+      noTimestamp: true,
+      data: ["foo=bar"],
+    });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS")
@@ -121,7 +125,11 @@ describe("addCmd", () => {
 
     mockedLog.mockReset();
 
-    await addCmd({ idPart: "my name is bob", noTimestamp: true, data: ["foo=bar"] });
+    await addCmd({
+      idPart: "my name is bob",
+      noTimestamp: true,
+      data: ["foo=bar"],
+    });
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("CREATE")
     );
@@ -129,7 +137,11 @@ describe("addCmd", () => {
   });
 
   it("fails if addedDocument conflicts with different data", async () => {
-    await addCmd({ idPart: "my name is doug", noTimestamp: true, data: ["foo=bar"] });
+    await addCmd({
+      idPart: "my name is doug",
+      noTimestamp: true,
+      data: ["foo=bar"],
+    });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS")
@@ -138,7 +150,11 @@ describe("addCmd", () => {
     mockedLog.mockReset();
 
     try {
-      await addCmd({ idPart: "my name is doug", noTimestamp: true, data: ["different=data"]});
+      await addCmd({
+        idPart: "my name is doug",
+        noTimestamp: true,
+        data: ["different=data"],
+      });
       fail();
     } catch (e) {
       expect(e).toBeInstanceOf(DocExistsError);

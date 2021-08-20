@@ -1,7 +1,9 @@
 import {
   DatumData,
-  EitherDocument, EitherPayload,
+  EitherDocument,
+  EitherPayload,
   isDatumDocument,
+  isDatumPayload,
 } from "./documentControl/DatumDocument";
 import chalk from "chalk";
 import stringify from "string.ify";
@@ -86,10 +88,7 @@ export const showUpdate = (
   }
 };
 
-export const showNoDiff = (
-  doc: EitherDocument,
-  showAll = false
-): void => {
+export const showNoDiff = (doc: EitherDocument, showAll = false): void => {
   console.log(actionId(ACTIONS.NoDiff, doc._id));
   if (isDatumDocument(doc) && !showAll) {
     displayData(doc.data, ACTION_CHALK["NODIFF"]);
@@ -98,12 +97,9 @@ export const showNoDiff = (
   }
 };
 
-export const showFailed = (
-  doc: EitherPayload,
-  showAll = false
-): void => {
-  console.log(actionId(ACTIONS.Failed, doc._id));
-  if (isDatumDocument(doc) && !showAll) {
+export const showFailed = (doc: EitherPayload, showAll = false): void => {
+  console.log(actionId(ACTIONS.Failed, ""));
+  if (isDatumPayload(doc) && !showAll) {
     displayData(doc.data, ACTION_CHALK["FAILED"]);
   } else {
     displayData(doc, ACTION_CHALK["FAILED"]);
@@ -114,5 +110,5 @@ export enum Show {
   None,
   Minimal,
   Standard,
-  All
+  All,
 }

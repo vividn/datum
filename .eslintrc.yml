@@ -16,9 +16,18 @@ parserOptions:
   sourceType: module
   project: "./tsconfig.withTests.json"
   ecmaVersion: 2018
+plugins:
+  - unused-imports
 rules:
   radix: error
   eqeqeq: error
   "@typescript-eslint/no-explicit-any": off
   "@typescript-eslint/no-non-null-assertion": off
   semi: ["error", "always"]
+  "@typescript-eslint/no-unused-vars": "off"
+  "unused-imports/no-unused-imports": "error"
+  "unused-imports/no-unused-vars": [
+      "warn",
+      { "vars": "all", "args": "after-used" }
+  ]
+
