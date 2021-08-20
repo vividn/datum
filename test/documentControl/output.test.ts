@@ -107,3 +107,6 @@ test("updateDoc outputs a NODIFF: message if showing output and no update needed
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 });
+
+test.todo("overwriteDoc ouputs OWRITE");
+test.todo("overwriteDoc outputs NODIFF");

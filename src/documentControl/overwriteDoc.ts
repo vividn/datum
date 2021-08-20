@@ -4,6 +4,21 @@ import { IdError, MyError } from "../errors";
 import { assembleId } from "../ids";
 import { DateTime } from "luxon";
 import jClone from "../utils/jClone";
+import isEqual from "lodash.isequal";
+import unset from "lodash.unset";
+
+function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
+  const payloadClone = jClone(payload);
+  const docClone = jClone(existingDoc) as EitherPayload;
+
+  // _rev and modifyTime don't matter
+  unset(payloadClone, "_rev");
+  unset(docClone, "_rev");
+  unset(payloadClone, "meta.modifyTime");
+  unset(docClone, "meta.modifyTime");
+
+  return isEqual(payloadClone, docClone);
+}
 
 type overwriteDocType = {
   db: DocumentScope<EitherPayload>;
@@ -67,6 +82,9 @@ const overwriteDoc = async ({
   payload._id = newId;
 
   if (newId === id) {
+    if (isEquivalent(payload, oldDoc)) {
+      return oldDoc;
+    }
     payload._rev = oldDoc._rev;
     await db.insert(payload);
   } else {

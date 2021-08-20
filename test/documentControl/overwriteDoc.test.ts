@@ -19,6 +19,7 @@ import overwriteDoc, {
   OverwriteDocError,
 } from "../../src/documentControl/overwriteDoc";
 import jClone from "../../src/utils/jClone";
+import addDoc from "../../src/documentControl/addDoc";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -33,6 +34,7 @@ const testDatumPayload: DatumPayload = {
     humanId: "ndke4ms9",
   },
 };
+const testDatumPayloadId = "bar__rawString";
 
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
 const now = mockNow.toString();
@@ -234,66 +236,67 @@ describe("overwriteDoc", () => {
   });
 
   it("updates modifyTime to now for DatumPayloads", async () => {
-    const payloadWithoutModified = {
-      data: { foo: "bar" },
-      meta: { occurTime: notNow },
-    };
-    const payloadWithModified = {
-      data: { foo: "bar" },
-      meta: { occurTime: notNow, modifyTime: notNow },
-    };
+    const data1 = { foo: "bar" };
+    const data2 = { bar: "baz" };
+    const modMeta = { occurTime: notNow, modifyTime: notNow };
+    const noModMeta = { occurTime: notNow };
+    const modPay1 = { data: data1, meta: modMeta };
+    const noModPay1 = { data: data1, meta: noModMeta };
+    // These next two are used to avoid having equivalent payload and docs
+    const modPay2 = { data: data2, meta: modMeta };
+    const noModPay2 = { data: data2, meta: noModMeta };
 
-    await db.insert({ _id: "data-only-payload-1", foo: "bar" });
+    await db.insert({ _id: "data-only-payload-1", ...data1 });
     const newDoc1 = await overwriteDoc({
       db,
       id: "data-only-payload-1",
-      payload: payloadWithoutModified,
+      payload: noModPay1,
     });
     expect(newDoc1).toHaveProperty("meta.modifyTime", now);
 
-    await db.insert({ _id: "data-only-payload-2", foo: "bar" });
+    await db.insert({ _id: "data-only-payload-2", ...data1 });
     const newDoc2 = await overwriteDoc({
       db,
       id: "data-only-payload-2",
-      payload: payloadWithModified,
+      payload: modPay1,
     });
     expect(newDoc2).toHaveProperty("meta.modifyTime", now);
 
     await db.insert({
       _id: "datum-without-modifyTime-1",
-      ...payloadWithoutModified,
+      ...noModPay1,
     });
     const newDoc3 = await overwriteDoc({
       db,
       id: "datum-without-modifyTime-1",
-      payload: payloadWithoutModified,
+      payload: noModPay2,
     });
     expect(newDoc3).toHaveProperty("meta.modifyTime", now);
 
     await db.insert({
       _id: "datum-without-modifyTime-2",
-      ...payloadWithoutModified,
+      ...noModPay1,
     });
     const newDoc4 = await overwriteDoc({
       db,
       id: "datum-without-modifyTime-2",
-      payload: payloadWithModified,
+      payload: modPay2,
     });
     expect(newDoc4).toHaveProperty("meta.modifyTime", now);
 
-    await db.insert({ _id: "datum-with-modifyTime-1", ...payloadWithModified });
+    await db.insert({ _id: "datum-with-modifyTime-1", ...modPay1 });
     const newDoc5 = await overwriteDoc({
       db,
       id: "datum-with-modifyTime-1",
-      payload: payloadWithoutModified,
+      payload: noModPay2,
     });
     expect(newDoc5).toHaveProperty("meta.modifyTime", now);
 
-    await db.insert({ _id: "datum-with-modifyTime-2", ...payloadWithModified });
+    await db.insert({ _id: "datum-with-modifyTime-2", ...modPay1 });
     const newDoc6 = await overwriteDoc({
       db,
       id: "datum-with-modifyTime-2",
-      payload: payloadWithModified,
+      payload: modPay2,
     });
     expect(newDoc6).toHaveProperty("meta.modifyTime", now);
   });
@@ -447,5 +450,18 @@ describe("overwriteDoc", () => {
     await overwriteDoc({ db, id: "abcd", payload: payload1 });
 
     expect(payload1).toEqual(payload2);
+  });
+
+  it("does not write to db if payload is identical", async () => {
+    await addDoc({ db, payload: testDatumPayload });
+    const existingDoc = await db.get(testDatumPayloadId);
+
+    const returnedDoc = await overwriteDoc({
+      db,
+      id: testDatumPayloadId,
+      payload: testDatumPayload,
+    });
+    expect(returnedDoc).toEqual(existingDoc);
+    expect((await db.get(testDatumPayloadId))._rev).toEqual(existingDoc._rev);
   });
 });
