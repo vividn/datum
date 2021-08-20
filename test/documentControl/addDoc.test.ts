@@ -280,6 +280,9 @@ describe("addDoc", () => {
   });
 
   test("It still throws an DocExistsError if conflict and showOutput", async () => {
+    const originalLog = console.log;
+    console.log = jest.fn();
+
     const id = "conflictId";
     await db.insert({ _id: id, foo: "abc" });
     try {
@@ -292,5 +295,7 @@ describe("addDoc", () => {
     } catch (e) {
       expect(e).toBeInstanceOf(DocExistsError);
     }
+
+    console.log = originalLog;
   });
 });

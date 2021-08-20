@@ -8,9 +8,10 @@ import {
 } from "@jest/globals";
 import updateDoc from "../../src/documentControl/updateDoc";
 import * as updateDocModule from "../../src/documentControl/updateDoc";
-import { pass, testNano } from "../test-utils";
+import { fail, pass, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import addDoc from "../../src/documentControl/addDoc";
+import { DocExistsError } from "../../src/documentControl/base";
 
 const dbName = "doc_control_output_test";
 const db = testNano.db.use<EitherPayload>(dbName);
@@ -41,14 +42,21 @@ test("addDoc displays a CREATE: message and the document if showOutput", async (
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
 });
 
-test("addDoc displays an EXISTS: message and the document if showOuput and conlfict", async () => {
+test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict", async () => {
   await db.insert({ _id: "alreadyHere", foo: "bar" });
-  await addDoc({
-    db,
-    payload: { _id: "alreadyHere", baz: "bazzy" },
-    showOutput: true,
-  }).catch(pass);
+  try {
+    await addDoc({
+      db,
+      payload: { _id: "alreadyHere", baz: "bazzy" },
+      showOutput: true,
+    });
+    fail();
+  } catch (e) {
+    expect(e).toBeInstanceOf(DocExistsError);
+  }
+
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
 });
 
 test("addDoc calls updateDoc with showOutput", async () => {
