@@ -53,19 +53,24 @@ test("addDoc displays an EXISTS: message and the document if showOuput and conlf
 
 test("addDoc calls updateDoc with showOutput", async () => {
   const spy = jest.spyOn(updateDocModule, "default");
-  const payload = {_id: "docId", foo: "abce"};
-  await addDoc({db, payload, showOutput: true, conflictStrategy: "merge"});
+  const payload = { _id: "docId", foo: "abce" };
+  await addDoc({ db, payload, showOutput: true, conflictStrategy: "merge" });
   expect(spy).not.toHaveBeenCalled();
 
   mockedLog.mockClear();
 
-  await addDoc({db, payload, showOutput: true, conflictStrategy: "merge"});
+  await addDoc({ db, payload, showOutput: true, conflictStrategy: "merge" });
   expect(spy.mock.calls[0][0].showOutput).toEqual(true);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
   mockedLog.mockClear();
 
-  await addDoc({db, payload: {...payload, extraKey: 123}, showOutput: true, conflictStrategy: "merge" });
+  await addDoc({
+    db,
+    payload: { ...payload, extraKey: 123 },
+    showOutput: true,
+    conflictStrategy: "merge",
+  });
   expect(spy.mock.calls[1][0].showOutput).toEqual(true);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 

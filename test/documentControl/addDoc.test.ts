@@ -283,7 +283,11 @@ describe("addDoc", () => {
     const id = "conflictId";
     await db.insert({ _id: id, foo: "abc" });
     try {
-      await addDoc({ db, payload: { _id: id, foo: "different" }, showOutput: true });
+      await addDoc({
+        db,
+        payload: { _id: id, foo: "different" },
+        showOutput: true,
+      });
       fail();
     } catch (e) {
       expect(e).toBeInstanceOf(DocExistsError);

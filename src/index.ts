@@ -5,12 +5,12 @@ import addCmd, { AddCmdArgs } from "./commands/addCmd";
 
 async function main(cliInput: string | string[]): Promise<void> {
   const args = await configuredYargs.parseAsync(cliInput);
-  switch(args._[0]) {
+  switch (args._[0]) {
     case "add":
       await addCmd(args as AddCmdArgs);
       break;
     default:
-      throw Error('command not recognized');
+      throw Error("command not recognized");
   }
 }
 
