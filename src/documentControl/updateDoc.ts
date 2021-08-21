@@ -13,6 +13,7 @@ import { DateTime } from "luxon";
 import { assembleId } from "../ids";
 import { showNoDiff, showUpdate } from "../output";
 import isEqual from "lodash.isequal";
+import { BaseDocControlArgs } from "./base";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -29,13 +30,10 @@ export class NoDocToUpdateError extends MyError {
 }
 
 type updateDocType = {
-  db: DocumentScope<EitherPayload>;
   id: string;
   payload: EitherPayload;
   updateStrategy?: UpdateStrategyNames;
-  showOutput?: boolean;
-  showAll?: boolean;
-};
+} & BaseDocControlArgs;
 
 const updateDoc = async ({
   db,

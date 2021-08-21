@@ -12,7 +12,7 @@ import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import updateDoc from "./updateDoc";
 import { showCreate, showExists, showFailed } from "../output";
-import { DocExistsError } from "./base";
+import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 
 function payloadMatchesDbData(
@@ -33,12 +33,9 @@ function payloadMatchesDbData(
 }
 
 type addDocType = {
-  db: DocumentScope<EitherPayload>;
   payload: EitherPayload;
   conflictStrategy?: UpdateStrategyNames;
-  showOutput?: boolean;
-  showAll?: boolean;
-};
+} & BaseDocControlArgs;
 
 const addDoc = async ({
   db,

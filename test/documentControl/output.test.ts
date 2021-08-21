@@ -135,6 +135,7 @@ test("overwriteDoc outputs OWRITE", async () => {
     db,
     id: "docId",
     payload: { _id: "docId", data: { bar: "def" }, meta: { humanId: "defg" } },
+    showOutput: true
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
@@ -151,6 +152,7 @@ test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
     db,
     id: "docId",
     payload: { _id: "newId", data: { bar: "def" }, meta: { humanId: "defg" } },
+    showOutput: true
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
@@ -167,6 +169,7 @@ test("overwriteDoc outputs NODIFF", async () => {
     db,
     id: "docId",
     payload: { _id: "docId", data: { foo: "abc" }, meta: { humanId: "abcd" } },
+    showOutput: true
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
