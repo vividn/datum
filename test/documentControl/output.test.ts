@@ -130,7 +130,7 @@ test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
     _id: "docId",
     foo: "abc",
   });
-  await db.insert({_id: "conflictId", some: "data"});
+  await db.insert({ _id: "conflictId", some: "data" });
   try {
     await updateDoc({
       db,
@@ -157,7 +157,7 @@ test("overwriteDoc outputs OWRITE", async () => {
     db,
     id: "docId",
     payload: { _id: "docId", data: { bar: "def" }, meta: { humanId: "defg" } },
-    showOutput: true
+    showOutput: true,
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
@@ -174,7 +174,7 @@ test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
     db,
     id: "docId",
     payload: { _id: "newId", data: { bar: "def" }, meta: { humanId: "defg" } },
-    showOutput: true
+    showOutput: true,
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
@@ -191,7 +191,7 @@ test("overwriteDoc outputs NODIFF", async () => {
     db,
     id: "docId",
     payload: { _id: "docId", data: { foo: "abc" }, meta: { humanId: "abcd" } },
-    showOutput: true
+    showOutput: true,
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
@@ -217,7 +217,7 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
         data: { bar: "def" },
         meta: { humanId: "defg" },
       },
-      showOutput: true
+      showOutput: true,
     });
     fail();
   } catch (e) {

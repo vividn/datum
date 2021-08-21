@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import {
   DataOnlyPayload,
   EitherDocument,
@@ -11,7 +10,13 @@ import jClone from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
-import { showExists, showFailed, showNoDiff, showRename, showUpdate } from "../output";
+import {
+  showExists,
+  showFailed,
+  showNoDiff,
+  showRename,
+  showUpdate,
+} from "../output";
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 

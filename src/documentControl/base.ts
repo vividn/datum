@@ -18,4 +18,4 @@ export type BaseDocControlArgs = {
   db: DocumentScope<EitherPayload>;
   showOutput?: boolean;
   showAll?: boolean;
-}
+};

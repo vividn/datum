@@ -4,7 +4,6 @@ import {
   isDatumDocument,
   isDatumPayload,
 } from "./DatumDocument";
-import { DocumentScope } from "nano";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
 import { IdError } from "../errors";

@@ -6,7 +6,13 @@ import jClone from "../utils/jClone";
 import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
 import { BaseDocControlArgs, DocExistsError } from "./base";
-import { showExists, showFailed, showNoDiff, showOWrite, showRename } from "../output";
+import {
+  showExists,
+  showFailed,
+  showNoDiff,
+  showOWrite,
+  showRename,
+} from "../output";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
