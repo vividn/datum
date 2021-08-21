@@ -121,9 +121,31 @@ test.todo("updateDoc outputs a RENAME: UPDATE:", async () => {
     updateStrategy: "preferNew",
     showOutput: true,
   });
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 });
 
-test.todo("updateDoc throws and outputs an EXISTS: FAIL!!:");
+test("updateDoc throws and outputs an EXISTS: FAIL!!:", async () => {
+  await db.insert({
+    _id: "docId",
+    foo: "abc",
+  });
+  await db.insert({_id: "conflictId", some: "data"});
+  try {
+    await updateDoc({
+      db,
+      id: "docId",
+      payload: { _id: "conflictId", foo: "bar" },
+      updateStrategy: "preferNew",
+      showOutput: true,
+    });
+    fail();
+  } catch (e) {
+    expect(e).toBeInstanceOf(DocExistsError);
+  }
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAIL!!"));
+});
 
 test("overwriteDoc outputs OWRITE", async () => {
   await db.insert({

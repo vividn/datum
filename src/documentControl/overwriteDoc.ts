@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { EitherDocument, EitherPayload, isDatumPayload } from "./DatumDocument";
 import { IdError, MyError } from "../errors";
 import { assembleId } from "../ids";
@@ -7,6 +6,7 @@ import jClone from "../utils/jClone";
 import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
 import { BaseDocControlArgs, DocExistsError } from "./base";
+import { showExists, showFailed, showNoDiff, showOWrite, showRename } from "../output";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
@@ -44,6 +44,8 @@ const overwriteDoc = async ({
   db,
   id,
   payload,
+  showOutput,
+  showAll,
 }: overwriteDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   const oldDoc = await db.get(id).catch((e) => {
@@ -83,6 +85,9 @@ const overwriteDoc = async ({
 
   if (newId === id) {
     if (isEquivalent(payload, oldDoc)) {
+      if (showOutput) {
+        showNoDiff(oldDoc, showAll);
+      }
       return oldDoc;
     }
     payload._rev = oldDoc._rev;
@@ -92,15 +97,25 @@ const overwriteDoc = async ({
     await db.insert(payload).catch(async (e) => {
       if (e.error === "conflict") {
         const existingDoc = await db.get(newId);
+        if (showOutput) {
+          showExists(existingDoc, showAll);
+          showFailed(payload, showAll);
+        }
         throw new DocExistsError(payload, existingDoc);
       } else {
         throw e;
       }
     });
     await db.destroy(id, oldDoc._rev);
+    if (showOutput) {
+      showRename(id, newId, showAll);
+    }
   }
 
   const newDoc = await db.get(newId);
+  if (showOutput) {
+    showOWrite(oldDoc, newDoc, showAll);
+  }
   return newDoc;
 };
 

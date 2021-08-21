@@ -13,6 +13,8 @@ enum ACTIONS {
   Delete = "DELETE",
   Exists = "EXISTS",
   Update = "UPDATE",
+  OWrite = "OWRITE",
+  Rename = "RENAME",
   NoDiff = "NODIFF",
   Failed = "FAILED",
 }
@@ -21,6 +23,8 @@ const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   DELETE: chalk.red,
   EXISTS: chalk.yellow,
   UPDATE: chalk.cyan,
+  OWRITE: chalk.blue,
+  RENAME: chalk.cyan,
   NODIFF: chalk.hex("#ffa500"),
   FAILED: chalk.red,
 };
@@ -72,20 +76,35 @@ export const showUpdate = (
   afterDoc: EitherDocument,
   showAll = false
 ): void => {
-  if (beforeDoc._id !== afterDoc._id) {
-    console.log(
-      actionId(ACTIONS.Update, beforeDoc._id) +
-        " ⟶ " +
-        chalk.green(afterDoc._id)
-    );
-  } else {
-    console.log(actionId(ACTIONS.Update, afterDoc._id));
-  }
+  console.log(actionId(ACTIONS.Update, afterDoc._id));
   if (isDatumDocument(afterDoc) && !showAll) {
     displayData(afterDoc.data, ACTION_CHALK["UPDATE"]);
   } else {
     displayData(afterDoc, ACTION_CHALK["UPDATE"]);
   }
+};
+
+export const showOWrite = (
+  _beforeDoc: EitherDocument,
+  afterDoc: EitherDocument,
+  showAll = false
+): void => {
+  console.log(actionId(ACTIONS.OWrite, afterDoc._id));
+  if (isDatumDocument(afterDoc) && !showAll) {
+    displayData(afterDoc.data, ACTION_CHALK["OWRITE"]);
+  } else {
+    displayData(afterDoc, ACTION_CHALK["OWRITE"]);
+  }
+};
+
+export const showRename = (
+  beforeId: string,
+  afterId: string,
+  _showAll = false
+): void => {
+  console.log(
+    actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId)
+  );
 };
 
 export const showNoDiff = (doc: EitherDocument, showAll = false): void => {
