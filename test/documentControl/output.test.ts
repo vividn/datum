@@ -125,7 +125,7 @@ test("updateDoc outputs a RENAME: UPDATE:", async () => {
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 });
 
-test("updateDoc throws and outputs an EXISTS: FAIL!!:", async () => {
+test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
   await db.insert({
     _id: "docId",
     foo: "abc",
@@ -144,7 +144,7 @@ test("updateDoc throws and outputs an EXISTS: FAIL!!:", async () => {
     expect(e).toBeInstanceOf(DocExistsError);
   }
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAIL!!"));
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
 });
 
 test("overwriteDoc outputs OWRITE", async () => {
@@ -197,7 +197,7 @@ test("overwriteDoc outputs NODIFF", async () => {
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
 });
 
-test("overwriteDoc throws and outputs an EXISTS: FAIL!!:", async () => {
+test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
   await db.insert({
     _id: "docId",
     data: { foo: "abc" },
@@ -224,7 +224,7 @@ test("overwriteDoc throws and outputs an EXISTS: FAIL!!:", async () => {
     expect(e).toBeInstanceOf(DocExistsError);
   }
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAIL!!"));
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
 });
