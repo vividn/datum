@@ -109,7 +109,7 @@ test("updateDoc outputs a NODIFF: message if showing output and no update needed
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 });
 
-test.todo("updateDoc outputs a RENAME: UPDATE:", async () => {
+test("updateDoc outputs a RENAME: UPDATE:", async () => {
   await db.insert({
     _id: "docId",
     foo: "abc",

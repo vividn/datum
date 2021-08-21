@@ -11,9 +11,9 @@ import jClone from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
-import { showNoDiff, showUpdate } from "../output";
+import { showExists, showFailed, showNoDiff, showRename, showUpdate } from "../output";
 import isEqual from "lodash.isequal";
-import { BaseDocControlArgs } from "./base";
+import { BaseDocControlArgs, DocExistsError } from "./base";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -60,7 +60,7 @@ const updateDoc = async ({
 
   const newData = isDatumPayload(payload) ? payload.data : payload;
 
-  let updatedPayload;
+  let updatedPayload: EitherPayload;
   if (isDatumDocument(oldDoc)) {
     const oldData = oldDoc.data;
     const updatedData = combineData(oldData, newData, updateStrategy);
@@ -104,14 +104,22 @@ const updateDoc = async ({
     await db.insert(updatedPayload);
   } else {
     delete updatedPayload._rev;
-    await db.insert(updatedPayload).catch((e) => {
+    await db.insert(updatedPayload).catch(async (e) => {
       if (e.error === "conflict") {
-        throw new UpdateDocError("id conflict with another document");
+        const existingDoc = await db.get(newId);
+        if (showOutput) {
+          showExists(existingDoc, showAll);
+          showFailed(updatedPayload, showAll);
+        }
+        throw new DocExistsError(updatedPayload, existingDoc);
       } else {
         throw e;
       }
     });
     await db.destroy(id, oldDoc._rev);
+    if (showOutput) {
+      showRename(id, newId, showAll);
+    }
   }
 
   const newDoc = await db.get(newId);
