@@ -1,12 +1,25 @@
 #!/usr/bin/env node
 import { configuredYargs } from "./input";
+import { DocExistsError } from "./documentControl/base";
+import addCmd, { AddCmdArgs } from "./commands/addCmd";
 
 async function main(cliInput: string | string[]): Promise<void> {
-  await configuredYargs.parseAsync(cliInput);
+  const args = await configuredYargs.parseAsync(cliInput);
+  switch (args._[0]) {
+    case "add":
+      await addCmd(args as AddCmdArgs);
+      break;
+    default:
+      throw Error("command not recognized");
+  }
 }
 
 if (require.main === module) {
   main(process.argv.slice(2)).catch((err) => {
-    console.error(err);
+    if (err instanceof DocExistsError) {
+      process.exitCode = 11;
+    } else {
+      console.error(err);
+    }
   });
 }

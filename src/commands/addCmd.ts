@@ -218,7 +218,7 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export async function handler(args: AddCmdArgs): Promise<EitherDocument> {
+export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   // TODO: Get a timestamp as soon as possible
   const db = connectDb(args);
   const {
@@ -354,4 +354,4 @@ export async function handler(args: AddCmdArgs): Promise<EitherDocument> {
   return doc;
 }
 
-export default handler;
+export default addCmd;

@@ -1,27 +1,40 @@
-import { EitherDocument, EitherPayload, isDatumPayload } from "./DatumDocument";
-import { DocumentScope } from "nano";
+import {
+  EitherDocument,
+  EitherPayload,
+  isDatumDocument,
+  isDatumPayload,
+} from "./DatumDocument";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
-import { IdError, MyError } from "../errors";
+import { IdError } from "../errors";
 import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import updateDoc from "./updateDoc";
-import { showCreate, showExists, showUpdate } from "../output";
+import { showCreate, showExists, showFailed } from "../output";
+import { BaseDocControlArgs, DocExistsError } from "./base";
+import isEqual from "lodash.isequal";
 
-export class AddDocError extends MyError {
-  constructor(m: unknown) {
-    super(m);
-    Object.setPrototypeOf(this, AddDocError.prototype);
-  }
+function payloadMatchesDbData(
+  payload: EitherPayload,
+  existingDoc: EitherDocument
+) {
+  const existingWithoutRev = jClone(existingDoc) as EitherPayload;
+  delete existingWithoutRev._rev;
+
+  return (
+    (isDatumPayload(payload) &&
+      isDatumDocument(existingDoc) &&
+      isEqual(payload.data, existingDoc.data)) ||
+    (!isDatumPayload(payload) &&
+      !isDatumDocument(existingDoc) &&
+      isEqual(payload, existingWithoutRev))
+  );
 }
 
 type addDocType = {
-  db: DocumentScope<EitherPayload>;
   payload: EitherPayload;
   conflictStrategy?: UpdateStrategyNames;
-  showOutput?: boolean;
-  showAll?: boolean;
-};
+} & BaseDocControlArgs;
 
 const addDoc = async ({
   db,
@@ -52,28 +65,34 @@ const addDoc = async ({
   try {
     await db.insert(payload);
   } catch (e) {
-    if (e.error === "conflict") {
-      const existingDoc = await db.get(id);
-      if (conflictStrategy === undefined) {
-        if (showOutput) {
-          showExists(existingDoc, showAll);
-          return existingDoc;
-        } else {
-          throw new AddDocError(`conflict: doc with ${id} already exists`);
-        }
-      }
+    if (e.error !== "conflict") {
+      throw e;
+    }
+    const existingDoc = await db.get(id);
+
+    if (conflictStrategy !== undefined) {
       const updatedDoc = await updateDoc({
         db,
         id,
         payload,
         updateStrategy: conflictStrategy,
+        showOutput,
+        showAll,
       });
-      if (showOutput) {
-        showUpdate(existingDoc, updatedDoc, showAll);
-      }
       return updatedDoc;
     }
-    throw e;
+    if (payloadMatchesDbData(payload, existingDoc)) {
+      if (showOutput) {
+        showExists(existingDoc, showAll);
+      }
+      return existingDoc;
+    } else {
+      if (showOutput) {
+        showExists(existingDoc, showAll);
+        showFailed(payload, showAll);
+      }
+      throw new DocExistsError(payload, existingDoc);
+    }
   }
   const addedDoc = await db.get(id);
   if (showOutput) {

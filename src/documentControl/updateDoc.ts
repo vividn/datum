@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import {
   DataOnlyPayload,
   EitherDocument,
@@ -11,6 +10,15 @@ import jClone from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
+import {
+  showExists,
+  showFailed,
+  showNoDiff,
+  showRename,
+  showUpdate,
+} from "../output";
+import isEqual from "lodash.isequal";
+import { BaseDocControlArgs, DocExistsError } from "./base";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -27,17 +35,18 @@ export class NoDocToUpdateError extends MyError {
 }
 
 type updateDocType = {
-  db: DocumentScope<EitherPayload>;
   id: string;
   payload: EitherPayload;
   updateStrategy?: UpdateStrategyNames;
-};
+} & BaseDocControlArgs;
 
 const updateDoc = async ({
   db,
   id,
   payload,
   updateStrategy = "merge",
+  showOutput,
+  showAll,
 }: updateDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
@@ -56,10 +65,16 @@ const updateDoc = async ({
 
   const newData = isDatumPayload(payload) ? payload.data : payload;
 
-  let updatedPayload;
+  let updatedPayload: EitherPayload;
   if (isDatumDocument(oldDoc)) {
     const oldData = oldDoc.data;
     const updatedData = combineData(oldData, newData, updateStrategy);
+    if (isEqual(oldData, updatedData)) {
+      if (showOutput) {
+        showNoDiff(oldDoc, showAll);
+      }
+      return oldDoc;
+    }
     const meta = oldDoc.meta;
     meta.modifyTime = DateTime.utc().toString();
     updatedPayload = { data: updatedData, meta: meta };
@@ -67,6 +82,14 @@ const updateDoc = async ({
     const oldData = jClone(oldDoc) as DataOnlyPayload;
     delete oldData._rev;
     updatedPayload = combineData(oldData, newData, updateStrategy);
+
+    const updatedPayloadWithDefaultId = { _id: id, ...updatedPayload };
+    if (isEqual(oldData, updatedPayloadWithDefaultId)) {
+      if (showOutput) {
+        showNoDiff(oldDoc, showAll);
+      }
+      return oldDoc;
+    }
   }
 
   let newId: string;
@@ -86,17 +109,28 @@ const updateDoc = async ({
     await db.insert(updatedPayload);
   } else {
     delete updatedPayload._rev;
-    await db.insert(updatedPayload).catch((e) => {
+    await db.insert(updatedPayload).catch(async (e) => {
       if (e.error === "conflict") {
-        throw new UpdateDocError("id conflict with another document");
+        const existingDoc = await db.get(newId);
+        if (showOutput) {
+          showExists(existingDoc, showAll);
+          showFailed(updatedPayload, showAll);
+        }
+        throw new DocExistsError(updatedPayload, existingDoc);
       } else {
         throw e;
       }
     });
     await db.destroy(id, oldDoc._rev);
+    if (showOutput) {
+      showRename(id, newId, showAll);
+    }
   }
 
   const newDoc = await db.get(newId);
+  if (showOutput) {
+    showUpdate(oldDoc, newDoc, showAll);
+  }
   return newDoc;
 };
 
