@@ -6,6 +6,7 @@ import { DateTime } from "luxon";
 import jClone from "../utils/jClone";
 import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
+import { BaseDocControlArgs, DocExistsError } from "./base";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
@@ -21,10 +22,9 @@ function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
 }
 
 type overwriteDocType = {
-  db: DocumentScope<EitherPayload>;
   id: string;
   payload: EitherPayload;
-};
+} & BaseDocControlArgs;
 
 export class OverwriteDocError extends MyError {
   constructor(m: unknown) {
@@ -89,9 +89,10 @@ const overwriteDoc = async ({
     await db.insert(payload);
   } else {
     delete payload._rev;
-    await db.insert(payload).catch((e) => {
+    await db.insert(payload).catch(async (e) => {
       if (e.error === "conflict") {
-        throw new OverwriteDocError("id conflict with another document");
+        const existingDoc = await db.get(newId);
+        throw new DocExistsError(payload, existingDoc);
       } else {
         throw e;
       }

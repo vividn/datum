@@ -1,4 +1,5 @@
 import { EitherDocument, EitherPayload } from "./DatumDocument";
+import { DocumentScope } from "nano";
 
 export class DocExistsError extends Error {
   data: { existingDocument: EitherDocument; failedPayload: EitherPayload };
@@ -11,4 +12,10 @@ export class DocExistsError extends Error {
     Object.setPrototypeOf(this, DocExistsError.prototype);
     Error.captureStackTrace(this, this.constructor);
   }
+}
+
+export type BaseDocControlArgs = {
+  db: DocumentScope<EitherPayload>;
+  showOutput?: boolean;
+  showAll?: boolean;
 }
