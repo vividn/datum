@@ -7,6 +7,7 @@ import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import {
+  Show,
   showExists,
   showFailed,
   showNoDiff,
@@ -50,8 +51,7 @@ const overwriteDoc = async ({
   db,
   id,
   payload,
-  showOutput,
-  showAll,
+  show = Show.None,
 }: overwriteDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   const oldDoc = await db.get(id).catch((e) => {
@@ -91,9 +91,7 @@ const overwriteDoc = async ({
 
   if (newId === id) {
     if (isEquivalent(payload, oldDoc)) {
-      if (showOutput) {
-        showNoDiff(oldDoc, showAll);
-      }
+      showNoDiff(oldDoc, show);
       return oldDoc;
     }
     payload._rev = oldDoc._rev;
@@ -103,25 +101,19 @@ const overwriteDoc = async ({
     await db.insert(payload).catch(async (e) => {
       if (e.error === "conflict") {
         const existingDoc = await db.get(newId);
-        if (showOutput) {
-          showExists(existingDoc, showAll);
-          showFailed(payload, showAll);
-        }
+        showExists(existingDoc, show);
+        showFailed(payload, show);
         throw new DocExistsError(payload, existingDoc);
       } else {
         throw e;
       }
     });
     await db.destroy(id, oldDoc._rev);
-    if (showOutput) {
-      showRename(id, newId, showAll);
-    }
+    showRename(id, newId, show);
   }
 
   const newDoc = await db.get(newId);
-  if (showOutput) {
-    showOWrite(oldDoc, newDoc, showAll);
-  }
+  showOWrite(oldDoc, newDoc, show);
   return newDoc;
 };
 
