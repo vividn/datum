@@ -1,15 +1,36 @@
-import { DocumentScope } from "nano";
 import { EitherDocument, EitherPayload, isDatumPayload } from "./DatumDocument";
 import { IdError, MyError } from "../errors";
 import { assembleId } from "../ids";
 import { DateTime } from "luxon";
 import jClone from "../utils/jClone";
+import isEqual from "lodash.isequal";
+import unset from "lodash.unset";
+import { BaseDocControlArgs, DocExistsError } from "./base";
+import {
+  showExists,
+  showFailed,
+  showNoDiff,
+  showOWrite,
+  showRename,
+} from "../output";
+
+function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
+  const payloadClone = jClone(payload);
+  const docClone = jClone(existingDoc) as EitherPayload;
+
+  // _rev and modifyTime don't matter
+  unset(payloadClone, "_rev");
+  unset(docClone, "_rev");
+  unset(payloadClone, "meta.modifyTime");
+  unset(docClone, "meta.modifyTime");
+
+  return isEqual(payloadClone, docClone);
+}
 
 type overwriteDocType = {
-  db: DocumentScope<EitherPayload>;
   id: string;
   payload: EitherPayload;
-};
+} & BaseDocControlArgs;
 
 export class OverwriteDocError extends MyError {
   constructor(m: unknown) {
@@ -29,6 +50,8 @@ const overwriteDoc = async ({
   db,
   id,
   payload,
+  showOutput,
+  showAll,
 }: overwriteDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   const oldDoc = await db.get(id).catch((e) => {
@@ -67,21 +90,38 @@ const overwriteDoc = async ({
   payload._id = newId;
 
   if (newId === id) {
+    if (isEquivalent(payload, oldDoc)) {
+      if (showOutput) {
+        showNoDiff(oldDoc, showAll);
+      }
+      return oldDoc;
+    }
     payload._rev = oldDoc._rev;
     await db.insert(payload);
   } else {
     delete payload._rev;
-    await db.insert(payload).catch((e) => {
+    await db.insert(payload).catch(async (e) => {
       if (e.error === "conflict") {
-        throw new OverwriteDocError("id conflict with another document");
+        const existingDoc = await db.get(newId);
+        if (showOutput) {
+          showExists(existingDoc, showAll);
+          showFailed(payload, showAll);
+        }
+        throw new DocExistsError(payload, existingDoc);
       } else {
         throw e;
       }
     });
     await db.destroy(id, oldDoc._rev);
+    if (showOutput) {
+      showRename(id, newId, showAll);
+    }
   }
 
   const newDoc = await db.get(newId);
+  if (showOutput) {
+    showOWrite(oldDoc, newDoc, showAll);
+  }
   return newDoc;
 };
 

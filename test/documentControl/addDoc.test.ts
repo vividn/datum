@@ -16,12 +16,13 @@ import {
   test,
   jest,
 } from "@jest/globals";
-import { pass, testNano } from "../test-utils";
+import { fail, pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
-import addDoc, { AddDocError } from "../../src/documentControl/addDoc";
+import addDoc from "../../src/documentControl/addDoc";
 import { IdError } from "../../src/errors";
 import jClone from "../../src/utils/jClone";
 import * as updateDoc from "../../src/documentControl/updateDoc";
+import { DocExistsError } from "../../src/documentControl/base";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -127,29 +128,102 @@ describe("addDoc", () => {
     });
   });
 
-  it("throws error if document with id already exists", async () => {
+  it("does not write to db if identical DataOnlyDocument exists", async () => {
     const id = "existingId";
     const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
-    await db.insert(existingData, id);
+    await db.insert(existingData);
+    const existingDoc = await db.get(id);
+
+    const newDoc = await addDoc({ db, payload: existingData });
+    expect(newDoc).toEqual(existingDoc);
+    expect(await db.get(id)).toHaveProperty("_rev", existingDoc._rev);
+  });
+
+  it("does not write to db if DatumDocument with identical data already exists", async () => {
+    const id = "existingDatumId";
+    const existingPayload = {
+      _id: id,
+      data: { foo: "abc" },
+      meta: { humanId: "meta can be different" },
+    };
+    const payloadSameData = {
+      _id: id,
+      data: { foo: "abc" },
+      meta: { humanId: "different metadata" },
+    };
+    await db.insert(existingPayload);
+    const existingDoc = await db.get(id);
+
+    const newDoc = await addDoc({ db, payload: payloadSameData });
+    expect(newDoc).toEqual(existingDoc);
+    expect(await db.get(id)).toHaveProperty("_rev", existingDoc._rev);
+    expect(newDoc.meta.humanId).toEqual("meta can be different");
+  });
+
+  it("throws error if a different document with id already exists", async () => {
+    const id = "existingId";
+    const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
+    await db.insert(existingData);
 
     const attemptedNewPayload = {
       _id: id,
       newData: "but this won't get inserted",
     };
 
-    await expect(
-      addDoc({ db, payload: attemptedNewPayload })
-    ).rejects.toThrowError(AddDocError);
+    try {
+      await addDoc({ db, payload: attemptedNewPayload });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     const dbDoc = await db.get(id);
     expect(dbDoc).toMatchObject(existingData);
     expect(dbDoc).not.toHaveProperty("newData");
   });
 
-  it("fails if called twice because of duplicate id", async () => {
-    await addDoc({ db, payload: testDatumPayload });
-    await expect(
-      addDoc({ db, payload: testDatumPayload })
-    ).rejects.toThrowError(AddDocError);
+  it("it still fails if data is the same, but payload is datum and the existing is dataonly", async () => {
+    const data = { foo: "abc" };
+    await db.insert({ _id: "dataOnly", ...data });
+
+    try {
+      await addDoc({
+        db,
+        payload: {
+          _id: "dataOnly",
+          data: { ...data },
+          meta: { humanId: "human" },
+        },
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+  });
+
+  it("it still fails if data is the same, but payload is dataOnly and the existing is datum", async () => {
+    const data = { _id: "datum", foo: "abc" };
+    await db.insert({
+      _id: "datum",
+      data: { ...data },
+      meta: { humanId: "datumDoc" },
+    });
+    try {
+      await addDoc({ db, payload: { ...data } });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+  });
+
+  it("still calls updateDoc with updateStrategy is even if data is identical", async () => {
+    const spy = jest.spyOn(updateDoc, "default");
+    const data = { _id: "dataonly", foo: "abc" };
+    await db.insert(data);
+
+    const newDoc = await addDoc({ db, payload: data, conflictStrategy: "xor" });
+    expect(spy).toHaveBeenCalled();
+    // xor removes properties that appear in both
+    expect(newDoc).not.toHaveProperty("foo");
   });
 
   it("can still insert if _rev is given in the payload", async () => {
@@ -205,6 +279,23 @@ describe("addDoc", () => {
     expect(spy).toHaveBeenCalled();
   });
 
-  test.todo("it displays the document if showOutput");
-  test.todo("It does not throw an AddDocError if conflict and showOutput");
+  test("It still throws an DocExistsError if conflict and showOutput", async () => {
+    const originalLog = console.log;
+    console.log = jest.fn();
+
+    const id = "conflictId";
+    await db.insert({ _id: id, foo: "abc" });
+    try {
+      await addDoc({
+        db,
+        payload: { _id: id, foo: "different" },
+        showOutput: true,
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+
+    console.log = originalLog;
+  });
 });

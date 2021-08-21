@@ -1,7 +1,9 @@
 import {
   DatumData,
   EitherDocument,
+  EitherPayload,
   isDatumDocument,
+  isDatumPayload,
 } from "./documentControl/DatumDocument";
 import chalk from "chalk";
 import stringify from "string.ify";
@@ -11,12 +13,20 @@ enum ACTIONS {
   Delete = "DELETE",
   Exists = "EXISTS",
   Update = "UPDATE",
+  OWrite = "OWRITE",
+  Rename = "RENAME",
+  NoDiff = "NODIFF",
+  Failed = "FAILED",
 }
 const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   CREATE: chalk.green,
   DELETE: chalk.red,
   EXISTS: chalk.yellow,
   UPDATE: chalk.cyan,
+  OWRITE: chalk.blue,
+  RENAME: chalk.cyan,
+  NODIFF: chalk.hex("#ffa500"),
+  FAILED: chalk.red,
 };
 
 const actionId = (action: ACTIONS, id: string): string => {
@@ -66,18 +76,58 @@ export const showUpdate = (
   afterDoc: EitherDocument,
   showAll = false
 ): void => {
-  if (beforeDoc._id !== afterDoc._id) {
-    console.log(
-      actionId(ACTIONS.Update, beforeDoc._id) +
-        " ⟶ " +
-        chalk.green(afterDoc._id)
-    );
-  } else {
-    console.log(actionId(ACTIONS.Update, afterDoc._id));
-  }
+  console.log(actionId(ACTIONS.Update, afterDoc._id));
   if (isDatumDocument(afterDoc) && !showAll) {
     displayData(afterDoc.data, ACTION_CHALK["UPDATE"]);
   } else {
     displayData(afterDoc, ACTION_CHALK["UPDATE"]);
   }
 };
+
+export const showOWrite = (
+  _beforeDoc: EitherDocument,
+  afterDoc: EitherDocument,
+  showAll = false
+): void => {
+  console.log(actionId(ACTIONS.OWrite, afterDoc._id));
+  if (isDatumDocument(afterDoc) && !showAll) {
+    displayData(afterDoc.data, ACTION_CHALK["OWRITE"]);
+  } else {
+    displayData(afterDoc, ACTION_CHALK["OWRITE"]);
+  }
+};
+
+export const showRename = (
+  beforeId: string,
+  afterId: string,
+  _showAll = false
+): void => {
+  console.log(
+    actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId)
+  );
+};
+
+export const showNoDiff = (doc: EitherDocument, showAll = false): void => {
+  console.log(actionId(ACTIONS.NoDiff, doc._id));
+  if (isDatumDocument(doc) && !showAll) {
+    displayData(doc.data, ACTION_CHALK["NODIFF"]);
+  } else {
+    displayData(doc, ACTION_CHALK["NODIFF"]);
+  }
+};
+
+export const showFailed = (doc: EitherPayload, showAll = false): void => {
+  console.log(actionId(ACTIONS.Failed, ""));
+  if (isDatumPayload(doc) && !showAll) {
+    displayData(doc.data, ACTION_CHALK["FAILED"]);
+  } else {
+    displayData(doc, ACTION_CHALK["FAILED"]);
+  }
+};
+
+export enum Show {
+  None,
+  Minimal,
+  Standard,
+  All,
+}

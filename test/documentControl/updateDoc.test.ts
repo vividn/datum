@@ -14,7 +14,7 @@ import {
   jest,
   test,
 } from "@jest/globals";
-import { pass, testNano } from "../test-utils";
+import { fail, pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
 import updateDoc, {
   NoDocToUpdateError,
@@ -23,6 +23,7 @@ import updateDoc, {
 import addDoc from "../../src/documentControl/addDoc";
 import * as combineData from "../../src/documentControl/combineData";
 import jClone from "../../src/utils/jClone";
+import { DocExistsError } from "../../src/documentControl/base";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -213,14 +214,17 @@ describe("updateDoc", () => {
     await db.insert({ _id: oldId });
     await db.insert({ _id: clashingId });
 
-    await expect(
-      updateDoc({
+    try {
+      await updateDoc({
         db,
         id: oldId,
         payload: { _id: clashingId, foo: "bar" },
         updateStrategy: "useNew",
-      })
-    ).rejects.toThrowError(UpdateDocError);
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldId); // original doc is not deleted
 
     const oldCalculatedId = "old-calc-id";
@@ -229,16 +233,19 @@ describe("updateDoc", () => {
       data: { foo: oldCalculatedId },
       meta: { idStructure: "%foo%" },
     });
-    await expect(
-      updateDoc({
+    try {
+      await updateDoc({
         db,
         id: oldCalculatedId,
         payload: {
           foo: clashingId,
         },
         updateStrategy: "useNew",
-      })
-    ).rejects.toThrowError(UpdateDocError);
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldCalculatedId);
   });
 
@@ -364,5 +371,43 @@ describe("updateDoc", () => {
 
   test.todo("how does it handle _ids for dataonly docs?");
 
-  test.todo("it does not write to database if updated document is identical");
+  test("it does not write to database if updated data document is identical", async () => {
+    await db.insert({ _id: "datadoc-id", foo: "abc" });
+    const currentDoc = await db.get("datadoc-id");
+    const nDocsBefore = (await db.info()).doc_count;
+
+    const newDoc = await updateDoc({
+      db,
+      id: "datadoc-id",
+      payload: { foo: "abc" },
+      updateStrategy: "useNew",
+    });
+    expect(newDoc._rev).toEqual(currentDoc._rev);
+    const nDocsAfter = (await db.info()).doc_count;
+    expect(nDocsBefore).toEqual(nDocsAfter);
+  });
+
+  test("it does not write to db if updated datum document is identical", async () => {
+    // Datum
+    await db.insert({
+      _id: "datum-id",
+      data: { abc: "foo" },
+      meta: { humanId: "datumDatum" },
+    });
+    const currentDDoc = await db.get("datum-id");
+    const nDocsBefore2 = (await db.info()).doc_count;
+
+    const newDDoc = await updateDoc({
+      db,
+      id: "datum-id",
+      payload: {
+        data: { keys: "that", will: "be ignored" },
+        meta: { random: 0.010101 },
+      },
+      updateStrategy: "useOld",
+    });
+    expect(newDDoc._rev).toEqual(currentDDoc._rev);
+    const nDocsAfter2 = (await db.info()).doc_count;
+    expect(nDocsBefore2).toEqual(nDocsAfter2);
+  });
 });
