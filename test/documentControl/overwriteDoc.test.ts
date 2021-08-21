@@ -12,7 +12,7 @@ import {
   it,
   test,
 } from "@jest/globals";
-import { pass, testNano } from "../test-utils";
+import { fail, pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
 import overwriteDoc, {
   NoDocToOverwriteError,
@@ -20,6 +20,7 @@ import overwriteDoc, {
 } from "../../src/documentControl/overwriteDoc";
 import jClone from "../../src/utils/jClone";
 import addDoc from "../../src/documentControl/addDoc";
+import { DocExistsError } from "../../src/documentControl/base";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -93,30 +94,43 @@ describe("overwriteDoc", () => {
     await db.insert({ _id: oldId });
     await db.insert({ _id: clashingId });
 
-    await expect(
-      overwriteDoc({ db, id: oldId, payload: { _id: clashingId, foo: "bar" } })
-    ).rejects.toThrowError(OverwriteDocError);
+    try {
+      await overwriteDoc({
+        db,
+        id: oldId,
+        payload: { _id: clashingId, foo: "bar" },
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldId); // original doc is not deleted
 
-    await expect(
-      overwriteDoc({
+    try {
+      await overwriteDoc({
         db,
         id: oldId,
         payload: { _id: clashingId, data: {}, meta: {} },
-      })
-    ).rejects.toThrowError(OverwriteDocError);
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldId);
 
-    await expect(
-      overwriteDoc({
+    try {
+      await overwriteDoc({
         db,
         id: oldId,
         payload: {
           data: { idField: clashingId },
           meta: { idStructure: "%idField%" },
         },
-      })
-    ).rejects.toThrowError(OverwriteDocError);
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldId);
   });
 
