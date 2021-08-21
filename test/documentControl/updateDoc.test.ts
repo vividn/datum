@@ -14,7 +14,7 @@ import {
   jest,
   test,
 } from "@jest/globals";
-import { pass, testNano } from "../test-utils";
+import { fail, pass, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
 import updateDoc, {
   NoDocToUpdateError,
@@ -23,6 +23,7 @@ import updateDoc, {
 import addDoc from "../../src/documentControl/addDoc";
 import * as combineData from "../../src/documentControl/combineData";
 import jClone from "../../src/utils/jClone";
+import { DocExistsError } from "../../src/documentControl/base";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -213,14 +214,17 @@ describe("updateDoc", () => {
     await db.insert({ _id: oldId });
     await db.insert({ _id: clashingId });
 
-    await expect(
-      updateDoc({
+    try {
+      await updateDoc({
         db,
         id: oldId,
         payload: { _id: clashingId, foo: "bar" },
         updateStrategy: "useNew",
-      })
-    ).rejects.toThrowError(UpdateDocError);
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldId); // original doc is not deleted
 
     const oldCalculatedId = "old-calc-id";
@@ -229,16 +233,19 @@ describe("updateDoc", () => {
       data: { foo: oldCalculatedId },
       meta: { idStructure: "%foo%" },
     });
-    await expect(
-      updateDoc({
+    try {
+      await updateDoc({
         db,
         id: oldCalculatedId,
         payload: {
           foo: clashingId,
         },
         updateStrategy: "useNew",
-      })
-    ).rejects.toThrowError(UpdateDocError);
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
     await db.get(oldCalculatedId);
   });
 
