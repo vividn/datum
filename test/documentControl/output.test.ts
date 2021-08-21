@@ -204,7 +204,7 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
     meta: { humanId: "abcd" },
   });
   await db.insert({
-    _id: "conflictDoc",
+    _id: "conflictId",
     data: { some: "data" },
     meta: { humanId: "conlfict" },
   });
