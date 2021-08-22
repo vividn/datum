@@ -2,11 +2,11 @@ import {
   DatumData,
   EitherDocument,
   EitherPayload,
-  isDatumDocument,
   isDatumPayload,
 } from "./documentControl/DatumDocument";
 import chalk from "chalk";
 import stringify from "string.ify";
+import jClone from "./utils/jClone";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -53,81 +53,80 @@ export const displayData = (
   );
 };
 
-export const showCreate = (doc: EitherDocument, showAll = false): void => {
-  console.log(actionId(ACTIONS.Create, doc._id));
-  if (isDatumDocument(doc) && !showAll) {
-    displayData(doc.data, ACTION_CHALK["CREATE"]);
-  } else {
-    displayData(doc, ACTION_CHALK["CREATE"]);
-  }
-};
-
-export const showExists = (doc: EitherDocument, showAll = false): void => {
-  console.log(actionId(ACTIONS.Exists, doc._id));
-  if (isDatumDocument(doc) && !showAll) {
-    displayData(doc.data, ACTION_CHALK["EXISTS"]);
-  } else {
-    displayData(doc, ACTION_CHALK["EXISTS"]);
-  }
-};
-
-export const showUpdate = (
-  beforeDoc: EitherDocument,
-  afterDoc: EitherDocument,
-  showAll = false
-): void => {
-  console.log(actionId(ACTIONS.Update, afterDoc._id));
-  if (isDatumDocument(afterDoc) && !showAll) {
-    displayData(afterDoc.data, ACTION_CHALK["UPDATE"]);
-  } else {
-    displayData(afterDoc, ACTION_CHALK["UPDATE"]);
-  }
-};
-
-export const showOWrite = (
-  _beforeDoc: EitherDocument,
-  afterDoc: EitherDocument,
-  showAll = false
-): void => {
-  console.log(actionId(ACTIONS.OWrite, afterDoc._id));
-  if (isDatumDocument(afterDoc) && !showAll) {
-    displayData(afterDoc.data, ACTION_CHALK["OWRITE"]);
-  } else {
-    displayData(afterDoc, ACTION_CHALK["OWRITE"]);
-  }
-};
-
 export const showRename = (
   beforeId: string,
   afterId: string,
-  _showAll = false
+  show: Show
 ): void => {
+  if (show === Show.None) {
+    return;
+  }
   console.log(
     actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId)
   );
 };
 
-export const showNoDiff = (doc: EitherDocument, showAll = false): void => {
-  console.log(actionId(ACTIONS.NoDiff, doc._id));
-  if (isDatumDocument(doc) && !showAll) {
-    displayData(doc.data, ACTION_CHALK["NODIFF"]);
-  } else {
-    displayData(doc, ACTION_CHALK["NODIFF"]);
+export function showSingle(
+  action: ACTIONS,
+  doc: EitherPayload,
+  show: Show
+): void {
+  if (show === Show.None) {
+    return;
   }
-};
 
-export const showFailed = (doc: EitherPayload, showAll = false): void => {
-  console.log(actionId(ACTIONS.Failed, ""));
-  if (isDatumPayload(doc) && !showAll) {
-    displayData(doc.data, ACTION_CHALK["FAILED"]);
-  } else {
-    displayData(doc, ACTION_CHALK["FAILED"]);
+  console.log(actionId(action, doc._id ?? ""));
+  if (show === Show.Minimal) {
+    return;
   }
-};
+
+  if (show === Show.All) {
+    displayData(doc, ACTION_CHALK[action]);
+    return;
+  }
+
+  if (show === Show.Standard) {
+    const docClone = jClone(doc);
+    delete docClone._id;
+    delete docClone._rev;
+    if (isDatumPayload(docClone)) {
+      displayData(docClone.data, ACTION_CHALK[action]);
+    } else {
+      displayData(docClone, ACTION_CHALK[action]);
+    }
+  }
+}
+export function showCreate(doc: EitherDocument, show: Show): void {
+  return showSingle(ACTIONS.Create, doc, show);
+}
+export function showExists(doc: EitherDocument, show: Show): void {
+  return showSingle(ACTIONS.Exists, doc, show);
+}
+export function showNoDiff(doc: EitherDocument, show: Show): void {
+  return showSingle(ACTIONS.NoDiff, doc, show);
+}
+export function showFailed(payload: EitherPayload, show: Show): void {
+  return showSingle(ACTIONS.Failed, payload, show);
+}
+
+export function showUpdate(
+  _beforeDoc: EitherDocument,
+  afterDoc: EitherDocument,
+  show: Show
+): void {
+  return showSingle(ACTIONS.Update, afterDoc, show);
+}
+export function showOWrite(
+  _beforeDoc: EitherDocument,
+  afterDoc: EitherDocument,
+  show: Show
+): void {
+  return showSingle(ACTIONS.OWrite, afterDoc, show);
+}
 
 export enum Show {
-  None,
-  Minimal,
-  Standard,
-  All,
+  None = "none",
+  Minimal = "minimal",
+  Standard = "standard",
+  All = "all",
 }

@@ -1,4 +1,5 @@
 import yargs from "yargs";
+import { Show } from "../output";
 
 export type BaseDatumArgs = {
   db?: string;
@@ -7,10 +8,11 @@ export type BaseDatumArgs = {
   password?: string;
   env?: string;
   showAll?: boolean;
+  show?: Show;
   _?: string[];
 };
 
-export const configuredYargs = yargs
+export const baseYargs = yargs
   .options({
     // couchdb options
     db: {
@@ -41,9 +43,15 @@ export const configuredYargs = yargs
       type: "boolean",
       alias: "A",
     },
+    show: {
+      describe: "how much of documents to show",
+      type: "string",
+      choices: Object.values(Show),
+      default: "standard",
+      conflict: "show-all",
+    },
   })
-  .commandDir("commands")
-  .command("hello [dataa..]", "hello world message")
+  .commandDir("../commands")
   .help("h")
   .alias("h", "help")
   .strict();

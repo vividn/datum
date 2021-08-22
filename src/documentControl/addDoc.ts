@@ -10,7 +10,7 @@ import { IdError } from "../errors";
 import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import updateDoc from "./updateDoc";
-import { showCreate, showExists, showFailed } from "../output";
+import { Show, showCreate, showExists, showFailed } from "../output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 
@@ -40,8 +40,7 @@ const addDoc = async ({
   db,
   payload,
   conflictStrategy,
-  showOutput,
-  showAll,
+  show = Show.None,
 }: addDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   let id;
@@ -76,28 +75,21 @@ const addDoc = async ({
         id,
         payload,
         updateStrategy: conflictStrategy,
-        showOutput,
-        showAll,
+        show,
       });
       return updatedDoc;
     }
     if (payloadMatchesDbData(payload, existingDoc)) {
-      if (showOutput) {
-        showExists(existingDoc, showAll);
-      }
+      showExists(existingDoc, show);
       return existingDoc;
     } else {
-      if (showOutput) {
-        showExists(existingDoc, showAll);
-        showFailed(payload, showAll);
-      }
+      showExists(existingDoc, show);
+      showFailed(payload, show);
       throw new DocExistsError(payload, existingDoc);
     }
   }
   const addedDoc = await db.get(id);
-  if (showOutput) {
-    showCreate(addedDoc, showAll);
-  }
+  showCreate(addedDoc, show);
   return addedDoc;
 };
 

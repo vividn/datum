@@ -23,6 +23,7 @@ import { IdError } from "../../src/errors";
 import jClone from "../../src/utils/jClone";
 import * as updateDoc from "../../src/documentControl/updateDoc";
 import { DocExistsError } from "../../src/documentControl/base";
+import { Show } from "../../src/output";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -289,7 +290,7 @@ describe("addDoc", () => {
       await addDoc({
         db,
         payload: { _id: id, foo: "different" },
-        showOutput: true,
+        show: Show.Standard,
       });
       fail();
     } catch (e) {
