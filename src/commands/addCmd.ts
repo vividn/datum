@@ -345,7 +345,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   }
 
   const conflictStrategy = args.update ?? (args.merge ? "merge" : undefined);
-  const show: Show | undefined = args.showAll ? Show.All : args.show;
+  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
   const doc = await addDoc({
     db,
     payload,

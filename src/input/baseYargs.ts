@@ -52,7 +52,6 @@ export const baseYargs = yargs
     },
   })
   .commandDir("../commands")
-  .command("hello [dataa..]", "hello world message")
   .help("h")
   .alias("h", "help")
   .strict();

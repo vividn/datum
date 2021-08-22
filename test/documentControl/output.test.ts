@@ -14,6 +14,9 @@ import addDoc from "../../src/documentControl/addDoc";
 import { DocExistsError } from "../../src/documentControl/base";
 import overwriteDoc from "../../src/documentControl/overwriteDoc";
 import { Show } from "../../src/output";
+import * as addDocModule from "../../src/documentControl/addDoc";
+import addCmd from "../../src/commands/addCmd";
+import { main } from "../../src";
 
 const dbName = "doc_control_output_test";
 const db = testNano.db.use<EitherPayload>(dbName);
@@ -228,4 +231,34 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
+});
+
+test("show is None by default when calling a command via import or API", async () => {
+  const spy = jest.spyOn(addDocModule, "default").mockReturnValue(
+    Promise.resolve({
+      _id: "returnDoc",
+      _rev: "1-abcd",
+      data: {},
+      meta: {},
+    })
+  );
+  await addCmd({});
+  expect(spy.mock.calls[0][0].show).toEqual(Show.None);
+  spy.mockRestore();
+});
+
+test("show is Standard by default when calling from the CLI", async () => {
+  const spy = jest.spyOn(addDocModule, "default").mockReturnValue(
+    Promise.resolve({
+      _id: "returnDoc",
+      _rev: "1-abcd",
+      data: {},
+      meta: {},
+    })
+  );
+
+  await main(["--db", dbName, "add"]);
+  expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
+
+  spy.mockRestore();
 });

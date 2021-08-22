@@ -3,7 +3,7 @@ import { baseYargs } from "./input/baseYargs";
 import { DocExistsError } from "./documentControl/base";
 import addCmd, { AddCmdArgs } from "./commands/addCmd";
 
-async function main(cliInput: string | string[]): Promise<void> {
+export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parseAsync(cliInput);
   switch (args._[0]) {
     case "add":
