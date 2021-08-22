@@ -1,5 +1,6 @@
 import RJSON from "relaxed-json";
 
+// TODO: Create special strings for many of the values below because they can't actually be stored in couchdb
 const inferType = (value: number | string): any => {
   if (typeof value === "number") {
     return value;

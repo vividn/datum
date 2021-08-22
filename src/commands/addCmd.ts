@@ -22,6 +22,7 @@ import {
   UpdateStrategyNames,
 } from "../documentControl/combineData";
 import { Show } from "../output";
+import { DateTime } from "luxon";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -220,8 +221,14 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
-  // TODO: Get a timestamp as soon as possible
-  const db = connectDb(args);
+  // Calculate timing data early to make occurTime more exact
+  const { timeStr: occurTime, utcOffset } = !args.noTimestamp
+    ? processTimeArgs(args)
+    : {
+        timeStr: undefined,
+        utcOffset: DateTime.local().offset / 60,
+      };
+
   const {
     data: argData = [],
     field,
@@ -250,8 +257,10 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     baseData,
   });
 
-  // Process timing/metadata
-  const hasOccurTime = !args.noMetadata && !args.noTimestamp;
+  const hasOccurTime = occurTime !== undefined;
+  if (hasOccurTime) {
+    payloadData.occurTime = occurTime;
+  }
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data: payloadData,
     hasOccurTime,
@@ -266,33 +275,13 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const { noMetadata } = args;
   let meta: DatumMetadata | undefined = undefined;
   if (!noMetadata) {
-    const {
-      date,
-      time,
-      quick,
-      yesterday,
-      fullDay,
-      noTimestamp,
-      timezone,
-    } = args;
 
     meta = {
       humanId: newHumanId(),
       random: Math.random(),
     };
 
-    if (!noTimestamp) {
-      const { timeStr: occurTime, utcOffset } = processTimeArgs({
-        date,
-        time,
-        quick,
-        yesterday,
-        fullDay,
-        timezone,
-      });
-      meta.occurTime = occurTime;
-      meta.utcOffset = utcOffset;
-    }
+    meta.utcOffset = utcOffset;
 
     // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same
@@ -311,6 +300,8 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     idStructure: idStructure,
   });
   payload._id = _id;
+
+  const db = connectDb(args);
 
   const { undo } = args;
   if (undo) {

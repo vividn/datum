@@ -162,7 +162,7 @@ export const defaultIdComponents = ({
   hasOccurTime: boolean;
 }): { defaultIdParts: string[]; defaultPartitionParts?: string[] } => {
   const defaultIdParts = hasOccurTime
-    ? ["%?occurTime%"]
+    ? ["%occurTime%"]
     : Object.keys(data).map((key) => `%${key.replace(/%/g, String.raw`\%`)}%`);
   const defaultPartitionParts = "field" in data ? ["%field%"] : undefined;
   return { defaultIdParts, defaultPartitionParts };

@@ -22,7 +22,7 @@ const exampleData: DatumData = {
   num: 3,
   "wei%rd": "da%ta",
 };
-const exampleMetaNoOccur: DatumMetadata = {
+const exampleMeta: DatumMetadata = {
   createTime: "2020-11-09T00:40:12.544Z",
   modifyTime: "2020-11-09T00:40:12.544Z",
   utcOffset: 1,
@@ -30,10 +30,6 @@ const exampleMetaNoOccur: DatumMetadata = {
   humanId: "mqp4znq4cvp3qnj74fgi9",
 };
 const exampleOccurTime = "2020-11-09T00:35:10.000Z";
-const exampleMeta: DatumMetadata = {
-  occurTime: exampleOccurTime,
-  ...exampleMetaNoOccur,
-};
 
 const exampleDataWithField: DatumData = { ...exampleData, field: "main" };
 
@@ -72,7 +68,7 @@ describe("id flow", () => {
   it("returns the occurTime as a default id, if occurTime is in meta", () => {
     expectStructureAndId(
       {},
-      "%?occurTime%",
+      "%occurTime%",
       exampleOccurTime,
       exampleData,
       exampleMeta
