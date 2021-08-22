@@ -1,4 +1,5 @@
 import yargs from "yargs";
+import { Show } from "../output";
 
 export type BaseDatumArgs = {
   db?: string;
@@ -7,6 +8,7 @@ export type BaseDatumArgs = {
   password?: string;
   env?: string;
   showAll?: boolean;
+  show?: Show;
   _?: string[];
 };
 
@@ -41,8 +43,15 @@ export const baseYargs = yargs
       type: "boolean",
       alias: "A",
     },
+    show: {
+      describe: "how much of documents to show",
+      type: "string",
+      choices: Object.values(Show),
+      default: "standard",
+      conflict: "show-all",
+    },
   })
-  .commandDir("commands")
+  .commandDir("../commands")
   .command("hello [dataa..]", "hello world message")
   .help("h")
   .alias("h", "help")

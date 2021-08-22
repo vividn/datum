@@ -2,7 +2,6 @@ import {
   DatumData,
   EitherDocument,
   EitherPayload,
-  isDatumDocument,
   isDatumPayload,
 } from "./documentControl/DatumDocument";
 import chalk from "chalk";
@@ -67,7 +66,11 @@ export const showRename = (
   );
 };
 
-export function showSingle(action: ACTIONS, doc: EitherPayload, show: Show): void {
+export function showSingle(
+  action: ACTIONS,
+  doc: EitherPayload,
+  show: Show
+): void {
   if (show === Show.None) {
     return;
   }
@@ -94,7 +97,7 @@ export function showSingle(action: ACTIONS, doc: EitherPayload, show: Show): voi
   }
 }
 export function showCreate(doc: EitherDocument, show: Show): void {
-  return showSingle(ACTIONS.Create, doc,show);
+  return showSingle(ACTIONS.Create, doc, show);
 }
 export function showExists(doc: EitherDocument, show: Show): void {
   return showSingle(ACTIONS.Exists, doc, show);
@@ -106,17 +109,24 @@ export function showFailed(payload: EitherPayload, show: Show): void {
   return showSingle(ACTIONS.Failed, payload, show);
 }
 
-export function showUpdate(_beforeDoc: EitherDocument, afterDoc: EitherDocument, show: Show): void {
+export function showUpdate(
+  _beforeDoc: EitherDocument,
+  afterDoc: EitherDocument,
+  show: Show
+): void {
   return showSingle(ACTIONS.Update, afterDoc, show);
 }
-export function showOWrite(_beforeDoc: EitherDocument, afterDoc: EitherDocument, show: Show): void {
+export function showOWrite(
+  _beforeDoc: EitherDocument,
+  afterDoc: EitherDocument,
+  show: Show
+): void {
   return showSingle(ACTIONS.OWrite, afterDoc, show);
 }
 
-
 export enum Show {
-  None,
-  Minimal,
-  Standard,
-  All,
+  None = "none",
+  Minimal = "minimal",
+  Standard = "standard",
+  All = "all",
 }

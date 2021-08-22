@@ -21,6 +21,7 @@ import {
   updateStrategies,
   UpdateStrategyNames,
 } from "../documentControl/combineData";
+import { Show } from "../output";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -344,12 +345,12 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   }
 
   const conflictStrategy = args.update ?? (args.merge ? "merge" : undefined);
+  const show: Show | undefined = args.showAll ? Show.All : args.show;
   const doc = await addDoc({
     db,
     payload,
     conflictStrategy,
-    showOutput: true,
-    showAll: args.showAll,
+    show,
   });
   return doc;
 }
