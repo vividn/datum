@@ -10,7 +10,7 @@ export type BaseDatumArgs = {
   _?: string[];
 };
 
-export const configuredYargs = yargs
+export const baseYargs = yargs
   .options({
     // couchdb options
     db: {

@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { configuredYargs } from "./input";
+import { baseYargs } from "./input/baseYargs";
 import { DocExistsError } from "./documentControl/base";
 import addCmd, { AddCmdArgs } from "./commands/addCmd";
 
 async function main(cliInput: string | string[]): Promise<void> {
-  const args = await configuredYargs.parseAsync(cliInput);
+  const args = await baseYargs.parseAsync(cliInput);
   switch (args._[0]) {
     case "add":
       await addCmd(args as AddCmdArgs);

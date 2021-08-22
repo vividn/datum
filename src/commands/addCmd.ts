@@ -1,5 +1,5 @@
 import { Argv } from "yargs";
-import { BaseDatumArgs } from "../input";
+import { BaseDatumArgs } from "../input/baseYargs";
 import {
   DataOnlyPayload,
   DatumMetadata,
