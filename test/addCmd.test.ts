@@ -19,6 +19,7 @@ import * as connectDb from "../src/auth/connectDb";
 import * as addDoc from "../src/documentControl/addDoc";
 import { DocumentScope } from "nano";
 import { DocExistsError } from "../src/documentControl/base";
+import { Show } from "../src/output";
 
 const originalLog = console.log;
 
@@ -117,6 +118,7 @@ describe("addCmd", () => {
       idPart: "my name is bob",
       noTimestamp: true,
       data: ["foo=bar"],
+      show: Show.Standard,
     });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
@@ -129,6 +131,7 @@ describe("addCmd", () => {
       idPart: "my name is bob",
       noTimestamp: true,
       data: ["foo=bar"],
+      show: Show.Standard,
     });
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("CREATE")
@@ -141,6 +144,7 @@ describe("addCmd", () => {
       idPart: "my name is doug",
       noTimestamp: true,
       data: ["foo=bar"],
+      show: Show.Standard,
     });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
@@ -154,6 +158,7 @@ describe("addCmd", () => {
         idPart: "my name is doug",
         noTimestamp: true,
         data: ["different=data"],
+        show: Show.Standard,
       });
       fail();
     } catch (e) {

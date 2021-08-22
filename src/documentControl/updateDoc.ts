@@ -11,6 +11,7 @@ import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
 import {
+  Show,
   showExists,
   showFailed,
   showNoDiff,
@@ -45,8 +46,7 @@ const updateDoc = async ({
   id,
   payload,
   updateStrategy = "merge",
-  showOutput,
-  showAll,
+  show = Show.None,
 }: updateDocType): Promise<EitherDocument> => {
   payload = jClone(payload);
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
@@ -70,9 +70,7 @@ const updateDoc = async ({
     const oldData = oldDoc.data;
     const updatedData = combineData(oldData, newData, updateStrategy);
     if (isEqual(oldData, updatedData)) {
-      if (showOutput) {
-        showNoDiff(oldDoc, showAll);
-      }
+      showNoDiff(oldDoc, show);
       return oldDoc;
     }
     const meta = oldDoc.meta;
@@ -85,9 +83,7 @@ const updateDoc = async ({
 
     const updatedPayloadWithDefaultId = { _id: id, ...updatedPayload };
     if (isEqual(oldData, updatedPayloadWithDefaultId)) {
-      if (showOutput) {
-        showNoDiff(oldDoc, showAll);
-      }
+      showNoDiff(oldDoc, show);
       return oldDoc;
     }
   }
@@ -112,25 +108,19 @@ const updateDoc = async ({
     await db.insert(updatedPayload).catch(async (e) => {
       if (e.error === "conflict") {
         const existingDoc = await db.get(newId);
-        if (showOutput) {
-          showExists(existingDoc, showAll);
-          showFailed(updatedPayload, showAll);
-        }
+        showExists(existingDoc, show);
+        showFailed(updatedPayload, show);
         throw new DocExistsError(updatedPayload, existingDoc);
       } else {
         throw e;
       }
     });
     await db.destroy(id, oldDoc._rev);
-    if (showOutput) {
-      showRename(id, newId, showAll);
-    }
+    showRename(id, newId, show);
   }
 
   const newDoc = await db.get(newId);
-  if (showOutput) {
-    showUpdate(oldDoc, newDoc, showAll);
-  }
+  showUpdate(oldDoc, newDoc, show);
   return newDoc;
 };
 
