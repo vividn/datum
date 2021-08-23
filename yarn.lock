@@ -5448,10 +5448,10 @@ through@^2.3.6:
   resolved "https://registry.yarnpkg.com/through/-/through-2.3.8.tgz#0dd4c9ffaabc357960b1b724115d7e0e86a2e1f5"
   integrity sha1-DdTJ/6q8NXlgsbckEV1+Doai4fU=
 
-timezone-mock@^1.1.2:
-  version "1.1.2"
-  resolved "https://registry.yarnpkg.com/timezone-mock/-/timezone-mock-1.1.2.tgz#58b6f8b6ba4d05b8153137baa6ce2c656a63cee8"
-  integrity sha512-f+XeiEoRNY4goREYKtOE9kWXkYJ6gDaYs7bwWLyK/xgqEyniPWQDV1aMneHu4J1VlmCQBRnFQpBV9qOjlr9b9A==
+timezone-mock@^1.2.1:
+  version "1.2.1"
+  resolved "https://registry.yarnpkg.com/timezone-mock/-/timezone-mock-1.2.1.tgz#f470559b2b4f7a0203f203d5e38a097150c4af2c"
+  integrity sha512-zpAS+mQtQ9NCR6pT1tuL/WS3n/rHvv9ueDF1pJU4PFtedLwdJf3pUgjgtpZLJ9sMIb96ELcM39YlM015kbtutw==
 
 tmp-promise@^3.0.2:
   version "3.0.2"
