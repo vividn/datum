@@ -14,7 +14,7 @@ import { parseData } from "../parseData";
 import { assembleId, buildIdStructure, defaultIdComponents } from "../ids";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
-import { processTimeArgs } from "../timings";
+import { processTimeArgs, setTimezone } from "../timings";
 import chalk from "chalk";
 import addDoc from "../documentControl/addDoc";
 import {
@@ -226,7 +226,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     ? processTimeArgs(args)
     : {
         timeStr: undefined,
-        utcOffset: DateTime.local().offset / 60,
+        utcOffset: setTimezone(args.timezone),
       };
 
   const {

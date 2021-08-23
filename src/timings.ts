@@ -184,7 +184,7 @@ const parseDateStr = function ({
   throw new BadDateArgError("date not parsable");
 };
 
-export function setTimezone(timezone?: string): void {
+export function setTimezone(timezone?: string): number {
   if (timezone) {
     const tzNumber = Number(timezone);
     if (isNaN(tzNumber)) {
@@ -198,8 +198,10 @@ export function setTimezone(timezone?: string): void {
   } else {
     DateTimeSettings.defaultZone = "system";
   }
-  // Test to make sure that the zone is valid
-  if (!DateTime.local().isValid) {
+  const now = DateTime.local();
+  if (!now.isValid) {
     throw new BadTimezoneError("timezone is invalid");
   }
+
+  return now.offset / 60;
 }

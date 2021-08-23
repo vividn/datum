@@ -303,7 +303,7 @@ describe("addCmd", () => {
   });
 
   it("stores utcOffset using the timezone arg even if no occurTime is collected", async () => {
-    const newDoc = (await addCmd({noTimestamp: true, timezone: "+2"}));
+    const newDoc = (await addCmd({idPart: "unstamped", noTimestamp: true, timezone: "+2"}));
     expect(newDoc.meta).toHaveProperty("utcOffset", 2);
   });
 
