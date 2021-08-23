@@ -234,9 +234,9 @@ describe("processTimeArgs", () => {
   });
 
   it.only("does not persist timezone across runs", () => {
-    const {utcOffset: offset1} = processTimeArgs({timezone: "+3"});
+    const { utcOffset: offset1 } = processTimeArgs({ timezone: "+3" });
     expect(offset1).toEqual(3);
-    const {utcOffset: offset2} = processTimeArgs({});
+    const { utcOffset: offset2 } = processTimeArgs({});
     expect(offset2).toEqual(0);
   });
 });

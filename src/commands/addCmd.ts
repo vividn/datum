@@ -22,7 +22,6 @@ import {
   UpdateStrategyNames,
 } from "../documentControl/combineData";
 import { Show } from "../output";
-import { DateTime } from "luxon";
 
 export const command = "add [data..]";
 export const desc = "add a document";
