@@ -1,8 +1,4 @@
-import {
-  DateTime,
-  Duration,
-  Settings as DateTimeSettings,
-} from "luxon";
+import { DateTime, Duration, Settings as DateTimeSettings } from "luxon";
 import * as chrono from "chrono-node";
 import { BadDateArgError, BadTimeArgError, BadTimezoneError } from "./errors";
 

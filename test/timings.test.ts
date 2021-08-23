@@ -211,7 +211,7 @@ describe("processTimeArgs", () => {
     );
     expectTiming(
       { timezone: "2", time: "10:00" },
-      { timeStr: "2020-05-10T08:00:00.000Z", utcOffset: -4 }
+      { timeStr: "2020-05-10T08:00:00.000Z", utcOffset: 2 }
     );
   });
 
@@ -233,7 +233,7 @@ describe("processTimeArgs", () => {
     ).toThrowError(BadTimezoneError);
   });
 
-  it.only("does not persist timezone across runs", () => {
+  it("does not persist timezone across runs", () => {
     const { utcOffset: offset1 } = processTimeArgs({ timezone: "+3" });
     expect(offset1).toEqual(3);
     const { utcOffset: offset2 } = processTimeArgs({});
