@@ -302,13 +302,19 @@ describe("addDoc", () => {
 
   test("it can do an id with %?createTime% as id_structure", async () => {
     await expect(() => db.get(nowStr)).rejects.toThrow("missing");
-    const newDoc = await(addDoc({db, payload: {data: {}, meta: {idStructure: "%?createTime%"}}}));
+    const newDoc = await addDoc({
+      db,
+      payload: { data: {}, meta: { idStructure: "%?createTime%" } },
+    });
     expect(newDoc._id).toEqual(nowStr);
   });
 
   test("it can do an id with %?modifyTime% as id_structure", async () => {
     await expect(() => db.get(nowStr)).rejects.toThrow("missing");
-    const newDoc = await(addDoc({db, payload: {data: {}, meta: {idStructure: "%?modifyTime%"}}}));
+    const newDoc = await addDoc({
+      db,
+      payload: { data: {}, meta: { idStructure: "%?modifyTime%" } },
+    });
     expect(newDoc._id).toEqual(nowStr);
   });
 });

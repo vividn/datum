@@ -413,8 +413,16 @@ describe("updateDoc", () => {
 
   test("it can update the id with new modifyTime when idStructure is %?modifyTime%", async () => {
     await expect(() => db.get(nowStr)).rejects.toThrow("missing");
-    await db.insert({_id: notNowStr, data: {}, meta: {modifyTime: notNowStr, idStructure: "%?modifyTime%"}});
-    const newDoc = await updateDoc({db, id: notNowStr, payload: {foo: "bar"}});
+    await db.insert({
+      _id: notNowStr,
+      data: {},
+      meta: { modifyTime: notNowStr, idStructure: "%?modifyTime%" },
+    });
+    const newDoc = await updateDoc({
+      db,
+      id: notNowStr,
+      payload: { foo: "bar" },
+    });
     expect(newDoc._id).toEqual(nowStr);
     await expect(() => db.get(notNowStr)).rejects.toThrowError("deleted");
   });
