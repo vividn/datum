@@ -41,7 +41,7 @@ const testDatumPayload: DatumPayload = {
 
 const testDatumPayloadId = "bar__rawString";
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
-const now = mockNow.toString();
+const nowStr = mockNow.toString();
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
@@ -124,8 +124,8 @@ describe("addDoc", () => {
     const newDoc = await addDoc({ db, payload });
 
     expect(newDoc.meta).toMatchObject({
-      createTime: now,
-      modifyTime: now,
+      createTime: nowStr,
+      modifyTime: nowStr,
     });
   });
 
@@ -299,7 +299,16 @@ describe("addDoc", () => {
 
     console.log = originalLog;
   });
-});
 
-test.todo("it can do an id with %?createTime% as id_structure");
-test.todo("it can do an id with %?modifyTime% as id_structure");
+  test("it can do an id with %?createTime% as id_structure", async () => {
+    await expect(() => db.get(nowStr)).rejects.toThrow("missing");
+    const newDoc = await(addDoc({db, payload: {data: {}, meta: {idStructure: "%?createTime%"}}}));
+    expect(newDoc._id).toEqual(nowStr);
+  });
+
+  test("it can do an id with %?modifyTime% as id_structure", async () => {
+    await expect(() => db.get(nowStr)).rejects.toThrow("missing");
+    const newDoc = await(addDoc({db, payload: {data: {}, meta: {idStructure: "%?modifyTime%"}}}));
+    expect(newDoc._id).toEqual(nowStr);
+  });
+});

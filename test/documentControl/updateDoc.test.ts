@@ -41,8 +41,8 @@ const testDatumPayload: DatumPayload = {
 
 const testDatumPayloadId = "bar__rawString";
 const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
-const now = mockNow.toString();
-const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
+const nowStr = mockNow.toString();
+const notNowStr = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
@@ -89,7 +89,7 @@ describe("updateDoc", () => {
     const docWithModify = {
       _id: "doc-to-update",
       data: { abc: "def" },
-      meta: { modifyTime: notNow },
+      meta: { modifyTime: notNowStr },
     };
     await db.insert(docWithModify);
 
@@ -101,7 +101,7 @@ describe("updateDoc", () => {
       },
     });
 
-    expect(newDoc).toHaveProperty("meta.modifyTime", now);
+    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
 
     timezone_mock.unregister();
     Settings.resetCaches();
@@ -411,5 +411,11 @@ describe("updateDoc", () => {
     expect(nDocsBefore2).toEqual(nDocsAfter2);
   });
 
-  test.todo("it can update the id with new modifyTime");
+  test("it can update the id with new modifyTime when idStructure is %?modifyTime%", async () => {
+    await expect(() => db.get(nowStr)).rejects.toThrow("missing");
+    await db.insert({_id: notNowStr, data: {}, meta: {modifyTime: notNowStr, idStructure: "%?modifyTime%"}});
+    const newDoc = await updateDoc({db, id: notNowStr, payload: {foo: "bar"}});
+    expect(newDoc._id).toEqual(nowStr);
+    await expect(() => db.get(notNowStr)).rejects.toThrowError("deleted");
+  });
 });
