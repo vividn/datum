@@ -6,7 +6,11 @@ import {
   ProcessTimeArgsType,
   TimingData,
 } from "../src/timings";
-import { BadDateArgError, BadTimeArgError } from "../src/errors";
+import {
+  BadDateArgError,
+  BadTimeArgError,
+  BadTimezoneError,
+} from "../src/errors";
 
 const expectTiming = (
   props: ProcessTimeArgsType,
@@ -201,6 +205,14 @@ describe("processTimeArgs", () => {
       { timezone: "-4", time: "10:00" },
       { timeStr: "2020-05-10T14:00:00.000Z", utcOffset: -4 }
     );
+    expectTiming(
+      { timezone: "0", time: "10:00" },
+      { timeStr: "2020-05-10T10:00:00.000Z", utcOffset: 0 }
+    );
+    expectTiming(
+      { timezone: "2", time: "10:00" },
+      { timeStr: "2020-05-10T08:00:00.000Z", utcOffset: 2 }
+    );
   });
 
   it("throws on unparsable times and dates", () => {
@@ -216,5 +228,15 @@ describe("processTimeArgs", () => {
     expect(() =>
       processTimeArgs({ time: "half past nothing", yesterday: 1 })
     ).toThrowError(BadTimeArgError);
+    expect(() =>
+      processTimeArgs({ timezone: "rubbish/timezone" })
+    ).toThrowError(BadTimezoneError);
+  });
+
+  it("does not persist timezone across runs", () => {
+    const { utcOffset: offset1 } = processTimeArgs({ timezone: "+3" });
+    expect(offset1).toEqual(3);
+    const { utcOffset: offset2 } = processTimeArgs({});
+    expect(offset2).toEqual(0);
   });
 });

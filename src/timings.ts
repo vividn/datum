@@ -1,9 +1,13 @@
 import { DateTime, Duration, Settings as DateTimeSettings } from "luxon";
 import * as chrono from "chrono-node";
-import { BadDateArgError, BadTimeArgError } from "./errors";
+import { BadDateArgError, BadTimeArgError, BadTimezoneError } from "./errors";
 
 export type isoDatetime = string;
 export type isoDate = string;
+
+export function isIsoDateOrTime(str: string): str is isoDate | isoDatetime {
+  return DateTime.fromISO(str).isValid;
+}
 
 export type TimingData = {
   timeStr: isoDatetime | isoDate;
@@ -28,15 +32,7 @@ export const processTimeArgs = function ({
   referenceTime,
   timezone,
 }: ProcessTimeArgsType): TimingData {
-  if (timezone) {
-    if (isNaN(Number(timezone))) {
-      // timezone is a named zone
-      DateTimeSettings.defaultZoneName = timezone;
-    } else {
-      // timezone is a utc offset "+6"
-      DateTimeSettings.defaultZoneName = `UTC${timezone}`;
-    }
-  }
+  setTimezone(timezone);
 
   const now = DateTime.local() as DateTime;
   referenceTime = referenceTime ?? now;
@@ -187,3 +183,25 @@ const parseDateStr = function ({
 
   throw new BadDateArgError("date not parsable");
 };
+
+export function setTimezone(timezone?: string): number {
+  if (timezone) {
+    const tzNumber = Number(timezone);
+    if (isNaN(tzNumber)) {
+      // timezone is a named zone
+      DateTimeSettings.defaultZone = timezone;
+    } else {
+      // timezone is a utc offset "+6"
+      const tzStr = tzNumber >= 0 ? `+${tzNumber}` : `${tzNumber}`;
+      DateTimeSettings.defaultZone = `UTC${tzStr}`;
+    }
+  } else {
+    DateTimeSettings.defaultZone = "system";
+  }
+  const now = DateTime.local();
+  if (!now.isValid) {
+    throw new BadTimezoneError("timezone is invalid");
+  }
+
+  return now.offset / 60;
+}

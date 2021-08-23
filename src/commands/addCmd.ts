@@ -14,7 +14,7 @@ import { parseData } from "../parseData";
 import { assembleId, buildIdStructure, defaultIdComponents } from "../ids";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
-import { processTimeArgs } from "../timings";
+import { processTimeArgs, setTimezone } from "../timings";
 import chalk from "chalk";
 import addDoc from "../documentControl/addDoc";
 import {
@@ -220,8 +220,14 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
-  // TODO: Get a timestamp as soon as possible
-  const db = connectDb(args);
+  // Calculate timing data early to make occurTime more exact
+  const { timeStr: occurTime, utcOffset } = !args.noTimestamp
+    ? processTimeArgs(args)
+    : {
+        timeStr: undefined,
+        utcOffset: setTimezone(args.timezone),
+      };
+
   const {
     data: argData = [],
     field,
@@ -249,12 +255,12 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     lenient,
     baseData,
   });
+  if (occurTime !== undefined) {
+    payloadData.occurTime = occurTime;
+  }
 
-  // Process timing/metadata
-  const hasOccurTime = !args.noMetadata && !args.noTimestamp;
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data: payloadData,
-    hasOccurTime,
   });
 
   const idStructure = buildIdStructure({
@@ -266,33 +272,12 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const { noMetadata } = args;
   let meta: DatumMetadata | undefined = undefined;
   if (!noMetadata) {
-    const {
-      date,
-      time,
-      quick,
-      yesterday,
-      fullDay,
-      noTimestamp,
-      timezone,
-    } = args;
-
     meta = {
       humanId: newHumanId(),
       random: Math.random(),
     };
 
-    if (!noTimestamp) {
-      const { timeStr: occurTime, utcOffset } = processTimeArgs({
-        date,
-        time,
-        quick,
-        yesterday,
-        fullDay,
-        timezone,
-      });
-      meta.occurTime = occurTime;
-      meta.utcOffset = utcOffset;
-    }
+    meta.utcOffset = utcOffset;
 
     // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same
@@ -312,6 +297,8 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   });
   payload._id = _id;
 
+  const db = connectDb(args);
+
   const { undo } = args;
   if (undo) {
     let doc;
@@ -321,7 +308,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       // if the id involves a time, then there could be some slight difference in the id
       if (
         e.reason === "missing" &&
-        idStructure.match(/%\?(create|modify|occur)Time%/)
+        idStructure.match(/%\??(create|modify|occur)Time%/)
       ) {
         // just get the next lowest id
         doc = (
