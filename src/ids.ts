@@ -3,6 +3,7 @@ import {
   DatumMetadata,
   EitherPayload,
   isDatumPayload,
+  isOccurredData,
 } from "./documentControl/DatumDocument";
 import { GenericObject } from "./GenericObject";
 import deepGet from "lodash.get";
@@ -156,12 +157,10 @@ export const assembleId = function ({
 
 export const defaultIdComponents = ({
   data,
-  hasOccurTime,
 }: {
   data: DatumData;
-  hasOccurTime: boolean;
 }): { defaultIdParts: string[]; defaultPartitionParts?: string[] } => {
-  const defaultIdParts = hasOccurTime
+  const defaultIdParts = isOccurredData(data)
     ? ["%occurTime%"]
     : Object.keys(data).map((key) => `%${key.replace(/%/g, String.raw`\%`)}%`);
   const defaultPartitionParts = "field" in data ? ["%field%"] : undefined;

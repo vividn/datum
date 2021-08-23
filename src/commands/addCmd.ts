@@ -256,14 +256,12 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     lenient,
     baseData,
   });
-
-  const hasOccurTime = occurTime !== undefined;
-  if (hasOccurTime) {
+  if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
   }
+
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data: payloadData,
-    hasOccurTime,
   });
 
   const idStructure = buildIdStructure({

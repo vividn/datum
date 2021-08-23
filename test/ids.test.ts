@@ -40,10 +40,8 @@ const expectStructureAndId = (
   testData: DatumData = exampleData,
   testMeta: DatumMetadata | false = exampleMeta
 ) => {
-  const hasOccurTime = "occurTime" in testData;
   const { defaultPartitionParts, defaultIdParts } = defaultIdComponents({
     data: testData,
-    hasOccurTime,
   });
   const payload: EitherPayload = testMeta
     ? { data: testData, meta: testMeta }
@@ -387,30 +385,27 @@ describe("destructureIdKeys", () => {
 
 describe("defaultIdComponents", () => {
   it("can use occurTime", () => {
-    expect(
-      defaultIdComponents({ data: exampleDataOccur, hasOccurTime: true })
-    ).toMatchObject({ defaultIdParts: ["%occurTime%"] });
+    expect(defaultIdComponents({ data: exampleDataOccur })).toMatchObject({
+      defaultIdParts: ["%occurTime%"],
+    });
   });
 
   it("uses a concatenation of data fields if hasOccurTime is false", () => {
     const simpleData = { firstKey: "firstData", secondKey: "secondData" };
-    expect(
-      defaultIdComponents({ data: simpleData, hasOccurTime: false })
-    ).toMatchObject({ defaultIdParts: ["%firstKey%", "%secondKey%"] });
+    expect(defaultIdComponents({ data: simpleData })).toMatchObject({
+      defaultIdParts: ["%firstKey%", "%secondKey%"],
+    });
   });
 
   it("uses field as the default partition", () => {
     expect(
       defaultIdComponents({
         data: { field: "abc", occurTime: exampleOccurTime },
-        hasOccurTime: true,
       })
     ).toMatchObject({
       defaultPartitionParts: ["%field%"],
     });
-    expect(
-      defaultIdComponents({ data: { field: "abc" }, hasOccurTime: false })
-    ).toMatchObject({
+    expect(defaultIdComponents({ data: { field: "abc" } })).toMatchObject({
       defaultPartitionParts: ["%field%"],
     });
     expect(
@@ -421,13 +416,11 @@ describe("defaultIdComponents", () => {
           keys: "too",
           occurTime: exampleOccurTime,
         },
-        hasOccurTime: true,
       })
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
     expect(
       defaultIdComponents({
         data: { field: "works", with: "other", keys: "too" },
-        hasOccurTime: false,
       })
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
   });
@@ -436,13 +429,11 @@ describe("defaultIdComponents", () => {
     expect(
       defaultIdComponents({
         data: { no: "field", key: "present", occurTime: exampleOccurTime },
-        hasOccurTime: true,
       })
     ).toMatchObject({ defaultPartitionParts: undefined });
     expect(
       defaultIdComponents({
         data: { no: "field", key: "present" },
-        hasOccurTime: false,
       })
     ).toMatchObject({ defaultPartitionParts: undefined });
   });
