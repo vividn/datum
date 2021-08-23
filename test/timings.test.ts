@@ -1,5 +1,12 @@
 import { Settings, DateTime, Duration } from "luxon";
-import { afterEach, beforeEach, describe, expect, it, test } from "@jest/globals";
+import {
+  afterEach,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  test,
+} from "@jest/globals";
 import timezone_mock from "timezone-mock";
 import {
   processTimeArgs,
@@ -221,6 +228,6 @@ describe("processTimeArgs", () => {
 
 test.todo("it stores the occurTime in the data");
 
-test.todo("utcOffset is stored in the metadata")
+test.todo("utcOffset is stored in the metadata");
 
 test.todo("utcOffset is still stored even if no occurTime is collected");

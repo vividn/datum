@@ -410,4 +410,6 @@ describe("updateDoc", () => {
     const nDocsAfter2 = (await db.info()).doc_count;
     expect(nDocsBefore2).toEqual(nDocsAfter2);
   });
+
+  test.todo("it can update the id with new modifyTime");
 });

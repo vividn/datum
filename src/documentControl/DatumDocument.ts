@@ -1,19 +1,21 @@
 import { isIsoDateOrTime, isoDate, isoDatetime } from "../timings";
 
-
 export type occurredData = {
   occurTime?: isoDatetime | isoDate;
   [key: string]: any;
-}
+};
 
 export type GenericData = {
   [key: string]: any;
-}
+};
 
-export type DatumData = occurredData | GenericData
+export type DatumData = occurredData | GenericData;
 
 export function isOccurredData(data: DatumData): data is occurredData {
-  return (data as occurredData).occurTime !== undefined && isIsoDateOrTime(data.occurTime);
+  return (
+    (data as occurredData).occurTime !== undefined &&
+    isIsoDateOrTime(data.occurTime)
+  );
 }
 
 export type DatumMetadata = {

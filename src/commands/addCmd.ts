@@ -275,7 +275,6 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const { noMetadata } = args;
   let meta: DatumMetadata | undefined = undefined;
   if (!noMetadata) {
-
     meta = {
       humanId: newHumanId(),
       random: Math.random(),
@@ -312,7 +311,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       // if the id involves a time, then there could be some slight difference in the id
       if (
         e.reason === "missing" &&
-        idStructure.match(/%\?(create|modify|occur)Time%/)
+        idStructure.match(/%\??(create|modify|occur)Time%/)
       ) {
         // just get the next lowest id
         doc = (

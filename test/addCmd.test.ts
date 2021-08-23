@@ -98,7 +98,7 @@ describe("addCmd", () => {
     const inAMinute = "2021-06-28T06:31:00.000Z";
     await addCmd({ time: now });
     const insertedDoc = (await db.get(now)) as DatumDocument;
-    expect(insertedDoc.meta.idStructure).toMatch(/%?occurTime%/);
+    expect(insertedDoc.meta.idStructure).toMatch(/%occurTime%/);
 
     await addCmd({ time: inAMinute, undo: true });
     await expect(db.get(now)).rejects.toThrowError("deleted");

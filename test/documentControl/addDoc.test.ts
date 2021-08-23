@@ -300,3 +300,6 @@ describe("addDoc", () => {
     console.log = originalLog;
   });
 });
+
+test.todo("it can do an id with %?createTime% as id_structure");
+test.todo("it can do an id with %?modifyTime% as id_structure");
