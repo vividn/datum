@@ -44,6 +44,13 @@ export class BadDateArgError extends MyError {
   }
 }
 
+export class BadTimezoneError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, BadTimezoneError.prototype);
+  }
+}
+
 export class MigrationError extends MyError {
   constructor(m: unknown) {
     super(m);

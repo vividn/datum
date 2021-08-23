@@ -1,4 +1,4 @@
-import { describe, expect, it } from "@jest/globals";
+import { describe, expect, it, test } from "@jest/globals";
 import {
   DatumData,
   DatumMetadata,
@@ -22,20 +22,16 @@ const exampleData: DatumData = {
   num: 3,
   "wei%rd": "da%ta",
 };
-const exampleMetaNoOccur: DatumMetadata = {
+const exampleOccurTime = "2020-11-09T00:35:10.000Z";
+const exampleDataOccur = { occurTime: exampleOccurTime, ...exampleData };
+const exampleDataOccurField: DatumData = { ...exampleDataOccur, field: "main" };
+const exampleMeta: DatumMetadata = {
   createTime: "2020-11-09T00:40:12.544Z",
   modifyTime: "2020-11-09T00:40:12.544Z",
   utcOffset: 1,
   random: 0.7368733800261729,
   humanId: "mqp4znq4cvp3qnj74fgi9",
 };
-const exampleOccurTime = "2020-11-09T00:35:10.000Z";
-const exampleMeta: DatumMetadata = {
-  occurTime: exampleOccurTime,
-  ...exampleMetaNoOccur,
-};
-
-const exampleDataWithField: DatumData = { ...exampleData, field: "main" };
 
 const expectStructureAndId = (
   props: Partial<buildIdStructureType>,
@@ -44,10 +40,8 @@ const expectStructureAndId = (
   testData: DatumData = exampleData,
   testMeta: DatumMetadata | false = exampleMeta
 ) => {
-  const hasOccurTime = testMeta && "occurTime" in testMeta;
   const { defaultPartitionParts, defaultIdParts } = defaultIdComponents({
     data: testData,
-    hasOccurTime,
   });
   const payload: EitherPayload = testMeta
     ? { data: testData, meta: testMeta }
@@ -69,12 +63,12 @@ const expectStructureAndId = (
 };
 
 describe("id flow", () => {
-  it("returns the occurTime as a default id, if occurTime is in meta", () => {
+  it("returns the occurTime as a default id, if occurTime is present", () => {
     expectStructureAndId(
       {},
-      "%?occurTime%",
+      "%occurTime%",
       exampleOccurTime,
-      exampleData,
+      exampleDataOccur,
       exampleMeta
     );
   });
@@ -86,7 +80,7 @@ describe("id flow", () => {
       "%a%__%b%__%three%",
       "123__abc__value",
       simpleData,
-      exampleMetaNoOccur
+      exampleMeta
     );
 
     expectStructureAndId(
@@ -94,7 +88,7 @@ describe("id flow", () => {
       String.raw`%foo%__%bar%__%complex%__%array%__%num%__%wei\%rd%`,
       String.raw`abc__def__{"data":"nested"}__["various",2,"data"]__3__da%ta`,
       exampleData,
-      exampleMetaNoOccur
+      exampleMeta
     );
   });
 
@@ -209,9 +203,9 @@ describe("id flow", () => {
   it("prepends the partition field if provided", () => {
     expectStructureAndId(
       {},
-      "%field%:%?occurTime%",
+      "%field%:%occurTime%",
       "main:" + exampleOccurTime,
-      exampleDataWithField
+      exampleDataOccurField
     );
     expectStructureAndId(
       { idParts: "%foo" },
@@ -265,38 +259,38 @@ describe("id flow", () => {
   it("handles this example", () => {
     expectStructureAndId(
       {
-        idParts: ["%foo", "%?occurTime", "rawString"],
+        idParts: ["%foo", "%?modifyTime", "rawString"],
         delimiter: "__",
         partition: "%field",
       },
-      "%field%:%foo%__%?occurTime%__rawString",
-      "main:abc__2020-11-09T00:35:10.000Z__rawString",
-      exampleDataWithField
+      "%field%:%foo%__%?modifyTime%__rawString",
+      "main:abc__2020-11-09T00:40:12.544Z__rawString",
+      exampleDataOccurField
     );
   });
 
   it("can use metadata fields by using a question mark before the field", () => {
     expectStructureAndId(
       {
-        idParts: "%?occurTime",
+        idParts: "%?modifyTime",
       },
-      "%?occurTime%",
-      "2020-11-09T00:35:10.000Z"
+      "%?modifyTime%",
+      "2020-11-09T00:40:12.544Z"
     );
     expectStructureAndId(
-      { idParts: ["%?occurTime", "%foo", "%?humanId"] },
-      "%?occurTime%__%foo%__%?humanId%",
-      "2020-11-09T00:35:10.000Z__abc__mqp4znq4cvp3qnj74fgi9"
+      { idParts: ["%?modifyTime", "%foo", "%?humanId"] },
+      "%?modifyTime%__%foo%__%?humanId%",
+      "2020-11-09T00:40:12.544Z__abc__mqp4znq4cvp3qnj74fgi9"
     );
   });
 
   it("can use a dataField that starts with a question mark by escaping the question", () => {
     expectStructureAndId(
-      { idParts: "%\\?occurTime%" },
-      "%\\?occurTime%",
+      { idParts: "%\\?modifyTime%" },
+      "%\\?modifyTime%",
       "now",
       {
-        "?occurTime": "now",
+        "?modifyTime": "now",
       }
     );
   });
@@ -391,39 +385,42 @@ describe("destructureIdKeys", () => {
 
 describe("defaultIdComponents", () => {
   it("can use occurTime", () => {
-    expect(
-      defaultIdComponents({ data: exampleData, hasOccurTime: true })
-    ).toMatchObject({ defaultIdParts: ["%?occurTime%"] });
+    expect(defaultIdComponents({ data: exampleDataOccur })).toMatchObject({
+      defaultIdParts: ["%occurTime%"],
+    });
   });
 
   it("uses a concatenation of data fields if hasOccurTime is false", () => {
     const simpleData = { firstKey: "firstData", secondKey: "secondData" };
-    expect(
-      defaultIdComponents({ data: simpleData, hasOccurTime: false })
-    ).toMatchObject({ defaultIdParts: ["%firstKey%", "%secondKey%"] });
+    expect(defaultIdComponents({ data: simpleData })).toMatchObject({
+      defaultIdParts: ["%firstKey%", "%secondKey%"],
+    });
   });
 
   it("uses field as the default partition", () => {
     expect(
-      defaultIdComponents({ data: { field: "abc" }, hasOccurTime: true })
+      defaultIdComponents({
+        data: { field: "abc", occurTime: exampleOccurTime },
+      })
     ).toMatchObject({
       defaultPartitionParts: ["%field%"],
     });
-    expect(
-      defaultIdComponents({ data: { field: "abc" }, hasOccurTime: false })
-    ).toMatchObject({
+    expect(defaultIdComponents({ data: { field: "abc" } })).toMatchObject({
       defaultPartitionParts: ["%field%"],
     });
     expect(
       defaultIdComponents({
-        data: { field: "works", with: "other", keys: "too" },
-        hasOccurTime: true,
+        data: {
+          field: "works",
+          with: "other",
+          keys: "too",
+          occurTime: exampleOccurTime,
+        },
       })
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
     expect(
       defaultIdComponents({
         data: { field: "works", with: "other", keys: "too" },
-        hasOccurTime: false,
       })
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
   });
@@ -431,14 +428,12 @@ describe("defaultIdComponents", () => {
   it("returns undefined for defaultPartitionParts when no field is present", () => {
     expect(
       defaultIdComponents({
-        data: { no: "field", key: "present" },
-        hasOccurTime: true,
+        data: { no: "field", key: "present", occurTime: exampleOccurTime },
       })
     ).toMatchObject({ defaultPartitionParts: undefined });
     expect(
       defaultIdComponents({
         data: { no: "field", key: "present" },
-        hasOccurTime: false,
       })
     ).toMatchObject({ defaultPartitionParts: undefined });
   });
@@ -464,7 +459,7 @@ describe("assembleId", () => {
       assembleId({
         payload: {
           data: { abc: "123" },
-          meta: { occurTime: "2020-11-09T00:40:12.544Z" },
+          meta: { modifyTime: "2020-11-09T00:40:12.544Z" },
         },
       })
     ).toThrowError(IdError);
@@ -473,3 +468,5 @@ describe("assembleId", () => {
 
   it.todo("doesn't allow recursive %?idStructure% as a part of the id");
 });
+
+test.todo("it allows for a uuid somehow");

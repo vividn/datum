@@ -20,6 +20,8 @@ import * as addDoc from "../src/documentControl/addDoc";
 import { DocumentScope } from "nano";
 import { DocExistsError } from "../src/documentControl/base";
 import { Show } from "../src/output";
+import timezone_mock from "timezone-mock";
+import { DateTime, Settings } from "luxon";
 
 const originalLog = console.log;
 
@@ -98,7 +100,7 @@ describe("addCmd", () => {
     const inAMinute = "2021-06-28T06:31:00.000Z";
     await addCmd({ time: now });
     const insertedDoc = (await db.get(now)) as DatumDocument;
-    expect(insertedDoc.meta.idStructure).toMatch(/%?occurTime%/);
+    expect(insertedDoc.meta.idStructure).toMatch(/%occurTime%/);
 
     await addCmd({ time: inAMinute, undo: true });
     await expect(db.get(now)).rejects.toThrowError("deleted");
@@ -283,4 +285,58 @@ describe("addCmd", () => {
   });
 
   // TODO: write tests for all of the various options
+
+  it("stores the occurTime in the data", async () => {
+    const newDoc = (await addCmd({
+      date: "2021-08-23",
+      time: "12",
+      timezone: "0",
+    })) as DatumDocument;
+    expect(newDoc.data).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
+    expect(newDoc.meta).not.toHaveProperty("occurTime");
+  });
+
+  it("stores the occurTime in DataOnly docs", async () => {
+    const newDoc = (await addCmd({
+      noMetadata: true,
+      date: "2021-08-23",
+      time: "12",
+      timezone: "0",
+    })) as DatumDocument;
+    expect(newDoc).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
+  });
+
+  it("stores utcOffset in the metadata", async () => {
+    const newDoc = (await addCmd({
+      date: "2021-08-23",
+      time: "12",
+      timezone: "0",
+    })) as DatumDocument;
+    expect(newDoc.meta).toHaveProperty("utcOffset", 0);
+  });
+
+  it("stores utcOffset using the timezone arg even if no occurTime is collected", async () => {
+    const newDoc = await addCmd({
+      idPart: "unstamped",
+      noTimestamp: true,
+      timezone: "+2",
+    });
+    expect(newDoc.meta).toHaveProperty("utcOffset", 2);
+  });
+
+  it("stores utcOffset using local timezone even if no occurTime is collected", async () => {
+    timezone_mock.register("US/Pacific");
+    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
+    Settings.now = () => mockNow;
+
+    const newDoc = (await addCmd({
+      idPart: "unstamped",
+      noTimestamp: true,
+    })) as DatumDocument;
+    expect(newDoc.meta).toHaveProperty("utcOffset");
+    expect(newDoc.meta.utcOffset).toEqual(-7);
+
+    timezone_mock.unregister();
+    Settings.resetCaches();
+  });
 });
