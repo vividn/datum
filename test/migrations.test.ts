@@ -49,7 +49,7 @@ const docAA2B = {
 //   field: "field",
 // };
 
-describe("createMigration", () => {
+describe.skip("createMigration", () => {
   let db: DocumentScope<GenericObject>;
   beforeAll(async () => {
     await nano.db.destroy("test_create_migration").catch(pass);
@@ -130,7 +130,7 @@ describe("createMigration", () => {
   });
 });
 
-describe("runMigration", () => {
+describe.skip("runMigration", () => {
   let db: DocumentScope<GenericObject>;
   beforeAll(async () => {
     await nano.db.destroy("test_run_migration").catch(pass);
