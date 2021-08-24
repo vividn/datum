@@ -27,12 +27,10 @@ export const createMigration = async ({
   migrationName,
   mapFnStr,
 }: createMigrationType): Promise<void> => {
-  const designDoc = (await db
-    .get("_design/migrate")
-    .catch(() => ({
-      _id: "_design/migrate",
-      views: {},
-    }))) as ViewDocument<GenericObject>;
+  const designDoc = (await db.get("_design/migrate").catch(() => ({
+    _id: "_design/migrate",
+    views: {},
+  }))) as ViewDocument<GenericObject>;
 
   const currentOrTemplate = (designDoc.views[migrationName]?.map ??
     template_migration) as string;
