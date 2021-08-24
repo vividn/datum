@@ -246,7 +246,8 @@ describe("addCmd", () => {
   });
 
   it("can display just the data of documents or the whole documents", async () => {
-    const matchExtraKeysInAnyOrder = /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
+    const matchExtraKeysInAnyOrder =
+      /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
     await addCmd({ idPart: "this-id" });
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringMatching(matchExtraKeysInAnyOrder)
