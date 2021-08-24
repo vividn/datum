@@ -19,7 +19,8 @@ type baseMigrationType = {
   migrationName: string;
 };
 
-type createMigrationType = baseMigrationType & {
+type createMigrationType = Omit<baseMigrationType, "db"> & {
+  db: DocumentScope<ViewDocument<GenericObject>>;
   mapFnStr?: string;
 };
 export const createMigration = async ({
@@ -27,11 +28,18 @@ export const createMigration = async ({
   migrationName,
   mapFnStr,
 }: createMigrationType): Promise<void> => {
-  const designDoc = (await db
-    .get("_design/migrate")
-    .catch(() => ({ _id: "_design/migrate", views: {} }))) as ViewDocument<
-    GenericObject
-  >;
+  let designDoc: ViewDocument<GenericObject>;
+  try {
+    designDoc = await db.get("_design/migrate");
+  } catch (error) {
+    if (!(error.reason in ["missing", "deleted"])) {
+      throw error;
+    }
+    designDoc = {
+      _id: "_design/migrate",
+      views: {},
+    };
+  }
 
   const currentOrTemplate = (designDoc.views[migrationName]?.map ??
     template_migration) as string;

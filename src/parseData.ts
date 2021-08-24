@@ -117,9 +117,11 @@ export const parseData = function ({
   }
 
   if (comment) {
-    const inferredComments = (Array.isArray(comment)
-      ? comment.map((comm) => inferType(comm))
-      : [inferType(comment)]) as any[];
+    const inferredComments = (
+      Array.isArray(comment)
+        ? comment.map((comm) => inferType(comm))
+        : [inferType(comment)]
+    ) as any[];
     data.comment = inferredComments.reduce(
       (accumulator, current) => createOrAppend(accumulator, current),
       data["comment"]
