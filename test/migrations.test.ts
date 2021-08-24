@@ -147,7 +147,7 @@ describe("runMigration", () => {
     await nano.db.destroy("test_run_migration").catch(pass);
   });
 
-  it("can overwrite documents", async () => {
+  it.skip("can overwrite documents", async () => {
     await createMigration({ db: db, migrationName: "A2B", mapFnStr: migA2B });
     await db.insert(docA);
     await db.insert(docC);
