@@ -258,6 +258,7 @@ test("show is Standard by default when calling from the CLI", async () => {
   );
 
   await main(["--db", dbName, "add"]);
+  expect(spy).toHaveBeenCalled();
   expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
 
   spy.mockRestore();
