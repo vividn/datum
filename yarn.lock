@@ -1465,10 +1465,10 @@
   resolved "https://registry.yarnpkg.com/@types/prettier/-/prettier-2.1.0.tgz#5f96562c1075ee715a5b138f0b7f591c1f40f6b8"
   integrity sha512-hiYA88aHiEIgDmeKlsyVsuQdcFn3Z2VuFd/Xm/HCnGnPD8UFU5BM128uzzRVVGEzKDKYUrRsRH9S2o+NUy/3IA==
 
-"@types/relaxed-json@^1.0.0":
-  version "1.0.0"
-  resolved "https://registry.yarnpkg.com/@types/relaxed-json/-/relaxed-json-1.0.0.tgz#8de225bc3c95927a9e5b24725a930766e98cc138"
-  integrity sha1-jeIlvDyVknqeWyRyWpMHZumMwTg=
+"@types/relaxed-json@^1.0.1":
+  version "1.0.1"
+  resolved "https://registry.yarnpkg.com/@types/relaxed-json/-/relaxed-json-1.0.1.tgz#fa59a05b8b065cde9f90b68543c1fedcfc94c3b3"
+  integrity sha512-UnBKvLCa16RNrNeq8K2NoiAN6Whrw/fPjh6iWl1uYt4T+/AqykJKfQv1OL/ktkLprmwQPnBlmT3fu9xTc3o9AA==
 
 "@types/stack-utils@^2.0.0":
   version "2.0.1"
