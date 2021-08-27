@@ -307,7 +307,8 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     } catch (error) {
       // if the id involves a time, then there could be some slight difference in the id
       if (
-        isCouchDbError(error) && error.reason === "missing" &&
+        isCouchDbError(error) &&
+        error.reason === "missing" &&
         idStructure.match(/%\??(create|modify|occur)Time%/)
       ) {
         // just get the next lowest id
