@@ -6,7 +6,7 @@ import {
 } from "./DatumDocument";
 import { DateTime } from "luxon";
 import { assembleId } from "../ids";
-import { IdError } from "../errors";
+import { IdError, isCouchDbError } from "../errors";
 import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import updateDoc from "./updateDoc";
@@ -63,9 +63,9 @@ const addDoc = async ({
   }
   try {
     await db.insert(payload);
-  } catch (e) {
-    if (e.error !== "conflict") {
-      throw e;
+  } catch (error) {
+    if (isCouchDbError(error) && error.error !== "conflict") {
+      throw error;
     }
     const existingDoc = await db.get(id);
 

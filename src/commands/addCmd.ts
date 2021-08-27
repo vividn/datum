@@ -9,7 +9,7 @@ import {
 } from "../documentControl/DatumDocument";
 import connectDb from "../auth/connectDb";
 import inferType from "../utils/inferType";
-import { BaseDataError } from "../errors";
+import { BaseDataError, isCouchDbError } from "../errors";
 import { parseData } from "../parseData";
 import { assembleId, buildIdStructure, defaultIdComponents } from "../ids";
 import { defaults } from "../input/defaults";
@@ -304,10 +304,10 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     let doc;
     try {
       doc = await db.get(_id);
-    } catch (e) {
+    } catch (error) {
       // if the id involves a time, then there could be some slight difference in the id
       if (
-        e.reason === "missing" &&
+        isCouchDbError(error) && error.reason === "missing" &&
         idStructure.match(/%\??(create|modify|occur)Time%/)
       ) {
         // just get the next lowest id
@@ -320,10 +320,10 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
           })
         ).rows[0]?.doc;
         if (doc === undefined) {
-          throw e;
+          throw error;
         }
       } else {
-        throw e;
+        throw error;
       }
     }
     await db.destroy(doc._id, doc._rev);

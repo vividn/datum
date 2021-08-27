@@ -1,5 +1,5 @@
 import { DocumentScope, ViewDocument, MaybeDocument, Document } from "nano";
-import { MigrationError } from "./errors";
+import { isCouchDbError, MigrationError } from "./errors";
 import editInTerminal from "./utils/editInTerminal";
 import pass from "./utils/pass";
 import { testNano } from "../test/test-utils";
@@ -32,7 +32,7 @@ export const createMigration = async ({
   try {
     designDoc = await db.get("_design/migrate");
   } catch (error) {
-    if (!(error.reason in ["missing", "deleted"])) {
+    if (!(isCouchDbError(error) && error.reason in ["missing", "deleted"])) {
       throw error;
     }
     designDoc = {
