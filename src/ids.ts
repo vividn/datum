@@ -44,10 +44,10 @@ export const buildIdStructure = function ({
   return structurizedPartitionId.join(":");
 };
 
-export const destructureIdKeys = (
+export function destructureIdKeys(
   datumData: DatumData,
   idStructure?: string
-): { onlyFields: GenericObject; noFields: GenericObject } => {
+): { onlyFields: GenericObject; noFields: GenericObject } {
   const noFields = JSON.parse(JSON.stringify(datumData));
   const onlyFields = {} as GenericObject;
 
@@ -67,15 +67,15 @@ export const destructureIdKeys = (
   });
 
   return { onlyFields, noFields };
-};
+}
 
-export const splitRawAndFields = (str: string): string[] => {
+export function splitRawAndFields(str: string): string[] {
   // split apart and also replace the escaped %s with normal percents
   return str
     .replace(/(?<!\\)%/g, "\xff\x00")
     .replace(/\\%/g, "%")
     .split("\xff\x00");
-};
+}
 
 type assembleIdType = {
   payload: EitherPayload;
@@ -155,14 +155,13 @@ export const assembleId = function ({
   return interpolatedFields;
 };
 
-export const defaultIdComponents = ({
-  data,
-}: {
-  data: DatumData;
-}): { defaultIdParts: string[]; defaultPartitionParts?: string[] } => {
+export function defaultIdComponents({ data }: { data: DatumData }): {
+  defaultIdParts: string[];
+  defaultPartitionParts?: string[];
+} {
   const defaultIdParts = isOccurredData(data)
     ? ["%occurTime%"]
     : Object.keys(data).map((key) => `%${key.replace(/%/g, String.raw`\%`)}%`);
   const defaultPartitionParts = "field" in data ? ["%field%"] : undefined;
   return { defaultIdParts, defaultPartitionParts };
-};
+}

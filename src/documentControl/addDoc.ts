@@ -36,12 +36,12 @@ type addDocType = {
   conflictStrategy?: UpdateStrategyNames;
 } & BaseDocControlArgs;
 
-const addDoc = async ({
+async function addDoc({
   db,
   payload,
   conflictStrategy,
   show = Show.None,
-}: addDocType): Promise<EitherDocument> => {
+}: addDocType): Promise<EitherDocument> {
   payload = jClone(payload);
   let id;
   if (isDatumPayload(payload)) {
@@ -91,6 +91,6 @@ const addDoc = async ({
   const addedDoc = await db.get(id);
   showCreate(addedDoc, show);
   return addedDoc;
-};
+}
 
 export default addDoc;

@@ -54,20 +54,20 @@ export type DataOnlyDocument = DataOnlyPayload & {
 export type EitherPayload = DatumPayload | DataOnlyPayload;
 export type EitherDocument = DatumDocument | DataOnlyDocument;
 
-export const isDatumDocument = (
+export function isDatumDocument(
   doc: DatumDocument | DataOnlyDocument
-): doc is DatumDocument => {
+): doc is DatumDocument {
   return (
     (doc as DatumDocument).data !== undefined &&
     (doc as DatumDocument).meta !== undefined
   );
-};
+}
 
-export const isDatumPayload = (
+export function isDatumPayload(
   payload: DatumPayload | DataOnlyPayload
-): payload is DatumPayload => {
+): payload is DatumPayload {
   return (
     (payload as DatumPayload).data !== undefined &&
     (payload as DatumPayload).meta !== undefined
   );
-};
+}
