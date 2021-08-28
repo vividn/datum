@@ -33,13 +33,13 @@ const exampleMeta: DatumMetadata = {
   humanId: "mqp4znq4cvp3qnj74fgi9",
 };
 
-const expectStructureAndId = (
+function expectStructureAndId(
   props: Partial<buildIdStructureType>,
   expectedStructure: string,
   expectedIdOnTestData: string,
   testData: DatumData = exampleData,
   testMeta: DatumMetadata | false = exampleMeta
-) => {
+) {
   const { defaultPartitionParts, defaultIdParts } = defaultIdComponents({
     data: testData,
   });
@@ -60,7 +60,7 @@ const expectStructureAndId = (
     idStructure: idStructure,
   });
   expect(id).toStrictEqual(expectedIdOnTestData);
-};
+}
 
 describe("id flow", () => {
   it("returns the occurTime as a default id, if occurTime is present", () => {

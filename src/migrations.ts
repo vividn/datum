@@ -23,11 +23,11 @@ type createMigrationType = Omit<baseMigrationType, "db"> & {
   db: DocumentScope<ViewDocument<GenericObject>>;
   mapFnStr?: string;
 };
-export const createMigration = async ({
+export async function createMigration({
   db,
   migrationName,
   mapFnStr,
-}: createMigrationType): Promise<void> => {
+}: createMigrationType): Promise<void> {
   let designDoc: ViewDocument<GenericObject>;
   try {
     designDoc = await db.get("_design/migrate");
@@ -49,12 +49,12 @@ export const createMigration = async ({
 
   designDoc.views[migrationName] = { map: mapFn };
   await db.insert(designDoc);
-};
+}
 
-export const runMigration = async ({
+export async function runMigration({
   db,
   migrationName,
-}: baseMigrationType): Promise<{ pass: string[]; fail: [string, Error][] }> => {
+}: baseMigrationType): Promise<{ pass: string[]; fail: [string, Error][] }> {
   const rows = (await db.view("migrate", migrationName)).rows;
   const updateResults = await Promise.allSettled(
     rows.map(async (row) => {
@@ -89,7 +89,7 @@ export const runMigration = async ({
     },
     { pass: [] as string[], fail: [] as [string, Error][] }
   );
-};
+}
 
 if (require.main === module) {
   testNano.db.create("test").catch(pass).then(pass);

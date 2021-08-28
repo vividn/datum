@@ -47,12 +47,12 @@ export class NoDocToOverwriteError extends MyError {
   }
 }
 
-const overwriteDoc = async ({
+async function overwriteDoc({
   db,
   id,
   payload,
   show = Show.None,
-}: overwriteDocType): Promise<EitherDocument> => {
+}: overwriteDocType): Promise<EitherDocument> {
   payload = jClone(payload);
   const oldDoc = await db.get(id).catch((e) => {
     if (["missing", "deleted"].includes(e.reason)) {
@@ -115,6 +115,6 @@ const overwriteDoc = async ({
   const newDoc = await db.get(newId);
   showOWrite(oldDoc, newDoc, show);
   return newDoc;
-};
+}
 
 export default overwriteDoc;
