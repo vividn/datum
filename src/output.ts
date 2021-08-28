@@ -29,16 +29,16 @@ const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   FAILED: chalk.red,
 };
 
-const actionId = (action: ACTIONS, id: string): string => {
+function actionId(action: ACTIONS, id: string): string {
   const color = ACTION_CHALK[action];
   const actionText = chalk.grey(action + ": ");
   return actionText + color(id);
-};
+}
 
-export const displayData = (
+export function displayData(
   data: DatumData,
   color: (val: any) => string
-): void => {
+): void {
   const maxLength = process.stdout.columns;
   console.log(
     stringify.configure({
@@ -51,20 +51,20 @@ export const displayData = (
       maxLength: maxLength,
     })(data)
   );
-};
+}
 
-export const showRename = (
+export function showRename(
   beforeId: string,
   afterId: string,
   show: Show
-): void => {
+): void {
   if (show === Show.None) {
     return;
   }
   console.log(
     actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId)
   );
-};
+}
 
 export function showSingle(
   action: ACTIONS,
