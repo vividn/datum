@@ -17,6 +17,7 @@ import { Show } from "../../src/output";
 import * as addDocModule from "../../src/documentControl/addDoc";
 import addCmd from "../../src/commands/addCmd";
 import { main } from "../../src";
+import { deleteDoc } from "../../src/documentControl/deleteDoc";
 
 const dbName = "doc_control_output_test";
 const db = testNano.db.use<EitherPayload>(dbName);
@@ -231,6 +232,12 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
+});
+
+test("deleteDoc outputs DELETE", async () => {
+  await db.insert({ _id: "doc-to-delete" });
+  await deleteDoc({ db, id: "doc-to-delete", show: Show.Standard });
+  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
 });
 
 test("show is None by default when calling a command via import or API", async () => {

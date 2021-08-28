@@ -108,6 +108,9 @@ export function showNoDiff(doc: EitherDocument, show: Show): void {
 export function showFailed(payload: EitherPayload, show: Show): void {
   return showSingle(ACTIONS.Failed, payload, show);
 }
+export function showDelete(payload: EitherPayload, show: Show): void {
+  return showSingle(ACTIONS.Delete, payload, show);
+}
 
 export function showUpdate(
   _beforeDoc: EitherDocument,
