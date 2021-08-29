@@ -17,11 +17,16 @@ export type DatumView<D extends EitherDocument> = {
   reduce?: ReduceFunction | { [viewName: string]: ReduceFunction };
 };
 
+export type StringifiedDatumView = {
+  name: string;
+  map: string;
+  reduce?: string | { [viewName: string]: string };
+};
+
 export type ReduceFunction =
   | ((keysAndDocIds: [any, string][], values: [], rereduce: boolean) => any)
   | "_sum"
   | "_stats"
   | "_count"
   | "_approx_count_distinct"
-  | string;
-export type MapFunction<D extends EitherDocument> = string | ((doc: D) => void);
+export type MapFunction<D extends EitherDocument> = (doc: D) => void;
