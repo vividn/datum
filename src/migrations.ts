@@ -4,6 +4,7 @@ import editInTerminal from "./utils/editInTerminal";
 import pass from "./utils/pass";
 import { testNano } from "../test/test-utils";
 import { GenericObject } from "./GenericObject";
+import { asViewDb } from "./views/getViewDoc";
 
 const template_migration = `(doc) => {
   // Conditional to check if the document should be migrate
@@ -19,8 +20,7 @@ type baseMigrationType = {
   migrationName: string;
 };
 
-type createMigrationType = Omit<baseMigrationType, "db"> & {
-  db: DocumentScope<ViewDocument<GenericObject>>;
+type createMigrationType = baseMigrationType & {
   mapFnStr?: string;
 };
 export async function createMigration({
@@ -28,9 +28,10 @@ export async function createMigration({
   migrationName,
   mapFnStr,
 }: createMigrationType): Promise<void> {
+  const viewDb = asViewDb(db);
   let designDoc: ViewDocument<GenericObject>;
   try {
-    designDoc = await db.get("_design/migrate");
+    designDoc = await viewDb.get("_design/migrate");
   } catch (error) {
     if (!(isCouchDbError(error) && error.reason in ["missing", "deleted"])) {
       throw error;
