@@ -4,6 +4,7 @@ import {
   describe,
   jest,
   it,
+  test,
   expect,
 } from "@jest/globals";
 import * as emit from "../../src/views/emit";
@@ -69,4 +70,8 @@ describe("subHumanIdView", () => {
     subHumanIdView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
+
+  test.todo("minId returns the smallest non-conflicting humanId");
+  test.todo("minId throws if the full string matches multiple docs");
+  test.todo("minId throws if no slice matches exactly one document");
 });
