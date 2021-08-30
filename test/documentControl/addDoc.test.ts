@@ -167,7 +167,7 @@ describe("addDoc", () => {
   it("does not write to db if ViewDocument with identical views already exists", async () => {
     const testViews = {
       viewName: {
-        map: ((doc) => {
+        map: ((_doc: any) => {
           emit(null, null);
         }).toString(),
       },
