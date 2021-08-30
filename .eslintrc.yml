@@ -16,6 +16,7 @@ parserOptions:
   sourceType: module
   project: "./tsconfig.withTests.json"
   ecmaVersion: 2018
+  warnOnUnsupportedTypeScriptVersion: false
 plugins:
   - unused-imports
 rules:
