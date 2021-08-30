@@ -26,6 +26,7 @@ import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
 import * as deleteDoc from "../../src/documentControl/deleteDoc";
 import { DocExistsError } from "../../src/documentControl/base";
 import { Show } from "../../src/output";
+import emit from "../../src/views/emit";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -161,6 +162,22 @@ describe("addDoc", () => {
     expect(newDoc).toEqual(existingDoc);
     expect(await db.get(id)).toHaveProperty("_rev", existingDoc._rev);
     expect(newDoc.meta.humanId).toEqual("meta can be different");
+  });
+
+  it("does not write to db if ViewDocument with identical views already exists", async () => {
+    const testViews = {
+      viewName: {
+        map: ((doc) => {
+          emit(null, null);
+        }).toString(),
+      },
+    };
+    const id = "_design/viewName";
+    await db.insert({ _id: id, views: testViews, meta: {} });
+    const existingDoc = await db.get(id);
+
+    const newDoc = await addDoc({db, payload: {_id: id, views: testViews, meta: {}}});
+    expect(newDoc).toEqual(existingDoc);
   });
 
   it("throws error if a different document with id already exists", async () => {

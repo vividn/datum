@@ -15,6 +15,7 @@ import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 import overwriteDoc from "./overwriteDoc";
 import deleteDoc from "./deleteDoc";
+import { isViewDocument, isViewPayload } from "../views/getViewDoc";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
@@ -27,6 +28,9 @@ function payloadMatchesDbData(
     (isDatumPayload(payload) &&
       isDatumDocument(existingDoc) &&
       isEqual(payload.data, existingDoc.data)) ||
+    (isViewPayload(payload) &&
+      isViewDocument(existingDoc) &&
+      isEqual(payload.views, existingDoc.views)) ||
     (!isDatumPayload(payload) &&
       !isDatumDocument(existingDoc) &&
       isEqual(payload, existingWithoutRev))
