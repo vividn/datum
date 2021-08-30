@@ -4,12 +4,16 @@ import {
   describe,
   jest,
   it,
-  test,
   expect,
 } from "@jest/globals";
 import * as emit from "../../src/views/emit";
-import { DatumDocument } from "../../src/documentControl/DatumDocument";
-import { humanIdView, subHumanIdView } from "../../src/views/datumViews/humanId";
+import {
+  DatumDocument,
+} from "../../src/documentControl/DatumDocument";
+import {
+  humanIdView,
+  subHumanIdView,
+} from "../../src/views/datumViews/humanId";
 
 const emitMock = jest.spyOn(emit, "default");
 beforeEach(() => {
@@ -55,7 +59,18 @@ describe("subHumanIdView", () => {
     };
     subHumanIdView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(10);
-    for (const substr of ["s", "su", "sub", "subs", "subst", "substr", "substri", "substrin", "substring", "substrings"] ) {
+    for (const substr of [
+      "s",
+      "su",
+      "sub",
+      "subs",
+      "subst",
+      "substr",
+      "substri",
+      "substrin",
+      "substring",
+      "substrings",
+    ]) {
       expect(emitMock).toHaveBeenCalledWith(substr, null);
     }
   });
@@ -70,8 +85,4 @@ describe("subHumanIdView", () => {
     subHumanIdView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
-
-  test.todo("minId returns the smallest non-conflicting humanId");
-  test.todo("minId throws if the full string matches multiple docs");
-  test.todo("minId throws if no slice matches exactly one document");
 });

@@ -28,5 +28,5 @@ export type ReduceFunction =
   | "_sum"
   | "_stats"
   | "_count"
-  | "_approx_count_distinct"
+  | "_approx_count_distinct";
 export type MapFunction<D extends EitherDocument> = (doc: D) => void;

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "@jest/globals";
 import jClone from "../../src/utils/jClone";
 import combineData, {
-  conflictStrategies,
+  conflictingKeyStrategies,
   mergeValues,
 } from "../../src/documentControl/combineData";
 import { MergeError } from "../../src/errors";
@@ -27,7 +27,7 @@ describe("combineData", () => {
           "merge",
           "append",
           false,
-        ] as conflictStrategies[]) {
+        ] as conflictingKeyStrategies[]) {
           const testCaseDescription = `(${justAVal},${justBVal},${sameVal},${conflictVal})`;
           const combined = combineData(aData, bData, {
             justA: justAVal,

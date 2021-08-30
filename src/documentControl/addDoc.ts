@@ -13,6 +13,8 @@ import updateDoc from "./updateDoc";
 import { Show, showCreate, showExists, showFailed } from "../output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
+import overwriteDoc from "./overwriteDoc";
+import deleteDoc from "./deleteDoc";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
@@ -31,9 +33,14 @@ function payloadMatchesDbData(
   );
 }
 
+export type ConflictStrategyNames =
+  | UpdateStrategyNames
+  | "overwrite"
+  | "delete";
+
 type addDocType = {
   payload: EitherPayload;
-  conflictStrategy?: UpdateStrategyNames;
+  conflictStrategy?: ConflictStrategyNames;
 } & BaseDocControlArgs;
 
 async function addDoc({
@@ -70,14 +77,19 @@ async function addDoc({
     const existingDoc = await db.get(id);
 
     if (conflictStrategy !== undefined) {
-      const updatedDoc = await updateDoc({
+      if (conflictStrategy === "overwrite") {
+        return overwriteDoc({ db, id, payload, show });
+      }
+      if (conflictStrategy === "delete") {
+        return deleteDoc({ db, id, show });
+      }
+      return await updateDoc({
         db,
         id,
         payload,
         updateStrategy: conflictStrategy,
         show,
       });
-      return updatedDoc;
     }
     if (payloadMatchesDbData(payload, existingDoc)) {
       showExists(existingDoc, show);

@@ -16,11 +16,7 @@ import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
 import { processTimeArgs, setTimezone } from "../timings";
 import chalk from "chalk";
-import addDoc from "../documentControl/addDoc";
-import {
-  updateStrategies,
-  UpdateStrategyNames,
-} from "../documentControl/combineData";
+import addDoc, { ConflictStrategyNames } from "../documentControl/addDoc";
 import { Show } from "../output";
 
 export const command = "add [data..]";
@@ -44,13 +40,28 @@ export type AddCmdArgs = BaseDatumArgs & {
   partition?: string;
   undo?: boolean;
   merge?: boolean;
-  update?: UpdateStrategyNames;
+  conflict?: ConflictStrategyNames;
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
 };
+
+const conflictRecord: Record<ConflictStrategyNames, any> = {
+  useOld: "",
+  merge: "",
+  removeConflicting: "",
+  xor: "",
+  intersection: "",
+  append: "",
+  preferNew: "",
+  delete: "",
+  useNew: "",
+  overwrite: "",
+  preferOld: "",
+};
+const conflictChoices = Object.keys(conflictRecord);
 
 export function builder(yargs: Argv): Argv {
   return yargs
@@ -169,11 +180,11 @@ export function builder(yargs: Argv): Argv {
         type: "boolean",
         conflicts: "update",
       },
-      update: {
+      conflict: {
         describe: `on conflict, update with given strategy.`,
         alias: "X",
         type: "string",
-        choices: Object.keys(updateStrategies),
+        choices: conflictChoices,
       },
       // "force-undo": {
       //   describe:
@@ -332,7 +343,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     return doc;
   }
 
-  const conflictStrategy = args.update ?? (args.merge ? "merge" : undefined);
+  const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);
   const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
   const doc = await addDoc({
     db,

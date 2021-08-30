@@ -22,6 +22,8 @@ import addDoc from "../../src/documentControl/addDoc";
 import { IdError } from "../../src/errors";
 import jClone from "../../src/utils/jClone";
 import * as updateDoc from "../../src/documentControl/updateDoc";
+import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
+import * as deleteDoc from "../../src/documentControl/deleteDoc";
 import { DocExistsError } from "../../src/documentControl/base";
 import { Show } from "../../src/output";
 
@@ -258,7 +260,7 @@ describe("addDoc", () => {
     expect(payload1).toEqual(payload2);
   });
 
-  it("calls another document control method if id already exists and conflict strategy is given", async () => {
+  it("calls updateDoc if id already exists and conflict strategy is given", async () => {
     const originalPayload = { _id: "docId", foo: "bar", anotherKey: "data" };
     const updatePayload = { _id: "docId", foo: "baz" };
     const conflictStrategy = "merge";
@@ -278,6 +280,87 @@ describe("addDoc", () => {
 
     expect(newDoc).toMatchObject(expectedResult);
     expect(spy).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it("calls overwriteDoc if conflict and 'overwrite' given as conflict strategy", async () => {
+    const originalPayload: DatumPayload = {
+      _id: "docId",
+      data: { foo: "bar", anotherKey: "data" },
+      meta: { humanId: "original" },
+    };
+    const overwritePayload: DatumPayload = {
+      _id: "docId",
+      data: { foo: "baz" },
+      meta: { humanId: "overwrite" },
+    };
+    const conflictStrategy = "overwrite";
+    const expectedResult: DatumPayload = {
+      _id: "docId",
+      data: { foo: "baz" },
+      meta: { humanId: "overwrite" },
+    };
+    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
+
+    await addDoc({ db, payload: originalPayload });
+    const newDoc = await addDoc({
+      db,
+      payload: overwritePayload,
+      conflictStrategy,
+    });
+    expect(newDoc).toMatchObject(expectedResult);
+    expect(overwriteSpy).toHaveBeenCalled();
+
+    overwriteSpy.mockRestore();
+  });
+
+  it("calls deleteDoc if conflict and 'delete' given as conflict strategy", async () => {
+    const originalPayload: DatumPayload = {
+      _id: "docId",
+      data: { foo: "bar", anotherKey: "data" },
+      meta: { humanId: "original" },
+    };
+    const deletePayload: DatumPayload = {
+      _id: "docId",
+      data: { none: "of_this", data: "matters" },
+      meta: { humanId: "delete" },
+    };
+    const conflictStrategy = "delete";
+    const expectedResult = {
+      _id: "docId",
+      _deleted: true,
+    };
+
+    const deleteSpy = jest.spyOn(deleteDoc, "default");
+
+    await addDoc({ db, payload: originalPayload });
+    const newDoc = await addDoc({
+      db,
+      payload: deletePayload,
+      conflictStrategy,
+    });
+    expect(newDoc).toMatchObject(expectedResult);
+    expect(deleteSpy).toHaveBeenCalled();
+
+    deleteSpy.mockRestore();
+  });
+
+  it("does not call other documentControl strategies if there is no conflict", async () => {
+    const updateSpy = jest.spyOn(updateDoc, "default");
+    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
+    const deleteSpy = jest.spyOn(deleteDoc, "default");
+
+    await addDoc({ db, payload: { _id: "new_id", data: {}, meta: {} } });
+    await addDoc({ db, payload: { _id: "data_only_new", foo: "bar" } });
+
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(overwriteSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    updateSpy.mockRestore();
+    overwriteSpy.mockRestore();
+    deleteSpy.mockRestore();
   });
 
   test("It still throws an DocExistsError if conflict and showOutput", async () => {
