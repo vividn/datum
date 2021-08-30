@@ -7,9 +7,7 @@ import {
   expect,
 } from "@jest/globals";
 import * as emit from "../../src/views/emit";
-import {
-  DatumDocument,
-} from "../../src/documentControl/DatumDocument";
+import { DatumDocument } from "../../src/documentControl/DatumDocument";
 import {
   humanIdView,
   subHumanIdView,

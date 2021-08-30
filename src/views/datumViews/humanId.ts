@@ -1,4 +1,7 @@
-import { EitherDocument, EitherPayload } from "../../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
 import { DatumView } from "../getViewDoc";
 import emit from "../emit";
 import { DocumentScope } from "nano";

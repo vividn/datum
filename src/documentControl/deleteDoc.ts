@@ -1,5 +1,4 @@
 import { BaseDocControlArgs } from "./base";
-import { EitherDocument } from "./DatumDocument";
 import { isCouchDbError, MyError } from "../errors";
 import { Show, showDelete } from "../output";
 
@@ -18,7 +17,7 @@ type DeletedDocument = {
   _id: string;
   _rev: string;
   _deleted: true;
-}
+};
 
 async function deleteDoc({
   id,
@@ -37,7 +36,7 @@ async function deleteDoc({
   }
 
   const deletedRev = (await db.destroy(id, existingDoc._rev)).rev;
-  const deletedDoc = await db.get(id, {rev: deletedRev}) as DeletedDocument;
+  const deletedDoc = (await db.get(id, { rev: deletedRev })) as DeletedDocument;
   showDelete(existingDoc, show);
   return deletedDoc;
 }

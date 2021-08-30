@@ -1,5 +1,8 @@
 import { afterEach, beforeAll, beforeEach, expect, test } from "@jest/globals";
-import { DatumPayload, EitherDocument, EitherPayload } from "../../src/documentControl/DatumDocument";
+import {
+  DatumPayload,
+  EitherPayload,
+} from "../../src/documentControl/DatumDocument";
 import { pass, testNano } from "../test-utils";
 import { minId } from "../../src/views/datumViews/humanId";
 import { DocumentScope } from "nano";
