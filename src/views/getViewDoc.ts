@@ -1,10 +1,6 @@
 import { DocumentScope, ViewDocument } from "nano";
 import { EitherDocument } from "../documentControl/DatumDocument";
 
-type GetViewDocType = {};
-
-export async function getViewDoc() {}
-
 export function asViewDb<T>(
   db: DocumentScope<T>
 ): DocumentScope<ViewDocument<T>> {
