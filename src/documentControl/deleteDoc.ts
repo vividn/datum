@@ -14,11 +14,17 @@ type deleteDocType = {
   id: string;
 } & BaseDocControlArgs;
 
-export async function deleteDoc({
+type DeletedDocument = {
+  _id: string;
+  _rev: string;
+  _deleted: true;
+}
+
+async function deleteDoc({
   id,
   db,
   show = Show.None,
-}: deleteDocType): Promise<EitherDocument> {
+}: deleteDocType): Promise<DeletedDocument> {
   let existingDoc;
   try {
     existingDoc = await db.get(id);
@@ -30,7 +36,10 @@ export async function deleteDoc({
     }
   }
 
-  await db.destroy(id, existingDoc._rev);
+  const deletedRev = (await db.destroy(id, existingDoc._rev)).rev;
+  const deletedDoc = await db.get(id, {rev: deletedRev}) as DeletedDocument;
   showDelete(existingDoc, show);
-  return existingDoc;
+  return deletedDoc;
 }
+
+export default deleteDoc;
