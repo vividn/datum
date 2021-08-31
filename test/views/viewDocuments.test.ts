@@ -6,12 +6,16 @@ import {
 import emit from "../../src/views/emit";
 
 const genericMapFunction = (doc: any) => {
-      emit(doc._id, null);
-    };
+  emit(doc._id, null);
+};
 const genericMapStr = genericMapFunction.toString();
-const genericReduceFunction = (_keys: any[], _values: any[], _rereduce: boolean) => {
-      return 0;
-    };
+const genericReduceFunction = (
+  _keys: any[],
+  _values: any[],
+  _rereduce: boolean
+) => {
+  return 0;
+};
 const genericReduceStr = genericReduceFunction.toString();
 
 describe("datumViewToViewPayload", () => {
@@ -27,36 +31,30 @@ describe("datumViewToViewPayload", () => {
   it("has a 'default' view with stringified map doc if no reduce is given", () => {
     const datumView: DatumView = {
       name: "has_a_default_view",
-      map: genericMapFunction
+      map: genericMapFunction,
     };
     const viewPayload = datumViewToViewPayload(datumView);
     expect(viewPayload).toHaveProperty("views.default");
     expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
   });
 
-  it(
-    "uses a 'default' view with stringified map if just one reduce is given",
-    () => {
-      const datumView: DatumView = {
-        name: "with_reduce_still_has_default",
-        map: genericMapFunction,
-        reduce: "_count"
-      };
-      const viewPayload = datumViewToViewPayload(datumView);
-      expect(viewPayload).toHaveProperty("views.default");
-      expect(viewPayload).toHaveProperty(
-        "views.default.map",
-        genericMapStr
-      );
-    }
-  );
+  it("uses a 'default' view with stringified map if just one reduce is given", () => {
+    const datumView: DatumView = {
+      name: "with_reduce_still_has_default",
+      map: genericMapFunction,
+      reduce: "_count",
+    };
+    const viewPayload = datumViewToViewPayload(datumView);
+    expect(viewPayload).toHaveProperty("views.default");
+    expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
+  });
 
   it("stringifies reduce if it is function", () => {
     const datumView: DatumView = {
-        name: "stringified_reduce",
-        map: genericMapFunction,
-        reduce: genericReduceFunction
-      };
+      name: "stringified_reduce",
+      map: genericMapFunction,
+      reduce: genericReduceFunction,
+    };
     const viewPayload = datumViewToViewPayload(datumView);
     expect(viewPayload).toHaveProperty("views.default.reduce", genericMapStr);
   });
@@ -65,7 +63,7 @@ describe("datumViewToViewPayload", () => {
     const viewPayload = datumViewToViewPayload({
       name: "special_reduce_string",
       map: genericMapFunction,
-      reduce: "_count"
+      reduce: "_count",
     });
     expect(viewPayload).toHaveProperty("views.default.reduce", "_count");
   });
@@ -77,28 +75,27 @@ describe("datumViewToViewPayload", () => {
       reduce: {
         count: "_count",
         default: genericReduceFunction,
-        anotherView: genericReduceFunction
-      }
+        anotherView: genericReduceFunction,
+      },
     });
     const expectedViews = {
       views: {
         anotherView: {
           map: genericMapStr,
-          reduce: genericReduceStr
+          reduce: genericReduceStr,
         },
         count: {
           map: genericMapStr,
-          reduce: "_count"
+          reduce: "_count",
         },
         default: {
           map: genericMapStr,
-          reduce: genericReduceStr
-        }
-      }
+          reduce: genericReduceStr,
+        },
+      },
     };
     expect(viewPayload).toMatchObject(expectedViews);
-    }
-  );
+  });
 
   it("has a default view with just the map document if no reduce is named default", () => {
     const viewPayload = datumViewToViewPayload({
@@ -106,32 +103,37 @@ describe("datumViewToViewPayload", () => {
       map: genericMapFunction,
       reduce: {
         count: "_count",
-        anotherView: genericReduceFunction
-      }
+        anotherView: genericReduceFunction,
+      },
     });
     expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
     expect(viewPayload).not.toHaveProperty("views.default.reduce");
-    }
-  );
+  });
 
   it("adds an empty meta object", () => {
-    expect(datumViewToViewPayload({
-      name: "no_reduce",
-      map: genericMapFunction
-    })).toHaveProperty("meta", {});
-    expect(datumViewToViewPayload({
-      name: "one_reduce",
-      map: genericMapFunction,
-      reduce: "_count"
-    })).toHaveProperty("meta", {});
-    expect(datumViewToViewPayload({
-      name: "several_reduce",
-      map: genericMapFunction,
-      reduce: {
-        one: genericReduceFunction,
-        two: genericReduceFunction
-      }
-    })).toHaveProperty("meta", {});
+    expect(
+      datumViewToViewPayload({
+        name: "no_reduce",
+        map: genericMapFunction,
+      })
+    ).toHaveProperty("meta", {});
+    expect(
+      datumViewToViewPayload({
+        name: "one_reduce",
+        map: genericMapFunction,
+        reduce: "_count",
+      })
+    ).toHaveProperty("meta", {});
+    expect(
+      datumViewToViewPayload({
+        name: "several_reduce",
+        map: genericMapFunction,
+        reduce: {
+          one: genericReduceFunction,
+          two: genericReduceFunction,
+        },
+      })
+    ).toHaveProperty("meta", {});
   });
 });
 

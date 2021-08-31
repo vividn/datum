@@ -1,4 +1,8 @@
-import { DatumMetadata, EitherDocument, EitherPayload } from "../documentControl/DatumDocument";
+import {
+  DatumMetadata,
+  EitherDocument,
+  EitherPayload,
+} from "../documentControl/DatumDocument";
 
 // export function asViewDb<D extends EitherPayload>(
 //   db: DocumentScope<D>
@@ -24,7 +28,9 @@ export type ReduceFunction =
   | "_stats"
   | "_count"
   | "_approx_count_distinct";
-export type MapFunction<D extends EitherDocument = EitherDocument> = (doc: D) => void;
+export type MapFunction<D extends EitherDocument = EitherDocument> = (
+  doc: D
+) => void;
 
 export type ViewPayload = {
   _id: string;
@@ -35,21 +41,27 @@ export type ViewPayload = {
       reduce?: string;
     };
   };
-  meta?: DatumMetadata
+  meta?: DatumMetadata;
 };
 
 export type ViewDocument = ViewPayload & {
   _rev: string;
+};
+
+export function isViewPayload(
+  payload: EitherPayload | ViewPayload
+): payload is ViewPayload {
+  return !!(
+    payload._id &&
+    payload._id.startsWith("_design/") &&
+    (payload as ViewPayload).views
+  );
 }
 
-export function isViewPayload (payload: EitherPayload | ViewPayload): payload is ViewPayload {
-  return !!(payload._id && payload._id.startsWith("_design/") && (payload as ViewPayload).views);
-}
-
-export function isViewDocument(doc: EitherDocument | ViewDocument): doc is ViewDocument {
+export function isViewDocument(
+  doc: EitherDocument | ViewDocument
+): doc is ViewDocument {
   return !!(doc._id.startsWith("_design") && (doc as ViewDocument).views);
 }
 
-export function datumViewToViewPayload (datumView: DatumView): ViewPayload {
-
-}
+export function datumViewToViewPayload(datumView: DatumView): ViewPayload {}

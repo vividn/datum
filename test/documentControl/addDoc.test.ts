@@ -176,7 +176,10 @@ describe("addDoc", () => {
     await db.insert({ _id: id, views: testViews, meta: {} });
     const existingDoc = await db.get(id);
 
-    const newDoc = await addDoc({db, payload: {_id: id, views: testViews, meta: {}}});
+    const newDoc = await addDoc({
+      db,
+      payload: { _id: id, views: testViews, meta: {} },
+    });
     expect(newDoc).toEqual(existingDoc);
   });
 

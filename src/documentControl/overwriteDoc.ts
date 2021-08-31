@@ -1,4 +1,4 @@
-import { EitherDocument, EitherPayload, isDatumPayload } from "./DatumDocument";
+import { EitherDocument, EitherPayload } from "./DatumDocument";
 import { IdError, MyError } from "../errors";
 import { assembleId } from "../ids";
 import { DateTime } from "luxon";
