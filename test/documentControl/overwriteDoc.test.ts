@@ -478,4 +478,6 @@ describe("overwriteDoc", () => {
     expect(returnedDoc).toEqual(existingDoc);
     expect((await db.get(testDatumPayloadId))._rev).toEqual(existingDoc._rev);
   });
+
+  it.todo("can overwrite a design document with a new one");
 });

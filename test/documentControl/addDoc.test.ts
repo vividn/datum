@@ -417,4 +417,6 @@ describe("addDoc", () => {
     });
     expect(newDoc._id).toEqual(nowStr);
   });
+
+  test.todo("it can add a view document to the database");
 });

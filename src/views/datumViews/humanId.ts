@@ -2,7 +2,7 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../../documentControl/DatumDocument";
-import { DatumView } from "../getViewDoc";
+import { DatumView } from "../viewDocument";
 import emit from "../emit";
 import { DocumentScope } from "nano";
 
