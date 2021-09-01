@@ -1,3 +1,4 @@
+import isPlainObject from "lodash.isplainobject";
 import {
   DatumMetadata,
   EitherDocument,
@@ -13,34 +14,53 @@ import {
 export type DatumView<D extends EitherDocument = EitherDocument> = {
   name: string;
   map: MapFunction<D>;
-  reduce?: ReduceFunction | { [viewName: string]: ReduceFunction };
+  reduce?: ReduceFunction | MultiReduceFunction;
 };
+
+type MultiReduceFunction = {
+  [viewName: string]: ReduceFunction;
+};
+
+type BuiltInReduce = "_sum" | "_stats" | "_count" | "_approx_count_distinct";
 
 export type StringifiedDatumView = {
   name: string;
   map: string;
-  reduce?: string | { [viewName: string]: string };
+  reduce?: string | MultiStringReduceFunction;
 };
+
+type MultiStringReduceFunction = { [viewName: string]: string };
+
+function isMultiReduce(
+  reduce:
+    | undefined
+    | ReduceFunction
+    | string
+    | MultiReduceFunction
+    | MultiStringReduceFunction
+): reduce is MultiReduceFunction | MultiStringReduceFunction {
+  return isPlainObject(reduce);
+}
 
 export type ReduceFunction =
   | ((keysAndDocIds: [any, string][], values: [], rereduce: boolean) => any)
-  | "_sum"
-  | "_stats"
-  | "_count"
-  | "_approx_count_distinct";
+  | BuiltInReduce;
+
 export type MapFunction<D extends EitherDocument = EitherDocument> = (
   doc: D
 ) => void;
 
+type ViewPayloadViews = {
+  [viewName: string]: {
+    map: string;
+    reduce?: string;
+  };
+};
+
 export type ViewPayload = {
   _id: string;
   _rev?: string;
-  views: {
-    [viewName: string]: {
-      map: string;
-      reduce?: string;
-    };
-  };
+  views: ViewPayloadViews;
   meta?: DatumMetadata;
 };
 
@@ -64,4 +84,36 @@ export function isViewDocument(
   return !!(doc._id.startsWith("_design") && (doc as ViewDocument).views);
 }
 
-export function datumViewToViewPayload(datumView: DatumView): ViewPayload {}
+export function datumViewToViewPayload(
+  datumView: DatumView | StringifiedDatumView
+): ViewPayload {
+  const views: ViewPayloadViews = {};
+  const mapStr = datumView.map.toString();
+  const datumReduce = datumView.reduce;
+  if (isMultiReduce(datumReduce)) {
+    for (const reduceName in datumReduce) {
+      views[reduceName] = {
+        map: mapStr,
+        reduce: datumReduce[reduceName].toString(),
+      };
+    }
+    if (views.default === undefined) {
+      views.default = {
+        map: mapStr
+      };
+    }
+  } else {
+    views.default = datumReduce === undefined ? {
+      map: mapStr
+    } : {
+      map: mapStr,
+      reduce: datumReduce.toString()
+    };
+  }
+
+  return {
+    _id: `_design/${datumView.name}`,
+    views: views,
+    meta: {}
+  };
+}

@@ -1,14 +1,22 @@
-import { it, describe, expect } from "@jest/globals";
+import { it, test, describe, expect } from "@jest/globals";
 import {
   DatumView,
   datumViewToViewPayload,
 } from "../../src/views/viewDocument";
-import emit from "../../src/views/emit";
+import _emit from "../../src/views/emit";
+
+function emit(doc: unknown, value: unknown) {
+  _emit(doc, value);
+}
 
 const genericMapFunction = (doc: any) => {
   emit(doc._id, null);
 };
-const genericMapStr = genericMapFunction.toString();
+
+const genericMapStr = `doc => {
+  emit(doc._id, null);
+}`;
+
 const genericReduceFunction = (
   _keys: any[],
   _values: any[],
@@ -16,7 +24,14 @@ const genericReduceFunction = (
 ) => {
   return 0;
 };
-const genericReduceStr = genericReduceFunction.toString();
+const genericReduceStr = `(_keys, _values, _rereduce) => {
+  return 0;
+}`;
+
+test("string representations match toString return value", () => {
+  expect(genericMapFunction.toString()).toEqual(genericMapStr);
+  expect(genericReduceFunction.toString()).toEqual(genericReduceStr);
+});
 
 describe("datumViewToViewPayload", () => {
   it("turns the name into a _design id", () => {
@@ -56,7 +71,10 @@ describe("datumViewToViewPayload", () => {
       reduce: genericReduceFunction,
     };
     const viewPayload = datumViewToViewPayload(datumView);
-    expect(viewPayload).toHaveProperty("views.default.reduce", genericMapStr);
+    expect(viewPayload).toHaveProperty(
+      "views.default.reduce",
+      genericReduceStr
+    );
   });
 
   it("keeps the reduce string if it is a special case", () => {
@@ -78,6 +96,7 @@ describe("datumViewToViewPayload", () => {
         anotherView: genericReduceFunction,
       },
     });
+    console.log(viewPayload);
     const expectedViews = {
       views: {
         anotherView: {
@@ -134,6 +153,27 @@ describe("datumViewToViewPayload", () => {
         },
       })
     ).toHaveProperty("meta", {});
+  });
+
+  it("can also accept prestringified versions of map and reduce", () => {
+    const datumView = datumViewToViewPayload({
+      name: "stringy_input",
+      map: genericMapStr,
+      reduce: {
+        one: "_sum",
+        two: genericReduceStr,
+      },
+    });
+    console.log(datumView);
+    expect(datumView).toMatchObject({
+      _id: "_design/stringy_input",
+      views: {
+        one: { map: genericMapStr, reduce: "_sum" },
+        two: { map: genericMapStr, reduce: genericReduceStr },
+        default: { map: genericMapStr },
+      },
+      meta: {},
+    });
   });
 });
 

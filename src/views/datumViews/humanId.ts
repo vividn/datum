@@ -3,8 +3,12 @@ import {
   EitherPayload,
 } from "../../documentControl/DatumDocument";
 import { DatumView } from "../viewDocument";
-import emit from "../emit";
+import _emit from "../emit";
 import { DocumentScope } from "nano";
+
+function emit(doc: unknown, value: unknown) {
+  _emit(doc,value);
+}
 
 export const humanIdView: DatumView<EitherDocument> = {
   name: "datum_human_id",
