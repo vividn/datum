@@ -37,7 +37,9 @@ describe("datumViewToViewPayload", () => {
   it("turns the name into a _design id", () => {
     const datumView: DatumView = {
       name: "the_name",
-      map: (_doc) => {},
+      map: (_doc) => {
+        return;
+      },
     };
     const viewPayload = datumViewToViewPayload(datumView);
     expect(viewPayload).toHaveProperty("_id", "_design/the_name");

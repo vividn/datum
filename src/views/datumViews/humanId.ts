@@ -7,7 +7,7 @@ import _emit from "../emit";
 import { DocumentScope } from "nano";
 
 function emit(doc: unknown, value: unknown) {
-  _emit(doc,value);
+  _emit(doc, value);
 }
 
 export const humanIdView: DatumView<EitherDocument> = {

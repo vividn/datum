@@ -99,21 +99,24 @@ export function datumViewToViewPayload(
     }
     if (views.default === undefined) {
       views.default = {
-        map: mapStr
+        map: mapStr,
       };
     }
   } else {
-    views.default = datumReduce === undefined ? {
-      map: mapStr
-    } : {
-      map: mapStr,
-      reduce: datumReduce.toString()
-    };
+    views.default =
+      datumReduce === undefined
+        ? {
+            map: mapStr,
+          }
+        : {
+            map: mapStr,
+            reduce: datumReduce.toString(),
+          };
   }
 
   return {
     _id: `_design/${datumView.name}`,
     views: views,
-    meta: {}
+    meta: {},
   };
 }

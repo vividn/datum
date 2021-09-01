@@ -23,7 +23,7 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export async function mapCmd(args: MapCmdArgs): Promise<void> {
+export async function mapCmd(_args: MapCmdArgs): Promise<void> {
   console.log(subHumanIdView.map.toString());
 }
 
