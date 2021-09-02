@@ -1,12 +1,23 @@
-import { it, test, describe, expect } from "@jest/globals";
+import {
+  it,
+  test,
+  describe,
+  expect,
+  beforeEach,
+  beforeAll,
+  afterEach,
+} from "@jest/globals";
 import {
   DatumView,
   datumViewToViewPayload,
 } from "../../src/views/viewDocument";
 import _emit from "../../src/views/emit";
+import { fail, pass, testNano } from "../test-utils";
+import { EitherPayload } from "../../src/documentControl/DatumDocument";
+import insertDatumView from "../../src/views/insertDatumView";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+function emit(key: unknown, value: unknown) {
+  _emit(key, value);
 }
 
 const genericMapFunction = (doc: any) => {
@@ -180,8 +191,50 @@ describe("datumViewToViewPayload", () => {
 });
 
 describe("insertDatumView", () => {
-  it.todo("turns a DatumView into a functioning view");
-  it.todo("overwrites an existing view with the new function contents");
+  const dbName = "insert_datum_view_test";
+  const db = testNano.use<EitherPayload>(dbName);
+  
+  beforeAll(async () => {
+    await testNano.db.destroy(dbName).catch(pass);
+  });
+  beforeEach(async () => {
+    await testNano.db.create(dbName);
+  });
+  afterEach(async () => {
+    await testNano.db.destroy(dbName);
+  });
+
+  it("turns a DatumView into a functioning view", async () => {
+    const summerAB: DatumView = {
+      name: "summer",
+      map: (doc: any) => {
+        if (doc.a) {
+          emit("a", doc.a);
+        }
+        if (doc.b) {
+          emit("b", doc.b);
+        }
+      },
+      reduce: "_sum"
+    };
+
+    await db.insert({_id: "doc1", a: 3, b:4});
+    await db.insert({_id: "doc2", a: 6});
+
+    await insertDatumView(summerAB);
+
+    const total = await db.view("summer", "default");
+    expect(total.rows[0].value).toBe(13);
+
+    const grouped = await db.view("summer", "default", {group: true});
+    expect(grouped.rows).toEqual([{ key: "a", value: 9}, { key: "b", value: 4}]);
+
+    const unreduced = await db.view("summer", "default", {reduce: false});
+    expect(unreduced.total_rows).toEqual(3);
+  });
+  
+  it.todo("overwrites an existing view if DatumView is different contents");
+  it.todo("does not overwrite if view is identical")
 });
 
 it.todo("adds all datum views to an empty db");
