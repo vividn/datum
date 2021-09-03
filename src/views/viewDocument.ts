@@ -4,12 +4,13 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
+import { DocumentScope } from "nano";
 
-// export function asViewDb<D extends EitherPayload>(
-//   db: DocumentScope<D>
-// ): DocumentScope<ViewPayload<D>> {
-//   return db as unknown as DocumentScope<ViewPayload<D>>;
-// }
+export function asViewDb(
+  db: DocumentScope<any>
+): DocumentScope<ViewPayload> {
+  return db as unknown as DocumentScope<ViewPayload>;
+}
 
 export type DatumView<D extends EitherDocument = EitherDocument> = {
   name: string;

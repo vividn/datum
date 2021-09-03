@@ -8,11 +8,12 @@ import {
   afterEach,
 } from "@jest/globals";
 import {
+  asViewDb,
   DatumView,
   datumViewToViewPayload,
 } from "../../src/views/viewDocument";
 import _emit from "../../src/views/emit";
-import { fail, pass, testNano } from "../test-utils";
+import { pass, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import insertDatumView from "../../src/views/insertDatumView";
 
@@ -193,7 +194,8 @@ describe("datumViewToViewPayload", () => {
 describe("insertDatumView", () => {
   const dbName = "insert_datum_view_test";
   const db = testNano.use<EitherPayload>(dbName);
-  
+  const viewDb = asViewDb(db);
+
   beforeAll(async () => {
     await testNano.db.destroy(dbName).catch(pass);
   });
@@ -215,26 +217,53 @@ describe("insertDatumView", () => {
           emit("b", doc.b);
         }
       },
-      reduce: "_sum"
+      reduce: "_sum",
     };
 
-    await db.insert({_id: "doc1", a: 3, b:4});
-    await db.insert({_id: "doc2", a: 6});
+    await db.insert({ _id: "doc1", a: 3, b: 4 });
+    await db.insert({ _id: "doc2", a: 6 });
 
-    await insertDatumView(summerAB);
+    await insertDatumView(viewDb, summerAB);
 
     const total = await db.view("summer", "default");
     expect(total.rows[0].value).toBe(13);
 
-    const grouped = await db.view("summer", "default", {group: true});
-    expect(grouped.rows).toEqual([{ key: "a", value: 9}, { key: "b", value: 4}]);
+    const grouped = await db.view("summer", "default", { group: true });
+    expect(grouped.rows).toEqual([
+      { key: "a", value: 9 },
+      { key: "b", value: 4 },
+    ]);
 
-    const unreduced = await db.view("summer", "default", {reduce: false});
+    const unreduced = await db.view("summer", "default", { reduce: false });
     expect(unreduced.total_rows).toEqual(3);
   });
-  
-  it.todo("overwrites an existing view if DatumView is different contents");
-  it.todo("does not overwrite if view is identical")
+
+  it("overwrites an existing view if DatumView has same name but different contents", async () => {
+    const datumView1: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_count",
+    };
+    await insertDatumView(viewDb, datumView1);
+    const designDoc1 = await viewDb.get("_design/datum_view");
+    expect(designDoc1.views["default"].reduce).toEqual("_count");
+
+    const datumView2: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_stats",
+    };
+    await insertDatumView(viewDb, datumView2);
+    const designDoc2 = await viewDb.get("_design/datum_view");
+    expect(designDoc2.views["default"].reduce).toEqual("_stats");
+
+    expect(designDoc1._rev).not.toEqual(designDoc2._rev);
+  });
+
+  it.todo("does not overwrite if view is identical");
+
+  it.todo("calls addDoc");
+  it.todo("calls overwriteDoc when overwriting");
 });
 
 it.todo("adds all datum views to an empty db");
