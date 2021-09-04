@@ -15,7 +15,7 @@ import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 import overwriteDoc from "./overwriteDoc";
 import deleteDoc from "./deleteDoc";
-import { isViewDocument, isViewPayload } from "../views/viewDocument";
+import { DataOrDesignDocument, DataOrDesignPayload, isViewDocument, isViewPayload } from "../views/viewDocument";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
@@ -52,7 +52,7 @@ async function addDoc({
   payload,
   conflictStrategy,
   show = Show.None,
-}: addDocType): Promise<EitherDocument> {
+}: addDocType): Promise<DataOrDesignDocument> {
   payload = jClone(payload);
   let id;
   if (isDatumPayload(payload)) {

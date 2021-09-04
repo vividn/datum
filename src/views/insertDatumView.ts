@@ -1,9 +1,31 @@
-import { DatumView, ViewPayload } from "./viewDocument";
+import {
+  DataOrDesignPayload,
+  DatumView,
+  datumViewToViewPayload,
+  ViewDocument,
+  ViewPayload,
+} from "./viewDocument";
 import { DocumentScope } from "nano";
-import { EitherPayload } from "../documentControl/DatumDocument";
+import addDoc from "../documentControl/addDoc";
+import { BaseDocControlArgs } from "../documentControl/base";
 
-function insertDatumView(db: DocumentScope<ViewPayload>, datumView: DatumView) {
+type InsertDatumViewArgs = {
+  datumView: DatumView;
+} & BaseDocControlArgs;
 
+async function insertDatumView({
+  db,
+  datumView,
+  show,
+}: InsertDatumViewArgs): Promise<ViewDocument> {
+  const viewPayload = datumViewToViewPayload(datumView);
+  const newDesignDoc = (await addDoc({
+    db,
+    payload: viewPayload,
+    show,
+    conflictStrategy: "overwrite",
+  })) as ViewDocument;
+  return newDesignDoc;
 }
 
-export default  insertDatumView;
+export default insertDatumView;

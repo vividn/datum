@@ -6,6 +6,7 @@ import {
   beforeEach,
   beforeAll,
   afterEach,
+  jest,
 } from "@jest/globals";
 import {
   asViewDb,
@@ -16,6 +17,8 @@ import _emit from "../../src/views/emit";
 import { pass, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import insertDatumView from "../../src/views/insertDatumView";
+import * as addDoc from "../../src/documentControl/addDoc";
+import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
 
 function emit(key: unknown, value: unknown) {
   _emit(key, value);
@@ -110,7 +113,6 @@ describe("datumViewToViewPayload", () => {
         anotherView: genericReduceFunction,
       },
     });
-    console.log(viewPayload);
     const expectedViews = {
       views: {
         anotherView: {
@@ -178,7 +180,6 @@ describe("datumViewToViewPayload", () => {
         two: genericReduceStr,
       },
     });
-    console.log(datumView);
     expect(datumView).toMatchObject({
       _id: "_design/stringy_input",
       views: {
@@ -223,7 +224,7 @@ describe("insertDatumView", () => {
     await db.insert({ _id: "doc1", a: 3, b: 4 });
     await db.insert({ _id: "doc2", a: 6 });
 
-    await insertDatumView(viewDb, summerAB);
+    await insertDatumView({ db: viewDb, datumView: summerAB });
 
     const total = await db.view("summer", "default");
     expect(total.rows[0].value).toBe(13);
@@ -238,13 +239,27 @@ describe("insertDatumView", () => {
     expect(unreduced.total_rows).toEqual(3);
   });
 
+  it("returns the new viewDoc", async () => {
+    const datumView1: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_count",
+    };
+    const newDesignDoc = await insertDatumView({
+      db: viewDb,
+      datumView: datumView1,
+    });
+    const dbDoc = await db.get("_design/datum_view");
+    expect(newDesignDoc).toEqual(dbDoc);
+  });
+
   it("overwrites an existing view if DatumView has same name but different contents", async () => {
     const datumView1: DatumView = {
       name: "datum_view",
       map: genericMapFunction,
       reduce: "_count",
     };
-    await insertDatumView(viewDb, datumView1);
+    await insertDatumView({ db: viewDb, datumView: datumView1 });
     const designDoc1 = await viewDb.get("_design/datum_view");
     expect(designDoc1.views["default"].reduce).toEqual("_count");
 
@@ -253,17 +268,66 @@ describe("insertDatumView", () => {
       map: genericMapFunction,
       reduce: "_stats",
     };
-    await insertDatumView(viewDb, datumView2);
+    const returnedDoc = await insertDatumView({
+      db: viewDb,
+      datumView: datumView2,
+    });
     const designDoc2 = await viewDb.get("_design/datum_view");
-    expect(designDoc2.views["default"].reduce).toEqual("_stats");
+    expect(returnedDoc).toEqual(designDoc2);
 
+    expect(designDoc2.views["default"].reduce).toEqual("_stats");
     expect(designDoc1._rev).not.toEqual(designDoc2._rev);
   });
 
-  it.todo("does not overwrite if view is identical");
+  it("does not overwrite if view is identical", async () => {
+    const datumView: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_count",
+    };
+    await insertDatumView({ db: viewDb, datumView: datumView });
+    const designDoc1 = await viewDb.get("_design/datum_view");
 
-  it.todo("calls addDoc");
-  it.todo("calls overwriteDoc when overwriting");
+    await insertDatumView({ db: viewDb, datumView: datumView });
+
+    const designDoc2 = await viewDb.get("_design/datum_view");
+    expect(designDoc1._rev).toEqual(designDoc2._rev);
+  });
+
+  it("calls addDoc", async () => {
+    const addDocSpy = jest.spyOn(addDoc, "default");
+    const datumView: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_count",
+    };
+    await insertDatumView({ db: viewDb, datumView: datumView });
+
+    expect(addDocSpy).toHaveBeenCalledTimes(1);
+
+    addDocSpy.mockRestore();
+  });
+
+  it("calls overwriteDoc when overwriting", async () => {
+    const overwriteDocSpy = jest.spyOn(overwriteDoc, "default");
+    const datumView1: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_count",
+    };
+    await insertDatumView({ db: viewDb, datumView: datumView1 });
+
+    const datumView2: DatumView = {
+      name: "datum_view",
+      map: genericMapFunction,
+      reduce: "_stats",
+    };
+    await insertDatumView({ db: viewDb, datumView: datumView2 });
+
+    expect(overwriteDocSpy).toHaveBeenCalledTimes(1);
+
+    overwriteDocSpy.mockRestore();
+  });
 });
 
 it.todo("adds all datum views to an empty db");

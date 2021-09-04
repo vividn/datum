@@ -6,9 +6,7 @@ import {
 } from "../documentControl/DatumDocument";
 import { DocumentScope } from "nano";
 
-export function asViewDb(
-  db: DocumentScope<any>
-): DocumentScope<ViewPayload> {
+export function asViewDb(db: DocumentScope<any>): DocumentScope<ViewPayload> {
   return db as unknown as DocumentScope<ViewPayload>;
 }
 
@@ -65,9 +63,13 @@ export type ViewPayload = {
   meta?: DatumMetadata;
 };
 
+export type DataOrDesignPayload = ViewPayload | EitherPayload;
+
 export type ViewDocument = ViewPayload & {
   _rev: string;
 };
+
+export type DataOrDesignDocument = ViewDocument | EitherDocument;
 
 export function isViewPayload(
   payload: EitherPayload | ViewPayload
