@@ -11,7 +11,7 @@ import {
 import {
   asViewDb,
   DatumView,
-  datumViewToViewPayload,
+  datumViewToViewPayload, ViewPayload,
 } from "../../src/views/viewDocument";
 import _emit from "../../src/views/emit";
 import { pass, testNano } from "../test-utils";
@@ -329,5 +329,3 @@ describe("insertDatumView", () => {
     overwriteDocSpy.mockRestore();
   });
 });
-
-it.todo("adds all datum views to an empty db");

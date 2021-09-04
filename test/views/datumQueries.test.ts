@@ -4,8 +4,8 @@ import {
   EitherPayload,
 } from "../../src/documentControl/DatumDocument";
 import { pass, testNano } from "../test-utils";
-import { minId } from "../../src/views/datumViews/humanId";
 import { DocumentScope } from "nano";
+import { minId } from "../../src/ids/minId";
 
 const dbName = "test_datum_queries";
 const db = testNano.db.use(dbName) as DocumentScope<EitherPayload>;
