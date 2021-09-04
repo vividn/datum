@@ -28,4 +28,3 @@ export const subHumanIdView: DatumView<EitherDocument> = {
   },
   reduce: "_count",
 };
-

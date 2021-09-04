@@ -6,7 +6,10 @@ import {
 } from "../src/documentControl/DatumDocument";
 
 import { IdError } from "../src/errors";
-import { buildIdStructure, buildIdStructureType } from "../src/ids/buildIdStructure";
+import {
+  buildIdStructure,
+  buildIdStructureType,
+} from "../src/ids/buildIdStructure";
 import { destructureIdKeys } from "../src/ids/destructureIdKeys";
 import { assembleId } from "../src/ids/assembleId";
 import { defaultIdComponents } from "../src/ids/defaultIdComponents";

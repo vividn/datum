@@ -1,1 +1,1 @@
-export {humanIdView, subHumanIdView} from "./humanId";
+export { humanIdView, subHumanIdView } from "./humanId";
