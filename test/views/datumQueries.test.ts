@@ -1,4 +1,11 @@
-import { afterEach, beforeAll, beforeEach, expect, test, it, describe } from "@jest/globals";
+import {
+  afterEach,
+  beforeAll,
+  beforeEach,
+  expect,
+  it,
+  describe,
+} from "@jest/globals";
 import {
   DatumPayload,
   EitherPayload,
@@ -8,7 +15,7 @@ import { DocumentScope } from "nano";
 import { minHumanId, MinHumanIdError } from "../../src/ids/minHumanId";
 import insertDatumView from "../../src/views/insertDatumView";
 import { subHumanIdView } from "../../src/views/datumViews";
-import { DatumViewMissing, isCouchDbError } from "../../src/errors";
+import { DatumViewMissing } from "../../src/errors";
 
 const dbName = "test_datum_queries";
 const db = testNano.db.use(dbName) as DocumentScope<EitherPayload>;
@@ -26,7 +33,7 @@ afterEach(async () => {
 
 describe("minHumanId", () => {
   beforeEach(async () => {
-    await insertDatumView({db, datumView: subHumanIdView});
+    await insertDatumView({ db, datumView: subHumanIdView });
   });
 
   it(" returns the smallest non-conflicting humanId", async () => {
@@ -74,7 +81,7 @@ describe("minHumanId", () => {
     const doc4: DatumPayload = {
       _id: "doc4",
       data: {},
-      meta: { humanId: hid3 },
+      meta: { humanId: hid4 },
     };
     await db.insert(doc1);
     await db.insert(doc2);
@@ -82,7 +89,9 @@ describe("minHumanId", () => {
     await db.insert(doc4);
 
     await expect(() => minHumanId(db, hid1)).rejects.toThrow(MinHumanIdError);
-    await expect(() => minHumanId(db, "initial_substring")).rejects.toThrow(MinHumanIdError);
+    await expect(() => minHumanId(db, "initial_substring")).rejects.toThrow(
+      MinHumanIdError
+    );
   });
 
   it("throws if no slice matches exactly one document", async () => {
@@ -102,13 +111,17 @@ describe("minHumanId", () => {
     await db.insert(doc1);
     await db.insert(doc2);
 
-    await expect(() => minHumanId(db, "completely_different")).rejects.toThrow(MinHumanIdError);
+    await expect(() => minHumanId(db, "completely_different")).rejects.toThrow(
+      MinHumanIdError
+    );
   });
 
   it("throws if sub_human_id view does not exist", async () => {
-    const viewDoc = await  db.get("_design/datum_sub_human_id");
+    const viewDoc = await db.get("_design/datum_sub_human_id");
     await db.destroy("_design/datum_sub_human_id", viewDoc._rev);
 
-    await expect(() => minHumanId(db, "anything")).rejects.toThrow(DatumViewMissing);
+    await expect(() => minHumanId(db, "anything")).rejects.toThrow(
+      DatumViewMissing
+    );
   });
 });

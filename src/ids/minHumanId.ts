@@ -17,15 +17,20 @@ export async function minHumanId(
 ): Promise<string> {
   //TODO: Create function that takes the DatumView object and does view info on it
   const docCountsPerSlice = (
-    await db.view("datum_sub_human_id", "default", {
-      group: true,
-      keys: startingSlices(humanId),
-    }).catch((error) => {
-      if (isCouchDbError(error) && ["missing", "deleted", "missing_named_view"].includes(error.reason)) {
-        throw new DatumViewMissing();
-      }
-      throw error;
-    })
+    await db
+      .view("datum_sub_human_id", "default", {
+        group: true,
+        keys: startingSlices(humanId),
+      })
+      .catch((error) => {
+        if (
+          isCouchDbError(error) &&
+          ["missing", "deleted", "missing_named_view"].includes(error.reason)
+        ) {
+          throw new DatumViewMissing();
+        }
+        throw error;
+      })
   ).rows;
   const minWithoutConflict = docCountsPerSlice.find(
     (row) => row.value === 1

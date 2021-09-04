@@ -2,7 +2,6 @@ import insertDatumView from "./insertDatumView";
 import { BaseDocControlArgs } from "../documentControl/base";
 import getAllDatumViews from "./getAllDatumViews";
 
-
 export default async function setupDatumViews({
   db,
   show,
