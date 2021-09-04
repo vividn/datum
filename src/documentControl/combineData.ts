@@ -26,6 +26,7 @@ export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   append: { justA: true, justB: true, same: true, conflict: "append" },
 };
 
+// TODO: Add mergesort here
 export type conflictingKeyStrategies = "A" | "B" | "merge" | "append" | false;
 
 type CombiningType = {

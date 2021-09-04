@@ -1,5 +1,6 @@
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
+import { DatumViewMissing, isCouchDbError, MyError } from "../errors";
 
 function startingSlices(str: string): string[] {
   let i = str.length;
@@ -10,22 +11,34 @@ function startingSlices(str: string): string[] {
   return retVal;
 }
 
-export async function minId(
+export async function minHumanId(
   db: DocumentScope<EitherPayload>,
   humanId: string
 ): Promise<string> {
   //TODO: Create function that takes the DatumView object and does view info on it
   const docCountsPerSlice = (
-    await db.view("datum_sub_human_id", "datum_sub_human_id", {
+    await db.view("datum_sub_human_id", "default", {
       group: true,
       keys: startingSlices(humanId),
+    }).catch((error) => {
+      if (isCouchDbError(error) && ["missing", "deleted", "missing_named_view"].includes(error.reason)) {
+        throw new DatumViewMissing();
+      }
+      throw error;
     })
   ).rows;
   const minWithoutConflict = docCountsPerSlice.find(
     (row) => row.value === 1
   )?.key;
   if (minWithoutConflict === undefined) {
-    throw Error("No substring uniquely identifies document");
+    throw new MinHumanIdError("No substring uniquely identifies document");
   }
   return minWithoutConflict;
+}
+
+export class MinHumanIdError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, MinHumanIdError.prototype);
+  }
 }

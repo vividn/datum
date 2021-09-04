@@ -77,3 +77,10 @@ export type CouchDbError = {
 export const isCouchDbError = (error: unknown): error is CouchDbError => {
   return (error as CouchDbError).scope === "couch";
 };
+
+export class DatumViewMissing extends MyError {
+  constructor() {
+    super("Internal datum view is missing. Please run setup on this database");
+    Object.setPrototypeOf(this, DatumViewMissing.prototype);
+  }
+}
