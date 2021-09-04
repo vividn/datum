@@ -19,6 +19,7 @@ import {
   DataOrDesignDocument,
   isViewDocument,
   isViewPayload,
+  ViewPayload,
 } from "../views/viewDocument";
 
 function payloadMatchesDbData(
@@ -47,7 +48,7 @@ export type ConflictStrategyNames =
   | "delete";
 
 type addDocType = {
-  payload: EitherPayload;
+  payload: EitherPayload | ViewPayload;
   conflictStrategy?: ConflictStrategyNames;
 } & BaseDocControlArgs;
 
