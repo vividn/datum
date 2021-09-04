@@ -479,5 +479,8 @@ describe("overwriteDoc", () => {
     expect((await db.get(testDatumPayloadId))._rev).toEqual(existingDoc._rev);
   });
 
+  START HERE AND FINISH THESE TESTS AND IN ADDDOC
   it.todo("can overwrite a design document with a new one");
+  it.todo("updates the modifyTime of a design document");
+  it.todo("does not write to db if view is identical");
 });
