@@ -1,11 +1,8 @@
 import {
-  DataOrDesignPayload,
   DatumView,
   datumViewToViewPayload,
   ViewDocument,
-  ViewPayload,
 } from "./viewDocument";
-import { DocumentScope } from "nano";
 import addDoc from "../documentControl/addDoc";
 import { BaseDocControlArgs } from "../documentControl/base";
 

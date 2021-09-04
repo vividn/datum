@@ -15,7 +15,11 @@ import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 import overwriteDoc from "./overwriteDoc";
 import deleteDoc from "./deleteDoc";
-import { DataOrDesignDocument, DataOrDesignPayload, isViewDocument, isViewPayload } from "../views/viewDocument";
+import {
+  DataOrDesignDocument,
+  isViewDocument,
+  isViewPayload,
+} from "../views/viewDocument";
 
 function payloadMatchesDbData(
   payload: EitherPayload,

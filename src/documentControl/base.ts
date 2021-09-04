@@ -1,7 +1,7 @@
 import { EitherDocument, EitherPayload } from "./DatumDocument";
 import { DocumentScope } from "nano";
 import { Show } from "../output";
-import { DataOrDesignPayload, ViewPayload } from "../views/viewDocument";
+import { ViewPayload } from "../views/viewDocument";
 
 export class DocExistsError extends Error {
   data: { existingDocument: EitherDocument; failedPayload: EitherPayload };
