@@ -11,13 +11,15 @@ import connectDb from "../auth/connectDb";
 import inferType from "../utils/inferType";
 import { BaseDataError, isCouchDbError } from "../errors";
 import { parseData } from "../parseData";
-import { assembleId, buildIdStructure, defaultIdComponents } from "../ids";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
 import { processTimeArgs, setTimezone } from "../timings";
 import chalk from "chalk";
 import addDoc, { ConflictStrategyNames } from "../documentControl/addDoc";
 import { Show } from "../output";
+import { buildIdStructure } from "../ids/buildIdStructure";
+import { assembleId } from "../ids/assembleId";
+import { defaultIdComponents } from "../ids/defaultIdComponents";
 
 export const command = "add [data..]";
 export const desc = "add a document";

@@ -5,14 +5,11 @@ import {
   EitherPayload,
 } from "../src/documentControl/DatumDocument";
 
-import {
-  assembleId,
-  buildIdStructure,
-  buildIdStructureType,
-  defaultIdComponents,
-  destructureIdKeys,
-} from "../src/ids";
 import { IdError } from "../src/errors";
+import { buildIdStructure, buildIdStructureType } from "../src/ids/buildIdStructure";
+import { destructureIdKeys } from "../src/ids/destructureIdKeys";
+import { assembleId } from "../src/ids/assembleId";
+import { defaultIdComponents } from "../src/ids/defaultIdComponents";
 
 const exampleData: DatumData = {
   foo: "abc",

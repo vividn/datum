@@ -5,7 +5,6 @@ import {
   isDatumPayload,
 } from "./DatumDocument";
 import { DateTime } from "luxon";
-import { assembleId } from "../ids";
 import { IdError, isCouchDbError } from "../errors";
 import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
@@ -21,6 +20,7 @@ import {
   isViewPayload,
   ViewPayload,
 } from "../views/viewDocument";
+import { assembleId } from "../ids/assembleId";
 
 function payloadMatchesDbData(
   payload: EitherPayload,

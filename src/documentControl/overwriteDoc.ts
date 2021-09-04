@@ -1,6 +1,5 @@
 import { EitherDocument, EitherPayload } from "./DatumDocument";
 import { IdError, MyError } from "../errors";
-import { assembleId } from "../ids";
 import { DateTime } from "luxon";
 import jClone from "../utils/jClone";
 import isEqual from "lodash.isequal";
@@ -14,6 +13,7 @@ import {
   showOWrite,
   showRename,
 } from "../output";
+import { assembleId } from "../ids/assembleId";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
