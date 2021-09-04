@@ -3,6 +3,7 @@ import { baseYargs } from "./input/baseYargs";
 import { DocExistsError } from "./documentControl/base";
 import addCmd, { AddCmdArgs } from "./commands/addCmd";
 import mapCmd, { MapCmdArgs } from "./commands/mapCmd";
+import setupCmd, { SetupCmdArgs } from "./commands/setupCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
@@ -12,6 +13,9 @@ export async function main(cliInput: string | string[]): Promise<void> {
       break;
     case "map":
       await mapCmd(args as unknown as MapCmdArgs);
+      break;
+    case "setup":
+      await setupCmd(args as unknown as SetupCmdArgs);
       break;
     default:
       throw Error("command not recognized");
