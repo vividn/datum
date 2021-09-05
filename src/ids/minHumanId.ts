@@ -16,6 +16,7 @@ export async function minHumanId(
   humanId: string
 ): Promise<string> {
   //TODO: Create function that takes the DatumView object and does view info on it
+  console.log(await db.get("_design/datum_sub_human_id"));
   const docCountsPerSlice = (
     await db
       .view("datum_sub_human_id", "default", {
@@ -32,7 +33,6 @@ export async function minHumanId(
         throw error;
       })
   ).rows;
-  console.log({ docCountsPerSlice });
   const minWithoutConflict = docCountsPerSlice.find(
     (row) => row.value === 1
   )?.key;
