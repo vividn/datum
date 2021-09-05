@@ -484,7 +484,7 @@ describe("overwriteDoc", () => {
       _id: "_design/someView",
       views: {
         default: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
     };
@@ -492,7 +492,7 @@ describe("overwriteDoc", () => {
       _id: "_design/someView",
       views: {
         newViewName: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
     };
@@ -512,7 +512,7 @@ describe("overwriteDoc", () => {
       _id: "_design/someView",
       views: {
         default: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
       meta: { modifyTime: notNow },
@@ -521,7 +521,7 @@ describe("overwriteDoc", () => {
       _id: "_design/someView",
       views: {
         newViewName: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
       meta: {},
@@ -541,7 +541,7 @@ describe("overwriteDoc", () => {
       _id: "_design/someView",
       views: {
         default: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
       meta: { modifyTime: notNow },

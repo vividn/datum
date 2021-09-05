@@ -426,7 +426,7 @@ describe("addDoc", () => {
       _id: "_design/viewDoc",
       views: {
         default: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
     };
@@ -440,7 +440,7 @@ describe("addDoc", () => {
       _id: "_design/viewDoc",
       views: {
         default: {
-          map: "(doc) => {emit(doc._id, null);}"
+          map: "(doc) => {emit(doc._id, null);}",
         },
       },
       meta: {},
