@@ -479,8 +479,81 @@ describe("overwriteDoc", () => {
     expect((await db.get(testDatumPayloadId))._rev).toEqual(existingDoc._rev);
   });
 
-  START HERE AND FINISH THESE TESTS AND IN ADDDOC
-  it.todo("can overwrite a design document with a new one");
-  it.todo("updates the modifyTime of a design document");
-  it.todo("does not write to db if view is identical");
+  it("can overwrite a design document with a new one", async () => {
+    const viewDoc1 = {
+      _id: "_design/someView",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+    };
+    const viewDoc2 = {
+      _id: "_design/someView",
+      views: {
+        newViewName: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+    };
+    await db.insert(viewDoc1);
+
+    const newDoc = await overwriteDoc({
+      db,
+      id: "_design/someView",
+      payload: viewDoc2,
+    });
+    expect(newDoc).toHaveProperty("views.newViewName.map");
+    expect(newDoc).not.toHaveProperty("views.default");
+  });
+
+  it("updates the modifyTime of a design document", async () => {
+    const viewDoc1 = {
+      _id: "_design/someView",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+      meta: { modifyTime: notNow },
+    };
+    const viewDoc2 = {
+      _id: "_design/someView",
+      views: {
+        newViewName: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+      meta: {},
+    };
+    await db.insert(viewDoc1);
+
+    const newDoc = await overwriteDoc({
+      db,
+      id: "_design/someView",
+      payload: viewDoc2,
+    });
+    expect(newDoc).toHaveProperty("meta.modifyTime", now);
+  });
+
+  it("does not write to db if view is identical", async () => {
+    const viewDoc1 = {
+      _id: "_design/someView",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+      meta: { modifyTime: notNow },
+    };
+    await db.insert(viewDoc1);
+    const dbDoc = await db.get("_design/someView");
+
+    const newDoc = await overwriteDoc({
+      db,
+      id: "_design/someView",
+      payload: viewDoc1,
+    });
+    expect(newDoc._rev).toEqual(dbDoc._rev);
+  });
 });

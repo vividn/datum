@@ -421,6 +421,33 @@ describe("addDoc", () => {
     expect(newDoc._id).toEqual(nowStr);
   });
 
-  test.todo("it can add a design document to the database");
-  test.todo("it adds createTime and modifyTime to a design document");
+  test("it can add a design document to the database", async () => {
+    const designPayload = {
+      _id: "_design/viewDoc",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+    };
+
+    const newDoc = await addDoc({ db, payload: designPayload });
+    expect(newDoc).toHaveProperty("views.default.map");
+  });
+
+  test("it adds createTime and modifyTime to a design document with a meta field in the payload", async () => {
+    const designPayload = {
+      _id: "_design/viewDoc",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}"
+        },
+      },
+      meta: {},
+    };
+
+    const newDoc = await addDoc({ db, payload: designPayload });
+    expect(newDoc).toHaveProperty("meta.createTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
+  });
 });
