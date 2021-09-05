@@ -22,8 +22,11 @@ import addDoc from "../../src/documentControl/addDoc";
 import { IdError } from "../../src/errors";
 import jClone from "../../src/utils/jClone";
 import * as updateDoc from "../../src/documentControl/updateDoc";
+import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
+import * as deleteDoc from "../../src/documentControl/deleteDoc";
 import { DocExistsError } from "../../src/documentControl/base";
 import { Show } from "../../src/output";
+import emit from "../../src/views/emit";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -161,6 +164,25 @@ describe("addDoc", () => {
     expect(newDoc.meta.humanId).toEqual("meta can be different");
   });
 
+  it("does not write to db if ViewDocument with identical views already exists", async () => {
+    const testViews = {
+      viewName: {
+        map: ((_doc: any) => {
+          emit(null, null);
+        }).toString(),
+      },
+    };
+    const id = "_design/viewName";
+    await db.insert({ _id: id, views: testViews, meta: {} });
+    const existingDoc = await db.get(id);
+
+    const newDoc = await addDoc({
+      db,
+      payload: { _id: id, views: testViews, meta: {} },
+    });
+    expect(newDoc).toEqual(existingDoc);
+  });
+
   it("throws error if a different document with id already exists", async () => {
     const id = "existingId";
     const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
@@ -258,7 +280,7 @@ describe("addDoc", () => {
     expect(payload1).toEqual(payload2);
   });
 
-  it("calls another document control method if id already exists and conflict strategy is given", async () => {
+  it("calls updateDoc if id already exists and conflict strategy is given", async () => {
     const originalPayload = { _id: "docId", foo: "bar", anotherKey: "data" };
     const updatePayload = { _id: "docId", foo: "baz" };
     const conflictStrategy = "merge";
@@ -278,6 +300,87 @@ describe("addDoc", () => {
 
     expect(newDoc).toMatchObject(expectedResult);
     expect(spy).toHaveBeenCalled();
+
+    spy.mockRestore();
+  });
+
+  it("calls overwriteDoc if conflict and 'overwrite' given as conflict strategy", async () => {
+    const originalPayload: DatumPayload = {
+      _id: "docId",
+      data: { foo: "bar", anotherKey: "data" },
+      meta: { humanId: "original" },
+    };
+    const overwritePayload: DatumPayload = {
+      _id: "docId",
+      data: { foo: "baz" },
+      meta: { humanId: "overwrite" },
+    };
+    const conflictStrategy = "overwrite";
+    const expectedResult: DatumPayload = {
+      _id: "docId",
+      data: { foo: "baz" },
+      meta: { humanId: "overwrite" },
+    };
+    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
+
+    await addDoc({ db, payload: originalPayload });
+    const newDoc = await addDoc({
+      db,
+      payload: overwritePayload,
+      conflictStrategy,
+    });
+    expect(newDoc).toMatchObject(expectedResult);
+    expect(overwriteSpy).toHaveBeenCalled();
+
+    overwriteSpy.mockRestore();
+  });
+
+  it("calls deleteDoc if conflict and 'delete' given as conflict strategy", async () => {
+    const originalPayload: DatumPayload = {
+      _id: "docId",
+      data: { foo: "bar", anotherKey: "data" },
+      meta: { humanId: "original" },
+    };
+    const deletePayload: DatumPayload = {
+      _id: "docId",
+      data: { none: "of_this", data: "matters" },
+      meta: { humanId: "delete" },
+    };
+    const conflictStrategy = "delete";
+    const expectedResult = {
+      _id: "docId",
+      _deleted: true,
+    };
+
+    const deleteSpy = jest.spyOn(deleteDoc, "default");
+
+    await addDoc({ db, payload: originalPayload });
+    const newDoc = await addDoc({
+      db,
+      payload: deletePayload,
+      conflictStrategy,
+    });
+    expect(newDoc).toMatchObject(expectedResult);
+    expect(deleteSpy).toHaveBeenCalled();
+
+    deleteSpy.mockRestore();
+  });
+
+  it("does not call other documentControl strategies if there is no conflict", async () => {
+    const updateSpy = jest.spyOn(updateDoc, "default");
+    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
+    const deleteSpy = jest.spyOn(deleteDoc, "default");
+
+    await addDoc({ db, payload: { _id: "new_id", data: {}, meta: {} } });
+    await addDoc({ db, payload: { _id: "data_only_new", foo: "bar" } });
+
+    expect(updateSpy).not.toHaveBeenCalled();
+    expect(overwriteSpy).not.toHaveBeenCalled();
+    expect(deleteSpy).not.toHaveBeenCalled();
+
+    updateSpy.mockRestore();
+    overwriteSpy.mockRestore();
+    deleteSpy.mockRestore();
   });
 
   test("It still throws an DocExistsError if conflict and showOutput", async () => {
@@ -316,5 +419,35 @@ describe("addDoc", () => {
       payload: { data: {}, meta: { idStructure: "%?modifyTime%" } },
     });
     expect(newDoc._id).toEqual(nowStr);
+  });
+
+  test("it can add a design document to the database", async () => {
+    const designPayload = {
+      _id: "_design/viewDoc",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}",
+        },
+      },
+    };
+
+    const newDoc = await addDoc({ db, payload: designPayload });
+    expect(newDoc).toHaveProperty("views.default.map");
+  });
+
+  test("it adds createTime and modifyTime to a design document with a meta field in the payload", async () => {
+    const designPayload = {
+      _id: "_design/viewDoc",
+      views: {
+        default: {
+          map: "(doc) => {emit(doc._id, null);}",
+        },
+      },
+      meta: {},
+    };
+
+    const newDoc = await addDoc({ db, payload: designPayload });
+    expect(newDoc).toHaveProperty("meta.createTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
   });
 });
