@@ -32,6 +32,7 @@ export async function minHumanId(
         throw error;
       })
   ).rows;
+  console.log({ docCountsPerSlice });
   const minWithoutConflict = docCountsPerSlice.find(
     (row) => row.value === 1
   )?.key;
