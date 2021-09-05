@@ -22,7 +22,7 @@ export type DatumMetadata = {
   occurTime?: isoDate | isoDatetime;
   utcOffset?: number;
   createTime?: isoDatetime;
-  modifyTime?: isoDatetime;
+  modifyTime?: isoDatetime; //TODO: turn into an array of times
   idStructure?: string;
   random?: number;
   humanId?: string;

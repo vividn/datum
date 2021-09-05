@@ -16,6 +16,6 @@ export class DocExistsError extends Error {
 }
 
 export type BaseDocControlArgs = {
-  db: DocumentScope<EitherPayload>;
+  db: DocumentScope<any>;
   show?: Show;
 };

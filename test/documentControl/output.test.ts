@@ -17,7 +17,7 @@ import { Show } from "../../src/output";
 import * as addDocModule from "../../src/documentControl/addDoc";
 import addCmd from "../../src/commands/addCmd";
 import { main } from "../../src";
-import { deleteDoc } from "../../src/documentControl/deleteDoc";
+import deleteDoc from "../../src/documentControl/deleteDoc";
 
 const dbName = "doc_control_output_test";
 const db = testNano.db.use<EitherPayload>(dbName);

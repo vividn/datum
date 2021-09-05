@@ -5,7 +5,6 @@ import {
   isDatumPayload,
 } from "./DatumDocument";
 import { DateTime } from "luxon";
-import { assembleId } from "../ids";
 import { IdError, isCouchDbError } from "../errors";
 import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
@@ -13,6 +12,15 @@ import updateDoc from "./updateDoc";
 import { Show, showCreate, showExists, showFailed } from "../output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
+import overwriteDoc from "./overwriteDoc";
+import deleteDoc from "./deleteDoc";
+import {
+  DataOrDesignDocument,
+  isViewDocument,
+  isViewPayload,
+  ViewPayload,
+} from "../views/viewDocument";
+import { assembleId } from "../ids/assembleId";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
@@ -25,15 +33,23 @@ function payloadMatchesDbData(
     (isDatumPayload(payload) &&
       isDatumDocument(existingDoc) &&
       isEqual(payload.data, existingDoc.data)) ||
+    (isViewPayload(payload) &&
+      isViewDocument(existingDoc) &&
+      isEqual(payload.views, existingDoc.views)) ||
     (!isDatumPayload(payload) &&
       !isDatumDocument(existingDoc) &&
       isEqual(payload, existingWithoutRev))
   );
 }
 
+export type ConflictStrategyNames =
+  | UpdateStrategyNames
+  | "overwrite"
+  | "delete";
+
 type addDocType = {
-  payload: EitherPayload;
-  conflictStrategy?: UpdateStrategyNames;
+  payload: EitherPayload | ViewPayload;
+  conflictStrategy?: ConflictStrategyNames;
 } & BaseDocControlArgs;
 
 async function addDoc({
@@ -41,10 +57,10 @@ async function addDoc({
   payload,
   conflictStrategy,
   show = Show.None,
-}: addDocType): Promise<EitherDocument> {
+}: addDocType): Promise<DataOrDesignDocument> {
   payload = jClone(payload);
   let id;
-  if (isDatumPayload(payload)) {
+  if (payload.meta) {
     const now = DateTime.utc().toString();
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;
@@ -70,14 +86,19 @@ async function addDoc({
     const existingDoc = await db.get(id);
 
     if (conflictStrategy !== undefined) {
-      const updatedDoc = await updateDoc({
+      if (conflictStrategy === "overwrite") {
+        return overwriteDoc({ db, id, payload, show });
+      }
+      if (conflictStrategy === "delete") {
+        return deleteDoc({ db, id, show });
+      }
+      return await updateDoc({
         db,
         id,
         payload,
         updateStrategy: conflictStrategy,
         show,
       });
-      return updatedDoc;
     }
     if (payloadMatchesDbData(payload, existingDoc)) {
       showExists(existingDoc, show);

@@ -273,12 +273,12 @@ describe("addCmd", () => {
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("merge");
   });
 
-  it("can update and existing document with --update", async () => {
+  it("can update and existing document with --conflict", async () => {
     await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
     const newDoc = await addCmd({
       idPart: "doc-id",
       data: ["foo=def"],
-      update: "preferNew",
+      conflict: "preferNew",
     });
     expect(addDocSpy).toHaveBeenCalledTimes(2);
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");

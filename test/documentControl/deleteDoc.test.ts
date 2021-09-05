@@ -1,8 +1,7 @@
 import { pass, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import { afterEach, beforeAll, beforeEach, expect, it } from "@jest/globals";
-import {
-  deleteDoc,
+import deleteDoc, {
   NoDocToDeleteError,
 } from "../../src/documentControl/deleteDoc";
 
@@ -27,12 +26,17 @@ it("deletes the document with the given in the db", async () => {
   await expect(db.get("doc-to-delete")).rejects.toThrow("deleted");
 });
 
-it("returns the deleted document", async () => {
+it("returns a DeletedDocument, with a new _rev", async () => {
   await db.insert({ _id: "someDoc", foo: "bar", baz: "abc" });
   const existingDoc = await db.get("someDoc");
 
-  const returned = await deleteDoc({ id: "someDoc", db });
-  expect(returned).toEqual(existingDoc);
+  const deletedDocument = await deleteDoc({ id: "someDoc", db });
+
+  const oldRevNumber = Number(existingDoc._rev.split("-")[0]);
+  const newRevNumber = Number(deletedDocument._rev.split("-")[0]);
+  expect(newRevNumber).toEqual(oldRevNumber + 1);
+
+  expect(deletedDocument._deleted).toBe(true);
 });
 
 it("throws if doc at id does not exist", async () => {

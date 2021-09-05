@@ -26,13 +26,14 @@ export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   append: { justA: true, justB: true, same: true, conflict: "append" },
 };
 
-export type conflictStrategies = "A" | "B" | "merge" | "append" | false;
+// TODO: Add mergesort here
+export type conflictingKeyStrategies = "A" | "B" | "merge" | "append" | false;
 
 type CombiningType = {
   justA: boolean;
   justB: boolean;
   same: boolean;
-  conflict: conflictStrategies;
+  conflict: conflictingKeyStrategies;
 };
 
 const combineData = (

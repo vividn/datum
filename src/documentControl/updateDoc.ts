@@ -9,7 +9,6 @@ import combineData, { UpdateStrategyNames } from "./combineData";
 import jClone from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
-import { assembleId } from "../ids";
 import {
   Show,
   showExists,
@@ -20,6 +19,7 @@ import {
 } from "../output";
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
+import { assembleId } from "../ids/assembleId";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {

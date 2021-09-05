@@ -1,6 +1,5 @@
-import { EitherDocument, EitherPayload, isDatumPayload } from "./DatumDocument";
+import { EitherDocument, EitherPayload } from "./DatumDocument";
 import { IdError, MyError } from "../errors";
-import { assembleId } from "../ids";
 import { DateTime } from "luxon";
 import jClone from "../utils/jClone";
 import isEqual from "lodash.isequal";
@@ -14,6 +13,7 @@ import {
   showOWrite,
   showRename,
 } from "../output";
+import { assembleId } from "../ids/assembleId";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
@@ -68,7 +68,7 @@ async function overwriteDoc({
     throw new OverwriteDocError("_rev does not match document to overwrite");
   }
 
-  if (isDatumPayload(payload)) {
+  if (payload.meta) {
     const now = DateTime.utc().toString();
     payload.meta.modifyTime = now;
     if (oldDoc.meta?.createTime) {

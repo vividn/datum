@@ -14,7 +14,7 @@
     "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json",
     "typewatch": "tsc -p tsconfig.withTests.json -w",
-    "build": "tsc -p .",
+    "build": "rm -rf ./build; tsc -p .",
     "buildwatch": "tsc -p . -w",
     "system": "NODE_ENV=production yarn global add $PWD",
     "pipeline": "yarn refresh && yarn test && yarn build && rm -rf ./node_modules && yarn install --production && yarn system",
