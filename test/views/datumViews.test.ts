@@ -16,7 +16,10 @@ import {
   humanIdView,
   subHumanIdView,
 } from "../../src/views/datumViews/humanId";
-import { dataStructuresView, structuresView } from "../../src/views/datumViews/structure";
+import {
+  dataStructuresView,
+  structuresView,
+} from "../../src/views/datumViews/structure";
 
 const emitMock = jest.spyOn(emit, "default");
 beforeEach(() => {
@@ -149,11 +152,11 @@ describe("dataStructuresView", () => {
       butNone: "of them",
       are: "data",
       nested: {
-        data: "doesn't count"
+        data: "doesn't count",
       },
       meta: {
-        modifyTime: "2021-09-07T19:26:54.442Z"
-      }
+        modifyTime: "2021-09-07T19:26:54.442Z",
+      },
     };
     dataStructuresView.map(doc);
 
@@ -170,7 +173,7 @@ describe("dataStructuresView", () => {
         someKey: 123,
         nested: {
           zzz: "abc",
-          aaa: "xxx"
+          aaa: "xxx",
         },
       },
       meta: { modifyTime: "2021-09-07T19:26:54.442Z" },
@@ -180,7 +183,9 @@ describe("dataStructuresView", () => {
     dataStructuresView.map(doc);
 
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(["empty", "nested", "nested.aaa",
-    "nested.zzz", "someKey", "zdx"], null);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["empty", "nested", "nested.aaa", "nested.zzz", "someKey", "zdx"],
+      null
+    );
   });
 });
