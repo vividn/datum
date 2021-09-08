@@ -28,3 +28,12 @@ export const subHumanIdView: DatumView<EitherDocument> = {
   },
   reduce: "_count",
 };
+
+export const idToHumanView: DatumView<EitherDocument> = {
+  name: "datum_id_to_human_id",
+  map: (doc) => {
+    if (doc.meta && doc.meta.humanId) {
+      emit(doc._id, doc.meta.humanId);
+    }
+  },
+};
