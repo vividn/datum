@@ -14,6 +14,7 @@ import {
 } from "../../src/documentControl/DatumDocument";
 import {
   humanIdView,
+  idToHumanView,
   subHumanIdView,
 } from "../../src/views/datumViews/humanId";
 import {
@@ -89,6 +90,31 @@ describe("subHumanIdView", () => {
       meta: {},
     };
     subHumanIdView.map(doc);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("idToHumanView", () => {
+  it("emits the _id to humanId if it exists", () => {
+    const doc: DatumDocument = {
+      _id: "some_doc",
+      _rev: "some_revision",
+      data: {},
+      meta: { humanId: "abcde" },
+    };
+    idToHumanView.map(doc);
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitMock).toHaveBeenCalledWith("some_doc", "abcde");
+  });
+
+  it("emits nothing if there is no human id", () => {
+    const doc: DatumDocument = {
+      _id: "some_doc",
+      _rev: "some_revision",
+      data: {},
+      meta: { random: 0.12345 },
+    };
+    idToHumanView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
 });
