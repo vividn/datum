@@ -1,1 +1,2 @@
-export { humanIdView, subHumanIdView } from "./humanId";
+export { humanIdView, subHumanIdView, idToHumanView } from "./humanId";
+export { structuresView, dataStructuresView } from "./structure";
