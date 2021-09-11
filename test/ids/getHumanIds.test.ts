@@ -1,12 +1,8 @@
 import { it, jest } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { humanIdView, subHumanIdView } from "../../src/views/datumViews";
+import { humanIdView } from "../../src/views/datumViews";
 import { getHumanIds } from "../../src/ids/getHumanIds";
-import * as minHumanId from "../../src/ids/minHumanId";
-import { pass, testNano } from "../test-utils";
-import insertDatumView from "../../src/views/insertDatumView";
-import { EitherPayload } from "../../src/documentControl/DatumDocument";
 
 const dbMock = mock<DocumentScope<any>>();
 
@@ -49,5 +45,3 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
 
   expect(returnVal).toEqual(["hid1", "hid2", "hid3"]);
 });
-
-
