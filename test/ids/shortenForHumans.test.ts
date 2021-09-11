@@ -49,11 +49,12 @@ it("calls getHumanIds with the array of ids", async () => {
 describe("integration test", () => {
   const dbName = "test_shorten_for_humans";
   const db: DocumentScope<EitherPayload> = testNano.use(dbName);
+
   beforeAll(async () => {
     await testNano.db.destroy(dbName).catch(pass);
     await testNano.db.create(dbName);
 
-    await insertDatumView({ db, datumView: humanIdView });
+    // await insertDatumView({ db, datumView: humanIdView });
     await insertDatumView({ db, datumView: subHumanIdView });
   });
 

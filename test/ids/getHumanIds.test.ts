@@ -2,7 +2,7 @@ import { it, jest } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { humanIdView } from "../../src/views/datumViews";
-import { getHumanIds } from "../../src/ids/getHumanIds";
+import getHumanIds from "../../src/ids/getHumanIds";
 
 const dbMock = mock<DocumentScope<any>>();
 
@@ -29,19 +29,20 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
   };
   dbMock.view.mockReturnValue(Promise.resolve(mockViewResult));
 
-  const returnVal = await getHumanIds(dbMock, [
+  const inputIds = [
     "id1",
     "id2",
     "id_with_no_humanId",
     "id3",
-  ]);
+  ];
+  const returnVal = await getHumanIds(dbMock, inputIds);
 
   expect(dbMock.view).toHaveBeenCalledTimes(1);
   expect(dbMock.view).toBeCalledWith(
     viewName,
     "default",
-    expect.objectContaining({ reduce: false })
+    expect.objectContaining({ reduce: false, keys: inputIds })
   );
 
-  expect(returnVal).toEqual(["hid1", "hid2", "hid3"]);
+  expect(returnVal).toEqual(["hid1", "hid2", undefined, "hid3"]);
 });
