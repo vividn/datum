@@ -13,10 +13,7 @@ import { DocumentScope } from "nano";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import { pass, testNano } from "../test-utils";
 import insertDatumView from "../../src/views/insertDatumView";
-import {
-  idToHumanView,
-  subHumanIdView,
-} from "../../src/views/datumViews";
+import { idToHumanView, subHumanIdView } from "../../src/views/datumViews";
 import { mock } from "jest-mock-extended";
 import shortenForHumans from "../../src/ids/shortenForHumans";
 
