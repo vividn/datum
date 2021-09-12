@@ -1,8 +1,10 @@
 import { it, jest } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { humanIdView } from "../../src/views/datumViews";
+import { humanIdView, idToHumanView } from "../../src/views/datumViews";
 import getHumanIds from "../../src/ids/getHumanIds";
+import { mockDocDeletedError, mockDocMissingError, mockMissingNamedViewError } from "../test-utils";
+import { DatumViewMissingError } from "../../src/errors";
 
 const dbMock = mock<DocumentScope<any>>();
 
@@ -11,7 +13,7 @@ beforeEach(() => {
 });
 
 it("calls the humanId view with the input _ids as keys, then calls minHid with the returned humanIds", async () => {
-  const viewName = humanIdView.name;
+  const viewName = idToHumanView.name;
   const idsHids = [
     ["id1", "hid1"],
     ["id2", "hid2"],
@@ -29,12 +31,7 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
   };
   dbMock.view.mockReturnValue(Promise.resolve(mockViewResult));
 
-  const inputIds = [
-    "id1",
-    "id2",
-    "id_with_no_humanId",
-    "id3",
-  ];
+  const inputIds = ["id1", "id2", "id_with_no_humanId", "id3"];
   const returnVal = await getHumanIds(dbMock, inputIds);
 
   expect(dbMock.view).toHaveBeenCalledTimes(1);
@@ -45,4 +42,22 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
   );
 
   expect(returnVal).toEqual(["hid1", "hid2", undefined, "hid3"]);
+});
+
+it("throws a DatumViewMissing if datum view is not present", async () => {
+  dbMock.view
+    .mockRejectedValueOnce(mockDocMissingError)
+    .mockRejectedValueOnce(mockDocDeletedError)
+    .mockRejectedValueOnce(mockMissingNamedViewError)
+    .mockRejectedValueOnce(new Error('should not be caught'));
+
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(DatumViewMissingError);
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(DatumViewMissingError);
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(DatumViewMissingError);
+  try {
+    await getHumanIds(dbMock, ["abc"]);
+  } catch (error: any) {
+    expect(error).not.toBeInstanceOf(DatumViewMissingError);
+    expect(error.message).toEqual('should not be caught');
+  }
 });

@@ -1,6 +1,6 @@
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { DatumViewMissing, isCouchDbError, MyError } from "../errors";
+import { DatumViewMissingError, isCouchDbError, MyError } from "../errors";
 
 function startingSlices(str: string): string[] {
   let i = str.length;
@@ -27,7 +27,7 @@ export async function minHumanId(
           isCouchDbError(error) &&
           ["missing", "deleted", "missing_named_view"].includes(error.reason)
         ) {
-          throw new DatumViewMissing();
+          throw new DatumViewMissingError();
         }
         throw error;
       })
