@@ -15,7 +15,7 @@ import { DocumentScope } from "nano";
 import { minHumanId, MinHumanIdError } from "../../src/ids/minHumanId";
 import insertDatumView from "../../src/views/insertDatumView";
 import { subHumanIdView } from "../../src/views/datumViews";
-import { DatumViewMissing } from "../../src/errors";
+import { DatumViewMissingError } from "../../src/errors";
 
 const dbName = "test_datum_queries";
 const db = testNano.db.use(dbName) as DocumentScope<EitherPayload>;
@@ -121,7 +121,7 @@ describe("minHumanId", () => {
     await db.destroy("_design/datum_sub_human_id", viewDoc._rev);
 
     await expect(() => minHumanId(db, "anything")).rejects.toThrow(
-      DatumViewMissing
+      DatumViewMissingError
     );
   });
 });
