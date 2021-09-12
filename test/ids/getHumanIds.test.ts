@@ -1,9 +1,13 @@
 import { it, jest } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { humanIdView, idToHumanView } from "../../src/views/datumViews";
+import { idToHumanView } from "../../src/views/datumViews";
 import getHumanIds from "../../src/ids/getHumanIds";
-import { mockDocDeletedError, mockDocMissingError, mockMissingNamedViewError } from "../test-utils";
+import {
+  mockDocDeletedError,
+  mockDocMissingError,
+  mockMissingNamedViewError,
+} from "../test-utils";
 import { DatumViewMissingError } from "../../src/errors";
 
 const dbMock = mock<DocumentScope<any>>();
@@ -49,15 +53,21 @@ it("throws a DatumViewMissing if datum view is not present", async () => {
     .mockRejectedValueOnce(mockDocMissingError)
     .mockRejectedValueOnce(mockDocDeletedError)
     .mockRejectedValueOnce(mockMissingNamedViewError)
-    .mockRejectedValueOnce(new Error('should not be caught'));
+    .mockRejectedValueOnce(new Error("should not be caught"));
 
-  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(DatumViewMissingError);
-  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(DatumViewMissingError);
-  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(DatumViewMissingError);
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
+    DatumViewMissingError
+  );
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
+    DatumViewMissingError
+  );
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
+    DatumViewMissingError
+  );
   try {
     await getHumanIds(dbMock, ["abc"]);
   } catch (error: any) {
     expect(error).not.toBeInstanceOf(DatumViewMissingError);
-    expect(error.message).toEqual('should not be caught');
+    expect(error.message).toEqual("should not be caught");
   }
 });

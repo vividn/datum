@@ -10,12 +10,14 @@ async function shortenForHumans(
   ids: string[]
 ): Promise<(string | undefined)[]> {
   const humanIds = await getHumanIds(db, ids);
-  const shortenedHumanIds = Promise.all(humanIds.map(async (humanId) => {
-    if (humanId === undefined) {
-      return undefined;
-    }
-    return await minHumanId(db, humanId);
-  }));
+  const shortenedHumanIds = Promise.all(
+    humanIds.map(async (humanId) => {
+      if (humanId === undefined) {
+        return undefined;
+      }
+      return await minHumanId(db, humanId);
+    })
+  );
   return shortenedHumanIds;
 }
 
