@@ -9,6 +9,13 @@ export class AmbiguousQuickIdError extends MyError {
   }
 }
 
+export class NoQuickIdMatchError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, NoQuickIdMatchError.prototype);
+  }
+}
+
 async function quickId(db: DocumentScope<EitherPayload>, quickString: string): string {
 
 }
