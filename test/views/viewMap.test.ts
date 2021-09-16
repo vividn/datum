@@ -26,7 +26,8 @@ it("calls the default view in the named DatumView on the db unreduced", async ()
     datumView: mockDatumView,
     params: { key: "abc" },
   });
-  expect(mockDb.view).toBeCalledWith(mockDatumView.name, "default", {reduce: false, key: "abc"});
+  const designDocName = "_design/" + mockDatumView.name;
+  expect(mockDb.view).toBeCalledWith(designDocName, "default", {reduce: false, key: "abc"});
 });
 
 it("returns the view result directly", async () => {
