@@ -60,10 +60,10 @@ test("if the text matches more than one humanId, it throws an error, showing the
   } catch (error) {
     expect(error).toBeInstanceOf(AmbiguousQuickIdError);
     const message = (error as AmbiguousQuickIdError).message;
-    expect(message).toMatch(/\Wabc\W/);
-    expect(message).toMatch(/\Wdoc-id1\W/);
-    expect(message).toMatch(/\Wabz\W/);
-    expect(message).toMatch(/\Wdoc-id2\W/);
+    expect(message).toMatch(/\babc\b/);
+    expect(message).toMatch(/\bdoc-id1\b/);
+    expect(message).toMatch(/\babz\b/);
+    expect(message).toMatch(/\bdoc-id2\b/);
   }
 });
 
@@ -111,10 +111,10 @@ test("if no humanIds match, but several _ids match starting sub string, throw er
   } catch (error) {
     expect(error).toBeInstanceOf(AmbiguousQuickIdError);
     const message = (error as AmbiguousQuickIdError).message;
-    expect(message).toMatch(/\Wa\W/);
-    expect(message).toMatch(/\Wzzz_this_id\W/);
-    expect(message).toMatch(/\Wd\W/);
-    expect(message).toMatch(/\Wzzz_same_start\W/);
+    expect(message).toMatch(/\ba\b/);
+    expect(message).toMatch(/\bzzz_this_id\b/);
+    expect(message).toMatch(/\bd\b/);
+    expect(message).toMatch(/\bzzz_same_start\b/);
   }
 });
 
