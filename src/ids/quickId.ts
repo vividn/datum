@@ -9,7 +9,11 @@ import { minHumanId } from "./minHumanId";
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
     const idPairs = ids.map((id, index) => `${quickIds[index]}\t${id}`);
-    const errorMessage = [`${quickString} is ambiguous and may refer to`, "quickId\tid", ...idPairs].join("\n");
+    const errorMessage = [
+      `${quickString} is ambiguous and may refer to`,
+      "quickId\tid",
+      ...idPairs,
+    ].join("\n");
     super(errorMessage);
     Object.setPrototypeOf(this, AmbiguousQuickIdError.prototype);
   }
@@ -37,12 +41,18 @@ async function quickId(
     }
   }
 
-  const startsHumanId = await viewMap({db, datumView: humanIdView, params: startsWith(quickString)});
+  const startsHumanId = await viewMap({
+    db,
+    datumView: humanIdView,
+    params: startsWith(quickString),
+  });
   if (startsHumanId.rows.length === 1) {
     return startsHumanId.rows[0].id;
   }
   if (startsHumanId.rows.length > 1) {
-    const possibleQuickIds = await Promise.all(startsHumanId.rows.map((row) => minHumanId(db, row.key)));
+    const possibleQuickIds = await Promise.all(
+      startsHumanId.rows.map((row) => minHumanId(db, row.key))
+    );
     const possibleIds = startsHumanId.rows.map((row) => row.id);
     throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
   }
@@ -53,8 +63,16 @@ async function quickId(
   }
   if (startsMainId.rows.length > 1) {
     const possibleIds = startsMainId.rows.map((row) => row.id);
-    const correspondingHumanIds = (await viewMap({db, datumView: idToHumanView, params: {keys: possibleIds}})).rows.map(row => row.value);
-    const possibleQuickIds = await Promise.all(correspondingHumanIds.map((humanId) => minHumanId(db, humanId)));
+    const correspondingHumanIds = (
+      await viewMap({
+        db,
+        datumView: idToHumanView,
+        params: { keys: possibleIds },
+      })
+    ).rows.map((row) => row.value);
+    const possibleQuickIds = await Promise.all(
+      correspondingHumanIds.map((humanId) => minHumanId(db, humanId))
+    );
     throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
   }
 

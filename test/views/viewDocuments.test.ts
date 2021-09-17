@@ -11,7 +11,8 @@ import {
 import {
   asViewDb,
   DatumView,
-  datumViewToViewPayload, StringifiedDatumView,
+  datumViewToViewPayload,
+  StringifiedDatumView,
 } from "../../src/views/viewDocument";
 import _emit from "../../src/views/emit";
 import { pass, testNano } from "../test-utils";

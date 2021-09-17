@@ -1,12 +1,17 @@
 import { it } from "@jest/globals";
 import { mock } from "jest-mock-extended";
-import { EitherDocument, EitherPayload } from "../../src/documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../../src/documentControl/DatumDocument";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { DatumView, StringifiedDatumView } from "../../src/views/viewDocument";
 import {
   mockDocDeletedError,
   mockDocMissingError,
-  mockMissingNamedViewError, pass, testNano,
+  mockMissingNamedViewError,
+  pass,
+  testNano,
 } from "../test-utils";
 import { DatumViewMissingError } from "../../src/errors";
 import viewMap from "../../src/views/viewMap";
@@ -80,9 +85,8 @@ it("can call a view that has been inserted by insertDatumView", async () => {
 
   const testDatumView: StringifiedDatumView = {
     name: "datum_test_view_datum_view",
-    map: `(doc) => {emit(doc._id, null)}`
+    map: `(doc) => {emit(doc._id, null)}`,
   };
-  await insertDatumView({db, datumView: testDatumView});
-  await expect(viewMap({db, datumView: testDatumView})).resolves.toBeTruthy();
-
-})
+  await insertDatumView({ db, datumView: testDatumView });
+  await expect(viewMap({ db, datumView: testDatumView })).resolves.toBeTruthy();
+});

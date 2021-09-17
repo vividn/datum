@@ -8,7 +8,11 @@ import {
 } from "@jest/globals";
 import { fail, pass, testNano } from "../test-utils";
 import insertDatumView from "../../src/views/insertDatumView";
-import { humanIdView, idToHumanView, subHumanIdView } from "../../src/views/datumViews";
+import {
+  humanIdView,
+  idToHumanView,
+  subHumanIdView,
+} from "../../src/views/datumViews";
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import quickId, {
@@ -27,7 +31,7 @@ beforeEach(async () => {
   await testNano.db.create(dbName);
   await insertDatumView({ db, datumView: idToHumanView });
   await insertDatumView({ db, datumView: subHumanIdView });
-  await insertDatumView({db, datumView: humanIdView});
+  await insertDatumView({ db, datumView: humanIdView });
 });
 
 afterEach(async () => {

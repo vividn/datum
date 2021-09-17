@@ -1,6 +1,7 @@
 import {
   DatumView,
-  datumViewToViewPayload, StringifiedDatumView,
+  datumViewToViewPayload,
+  StringifiedDatumView,
   ViewDocument,
 } from "./viewDocument";
 import addDoc from "../documentControl/addDoc";
