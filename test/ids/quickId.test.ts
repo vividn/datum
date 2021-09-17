@@ -15,7 +15,6 @@ import quickId, {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
 } from "../../src/ids/quickId";
-import { DatumViewMissingError } from "../../src/errors";
 
 const dbName = "test_quick_id";
 const db: DocumentScope<EitherPayload> = testNano.use(dbName);

@@ -16,7 +16,7 @@ export class AmbiguousQuickIdError extends MyError {
 }
 
 export class NoQuickIdMatchError extends MyError {
-  constructor(quickId: string) {
+  constructor(quickId: unknown) {
     super(`${quickId} does not match the humanId or id of any documents`);
     Object.setPrototypeOf(this, NoQuickIdMatchError.prototype);
   }
