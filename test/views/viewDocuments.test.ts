@@ -12,6 +12,7 @@ import {
   asViewDb,
   DatumView,
   datumViewToViewPayload,
+  StringifiedDatumView,
 } from "../../src/views/viewDocument";
 import _emit from "../../src/views/emit";
 import { pass, testNano } from "../test-utils";
@@ -218,6 +219,38 @@ describe("insertDatumView", () => {
           emit("b", doc.b);
         }
       },
+      reduce: "_sum",
+    };
+
+    await db.insert({ _id: "doc1", a: 3, b: 4 });
+    await db.insert({ _id: "doc2", a: 6 });
+
+    await insertDatumView({ db: viewDb, datumView: summerAB });
+
+    const total = await db.view("summer", "default");
+    expect(total.rows[0].value).toBe(13);
+
+    const grouped = await db.view("summer", "default", { group: true });
+    expect(grouped.rows).toEqual([
+      { key: "a", value: 9 },
+      { key: "b", value: 4 },
+    ]);
+
+    const unreduced = await db.view("summer", "default", { reduce: false });
+    expect(unreduced.total_rows).toEqual(3);
+  });
+
+  it("turns a StringifiedDatumView into a functioning view", async () => {
+    const summerAB: StringifiedDatumView = {
+      name: "summer",
+      map: `(doc) => {
+        if (doc.a) {
+          emit("a", doc.a);
+        }
+        if (doc.b) {
+          emit("b", doc.b);
+        }
+      }`,
       reduce: "_sum",
     };
 

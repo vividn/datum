@@ -1,13 +1,14 @@
 import {
   DatumView,
   datumViewToViewPayload,
+  StringifiedDatumView,
   ViewDocument,
 } from "./viewDocument";
 import addDoc from "../documentControl/addDoc";
 import { BaseDocControlArgs } from "../documentControl/base";
 
 type InsertDatumViewArgs = {
-  datumView: DatumView;
+  datumView: DatumView | StringifiedDatumView;
 } & BaseDocControlArgs;
 
 async function insertDatumView({
