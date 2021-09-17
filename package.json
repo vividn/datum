@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "main": "build/index.js",
   "bin": {
-    "dtm": "./build/src/index.js"
+    "dtm": "./build/index.js"
   },
   "scripts": {
     "test": "jest",
