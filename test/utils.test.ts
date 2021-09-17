@@ -125,7 +125,7 @@ describe("startsWith", () => {
     ["a", "a\uffff\uffff\uffff\uffff"],
     ["asdf", "asdf\uffff\uffff\uffff\uffff"],
     ["zzz", "zzz\uffff\uffff\uffff\uffff"],
-    ["ƞ", "ƞ\uffffuffffuffffuffff"],
+    ["ƞ", "ƞ\uffff\uffff\uffff\uffff"],
   ])(
     "returns endKey as the start key plus a bunch of high value unicode letters",
     (startKey, endKey) => {
