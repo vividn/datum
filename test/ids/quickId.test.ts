@@ -188,25 +188,3 @@ test("if no humanIds or ids match at all, throw a NoQuickIdMatchError", async ()
     NoQuickIdMatchError
   );
 });
-
-test("it raises DatumViewMissingError if idToHumanView is missing", async () => {
-  const viewDoc = await db.get("_design/" + idToHumanView.name);
-  await db.destroy("_design/" + idToHumanView.name, viewDoc._rev);
-
-  await db.insert({ _id: "abcId", data: {}, meta: { humanId: "humanId" } });
-
-  await expect(() => quickId(db, "hum")).rejects.toThrowError(
-    DatumViewMissingError
-  );
-});
-
-test("it raises DatumViewMissingError if subHumanIdView is missing", async () => {
-  const viewDoc = await db.get("_design/" + subHumanIdView.name);
-  await db.destroy("_design/" + subHumanIdView.name, viewDoc._rev);
-
-  await db.insert({ _id: "abcId", data: {}, meta: { humanId: "humanId" } });
-
-  await expect(() => quickId(db, "hum")).rejects.toThrowError(
-    DatumViewMissingError
-  );
-});
