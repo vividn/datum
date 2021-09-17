@@ -6,7 +6,7 @@ import { DatumView } from "../../src/views/viewDocument";
 import {
   mockDocDeletedError,
   mockDocMissingError,
-  mockMissingNamedViewError,
+  mockMissingNamedViewError, pass, testNano,
 } from "../test-utils";
 import { DatumViewMissingError } from "../../src/errors";
 import viewMap from "../../src/views/viewMap";
