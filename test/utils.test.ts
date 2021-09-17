@@ -122,17 +122,16 @@ describe("createOrAppend", () => {
 
 describe("startsWith", () => {
   it.each([
-    ["a", "b"],
-    ["asdf", "asdg"],
-    ["zzz", "zz{"],
-    ["ƞ", "Ɵ"],
+    ["a", "a\uffff\uffff\uffff\uffff"],
+    ["asdf", "asdf\uffff\uffff\uffff\uffff"],
+    ["zzz", "zzz\uffff\uffff\uffff\uffff"],
+    ["ƞ", "ƞ\uffffuffffuffffuffff"],
   ])(
-    "returns endKey with last character incremented by one",
+    "returns endKey as the start key plus a bunch of high value unicode letters",
     (startKey, endKey) => {
       expect(startsWith(startKey)).toEqual({
         start_key: startKey,
         end_key: endKey,
-        inclusive_end: false,
       });
     }
   );
