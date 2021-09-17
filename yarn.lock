@@ -4710,10 +4710,10 @@ mute-stream@0.0.8:
   resolved "https://registry.yarnpkg.com/mute-stream/-/mute-stream-0.0.8.tgz#1630c42b2251ff81e2a283de96a5497ea92e5e0d"
   integrity sha512-nnbWWOkoWyUsTjKrhgD0dcz22mdkSnpYqbEjIm2nhwhuxlSkpywJmBo8h0ZqJdkp73mb90SssHkN4rsRaBAfAA==
 
-nano@*, nano@^9.0.4:
-  version "9.0.4"
-  resolved "https://registry.yarnpkg.com/nano/-/nano-9.0.4.tgz#4c316d08b6501e940186c68b3d6731b2837f6157"
-  integrity sha512-hDf8r9iMiIgyXcIO/hWoTdawCTTFdjmcmGyAN+KaW86O8hVdZxr+Zid5vh51DYpsR8pE4AAu90Ts57Tjpwlqwg==
+nano@*, nano@^9.0.5:
+  version "9.0.5"
+  resolved "https://registry.yarnpkg.com/nano/-/nano-9.0.5.tgz#2b767819f612907a3ac09b21f2929d4097407262"
+  integrity sha512-fEAhwAdXh4hDDnC8cYJtW6D8ivOmpvFAqT90+zEuQREpRkzA/mJPcI4EKv15JUdajaqiLTXNoKK6PaRF+/06DQ==
   dependencies:
     "@types/tough-cookie" "^4.0.0"
     axios "^0.21.1"
