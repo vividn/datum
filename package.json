@@ -17,7 +17,7 @@
     "build": "rm -rf ./build; tsc -p .",
     "buildwatch": "tsc -p . -w",
     "system": "NODE_ENV=production yarn global add $PWD",
-    "pipeline": "yarn refresh && yarn test && yarn build && rm -rf ./node_modules && yarn install --production && yarn system",
+    "pipeline": "yarn refresh && yarn test --maxWorkers 1 && yarn build && rm -rf ./node_modules && yarn install --production && yarn system",
     "refresh": "rm -rf ./node_modules && yarn install",
     "lint": "prettier src test --check && eslint src test",
     "fmt": "prettier src test --write && eslint src test --fix",
