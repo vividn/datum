@@ -16,7 +16,7 @@ async function viewMap({
   const viewParams: DocumentViewParams = params
     ? { ...params, reduce: false }
     : { reduce: false };
-    const designDocName = "_design/" + datumView.name;
+  const designDocName = "_design/" + datumView.name;
   try {
     return await db.view(designDocName, "default", viewParams);
   } catch (error) {

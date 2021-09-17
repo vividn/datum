@@ -16,7 +16,10 @@ export class NoQuickIdMatchError extends MyError {
   }
 }
 
-async function quickId(db: DocumentScope<EitherPayload>, quickString: string): string {
+async function quickId(
+  db: DocumentScope<EitherPayload>,
+  quickString: string
+): string {
   try {
     const doc = await db.get(quickString);
     return doc._id;
@@ -27,9 +30,6 @@ async function quickId(db: DocumentScope<EitherPayload>, quickString: string): s
       throw error;
     }
   }
-
-
-
 }
 
 export default quickId;

@@ -14,7 +14,6 @@ import viewMap from "../../src/views/viewMap";
 const mockDb = mock<DocumentScope<EitherDocument>>();
 const mockDatumView = mock<DatumView>();
 
-
 beforeEach(() => {
   jest.resetAllMocks();
   mockDatumView.name = "mock_datum_view";
@@ -27,13 +26,25 @@ it("calls the default view in the named DatumView on the db unreduced", async ()
     params: { key: "abc" },
   });
   const designDocName = "_design/" + mockDatumView.name;
-  expect(mockDb.view).toBeCalledWith(designDocName, "default", {reduce: false, key: "abc"});
+  expect(mockDb.view).toBeCalledWith(designDocName, "default", {
+    reduce: false,
+    key: "abc",
+  });
 });
 
 it("returns the view result directly", async () => {
-  const mockViewResponse: DocumentViewResponse<unknown, EitherDocument> = {total_rows: 1, rows: [{key: "abc", value: 37, id: "abc__37"}], offset: 1337, update_seq: undefined};
+  const mockViewResponse: DocumentViewResponse<unknown, EitherDocument> = {
+    total_rows: 1,
+    rows: [{ key: "abc", value: 37, id: "abc__37" }],
+    offset: 1337,
+    update_seq: undefined,
+  };
   mockDb.view.mockReturnValue(Promise.resolve(mockViewResponse));
-  const returnValue = await viewMap({db: mockDb, datumView: mockDatumView, params: { key: "abc" }});
+  const returnValue = await viewMap({
+    db: mockDb,
+    datumView: mockDatumView,
+    params: { key: "abc" },
+  });
   expect(returnValue).toEqual(mockViewResponse);
 });
 
