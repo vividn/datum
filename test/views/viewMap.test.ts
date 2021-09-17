@@ -1,8 +1,8 @@
 import { it } from "@jest/globals";
 import { mock } from "jest-mock-extended";
-import { EitherDocument } from "../../src/documentControl/DatumDocument";
+import { EitherDocument, EitherPayload } from "../../src/documentControl/DatumDocument";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { DatumView } from "../../src/views/viewDocument";
+import { DatumView, StringifiedDatumView } from "../../src/views/viewDocument";
 import {
   mockDocDeletedError,
   mockDocMissingError,
@@ -10,6 +10,7 @@ import {
 } from "../test-utils";
 import { DatumViewMissingError } from "../../src/errors";
 import viewMap from "../../src/views/viewMap";
+import insertDatumView from "../../src/views/insertDatumView";
 
 const mockDb = mock<DocumentScope<EitherDocument>>();
 const mockDatumView = mock<DatumView>();
@@ -25,8 +26,7 @@ it("calls the default view in the named DatumView on the db unreduced", async ()
     datumView: mockDatumView,
     params: { key: "abc" },
   });
-  const designDocName = "_design/" + mockDatumView.name;
-  expect(mockDb.view).toBeCalledWith(designDocName, "default", {
+  expect(mockDb.view).toBeCalledWith(mockDatumView.name, "default", {
     reduce: false,
     key: "abc",
   });
@@ -71,3 +71,18 @@ it("throws a DatumViewMissingError if the view document is not there or the name
     expect(error.message).toEqual("should not be caught");
   }
 });
+
+it("can call a view that has been inserted by insertDatumView", async () => {
+  const dbName = "test_view_map";
+  await testNano.db.destroy(dbName).catch(pass);
+  await testNano.db.create(dbName);
+  const db = testNano.use<EitherPayload>(dbName);
+
+  const testDatumView: StringifiedDatumView = {
+    name: "datum_test_view_datum_view",
+    map: `(doc) => {emit(doc._id, null)}`
+  };
+  await insertDatumView({db, datumView: testDatumView});
+  await expect(viewMap({db, datumView: testDatumView})).resolves.toBeTruthy();
+
+})

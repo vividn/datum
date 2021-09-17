@@ -1,11 +1,11 @@
 import { DocumentScope, DocumentViewParams, DocumentViewResponse } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { DatumView } from "./viewDocument";
+import { DatumView, StringifiedDatumView } from "./viewDocument";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 type ViewMapType = {
   db: DocumentScope<EitherPayload>;
-  datumView: DatumView;
+  datumView: DatumView | StringifiedDatumView;
   params?: Omit<DocumentViewParams, "reduce">;
 };
 async function viewMap({
@@ -16,12 +16,11 @@ async function viewMap({
   const viewParams: DocumentViewParams = params
     ? { ...params, reduce: false }
     : { reduce: false };
-  const designDocName = "_design/" + datumView.name;
   try {
-    return await db.view(designDocName, "default", viewParams);
+    return await db.view(datumView.name, "default", viewParams);
   } catch (error) {
     if (isCouchDbError(error) && error.error === "not_found") {
-      throw new DatumViewMissingError();
+      throw new DatumViewMissingError(datumView.name, "default");
     } else {
       throw error;
     }

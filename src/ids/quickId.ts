@@ -25,7 +25,7 @@ export class NoQuickIdMatchError extends MyError {
 async function quickId(
   db: DocumentScope<EitherPayload>,
   quickString: string
-): string {
+): Promise<string> {
   try {
     const doc = await db.get(quickString);
     return doc._id;
