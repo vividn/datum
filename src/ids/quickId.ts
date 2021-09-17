@@ -29,6 +29,7 @@ async function quickId(db: DocumentScope<EitherPayload>, quickString: string): s
   }
 
 
+
 }
 
 export default quickId;
