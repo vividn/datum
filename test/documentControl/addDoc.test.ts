@@ -8,7 +8,6 @@ import {
 import { DateTime, Settings } from "luxon";
 import {
   afterEach,
-  beforeAll,
   beforeEach,
   describe,
   expect,
@@ -16,7 +15,7 @@ import {
   test,
   jest,
 } from "@jest/globals";
-import { fail, pass, testNano } from "../test-utils";
+import { fail, pass, resetTestDb, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
 import addDoc from "../../src/documentControl/addDoc";
 import { IdError } from "../../src/errors";
@@ -50,12 +49,8 @@ describe("addDoc", () => {
   const dbName = "add_doc_test";
   const db = testNano.db.use<EitherPayload>(dbName);
 
-  beforeAll(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
-
   beforeEach(async () => {
-    await testNano.db.create(dbName).catch(pass);
+    await resetTestDb(dbName);
     timezone_mock.register("UTC");
     Settings.now = () => mockNow.toMillis();
   });

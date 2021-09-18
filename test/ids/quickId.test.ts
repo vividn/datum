@@ -1,12 +1,5 @@
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  test,
-  jest,
-  expect,
-} from "@jest/globals";
-import { fail, pass, testNano } from "../test-utils";
+import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
+import { fail, pass, resetTestDb, testNano } from "../test-utils";
 import insertDatumView from "../../src/views/insertDatumView";
 import {
   humanIdView,
@@ -23,12 +16,8 @@ import quickId, {
 const dbName = "test_quick_id";
 const db: DocumentScope<EitherPayload> = testNano.use(dbName);
 
-beforeAll(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
-});
-
 beforeEach(async () => {
-  await testNano.db.create(dbName);
+  await resetTestDb(dbName);
   await insertDatumView({ db, datumView: idToHumanView });
   await insertDatumView({ db, datumView: subHumanIdView });
   await insertDatumView({ db, datumView: humanIdView });

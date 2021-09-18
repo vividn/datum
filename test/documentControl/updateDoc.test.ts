@@ -7,14 +7,13 @@ import {
 import { DateTime, Settings } from "luxon";
 import {
   afterEach,
-  beforeAll,
   beforeEach,
   describe,
   expect,
   jest,
   test,
 } from "@jest/globals";
-import { fail, pass, testNano } from "../test-utils";
+import { fail, pass, resetTestDb, testNano } from "../test-utils";
 import timezone_mock from "timezone-mock";
 import updateDoc, {
   NoDocToUpdateError,
@@ -48,12 +47,8 @@ describe("updateDoc", () => {
   const dbName = "update_doc_test";
   const db = testNano.db.use<EitherPayload>(dbName);
 
-  beforeAll(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
-
   beforeEach(async () => {
-    await testNano.db.create(dbName).catch(pass);
+    await resetTestDb(dbName);
   });
 
   afterEach(async () => {

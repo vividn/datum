@@ -1,16 +1,9 @@
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  expect,
-  it,
-  describe,
-} from "@jest/globals";
+import { beforeEach, expect, it, describe, afterAll } from "@jest/globals";
 import {
   DatumPayload,
   EitherPayload,
 } from "../../src/documentControl/DatumDocument";
-import { pass, testNano } from "../test-utils";
+import { resetTestDb, testNano } from "../test-utils";
 import { DocumentScope } from "nano";
 import { minHumanId, MinHumanIdError } from "../../src/ids/minHumanId";
 import insertDatumView from "../../src/views/insertDatumView";
@@ -19,15 +12,12 @@ import { DatumViewMissingError } from "../../src/errors";
 
 const dbName = "test_datum_queries";
 const db = testNano.db.use(dbName) as DocumentScope<EitherPayload>;
-beforeAll(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
-});
 
 beforeEach(async () => {
-  await testNano.db.create(dbName);
+  await resetTestDb(dbName);
 });
 
-afterEach(async () => {
+afterAll(async () => {
   await testNano.db.destroy(dbName);
 });
 

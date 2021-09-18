@@ -35,3 +35,17 @@ export const mockMissingNamedViewError: CouchDbError = {
   error: "not_found",
   reason: "missing_named_view",
 };
+
+export async function resetTestDb(dbName: string): Promise<void> {
+  const maxTries = 3;
+  let tries = 0;
+  await testNano.db.destroy(dbName).catch(pass);
+  while (tries++ <= maxTries) {
+    await testNano.db.destroy(dbName).catch(pass);
+    await testNano.db.create(dbName).catch(pass);
+    if ((await testNano.db.list()).includes(dbName)) {
+      return;
+    }
+  }
+  throw Error(`Unable to reset database after ${maxTries} attempts`);
+}

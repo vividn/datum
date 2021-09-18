@@ -1,14 +1,13 @@
 import {
   afterAll,
   afterEach,
-  beforeAll,
   beforeEach,
   describe,
   expect,
   it,
   jest,
 } from "@jest/globals";
-import { fail, pass, testNano } from "./test-utils";
+import { fail, pass, resetTestDb, testNano } from "./test-utils";
 import { BaseDataError } from "../src/errors";
 import {
   DatumDocument,
@@ -34,12 +33,8 @@ describe("addCmd", () => {
     .mockImplementation(() => db);
   const addDocSpy = jest.spyOn(addDoc, "default");
 
-  beforeAll(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
-
   beforeEach(async () => {
-    await testNano.db.create(dbName).catch(pass);
+    await resetTestDb(dbName);
     console.log = mockedLog;
     addDocSpy.mockClear();
   });

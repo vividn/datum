@@ -4,9 +4,8 @@ import {
   describe,
   expect,
   beforeEach,
-  beforeAll,
-  afterEach,
   jest,
+  afterAll,
 } from "@jest/globals";
 import {
   asViewDb,
@@ -15,7 +14,7 @@ import {
   StringifiedDatumView,
 } from "../../src/views/viewDocument";
 import _emit from "../../src/views/emit";
-import { pass, testNano } from "../test-utils";
+import { resetTestDb, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import insertDatumView from "../../src/views/insertDatumView";
 import * as addDoc from "../../src/documentControl/addDoc";
@@ -198,13 +197,10 @@ describe("insertDatumView", () => {
   const db = testNano.use<EitherPayload>(dbName);
   const viewDb = asViewDb(db);
 
-  beforeAll(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
   beforeEach(async () => {
-    await testNano.db.create(dbName);
+    await resetTestDb(dbName);
   });
-  afterEach(async () => {
+  afterAll(async () => {
     await testNano.db.destroy(dbName);
   });
 
