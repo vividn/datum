@@ -12,7 +12,10 @@ export type UpdateStrategyNames =
   | "removeConflicting"
   | "xor"
   | "merge"
-  | "append";
+  | "append"
+  | "prepend"
+  | "mergeSort"
+  | "appendSort";
 
 export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   useOld: { justA: true, justB: false, same: true, conflict: "A" },
@@ -24,10 +27,20 @@ export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   xor: { justA: true, justB: true, same: false, conflict: false },
   merge: { justA: true, justB: true, same: true, conflict: "merge" },
   append: { justA: true, justB: true, same: true, conflict: "append" },
+  prepend: { justA: true, justB: true, same: true, conflict: "prepend" },
+  mergeSort: { justA: true, justB: true, same: true, conflict: "mergeSort" },
+  appendSort: { justA: true, justB: true, same: true, conflict: "appendSort" },
 };
 
-// TODO: Add mergesort here
-export type conflictingKeyStrategies = "A" | "B" | "merge" | "append" | false;
+export type conflictingKeyStrategies =
+  | false
+  | "A"
+  | "B"
+  | "merge"
+  | "append"
+  | "prepend"
+  | "mergeSort"
+  | "appendSort";
 
 type CombiningType = {
   justA: boolean;
@@ -80,6 +93,12 @@ const combineData = (
       combined[key] = mergeValues(aVal, bVal, true);
     } else if (strategy.conflict === "append") {
       combined[key] = mergeValues(aVal, bVal, false);
+    } else if (strategy.conflict === "prepend") {
+      combined[key] = mergeValues(bVal, aVal, false);
+    } else if (strategy.conflict === "mergeSort") {
+      combined[key] = mergeValues(aVal, bVal, true, true);
+    } else if (strategy.conflict === "appendSort") {
+      combined[key] = mergeValues(aVal, bVal, false, true);
     } else {
       throw new Error("unknown conflict resolution strategy");
     }
@@ -104,8 +123,12 @@ const isMergeableValue = (val: any) => {
   );
 };
 
-// eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-export const mergeValues = (aVal: any, bVal: any, unique = true): any => {
+export const mergeValues = (
+  aVal: unknown,
+  bVal: unknown,
+  unique = true,
+  sort = false
+): any => {
   if (bVal === undefined) return aVal;
   if (aVal === undefined) return bVal;
 
@@ -123,11 +146,9 @@ export const mergeValues = (aVal: any, bVal: any, unique = true): any => {
     ? [aVal, ...bVal]
     : [aVal, bVal];
 
-  if (unique) {
-    return Array.from(new Set(appended));
-  } else {
-    return appended;
-  }
+  const maybeMerged = unique ? Array.from(new Set(appended)) : appended;
+  const maybeSorted = sort ? maybeMerged.sort() : maybeMerged;
+  return maybeSorted;
 };
 
 export default combineData;
