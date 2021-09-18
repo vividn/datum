@@ -11,7 +11,7 @@ import * as minHumanId from "../../src/ids/minHumanId";
 import * as getHumanIds from "../../src/ids/getHumanIds";
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
-import { pass, testNano } from "../test-utils";
+import { resetTestDb, testNano } from "../test-utils";
 import insertDatumView from "../../src/views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../src/views/datumViews";
 import { mock } from "jest-mock-extended";
@@ -57,8 +57,7 @@ describe("integration test", () => {
   const db: DocumentScope<EitherPayload> = testNano.use(dbName);
 
   beforeAll(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-    await testNano.db.create(dbName);
+    await resetTestDb(dbName);
 
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });

@@ -1,6 +1,6 @@
-import { pass, testNano } from "../test-utils";
+import { resetTestDb, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
-import { afterEach, beforeAll, beforeEach, expect, it } from "@jest/globals";
+import { afterEach, beforeEach, expect, it } from "@jest/globals";
 import deleteDoc, {
   NoDocToDeleteError,
 } from "../../src/documentControl/deleteDoc";
@@ -8,12 +8,8 @@ import deleteDoc, {
 const dbName = "delete_doc_test";
 const db = testNano.db.use<EitherPayload>(dbName);
 
-beforeAll(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
-});
-
 beforeEach(async () => {
-  await testNano.db.create(dbName);
+  await resetTestDb(dbName);
 });
 
 afterEach(async () => {

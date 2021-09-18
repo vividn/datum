@@ -1,14 +1,7 @@
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  expect,
-  jest,
-  test,
-} from "@jest/globals";
+import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import updateDoc from "../../src/documentControl/updateDoc";
 import * as updateDocModule from "../../src/documentControl/updateDoc";
-import { fail, pass, testNano } from "../test-utils";
+import { fail, resetTestDb, testNano } from "../test-utils";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import addDoc from "../../src/documentControl/addDoc";
 import { DocExistsError } from "../../src/documentControl/base";
@@ -24,12 +17,8 @@ const db = testNano.db.use<EitherPayload>(dbName);
 const originalLog = console.log;
 const mockedLog = jest.fn();
 
-beforeAll(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
-});
-
 beforeEach(async () => {
-  await testNano.db.create(dbName);
+  await resetTestDb(dbName);
   mockedLog.mockReset();
   console.log = mockedLog;
 });
