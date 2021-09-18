@@ -1,13 +1,6 @@
-import { pass, testNano } from "../test-utils";
+import { pass, resetTestDb, testNano } from "../test-utils";
 import { ViewPayload } from "../../src/views/viewDocument";
-import {
-  afterEach,
-  beforeAll,
-  beforeEach,
-  expect,
-  it,
-  jest,
-} from "@jest/globals";
+import { afterEach, beforeEach, expect, it, jest } from "@jest/globals";
 import * as insertDatumViewModule from "../../src/views/insertDatumView";
 import setupDatumViews from "../../src/views/setupDatumViews";
 import _emit from "../../src/views/emit";
@@ -20,14 +13,12 @@ function emit(key: any, value: any) {
   _emit(key, value);
 }
 
-beforeAll(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
-});
 beforeEach(async () => {
-  await testNano.db.create(dbName);
+  await resetTestDb(dbName);
 });
+
 afterEach(async () => {
-  await testNano.db.destroy(dbName);
+  await testNano.db.destroy(dbName).catch(pass);
   jest.resetModules();
   jest.restoreAllMocks();
 });
