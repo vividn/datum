@@ -71,13 +71,13 @@ while true; do
             fi
             ;;
         
-        -T) # Shortcut for -t 23:59:59.999
+        -D) # Shortcut for -t 23:59:59.999
             TIMEFLAG=true
             TIMESTR="23:59:59.999"
             shift
             ;;
 
-        -D|-y) # Shortcut for -d -1
+        -y) # Shortcut for -d -1
             DATEFLAG=true
             DATESTR=$(date --date yesterday '+%Y-%m-%d')
             shift
