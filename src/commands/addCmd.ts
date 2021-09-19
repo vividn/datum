@@ -51,17 +51,20 @@ export type AddCmdArgs = BaseDatumArgs & {
 };
 
 const conflictRecord: Record<ConflictStrategyNames, any> = {
-  useOld: "",
   merge: "",
+  useOld: "",
+  preferOld: "",
+  preferNew: "",
+  useNew: "",
   removeConflicting: "",
   xor: "",
   intersection: "",
   append: "",
-  preferNew: "",
-  delete: "",
-  useNew: "",
+  prepend: "",
+  appendSort: "",
+  mergeSort: "",
   overwrite: "",
-  preferOld: "",
+  delete: "",
 };
 const conflictChoices = Object.keys(conflictRecord);
 

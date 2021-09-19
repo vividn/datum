@@ -5,6 +5,7 @@ import combineData, {
   mergeValues,
 } from "../../src/documentControl/combineData";
 import { MergeError } from "../../src/errors";
+import { fail } from "../test-utils";
 
 describe("combineData", () => {
   const aData = {
@@ -26,6 +27,9 @@ describe("combineData", () => {
           "B",
           "merge",
           "append",
+          "prepend",
+          "mergeSort",
+          "appendSort",
           false,
         ] as conflictingKeyStrategies[]) {
           const testCaseDescription = `(${justAVal},${justBVal},${sameVal},${conflictVal})`;
@@ -66,7 +70,11 @@ describe("combineData", () => {
             });
           }
 
-          if (conflictVal === "A") {
+          if (conflictVal === false) {
+            test(`conflicting fields excluded with ${testCaseDescription}`, () => {
+              expect(combined).not.toHaveProperty("different");
+            });
+          } else if (conflictVal === "A") {
             test(`conflicting fields use the value in A with ${testCaseDescription}`, () => {
               expect(combined).toHaveProperty("different", "Aa");
             });
@@ -74,14 +82,19 @@ describe("combineData", () => {
             test(`conflicting fields use the value in B with ${testCaseDescription}`, () => {
               expect(combined).toHaveProperty("different", "bB");
             });
-          } else if (conflictVal === "merge" || conflictVal === "append") {
+          } else if (
+            ["merge", "append", "prepend", "mergeSort", "appendSort"].includes(
+              conflictVal
+            )
+          ) {
             test(`conflicting fields merge into single array with ${testCaseDescription}`, () => {
-              expect(combined).toHaveProperty("different", ["Aa", "bB"]);
+              expect(combined).toHaveProperty(
+                "different",
+                expect.arrayContaining(["Aa", "bB"])
+              );
             });
           } else {
-            test(`conflicting fields excluded with ${testCaseDescription}`, () => {
-              expect(combined).not.toHaveProperty("different");
-            });
+            fail();
           }
         }
       }
@@ -154,6 +167,18 @@ describe("combineData", () => {
     });
   });
 
+  test("mergeSort combines conflicting fields into sorted arrays removing duplicates", () => {
+    const aMerge = { ...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = { ...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    expect(combineData(aMerge, bMerge, "mergeSort")).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: ["Aa", "bB"],
+      someDataDuplicated: ["duplicate", "unique1", "unique2"],
+    });
+  });
+
   test("append combines conflicting fields into arrays keeping duplicates", () => {
     const aMerge = { ...aData, someDataDuplicated: ["unique1", "duplicate"] };
     const bMerge = { ...bData, someDataDuplicated: ["unique2", "duplicate"] };
@@ -163,6 +188,30 @@ describe("combineData", () => {
       bothSame: "same",
       different: ["Aa", "bB"],
       someDataDuplicated: ["unique1", "duplicate", "unique2", "duplicate"],
+    });
+  });
+
+  test("prepend combines conflicting fields into arrays keeping duplicates, but with b first", () => {
+    const aMerge = { ...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = { ...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    expect(combineData(aMerge, bMerge, "prepend")).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: ["bB", "Aa"],
+      someDataDuplicated: ["unique2", "duplicate", "unique1", "duplicate"],
+    });
+  });
+
+  test("appendSort combines conflicting fields into sorted arrays keeping duplicates", () => {
+    const aMerge = { ...aData, someDataDuplicated: ["unique1", "duplicate"] };
+    const bMerge = { ...bData, someDataDuplicated: ["unique2", "duplicate"] };
+    expect(combineData(aMerge, bMerge, "appendSort")).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: ["Aa", "bB"],
+      someDataDuplicated: ["duplicate", "duplicate", "unique1", "unique2"],
     });
   });
 
@@ -291,6 +340,34 @@ describe("mergeValues", () => {
     ]);
   });
 
+  test("sorts values if doing sort merge", () => {
+    expect(mergeValues(["a", "z", 3], ["z", "4", 5], true, true)).toEqual([
+      3,
+      "4",
+      5,
+      "a",
+      "z",
+    ]);
+
+    expect(
+      mergeValues(
+        [1, "uniqueString", "duplicatedString", 2],
+        [2, "anotherUnique", "duplicatedString", 5],
+        false,
+        true
+      )
+    ).toEqual([
+      1,
+      2,
+      2,
+      5,
+      "anotherUnique",
+      "duplicatedString",
+      "duplicatedString",
+      "uniqueString",
+    ]);
+  });
+
   test("throws error if trying to merge an object with anything (except undefined)", () => {
     expect(() => mergeValues({ abc: 123 }, "string")).toThrowError(MergeError);
     expect(() => mergeValues(3, { abc: 123 })).toThrowError(MergeError);
@@ -303,5 +380,9 @@ describe("mergeValues", () => {
     expect(() =>
       mergeValues({ even: "two" }, { objects: "fail" })
     ).toThrowError(MergeError);
+    expect(mergeValues({ object: "can", merge: "with" }, undefined)).toEqual({
+      object: "can",
+      merge: "with",
+    });
   });
 });
