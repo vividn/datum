@@ -1,0 +1,10 @@
+version: "3.9"
+services:
+  datum:
+    build: .
+    volumes:
+      - .:/datum/:ro
+      - ~/Analysis/Pictures:/home/user/Analysis/Pictures
+      - ~/Data/datum:/home/user/Data/datum:ro
+      - ~/.fonts:/home/user/.fonts:ro
+      - /etc/localtime:/etc/localtime:ro
