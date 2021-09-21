@@ -18,7 +18,7 @@ import * as connectDb from "../src/auth/connectDb";
 import * as addDoc from "../src/documentControl/addDoc";
 import { DocumentScope } from "nano";
 import { DocExistsError } from "../src/documentControl/base";
-import { Show } from "../src/output";
+import { Show } from "../src/output/output";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 

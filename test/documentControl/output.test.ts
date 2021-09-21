@@ -6,7 +6,7 @@ import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import addDoc from "../../src/documentControl/addDoc";
 import { DocExistsError } from "../../src/documentControl/base";
 import overwriteDoc from "../../src/documentControl/overwriteDoc";
-import { Show } from "../../src/output";
+import { Show } from "../../src/output/output";
 import * as addDocModule from "../../src/documentControl/addDoc";
 import addCmd from "../../src/commands/addCmd";
 import { main } from "../../src";

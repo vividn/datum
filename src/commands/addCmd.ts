@@ -16,7 +16,7 @@ import newHumanId from "../meta/newHumanId";
 import { processTimeArgs, setTimezone } from "../timings";
 import chalk from "chalk";
 import addDoc, { ConflictStrategyNames } from "../documentControl/addDoc";
-import { Show } from "../output";
+import { Show } from "../output/output";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";

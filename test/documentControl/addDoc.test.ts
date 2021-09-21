@@ -24,7 +24,7 @@ import * as updateDoc from "../../src/documentControl/updateDoc";
 import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
 import * as deleteDoc from "../../src/documentControl/deleteDoc";
 import { DocExistsError } from "../../src/documentControl/base";
-import { Show } from "../../src/output";
+import { Show } from "../../src/output/output";
 import emit from "../../src/views/emit";
 
 const testDatumPayload: DatumPayload = {
