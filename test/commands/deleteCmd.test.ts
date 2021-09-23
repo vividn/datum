@@ -1,6 +1,6 @@
 import { it } from "@jest/globals";
 
-it.todo("deletes a document based on first few letters of humanId")
+it.todo("deletes a document based on first few letters of humanId");
 
 it.todo("deletes a document based on first few letters of _id");
 
