@@ -1,6 +1,9 @@
 import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
-import { DeletedDocument } from "../documentControl/deleteDoc";
+import deleteDoc, { DeletedDocument } from "../documentControl/deleteDoc";
+import quickId from "../ids/quickId";
+import connectDb from "../auth/connectDb";
+import { Show } from "../output";
 
 export const command = "delete <quickId>";
 export const desc = "delete a document";
@@ -21,4 +24,10 @@ export function builder(yargs: Argv): Argv {
 
 export async function deleteCmd(
   args: DeleteCmdArgs
-): Promise<DeletedDocument> {}
+): Promise<DeletedDocument> {
+  const db = connectDb(args);
+  const id = await quickId(db, args.quickId);
+  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
+
+  return await deleteDoc({id, db, show });
+}
