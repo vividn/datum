@@ -5,7 +5,7 @@ import quickId from "../ids/quickId";
 import connectDb from "../auth/connectDb";
 import { Show } from "../output";
 
-export const command = "delete <quickId>";
+export const command = ["delete <quickId>", "del <quickId>"];
 export const desc = "delete a document";
 
 export type DeleteCmdArgs = BaseDatumArgs & {

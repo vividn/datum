@@ -26,7 +26,7 @@ const originalLog = console.log;
 
 describe("addCmd", () => {
   const mockedLog = jest.fn();
-  const dbName = "add_cmd_test";
+  const dbName = "delete_cmd_test";
   const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
   const connectDbSpy = jest
     .spyOn(connectDb, "default")
