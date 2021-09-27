@@ -29,10 +29,11 @@ const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
   FAILED: chalk.red,
 };
 
-function actionId(action: ACTIONS, id: string): string {
+function actionId(action: ACTIONS, id: string, humanId?: string): string {
   const color = ACTION_CHALK[action];
   const actionText = chalk.grey(action + ": ");
-  return actionText + color(id);
+  const quickId = humanId ? ` (${humanId.slice(0,5)})` : '';
+  return actionText + color(id) + quickId;
 }
 
 export function displayData(
@@ -75,7 +76,7 @@ export function showSingle(
     return;
   }
 
-  console.log(actionId(action, doc._id ?? ""));
+  console.log(actionId(action, doc._id ?? "", doc.meta?.humanId));
   if (show === Show.Minimal) {
     return;
   }
