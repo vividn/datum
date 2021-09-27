@@ -22,12 +22,10 @@ export function builder(yargs: Argv): Argv {
   });
 }
 
-export async function deleteCmd(
-  args: DeleteCmdArgs
-): Promise<DeletedDocument> {
+export async function deleteCmd(args: DeleteCmdArgs): Promise<DeletedDocument> {
   const db = connectDb(args);
   const id = await quickId(db, args.quickId);
   const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
 
-  return await deleteDoc({id, db, show });
+  return await deleteDoc({ id, db, show });
 }

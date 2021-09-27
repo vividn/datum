@@ -15,7 +15,7 @@ const deleteDocSpy = jest.spyOn(deleteDoc, "default");
 
 beforeEach(async () => {
   await resetTestDb(dbName);
-  await setupCmd({db: dbName });
+  await setupCmd({ db: dbName });
   deleteDocSpy.mockClear();
 });
 
@@ -28,7 +28,7 @@ it("deletes a document based on first few letters of humanId", async () => {
   await db.insert({ _id: "hello", data: {}, meta: { humanId: "a44quickId" } });
   const returned = await deleteCmd({ db: dbName, quickId: "a44" });
 
-  expect(returned).toMatchObject({_id: "hello", _deleted: true});
+  expect(returned).toMatchObject({ _id: "hello", _deleted: true });
   expect(deleteDocSpy).toHaveBeenCalledWith(
     expect.objectContaining({ id: "hello" })
   );
@@ -39,7 +39,10 @@ it("deletes a document based on first few letters of _id", async () => {
   await db.insert({ _id: "the_quick_brown_fox", foo: "abc" });
   const returned = await deleteCmd({ db: dbName, quickId: "the_qu" });
 
-  expect(returned).toMatchObject({_id: "the_quick_brown_fox", _deleted: true});
+  expect(returned).toMatchObject({
+    _id: "the_quick_brown_fox",
+    _deleted: true,
+  });
   expect(deleteDocSpy).toHaveBeenCalledWith(
     expect.objectContaining({ id: "the_quick_brown_fox" })
   );

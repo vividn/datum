@@ -32,7 +32,7 @@ const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
 function actionId(action: ACTIONS, id: string, humanId?: string): string {
   const color = ACTION_CHALK[action];
   const actionText = chalk.grey(action + ": ");
-  const quickId = humanId ? ` (${humanId.slice(0,5)})` : '';
+  const quickId = humanId ? ` (${humanId.slice(0, 5)})` : "";
   return actionText + color(id) + quickId;
 }
 
