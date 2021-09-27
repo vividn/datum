@@ -13,7 +13,7 @@ type deleteDocType = {
   id: string;
 } & BaseDocControlArgs;
 
-type DeletedDocument = {
+export type DeletedDocument = {
   _id: string;
   _rev: string;
   _deleted: true;

@@ -7,18 +7,18 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "./test-utils";
-import { BaseDataError } from "../src/errors";
+import { fail, pass, resetTestDb, testNano } from "../test-utils";
+import { BaseDataError } from "../../src/errors";
 import {
   DatumDocument,
   EitherPayload,
-} from "../src/documentControl/DatumDocument";
-import addCmd from "../src/commands/addCmd";
-import * as connectDb from "../src/auth/connectDb";
-import * as addDoc from "../src/documentControl/addDoc";
+} from "../../src/documentControl/DatumDocument";
+import addCmd from "../../src/commands/addCmd";
+import * as connectDb from "../../src/auth/connectDb";
+import * as addDoc from "../../src/documentControl/addDoc";
 import { DocumentScope } from "nano";
-import { DocExistsError } from "../src/documentControl/base";
-import { Show } from "../src/output";
+import { DocExistsError } from "../../src/documentControl/base";
+import { Show } from "../../src/output";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 
@@ -26,7 +26,7 @@ const originalLog = console.log;
 
 describe("addCmd", () => {
   const mockedLog = jest.fn();
-  const dbName = "add_cmd_test";
+  const dbName = "delete_cmd_test";
   const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
   const connectDbSpy = jest
     .spyOn(connectDb, "default")
