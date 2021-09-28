@@ -20,13 +20,12 @@ import { Show } from "../output";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
+import { DataInputArgs, dataYargs } from "../input/dataArgs";
 
 export const command = "add [data..]";
 export const desc = "add a document";
 
-export type AddCmdArgs = BaseDatumArgs & {
-  data?: (string | number)[];
-  baseData?: string;
+export type AddCmdArgs = BaseDatumArgs & DataInputArgs & {
   date?: string;
   yesterday?: number;
   time?: string;
@@ -43,11 +42,6 @@ export type AddCmdArgs = BaseDatumArgs & {
   undo?: boolean;
   merge?: boolean;
   conflict?: ConflictStrategyNames;
-  required?: string | string[];
-  optional?: string | string[];
-  remainder?: string;
-  stringRemainder?: boolean;
-  lenient?: boolean;
 };
 
 const conflictRecord: Record<ConflictStrategyNames, any> = {
@@ -69,24 +63,8 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 const conflictChoices = Object.keys(conflictRecord);
 
 export function builder(yargs: Argv): Argv {
-  return yargs
-    .positional("data", {
-      describe:
-        "The data to put in the document. " +
-        "Data must include one argument for each key specified by --required. " +
-        "Once required keys are filled, data will be assigned to keys specified by --optional. " +
-        'Additional data can be specified in a "key=data" format. ' +
-        "Any data that does not have a key will be put in the key specified with --remainder, unless strict mode is on",
-    })
+  return dataYargs(yargs)
     .options({
-      "base-data": {
-        describe:
-          "base object on which additional keys are added. Fed through relaxed-json, but should still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
-        nargs: 1,
-        alias: "b",
-        type: "string",
-      },
-
       // timing
       date: {
         describe:
@@ -183,7 +161,7 @@ export function builder(yargs: Argv): Argv {
           "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
         alias: "x",
         type: "boolean",
-        conflicts: "update",
+        conflicts: "conflict",
       },
       conflict: {
         describe: `on conflict, update with given strategy.`,
@@ -198,40 +176,6 @@ export function builder(yargs: Argv): Argv {
       //   type: "boolean",
       // },
 
-      // Data
-      required: {
-        describe:
-          "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown",
-        alias: ["K", "req"],
-        type: "string",
-        nargs: 1,
-      },
-      optional: {
-        describe:
-          "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
-        alias: ["k", "opt"],
-        type: "string",
-        nargs: 1,
-      },
-      remainder: {
-        describe:
-          "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
-        alias: ["rem", "R"],
-        type: "string",
-        nargs: 1,
-      },
-      "string-remainder": {
-        describe:
-          "Remainder data will be a space-concatenated string rather than an array",
-        alias: "S",
-        type: "boolean",
-      },
-      lenient: {
-        //TODO: Invert this to be strict
-        describe: "Allow extra data without defined keys",
-        type: "boolean",
-        alias: "l",
-      },
     });
 }
 
