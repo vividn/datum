@@ -13,15 +13,18 @@ export type TimingInputArgs = {
 export function timingYargs(otherYargs?: Argv): Argv {
   const yarg = otherYargs ?? yargs;
   return yarg
-    .group([
-      "date",
-      "yesterday",
-      "time",
-      "quick",
-      "timezone",
-      "full-day",
-      "no-timestamp",
-    ], "Timing")
+    .group(
+      [
+        "date",
+        "yesterday",
+        "time",
+        "quick",
+        "timezone",
+        "full-day",
+        "no-timestamp",
+      ],
+      "Timing"
+    )
     .options({
       date: {
         describe:
