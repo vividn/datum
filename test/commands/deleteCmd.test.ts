@@ -58,18 +58,20 @@ it("only deletes the one document", async () => {
   expect(await db.get("id2")).toHaveProperty("_id");
 });
 
-it("calls quickId on the quickId term", async () => {
+it("calls quickId and deleteDoc", async () => {
   deleteDocSpy.mockReturnValue(
     Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true })
   );
   const quickIdSpy = jest
     .spyOn(quickId, "default")
-    .mockImplementation(async (db, id) => id);
+    .mockImplementation(async (db, id) => id + "_to_delete");
 
   for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
     await deleteCmd({ db: dbName, quickId: quick });
     expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), quick);
+    expect(deleteDocSpy).toHaveBeenCalledWith(expect.objectContaining({id: quick + "_to_delete"}))
     quickIdSpy.mockClear();
+    deleteDocSpy.mockClear();
   }
   quickIdSpy.mockRestore();
   deleteDocSpy.mockRestore();
