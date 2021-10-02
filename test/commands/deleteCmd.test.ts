@@ -9,7 +9,7 @@ import { Show } from "../../src/output";
 import setupCmd from "../../src/commands/setupCmd";
 
 const dbName = "add_cmd_test";
-const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
+const db = testNano.use<EitherPayload>(dbName);
 
 const deleteDocSpy = jest.spyOn(deleteDoc, "default");
 

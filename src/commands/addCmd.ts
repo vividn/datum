@@ -26,20 +26,6 @@ import { TimingInputArgs, timingYargs } from "../input/timingArgs";
 export const command = "add [data..]";
 export const desc = "add a document";
 
-export type AddCmdArgs = BaseDatumArgs &
-  DataInputArgs &
-  TimingInputArgs & {
-    noMetadata?: boolean;
-    field?: string;
-    comment?: string | string[];
-    idPart?: string | string[];
-    idDelimiter?: string;
-    partition?: string;
-    undo?: boolean;
-    merge?: boolean;
-    conflict?: ConflictStrategyNames;
-  };
-
 const conflictRecord: Record<ConflictStrategyNames, any> = {
   merge: "",
   useOld: "",
@@ -128,6 +114,20 @@ export function builder(yargs: Argv): Argv {
   });
 }
 
+export type AddCmdArgs = BaseDatumArgs &
+  DataInputArgs &
+  TimingInputArgs & {
+    noMetadata?: boolean;
+    field?: string;
+    comment?: string | string[];
+    idPart?: string | string[];
+    idDelimiter?: string;
+    partition?: string;
+    undo?: boolean;
+    merge?: boolean;
+    conflict?: ConflictStrategyNames;
+  };
+
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   // Calculate timing data early to make occurTime more exact
   const { timeStr: occurTime, utcOffset } = !args.noTimestamp
@@ -137,33 +137,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
         utcOffset: setTimezone(args.timezone),
       };
 
-  const {
-    data: argData = [],
-    field,
-    comment,
-    required,
-    optional,
-    remainder,
-    stringRemainder,
-    lenient,
-  } = args;
-
-  const baseData = args.baseData ? inferType(args.baseData) : {};
-  if (typeof baseData !== "object" || baseData === null) {
-    throw new BaseDataError("base data not a valid object");
-  }
-
-  const payloadData = parseData({
-    argData,
-    field,
-    comment,
-    required,
-    optional,
-    remainder,
-    stringRemainder,
-    lenient,
-    baseData,
-  });
+  const payloadData = parseData(args);
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
   }
