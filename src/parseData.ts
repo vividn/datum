@@ -3,18 +3,11 @@ import inferType from "./utils/inferType";
 import { splitFirst } from "./utils/splitFirst";
 import { createOrAppend } from "./utils/createOrAppend";
 import { DatumData } from "./documentControl/DatumDocument";
+import { DataInputArgs } from "./input/dataArgs";
+import { AddCmdArgs } from "./commands/addCmd";
 
-export type parseDataType = {
-  data?: (string | number)[];
-  required?: string | string[];
-  optional?: string | string[];
-  remainder?: string;
-  stringRemainder?: boolean;
-  field?: string | string[];
-  comment?: string | string[];
-  lenient?: boolean;
-  baseData?: string;
-};
+export type parseDataType = DataInputArgs &
+  Pick<AddCmdArgs, "field" | "comment">;
 export const parseData = function ({
   data = [],
   required = [],
@@ -114,8 +107,7 @@ export const parseData = function ({
 
   // put in field, overwriting if necessary
   if (field) {
-    const rawValue = typeof field === "string" ? field : field.slice(-1)[0];
-    parsedData.field = inferType(rawValue);
+    parsedData.field = inferType(field);
   }
 
   if (comment) {

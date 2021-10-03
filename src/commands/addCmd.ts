@@ -8,8 +8,7 @@ import {
   EitherPayload,
 } from "../documentControl/DatumDocument";
 import connectDb from "../auth/connectDb";
-import inferType from "../utils/inferType";
-import { BaseDataError, isCouchDbError } from "../errors";
+import { isCouchDbError } from "../errors";
 import { parseData } from "../parseData";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
