@@ -50,20 +50,6 @@ export function builder(yargs: Argv): Argv {
       alias: "M",
       type: "boolean",
     },
-    field: {
-      describe:
-        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
-      alias: "f",
-      nargs: 1,
-      type: "string",
-    },
-    comment: {
-      describe: "comment to include in the data",
-      alias: "c",
-      nargs: 1,
-      type: "string",
-    },
-
     // id
     "id-part": {
       describe:
@@ -117,8 +103,6 @@ export type AddCmdArgs = BaseDatumArgs &
   DataInputArgs &
   TimingInputArgs & {
     noMetadata?: boolean;
-    field?: string;
-    comment?: string | string[];
     idPart?: string | string[];
     idDelimiter?: string;
     partition?: string;

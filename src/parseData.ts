@@ -4,10 +4,8 @@ import { splitFirst } from "./utils/splitFirst";
 import { createOrAppend } from "./utils/createOrAppend";
 import { DatumData } from "./documentControl/DatumDocument";
 import { DataInputArgs } from "./input/dataArgs";
-import { AddCmdArgs } from "./commands/addCmd";
 
-export type parseDataType = DataInputArgs &
-  Pick<AddCmdArgs, "field" | "comment">;
+export type ParseDataType = DataInputArgs;
 export const parseData = function ({
   data = [],
   required = [],
@@ -18,7 +16,7 @@ export const parseData = function ({
   comment,
   lenient = false,
   baseData,
-}: parseDataType): DatumData {
+}: ParseDataType): DatumData {
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);

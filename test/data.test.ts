@@ -1,11 +1,11 @@
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { parseData, parseDataType } from "../src/parseData";
+import { parseData, ParseDataType } from "../src/parseData";
 import { DataError } from "../src/errors";
 import * as inferType from "../src/utils/inferType";
 import { GenericObject } from "../src/GenericObject";
 
 const expectParseDataToReturn = (
-  inputProps: parseDataType,
+  inputProps: ParseDataType,
   expectedOutput: GenericObject
 ) => {
   expect(parseData(inputProps)).toEqual(expectedOutput);
@@ -154,7 +154,7 @@ describe("parseData", () => {
   });
 
   it("calls inferType for all kinds of data entry", () => {
-    const testCases: [parseDataType, number][] = [
+    const testCases: [ParseDataType, number][] = [
       [{ data: ["withKey=data"] }, 1],
       [{ data: ["extraArg"], lenient: true }, 1],
       [{ required: ["keyIs"], data: ["given"] }, 1],
@@ -167,7 +167,7 @@ describe("parseData", () => {
     ];
 
     testCases.forEach((testCase) => {
-      const parseDataArgs: parseDataType = testCase[0];
+      const parseDataArgs: ParseDataType = testCase[0];
       const inferTypeCalls = testCase[1];
 
       const spy = jest.spyOn(inferType, "default");
@@ -190,13 +190,6 @@ describe("parseData", () => {
     expectParseDataToReturn(
       { field: "fromProps", data: ["field=fromExtra"] },
       { field: "fromProps" }
-    );
-  });
-
-  it("only uses the last field specified", () => {
-    expectParseDataToReturn(
-      { field: ["fromProps1", "fromProps2"], data: ["field=fromExtra"] },
-      { field: "fromProps2" }
     );
   });
 

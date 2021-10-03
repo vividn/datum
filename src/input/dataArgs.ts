@@ -3,6 +3,8 @@ import yargs, { Argv } from "yargs";
 export type DataInputArgs = {
   data?: (string | number)[];
   baseData?: string;
+  field?: string;
+  comment?: string | string[];
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
@@ -38,6 +40,19 @@ export function dataYargs(otherYargs?: Argv): Argv {
           "base object on which additional keys are added. Fed through relaxed-json, but must still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
         nargs: 1,
         alias: "b",
+        type: "string",
+      },
+      field: {
+        describe:
+          "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
+        alias: "f",
+        nargs: 1,
+        type: "string",
+      },
+      comment: {
+        describe: "comment to include in the data",
+        alias: "c",
+        nargs: 1,
         type: "string",
       },
       required: {
