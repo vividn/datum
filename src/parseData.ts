@@ -1,4 +1,3 @@
-import { GenericObject } from "./GenericObject";
 import { BaseDataError, DataError } from "./errors";
 import inferType from "./utils/inferType";
 import { splitFirst } from "./utils/splitFirst";
@@ -32,8 +31,8 @@ export const parseData = function ({
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
   const remainderData = [];
 
-  const parsedData: DatumData = args.baseData ? inferType(args.baseData) : {};
-  if (typeof baseData !== "object" || baseData === null) {
+  const parsedData: DatumData = baseData ? inferType(baseData) : {};
+  if (typeof parsedData !== "object" || parsedData === null) {
     throw new BaseDataError("base data not a valid object");
   }
 
