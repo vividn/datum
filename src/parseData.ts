@@ -1,23 +1,13 @@
-import { GenericObject } from "./GenericObject";
-import { DataError } from "./errors";
+import { BaseDataError, DataError } from "./errors";
 import inferType from "./utils/inferType";
 import { splitFirst } from "./utils/splitFirst";
 import { createOrAppend } from "./utils/createOrAppend";
 import { DatumData } from "./documentControl/DatumDocument";
+import { DataInputArgs } from "./input/dataArgs";
 
-export type parseDataType = {
-  argData: (string | number)[];
-  required?: string | string[];
-  optional?: string | string[];
-  remainder?: string;
-  stringRemainder?: boolean;
-  field?: string | string[];
-  comment?: string | string[];
-  lenient?: boolean;
-  baseData?: GenericObject;
-};
+export type ParseDataType = DataInputArgs;
 export const parseData = function ({
-  argData,
+  data = [],
   required = [],
   optional = [],
   remainder,
@@ -25,46 +15,49 @@ export const parseData = function ({
   field,
   comment,
   lenient = false,
-  baseData = {},
-}: parseDataType): DatumData {
+  baseData,
+}: ParseDataType): DatumData {
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
   const remainderData = [];
 
-  const data: DatumData = baseData;
+  const parsedData: DatumData = baseData ? inferType(baseData) : {};
+  if (typeof parsedData !== "object" || parsedData === null) {
+    throw new BaseDataError("base data not a valid object");
+  }
 
-  posArgsLoop: for (const arg of argData) {
-    const [first, rest] = splitFirst("=", String(arg));
+  posArgsLoop: for (const arg of data) {
+    const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
-    if (rest !== undefined) {
+    if (afterEquals !== undefined) {
       // explicit key is given e.g., 'key=value'
-      data[first] = inferType(rest);
+      parsedData[beforeEquals] = inferType(afterEquals);
       continue posArgsLoop;
     }
 
     // no explicit key given
-    const dataValue = first;
+    const dataValue = beforeEquals;
 
     requiredKeysLoop: while (requiredKeys.length > 0) {
       const dataKey = requiredKeys.shift()!;
 
-      if (dataKey in data) {
+      if (dataKey in parsedData) {
         continue requiredKeysLoop;
       }
 
-      data[dataKey] = inferType(dataValue);
+      parsedData[dataKey] = inferType(dataValue);
       continue posArgsLoop;
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
       const [dataKey] = splitFirst("=", optionalKeys.shift()!);
 
-      if (dataKey in data) {
+      if (dataKey in parsedData) {
         continue optionalKeysLoop;
       }
 
-      data[dataKey] = inferType(dataValue);
+      parsedData[dataKey] = inferType(dataValue);
       continue posArgsLoop;
     }
 
@@ -79,14 +72,14 @@ export const parseData = function ({
     }
 
     if (stringRemainder) {
-      data[remainderKey] = createOrAppend(
-        data[remainderKey],
+      parsedData[remainderKey] = createOrAppend(
+        parsedData[remainderKey],
         remainderData.join(" ")
       );
     } else {
       for (const remainder of remainderData) {
-        data[remainderKey] = createOrAppend(
-          data[remainderKey],
+        parsedData[remainderKey] = createOrAppend(
+          parsedData[remainderKey],
           inferType(remainder)
         );
       }
@@ -103,17 +96,16 @@ export const parseData = function ({
   while (optionalKeys.length > 0) {
     const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
-    if (dataKey in data || defaultValue === undefined) {
+    if (dataKey in parsedData || defaultValue === undefined) {
       continue;
     }
 
-    data[dataKey] = inferType(defaultValue);
+    parsedData[dataKey] = inferType(defaultValue);
   }
 
   // put in field, overwriting if necessary
   if (field) {
-    const rawValue = typeof field === "string" ? field : field.slice(-1)[0];
-    data.field = inferType(rawValue);
+    parsedData.field = inferType(field);
   }
 
   if (comment) {
@@ -122,12 +114,12 @@ export const parseData = function ({
         ? comment.map((comm) => inferType(comm))
         : [inferType(comment)]
     ) as any[];
-    data.comment = inferredComments.reduce(
+    parsedData.comment = inferredComments.reduce(
       (accumulator, current) => createOrAppend(accumulator, current),
-      data["comment"]
+      parsedData["comment"]
     );
   }
 
-  return data;
+  return parsedData;
 };
 // TODO: Keys that end in -Time or -Date should be parsed as such

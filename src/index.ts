@@ -5,6 +5,7 @@ import addCmd, { AddCmdArgs } from "./commands/addCmd";
 import mapCmd, { MapCmdArgs } from "./commands/mapCmd";
 import setupCmd, { SetupCmdArgs } from "./commands/setupCmd";
 import { deleteCmd, DeleteCmdArgs } from "./commands/deleteCmd";
+import { updateCmd, UpdateCmdArgs } from "./commands/updateCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
@@ -12,6 +13,20 @@ export async function main(cliInput: string | string[]): Promise<void> {
     case "add":
       await addCmd(args as unknown as AddCmdArgs);
       break;
+
+    case "update": {
+      const updateArgs = args as unknown as UpdateCmdArgs;
+      updateArgs.strategy = updateArgs.strategy ?? "preferNew";
+      await updateCmd(updateArgs);
+      break;
+    }
+
+    case "merge": {
+      const updateArgs = args as unknown as UpdateCmdArgs;
+      updateArgs.strategy = updateArgs.strategy ?? "merge";
+      await updateCmd(updateArgs);
+      break;
+    }
 
     case "delete":
     case "del":
