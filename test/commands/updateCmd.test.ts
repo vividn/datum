@@ -8,8 +8,8 @@ import {
 } from "../../src/documentControl/DatumDocument";
 import { updateCmd } from "../../src/commands/updateCmd";
 import * as quickId from "../../src/ids/quickId";
-import mock = jest.mock;
 import { Show } from "../../src/output";
+import { mock } from "jest-mock-extended";
 
 const dbName = "update_cmd_test";
 const db = testNano.use<EitherPayload>(dbName);
