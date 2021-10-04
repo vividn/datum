@@ -106,10 +106,7 @@ describe("parseData", () => {
   });
 
   it("handles optional extra keys", () => {
-    expectParseDataToReturn(
-      { optional: "abc", data: ["cde"] },
-      { abc: "cde" }
-    );
+    expectParseDataToReturn({ optional: "abc", data: ["cde"] }, { abc: "cde" });
     expectParseDataToReturn({ optional: "optional", data: [] }, {});
     expectParseDataToReturn(
       { optional: "withDefault=3", data: [] },

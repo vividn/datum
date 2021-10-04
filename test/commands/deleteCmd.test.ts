@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
 import { resetTestDb, testNano } from "../test-utils";
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import * as deleteDoc from "../../src/documentControl/deleteDoc";
 import { deleteCmd } from "../../src/commands/deleteCmd";
@@ -69,7 +68,9 @@ it("calls quickId and deleteDoc", async () => {
   for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
     await deleteCmd({ db: dbName, quickId: quick });
     expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), quick);
-    expect(deleteDocSpy).toHaveBeenCalledWith(expect.objectContaining({id: quick + "_to_delete"}))
+    expect(deleteDocSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: quick + "_to_delete" })
+    );
     quickIdSpy.mockClear();
     deleteDocSpy.mockClear();
   }
