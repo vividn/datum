@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
 import { resetTestDb, testNano } from "../test-utils";
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../../src/documentControl/DatumDocument";
 import * as deleteDoc from "../../src/documentControl/deleteDoc";
 import { deleteCmd } from "../../src/commands/deleteCmd";
@@ -9,7 +8,7 @@ import { Show } from "../../src/output";
 import setupCmd from "../../src/commands/setupCmd";
 
 const dbName = "add_cmd_test";
-const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
+const db = testNano.use<EitherPayload>(dbName);
 
 const deleteDocSpy = jest.spyOn(deleteDoc, "default");
 
@@ -58,18 +57,22 @@ it("only deletes the one document", async () => {
   expect(await db.get("id2")).toHaveProperty("_id");
 });
 
-it("calls quickId on the quickId term", async () => {
+it("calls quickId and deleteDoc", async () => {
   deleteDocSpy.mockReturnValue(
     Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true })
   );
   const quickIdSpy = jest
     .spyOn(quickId, "default")
-    .mockImplementation(async (db, id) => id);
+    .mockImplementation(async (db, id) => id + "_to_delete");
 
   for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
     await deleteCmd({ db: dbName, quickId: quick });
     expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), quick);
+    expect(deleteDocSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ id: quick + "_to_delete" })
+    );
     quickIdSpy.mockClear();
+    deleteDocSpy.mockClear();
   }
   quickIdSpy.mockRestore();
   deleteDocSpy.mockRestore();
