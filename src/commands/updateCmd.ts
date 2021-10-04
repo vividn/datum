@@ -16,10 +16,7 @@ export type UpdateCmdArgs = BaseDatumArgs & DataInputArgs & {
 export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
   const strategy = args.strategy ?? "preferNew";
 
-  const baseData = args.baseData ? inferType(args.baseData) : {};
-  if (typeof baseData !== "object" || baseData === null) {
-    throw new BaseDataError("base data not a valid object");
-  }
+  const
 
   return {_id: "", _rev: ""};
 }
