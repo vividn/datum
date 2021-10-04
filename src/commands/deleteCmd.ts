@@ -4,6 +4,7 @@ import deleteDoc, { DeletedDocument } from "../documentControl/deleteDoc";
 import quickId from "../ids/quickId";
 import connectDb from "../auth/connectDb";
 import { Show } from "../output";
+import { quickIdArg } from "../input/quickIdArg";
 
 export const command = ["delete <quickId>", "del <quickId>"];
 export const desc = "delete a document";
@@ -13,13 +14,7 @@ export type DeleteCmdArgs = BaseDatumArgs & {
 };
 
 export function builder(yargs: Argv): Argv {
-  return yargs.positional("quickId", {
-    describe:
-      "Can be all or the first few letters of the _id or " +
-      "the humanId of a document. It must match exactly one document " +
-      "unambiguosly.",
-    type: "string",
-  });
+  return quickIdArg(yargs);
 }
 
 export async function deleteCmd(args: DeleteCmdArgs): Promise<DeletedDocument> {

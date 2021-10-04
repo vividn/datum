@@ -1,12 +1,18 @@
 import { BaseDatumArgs } from "../input/baseYargs";
-import { DataInputArgs } from "../input/dataArgs";
-import { UpdateStrategyNames } from "../documentControl/combineData";
+import { DataInputArgs, dataYargs } from "../input/dataArgs";
+import {
+  updateStrategies,
+  UpdateStrategyNames,
+} from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { parseData } from "../parseData";
 import connectDb from "../auth/connectDb";
 import { Show } from "../output";
 import updateDoc from "../documentControl/updateDoc";
 import quickId from "../ids/quickId";
+import { Argv } from "yargs";
+import { timingYargs } from "../input/timingArgs";
+import { quickIdArg } from "../input/quickIdArg";
 
 export const command = [
   "update <quickId> [data..]",
@@ -19,6 +25,20 @@ export type UpdateCmdArgs = BaseDatumArgs &
     quickId: string;
     strategy?: UpdateStrategyNames;
   };
+
+export function builder(yargs: Argv): Argv {
+  return timingYargs(dataYargs(quickIdArg(yargs))).options({
+    strategy: {
+      describe:
+        "which update strategy to use when modifying the doc." +
+        " Defaults to 'preferNew' for update command." +
+        " Defaults to 'merge' for merge command.",
+      type: "string",
+      alias: "X",
+      choices: Object.keys(updateStrategies),
+    },
+  });
+}
 
 export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
