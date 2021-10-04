@@ -9,6 +9,7 @@ import {
 import { updateCmd } from "../../src/commands/updateCmd";
 import * as quickId from "../../src/ids/quickId";
 import mock = jest.mock;
+import { Show } from "../../src/output";
 
 const dbName = "update_cmd_test";
 const db = testNano.use<EitherPayload>(dbName);
@@ -77,11 +78,11 @@ it("calls quickId and updateDoc", async () => {
     data: ["foo=bar"],
   });
   expect(retDoc).toBe(updateDocReturn);
-  expect(quickIdSpy).toHaveBeenCalledWith(db, "input_quick");
+  expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), "input_quick");
   expect(updateDocSpy).toHaveBeenCalledWith(
     expect.objectContaining({
-      _id: "quick_id",
-      updateStragtey: "xor",
+      id: "quick_id",
+      updateStrategy: "xor",
       payload: { foo: "bar" },
     })
   );
@@ -94,11 +95,13 @@ it("uses preferNew as the default updateStrategy", async () => {
   const quickIdSpy = jest
     .spyOn(quickId, "default")
     .mockImplementation(async () => "quick_id");
-  const updateDocSpy = jest.spyOn(updateDoc, "default");
+  const updateDocSpy = jest
+    .spyOn(updateDoc, "default")
+    .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
 
   await updateCmd({ db: dbName, quickId: "input_quick", data: ["foo=bar"] });
   expect(updateDocSpy).toHaveBeenCalledWith(
-    expect.objectContaining({ updateStragtey: "preferNew"})
+    expect.objectContaining({ updateStrategy: "preferNew" })
   );
 
   updateDocSpy.mockRestore();
@@ -110,12 +113,23 @@ it("outputs an UPDATE message or a NODIFF message when show is standard", async 
   const mockLog = jest.fn();
   console.log = mockLog;
 
-  await db.insert({_id: "zzz", data: {foo: "bar"}, meta: {}});
-  await updateCmd({db: dbName, quickId: "zzz", data: ["foo=baz"]});
+  await db.insert({ _id: "zzz", data: { foo: "bar" }, meta: {} });
+  await updateCmd({
+    db: dbName,
+    quickId: "zzz",
+    data: ["foo=baz"],
+    show: Show.Standard,
+  });
   expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
   mockLog.mockReset();
 
-  await updateCmd({db: dbName, quickId: "zzz", data: ["foo=baz"]});
+  await updateCmd({
+    db: dbName,
+    quickId: "zzz",
+    data: ["foo=baz"],
+    show: Show.Standard,
+  });
   expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
-});
 
+  console.log = originalLog;
+});
