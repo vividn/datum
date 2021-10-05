@@ -12,7 +12,7 @@ import { isCouchDbError } from "../errors";
 import { parseData } from "../parseData";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
-import { processTimeArgs, setTimezone } from "../timings";
+import { processTimeArgs } from "../timings";
 import chalk from "chalk";
 import addDoc, { ConflictStrategyNames } from "../documentControl/addDoc";
 import { Show } from "../output";

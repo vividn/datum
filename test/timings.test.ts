@@ -241,7 +241,7 @@ describe("processTimeArgs", () => {
   });
 
   it("returns an undefined timeStr if noTimestamp is requested", () => {
-    const { timeStr } = processTimeArgs({noTimestamp: true});
+    const { timeStr } = processTimeArgs({ noTimestamp: true });
     expect(timeStr).toBeUndefined();
   });
 
@@ -253,7 +253,7 @@ describe("processTimeArgs", () => {
     const { utcOffset: offset2 } = processTimeArgs({});
     expect(offset2).toBe(-3);
 
-    const { utcOffset: offset3 } = processTimeArgs({noTimestamp: true});
+    const { utcOffset: offset3 } = processTimeArgs({ noTimestamp: true });
     expect(offset3).toBe(-3);
   });
 });
