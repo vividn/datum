@@ -1,6 +1,7 @@
 import { DateTime, Duration, Settings as DateTimeSettings } from "luxon";
 import * as chrono from "chrono-node";
 import { BadDateArgError, BadTimeArgError, BadTimezoneError } from "./errors";
+import { TimingInputArgs } from "./input/timingArgs";
 
 export type isoDatetime = string;
 export type isoDate = string;
@@ -10,18 +11,12 @@ export function isIsoDateOrTime(str: string): str is isoDate | isoDatetime {
 }
 
 export type TimingData = {
-  timeStr: isoDatetime | isoDate;
+  timeStr?: isoDatetime | isoDate;
   utcOffset: number;
 };
 
-export type ProcessTimeArgsType = {
-  date?: string;
-  time?: string;
-  yesterday?: number;
-  quick?: number;
-  fullDay?: boolean;
+export type ProcessTimeArgsType = TimingInputArgs & {
   referenceTime?: DateTime;
-  timezone?: string;
 };
 export const processTimeArgs = function ({
   date,
@@ -31,10 +26,17 @@ export const processTimeArgs = function ({
   fullDay,
   referenceTime,
   timezone,
+  noTimestamp,
 }: ProcessTimeArgsType): TimingData {
-  setTimezone(timezone);
+  const tzOffset = setTimezone(timezone);
+  if (noTimestamp) {
+    return {
+      timeStr: undefined,
+      utcOffset: tzOffset,
+    };
+  }
 
-  const now = DateTime.local() as DateTime;
+  const now = DateTime.local();
   referenceTime = referenceTime ?? now;
 
   if (time) {

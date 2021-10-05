@@ -113,12 +113,7 @@ export type AddCmdArgs = BaseDatumArgs &
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   // Calculate timing data early to make occurTime more exact
-  const { timeStr: occurTime, utcOffset } = !args.noTimestamp
-    ? processTimeArgs(args)
-    : {
-        timeStr: undefined,
-        utcOffset: setTimezone(args.timezone),
-      };
+  const { timeStr: occurTime, utcOffset } = processTimeArgs(args);
 
   const payloadData = parseData(args);
   if (occurTime !== undefined) {

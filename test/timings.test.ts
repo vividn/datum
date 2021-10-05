@@ -239,4 +239,11 @@ describe("processTimeArgs", () => {
     const { utcOffset: offset2 } = processTimeArgs({});
     expect(offset2).toEqual(0);
   });
+
+  it("returns an undefined timeStr if noTimestamp is requested", () => {
+    const { timeStr } = processTimeArgs({noTimestamp: true});
+    expect(timeStr).toBeUndefined();
+  });
+
+  it.todo("returns the locales timezone if none is specified");
 });
