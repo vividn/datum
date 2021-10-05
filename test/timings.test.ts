@@ -245,5 +245,15 @@ describe("processTimeArgs", () => {
     expect(timeStr).toBeUndefined();
   });
 
-  it.todo("returns the locales timezone if none is specified");
+  it("returns the locales timezone if none is specified", () => {
+    const { utcOffset: offset1 } = processTimeArgs({});
+    expect(offset1).toBe(0);
+
+    timezone_mock.register("Brazil/East");
+    const { utcOffset: offset2 } = processTimeArgs({});
+    expect(offset2).toBe(-3);
+
+    const { utcOffset: offset3 } = processTimeArgs({noTimestamp: true});
+    expect(offset3).toBe(-3);
+  });
 });
