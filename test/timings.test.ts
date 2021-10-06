@@ -2,15 +2,11 @@ import { Settings, DateTime, Duration } from "luxon";
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
 import timezone_mock from "timezone-mock";
 import {
-  processTimeArgs,
-  ProcessTimeArgsType,
-  TimingData,
-} from "../src/timings";
-import {
   BadDateArgError,
   BadTimeArgError,
   BadTimezoneError,
 } from "../src/errors";
+import { processTimeArgs, ProcessTimeArgsType, TimingData } from "../src/time/processTimeArgs";
 
 const expectTiming = (
   props: ProcessTimeArgsType,

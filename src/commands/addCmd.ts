@@ -12,7 +12,6 @@ import { isCouchDbError } from "../errors";
 import { parseData } from "../parseData";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
-import { processTimeArgs } from "../timings";
 import chalk from "chalk";
 import addDoc, { ConflictStrategyNames } from "../documentControl/addDoc";
 import { Show } from "../output";
@@ -21,6 +20,7 @@ import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataInputArgs, dataYargs } from "../input/dataArgs";
 import { TimingInputArgs, timingYargs } from "../input/timingArgs";
+import { processTimeArgs } from "../time/processTimeArgs";
 
 export const command = "add [data..]";
 export const desc = "add a document";
