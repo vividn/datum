@@ -10,6 +10,8 @@ export function isIsoDateOrTime(str: string): str is isoDate | isoDatetime {
   return DateTime.fromISO(str).isValid;
 }
 
+export const now = DateTime.local;
+
 export type TimingData = {
   timeStr?: isoDatetime | isoDate;
   utcOffset: number;
@@ -36,8 +38,7 @@ export const processTimeArgs = function ({
     };
   }
 
-  const now = DateTime.local();
-  referenceTime = referenceTime ?? now;
+  referenceTime = referenceTime ?? now();
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
@@ -69,12 +70,14 @@ export const processTimeArgs = function ({
 
 type ParseTimeStrType = {
   timeStr: string;
-  referenceTime: DateTime;
+  referenceTime?: DateTime;
 };
 export const parseTimeStr = function ({
   timeStr,
   referenceTime,
 }: ParseTimeStrType): DateTime {
+  referenceTime = referenceTime ?? now();
+
   // This custom regex is to match a few extra strings not recognized by chrono, particularly short
   // E.g, 10 for 10:00, 1513 for 15:13, etc.
   const matches = timeStr.match(
@@ -148,12 +151,14 @@ export const parseTimeStr = function ({
 
 type ParseDateStrType = {
   dateStr: string;
-  referenceTime: DateTime;
+  referenceTime?: DateTime;
 };
 const parseDateStr = function ({
   dateStr,
   referenceTime,
 }: ParseDateStrType): DateTime {
+  referenceTime = referenceTime ?? now();
+  
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
   const relDateMatches = dateStr.match(/^([+-])\d+$/);
   if (relDateMatches) {
