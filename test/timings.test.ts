@@ -6,7 +6,11 @@ import {
   BadTimeArgError,
   BadTimezoneError,
 } from "../src/errors";
-import { processTimeArgs, ProcessTimeArgsType, TimingData } from "../src/time/processTimeArgs";
+import {
+  processTimeArgs,
+  ProcessTimeArgsType,
+  TimingData,
+} from "../src/time/processTimeArgs";
 
 const expectTiming = (
   props: ProcessTimeArgsType,
