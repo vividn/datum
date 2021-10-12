@@ -5,12 +5,12 @@ import {
   BadDateArgError,
   BadTimeArgError,
   BadTimezoneError,
-} from "../src/errors";
+} from "../../src/errors";
 import {
   processTimeArgs,
   ProcessTimeArgsType,
   TimingData,
-} from "../src/time/processTimeArgs";
+} from "../../src/time/processTimeArgs";
 
 const expectTiming = (
   props: ProcessTimeArgsType,
