@@ -27,8 +27,8 @@ const expectTiming = (
 describe("processTimeArgs", () => {
   beforeEach(() => {
     timezone_mock.register("UTC");
-    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
-    Settings.now = () => mockNow;
+    const mockNowMillis = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
+    Settings.now = () => mockNowMillis;
   });
 
   afterEach(() => {
