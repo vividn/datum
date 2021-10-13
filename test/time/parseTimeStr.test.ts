@@ -132,13 +132,15 @@ describe("relative time strings", () => {
     "it parses %s as a duration of %s away from a relative time",
     (timeStr, durationObject) => {
       const differentReferenceTime = DateTime.fromObject({
-      ...anotherDate,
-      ...anotherTime,
-    });
-        const expectedDateTime = differentReferenceTime.plus(
+        ...anotherDate,
+        ...anotherTime,
+      });
+      const expectedDateTime = differentReferenceTime.plus(
         Duration.fromObject(durationObject)
       );
-      expect(parseTimeStr({ timeStr, referenceTime: differentReferenceTime })).toEqual(expectedDateTime);
+      expect(
+        parseTimeStr({ timeStr, referenceTime: differentReferenceTime })
+      ).toEqual(expectedDateTime);
     }
   );
 });
