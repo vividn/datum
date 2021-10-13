@@ -112,4 +112,33 @@ describe("relative time strings", () => {
       expect(parseTimeStr({ timeStr })).toEqual(expectedDateTime);
     }
   );
+
+  test.each([
+    ["+1", { minutes: 1 }],
+    ["+10m", { minutes: 10 }],
+    ["+100min", { minutes: 100 }],
+    ["+87.3", { minutes: 87.3 }],
+    ["-1", { minutes: -1 }],
+    ["-10", { minutes: -10 }],
+    ["-30 minutes", { minutes: -30 }],
+    ["+3h", { hours: 3 }],
+    ["-1hr", { hours: -1 }],
+    ["-3hrs", { hours: -3 }],
+    ["+8.5hours", { hours: 8.5 }],
+    ["+8 hours", { hours: 8 }],
+    ["+100s", { seconds: 100 }],
+    ["-3sec", { seconds: -3 }],
+  ])(
+    "it parses %s as a duration of %s away from a relative time",
+    (timeStr, durationObject) => {
+      const differentReferenceTime = DateTime.fromObject({
+      ...anotherDate,
+      ...anotherTime,
+    });
+        const expectedDateTime = differentReferenceTime.plus(
+        Duration.fromObject(durationObject)
+      );
+      expect(parseTimeStr({ timeStr, referenceTime: differentReferenceTime })).toEqual(expectedDateTime);
+    }
+  );
 });
