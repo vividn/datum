@@ -24,7 +24,7 @@
     "postinstall": "yarn cache clean datum"
   },
   "devDependencies": {
-    "@babel/core": "^7.15.5",
+    "@babel/core": "^7.15.8",
     "@babel/preset-env": "^7.15.6",
     "@babel/preset-typescript": "^7.15.0",
     "@jest/globals": "^27.2.4",
