@@ -1,6 +1,6 @@
 import { Duration } from "luxon";
 import parse from "parse-duration";
-import { BadDurationArgError } from "../errors";
+import { BadDurationError } from "../errors";
 
 type ParseDurationStrType = {
   durationStr: string;
@@ -43,7 +43,7 @@ export const parseDurationStr = function ({
     const [seconds, minutes, hours, days, years, extra] = colonSplits.reverse();
 
     if (extra !== undefined) {
-      throw new BadDurationArgError("could not parse duration");
+      throw new BadDurationError("could not parse duration");
     }
 
     const duration = Duration.fromObject({
@@ -62,7 +62,7 @@ export const parseDurationStr = function ({
   const ms = parse(durationStr);
 
   if (ms === null) {
-    throw new BadDurationArgError("could not parse duration");
+    throw new BadDurationError("could not parse duration");
   }
 
   const duration = Duration.fromObject({ milliseconds: ms }).shiftTo(

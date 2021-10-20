@@ -1,7 +1,7 @@
 import { DateTime } from "luxon";
 import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
-import { BadTimeArgError } from "../errors";
+import { BadTimeError } from "../errors";
 import { parseDurationStr } from "./parseDurationString";
 
 type ParseTimeStrType = {
@@ -63,5 +63,5 @@ export const parseTimeStr = function ({
     return DateTime.fromISO(chronoParsed.toISOString());
   }
 
-  throw new BadTimeArgError("time not parsable");
+  throw new BadTimeError("time not parsable");
 };

@@ -1,7 +1,7 @@
 import { DateTime, Duration } from "luxon";
 import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
-import { BadDateArgError } from "../errors";
+import { BadDateError } from "../errors";
 
 type ParseDateStrType = {
   dateStr: string;
@@ -42,5 +42,5 @@ export const parseDateStr = function ({
     return referenceTime.set({ year, month, day });
   }
 
-  throw new BadDateArgError("date not parsable");
+  throw new BadDateError("date not parsable");
 };

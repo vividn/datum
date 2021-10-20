@@ -1,6 +1,6 @@
 import { parseDurationStr } from "../../src/time/parseDurationString";
 import { Duration } from "luxon";
-import { BadDurationArgError } from "../../src/errors";
+import { BadDurationError } from "../../src/errors";
 
 test.each([
   ["3", { minutes: 3 }],
@@ -41,11 +41,11 @@ test.each([
 it("throws an error for a completely unparseable duration", () => {
   expect(() =>
     parseDurationStr({ durationStr: "not a good duration" })
-  ).toThrowError(BadDurationArgError);
+  ).toThrowError(BadDurationError);
 });
 
 it("throws an error for a number string with too many colons in it", () => {
   expect(() => parseDurationStr({ durationStr: "1:2:3:4:5:6:7" })).toThrowError(
-    BadDurationArgError
+    BadDurationError
   );
 });

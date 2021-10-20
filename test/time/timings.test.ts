@@ -2,8 +2,8 @@ import { Settings, DateTime, Duration } from "luxon";
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
 import timezone_mock from "timezone-mock";
 import {
-  BadDateArgError,
-  BadTimeArgError,
+  BadDateError,
+  BadTimeError,
   BadTimezoneError,
 } from "../../src/errors";
 import {
@@ -217,17 +217,17 @@ describe("processTimeArgs", () => {
 
   it("throws on unparsable times and dates", () => {
     expect(() => processTimeArgs({ time: "absolute rubbish" })).toThrowError(
-      BadTimeArgError
+      BadTimeError
     );
     expect(() => processTimeArgs({ date: "before" })).toThrowError(
-      BadDateArgError
+      BadDateError
     );
     expect(() =>
       processTimeArgs({ time: "3am", date: "the end of the universe" })
-    ).toThrowError(BadDateArgError);
+    ).toThrowError(BadDateError);
     expect(() =>
       processTimeArgs({ time: "half past nothing", yesterday: 1 })
-    ).toThrowError(BadTimeArgError);
+    ).toThrowError(BadTimeError);
     expect(() =>
       processTimeArgs({ timezone: "rubbish/timezone" })
     ).toThrowError(BadTimezoneError);
