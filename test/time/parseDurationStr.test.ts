@@ -9,7 +9,7 @@ test.each([
   ["2:45", {minutes: 2, seconds: 45}],
   ["-1:12:37", {hours: -1, minutes: -12, seconds: -37}],
   ["10:11:12:13", {days: 10, hours: 11, minutes: 12, seconds: 13}],
-  ["1:2:3:4:5", {years: 1, days: 2, hours: 3, minutes: 4, seconds: 5}],
+  ["2000:3:4:5", {days: 2000, hours: 3, minutes: 4, seconds: 5}],
   ["+0:45", {seconds: 45}],
   ["+:45", {seconds: 45}],
   ["4.5m", {minutes: 4, seconds: 30}],
@@ -29,7 +29,6 @@ test.each([
   ["P3DT4H5S", {days: 3, hours: 4, seconds: 5}],
   ["-PT3M4S", {minutes: -3, seconds: -4}],
   ["PT-5H-3M", {hours: -5, minutes: -3}],
-  ["307 years, 36 days, 3 seconds", {years: 307, days: 36, seconds: 3}],
   ["134 seconds", {minutes: 2, seconds: 14}],
   ["13.3", {minutes: 13, seconds: 18}],
   ["-10.25", {minutes: -10, seconds: -15}]
@@ -39,4 +38,9 @@ test.each([
 
 it("throws an error for a completely unparseable duration", () => {
   expect(() => parseDurationStr({ durationStr: "not a good duration" })).toThrowError(BadDurationArgError);
+});
+
+it("throws an error for a number string with too many colons in it", () => {
+    expect(() => parseDurationStr({ durationStr: "1:2:3:4:5:6:7" })).toThrowError(BadDurationArgError);
+
 })

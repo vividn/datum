@@ -35,10 +35,14 @@ export const parseDurationStr = function ({
   // 10:11          -> 10min 11sec
   // 10:11:12       -> 10hrs 11min 12sec
   // 10:11:12:13    -> 10days 11hours 12min 13sec
-  // 10:11:12:13:14 -> 10years 11days 12hours 13min 14sec
   const colonSplits = durationStr.split(':').map((element) => Number(element));
   if (colonSplits.length > 1 && colonSplits.every((value) => !Number.isNaN(value))) {
-    const [seconds, minutes, hours, days, years] = colonSplits.reverse();
+    const [seconds, minutes, hours, days, years, extra] = colonSplits.reverse();
+
+    if (extra !== undefined) {
+      throw new BadDurationArgError("could not parse duration");
+    }
+
     const duration = Duration.fromObject({seconds, minutes, hours, days, years});
     return isNegative ? duration.negate() : duration;
   }
@@ -53,7 +57,6 @@ export const parseDurationStr = function ({
   }
 
   const duration = Duration.fromObject({ milliseconds: ms }).shiftTo(
-    "years",
     "days",
     "hours",
     "minutes",
