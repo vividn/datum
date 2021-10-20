@@ -47,34 +47,8 @@ export const parseTimeStr = function ({
 
   // Also supports relative time strings, e.g., -5min
   if(timeStr.match(/^[+-]/)) {
-
     const duration = parseDurationStr({durationStr: timeStr});
     return referenceTime.plus(duration);
-  }
-  const relTimeMatches = timeStr.match(
-    /^(?<sign>[+-])(?<value>\d+(\.\d)?) ?(?<units>s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)?$/
-  );
-  if (relTimeMatches?.groups) {
-    const { sign, value, units } = relTimeMatches?.groups;
-    const durationUnit =
-      units === undefined
-        ? "minutes"
-        : units[0] === "s"
-        ? "seconds"
-        : units[0] === "m"
-        ? "minutes"
-        : units[0] === "h"
-        ? "hours"
-        : "minutes";
-
-    const durationObject: { [index: string]: number } = {};
-    durationObject[durationUnit] = Number(value);
-
-    if (sign === "+") {
-      return referenceTime.plus(Duration.fromObject(durationObject));
-    } else {
-      return referenceTime.minus(Duration.fromObject(durationObject));
-    }
   }
 
   // DateTime can parse some extra ISO type strings
