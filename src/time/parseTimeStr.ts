@@ -2,6 +2,7 @@ import { DateTime, Duration } from "luxon";
 import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadTimeArgError } from "../errors";
+import { parseDurationStr } from "./parseDurationString";
 
 type ParseTimeStrType = {
   timeStr: string;
@@ -26,7 +27,9 @@ export const parseTimeStr = function ({
       milli = "0",
       meridian,
     } = matches.groups;
-    const correctedHour = // fairly dirty implementation, but built for speed
+
+    // fairly dirty implementation, but built for speed
+    const correctedHour =
       meridian?.toLowerCase() === "pm"
         ? parseInt(hour, 10) + 12
         : parseInt(hour, 10);
@@ -43,6 +46,11 @@ export const parseTimeStr = function ({
   }
 
   // Also supports relative time strings, e.g., -5min
+  if(timeStr.match(/^[+-]/)) {
+
+    const duration = parseDurationStr({durationStr: timeStr});
+    return referenceTime.plus(duration);
+  }
   const relTimeMatches = timeStr.match(
     /^(?<sign>[+-])(?<value>\d+(\.\d)?) ?(?<units>s|secs?|seconds?|m|mins?|minutes?|h|hrs?|hours?)?$/
   );
