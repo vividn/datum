@@ -2,25 +2,21 @@ import { Settings, DateTime, Duration } from "luxon";
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
 import timezone_mock from "timezone-mock";
 import { BadDateError, BadTimeError, BadTimezoneError } from "../../errors";
-import {
-  processTimeArgs,
-  ProcessTimeArgsType,
-  TimingData,
-} from "../processTimeArgs";
+import { handleTimeArgs, ReferencedTimeArgs, TimeStrWithOffset } from "../timeArgs";
 
 const expectTiming = (
-  props: ProcessTimeArgsType,
-  expectedTimeStrOrTimings: string | Partial<TimingData>
+  props: ReferencedTimeArgs,
+  expectedTimeStrOrTimings: string | Partial<TimeStrWithOffset>
 ) => {
   const expectedOutput =
     typeof expectedTimeStrOrTimings === "string"
       ? { timeStr: expectedTimeStrOrTimings }
       : expectedTimeStrOrTimings;
 
-  expect(processTimeArgs(props)).toMatchObject(expectedOutput);
+  expect(handleTimeArgs(props)).toMatchObject(expectedOutput);
 };
 
-describe("processTimeArgs", () => {
+describe("handleTimeArgs", () => {
   beforeEach(() => {
     timezone_mock.register("UTC");
     const mockNowMillis = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
@@ -33,7 +29,7 @@ describe("processTimeArgs", () => {
   });
 
   it("returns timeStr as current time when no arguments are given", () => {
-    expect(processTimeArgs({}).timeStr).toBe("2020-05-10T15:25:30.000Z");
+    expect(handleTimeArgs({}).timeStr).toBe("2020-05-10T15:25:30.000Z");
   });
 
   it("handles absolute time strings", () => {
@@ -178,7 +174,7 @@ describe("processTimeArgs", () => {
     const mockNow = DateTime.utc(2020, 5, 10, 2, 0, 0).toMillis(); // 23:00 May 9, Brazil time
     Settings.now = () => mockNow;
 
-    const result = processTimeArgs({ fullDay: true });
+    const result = handleTimeArgs({ fullDay: true });
     expect(result.timeStr).toBe("2020-05-09");
   });
 
@@ -212,44 +208,44 @@ describe("processTimeArgs", () => {
   });
 
   it("throws on unparsable times and dates", () => {
-    expect(() => processTimeArgs({ time: "absolute rubbish" })).toThrowError(
+    expect(() => handleTimeArgs({ time: "absolute rubbish" })).toThrowError(
       BadTimeError
     );
-    expect(() => processTimeArgs({ date: "before" })).toThrowError(
+    expect(() => handleTimeArgs({ date: "before" })).toThrowError(
       BadDateError
     );
     expect(() =>
-      processTimeArgs({ time: "3am", date: "the end of the universe" })
+      handleTimeArgs({ time: "3am", date: "the end of the universe" })
     ).toThrowError(BadDateError);
     expect(() =>
-      processTimeArgs({ time: "half past nothing", yesterday: 1 })
+      handleTimeArgs({ time: "half past nothing", yesterday: 1 })
     ).toThrowError(BadTimeError);
     expect(() =>
-      processTimeArgs({ timezone: "rubbish/timezone" })
+      handleTimeArgs({ timezone: "rubbish/timezone" })
     ).toThrowError(BadTimezoneError);
   });
 
   it("does not persist timezone across runs", () => {
-    const { utcOffset: offset1 } = processTimeArgs({ timezone: "+3" });
+    const { utcOffset: offset1 } = handleTimeArgs({ timezone: "+3" });
     expect(offset1).toEqual(3);
-    const { utcOffset: offset2 } = processTimeArgs({});
+    const { utcOffset: offset2 } = handleTimeArgs({});
     expect(offset2).toEqual(0);
   });
 
   it("returns an undefined timeStr if noTimestamp is requested", () => {
-    const { timeStr } = processTimeArgs({ noTimestamp: true });
+    const { timeStr } = handleTimeArgs({ noTimestamp: true });
     expect(timeStr).toBeUndefined();
   });
 
   it("returns the locales timezone if none is specified", () => {
-    const { utcOffset: offset1 } = processTimeArgs({});
+    const { utcOffset: offset1 } = handleTimeArgs({});
     expect(offset1).toBe(0);
 
     timezone_mock.register("Brazil/East");
-    const { utcOffset: offset2 } = processTimeArgs({});
+    const { utcOffset: offset2 } = handleTimeArgs({});
     expect(offset2).toBe(-3);
 
-    const { utcOffset: offset3 } = processTimeArgs({ noTimestamp: true });
+    const { utcOffset: offset3 } = handleTimeArgs({ noTimestamp: true });
     expect(offset3).toBe(-3);
   });
 });

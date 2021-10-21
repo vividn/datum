@@ -1,6 +1,11 @@
 import yargs, { Argv } from "yargs";
+import { DateTime } from "luxon";
+import { isoDate, isoDatetime, now } from "../time/timeUtils";
+import { setTimezone } from "../time/setTimezone";
+import { parseTimeStr } from "../time/parseTimeStr";
+import { parseDateStr } from "../time/parseDateStr";
 
-export type TimingInputArgs = {
+export type TimeArgs = {
   date?: string;
   yesterday?: number;
   time?: string;
@@ -10,7 +15,7 @@ export type TimingInputArgs = {
   noTimestamp?: boolean;
 };
 
-export function timingYargs(otherYargs?: Argv): Argv {
+export function timeYargs(otherYargs?: Argv): Argv {
   const yarg = otherYargs ?? yargs;
   return yarg
     .group(
@@ -71,3 +76,58 @@ export function timingYargs(otherYargs?: Argv): Argv {
       },
     });
 }
+
+export type ReferencedTimeArgs = TimeArgs & {
+  referenceTime?: DateTime;
+};
+export type TimeStrWithOffset = {
+  timeStr?: isoDatetime | isoDate;
+  utcOffset: number;
+};
+export const handleTimeArgs = function ({
+  date,
+  time,
+  yesterday,
+  quick,
+  fullDay,
+  timezone,
+  noTimestamp,
+  referenceTime,
+}: ReferencedTimeArgs): TimeStrWithOffset {
+  const tzOffset = setTimezone(timezone);
+  if (noTimestamp) {
+    return {
+      timeStr: undefined,
+      utcOffset: tzOffset,
+    };
+  }
+
+  referenceTime = referenceTime ?? now();
+
+  if (time) {
+    referenceTime = parseTimeStr({ timeStr: time, referenceTime });
+  }
+
+  if (quick) {
+    referenceTime = referenceTime.minus({ minutes: 5 * quick });
+  }
+
+  if (date) {
+    referenceTime = parseDateStr({ dateStr: date, referenceTime });
+  }
+
+  if (yesterday) {
+    referenceTime = referenceTime.minus({ days: yesterday });
+  }
+
+  // if only date information is given (or marked fullDay), only record the date
+  const timeStr =
+    fullDay || ((date || yesterday) && !time && !quick)
+      ? (referenceTime.toISODate() as isoDate)
+      : (referenceTime.toUTC().toString() as isoDatetime);
+
+  return {
+    timeStr,
+    utcOffset: referenceTime.offset / 60, // utc offset needs to be recalculated because DST could be different for the specified time, for example.
+  };
+};
