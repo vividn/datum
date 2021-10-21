@@ -9,7 +9,6 @@ import {
 } from "../documentControl/DatumDocument";
 import connectDb from "../auth/connectDb";
 import { isCouchDbError } from "../errors";
-import { parseData } from "../parseData";
 import { defaults } from "../input/defaults";
 import newHumanId from "../meta/newHumanId";
 import chalk from "chalk";
@@ -18,7 +17,7 @@ import { Show } from "../output";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
-import { DataInputArgs, dataYargs } from "../input/dataArgs";
+import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
 
 export const command = "add [data..]";
@@ -99,7 +98,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export type AddCmdArgs = BaseDatumArgs &
-  DataInputArgs &
+  DataArgs &
   TimeArgs & {
     noMetadata?: boolean;
     idPart?: string | string[];
@@ -114,7 +113,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   // Calculate timing data early to make occurTime more exact
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
 
-  const payloadData = parseData(args);
+  const payloadData = handleDataArgs(args);
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
   }

@@ -1,23 +1,23 @@
+import { DataArgs, handleDataArgs } from "../dataArgs";
+import { GenericObject } from "../../GenericObject";
 import { beforeEach, describe, expect, it, jest } from "@jest/globals";
-import { parseData, ParseDataType } from "../src/parseData";
-import { DataError } from "../src/errors";
-import * as inferType from "../src/utils/inferType";
-import { GenericObject } from "../src/GenericObject";
+import { DataError } from "../../errors";
+import * as inferType from "../../utils/inferType";
 
 const expectParseDataToReturn = (
-  inputProps: ParseDataType,
+  inputProps: DataArgs,
   expectedOutput: GenericObject
 ) => {
-  expect(parseData(inputProps)).toEqual(expectedOutput);
+  expect(handleDataArgs(inputProps)).toEqual(expectedOutput);
 };
 
-describe("parseData", () => {
+describe("handleDataArgs", () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
   it("returns an empty object with just a blank positional array", () => {
-    expect(parseData({ data: [] })).toEqual({});
+    expect(handleDataArgs({ data: [] })).toEqual({});
   });
 
   it("parses data that is paired with keys into the return payload", () => {
@@ -38,12 +38,12 @@ describe("parseData", () => {
   });
 
   it("throws error with extra data and no leniency", () => {
-    expect(() => parseData({ data: ["keyless"] })).toThrowError(DataError);
+    expect(() => handleDataArgs({ data: ["keyless"] })).toThrowError(DataError);
     expect(() =>
-      parseData({ data: ["these", "data", "have", "no", "keys"] })
+      handleDataArgs({ data: ["these", "data", "have", "no", "keys"] })
     ).toThrowError(DataError);
     expect(() =>
-      parseData({ required: ["key1"], data: ["hasKey", "noKey"] })
+      handleDataArgs({ required: ["key1"], data: ["hasKey", "noKey"] })
     ).toThrowError(DataError);
   });
 
@@ -90,14 +90,14 @@ describe("parseData", () => {
   });
 
   it("throws if not enough data is given for all required keys", () => {
-    expect(() => parseData({ required: "a", data: [] })).toThrowError(
+    expect(() => handleDataArgs({ required: "a", data: [] })).toThrowError(
       DataError
     );
     expect(() =>
-      parseData({ required: ["a", "b"], data: ["onlyOne"] })
+      handleDataArgs({ required: ["a", "b"], data: ["onlyOne"] })
     ).toThrowError(DataError);
     expect(() =>
-      parseData({
+      handleDataArgs({
         required: ["a", "b"],
         data: ["lenientDoesNotHelp"],
         lenient: true,
@@ -151,7 +151,7 @@ describe("parseData", () => {
   });
 
   it("calls inferType for all kinds of data entry", () => {
-    const testCases: [ParseDataType, number][] = [
+    const testCases: [DataArgs, number][] = [
       [{ data: ["withKey=data"] }, 1],
       [{ data: ["extraArg"], lenient: true }, 1],
       [{ required: ["keyIs"], data: ["given"] }, 1],
@@ -164,11 +164,11 @@ describe("parseData", () => {
     ];
 
     testCases.forEach((testCase) => {
-      const parseDataArgs: ParseDataType = testCase[0];
+      const parseDataArgs: DataArgs = testCase[0];
       const inferTypeCalls = testCase[1];
 
       const spy = jest.spyOn(inferType, "default");
-      parseData(parseDataArgs);
+      handleDataArgs(parseDataArgs);
 
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
       spy.mockRestore();

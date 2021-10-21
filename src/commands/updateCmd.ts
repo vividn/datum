@@ -1,11 +1,10 @@
 import { BaseDatumArgs } from "../input/baseYargs";
-import { DataInputArgs, dataYargs } from "../input/dataArgs";
+import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import {
   updateStrategies,
   UpdateStrategyNames,
 } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { parseData } from "../parseData";
 import connectDb from "../auth/connectDb";
 import { Show } from "../output";
 import updateDoc from "../documentControl/updateDoc";
@@ -21,7 +20,7 @@ export const command = [
 export const desc = "Update the data in an existing document";
 
 export type UpdateCmdArgs = BaseDatumArgs &
-  DataInputArgs & {
+  DataArgs & {
     quickId: string;
     strategy?: UpdateStrategyNames;
   };
@@ -44,7 +43,7 @@ export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
 
   const id = await quickId(db, args.quickId);
-  const payload = parseData(args);
+  const payload = handleDataArgs(args);
   const updateStrategy = args.strategy ?? "preferNew";
   const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
 
