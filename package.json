@@ -68,6 +68,7 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^2.0.2",
     "nano": "^9.0.5",
+    "parse-duration": "^1.0.2",
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
     "string.ify": "^1.0.64",

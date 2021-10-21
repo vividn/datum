@@ -1,4 +1,4 @@
-import { isIsoDateOrTime, isoDate, isoDatetime } from "../timings";
+import { isIsoDateOrTime, isoDate, isoDatetime } from "../time/timeUtils";
 
 export type occurredData = {
   occurTime?: isoDatetime | isoDate;

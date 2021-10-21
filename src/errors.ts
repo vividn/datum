@@ -30,17 +30,24 @@ export class IdError extends MyError {
   }
 }
 
-export class BadTimeArgError extends MyError {
+export class BadTimeError extends MyError {
   constructor(m: unknown) {
     super(m);
-    Object.setPrototypeOf(this, BadTimeArgError.prototype);
+    Object.setPrototypeOf(this, BadTimeError.prototype);
   }
 }
 
-export class BadDateArgError extends MyError {
+export class BadDateError extends MyError {
   constructor(m: unknown) {
     super(m);
-    Object.setPrototypeOf(this, BadDateArgError.prototype);
+    Object.setPrototypeOf(this, BadDateError.prototype);
+  }
+}
+
+export class BadDurationError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, BadDurationError.prototype);
   }
 }
 
