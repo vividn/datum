@@ -12,13 +12,13 @@ import {
   DatumView,
   datumViewToViewPayload,
   StringifiedDatumView,
-} from "../../src/views/viewDocument";
-import _emit from "../../src/views/emit";
-import { resetTestDb, testNano } from "../test-utils";
-import { EitherPayload } from "../../src/documentControl/DatumDocument";
-import insertDatumView from "../../src/views/insertDatumView";
-import * as addDoc from "../../src/documentControl/addDoc";
-import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
+} from "../viewDocument";
+import _emit from "../emit";
+import { resetTestDb, testNano } from "../../../test/test-utils";
+import { EitherPayload } from "../../documentControl/DatumDocument";
+import insertDatumView from "../insertDatumView";
+import * as addDoc from "../../documentControl/addDoc";
+import * as overwriteDoc from "../../documentControl/overwriteDoc";
 
 function emit(key: unknown, value: unknown) {
   _emit(key, value);

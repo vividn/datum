@@ -3,19 +3,19 @@ import { mock } from "jest-mock-extended";
 import {
   EitherDocument,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
+} from "../../documentControl/DatumDocument";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { DatumView, StringifiedDatumView } from "../../src/views/viewDocument";
+import { DatumView, StringifiedDatumView } from "../viewDocument";
 import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
   pass,
   testNano,
-} from "../test-utils";
-import { DatumViewMissingError } from "../../src/errors";
-import viewMap from "../../src/views/viewMap";
-import insertDatumView from "../../src/views/insertDatumView";
+} from "../../../test/test-utils";
+import { DatumViewMissingError } from "../../errors";
+import viewMap from "../viewMap";
+import insertDatumView from "../insertDatumView";
 
 const mockDb = mock<DocumentScope<EitherDocument>>();
 const mockDatumView = mock<DatumView>();

@@ -1,10 +1,10 @@
-import { pass, resetTestDb, testNano } from "../test-utils";
-import { ViewPayload } from "../../src/views/viewDocument";
+import { pass, resetTestDb, testNano } from "../../../test/test-utils";
+import { ViewPayload } from "../viewDocument";
 import { afterEach, beforeEach, expect, it, jest } from "@jest/globals";
-import * as insertDatumViewModule from "../../src/views/insertDatumView";
-import setupDatumViews from "../../src/views/setupDatumViews";
-import _emit from "../../src/views/emit";
-import * as getAllDatumViews from "../../src/views/getAllDatumViews";
+import * as insertDatumViewModule from "../insertDatumView";
+import setupDatumViews from "../setupDatumViews";
+import _emit from "../emit";
+import * as getAllDatumViews from "../getAllDatumViews";
 
 const dbName = "setup_datum_views_test";
 const db = testNano.use<ViewPayload>(dbName);

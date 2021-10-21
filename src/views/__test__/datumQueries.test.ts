@@ -2,13 +2,13 @@ import { beforeEach, expect, it, describe, afterAll } from "@jest/globals";
 import {
   DatumPayload,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../test-utils";
+} from "../../documentControl/DatumDocument";
+import { resetTestDb, testNano } from "../../../test/test-utils";
 import { DocumentScope } from "nano";
-import { minHumanId, MinHumanIdError } from "../../src/ids/minHumanId";
-import insertDatumView from "../../src/views/insertDatumView";
-import { subHumanIdView } from "../../src/views/datumViews";
-import { DatumViewMissingError } from "../../src/errors";
+import { minHumanId, MinHumanIdError } from "../../ids/minHumanId";
+import insertDatumView from "../insertDatumView";
+import { subHumanIdView } from "../datumViews";
+import { DatumViewMissingError } from "../../errors";
 
 const dbName = "test_datum_queries";
 const db = testNano.db.use(dbName) as DocumentScope<EitherPayload>;

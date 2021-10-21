@@ -6,21 +6,21 @@ import {
   it,
   expect,
 } from "@jest/globals";
-import * as emit from "../../src/views/emit";
+import * as emit from "../emit";
 import {
   DataOnlyDocument,
   DatumDocument,
   EitherDocument,
-} from "../../src/documentControl/DatumDocument";
+} from "../../documentControl/DatumDocument";
 import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
-} from "../../src/views/datumViews/humanId";
+} from "../datumViews/humanId";
 import {
   dataStructuresView,
   structuresView,
-} from "../../src/views/datumViews/structure";
+} from "../datumViews/structure";
 
 const emitMock = jest.spyOn(emit, "default");
 beforeEach(() => {
