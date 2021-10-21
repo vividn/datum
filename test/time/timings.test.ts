@@ -1,16 +1,12 @@
 import { Settings, DateTime, Duration } from "luxon";
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
 import timezone_mock from "timezone-mock";
+import { BadDateError, BadTimeError, BadTimezoneError } from "../../src/errors";
 import {
   processTimeArgs,
   ProcessTimeArgsType,
   TimingData,
-} from "../src/timings";
-import {
-  BadDateArgError,
-  BadTimeArgError,
-  BadTimezoneError,
-} from "../src/errors";
+} from "../../src/time/processTimeArgs";
 
 const expectTiming = (
   props: ProcessTimeArgsType,
@@ -27,8 +23,8 @@ const expectTiming = (
 describe("processTimeArgs", () => {
   beforeEach(() => {
     timezone_mock.register("UTC");
-    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
-    Settings.now = () => mockNow;
+    const mockNowMillis = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
+    Settings.now = () => mockNowMillis;
   });
 
   afterEach(() => {
@@ -217,17 +213,17 @@ describe("processTimeArgs", () => {
 
   it("throws on unparsable times and dates", () => {
     expect(() => processTimeArgs({ time: "absolute rubbish" })).toThrowError(
-      BadTimeArgError
+      BadTimeError
     );
     expect(() => processTimeArgs({ date: "before" })).toThrowError(
-      BadDateArgError
+      BadDateError
     );
     expect(() =>
       processTimeArgs({ time: "3am", date: "the end of the universe" })
-    ).toThrowError(BadDateArgError);
+    ).toThrowError(BadDateError);
     expect(() =>
       processTimeArgs({ time: "half past nothing", yesterday: 1 })
-    ).toThrowError(BadTimeArgError);
+    ).toThrowError(BadTimeError);
     expect(() =>
       processTimeArgs({ timezone: "rubbish/timezone" })
     ).toThrowError(BadTimezoneError);
@@ -238,5 +234,22 @@ describe("processTimeArgs", () => {
     expect(offset1).toEqual(3);
     const { utcOffset: offset2 } = processTimeArgs({});
     expect(offset2).toEqual(0);
+  });
+
+  it("returns an undefined timeStr if noTimestamp is requested", () => {
+    const { timeStr } = processTimeArgs({ noTimestamp: true });
+    expect(timeStr).toBeUndefined();
+  });
+
+  it("returns the locales timezone if none is specified", () => {
+    const { utcOffset: offset1 } = processTimeArgs({});
+    expect(offset1).toBe(0);
+
+    timezone_mock.register("Brazil/East");
+    const { utcOffset: offset2 } = processTimeArgs({});
+    expect(offset2).toBe(-3);
+
+    const { utcOffset: offset3 } = processTimeArgs({ noTimestamp: true });
+    expect(offset3).toBe(-3);
   });
 });
