@@ -7,15 +7,15 @@ import {
   beforeAll,
   afterAll,
 } from "@jest/globals";
-import * as minHumanId from "../../src/ids/minHumanId";
-import * as getHumanIds from "../../src/ids/getHumanIds";
+import * as minHumanId from "../minHumanId";
+import * as getHumanIds from "../getHumanIds";
 import { DocumentScope } from "nano";
-import { EitherPayload } from "../../src/documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../test-utils";
-import insertDatumView from "../../src/views/insertDatumView";
-import { idToHumanView, subHumanIdView } from "../../src/views/datumViews";
+import { EitherPayload } from "../../documentControl/DatumDocument";
+import { resetTestDb, testNano } from "../../../test/test-utils";
+import insertDatumView from "../../views/insertDatumView";
+import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";
-import shortenForHumans from "../../src/ids/shortenForHumans";
+import shortenForHumans from "../shortenForHumans";
 
 describe("shortenForHumans", () => {
   const mockDb = mock<DocumentScope<any>>();

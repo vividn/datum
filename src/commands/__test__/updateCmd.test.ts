@@ -1,14 +1,14 @@
 import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
-import { resetTestDb, testNano } from "../test-utils";
-import setupCmd from "../../src/commands/setupCmd";
-import * as updateDoc from "../../src/documentControl/updateDoc";
+import { resetTestDb, testNano } from "../../../test/test-utils";
+import setupCmd from "../setupCmd";
+import * as updateDoc from "../../documentControl/updateDoc";
 import {
   EitherDocument,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
-import { updateCmd } from "../../src/commands/updateCmd";
-import * as quickId from "../../src/ids/quickId";
-import { Show } from "../../src/output";
+} from "../../documentControl/DatumDocument";
+import { updateCmd } from "../updateCmd";
+import * as quickId from "../../ids/quickId";
+import { Show } from "../../output";
 import { mock } from "jest-mock-extended";
 
 const dbName = "update_cmd_test";

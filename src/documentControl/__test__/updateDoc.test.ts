@@ -3,7 +3,7 @@ import {
   DatumMetadata,
   DatumPayload,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
+} from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import {
   afterEach,
@@ -13,16 +13,16 @@ import {
   jest,
   test,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../test-utils";
+import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
 import timezone_mock from "timezone-mock";
 import updateDoc, {
   NoDocToUpdateError,
   UpdateDocError,
-} from "../../src/documentControl/updateDoc";
-import addDoc from "../../src/documentControl/addDoc";
-import * as combineData from "../../src/documentControl/combineData";
-import jClone from "../../src/utils/jClone";
-import { DocExistsError } from "../../src/documentControl/base";
+} from "../updateDoc";
+import addDoc from "../addDoc";
+import * as combineData from "../combineData";
+import jClone from "../../utils/jClone";
+import { DocExistsError } from "../base";
 
 const testDatumPayload: DatumPayload = {
   data: {

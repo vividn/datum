@@ -4,7 +4,7 @@ import {
   DatumDocument,
   DatumPayload,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
+} from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import {
   afterEach,
@@ -15,17 +15,17 @@ import {
   test,
   jest,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../test-utils";
+import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
 import timezone_mock from "timezone-mock";
-import addDoc from "../../src/documentControl/addDoc";
-import { IdError } from "../../src/errors";
-import jClone from "../../src/utils/jClone";
-import * as updateDoc from "../../src/documentControl/updateDoc";
-import * as overwriteDoc from "../../src/documentControl/overwriteDoc";
-import * as deleteDoc from "../../src/documentControl/deleteDoc";
-import { DocExistsError } from "../../src/documentControl/base";
-import { Show } from "../../src/output";
-import emit from "../../src/views/emit";
+import addDoc from "../addDoc";
+import { IdError } from "../../errors";
+import jClone from "../../utils/jClone";
+import * as updateDoc from "../updateDoc";
+import * as overwriteDoc from "../overwriteDoc";
+import * as deleteDoc from "../deleteDoc";
+import { DocExistsError } from "../base";
+import { Show } from "../../output";
+import emit from "../../views/emit";
 
 const testDatumPayload: DatumPayload = {
   data: {

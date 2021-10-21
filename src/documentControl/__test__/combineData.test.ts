@@ -1,11 +1,11 @@
 import { describe, expect, test } from "@jest/globals";
-import jClone from "../../src/utils/jClone";
+import jClone from "../../utils/jClone";
 import combineData, {
   conflictingKeyStrategies,
   mergeValues,
-} from "../../src/documentControl/combineData";
-import { MergeError } from "../../src/errors";
-import { fail } from "../test-utils";
+} from "../combineData";
+import { MergeError } from "../../errors";
+import { fail } from "../../../test/test-utils";
 
 describe("combineData", () => {
   const aData = {

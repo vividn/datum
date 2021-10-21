@@ -1,16 +1,16 @@
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import updateDoc from "../../src/documentControl/updateDoc";
-import * as updateDocModule from "../../src/documentControl/updateDoc";
-import { fail, resetTestDb, testNano } from "../test-utils";
-import { EitherPayload } from "../../src/documentControl/DatumDocument";
-import addDoc from "../../src/documentControl/addDoc";
-import { DocExistsError } from "../../src/documentControl/base";
-import overwriteDoc from "../../src/documentControl/overwriteDoc";
-import { Show } from "../../src/output";
-import * as addDocModule from "../../src/documentControl/addDoc";
-import addCmd from "../../src/commands/addCmd";
-import { main } from "../../src";
-import deleteDoc from "../../src/documentControl/deleteDoc";
+import updateDoc from "../updateDoc";
+import * as updateDocModule from "../updateDoc";
+import { fail, resetTestDb, testNano } from "../../../test/test-utils";
+import { EitherPayload } from "../DatumDocument";
+import addDoc from "../addDoc";
+import { DocExistsError } from "../base";
+import overwriteDoc from "../overwriteDoc";
+import { Show } from "../../output";
+import * as addDocModule from "../addDoc";
+import addCmd from "../../commands/addCmd";
+import { main } from "../../index";
+import deleteDoc from "../deleteDoc";
 
 const dbName = "doc_control_output_test";
 const db = testNano.db.use<EitherPayload>(dbName);

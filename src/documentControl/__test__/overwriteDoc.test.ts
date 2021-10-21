@@ -1,7 +1,7 @@
 import {
   DatumPayload,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
+} from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import {
   afterEach,
@@ -11,15 +11,15 @@ import {
   it,
   test,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../test-utils";
+import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
 import timezone_mock from "timezone-mock";
 import overwriteDoc, {
   NoDocToOverwriteError,
   OverwriteDocError,
-} from "../../src/documentControl/overwriteDoc";
-import jClone from "../../src/utils/jClone";
-import addDoc from "../../src/documentControl/addDoc";
-import { DocExistsError } from "../../src/documentControl/base";
+} from "../overwriteDoc";
+import jClone from "../../utils/jClone";
+import addDoc from "../addDoc";
+import { DocExistsError } from "../base";
 
 const testDatumPayload: DatumPayload = {
   data: {

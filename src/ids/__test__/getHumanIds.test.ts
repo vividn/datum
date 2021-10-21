@@ -1,14 +1,14 @@
 import { it, jest } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { idToHumanView } from "../../src/views/datumViews";
-import getHumanIds from "../../src/ids/getHumanIds";
+import { idToHumanView } from "../../views/datumViews";
+import getHumanIds from "../getHumanIds";
 import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
-} from "../test-utils";
-import { DatumViewMissingError } from "../../src/errors";
+} from "../../../test/test-utils";
+import { DatumViewMissingError } from "../../errors";
 
 const dbMock = mock<DocumentScope<any>>();
 

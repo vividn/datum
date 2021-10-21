@@ -6,9 +6,9 @@ import {
   beforeAll,
   expect,
 } from "@jest/globals";
-import { pass, testNano } from "../test-utils";
-import * as setupDatumViews from "../../src/views/setupDatumViews";
-import { setupCmd } from "../../src/commands/setupCmd";
+import { pass, testNano } from "../../../test/test-utils";
+import * as setupDatumViews from "../../views/setupDatumViews";
+import { setupCmd } from "../setupCmd";
 
 const dbName = "setup_cmd_test";
 const db = testNano.use(dbName);

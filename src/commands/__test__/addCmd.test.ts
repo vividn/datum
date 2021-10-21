@@ -7,18 +7,18 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../test-utils";
-import { BaseDataError } from "../../src/errors";
+import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
+import { BaseDataError } from "../../errors";
 import {
   DatumDocument,
   EitherPayload,
-} from "../../src/documentControl/DatumDocument";
-import addCmd from "../../src/commands/addCmd";
-import * as connectDb from "../../src/auth/connectDb";
-import * as addDoc from "../../src/documentControl/addDoc";
+} from "../../documentControl/DatumDocument";
+import addCmd from "../addCmd";
+import * as connectDb from "../../auth/connectDb";
+import * as addDoc from "../../documentControl/addDoc";
 import { DocumentScope } from "nano";
-import { DocExistsError } from "../../src/documentControl/base";
-import { Show } from "../../src/output";
+import { DocExistsError } from "../../documentControl/base";
+import { Show } from "../../output";
 import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 

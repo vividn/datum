@@ -1,17 +1,17 @@
 import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../test-utils";
-import insertDatumView from "../../src/views/insertDatumView";
+import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
+import insertDatumView from "../../views/insertDatumView";
 import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
-} from "../../src/views/datumViews";
+} from "../../views/datumViews";
 import { DocumentScope } from "nano";
-import { EitherPayload } from "../../src/documentControl/DatumDocument";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 import quickId, {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
-} from "../../src/ids/quickId";
+} from "../quickId";
 
 const dbName = "test_quick_id";
 const db: DocumentScope<EitherPayload> = testNano.use(dbName);

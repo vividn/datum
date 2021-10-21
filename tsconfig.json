@@ -18,5 +18,5 @@
     "resolveJsonModule": true
   },
   "include": ["src/**/*.ts", "./typings"],
-  "exclude": ["node_modules"]
+  "exclude": ["node_modules", "src/**/__test__"]
 }

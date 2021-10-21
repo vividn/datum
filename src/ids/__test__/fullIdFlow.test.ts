@@ -3,35 +3,18 @@ import {
   DatumData,
   DatumMetadata,
   EitherPayload,
-} from "../src/documentControl/DatumDocument";
+} from "../../documentControl/DatumDocument";
 
-import { IdError } from "../src/errors";
 import {
   buildIdStructure,
   buildIdStructureType,
-} from "../src/ids/buildIdStructure";
-import { destructureIdKeys } from "../src/ids/destructureIdKeys";
-import { assembleId } from "../src/ids/assembleId";
-import { defaultIdComponents } from "../src/ids/defaultIdComponents";
+} from "../buildIdStructure";
+import { assembleId } from "../assembleId";
+import { defaultIdComponents } from "../defaultIdComponents";
+import { exampleData, exampleDataOccur, exampleMeta, exampleOccurTime } from "./exampleData";
+import { exampleDataOccurField } from "./exampleData";
 
-const exampleData: DatumData = {
-  foo: "abc",
-  bar: "def",
-  complex: { data: "nested" },
-  array: ["various", 2, "data"],
-  num: 3,
-  "wei%rd": "da%ta",
-};
-const exampleOccurTime = "2020-11-09T00:35:10.000Z";
-const exampleDataOccur = { occurTime: exampleOccurTime, ...exampleData };
-const exampleDataOccurField: DatumData = { ...exampleDataOccur, field: "main" };
-const exampleMeta: DatumMetadata = {
-  createTime: "2020-11-09T00:40:12.544Z",
-  modifyTime: "2020-11-09T00:40:12.544Z",
-  utcOffset: 1,
-  random: 0.7368733800261729,
-  humanId: "mqp4znq4cvp3qnj74fgi9",
-};
+
 
 function expectStructureAndId(
   props: Partial<buildIdStructureType>,
@@ -317,156 +300,9 @@ describe("id flow", () => {
   });
 });
 
-describe("destructureIdKeys", () => {
-  const obj = { a: 1, b: 2, c: 3 };
-  it("can pull out individual keys", () => {
-    expect(destructureIdKeys(obj, "%b%")).toMatchObject({
-      onlyFields: { b: 2 },
-      noFields: { a: 1, c: 3 },
-    });
-  });
 
-  it("can pull out multiple keys", () => {
-    expect(destructureIdKeys(obj, "%b%__%c%")).toMatchObject({
-      onlyFields: { b: 2, c: 3 },
-      noFields: { a: 1 },
-    });
-  });
 
-  it("does not treat raw strings as keys", () => {
-    expect(destructureIdKeys(obj, "a")).toMatchObject({
-      onlyFields: {},
-      noFields: { a: 1, b: 2, c: 3 },
-    });
-    expect(destructureIdKeys(obj, "c%a%b")).toMatchObject({
-      onlyFields: { a: 1 },
-      noFields: { b: 2, c: 3 },
-    });
-  });
 
-  it("shows missing keys as undefined", () => {
-    expect(destructureIdKeys(obj, "%notAKey%")).toMatchObject({
-      onlyFields: { notAKey: undefined },
-      noFields: obj,
-    });
-  });
 
-  it("handles nested objects", () => {
-    const nestedObj = { a: { nested1: "one", nested2: "two" }, b: 2 };
-
-    expect(destructureIdKeys(nestedObj, "%a%")).toMatchObject({
-      onlyFields: { a: { nested1: "one", nested2: "two" } },
-      noFields: { b: 2 },
-    });
-    expect(destructureIdKeys(nestedObj, "%a.nested1%")).toMatchObject({
-      onlyFields: { a: { nested1: "one" } },
-      noFields: { a: { nested2: "two" }, b: 2 },
-    });
-    expect(
-      destructureIdKeys(nestedObj, "%a.nested1%__%a.nested2%")
-    ).toMatchObject({
-      onlyFields: { a: { nested1: "one", nested2: "two" } },
-      noFields: { a: {}, b: 2 },
-    });
-  });
-
-  it("can use meta.idStructure to grab keys if idStructure not explicit", () => {
-    const objWithMeta = {
-      a: { b: 2, bb: 55 },
-      c: 3,
-      meta: { idStructure: "%a.bb%%c%" },
-    };
-    expect(destructureIdKeys(objWithMeta)).toMatchObject({
-      onlyFields: { a: { bb: 55 }, c: 3 },
-      noFields: { a: { b: 2 }, meta: { idStructure: "%a.bb%%c%" } },
-    });
-  });
-});
-
-describe("defaultIdComponents", () => {
-  it("can use occurTime", () => {
-    expect(defaultIdComponents({ data: exampleDataOccur })).toMatchObject({
-      defaultIdParts: ["%occurTime%"],
-    });
-  });
-
-  it("uses a concatenation of data fields if hasOccurTime is false", () => {
-    const simpleData = { firstKey: "firstData", secondKey: "secondData" };
-    expect(defaultIdComponents({ data: simpleData })).toMatchObject({
-      defaultIdParts: ["%firstKey%", "%secondKey%"],
-    });
-  });
-
-  it("uses field as the default partition", () => {
-    expect(
-      defaultIdComponents({
-        data: { field: "abc", occurTime: exampleOccurTime },
-      })
-    ).toMatchObject({
-      defaultPartitionParts: ["%field%"],
-    });
-    expect(defaultIdComponents({ data: { field: "abc" } })).toMatchObject({
-      defaultPartitionParts: ["%field%"],
-    });
-    expect(
-      defaultIdComponents({
-        data: {
-          field: "works",
-          with: "other",
-          keys: "too",
-          occurTime: exampleOccurTime,
-        },
-      })
-    ).toMatchObject({ defaultPartitionParts: ["%field%"] });
-    expect(
-      defaultIdComponents({
-        data: { field: "works", with: "other", keys: "too" },
-      })
-    ).toMatchObject({ defaultPartitionParts: ["%field%"] });
-  });
-
-  it("returns undefined for defaultPartitionParts when no field is present", () => {
-    expect(
-      defaultIdComponents({
-        data: { no: "field", key: "present", occurTime: exampleOccurTime },
-      })
-    ).toMatchObject({ defaultPartitionParts: undefined });
-    expect(
-      defaultIdComponents({
-        data: { no: "field", key: "present" },
-      })
-    ).toMatchObject({ defaultPartitionParts: undefined });
-  });
-});
-
-describe("assembleId", () => {
-  it("uses the _id in the payload if no idStructure is provided or found in metadata", () => {
-    expect(assembleId({ payload: { _id: "dataOnlyId", foo: "bar" } })).toEqual(
-      "dataOnlyId"
-    );
-    expect(
-      assembleId({
-        payload: {
-          _id: "datumId",
-          data: { foo: "bar" },
-          meta: { humanId: "does-not-have-id-Structure" },
-        },
-      })
-    );
-  });
-  it("throws error if no idStructure provided or found, and no _id is in payload", () => {
-    expect(() =>
-      assembleId({
-        payload: {
-          data: { abc: "123" },
-          meta: { modifyTime: "2020-11-09T00:40:12.544Z" },
-        },
-      })
-    ).toThrowError(IdError);
-    expect(() => assembleId({ payload: { abc: "123" } })).toThrowError(IdError);
-  });
-
-  it.todo("doesn't allow recursive %?idStructure% as a part of the id");
-});
 
 test.todo("it allows for a uuid somehow");
