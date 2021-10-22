@@ -11,7 +11,7 @@ import {
   it,
   test,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
+import { fail, pass, resetTestDb, testNano } from "../../test-utils";
 import timezone_mock from "timezone-mock";
 import overwriteDoc, {
   NoDocToOverwriteError,

@@ -6,7 +6,7 @@ import {
 } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import connectDb from "../auth/connectDb";
-import { Show } from "../output";
+import { Show } from "../output/output";
 import updateDoc from "../documentControl/updateDoc";
 import quickId from "../ids/quickId";
 import { Argv } from "yargs";

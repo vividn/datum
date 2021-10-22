@@ -1,10 +1,10 @@
 import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
-import { resetTestDb, testNano } from "../../../test/test-utils";
+import { resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../../documentControl/DatumDocument";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
-import { Show } from "../../output";
+import { Show } from "../../output/output";
 import setupCmd from "../setupCmd";
 
 const dbName = "add_cmd_test";

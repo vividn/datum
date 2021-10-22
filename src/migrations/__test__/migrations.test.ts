@@ -1,5 +1,5 @@
 import { test } from "@jest/globals";
-import { fail } from "./test-utils";
+import { fail } from "../../test-utils";
 
 test.skip("Rewrite migrations tests", () => {
   fail();

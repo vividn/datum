@@ -6,7 +6,7 @@ import {
   beforeAll,
   expect,
 } from "@jest/globals";
-import { pass, testNano } from "../../../test/test-utils";
+import { pass, testNano } from "../../test-utils";
 import * as setupDatumViews from "../../views/setupDatumViews";
 import { setupCmd } from "../setupCmd";
 

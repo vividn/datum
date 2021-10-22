@@ -1,4 +1,4 @@
-import { pass, resetTestDb, testNano } from "../../../test/test-utils";
+import { pass, resetTestDb, testNano } from "../../test-utils";
 import { ViewPayload } from "../viewDocument";
 import { afterEach, beforeEach, expect, it, jest } from "@jest/globals";
 import * as insertDatumViewModule from "../insertDatumView";

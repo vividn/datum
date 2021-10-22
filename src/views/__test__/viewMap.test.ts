@@ -12,7 +12,7 @@ import {
   mockMissingNamedViewError,
   pass,
   testNano,
-} from "../../../test/test-utils";
+} from "../../test-utils";
 import { DatumViewMissingError } from "../../errors";
 import viewMap from "../viewMap";
 import insertDatumView from "../insertDatumView";

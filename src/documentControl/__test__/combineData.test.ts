@@ -5,7 +5,7 @@ import combineData, {
   mergeValues,
 } from "../combineData";
 import { MergeError } from "../../errors";
-import { fail } from "../../../test/test-utils";
+import { fail } from "../../test-utils";
 
 describe("combineData", () => {
   const aData = {

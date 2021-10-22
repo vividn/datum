@@ -3,10 +3,10 @@ import {
   EitherDocument,
   EitherPayload,
   isDatumPayload,
-} from "./documentControl/DatumDocument";
+} from "../documentControl/DatumDocument";
 import chalk from "chalk";
 import stringify from "string.ify";
-import jClone from "./utils/jClone";
+import jClone from "../utils/jClone";
 
 enum ACTIONS {
   Create = "CREATE",

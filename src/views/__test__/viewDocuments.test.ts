@@ -14,7 +14,7 @@ import {
   StringifiedDatumView,
 } from "../viewDocument";
 import _emit from "../emit";
-import { resetTestDb, testNano } from "../../../test/test-utils";
+import { resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../../documentControl/DatumDocument";
 import insertDatumView from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";

@@ -3,7 +3,7 @@ import {
   DatumPayload,
   EitherPayload,
 } from "../../documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../../../test/test-utils";
+import { resetTestDb, testNano } from "../../test-utils";
 import { DocumentScope } from "nano";
 import { minHumanId, MinHumanIdError } from "../../ids/minHumanId";
 import insertDatumView from "../insertDatumView";

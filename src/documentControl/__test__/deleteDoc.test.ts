@@ -1,4 +1,4 @@
-import { resetTestDb, testNano } from "../../../test/test-utils";
+import { resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../DatumDocument";
 import { afterEach, beforeEach, expect, it } from "@jest/globals";
 import deleteDoc, {

@@ -11,7 +11,7 @@ import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../../documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../../../test/test-utils";
+import { resetTestDb, testNano } from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";

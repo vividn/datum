@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../../test/test-utils";
+import { fail, pass, resetTestDb, testNano } from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import {
   humanIdView,

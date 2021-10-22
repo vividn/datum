@@ -7,7 +7,7 @@ import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
-} from "../../../test/test-utils";
+} from "../../test-utils";
 import { DatumViewMissingError } from "../../errors";
 
 const dbMock = mock<DocumentScope<any>>();

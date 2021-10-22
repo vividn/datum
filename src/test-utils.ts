@@ -1,5 +1,5 @@
 import Nano from "nano";
-import { CouchDbError } from "../src/errors";
+import { CouchDbError } from "./errors";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};

@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import updateDoc from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, resetTestDb, testNano } from "../../../test/test-utils";
+import { fail, resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../DatumDocument";
 import addDoc from "../addDoc";
 import { DocExistsError } from "../base";
 import overwriteDoc from "../overwriteDoc";
-import { Show } from "../../output";
+import { Show } from "../../output/output";
 import * as addDocModule from "../addDoc";
 import addCmd from "../../commands/addCmd";
 import { main } from "../../index";
