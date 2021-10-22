@@ -10,8 +10,8 @@ import { Show } from "../output";
 import updateDoc from "../documentControl/updateDoc";
 import quickId from "../ids/quickId";
 import { Argv } from "yargs";
-import { timingYargs } from "../input/timingArgs";
 import { quickIdArg } from "../input/quickIdArg";
+import { timeYargs } from "../input/timeArgs";
 
 export const command = [
   "update <quickId> [data..]",
@@ -26,7 +26,7 @@ export type UpdateCmdArgs = BaseDatumArgs &
   };
 
 export function builder(yargs: Argv): Argv {
-  return timingYargs(dataYargs(quickIdArg(yargs))).options({
+  return timeYargs(dataYargs(quickIdArg(yargs))).options({
     strategy: {
       describe:
         "which update strategy to use when modifying the doc." +
