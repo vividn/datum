@@ -1,7 +1,4 @@
-import {
-  DatumPayload,
-  EitherPayload,
-} from "../DatumDocument";
+import { DatumPayload, EitherPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import {
   afterEach,

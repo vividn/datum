@@ -10,7 +10,10 @@ export const exampleData: DatumData = {
 };
 export const exampleOccurTime = "2020-11-09T00:35:10.000Z";
 export const exampleDataOccur = { occurTime: exampleOccurTime, ...exampleData };
-export const exampleDataOccurField: DatumData = { ...exampleDataOccur, field: "main" };
+export const exampleDataOccurField: DatumData = {
+  ...exampleDataOccur,
+  field: "main",
+};
 export const exampleMeta: DatumMetadata = {
   createTime: "2020-11-09T00:40:12.544Z",
   modifyTime: "2020-11-09T00:40:12.544Z",

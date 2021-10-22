@@ -1,9 +1,7 @@
 import { resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../DatumDocument";
 import { afterEach, beforeEach, expect, it } from "@jest/globals";
-import deleteDoc, {
-  NoDocToDeleteError,
-} from "../deleteDoc";
+import deleteDoc, { NoDocToDeleteError } from "../deleteDoc";
 
 const dbName = "delete_doc_test";
 const db = testNano.db.use<EitherPayload>(dbName);

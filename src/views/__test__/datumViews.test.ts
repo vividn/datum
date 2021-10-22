@@ -17,10 +17,7 @@ import {
   idToHumanView,
   subHumanIdView,
 } from "../datumViews/humanId";
-import {
-  dataStructuresView,
-  structuresView,
-} from "../datumViews/structure";
+import { dataStructuresView, structuresView } from "../datumViews/structure";
 
 const emitMock = jest.spyOn(emit, "default");
 beforeEach(() => {

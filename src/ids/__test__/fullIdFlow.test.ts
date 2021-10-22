@@ -5,16 +5,16 @@ import {
   EitherPayload,
 } from "../../documentControl/DatumDocument";
 
-import {
-  buildIdStructure,
-  buildIdStructureType,
-} from "../buildIdStructure";
+import { buildIdStructure, buildIdStructureType } from "../buildIdStructure";
 import { assembleId } from "../assembleId";
 import { defaultIdComponents } from "../defaultIdComponents";
-import { exampleData, exampleDataOccur, exampleMeta, exampleOccurTime } from "./exampleData";
+import {
+  exampleData,
+  exampleDataOccur,
+  exampleMeta,
+  exampleOccurTime,
+} from "./exampleData";
 import { exampleDataOccurField } from "./exampleData";
-
-
 
 function expectStructureAndId(
   props: Partial<buildIdStructureType>,
@@ -299,10 +299,5 @@ describe("id flow", () => {
     );
   });
 });
-
-
-
-
-
 
 test.todo("it allows for a uuid somehow");

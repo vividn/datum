@@ -2,7 +2,11 @@ import { Settings, DateTime, Duration } from "luxon";
 import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
 import timezone_mock from "timezone-mock";
 import { BadDateError, BadTimeError, BadTimezoneError } from "../../errors";
-import { handleTimeArgs, ReferencedTimeArgs, TimeStrWithOffset } from "../timeArgs";
+import {
+  handleTimeArgs,
+  ReferencedTimeArgs,
+  TimeStrWithOffset,
+} from "../timeArgs";
 
 const expectTiming = (
   props: ReferencedTimeArgs,
@@ -211,18 +215,16 @@ describe("handleTimeArgs", () => {
     expect(() => handleTimeArgs({ time: "absolute rubbish" })).toThrowError(
       BadTimeError
     );
-    expect(() => handleTimeArgs({ date: "before" })).toThrowError(
-      BadDateError
-    );
+    expect(() => handleTimeArgs({ date: "before" })).toThrowError(BadDateError);
     expect(() =>
       handleTimeArgs({ time: "3am", date: "the end of the universe" })
     ).toThrowError(BadDateError);
     expect(() =>
       handleTimeArgs({ time: "half past nothing", yesterday: 1 })
     ).toThrowError(BadTimeError);
-    expect(() =>
-      handleTimeArgs({ timezone: "rubbish/timezone" })
-    ).toThrowError(BadTimezoneError);
+    expect(() => handleTimeArgs({ timezone: "rubbish/timezone" })).toThrowError(
+      BadTimezoneError
+    );
   });
 
   it("does not persist timezone across runs", () => {

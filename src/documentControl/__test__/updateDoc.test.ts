@@ -15,10 +15,7 @@ import {
 } from "@jest/globals";
 import { fail, pass, resetTestDb, testNano } from "../../test-utils";
 import timezone_mock from "timezone-mock";
-import updateDoc, {
-  NoDocToUpdateError,
-  UpdateDocError,
-} from "../updateDoc";
+import updateDoc, { NoDocToUpdateError, UpdateDocError } from "../updateDoc";
 import addDoc from "../addDoc";
 import * as combineData from "../combineData";
 import jClone from "../../utils/jClone";
