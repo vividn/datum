@@ -13,17 +13,17 @@ describe("inferType", () => {
   });
 
   it("handles special number strings", () => {
-    expect(inferType("nan")).toBe(Number.NaN);
-    expect(inferType("NaN")).toBe(Number.NaN);
-    expect(inferType("NAN")).toBe(Number.NaN);
+    expect(inferType("nan")).toBe("NaN");
+    expect(inferType("NaN")).toBe("NaN");
+    expect(inferType("NAN")).toBe("NaN");
 
     expect(inferType("null")).toBe(null);
     expect(inferType("NULL")).toBe(null);
 
-    expect(inferType("inf")).toBe(Number.POSITIVE_INFINITY);
-    expect(inferType("infinity")).toBe(Number.POSITIVE_INFINITY);
-    expect(inferType("-inf")).toBe(Number.NEGATIVE_INFINITY);
-    expect(inferType("-infinity")).toBe(Number.NEGATIVE_INFINITY);
+    expect(inferType("inf")).toBe("Infinity");
+    expect(inferType("infinity")).toBe("Infinity");
+    expect(inferType("-inf")).toBe("-Infinity");
+    expect(inferType("-infinity")).toBe("-Infinity");
   });
 
   it("converts array looking data", () => {

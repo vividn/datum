@@ -9,12 +9,10 @@ const inferType = (value: number | string): any => {
     return null;
   }
   if (/^nan$/i.test(value)) {
-    return Number.NaN;
+    return "NaN";
   }
   if (/^-?inf(inity)?$/i.test(value)) {
-    return value[0] === "-"
-      ? Number.NEGATIVE_INFINITY
-      : Number.POSITIVE_INFINITY;
+    return value[0] === "-" ? "-Infinity" : "Infinity";
   }
   try {
     return RJSON.parse(value);
