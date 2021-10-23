@@ -16,7 +16,7 @@ import {
   showNoDiff,
   showRename,
   showUpdate,
-} from "../output";
+} from "../output/output";
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";

@@ -1,5 +1,5 @@
 import yargs from "yargs";
-import { Show } from "../output";
+import { Show } from "../output/output";
 
 export type BaseDatumArgs = {
   db?: string;

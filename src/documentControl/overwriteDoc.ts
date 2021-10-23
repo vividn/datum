@@ -12,7 +12,7 @@ import {
   showNoDiff,
   showOWrite,
   showRename,
-} from "../output";
+} from "../output/output";
 import { assembleId } from "../ids/assembleId";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {

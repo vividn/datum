@@ -9,7 +9,7 @@ import { IdError, isCouchDbError } from "../errors";
 import jClone from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import updateDoc from "./updateDoc";
-import { Show, showCreate, showExists, showFailed } from "../output";
+import { Show, showCreate, showExists, showFailed } from "../output/output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 import overwriteDoc from "./overwriteDoc";
