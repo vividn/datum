@@ -6,9 +6,7 @@ type ParseDurationStrType = {
   durationStr: string;
 };
 
-export const parseDurationStr = function ({
-  durationStr,
-}: ParseDurationStrType): Duration {
+function parseDurationStr({ durationStr }: ParseDurationStrType): Duration {
   let isNegative;
   switch (durationStr.charAt(0)) {
     case "-":
@@ -73,4 +71,6 @@ export const parseDurationStr = function ({
     "milliseconds"
   );
   return isNegative ? duration.negate() : duration;
-};
+}
+
+export default parseDurationStr;
