@@ -3,7 +3,7 @@ import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadDateError } from "../errors";
 
-type ParseDateStrType = {
+export type ParseDateStrType = {
   dateStr: string;
   referenceTime?: DateTime;
 };

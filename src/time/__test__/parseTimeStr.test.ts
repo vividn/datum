@@ -1,7 +1,7 @@
 import { afterEach, beforeEach } from "@jest/globals";
 import timezone_mock from "timezone-mock";
 import { DateTime, Duration, Settings } from "luxon";
-import parseTimeStr from "../parseTimeStr";
+import parseTimeStr  from "../parseTimeStr";
 
 const todayObj = { year: 2021, month: 10, day: 12 };
 const timeOfDayObj = { hour: 18, minute: 32, second: 30 };
