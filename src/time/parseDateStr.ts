@@ -28,13 +28,14 @@ function parseDateStr({ dateStr, referenceTime }: ParseDateStrType): DateTime {
 
   // Finally, use chrono to parse the time if all else fails
   // The keepLocalTime is to avoid timezone shenanigans
+  // i.e. tomorrow is always local tomorrow not utc tomorrow
   const chronoParsed = chrono.parseDate(
     dateStr,
     referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate()
   );
   if (chronoParsed) {
-    const { year, month, day } = DateTime.fromISO(
-      chronoParsed.toISOString()
+    const { year, month, day } = DateTime.fromJSDate(
+      chronoParsed, {zone: "utc"}
     ).toObject();
     return referenceTime.set({ year, month, day });
   }

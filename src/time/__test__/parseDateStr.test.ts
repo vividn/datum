@@ -1,4 +1,3 @@
-import { it } from "@jest/globals";
 import parseDateStr, { ParseDateStrType } from "../parseDateStr";
 import { DateTime, Settings } from "luxon";
 import timezone_mock from "timezone-mock";
@@ -10,13 +9,13 @@ function expectDate(
   expect(parseDateStr(props).toObject()).toMatchObject(timeObject);
 }
 
-beforeAll(() => {
+beforeEach(() => {
   timezone_mock.register("UTC");
   const mockNowMillis = DateTime.utc(2021, 10, 26, 12, 0, 30).toMillis();
   Settings.now = () => mockNowMillis;
 });
 
-afterAll(() => {
+afterEach(() => {
   timezone_mock.unregister();
   Settings.resetCaches();
 });
@@ -95,6 +94,16 @@ it("handles relative dates from referenceTime", () => {
   );
 });
 
-it.todo(
-  "handles relative dates correctly even close to midnight in non-utc timezones"
-);
+it("handles relative dates correctly even close to midnight in non-utc timezones", () => {
+  timezone_mock.register("Brazil/East");
+
+  // Slightly before midnight
+  const mockNowMillis1 = DateTime.local(2021, 10, 26, 23, 0, 0).toMillis();
+  Settings.now = () => mockNowMillis1;
+  expectDate({ dateStr: "tomorrow" }, { year: 2021, month: 10, day: 27 });
+
+  //Slightly after
+  const mockNowMillis2 = DateTime.local(2021, 10, 27, 1, 0, 0).toMillis();
+  Settings.now = () => mockNowMillis2;
+  expectDate({ dateStr: "tomorrow" }, { year: 2021, month: 10, day: 28 });
+});
