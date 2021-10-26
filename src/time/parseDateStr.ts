@@ -34,9 +34,9 @@ function parseDateStr({ dateStr, referenceTime }: ParseDateStrType): DateTime {
     referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate()
   );
   if (chronoParsed) {
-    const { year, month, day } = DateTime.fromJSDate(
-      chronoParsed, {zone: "utc"}
-    ).toObject();
+    const { year, month, day } = DateTime.fromJSDate(chronoParsed, {
+      zone: "utc",
+    }).toObject();
     return referenceTime.set({ year, month, day });
   }
 

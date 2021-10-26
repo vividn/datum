@@ -92,8 +92,12 @@ describe("inferType with special fields", () => {
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
     expect(inferType("3", "time")).toEqual("2021-10-25T03:00:00.000Z");
-    expect(inferType("-15", "expectedTime")).toEqual( "2021-10-25T22:15:00.000Z");
-    expect(inferType("10:15", "snake_time")).toEqual("2021-10-25T03:00:00.000Z");
+    expect(inferType("-15", "expectedTime")).toEqual(
+      "2021-10-25T22:15:00.000Z"
+    );
+    expect(inferType("10:15", "snake_time")).toEqual(
+      "2021-10-25T03:00:00.000Z"
+    );
     expect(parseTimeSpy).toHaveBeenCalledTimes(3);
   });
 
