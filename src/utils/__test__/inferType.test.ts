@@ -96,7 +96,7 @@ describe("inferType with special fields", () => {
       "2021-10-25T22:15:00.000Z"
     );
     expect(inferType("10:15", "snake_time")).toEqual(
-      "2021-10-25T03:00:00.000Z"
+      "2021-10-25T10:15:00.000Z"
     );
 
     expect(parseTimeSpy).toHaveBeenCalledTimes(3);
@@ -132,7 +132,7 @@ describe("inferType with special fields", () => {
     expect(parseTimeSpy).toHaveBeenCalled();
     expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
 
-    expect(inferType("when pigs fly", "weirdDate")).toEqual("sadflkjasdfklj");
+    expect(inferType("when pigs fly", "weirdDate")).toEqual("when pigs fly");
     expect(parseDateSpy).toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveReturned();
 
