@@ -8,7 +8,7 @@ import { isoDateFromDateTime, isoDatetimeFromDateTime, isoDurationFromDuration }
 const inferType = (value: number | string, fieldName?: string): any => {
   if (fieldName !== undefined) {
     switch (true) {
-      case /\btime$/i.test(fieldName):
+      case /(?:\b|_)time$/i.test(fieldName):
       case /[a-z0-9]Time$/.test(fieldName):
         try {
           const parsedTime = parseTimeStr({ timeStr: String(value) });
@@ -22,7 +22,7 @@ const inferType = (value: number | string, fieldName?: string): any => {
         }
         break;
 
-      case /\bdate$/i.test(fieldName!):
+      case /(?:\b|_)date$/i.test(fieldName!):
       case /[a-z0-9]Date$/.test(fieldName):
         try {
           const parsedDate = parseDateStr({ dateStr: String(value) });
@@ -36,7 +36,7 @@ const inferType = (value: number | string, fieldName?: string): any => {
         }
         break;
 
-      case /\bdur(ation)?$/i.test(fieldName!):
+      case /(?:\b|_)dur(ation)?$/i.test(fieldName!):
       case /[a-z0-9]Dur(ation)?$/.test(fieldName):
         try {
           const parsedDuration = parseDurationStr({ durationStr: String(value) });
