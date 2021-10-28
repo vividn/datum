@@ -3,7 +3,11 @@ import parseTimeStr from "../time/parseTimeStr";
 import { BadDateError, BadDurationError, BadTimeError } from "../errors";
 import parseDurationStr from "../time/parseDurationString";
 import parseDateStr from "../time/parseDateStr";
-import { isoDateFromDateTime, isoDatetimeFromDateTime, isoDurationFromDuration } from "../time/timeUtils";
+import {
+  isoDateFromDateTime,
+  isoDatetimeFromDateTime,
+  isoDurationFromDuration,
+} from "../time/timeUtils";
 
 const inferType = (value: number | string, fieldName?: string): any => {
   if (fieldName !== undefined) {
@@ -39,7 +43,9 @@ const inferType = (value: number | string, fieldName?: string): any => {
       case /(?:\b|_)dur(ation)?$/i.test(fieldName!):
       case /[a-z0-9]Dur(ation)?$/.test(fieldName):
         try {
-          const parsedDuration = parseDurationStr({ durationStr: String(value) });
+          const parsedDuration = parseDurationStr({
+            durationStr: String(value),
+          });
           return isoDurationFromDuration(parsedDuration);
         } catch (e) {
           if (e instanceof BadDurationError) {
