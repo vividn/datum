@@ -122,7 +122,7 @@ export const handleDataArgs = function ({
 
     if (afterEquals !== undefined) {
       // explicit key is given e.g., 'key=value'
-      parsedData[beforeEquals] = inferType(afterEquals);
+      parsedData[beforeEquals] = inferType(afterEquals, beforeEquals);
       continue posArgsLoop;
     }
 
@@ -136,7 +136,7 @@ export const handleDataArgs = function ({
         continue requiredKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue);
+      parsedData[dataKey] = inferType(dataValue, dataKey);
       continue posArgsLoop;
     }
 
@@ -147,7 +147,7 @@ export const handleDataArgs = function ({
         continue optionalKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue);
+      parsedData[dataKey] = inferType(dataValue, dataKey);
       continue posArgsLoop;
     }
 
@@ -170,7 +170,7 @@ export const handleDataArgs = function ({
       for (const remainder of remainderData) {
         parsedData[remainderKey] = createOrAppend(
           parsedData[remainderKey],
-          inferType(remainder)
+          inferType(remainder, remainderKey)
         );
       }
     }
@@ -182,7 +182,7 @@ export const handleDataArgs = function ({
     );
   }
 
-  // If extra keys are left assign default values
+  // If optional keys with default values are left assign them
   while (optionalKeys.length > 0) {
     const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
@@ -190,19 +190,19 @@ export const handleDataArgs = function ({
       continue;
     }
 
-    parsedData[dataKey] = inferType(defaultValue);
+    parsedData[dataKey] = inferType(defaultValue, dataKey);
   }
 
   // put in field, overwriting if necessary
   if (field) {
-    parsedData.field = inferType(field);
+    parsedData.field = inferType(field, "field");
   }
 
   if (comment) {
     const inferredComments = (
       Array.isArray(comment)
-        ? comment.map((comm) => inferType(comm))
-        : [inferType(comment)]
+        ? comment.map((comm) => inferType(comm, "comment"))
+        : [inferType(comment, "comment")]
     ) as any[];
     parsedData.comment = inferredComments.reduce(
       (accumulator, current) => createOrAppend(accumulator, current),
