@@ -1,7 +1,7 @@
 import { DateTime, Settings as DateTimeSettings } from "luxon";
 import { BadTimezoneError } from "../errors";
 
-export function setTimezone(timezone?: string): number {
+function setTimezone(timezone?: string): number {
   if (timezone) {
     const tzNumber = Number(timezone);
     if (isNaN(tzNumber)) {
@@ -22,3 +22,5 @@ export function setTimezone(timezone?: string): number {
 
   return now.offset / 60;
 }
+
+export default setTimezone;

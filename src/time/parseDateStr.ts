@@ -3,14 +3,11 @@ import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadDateError } from "../errors";
 
-type ParseDateStrType = {
+export type ParseDateStrType = {
   dateStr: string;
   referenceTime?: DateTime;
 };
-export const parseDateStr = function ({
-  dateStr,
-  referenceTime,
-}: ParseDateStrType): DateTime {
+function parseDateStr({ dateStr, referenceTime }: ParseDateStrType): DateTime {
   referenceTime = referenceTime ?? now();
 
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
@@ -31,16 +28,19 @@ export const parseDateStr = function ({
 
   // Finally, use chrono to parse the time if all else fails
   // The keepLocalTime is to avoid timezone shenanigans
+  // i.e. tomorrow is always local tomorrow not utc tomorrow
   const chronoParsed = chrono.parseDate(
     dateStr,
     referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate()
   );
   if (chronoParsed) {
-    const { year, month, day } = DateTime.fromISO(
-      chronoParsed.toISOString()
-    ).toObject();
+    const { year, month, day } = DateTime.fromJSDate(chronoParsed, {
+      zone: "utc",
+    }).toObject();
     return referenceTime.set({ year, month, day });
   }
 
   throw new BadDateError("date not parsable");
-};
+}
+
+export default parseDateStr;
