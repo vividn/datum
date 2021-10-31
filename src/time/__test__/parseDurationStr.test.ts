@@ -1,4 +1,4 @@
-import { parseDurationStr } from "../parseDurationString";
+import parseDurationStr from "../parseDurationString";
 import { Duration } from "luxon";
 import { BadDurationError } from "../../errors";
 
@@ -25,6 +25,7 @@ test.each([
   ["1m,45s", { minutes: 1, seconds: 45 }],
   ["1m 45s", { minutes: 1, seconds: 45 }],
   ["3hrs 3 minutes and 2s", { hours: 3, minutes: 3, seconds: 2 }],
+  ["2days", { days: 2 }],
   ["PT7M", { minutes: 7 }],
   ["P3DT4H5S", { days: 3, hours: 4, seconds: 5 }],
   ["-PT3M4S", { minutes: -3, seconds: -4 }],

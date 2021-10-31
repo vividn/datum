@@ -302,4 +302,40 @@ describe("handleDataArgs", () => {
       { req1: "value1", req2: "value2", opt1: "value3", opt2: "value4" }
     );
   });
+
+  it("infers type from key for key=value data entry", () => {
+    expectParseDataToReturn(
+      { data: ["taskDuration=3hrs"] },
+      {
+        taskDuration: "PT3H",
+      }
+    );
+  });
+
+  it("infers type from key for required keys", () => {
+    expectParseDataToReturn(
+      { required: ["dueDate"], data: ["Dec 31, 2021"] },
+      {
+        dueDate: "2021-12-31",
+      }
+    );
+  });
+
+  it("infers type from key for optional keys", () => {
+    expectParseDataToReturn(
+      { optional: "startDate", data: ["June 13, 2020"] },
+      {
+        startDate: "2020-06-13",
+      }
+    );
+  });
+
+  it("infers type from key for default values", () => {
+    expectParseDataToReturn(
+      { optional: "duration=5" },
+      {
+        duration: "PT5M",
+      }
+    );
+  });
 });
