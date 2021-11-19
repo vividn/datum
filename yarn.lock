@@ -2080,10 +2080,10 @@ chardet@^0.7.0:
   resolved "https://registry.yarnpkg.com/chardet/-/chardet-0.7.0.tgz#90094849f0937f2eedc2425d0d28a9e5f0cbad9e"
   integrity sha512-mT8iDcrh03qDGRRmoA2hmBJnxpllMR+0/0qlzjqZES6NdiWDcZkCNAk4rPFZ9Q85r27unkiNNg8ZOiwZXBHwcA==
 
-chrono-node@^2.3.2:
-  version "2.3.2"
-  resolved "https://registry.yarnpkg.com/chrono-node/-/chrono-node-2.3.2.tgz#794f2ada1f75fe3da216501031812c0f3dd23c71"
-  integrity sha512-uZkVtF8dJ7llRzk3zrjGjV524I6NvojqMYk30tIfnUQ8ODrL8wvi/E2iEOTfcyiJaLf0dGDu9XVqNkVFNDMPCA==
+chrono-node@^2.3.3:
+  version "2.3.3"
+  resolved "https://registry.yarnpkg.com/chrono-node/-/chrono-node-2.3.3.tgz#1336a1105be3777d440b643dc867dbfe70bbd159"
+  integrity sha512-T7Jk08ZJ66EHvEkhx7PiCc9BN95n3/vfvindGAlf+l0kdu11yckMOlOCEtEmoNxCad72xvJjqbsArw4TDKMl7w==
   dependencies:
     dayjs "^1.10.0"
 
