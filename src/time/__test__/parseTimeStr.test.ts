@@ -1,5 +1,4 @@
 import { afterEach, beforeEach } from "@jest/globals";
-import timezone_mock from "timezone-mock";
 import { DateTime, Duration, Settings } from "luxon";
 import parseTimeStr from "../parseTimeStr";
 
@@ -10,14 +9,14 @@ const anotherTime = { hour: 10, minute: 17, second: 0 };
 let mockNow: DateTime;
 
 beforeEach(() => {
-  timezone_mock.register("UTC");
+  Settings.defaultZone = "utc";
   mockNow = DateTime.fromObject({ ...todayObj, ...timeOfDayObj });
   const mockNowMillis = mockNow.toMillis();
   Settings.now = () => mockNowMillis;
 });
 
 afterEach(() => {
-  timezone_mock.unregister();
+  Settings.defaultZone = "system";
   Settings.resetCaches();
 });
 

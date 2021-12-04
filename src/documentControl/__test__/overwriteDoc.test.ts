@@ -9,7 +9,6 @@ import {
   test,
 } from "@jest/globals";
 import { fail, pass, resetTestDb, testNano } from "../../test-utils";
-import timezone_mock from "timezone-mock";
 import overwriteDoc, {
   NoDocToOverwriteError,
   OverwriteDocError,
@@ -43,13 +42,13 @@ describe("overwriteDoc", () => {
 
   beforeEach(async () => {
     await resetTestDb(dbName);
-    timezone_mock.register("UTC");
+    Settings.defaultZone = "utc";
     Settings.now = () => mockNow.toMillis();
   });
 
   afterEach(async () => {
     await testNano.db.destroy(dbName).catch(pass);
-    timezone_mock.unregister();
+    Settings.defaultZone = "system";
     Settings.resetCaches();
   });
 

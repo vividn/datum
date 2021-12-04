@@ -1,6 +1,5 @@
 import parseDateStr, { ParseDateStrType } from "../parseDateStr";
 import { DateTime, Settings } from "luxon";
-import timezone_mock from "timezone-mock";
 
 function expectDate(
   props: ParseDateStrType,
@@ -10,13 +9,13 @@ function expectDate(
 }
 
 beforeEach(() => {
-  timezone_mock.register("UTC");
+  Settings.defaultZone = "utc";
   const mockNowMillis = DateTime.utc(2021, 10, 26, 12, 0, 30).toMillis();
   Settings.now = () => mockNowMillis;
 });
 
 afterEach(() => {
-  timezone_mock.unregister();
+  Settings.defaultZone = "system";
   Settings.resetCaches();
 });
 
@@ -95,7 +94,7 @@ it("handles relative dates from referenceTime", () => {
 });
 
 it("handles relative dates correctly even close to midnight in non-utc timezones", () => {
-  timezone_mock.register("Brazil/East");
+  Settings.defaultZone = "America/Sao_Paulo";
 
   // Slightly before midnight
   const mockNowMillis1 = DateTime.local(2021, 10, 26, 23, 0, 0).toMillis();
@@ -106,4 +105,6 @@ it("handles relative dates correctly even close to midnight in non-utc timezones
   const mockNowMillis2 = DateTime.local(2021, 10, 27, 1, 0, 0).toMillis();
   Settings.now = () => mockNowMillis2;
   expectDate({ dateStr: "tomorrow" }, { year: 2021, month: 10, day: 28 });
+
+  Settings.defaultZone = "system";
 });

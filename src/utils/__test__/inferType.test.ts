@@ -3,7 +3,6 @@ import inferType from "../inferType";
 import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
 import * as parseDurationStr from "../../time/parseDurationString";
-import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 
 describe("inferType", () => {
@@ -72,7 +71,7 @@ describe("inferType with special fields", () => {
   });
 
   beforeAll(() => {
-    timezone_mock.register("UTC");
+    Settings.defaultZone = "utc";
     const mockNow = DateTime.fromObject({
       year: 2021,
       month: 10,
@@ -86,7 +85,7 @@ describe("inferType with special fields", () => {
 
   afterAll(() => {
     jest.restoreAllMocks();
-    timezone_mock.unregister();
+    Settings.defaultZone = "system";
     Settings.resetCaches();
   });
 
