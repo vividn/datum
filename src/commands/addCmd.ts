@@ -65,7 +65,8 @@ export function builder(yargs: Argv): Argv {
       describe:
         "field to use for the partition (default: field, specified with -f)." +
         " Can be fields of data or raw strings surrounded by single quotes." +
-        " Like --id-field, can be used  multiple times to assemble a partition separated by --id-delimiter",
+        " Like --id-part, can be used  multiple times to assemble a partition separated by --id-delimiter",
+      alias: ["P"],
       type: "string",
     },
 
