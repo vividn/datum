@@ -8,7 +8,7 @@ export function isIsoDateOrTime(str: string): str is isoDate | isoDatetime {
   return DateTime.fromISO(str).isValid;
 }
 
-export const now = (zone: Zone | string): DateTime => DateTime.local({ zone });
+export const now = (zone?: Zone | string): DateTime => DateTime.local({ zone });
 
 export function isoDateFromDateTime(dt: DateTime): isoDate {
   return dt.toISODate() as isoDate;
