@@ -320,7 +320,7 @@ describe("addCmd", () => {
   });
 
   it("stores utcOffset using local timezone even if no occurTime is collected", async () => {
-    Settings.defaultZone = "US/Pacific";
+    Settings.defaultZone = "America/Phoenix";
     const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
     Settings.now = () => mockNow;
 
