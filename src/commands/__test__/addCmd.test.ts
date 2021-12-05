@@ -19,7 +19,6 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocumentScope } from "nano";
 import { DocExistsError } from "../../documentControl/base";
 import { Show } from "../../output/output";
-import timezone_mock from "timezone-mock";
 import { DateTime, Settings } from "luxon";
 
 const originalLog = console.log;
@@ -321,7 +320,7 @@ describe("addCmd", () => {
   });
 
   it("stores utcOffset using local timezone even if no occurTime is collected", async () => {
-    timezone_mock.register("US/Pacific");
+    Settings.defaultZone = "America/Phoenix";
     const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
     Settings.now = () => mockNow;
 
@@ -332,7 +331,7 @@ describe("addCmd", () => {
     expect(newDoc.meta).toHaveProperty("utcOffset");
     expect(newDoc.meta.utcOffset).toEqual(-7);
 
-    timezone_mock.unregister();
+    Settings.defaultZone = "system";
     Settings.resetCaches();
   });
 });

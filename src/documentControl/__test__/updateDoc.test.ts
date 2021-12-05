@@ -14,7 +14,6 @@ import {
   test,
 } from "@jest/globals";
 import { fail, pass, resetTestDb, testNano } from "../../test-utils";
-import timezone_mock from "timezone-mock";
 import updateDoc, { NoDocToUpdateError, UpdateDocError } from "../updateDoc";
 import addDoc from "../addDoc";
 import * as combineData from "../combineData";
@@ -75,7 +74,6 @@ describe("updateDoc", () => {
   });
 
   test("updates modifyTime if oldDoc has metadata", async () => {
-    timezone_mock.register("UTC");
     Settings.now = () => mockNow.toMillis();
 
     const docWithModify = {
@@ -94,9 +92,6 @@ describe("updateDoc", () => {
     });
 
     expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
-
-    timezone_mock.unregister();
-    Settings.resetCaches();
   });
 
   test("does not add metadata if oldDoc does not have metadata", async () => {
