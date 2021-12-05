@@ -94,15 +94,15 @@ export const handleTimeArgs = function ({
   noTimestamp,
   referenceTime,
 }: ReferencedTimeArgs): TimeStrWithOffset {
-  const tzOffset = setTimezone(timezone);
+  const tz = setTimezone(timezone);
+  referenceTime = referenceTime ?? now(tz);
+
   if (noTimestamp) {
     return {
       timeStr: undefined,
-      utcOffset: tzOffset,
+      utcOffset: referenceTime.offset / 60,
     };
   }
-
-  referenceTime = referenceTime ?? now();
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
