@@ -16,7 +16,6 @@ import {
   jest,
 } from "@jest/globals";
 import { fail, pass, resetTestDb, testNano } from "../../test-utils";
-import timezone_mock from "timezone-mock";
 import addDoc from "../addDoc";
 import { IdError } from "../../errors";
 import jClone from "../../utils/jClone";
@@ -51,14 +50,11 @@ describe("addDoc", () => {
 
   beforeEach(async () => {
     await resetTestDb(dbName);
-    timezone_mock.register("UTC");
     Settings.now = () => mockNow.toMillis();
   });
 
   afterEach(async () => {
     await testNano.db.destroy(dbName).catch(pass);
-    timezone_mock.unregister();
-    Settings.resetCaches();
   });
 
   it("it adds dataOnly payloads with _id to the given database", async () => {

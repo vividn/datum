@@ -1,6 +1,6 @@
 import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
-import { isoDate, isoDatetime, now } from "../time/timeUtils";
+import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
 import setTimezone from "../time/setTimezone";
 import parseTimeStr from "../time/parseTimeStr";
 import parseDateStr from "../time/parseDateStr";
@@ -94,15 +94,15 @@ export const handleTimeArgs = function ({
   noTimestamp,
   referenceTime,
 }: ReferencedTimeArgs): TimeStrWithOffset {
-  const tzOffset = setTimezone(timezone);
+  const tz = setTimezone(timezone);
+  referenceTime = referenceTime ?? now(tz);
+
   if (noTimestamp) {
     return {
       timeStr: undefined,
-      utcOffset: tzOffset,
+      utcOffset: utcOffset(referenceTime),
     };
   }
-
-  referenceTime = referenceTime ?? now();
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
@@ -128,6 +128,7 @@ export const handleTimeArgs = function ({
 
   return {
     timeStr,
-    utcOffset: referenceTime.offset / 60, // utc offset needs to be recalculated because DST could be different for the specified time, for example.
+    // utc offset needs to be recalculated because DST could be different for the specified time, for example.
+    utcOffset: utcOffset(referenceTime),
   };
 };

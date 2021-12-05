@@ -1,26 +1,30 @@
-import { DateTime, Settings as DateTimeSettings } from "luxon";
+import {
+  FixedOffsetZone,
+  IANAZone,
+  Settings as DateTimeSettings,
+  Zone,
+} from "luxon";
 import { BadTimezoneError } from "../errors";
 
-function setTimezone(timezone?: string): number {
+function setTimezone(timezone?: string): Zone {
+  let zone: Zone;
   if (timezone) {
     const tzNumber = Number(timezone);
     if (isNaN(tzNumber)) {
       // timezone is a named zone
-      DateTimeSettings.defaultZone = timezone;
+      zone = IANAZone.create(timezone);
     } else {
       // timezone is a utc offset "+6"
-      const tzStr = tzNumber >= 0 ? `+${tzNumber}` : `${tzNumber}`;
-      DateTimeSettings.defaultZone = `UTC${tzStr}`;
+      zone = FixedOffsetZone.instance(tzNumber * 60);
     }
   } else {
-    DateTimeSettings.defaultZone = "system";
+    zone = DateTimeSettings.defaultZone as Zone;
   }
-  const now = DateTime.local();
-  if (!now.isValid) {
+  if (!zone.isValid) {
     throw new BadTimezoneError("timezone is invalid");
   }
 
-  return now.offset / 60;
+  return zone;
 }
 
 export default setTimezone;

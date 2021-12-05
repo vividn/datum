@@ -1,6 +1,5 @@
 import { Settings, DateTime, Duration } from "luxon";
-import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
-import timezone_mock from "timezone-mock";
+import { beforeEach, describe, expect, it } from "@jest/globals";
 import { BadDateError, BadTimeError, BadTimezoneError } from "../../errors";
 import {
   handleTimeArgs,
@@ -22,14 +21,8 @@ const expectTiming = (
 
 describe("handleTimeArgs", () => {
   beforeEach(() => {
-    timezone_mock.register("UTC");
     const mockNowMillis = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
     Settings.now = () => mockNowMillis;
-  });
-
-  afterEach(() => {
-    timezone_mock.unregister();
-    Settings.resetCaches();
   });
 
   it("returns timeStr as current time when no arguments are given", () => {
@@ -174,12 +167,13 @@ describe("handleTimeArgs", () => {
   });
 
   it("gives local date, not utc date", () => {
-    timezone_mock.register("Brazil/East");
+    Settings.defaultZone = "Brazil/East";
     const mockNow = DateTime.utc(2020, 5, 10, 2, 0, 0).toMillis(); // 23:00 May 9, Brazil time
     Settings.now = () => mockNow;
 
     const result = handleTimeArgs({ fullDay: true });
     expect(result.timeStr).toBe("2020-05-09");
+    Settings.defaultZone = "system";
   });
 
   it("adjust datetime appropriately for timezone", () => {
@@ -243,11 +237,13 @@ describe("handleTimeArgs", () => {
     const { utcOffset: offset1 } = handleTimeArgs({});
     expect(offset1).toBe(0);
 
-    timezone_mock.register("Brazil/East");
+    Settings.defaultZone = "Brazil/East";
     const { utcOffset: offset2 } = handleTimeArgs({});
     expect(offset2).toBe(-3);
 
     const { utcOffset: offset3 } = handleTimeArgs({ noTimestamp: true });
     expect(offset3).toBe(-3);
+
+    Settings.defaultZone = "system";
   });
 });
