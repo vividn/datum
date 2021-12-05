@@ -42,14 +42,11 @@ describe("overwriteDoc", () => {
 
   beforeEach(async () => {
     await resetTestDb(dbName);
-    Settings.defaultZone = "utc";
     Settings.now = () => mockNow.toMillis();
   });
 
   afterEach(async () => {
     await testNano.db.destroy(dbName).catch(pass);
-    Settings.defaultZone = "system";
-    Settings.resetCaches();
   });
 
   it("fails if id to be overwritten does not exist in db", async () => {

@@ -6,7 +6,7 @@ import {
 } from "luxon";
 import { BadTimezoneError } from "../errors";
 
-function setZone(timezone?: string): Zone {
+function setTimezone(timezone?: string): Zone {
   let zone: Zone;
   if (timezone) {
     const tzNumber = Number(timezone);
@@ -27,4 +27,4 @@ function setZone(timezone?: string): Zone {
   return zone;
 }
 
-export default setZone;
+export default setTimezone;

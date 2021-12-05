@@ -74,7 +74,6 @@ describe("updateDoc", () => {
   });
 
   test("updates modifyTime if oldDoc has metadata", async () => {
-    Settings.defaultZone = "utc";
     Settings.now = () => mockNow.toMillis();
 
     const docWithModify = {
@@ -93,9 +92,6 @@ describe("updateDoc", () => {
     });
 
     expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
-
-    Settings.defaultZone = "system";
-    Settings.resetCaches();
   });
 
   test("does not add metadata if oldDoc does not have metadata", async () => {

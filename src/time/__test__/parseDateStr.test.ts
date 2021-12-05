@@ -9,14 +9,8 @@ function expectDate(
 }
 
 beforeEach(() => {
-  Settings.defaultZone = "utc";
   const mockNowMillis = DateTime.utc(2021, 10, 26, 12, 0, 30).toMillis();
   Settings.now = () => mockNowMillis;
-});
-
-afterEach(() => {
-  Settings.defaultZone = "system";
-  Settings.resetCaches();
 });
 
 it("handles absolute dates", () => {

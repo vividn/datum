@@ -1,4 +1,4 @@
-import { afterEach, beforeEach } from "@jest/globals";
+import { beforeEach } from "@jest/globals";
 import { DateTime, Duration, Settings } from "luxon";
 import parseTimeStr from "../parseTimeStr";
 
@@ -9,15 +9,9 @@ const anotherTime = { hour: 10, minute: 17, second: 0 };
 let mockNow: DateTime;
 
 beforeEach(() => {
-  Settings.defaultZone = "utc";
   mockNow = DateTime.fromObject({ ...todayObj, ...timeOfDayObj });
   const mockNowMillis = mockNow.toMillis();
   Settings.now = () => mockNowMillis;
-});
-
-afterEach(() => {
-  Settings.defaultZone = "system";
-  Settings.resetCaches();
 });
 
 describe("absolute time strings", () => {

@@ -1,5 +1,5 @@
 import { Settings, DateTime, Duration } from "luxon";
-import { afterEach, beforeEach, describe, expect, it } from "@jest/globals";
+import { beforeEach, describe, expect, it } from "@jest/globals";
 import { BadDateError, BadTimeError, BadTimezoneError } from "../../errors";
 import {
   handleTimeArgs,
@@ -21,14 +21,8 @@ const expectTiming = (
 
 describe("handleTimeArgs", () => {
   beforeEach(() => {
-    Settings.defaultZone = "utc";
     const mockNowMillis = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
     Settings.now = () => mockNowMillis;
-  });
-
-  afterEach(() => {
-    Settings.defaultZone = "system";
-    Settings.resetCaches();
   });
 
   it("returns timeStr as current time when no arguments are given", () => {
@@ -179,6 +173,7 @@ describe("handleTimeArgs", () => {
 
     const result = handleTimeArgs({ fullDay: true });
     expect(result.timeStr).toBe("2020-05-09");
+    Settings.defaultZone = "system";
   });
 
   it("adjust datetime appropriately for timezone", () => {
@@ -248,5 +243,7 @@ describe("handleTimeArgs", () => {
 
     const { utcOffset: offset3 } = handleTimeArgs({ noTimestamp: true });
     expect(offset3).toBe(-3);
+
+    Settings.defaultZone = "system";
   });
 });

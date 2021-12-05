@@ -50,14 +50,11 @@ describe("addDoc", () => {
 
   beforeEach(async () => {
     await resetTestDb(dbName);
-    Settings.defaultZone = "utc";
     Settings.now = () => mockNow.toMillis();
   });
 
   afterEach(async () => {
     await testNano.db.destroy(dbName).catch(pass);
-    Settings.defaultZone = "system";
-    Settings.resetCaches();
   });
 
   it("it adds dataOnly payloads with _id to the given database", async () => {

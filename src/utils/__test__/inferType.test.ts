@@ -71,7 +71,6 @@ describe("inferType with special fields", () => {
   });
 
   beforeAll(() => {
-    Settings.defaultZone = "utc";
     const mockNow = DateTime.fromObject({
       year: 2021,
       month: 10,
@@ -81,12 +80,6 @@ describe("inferType with special fields", () => {
     });
     const mockNowMillis = mockNow.toMillis();
     Settings.now = () => mockNowMillis;
-  });
-
-  afterAll(() => {
-    jest.restoreAllMocks();
-    Settings.defaultZone = "system";
-    Settings.resetCaches();
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
