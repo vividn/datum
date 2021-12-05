@@ -1,4 +1,9 @@
-import { DateTime, FixedOffsetZone, IANAZone, Settings as DateTimeSettings, Zone } from "luxon";
+import {
+  FixedOffsetZone,
+  IANAZone,
+  Settings as DateTimeSettings,
+  Zone,
+} from "luxon";
 import { BadTimezoneError } from "../errors";
 
 function setZone(timezone?: string): Zone {
