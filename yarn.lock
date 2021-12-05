@@ -4119,11 +4119,6 @@ jest-regex-util@^26.0.0:
   resolved "https://registry.yarnpkg.com/jest-regex-util/-/jest-regex-util-26.0.0.tgz#d25e7184b36e39fd466c3bc41be0971e821fee28"
   integrity sha512-Gv3ZIs/nA48/Zvjrl34bf+oD76JHiGDUxNOVgUjh3j890sblXryjY4rss71fPtD/njchl6PSE2hIhvyWa1eT0A==
 
-jest-regex-util@^27.0.6:
-  version "27.0.6"
-  resolved "https://registry.yarnpkg.com/jest-regex-util/-/jest-regex-util-27.0.6.tgz#02e112082935ae949ce5d13b2675db3d8c87d9c5"
-  integrity sha512-SUhPzBsGa1IKm8hx2F4NfTGGp+r7BXJ4CulsZ1k2kI+mGLG+lxGrs76veN2LF/aUdGosJBzKgXmNCw+BzFqBDQ==
-
 jest-regex-util@^27.4.0:
   version "27.4.0"
   resolved "https://registry.yarnpkg.com/jest-regex-util/-/jest-regex-util-27.4.0.tgz#e4c45b52653128843d07ad94aec34393ea14fbca"
@@ -4260,18 +4255,6 @@ jest-util@^26.1.0, jest-util@^26.6.2:
     graceful-fs "^4.2.4"
     is-ci "^2.0.0"
     micromatch "^4.0.2"
-
-jest-util@^27.3.1:
-  version "27.3.1"
-  resolved "https://registry.yarnpkg.com/jest-util/-/jest-util-27.3.1.tgz#a58cdc7b6c8a560caac9ed6bdfc4e4ff23f80429"
-  integrity sha512-8fg+ifEH3GDryLQf/eKZck1DEs2YuVPBCMOaHQxVVLmQwl/CDhWzrvChTX4efLZxGrw+AA0mSXv78cyytBt/uw==
-  dependencies:
-    "@jest/types" "^27.2.5"
-    "@types/node" "*"
-    chalk "^4.0.0"
-    ci-info "^3.2.0"
-    graceful-fs "^4.2.4"
-    picomatch "^2.2.3"
 
 jest-util@^27.4.2:
   version "27.4.2"
@@ -6015,10 +5998,10 @@ ts-jest@^26.5.6:
     semver "7.x"
     yargs-parser "20.x"
 
-ts-node@^10.3.0:
-  version "10.3.1"
-  resolved "https://registry.yarnpkg.com/ts-node/-/ts-node-10.3.1.tgz#739b42839b56d1a3c85026994af7045b2fccc6f5"
-  integrity sha512-Yw3W2mYzhHfCHOICGNJqa0i+rbL0rAyg7ZIHxU+K4pgY8gd2Lh1j+XbHCusJMykbj6RZMJVOY0MlHVd+GOivcw==
+ts-node@^10.4.0:
+  version "10.4.0"
+  resolved "https://registry.yarnpkg.com/ts-node/-/ts-node-10.4.0.tgz#680f88945885f4e6cf450e7f0d6223dd404895f7"
+  integrity sha512-g0FlPvvCXSIO1JDF6S232P5jPYqBkRL9qly81ZgAOSU7rwI0stphCgd2kLiCrU9DjQCrJMWEqcNSjQL02s6d8A==
   dependencies:
     "@cspotcode/source-map-support" "0.7.0"
     "@tsconfig/node10" "^1.0.7"
