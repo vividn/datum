@@ -71,7 +71,7 @@
     "pluralize": "^8.0.0",
     "relaxed-json": "^1.0.3",
     "string.ify": "^1.0.64",
-    "tmp-promise": "^3.0.2",
+    "tmp-promise": "^3.0.3",
     "yargs": "^17.2.1"
   }
 }
