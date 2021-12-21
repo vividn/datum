@@ -27,7 +27,7 @@
     "@babel/core": "^7.16.5",
     "@babel/preset-env": "^7.16.4",
     "@babel/preset-typescript": "^7.16.5",
-    "@jest/globals": "^27.4.2",
+    "@jest/globals": "^27.4.4",
     "@types/jest": "^27.0.3",
     "@types/lodash.isequal": "^4.5.5",
     "@types/lodash.isplainobject": "^4.0.6",
