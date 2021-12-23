@@ -6,10 +6,8 @@ export function createOrAppend(
   if (existing === undefined) {
     return toAppend;
   }
-  const existingArr = Array.isArray(existing ?? [])
-    ? existing ?? []
-    : [existing];
-  existingArr.push(toAppend);
-  return existingArr;
+  const arr = Array.isArray(existing) ? existing : [existing];
+  arr.push(toAppend);
+  return arr;
 }
 /* eslint-enable @typescript-eslint/explicit-module-boundary-types */
