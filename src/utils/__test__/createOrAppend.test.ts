@@ -31,4 +31,12 @@ describe("createOrAppend", () => {
       "c",
     ]);
   });
+
+  it("concats nulls into the array", () => {
+    expect(createOrAppend(null, "rightside")).toStrictEqual([
+      null,
+      "rightside",
+    ]);
+    expect(createOrAppend("leftside", null)).toStrictEqual(["leftside", null]);
+  });
 });
