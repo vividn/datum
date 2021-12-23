@@ -164,7 +164,8 @@ export const handleDataArgs = function ({
     if (stringRemainder) {
       parsedData[remainderKey] = createOrAppend(
         parsedData[remainderKey],
-        remainderData.join(" ")
+        remainderData.join(" "),
+        " "
       );
     } else {
       for (const remainder of remainderData) {

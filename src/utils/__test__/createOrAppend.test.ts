@@ -31,4 +31,19 @@ describe("createOrAppend", () => {
       "c",
     ]);
   });
+<<<<<<< Updated upstream
+=======
+
+  it("concats nulls into the array", () => {
+    expect(createOrAppend(null, "rightside")).toStrictEqual([
+      null,
+      "rightside",
+    ]);
+    expect(createOrAppend("leftside", null)).toStrictEqual(["leftside", null]);
+  });
+
+  it("can join the output into a string", () => {
+    expect(createOrAppend("abc", "def", " ")).toStrictEqual("abc def");
+  });
+>>>>>>> Stashed changes
 });
