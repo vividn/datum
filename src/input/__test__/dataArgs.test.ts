@@ -105,6 +105,27 @@ describe("handleDataArgs", () => {
     ).toThrowError(DataError);
   });
 
+  test("required keys can be specified manually without error", () => {
+    expectParseDataToReturn(
+      { required: ["abc"], data: ["abc=def"] },
+      { abc: "def" }
+    );
+  });
+
+  test("manually specified required keys overwrite already specified auto values", () => {
+    expectParseDataToReturn(
+      { required: ["abc"], data: ["def", "abc=ghi"] },
+      { abc: "ghi" }
+    );
+  });
+
+  test("future keyless data skips over manually specified required keys", () => {
+    expectParseDataToReturn(
+      { required: ["abc", "def", "ghi"], data: ["def=123", "xyz", "foobar"] },
+      { abc: "xyz", def: 123, ghi: "foobar" }
+    );
+  });
+
   it("handles optional extra keys", () => {
     expectParseDataToReturn({ optional: "abc", data: ["cde"] }, { abc: "cde" });
     expectParseDataToReturn({ optional: "optional", data: [] }, {});

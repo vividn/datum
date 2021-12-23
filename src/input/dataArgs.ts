@@ -176,10 +176,12 @@ export const handleDataArgs = function ({
     }
   }
 
-  if (requiredKeys.length > 0) {
-    throw new DataError(
-      `No data given for the required key(s) '${requiredKeys}`
-    );
+  while (requiredKeys.length > 0) {
+    const requiredKey = requiredKeys.shift()!;
+    if (requiredKey in parsedData) {
+      continue;
+    }
+    throw new DataError(`No data given for the required key: ${requiredKey}`);
   }
 
   // If optional keys with default values are left assign them
