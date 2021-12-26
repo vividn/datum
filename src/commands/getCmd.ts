@@ -15,7 +15,7 @@ export function builder(yargs: Argv): Argv {
   return quickIdArg(yargs);
 }
 
-export async function getCmd(args: SeeCmdArgs): Promise<EitherDocument> {
+export async function getCmd(args: GetCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
   const id = await quickId(db, args.quickId);
   const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
