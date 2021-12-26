@@ -20,7 +20,8 @@ export const command = [
 export const desc = "Update the data in an existing document";
 
 export type UpdateCmdArgs = BaseDatumArgs &
-  DataArgs & QuickIdArg & {
+  DataArgs &
+  QuickIdArg & {
     strategy?: UpdateStrategyNames;
   };
 

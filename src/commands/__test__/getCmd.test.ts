@@ -44,7 +44,7 @@ it("outputs an EXISTS message when show is standard", async () => {
     meta: { humanId: "somethingElse" },
   };
   await db.insert(doc);
-  await getCmd({db: dbName, quickId: "show_me", show: Show.Standard});
+  await getCmd({ db: dbName, quickId: "show_me", show: Show.Standard });
   expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
 
   console.log = originalLog;

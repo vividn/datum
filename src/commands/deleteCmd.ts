@@ -9,7 +9,7 @@ import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 export const command = ["delete <quickId>", "del <quickId>"];
 export const desc = "delete a document";
 
-export type DeleteCmdArgs = BaseDatumArgs & QuickIdArg
+export type DeleteCmdArgs = BaseDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
   return quickIdArg(yargs);
