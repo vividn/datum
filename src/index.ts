@@ -6,12 +6,18 @@ import mapCmd, { MapCmdArgs } from "./commands/mapCmd";
 import setupCmd, { SetupCmdArgs } from "./commands/setupCmd";
 import { deleteCmd, DeleteCmdArgs } from "./commands/deleteCmd";
 import { updateCmd, UpdateCmdArgs } from "./commands/updateCmd";
+import { getCmd, GetCmdArgs } from "./commands/getCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
   switch (args._[0]) {
     case "add":
       await addCmd(args as unknown as AddCmdArgs);
+      break;
+
+    case "get":
+    case "see":
+      await getCmd(args as unknown as GetCmdArgs);
       break;
 
     case "update": {
