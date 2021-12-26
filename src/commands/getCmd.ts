@@ -9,7 +9,7 @@ import { Show, showExists } from "../output/output";
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
 
-export type SeeCmdArgs = BaseDatumArgs & QuickIdArg;
+export type GetCmdArgs = BaseDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
   return quickIdArg(yargs);
