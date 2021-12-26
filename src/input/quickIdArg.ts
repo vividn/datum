@@ -1,5 +1,9 @@
 import yargs, { Argv } from "yargs";
 
+export type QuickIdArg = {
+  quickId: string;
+};
+
 export function quickIdArg(otherYargs?: Argv): Argv {
   const yarg = otherYargs ?? yargs;
   return yarg.positional("quickId", {

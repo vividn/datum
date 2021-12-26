@@ -10,7 +10,7 @@ import { Show } from "../output/output";
 import updateDoc from "../documentControl/updateDoc";
 import quickId from "../ids/quickId";
 import { Argv } from "yargs";
-import { quickIdArg } from "../input/quickIdArg";
+import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
 
 export const command = [
@@ -20,8 +20,7 @@ export const command = [
 export const desc = "Update the data in an existing document";
 
 export type UpdateCmdArgs = BaseDatumArgs &
-  DataArgs & {
-    quickId: string;
+  DataArgs & QuickIdArg & {
     strategy?: UpdateStrategyNames;
   };
 
