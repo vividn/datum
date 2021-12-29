@@ -478,10 +478,11 @@ def main(**kwargs):
         )
 
     # Draw a Yellow line that represents now
-    now_x = dayperc(datetime.datetime.now().time()) * day_lenx + l_midnight
-    now_bottom = ysize - image_padding
-    now_top = day0s[-1]
-    draw.line((now_x, now_top, now_x, now_bottom), fill=now_color, width=now_width)
+    if end_date == dt.date.today():
+        now_x = dayperc(datetime.datetime.now().time()) * day_lenx + l_midnight
+        now_bottom = ysize - image_padding
+        now_top = day0s[-1]
+        draw.line((now_x, now_top, now_x, now_bottom), fill=now_color, width=now_width)
 
     # Display error symbol if error has occured
     if error_has_occurred:
