@@ -634,6 +634,24 @@ if __name__ == "__main__":
     )
     main(nDays=14, imagename="2week", ysize=1200)
     # main(
+    #     imagename="allData",
+    #     begin_date=dt.date(2016,11,27),
+    #     end_date=dt.date.today(),
+    #     xsize=1000,
+    #     ysize=300000
+    # )
+
+    # main(
+    #     begin_date=dt.date(2021, 9, 13),
+    #     end_date=dt.date(2021, 9, 17),
+    #     imagename="crunchAndRelease",
+    #     xsize=750,
+    #     ysize=750,
+    #     fontsize=0,
+    #     quantfontsize=0,
+    #     point_r=5,
+    #         )
+    # main(
     #     begin_date=dt.date(2018, 12, 9),
     #     end_date=dt.date(2018, 12, 15),
     #     imagename="interview",
