@@ -9,6 +9,7 @@ verify_ssl = true
 pandas = "*"
 numpy = "*"
 pillow = "*"
+matplotlib = "*"
 
 [requires]
 python_version = "3.8"
