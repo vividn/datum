@@ -284,13 +284,14 @@ def main(**kwargs):
             + day_height / 2.0
             - date_height / 2.0
         )
-        draw.multiline_text(
-            xy=(date_x, date_y),
-            text=date_label,
-            font=imfont,
-            fill=text_color,
-            align="right",
-        )
+        if fontsize > 0:
+            draw.multiline_text(
+                xy=(date_x, date_y),
+                text=date_label,
+                font=imfont,
+                fill=text_color,
+                align="right",
+            )
 
     ################################################
     # Load and iterate through the data
@@ -435,9 +436,10 @@ def main(**kwargs):
                 - (quant_height / 2)
             )
 
-            draw.text(
-                xy=(quant_x, quant_y), text=quant_str, font=quantfont, fill=quant_color
-            )
+            if quantfontsize > 0:
+                draw.text(
+                    xy=(quant_x, quant_y), text=quant_str, font=quantfont, fill=quant_color
+                )
 
     # All data are now drawn
 
@@ -453,10 +455,11 @@ def main(**kwargs):
         text_y_bottom = ysize - image_padding - text_height
 
         # Draw the text on the top and bottom of the display
-        draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color)
-        draw.text(
-            xy=(text_x, text_y_bottom), text=text_str, font=imfont, fill=text_color
-        )
+        if fontsize > 0:
+            draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color)
+            draw.text(
+                xy=(text_x, text_y_bottom), text=text_str, font=imfont, fill=text_color
+            )
 
         # Draw a line between the top and bottom
         line_top = text_y_top + text_height + 2
