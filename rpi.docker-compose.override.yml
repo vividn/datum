@@ -1,5 +1,0 @@
-version: "3"
-
-services:
-  couchdb:
-    image: "treehouses/couchdb:2.3.1"
