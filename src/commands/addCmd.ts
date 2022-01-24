@@ -19,6 +19,7 @@ import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
+import { DateTime, Duration } from "luxon";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -139,6 +140,12 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
 
     meta.utcOffset = utcOffset;
 
+    // these will be overwritten later by addDoc, but useful to have them here
+    // for undo and original id building
+    const now = DateTime.utc().toString();
+    meta.createTime = now;
+    meta.modifyTime = now;
+
     // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same
     if (idStructure.match(/(?<!\\)%/)) {
@@ -186,6 +193,17 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       } else {
         throw error;
       }
+    }
+
+    const fifteenMinutesAgo = DateTime.now().minus(
+      Duration.fromObject({ minutes: 15 })
+    );
+    if (
+      doc.meta?.createTime &&
+      DateTime.fromISO(doc.meta.createTime) < fifteenMinutesAgo
+    ) {
+      // deletion prevention
+      throw Error("Doc created more than fifteen minutes ago");
     }
     await db.destroy(doc._id, doc._rev);
     console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
