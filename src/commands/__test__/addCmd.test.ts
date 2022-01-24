@@ -19,7 +19,7 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocumentScope } from "nano";
 import { DocExistsError } from "../../documentControl/base";
 import { Show } from "../../output/output";
-import { DateTime, Settings } from "luxon";
+import { DateTime, Duration, Settings } from "luxon";
 
 const originalLog = console.log;
 
@@ -332,6 +332,26 @@ describe("addCmd", () => {
     expect(newDoc.meta.utcOffset).toEqual(-7);
 
     Settings.defaultZone = "system";
+    Settings.resetCaches();
+  });
+
+  it("prevents undo if created more than 15 minutes ago", async () => {
+    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
+    const oldTime = mockNow.minus(
+      Duration.fromObject({ minutes: 15, seconds: 30 })
+    );
+    Settings.now = () => mockNow.toMillis();
+
+    await db.insert({
+      _id: "oldDoc",
+      data: {},
+      meta: { createTime: oldTime.toString() },
+    });
+
+    await expect(addCmd({ idPart: "oldDoc", undo: true })).rejects.toThrowError(
+      "Doc created more than fifteen minutes ago"
+    );
+
     Settings.resetCaches();
   });
 });

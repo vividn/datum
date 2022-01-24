@@ -1,0 +1,15 @@
+version: "3"
+services:
+  test-couch:
+    image: "couchdb:3.0.0"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+    environment:
+      COUCHDB_USER: "admin"
+      COUCHDB_PASSWORD: "password"
+      COUCHDB_SECRET: "secret secret secret"
+      NODENAME:
+    ports:
+      - "5983:5984"
