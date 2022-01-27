@@ -71,12 +71,19 @@ export function builder(yargs: Argv): Argv {
       type: "string",
     },
 
-    // Change behavior
+    // Undo
     undo: {
       describe: "undoes the last datum entry, can be combined with -f",
       alias: "u",
       type: "boolean",
     },
+    "force-undo": {
+      describe:
+        "forces an undo, even if the datapoint was entered more than 15 minutes ago",
+      alias: "U",
+      type: "boolean",
+    },
+
     merge: {
       describe:
         "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
@@ -90,12 +97,6 @@ export function builder(yargs: Argv): Argv {
       type: "string",
       choices: conflictChoices,
     },
-    // "force-undo": {
-    //   describe:
-    //     "forces an undo, even if the datapoint was entered more than 15 minutes ago",
-    //   alias: "U",
-    //   type: "boolean",
-    // },
   });
 }
 
@@ -107,6 +108,7 @@ export type AddCmdArgs = BaseDatumArgs &
     idDelimiter?: string;
     partition?: string;
     undo?: boolean;
+    "force-undo"?: boolean;
     merge?: boolean;
     conflict?: ConflictStrategyNames;
   };
@@ -166,8 +168,8 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
 
   const db = connectDb(args);
 
-  const { undo } = args;
-  if (undo) {
+  const { undo, "force-undo": force } = args;
+  if (undo || force) {
     let doc;
     try {
       doc = await db.get(_id);
@@ -202,8 +204,11 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       doc.meta?.createTime &&
       DateTime.fromISO(doc.meta.createTime) < fifteenMinutesAgo
     ) {
-      // deletion prevention
-      throw Error("Doc created more than fifteen minutes ago");
+      if (!force) {
+        // deletion prevention
+        throw Error("Doc created more than fifteen minutes ago");
+      }
+      console.log("Doc created more than fifteen minutes ago");
     }
     await db.destroy(doc._id, doc._rev);
     console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
