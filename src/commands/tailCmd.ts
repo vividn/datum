@@ -33,7 +33,7 @@ export function builder(yargs: Argv): Argv {
     },
     format: {
       describe: "custom format for outputting the data",
-      type: "string"
-    }
+      type: "string",
+    },
   });
 }
