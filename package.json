@@ -58,7 +58,7 @@
   "dependencies": {
     "@types/lodash.get": "^4.4.6",
     "chalk": "^4.1.2",
-    "chrono-node": "^2.3.5",
+    "chrono-node": "^2.3.6",
     "dotenv": "^14.2.0",
     "lodash.get": "^4.4.2",
     "lodash.isequal": "^4.5.0",
