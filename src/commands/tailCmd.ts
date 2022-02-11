@@ -77,11 +77,10 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     },
   });
   const rawRows = viewResults.rows.reverse();
-
+  const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
   const headerRow = ["occurTime", "hid", "id"];
   const tableRows = [headerRow].concat(
-    rawRows.map((row) => {
-      const doc = row.doc!;
+    docs.map((doc) => {
       if (isDatumDocument(doc)) {
         const data = doc.data;
         const meta = doc.meta;
@@ -103,4 +102,6 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   });
 
   console.log(output);
+
+  return docs;
 }
