@@ -1,9 +1,13 @@
 import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
-import { EitherDocument } from "../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  isDatumDocument,
+} from "../documentControl/DatumDocument";
 import viewMap from "../views/viewMap";
 import connectDb from "../auth/connectDb";
 import { occurTimeView } from "../views/datumViews";
+import { getBorderCharacters, table } from "table";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -65,9 +69,38 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const viewResults = await viewMap({
     db,
     datumView: occurTimeView,
-    params: { descending: true, start_key: "\uffff\uffff", limit, include_docs: true },
+    params: {
+      descending: true,
+      start_key: "\uffff\uffff",
+      limit,
+      include_docs: true,
+    },
   });
-  const rows = viewResults.rows.reverse();
-  
-  console.log(rows);
+  const rawRows = viewResults.rows.reverse();
+
+  const headerRow = ["occurTime", "hid", "id"];
+  const tableRows = [headerRow].concat(
+    rawRows.map((row) => {
+      const doc = row.doc!;
+      if (isDatumDocument(doc)) {
+        const data = doc.data;
+        const meta = doc.meta;
+        const id = doc._id;
+        return [data?.occurTime, meta?.humanId?.slice(0, 5), id];
+      } else {
+        return [doc.occurTime, "", doc._id];
+      }
+    })
+  );
+
+  const output = table(tableRows, {
+    border: getBorderCharacters("void"),
+    columnDefault: {
+      paddingLeft: 0,
+      paddingRight: 1,
+    },
+    drawHorizontalLine: () => false,
+  });
+
+  console.log(output);
 }
