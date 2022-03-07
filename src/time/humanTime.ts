@@ -23,4 +23,3 @@ export function humanTime(time: DateTime): string {
 
   return time.toFormat(dateTimeFormat);
 }
-

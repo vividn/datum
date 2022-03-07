@@ -3,8 +3,7 @@ import { humanTime } from "../humanTime";
 
 const mockNow = DateTime.utc(2022, 2, 11, 9, 20, 0);
 
-describe("humanTime", () =>
-{
+describe("humanTime", () => {
   beforeEach(async () => {
     Settings.now = () => mockNow.toMillis();
     Settings.defaultZone = "system";
