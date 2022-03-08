@@ -2,7 +2,7 @@
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
     "lib": ["ES2020", "ESNext"],
-    "module": "CommonJS",
+    "module": "ES2020",
     "moduleResolution": "node",
     "target": "ES2020",
     "declaration": true,
