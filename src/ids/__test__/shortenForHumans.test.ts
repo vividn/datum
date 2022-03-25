@@ -11,14 +11,6 @@ import shortenForHumans from "../shortenForHumans";
 describe("shortenForHumans", () => {
   const mockDb = mock<DocumentScope<any>>();
 
-  beforeEach(() => {
-    jest.resetAllMocks();
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
   it("calls getHumanIds with the array of ids", async () => {
     const ids = ["idA", "idB", "idNo", "idC"];
     const getHumanIdsSpy = jest

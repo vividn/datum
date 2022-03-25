@@ -333,8 +333,6 @@ describe("insertDatumView", () => {
     await insertDatumView({ db: viewDb, datumView: datumView });
 
     expect(addDocSpy).toHaveBeenCalledTimes(1);
-
-    addDocSpy.mockRestore();
   });
 
   it("calls overwriteDoc when overwriting", async () => {
@@ -354,7 +352,5 @@ describe("insertDatumView", () => {
     await insertDatumView({ db: viewDb, datumView: datumView2 });
 
     expect(overwriteDocSpy).toHaveBeenCalledTimes(1);
-
-    overwriteDocSpy.mockRestore();
   });
 });

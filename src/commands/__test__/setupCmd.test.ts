@@ -14,7 +14,6 @@ it("calls setupDatumViews", async () => {
     });
   await setupCmd({ db: dbName });
   expect(setupDatumViewsSpy).toHaveBeenCalledTimes(1);
-  setupDatumViewsSpy.mockRestore();
 });
 
 it("adds datum views into the db", async () => {

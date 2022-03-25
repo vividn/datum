@@ -1,6 +1,6 @@
 import { DataArgs, handleDataArgs } from "../dataArgs";
 import { GenericObject } from "../../GenericObject";
-import { beforeEach, describe, expect, it, jest } from "@jest/globals";
+import { describe, expect, it, jest } from "@jest/globals";
 import { DataError } from "../../errors";
 import * as inferType from "../../utils/inferType";
 
@@ -12,10 +12,6 @@ const expectParseDataToReturn = (
 };
 
 describe("handleDataArgs", () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   it("returns an empty object with just a blank positional array", () => {
     expect(handleDataArgs({ data: [] })).toEqual({});
   });
@@ -171,30 +167,25 @@ describe("handleDataArgs", () => {
     );
   });
 
-  it("calls inferType for all kinds of data entry", () => {
-    const testCases: [DataArgs, number][] = [
-      [{ data: ["withKey=data"] }, 1],
-      [{ data: ["extraArg"], lenient: true }, 1],
-      [{ required: ["keyIs"], data: ["given"] }, 1],
-      [{ data: [] }, 0],
-      [{ optional: "has=defaultValue", data: [] }, 1],
-      [{ optional: ["onlyFinalData=goesThrough"], data: ["inferType"] }, 1],
-      [{ field: "[1,2,3]", data: [] }, 1],
-      [{ comment: "comment", data: [] }, 1],
-      [{ comment: "comment1", data: ["comment=[123]"] }, 2],
-    ];
-
-    testCases.forEach((testCase) => {
-      const parseDataArgs: DataArgs = testCase[0];
-      const inferTypeCalls = testCase[1];
-
+  it.each([
+    [{ data: ["withKey=data"] }, 1],
+    [{ data: ["extraArg"], lenient: true }, 1],
+    [{ required: ["keyIs"], data: ["given"] }, 1],
+    [{ data: [] }, 0],
+    [{ optional: "has=defaultValue", data: [] }, 1],
+    [{ optional: ["onlyFinalData=goesThrough"], data: ["inferType"] }, 1],
+    [{ field: "[1,2,3]", data: [] }, 1],
+    [{ comment: "comment", data: [] }, 1],
+    [{ comment: "comment1", data: ["comment=[123]"] }, 2],
+  ])(
+    "When called with %s, inferType is called %i times",
+    (parseDataArgs: DataArgs, inferTypeCalls: number) => {
       const spy = jest.spyOn(inferType, "default");
       handleDataArgs(parseDataArgs);
 
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
-      spy.mockRestore();
-    });
-  });
+    }
+  );
 
   it("uses the field prop to populate the field key, overwriting manual spec", () => {
     expectParseDataToReturn(

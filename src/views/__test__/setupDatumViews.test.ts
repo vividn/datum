@@ -13,7 +13,6 @@ function emit(key: any, value: any) {
 
 afterEach(async () => {
   jest.resetModules();
-  jest.restoreAllMocks();
 });
 
 it("adds all datum views to an empty db", async () => {
@@ -32,9 +31,7 @@ it("adds all datum views to an empty db", async () => {
   };
 
   const mockAllDatumViews = [datumView1, datumView2];
-  const getAllDatumViewsSpy = jest
-    .spyOn(getAllDatumViews, "default")
-    .mockReturnValue(mockAllDatumViews);
+  jest.spyOn(getAllDatumViews, "default").mockReturnValue(mockAllDatumViews);
 
   const insertDatumViewsSpy = jest.spyOn(insertDatumViewModule, "default");
 
@@ -44,7 +41,4 @@ it("adds all datum views to an empty db", async () => {
   await db.get("_design/datum_another_view");
 
   expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
-
-  insertDatumViewsSpy.mockRestore();
-  getAllDatumViewsSpy.mockRestore();
 });
