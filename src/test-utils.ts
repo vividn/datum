@@ -4,7 +4,6 @@ import { EitherPayload } from "./documentControl/DatumDocument";
 import { afterAll, afterEach, beforeEach, jest } from "@jest/globals";
 import * as connectDb from "./auth/connectDb";
 import Mock = jest.Mock;
-import { MockProxy } from "jest-mock-extended";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -41,7 +40,7 @@ export const mockMissingNamedViewError: CouchDbError = {
   reason: "missing_named_view",
 };
 
-export async function resetTestDb(dbName: string): Promise<void> {
+export async function resetTestDb(dbName: string): Promise<DocumentScope<EitherPayload>> {
   const maxTries = 3;
   let tries = 0;
   await testNano.db.destroy(dbName).catch(pass);
@@ -49,7 +48,7 @@ export async function resetTestDb(dbName: string): Promise<void> {
     await testNano.db.destroy(dbName).catch(pass);
     await testNano.db.create(dbName).catch(pass);
     if ((await testNano.db.list()).includes(dbName)) {
-      return;
+      return testNano.use(dbName) as DocumentScope<EitherPayload>;
     }
   }
   throw Error(`Unable to reset database after ${maxTries} attempts`);

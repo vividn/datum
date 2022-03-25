@@ -1,8 +1,6 @@
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { BaseDataError } from "../../errors";
-import {
-  DatumDocument,
-} from "../../documentControl/DatumDocument";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import addCmd from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
@@ -13,7 +11,7 @@ describe("addCmd", () => {
   const dbName = "delete_cmd_test";
   const db = testDbLifecycle(dbName);
   const mockedLog = mockedLogLifecycle();
-  
+
   const addDocSpy = jest.spyOn(addDoc, "default");
 
   beforeEach(async () => {

@@ -1,27 +1,15 @@
-import { beforeEach, expect, it, describe, afterAll } from "@jest/globals";
-import {
-  DatumPayload,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../../test-utils";
-import { DocumentScope } from "nano";
+import { beforeEach, expect, it, describe } from "@jest/globals";
+import { DatumPayload } from "../../documentControl/DatumDocument";
+import { testDbLifecycle } from "../../test-utils";
 import { minHumanId, MinHumanIdError } from "../../ids/minHumanId";
 import insertDatumView from "../insertDatumView";
 import { subHumanIdView } from "../datumViews";
 import { DatumViewMissingError } from "../../errors";
 
-const dbName = "test_datum_queries";
-const db = testNano.db.use(dbName) as DocumentScope<EitherPayload>;
-
-beforeEach(async () => {
-  await resetTestDb(dbName);
-});
-
-afterAll(async () => {
-  await testNano.db.destroy(dbName);
-});
-
 describe("minHumanId", () => {
+  const dbName = "test_datum_queries";
+  const db = testDbLifecycle(dbName);
+
   beforeEach(async () => {
     await insertDatumView({ db, datumView: subHumanIdView });
   });

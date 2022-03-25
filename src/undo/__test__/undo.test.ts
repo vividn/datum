@@ -1,18 +1,14 @@
 import {
-  afterAll,
   afterEach,
   beforeEach,
   expect,
   it,
   jest,
 } from "@jest/globals";
-import { pass, resetTestDb, testDbLifecycle, testNano } from "../../test-utils";
-import { DocumentScope } from "nano";
+import { testDbLifecycle } from "../../test-utils";
 import {
   DatumDocument,
-  EitherPayload,
 } from "../../documentControl/DatumDocument";
-import * as connectDb from "../../auth/connectDb";
 import addCmd from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 

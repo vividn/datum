@@ -3,11 +3,9 @@ import {
   DataOnlyPayload,
   DatumDocument,
   DatumPayload,
-  EitherPayload,
 } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import {
-  afterEach,
   beforeEach,
   describe,
   expect,
@@ -15,7 +13,10 @@ import {
   test,
   jest,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
+import {
+  fail,
+  testDbLifecycle,
+} from "../../test-utils";
 import addDoc from "../addDoc";
 import { IdError } from "../../errors";
 import jClone from "../../utils/jClone";
@@ -46,15 +47,10 @@ const nowStr = mockNow.toString();
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
-  const db = testNano.db.use<EitherPayload>(dbName);
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
     Settings.now = () => mockNow.toMillis();
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
   });
 
   it("it adds dataOnly payloads with _id to the given database", async () => {

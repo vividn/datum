@@ -1,14 +1,16 @@
-import { DatumPayload, EitherPayload } from "../DatumDocument";
+import { DatumPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import {
-  afterEach,
   beforeEach,
   describe,
   expect,
   it,
   test,
 } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
+import {
+  fail,
+  testDbLifecycle,
+} from "../../test-utils";
 import overwriteDoc, {
   NoDocToOverwriteError,
   OverwriteDocError,
@@ -38,15 +40,10 @@ const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("overwriteDoc", () => {
   const dbName = "overwrite_doc_test";
-  const db = testNano.db.use<EitherPayload>(dbName);
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
     Settings.now = () => mockNow.toMillis();
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
   });
 
   it("fails if id to be overwritten does not exist in db", async () => {

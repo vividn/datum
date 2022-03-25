@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
 import updateDoc from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, resetTestDb, testNano } from "../../test-utils";
+import { fail, mockedLogLifecycle, resetTestDb, testDbLifecycle, testNano } from "../../test-utils";
 import { EitherPayload } from "../DatumDocument";
 import addDoc from "../addDoc";
 import { DocExistsError } from "../base";
@@ -13,20 +13,8 @@ import { main } from "../../index";
 import deleteDoc from "../deleteDoc";
 
 const dbName = "doc_control_output_test";
-const db = testNano.db.use<EitherPayload>(dbName);
-const originalLog = console.log;
-const mockedLog = jest.fn();
-
-beforeEach(async () => {
-  await resetTestDb(dbName);
-  mockedLog.mockReset();
-  console.log = mockedLog;
-});
-
-afterEach(async () => {
-  await testNano.db.destroy(dbName);
-  console.log = originalLog;
-});
+const db = testDbLifecycle(dbName);
+const mockedLog = mockedLogLifecycle();
 
 test("addDoc displays a CREATE: message and the document if showOutput", async () => {
   await addDoc({

@@ -1,10 +1,9 @@
-import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
-import { resetTestDb, testNano } from "../../test-utils";
+import { beforeEach, expect, it, jest } from "@jest/globals";
+import { testDbLifecycle } from "../../test-utils";
 import setupCmd from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
 import {
   EitherDocument,
-  EitherPayload,
 } from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
@@ -12,15 +11,10 @@ import { Show } from "../../output/output";
 import { mock } from "jest-mock-extended";
 
 const dbName = "update_cmd_test";
-const db = testNano.use<EitherPayload>(dbName);
+const db = testDbLifecycle(dbName);
 
 beforeEach(async () => {
-  await resetTestDb(dbName);
   await setupCmd({ db: dbName });
-});
-
-afterAll(async () => {
-  await testNano.db.destroy(dbName);
 });
 
 it("can update an existing doc from the first few letters of its humanId", async () => {
