@@ -1,9 +1,8 @@
 import { file as tmpFile } from "tmp-promise";
 import { promises as fs } from "fs";
-import RJSON from "relaxed-json"
+import RJSON from "relaxed-json";
 
 import child_process from "child_process";
-import { EitherDocument } from "../documentControl/DatumDocument";
 import { GenericObject } from "../GenericObject";
 import { MyError } from "../errors";
 
@@ -14,9 +13,7 @@ export class EditorError extends MyError {
   }
 }
 
-export async function editInTerminal (
-  initialText: string
-): Promise<string> {
+export async function editInTerminal(initialText: string): Promise<string> {
   const editor = process.env.EDITOR || "vi";
 
   const { path, cleanup } = await tmpFile();
@@ -28,14 +25,16 @@ export async function editInTerminal (
     });
     child.on("exit", async (code: number) => {
       if (code !== 0) {
-        reject(new EditorError(`${editor} returned non-zero exit code: ${code}`));
+        reject(
+          new EditorError(`${editor} returned non-zero exit code: ${code}`)
+        );
       } else {
         resolve(await fs.readFile(path, "utf8"));
       }
       await cleanup();
     });
   });
-};
+}
 
 export async function editJSONInTerminal(
   object: GenericObject

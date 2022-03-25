@@ -1,23 +1,17 @@
 import { BaseDatumArgs } from "../input/baseYargs";
-import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
-import { updateStrategies, UpdateStrategyNames } from "../documentControl/combineData";
 import { Argv } from "yargs";
-import { timeYargs } from "../input/timeArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import connectDb from "../auth/connectDb";
 import quickId from "../ids/quickId";
 import { Show } from "../output/output";
-import updateDoc from "../documentControl/updateDoc";
-import editInTerminal, { editJSONInTerminal } from "../utils/editInTerminal";
+import { editJSONInTerminal } from "../utils/editInTerminal";
 import overwriteDoc from "../documentControl/overwriteDoc";
 
-export const command = [
-  "edit <quickId>",
-];
+export const command = ["edit <quickId>"];
 export const desc = "Edit a document directly with EDITOR";
 
-export type EditCmdArgs = BaseDatumArgs & QuickIdArg
+export type EditCmdArgs = BaseDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
   return quickIdArg(yargs);
