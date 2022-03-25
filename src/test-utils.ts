@@ -1,7 +1,6 @@
 import Nano, { DocumentScope } from "nano";
 import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
-import { afterEach, beforeEach, jest } from "@jest/globals";
 import * as connectDb from "./auth/connectDb";
 import Mock = jest.Mock;
 

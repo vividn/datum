@@ -1,4 +1,3 @@
-import { expect, it } from "@jest/globals";
 import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import addCmd from "../../commands/addCmd";
