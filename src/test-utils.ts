@@ -40,7 +40,9 @@ export const mockMissingNamedViewError: CouchDbError = {
   reason: "missing_named_view",
 };
 
-export async function resetTestDb(dbName: string): Promise<DocumentScope<EitherPayload>> {
+export async function resetTestDb(
+  dbName: string
+): Promise<DocumentScope<EitherPayload>> {
   const maxTries = 3;
   let tries = 0;
   await testNano.db.destroy(dbName).catch(pass);

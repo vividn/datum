@@ -1,8 +1,4 @@
-import {
-  it,
-  jest,
-  expect,
-} from "@jest/globals";
+import { it, jest, expect } from "@jest/globals";
 import { testDbLifecycle } from "../../test-utils";
 import * as setupDatumViews from "../../views/setupDatumViews";
 import { setupCmd } from "../setupCmd";

@@ -1,6 +1,6 @@
 import { describe, expect, it, test } from "@jest/globals";
 import startsWith from "../startsWith";
-import { testDbLifecycle, testNano } from "../../test-utils";
+import { testDbLifecycle } from "../../test-utils";
 
 describe("startsWith", () => {
   it.each([

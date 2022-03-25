@@ -2,9 +2,7 @@ import { beforeEach, expect, it, jest } from "@jest/globals";
 import { testDbLifecycle } from "../../test-utils";
 import setupCmd from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
-import {
-  EitherDocument,
-} from "../../documentControl/DatumDocument";
+import { EitherDocument } from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";

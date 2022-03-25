@@ -1,13 +1,14 @@
 import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
-import { fail, pass, resetTestDb, testDbLifecycle, testNano } from "../../test-utils";
+import {
+  fail,
+  testDbLifecycle,
+} from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
 } from "../../views/datumViews";
-import { DocumentScope } from "nano";
-import { EitherPayload } from "../../documentControl/DatumDocument";
 import quickId, {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,

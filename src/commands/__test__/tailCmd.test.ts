@@ -1,7 +1,4 @@
-import {
-  mockedLogLifecycle,
-  testDbLifecycle,
-} from "../../test-utils";
+import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 
 const originalLog = console.log;
 

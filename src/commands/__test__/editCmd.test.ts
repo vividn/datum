@@ -31,7 +31,9 @@ describe("editCmd", () => {
       _id: "changed_id",
       def: "ghi",
     };
-    editJSONInTerminalSpy.mockImplementation(async (_doc: GenericObject) => editedDoc);
+    editJSONInTerminalSpy.mockImplementation(
+      async (_doc: GenericObject) => editedDoc
+    );
     await db.insert({ _id: "abcdef", abc: "def" });
     const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
     expect(returnedDoc).toMatchObject(editedDoc);

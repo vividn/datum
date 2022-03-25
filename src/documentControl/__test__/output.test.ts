@@ -1,8 +1,11 @@
-import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
+import { expect, jest, test } from "@jest/globals";
 import updateDoc from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, mockedLogLifecycle, resetTestDb, testDbLifecycle, testNano } from "../../test-utils";
-import { EitherPayload } from "../DatumDocument";
+import {
+  fail,
+  mockedLogLifecycle,
+  testDbLifecycle,
+} from "../../test-utils";
 import addDoc from "../addDoc";
 import { DocExistsError } from "../base";
 import overwriteDoc from "../overwriteDoc";
