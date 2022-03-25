@@ -1,4 +1,4 @@
-import { it, jest } from "@jest/globals";
+import { it } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { idToHumanView } from "../../views/datumViews";

@@ -1,15 +1,16 @@
-import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
+import { beforeEach, expect, it, jest } from "@jest/globals";
 import { testDbLifecycle } from "../../test-utils";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";
 import setupCmd from "../setupCmd";
+import SpyInstance = jest.SpyInstance;
 
-const dbName = "add_cmd_test";
+const dbName = "delete_cmd_test";
 const db = testDbLifecycle(dbName);
 
-let deleteDocSpy;
+let deleteDocSpy: any;
 beforeEach(async () => {
   deleteDocSpy = jest.spyOn(deleteDoc, "default");
   await setupCmd({ db: dbName });

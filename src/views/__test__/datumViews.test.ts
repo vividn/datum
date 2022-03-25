@@ -5,13 +5,8 @@ import {
   DatumDocument,
   EitherDocument,
 } from "../../documentControl/DatumDocument";
-import {
-  humanIdView,
-  idToHumanView,
-  subHumanIdView,
-} from "../datumViews/humanId";
-import { dataStructuresView, structuresView } from "../datumViews/structure";
-import SpyInstance = jest.SpyInstance;
+import { humanIdView, idToHumanView, subHumanIdView } from "../datumViews";
+import { dataStructuresView, structuresView } from "../datumViews";
 
 describe("humanIdView", () => {
   let emitMock: any;

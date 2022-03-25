@@ -1,7 +1,7 @@
 import Nano, { DocumentScope } from "nano";
 import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
-import { afterAll, afterEach, beforeEach, jest } from "@jest/globals";
+import { afterEach, beforeEach, jest } from "@jest/globals";
 import * as connectDb from "./auth/connectDb";
 import Mock = jest.Mock;
 
@@ -61,9 +61,7 @@ export function testDbLifecycle(dbName: string): DocumentScope<EitherPayload> {
 
   beforeEach(async () => {
     await resetTestDb(dbName);
-    jest
-    .spyOn(connectDb, "default")
-    .mockImplementation(() => db);
+    jest.spyOn(connectDb, "default").mockImplementation(() => db);
   });
 
   afterEach(async () => {

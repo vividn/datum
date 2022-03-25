@@ -4,6 +4,7 @@ import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
 import * as parseDurationStr from "../../time/parseDurationString";
 import { DateTime, Settings } from "luxon";
+import SpyInstance = jest.SpyInstance;
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {
@@ -74,7 +75,7 @@ describe("inferType with special fields", () => {
     Settings.now = () => mockNowMillis;
   });
 
-  let parseTimeSpy, parseDateSpy, parseDurationSpy;
+  let parseTimeSpy: SpyInstance, parseDateSpy: SpyInstance, parseDurationSpy: SpyInstance;
   beforeEach(() => {
     parseTimeSpy = jest.spyOn(parseTimeStr, "default");
     parseDateSpy = jest.spyOn(parseDateStr, "default");

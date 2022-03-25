@@ -6,13 +6,14 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import { Show } from "../../output/output";
 import { DateTime, Settings } from "luxon";
+import SpyInstance = jest.SpyInstance;
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
   const db = testDbLifecycle(dbName);
   const mockedLog = mockedLogLifecycle();
 
-  let addDocSpy;
+  let addDocSpy: SpyInstance;
   beforeEach(() => {
     addDocSpy = jest.spyOn(addDoc, "default");
   });
