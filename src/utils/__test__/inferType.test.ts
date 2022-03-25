@@ -75,7 +75,9 @@ describe("inferType with special fields", () => {
     Settings.now = () => mockNowMillis;
   });
 
-  let parseTimeSpy: SpyInstance, parseDateSpy: SpyInstance, parseDurationSpy: SpyInstance;
+  let parseTimeSpy: SpyInstance,
+    parseDateSpy: SpyInstance,
+    parseDurationSpy: SpyInstance;
   beforeEach(() => {
     parseTimeSpy = jest.spyOn(parseTimeStr, "default");
     parseDateSpy = jest.spyOn(parseDateStr, "default");

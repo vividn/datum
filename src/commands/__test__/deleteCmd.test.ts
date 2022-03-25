@@ -5,7 +5,6 @@ import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";
 import setupCmd from "../setupCmd";
-import SpyInstance = jest.SpyInstance;
 
 const dbName = "delete_cmd_test";
 const db = testDbLifecycle(dbName);
