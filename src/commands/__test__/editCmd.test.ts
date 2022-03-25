@@ -1,5 +1,5 @@
 import * as editInTerminal from "../../utils/editInTerminal";
-import { afterAll, beforeEach, jest } from "@jest/globals";
+import { beforeEach, jest } from "@jest/globals";
 import { testDbLifecycle } from "../../test-utils";
 import { editCmd } from "../editCmd";
 import { GenericObject } from "../../GenericObject";
@@ -11,10 +11,6 @@ describe("editCmd", () => {
 
   beforeEach(async () => {
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
-  });
-
-  afterAll(async () => {
-    jest.restoreAllMocks();
   });
 
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {

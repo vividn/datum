@@ -14,10 +14,6 @@ describe("humanOccurTime", () => {
     humanTimeSpy = jest.spyOn(humanTime, "humanTime");
   });
 
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
   it("formats a datum doc with the right offset", () => {
     const datumDoc: DatumDocument = {
       _id: "some_datum_document",

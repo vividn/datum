@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
+import { beforeEach, test, expect } from "@jest/globals";
 import { fail, testDbLifecycle } from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import {
@@ -18,10 +18,6 @@ beforeEach(async () => {
   await insertDatumView({ db, datumView: idToHumanView });
   await insertDatumView({ db, datumView: subHumanIdView });
   await insertDatumView({ db, datumView: humanIdView });
-});
-
-afterEach(async () => {
-  jest.restoreAllMocks();
 });
 
 test("it returns the string directly if the exact id exists in the database", async () => {

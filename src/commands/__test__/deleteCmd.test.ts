@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
+import { beforeEach, expect, it, jest } from "@jest/globals";
 import { testDbLifecycle } from "../../test-utils";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
@@ -6,18 +6,13 @@ import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";
 import setupCmd from "../setupCmd";
 
-const dbName = "add_cmd_test";
+const dbName = "delete_cmd_test";
 const db = testDbLifecycle(dbName);
 
-const deleteDocSpy = jest.spyOn(deleteDoc, "default");
-
+let deleteDocSpy: any;
 beforeEach(async () => {
+  deleteDocSpy = jest.spyOn(deleteDoc, "default");
   await setupCmd({ db: dbName });
-  deleteDocSpy.mockClear();
-});
-
-afterAll(async () => {
-  deleteDocSpy.mockRestore();
 });
 
 it("deletes a document based on first few letters of humanId", async () => {
@@ -71,8 +66,6 @@ it("calls quickId and deleteDoc", async () => {
     quickIdSpy.mockClear();
     deleteDocSpy.mockClear();
   }
-  quickIdSpy.mockRestore();
-  deleteDocSpy.mockRestore();
 });
 
 it("outputs a DELETED message when show is standard", async () => {

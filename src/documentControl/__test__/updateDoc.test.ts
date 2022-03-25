@@ -164,9 +164,6 @@ describe("updateDoc", () => {
       updateStrategy: "append",
     });
     expect(spy).toHaveBeenCalledWith(data4, data1, "append");
-    spy.mockClear();
-
-    spy.mockRestore();
   });
 
   test("fails if id to be updated does not exist in db", async () => {

@@ -21,7 +21,6 @@ const mockDb = mock<DocumentScope<EitherDocument>>();
 const mockDatumView = mock<DatumView>();
 
 beforeEach(() => {
-  jest.resetAllMocks();
   mockDatumView.name = "mock_datum_view";
 });
 

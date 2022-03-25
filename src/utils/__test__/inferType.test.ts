@@ -4,6 +4,7 @@ import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
 import * as parseDurationStr from "../../time/parseDurationString";
 import { DateTime, Settings } from "luxon";
+import SpyInstance = jest.SpyInstance;
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {
@@ -62,14 +63,6 @@ describe("inferType", () => {
 });
 
 describe("inferType with special fields", () => {
-  const parseTimeSpy = jest.spyOn(parseTimeStr, "default");
-  const parseDateSpy = jest.spyOn(parseDateStr, "default");
-  const parseDurationSpy = jest.spyOn(parseDurationStr, "default");
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   beforeAll(() => {
     const mockNow = DateTime.fromObject({
       year: 2021,
@@ -80,6 +73,15 @@ describe("inferType with special fields", () => {
     });
     const mockNowMillis = mockNow.toMillis();
     Settings.now = () => mockNowMillis;
+  });
+
+  let parseTimeSpy: SpyInstance,
+    parseDateSpy: SpyInstance,
+    parseDurationSpy: SpyInstance;
+  beforeEach(() => {
+    parseTimeSpy = jest.spyOn(parseTimeStr, "default");
+    parseDateSpy = jest.spyOn(parseDateStr, "default");
+    parseDurationSpy = jest.spyOn(parseDurationStr, "default");
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {

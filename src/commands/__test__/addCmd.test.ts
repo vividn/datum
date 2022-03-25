@@ -6,20 +6,16 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import { Show } from "../../output/output";
 import { DateTime, Settings } from "luxon";
+import SpyInstance = jest.SpyInstance;
 
 describe("addCmd", () => {
-  const dbName = "delete_cmd_test";
+  const dbName = "add_cmd_test";
   const db = testDbLifecycle(dbName);
   const mockedLog = mockedLogLifecycle();
 
-  const addDocSpy = jest.spyOn(addDoc, "default");
-
-  beforeEach(async () => {
-    addDocSpy.mockClear();
-  });
-
-  afterAll(async () => {
-    addDocSpy.mockRestore();
+  let addDocSpy: SpyInstance;
+  beforeEach(() => {
+    addDocSpy = jest.spyOn(addDoc, "default");
   });
 
   it("inserts documents into couchdb", async () => {

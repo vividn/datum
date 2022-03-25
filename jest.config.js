@@ -13,8 +13,9 @@ module.exports = {
   // The directory where Jest should store its cached dependency information
   // cacheDirectory: "/tmp/jest_rs",
 
-  // Automatically clear mock calls and instances between every test
-  // clearMocks: false,
+  clearMocks: true,
+  resetMocks: true,
+  restoreMocks: true,
 
   // Indicates whether the coverage information should be collected while executing the test
   // collectCoverage: false,
@@ -99,17 +100,13 @@ module.exports = {
   // Use this configuration option to add custom reporters to Jest
   // reporters: undefined,
 
-  // Automatically reset mock state between every test
-  // resetMocks: false,
+
 
   // Reset the module registry before running each individual test
   // resetModules: false,
 
   // A path to a custom resolver
   // resolver: undefined,
-
-  // Automatically restore mock state between every test
-  // restoreMocks: false,
 
   // The root directory that Jest should scan for tests and modules within
   // rootDir: undefined,

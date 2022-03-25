@@ -78,9 +78,6 @@ it("calls quickId and updateDoc", async () => {
       payload: { foo: "bar" },
     })
   );
-
-  updateDocSpy.mockRestore();
-  quickIdSpy.mockRestore();
 });
 
 it("uses preferNew as the default updateStrategy", async () => {
@@ -95,9 +92,6 @@ it("uses preferNew as the default updateStrategy", async () => {
   expect(updateDocSpy).toHaveBeenCalledWith(
     expect.objectContaining({ updateStrategy: "preferNew" })
   );
-
-  updateDocSpy.mockRestore();
-  quickIdSpy.mockRestore();
 });
 
 it("outputs an UPDATE message or a NODIFF message when show is standard", async () => {

@@ -1,4 +1,4 @@
-import { it, jest } from "@jest/globals";
+import { it } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { idToHumanView } from "../../views/datumViews";
@@ -11,10 +11,6 @@ import {
 import { DatumViewMissingError } from "../../errors";
 
 const dbMock = mock<DocumentScope<any>>();
-
-beforeEach(() => {
-  jest.resetAllMocks();
-});
 
 it("calls the humanId view with the input _ids as keys, then calls minHid with the returned humanIds", async () => {
   const viewName = idToHumanView.name;
