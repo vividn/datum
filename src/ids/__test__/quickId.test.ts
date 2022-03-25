@@ -1,30 +1,26 @@
 import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
+import { fail, testDbLifecycle } from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
 } from "../../views/datumViews";
-import { DocumentScope } from "nano";
-import { EitherPayload } from "../../documentControl/DatumDocument";
 import quickId, {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
 } from "../quickId";
 
 const dbName = "test_quick_id";
-const db: DocumentScope<EitherPayload> = testNano.use(dbName);
+const db = testDbLifecycle(dbName);
 
 beforeEach(async () => {
-  await resetTestDb(dbName);
   await insertDatumView({ db, datumView: idToHumanView });
   await insertDatumView({ db, datumView: subHumanIdView });
   await insertDatumView({ db, datumView: humanIdView });
 });
 
 afterEach(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
   jest.restoreAllMocks();
 });
 
