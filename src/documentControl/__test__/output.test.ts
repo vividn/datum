@@ -1,4 +1,3 @@
-import { expect, jest, test } from "@jest/globals";
 import updateDoc from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
