@@ -62,10 +62,6 @@ describe("inferType", () => {
 });
 
 describe("inferType with special fields", () => {
-  const parseTimeSpy = jest.spyOn(parseTimeStr, "default");
-  const parseDateSpy = jest.spyOn(parseDateStr, "default");
-  const parseDurationSpy = jest.spyOn(parseDurationStr, "default");
-
   beforeAll(() => {
     const mockNow = DateTime.fromObject({
       year: 2021,
@@ -76,6 +72,13 @@ describe("inferType with special fields", () => {
     });
     const mockNowMillis = mockNow.toMillis();
     Settings.now = () => mockNowMillis;
+  });
+
+  let parseTimeSpy, parseDateSpy, parseDurationSpy;
+  beforeEach(() => {
+    parseTimeSpy = jest.spyOn(parseTimeStr, "default");
+    parseDateSpy = jest.spyOn(parseDateStr, "default");
+    parseDurationSpy = jest.spyOn(parseDurationStr, "default");
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {

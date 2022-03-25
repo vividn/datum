@@ -58,20 +58,16 @@ export async function resetTestDb(
 
 export function testDbLifecycle(dbName: string): DocumentScope<EitherPayload> {
   const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  const connectDbSpy = jest
-    .spyOn(connectDb, "default")
-    .mockImplementation(() => db);
 
   beforeEach(async () => {
     await resetTestDb(dbName);
+    jest
+    .spyOn(connectDb, "default")
+    .mockImplementation(() => db);
   });
 
   afterEach(async () => {
     await testNano.db.destroy(dbName).catch(pass);
-  });
-
-  afterAll(async () => {
-    connectDbSpy.mockRestore();
   });
 
   return db;

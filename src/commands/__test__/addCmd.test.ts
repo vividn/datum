@@ -8,11 +8,14 @@ import { Show } from "../../output/output";
 import { DateTime, Settings } from "luxon";
 
 describe("addCmd", () => {
-  const dbName = "delete_cmd_test";
+  const dbName = "add_cmd_test";
   const db = testDbLifecycle(dbName);
   const mockedLog = mockedLogLifecycle();
 
-  const addDocSpy = jest.spyOn(addDoc, "default");
+  let addDocSpy;
+  beforeEach(() => {
+    addDocSpy = jest.spyOn(addDoc, "default");
+  });
 
   it("inserts documents into couchdb", async () => {
     await addCmd({});

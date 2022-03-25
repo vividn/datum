@@ -9,9 +9,9 @@ import setupCmd from "../setupCmd";
 const dbName = "add_cmd_test";
 const db = testDbLifecycle(dbName);
 
-const deleteDocSpy = jest.spyOn(deleteDoc, "default");
-
+let deleteDocSpy;
 beforeEach(async () => {
+  deleteDocSpy = jest.spyOn(deleteDoc, "default");
   await setupCmd({ db: dbName });
 });
 
