@@ -1,5 +1,4 @@
 import { testDbLifecycle } from "../../test-utils";
-import { afterEach, expect, it, jest } from "@jest/globals";
 import * as insertDatumViewModule from "../insertDatumView";
 import setupDatumViews from "../setupDatumViews";
 import _emit from "../emit";

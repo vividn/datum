@@ -1,5 +1,4 @@
 import { testDbLifecycle } from "../../test-utils";
-import { expect, it } from "@jest/globals";
 import deleteDoc, { NoDocToDeleteError } from "../deleteDoc";
 
 const dbName = "delete_doc_test";

@@ -1,4 +1,3 @@
-import { it } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import {
   EitherDocument,

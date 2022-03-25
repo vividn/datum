@@ -1,4 +1,3 @@
-import { describe, expect, it } from "@jest/globals";
 import { defaultIdComponents } from "../defaultIdComponents";
 import { exampleDataOccur, exampleOccurTime } from "./exampleData";
 

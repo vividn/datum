@@ -1,4 +1,3 @@
-import { beforeEach, expect, it, jest, describe } from "@jest/globals";
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
 import { DocumentScope } from "nano";

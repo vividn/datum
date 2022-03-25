@@ -1,18 +1,8 @@
-import { test } from "@jest/globals";
 import { fail } from "../../test-utils";
 
 test.skip("Rewrite migrations tests", () => {
   fail();
 });
-// import {
-//   afterEach,
-//   beforeAll,
-//   beforeEach,
-//   describe,
-//   expect,
-//   it,
-//   jest,
-// } from "@jest/globals";
 // import { DocumentScope } from "nano";
 //
 // import { createMigration, runMigration } from "../src/migrations";
