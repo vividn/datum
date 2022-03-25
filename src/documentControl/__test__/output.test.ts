@@ -63,8 +63,6 @@ test("addDoc calls updateDoc with showOutput", async () => {
   });
   expect(spy.mock.calls[1][0].show).toEqual(Show.Standard);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-
-  spy.mockRestore();
 });
 
 test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
@@ -227,7 +225,6 @@ test("show is None by default when calling a command via import or API", async (
   );
   await addCmd({});
   expect(spy.mock.calls[0][0].show).toEqual(Show.None);
-  spy.mockRestore();
 });
 
 // This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings
@@ -244,6 +241,4 @@ test.skip("show is Standard by default when calling from the CLI", async () => {
   await main(["--db", dbName, "add"]);
   expect(spy).toHaveBeenCalled();
   expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
-
-  spy.mockRestore();
 });

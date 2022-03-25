@@ -277,8 +277,6 @@ describe("addDoc", () => {
 
     expect(newDoc).toMatchObject(expectedResult);
     expect(spy).toHaveBeenCalled();
-
-    spy.mockRestore();
   });
 
   it("calls overwriteDoc if conflict and 'overwrite' given as conflict strategy", async () => {
@@ -308,8 +306,6 @@ describe("addDoc", () => {
     });
     expect(newDoc).toMatchObject(expectedResult);
     expect(overwriteSpy).toHaveBeenCalled();
-
-    overwriteSpy.mockRestore();
   });
 
   it("calls deleteDoc if conflict and 'delete' given as conflict strategy", async () => {
@@ -339,8 +335,6 @@ describe("addDoc", () => {
     });
     expect(newDoc).toMatchObject(expectedResult);
     expect(deleteSpy).toHaveBeenCalled();
-
-    deleteSpy.mockRestore();
   });
 
   it("does not call other documentControl strategies if there is no conflict", async () => {
@@ -354,10 +348,6 @@ describe("addDoc", () => {
     expect(updateSpy).not.toHaveBeenCalled();
     expect(overwriteSpy).not.toHaveBeenCalled();
     expect(deleteSpy).not.toHaveBeenCalled();
-
-    updateSpy.mockRestore();
-    overwriteSpy.mockRestore();
-    deleteSpy.mockRestore();
   });
 
   test("It still throws an DocExistsError if conflict and showOutput", async () => {

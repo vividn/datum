@@ -13,10 +13,6 @@ describe("editCmd", () => {
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
   });
 
-  afterAll(async () => {
-    jest.restoreAllMocks();
-  });
-
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {
     editJSONInTerminalSpy.mockImplementation(async (doc: GenericObject) => doc);
     await db.insert({ _id: "abcdef", abc: "def" });

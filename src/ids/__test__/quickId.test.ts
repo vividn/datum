@@ -20,10 +20,6 @@ beforeEach(async () => {
   await insertDatumView({ db, datumView: humanIdView });
 });
 
-afterEach(async () => {
-  jest.restoreAllMocks();
-});
-
 test("it returns the string directly if the exact id exists in the database", async () => {
   await db.insert({ _id: "exact-id", data: {}, meta: {} });
   const quick = await quickId(db, "exact-id");

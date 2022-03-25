@@ -192,7 +192,6 @@ describe("handleDataArgs", () => {
       handleDataArgs(parseDataArgs);
 
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
-      spy.mockRestore();
     });
   });
 

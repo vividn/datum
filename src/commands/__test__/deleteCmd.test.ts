@@ -66,8 +66,6 @@ it("calls quickId and deleteDoc", async () => {
     quickIdSpy.mockClear();
     deleteDocSpy.mockClear();
   }
-  quickIdSpy.mockRestore();
-  deleteDocSpy.mockRestore();
 });
 
 it("outputs a DELETED message when show is standard", async () => {
