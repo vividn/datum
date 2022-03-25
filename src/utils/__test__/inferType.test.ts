@@ -66,10 +66,6 @@ describe("inferType with special fields", () => {
   const parseDateSpy = jest.spyOn(parseDateStr, "default");
   const parseDurationSpy = jest.spyOn(parseDurationStr, "default");
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
   beforeAll(() => {
     const mockNow = DateTime.fromObject({
       year: 2021,

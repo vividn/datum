@@ -20,13 +20,6 @@ import {
 import { dataStructuresView, structuresView } from "../datumViews/structure";
 
 const emitMock = jest.spyOn(emit, "default");
-beforeEach(() => {
-  emitMock.mockClear();
-});
-
-afterAll(() => {
-  emitMock.mockRestore();
-});
 
 describe("humanIdView", () => {
   it("emits one humanId if document has it", () => {

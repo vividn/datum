@@ -13,11 +13,6 @@ const deleteDocSpy = jest.spyOn(deleteDoc, "default");
 
 beforeEach(async () => {
   await setupCmd({ db: dbName });
-  deleteDocSpy.mockClear();
-});
-
-afterAll(async () => {
-  deleteDocSpy.mockRestore();
 });
 
 it("deletes a document based on first few letters of humanId", async () => {

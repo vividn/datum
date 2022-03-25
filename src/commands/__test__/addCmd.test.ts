@@ -14,14 +14,6 @@ describe("addCmd", () => {
 
   const addDocSpy = jest.spyOn(addDoc, "default");
 
-  beforeEach(async () => {
-    addDocSpy.mockClear();
-  });
-
-  afterAll(async () => {
-    addDocSpy.mockRestore();
-  });
-
   it("inserts documents into couchdb", async () => {
     await addCmd({});
 

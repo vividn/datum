@@ -12,10 +12,6 @@ import { DatumViewMissingError } from "../../errors";
 
 const dbMock = mock<DocumentScope<any>>();
 
-beforeEach(() => {
-  jest.resetAllMocks();
-});
-
 it("calls the humanId view with the input _ids as keys, then calls minHid with the returned humanIds", async () => {
   const viewName = idToHumanView.name;
   const idsHids = [

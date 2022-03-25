@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, jest } from "@jest/globals";
-import { testDbLifecycle } from "../../test-utils";
+import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import addCmd from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
@@ -7,19 +7,9 @@ import { DateTime, Duration, Settings } from "luxon";
 // TODO: Make undo system more robust and more tested
 
 describe("addCmd undo", () => {
-  const originalLog = console.log;
-  const mockedLog = jest.fn();
+  const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
   const db = testDbLifecycle(dbName);
-
-  beforeEach(async () => {
-    console.log = mockedLog;
-  });
-
-  afterEach(async () => {
-    console.log = originalLog;
-    mockedLog.mockReset();
-  });
 
   it("can undo adding documents with a known id", async () => {
     await addCmd({ idPart: "this_one_should_be_deleted" });
