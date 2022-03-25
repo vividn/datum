@@ -3,6 +3,8 @@ import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
 import { afterAll, afterEach, beforeEach, jest } from "@jest/globals";
 import * as connectDb from "./auth/connectDb";
+import Mock = jest.Mock;
+import { MockProxy } from "jest-mock-extended";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -72,4 +74,20 @@ export function testDbLifecycle(dbName: string): DocumentScope<EitherPayload> {
   });
 
   return db;
+}
+
+export function mockedLogLifecycle(): Mock {
+  const originalLog = console.log;
+  const mockedLog = jest.fn() as Mock;
+
+  beforeEach(async () => {
+    console.log = mockedLog;
+  });
+
+  afterEach(async () => {
+    console.log = originalLog;
+    mockedLog.mockReset();
+  });
+
+  return mockedLog;
 }

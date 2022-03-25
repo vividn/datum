@@ -6,7 +6,7 @@ import {
   it,
   jest,
 } from "@jest/globals";
-import { pass, resetTestDb, testNano } from "../../test-utils";
+import { pass, resetTestDb, testDbLifecycle, testNano } from "../../test-utils";
 import { DocumentScope } from "nano";
 import {
   DatumDocument,
@@ -22,24 +22,15 @@ describe("addCmd undo", () => {
   const originalLog = console.log;
   const mockedLog = jest.fn();
   const dbName = "undo_addcmd_test";
-  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  const connectDbSpy = jest
-    .spyOn(connectDb, "default")
-    .mockImplementation(() => db);
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
     console.log = mockedLog;
   });
 
   afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
     console.log = originalLog;
     mockedLog.mockReset();
-  });
-
-  afterAll(async () => {
-    connectDbSpy.mockRestore();
   });
 
   it("can undo adding documents with a known id", async () => {
