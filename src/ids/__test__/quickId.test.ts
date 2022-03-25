@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, test, jest, expect } from "@jest/globals";
+import { beforeEach, test, expect } from "@jest/globals";
 import { fail, testDbLifecycle } from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import {
