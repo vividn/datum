@@ -1,6 +1,5 @@
 import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
-import { resetTestDb, testNano } from "../../test-utils";
-import { EitherPayload } from "../../documentControl/DatumDocument";
+import { testDbLifecycle } from "../../test-utils";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
@@ -8,18 +7,16 @@ import { Show } from "../../output/output";
 import setupCmd from "../setupCmd";
 
 const dbName = "add_cmd_test";
-const db = testNano.use<EitherPayload>(dbName);
+const db = testDbLifecycle(dbName);
 
 const deleteDocSpy = jest.spyOn(deleteDoc, "default");
 
 beforeEach(async () => {
-  await resetTestDb(dbName);
   await setupCmd({ db: dbName });
   deleteDocSpy.mockClear();
 });
 
 afterAll(async () => {
-  await testNano.db.destroy(dbName);
   deleteDocSpy.mockRestore();
 });
 

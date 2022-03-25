@@ -1,19 +1,7 @@
-import {
-  DatumDocument,
-  DatumMetadata,
-  DatumPayload,
-  EitherPayload,
-} from "../DatumDocument";
+import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  jest,
-  test,
-} from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
+import { describe, expect, jest, test } from "@jest/globals";
+import { fail, testDbLifecycle } from "../../test-utils";
 import updateDoc, { NoDocToUpdateError, UpdateDocError } from "../updateDoc";
 import addDoc from "../addDoc";
 import * as combineData from "../combineData";
@@ -41,15 +29,7 @@ const notNowStr = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
-  const db = testNano.db.use<EitherPayload>(dbName);
-
-  beforeEach(async () => {
-    await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   test("it returns the updated document in the db", async () => {
     await db.insert({ _id: "docId1", data: { abc: "123" }, meta: {} });

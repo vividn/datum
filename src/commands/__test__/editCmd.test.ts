@@ -1,35 +1,24 @@
 import * as editInTerminal from "../../utils/editInTerminal";
-import { afterAll, afterEach, beforeEach, jest } from "@jest/globals";
-import { pass, resetTestDb, testNano } from "../../test-utils";
-import { DocumentScope } from "nano";
-import { EitherPayload } from "../../documentControl/DatumDocument";
-import * as connectDb from "../../auth/connectDb";
+import { afterAll, beforeEach, jest } from "@jest/globals";
+import { testDbLifecycle } from "../../test-utils";
 import { editCmd } from "../editCmd";
+import { GenericObject } from "../../GenericObject";
 
 describe("editCmd", () => {
   let editJSONInTerminalSpy: any;
   const dbName = "delete_cmd_test";
-  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  const connectDbSpy = jest
-    .spyOn(connectDb, "default")
-    .mockImplementation(() => db);
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
   });
 
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
-
   afterAll(async () => {
-    connectDbSpy.mockRestore();
     jest.restoreAllMocks();
   });
 
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {
-    editJSONInTerminalSpy.mockImplementation(async (doc) => doc);
+    editJSONInTerminalSpy.mockImplementation(async (doc: GenericObject) => doc);
     await db.insert({ _id: "abcdef", abc: "def" });
     const dbDoc = await db.get("abcdef");
 
@@ -42,7 +31,9 @@ describe("editCmd", () => {
       _id: "changed_id",
       def: "ghi",
     };
-    editJSONInTerminalSpy.mockImplementation(async (_doc) => editedDoc);
+    editJSONInTerminalSpy.mockImplementation(
+      async (_doc: GenericObject) => editedDoc
+    );
     await db.insert({ _id: "abcdef", abc: "def" });
     const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
     expect(returnedDoc).toMatchObject(editedDoc);

@@ -1,20 +1,14 @@
-import { resetTestDb, testNano } from "../../test-utils";
-import { EitherPayload } from "../../documentControl/DatumDocument";
-import { afterAll, beforeEach, jest } from "@jest/globals";
+import { testDbLifecycle } from "../../test-utils";
+import { beforeEach, jest } from "@jest/globals";
 import setupCmd from "../setupCmd";
 import { getCmd } from "../getCmd";
 import { Show } from "../../output/output";
 
 const dbName = "get_cmd_test";
-const db = testNano.use<EitherPayload>(dbName);
+const db = testDbLifecycle(dbName);
 
 beforeEach(async () => {
-  await resetTestDb(dbName);
   await setupCmd({ db: dbName });
-});
-
-afterAll(async () => {
-  await testNano.db.destroy(dbName);
 });
 
 it("gets a document based on the first few letters of humanId", async () => {

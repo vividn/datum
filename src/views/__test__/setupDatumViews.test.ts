@@ -1,24 +1,17 @@
-import { pass, resetTestDb, testNano } from "../../test-utils";
-import { ViewPayload } from "../viewDocument";
-import { afterEach, beforeEach, expect, it, jest } from "@jest/globals";
+import { testDbLifecycle } from "../../test-utils";
+import { afterEach, expect, it, jest } from "@jest/globals";
 import * as insertDatumViewModule from "../insertDatumView";
 import setupDatumViews from "../setupDatumViews";
 import _emit from "../emit";
 import * as getAllDatumViews from "../getAllDatumViews";
 
-const dbName = "setup_datum_views_test";
-const db = testNano.use<ViewPayload>(dbName);
+const db = testDbLifecycle("setup_datum_views_test");
 
 function emit(key: any, value: any) {
   _emit(key, value);
 }
 
-beforeEach(async () => {
-  await resetTestDb(dbName);
-});
-
 afterEach(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
   jest.resetModules();
   jest.restoreAllMocks();
 });

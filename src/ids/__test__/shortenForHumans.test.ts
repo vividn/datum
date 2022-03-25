@@ -1,17 +1,8 @@
-import {
-  beforeEach,
-  expect,
-  it,
-  jest,
-  describe,
-  beforeAll,
-  afterAll,
-} from "@jest/globals";
+import { beforeEach, expect, it, jest, describe } from "@jest/globals";
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
 import { DocumentScope } from "nano";
-import { EitherPayload } from "../../documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../../test-utils";
+import { testDbLifecycle } from "../../test-utils";
 import insertDatumView from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";
@@ -54,17 +45,11 @@ describe("shortenForHumans", () => {
 
 describe("integration test", () => {
   const dbName = "test_shorten_for_humans";
-  const db: DocumentScope<EitherPayload> = testNano.use(dbName);
+  const db = testDbLifecycle(dbName);
 
-  beforeAll(async () => {
-    await resetTestDb(dbName);
-
+  beforeEach(async () => {
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });
-  });
-
-  afterAll(async () => {
-    await testNano.db.destroy(dbName);
   });
 
   it("returns an array of shortened humanIds, with undefined holes for docs that have no row in the view", async () => {
