@@ -1,7 +1,6 @@
-import { EitherDocument, EitherPayload } from "./DatumDocument";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
-import jClone from "../utils/jClone";
+import { jClone } from "../utils/jClone";
 import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
 import { BaseDocControlArgs, DocExistsError } from "./base";
@@ -14,6 +13,7 @@ import {
   showRename,
 } from "../output/output";
 import { assembleId } from "../ids/assembleId";
+import { EitherDocument, EitherPayload } from "./DatumDocument";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
@@ -47,7 +47,7 @@ export class NoDocToOverwriteError extends MyError {
   }
 }
 
-async function overwriteDoc({
+export async function overwriteDoc({
   db,
   id,
   payload,
@@ -116,5 +116,3 @@ async function overwriteDoc({
   showOWrite(oldDoc, newDoc, show);
   return newDoc;
 }
-
-export default overwriteDoc;

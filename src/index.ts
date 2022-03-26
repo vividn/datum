@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { baseYargs } from "./input/baseYargs";
 import { DocExistsError } from "./documentControl/base";
-import addCmd, { AddCmdArgs } from "./commands/addCmd";
-import mapCmd, { MapCmdArgs } from "./commands/mapCmd";
-import setupCmd, { SetupCmdArgs } from "./commands/setupCmd";
+import { addCmd, AddCmdArgs } from "./commands/addCmd";
+import { mapCmd, MapCmdArgs } from "./commands/mapCmd";
+import { setupCmd, SetupCmdArgs } from "./commands/setupCmd";
 import { deleteCmd, DeleteCmdArgs } from "./commands/deleteCmd";
 import { updateCmd, UpdateCmdArgs } from "./commands/updateCmd";
 import { getCmd, GetCmdArgs } from "./commands/getCmd";

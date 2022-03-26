@@ -13,8 +13,8 @@ import {
   testNano,
 } from "../../test-utils";
 import { DatumViewMissingError } from "../../errors";
-import viewMap from "../viewMap";
-import insertDatumView from "../insertDatumView";
+import { viewMap } from "../viewMap";
+import { insertDatumView } from "../insertDatumView";
 
 const mockDb = mock<DocumentScope<EitherDocument>>();
 const mockDatumView = mock<DatumView>();

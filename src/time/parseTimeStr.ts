@@ -2,13 +2,16 @@ import { DateTime } from "luxon";
 import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadTimeError } from "../errors";
-import parseDurationStr from "./parseDurationString";
+import { parseDurationStr } from "./parseDurationString";
 
 type ParseTimeStrType = {
   timeStr: string;
   referenceTime?: DateTime;
 };
-function parseTimeStr({ timeStr, referenceTime }: ParseTimeStrType): DateTime {
+export function parseTimeStr({
+  timeStr,
+  referenceTime,
+}: ParseTimeStrType): DateTime {
   referenceTime = referenceTime ?? now();
 
   // This custom regex is to match a few extra strings not recognized by chrono, particularly short
@@ -62,5 +65,3 @@ function parseTimeStr({ timeStr, referenceTime }: ParseTimeStrType): DateTime {
 
   throw new BadTimeError("time not parsable");
 }
-
-export default parseTimeStr;

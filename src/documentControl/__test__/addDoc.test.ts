@@ -6,15 +6,15 @@ import {
 } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import { fail, testDbLifecycle } from "../../test-utils";
-import addDoc from "../addDoc";
+import { addDoc } from "../addDoc";
 import { IdError } from "../../errors";
-import jClone from "../../utils/jClone";
+import { jClone } from "../../utils/jClone";
 import * as updateDoc from "../updateDoc";
 import * as overwriteDoc from "../overwriteDoc";
 import * as deleteDoc from "../deleteDoc";
 import { DocExistsError } from "../base";
 import { Show } from "../../output/output";
-import emit from "../../views/emit";
+import { _emit as emit } from "../../views/emit";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -215,7 +215,7 @@ describe("addDoc", () => {
   });
 
   it("still calls updateDoc with updateStrategy is even if data is identical", async () => {
-    const spy = jest.spyOn(updateDoc, "default");
+    const spy = jest.spyOn(updateDoc, "updateDoc");
     const data = { _id: "dataonly", foo: "abc" };
     await db.insert(data);
 
@@ -265,7 +265,7 @@ describe("addDoc", () => {
       foo: ["bar", "baz"],
       anotherKey: "data",
     };
-    const spy = jest.spyOn(updateDoc, "default");
+    const spy = jest.spyOn(updateDoc, "updateDoc");
 
     await addDoc({ db, payload: originalPayload });
     const newDoc = await addDoc({
@@ -295,7 +295,7 @@ describe("addDoc", () => {
       data: { foo: "baz" },
       meta: { humanId: "overwrite" },
     };
-    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
+    const overwriteSpy = jest.spyOn(overwriteDoc, "overwriteDoc");
 
     await addDoc({ db, payload: originalPayload });
     const newDoc = await addDoc({
@@ -324,7 +324,7 @@ describe("addDoc", () => {
       _deleted: true,
     };
 
-    const deleteSpy = jest.spyOn(deleteDoc, "default");
+    const deleteSpy = jest.spyOn(deleteDoc, "deleteDoc");
 
     await addDoc({ db, payload: originalPayload });
     const newDoc = await addDoc({
@@ -337,9 +337,9 @@ describe("addDoc", () => {
   });
 
   it("does not call other documentControl strategies if there is no conflict", async () => {
-    const updateSpy = jest.spyOn(updateDoc, "default");
-    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
-    const deleteSpy = jest.spyOn(deleteDoc, "default");
+    const updateSpy = jest.spyOn(updateDoc, "updateDoc");
+    const overwriteSpy = jest.spyOn(overwriteDoc, "overwriteDoc");
+    const deleteSpy = jest.spyOn(deleteDoc, "deleteDoc");
 
     await addDoc({ db, payload: { _id: "new_id", data: {}, meta: {} } });
     await addDoc({ db, payload: { _id: "data_only_new", foo: "bar" } });

@@ -1,4 +1,4 @@
-import inferType from "../inferType";
+import { inferType } from "../inferType";
 import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
 import * as parseDurationStr from "../../time/parseDurationString";
@@ -78,9 +78,9 @@ describe("inferType with special fields", () => {
     parseDateSpy: SpyInstance,
     parseDurationSpy: SpyInstance;
   beforeEach(() => {
-    parseTimeSpy = jest.spyOn(parseTimeStr, "default");
-    parseDateSpy = jest.spyOn(parseDateStr, "default");
-    parseDurationSpy = jest.spyOn(parseDurationStr, "default");
+    parseTimeSpy = jest.spyOn(parseTimeStr, "parseTimeStr");
+    parseDateSpy = jest.spyOn(parseDateStr, "parseDateStr");
+    parseDurationSpy = jest.spyOn(parseDurationStr, "parseDurationStr");
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {

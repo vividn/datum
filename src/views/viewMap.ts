@@ -8,7 +8,7 @@ type ViewMapType = {
   datumView: DatumView | StringifiedDatumView;
   params?: Omit<DocumentViewParams, "reduce">;
 };
-async function viewMap({
+export async function viewMap({
   db,
   datumView,
   params,
@@ -26,5 +26,3 @@ async function viewMap({
     }
   }
 }
-
-export default viewMap;

@@ -2,10 +2,10 @@ import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
 import { DocumentScope } from "nano";
 import { testDbLifecycle } from "../../test-utils";
-import insertDatumView from "../../views/insertDatumView";
+import { insertDatumView } from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";
-import shortenForHumans from "../shortenForHumans";
+import { shortenForHumans } from "../shortenForHumans";
 
 describe("shortenForHumans", () => {
   const mockDb = mock<DocumentScope<any>>();
@@ -13,7 +13,7 @@ describe("shortenForHumans", () => {
   it("calls getHumanIds with the array of ids", async () => {
     const ids = ["idA", "idB", "idNo", "idC"];
     const getHumanIdsSpy = jest
-      .spyOn(getHumanIds, "default")
+      .spyOn(getHumanIds, "getHumanIds")
       .mockReturnValue(Promise.resolve(["aa", "bb", undefined, "cc"]));
     const minHumanIdSpy = jest
       .spyOn(minHumanId, "minHumanId")

@@ -1,7 +1,7 @@
 import { mock } from "jest-mock-extended";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { idToHumanView } from "../../views/datumViews";
-import getHumanIds from "../getHumanIds";
+import { getHumanIds } from "../getHumanIds";
 import {
   mockDocDeletedError,
   mockDocMissingError,

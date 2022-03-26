@@ -3,7 +3,7 @@ import { DocumentScope } from "nano";
 import { idToHumanView } from "../views/datumViews";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
-async function getHumanIds(
+export async function getHumanIds(
   db: DocumentScope<EitherPayload>,
   ids: string[]
 ): Promise<(string | undefined)[]> {
@@ -32,5 +32,3 @@ async function getHumanIds(
   });
   return returnValue;
 }
-
-export default getHumanIds;

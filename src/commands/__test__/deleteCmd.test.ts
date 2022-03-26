@@ -3,14 +3,14 @@ import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";
-import setupCmd from "../setupCmd";
+import { setupCmd } from "../setupCmd";
 
 const dbName = "delete_cmd_test";
 const db = testDbLifecycle(dbName);
 
 let deleteDocSpy: any;
 beforeEach(async () => {
-  deleteDocSpy = jest.spyOn(deleteDoc, "default");
+  deleteDocSpy = jest.spyOn(deleteDoc, "deleteDoc");
   await setupCmd({ db: dbName });
 });
 
@@ -53,7 +53,7 @@ it("calls quickId and deleteDoc", async () => {
     Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true })
   );
   const quickIdSpy = jest
-    .spyOn(quickId, "default")
+    .spyOn(quickId, "quickId")
     .mockImplementation(async (db, id) => id + "_to_delete");
 
   for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {

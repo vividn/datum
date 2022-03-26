@@ -1,14 +1,14 @@
-import updateDoc from "../updateDoc";
+import { updateDoc } from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
-import addDoc from "../addDoc";
+import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
-import overwriteDoc from "../overwriteDoc";
+import { overwriteDoc } from "../overwriteDoc";
 import { Show } from "../../output/output";
 import * as addDocModule from "../addDoc";
-import addCmd from "../../commands/addCmd";
+import { addCmd } from "../../commands/addCmd";
 import { main } from "../../index";
-import deleteDoc from "../deleteDoc";
+import { deleteDoc } from "../deleteDoc";
 
 const dbName = "doc_control_output_test";
 const db = testDbLifecycle(dbName);
@@ -41,7 +41,7 @@ test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict",
 });
 
 test("addDoc calls updateDoc with showOutput", async () => {
-  const spy = jest.spyOn(updateDocModule, "default");
+  const spy = jest.spyOn(updateDocModule, "updateDoc");
   const payload = { _id: "docId", foo: "abce" };
   await addDoc({ db, payload, show: Show.Standard, conflictStrategy: "merge" });
   expect(spy).not.toHaveBeenCalled();
@@ -214,7 +214,7 @@ test("deleteDoc outputs DELETE", async () => {
 });
 
 test("show is None by default when calling a command via import or API", async () => {
-  const spy = jest.spyOn(addDocModule, "default").mockReturnValue(
+  const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
     Promise.resolve({
       _id: "returnDoc",
       _rev: "1-abcd",
@@ -228,7 +228,7 @@ test("show is None by default when calling a command via import or API", async (
 
 // This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings
 test.skip("show is Standard by default when calling from the CLI", async () => {
-  const spy = jest.spyOn(addDocModule, "default").mockReturnValue(
+  const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
     Promise.resolve({
       _id: "returnDoc",
       _rev: "1-abcd",

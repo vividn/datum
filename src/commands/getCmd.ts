@@ -2,8 +2,8 @@ import { BaseDatumArgs } from "../input/baseYargs";
 import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import quickId from "../ids/quickId";
-import connectDb from "../auth/connectDb";
+import { quickId } from "../ids/quickId";
+import { connectDb } from "../auth/connectDb";
 import { Show, showExists } from "../output/output";
 
 export const command = ["get <quickId>", "see <quickId>"];

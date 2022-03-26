@@ -1,4 +1,4 @@
-import startsWith from "../startsWith";
+import { startsWith } from "../startsWith";
 import { testDbLifecycle } from "../../test-utils";
 
 describe("startsWith", () => {

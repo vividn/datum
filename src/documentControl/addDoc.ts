@@ -6,14 +6,14 @@ import {
 } from "./DatumDocument";
 import { DateTime } from "luxon";
 import { IdError, isCouchDbError } from "../errors";
-import jClone from "../utils/jClone";
+import { jClone } from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
-import updateDoc from "./updateDoc";
+import { updateDoc } from "./updateDoc";
 import { Show, showCreate, showExists, showFailed } from "../output/output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
-import overwriteDoc from "./overwriteDoc";
-import deleteDoc from "./deleteDoc";
+import { overwriteDoc } from "./overwriteDoc";
+import { deleteDoc } from "./deleteDoc";
 import {
   DataOrDesignDocument,
   isViewDocument,
@@ -52,7 +52,7 @@ type addDocType = {
   conflictStrategy?: ConflictStrategyNames;
 } & BaseDocControlArgs;
 
-async function addDoc({
+export async function addDoc({
   db,
   payload,
   conflictStrategy,
@@ -113,5 +113,3 @@ async function addDoc({
   showCreate(addedDoc, show);
   return addedDoc;
 }
-
-export default addDoc;

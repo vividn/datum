@@ -1,4 +1,4 @@
-import parseDurationStr from "../parseDurationString";
+import { parseDurationStr } from "../parseDurationString";
 import { Duration } from "luxon";
 import { BadDurationError } from "../../errors";
 

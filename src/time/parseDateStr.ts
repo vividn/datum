@@ -7,7 +7,10 @@ export type ParseDateStrType = {
   dateStr: string;
   referenceTime?: DateTime;
 };
-function parseDateStr({ dateStr, referenceTime }: ParseDateStrType): DateTime {
+export function parseDateStr({
+  dateStr,
+  referenceTime,
+}: ParseDateStrType): DateTime {
   referenceTime = referenceTime ?? now();
 
   // Relative dates, e.g. can use -1 to mean yesterday or +1 to mean tomorrow
@@ -42,5 +45,3 @@ function parseDateStr({ dateStr, referenceTime }: ParseDateStrType): DateTime {
 
   throw new BadDateError("date not parsable");
 }
-
-export default parseDateStr;

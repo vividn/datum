@@ -4,14 +4,14 @@ import {
   StringifiedDatumView,
   ViewDocument,
 } from "./viewDocument";
-import addDoc from "../documentControl/addDoc";
+import { addDoc } from "../documentControl/addDoc";
 import { BaseDocControlArgs } from "../documentControl/base";
 
 type InsertDatumViewArgs = {
   datumView: DatumView | StringifiedDatumView;
 } & BaseDocControlArgs;
 
-async function insertDatumView({
+export async function insertDatumView({
   db,
   datumView,
   show,
@@ -25,5 +25,3 @@ async function insertDatumView({
   })) as ViewDocument;
   return newDesignDoc;
 }
-
-export default insertDatumView;

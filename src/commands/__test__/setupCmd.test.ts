@@ -7,7 +7,7 @@ const db = testDbLifecycle(dbName);
 
 it("calls setupDatumViews", async () => {
   const setupDatumViewsSpy = jest
-    .spyOn(setupDatumViews, "default")
+    .spyOn(setupDatumViews, "setupDatumViews")
     .mockImplementation(async () => {
       return;
     });

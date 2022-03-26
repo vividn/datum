@@ -1,5 +1,5 @@
 import { testDbLifecycle } from "../../test-utils";
-import setupCmd from "../setupCmd";
+import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
@@ -56,10 +56,10 @@ it("can update a datonly doc from the first letters of its id", async () => {
 it("calls quickId and updateDoc", async () => {
   const updateDocReturn = mock<EitherDocument>();
   const quickIdSpy = jest
-    .spyOn(quickId, "default")
+    .spyOn(quickId, "quickId")
     .mockImplementation(async () => "quick_id");
   const updateDocSpy = jest
-    .spyOn(updateDoc, "default")
+    .spyOn(updateDoc, "updateDoc")
     .mockReturnValue(Promise.resolve(updateDocReturn));
 
   const retDoc = await updateCmd({
@@ -80,11 +80,9 @@ it("calls quickId and updateDoc", async () => {
 });
 
 it("uses preferNew as the default updateStrategy", async () => {
-  const quickIdSpy = jest
-    .spyOn(quickId, "default")
-    .mockImplementation(async () => "quick_id");
+  jest.spyOn(quickId, "quickId").mockImplementation(async () => "quick_id");
   const updateDocSpy = jest
-    .spyOn(updateDoc, "default")
+    .spyOn(updateDoc, "updateDoc")
     .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
 
   await updateCmd({ db: dbName, quickId: "input_quick", data: ["foo=bar"] });

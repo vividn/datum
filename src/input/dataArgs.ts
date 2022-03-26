@@ -1,6 +1,6 @@
 import yargs, { Argv } from "yargs";
 import { DatumData } from "../documentControl/DatumDocument";
-import inferType from "../utils/inferType";
+import { inferType } from "../utils/inferType";
 import { BaseDataError, DataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import { createOrAppend } from "../utils/createOrAppend";

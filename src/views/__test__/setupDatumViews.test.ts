@@ -1,7 +1,7 @@
 import { testDbLifecycle } from "../../test-utils";
 import * as insertDatumViewModule from "../insertDatumView";
-import setupDatumViews from "../setupDatumViews";
-import _emit from "../emit";
+import { setupDatumViews } from "../setupDatumViews";
+import { _emit } from "../emit";
 import * as getAllDatumViews from "../getAllDatumViews";
 
 const db = testDbLifecycle("setup_datum_views_test");
@@ -30,9 +30,14 @@ it("adds all datum views to an empty db", async () => {
   };
 
   const mockAllDatumViews = [datumView1, datumView2];
-  jest.spyOn(getAllDatumViews, "default").mockReturnValue(mockAllDatumViews);
+  jest
+    .spyOn(getAllDatumViews, "getAllDatumViews")
+    .mockReturnValue(mockAllDatumViews);
 
-  const insertDatumViewsSpy = jest.spyOn(insertDatumViewModule, "default");
+  const insertDatumViewsSpy = jest.spyOn(
+    insertDatumViewModule,
+    "insertDatumView"
+  );
 
   await setupDatumViews({ db });
 

@@ -4,8 +4,8 @@ import {
   EitherDocument,
   isDatumDocument,
 } from "../documentControl/DatumDocument";
-import viewMap from "../views/viewMap";
-import connectDb from "../auth/connectDb";
+import { viewMap } from "../views/viewMap";
+import { connectDb } from "../auth/connectDb";
 import { occurTimeView } from "../views/datumViews";
 import { getBorderCharacters, table } from "table";
 import { DateTime, FixedOffsetZone } from "luxon";

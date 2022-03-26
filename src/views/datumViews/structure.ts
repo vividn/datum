@@ -1,4 +1,4 @@
-import _emit from "../emit";
+import { _emit } from "../emit";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { DatumView } from "../viewDocument";
 

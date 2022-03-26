@@ -10,7 +10,7 @@ import { dataStructuresView, structuresView } from "../datumViews";
 describe("humanIdView", () => {
   let emitMock: any;
   beforeEach(() => {
-    emitMock = jest.spyOn(emit, "default");
+    emitMock = jest.spyOn(emit, "_emit");
   });
 
   it("emits one humanId if document has it", () => {
@@ -40,7 +40,7 @@ describe("humanIdView", () => {
 describe("subHumanIdView", () => {
   let emitMock: any;
   beforeEach(() => {
-    emitMock = jest.spyOn(emit, "default");
+    emitMock = jest.spyOn(emit, "_emit");
   });
 
   it("emits a row for each starting substring of humanId", () => {
@@ -83,7 +83,7 @@ describe("subHumanIdView", () => {
 describe("idToHumanView", () => {
   let emitMock: any;
   beforeEach(() => {
-    emitMock = jest.spyOn(emit, "default");
+    emitMock = jest.spyOn(emit, "_emit");
   });
 
   it("emits the _id to humanId if it exists", () => {
@@ -113,7 +113,7 @@ describe("idToHumanView", () => {
 describe("structuresView", () => {
   let emitMock: any;
   beforeEach(() => {
-    emitMock = jest.spyOn(emit, "default");
+    emitMock = jest.spyOn(emit, "_emit");
   });
 
   it("emits a sorted array containing each field in a flat document", () => {
@@ -167,7 +167,7 @@ describe("structuresView", () => {
 describe("dataStructuresView", () => {
   let emitMock: any;
   beforeEach(() => {
-    emitMock = jest.spyOn(emit, "default");
+    emitMock = jest.spyOn(emit, "_emit");
   });
 
   it("emits nothing if there is no data field", () => {

@@ -5,10 +5,10 @@ import {
   UpdateStrategyNames,
 } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import connectDb from "../auth/connectDb";
+import { connectDb } from "../auth/connectDb";
 import { Show } from "../output/output";
-import updateDoc from "../documentControl/updateDoc";
-import quickId from "../ids/quickId";
+import { updateDoc } from "../documentControl/updateDoc";
+import { quickId } from "../ids/quickId";
 import { Argv } from "yargs";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";

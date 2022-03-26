@@ -3,7 +3,7 @@ import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
 import { BaseDatumArgs } from "../input/baseYargs";
 
-function connectDb(args: BaseDatumArgs): DocumentScope<EitherPayload> {
+export function connectDb(args: BaseDatumArgs): DocumentScope<EitherPayload> {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
   }
@@ -24,5 +24,3 @@ function connectDb(args: BaseDatumArgs): DocumentScope<EitherPayload> {
   const db: DocumentScope<EitherPayload> = nano.use(dbName);
   return db;
 }
-
-export default connectDb;

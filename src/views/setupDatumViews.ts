@@ -1,8 +1,8 @@
-import insertDatumView from "./insertDatumView";
+import { insertDatumView } from "./insertDatumView";
 import { BaseDocControlArgs } from "../documentControl/base";
-import getAllDatumViews from "./getAllDatumViews";
+import { getAllDatumViews } from "./getAllDatumViews";
 
-export default async function setupDatumViews({
+export async function setupDatumViews({
   db,
   show,
 }: BaseDocControlArgs): Promise<void> {

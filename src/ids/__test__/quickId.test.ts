@@ -1,11 +1,12 @@
 import { fail, testDbLifecycle } from "../../test-utils";
-import insertDatumView from "../../views/insertDatumView";
+import { insertDatumView } from "../../views/insertDatumView";
 import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
 } from "../../views/datumViews";
-import quickId, {
+import {
+  quickId,
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
 } from "../quickId";

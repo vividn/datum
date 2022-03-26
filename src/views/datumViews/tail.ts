@@ -1,5 +1,5 @@
 import { DatumView } from "../viewDocument";
-import _emit from "../emit";
+import { _emit } from "../emit";
 import {
   DataOnlyDocument,
   EitherDocument,
