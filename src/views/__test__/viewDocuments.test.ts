@@ -4,10 +4,10 @@ import {
   datumViewToViewPayload,
   StringifiedDatumView,
 } from "../viewDocument";
-import _emit from "../emit";
+import { _emit } from "../emit";
 import { resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../../documentControl/DatumDocument";
-import insertDatumView from "../insertDatumView";
+import { insertDatumView } from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";
 import * as overwriteDoc from "../../documentControl/overwriteDoc";
 
@@ -315,7 +315,7 @@ describe("insertDatumView", () => {
   });
 
   it("calls addDoc", async () => {
-    const addDocSpy = jest.spyOn(addDoc, "default");
+    const addDocSpy = jest.spyOn(addDoc, "addDoc");
     const datumView: DatumView = {
       name: "datum_view",
       map: genericMapFunction,
@@ -327,7 +327,7 @@ describe("insertDatumView", () => {
   });
 
   it("calls overwriteDoc when overwriting", async () => {
-    const overwriteDocSpy = jest.spyOn(overwriteDoc, "default");
+    const overwriteDocSpy = jest.spyOn(overwriteDoc, "overwriteDoc");
     const datumView1: DatumView = {
       name: "datum_view",
       map: genericMapFunction,

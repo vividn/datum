@@ -1,9 +1,9 @@
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { isCouchDbError, MyError } from "../errors";
-import viewMap from "../views/viewMap";
+import { viewMap } from "../views/viewMap";
 import { humanIdView, idToHumanView } from "../views/datumViews";
-import startsWith from "../utils/startsWith";
+import { startsWith } from "../utils/startsWith";
 import { minHumanId } from "./minHumanId";
 
 export class AmbiguousQuickIdError extends MyError {
@@ -26,7 +26,7 @@ export class NoQuickIdMatchError extends MyError {
   }
 }
 
-async function quickId(
+export async function quickId(
   db: DocumentScope<EitherPayload>,
   quickString: string
 ): Promise<string> {
@@ -78,5 +78,3 @@ async function quickId(
 
   throw new NoQuickIdMatchError(quickString);
 }
-
-export default quickId;

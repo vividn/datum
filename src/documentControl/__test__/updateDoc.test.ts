@@ -1,10 +1,10 @@
 import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import { fail, testDbLifecycle } from "../../test-utils";
-import updateDoc, { NoDocToUpdateError, UpdateDocError } from "../updateDoc";
-import addDoc from "../addDoc";
+import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc";
+import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";
-import jClone from "../../utils/jClone";
+import { jClone } from "../../utils/jClone";
 import { DocExistsError } from "../base";
 
 const testDatumPayload: DatumPayload = {
@@ -119,7 +119,7 @@ describe("updateDoc", () => {
     const metadata = { ...testDatumPayload.meta } as DatumMetadata;
     delete metadata.idStructure;
 
-    const spy = jest.spyOn(combineData, "default");
+    const spy = jest.spyOn(combineData, "combineData");
 
     await db.insert({ _id: "data-doc-1", ...data1 });
     await updateDoc({ db, id: "data-doc-1", payload: data2 });

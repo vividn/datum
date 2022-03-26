@@ -1,12 +1,13 @@
 import { DatumPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
 import { fail, testDbLifecycle } from "../../test-utils";
-import overwriteDoc, {
+import {
+  overwriteDoc,
   NoDocToOverwriteError,
   OverwriteDocError,
 } from "../overwriteDoc";
-import jClone from "../../utils/jClone";
-import addDoc from "../addDoc";
+import { jClone } from "../../utils/jClone";
+import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 
 const testDatumPayload: DatumPayload = {

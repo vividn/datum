@@ -1,5 +1,5 @@
 import { testDbLifecycle } from "../../test-utils";
-import setupCmd from "../setupCmd";
+import { setupCmd } from "../setupCmd";
 import { getCmd } from "../getCmd";
 import { Show } from "../../output/output";
 

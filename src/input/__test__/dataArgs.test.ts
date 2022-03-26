@@ -179,7 +179,7 @@ describe("handleDataArgs", () => {
   ])(
     "When called with %s, inferType is called %i times",
     (parseDataArgs: DataArgs, inferTypeCalls: number) => {
-      const spy = jest.spyOn(inferType, "default");
+      const spy = jest.spyOn(inferType, "inferType");
       handleDataArgs(parseDataArgs);
 
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
