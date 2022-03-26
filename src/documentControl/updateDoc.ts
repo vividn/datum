@@ -5,8 +5,8 @@ import {
   isDatumDocument,
   isDatumPayload,
 } from "./DatumDocument";
-import combineData, { UpdateStrategyNames } from "./combineData";
-import jClone from "../utils/jClone";
+import { combineData, UpdateStrategyNames } from "./combineData";
+import { jClone } from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import {
@@ -41,13 +41,13 @@ type updateDocType = {
   updateStrategy?: UpdateStrategyNames;
 } & BaseDocControlArgs;
 
-const updateDoc = async ({
+export async function updateDoc({
   db,
   id,
   payload,
   updateStrategy = "merge",
   show = Show.None,
-}: updateDocType): Promise<EitherDocument> => {
+}: updateDocType): Promise<EitherDocument> {
   payload = jClone(payload);
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
     if (["missing", "deleted"].includes(e.reason)) {
@@ -122,6 +122,4 @@ const updateDoc = async ({
   const newDoc = await db.get(newId);
   showUpdate(oldDoc, newDoc, show);
   return newDoc;
-};
-
-export default updateDoc;
+}

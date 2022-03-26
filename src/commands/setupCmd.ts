@@ -1,7 +1,7 @@
 import { Argv } from "yargs";
 import { BaseDatumArgs } from "../input/baseYargs";
-import setupDatumViews from "../views/setupDatumViews";
-import connectDb from "../auth/connectDb";
+import { setupDatumViews } from "../views/setupDatumViews";
+import { connectDb } from "../auth/connectDb";
 import { Show } from "../output/output";
 
 export const command = "setup";
@@ -18,5 +18,3 @@ export async function setupCmd(args: SetupCmdArgs): Promise<void> {
   const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
   await setupDatumViews({ db, show: show });
 }
-
-export default setupCmd;

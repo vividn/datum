@@ -19,6 +19,7 @@ parserOptions:
   warnOnUnsupportedTypeScriptVersion: false
 plugins:
   - unused-imports
+  - import
 rules:
   radix: error
   eqeqeq: error
@@ -31,4 +32,5 @@ rules:
       "warn",
       { "vars": "all", "varsIgnorePattern": "^_", "args": "after-used", "argsIgnorePattern": "^_" }
   ]
+  "import/no-default-export": "error"
 

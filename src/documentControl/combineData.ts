@@ -1,5 +1,5 @@
 import { GenericObject } from "../GenericObject";
-import jClone from "../utils/jClone";
+import { jClone } from "../utils/jClone";
 import isPlainObject from "lodash.isplainobject";
 import { MergeError } from "../errors";
 
@@ -49,11 +49,11 @@ type CombiningType = {
   conflict: conflictingKeyStrategies;
 };
 
-const combineData = (
+export function combineData(
   aData: GenericObject,
   bData: GenericObject,
   how: UpdateStrategyNames | CombiningType
-): GenericObject => {
+): GenericObject {
   const strategy = typeof how === "string" ? updateStrategies[how] : how;
   const aClone = jClone(aData);
   const bClone = jClone(bData);
@@ -112,7 +112,7 @@ const combineData = (
   }
 
   return combined;
-};
+}
 
 const isMergeableValue = (val: any) => {
   return (
@@ -150,5 +150,3 @@ export const mergeValues = (
   const maybeSorted = sort ? maybeMerged.sort() : maybeMerged;
   return maybeSorted;
 };
-
-export default combineData;

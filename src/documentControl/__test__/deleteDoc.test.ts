@@ -1,5 +1,5 @@
 import { testDbLifecycle } from "../../test-utils";
-import deleteDoc, { NoDocToDeleteError } from "../deleteDoc";
+import { deleteDoc, NoDocToDeleteError } from "../deleteDoc";
 
 const dbName = "delete_doc_test";
 const db = testDbLifecycle(dbName);

@@ -1,15 +1,15 @@
 import RJSON from "relaxed-json";
-import parseTimeStr from "../time/parseTimeStr";
+import { parseTimeStr } from "../time/parseTimeStr";
 import { BadDateError, BadDurationError, BadTimeError } from "../errors";
-import parseDurationStr from "../time/parseDurationString";
-import parseDateStr from "../time/parseDateStr";
+import { parseDurationStr } from "../time/parseDurationString";
+import { parseDateStr } from "../time/parseDateStr";
 import {
   isoDateFromDateTime,
   isoDatetimeFromDateTime,
   isoDurationFromDuration,
 } from "../time/timeUtils";
 
-const inferType = (value: number | string, fieldName?: string): any => {
+export function inferType(value: number | string, fieldName?: string): any {
   if (fieldName !== undefined) {
     switch (true) {
       case /(?:\b|_)time$/i.test(fieldName):
@@ -76,6 +76,4 @@ const inferType = (value: number | string, fieldName?: string): any => {
     // If RJSON can't parse than just return the initial value
   }
   return value;
-};
-
-export default inferType;
+}

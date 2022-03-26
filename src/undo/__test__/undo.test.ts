@@ -1,6 +1,6 @@
 import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
-import addCmd from "../../commands/addCmd";
+import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 
 // TODO: Make undo system more robust and more tested

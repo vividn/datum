@@ -19,7 +19,7 @@ export type DeletedDocument = {
   _deleted: true;
 };
 
-async function deleteDoc({
+export async function deleteDoc({
   id,
   db,
   show = Show.None,
@@ -40,5 +40,3 @@ async function deleteDoc({
   showDelete(existingDoc, show);
   return deletedDoc;
 }
-
-export default deleteDoc;

@@ -2,11 +2,11 @@ import { BaseDatumArgs } from "../input/baseYargs";
 import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import connectDb from "../auth/connectDb";
-import quickId from "../ids/quickId";
+import { connectDb } from "../auth/connectDb";
+import { quickId } from "../ids/quickId";
 import { Show } from "../output/output";
 import { editJSONInTerminal } from "../utils/editInTerminal";
-import overwriteDoc from "../documentControl/overwriteDoc";
+import { overwriteDoc } from "../documentControl/overwriteDoc";
 
 export const command = ["edit <quickId>"];
 export const desc = "Edit a document directly with EDITOR";

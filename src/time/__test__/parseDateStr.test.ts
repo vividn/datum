@@ -1,4 +1,4 @@
-import parseDateStr, { ParseDateStrType } from "../parseDateStr";
+import { parseDateStr, ParseDateStrType } from "../parseDateStr";
 import { DateTime, Settings } from "luxon";
 
 function expectDate(
