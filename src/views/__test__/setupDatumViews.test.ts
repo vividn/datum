@@ -14,7 +14,7 @@ afterEach(async () => {
   jest.resetModules();
 });
 
-it("adds all datum views to an empty db", async () => {
+it("adds all datum views and db views to an empty db", async () => {
   const datumView1 = {
     name: "datum_view",
     map: (doc: any) => {
@@ -34,6 +34,16 @@ it("adds all datum views to an empty db", async () => {
     .spyOn(getAllDatumViews, "getAllDatumViews")
     .mockReturnValue(mockAllDatumViews);
 
+  const dbView1 = {
+    name: "project_view",
+    map: (doc: any) => {
+      emit(doc._id, 3);
+    },
+  };
+  const mockDbDatumViews = [dbView1];
+  jest.spyOn(getAllDatumViews, "getDbDatumViews").mockResolvedValue(mockDbDatumViews);
+
+
   const insertDatumViewsSpy = jest.spyOn(
     insertDatumViewModule,
     "insertDatumView"
@@ -43,6 +53,7 @@ it("adds all datum views to an empty db", async () => {
 
   await db.get("_design/datum_view");
   await db.get("_design/datum_another_view");
+  await db.get("_design/project_view");
 
-  expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
+  expect(insertDatumViewsSpy).toHaveBeenCalledTimes(3);
 });

@@ -5,9 +5,9 @@
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
   "license": "UNLICENSED",
-  "main": "build/index.js",
+  "main": "build/src/index.js",
   "bin": {
-    "dtm": "./build/index.js"
+    "dtm": "./build/src/index.js"
   },
   "scripts": {
     "test": "jest",

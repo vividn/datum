@@ -10,3 +10,12 @@ export function getAllDatumViews(): DatumView[] {
   }
   return allDatumViews;
 }
+
+export async function getDbDatumViews(dbName: string): Promise<DatumView[]> {
+  const dbViews = await import(`../../projects/${dbName}`) as { [name: string]: DatumView};
+  const allDbViews: DatumView[] = [];
+  for (const viewName in dbViews) {
+    allDbViews.push(dbViews[viewName]);
+  }
+  return allDbViews;
+}
