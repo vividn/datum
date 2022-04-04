@@ -6,7 +6,9 @@ export async function setupDatumViews({
   db,
   show,
 }: BaseDocControlArgs): Promise<void> {
-  const allDatumViews = getAllDatumViews().concat(await getDbDatumViews(db.config.db));
+  const allDatumViews = getAllDatumViews().concat(
+    await getDbDatumViews(db.config.db)
+  );
   const promises = allDatumViews.map((datumView) => {
     return insertDatumView({ datumView, db, show });
   });

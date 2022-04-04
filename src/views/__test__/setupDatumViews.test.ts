@@ -41,8 +41,9 @@ it("adds all datum views and db views to an empty db", async () => {
     },
   };
   const mockDbDatumViews = [dbView1];
-  jest.spyOn(getAllDatumViews, "getDbDatumViews").mockResolvedValue(mockDbDatumViews);
-
+  jest
+    .spyOn(getAllDatumViews, "getDbDatumViews")
+    .mockResolvedValue(mockDbDatumViews);
 
   const insertDatumViewsSpy = jest.spyOn(
     insertDatumViewModule,

@@ -2,17 +2,18 @@ import { isIsoDateOrTime, isoDate, isoDatetime } from "../time/timeUtils";
 
 export type Occurance = {
   occurTime: isoDatetime | isoDate;
-  occurUtcOffset?: number
+  occurUtcOffset?: number;
 };
 
 export type GenericData<T = any> = T & {
   [key: string]: any;
 };
-export type OccurredData<T = any> = Occurance & T & {
-  [key: string]: any;
-}
+export type OccurredData<T = any> = Occurance &
+  T & {
+    [key: string]: any;
+  };
 
-export type DatumData<T = any> = GenericData<T> | OccurredData<T> ;
+export type DatumData<T = any> = GenericData<T> | OccurredData<T>;
 
 export function isOccurredData(data: DatumData): data is OccurredData {
   return (
