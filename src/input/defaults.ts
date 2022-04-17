@@ -1,1 +1,1 @@
-export const defaults = { idDelimiter: "__", projectDir: process.env["HOME"] + "/.projectDatumViews" };
+export const defaults = { idDelimiter: "__",  };

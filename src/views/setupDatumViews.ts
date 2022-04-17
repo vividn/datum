@@ -3,7 +3,7 @@ import { BaseDocControlArgs } from "../documentControl/base";
 import { getAllDatumViews, getDbDatumViews } from "./getAllDatumViews";
 
 export type SetupDatumViewsType = {
-  projectDir: string;
+  projectDir?: string;
 } & BaseDocControlArgs
 
 export async function setupDatumViews({
@@ -12,7 +12,7 @@ export async function setupDatumViews({
   show,
 }: SetupDatumViewsType): Promise<void> {
   const allDatumViews = getAllDatumViews();
-  const allDbViews = await getDbDatumViews({dbName: db.config.db, projectDir});
+  const allDbViews = projectDir ? await getDbDatumViews({dbName: db.config.db, projectDir}) : [];
   const promises = allDatumViews.concat(allDbViews).map((datumView) => {
     return insertDatumView({ datumView, db, show });
   });
