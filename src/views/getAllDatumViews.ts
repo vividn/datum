@@ -13,16 +13,16 @@ export function getAllDatumViews(): DatumView[] {
 
 export async function getDbDatumViews({
   dbName,
-  projectDir
+  projectDir,
 }: {
-  dbName: string,
-  projectDir: string
+  dbName: string;
+  projectDir: string;
 }): Promise<DatumView[]> {
-  let dbViews: { [key: string]: DatumView};
+  let dbViews: { [key: string]: DatumView };
   try {
-  dbViews = (await import(`${projectDir}/${dbName}`)) as {
-    [name: string]: DatumView;
-  };
+    dbViews = (await import(`${projectDir}/${dbName}`)) as {
+      [name: string]: DatumView;
+    };
   } catch (e: any) {
     if (e.message.startsWith("Cannot find module")) {
       console.warn(`no folder for db found in ${projectDir}/${dbName}`);

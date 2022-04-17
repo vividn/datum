@@ -3,7 +3,6 @@ import { BaseDatumArgs } from "../input/baseYargs";
 import { setupDatumViews } from "../views/setupDatumViews";
 import { connectDb } from "../auth/connectDb";
 import { Show } from "../output/output";
-import { defaults } from "../input/defaults";
 
 export const command = "setup";
 export const desc = "setup the database for use with datum";
@@ -15,9 +14,10 @@ export type SetupCmdArgs = BaseDatumArgs & {
 export function builder(yargs: Argv): Argv {
   return yargs.options({
     "project-dir": {
-      describe: "where to look for additional DatumViews to setup in the database",
+      describe:
+        "where to look for additional DatumViews to setup in the database",
       type: "string",
-    }
+    },
   });
 }
 

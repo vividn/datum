@@ -1,1 +1,1 @@
-export const defaults = { idDelimiter: "__",  };
+export const defaults = { idDelimiter: "__" };

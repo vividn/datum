@@ -57,7 +57,6 @@ it("adds all datum views and db views to an empty db", async () => {
   await expect(db.get("_design/project_view")).rejects.toThrowError("missing");
   expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
 
-  await setupDatumViews({ db, projectDir: "./"});
+  await setupDatumViews({ db, projectDir: "./" });
   await db.get("_design/project_view");
-
 });
