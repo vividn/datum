@@ -50,7 +50,7 @@ it("adds all datum views and db views to an empty db", async () => {
     "insertDatumView"
   );
 
-  await setupDatumViews({ db });
+  await setupDatumViews({ db, projectDir: "./" });
 
   await db.get("_design/datum_view");
   await db.get("_design/datum_another_view");
