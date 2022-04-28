@@ -1,25 +1,28 @@
 import { isIsoDateOrTime, isoDate, isoDatetime } from "../time/timeUtils";
 
-export type occurredData = {
-  occurTime?: isoDatetime | isoDate;
-  [key: string]: any;
+export type Occurance = {
+  occurTime: isoDatetime | isoDate;
+  occurUtcOffset?: number;
 };
 
-export type GenericData = {
+export type GenericData<T = any> = T & {
   [key: string]: any;
 };
+export type OccurredData<T = any> = Occurance &
+  T & {
+    [key: string]: any;
+  };
 
-export type DatumData = occurredData | GenericData;
+export type DatumData<T = any> = GenericData<T> | OccurredData<T>;
 
-export function isOccurredData(data: DatumData): data is occurredData {
+export function isOccurredData(data: DatumData): data is OccurredData {
   return (
-    (data as occurredData).occurTime !== undefined &&
+    (data as OccurredData).occurTime !== undefined &&
     isIsoDateOrTime(data.occurTime)
   );
 }
 
 export type DatumMetadata = {
-  occurTime?: isoDate | isoDatetime;
   utcOffset?: number;
   createTime?: isoDatetime;
   modifyTime?: isoDatetime; //TODO: turn into an array of times
@@ -29,30 +32,30 @@ export type DatumMetadata = {
   // [key: string]: any;
 };
 
-export type DatumPayload = {
+export type DatumPayload<T = any> = {
   _id?: string;
   _rev?: string;
-  data: DatumData;
+  data: DatumData<T>;
   meta: DatumMetadata;
 };
 
-export type DatumDocument = DatumPayload & {
+export type DatumDocument<T = any> = DatumPayload<T> & {
   _id: string;
   _rev: string;
 };
 
-export type DataOnlyPayload = {
+export type DataOnlyPayload<T = any> = {
   _id?: string;
   _rev?: string;
-} & DatumData;
+} & DatumData<T>;
 
-export type DataOnlyDocument = DataOnlyPayload & {
+export type DataOnlyDocument<T = any> = DataOnlyPayload<T> & {
   _id: string;
   _rev: string;
 };
 
-export type EitherPayload = DatumPayload | DataOnlyPayload;
-export type EitherDocument = DatumDocument | DataOnlyDocument;
+export type EitherPayload<T = any> = DatumPayload<T> | DataOnlyPayload<T>;
+export type EitherDocument<T = any> = DatumDocument<T> | DataOnlyDocument<T>;
 
 export function isDatumDocument(
   doc: DatumDocument | DataOnlyDocument
