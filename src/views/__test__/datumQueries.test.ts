@@ -5,6 +5,7 @@ import { insertDatumView } from "../insertDatumView";
 import { subHumanIdView } from "../datumViews";
 import { DatumViewMissingError } from "../../errors";
 
+jest.retryTimes(3);
 describe("minHumanId", () => {
   const dbName = "test_datum_queries";
   const db = testDbLifecycle(dbName);
