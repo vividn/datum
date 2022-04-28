@@ -1,25 +1,25 @@
 import { isIsoDateOrTime, isoDate, isoDatetime } from "../time/timeUtils";
+import { WithRequired } from "../utils/utilityTypes";
 
-export type Occurance = {
-  occurTime: isoDatetime | isoDate;
+export type GenericData<T = unknown> = T & {
+  [key: string]: any;
+};
+
+export type DatumData<T = unknown> = GenericData<T> & {
+  occurTime?: isoDatetime | isoDate;
   occurUtcOffset?: number;
 };
 
-export type GenericData<T = any> = T & {
-  [key: string]: any;
-};
-export type OccurredData<T = any> = Occurance &
-  T & {
-    [key: string]: any;
-  };
+export type OccurredData<T = unknown> = WithRequired<
+  DatumData<T>,
+  "occurTime" | "occurUtcOffset"
+>;
 
-export type DatumData<T = any> = GenericData<T> | OccurredData<T>;
-
-export function isOccurredData(data: DatumData): data is OccurredData {
-  return (
-    (data as OccurredData).occurTime !== undefined &&
-    isIsoDateOrTime(data.occurTime)
-  );
+export function isOccurredData(
+  data: DatumData | OccurredData
+): data is OccurredData {
+  const occurTime = data.occurTime;
+  return occurTime !== undefined && isIsoDateOrTime(occurTime);
 }
 
 export type DatumMetadata = {
@@ -32,30 +32,32 @@ export type DatumMetadata = {
   // [key: string]: any;
 };
 
-export type DatumPayload<T = any> = {
+export type DatumPayload<T = unknown> = {
   _id?: string;
   _rev?: string;
   data: DatumData<T>;
   meta: DatumMetadata;
 };
 
-export type DatumDocument<T = any> = DatumPayload<T> & {
+export type DatumDocument<T = unknown> = DatumPayload<T> & {
   _id: string;
   _rev: string;
 };
 
-export type DataOnlyPayload<T = any> = {
+export type DataOnlyPayload<T = unknown> = {
   _id?: string;
   _rev?: string;
 } & DatumData<T>;
 
-export type DataOnlyDocument<T = any> = DataOnlyPayload<T> & {
+export type DataOnlyDocument<T = unknown> = DataOnlyPayload<T> & {
   _id: string;
   _rev: string;
 };
 
-export type EitherPayload<T = any> = DatumPayload<T> | DataOnlyPayload<T>;
-export type EitherDocument<T = any> = DatumDocument<T> | DataOnlyDocument<T>;
+export type EitherPayload<T = unknown> = DatumPayload<T> | DataOnlyPayload<T>;
+export type EitherDocument<T = unknown> =
+  | DatumDocument<T>
+  | DataOnlyDocument<T>;
 
 export function isDatumDocument(
   doc: DatumDocument | DataOnlyDocument
