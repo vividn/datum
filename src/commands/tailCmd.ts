@@ -10,6 +10,7 @@ import { occurTimeView } from "../views/datumViews";
 import { getBorderCharacters, table } from "table";
 import { DateTime, FixedOffsetZone } from "luxon";
 import { humanTime } from "../time/humanTime";
+import { assembleId } from "../ids/assembleId";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -48,10 +49,11 @@ export function builder(yargs: Argv): Argv {
     //   alias: "m",
     //   type: "string",
     // },
-    // format: {
-    //   describe: "custom format for outputting the data",
-    //   type: "string",
-    // },
+    format: {
+      describe:
+        "custom format for outputting the data. To use fields in the data use %fieldName%, for fields in the metadata use %?fieldName%",
+      type: "string",
+    },
     // head: {
     //   describe: "show first rows instead of last rows",
     //   type: "boolean",
@@ -80,6 +82,13 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   });
   const rawRows = viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
+  if (args.format) {
+    docs.forEach((doc) => {
+      console.log(assembleId({ payload: doc, idStructure: args.format }));
+    });
+    return docs;
+  }
+
   const headerRow = ["occurTime", "hid", "id"];
   const tableRows = [headerRow].concat(
     docs.map((doc) => {
