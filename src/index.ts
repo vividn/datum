@@ -45,9 +45,12 @@ export async function main(cliInput: string | string[]): Promise<void> {
       await mapCmd(args as unknown as MapCmdArgs);
       break;
 
-    case "setup":
-      await setupCmd(args as unknown as SetupCmdArgs);
+    case "setup": {
+      const setupArgs = args as unknown as SetupCmdArgs;
+      setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
+      await setupCmd(setupArgs);
       break;
+    }
 
     case "tail":
       await tailCmd(args as unknown as TailCmdArgs);

@@ -43,10 +43,6 @@ describe("humanOccurTime", () => {
     humanTimeSpy.mockReturnValue("formatted_human_time");
     const returnVal = humanOccurTime(dataDoc);
     expect(returnVal).toEqual("formatted_human_time");
-    console.log({
-      expectedLuxonDateTime,
-      dateTimeArg: humanTimeSpy.mock.calls[0][0],
-    });
     expect(
       expectedLuxonDateTime.equals(humanTimeSpy.mock.calls[0][0])
     ).toBeTruthy();

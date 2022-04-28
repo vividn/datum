@@ -20,9 +20,9 @@ const testDatumPayload: DatumPayload = {
   data: {
     abc: 123,
     foo: "bar",
+    occurTime: "2021-06-20T14:00:00Z",
   },
   meta: {
-    occurTime: "2021-06-20T14:00:00Z",
     utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
