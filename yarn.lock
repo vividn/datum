@@ -1532,10 +1532,10 @@
   dependencies:
     "@types/lodash" "*"
 
-"@types/lodash.isplainobject@^4.0.6":
-  version "4.0.6"
-  resolved "https://registry.yarnpkg.com/@types/lodash.isplainobject/-/lodash.isplainobject-4.0.6.tgz#757d2dcdecbb32f4452018b285a586776092efd1"
-  integrity sha512-8G41YFhmOl8Ck6NrwLK5hhnbz6ADfuDJP+zusDnX3PoYhfC60+H/rQE6zmdO4yFzPCPJPY4oGZK2spbXm6gYEA==
+"@types/lodash.isplainobject@^4.0.7":
+  version "4.0.7"
+  resolved "https://registry.yarnpkg.com/@types/lodash.isplainobject/-/lodash.isplainobject-4.0.7.tgz#698e3231341b1aa0a16681e7aa8b10ee6d9a7d8c"
+  integrity sha512-fdHtdjpy7fXydEaRHx1dPa+2AVmLbmk2Gv7f0w/90BKCH0DkWo8pIrzygnB3rvgo6oKNb3cO9VaPpj9GLCr5Ug==
   dependencies:
     "@types/lodash" "*"
 
