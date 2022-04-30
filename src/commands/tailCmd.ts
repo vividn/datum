@@ -1,8 +1,11 @@
 import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import {
+  DatumData,
+  DatumMetadata,
   EitherDocument,
   isDatumDocument,
+  isDatumPayload,
 } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
@@ -10,7 +13,7 @@ import { occurTimeView } from "../views/datumViews";
 import { getBorderCharacters, table } from "table";
 import { DateTime, FixedOffsetZone } from "luxon";
 import { humanTime } from "../time/humanTime";
-import { assembleId } from "../ids/assembleId";
+import { interpolateFields } from "../ids/interpolateFields";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -82,9 +85,18 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   });
   const rawRows = viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
-  if (args.format) {
+  const format = args.format;
+  if (format) {
+    let data: DatumData;
+    let meta: DatumMetadata | undefined;
     docs.forEach((doc) => {
-      console.log(assembleId({ payload: doc, idStructure: args.format }));
+      if (isDatumPayload(doc)) {
+        data = doc.data as DatumData;
+        meta = doc.meta;
+      } else {
+        data = doc as DatumData;
+      }
+      console.log(interpolateFields({ data, meta, format }));
     });
     return docs;
   }
