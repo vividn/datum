@@ -13,7 +13,7 @@ type TaskDoc = DatumDocument<{
   proj?: string;
 }>;
 
-export const inboxView: DatumView = {
+export const inboxView: DatumView<TaskDoc> = {
   name: "inbox",
   map: (doc: TaskDoc) => {
     if (!doc.data) {

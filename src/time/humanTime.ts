@@ -1,4 +1,5 @@
-import { DateTime, Duration } from "luxon";
+import { DateTime, Duration, FixedOffsetZone } from "luxon";
+import { isoDatetime } from "./timeUtils";
 
 export function humanTime(time: DateTime): string {
   let dateTimeFormat;
@@ -22,4 +23,17 @@ export function humanTime(time: DateTime): string {
   }
 
   return time.toFormat(dateTimeFormat);
+}
+
+export function humanTimeFromISO(
+  timeStr: isoDatetime,
+  utcOffset?: number
+): string {
+  const datetime = DateTime.fromISO(timeStr, {
+    zone:
+      utcOffset !== undefined
+        ? FixedOffsetZone.instance(60 * utcOffset)
+        : undefined,
+  });
+  return humanTime(datetime);
 }

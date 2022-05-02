@@ -6,4 +6,5 @@ describe("tailCmd", () => {
 
   it.todo("displays the last 10 occurences in the database");
   it.todo("can display the last n occurences");
+  it.todo("can display a custom format for the tail commands");
 });

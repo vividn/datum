@@ -5,8 +5,7 @@ import {
   isDatumPayload,
 } from "../documentControl/DatumDocument";
 import { IdError } from "../errors";
-import { splitRawAndFields } from "./splitRawAndFields";
-import { GenericObject } from "../GenericObject";
+import { interpolateFields } from "./interpolateFields";
 
 type assembleIdType = {
   payload: EitherPayload;
@@ -19,7 +18,7 @@ export const assembleId = function ({
   let data: DatumData;
   let meta: DatumMetadata | undefined;
   if (isDatumPayload(payload)) {
-    data = payload.data;
+    data = payload.data as DatumData;
     meta = payload.meta;
   } else {
     data = payload as DatumData;
@@ -42,46 +41,5 @@ export const assembleId = function ({
     throw new IdError("Cannot determine the id");
   }
 
-  const rawEvenFieldOdd = splitRawAndFields(structure);
-
-  const interpolatedFields = rawEvenFieldOdd
-    .reduce((combined: string[], strPart: string, index: number) => {
-      if (index % 2 === 0) {
-        // raw ids get appended directly
-        combined.push(strPart);
-        return combined;
-      }
-
-      // Keys that start with '?' are pulled from meta instead
-      let key: string, sourceObject: DatumData | DatumMetadata | undefined;
-      if (strPart.startsWith("?")) {
-        key = strPart.slice(1);
-        sourceObject = meta;
-      } else if (strPart.startsWith(String.raw`\?`)) {
-        key = strPart.slice(1);
-        sourceObject = data;
-      } else {
-        key = strPart;
-        sourceObject = data;
-      }
-
-      // retrieve deeper values with dot notation
-      const extractedValue = key
-        .split(".")
-        .reduce(
-          (o, subKey) => (o as undefined | GenericObject)?.[subKey],
-          sourceObject
-        );
-      if (extractedValue !== undefined) {
-        const valueAsString =
-          typeof extractedValue === "string"
-            ? extractedValue
-            : JSON.stringify(extractedValue);
-        combined.push(valueAsString);
-      }
-      return combined;
-    }, [])
-    .join("");
-
-  return interpolatedFields;
+  return interpolateFields({ data, meta, format: structure });
 };
