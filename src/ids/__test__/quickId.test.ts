@@ -11,6 +11,8 @@ import {
   NoQuickIdMatchError,
 } from "../quickId";
 
+jest.retryTimes(3);
+
 const dbName = "test_quick_id";
 const db = testDbLifecycle(dbName);
 
