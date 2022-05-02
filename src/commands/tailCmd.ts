@@ -97,7 +97,9 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
       } else {
         data = doc as DatumData;
       }
-      console.log(interpolateFields({ data, meta, format }));
+      console.log(
+        interpolateFields({ data, meta, format, useHumanTimes: true })
+      );
     });
     return docs;
   }
