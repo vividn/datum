@@ -50,9 +50,10 @@ export function interpolateFields({
           typeof extractedValue === "string"
             ? extractedValue
             : JSON.stringify(extractedValue);
-        const formattedString = isIsoDateOrTime(valueAsString)
-          ? humanTimeFromISO(valueAsString)
-          : valueAsString;
+        const formattedString =
+          isIsoDateOrTime(valueAsString) && useHumanTimes
+            ? humanTimeFromISO(valueAsString)
+            : valueAsString;
         combined.push(formattedString);
       }
       return combined;
