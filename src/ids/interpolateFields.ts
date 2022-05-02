@@ -1,15 +1,19 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
 import { splitRawAndFields } from "./splitRawAndFields";
 import { GenericObject } from "../GenericObject";
+import { isIsoDateOrTime } from "../time/timeUtils";
+import { humanTimeFromISO } from "../time/humanTime";
 
 export function interpolateFields({
   data,
   meta,
   format,
+  useHumanTimes = false,
 }: {
   data: DatumData;
   meta?: DatumMetadata;
   format: string;
+  useHumanTimes?: boolean;
 }): string {
   const rawEvenFieldOdd = splitRawAndFields(format);
 
@@ -46,7 +50,10 @@ export function interpolateFields({
           typeof extractedValue === "string"
             ? extractedValue
             : JSON.stringify(extractedValue);
-        combined.push(valueAsString);
+        const formattedString = isIsoDateOrTime(valueAsString)
+          ? humanTimeFromISO(valueAsString)
+          : valueAsString;
+        combined.push(formattedString);
       }
       return combined;
     }, [])

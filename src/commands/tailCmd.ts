@@ -87,6 +87,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
   const format = args.format;
   if (format) {
+    //TODO: factor this out better, automatically extract all docs into a similar forat to simplify code base
     let data: DatumData;
     let meta: DatumMetadata | undefined;
     docs.forEach((doc) => {
