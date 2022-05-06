@@ -12,9 +12,9 @@ const testDatumPayload: DatumPayload = {
     abc: 123,
     foo: "bar",
     occurTime: "2021-06-20T14:00:00Z",
+    occurUtcOffset: 2,
   },
   meta: {
-    utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
     humanId: "ndke4ms9",
@@ -89,10 +89,12 @@ describe("updateDoc", () => {
       payload: testDatumPayload,
     })) as DatumDocument;
     const newPayload = {
-      data: { newKey: "newData" },
-      meta: {
+      data: {
+        newKey: "newData",
         occurTime: "2021-08-09T14:13:00Z",
-        utcOffset: 1,
+        occurUtcOffset: 1,
+      },
+      meta: {
         idStructure: "%newKey%",
         random: 0.666,
         humanId: "noneOfThisShouldBeIncluded",

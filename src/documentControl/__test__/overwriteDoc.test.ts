@@ -15,9 +15,9 @@ const testDatumPayload: DatumPayload = {
     abc: 123,
     foo: "bar",
     occurTime: "2021-06-20T14:00:00Z",
+    occurUtcOffset: 2,
   },
   meta: {
-    utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
     humanId: "ndke4ms9",
@@ -299,7 +299,6 @@ describe("overwriteDoc", () => {
       data: {},
       meta: {
         occurTime: timeA,
-        utcOffset: 1,
         createTime: timeA,
         humanId: "olddoc",
       },
@@ -309,7 +308,6 @@ describe("overwriteDoc", () => {
       data: {},
       meta: {
         occurTime: timeB,
-        utcOffset: 2,
         createTime: timeB,
         humanId: "newdoc",
       },
@@ -319,7 +317,6 @@ describe("overwriteDoc", () => {
       data: {},
       meta: {
         occurTime: timeB,
-        utcOffset: 2,
         createTime: timeA,
         humanId: "newdoc",
       },
@@ -428,11 +425,10 @@ describe("overwriteDoc", () => {
       data: {
         foo: "bar",
         abc: 123,
-      },
-      meta: {
         occurTime: "2021-06-20T14:00:00Z",
-        utcOffset: 2,
+        occurUtcOffset: 2,
       },
+      meta: {},
     };
     const payload2 = jClone(payload1);
     expect(payload1).toEqual(payload2);
