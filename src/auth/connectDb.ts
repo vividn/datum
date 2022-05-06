@@ -2,8 +2,9 @@ import Nano, { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
 import { BaseDatumArgs } from "../input/baseYargs";
+import { pass } from "../utils/pass";
 
-export function connectDb(args: BaseDatumArgs): DocumentScope<EitherPayload> {
+export function connectNano(args: BaseDatumArgs): Nano.ServerScope {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
   }
@@ -15,12 +16,19 @@ export function connectDb(args: BaseDatumArgs): DocumentScope<EitherPayload> {
     password: args.password ?? process.env.COUCHDB_PASSWORD ?? "password",
     hostname: args.host ?? process.env.COUCHDB_HOSTNAME ?? defaultHost,
   };
-  const nano = Nano(
+  return Nano(
     `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`
   );
+}
 
+export async function connectDb(
+  args: BaseDatumArgs
+): Promise<DocumentScope<EitherPayload>> {
+  const nano = connectNano(args);
   const { db: dbName = "datum" } = args;
-
+  if (args.createDb) {
+    await nano.db.create(dbName).catch(pass);
+  }
   const db: DocumentScope<EitherPayload> = nano.use(dbName);
   return db;
 }

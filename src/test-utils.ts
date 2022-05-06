@@ -60,7 +60,7 @@ export function testDbLifecycle(dbName: string): DocumentScope<EitherPayload> {
 
   beforeEach(async () => {
     await resetTestDb(dbName);
-    jest.spyOn(connectDb, "connectDb").mockImplementation(() => db);
+    jest.spyOn(connectDb, "connectDb").mockImplementation(async () => db);
   });
 
   afterEach(async () => {
