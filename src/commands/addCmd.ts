@@ -120,6 +120,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const payloadData = handleDataArgs(args);
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
+    payloadData.occurUtcOffset = utcOffset;
   }
 
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
@@ -139,8 +140,6 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       humanId: newHumanId(),
       random: Math.random(),
     };
-
-    meta.utcOffset = utcOffset;
 
     // these will be overwritten later by addDoc, but useful to have them here
     // for undo and original id building
