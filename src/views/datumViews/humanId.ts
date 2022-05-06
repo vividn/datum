@@ -1,6 +1,6 @@
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { DatumView } from "../viewDocument";
-import _emit from "../emit";
+import { _emit } from "../emit";
 
 function emit(doc: unknown, value: unknown) {
   _emit(doc, value);

@@ -1,18 +1,8 @@
-import { resetTestDb, testNano } from "../../test-utils";
-import { EitherPayload } from "../DatumDocument";
-import { afterEach, beforeEach, expect, it } from "@jest/globals";
-import deleteDoc, { NoDocToDeleteError } from "../deleteDoc";
+import { testDbLifecycle } from "../../test-utils";
+import { deleteDoc, NoDocToDeleteError } from "../deleteDoc";
 
 const dbName = "delete_doc_test";
-const db = testNano.db.use<EitherPayload>(dbName);
-
-beforeEach(async () => {
-  await resetTestDb(dbName);
-});
-
-afterEach(async () => {
-  await testNano.db.destroy(dbName);
-});
+const db = testDbLifecycle(dbName);
 
 it("deletes the document with the given in the db", async () => {
   await db.insert({ _id: "doc-to-delete" });

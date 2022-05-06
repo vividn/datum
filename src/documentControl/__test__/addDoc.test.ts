@@ -3,36 +3,26 @@ import {
   DataOnlyPayload,
   DatumDocument,
   DatumPayload,
-  EitherPayload,
 } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  test,
-  jest,
-} from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
-import addDoc from "../addDoc";
+import { fail, testDbLifecycle } from "../../test-utils";
+import { addDoc } from "../addDoc";
 import { IdError } from "../../errors";
-import jClone from "../../utils/jClone";
+import { jClone } from "../../utils/jClone";
 import * as updateDoc from "../updateDoc";
 import * as overwriteDoc from "../overwriteDoc";
 import * as deleteDoc from "../deleteDoc";
 import { DocExistsError } from "../base";
 import { Show } from "../../output/output";
-import emit from "../../views/emit";
+import { _emit as emit } from "../../views/emit";
 
 const testDatumPayload: DatumPayload = {
   data: {
     abc: 123,
     foo: "bar",
+    occurTime: "2021-06-20T14:00:00Z",
   },
   meta: {
-    occurTime: "2021-06-20T14:00:00Z",
     utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
@@ -46,15 +36,10 @@ const nowStr = mockNow.toString();
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
-  const db = testNano.db.use<EitherPayload>(dbName);
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
     Settings.now = () => mockNow.toMillis();
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
   });
 
   it("it adds dataOnly payloads with _id to the given database", async () => {
@@ -230,7 +215,7 @@ describe("addDoc", () => {
   });
 
   it("still calls updateDoc with updateStrategy is even if data is identical", async () => {
-    const spy = jest.spyOn(updateDoc, "default");
+    const spy = jest.spyOn(updateDoc, "updateDoc");
     const data = { _id: "dataonly", foo: "abc" };
     await db.insert(data);
 
@@ -280,7 +265,7 @@ describe("addDoc", () => {
       foo: ["bar", "baz"],
       anotherKey: "data",
     };
-    const spy = jest.spyOn(updateDoc, "default");
+    const spy = jest.spyOn(updateDoc, "updateDoc");
 
     await addDoc({ db, payload: originalPayload });
     const newDoc = await addDoc({
@@ -291,8 +276,6 @@ describe("addDoc", () => {
 
     expect(newDoc).toMatchObject(expectedResult);
     expect(spy).toHaveBeenCalled();
-
-    spy.mockRestore();
   });
 
   it("calls overwriteDoc if conflict and 'overwrite' given as conflict strategy", async () => {
@@ -312,7 +295,7 @@ describe("addDoc", () => {
       data: { foo: "baz" },
       meta: { humanId: "overwrite" },
     };
-    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
+    const overwriteSpy = jest.spyOn(overwriteDoc, "overwriteDoc");
 
     await addDoc({ db, payload: originalPayload });
     const newDoc = await addDoc({
@@ -322,8 +305,6 @@ describe("addDoc", () => {
     });
     expect(newDoc).toMatchObject(expectedResult);
     expect(overwriteSpy).toHaveBeenCalled();
-
-    overwriteSpy.mockRestore();
   });
 
   it("calls deleteDoc if conflict and 'delete' given as conflict strategy", async () => {
@@ -343,7 +324,7 @@ describe("addDoc", () => {
       _deleted: true,
     };
 
-    const deleteSpy = jest.spyOn(deleteDoc, "default");
+    const deleteSpy = jest.spyOn(deleteDoc, "deleteDoc");
 
     await addDoc({ db, payload: originalPayload });
     const newDoc = await addDoc({
@@ -353,14 +334,12 @@ describe("addDoc", () => {
     });
     expect(newDoc).toMatchObject(expectedResult);
     expect(deleteSpy).toHaveBeenCalled();
-
-    deleteSpy.mockRestore();
   });
 
   it("does not call other documentControl strategies if there is no conflict", async () => {
-    const updateSpy = jest.spyOn(updateDoc, "default");
-    const overwriteSpy = jest.spyOn(overwriteDoc, "default");
-    const deleteSpy = jest.spyOn(deleteDoc, "default");
+    const updateSpy = jest.spyOn(updateDoc, "updateDoc");
+    const overwriteSpy = jest.spyOn(overwriteDoc, "overwriteDoc");
+    const deleteSpy = jest.spyOn(deleteDoc, "deleteDoc");
 
     await addDoc({ db, payload: { _id: "new_id", data: {}, meta: {} } });
     await addDoc({ db, payload: { _id: "data_only_new", foo: "bar" } });
@@ -368,10 +347,6 @@ describe("addDoc", () => {
     expect(updateSpy).not.toHaveBeenCalled();
     expect(overwriteSpy).not.toHaveBeenCalled();
     expect(deleteSpy).not.toHaveBeenCalled();
-
-    updateSpy.mockRestore();
-    overwriteSpy.mockRestore();
-    deleteSpy.mockRestore();
   });
 
   test("It still throws an DocExistsError if conflict and showOutput", async () => {

@@ -1,29 +1,20 @@
-import { pass, resetTestDb, testNano } from "../../test-utils";
-import { ViewPayload } from "../viewDocument";
-import { afterEach, beforeEach, expect, it, jest } from "@jest/globals";
+import { testDbLifecycle } from "../../test-utils";
 import * as insertDatumViewModule from "../insertDatumView";
-import setupDatumViews from "../setupDatumViews";
-import _emit from "../emit";
+import { setupDatumViews } from "../setupDatumViews";
+import { _emit } from "../emit";
 import * as getAllDatumViews from "../getAllDatumViews";
 
-const dbName = "setup_datum_views_test";
-const db = testNano.use<ViewPayload>(dbName);
+const db = testDbLifecycle("setup_datum_views_test");
 
 function emit(key: any, value: any) {
   _emit(key, value);
 }
 
-beforeEach(async () => {
-  await resetTestDb(dbName);
-});
-
 afterEach(async () => {
-  await testNano.db.destroy(dbName).catch(pass);
   jest.resetModules();
-  jest.restoreAllMocks();
 });
 
-it("adds all datum views to an empty db", async () => {
+it("adds all datum views and db views to an empty db", async () => {
   const datumView1 = {
     name: "datum_view",
     map: (doc: any) => {
@@ -39,19 +30,33 @@ it("adds all datum views to an empty db", async () => {
   };
 
   const mockAllDatumViews = [datumView1, datumView2];
-  const getAllDatumViewsSpy = jest
-    .spyOn(getAllDatumViews, "default")
+  jest
+    .spyOn(getAllDatumViews, "getAllDatumViews")
     .mockReturnValue(mockAllDatumViews);
 
-  const insertDatumViewsSpy = jest.spyOn(insertDatumViewModule, "default");
+  const dbView1 = {
+    name: "project_view",
+    map: (doc: any) => {
+      emit(doc._id, 3);
+    },
+  };
+  const mockDbDatumViews = [dbView1];
+  jest
+    .spyOn(getAllDatumViews, "getDbDatumViews")
+    .mockResolvedValue(mockDbDatumViews);
+
+  const insertDatumViewsSpy = jest.spyOn(
+    insertDatumViewModule,
+    "insertDatumView"
+  );
 
   await setupDatumViews({ db });
 
   await db.get("_design/datum_view");
   await db.get("_design/datum_another_view");
-
+  await expect(db.get("_design/project_view")).rejects.toThrowError("missing");
   expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
 
-  insertDatumViewsSpy.mockRestore();
-  getAllDatumViewsSpy.mockRestore();
+  await setupDatumViews({ db, projectDir: "./" });
+  await db.get("_design/project_view");
 });

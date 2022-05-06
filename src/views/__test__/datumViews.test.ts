@@ -1,34 +1,18 @@
-import {
-  afterAll,
-  beforeEach,
-  describe,
-  jest,
-  it,
-  expect,
-} from "@jest/globals";
 import * as emit from "../emit";
 import {
   DataOnlyDocument,
   DatumDocument,
   EitherDocument,
 } from "../../documentControl/DatumDocument";
-import {
-  humanIdView,
-  idToHumanView,
-  subHumanIdView,
-} from "../datumViews/humanId";
-import { dataStructuresView, structuresView } from "../datumViews/structure";
-
-const emitMock = jest.spyOn(emit, "default");
-beforeEach(() => {
-  emitMock.mockClear();
-});
-
-afterAll(() => {
-  emitMock.mockRestore();
-});
+import { humanIdView, idToHumanView, subHumanIdView } from "../datumViews";
+import { dataStructuresView, structuresView } from "../datumViews";
 
 describe("humanIdView", () => {
+  let emitMock: any;
+  beforeEach(() => {
+    emitMock = jest.spyOn(emit, "_emit");
+  });
+
   it("emits one humanId if document has it", () => {
     const doc: DatumDocument = {
       _id: "datum_doc",
@@ -54,6 +38,11 @@ describe("humanIdView", () => {
 });
 
 describe("subHumanIdView", () => {
+  let emitMock: any;
+  beforeEach(() => {
+    emitMock = jest.spyOn(emit, "_emit");
+  });
+
   it("emits a row for each starting substring of humanId", () => {
     const doc: DatumDocument = {
       _id: "datum_doc",
@@ -92,6 +81,11 @@ describe("subHumanIdView", () => {
 });
 
 describe("idToHumanView", () => {
+  let emitMock: any;
+  beforeEach(() => {
+    emitMock = jest.spyOn(emit, "_emit");
+  });
+
   it("emits the _id to humanId if it exists", () => {
     const doc: DatumDocument = {
       _id: "some_doc",
@@ -117,6 +111,11 @@ describe("idToHumanView", () => {
 });
 
 describe("structuresView", () => {
+  let emitMock: any;
+  beforeEach(() => {
+    emitMock = jest.spyOn(emit, "_emit");
+  });
+
   it("emits a sorted array containing each field in a flat document", () => {
     const doc: DataOnlyDocument = {
       _id: "doc",
@@ -166,6 +165,11 @@ describe("structuresView", () => {
 });
 
 describe("dataStructuresView", () => {
+  let emitMock: any;
+  beforeEach(() => {
+    emitMock = jest.spyOn(emit, "_emit");
+  });
+
   it("emits nothing if there is no data field", () => {
     const doc: EitherDocument = {
       _id: "someId",

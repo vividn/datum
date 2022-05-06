@@ -1,46 +1,14 @@
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  expect,
-  it,
-  jest,
-} from "@jest/globals";
-import { pass, resetTestDb, testNano } from "../../test-utils";
-import { DocumentScope } from "nano";
-import {
-  DatumDocument,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
-import * as connectDb from "../../auth/connectDb";
-import addCmd from "../../commands/addCmd";
+import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { DatumDocument } from "../../documentControl/DatumDocument";
+import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 
 // TODO: Make undo system more robust and more tested
 
 describe("addCmd undo", () => {
-  const originalLog = console.log;
-  const mockedLog = jest.fn();
+  const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
-  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  const connectDbSpy = jest
-    .spyOn(connectDb, "default")
-    .mockImplementation(() => db);
-
-  beforeEach(async () => {
-    await resetTestDb(dbName);
-    console.log = mockedLog;
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-    console.log = originalLog;
-    mockedLog.mockReset();
-  });
-
-  afterAll(async () => {
-    connectDbSpy.mockRestore();
-  });
+  const db = testDbLifecycle(dbName);
 
   it("can undo adding documents with a known id", async () => {
     await addCmd({ idPart: "this_one_should_be_deleted" });

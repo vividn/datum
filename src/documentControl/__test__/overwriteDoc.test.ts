@@ -1,29 +1,22 @@
-import { DatumPayload, EitherPayload } from "../DatumDocument";
+import { DatumPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
+import { fail, testDbLifecycle } from "../../test-utils";
 import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  test,
-} from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
-import overwriteDoc, {
+  overwriteDoc,
   NoDocToOverwriteError,
   OverwriteDocError,
 } from "../overwriteDoc";
-import jClone from "../../utils/jClone";
-import addDoc from "../addDoc";
+import { jClone } from "../../utils/jClone";
+import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 
 const testDatumPayload: DatumPayload = {
   data: {
     abc: 123,
     foo: "bar",
+    occurTime: "2021-06-20T14:00:00Z",
   },
   meta: {
-    occurTime: "2021-06-20T14:00:00Z",
     utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
@@ -38,15 +31,10 @@ const notNow = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("overwriteDoc", () => {
   const dbName = "overwrite_doc_test";
-  const db = testNano.db.use<EitherPayload>(dbName);
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
     Settings.now = () => mockNow.toMillis();
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
   });
 
   it("fails if id to be overwritten does not exist in db", async () => {

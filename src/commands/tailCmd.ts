@@ -1,15 +1,19 @@
 import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import {
+  DatumData,
+  DatumMetadata,
   EitherDocument,
   isDatumDocument,
+  isDatumPayload,
 } from "../documentControl/DatumDocument";
-import viewMap from "../views/viewMap";
-import connectDb from "../auth/connectDb";
+import { viewMap } from "../views/viewMap";
+import { connectDb } from "../auth/connectDb";
 import { occurTimeView } from "../views/datumViews";
 import { getBorderCharacters, table } from "table";
 import { DateTime, FixedOffsetZone } from "luxon";
 import { humanTime } from "../time/humanTime";
+import { interpolateFields } from "../ids/interpolateFields";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -48,10 +52,11 @@ export function builder(yargs: Argv): Argv {
     //   alias: "m",
     //   type: "string",
     // },
-    // format: {
-    //   describe: "custom format for outputting the data",
-    //   type: "string",
-    // },
+    format: {
+      describe:
+        "custom format for outputting the data. To use fields in the data use %fieldName%, for fields in the metadata use %?fieldName%",
+      type: "string",
+    },
     // head: {
     //   describe: "show first rows instead of last rows",
     //   type: "boolean",
@@ -80,6 +85,25 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   });
   const rawRows = viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
+  const format = args.format;
+  if (format) {
+    //TODO: factor this out better, automatically extract all docs into a similar forat to simplify code base
+    let data: DatumData;
+    let meta: DatumMetadata | undefined;
+    docs.forEach((doc) => {
+      if (isDatumPayload(doc)) {
+        data = doc.data as DatumData;
+        meta = doc.meta;
+      } else {
+        data = doc as DatumData;
+      }
+      console.log(
+        interpolateFields({ data, meta, format, useHumanTimes: true })
+      );
+    });
+    return docs;
+  }
+
   const headerRow = ["occurTime", "hid", "id"];
   const tableRows = [headerRow].concat(
     docs.map((doc) => {

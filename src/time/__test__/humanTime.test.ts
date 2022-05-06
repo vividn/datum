@@ -1,9 +1,8 @@
 import { DateTime, Settings } from "luxon";
-import { humanTime } from "../humanTime";
-
-const mockNow = DateTime.utc(2022, 2, 11, 9, 20, 0);
+import { humanTime, humanTimeFromISO } from "../humanTime";
 
 describe("humanTime", () => {
+  const mockNow = DateTime.utc(2022, 2, 11, 9, 20, 0);
   beforeEach(async () => {
     Settings.now = () => mockNow.toMillis();
     Settings.defaultZone = "system";
@@ -62,5 +61,24 @@ describe("humanTime", () => {
     Settings.defaultZone = "Europe/Berlin";
     const alreadyValentinesDay = DateTime.local();
     expect(humanTime(alreadyValentinesDay)).toEqual("00:30:00");
+  });
+});
+
+describe("humanTimeFromISO", () => {
+  const mockNow = DateTime.utc(2022, 5, 1, 12, 20, 0);
+
+  beforeEach(async () => {
+    Settings.now = () => mockNow.toMillis();
+    Settings.defaultZone = "UTC+2";
+  });
+
+  it("generates a humanTime in the local zone from a UTC ISO timestamp", () => {
+    const result = humanTimeFromISO("2022-05-01T19:11:50Z");
+    expect(result).toEqual("21:11:50");
+  });
+
+  it("generates a humanTime with the specified offset", () => {
+    const result = humanTimeFromISO("2021-04-30T12:00:00Z", -7);
+    expect(result).toEqual("2021-04-30, 05:00:00 UTC-7");
   });
 });

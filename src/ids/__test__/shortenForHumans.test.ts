@@ -1,37 +1,19 @@
-import {
-  beforeEach,
-  expect,
-  it,
-  jest,
-  describe,
-  beforeAll,
-  afterAll,
-} from "@jest/globals";
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
 import { DocumentScope } from "nano";
-import { EitherPayload } from "../../documentControl/DatumDocument";
-import { resetTestDb, testNano } from "../../test-utils";
-import insertDatumView from "../../views/insertDatumView";
+import { testDbLifecycle } from "../../test-utils";
+import { insertDatumView } from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";
-import shortenForHumans from "../shortenForHumans";
+import { shortenForHumans } from "../shortenForHumans";
 
 describe("shortenForHumans", () => {
   const mockDb = mock<DocumentScope<any>>();
 
-  beforeEach(() => {
-    jest.resetAllMocks();
-  });
-
-  afterEach(() => {
-    jest.restoreAllMocks();
-  });
-
   it("calls getHumanIds with the array of ids", async () => {
     const ids = ["idA", "idB", "idNo", "idC"];
     const getHumanIdsSpy = jest
-      .spyOn(getHumanIds, "default")
+      .spyOn(getHumanIds, "getHumanIds")
       .mockReturnValue(Promise.resolve(["aa", "bb", undefined, "cc"]));
     const minHumanIdSpy = jest
       .spyOn(minHumanId, "minHumanId")
@@ -54,17 +36,11 @@ describe("shortenForHumans", () => {
 
 describe("integration test", () => {
   const dbName = "test_shorten_for_humans";
-  const db: DocumentScope<EitherPayload> = testNano.use(dbName);
+  const db = testDbLifecycle(dbName);
 
-  beforeAll(async () => {
-    await resetTestDb(dbName);
-
+  beforeEach(async () => {
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });
-  });
-
-  afterAll(async () => {
-    await testNano.db.destroy(dbName);
   });
 
   it("returns an array of shortened humanIds, with undefined holes for docs that have no row in the view", async () => {

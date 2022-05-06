@@ -1,32 +1,18 @@
-import { afterEach, beforeEach, expect, jest, test } from "@jest/globals";
-import updateDoc from "../updateDoc";
+import { updateDoc } from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, resetTestDb, testNano } from "../../test-utils";
-import { EitherPayload } from "../DatumDocument";
-import addDoc from "../addDoc";
+import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
-import overwriteDoc from "../overwriteDoc";
+import { overwriteDoc } from "../overwriteDoc";
 import { Show } from "../../output/output";
 import * as addDocModule from "../addDoc";
-import addCmd from "../../commands/addCmd";
+import { addCmd } from "../../commands/addCmd";
 import { main } from "../../index";
-import deleteDoc from "../deleteDoc";
+import { deleteDoc } from "../deleteDoc";
 
 const dbName = "doc_control_output_test";
-const db = testNano.db.use<EitherPayload>(dbName);
-const originalLog = console.log;
-const mockedLog = jest.fn();
-
-beforeEach(async () => {
-  await resetTestDb(dbName);
-  mockedLog.mockReset();
-  console.log = mockedLog;
-});
-
-afterEach(async () => {
-  await testNano.db.destroy(dbName);
-  console.log = originalLog;
-});
+const db = testDbLifecycle(dbName);
+const mockedLog = mockedLogLifecycle();
 
 test("addDoc displays a CREATE: message and the document if showOutput", async () => {
   await addDoc({
@@ -55,7 +41,7 @@ test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict",
 });
 
 test("addDoc calls updateDoc with showOutput", async () => {
-  const spy = jest.spyOn(updateDocModule, "default");
+  const spy = jest.spyOn(updateDocModule, "updateDoc");
   const payload = { _id: "docId", foo: "abce" };
   await addDoc({ db, payload, show: Show.Standard, conflictStrategy: "merge" });
   expect(spy).not.toHaveBeenCalled();
@@ -76,8 +62,6 @@ test("addDoc calls updateDoc with showOutput", async () => {
   });
   expect(spy.mock.calls[1][0].show).toEqual(Show.Standard);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-
-  spy.mockRestore();
 });
 
 test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
@@ -230,7 +214,7 @@ test("deleteDoc outputs DELETE", async () => {
 });
 
 test("show is None by default when calling a command via import or API", async () => {
-  const spy = jest.spyOn(addDocModule, "default").mockReturnValue(
+  const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
     Promise.resolve({
       _id: "returnDoc",
       _rev: "1-abcd",
@@ -240,12 +224,11 @@ test("show is None by default when calling a command via import or API", async (
   );
   await addCmd({});
   expect(spy.mock.calls[0][0].show).toEqual(Show.None);
-  spy.mockRestore();
 });
 
 // This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings
 test.skip("show is Standard by default when calling from the CLI", async () => {
-  const spy = jest.spyOn(addDocModule, "default").mockReturnValue(
+  const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
     Promise.resolve({
       _id: "returnDoc",
       _rev: "1-abcd",
@@ -257,6 +240,4 @@ test.skip("show is Standard by default when calling from the CLI", async () => {
   await main(["--db", dbName, "add"]);
   expect(spy).toHaveBeenCalled();
   expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
-
-  spy.mockRestore();
 });

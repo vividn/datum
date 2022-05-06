@@ -1,5 +1,8 @@
-import Nano from "nano";
+import Nano, { DocumentScope } from "nano";
 import { CouchDbError } from "./errors";
+import { EitherPayload } from "./documentControl/DatumDocument";
+import * as connectDb from "./auth/connectDb";
+import Mock = jest.Mock;
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -36,7 +39,9 @@ export const mockMissingNamedViewError: CouchDbError = {
   reason: "missing_named_view",
 };
 
-export async function resetTestDb(dbName: string): Promise<void> {
+export async function resetTestDb(
+  dbName: string
+): Promise<DocumentScope<EitherPayload>> {
   const maxTries = 3;
   let tries = 0;
   await testNano.db.destroy(dbName).catch(pass);
@@ -44,8 +49,39 @@ export async function resetTestDb(dbName: string): Promise<void> {
     await testNano.db.destroy(dbName).catch(pass);
     await testNano.db.create(dbName).catch(pass);
     if ((await testNano.db.list()).includes(dbName)) {
-      return;
+      return testNano.use(dbName) as DocumentScope<EitherPayload>;
     }
   }
   throw Error(`Unable to reset database after ${maxTries} attempts`);
+}
+
+export function testDbLifecycle(dbName: string): DocumentScope<EitherPayload> {
+  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
+
+  beforeEach(async () => {
+    await resetTestDb(dbName);
+    jest.spyOn(connectDb, "connectDb").mockImplementation(() => db);
+  });
+
+  afterEach(async () => {
+    await testNano.db.destroy(dbName).catch(pass);
+  });
+
+  return db;
+}
+
+export function mockedLogLifecycle(): Mock {
+  const originalLog = console.log;
+  const mockedLog = jest.fn() as Mock;
+
+  beforeEach(async () => {
+    console.log = mockedLog;
+  });
+
+  afterEach(async () => {
+    console.log = originalLog;
+    mockedLog.mockReset();
+  });
+
+  return mockedLog;
 }

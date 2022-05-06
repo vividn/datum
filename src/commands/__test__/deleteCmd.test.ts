@@ -1,26 +1,17 @@
-import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
-import { resetTestDb, testNano } from "../../test-utils";
-import { EitherPayload } from "../../documentControl/DatumDocument";
+import { testDbLifecycle } from "../../test-utils";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";
-import setupCmd from "../setupCmd";
+import { setupCmd } from "../setupCmd";
 
-const dbName = "add_cmd_test";
-const db = testNano.use<EitherPayload>(dbName);
+const dbName = "delete_cmd_test";
+const db = testDbLifecycle(dbName);
 
-const deleteDocSpy = jest.spyOn(deleteDoc, "default");
-
+let deleteDocSpy: any;
 beforeEach(async () => {
-  await resetTestDb(dbName);
+  deleteDocSpy = jest.spyOn(deleteDoc, "deleteDoc");
   await setupCmd({ db: dbName });
-  deleteDocSpy.mockClear();
-});
-
-afterAll(async () => {
-  await testNano.db.destroy(dbName);
-  deleteDocSpy.mockRestore();
 });
 
 it("deletes a document based on first few letters of humanId", async () => {
@@ -62,7 +53,7 @@ it("calls quickId and deleteDoc", async () => {
     Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true })
   );
   const quickIdSpy = jest
-    .spyOn(quickId, "default")
+    .spyOn(quickId, "quickId")
     .mockImplementation(async (db, id) => id + "_to_delete");
 
   for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
@@ -74,8 +65,6 @@ it("calls quickId and deleteDoc", async () => {
     quickIdSpy.mockClear();
     deleteDocSpy.mockClear();
   }
-  quickIdSpy.mockRestore();
-  deleteDocSpy.mockRestore();
 });
 
 it("outputs a DELETED message when show is standard", async () => {

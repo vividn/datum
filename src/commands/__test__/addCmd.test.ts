@@ -1,52 +1,21 @@
-import {
-  afterAll,
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  it,
-  jest,
-} from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
+import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { BaseDataError } from "../../errors";
-import {
-  DatumDocument,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
-import addCmd from "../addCmd";
-import * as connectDb from "../../auth/connectDb";
+import { DatumDocument } from "../../documentControl/DatumDocument";
+import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
-import { DocumentScope } from "nano";
 import { DocExistsError } from "../../documentControl/base";
 import { Show } from "../../output/output";
 import { DateTime, Settings } from "luxon";
-
-const originalLog = console.log;
+import SpyInstance = jest.SpyInstance;
 
 describe("addCmd", () => {
-  const mockedLog = jest.fn();
-  const dbName = "delete_cmd_test";
-  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
-  const connectDbSpy = jest
-    .spyOn(connectDb, "default")
-    .mockImplementation(() => db);
-  const addDocSpy = jest.spyOn(addDoc, "default");
+  const dbName = "add_cmd_test";
+  const db = testDbLifecycle(dbName);
+  const mockedLog = mockedLogLifecycle();
 
-  beforeEach(async () => {
-    await resetTestDb(dbName);
-    console.log = mockedLog;
-    addDocSpy.mockClear();
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-    console.log = originalLog;
-    mockedLog.mockReset();
-  });
-
-  afterAll(async () => {
-    addDocSpy.mockRestore();
-    connectDbSpy.mockRestore();
+  let addDocSpy: SpyInstance;
+  beforeEach(() => {
+    addDocSpy = jest.spyOn(addDoc, "addDoc");
   });
 
   it("inserts documents into couchdb", async () => {

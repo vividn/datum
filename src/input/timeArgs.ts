@@ -1,9 +1,9 @@
 import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
 import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
-import setTimezone from "../time/setTimezone";
-import parseTimeStr from "../time/parseTimeStr";
-import parseDateStr from "../time/parseDateStr";
+import { setTimezone } from "../time/setTimezone";
+import { parseTimeStr } from "../time/parseTimeStr";
+import { parseDateStr } from "../time/parseDateStr";
 
 export type TimeArgs = {
   date?: string;

@@ -1,4 +1,3 @@
-import { it } from "@jest/globals";
 import { mock } from "jest-mock-extended";
 import {
   EitherDocument,
@@ -14,14 +13,13 @@ import {
   testNano,
 } from "../../test-utils";
 import { DatumViewMissingError } from "../../errors";
-import viewMap from "../viewMap";
-import insertDatumView from "../insertDatumView";
+import { viewMap } from "../viewMap";
+import { insertDatumView } from "../insertDatumView";
 
 const mockDb = mock<DocumentScope<EitherDocument>>();
 const mockDatumView = mock<DatumView>();
 
 beforeEach(() => {
-  jest.resetAllMocks();
   mockDatumView.name = "mock_datum_view";
 });
 

@@ -1,32 +1,19 @@
-import {
-  DatumDocument,
-  DatumMetadata,
-  DatumPayload,
-  EitherPayload,
-} from "../DatumDocument";
+import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
 import { DateTime, Settings } from "luxon";
-import {
-  afterEach,
-  beforeEach,
-  describe,
-  expect,
-  jest,
-  test,
-} from "@jest/globals";
-import { fail, pass, resetTestDb, testNano } from "../../test-utils";
-import updateDoc, { NoDocToUpdateError, UpdateDocError } from "../updateDoc";
-import addDoc from "../addDoc";
+import { fail, testDbLifecycle } from "../../test-utils";
+import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc";
+import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";
-import jClone from "../../utils/jClone";
+import { jClone } from "../../utils/jClone";
 import { DocExistsError } from "../base";
 
 const testDatumPayload: DatumPayload = {
   data: {
     abc: 123,
     foo: "bar",
+    occurTime: "2021-06-20T14:00:00Z",
   },
   meta: {
-    occurTime: "2021-06-20T14:00:00Z",
     utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
@@ -41,15 +28,7 @@ const notNowStr = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
-  const db = testNano.db.use<EitherPayload>(dbName);
-
-  beforeEach(async () => {
-    await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   test("it returns the updated document in the db", async () => {
     await db.insert({ _id: "docId1", data: { abc: "123" }, meta: {} });
@@ -140,7 +119,7 @@ describe("updateDoc", () => {
     const metadata = { ...testDatumPayload.meta } as DatumMetadata;
     delete metadata.idStructure;
 
-    const spy = jest.spyOn(combineData, "default");
+    const spy = jest.spyOn(combineData, "combineData");
 
     await db.insert({ _id: "data-doc-1", ...data1 });
     await updateDoc({ db, id: "data-doc-1", payload: data2 });
@@ -184,9 +163,6 @@ describe("updateDoc", () => {
       updateStrategy: "append",
     });
     expect(spy).toHaveBeenCalledWith(data4, data1, "append");
-    spy.mockClear();
-
-    spy.mockRestore();
   });
 
   test("fails if id to be updated does not exist in db", async () => {

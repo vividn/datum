@@ -7,12 +7,12 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
-import connectDb from "../auth/connectDb";
+import { connectDb } from "../auth/connectDb";
 import { isCouchDbError } from "../errors";
 import { defaults } from "../input/defaults";
-import newHumanId from "../meta/newHumanId";
+import { newHumanId } from "../meta/newHumanId";
 import chalk from "chalk";
-import addDoc, { ConflictStrategyNames } from "../documentControl/addDoc";
+import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
 import { Show } from "../output/output";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
@@ -225,5 +225,3 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   });
   return doc;
 }
-
-export default addCmd;

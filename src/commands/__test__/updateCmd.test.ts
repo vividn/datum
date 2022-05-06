@@ -1,26 +1,17 @@
-import { afterAll, beforeEach, expect, it, jest } from "@jest/globals";
-import { resetTestDb, testNano } from "../../test-utils";
-import setupCmd from "../setupCmd";
+import { testDbLifecycle } from "../../test-utils";
+import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
-import {
-  EitherDocument,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
+import { EitherDocument } from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
 import { Show } from "../../output/output";
 import { mock } from "jest-mock-extended";
 
 const dbName = "update_cmd_test";
-const db = testNano.use<EitherPayload>(dbName);
+const db = testDbLifecycle(dbName);
 
 beforeEach(async () => {
-  await resetTestDb(dbName);
   await setupCmd({ db: dbName });
-});
-
-afterAll(async () => {
-  await testNano.db.destroy(dbName);
 });
 
 it("can update an existing doc from the first few letters of its humanId", async () => {
@@ -65,10 +56,10 @@ it("can update a datonly doc from the first letters of its id", async () => {
 it("calls quickId and updateDoc", async () => {
   const updateDocReturn = mock<EitherDocument>();
   const quickIdSpy = jest
-    .spyOn(quickId, "default")
+    .spyOn(quickId, "quickId")
     .mockImplementation(async () => "quick_id");
   const updateDocSpy = jest
-    .spyOn(updateDoc, "default")
+    .spyOn(updateDoc, "updateDoc")
     .mockReturnValue(Promise.resolve(updateDocReturn));
 
   const retDoc = await updateCmd({
@@ -86,26 +77,18 @@ it("calls quickId and updateDoc", async () => {
       payload: { foo: "bar" },
     })
   );
-
-  updateDocSpy.mockRestore();
-  quickIdSpy.mockRestore();
 });
 
 it("uses preferNew as the default updateStrategy", async () => {
-  const quickIdSpy = jest
-    .spyOn(quickId, "default")
-    .mockImplementation(async () => "quick_id");
+  jest.spyOn(quickId, "quickId").mockImplementation(async () => "quick_id");
   const updateDocSpy = jest
-    .spyOn(updateDoc, "default")
+    .spyOn(updateDoc, "updateDoc")
     .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
 
   await updateCmd({ db: dbName, quickId: "input_quick", data: ["foo=bar"] });
   expect(updateDocSpy).toHaveBeenCalledWith(
     expect.objectContaining({ updateStrategy: "preferNew" })
   );
-
-  updateDocSpy.mockRestore();
-  quickIdSpy.mockRestore();
 });
 
 it("outputs an UPDATE message or a NODIFF message when show is standard", async () => {

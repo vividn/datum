@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 import { baseYargs } from "./input/baseYargs";
 import { DocExistsError } from "./documentControl/base";
-import addCmd, { AddCmdArgs } from "./commands/addCmd";
-import mapCmd, { MapCmdArgs } from "./commands/mapCmd";
-import setupCmd, { SetupCmdArgs } from "./commands/setupCmd";
+import { addCmd, AddCmdArgs } from "./commands/addCmd";
+import { mapCmd, MapCmdArgs } from "./commands/mapCmd";
+import { setupCmd, SetupCmdArgs } from "./commands/setupCmd";
 import { deleteCmd, DeleteCmdArgs } from "./commands/deleteCmd";
 import { updateCmd, UpdateCmdArgs } from "./commands/updateCmd";
 import { getCmd, GetCmdArgs } from "./commands/getCmd";
 import { tailCmd, TailCmdArgs } from "./commands/tailCmd";
+import { editCmd, EditCmdArgs } from "./commands/editCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
@@ -44,12 +45,19 @@ export async function main(cliInput: string | string[]): Promise<void> {
       await mapCmd(args as unknown as MapCmdArgs);
       break;
 
-    case "setup":
-      await setupCmd(args as unknown as SetupCmdArgs);
+    case "setup": {
+      const setupArgs = args as unknown as SetupCmdArgs;
+      setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
+      await setupCmd(setupArgs);
       break;
+    }
 
     case "tail":
       await tailCmd(args as unknown as TailCmdArgs);
+      break;
+
+    case "edit":
+      await editCmd(args as unknown as EditCmdArgs);
       break;
 
     default:

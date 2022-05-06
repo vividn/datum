@@ -1,8 +1,8 @@
 import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
-import deleteDoc, { DeletedDocument } from "../documentControl/deleteDoc";
-import quickId from "../ids/quickId";
-import connectDb from "../auth/connectDb";
+import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
+import { quickId } from "../ids/quickId";
+import { connectDb } from "../auth/connectDb";
 import { Show } from "../output/output";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 
