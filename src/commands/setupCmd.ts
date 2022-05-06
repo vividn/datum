@@ -22,6 +22,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function setupCmd(args: SetupCmdArgs): Promise<void> {
+  args.createDb ??= true;
   const db = await connectDb(args);
   const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
   await setupDatumViews({ db, show: show, projectDir: args.projectDir });
