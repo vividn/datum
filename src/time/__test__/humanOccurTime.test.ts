@@ -18,8 +18,8 @@ describe("humanOccurTime", () => {
     const datumDoc: DatumDocument = {
       _id: "some_datum_document",
       _rev: "some_revison",
-      data: { occurTime: "2022-03-06T07:00:00.000Z" },
-      meta: { utcOffset: -8 },
+      data: { occurTime: "2022-03-06T07:00:00.000Z", occurUtcOffset: -8 },
+      meta: {},
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 23, {
       zone: "UTC-8",

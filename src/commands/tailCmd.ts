@@ -11,9 +11,9 @@ import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
 import { occurTimeView } from "../views/datumViews";
 import { getBorderCharacters, table } from "table";
-import { DateTime, FixedOffsetZone } from "luxon";
 import { humanTime } from "../time/humanTime";
 import { interpolateFields } from "../ids/interpolateFields";
+import { getOccurTime } from "../time/getOccurTime";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -107,25 +107,12 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const headerRow = ["occurTime", "hid", "id"];
   const tableRows = [headerRow].concat(
     docs.map((doc) => {
-      let occurTime, hid, id;
+      const occurTime = humanTime(getOccurTime(doc)!);
+      let hid, id;
       if (isDatumDocument(doc)) {
-        const data = doc.data;
-        const meta = doc.meta;
-        occurTime = data.occurTime
-          ? humanTime(
-              DateTime.fromISO(data.occurTime, {
-                zone: meta.utcOffset
-                  ? FixedOffsetZone.instance(60 * meta.utcOffset)
-                  : undefined,
-              })
-            )
-          : "";
         id = doc._id;
-        hid = meta.humanId?.slice(0, 5) ?? "";
+        hid = doc.meta.humanId?.slice(0, 5) ?? "";
       } else {
-        occurTime = doc.occurTime
-          ? humanTime(DateTime.fromISO(doc.occurTime).toLocal())
-          : "";
         hid = "";
         id = doc._id;
       }

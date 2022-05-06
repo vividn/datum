@@ -5,7 +5,6 @@ import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import { Show } from "../../output/output";
-import { DateTime, Settings } from "luxon";
 import SpyInstance = jest.SpyInstance;
 
 describe("addCmd", () => {
@@ -224,7 +223,7 @@ describe("addCmd", () => {
     expect(newDoc.meta).not.toHaveProperty("occurTime");
   });
 
-  it("stores the occurTime in DataOnly docs", async () => {
+  it("stores the occurTime and utcOffset in DataOnly docs", async () => {
     const newDoc = (await addCmd({
       noMetadata: true,
       date: "2021-08-23",
@@ -232,39 +231,15 @@ describe("addCmd", () => {
       timezone: "0",
     })) as DatumDocument;
     expect(newDoc).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
+    expect(newDoc).toHaveProperty("occurUtcOffset", 0);
   });
 
-  it("stores utcOffset in the metadata", async () => {
+  it("stores utcOffset", async () => {
     const newDoc = (await addCmd({
       date: "2021-08-23",
       time: "12",
       timezone: "0",
     })) as DatumDocument;
-    expect(newDoc.meta).toHaveProperty("utcOffset", 0);
-  });
-
-  it("stores utcOffset using the timezone arg even if no occurTime is collected", async () => {
-    const newDoc = await addCmd({
-      idPart: "unstamped",
-      noTimestamp: true,
-      timezone: "+2",
-    });
-    expect(newDoc.meta).toHaveProperty("utcOffset", 2);
-  });
-
-  it("stores utcOffset using local timezone even if no occurTime is collected", async () => {
-    Settings.defaultZone = "America/Phoenix";
-    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
-    Settings.now = () => mockNow;
-
-    const newDoc = (await addCmd({
-      idPart: "unstamped",
-      noTimestamp: true,
-    })) as DatumDocument;
-    expect(newDoc.meta).toHaveProperty("utcOffset");
-    expect(newDoc.meta.utcOffset).toEqual(-7);
-
-    Settings.defaultZone = "system";
-    Settings.resetCaches();
+    expect(newDoc.data).toHaveProperty("occurUtcOffset", 0);
   });
 });

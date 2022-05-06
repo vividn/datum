@@ -21,9 +21,9 @@ const testDatumPayload: DatumPayload = {
     abc: 123,
     foo: "bar",
     occurTime: "2021-06-20T14:00:00Z",
+    occurUtcOffset: 2,
   },
   meta: {
-    utcOffset: 2,
     random: 0.4869350234,
     idStructure: "%foo%__rawString",
     humanId: "ndke4ms9",
@@ -245,7 +245,6 @@ describe("addDoc", () => {
       },
       meta: {
         occurTime: "2021-06-20T14:00:00Z",
-        utcOffset: 2,
       },
     };
     const payload2 = jClone(payload1);
