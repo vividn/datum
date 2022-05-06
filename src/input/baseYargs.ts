@@ -9,6 +9,7 @@ export type BaseDatumArgs = {
   env?: string;
   showAll?: boolean;
   show?: Show;
+  createDb?: boolean;
   _?: string[];
 };
 
@@ -49,6 +50,10 @@ export const baseYargs = yargs
       choices: Object.values(Show),
       default: "standard",
       conflict: "show-all",
+    },
+    "create-db": {
+      describe: "Create the db if it does not exist",
+      type: "boolean",
     },
   })
   .commandDir("../commands")
