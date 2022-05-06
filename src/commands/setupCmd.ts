@@ -1,7 +1,7 @@
 import { Argv } from "yargs";
 import { BaseDatumArgs } from "../input/baseYargs";
 import { setupDatumViews } from "../views/setupDatumViews";
-import { connectDb, connectNano } from "../auth/connectDb";
+import { connectDb } from "../auth/connectDb";
 import { Show } from "../output/output";
 
 export const command = "setup";

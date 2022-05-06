@@ -9,7 +9,7 @@ export type BaseDatumArgs = {
   env?: string;
   showAll?: boolean;
   show?: Show;
-  createDb?: boolean
+  createDb?: boolean;
   _?: string[];
 };
 
@@ -54,7 +54,7 @@ export const baseYargs = yargs
     "create-db": {
       describe: "Create the db if it does not exist",
       type: "boolean",
-    }
+    },
   })
   .commandDir("../commands")
   .help("h")

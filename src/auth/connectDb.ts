@@ -21,7 +21,9 @@ export function connectNano(args: BaseDatumArgs): Nano.ServerScope {
   );
 }
 
-export async function connectDb(args: BaseDatumArgs): Promise<DocumentScope<EitherPayload>> {
+export async function connectDb(
+  args: BaseDatumArgs
+): Promise<DocumentScope<EitherPayload>> {
   const nano = connectNano(args);
   const { db: dbName = "datum" } = args;
   if (args.createDb) {

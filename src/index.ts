@@ -9,7 +9,6 @@ import { updateCmd, UpdateCmdArgs } from "./commands/updateCmd";
 import { getCmd, GetCmdArgs } from "./commands/getCmd";
 import { tailCmd, TailCmdArgs } from "./commands/tailCmd";
 import { editCmd, EditCmdArgs } from "./commands/editCmd";
-import { Show } from "./output/output";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
