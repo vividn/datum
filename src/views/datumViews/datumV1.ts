@@ -14,17 +14,21 @@ export const datumV1View: DatumView<DatumDocument> = {
       return;
     }
 
-    const offset = data.occurUtcOffset * 60 * 60 * 1000;
+    const offset = data.occurUtcOffset;
+    const msOffset = offset * 60 * 60 * 1000;
     const dateTime = new Date(data.occurTime);
-    const offsetDateTime = new Date(dateTime.getTime() - offset);
+    const offsetDateTime = new Date(dateTime.getTime() - msOffset);
 
     const [dateStr, timeStr] = offsetDateTime.toISOString().split(/T|Z/);
 
     const offsetPolarity = offset >= 0 ? "+" : "-";
-    const offsetHour = Math.abs(offset) >= 10 ? Math.abs(offset) + "00" : "0" + Math.abs(offset) + "00";
+    const offsetHour =
+      Math.abs(offset) >= 10
+        ? Math.abs(offset) + "00"
+        : "0" + Math.abs(offset) + "00";
     const offsetStr = offsetPolarity + offsetHour;
 
-    const duration = data.duration ?? "";
+    const duration = data.dur || "";
     emit(data.occurTime, [dateStr, timeStr, offsetStr, duration]);
-  }
-}
+  },
+};
