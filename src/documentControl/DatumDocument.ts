@@ -8,6 +8,7 @@ export type GenericData<T = unknown> = T & {
 export type DatumData<T = unknown> = GenericData<T> & {
   occurTime?: isoDatetime | isoDate;
   occurUtcOffset?: number;
+  duration?: "start" | "end" | number;
 };
 
 export type OccurredData<T = unknown> = WithRequired<
