@@ -48,7 +48,7 @@ export const baseYargs = yargs
       describe: "how much of documents to show",
       type: "string",
       choices: Object.values(Show),
-      default: "standard",
+      default: "default",
       conflict: "show-all",
     },
     "create-db": {

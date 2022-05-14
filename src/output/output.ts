@@ -86,7 +86,7 @@ export function showSingle(
     return;
   }
 
-  if (show === Show.Standard) {
+  if (show === Show.Standard || show === Show.Default) {
     const docClone = jClone(doc);
     delete docClone._id;
     delete docClone._rev;
@@ -129,6 +129,7 @@ export function showOWrite(
 }
 
 export enum Show {
+  Default = "default",
   None = "none",
   Minimal = "minimal",
   Standard = "standard",
