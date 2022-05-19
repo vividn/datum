@@ -15,7 +15,7 @@ FORCE=
 mode=normal
 
 # Parse arguments using getopt
-args=$(getopt -n datum -o f:d:t:qTDya:uUisp:K:kz:c: \
+args=$(getopt -n datum -o f:d:t:qTDya:uUisp:K:k:z:c: \
               --long "file:,date:,time:,undo,force-undo,interactive,state,zone,id:" \
               -- "$@")
 if [ $? -ne 0 ]; then
@@ -124,7 +124,7 @@ while true; do
             ;;
 
         *)
-            echo "Bad getopt config" >&2
+            echo "Bad getopt config: $1" >&2
             exit 10
             ;;
 
@@ -210,7 +210,7 @@ case $mode in
         fi
 
         # Open up the file for editing
-        vim $tmpfile
+        $EDITOR $tmpfile
 
         # Reget timestamp unless it was specified
         if [ -z $TIMEFLAG ]; then
