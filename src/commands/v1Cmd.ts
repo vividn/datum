@@ -2,7 +2,6 @@ import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
-import { WriteStream } from "fs";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 
@@ -19,7 +18,8 @@ export type V1CmdArgs = BaseDatumArgs & {
 export function builder(yargs: Argv): Argv {
   return yargs
     .positional("field", {
-      describe: "field of the data. Corresponds the to the file in v1. Can list multiple. If none specified, will do all fields",
+      describe:
+        "field of the data. Corresponds the to the file in v1. Can list multiple. If none specified, will do all fields",
     })
     .options({
       "output-file": {
@@ -40,7 +40,6 @@ export function builder(yargs: Argv): Argv {
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   const db = await connectDb(args);
 
-  const
   if (args.field === undefined) {
     const { rows } = await db.view<string[]>(datumV1View.name, "default");
     if (!args.outputDir && !args.outputFile) {
@@ -62,44 +61,51 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   const viewResult = await db.view(datumV1View.name, "default", {
     // start_key: [args.field],
     // end_key: [args.field, "\uffff"],
-    keys: [["apple"], ["coconut"]]
+    keys: [["apple"], ["coconut"]],
   });
   viewResult.rows
-    .map((row) => ([row.key[0], ...row.value as string[]]).join("\t"))
+    .map((row) => [row.key[0], ...(row.value as string[])].join("\t"))
     .forEach((row) => console.log(row));
 }
 
 function createHeader(field: string): string {
-  const standardSet = ["Date", "Time", "Offset", "Minutes"]
+  const standardSet = ["Date", "Time", "Offset", "Minutes"];
   switch (field) {
     case "activity":
-      return standardSet.concat(["Activity", "Project"]).join("\t")
+      return standardSet.concat(["Activity", "Project"]).join("\t");
 
     case "environment":
-      return standardSet.concat(["Category"]).join("\t")
+      return standardSet.concat(["Category"]).join("\t");
 
     case "call":
-      return standardSet.concat(["Format"]).join("\t")
+      return standardSet.concat(["Format"]).join("\t");
 
     case "consume":
-      return standardSet.concat(["Media"]).join("\t")
+      return standardSet.concat(["Media"]).join("\t");
 
     case "hygiene":
-      return standardSet.concat((["Activity"])).join("\t")
+      return standardSet.concat(["Activity"]).join("\t");
 
     default:
-      return standardSet.join("\t")
+      return standardSet.join("\t");
   }
 }
 
-async function getRows(fields: string[], db: DocumentScope<EitherPayload>): Promise<DocumentViewResponse<string[], EitherPayload>["rows"]> {
+async function getRows(
+  fields: string[],
+  db: DocumentScope<EitherPayload>
+): Promise<DocumentViewResponse<string[], EitherPayload>["rows"]> {
   if (fields.length === 0) {
     return (await db.view<string[]>(datumV1View.name, "default")).rows;
   }
   return fields.reduce((allRows, field) => {
-    return allRows.concat((await db.view<string[]>(datumV1View.name, "default", {
-      start_key: [field],
-      end_key: [field, "\uffff"]
-    })).rows);
+    return allRows.concat(
+      (
+        await db.view<string[]>(datumV1View.name, "default", {
+          start_key: [field],
+          end_key: [field, "\uffff"],
+        })
+      ).rows
+    );
   }, [] as DocumentViewResponse<string[], EitherPayload>["rows"]);
 }
