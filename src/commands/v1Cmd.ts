@@ -4,12 +4,12 @@ import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
 import { WriteStream } from "fs";
 
-export const command = "v1 [field]";
+export const command = "v1 [field..]";
 export const description =
   "export in the style of the old datum format. Outputs to stdout unless --output-file or --output-dir is given";
 
 export type V1CmdArgs = BaseDatumArgs & {
-  field?: string;
+  field: string[];
   outputFile?: string;
   outputDir?: string;
 };
@@ -37,7 +37,7 @@ export function builder(yargs: Argv): Argv {
 
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   const db = await connectDb(args);
-
+  console.log(args.field);
   // TODO: Use streams to streamline this
   if (args.field === undefined) {
     const { rows } = await db.view<string[]>(datumV1View.name, "default");
@@ -46,9 +46,10 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
         const rowField = row.key[0];
         if (rowField !== currentField) {
           console.log("");
+          console.log(`#### field: ${rowField}`);
           console.log(createHeader(rowField));
         }
-        console.log([rowField, ...row.value].join("\t"));
+        console.log(row.value.join("\t"));
         return rowField;
       }, "");
       return;
