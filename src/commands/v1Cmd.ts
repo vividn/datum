@@ -3,6 +3,8 @@ import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
 import { WriteStream } from "fs";
+import { DocumentScope, DocumentViewResponse } from "nano";
+import { EitherPayload } from "../documentControl/DatumDocument";
 
 export const command = "v1 [field..]";
 export const description =
@@ -17,7 +19,7 @@ export type V1CmdArgs = BaseDatumArgs & {
 export function builder(yargs: Argv): Argv {
   return yargs
     .positional("field", {
-      describe: "field of the data. Corresponds the to the file in v1",
+      describe: "field of the data. Corresponds the to the file in v1. Can list multiple. If none specified, will do all fields",
     })
     .options({
       "output-file": {
@@ -37,8 +39,8 @@ export function builder(yargs: Argv): Argv {
 
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   const db = await connectDb(args);
-  console.log(args.field);
-  // TODO: Use streams to streamline this
+
+  const
   if (args.field === undefined) {
     const { rows } = await db.view<string[]>(datumV1View.name, "default");
     if (!args.outputDir && !args.outputFile) {
@@ -88,4 +90,16 @@ function createHeader(field: string): string {
     default:
       return standardSet.join("\t")
   }
+}
+
+async function getRows(fields: string[], db: DocumentScope<EitherPayload>): Promise<DocumentViewResponse<string[], EitherPayload>["rows"]> {
+  if (fields.length === 0) {
+    return (await db.view<string[]>(datumV1View.name, "default")).rows;
+  }
+  return fields.reduce((allRows, field) => {
+    return allRows.concat((await db.view<string[]>(datumV1View.name, "default", {
+      start_key: [field],
+      end_key: [field, "\uffff"]
+    })).rows);
+  }, [] as DocumentViewResponse<string[], EitherPayload>["rows"]);
 }
