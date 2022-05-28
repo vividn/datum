@@ -4,6 +4,7 @@ import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
 import { DocumentScope, DocumentViewResponse } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
+import { flatten } from "table/dist/src/utils";
 
 export const command = "v1 [field..]";
 export const description =
@@ -98,14 +99,12 @@ async function getRows(
   if (fields.length === 0) {
     return (await db.view<string[]>(datumV1View.name, "default")).rows;
   }
-  return fields.reduce((allRows, field) => {
-    return allRows.concat(
-      (
-        await db.view<string[]>(datumV1View.name, "default", {
+  const groupedRows = await Promise.all(fields.map((field) => {
+    return (await db.view<string[]>(datumV1View.name, "default", {
           start_key: [field],
           end_key: [field, "\uffff"],
         })
-      ).rows
-    );
-  }, [] as DocumentViewResponse<string[], EitherPayload>["rows"]);
+      ).rows;
+  }));
+  return flatten(groupedRows);
 }
