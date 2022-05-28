@@ -99,12 +99,15 @@ async function getRows(
   if (fields.length === 0) {
     return (await db.view<string[]>(datumV1View.name, "default")).rows;
   }
-  const groupedRows = await Promise.all(fields.map((field) => {
-    return (await db.view<string[]>(datumV1View.name, "default", {
+  const groupedRows = await Promise.all(
+    fields.map(async (field) => {
+      return (
+        await db.view<string[]>(datumV1View.name, "default", {
           start_key: [field],
           end_key: [field, "\uffff"],
         })
       ).rows;
-  }));
+    })
+  );
   return flatten(groupedRows);
 }
