@@ -41,22 +41,22 @@ export function builder(yargs: Argv): Argv {
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   const db = await connectDb(args);
 
-  if (args.field === undefined) {
-    const { rows } = await db.view<string[]>(datumV1View.name, "default");
+  const rows = await getRows(args.field, db);
+  if (args.field.length === 0) {
+    console.log("hello :)");
     if (!args.outputDir && !args.outputFile) {
       rows.reduce((currentField, row) => {
         const rowField = row.key[0];
         if (rowField !== currentField) {
           console.log("");
           console.log(`#### field: ${rowField}`);
-          console.log(createHeader(rowField));
+          console.log(createHeader(rowField).join("\t"));
         }
         console.log(row.value.join("\t"));
         return rowField;
       }, "");
       return;
     }
-    const skipFieldColumn = args.outputDir && !args.outputFile;
   }
 
   const viewResult = await db.view(datumV1View.name, "default", {
@@ -69,26 +69,26 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
     .forEach((row) => console.log(row));
 }
 
-function createHeader(field: string): string {
+function createHeader(field: string): string[] {
   const standardSet = ["Date", "Time", "Offset", "Minutes"];
   switch (field) {
     case "activity":
-      return standardSet.concat(["Activity", "Project"]).join("\t");
+      return standardSet.concat(["Activity", "Project"]);
 
     case "environment":
-      return standardSet.concat(["Category"]).join("\t");
+      return standardSet.concat(["Category"]);
 
     case "call":
-      return standardSet.concat(["Format"]).join("\t");
+      return standardSet.concat(["Format"]);
 
     case "consume":
-      return standardSet.concat(["Media"]).join("\t");
+      return standardSet.concat(["Media"]);
 
     case "hygiene":
-      return standardSet.concat(["Activity"]).join("\t");
+      return standardSet.concat(["Activity"]);
 
     default:
-      return standardSet.join("\t");
+      return standardSet;
   }
 }
 
