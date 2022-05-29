@@ -24,7 +24,7 @@ export const inboxView: DatumView<TaskDoc> = {
     const createTime = meta.createTime || "unknown";
     const taskName = data.task;
     const humanId = meta.humanId;
-    if (data.proj || data.done || data.type ) {
+    if (data.proj || data.done || (data.type && data.type !== "inbox")) {
       return;
     }
     let quickId;
@@ -36,6 +36,6 @@ export const inboxView: DatumView<TaskDoc> = {
     emit(createTime, `(${quickId}) ${taskName}`);
   },
   reduce: {
-    count: "_count"
-  }
+    count: "_count",
+  },
 };
