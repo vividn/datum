@@ -68,6 +68,7 @@ class Datumdata:
 
         # Load in the data
         self.datum_file = datum_dir + self.name + ".tsv"
+        self.v2_datum_file = datum_dir + "v2/" + self.name + ".tsv"
         self.load_data()
 
     def load_raw(self):
@@ -83,9 +84,19 @@ class Datumdata:
         self.load_raw()
 
         # Make pandas dataframe from datum file, with the date and time combined into one field and set as the index
-        self.data = pd.read_csv(
+        self.v1_data = pd.read_csv(
             self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
         )
+
+        # Get v2 data as well
+        try:
+            self.v2_data = pd.read_csv(
+                self.v2_datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
+            )
+            self.data = pd.concat([self.v1_data, self.v2_data])
+        except FileNotFoundError:
+            self.data = self.v1_data
+
 
         self.data.drop(columns=["Offset"], inplace=True)
 
