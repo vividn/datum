@@ -29,7 +29,7 @@ export function builder(yargs: Argv): Argv {
         description:
           "Where to write the output files. data will be written to {{field}}.tsv",
         type: "string",
-        alias: ["O"],
+        alias: ["o"],
       },
     });
 }
@@ -66,7 +66,10 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
         closeFd(fd);
         fd = openFd(rowField);
         currentField = rowField;
+
+        fs.writeSync(fd, createHeader(currentField).join("\t") + "\n");
       }
+      fs.writeSync(fd, row.value.join("\t") + "\n");
 
       return { currentField, fd };
     },
