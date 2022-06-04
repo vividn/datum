@@ -2,9 +2,12 @@ import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
-import { DocumentScope, DocumentViewResponse } from "nano";
+import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { flatten } from "table/dist/src/utils";
+import { ViewRow } from "../utils/utilityTypes";
+import * as fs from "fs";
+import path from "path";
 
 export const command = "v1 [field..]";
 export const description =
@@ -12,7 +15,6 @@ export const description =
 
 export type V1CmdArgs = BaseDatumArgs & {
   field: string[];
-  outputFile?: string;
   outputDir?: string;
 };
 
@@ -23,15 +25,9 @@ export function builder(yargs: Argv): Argv {
         "field of the data. Corresponds the to the file in v1. Can list multiple. If none specified, will do all fields",
     })
     .options({
-      "output-file": {
-        description:
-          "Path where the file should be written. Can be absolute or relative to to outputDir or cwd",
-        type: "string",
-        alias: ["o"],
-      },
       "output-dir": {
         description:
-          "Where to write the output files. if outputFile is not specified, data will be written to {{field}}.tsv",
+          "Where to write the output files. data will be written to {{field}}.tsv",
         type: "string",
         alias: ["O"],
       },
@@ -41,32 +37,44 @@ export function builder(yargs: Argv): Argv {
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   const db = await connectDb(args);
 
-  const rows = await getRows(args.field, db);
-  if (args.field.length === 0) {
-    console.log("hello :)");
-    if (!args.outputDir && !args.outputFile) {
-      rows.reduce((currentField, row) => {
-        const rowField = row.key[0];
-        if (rowField !== currentField) {
-          console.log("");
-          console.log(`#### field: ${rowField}`);
-          console.log(createHeader(rowField).join("\t"));
-        }
-        console.log(row.value.join("\t"));
-        return rowField;
-      }, "");
+  function openFd(field: string): number {
+    if (!args.outputDir) {
+      // use stdOut if no output file specified
+      console.log("");
+      console.log(`#### field: ${field}`);
+      return 1;
+    }
+    return fs.openSync(path.join(args.outputDir, field + ".tsv"), "w");
+  }
+  function closeFd(fd: number): void {
+    // don't close stdOut or stdErr
+    if (fd < 3) {
       return;
     }
+    fs.close(fd, (err) => {
+      if (err) {
+        throw err;
+      }
+    });
   }
+  const rows = await getRows(args.field, db);
+  const { fd: finalFd } = rows.reduce(
+    (state: { currentField?: string; fd: number }, row) => {
+      let { currentField, fd } = state;
+      const rowField = row.key[0];
+      if (rowField !== currentField) {
+        closeFd(fd);
+        fd = openFd(rowField);
+        currentField = rowField;
+      }
 
-  const viewResult = await db.view(datumV1View.name, "default", {
-    // start_key: [args.field],
-    // end_key: [args.field, "\uffff"],
-    keys: [["apple"], ["coconut"]],
-  });
-  viewResult.rows
-    .map((row) => [row.key[0], ...(row.value as string[])].join("\t"))
-    .forEach((row) => console.log(row));
+      return { currentField, fd };
+    },
+    { currentField: undefined, fd: 0 }
+  );
+
+  closeFd(finalFd);
+  return;
 }
 
 function createHeader(field: string): string[] {
@@ -95,7 +103,7 @@ function createHeader(field: string): string[] {
 async function getRows(
   fields: string[],
   db: DocumentScope<EitherPayload>
-): Promise<DocumentViewResponse<string[], EitherPayload>["rows"]> {
+): Promise<ViewRow<string[]>[]> {
   if (fields.length === 0) {
     return (await db.view<string[]>(datumV1View.name, "default")).rows;
   }
