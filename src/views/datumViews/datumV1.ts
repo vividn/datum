@@ -46,6 +46,30 @@ export const datumV1View: DatumView<DatumDocument> = {
     const minutes = durObj ? (durObj.sign * (525600 * durObj.years + 43800 * durObj.months + 10080 * durObj.weeks + 1440 * durObj.days + 60 * durObj.hours + durObj.minutes + durObj.seconds/60)) : "";
 
     outputArray.push(String(minutes));
+
+    switch (data.field) {
+      case "activity":
+        outputArray.push(data.activity);
+        outputArray.push(data.project);
+        break;
+
+      case "environment":
+        outputArray.push(data.category);
+        break;
+
+      case "call":
+        outputArray.push(data.format);
+        break;
+
+      case "consume":
+        outputArray.push(data.media);
+        break;
+
+      case "hygiene":
+        outputArray.push(data.activity);
+        break;
+    }
+
     emit(key, outputArray);
   },
 };
