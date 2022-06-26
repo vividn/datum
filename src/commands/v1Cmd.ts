@@ -81,25 +81,25 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
 }
 
 function createHeader(field: string): string[] {
-  const standardSet = ["Date", "Time", "Offset", "Minutes"];
+  const defaultHeader = ["Date", "Time", "Offset", "Minutes"];
   switch (field) {
     case "activity":
-      return standardSet.concat(["Activity", "Project"]);
+      return defaultHeader.concat(["Activity", "Project"]);
 
     case "environment":
-      return standardSet.concat(["Category"]);
+      return defaultHeader.concat(["Category"]);
 
     case "call":
-      return standardSet.concat(["Format"]);
+      return defaultHeader.concat(["Format"]);
 
     case "consume":
-      return standardSet.concat(["Media"]);
+      return defaultHeader.concat(["Media"]);
 
     case "hygiene":
-      return standardSet.concat(["Activity"]);
+      return defaultHeader.concat(["Activity"]);
 
     default:
-      return standardSet;
+      return defaultHeader;
   }
 }
 
