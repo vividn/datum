@@ -1,4 +1,9 @@
-import { isIsoDateOrTime, isoDate, isoDatetime, isoDuration } from "../time/timeUtils";
+import {
+  isIsoDateOrTime,
+  isoDate,
+  isoDatetime,
+  isoDuration,
+} from "../time/timeUtils";
 import { WithRequired } from "../utils/utilityTypes";
 
 export type GenericData<T = unknown> = T & {
