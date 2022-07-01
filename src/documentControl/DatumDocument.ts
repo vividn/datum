@@ -1,4 +1,9 @@
-import { isIsoDateOrTime, isoDate, isoDatetime } from "../time/timeUtils";
+import {
+  isIsoDateOrTime,
+  isoDate,
+  isoDatetime,
+  isoDuration,
+} from "../time/timeUtils";
 import { WithRequired } from "../utils/utilityTypes";
 
 export type GenericData<T = unknown> = T & {
@@ -8,6 +13,7 @@ export type GenericData<T = unknown> = T & {
 export type DatumData<T = unknown> = GenericData<T> & {
   occurTime?: isoDatetime | isoDate;
   occurUtcOffset?: number;
+  dur?: "start" | "end" | isoDuration;
 };
 
 export type OccurredData<T = unknown> = WithRequired<

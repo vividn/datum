@@ -55,5 +55,29 @@ export const dataStructuresView: DatumView<EitherDocument> = {
       emit(structure, null);
     }
   },
-  reduce: "_count",
+  reduce: {
+    count: "_count",
+    fieldList: (keysAndDocIds: [string[], string][], values, rereduce) => {
+      if (!rereduce) {
+        return keysAndDocIds.reduce((accum: string[], keyAndDocId) => {
+          const [listOfFields] = keyAndDocId;
+          listOfFields.forEach((field) => {
+            if (!accum.includes(field)) {
+              accum.push(field);
+            }
+          });
+          return accum;
+        }, [] as string[]);
+      } else {
+        return (values as string[][]).reduce((accum, listOfFields) => {
+          listOfFields.forEach((field) => {
+            if (!accum.includes(field)) {
+              accum.push(field);
+            }
+          });
+          return accum;
+        });
+      }
+    },
+  },
 };
