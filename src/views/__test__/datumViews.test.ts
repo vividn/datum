@@ -224,7 +224,8 @@ describe("datumV1View", () => {
   });
 
   it.todo(
-    "does not emit if there is no occurTime, or if there is no occurUtcOffset");
+    "does not emit if there is no occurTime, or if there is no occurUtcOffset"
+  );
 
   it.todo("emits [date, time, offset,...] for a offset of 0");
 
