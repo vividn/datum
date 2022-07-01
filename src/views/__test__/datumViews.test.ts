@@ -216,3 +216,24 @@ describe("dataStructuresView", () => {
     );
   });
 });
+
+describe("datumV1View", () => {
+  let _emitMock: any;
+  beforeEach(() => {
+    _emitMock = jest.spyOn(emit, "_emit");
+  });
+
+  it.todo(
+    "does not emit if there is no occurTime, or if there is no occurUtcOffset"
+  );
+
+  it.todo("emits [date, time, offset,...] for a offset of 0");
+
+  it.todo(
+    "emits [date, time, offset,...] with Time and Date corrected for the local time based on the offset"
+  );
+
+  it.todo("emits duration, if it exists");
+
+  it.todo('emitted duration is "" if duration does not exist');
+});

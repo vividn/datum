@@ -10,6 +10,7 @@ import { getCmd, GetCmdArgs } from "./commands/getCmd";
 import { tailCmd, TailCmdArgs } from "./commands/tailCmd";
 import { editCmd, EditCmdArgs } from "./commands/editCmd";
 import { Show } from "./output/output";
+import { v1Cmd, V1CmdArgs } from "./commands/v1Cmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
@@ -61,6 +62,10 @@ export async function main(cliInput: string | string[]): Promise<void> {
 
     case "edit":
       await editCmd(args as unknown as EditCmdArgs);
+      break;
+
+    case "v1":
+      await v1Cmd(args as unknown as V1CmdArgs);
       break;
 
     default:
