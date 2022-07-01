@@ -6,7 +6,7 @@ function emit(doc: unknown, value: unknown) {
 }
 
 export const keyValueView: DatumView = {
-  name: "update_seq_view",
+  name: "key_value_view",
   map: (doc) => {
     if (doc.data.key && doc.data.value) {
       emit(doc.data.key, doc.data.value);
