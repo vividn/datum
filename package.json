@@ -65,7 +65,7 @@
     "lodash.isplainobject": "^4.0.6",
     "lodash.set": "^4.3.2",
     "lodash.unset": "^4.5.2",
-    "luxon": "^2.4.0",
+    "luxon": "^3.0.1",
     "nano": "^10.0.0",
     "parse-duration": "^1.0.2",
     "pluralize": "^8.0.0",
