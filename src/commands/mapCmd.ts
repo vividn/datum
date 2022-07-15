@@ -1,6 +1,8 @@
 import { Argv } from "yargs";
 import { BaseDatumArgs } from "../input/baseYargs";
 import { subHumanIdView } from "../views/datumViews/humanId";
+import { connectDb } from "../auth/connectDb";
+import { renderView } from "../output/renderView";
 
 export const command = "map <mapName>";
 export const desc = "display a map view or map reduce view";
@@ -23,6 +25,8 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export async function mapCmd(_args: MapCmdArgs): Promise<void> {
-  console.log(subHumanIdView.map.toString());
+export async function mapCmd(args: MapCmdArgs): Promise<void> {
+  const db = await connectDb(args);
+  const viewResult = await db.view(args.mapName, "default", {reduce: false});
+  renderView(viewResult);
 }
