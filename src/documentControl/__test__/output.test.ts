@@ -7,7 +7,6 @@ import { overwriteDoc } from "../overwriteDoc";
 import { Show } from "../../output/output";
 import * as addDocModule from "../addDoc";
 import { addCmd } from "../../commands/addCmd";
-import { main } from "../../index";
 import { deleteDoc } from "../deleteDoc";
 
 const dbName = "doc_control_output_test";
@@ -227,17 +226,17 @@ test("show is None by default when calling a command via import or API", async (
 });
 
 // This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings
-test.skip("show is Standard by default when calling from the CLI", async () => {
-  const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
-    Promise.resolve({
-      _id: "returnDoc",
-      _rev: "1-abcd",
-      data: {},
-      meta: {},
-    })
-  );
-
-  await main(["--db", dbName, "add"]);
-  expect(spy).toHaveBeenCalled();
-  expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
-});
+// test.skip("show is Standard by default when calling from the CLI", async () => {
+//   const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
+//     Promise.resolve({
+//       _id: "returnDoc",
+//       _rev: "1-abcd",
+//       data: {},
+//       meta: {},
+//     })
+//   );
+//
+//   await main(["--db", dbName, "add"]);
+//   expect(spy).toHaveBeenCalled();
+//   expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
+// });

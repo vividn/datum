@@ -15,8 +15,9 @@
     "types": ["node", "jest"],
     "typeRoots": ["./node_modules/@types", "./typings"],
     "esModuleInterop": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    "jsx": "react"
   },
-  "include": ["src/**/*.ts", "./typings", "./projects"],
+  "include": ["src/**/*", "./typings", "./projects"],
   "exclude": ["node_modules", "src/**/__test__"]
 }
