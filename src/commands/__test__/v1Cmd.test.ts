@@ -14,9 +14,7 @@ it.todo("has the appropriate columns and data for consume");
 it.todo("has the appropriate columns and data for hygiene");
 it.todo("has the appropriate columns and data for others???");
 
-it.todo("writes field v1 to specified outputFile");
 it.todo("writes to {field}.tsv if outputDir is specified");
-it.todo("writes a datum-v1 like file in an outputFile");
 it.todo(
   "writes one datum-v1 like file for each field if outputDir is specified"
 );
