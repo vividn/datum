@@ -1,6 +1,5 @@
 import { Argv } from "yargs";
 import { BaseDatumArgs } from "../input/baseYargs";
-import { subHumanIdView } from "../views/datumViews/humanId";
 import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
 
@@ -27,6 +26,6 @@ export function builder(yargs: Argv): Argv {
 
 export async function mapCmd(args: MapCmdArgs): Promise<void> {
   const db = await connectDb(args);
-  const viewResult = await db.view(args.mapName, "default", {reduce: false});
+  const viewResult = await db.view(args.mapName, "default", { reduce: false });
   renderView(viewResult);
 }
