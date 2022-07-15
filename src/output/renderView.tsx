@@ -1,6 +1,6 @@
-import {render, Text} from 'ink';
+import {render} from 'ink';
 import { DocumentViewResponse } from "nano";
-import { EitherDocument, EitherPayload } from "../documentControl/DatumDocument";
+import { EitherPayload } from "../documentControl/DatumDocument";
 import Table from "ink-table";
 import React from 'react';
 
