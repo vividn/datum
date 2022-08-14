@@ -123,7 +123,7 @@ export function at<A extends any[], O>(
   fn: (...args: A) => O
 ): (...args: A) => O {
   return (...args: A): O => {
-    setNow(timeStr);
+    pushNow(timeStr);
     const returnVal: O = fn(...args);
     popNow();
     return returnVal;
