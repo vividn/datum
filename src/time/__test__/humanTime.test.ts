@@ -1,10 +1,10 @@
 import { DateTime, Settings } from "luxon";
 import { humanTime, humanTimeFromISO } from "../humanTime";
+import { setNow } from "../../test-utils";
 
 describe("humanTime", () => {
-  const mockNow = DateTime.utc(2022, 2, 11, 9, 20, 0);
   beforeEach(async () => {
-    Settings.now = () => mockNow.toMillis();
+    setNow("2022-02-11T09:20:00Z");
     Settings.defaultZone = "system";
   });
 
@@ -56,8 +56,7 @@ describe("humanTime", () => {
   });
 
   it("still thinks it's today even if utc date is different than local date", () => {
-    const mockUtcAnotherDay = DateTime.utc(2022, 2, 13, 23, 30);
-    Settings.now = () => mockUtcAnotherDay.toMillis();
+    setNow("2022-02-13T23:30:00Z");
     Settings.defaultZone = "Europe/Berlin";
     const alreadyValentinesDay = DateTime.local();
     expect(humanTime(alreadyValentinesDay)).toEqual("00:30:00");
@@ -65,10 +64,8 @@ describe("humanTime", () => {
 });
 
 describe("humanTimeFromISO", () => {
-  const mockNow = DateTime.utc(2022, 5, 1, 12, 20, 0);
-
   beforeEach(async () => {
-    Settings.now = () => mockNow.toMillis();
+    setNow("2022-05-01T12:20:00Z");
     Settings.defaultZone = "UTC+2";
   });
 

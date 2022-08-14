@@ -5,6 +5,7 @@ import {
   ReferencedTimeArgs,
   TimeStrWithOffset,
 } from "../timeArgs";
+import { setNow } from "../../test-utils";
 
 const expectTiming = (
   props: ReferencedTimeArgs,
@@ -20,8 +21,7 @@ const expectTiming = (
 
 describe("handleTimeArgs", () => {
   beforeEach(() => {
-    const mockNowMillis = DateTime.utc(2020, 5, 10, 15, 25, 30).toMillis();
-    Settings.now = () => mockNowMillis;
+    setNow("2020-05-10T15:25:30Z");
   });
 
   it("returns timeStr as current time when no arguments are given", () => {
@@ -167,8 +167,7 @@ describe("handleTimeArgs", () => {
 
   it("gives local date, not utc date", () => {
     Settings.defaultZone = "Brazil/East";
-    const mockNow = DateTime.utc(2020, 5, 10, 2, 0, 0).toMillis(); // 23:00 May 9, Brazil time
-    Settings.now = () => mockNow;
+    setNow("2020-05-10T02:00:00Z");
 
     const result = handleTimeArgs({ fullDay: true });
     expect(result.timeStr).toBe("2020-05-09");
