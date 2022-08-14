@@ -1,5 +1,5 @@
 import { DatumPayload } from "../DatumDocument";
-import { DateTime, Settings } from "luxon";
+import { DateTime } from "luxon";
 import { fail, setNow, testDbLifecycle } from "../../test-utils";
 import {
   overwriteDoc,
@@ -349,10 +349,19 @@ describe("overwriteDoc", () => {
   });
 
   it("if createTime or metadata does not exist on old document, new document does not have a createTime because it is unknown", async () => {
-    await db.insert({ _id: "doc-without-meta", foo: "bar", occurTime: "2022-08-14T22:42:00Z", occurUtcOffset: 2 });
+    await db.insert({
+      _id: "doc-without-meta",
+      foo: "bar",
+      occurTime: "2022-08-14T22:42:00Z",
+      occurUtcOffset: 2,
+    });
     await db.insert({
       _id: "doc-without-createTime",
-      data: { bar: "baz", occurTime: "2022-08-14T22:42:00Z", occurUtcOffset: 2 },
+      data: {
+        bar: "baz",
+        occurTime: "2022-08-14T22:42:00Z",
+        occurUtcOffset: 2,
+      },
       meta: { humanId: "fedcba" },
     });
     const newPayload = {

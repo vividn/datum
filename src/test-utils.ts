@@ -5,10 +5,7 @@ import * as connectDb from "./auth/connectDb";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
-import { parseDateStr } from "./time/parseDateStr";
-import { parsed } from "yargs";
 import { now } from "./time/timeUtils";
-import { addCmd } from "./commands/addCmd";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -95,7 +92,7 @@ export function mockedLogLifecycle(): Mock {
 const originalNowFn = Settings.now;
 const nowStack: (() => number)[] = [];
 export function setNow(timeStr: string): DateTime {
-  const parsedTime = parseTimeStr({timeStr});
+  const parsedTime = parseTimeStr({ timeStr });
   const newNow = () => parsedTime.toMillis();
   Settings.now = newNow;
   return parsedTime;
@@ -121,7 +118,10 @@ export function restoreNow(): DateTime {
   return now();
 }
 
-export function at<A extends any[], O>(timeStr: string, fn: (...args: A) => O): (...args: A) => O {
+export function at<A extends any[], O>(
+  timeStr: string,
+  fn: (...args: A) => O
+): (...args: A) => O {
   return (...args: A): O => {
     setNow(timeStr);
     const returnVal: O = fn(...args);
