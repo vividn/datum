@@ -4,8 +4,7 @@ import {
   DatumDocument,
   DatumPayload,
 } from "../DatumDocument";
-import { DateTime, Settings } from "luxon";
-import { fail, testDbLifecycle } from "../../test-utils";
+import { fail, setNow, testDbLifecycle } from "../../test-utils";
 import { addDoc } from "../addDoc";
 import { IdError } from "../../errors";
 import { jClone } from "../../utils/jClone";
@@ -31,15 +30,14 @@ const testDatumPayload: DatumPayload = {
 };
 
 const testDatumPayloadId = "bar__rawString";
-const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
-const nowStr = mockNow.toString();
+const nowStr = "2021-06-20T18:45:00.000Z";
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    Settings.now = () => mockNow.toMillis();
+    setNow(nowStr);
   });
 
   it("it adds dataOnly payloads with _id to the given database", async () => {

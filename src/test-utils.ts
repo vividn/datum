@@ -93,25 +93,31 @@ export function mockedLogLifecycle(): Mock {
 }
 
 const originalNowFn = Settings.now;
-const lastNowStack: (() => number)[] = [];
+const nowStack: (() => number)[] = [];
 export function setNow(timeStr: string): DateTime {
   const parsedTime = parseTimeStr({timeStr});
   const newNow = () => parsedTime.toMillis();
-  lastNowStack.push(Settings.now);
   Settings.now = newNow;
   return parsedTime;
 }
+
+export function pushNow(timeStr: string): DateTime {
+  nowStack.push(Settings.now);
+  return setNow(timeStr);
+}
+
 export function popNow(): DateTime {
-  const lastNow = lastNowStack.pop();
+  const lastNow = nowStack.pop();
   if (lastNow === undefined) {
-    throw new Error("tried to pop non existant lastNow");
+    throw new Error("tried to pop non existent now");
   }
   Settings.now = lastNow;
   return now();
 }
+
 export function restoreNow(): DateTime {
   Settings.now = originalNowFn;
-  lastNowStack.length = 0;
+  nowStack.length = 0;
   return now();
 }
 

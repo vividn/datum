@@ -1,6 +1,5 @@
 import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
-import { DateTime, Settings } from "luxon";
-import { fail, testDbLifecycle } from "../../test-utils";
+import { fail, setNow, testDbLifecycle } from "../../test-utils";
 import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc";
 import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";
@@ -22,9 +21,8 @@ const testDatumPayload: DatumPayload = {
 };
 
 const testDatumPayloadId = "bar__rawString";
-const mockNow = DateTime.utc(2021, 6, 20, 18, 45, 0);
-const nowStr = mockNow.toString();
-const notNowStr = DateTime.utc(2010, 11, 12, 13, 14, 15).toString();
+const nowStr = "2021-06-20T18:45:00.000Z";
+const notNowStr = "2010-11-12T13:14:15.000Z";
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
@@ -53,7 +51,7 @@ describe("updateDoc", () => {
   });
 
   test("updates modifyTime if oldDoc has metadata", async () => {
-    Settings.now = () => mockNow.toMillis();
+    setNow(nowStr);
 
     const docWithModify = {
       _id: "doc-to-update",
