@@ -3,6 +3,9 @@ import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
 import * as connectDb from "./auth/connectDb";
 import Mock = jest.Mock;
+import { DateTime, Settings } from "luxon";
+import { parseTimeStr } from "./time/parseTimeStr";
+import { now } from "./time/timeUtils";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -85,3 +88,52 @@ export function mockedLogLifecycle(): Mock {
 
   return mockedLog;
 }
+
+const originalNowFn = Settings.now;
+const nowStack: (() => number)[] = [];
+export function setNow(timeStr: string): DateTime {
+  const parsedTime = parseTimeStr({ timeStr });
+  const newNow = () => parsedTime.toMillis();
+  Settings.now = newNow;
+  return parsedTime;
+}
+
+export function pushNow(timeStr: string): DateTime {
+  nowStack.push(Settings.now);
+  return setNow(timeStr);
+}
+
+export function popNow(): DateTime {
+  const lastNow = nowStack.pop();
+  if (lastNow === undefined) {
+    throw new Error("tried to pop non existent now");
+  }
+  Settings.now = lastNow;
+  return now();
+}
+
+export function restoreNow(): DateTime {
+  Settings.now = originalNowFn;
+  nowStack.length = 0;
+  return now();
+}
+
+export function at<A extends any[], O>(
+  timeStr: string,
+  fn: (...args: A) => O
+): (...args: A) => O {
+  return (...args: A): O => {
+    pushNow(timeStr);
+    const returnVal: O = fn(...args);
+    popNow();
+    return returnVal;
+  };
+}
+
+// export async function generateSampleDay(dateStr = "2022-08-14") {
+//
+//   setNow(dateStr);
+//   at('8:30', addCmd)({field: "sleep", })
+//
+//   popNow();
+// }

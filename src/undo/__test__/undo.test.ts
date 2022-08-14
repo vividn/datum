@@ -1,4 +1,4 @@
-import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
@@ -9,6 +9,10 @@ describe("addCmd undo", () => {
   const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
   const db = testDbLifecycle(dbName);
+  const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
+  beforeEach(() => {
+    setNow(mockNow.toString());
+  });
 
   it("can undo adding documents with a known id", async () => {
     await addCmd({ idPart: "this_one_should_be_deleted" });
@@ -45,11 +49,9 @@ describe("addCmd undo", () => {
   });
 
   it("prevents undo if created more than 15 minutes ago", async () => {
-    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
-    Settings.now = () => mockNow.toMillis();
 
     await db.insert({
       _id: "oldDoc",
@@ -66,11 +68,9 @@ describe("addCmd undo", () => {
 
   it("allows undo if force-undo", async () => {
     const docName = "oldDoc2";
-    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
-    Settings.now = () => mockNow.toMillis();
 
     await db.insert({
       _id: docName,
@@ -85,11 +85,9 @@ describe("addCmd undo", () => {
 
   it("allows undo if both force-undo and undo", async () => {
     const docName = "oldDoc3";
-    const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
-    Settings.now = () => mockNow.toMillis();
 
     await db.insert({
       _id: docName,

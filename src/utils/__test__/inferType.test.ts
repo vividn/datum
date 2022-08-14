@@ -2,8 +2,8 @@ import { inferType } from "../inferType";
 import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
 import * as parseDurationStr from "../../time/parseDurationString";
-import { DateTime, Settings } from "luxon";
 import SpyInstance = jest.SpyInstance;
+import { setNow } from "../../test-utils";
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {
@@ -63,15 +63,7 @@ describe("inferType", () => {
 
 describe("inferType with special fields", () => {
   beforeAll(() => {
-    const mockNow = DateTime.fromObject({
-      year: 2021,
-      month: 10,
-      day: 25,
-      hour: 22,
-      minute: 30,
-    });
-    const mockNowMillis = mockNow.toMillis();
-    Settings.now = () => mockNowMillis;
+    setNow("2021-10-25T22:30:00Z");
   });
 
   let parseTimeSpy: SpyInstance,
