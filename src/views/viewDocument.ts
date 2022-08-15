@@ -14,6 +14,7 @@ export type DatumView<D extends EitherDocument = EitherDocument> = {
   name: string;
   map: MapFunction<D>;
   reduce?: ReduceFunction | MultiReduceFunction;
+  options?: ViewOptions;
 };
 
 type MultiReduceFunction = {
@@ -26,6 +27,7 @@ export type StringifiedDatumView = {
   name: string;
   map: string;
   reduce?: string | MultiStringReduceFunction;
+  options?: ViewOptions;
 };
 
 type MultiStringReduceFunction = { [viewName: string]: string };
@@ -49,10 +51,15 @@ export type MapFunction<D extends EitherDocument = EitherDocument> = (
   doc: D
 ) => void;
 
+type ViewOptions = {
+  collation?: "raw";
+};
+
 type ViewPayloadViews = {
   [viewName: string]: {
     map: string;
     reduce?: string;
+    options?: ViewOptions;
   };
 };
 
@@ -93,16 +100,20 @@ export function datumViewToViewPayload(
   const views: ViewPayloadViews = {};
   const mapStr = datumView.map.toString();
   const datumReduce = datumView.reduce;
+  const options = datumView.options;
+
   if (isMultiReduce(datumReduce)) {
     for (const reduceName in datumReduce) {
       views[reduceName] = {
         map: mapStr,
         reduce: datumReduce[reduceName].toString(),
+        options,
       };
     }
     if (views.default === undefined) {
       views.default = {
         map: mapStr,
+        options,
       };
     }
   } else {
@@ -110,10 +121,12 @@ export function datumViewToViewPayload(
       datumReduce === undefined
         ? {
             map: mapStr,
+            options,
           }
         : {
             map: mapStr,
             reduce: datumReduce.toString(),
+            options,
           };
   }
 
