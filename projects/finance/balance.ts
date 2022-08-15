@@ -12,6 +12,7 @@ export type TxDoc = DatumDocument<{
   acc: string;
   amount: number;
   to: string;
+  reverse?: boolean;
   comment?: string | string[];
 }>;
 export type EqDoc = DatumDocument<{
@@ -32,11 +33,11 @@ export type XcDoc = DatumDocument<{
   comment?: string | string[];
 }>;
 
-export type FinDoc = TxDoc | EqDoc | XcDoc;
+export type FinanceDoc = TxDoc | EqDoc | XcDoc;
 
-export const balanceView: DatumView<FinDoc> = {
+export const balanceView: DatumView<FinanceDoc> = {
   name: "balance",
-  map: (doc: FinDoc) => {
+  map: (doc: FinanceDoc) => {
     const data = doc.data;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
@@ -52,4 +53,43 @@ export const balanceView: DatumView<FinDoc> = {
   options: {
     collation: "raw",
   },
+};
+
+export const categorizedBalanceView: DatumView<FinanceDoc> = {
+  name: "categorizedBalance",
+  map: (doc: FinanceDoc) => {
+    const getAccType = (name: string) => {
+      switch (true) {
+        case /^[A-Z]/.test(name):
+          return "Assets";
+        case /^[a-z]/.test(name):
+          return "expenses";
+        case /^\+|^_/.test(name):
+          return "+income";
+        default:
+          return name[0];
+      }
+    };
+
+    const data = doc.data;
+    if (data.type === "tx") {
+      const amount = data.reverse === true ? data.amount * -1 : data.amount;
+      emit(
+        [getAccType(data.acc), data.curr, data.acc, data.occurTime],
+        -amount
+      );
+      emit([getAccType(data.to), data.curr, data.to, data.occurTime], amount);
+    }
+    if (data.type === "xc") {
+      emit(
+        [getAccType(data.acc1), data.curr1, data.acc1, data.occurTime],
+        -data.amount1
+      );
+      emit(
+        [getAccType(data.acc2), data.curr2, data.acc2, data.occurTime],
+        data.amount2
+      );
+    }
+  },
+  reduce: "_sum",
 };

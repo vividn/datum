@@ -1,2 +1,2 @@
-export { balanceView } from "./balance";
+export { balanceView, categorizedBalanceView } from "./balance";
 export { withOrderedReduceView } from "./withOrderedReduce";
