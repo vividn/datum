@@ -33,11 +33,11 @@ export type XcDoc = DatumDocument<{
   comment?: string | string[];
 }>;
 
-export type FinDoc = TxDoc | EqDoc | XcDoc;
+export type FinanceDoc = TxDoc | EqDoc | XcDoc;
 
-export const balanceView: DatumView<FinDoc> = {
+export const balanceView: DatumView<FinanceDoc> = {
   name: "balance",
-  map: (doc: FinDoc) => {
+  map: (doc: FinanceDoc) => {
     const data = doc.data;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
@@ -55,9 +55,9 @@ export const balanceView: DatumView<FinDoc> = {
   },
 };
 
-export const categorizedBalanceView: DatumView<FinDoc> = {
+export const categorizedBalanceView: DatumView<FinanceDoc> = {
   name: "categorizedBalance",
-  map: (doc: FinDoc) => {
+  map: (doc: FinanceDoc) => {
     const getAccType = (name: string) => {
       switch (true) {
         case /^[A-Z]/.test(name):
