@@ -1,5 +1,5 @@
 import { _emit } from "../../src/views/emit";
-import { FinDoc } from "./balance";
+import { FinanceDoc } from "./balance";
 import { DatumView } from "../../src/views/viewDocument";
 
 function emit(doc: unknown, value: unknown) {
@@ -26,9 +26,9 @@ type RereduceRowValue = {
   }[];
 } | null;
 
-export const withOrderedReduceView: DatumView<FinDoc> = {
+export const withOrderedReduceView: DatumView<FinanceDoc> = {
   name: "withOrderedReduce",
-  map: (doc: FinDoc) => {
+  map: (doc: FinanceDoc) => {
     const data = doc.data;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
