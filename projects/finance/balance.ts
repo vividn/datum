@@ -74,13 +74,22 @@ export const categorizedBalanceView: DatumView<FinDoc> = {
     const data = doc.data;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
-      emit([getAccType(data.acc), data.curr, data.acc, data.occurTime], -amount);
+      emit(
+        [getAccType(data.acc), data.curr, data.acc, data.occurTime],
+        -amount
+      );
       emit([getAccType(data.to), data.curr, data.to, data.occurTime], amount);
     }
     if (data.type === "xc") {
-      emit([getAccType(data.acc1), data.curr1, data.acc1, data.occurTime], -data.amount1);
-      emit([getAccType(data.acc2), data.curr2, data.acc2, data.occurTime], data.amount2);
+      emit(
+        [getAccType(data.acc1), data.curr1, data.acc1, data.occurTime],
+        -data.amount1
+      );
+      emit(
+        [getAccType(data.acc2), data.curr2, data.acc2, data.occurTime],
+        data.amount2
+      );
     }
   },
   reduce: "_sum",
-}
+};
