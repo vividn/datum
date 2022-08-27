@@ -2,9 +2,10 @@ import { DateTime, Duration, Zone } from "luxon";
 
 export type isoDatetime = string;
 export type isoDate = string;
+export type isoDateOrTime = isoDate | isoDatetime;
 export type isoDuration = string;
 
-export function isIsoDateOrTime(str: string): str is isoDate | isoDatetime {
+export function isIsoDateOrTime(str: string): str is isoDateOrTime {
   return DateTime.fromISO(str).isValid;
 }
 

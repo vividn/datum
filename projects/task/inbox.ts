@@ -6,7 +6,7 @@ function emit(doc: unknown, value: unknown) {
   _emit(doc, value);
 }
 
-type TaskDoc = DatumDocument<{
+export type TaskDoc = DatumDocument<{
   task: string;
   done?: boolean;
   type?: string;
