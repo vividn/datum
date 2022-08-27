@@ -16,15 +16,19 @@ type ChoreDoc = TaskDoc &
   }>;
 
 type ChoreMapRow = {
-  key: string // chore name
-  value: { occur: isoDateOrTime, next?: isoDateOrTime, lastDone: isoDateOrTime | "" }
-}
+  key: string; // chore name
+  value: {
+    occur: isoDateOrTime;
+    next?: isoDateOrTime;
+    lastDone: isoDateOrTime | "";
+  };
+};
 
 export const choreView: DatumView<ChoreDoc> = {
   name: "chores",
   map: (doc: ChoreDoc) => {
     if (doc.data && doc.data.type === "maintain" && doc.data.occurTime) {
-      const {nextDate, nextTime, occurTime, done} = doc.data;
+      const { nextDate, nextTime, occurTime, done } = doc.data;
       let next: isoDateOrTime | null | undefined = undefined;
       if (nextTime) {
         if (nextDate) {
@@ -42,7 +46,11 @@ export const choreView: DatumView<ChoreDoc> = {
       } else if (nextDate) {
         next = nextDate;
       }
-      emit(doc.data.task, { occur: occurTime, next, lastDone: done ? occurTime : "" });
+      emit(doc.data.task, {
+        occur: occurTime,
+        next,
+        lastDone: done ? occurTime : "",
+      });
     }
   },
   reduce: (keysIds, values: ChoreMapRow["value"][], _rereduce) => {
@@ -50,8 +58,15 @@ export const choreView: DatumView<ChoreDoc> = {
       const isLatest = currentValue.occur > reduced.occur;
       const latestNext = isLatest ? currentValue.next : reduced.next;
       const latestOccur = isLatest ? currentValue.occur : reduced.occur;
-      const latestDoneOccur = currentValue.lastDone > reduced.lastDone ? currentValue.lastDone : reduced.lastDone
-      return {occur: latestOccur, lastDone: latestDoneOccur, next: latestNext};
+      const latestDoneOccur =
+        currentValue.lastDone > reduced.lastDone
+          ? currentValue.lastDone
+          : reduced.lastDone;
+      return {
+        occur: latestOccur,
+        lastDone: latestDoneOccur,
+        next: latestNext,
+      };
     });
-  }
+  },
 };
