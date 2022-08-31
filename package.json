@@ -60,7 +60,7 @@
     "@types/lodash.get": "^4.4.7",
     "chalk": "^4.1.2",
     "chrono-node": "^2.3.9",
-    "dotenv": "^16.0.1",
+    "dotenv": "^16.0.2",
     "ink": "^3.2.0",
     "ink-table": "^3.0.0",
     "lodash.get": "^4.4.2",
