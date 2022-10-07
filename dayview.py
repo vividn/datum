@@ -126,7 +126,44 @@ def set_constants():
 
 #########################################
 #########################################
+def get_datum_names_spans_and_colors(data_set):
+    # Load in the data to plot from the dayview_table.
+    # It includes name, span (vertical bar span), and color of the data
+    table_file = os.path.join(os.path.dirname(__file__), data_set + ".csv")
+    datum_table = pd.read_csv(table_file, comment="#")
 
+    # Extract the names, spans and colors
+    datum_names = []
+    datum_spans = {}
+    datum_colors = {}
+    prev_row = None
+    for row in datum_table.itertuples():
+        if row.Name != ":":
+            datum_names += [row.Name]
+            datum_spans[row.Name] = row.Span
+
+            # Don't assign a color if one is not entered
+            if not any(np.isnan([row.R, row.G, row.B])):
+                datum_colors[row.Name] = (int(row.R), int(row.G), int(row.B))
+            else:
+                global default_color
+                datum_colors[row.Name] = default_color
+            prev_row = row.Name
+
+        else:
+            # Color categorical data
+            # TODO: Allow further nesting with multiple colons
+
+            # If this is the first category, change the color for this data to be a hash, with the proper default
+            if datum_colors[prev_row].__class__ != dict:
+                datum_colors[prev_row] = {"default": datum_colors[prev_row]}
+            # Category name is in the span column
+            if not any(np.isnan([row.R, row.G, row.B])):
+                datum_colors[prev_row][row.Span] = (int(row.R), int(row.G), int(row.B))
+            else:
+                datum_colors[prev_row][row.Span] = datum_colors[prev_row]["default"]
+
+    return datum_names, datum_spans, datum_colors
 
 def main(**kwargs):
     """
@@ -174,40 +211,7 @@ def main(**kwargs):
     else:
         nDays = len(date_array)
 
-    # Load in the data to plot from the dayview_table.
-    # It includes name, span (vertical bar span), and color of the data
-    table_file = os.path.join(os.path.dirname(__file__), data_set + ".csv")
-    datum_table = pd.read_csv(table_file, comment="#")
-
-    # Extract the names, spans and colors
-    datum_names = []
-    datum_spans = {}
-    datum_colors = {}
-    prev_row = None
-    for row in datum_table.itertuples():
-        if row.Name != ":":
-            datum_names += [row.Name]
-            datum_spans[row.Name] = row.Span
-
-            # Don't assign a color if one is not entered
-            if not any(np.isnan([row.R, row.G, row.B])):
-                datum_colors[row.Name] = (int(row.R), int(row.G), int(row.B))
-            else:
-                datum_colors[row.Name] = default_color
-            prev_row = row.Name
-
-        else:
-            # Color categorical data
-            # TODO: Allow further nesting with multiple colons
-
-            # If this is the first category, change the color for this data to be a hash, with the proper default
-            if datum_colors[prev_row].__class__ != dict:
-                datum_colors[prev_row] = {"default": datum_colors[prev_row]}
-            # Category name is in the span column
-            if not any(np.isnan([row.R, row.G, row.B])):
-                datum_colors[prev_row][row.Span] = (int(row.R), int(row.G), int(row.B))
-            else:
-                datum_colors[prev_row][row.Span] = datum_colors[prev_row]["default"]
+    datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set)
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)

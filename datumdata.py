@@ -57,6 +57,7 @@ class Datumdata:
         # Memory of calculated timings and quantities (hashed by day)
         self.timings = {}
         self.totals = {}
+        self.active_now = False
 
         # Any columns that specify units or defaults will store them in these dicts
         self.units = {}
@@ -306,6 +307,9 @@ class Datumdata:
         """
         Data type independent function to get timings and totals for the day
         """
+        if date == dt.date.today():
+            # Will be calculated at end of day
+            self.active_now = False
 
         # This class uses memory to avoid repetitious look ups of data
         # If data has already been calculated, don't recalculate
@@ -479,6 +483,7 @@ class Datumdata:
         if in_block:
             if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()
+                self.active_now = in_block
             else:
                 block_end = dt.datetime.combine(date, dt.time.max)
 
@@ -647,6 +652,7 @@ class Datumdata:
         if in_block:
             if date == pd.Timestamp.now().date():
                 block_end = dt.datetime.now()
+                self.active_now = in_block
             else:
                 block_end = dt.datetime.combine(date, dt.time.max)
 
