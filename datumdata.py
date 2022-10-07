@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import datetime as dt
+import subprocess
 
 import re
 import os
@@ -63,7 +64,6 @@ class Datumdata:
 
         # Initialize data variable. This is used to compare new data to old data when (re)loading data
         # If differences are found, the appropriate days will be flagged for recalculation in memory
-        self.raw_text = None
         self.data = None
 
         # Load in the data
@@ -71,21 +71,19 @@ class Datumdata:
         self.v2_datum_file = datum_dir + "v2/" + self.name + ".tsv"
         self.load_data()
 
-    def load_raw(self):
-        with open(self.datum_file, "r") as f:
-            self.raw_text = f.read()
-
     def load_data(self):
 
         # Store a copy of the current data, to compare fr differences in the incoming data
         old_data = self.data
 
-        # Load in the raw text of the datum file
-        self.load_raw()
+
+        # Only load in header and last 1000 lines to save time
+        total_lines = int(subprocess.check_output(["/bin/sh", "-c", f"wc -l {self.datum_file}"]).split()[0])
+        to_skip=range(1, total_lines - 1000)
 
         # Make pandas dataframe from datum file, with the date and time combined into one field and set as the index
         self.v1_data = pd.read_csv(
-            self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
+            self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0], skiprows=[i for i in to_skip]
         )
 
         # Get v2 data as well
@@ -159,8 +157,11 @@ class Datumdata:
         """
         # TODO: Use symbols to indicate proper combination method
 
+        # Load in first line as header
+        with open(self.datum_file, "r") as f:
+            header = f.readline().strip().split("\t")
+
         # Split the header into an array of strings, the title of each column
-        header = self.raw_text.split("\n", 1)[0].split("\t")
         if header[0] != "Date":
             raise RuntimeError('No header for "' + self.name + '". Please create one')
 
