@@ -3,6 +3,7 @@ import { testDbLifecycle } from "../../test-utils";
 import { editMigration } from "../editMigration";
 import { asViewDb } from "../../views/viewDocument";
 import * as editInTerminal from "../../utils/editInTerminal";
+import { getMigrationId, getMigrationViewName } from "../migrations";
 
 const migA2B = `(doc) => {
   if (doc.a) {
@@ -25,29 +26,17 @@ describe("editMigration", () => {
   const db = testDbLifecycle(dbName);
 
   it("creates a _design document with the text of mapFn", async () => {
+    const migrationName = "rename_a_to_b";
+    const viewName = getMigrationViewName(migrationName);
+    const migrationId = getMigrationId(migrationName);
     await editMigration({
       db: db,
-      migrationName: "rename_a_to_b",
+      migrationName,
       mapFn: migA2B,
     });
-    await db.view("migrate_rename_a_to_b", "migration").catch(fail);
-    const designDoc = await asViewDb(db).get("_design/migrate").catch(fail);
-    expect(designDoc.views.rename_a_to_b.map).toBe(migA2B);
-  });
-
-  it("can create a second view function without overwriting the first", async () => {
-    await editMigration({
-      db: db,
-      migrationName: "rename_a_to_b",
-      mapFn: migA2B,
-    });
-    await editMigration({
-      db: db,
-      migrationName: "rename2",
-      mapFn: migA2B,
-    });
-    await db.view("migrate", "rename_a_to_b").catch(fail);
-    await db.view("migrate", "rename2").catch(fail);
+    await db.view(viewName, "migration").catch(fail);
+    const designDoc = await asViewDb(db).get(migrationId).catch(fail);
+    expect(designDoc.views.migration.map).toBe(migA2B);
   });
 
   it("opens a terminal editor if no mapFn is supplied", async () => {
@@ -58,14 +47,15 @@ describe("editMigration", () => {
     await editMigration({
       db: db,
       migrationName: "nonEditedMigration",
-      mapFn: migA2B,
+      mapFn: migB2A,
     });
     expect(mockedEditInTerminal).not.toHaveBeenCalled();
 
-    await editMigration({ db: db, migrationName: "manuallyEditedMigration" });
+    const manualName = "manuallyEditedMigration";
+    await editMigration({ db: db, migrationName: manualName });
     expect(mockedEditInTerminal).toBeCalledTimes(1);
-    const designDoc = await db.get("_design/migrate").catch(fail);
-    expect(designDoc.views.manuallyEditedMigration.map).toBe(migA2B);
+    const designDoc = await asViewDb(db).get(getMigrationId(manualName)).catch(fail);
+    expect(designDoc.views.migration.map).toBe(migA2B);
   });
 
   it("loads the current migration map for editing if one exists and no mapFn is supplied", async () => {
@@ -81,9 +71,9 @@ describe("editMigration", () => {
     await editMigration({ db: db, migrationName: "savedMigration" });
 
     expect(mockedEditInTerminal).toBeCalledTimes(1);
-    expect(mockedEditInTerminal).toHaveBeenCalledWith(migB2A);
+    expect(mockedEditInTerminal).toHaveBeenCalledWith(expect.stringContaining(migB2A));
 
-    const designDoc = await asViewDb(db).get("_design/migrate").catch(fail);
-    expect(designDoc.views.savedMigration.map).toBe(migB2A);
+    const designDoc = await asViewDb(db).get(getMigrationId("savedMigration")).catch(fail);
+    expect(designDoc.views.migration.map).toBe(migA2B);
   });
 });
