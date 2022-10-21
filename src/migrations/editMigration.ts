@@ -1,6 +1,6 @@
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { asViewDb, ViewPayload } from "../views/viewDocument";
+import { asViewDb, MapFunction, ViewPayload } from "../views/viewDocument";
 import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
@@ -22,21 +22,21 @@ type baseMigrationType = {
   migrationName: string;
 };
 
-type createMigrationType = baseMigrationType & {
-  mapFnStr?: string;
+type editMigrationType = baseMigrationType & {
+  mapFn?: string | MapFunction;
 };
-export async function createMigration({
+export async function editMigration({
   db,
   migrationName,
-  mapFnStr,
-}: createMigrationType): Promise<void> {
+  mapFn,
+}: editMigrationType): Promise<void> {
   const viewDb = asViewDb(db);
   const fullMigrationId = `_design/migrate_${migrationName}`;
   let designDoc: ViewPayload;
   try {
     designDoc = await viewDb.get(fullMigrationId);
   } catch (error) {
-    if (!(isCouchDbError(error) && error.reason in ["missing", "deleted"])) {
+    if (!(isCouchDbError(error) && ["missing", "deleted"].includes(error.reason))) {
       throw error;
     }
     designDoc = {
@@ -49,9 +49,9 @@ export async function createMigration({
   const currentOrTemplate = (designDoc.views["migration"]?.map ??
     template_migration) as string;
 
-  const mapFn = mapFnStr ?? (await editInTerminal(currentOrTemplate));
-  if (mapFn === undefined) return;
+  const mapFnStr = mapFn ? mapFn.toString() : (await editInTerminal(currentOrTemplate));
+  if (mapFnStr === undefined) return;
 
-  designDoc.views["migration"] = { map: mapFn };
+  designDoc.views["migration"] = { map: mapFnStr };
   await addDoc({db, payload: designDoc, show: Show.Minimal, conflictStrategy: "overwrite"});
 }
