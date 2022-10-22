@@ -8,7 +8,7 @@ export const desc = "migrate data from one state to another";
 export type MigrateCmdArgs = BaseDatumArgs;
 
 export function builder(yargs: Argv): Argv {
-  return yargs.commandDir('./migrate');
+  return yargs.commandDir("./migrate");
 }
 
 export async function migrateCmd(args: MigrateCmdArgs): Promise<unknown> {

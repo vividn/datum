@@ -16,10 +16,11 @@ const templateMigration = `(doc) => {
 }
 `;
 
-
 async function editWithExplanation(mapFn: string): Promise<string> {
   const divider = "////////// README //////////";
-  const explanationString = divider + `
+  const explanationString =
+    divider +
+    `
 // emit(key, value) should be:
 // emit('delete', null), emit('overwrite', completeNewDoc)
 // or have the key be one of the updateMethods, and the value be a JSON of how to apply that method:
@@ -31,7 +32,6 @@ async function editWithExplanation(mapFn: string): Promise<string> {
   const editedWithExplanation = await editInTerminal(beforeWithExplanation);
   return editedWithExplanation.split(divider)[0].trim();
 }
-
 
 type baseMigrationType = {
   db: DocumentScope<EitherPayload>;
@@ -52,22 +52,31 @@ export async function editMigration({
   try {
     designDoc = await viewDb.get(migrationId);
   } catch (error) {
-    if (!(isCouchDbError(error) && ["missing", "deleted"].includes(error.reason))) {
+    if (
+      !(isCouchDbError(error) && ["missing", "deleted"].includes(error.reason))
+    ) {
       throw error;
     }
     designDoc = {
       _id: migrationId,
       views: {},
-      meta: {}
+      meta: {},
     };
   }
 
   const currentOrTemplate = (designDoc.views["migration"]?.map ??
     templateMigration) as string;
 
-  const mapFnStr = mapFn ? mapFn.toString() : (await editWithExplanation(currentOrTemplate));
+  const mapFnStr = mapFn
+    ? mapFn.toString()
+    : await editWithExplanation(currentOrTemplate);
   if (mapFnStr === undefined) return;
 
   designDoc.views["migration"] = { map: mapFnStr };
-  await addDoc({db, payload: designDoc, show: Show.Minimal, conflictStrategy: "overwrite"});
+  await addDoc({
+    db,
+    payload: designDoc,
+    show: Show.Minimal,
+    conflictStrategy: "overwrite",
+  });
 }

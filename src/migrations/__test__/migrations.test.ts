@@ -8,7 +8,6 @@ import { DocumentScope } from "nano";
 import { createMigration, runMigration } from "../src/migrations";
 import { fail, pass, testNano } from "./test-utils";
 import { GenericObject } from "../src/GenericObject";
-import * as editInTerminal from "../src/utils/editInTerminal";
 
 const nano = testNano;
 
@@ -44,8 +43,6 @@ const docAA2B = {
 //   a: "someData",
 //   field: "field",
 // };
-
-
 
 describe.skip("runMigration", () => {
   let db: DocumentScope<GenericObject>;

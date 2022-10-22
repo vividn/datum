@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { testDbLifecycle } from "../../test-utils";
 import { editMigration } from "../editMigration";
 import { asViewDb } from "../../views/viewDocument";
@@ -54,7 +53,9 @@ describe("editMigration", () => {
     const manualName = "manuallyEditedMigration";
     await editMigration({ db: db, migrationName: manualName });
     expect(mockedEditInTerminal).toBeCalledTimes(1);
-    const designDoc = await asViewDb(db).get(getMigrationId(manualName)).catch(fail);
+    const designDoc = await asViewDb(db)
+      .get(getMigrationId(manualName))
+      .catch(fail);
     expect(designDoc.views.migration.map).toBe(migA2B);
   });
 
@@ -71,9 +72,13 @@ describe("editMigration", () => {
     await editMigration({ db: db, migrationName: "savedMigration" });
 
     expect(mockedEditInTerminal).toBeCalledTimes(1);
-    expect(mockedEditInTerminal).toHaveBeenCalledWith(expect.stringContaining(migB2A));
+    expect(mockedEditInTerminal).toHaveBeenCalledWith(
+      expect.stringContaining(migB2A)
+    );
 
-    const designDoc = await asViewDb(db).get(getMigrationId("savedMigration")).catch(fail);
+    const designDoc = await asViewDb(db)
+      .get(getMigrationId("savedMigration"))
+      .catch(fail);
     expect(designDoc.views.migration.map).toBe(migA2B);
   });
 });
