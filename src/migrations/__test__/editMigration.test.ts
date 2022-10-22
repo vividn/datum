@@ -33,9 +33,9 @@ describe("editMigration", () => {
       migrationName,
       mapFn: migA2B,
     });
-    await db.view(viewName, "migration").catch(fail);
+    await db.view(viewName, "default").catch(fail);
     const designDoc = await asViewDb(db).get(migrationId).catch(fail);
-    expect(designDoc.views.migration.map).toBe(migA2B);
+    expect(designDoc.views.default.map).toBe(migA2B);
   });
 
   it("opens a terminal editor if no mapFn is supplied", async () => {
@@ -56,7 +56,7 @@ describe("editMigration", () => {
     const designDoc = await asViewDb(db)
       .get(getMigrationId(manualName))
       .catch(fail);
-    expect(designDoc.views.migration.map).toBe(migA2B);
+    expect(designDoc.views.default.map).toBe(migA2B);
   });
 
   it("loads the current migration map for editing if one exists and no mapFn is supplied", async () => {
@@ -79,6 +79,6 @@ describe("editMigration", () => {
     const designDoc = await asViewDb(db)
       .get(getMigrationId("savedMigration"))
       .catch(fail);
-    expect(designDoc.views.migration.map).toBe(migA2B);
+    expect(designDoc.views.default.map).toBe(migA2B);
   });
 });
