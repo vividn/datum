@@ -9,9 +9,10 @@ import { Show } from "../output/output";
 import { getMigrationId } from "./migrations";
 
 const templateMigration = `(doc) => {
-  if (doc.condition === true) {
-    doc.condition = false
-    emit("overwrite",doc)
+  data = doc.data
+  if (data.condition === true) {
+    data.condition = false;
+    emit("overwrite", doc);
   }
 }
 `;
@@ -64,7 +65,7 @@ export async function editMigration({
     };
   }
 
-  const currentOrTemplate = (designDoc.views["migration"]?.map ??
+  const currentOrTemplate = (designDoc.views["default"]?.map ??
     templateMigration) as string;
 
   const mapFnStr = mapFn
@@ -72,7 +73,7 @@ export async function editMigration({
     : await editWithExplanation(currentOrTemplate);
   if (mapFnStr === undefined) return;
 
-  designDoc.views["migration"] = { map: mapFnStr };
+  designDoc.views["default"] = { map: mapFnStr };
   await addDoc({
     db,
     payload: designDoc,
