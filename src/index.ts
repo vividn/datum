@@ -11,6 +11,7 @@ import { tailCmd, TailCmdArgs } from "./commands/tailCmd";
 import { editCmd, EditCmdArgs } from "./commands/editCmd";
 import { Show } from "./output/output";
 import { v1Cmd, V1CmdArgs } from "./commands/v1Cmd";
+import { migrateCmd, MigrateCmdArgs } from "./commands/migrateCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
@@ -66,6 +67,12 @@ export async function main(cliInput: string | string[]): Promise<void> {
 
     case "v1":
       await v1Cmd(args as unknown as V1CmdArgs);
+      break;
+
+    case "migrate":
+    case "migration":
+    case "mig":
+      await migrateCmd(args as unknown as MigrateCmdArgs);
       break;
 
     default:
