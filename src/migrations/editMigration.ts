@@ -37,6 +37,7 @@ async function editWithExplanation(mapFn: string): Promise<string> {
 type baseMigrationType = {
   db: DocumentScope<EitherPayload>;
   migrationName: string;
+  show?: Show;
 };
 
 type editMigrationType = baseMigrationType & {
@@ -46,6 +47,7 @@ export async function editMigration({
   db,
   migrationName,
   mapFn,
+  show,
 }: editMigrationType): Promise<void> {
   const viewDb = asViewDb(db);
   const migrationId = getMigrationId(migrationName);
@@ -77,7 +79,7 @@ export async function editMigration({
   await addDoc({
     db,
     payload: designDoc,
-    show: Show.Minimal,
+    show,
     conflictStrategy: "overwrite",
   });
 }
