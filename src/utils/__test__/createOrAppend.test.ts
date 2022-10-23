@@ -38,4 +38,8 @@ describe("createOrAppend", () => {
     ]);
     expect(createOrAppend("leftside", null)).toStrictEqual(["leftside", null]);
   });
+
+  it("can join the output into a string", () => {
+    expect(createOrAppend("abc", "def", " ")).toStrictEqual("abc def");
+  });
 });
