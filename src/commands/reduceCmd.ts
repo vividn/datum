@@ -1,26 +1,24 @@
 import { Argv } from "yargs";
-import { BaseDatumArgs } from "../input/baseYargs";
 import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
+import { MapCmdArgs } from "./mapCmd";
 import { DocumentViewParams } from "nano";
 import { inferType } from "../utils/inferType";
 
-export const command = "map <mapName>";
-export const desc = "display a map view or map reduce view";
+export const command = "reduce <mapName> [groupLevel]";
+export const desc = "display a reduction of a map";
 
-export type MapCmdArgs = BaseDatumArgs & {
-  mapName: string;
-  view?: string;
-  reduce?: boolean;
-  params?: string;
+export type ReduceCmdArgs = MapCmdArgs & {
+  groupLevel?: number;
 };
 
 export function builder(yargs: Argv): Argv {
   return yargs
     .positional("mapName", {
-      describe: "Name of the design document and the map function",
+      describe: "Name of the mapName to use",
     })
     .options({
+      // TODO: DRY out with mapCmd
       view: {
         describe:
           'use a different view than "default". Can also be speified in the mapName by using a slash i.e. map/view',
@@ -41,13 +39,14 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export async function mapCmd(args: MapCmdArgs): Promise<void> {
+export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
   const db = await connectDb(args);
   const viewParams: DocumentViewParams = args.params
     ? inferType(args.params)
     : {};
   const viewResult = await db.view(args.mapName, args.view ?? "default", {
-    reduce: args.reduce ?? false,
+    reduce: true,
+    group_level: args.groupLevel,
     ...viewParams,
   });
   renderView(viewResult);

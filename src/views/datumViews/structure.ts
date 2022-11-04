@@ -56,7 +56,7 @@ export const dataStructuresView: DatumView<EitherDocument> = {
     }
   },
   reduce: {
-    count: "_count",
+    default: "_count",
     fieldList: (keysAndDocIds: [string[], string][], values, rereduce) => {
       if (!rereduce) {
         return keysAndDocIds.reduce((accum: string[], keyAndDocId) => {
