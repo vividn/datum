@@ -12,6 +12,7 @@ import { editCmd, EditCmdArgs } from "./commands/editCmd";
 import { Show } from "./output/output";
 import { v1Cmd, V1CmdArgs } from "./commands/v1Cmd";
 import { migrateCmd, MigrateCmdArgs } from "./commands/migrateCmd";
+import { reduceCmd, ReduceCmdArgs } from "./commands/reduceCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);
@@ -46,6 +47,10 @@ export async function main(cliInput: string | string[]): Promise<void> {
 
     case "map":
       await mapCmd(args as unknown as MapCmdArgs);
+      break;
+
+    case "reduce":
+      await reduceCmd(args as unknown as ReduceCmdArgs);
       break;
 
     case "setup": {
