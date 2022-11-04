@@ -34,6 +34,6 @@ export async function migrateEditCmd(args: MigrateEditCmdArgs): Promise<void> {
     db,
     migrationName: args.name,
     mapFn: args.function,
-    show
+    show,
   });
 }
