@@ -22,25 +22,33 @@ export function builder(yargs: Argv): Argv {
     })
     .options({
       view: {
-        describe: "use a different view than \"default\". Can also be speified in the mapName by using a slash i.e. map/view",
+        describe:
+          'use a different view than "default". Can also be speified in the mapName by using a slash i.e. map/view',
         type: "string",
         nargs: 1,
       },
       reduce: {
-        describe: "whether to reduce, triggered directly by the \"reduce\" command",
+        describe:
+          'whether to reduce, triggered directly by the "reduce" command',
         type: "boolean",
       },
       params: {
-        describe: "extra params to pass to the view function. See nano's DocumentViewParams type",
+        describe:
+          "extra params to pass to the view function. See nano's DocumentViewParams type",
         type: "string",
-        alias: "p"
-      }
+        alias: "p",
+      },
     });
 }
 
 export async function mapCmd(args: MapCmdArgs): Promise<void> {
   const db = await connectDb(args);
-  const viewParams: DocumentViewParams = args.params ? inferType(args.params) : {};
-  const viewResult = await db.view(args.mapName, args.view ?? "default", { reduce: args.reduce ?? false, ...viewParams});
+  const viewParams: DocumentViewParams = args.params
+    ? inferType(args.params)
+    : {};
+  const viewResult = await db.view(args.mapName, args.view ?? "default", {
+    reduce: args.reduce ?? false,
+    ...viewParams,
+  });
   renderView(viewResult);
 }

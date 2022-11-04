@@ -13,24 +13,29 @@ export type ReduceCmdArgs = MapCmdArgs & {
 };
 
 export function builder(yargs: Argv): Argv {
-  return yargs.positional("mapName", {
-    describe: "Name of the mapName to use",
-  }).options({
-    // TODO: DRY out with mapCmd
+  return yargs
+    .positional("mapName", {
+      describe: "Name of the mapName to use",
+    })
+    .options({
+      // TODO: DRY out with mapCmd
       view: {
-        describe: "use a different view than \"default\". Can also be speified in the mapName by using a slash i.e. map/view",
+        describe:
+          'use a different view than "default". Can also be speified in the mapName by using a slash i.e. map/view',
         type: "string",
         nargs: 1,
       },
       reduce: {
-        describe: "whether to reduce, triggered directly by the \"reduce\" command",
+        describe:
+          'whether to reduce, triggered directly by the "reduce" command',
         type: "boolean",
       },
       params: {
-        describe: "extra params to pass to the view function. See nano's DocumentViewParams type",
+        describe:
+          "extra params to pass to the view function. See nano's DocumentViewParams type",
         type: "string",
-        alias: "p"
-      }
+        alias: "p",
+      },
     });
 }
 
@@ -40,7 +45,9 @@ export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
     ? inferType(args.params)
     : {};
   const viewResult = await db.view(args.mapName, args.view ?? "default", {
-    reduce: true, group_level: args.groupLevel, ...viewParams
+    reduce: true,
+    group_level: args.groupLevel,
+    ...viewParams,
   });
   renderView(viewResult);
 }
