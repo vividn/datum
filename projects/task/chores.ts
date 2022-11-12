@@ -49,7 +49,7 @@ export const choreView: DatumView<ChoreDoc> = {
       emit(doc.data.task, {
         occur: occurTime,
         next,
-        lastDone: done ? occurTime : "",
+        lastDone: done ? occurTime : "#not done#",
       });
     }
   },
