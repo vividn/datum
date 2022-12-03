@@ -18,4 +18,6 @@ export class DocExistsError extends Error {
 export type BaseDocControlArgs = {
   db: DocumentScope<any>;
   show?: Show;
+  formatString?: string;
+  KEEP ADDING MORE INFRASTRUCTURE TO FORMATSTRING
 };

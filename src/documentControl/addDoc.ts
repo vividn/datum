@@ -104,8 +104,8 @@ export async function addDoc({
       showExists(existingDoc, show);
       return existingDoc;
     } else {
-      showExists(existingDoc, show);
       showFailed(payload, show);
+      showExists(existingDoc, show);
       throw new DocExistsError(payload, existingDoc);
     }
   }

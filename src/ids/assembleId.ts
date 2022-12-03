@@ -11,6 +11,8 @@ type assembleIdType = {
   payload: EitherPayload;
   idStructure?: string;
 };
+
+// TODO: Rename and move this for the sake of output formatting using the same function
 export const assembleId = function ({
   payload,
   idStructure,

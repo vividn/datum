@@ -51,6 +51,11 @@ export const baseYargs = yargs
       default: "default",
       conflict: "show-all",
     },
+    "format-string": {
+      describe: "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
+      type: "string",
+      alias: "o"
+    },
     "create-db": {
       describe: "Create the db if it does not exist",
       type: "boolean",
