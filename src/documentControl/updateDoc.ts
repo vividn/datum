@@ -10,7 +10,6 @@ import { jClone } from "../utils/jClone";
 import { IdError, MyError } from "../errors";
 import { DateTime } from "luxon";
 import {
-  Show,
   showExists,
   showFailed,
   showNoDiff,
@@ -20,6 +19,7 @@ import {
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
+import { Show } from "../input/outputArgs";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {

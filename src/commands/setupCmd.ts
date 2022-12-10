@@ -2,7 +2,7 @@ import { Argv } from "yargs";
 import { BaseDatumArgs } from "../input/baseYargs";
 import { setupDatumViews } from "../views/setupDatumViews";
 import { connectDb } from "../auth/connectDb";
-import { Show } from "../output/output";
+import { Show } from "../input/outputArgs";
 
 export const command = "setup";
 export const desc = "setup the database for use with datum";

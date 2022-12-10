@@ -1,7 +1,7 @@
 import { testDbLifecycle } from "../../test-utils";
 import { setupCmd } from "../setupCmd";
 import { getCmd } from "../getCmd";
-import { Show } from "../../output/output";
+import { Show } from "../../input/outputArgs";
 
 const dbName = "get_cmd_test";
 const db = testDbLifecycle(dbName);

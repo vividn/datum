@@ -5,8 +5,8 @@ import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
 import { addDoc } from "../documentControl/addDoc";
-import { Show } from "../output/output";
 import { getMigrationId } from "./migrations";
+import { Show } from "../input/outputArgs";
 
 const templateMigration = `(doc) => {
   data = doc.data

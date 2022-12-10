@@ -1,5 +1,5 @@
 import yargs from "yargs";
-import { Show } from "../output/output";
+import { OutputArgs, outputYargs, Show } from "./outputArgs";
 
 export type BaseDatumArgs = {
   db?: string;
@@ -7,13 +7,11 @@ export type BaseDatumArgs = {
   username?: string;
   password?: string;
   env?: string;
-  showAll?: boolean;
-  show?: Show;
   createDb?: boolean;
   _?: string[];
-};
+} & OutputArgs;
 
-export const baseYargs = yargs
+export const baseYargs = outputYargs(yargs
   .options({
     // couchdb options
     db: {
@@ -39,23 +37,6 @@ export const baseYargs = yargs
       nargs: 1,
       normalize: true,
     },
-    "show-all": {
-      describe: "Show complete document when displaying, not just data",
-      type: "boolean",
-      alias: "A",
-    },
-    show: {
-      describe: "how much of documents to show",
-      type: "string",
-      choices: Object.values(Show),
-      default: "default",
-      conflict: "show-all",
-    },
-    "format-string": {
-      describe: "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
-      type: "string",
-      alias: "o"
-    },
     "create-db": {
       describe: "Create the db if it does not exist",
       type: "boolean",
@@ -64,5 +45,5 @@ export const baseYargs = yargs
   .commandDir("../commands")
   .help("h")
   .alias("h", "help")
-  .strict();
+  .strict());
 // TODO: Middleware to enforce proper non array types

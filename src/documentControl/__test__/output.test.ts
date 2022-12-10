@@ -4,10 +4,10 @@ import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 import { overwriteDoc } from "../overwriteDoc";
-import { Show } from "../../output/output";
 import * as addDocModule from "../addDoc";
 import { addCmd } from "../../commands/addCmd";
 import { deleteDoc } from "../deleteDoc";
+import { Show } from "../../input/outputArgs";
 
 const dbName = "doc_control_output_test";
 const db = testDbLifecycle(dbName);

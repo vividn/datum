@@ -13,13 +13,13 @@ import { defaults } from "../input/defaults";
 import { newHumanId } from "../meta/newHumanId";
 import chalk from "chalk";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
-import { Show } from "../output/output";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
 import { DateTime, Duration } from "luxon";
+import { Show } from "../input/outputArgs";
 
 export const command = "add [data..]";
 export const desc = "add a document";

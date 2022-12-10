@@ -9,7 +9,7 @@ import { IdError, isCouchDbError } from "../errors";
 import { jClone } from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import { updateDoc } from "./updateDoc";
-import { Show, showCreate, showExists, showFailed } from "../output/output";
+import { showCreate, showExists, showFailed } from "../output/output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 import { overwriteDoc } from "./overwriteDoc";
@@ -21,6 +21,7 @@ import {
   ViewPayload,
 } from "../views/viewDocument";
 import { assembleId } from "../ids/assembleId";
+import { Show } from "../input/outputArgs";
 
 function payloadMatchesDbData(
   payload: EitherPayload,

@@ -8,6 +8,7 @@ import chalk from "chalk";
 import stringify from "string.ify";
 import { jClone } from "../utils/jClone";
 import { assembleId } from "../ids/assembleId";
+import { OutputArgs, Show } from "../input/outputArgs";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -66,8 +67,9 @@ export function showCustomFormat(
 export function showRename(
   beforeId: string,
   afterId: string,
-  show: Show
+  args: OutputArgs
 ): void {
+  const { show } = args;
   if (show === Show.None) {
     return;
   }
@@ -79,9 +81,9 @@ export function showRename(
 export function showSingle(
   action: ACTIONS,
   doc: EitherPayload,
-  show: Show,
-  formatString?: string
+  args: OutputArgs
 ): void {
+  const { show, formatString } = args;
   const color = ACTION_CHALK[action];
 
   if (show === Show.None) {
@@ -90,7 +92,9 @@ export function showSingle(
 
   if (show === Show.Format) {
     if (formatString === undefined) {
-      throw new Error("MissingArgument: formatted show requested without a format string");
+      throw new Error(
+        "MissingArgument: formatted show requested without a format string"
+      );
     }
     showCustomFormat(doc, formatString, color);
   }
@@ -126,42 +130,33 @@ export function showSingle(
     }
   }
 }
-export function showCreate(doc: EitherDocument, show: Show, formatString: string): void {
-  return showSingle(ACTIONS.Create, doc, show, formatString);
+export function showCreate(doc: EitherDocument, args: OutputArgs): void {
+  return showSingle(ACTIONS.Create, doc, args);
 }
-export function showExists(doc: EitherDocument, show: Show, formatString: string): void {
-  return showSingle(ACTIONS.Exists, doc, show, formatString);
+export function showExists(doc: EitherDocument, args: OutputArgs): void {
+  return showSingle(ACTIONS.Exists, doc, args);
 }
-export function showNoDiff(doc: EitherDocument, show: Show, formatString: string): void {
-  return showSingle(ACTIONS.NoDiff, doc, show, formatString);
+export function showNoDiff(doc: EitherDocument, args: OutputArgs): void {
+  return showSingle(ACTIONS.NoDiff, doc, args);
 }
-export function showFailed(payload: EitherPayload, show: Show, formatString: string): void {
-  return showSingle(ACTIONS.Failed, payload, show, formatString);
+export function showFailed(payload: EitherPayload, args: OutputArgs): void {
+  return showSingle(ACTIONS.Failed, payload, args);
 }
-export function showDelete(payload: EitherPayload, show: Show, formatString: string): void {
-  return showSingle(ACTIONS.Delete, payload, show, formatString);
+export function showDelete(payload: EitherPayload, args: OutputArgs): void {
+  return showSingle(ACTIONS.Delete, payload, args);
 }
 
 export function showUpdate(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
-  show: Show, formatString: string
+  args: OutputArgs
 ): void {
-  return showSingle(ACTIONS.Update, afterDoc, show, formatString);
+  return showSingle(ACTIONS.Update, afterDoc, args);
 }
 export function showOWrite(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
-  show: Show, formatString: string
+  args: OutputArgs
 ): void {
-  return showSingle(ACTIONS.OWrite, afterDoc, show, formatString);
-}
-
-export enum Show {
-  Default = "default",
-  None = "none",
-  Minimal = "minimal",
-  Standard = "standard",
-  Format = "format",
-  All = "all",
+  return showSingle(ACTIONS.OWrite, afterDoc, args);
 }

@@ -1,6 +1,7 @@
 import { BaseDocControlArgs } from "./base";
 import { isCouchDbError, MyError } from "../errors";
-import { Show, showDelete } from "../output/output";
+import { showDelete } from "../output/output";
+import { Show } from "../input/outputArgs";
 
 export class NoDocToDeleteError extends MyError {
   constructor(m: unknown) {

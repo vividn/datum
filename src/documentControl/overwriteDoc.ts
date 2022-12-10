@@ -5,7 +5,6 @@ import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import {
-  Show,
   showExists,
   showFailed,
   showNoDiff,
@@ -14,6 +13,7 @@ import {
 } from "../output/output";
 import { assembleId } from "../ids/assembleId";
 import { EitherDocument, EitherPayload } from "./DatumDocument";
+import { Show } from "../input/outputArgs";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);

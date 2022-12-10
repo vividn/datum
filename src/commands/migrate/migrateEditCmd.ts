@@ -3,7 +3,7 @@ import { MigrateCmdArgs } from "../migrateCmd";
 import { connectDb } from "../../auth/connectDb";
 import { editMigration } from "../../migrations/editMigration";
 import { MapFunction } from "../../views/viewDocument";
-import { Show } from "../../output/output";
+import { Show } from "../../input/outputArgs";
 
 export const command = ["edit <name>", "add <name>"];
 export const desc = "add or edit a migration";

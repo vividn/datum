@@ -3,8 +3,8 @@ import { Argv } from "yargs";
 import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
 import { quickId } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
-import { Show } from "../output/output";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
+import { Show } from "../input/outputArgs";
 
 export const command = ["delete <quickId>", "del <quickId>"];
 export const desc = "delete a document";

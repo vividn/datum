@@ -4,7 +4,8 @@ import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickId } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
-import { Show, showExists } from "../output/output";
+import { showExists } from "../output/output";
+import { Show } from "../input/outputArgs";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
