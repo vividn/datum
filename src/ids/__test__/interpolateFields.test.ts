@@ -1,4 +1,4 @@
-import { interpolateFields } from "../interpolateFields";
+import { interpolateFields } from "../../utils/interpolateFields";
 import { DatumData, DatumMetadata } from "../../documentControl/DatumDocument";
 import * as humanTime from "../../time/humanTime";
 

@@ -4,8 +4,8 @@ import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
-import { Show } from "../../output/output";
 import SpyInstance = jest.SpyInstance;
+import { Show } from "../../input/outputArgs";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";

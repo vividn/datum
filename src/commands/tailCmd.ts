@@ -12,7 +12,7 @@ import { connectDb } from "../auth/connectDb";
 import { occurTimeView } from "../views/datumViews";
 import { getBorderCharacters, table } from "table";
 import { humanTime } from "../time/humanTime";
-import { interpolateFields } from "../ids/interpolateFields";
+import { interpolateFields } from "../utils/interpolateFields";
 import { getOccurTime } from "../time/getOccurTime";
 
 export const command = ["tail [field]"];

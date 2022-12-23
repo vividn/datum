@@ -2,8 +2,8 @@ import { testDbLifecycle } from "../../test-utils";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
-import { Show } from "../../output/output";
 import { setupCmd } from "../setupCmd";
+import { Show } from "../../input/outputArgs";
 
 const dbName = "delete_cmd_test";
 const db = testDbLifecycle(dbName);

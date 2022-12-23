@@ -9,10 +9,10 @@ import { updateCmd, UpdateCmdArgs } from "./commands/updateCmd";
 import { getCmd, GetCmdArgs } from "./commands/getCmd";
 import { tailCmd, TailCmdArgs } from "./commands/tailCmd";
 import { editCmd, EditCmdArgs } from "./commands/editCmd";
-import { Show } from "./output/output";
 import { v1Cmd, V1CmdArgs } from "./commands/v1Cmd";
 import { migrateCmd, MigrateCmdArgs } from "./commands/migrateCmd";
 import { reduceCmd, ReduceCmdArgs } from "./commands/reduceCmd";
+import { Show } from "./input/outputArgs";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = await baseYargs.parse(cliInput);

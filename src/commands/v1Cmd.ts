@@ -29,7 +29,7 @@ export function builder(yargs: Argv): Argv {
         description:
           "Where to write the output files. data will be written to {{field}}.tsv",
         type: "string",
-        alias: ["o"],
+        alias: ["O"],
       },
     });
 }

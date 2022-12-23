@@ -13,7 +13,6 @@ import { defaults } from "../input/defaults";
 import { newHumanId } from "../meta/newHumanId";
 import chalk from "chalk";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
-import { Show } from "../output/output";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
@@ -215,12 +214,11 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   }
 
   const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
   const doc = await addDoc({
     db,
     payload,
     conflictStrategy,
-    show,
+    outputArgs: args,
   });
   return doc;
 }

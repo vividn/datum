@@ -6,7 +6,6 @@ import {
 } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { Show } from "../output/output";
 import { updateDoc } from "../documentControl/updateDoc";
 import { quickId } from "../ids/quickId";
 import { Argv } from "yargs";
@@ -45,9 +44,14 @@ export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
   const id = await quickId(db, args.quickId);
   const payload = handleDataArgs(args);
   const updateStrategy = args.strategy ?? "preferNew";
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
 
-  const doc = await updateDoc({ db, id, payload, updateStrategy, show });
+  const doc = await updateDoc({
+    db,
+    id,
+    payload,
+    updateStrategy,
+    outputArgs: args,
+  });
 
   return doc;
 }

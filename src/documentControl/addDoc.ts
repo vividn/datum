@@ -9,7 +9,7 @@ import { IdError, isCouchDbError } from "../errors";
 import { jClone } from "../utils/jClone";
 import { UpdateStrategyNames } from "./combineData";
 import { updateDoc } from "./updateDoc";
-import { Show, showCreate, showExists, showFailed } from "../output/output";
+import { showCreate, showExists, showFailed } from "../output/output";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import isEqual from "lodash.isequal";
 import { overwriteDoc } from "./overwriteDoc";
@@ -56,7 +56,7 @@ export async function addDoc({
   db,
   payload,
   conflictStrategy,
-  show = Show.None,
+  outputArgs = {},
 }: addDocType): Promise<DataOrDesignDocument> {
   payload = jClone(payload);
   let id;
@@ -87,29 +87,29 @@ export async function addDoc({
 
     if (conflictStrategy !== undefined) {
       if (conflictStrategy === "overwrite") {
-        return overwriteDoc({ db, id, payload, show });
+        return overwriteDoc({ db, id, payload, outputArgs: outputArgs });
       }
       if (conflictStrategy === "delete") {
-        return deleteDoc({ db, id, show });
+        return deleteDoc({ db, id, outputArgs: outputArgs });
       }
       return await updateDoc({
         db,
         id,
         payload,
         updateStrategy: conflictStrategy,
-        show,
+        outputArgs: outputArgs,
       });
     }
     if (payloadMatchesDbData(payload, existingDoc)) {
-      showExists(existingDoc, show);
+      showExists(existingDoc, outputArgs);
       return existingDoc;
     } else {
-      showExists(existingDoc, show);
-      showFailed(payload, show);
+      showFailed(payload, outputArgs);
+      showExists(existingDoc, outputArgs);
       throw new DocExistsError(payload, existingDoc);
     }
   }
   const addedDoc = await db.get(id);
-  showCreate(addedDoc, show);
+  showCreate(addedDoc, outputArgs);
   return addedDoc;
 }

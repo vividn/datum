@@ -5,12 +5,13 @@ import {
   isDatumPayload,
 } from "../documentControl/DatumDocument";
 import { IdError } from "../errors";
-import { interpolateFields } from "./interpolateFields";
+import { interpolateFields } from "../utils/interpolateFields";
 
 type assembleIdType = {
   payload: EitherPayload;
   idStructure?: string;
 };
+
 export const assembleId = function ({
   payload,
   idStructure,
