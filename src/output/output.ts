@@ -139,10 +139,16 @@ export function showExists(doc: EitherDocument, outputArgs: OutputArgs): void {
 export function showNoDiff(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.NoDiff, doc, outputArgs);
 }
-export function showFailed(payload: EitherPayload, outputArgs: OutputArgs): void {
+export function showFailed(
+  payload: EitherPayload,
+  outputArgs: OutputArgs
+): void {
   return showSingle(ACTIONS.Failed, payload, outputArgs);
 }
-export function showDelete(payload: EitherPayload, outputArgs: OutputArgs): void {
+export function showDelete(
+  payload: EitherPayload,
+  outputArgs: OutputArgs
+): void {
   return showSingle(ACTIONS.Delete, payload, outputArgs);
 }
 

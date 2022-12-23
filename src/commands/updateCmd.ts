@@ -11,7 +11,6 @@ import { quickId } from "../ids/quickId";
 import { Argv } from "yargs";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
-import { Show } from "../input/outputArgs";
 
 export const command = [
   "update <quickId> [data..]",
@@ -45,9 +44,14 @@ export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
   const id = await quickId(db, args.quickId);
   const payload = handleDataArgs(args);
   const updateStrategy = args.strategy ?? "preferNew";
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
 
-  const doc = await updateDoc({ db, id, payload, updateStrategy, show });
+  const doc = await updateDoc({
+    db,
+    id,
+    payload,
+    updateStrategy,
+    outputArgs: args,
+  });
 
   return doc;
 }

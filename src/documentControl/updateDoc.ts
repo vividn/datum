@@ -19,7 +19,6 @@ import {
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
-import { Show } from "../input/outputArgs";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -46,7 +45,7 @@ export async function updateDoc({
   id,
   payload,
   updateStrategy = "merge",
-  outputArgs = {}
+  outputArgs = {},
 }: updateDocType): Promise<EitherDocument> {
   payload = jClone(payload);
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {

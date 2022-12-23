@@ -5,7 +5,6 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickId } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
-import { Show } from "../input/outputArgs";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
@@ -19,9 +18,8 @@ export function builder(yargs: Argv): Argv {
 export async function getCmd(args: GetCmdArgs): Promise<EitherDocument> {
   const db = await connectDb(args);
   const id = await quickId(db, args.quickId);
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
 
   const doc = await db.get(id);
-  showExists(doc, show);
+  showExists(doc, args);
   return doc;
 }

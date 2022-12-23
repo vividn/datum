@@ -2,7 +2,6 @@ import { Argv } from "yargs";
 import { BaseDatumArgs } from "../input/baseYargs";
 import { setupDatumViews } from "../views/setupDatumViews";
 import { connectDb } from "../auth/connectDb";
-import { Show } from "../input/outputArgs";
 
 export const command = "setup";
 export const desc = "setup the database for use with datum";
@@ -24,6 +23,5 @@ export function builder(yargs: Argv): Argv {
 export async function setupCmd(args: SetupCmdArgs): Promise<void> {
   args.createDb ??= true;
   const db = await connectDb(args);
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
-  await setupDatumViews({ db, show: show, projectDir: args.projectDir });
+  await setupDatumViews({ db, outputArgs: args, projectDir: args.projectDir });
 }

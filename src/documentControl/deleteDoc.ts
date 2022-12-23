@@ -1,7 +1,6 @@
 import { BaseDocControlArgs } from "./base";
 import { isCouchDbError, MyError } from "../errors";
 import { showDelete } from "../output/output";
-import { Show } from "../input/outputArgs";
 
 export class NoDocToDeleteError extends MyError {
   constructor(m: unknown) {
@@ -23,7 +22,7 @@ export type DeletedDocument = {
 export async function deleteDoc({
   id,
   db,
-  show = Show.None,
+  outputArgs = {},
 }: deleteDocType): Promise<DeletedDocument> {
   let existingDoc;
   try {
@@ -38,6 +37,6 @@ export async function deleteDoc({
 
   const deletedRev = (await db.destroy(id, existingDoc._rev)).rev;
   const deletedDoc = (await db.get(id, { rev: deletedRev })) as DeletedDocument;
-  showDelete(existingDoc, show);
+  showDelete(existingDoc, outputArgs);
   return deletedDoc;
 }

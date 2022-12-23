@@ -38,4 +38,3 @@ export function outputYargs(otherYargs?: Argv): Argv {
     },
   });
 }
-

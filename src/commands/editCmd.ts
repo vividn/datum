@@ -6,7 +6,6 @@ import { connectDb } from "../auth/connectDb";
 import { quickId } from "../ids/quickId";
 import { editJSONInTerminal } from "../utils/editInTerminal";
 import { overwriteDoc } from "../documentControl/overwriteDoc";
-import { Show } from "../input/outputArgs";
 
 export const command = ["edit <quickId>"];
 export const desc = "Edit a document directly with EDITOR";
@@ -24,9 +23,7 @@ export async function editCmd(args: EditCmdArgs): Promise<EitherDocument> {
   const oldDoc = await db.get(id);
   const newDoc = await editJSONInTerminal(oldDoc);
 
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
-
-  const doc = await overwriteDoc({ db, id, payload: newDoc, show });
+  const doc = await overwriteDoc({ db, id, payload: newDoc, outputArgs: args });
 
   return doc;
 }

@@ -21,7 +21,6 @@ import {
   ViewPayload,
 } from "../views/viewDocument";
 import { assembleId } from "../ids/assembleId";
-import { Show } from "../input/outputArgs";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
@@ -57,7 +56,7 @@ export async function addDoc({
   db,
   payload,
   conflictStrategy,
-  outputArgs,
+  outputArgs = {},
 }: addDocType): Promise<DataOrDesignDocument> {
   payload = jClone(payload);
   let id;

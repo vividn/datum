@@ -356,7 +356,9 @@ describe("addDoc", () => {
       await addDoc({
         db,
         payload: { _id: id, foo: "different" },
-        show: Show.Standard,
+        outputArgs: {
+          show: Show.Standard,
+        },
       });
       fail();
     } catch (e) {

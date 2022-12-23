@@ -19,7 +19,6 @@ import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
 import { DateTime, Duration } from "luxon";
-import { Show } from "../input/outputArgs";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -215,12 +214,11 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   }
 
   const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
   const doc = await addDoc({
     db,
     payload,
     conflictStrategy,
-    show,
+    outputArgs: args,
   });
   return doc;
 }
