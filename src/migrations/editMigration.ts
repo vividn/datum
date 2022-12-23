@@ -5,8 +5,8 @@ import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
 import { addDoc } from "../documentControl/addDoc";
-import { Show } from "../output/output";
 import { getMigrationId } from "./migrations";
+import { OutputArgs } from "../input/outputArgs";
 
 const templateMigration = `(doc) => {
   data = doc.data
@@ -37,7 +37,7 @@ async function editWithExplanation(mapFn: string): Promise<string> {
 type baseMigrationType = {
   db: DocumentScope<EitherPayload>;
   migrationName: string;
-  show?: Show;
+  outputArgs?: OutputArgs;
 };
 
 type editMigrationType = baseMigrationType & {
@@ -47,7 +47,7 @@ export async function editMigration({
   db,
   migrationName,
   mapFn,
-  show,
+  outputArgs = {},
 }: editMigrationType): Promise<void> {
   const viewDb = asViewDb(db);
   const migrationId = getMigrationId(migrationName);
@@ -79,7 +79,7 @@ export async function editMigration({
   await addDoc({
     db,
     payload: designDoc,
-    show,
+    outputArgs,
     conflictStrategy: "overwrite",
   });
 }

@@ -12,8 +12,8 @@ import * as updateDoc from "../updateDoc";
 import * as overwriteDoc from "../overwriteDoc";
 import * as deleteDoc from "../deleteDoc";
 import { DocExistsError } from "../base";
-import { Show } from "../../output/output";
 import { _emit as emit } from "../../views/emit";
+import { Show } from "../../input/outputArgs";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -356,7 +356,9 @@ describe("addDoc", () => {
       await addDoc({
         db,
         payload: { _id: id, foo: "different" },
-        show: Show.Standard,
+        outputArgs: {
+          show: Show.Standard,
+        },
       });
       fail();
     } catch (e) {

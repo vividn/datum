@@ -4,7 +4,6 @@ import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { quickId } from "../ids/quickId";
-import { Show } from "../output/output";
 import { editJSONInTerminal } from "../utils/editInTerminal";
 import { overwriteDoc } from "../documentControl/overwriteDoc";
 
@@ -24,9 +23,7 @@ export async function editCmd(args: EditCmdArgs): Promise<EitherDocument> {
   const oldDoc = await db.get(id);
   const newDoc = await editJSONInTerminal(oldDoc);
 
-  const show: Show = args.showAll ? Show.All : args.show ?? Show.None;
-
-  const doc = await overwriteDoc({ db, id, payload: newDoc, show });
+  const doc = await overwriteDoc({ db, id, payload: newDoc, outputArgs: args });
 
   return doc;
 }

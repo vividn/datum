@@ -4,10 +4,10 @@ import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 import { overwriteDoc } from "../overwriteDoc";
-import { Show } from "../../output/output";
 import * as addDocModule from "../addDoc";
 import { addCmd } from "../../commands/addCmd";
 import { deleteDoc } from "../deleteDoc";
+import { Show } from "../../input/outputArgs";
 
 const dbName = "doc_control_output_test";
 const db = testDbLifecycle(dbName);
@@ -17,7 +17,9 @@ test("addDoc displays a CREATE: message and the document if showOutput", async (
   await addDoc({
     db,
     payload: { _id: "added-doc", abc: "def" },
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
 });
@@ -28,7 +30,9 @@ test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict",
     await addDoc({
       db,
       payload: { _id: "alreadyHere", baz: "bazzy" },
-      show: Show.Standard,
+      outputArgs: {
+        show: Show.Standard,
+      },
     });
     fail();
   } catch (e) {
@@ -40,15 +44,29 @@ test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict",
 });
 
 test("addDoc calls updateDoc with showOutput", async () => {
-  const spy = jest.spyOn(updateDocModule, "updateDoc");
+  const updateDocSpy = jest.spyOn(updateDocModule, "updateDoc");
   const payload = { _id: "docId", foo: "abce" };
-  await addDoc({ db, payload, show: Show.Standard, conflictStrategy: "merge" });
-  expect(spy).not.toHaveBeenCalled();
+  await addDoc({
+    db,
+    payload,
+    outputArgs: {
+      show: Show.Standard,
+    },
+    conflictStrategy: "merge",
+  });
+  expect(updateDocSpy).not.toHaveBeenCalled();
 
   mockedLog.mockClear();
 
-  await addDoc({ db, payload, show: Show.Standard, conflictStrategy: "merge" });
-  expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
+  await addDoc({
+    db,
+    payload,
+    outputArgs: {
+      show: Show.Standard,
+    },
+    conflictStrategy: "merge",
+  });
+  expect(updateDocSpy.mock.calls[0][0].outputArgs?.show).toEqual(Show.Standard);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
   mockedLog.mockClear();
@@ -56,10 +74,12 @@ test("addDoc calls updateDoc with showOutput", async () => {
   await addDoc({
     db,
     payload: { ...payload, extraKey: 123 },
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
     conflictStrategy: "merge",
   });
-  expect(spy.mock.calls[1][0].show).toEqual(Show.Standard);
+  expect(updateDocSpy.mock.calls[1][0].outputArgs?.show).toEqual(Show.Standard);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 });
 
@@ -69,7 +89,9 @@ test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
     db,
     id: "name",
     payload: { foo2: "abc2" },
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 });
@@ -81,7 +103,9 @@ test("updateDoc outputs a NODIFF: message if showing output and no update needed
     id: "name",
     payload: { foo2: "abc2" },
     updateStrategy: "useOld",
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 });
@@ -96,7 +120,9 @@ test("updateDoc outputs a RENAME: UPDATE:", async () => {
     id: "docId",
     payload: { _id: "newId", foo: "bar" },
     updateStrategy: "preferNew",
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
@@ -114,7 +140,9 @@ test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
       id: "docId",
       payload: { _id: "conflictId", foo: "bar" },
       updateStrategy: "preferNew",
-      show: Show.Standard,
+      outputArgs: {
+        show: Show.Standard,
+      },
     });
     fail();
   } catch (e) {
@@ -134,7 +162,9 @@ test("overwriteDoc outputs OWRITE", async () => {
     db,
     id: "docId",
     payload: { _id: "docId", data: { bar: "def" }, meta: { humanId: "defg" } },
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
@@ -151,7 +181,9 @@ test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
     db,
     id: "docId",
     payload: { _id: "newId", data: { bar: "def" }, meta: { humanId: "defg" } },
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
@@ -168,7 +200,9 @@ test("overwriteDoc outputs NODIFF", async () => {
     db,
     id: "docId",
     payload: { _id: "docId", data: { foo: "abc" }, meta: { humanId: "abcd" } },
-    show: Show.Standard,
+    outputArgs: {
+      show: Show.Standard,
+    },
   });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
   expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
@@ -194,7 +228,9 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
         data: { bar: "def" },
         meta: { humanId: "defg" },
       },
-      show: Show.Standard,
+      outputArgs: {
+        show: Show.Standard,
+      },
     });
     fail();
   } catch (e) {
@@ -208,7 +244,13 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
 
 test("deleteDoc outputs DELETE", async () => {
   await db.insert({ _id: "doc-to-delete" });
-  await deleteDoc({ db, id: "doc-to-delete", show: Show.Standard });
+  await deleteDoc({
+    db,
+    id: "doc-to-delete",
+    outputArgs: {
+      show: Show.Standard,
+    },
+  });
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
 });
 
@@ -222,7 +264,7 @@ test("show is None by default when calling a command via import or API", async (
     })
   );
   await addCmd({});
-  expect(spy.mock.calls[0][0].show).toEqual(Show.None);
+  expect(spy.mock.calls[0][0].outputArgs?.show).toBeUndefined();
 });
 
 // This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings

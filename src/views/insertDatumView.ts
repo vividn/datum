@@ -14,13 +14,13 @@ type InsertDatumViewArgs = {
 export async function insertDatumView({
   db,
   datumView,
-  show,
+  outputArgs,
 }: InsertDatumViewArgs): Promise<ViewDocument> {
   const viewPayload = datumViewToViewPayload(datumView);
   const newDesignDoc = (await addDoc({
     db,
     payload: viewPayload,
-    show,
+    outputArgs: outputArgs,
     conflictStrategy: "overwrite",
   })) as ViewDocument;
   return newDesignDoc;

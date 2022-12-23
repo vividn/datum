@@ -4,8 +4,8 @@ import * as updateDoc from "../../documentControl/updateDoc";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
-import { Show } from "../../output/output";
 import { mock } from "jest-mock-extended";
+import { Show } from "../../input/outputArgs";
 
 const dbName = "update_cmd_test";
 const db = testDbLifecycle(dbName);
