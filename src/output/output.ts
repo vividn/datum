@@ -1,5 +1,5 @@
 import {
-  DatumData,
+  DatumData, DatumMetadata,
   EitherDocument,
   EitherPayload,
   isDatumPayload,
@@ -9,6 +9,7 @@ import stringify from "string.ify";
 import { jClone } from "../utils/jClone";
 import { assembleId } from "../ids/assembleId";
 import { OutputArgs, Show } from "../input/outputArgs";
+import { interpolateFields } from "../utils/interpolateFields";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -57,11 +58,20 @@ export function displayData(
 }
 
 export function showCustomFormat(
-  data: EitherPayload,
+  payload: EitherPayload,
   formatString: string,
   color: (val: any) => string
 ): void {
-  console.log(color(assembleId({ payload: data, idStructure: formatString })));
+  let data: DatumData;
+  let meta: DatumMetadata | undefined;
+  if (isDatumPayload(payload)) {
+    data = payload.data as DatumData;
+    meta = payload.meta;
+  } else {
+    data = payload as DatumData;
+  }
+  const outputString = interpolateFields({ data, meta, format: formatString });
+  console.log(color(outputString));
 }
 
 export function showRename(

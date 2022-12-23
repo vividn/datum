@@ -1,5 +1,5 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
-import { splitRawAndFields } from "./splitRawAndFields";
+import { splitRawAndFields } from "../ids/splitRawAndFields";
 import { GenericObject } from "../GenericObject";
 import { isIsoDateOrTime } from "../time/timeUtils";
 import { humanTimeFromISO } from "../time/humanTime";
