@@ -44,7 +44,7 @@ test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict",
 });
 
 test("addDoc calls updateDoc with showOutput", async () => {
-  const spy = jest.spyOn(updateDocModule, "updateDoc");
+  const updateDocSpy = jest.spyOn(updateDocModule, "updateDoc");
   const payload = { _id: "docId", foo: "abce" };
   await addDoc({
     db,
@@ -54,7 +54,7 @@ test("addDoc calls updateDoc with showOutput", async () => {
     },
     conflictStrategy: "merge",
   });
-  expect(spy).not.toHaveBeenCalled();
+  expect(updateDocSpy).not.toHaveBeenCalled();
 
   mockedLog.mockClear();
 
@@ -66,7 +66,7 @@ test("addDoc calls updateDoc with showOutput", async () => {
     },
     conflictStrategy: "merge",
   });
-  expect(spy.mock.calls[0][0].outputArgs?.show).toEqual(Show.Standard);
+  expect(updateDocSpy.mock.calls[0][0].outputArgs?.show).toEqual(Show.Standard);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
   mockedLog.mockClear();
@@ -79,7 +79,7 @@ test("addDoc calls updateDoc with showOutput", async () => {
     },
     conflictStrategy: "merge",
   });
-  expect(spy.mock.calls[1][0].outputArgs?.show).toBeUndefined();
+  expect(updateDocSpy.mock.calls[1][0].outputArgs?.show).toEqual(Show.Standard);
   expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
 });
 
