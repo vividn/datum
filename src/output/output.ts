@@ -69,8 +69,8 @@ export function showRename(
   afterId: string,
   outputArgs: OutputArgs
 ): void {
-  const { show } = outputArgs;
-  if (show === Show.None) {
+  const { show } = sanitizeOutputArgs(outputArgs);
+  if (show === Show.None || show === Show.Format) {
     return;
   }
   console.log(
@@ -83,7 +83,7 @@ export function showSingle(
   doc: EitherPayload,
   outputArgs: OutputArgs
 ): void {
-  const { show, showAll, formatString } = outputArgs;
+  const { show, formatString } = sanitizeOutputArgs(outputArgs);
   const color = ACTION_CHALK[action];
 
   if (show === Show.None) {
@@ -111,7 +111,7 @@ export function showSingle(
     }
   }
 
-  if (showAll || show === Show.All) {
+  if (show === Show.All) {
     displayData(doc, color);
     return;
   }
@@ -165,4 +165,9 @@ export function showOWrite(
   outputArgs: OutputArgs
 ): void {
   return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
+}
+
+function sanitizeOutputArgs(outputArgs: OutputArgs): { show: Show, formatString?: string} {
+  const show = (outputArgs.showAll ? Show.All : outputArgs.show) ?? (outputArgs.formatString ? Show.Format : Show.None);
+  return { show, formatString: outputArgs.formatString };
 }
