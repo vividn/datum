@@ -1,5 +1,6 @@
 import {
-  DatumData, DatumMetadata,
+  DatumData,
+  DatumMetadata,
   EitherDocument,
   EitherPayload,
   isDatumPayload,
@@ -7,7 +8,6 @@ import {
 import chalk from "chalk";
 import stringify from "string.ify";
 import { jClone } from "../utils/jClone";
-import { assembleId } from "../ids/assembleId";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 
@@ -177,7 +177,12 @@ export function showOWrite(
   return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
 }
 
-function sanitizeOutputArgs(outputArgs: OutputArgs): { show: Show, formatString?: string} {
-  const show = (outputArgs.showAll ? Show.All : outputArgs.show) ?? (outputArgs.formatString ? Show.Format : Show.None);
+function sanitizeOutputArgs(outputArgs: OutputArgs): {
+  show: Show;
+  formatString?: string;
+} {
+  const show =
+    (outputArgs.showAll ? Show.All : outputArgs.show) ??
+    (outputArgs.formatString ? Show.Format : Show.None);
   return { show, formatString: outputArgs.formatString };
 }
