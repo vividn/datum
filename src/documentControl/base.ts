@@ -1,6 +1,7 @@
 import { EitherDocument, EitherPayload } from "./DatumDocument";
 import { DocumentScope } from "nano";
-import { Show } from "../input/outputArgs";
+import { OutputArgs, Show } from "../input/outputArgs";
+import { BaseDatumArgs } from "../input/baseYargs";
 
 export class DocExistsError extends Error {
   data: { existingDocument: EitherDocument; failedPayload: EitherPayload };
@@ -17,6 +18,5 @@ export class DocExistsError extends Error {
 
 export type BaseDocControlArgs = {
   db: DocumentScope<any>;
-  show?: Show;
-  formatString?: string;
+  outputArgs?: OutputArgs;
 };

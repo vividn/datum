@@ -85,6 +85,6 @@ it("can call a view that has been inserted by insertDatumView", async () => {
     name: "datum_test_view_datum_view",
     map: `(doc) => {emit(doc._id, null)}`,
   };
-  await insertDatumView({ db, datumView: testDatumView });
+  await insertDatumView({ db, datumView: testDatumView, outputArgs: {} });
   await expect(viewMap({ db, datumView: testDatumView })).resolves.toBeTruthy();
 });

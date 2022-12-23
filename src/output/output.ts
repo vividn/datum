@@ -67,9 +67,9 @@ export function showCustomFormat(
 export function showRename(
   beforeId: string,
   afterId: string,
-  args: OutputArgs
+  outputArgs: OutputArgs
 ): void {
-  const { show } = args;
+  const { show } = outputArgs;
   if (show === Show.None) {
     return;
   }
@@ -81,9 +81,9 @@ export function showRename(
 export function showSingle(
   action: ACTIONS,
   doc: EitherPayload,
-  args: OutputArgs
+  outputArgs: OutputArgs
 ): void {
-  const { show, formatString } = args;
+  const { show, showAll, formatString } = outputArgs;
   const color = ACTION_CHALK[action];
 
   if (show === Show.None) {
@@ -111,7 +111,7 @@ export function showSingle(
     }
   }
 
-  if (show === Show.All) {
+  if (showAll || show === Show.All) {
     displayData(doc, color);
     return;
   }
@@ -130,33 +130,33 @@ export function showSingle(
     }
   }
 }
-export function showCreate(doc: EitherDocument, args: OutputArgs): void {
-  return showSingle(ACTIONS.Create, doc, args);
+export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
+  return showSingle(ACTIONS.Create, doc, outputArgs);
 }
-export function showExists(doc: EitherDocument, args: OutputArgs): void {
-  return showSingle(ACTIONS.Exists, doc, args);
+export function showExists(doc: EitherDocument, outputArgs: OutputArgs): void {
+  return showSingle(ACTIONS.Exists, doc, outputArgs);
 }
-export function showNoDiff(doc: EitherDocument, args: OutputArgs): void {
-  return showSingle(ACTIONS.NoDiff, doc, args);
+export function showNoDiff(doc: EitherDocument, outputArgs: OutputArgs): void {
+  return showSingle(ACTIONS.NoDiff, doc, outputArgs);
 }
-export function showFailed(payload: EitherPayload, args: OutputArgs): void {
-  return showSingle(ACTIONS.Failed, payload, args);
+export function showFailed(payload: EitherPayload, outputArgs: OutputArgs): void {
+  return showSingle(ACTIONS.Failed, payload, outputArgs);
 }
-export function showDelete(payload: EitherPayload, args: OutputArgs): void {
-  return showSingle(ACTIONS.Delete, payload, args);
+export function showDelete(payload: EitherPayload, outputArgs: OutputArgs): void {
+  return showSingle(ACTIONS.Delete, payload, outputArgs);
 }
 
 export function showUpdate(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
-  args: OutputArgs
+  outputArgs: OutputArgs
 ): void {
-  return showSingle(ACTIONS.Update, afterDoc, args);
+  return showSingle(ACTIONS.Update, afterDoc, outputArgs);
 }
 export function showOWrite(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
-  args: OutputArgs
+  outputArgs: OutputArgs
 ): void {
-  return showSingle(ACTIONS.OWrite, afterDoc, args);
+  return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
 }
