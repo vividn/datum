@@ -20,6 +20,7 @@ parserOptions:
 plugins:
   - unused-imports
   - import
+  - prettier
 rules:
   radix: error
   eqeqeq: error
@@ -33,4 +34,5 @@ rules:
       { "vars": "all", "varsIgnorePattern": "^_", "args": "after-used", "argsIgnorePattern": "^_" }
   ]
   "import/no-default-export": "error"
+  "prettier/prettier": "error"
 

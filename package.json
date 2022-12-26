@@ -19,8 +19,8 @@
     "system": "NODE_ENV=production yarn global add $PWD",
     "pipeline": "yarn refresh && yarn test --maxWorkers 1 && yarn build && rm -rf ./node_modules && yarn install --production && yarn system",
     "refresh": "rm -rf ./node_modules && yarn install",
-    "lint": "prettier src --check && eslint src",
-    "fmt": "prettier src --write && eslint src --fix",
+    "lint": "eslint src",
+    "fmt": "eslint src --fix",
     "postinstall": "yarn cache clean datum"
   },
   "devDependencies": {
