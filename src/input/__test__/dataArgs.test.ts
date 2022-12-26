@@ -314,6 +314,35 @@ describe("handleDataArgs", () => {
     );
   });
 
+  it("allows a required key to be given a default value via an optional key", () => {
+    expectParseDataToReturn(
+      {
+        required: ["req1", "withDefaultFromOptional"],
+        optional: ["opt1", "withDefaultFromOptional=noError"],
+        data: ["onlyOneValue"],
+      },
+      { req1: "onlyOneValue", withDefaultFromOptional: "noError" }
+    );
+  });
+
+  it("still fills in required keys first even if one is given a default value in optional keys", () => {
+    expectParseDataToReturn(
+      {
+        required: ["req1", "withDefaultFromOptional"],
+        optional: ["opt1", "withDefaultFromOptional=noError"],
+        data: ["one", "two", "three"],
+      },
+      { req1: "one", withDefaultFromOptional: "two", opt1: "three" }
+    );
+    expect(() =>
+      handleDataArgs({
+        required: ["req1", "withDefaultFromOptional"],
+        optional: ["opt1", "withDefaultFromOptional=noError"],
+        data: ["one", "two", "three", "four"],
+      })
+    ).toThrowError(DataError);
+  });
+
   it("infers type from key for key=value data entry", () => {
     expectParseDataToReturn(
       { data: ["taskDuration=3hrs"] },
