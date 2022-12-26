@@ -181,6 +181,14 @@ export const handleDataArgs = function ({
     if (requiredKey in parsedData) {
       continue;
     }
+    // Allow required keys to be given a default value via an optional key
+    if (
+      optionalKeys?.find((optionalWithDefault) =>
+        new RegExp(`^${requiredKey}=`).test(optionalWithDefault)
+      )
+    ) {
+      continue;
+    }
     throw new DataError(`No data given for the required key: ${requiredKey}`);
   }
 
