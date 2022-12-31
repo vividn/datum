@@ -9,19 +9,25 @@ function emit(doc: unknown, value: unknown) {
 export const structuresView: DatumView<EitherDocument> = {
   name: "datum_structures",
   map: (doc) => {
-    function sortedSubkeys(obj: { [key: string]: any }): string[] {
-      const listOfDeepKeys: string[] = [];
+    function sortedSubkeys(obj: { [key: string]: any }): string[][] {
+      const subkeysByOrder: string[][] = [];
+      const topOrderKeys: string[] = [];
       const keys = Object.keys(obj).sort();
       for (const key of keys) {
-        listOfDeepKeys.push(key);
+        topOrderKeys.push(key);
         const val = obj[key];
         if (typeof val === "object" && val !== null && !Array.isArray(val)) {
-          const subKeys = sortedSubkeys(val);
-          const prefixedSubKeys = subKeys.map((subkey) => key + "." + subkey);
-          listOfDeepKeys.push(...prefixedSubKeys);
+          sortedSubkeys(val).map((subkeyArray, index) => {
+            const prefixedSubKeys = subkeyArray.map(
+              (subkey) => key + "." + subkey
+            );
+            (subkeysByOrder[index] = subkeysByOrder[index] || []).push(
+              ...prefixedSubKeys
+            );
+          });
         }
       }
-      return listOfDeepKeys;
+      return [topOrderKeys, ...subkeysByOrder];
     }
 
     delete (doc as any)["_rev"];
@@ -37,6 +43,7 @@ export const dataStructuresView: DatumView<EitherDocument> = {
   name: "datum_data_structures",
   map: (doc) => {
     function sortedSubkeys(obj: { [key: string]: any }): string[] {
+      const keysByOrder: string[][] = [];
       const listOfDeepKeys: string[] = [];
       const keys = Object.keys(obj).sort();
       for (const key of keys) {
