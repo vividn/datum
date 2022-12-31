@@ -17,6 +17,10 @@ export function builder(yargs: Argv): Argv {
     .positional("mapName", {
       describe: "Name of the mapName to use",
     })
+    .positional("groupLevel", {
+      describe: "how far to group the key arrays when reducing",
+      type: "number",
+    })
     .options({
       // TODO: DRY out with mapCmd
       view: {
