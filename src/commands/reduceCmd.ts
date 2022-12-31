@@ -25,7 +25,7 @@ export function builder(yargs: Argv): Argv {
       // TODO: DRY out with mapCmd
       view: {
         describe:
-          'use a different view than "default". Can also be speified in the mapName by using a slash i.e. map/view',
+          'use a different view than "default". TODO: Can also be specified in the mapName by using a slash i.e. map/view',
         type: "string",
         nargs: 1,
       },

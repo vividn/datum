@@ -126,10 +126,10 @@ describe("structuresView", () => {
     };
     structuresView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(["abc", "def", "zed"], null);
+    expect(emitMock).toHaveBeenCalledWith([["abc", "def", "zed"]], null);
   });
 
-  it("emits the subkeys (also alphabettically) as well if a field contains an object", () => {
+  it("emits the subkeys grouped by order (also alphabettically) as well if a field contains an object", () => {
     const doc: DataOnlyDocument = {
       _id: "doc",
       _rev: "some_revision",
@@ -149,16 +149,16 @@ describe("structuresView", () => {
     expect(emitMock).toHaveBeenCalledTimes(1);
     expect(emitMock).toHaveBeenCalledWith(
       [
-        "empty",
-        "meta",
-        "meta.modifyTime",
-        "normalValue",
-        "withData",
-        "withData.nested",
-        "withData.nested.even",
-        "withData.someKey",
-        "withData.zdx",
+        ["empty", "meta", "normalValue", "withData"],
+        [
+          "meta.modifyTime",
+          "withData.nested",
+          "withData.someKey",
+          "withData.zdx",
+        ],
+        ["withData.nested.even"],
       ],
+
       null
     );
   });
@@ -201,6 +201,9 @@ describe("dataStructuresView", () => {
         nested: {
           zzz: "abc",
           aaa: "xxx",
+          deeper: {
+            value: 1,
+          },
         },
       },
       meta: { modifyTime: "2021-09-07T19:26:54.442Z" },
@@ -211,7 +214,11 @@ describe("dataStructuresView", () => {
 
     expect(emitMock).toHaveBeenCalledTimes(1);
     expect(emitMock).toHaveBeenCalledWith(
-      ["empty", "nested", "nested.aaa", "nested.zzz", "someKey", "zdx"],
+      [
+        ["empty", "nested", "someKey", "zdx"],
+        ["nested.aaa", "nested.deeper", "nested.zzz"],
+        ["nested.deeper.value"],
+      ],
       null
     );
   });
