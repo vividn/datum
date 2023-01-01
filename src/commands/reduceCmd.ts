@@ -4,8 +4,9 @@ import { renderView } from "../output/renderView";
 import { MapCmdArgs } from "./mapCmd";
 import { DocumentViewParams } from "nano";
 import { inferType } from "../utils/inferType";
+import { startsWith } from "../utils/startsWith";
 
-export const command = "reduce <mapName> [groupLevel]";
+export const command = "reduce <mapName> [groupLevel] [start] [end]";
 export const desc = "display a reduction of a map";
 
 export type ReduceCmdArgs = MapCmdArgs & {
@@ -20,6 +21,16 @@ export function builder(yargs: Argv): Argv {
     .positional("groupLevel", {
       describe: "how far to group the key arrays when reducing",
       type: "number",
+    })
+    .positional("start", {
+      describe:
+        "Limit results to keys that start with this value. If 'end' is also given, acts as the start_key parameter",
+      type: "string",
+    })
+    .positional("end", {
+      describe:
+        "If given, then start acts as start_key and this acts as end_key parameter",
+      type: "string",
     })
     .options({
       // TODO: DRY out with mapCmd
@@ -48,10 +59,19 @@ export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
   const viewParams: DocumentViewParams = args.params
     ? inferType(args.params)
     : {};
+  const startEndParams = args.end
+    ? {
+        start_key: inferType(args.start as string),
+        end_key: inferType(args.end),
+      }
+    : args.start
+    ? startsWith(inferType(args.start))
+    : {};
   const viewResult = await db.view(args.mapName, args.view ?? "default", {
     reduce: true,
     group_level: args.groupLevel,
     ...viewParams,
+    ...startEndParams,
   });
   renderView(viewResult);
 }
