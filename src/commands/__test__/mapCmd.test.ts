@@ -12,4 +12,6 @@ describe("mapCmd", () => {
     "prioritizes a design document with / in it over using the named function of whats prior to the slash"
   );
   it.todo("can display a different map function by specifying view");
+  it.todo("can easily specify the startsWith")
+  it.todo("uses start_key and end_key if another value is passed after startsWith")
 });
