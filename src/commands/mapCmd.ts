@@ -4,12 +4,15 @@ import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
 import { DocumentViewParams } from "nano";
 import { inferType } from "../utils/inferType";
+import { startsWith } from "../utils/startsWith";
 
-export const command = "map <mapName>";
+export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
 
 export type MapCmdArgs = BaseDatumArgs & {
   mapName: string;
+  start?: string;
+  end?: string;
   view?: string;
   reduce?: boolean;
   params?: string;
@@ -19,6 +22,17 @@ export function builder(yargs: Argv): Argv {
   return yargs
     .positional("mapName", {
       describe: "Name of the design document and the map function",
+      type: "string",
+    })
+    .positional("start", {
+      describe:
+        "Limit results to keys that start with this value. If 'end' is also given, acts as the start_key parameter",
+      type: "string",
+    })
+    .positional("end", {
+      describe:
+        "If given, then start acts as start_key and this acts as end_key parameter",
+      type: "string",
     })
     .options({
       view: {
@@ -46,9 +60,18 @@ export async function mapCmd(args: MapCmdArgs): Promise<void> {
   const viewParams: DocumentViewParams = args.params
     ? inferType(args.params)
     : {};
+  const startEndParams = args.end
+    ? {
+        start_key: inferType(args.start as string),
+        end_key: inferType(args.end),
+      }
+    : args.start
+    ? startsWith(inferType(args.start))
+    : {};
   const viewResult = await db.view(args.mapName, args.view ?? "default", {
     reduce: args.reduce ?? false,
     ...viewParams,
+    ...startEndParams,
   });
   renderView(viewResult);
 }
