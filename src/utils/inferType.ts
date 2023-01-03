@@ -61,6 +61,9 @@ export function inferType(value: number | string, fieldName?: string): any {
   if (typeof value === "number") {
     return value;
   }
+  if (/^,/.test(value)) {
+    return inferType(`[${value.slice(1)}]`);
+  }
   if (/^null$/i.test(value)) {
     return null;
   }
