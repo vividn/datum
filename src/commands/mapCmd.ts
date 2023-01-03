@@ -71,7 +71,7 @@ export async function mapCmd(args: MapCmdArgs): Promise<void> {
   const viewResult = await db.view(args.mapName, args.view ?? "default", {
     reduce: args.reduce ?? false,
     ...viewParams,
-    ...startEndParams
+    ...startEndParams,
   });
   renderView(viewResult);
 }
