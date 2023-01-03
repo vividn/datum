@@ -39,6 +39,7 @@ describe("inferType", () => {
       3,
       ["mixed", [2], "nested"],
     ]);
+    expect(inferType("[a, null, 34]")).toEqual(["a", null, 34]);
   });
 
   it("converts JSON looking data", () => {
@@ -50,6 +51,13 @@ describe("inferType", () => {
     expect(inferType("{flat: {earth: [or, 1, turtle, shell]}}")).toEqual({
       flat: { earth: ["or", 1, "turtle", "shell"] },
     });
+  });
+
+  it("infers strings that start with commas as arrays", () => {
+    expect(inferType(",")).toEqual([]);
+    expect(inferType(",3")).toEqual([3]);
+    expect(inferType(",abc")).toEqual(["abc"]);
+    expect(inferType(",14,abc,null")).toEqual([14, "abc", null]);
   });
 
   it("parses weird looking things as strings", () => {
