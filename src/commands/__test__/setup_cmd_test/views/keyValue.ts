@@ -11,5 +11,5 @@ export const keyValueView: DatumView = {
     if (doc.data.key && doc.data.value) {
       emit(doc.data.key, doc.data.value);
     }
-  }
+  },
 };
