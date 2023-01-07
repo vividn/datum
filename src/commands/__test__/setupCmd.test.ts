@@ -39,3 +39,8 @@ it("adds datum views into the db", async () => {
   await setupCmd({ db: dbName });
   await db.get("_design/datum_sub_human_id");
 });
+
+it("adds project views into the db", async () => {
+  await setupCmd({ db: dbName, projectDir: __dirname });
+  await db.get("_design/key_value_view");
+});

@@ -20,7 +20,7 @@ export async function getDbDatumViews({
 }): Promise<DatumView[]> {
   let dbViews: { [key: string]: DatumView };
   try {
-    dbViews = (await import(`${projectDir}/${dbName}`)) as {
+    dbViews = (await import(`${projectDir}/${dbName}/views`)) as {
       [name: string]: DatumView;
     };
   } catch (e: any) {
