@@ -1,6 +1,6 @@
-import { DatumView } from "../../src/views/viewDocument";
-import { DatumDocument } from "../../src/documentControl/DatumDocument";
-import { _emit } from "../../src/views/emit";
+import { DatumView } from "../../../src/views/viewDocument";
+import { DatumDocument } from "../../../src/documentControl/DatumDocument";
+import { _emit } from "../../../src/views/emit";
 
 function emit(doc: unknown, value: unknown) {
   _emit(doc, value);
