@@ -1,15 +1,15 @@
-import { BaseDatumArgs } from "../input/baseYargs";
 import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickId } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
 
-export type GetCmdArgs = BaseDatumArgs & QuickIdArg;
+export type GetCmdArgs = MainDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
   return quickIdArg(yargs);

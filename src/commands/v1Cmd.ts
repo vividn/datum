@@ -1,4 +1,3 @@
-import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
@@ -8,12 +7,13 @@ import { flatten } from "table/dist/src/utils";
 import { ViewRow } from "../utils/utilityTypes";
 import * as fs from "fs";
 import path from "path";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = "v1 [field..]";
 export const description =
   "export in the style of the old datum format. Outputs to stdout unless --output-file or --output-dir is given";
 
-export type V1CmdArgs = BaseDatumArgs & {
+export type V1CmdArgs = MainDatumArgs & {
   field: string[];
   outputDir?: string;
 };

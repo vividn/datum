@@ -1,10 +1,10 @@
 import Nano, { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
-import { BaseDatumArgs } from "../input/baseYargs";
 import { pass } from "../utils/pass";
+import { MainDatumArgs } from "../input/mainYargs";
 
-export function connectNano(args: BaseDatumArgs): Nano.ServerScope {
+export function connectNano(args: MainDatumArgs): Nano.ServerScope {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env });
   }
@@ -22,7 +22,7 @@ export function connectNano(args: BaseDatumArgs): Nano.ServerScope {
 }
 
 export async function connectDb(
-  args: BaseDatumArgs
+  args: MainDatumArgs
 ): Promise<DocumentScope<EitherPayload>> {
   const nano = connectNano(args);
   const { db: dbName = "datum" } = args;
