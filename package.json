@@ -7,7 +7,8 @@
   "license": "UNLICENSED",
   "main": "build/src/index.js",
   "bin": {
-    "dtm": "./build/src/index.js"
+    "dtm": "./build/src/index.js",
+    "eqcheck": "./build/projects/finance/src/eqcheck.js"
   },
   "scripts": {
     "test": "jest",
