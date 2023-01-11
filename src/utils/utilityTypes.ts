@@ -1,9 +1,10 @@
-import { DocumentViewResponse } from "nano";
-import { EitherPayload } from "../documentControl/DatumDocument";
+import { EitherDocument } from "../documentControl/DatumDocument";
 
 export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
 
-export type ViewRow<RowValueType> = DocumentViewResponse<
-  RowValueType,
-  EitherPayload
->["rows"][0];
+export type ViewRow<KeyType, ValueType, DocumentType = EitherDocument> = {
+  id: string;
+  key: KeyType;
+  value: ValueType;
+  doc?: DocumentType;
+};

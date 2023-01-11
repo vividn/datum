@@ -4,10 +4,10 @@ import { datumV1View } from "../views/datumViews";
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { flatten } from "table/dist/src/utils";
-import { ViewRow } from "../utils/utilityTypes";
 import * as fs from "fs";
 import path from "path";
 import { MainDatumArgs } from "../input/mainYargs";
+import { V1MapRow } from "../views/datumViews/datumV1";
 
 export const command = "v1 [field..]";
 export const description =
@@ -106,9 +106,10 @@ function createHeader(field: string): string[] {
 async function getRows(
   fields: string[],
   db: DocumentScope<EitherPayload>
-): Promise<ViewRow<string[]>[]> {
+): Promise<V1MapRow[]> {
   if (fields.length === 0) {
-    return (await db.view<string[]>(datumV1View.name, "default")).rows;
+    return (await db.view<string[]>(datumV1View.name, "default"))
+      .rows as V1MapRow[];
   }
   const groupedRows = await Promise.all(
     fields.map(async (field) => {
