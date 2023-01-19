@@ -19,7 +19,7 @@ export type EqDoc = DatumDocument<{
   type: "eq";
   curr: string;
   acc: string;
-  amount: number;
+  bal: number;
   comment?: string | string[];
 }>;
 export type XcDoc = DatumDocument<{

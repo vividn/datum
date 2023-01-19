@@ -1,10 +1,14 @@
 import { _emit } from "../emit";
 import { DatumView } from "../viewDocument";
 import { DatumDocument } from "../../documentControl/DatumDocument";
+import { ViewRow } from "../../utils/utilityTypes";
+import { isoDatetime } from "../../time/timeUtils";
 
 function emit(doc: unknown, value: unknown) {
   _emit(doc, value);
 }
+
+export type V1MapRow = ViewRow<[string, isoDatetime], string[]>;
 
 export const datumV1View: DatumView<DatumDocument> = {
   name: "datum_v1_view",

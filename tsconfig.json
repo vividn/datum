@@ -16,7 +16,8 @@
     "typeRoots": ["./node_modules/@types", "./typings"],
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "jsx": "react"
+    "jsx": "react",
+    "skipLibCheck": true
   },
   "include": ["src/**/*", "./typings", "./projects"],
   "exclude": ["node_modules", "src/**/__test__"]

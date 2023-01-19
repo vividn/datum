@@ -1,4 +1,3 @@
-import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import {
   DatumData,
@@ -14,12 +13,13 @@ import { getBorderCharacters, table } from "table";
 import { humanTime } from "../time/humanTime";
 import { interpolateFields } from "../utils/interpolateFields";
 import { getOccurTime } from "../time/getOccurTime";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = ["tail [field]"];
 export const desc =
   "show the most recently occured/modified/created entries in the db";
 
-export type TailCmdArgs = BaseDatumArgs & {
+export type TailCmdArgs = MainDatumArgs & {
   num?: number;
   field?: string;
   metric?: "occur" | "create" | "modify";

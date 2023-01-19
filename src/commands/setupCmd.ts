@@ -1,12 +1,12 @@
 import { Argv } from "yargs";
-import { BaseDatumArgs } from "../input/baseYargs";
 import { setupDatumViews } from "../views/setupDatumViews";
 import { connectDb } from "../auth/connectDb";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = "setup";
 export const desc = "setup the database for use with datum";
 
-export type SetupCmdArgs = BaseDatumArgs & {
+export type SetupCmdArgs = MainDatumArgs & {
   projectDir?: string;
 };
 
