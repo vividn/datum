@@ -1,11 +1,14 @@
 import { DocumentScope, DocumentViewParams, DocumentViewResponse } from "nano";
-import { EitherPayload } from "../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../documentControl/DatumDocument";
 import { DatumView, StringifiedDatumView } from "./viewDocument";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 type ViewMapType = {
   db: DocumentScope<EitherPayload>;
-  datumView: DatumView | StringifiedDatumView;
+  datumView: DatumView<EitherDocument<any>> | StringifiedDatumView;
   params?: Omit<DocumentViewParams, "reduce">;
 };
 export async function viewMap({

@@ -1,15 +1,15 @@
 import { Argv } from "yargs";
-import { BaseDatumArgs } from "../input/baseYargs";
 import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
 import { DocumentViewParams } from "nano";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
 
-export type MapCmdArgs = BaseDatumArgs & {
+export type MapCmdArgs = MainDatumArgs & {
   mapName: string;
   start?: string;
   end?: string;

@@ -1,0 +1,13 @@
+diff --git a/node_modules/nano/lib/nano.d.ts b/node_modules/nano/lib/nano.d.ts
+index 549db39..1447155 100644
+--- a/node_modules/nano/lib/nano.d.ts
++++ b/node_modules/nano/lib/nano.d.ts
+@@ -1658,7 +1658,7 @@ declare namespace nano {
+      * By default the information returned contains only the document ID and revision. */
+     rows: Array<{
+       id: string;
+-      key: string;
++      key: any;
+       value: V;
+       doc?: D & Document;
+     }>;

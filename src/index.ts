@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { baseYargs } from "./input/baseYargs";
 import { DocExistsError } from "./documentControl/base";
 import { addCmd, AddCmdArgs } from "./commands/addCmd";
 import { mapCmd, MapCmdArgs } from "./commands/mapCmd";
@@ -13,10 +12,11 @@ import { v1Cmd, V1CmdArgs } from "./commands/v1Cmd";
 import { migrateCmd, MigrateCmdArgs } from "./commands/migrateCmd";
 import { reduceCmd, ReduceCmdArgs } from "./commands/reduceCmd";
 import { Show } from "./input/outputArgs";
+import { MainDatumArgs, mainYargs } from "./input/mainYargs";
 
 export async function main(cliInput: string | string[]): Promise<void> {
-  const args = await baseYargs.parse(cliInput);
-  switch (args._[0]) {
+  const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
+  switch (args._?.[0]) {
     case "add":
       await addCmd(args as unknown as AddCmdArgs);
       break;

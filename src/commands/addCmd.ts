@@ -1,5 +1,4 @@
 import { Argv } from "yargs";
-import { BaseDatumArgs } from "../input/baseYargs";
 import {
   DataOnlyPayload,
   DatumMetadata,
@@ -19,6 +18,7 @@ import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
 import { DateTime, Duration } from "luxon";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = "add [data..]";
 export const desc = "add a document";
@@ -99,7 +99,7 @@ export function builder(yargs: Argv): Argv {
   });
 }
 
-export type AddCmdArgs = BaseDatumArgs &
+export type AddCmdArgs = MainDatumArgs &
   DataArgs &
   TimeArgs & {
     noMetadata?: boolean;

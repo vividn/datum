@@ -10,6 +10,8 @@ export function asViewDb(db: DocumentScope<any>): DocumentScope<ViewPayload> {
   return db as unknown as DocumentScope<ViewPayload>;
 }
 
+// TODO: Expand types of DatumView to include information about format of map rows and reduce values
+
 export type DatumView<D extends EitherDocument = EitherDocument> = {
   name: string;
   map: MapFunction<D>;

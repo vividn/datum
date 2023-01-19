@@ -1,14 +1,14 @@
-import { BaseDatumArgs } from "../input/baseYargs";
 import { Argv } from "yargs";
 import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
 import { quickId } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
+import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = ["delete <quickId>", "del <quickId>"];
 export const desc = "delete a document";
 
-export type DeleteCmdArgs = BaseDatumArgs & QuickIdArg;
+export type DeleteCmdArgs = MainDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
   return quickIdArg(yargs);
