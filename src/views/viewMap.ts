@@ -1,5 +1,8 @@
 import { DocumentScope, DocumentViewParams, DocumentViewResponse } from "nano";
-import { EitherDocument, EitherPayload } from "../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../documentControl/DatumDocument";
 import { DatumView, StringifiedDatumView } from "./viewDocument";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
