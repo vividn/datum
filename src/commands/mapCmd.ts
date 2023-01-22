@@ -37,7 +37,7 @@ export function builder(yargs: Argv): Argv {
     .options({
       view: {
         describe:
-          'use a different view than "default". Can also be speified in the mapName by using a slash i.e. map/view',
+          'use a different view than "default". TODO: Can also be speified in the mapName by using a slash i.e. map/view',
         type: "string",
         nargs: 1,
       },
@@ -57,9 +57,7 @@ export function builder(yargs: Argv): Argv {
 
 export async function mapCmd(args: MapCmdArgs): Promise<void> {
   const db = await connectDb(args);
-  const viewParams: DocumentViewParams = args.params
-    ? inferType(args.params)
-    : {};
+
   const startEndParams = args.end
     ? {
         start_key: inferType(args.start as string),
@@ -68,10 +66,16 @@ export async function mapCmd(args: MapCmdArgs): Promise<void> {
     : args.start
     ? startsWith(inferType(args.start))
     : {};
-  const viewResult = await db.view(args.mapName, args.view ?? "default", {
+  const viewParams: DocumentViewParams = {
     reduce: args.reduce ?? false,
-    ...viewParams,
     ...startEndParams,
-  });
+    ...(args.params ? inferType(args.params) : {}),
+  };
+
+  // TODO: parse map name for /viewName
+  const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
+  const viewResult = useAllDocs
+    ? await db.list(viewParams)
+    : await db.view(args.mapName, args.view ?? "default", viewParams);
   renderView(viewResult);
 }
