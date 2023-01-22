@@ -19,5 +19,5 @@ describe("mapCmd", () => {
 
   it.todo("lists available maps and reduces if no arguments are given");
 
-  it.todo("can list the _all_docs view from the database")
+  it.todo("can list the _all_docs view from the database");
 });
