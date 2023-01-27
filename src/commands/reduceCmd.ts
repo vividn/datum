@@ -56,9 +56,8 @@ export function builder(yargs: Argv): Argv {
 
 export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
   const db = await connectDb(args);
-  const viewParams: DocumentViewParams = args.params
-    ? inferType(args.params)
-    : {};
+
+  const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const startEndParams = args.end
     ? {
         start_key: inferType(args.start as string),
@@ -67,11 +66,29 @@ export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
     : args.start
     ? startsWith(inferType(args.start))
     : {};
-  const viewResult = await db.view(args.mapName, args.view ?? "default", {
-    reduce: true,
-    group_level: args.groupLevel,
-    ...viewParams,
+  const viewParams: DocumentViewParams = {
+    reduce: args.reduce ?? !useAllDocs,
     ...startEndParams,
-  });
+    ...(args.params ? inferType(args.params) : {}),
+  };
+
+  // TODO: parse map name for /viewName
+  let viewResult;
+  if (useAllDocs) {
+    const allDocs = await db.list({ ...viewParams });
+    viewResult = {
+      rows: [
+        { key: null, value: (await db.list(viewParams)).rows.length, id: "" },
+      ],
+      total_rows: allDocs.total_rows,
+      offset: allDocs.offset,
+    };
+  } else {
+    viewResult = await db.view(
+      args.mapName,
+      args.view ?? "default",
+      viewParams
+    );
+  }
   renderView(viewResult);
 }

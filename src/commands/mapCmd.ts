@@ -71,7 +71,6 @@ export async function mapCmd(args: MapCmdArgs): Promise<void> {
     ...startEndParams,
     ...(args.params ? inferType(args.params) : {}),
   };
-
   // TODO: parse map name for /viewName
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const viewResult = useAllDocs
