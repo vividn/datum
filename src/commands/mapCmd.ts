@@ -1,10 +1,11 @@
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
-import { DocumentViewParams } from "nano";
+import { DocumentViewParams, DocumentViewResponse } from "nano";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
 import { MainDatumArgs } from "../input/mainYargs";
+import { EitherPayload } from "../documentControl/DatumDocument";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
@@ -18,7 +19,7 @@ export type MapCmdArgs = MainDatumArgs & {
   params?: string;
 };
 
-export function builder(yargs: Argv): Argv {
+export function mapCmdYargs(yargs: Argv): Argv {
   return yargs
     .positional("mapName", {
       describe: "Name of the design document and the map function",
@@ -45,6 +46,7 @@ export function builder(yargs: Argv): Argv {
         describe:
           'whether to reduce, triggered directly by the "reduce" command',
         type: "boolean",
+        hidden: true,
       },
       params: {
         describe:
@@ -54,8 +56,11 @@ export function builder(yargs: Argv): Argv {
       },
     });
 }
+export const builder = mapCmdYargs;
 
-export async function mapCmd(args: MapCmdArgs): Promise<void> {
+export async function mapCmd(
+  args: MapCmdArgs
+): Promise<DocumentViewResponse<unknown, EitherPayload<unknown>>> {
   const db = await connectDb(args);
 
   const startEndParams = args.end
@@ -77,4 +82,5 @@ export async function mapCmd(args: MapCmdArgs): Promise<void> {
     ? await db.list(viewParams)
     : await db.view(args.mapName, args.view ?? "default", viewParams);
   renderView(viewResult);
+  return viewResult;
 }
