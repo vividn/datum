@@ -68,6 +68,7 @@ export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
     : {};
   const viewParams: DocumentViewParams = {
     reduce: args.reduce ?? !useAllDocs,
+    group_level: args.groupLevel,
     ...startEndParams,
     ...(args.params ? inferType(args.params) : {}),
   };
