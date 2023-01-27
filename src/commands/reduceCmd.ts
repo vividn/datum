@@ -6,7 +6,7 @@ import { DocumentViewParams } from "nano";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
 
-export const command = "reduce <mapName> [groupLevel] [start] [end]";
+export const command = "reduce <mapName> [start] [end]";
 export const desc = "display a reduction of a map";
 
 export type ReduceCmdArgs = MapCmdArgs & {
@@ -17,10 +17,6 @@ export function builder(yargs: Argv): Argv {
   return yargs
     .positional("mapName", {
       describe: "Name of the mapName to use",
-    })
-    .positional("groupLevel", {
-      describe: "how far to group the key arrays when reducing",
-      type: "number",
     })
     .positional("start", {
       describe:
@@ -50,6 +46,11 @@ export function builder(yargs: Argv): Argv {
           "extra params to pass to the view function. See nano's DocumentViewParams type",
         type: "string",
         alias: "p",
+      },
+      groupLevel: {
+        describe: "how far to group the key arrays when reducing",
+        type: "number",
+        alias: "g",
       },
     });
 }
