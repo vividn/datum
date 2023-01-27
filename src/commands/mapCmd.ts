@@ -1,11 +1,11 @@
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
-import { renderView } from "../output/renderView";
 import { DocumentViewParams, DocumentViewResponse } from "nano";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
 import { MainDatumArgs } from "../input/mainYargs";
 import { EitherPayload } from "../documentControl/DatumDocument";
+import { renderView } from "../output/renderView";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
@@ -16,7 +16,7 @@ export type MapCmdArgs = MainDatumArgs & {
   end?: string;
   view?: string;
   reduce?: boolean;
-  params?: string;
+  params?: DocumentViewParams;
 };
 
 export function mapCmdYargs(yargs: Argv): Argv {
@@ -51,8 +51,10 @@ export function mapCmdYargs(yargs: Argv): Argv {
       params: {
         describe:
           "extra params to pass to the view function. See nano's DocumentViewParams type",
-        type: "string",
         alias: "p",
+        coerce: (params): DocumentViewParams => {
+          return inferType(params) as DocumentViewParams;
+        },
       },
     });
 }
@@ -62,7 +64,6 @@ export async function mapCmd(
   args: MapCmdArgs
 ): Promise<DocumentViewResponse<unknown, EitherPayload<unknown>>> {
   const db = await connectDb(args);
-
   const startEndParams = args.end
     ? {
         start_key: inferType(args.start as string),
@@ -74,7 +75,7 @@ export async function mapCmd(
   const viewParams: DocumentViewParams = {
     reduce: args.reduce ?? false,
     ...startEndParams,
-    ...(args.params ? inferType(args.params) : {}),
+    ...(args.params ?? {}),
   };
   // TODO: parse map name for /viewName
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";

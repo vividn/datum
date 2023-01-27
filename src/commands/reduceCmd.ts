@@ -1,5 +1,4 @@
 import { Argv } from "yargs";
-import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
 import { mapCmd, MapCmdArgs, mapCmdYargs } from "./mapCmd";
 import { DocumentViewResponse } from "nano";
@@ -26,15 +25,13 @@ export function builder(yargs: Argv): Argv {
 export async function reduceCmd(
   args: ReduceCmdArgs
 ): Promise<DocumentViewResponse<unknown, EitherPayload<unknown>>> {
-  const db = await connectDb(args);
-
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
 
   // mock _count reduce function on the _all_docs list
   if (useAllDocs) {
     const mapResult = await mapCmd({
       ...args,
-      reduce: undefined,
+      reduce: false,
       show: Show.None,
     });
     const mockReduceResult = {
@@ -45,8 +42,16 @@ export async function reduceCmd(
     renderView(mockReduceResult);
     return mockReduceResult;
   }
+
+  const groupParams = args.groupLevel
+    ? { group_level: args.groupLevel, group: true }
+    : {};
   return await mapCmd({
     ...args,
     reduce: true,
+    params: {
+      ...groupParams,
+      ...(args.params ?? {}),
+    },
   });
 }
