@@ -6,6 +6,7 @@ import { startsWith } from "../utils/startsWith";
 import { MainDatumArgs } from "../input/mainYargs";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { renderView } from "../output/renderView";
+import { Show } from "../input/outputArgs";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
@@ -82,6 +83,8 @@ export async function mapCmd(
   const viewResult = useAllDocs
     ? await db.list(viewParams)
     : await db.view(args.mapName, args.view ?? "default", viewParams);
-  renderView(viewResult);
+  if (args.show !== Show.None) {
+    renderView(viewResult);
+  }
   return viewResult;
 }

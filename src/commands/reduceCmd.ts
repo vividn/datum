@@ -39,7 +39,9 @@ export async function reduceCmd(
       total_rows: mapResult.total_rows,
       offset: mapResult.offset,
     };
-    renderView(mockReduceResult);
+    if (args.show !== Show.None) {
+      renderView(mockReduceResult);
+    }
     return mockReduceResult;
   }
 
