@@ -10,6 +10,9 @@
     "dtm": "./build/src/index.js",
     "eqcheck": "./build/projects/finance/src/eqcheck.js"
   },
+  "engines": {
+    "node": ">18.0.0"
+  },
   "scripts": {
     "test": "jest",
     "testwatch": "jest --watchAll",
@@ -35,7 +38,7 @@
     "@types/lodash.unset": "^4.5.7",
     "@types/luxon": "^3.1.0",
     "@types/nano": "^7.0.0",
-    "@types/node": "^14.14.37",
+    "@types/node": "^18.13.0",
     "@types/pluralize": "^0.0.29",
     "@types/react": "^18.0.26",
     "@types/relaxed-json": "^1.0.1",
@@ -71,7 +74,7 @@
     "lodash.set": "^4.3.2",
     "lodash.unset": "^4.5.2",
     "luxon": "^3.2.0",
-    "nano": "^10.0.0",
+    "nano": "^10.1.2",
     "parse-duration": "^1.0.2",
     "pluralize": "^8.0.0",
     "react": "^18.2.0",
