@@ -1,10 +1,12 @@
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
-import { renderView } from "../output/renderView";
-import { DocumentViewParams } from "nano";
+import { DocumentViewParams, DocumentViewResponse } from "nano";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
 import { MainDatumArgs } from "../input/mainYargs";
+import { EitherPayload } from "../documentControl/DatumDocument";
+import { renderView } from "../output/renderView";
+import { Show } from "../input/outputArgs";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
@@ -15,10 +17,10 @@ export type MapCmdArgs = MainDatumArgs & {
   end?: string;
   view?: string;
   reduce?: boolean;
-  params?: string;
+  params?: DocumentViewParams;
 };
 
-export function builder(yargs: Argv): Argv {
+export function mapCmdYargs(yargs: Argv): Argv {
   return yargs
     .positional("mapName", {
       describe: "Name of the design document and the map function",
@@ -45,19 +47,24 @@ export function builder(yargs: Argv): Argv {
         describe:
           'whether to reduce, triggered directly by the "reduce" command',
         type: "boolean",
+        hidden: true,
       },
       params: {
         describe:
           "extra params to pass to the view function. See nano's DocumentViewParams type",
-        type: "string",
         alias: "p",
+        coerce: (params): DocumentViewParams => {
+          return inferType(params) as DocumentViewParams;
+        },
       },
     });
 }
+export const builder = mapCmdYargs;
 
-export async function mapCmd(args: MapCmdArgs): Promise<void> {
+export async function mapCmd(
+  args: MapCmdArgs
+): Promise<DocumentViewResponse<unknown, EitherPayload<unknown>>> {
   const db = await connectDb(args);
-
   const startEndParams = args.end
     ? {
         start_key: inferType(args.start as string),
@@ -69,13 +76,15 @@ export async function mapCmd(args: MapCmdArgs): Promise<void> {
   const viewParams: DocumentViewParams = {
     reduce: args.reduce ?? false,
     ...startEndParams,
-    ...(args.params ? inferType(args.params) : {}),
+    ...(args.params ?? {}),
   };
-
   // TODO: parse map name for /viewName
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const viewResult = useAllDocs
     ? await db.list(viewParams)
     : await db.view(args.mapName, args.view ?? "default", viewParams);
-  renderView(viewResult);
+  if (args.show !== Show.None) {
+    renderView(viewResult);
+  }
+  return viewResult;
 }
