@@ -5,16 +5,45 @@ import { pass } from "../utils/pass";
 import { MainDatumArgs } from "../input/mainYargs";
 
 export function connectNano(args: MainDatumArgs): Nano.ServerScope {
-  if (args.env !== undefined) {
-    dotenv.config({ path: args.env });
+  if (
+    process.env.NODE_ENV?.includes("dev") ||
+    process.env.NODE_ENV?.includes("test")
+  ) {
+    process.env.COUCHDB_USER = "admin";
+    process.env.COUCHDB_PASSWORD = "password";
+    process.env.COUCHDB_HOSTNAME = "localhost:5983";
   }
-  const env = process.env.NODE_ENV || "production";
-  const defaultHost =
-    env === "production" ? "localhost:5984" : "localhost:5983";
+  if (args.env !== undefined) {
+    dotenv.config({ path: args.env, override: true });
+  }
+
+  process.env.COUCHDB_HOSTNAME ??= "locahost:5984";
+
   const couchConfig = {
-    username: args.username ?? process.env.COUCHDB_USER ?? "admin",
-    password: args.password ?? process.env.COUCHDB_PASSWORD ?? "password",
-    hostname: args.host ?? process.env.COUCHDB_HOSTNAME ?? defaultHost,
+    username:
+      args.username ??
+      process.env.COUCHDB_USER ??
+      (() => {
+        throw new Error(
+          "No username set. Specify with --username, or COUCHDB_USER"
+        );
+      })(),
+    password:
+      args.password ??
+      process.env.COUCHDB_PASSWORD ??
+      (() => {
+        throw new Error(
+          "No password set. Specify with --password or COUCHDB_PASSWORD"
+        );
+      })(),
+    hostname:
+      args.host ??
+      process.env.COUCHDB_HOSTNAME ??
+      (() => {
+        throw new Error(
+          "No hostame set. Specify with --host or COUCHDB_HOSTNAME"
+        );
+      })(),
   };
   return Nano(
     `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`
