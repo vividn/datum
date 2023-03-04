@@ -14,7 +14,7 @@ export function connectNano(args: MainDatumArgs): Nano.ServerScope {
     process.env.COUCHDB_HOSTNAME = "localhost:5983";
   }
   if (args.env !== undefined) {
-    dotenv.config({ path: args.env });
+    dotenv.config({ path: args.env, override: true });
   }
 
   process.env.COUCHDB_HOSTNAME ??= "locahost:5984";
