@@ -14,6 +14,7 @@ export type DatumData<T = unknown> = GenericData<T> & {
   occurTime?: isoDatetime | isoDate;
   occurUtcOffset?: number;
   dur?: "start" | "end" | isoDuration;
+  field?: string;
 };
 
 export type OccurredData<T = unknown> = WithRequired<

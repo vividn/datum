@@ -12,10 +12,16 @@ export function asViewDb(db: DocumentScope<any>): DocumentScope<ViewPayload> {
 
 // TODO: Expand types of DatumView to include information about format of map rows and reduce values
 
-export type DatumView<D extends EitherDocument = EitherDocument> = {
+export type DatumView<
+  DocType extends EitherDocument = EitherDocument,
+  MapKey = unknown,
+  MapValue = unknown,
+  ReduceValue = MapValue
+> = {
   name: string;
-  map: MapFunction<D>;
-  reduce?: ReduceFunction | MultiReduceFunction;
+  emit: (key: MapKey, value: MapValue) => void;
+  map: MapFunction<DocType>;
+  reduce?: ReduceFunction<MapKey, MapValue, ReduceValue> | MultiReduceFunction;
   options?: ViewOptions;
 };
 
@@ -45,8 +51,16 @@ function isMultiReduce(
   return isPlainObject(reduce);
 }
 
-export type ReduceFunction =
-  | ((keysAndDocIds: [any, string][], values: [], rereduce: boolean) => any)
+export type ReduceFunction<
+  MapKey = unknown,
+  MapValue = unknown,
+  ReduceValue = unknown
+> =
+  | ((
+      keysAndDocIds: [MapKey, string][],
+      values: MapValue[],
+      rereduce: boolean
+    ) => ReduceValue)
   | BuiltInReduce;
 
 export type MapFunction<D extends EitherDocument = EitherDocument> = (
