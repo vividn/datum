@@ -4,8 +4,8 @@ import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { isoDate, isoDateOrTime, isoDatetime } from "../../../src/time/timeUtils";
 import { DatumView } from "../../../src/views/DatumView";
 
-function emit(doc: ChoreMapRow["key"], value: ChoreMapRow["value"]) {
-  _emit(doc, value);
+function emit(key: ChoreMapRow["key"], value: ChoreMapRow["value"]) {
+  _emit(key, value);
 }
 
 type ChoreDoc = TaskDoc &

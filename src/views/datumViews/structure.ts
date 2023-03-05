@@ -2,8 +2,8 @@ import { _emit } from "../emit";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { DatumView } from "../DatumView";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+function emit(key: unknown, value: unknown) {
+  _emit(key, value);
 }
 
 export const structuresView: DatumView<EitherDocument> = {

@@ -2,8 +2,8 @@ import { _emit } from "../../../src/views/emit";
 import { FinanceDoc } from "./balance";
 import { DatumView } from "../../../src/views/DatumView";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+function emit(key: unknown, value: unknown) {
+  _emit(key, value);
 }
 
 type MapRowValue = {

@@ -2,8 +2,8 @@ import { DatumView } from "../../../src/views/DatumView";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { _emit } from "../../../src/views/emit";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+function emit(key: unknown, value: unknown) {
+  _emit(key, value);
 }
 
 export type TaskDoc = DatumDocument<{

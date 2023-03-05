@@ -1,8 +1,8 @@
 import { _emit } from "../../../../views/emit";
 import { DatumView } from "../../../../views/DatumView";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+function emit(key: unknown, value: unknown) {
+  _emit(key, value);
 }
 
 export const keyValueView: DatumView = {

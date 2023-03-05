@@ -5,12 +5,13 @@ import {
   EitherDocument,
 } from "../../documentControl/DatumDocument";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+function emit(key: unknown, value: unknown): void {
+  _emit(key, value);
 }
 
 export const occurTimeView: DatumView<EitherDocument> = {
   name: "datum_occur_time",
+  emit,
   map: (doc) => {
     if (doc.data && doc.data.occurTime) {
       emit(doc.data.occurTime, {
