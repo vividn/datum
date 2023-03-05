@@ -110,7 +110,9 @@ export function isViewDocument(
 }
 
 export function datumViewToViewPayload(
-  datumView: DatumView<any, any, any, Record<string, any>> | StringifiedDatumView
+  datumView:
+    | DatumView<any, any, any, Record<string, any>>
+    | StringifiedDatumView
 ): ViewPayload {
   const views: ViewPayloadViews = {};
   const mapStr = datumView.map.toString();
