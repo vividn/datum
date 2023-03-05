@@ -2,9 +2,9 @@ import { _emit } from "../emit";
 import { DatumView } from "../DatumView";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { ViewRow } from "../../utils/utilityTypes";
-import { isoDate, isoDatetime } from "../../time/timeUtils";
+import { isoDateOrTime } from "../../time/timeUtils";
 
-type MapKey = [string, isoDatetime | isoDate];
+type MapKey = [string, isoDateOrTime];
 type MapValue = string[];
 
 function emit(key: MapKey, value: MapValue): void {

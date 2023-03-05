@@ -1,45 +1,79 @@
 import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
 import {
-  DataOnlyDocument,
+  DatumData,
+  DatumMetadata,
   EitherDocument,
 } from "../../documentControl/DatumDocument";
+import { isoDateOrTime } from "../../time/timeUtils";
 
-function emit(key: unknown, value: unknown): void {
+type MapKey = isoDateOrTime;
+type MapValue = {
+  field?: string;
+  dur?: string;
+};
+
+function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const occurTimeView: DatumView<EitherDocument> = {
+export const occurTimeView: DatumView<EitherDocument, MapKey, MapValue> = {
   name: "datum_occur_time",
   emit,
   map: (doc) => {
-    if (doc.data && doc.data.occurTime) {
-      emit(doc.data.occurTime, {
-        field: doc.data.field,
-        dur: doc.data.dur,
-        stop: doc.data.stop,
+    let data: DatumData;
+    if (doc.data && doc.meta) {
+      data = doc.data;
+    } else {
+      data = doc;
+    }
+    if (data.occurTime) {
+      emit(data.occurTime, {
+        field: data.field,
+        dur: data.dur,
       });
-    } else if ((doc as DataOnlyDocument).occurTime) {
-      doc = doc as DataOnlyDocument;
-      emit(doc.occurTime, { field: doc.field, dur: doc.dur, stop: doc.stop });
     }
   },
 };
 
-export const createTimeView: DatumView<EitherDocument> = {
+export const createTimeView: DatumView<EitherDocument, MapKey, MapValue> = {
   name: "datum_create_time",
+  emit,
   map: (doc) => {
-    if (doc.meta && doc.meta.createTime) {
-      emit(doc.meta.createTime, null);
+    let data: DatumData;
+    let meta: DatumMetadata;
+    if (doc.data && doc.meta) {
+      meta = doc.meta;
+      data = doc.data;
+    } else {
+      return;
+    }
+    if (meta.createTime) {
+      emit(meta.createTime, {
+        field: data.field,
+        dur: data.dur,
+      });
     }
   },
 };
 
-export const modifyTimeView: DatumView<EitherDocument> = {
+export const modifyTimeView: DatumView<EitherDocument, MapKey, MapValue> = {
   name: "datum_modify_time",
+  emit,
   map: (doc) => {
-    if (doc.meta && doc.meta.modifyTime) {
-      emit(doc.meta.modifyTime, null);
+    let data: DatumData;
+    let meta: DatumMetadata;
+    if (doc.data && doc.meta) {
+      meta = doc.meta;
+      data = doc.data;
+    } else {
+      return;
+    }
+    if (meta.modifyTime) {
+      emit(doc.meta.modifyTime, {
+        field: data.field,
+        dur: data.dur,
+      });
     }
   },
 };
