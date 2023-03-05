@@ -55,9 +55,9 @@ export const structuresView: DatumView<
 };
 
 type DataStructuresNamedReduceValues = {
-  default: number,
-  fieldList: string[]
-}
+  default: number;
+  fieldList: string[];
+};
 
 export const dataStructuresView: DatumView<
   DocType,
@@ -66,6 +66,7 @@ export const dataStructuresView: DatumView<
   DataStructuresNamedReduceValues
 > = {
   name: "datum_data_structures",
+  emit,
   map: (doc) => {
     function sortedSubkeys(obj: { [key: string]: any }): string[][] {
       const subkeysByOrder: string[][] = [];
@@ -94,7 +95,11 @@ export const dataStructuresView: DatumView<
   },
   reduce: {
     default: "_count",
-    fieldList: (keysAndDocIds: [string[][], string][], values, rereduce) => {
+    fieldList: (
+      keysAndDocIds: [string[][], string][],
+      values: string[][][] | string[][],
+      rereduce: false | true
+    ) => {
       if (!rereduce) {
         return keysAndDocIds.reduce((accum: string[], keyAndDocId) => {
           const [listOfFields] = keyAndDocId;

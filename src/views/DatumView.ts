@@ -53,7 +53,12 @@ export type ReduceFunction<
   | ((
       keysAndDocIds: [MapKey, string][],
       values: MapValue[],
-      rereduce: boolean
+      rereduce: false
+    ) => ReduceValue)
+  | ((
+      keysAndDocIds: [MapKey, null][],
+      values: ReduceValue[],
+      rereduce: true
     ) => ReduceValue)
   | BuiltInReduce;
 
