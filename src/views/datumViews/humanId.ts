@@ -8,6 +8,7 @@ function emit(key: unknown, value: unknown) {
 
 export const humanIdView: DatumView<EitherDocument> = {
   name: "datum_human_id",
+  emit,
   map: (doc) => {
     if (doc.meta && doc.meta.humanId) {
       emit(doc.meta.humanId, null);
@@ -17,6 +18,7 @@ export const humanIdView: DatumView<EitherDocument> = {
 
 export const subHumanIdView: DatumView<EitherDocument> = {
   name: "datum_sub_human_id",
+  emit,
   map: (doc) => {
     if (doc.meta && doc.meta.humanId) {
       const hid = doc.meta.humanId;
@@ -26,11 +28,14 @@ export const subHumanIdView: DatumView<EitherDocument> = {
       }
     }
   },
-  reduce: "_count",
+  reduce: {
+    default: "_count"
+  },
 };
 
 export const idToHumanView: DatumView<EitherDocument> = {
   name: "datum_id_to_human_id",
+  emit,
   map: (doc) => {
     if (doc.meta && doc.meta.humanId) {
       emit(doc._id, doc.meta.humanId);
