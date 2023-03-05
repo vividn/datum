@@ -110,12 +110,12 @@ export function isViewDocument(
 }
 
 export function datumViewToViewPayload(
-  datumView: DatumView | StringifiedDatumView
+  datumView: DatumView<any, any, any, Record<string, any>> | StringifiedDatumView
 ): ViewPayload {
   const views: ViewPayloadViews = {};
   const mapStr = datumView.map.toString();
   const datumReduce = datumView.reduce as
-    | NamedReduceFunctions<any, any, any>
+    | NamedReduceFunctions<any, any, Record<string, any>>
     | Record<string, string>;
   const options = datumView.options;
 
