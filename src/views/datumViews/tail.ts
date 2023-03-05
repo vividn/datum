@@ -1,4 +1,4 @@
-import { DatumView } from "../viewDocument";
+import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
 import {
   DataOnlyDocument,

@@ -3,7 +3,7 @@ import {
   DatumView,
   datumViewToViewPayload,
   StringifiedDatumView,
-} from "../viewDocument";
+} from "../DatumView";
 import { _emit } from "../emit";
 import { resetTestDb, testNano } from "../../test-utils";
 import { EitherPayload } from "../../documentControl/DatumDocument";

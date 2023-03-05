@@ -1,5 +1,5 @@
 import { _emit } from "../../../src/views/emit";
-import { DatumView } from "../../../src/views/viewDocument";
+import { DatumView } from "../../../src/views/DatumView";
 
 function emit(doc: unknown, value: unknown) {
   _emit(doc, value);

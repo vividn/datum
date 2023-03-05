@@ -3,7 +3,7 @@ import {
   datumViewToViewPayload,
   StringifiedDatumView,
   ViewDocument,
-} from "./viewDocument";
+} from "./DatumView";
 import { addDoc } from "../documentControl/addDoc";
 import { BaseDocControlArgs } from "../documentControl/base";
 

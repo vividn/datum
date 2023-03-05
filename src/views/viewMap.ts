@@ -3,7 +3,7 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
-import { DatumView, StringifiedDatumView } from "./viewDocument";
+import { DatumView, StringifiedDatumView } from "./DatumView";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 type ViewMapType = {

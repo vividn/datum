@@ -1,4 +1,4 @@
-import { DatumView } from "../../../src/views/viewDocument";
+import { DatumView } from "../../../src/views/DatumView";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { _emit } from "../../../src/views/emit";
 

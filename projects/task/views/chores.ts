@@ -2,7 +2,7 @@ import { _emit } from "../../../src/views/emit";
 import { TaskDoc } from "./inbox";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { isoDate, isoDateOrTime, isoDatetime } from "../../../src/time/timeUtils";
-import { DatumView } from "../../../src/views/viewDocument";
+import { DatumView } from "../../../src/views/DatumView";
 
 function emit(doc: ChoreMapRow["key"], value: ChoreMapRow["value"]) {
   _emit(doc, value);

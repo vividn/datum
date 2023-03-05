@@ -1,5 +1,5 @@
 import { _emit } from "../emit";
-import { DatumView } from "../viewDocument";
+import { DatumView } from "../DatumView";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { ViewRow } from "../../utils/utilityTypes";
 import { isoDatetime } from "../../time/timeUtils";
