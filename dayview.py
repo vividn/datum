@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import shutil
+import tempfile
 
 import pandas as pd
 import numpy as np
@@ -122,6 +124,8 @@ def set_constants():
     imagedir = home + "Analysis/Pictures"
     global imagename
     imagename = "dayview"
+    global imagetype
+    imagetype = ".png"
 
 
 #########################################
@@ -176,7 +180,7 @@ def main(**kwargs):
         globals()[key] = value
 
     # Set where image is saved
-    imageout = imagedir + '/' + imagename + ".png"
+    imageout = imagedir + '/' + imagename + imagetype
 
     # Generate the fonts
     imfont = ImageFont.truetype(fontpath + imfontname, fontsize)
@@ -503,7 +507,9 @@ def main(**kwargs):
         )
         draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
 
-    im.save(imageout)
+    with tempfile.NamedTemporaryFile(suffix=imagetype) as tmp:
+        im.save(tmp.name)
+        shutil.copy(tmp.name, imageout)
 
 
 ###########################################################
