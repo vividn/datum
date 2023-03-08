@@ -22,7 +22,7 @@ export type DatumView<
   name: string;
   emit: (key: MapKey, value: MapValue) => void;
   map: MapFunction<DocType>;
-  reduce?: NamedReduceFunctions<MapKey, MapKey, NamedReduceValues>;
+  reduce?: NamedReduceFunctions<MapKey, MapValue, NamedReduceValues>;
   options?: ViewOptions;
 };
 
@@ -45,20 +45,25 @@ export type NamedReduceFunctions<
     | BuiltInReduce;
 };
 
+type FirstReduceArgs<MapKey, MapValue, _ReduceValue> = [
+  keysAndDocIds: [MapKey, string][],
+  values: MapValue[],
+  rereduce: false
+];
+type ReReduceArgs<MapKey, _MapValue, ReduceValue> = [
+  keysAndDocIds: [MapKey, null][],
+  values: ReduceValue[],
+  rereduce: true
+];
 export type ReduceFunction<
   MapKey = unknown,
   MapValue = unknown,
   ReduceValue = unknown
 > =
   | ((
-      keysAndDocIds: [MapKey, string][],
-      values: MapValue[],
-      rereduce: false
-    ) => ReduceValue)
-  | ((
-      keysAndDocIds: [MapKey, null][],
-      values: ReduceValue[],
-      rereduce: true
+      ...args:
+        | FirstReduceArgs<MapKey, MapValue, ReduceValue>
+        | ReReduceArgs<MapKey, MapValue, ReduceValue>
     ) => ReduceValue)
   | BuiltInReduce;
 

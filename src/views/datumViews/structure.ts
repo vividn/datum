@@ -1,6 +1,6 @@
 import { _emit } from "../emit";
 import { EitherDocument } from "../../documentControl/DatumDocument";
-import { DatumView } from "../DatumView";
+import { DatumView, ReduceFunction } from "../DatumView";
 
 type DocType = EitherDocument;
 type MapKey = string[][];
@@ -59,6 +59,35 @@ type DataStructuresNamedReduceValues = {
   fieldList: string[];
 };
 
+const fieldListReduce: ReduceFunction<MapKey, MapValue, string[]> = (
+  keysAndDocIds,
+  values,
+  rereduce
+) => {
+  if (!rereduce) {
+    return keysAndDocIds.reduce((accum: string[], keyAndDocId) => {
+      const [listOfFields] = keyAndDocId;
+      listOfFields.forEach((fieldsOfOrder) => {
+        fieldsOfOrder.forEach((field) => {
+          if (!accum.includes(field)) {
+            accum.push(field);
+          }
+        });
+      });
+      return accum;
+    }, [] as string[]);
+  } else {
+    return values.reduce((accum, listOfFields) => {
+      listOfFields.forEach((field) => {
+        if (!accum.includes(field)) {
+          accum.push(field);
+        }
+      });
+      return accum;
+    });
+  }
+};
+
 export const dataStructuresView: DatumView<
   DocType,
   MapKey,
@@ -95,33 +124,6 @@ export const dataStructuresView: DatumView<
   },
   reduce: {
     default: "_count",
-    fieldList: (
-      keysAndDocIds: [string[][], string][],
-      values: string[][][] | string[][],
-      rereduce: false | true
-    ) => {
-      if (!rereduce) {
-        return keysAndDocIds.reduce((accum: string[], keyAndDocId) => {
-          const [listOfFields] = keyAndDocId;
-          listOfFields.forEach((fieldsOfOrder) => {
-            fieldsOfOrder.forEach((field) => {
-              if (!accum.includes(field)) {
-                accum.push(field);
-              }
-            });
-          });
-          return accum;
-        }, [] as string[]);
-      } else {
-        return (values as string[][]).reduce((accum, listOfFields) => {
-          listOfFields.forEach((field) => {
-            if (!accum.includes(field)) {
-              accum.push(field);
-            }
-          });
-          return accum;
-        });
-      }
-    },
+    fieldList: fieldListReduce,
   },
 };
