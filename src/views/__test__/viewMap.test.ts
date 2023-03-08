@@ -4,7 +4,7 @@ import {
   EitherPayload,
 } from "../../documentControl/DatumDocument";
 import { DocumentScope, DocumentViewResponse } from "nano";
-import { DatumView, StringifiedDatumView } from "../viewDocument";
+import { DatumView, StringifiedDatumView } from "../DatumView";
 import {
   mockDocDeletedError,
   mockDocMissingError,

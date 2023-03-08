@@ -1,4 +1,3 @@
-import isPlainObject from "lodash.isplainobject";
 import {
   DatumMetadata,
   EitherDocument,
@@ -12,15 +11,19 @@ export function asViewDb(db: DocumentScope<any>): DocumentScope<ViewPayload> {
 
 // TODO: Expand types of DatumView to include information about format of map rows and reduce values
 
-export type DatumView<D extends EitherDocument = EitherDocument> = {
+export type DatumView<
+  DocType extends EitherDocument = EitherDocument,
+  MapKey = unknown,
+  MapValue = unknown,
+  NamedReduceValues extends Record<string, any> | undefined = {
+    default: unknown;
+  }
+> = {
   name: string;
-  map: MapFunction<D>;
-  reduce?: ReduceFunction | MultiReduceFunction;
+  emit: (key: MapKey, value: MapValue) => void;
+  map: MapFunction<DocType>;
+  reduce?: NamedReduceFunctions<MapKey, MapValue, NamedReduceValues>;
   options?: ViewOptions;
-};
-
-type MultiReduceFunction = {
-  [viewName: string]: ReduceFunction;
 };
 
 type BuiltInReduce = "_sum" | "_stats" | "_count" | "_approx_count_distinct";
@@ -28,25 +31,40 @@ type BuiltInReduce = "_sum" | "_stats" | "_count" | "_approx_count_distinct";
 export type StringifiedDatumView = {
   name: string;
   map: string;
-  reduce?: string | MultiStringReduceFunction;
+  reduce?: Record<string, string>;
   options?: ViewOptions;
 };
 
-type MultiStringReduceFunction = { [viewName: string]: string };
+export type NamedReduceFunctions<
+  MapKey,
+  MapValue,
+  NamedReduceValues extends Record<string, any> | undefined
+> = {
+  [T in keyof NamedReduceValues]:
+    | ReduceFunction<MapKey, MapValue, NamedReduceValues[T]>
+    | BuiltInReduce;
+};
 
-function isMultiReduce(
-  reduce:
-    | undefined
-    | ReduceFunction
-    | string
-    | MultiReduceFunction
-    | MultiStringReduceFunction
-): reduce is MultiReduceFunction | MultiStringReduceFunction {
-  return isPlainObject(reduce);
-}
-
-export type ReduceFunction =
-  | ((keysAndDocIds: [any, string][], values: [], rereduce: boolean) => any)
+type FirstReduceArgs<MapKey, MapValue, _ReduceValue> = [
+  keysAndDocIds: [MapKey, string][],
+  values: MapValue[],
+  rereduce: false
+];
+type ReReduceArgs<MapKey, _MapValue, ReduceValue> = [
+  keysAndDocIds: [MapKey, null][],
+  values: ReduceValue[],
+  rereduce: true
+];
+export type ReduceFunction<
+  MapKey = unknown,
+  MapValue = unknown,
+  ReduceValue = unknown
+> =
+  | ((
+      ...args:
+        | FirstReduceArgs<MapKey, MapValue, ReduceValue>
+        | ReReduceArgs<MapKey, MapValue, ReduceValue>
+    ) => ReduceValue)
   | BuiltInReduce;
 
 export type MapFunction<D extends EitherDocument = EitherDocument> = (
@@ -97,14 +115,23 @@ export function isViewDocument(
 }
 
 export function datumViewToViewPayload(
-  datumView: DatumView | StringifiedDatumView
+  datumView:
+    | DatumView<any, any, any, Record<string, any> | undefined>
+    | StringifiedDatumView
 ): ViewPayload {
   const views: ViewPayloadViews = {};
   const mapStr = datumView.map.toString();
-  const datumReduce = datumView.reduce;
+  const datumReduce = datumView.reduce as
+    | NamedReduceFunctions<any, any, Record<string, any>>
+    | Record<string, string>;
   const options = datumView.options;
 
-  if (isMultiReduce(datumReduce)) {
+  if (datumReduce === undefined) {
+    views.default = {
+      map: mapStr,
+      options,
+    };
+  } else {
     for (const reduceName in datumReduce) {
       views[reduceName] = {
         map: mapStr,
@@ -112,24 +139,12 @@ export function datumViewToViewPayload(
         options,
       };
     }
-    if (views.default === undefined) {
+    if (!views.default) {
       views.default = {
         map: mapStr,
         options,
       };
     }
-  } else {
-    views.default =
-      datumReduce === undefined
-        ? {
-            map: mapStr,
-            options,
-          }
-        : {
-            map: mapStr,
-            reduce: datumReduce.toString(),
-            options,
-          };
   }
 
   return {

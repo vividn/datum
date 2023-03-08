@@ -1,6 +1,6 @@
 import { testDbLifecycle } from "../../test-utils";
 import { editMigration } from "../editMigration";
-import { asViewDb } from "../../views/viewDocument";
+import { asViewDb } from "../../views/DatumView";
 import * as editInTerminal from "../../utils/editInTerminal";
 import { getMigrationId, getMigrationViewName } from "../migrations";
 

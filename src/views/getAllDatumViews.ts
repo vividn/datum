@@ -1,4 +1,4 @@
-import { DatumView } from "./viewDocument";
+import { DatumView } from "./DatumView";
 import * as datumViews from "./datumViews";
 
 const typedDatumViews = datumViews as { [name: string]: DatumView };

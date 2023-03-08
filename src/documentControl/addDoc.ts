@@ -19,7 +19,7 @@ import {
   isViewDocument,
   isViewPayload,
   ViewPayload,
-} from "../views/viewDocument";
+} from "../views/DatumView";
 import { assembleId } from "../ids/assembleId";
 
 function payloadMatchesDbData(

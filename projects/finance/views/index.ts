@@ -1,3 +1,4 @@
-export { balanceView, categorizedBalanceView } from "./balance";
+export { balanceView } from "./balance";
+export { categorizedBalanceView } from "./categorizedBalance";
 export { withOrderedReduceView } from "./withOrderedReduce";
 export { equalityView } from "./equalityCheck";

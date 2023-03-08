@@ -2,7 +2,7 @@ import { Argv } from "yargs";
 import { MigrateCmdArgs } from "../migrateCmd";
 import { connectDb } from "../../auth/connectDb";
 import { editMigration } from "../../migrations/editMigration";
-import { MapFunction } from "../../views/viewDocument";
+import { MapFunction } from "../../views/DatumView";
 
 export const command = ["edit <name>", "add <name>"];
 export const desc = "add or edit a migration";

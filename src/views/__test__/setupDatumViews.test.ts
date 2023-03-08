@@ -3,6 +3,7 @@ import * as insertDatumViewModule from "../insertDatumView";
 import { setupDatumViews } from "../setupDatumViews";
 import { _emit } from "../emit";
 import * as getAllDatumViews from "../getAllDatumViews";
+import { DatumView } from "../DatumView";
 
 const db = testDbLifecycle("setup_datum_views_test");
 
@@ -15,15 +16,19 @@ afterEach(async () => {
 });
 
 it("adds all datum views and db views to an empty db", async () => {
-  const datumView1 = {
+  const datumView1: DatumView = {
     name: "datum_view",
+    emit,
     map: (doc: any) => {
       emit(doc._id, 1);
     },
-    reduce: "_count",
+    reduce: {
+      default: "_count",
+    },
   };
-  const datumView2 = {
+  const datumView2: DatumView = {
     name: "datum_another_view",
+    emit,
     map: (doc: any) => {
       emit(doc._rev, null);
     },
@@ -34,8 +39,9 @@ it("adds all datum views and db views to an empty db", async () => {
     .spyOn(getAllDatumViews, "getAllDatumViews")
     .mockReturnValue(mockAllDatumViews);
 
-  const dbView1 = {
+  const dbView1: DatumView = {
     name: "project_view",
+    emit,
     map: (doc: any) => {
       emit(doc._id, 3);
     },

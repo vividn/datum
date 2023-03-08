@@ -1,31 +1,36 @@
 import { _emit } from "../emit";
-import { DatumView } from "../viewDocument";
+import { DatumView } from "../DatumView";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { ViewRow } from "../../utils/utilityTypes";
-import { isoDatetime } from "../../time/timeUtils";
+import { isoDateOrTime } from "../../time/timeUtils";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+type DocType = DatumDocument;
+type MapKey = [string, isoDateOrTime];
+type MapValue = string[];
+
+function emit(key: MapKey, value: MapValue): void {
+  _emit(key, value);
 }
 
-export type V1MapRow = ViewRow<[string, isoDatetime], string[]>;
+export type V1MapRow = ViewRow<MapKey, MapValue>;
 
-export const datumV1View: DatumView<DatumDocument> = {
+export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
   name: "datum_v1_view",
+  emit: emit,
   map: (doc) => {
     const data = doc.data;
     if (!data.occurTime || !data.occurUtcOffset || !data.field) {
       return;
     }
 
-    const key = [data.field, data.occurTime];
+    const key: MapKey = [data.field, data.occurTime];
 
     const offset = data.occurUtcOffset;
     const msOffset = offset * 60 * 60 * 1000;
     const dateTime = new Date(data.occurTime);
     const offsetDateTime = new Date(dateTime.getTime() + msOffset);
 
-    const outputArray = offsetDateTime.toISOString().split(/T|Z/, 2);
+    const outputArray = offsetDateTime.toISOString().split(/[TZ]/, 2);
 
     const offsetPolarity = offset >= 0 ? "+" : "-";
     const offsetHour =
