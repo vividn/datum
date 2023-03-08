@@ -1,5 +1,8 @@
 import { DatumView } from "../DatumView";
-import { DatumMetadata, EitherDocument } from "../../documentControl/DatumDocument";
+import {
+  DatumMetadata,
+  EitherDocument,
+} from "../../documentControl/DatumDocument";
 import { _emit } from "../emit";
 
 type DocType = EitherDocument;
