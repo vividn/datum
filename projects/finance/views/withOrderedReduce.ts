@@ -1,33 +1,43 @@
 import { _emit } from "../../../src/views/emit";
 import { FinanceDoc } from "./balance";
 import { DatumView } from "../../../src/views/DatumView";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
 
-function emit(key: unknown, value: unknown) {
-  _emit(key, value);
-}
-
-type MapRowValue = {
+type DocType = FinanceDoc;
+type MapKey = [string, string, isoDateOrTime?];
+type MapValue = {
   delta?: number;
   balance?: number;
 };
+type ReduceValues = {
+  default: {
+    delta: number;
+    account: string;
+    currency: string;
+    balance?: number;
+    initBalance?: number;
+    firstBalanceId?: string;
+    error?: {
+      id?: string;
+      expectedBal?: number;
+      calculatedBal?: number;
+      offBy: number;
+    }[];
+  } | null;
+};
 
-type RereduceRowValue = {
-  delta: number;
-  account: string;
-  currency: string;
-  balance?: number;
-  initBalance?: number;
-  firstBalanceId?: string;
-  error?: {
-    id?: string;
-    expectedBal?: number;
-    calculatedBal?: number;
-    offBy: number;
-  }[];
-} | null;
+function emit(key: MapKey, value: MapValue): void {
+  _emit(key, value);
+}
 
-export const withOrderedReduceView: DatumView<FinanceDoc> = {
+export const withOrderedReduceView: DatumView<
+  DocType,
+  MapKey,
+  MapValue,
+  ReduceValues
+> = {
   name: "withOrderedReduce",
+  emit,
   map: (doc: FinanceDoc) => {
     const data = doc.data;
     if (data.type === "tx") {
@@ -43,95 +53,92 @@ export const withOrderedReduceView: DatumView<FinanceDoc> = {
       emit([data.acc, data.curr, data.occurTime], { balance: data.bal });
     }
   },
-  reduce: (keysAndIds, values, rereduce) => {
-    if (!rereduce) {
-      return (values as MapRowValue[]).reduce(
-        (accum: RereduceRowValue, current, i) => {
-          // Must group_level>2 or will get null
-          if (accum === null) return null;
-          const account = keysAndIds[i][0][0];
-          const currency = keysAndIds[i][0][1];
-          if (accum.account !== account || accum.currency !== currency)
-            return null;
+  reduce: {
+    default: (keysAndIds, values, rereduce) => {
+      if (!rereduce) {
+        return values.reduce(
+          (accum: ReduceValues["default"], current, i) => {
+            // Must group_level>2 or will get null
+            if (accum === null) return null;
+            const account = keysAndIds[i][0][0];
+            const currency = keysAndIds[i][0][1];
+            if (accum.account !== account || accum.currency !== currency)
+              return null;
 
-          const id = keysAndIds[i][1];
+            const id = keysAndIds[i][1];
 
-          // total change since beginning of reduce
-          const change = current.delta === undefined ? 0 : current.delta;
-          accum.delta += change;
+            // total change since beginning of reduce
+            const change = current.delta === undefined ? 0 : current.delta;
+            accum.delta += change;
 
-          // update balance if known
-          if (accum.balance !== undefined) {
-            accum.balance += change;
-          }
-
-          // a balance entry should always align with the calculated balance
-          if (current.balance !== undefined) {
-            if (accum.balance === undefined) {
-              accum.balance = current.balance;
-              accum.initBalance = current.balance - accum.delta;
-              accum.firstBalanceId = id;
-            } else if (current.balance !== accum.balance) {
-              accum.error = accum.error || [];
-              accum.error.push({
-                id,
-                expectedBal: current.balance,
-                calculatedBal: accum.balance,
-                offBy: current.balance - accum.balance,
-              });
-
-              // update balance anyway to continue on with processing
-              accum.balance = current.balance;
+            // update balance if known
+            if (accum.balance !== undefined) {
+              accum.balance += change;
             }
-          }
 
-          return accum;
-        },
-        {
-          delta: 0,
-          account: keysAndIds[0][0][0],
-          currency: keysAndIds[0][0][1],
-        }
-      );
-    }
-
-    if (rereduce) {
-      return (values as RereduceRowValue[]).reduce(
-        (accum: RereduceRowValue, current: RereduceRowValue) => {
-          if (accum === null || current === null) return null;
-          if (
-            accum.account !== current.account ||
-            accum.currency !== current.currency
-          ) {
-            return null;
-          }
-
-          accum.delta += current.delta;
-
-          if (accum.balance !== undefined) {
-            if (current.initBalance !== undefined) {
-              // initBalance should always match the balance of the previous chunk
-              if (current.initBalance !== accum.balance) {
+            // a balance entry should always align with the calculated balance
+            if (current.balance !== undefined) {
+              if (accum.balance === undefined) {
+                accum.balance = current.balance;
+                accum.initBalance = current.balance - accum.delta;
+                accum.firstBalanceId = id;
+              } else if (current.balance !== accum.balance) {
                 accum.error = accum.error || [];
                 accum.error.push({
-                  id: current.firstBalanceId,
-                  offBy: current.initBalance - accum.balance,
+                  id,
+                  expectedBal: current.balance,
+                  calculatedBal: accum.balance,
+                  offBy: current.balance - accum.balance,
                 });
-              }
-              accum.balance = current.balance;
-            } else {
-              accum.balance += current.delta;
-            }
-          } else {
-            if (current.balance !== undefined) {
-              accum.initBalance = (current.initBalance as number) - accum.delta;
-              accum.balance = current.balance;
-            }
-          }
 
-          return accum;
+                // update balance anyway to continue on with processing
+                accum.balance = current.balance;
+              }
+            }
+
+            return accum;
+          },
+          {
+            delta: 0,
+            account: keysAndIds[0][0][0],
+            currency: keysAndIds[0][0][1],
+          }
+        );
+      }
+      return values.reduce((accum, current) => {
+        if (accum === null || current === null) return null;
+        if (
+          accum.account !== current.account ||
+          accum.currency !== current.currency
+        ) {
+          return null;
         }
-      );
-    }
+
+        accum.delta += current.delta;
+
+        if (accum.balance !== undefined) {
+          if (current.initBalance !== undefined) {
+            // initBalance should always match the balance of the previous chunk
+            if (current.initBalance !== accum.balance) {
+              accum.error = accum.error || [];
+              accum.error.push({
+                id: current.firstBalanceId,
+                offBy: current.initBalance - accum.balance,
+              });
+            }
+            accum.balance = current.balance;
+          } else {
+            accum.balance += current.delta;
+          }
+        } else {
+          if (current.balance !== undefined) {
+            accum.initBalance = (current.initBalance as number) - accum.delta;
+            accum.balance = current.balance;
+          }
+        }
+
+        return accum;
+      });
+    },
   },
 };
