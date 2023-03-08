@@ -1,6 +1,6 @@
 import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { asViewDb, MapFunction, ViewPayload } from "../views/viewDocument";
+import { asViewDb, MapFunction, ViewPayload } from "../views/DatumView";
 import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
