@@ -63,7 +63,7 @@ describe("datumViewToViewPayload", () => {
     expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
   });
 
-  it("uses a 'default' view with stringified map if just one reduce is given", () => {
+  it("can create a 'default' view with stringified map and reduce", () => {
     const datumView: DatumView = {
       name: "with_reduce_still_has_default",
       emit,

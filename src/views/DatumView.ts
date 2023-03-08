@@ -139,6 +139,12 @@ export function datumViewToViewPayload(
         options,
       };
     }
+    if (!views.default) {
+      views.default = {
+        map: mapStr,
+        options,
+      };
+    }
   }
 
   return {
