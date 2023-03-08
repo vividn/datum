@@ -15,7 +15,7 @@ export type DatumView<
   DocType extends EitherDocument = EitherDocument,
   MapKey = unknown,
   MapValue = unknown,
-  NamedReduceValues extends Record<string, any> = {
+  NamedReduceValues extends Record<string, any> | undefined = {
     default: unknown;
   }
 > = {
@@ -38,7 +38,7 @@ export type StringifiedDatumView = {
 export type NamedReduceFunctions<
   MapKey,
   MapValue,
-  NamedReduceValues extends Record<string, any>
+  NamedReduceValues extends Record<string, any> | undefined
 > = {
   [T in keyof NamedReduceValues]:
     | ReduceFunction<MapKey, MapValue, NamedReduceValues[T]>
