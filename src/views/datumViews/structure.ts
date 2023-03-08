@@ -53,4 +53,3 @@ export const structuresView: DatumView<
     default: "_count",
   },
 };
-

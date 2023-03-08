@@ -17,7 +17,12 @@ function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const occurTimeView: DatumView<EitherDocument, MapKey, MapValue, undefined> = {
+export const occurTimeView: DatumView<
+  EitherDocument,
+  MapKey,
+  MapValue,
+  undefined
+> = {
   name: "datum_occur_time",
   emit,
   map: (doc) => {
@@ -36,7 +41,12 @@ export const occurTimeView: DatumView<EitherDocument, MapKey, MapValue, undefine
   },
 };
 
-export const createTimeView: DatumView<EitherDocument, MapKey, MapValue, undefined> = {
+export const createTimeView: DatumView<
+  EitherDocument,
+  MapKey,
+  MapValue,
+  undefined
+> = {
   name: "datum_create_time",
   emit,
   map: (doc) => {
@@ -57,7 +67,12 @@ export const createTimeView: DatumView<EitherDocument, MapKey, MapValue, undefin
   },
 };
 
-export const modifyTimeView: DatumView<EitherDocument, MapKey, MapValue, undefined> = {
+export const modifyTimeView: DatumView<
+  EitherDocument,
+  MapKey,
+  MapValue,
+  undefined
+> = {
   name: "datum_modify_time",
   emit,
   map: (doc) => {
