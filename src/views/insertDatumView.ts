@@ -8,7 +8,7 @@ import { addDoc } from "../documentControl/addDoc";
 import { BaseDocControlArgs } from "../documentControl/base";
 
 type InsertDatumViewArgs = {
-  datumView: DatumView | StringifiedDatumView;
+  datumView: DatumView<any, any, any, any> | StringifiedDatumView;
 } & BaseDocControlArgs;
 
 export async function insertDatumView({
