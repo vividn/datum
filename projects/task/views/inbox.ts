@@ -13,7 +13,7 @@ export type TaskDoc = DatumDocument<{
 type DocType = TaskDoc;
 type MapKey = isoDateOrTime | "unknown";
 type MapValue = string;
-type NamedReduceValues = {
+type ReduceValues = {
   default: number;
 };
 
@@ -25,7 +25,7 @@ export const inboxView: DatumView<
   DocType,
   MapKey,
   MapValue,
-  NamedReduceValues
+  ReduceValues
 > = {
   name: "inbox",
   emit,

@@ -5,7 +5,7 @@ function emit(key: unknown, value: unknown): void {
   _emit(key, value);
 }
 
-export const keyValueView: DatumView = {
+export const keyValueView: DatumView<any, any, any, undefined> = {
   name: "key_value_view",
   emit,
   map: (doc) => {

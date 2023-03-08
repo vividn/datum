@@ -116,7 +116,7 @@ export function isViewDocument(
 
 export function datumViewToViewPayload(
   datumView:
-    | DatumView<any, any, any, Record<string, any>>
+    | DatumView<any, any, any, Record<string, any> | undefined>
     | StringifiedDatumView
 ): ViewPayload {
   const views: ViewPayloadViews = {};

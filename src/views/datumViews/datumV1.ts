@@ -4,6 +4,7 @@ import { DatumDocument } from "../../documentControl/DatumDocument";
 import { ViewRow } from "../../utils/utilityTypes";
 import { isoDateOrTime } from "../../time/timeUtils";
 
+type DocType = DatumDocument;
 type MapKey = [string, isoDateOrTime];
 type MapValue = string[];
 
@@ -13,7 +14,7 @@ function emit(key: MapKey, value: MapValue): void {
 
 export type V1MapRow = ViewRow<MapKey, MapValue>;
 
-export const datumV1View: DatumView<DatumDocument, MapKey, MapValue> = {
+export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
   name: "datum_v1_view",
   emit: emit,
   map: (doc) => {

@@ -22,7 +22,7 @@ type MapValue = {
   next?: isoDateOrTime;
   lastDone: isoDateOrTime | "#not done#";
 };
-type NamedReduceValues = {
+type ReduceValues = {
   default: MapValue;
 };
 
@@ -34,7 +34,7 @@ export const choreView: DatumView<
   DocType,
   MapKey,
   MapValue,
-  NamedReduceValues
+  ReduceValues
 > = {
   name: "chores",
   emit,
