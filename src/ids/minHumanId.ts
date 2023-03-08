@@ -12,7 +12,7 @@ function startingSlices(str: string): string[] {
 }
 
 export async function minHumanId(
-  db: DocumentScope<EitherPayload>,
+  db: PouchDB.Database<EitherPayload>,
   humanId: string
 ): Promise<string> {
   //TODO: Create function that takes the DatumView object and does view info on it

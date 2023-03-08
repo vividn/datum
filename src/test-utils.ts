@@ -44,7 +44,7 @@ export const mockMissingNamedViewError: CouchDbError = {
 
 export async function resetTestDb(
   dbName: string
-): Promise<DocumentScope<EitherPayload>> {
+): Promise<PouchDB.Database<EitherPayload>> {
   const maxTries = 3;
   let tries = 0;
   await testNano.db.destroy(dbName).catch(pass);
@@ -52,14 +52,14 @@ export async function resetTestDb(
     await testNano.db.destroy(dbName).catch(pass);
     await testNano.db.create(dbName).catch(pass);
     if ((await testNano.db.list()).includes(dbName)) {
-      return testNano.use(dbName) as DocumentScope<EitherPayload>;
+      return testNano.use(dbName) as PouchDB.Database<EitherPayload>;
     }
   }
   throw Error(`Unable to reset database after ${maxTries} attempts`);
 }
 
-export function testDbLifecycle(dbName: string): DocumentScope<EitherPayload> {
-  const db = testNano.use(dbName) as DocumentScope<EitherPayload>;
+export function testDbLifecycle(dbName: string): PouchDB.Database<EitherPayload> {
+  const db = testNano.use(dbName) as PouchDB.Database<EitherPayload>;
 
   beforeEach(async () => {
     await resetTestDb(dbName);

@@ -4,7 +4,7 @@ import { idToHumanView } from "../views/datumViews";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 export async function getHumanIds(
-  db: DocumentScope<EitherPayload>,
+  db: PouchDB.Database<EitherPayload>,
   ids: string[]
 ): Promise<(string | undefined)[]> {
   let viewResponse;

@@ -105,7 +105,7 @@ function createHeader(field: string): string[] {
 
 async function getRows(
   fields: string[],
-  db: DocumentScope<EitherPayload>
+  db: PouchDB.Database<EitherPayload>
 ): Promise<V1MapRow[]> {
   if (fields.length === 0) {
     return (await db.view<string[]>(datumV1View.name, "default"))

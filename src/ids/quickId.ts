@@ -27,7 +27,7 @@ export class NoQuickIdMatchError extends MyError {
 }
 
 export async function quickId(
-  db: DocumentScope<EitherPayload>,
+  db: PouchDB.Database<EitherPayload>,
   quickString: string
 ): Promise<string> {
   try {

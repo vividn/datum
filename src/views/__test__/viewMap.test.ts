@@ -16,7 +16,7 @@ import { DatumViewMissingError } from "../../errors";
 import { viewMap } from "../viewMap";
 import { insertDatumView } from "../insertDatumView";
 
-const mockDb = mock<DocumentScope<EitherDocument>>();
+const mockDb = mock<PouchDB.Database<EitherDocument>>();
 const mockDatumView = mock<DatumView>();
 
 beforeEach(() => {

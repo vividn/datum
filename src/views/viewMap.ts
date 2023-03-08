@@ -7,7 +7,7 @@ import { DatumView, StringifiedDatumView } from "./DatumView";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 type ViewMapType = {
-  db: DocumentScope<EitherPayload>;
+  db: PouchDB.Database<EitherPayload>;
   datumView:
     | DatumView<EitherDocument<any>, any, any, any>
     | StringifiedDatumView;

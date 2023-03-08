@@ -8,7 +8,7 @@ import { mock } from "jest-mock-extended";
 import { shortenForHumans } from "../shortenForHumans";
 
 describe("shortenForHumans", () => {
-  const mockDb = mock<DocumentScope<any>>();
+  const mockDb = mock<PouchDB.Database<any>>();
 
   it("calls getHumanIds with the array of ids", async () => {
     const ids = ["idA", "idB", "idNo", "idC"];
