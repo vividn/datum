@@ -8,7 +8,7 @@ import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 type ViewMapType = {
   db: DocumentScope<EitherPayload>;
-  datumView: DatumView<EitherDocument<any>> | StringifiedDatumView;
+  datumView: DatumView<EitherDocument<any>, any, any, any> | StringifiedDatumView;
   params?: Omit<DocumentViewParams, "reduce">;
 };
 export async function viewMap({
@@ -29,3 +29,5 @@ export async function viewMap({
     }
   }
 }
+
+// TODO: Combine this functions and it's tests directly into mapCmd
