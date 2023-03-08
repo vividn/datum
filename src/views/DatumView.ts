@@ -3,10 +3,11 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
-import { DocumentScope } from "nano";
 
-export function asViewDb(db: PouchDB.Database<any>): PouchDB.DatabaseViewPayload> {
-  return db as unknown as PouchDB.DatabaseViewPayload>;
+export function asViewDb(
+  db: PouchDB.Database<any>
+): PouchDB.Database<ViewPayload> {
+  return db as unknown as PouchDB.Database<ViewPayload>;
 }
 
 // TODO: Expand types of DatumView to include information about format of map rows and reduce values

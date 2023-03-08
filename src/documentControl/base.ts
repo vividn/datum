@@ -1,5 +1,4 @@
 import { EitherDocument, EitherPayload } from "./DatumDocument";
-import { DocumentScope } from "nano";
 import { OutputArgs } from "../input/outputArgs";
 
 export class DocExistsError extends Error {

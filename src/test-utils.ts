@@ -1,4 +1,3 @@
-import Nano, { DocumentScope } from "nano";
 import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
 import * as connectDb from "./auth/connectDb";
@@ -12,8 +11,6 @@ export const pass = (): void => {};
 export const fail = (): never => {
   throw Error;
 };
-
-export const testNano = Nano(`http://admin:password@localhost:5983`);
 
 export const mockDocMissingError: CouchDbError = {
   scope: "couch",
@@ -45,20 +42,14 @@ export const mockMissingNamedViewError: CouchDbError = {
 export async function resetTestDb(
   dbName: string
 ): Promise<PouchDB.Database<EitherPayload>> {
-  const maxTries = 3;
-  let tries = 0;
-  await testNano.db.destroy(dbName).catch(pass);
-  while (tries++ <= maxTries) {
-    await testNano.db.destroy(dbName).catch(pass);
-    await testNano.db.create(dbName).catch(pass);
-    if ((await testNano.db.list()).includes(dbName)) {
-      return testNano.use(dbName) as PouchDB.Database<EitherPayload>;
-    }
-  }
-  throw Error(`Unable to reset database after ${maxTries} attempts`);
+  const db = new PouchDB(dbName);
+  await db.destroy().catch(pass);
+  return new PouchDB(dbName);
 }
 
-export function testDbLifecycle(dbName: string): PouchDB.Database<EitherPayload> {
+export function testDbLifecycle(
+  dbName: string
+): PouchDB.Database<EitherPayload> {
   const db = testNano.use(dbName) as PouchDB.Database<EitherPayload>;
 
   beforeEach(async () => {
