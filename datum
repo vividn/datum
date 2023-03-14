@@ -59,7 +59,6 @@ while true; do
             if [[ $input_time =~ ^[-+][0-9]+ ]]; then
                 # If a negative number is given, subtract that many minutes (round to nearest minute for analysis reasons later)
                 rel_time="$input_time minutes"
-                echo "$rel_time"
                 TIMESTR=$(date --date "$rel_time" '+%H:%M')
                 TIMESTR=$(date --date "$TIMESTR" "+%H:%M:%S.%3N")
 
