@@ -127,7 +127,7 @@ def main():
             )
             draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
 
-        im.save(imageout)
+    im.save(imageout)
 
 if __name__ == "__main__":
     main()

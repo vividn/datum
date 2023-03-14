@@ -7,6 +7,7 @@ import numpy as np
 import datetime
 import re
 import os
+import stat
 import sys
 from PIL import Image, ImageDraw, ImageFont
 import traceback
@@ -509,6 +510,7 @@ def main(**kwargs):
 
     with tempfile.NamedTemporaryFile(suffix=imagetype) as tmp:
         im.save(tmp.name)
+        os.chmod(tmp.name, stat.S_IRUSR|stat.S_IWUSR|stat.S_IRGRP|stat.S_IROTH)
         shutil.copy(tmp.name, imageout)
 
 
