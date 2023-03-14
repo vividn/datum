@@ -599,7 +599,7 @@ def get_color(datum_name, datum_colors, category=None):
                 return default_color
 
 if __name__ == "__main__":
-    main()
+    main(imagename="weekview", xsize=1078, ysize=574, quantfontsize=15)
     main(imagename="reduced", data_set="reducedSet")
     main(nDays=30, imagename="30dayview", ysize=1920)
     main(
