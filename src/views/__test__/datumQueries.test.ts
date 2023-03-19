@@ -96,7 +96,7 @@ describe("minHumanId", () => {
 
   it("throws if sub_human_id view does not exist", async () => {
     const viewDoc = await db.get("_design/datum_sub_human_id");
-    await db.destroy("_design/datum_sub_human_id", viewDoc._rev);
+    await db.remove("_design/datum_sub_human_id", viewDoc._rev);
 
     await expect(() => minHumanId(db, "anything")).rejects.toThrow(
       DatumViewMissingError

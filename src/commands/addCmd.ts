@@ -208,7 +208,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       }
       console.log("Doc created more than fifteen minutes ago");
     }
-    await db.destroy(doc._id, doc._rev);
+    await db.remove(doc._id, doc._rev);
     console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
     return doc;
   }

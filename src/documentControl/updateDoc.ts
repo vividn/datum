@@ -112,9 +112,9 @@ export async function updateDoc({
         throw new DocExistsError(updatedPayload, existingDoc);
       } else {
         throw e;
-      }
+      }``
     });
-    await db.destroy(id, oldDoc._rev);
+    await db.remove(id, oldDoc._rev);
     showRename(id, newId, outputArgs);
   }
 
