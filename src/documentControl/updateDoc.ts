@@ -101,10 +101,10 @@ export async function updateDoc({
 
   if (newId === id) {
     updatedPayload._rev = oldDoc._rev;
-    await db.insert(updatedPayload);
+    await db.put(updatedPayload);
   } else {
     delete updatedPayload._rev;
-    await db.insert(updatedPayload).catch(async (e) => {
+    await db.put(updatedPayload).catch(async (e) => {
       if (e.error === "conflict") {
         const existingDoc = await db.get(newId);
         showExists(existingDoc, outputArgs);

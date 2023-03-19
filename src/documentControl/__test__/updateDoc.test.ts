@@ -29,7 +29,7 @@ describe("updateDoc", () => {
   const db = testDbLifecycle(dbName);
 
   test("it returns the updated document in the db", async () => {
-    await db.insert({ _id: "docId1", data: { abc: "123" }, meta: {} });
+    await db.put({ _id: "docId1", data: { abc: "123" }, meta: {} });
     const returnedDoc1 = await updateDoc({
       db,
       id: "docId1",
@@ -40,7 +40,7 @@ describe("updateDoc", () => {
     const dbDoc1 = await db.get("docId1");
     expect(returnedDoc1).toEqual(dbDoc1);
 
-    await db.insert({ _id: "docId2", def: "456" });
+    await db.put({ _id: "docId2", def: "456" });
     const returnedDoc2 = await updateDoc({
       db,
       id: "docId2",
@@ -58,7 +58,7 @@ describe("updateDoc", () => {
       data: { abc: "def" },
       meta: { modifyTime: notNowStr },
     };
-    await db.insert(docWithModify);
+    await db.put(docWithModify);
 
     const newDoc = await updateDoc({
       db,
@@ -72,7 +72,7 @@ describe("updateDoc", () => {
   });
 
   test("does not add metadata if oldDoc does not have metadata", async () => {
-    await db.insert({ _id: "docWithoutMeta", key: "data" });
+    await db.put({ _id: "docWithoutMeta", key: "data" });
     const newDoc = await updateDoc({
       db,
       id: "docWithoutMeta",
@@ -121,7 +121,7 @@ describe("updateDoc", () => {
 
     const spy = jest.spyOn(combineData, "combineData");
 
-    await db.insert({ _id: "data-doc-1", ...data1 });
+    await db.put({ _id: "data-doc-1", ...data1 });
     await updateDoc({ db, id: "data-doc-1", payload: data2 });
     expect(spy).toHaveBeenCalledWith(
       { _id: "data-doc-1", ...data1 },
@@ -130,7 +130,7 @@ describe("updateDoc", () => {
     );
     spy.mockClear();
 
-    await db.insert({ _id: "data-doc-2", ...data3 });
+    await db.put({ _id: "data-doc-2", ...data3 });
     const datumPayload2 = { data: data4, meta: metadata } as DatumPayload;
     await updateDoc({
       db,
@@ -145,7 +145,7 @@ describe("updateDoc", () => {
     );
     spy.mockClear();
 
-    await db.insert({ _id: "datum-doc-3", data: data2, meta: metadata });
+    await db.put({ _id: "datum-doc-3", data: data2, meta: metadata });
     await updateDoc({
       db,
       id: "datum-doc-3",
@@ -155,7 +155,7 @@ describe("updateDoc", () => {
     expect(spy).toHaveBeenCalledWith(data2, data3, "intersection");
     spy.mockClear();
 
-    await db.insert({ _id: "datum-doc-4", data: data4, meta: metadata });
+    await db.put({ _id: "datum-doc-4", data: data4, meta: metadata });
     await updateDoc({
       db,
       id: "datum-doc-4",
@@ -174,8 +174,8 @@ describe("updateDoc", () => {
   test("fails if new id clashes with a different document in the database", async () => {
     const oldId = "id-to-replace";
     const clashingId = "preexisting-clashing-id";
-    await db.insert({ _id: oldId });
-    await db.insert({ _id: clashingId });
+    await db.put({ _id: oldId });
+    await db.put({ _id: clashingId });
 
     try {
       await updateDoc({
@@ -191,7 +191,7 @@ describe("updateDoc", () => {
     await db.get(oldId); // original doc is not deleted
 
     const oldCalculatedId = "old-calc-id";
-    await db.insert({
+    await db.put({
       _id: oldCalculatedId,
       data: { foo: oldCalculatedId },
       meta: { idStructure: "%foo%" },
@@ -213,7 +213,7 @@ describe("updateDoc", () => {
   });
 
   test("if updated dataonly payload does not have id, then it uses the old id", async () => {
-    await db.insert({ _id: "data-id", dataKey: "abc" });
+    await db.put({ _id: "data-id", dataKey: "abc" });
     const newDoc = await updateDoc({
       db,
       id: "data-id",
@@ -225,7 +225,7 @@ describe("updateDoc", () => {
   });
 
   test("if the new document has a different explicit id, then the doc is moved there", async () => {
-    await db.insert({ _id: "old-id", foo: "bar" });
+    await db.put({ _id: "old-id", foo: "bar" });
     const newDoc = await updateDoc({
       db,
       id: "old-id",
@@ -238,7 +238,7 @@ describe("updateDoc", () => {
   });
 
   test("if the new document has a different calculated id, then the doc is moved there", async () => {
-    await db.insert({
+    await db.put({
       _id: "calculated-id",
       data: { foo: "calculated-id" },
       meta: { idStructure: "%foo%" },
@@ -256,7 +256,7 @@ describe("updateDoc", () => {
   });
 
   test("if payload specified a _rev, then it must match the _rev on the old document", async () => {
-    await db.insert({ _id: "abc", foo: "bar" });
+    await db.put({ _id: "abc", foo: "bar" });
     const oldDoc = await db.get("abc");
     const wrongRev = "1-38748349796ad6a60a11c0f63d10186a";
 
@@ -298,7 +298,7 @@ describe("updateDoc", () => {
   });
 
   test("it does not modify the input payload", async () => {
-    await db.insert({ _id: "ididid", abc: 123 });
+    await db.put({ _id: "ididid", abc: 123 });
     const payload = { key1: "data1", key2: "data2" };
     const payloadClone = jClone(payload);
 
@@ -307,7 +307,7 @@ describe("updateDoc", () => {
   });
 
   test("it successfully merges new data into the existing data", async () => {
-    await db.insert({
+    await db.put({
       _id: "doc-id",
       oldKey: "oldData",
       mutualKey: ["merge", "basis"],
@@ -335,7 +335,7 @@ describe("updateDoc", () => {
   test.todo("how does it handle _ids for dataonly docs?");
 
   test("it does not write to database if updated data document is identical", async () => {
-    await db.insert({ _id: "datadoc-id", foo: "abc" });
+    await db.put({ _id: "datadoc-id", foo: "abc" });
     const currentDoc = await db.get("datadoc-id");
     const nDocsBefore = (await db.info()).doc_count;
 
@@ -352,7 +352,7 @@ describe("updateDoc", () => {
 
   test("it does not write to db if updated datum document is identical", async () => {
     // Datum
-    await db.insert({
+    await db.put({
       _id: "datum-id",
       data: { abc: "foo" },
       meta: { humanId: "datumDatum" },
@@ -376,7 +376,7 @@ describe("updateDoc", () => {
 
   test("it can update the id with new modifyTime when idStructure is %?modifyTime%", async () => {
     await expect(() => db.get(nowStr)).rejects.toThrow("missing");
-    await db.insert({
+    await db.put({
       _id: notNowStr,
       data: {},
       meta: { modifyTime: notNowStr, idStructure: "%?modifyTime%" },

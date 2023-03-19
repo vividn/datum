@@ -44,17 +44,17 @@ describe("integration test", () => {
   });
 
   it("returns an array of shortened humanIds, with undefined holes for docs that have no row in the view", async () => {
-    await db.insert({
+    await db.put({
       _id: "id_w_human1",
       data: {},
       meta: { humanId: "abc-111" },
     });
-    await db.insert({
+    await db.put({
       _id: "id_w_human2",
       data: {},
       meta: { humanId: "abc-222" },
     });
-    await db.insert({
+    await db.put({
       _id: "id_no_human",
       data: {},
       meta: {},

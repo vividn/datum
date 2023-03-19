@@ -23,22 +23,22 @@ beforeEach(async () => {
 });
 
 test("it returns the string directly if the exact id exists in the database", async () => {
-  await db.insert({ _id: "exact-id", data: {}, meta: {} });
+  await db.put({ _id: "exact-id", data: {}, meta: {} });
   const quick = await quickId(db, "exact-id");
   expect(quick).toBe("exact-id");
 });
 
 test("if the text matches the beginning of exactly one humanId, it returns the associated _id", async () => {
-  await db.insert({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
-  await db.insert({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
+  await db.put({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
+  await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
 
   const quick = await quickId(db, "abc");
   expect(quick).toBe("doc-id1");
 });
 
 test("if the text matches more than one humanId, it throws an error, showing the possible matches", async () => {
-  await db.insert({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
-  await db.insert({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
+  await db.put({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
+  await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
 
   try {
     await quickId(db, "ab");
@@ -54,17 +54,17 @@ test("if the text matches more than one humanId, it throws an error, showing the
 });
 
 test("if no human ids match, and string matches the beginning of exactly one _id, return that _id", async () => {
-  await db.insert({
+  await db.put({
     _id: "zzz_this_id",
     data: {},
     meta: { humanId: "abcdefg" },
   });
-  await db.insert({
+  await db.put({
     _id: "xxx_another",
     data: {},
     meta: { humanId: "dfghrtoi" },
   });
-  await db.insert({
+  await db.put({
     _id: "yyy_finally",
     data: {},
     meta: { humanId: "no-matches-here" },
@@ -75,17 +75,17 @@ test("if no human ids match, and string matches the beginning of exactly one _id
 });
 
 test("if no humanIds match, but several _ids match starting sub string, throw error and show possible matches", async () => {
-  await db.insert({
+  await db.put({
     _id: "zzz_this_id",
     data: {},
     meta: { humanId: "abcdefg" },
   });
-  await db.insert({
+  await db.put({
     _id: "zzz_same_start",
     data: {},
     meta: { humanId: "dfghrtoi" },
   });
-  await db.insert({
+  await db.put({
     _id: "yyy_finally",
     data: {},
     meta: { humanId: "no-matches-here" },
@@ -105,12 +105,12 @@ test("if no humanIds match, but several _ids match starting sub string, throw er
 });
 
 test("if the substring starts both an id and a human id, then it prefers the humanId", async () => {
-  await db.insert({
+  await db.put({
     _id: "abc_this_is_an_id",
     data: {},
     meta: { humanId: "xyz_human_for_me" },
   });
-  await db.insert({
+  await db.put({
     _id: "another_id",
     data: {},
     meta: { humanId: "abcdefg" },
@@ -121,8 +121,8 @@ test("if the substring starts both an id and a human id, then it prefers the hum
 });
 
 test("if the string matches an id exactly and a human id exactly, prefer the id match", async () => {
-  await db.insert({ _id: "abcId", data: {}, meta: { humanId: "humanId" } });
-  await db.insert({
+  await db.put({ _id: "abcId", data: {}, meta: { humanId: "humanId" } });
+  await db.put({
     _id: "human_is_like_other_id",
     data: {},
     meta: { humanId: "abcId" },
@@ -133,8 +133,8 @@ test("if the string matches an id exactly and a human id exactly, prefer the id 
 });
 
 test("if the string matches an id exactly and is the beginning of one or more human ids, prefer the id", async () => {
-  await db.insert({ _id: "abcId", data: {}, meta: { humanId: "humanId" } });
-  await db.insert({
+  await db.put({ _id: "abcId", data: {}, meta: { humanId: "humanId" } });
+  await db.put({
     _id: "human_starts_like_other_id",
     data: {},
     meta: { humanId: "abcId_extra" },
@@ -143,7 +143,7 @@ test("if the string matches an id exactly and is the beginning of one or more hu
   const quick = await quickId(db, "abcId");
   expect(quick).toBe("abcId");
 
-  await db.insert({
+  await db.put({
     _id: "another_one_with_extra_human",
     data: {},
     meta: { humanId: "abcId_and_more" },
@@ -154,17 +154,17 @@ test("if the string matches an id exactly and is the beginning of one or more hu
 });
 
 test("if no humanIds or ids match at all, throw a NoQuickIdMatchError", async () => {
-  await db.insert({
+  await db.put({
     _id: "zzz_this_id",
     data: {},
     meta: { humanId: "abcdefg" },
   });
-  await db.insert({
+  await db.put({
     _id: "xxx_another",
     data: {},
     meta: { humanId: "dfghrtoi" },
   });
-  await db.insert({
+  await db.put({
     _id: "yyy_finally",
     data: {},
     meta: { humanId: "no-matches-here" },

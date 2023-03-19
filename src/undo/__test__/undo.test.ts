@@ -53,7 +53,7 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: "oldDoc",
       data: {},
       meta: { createTime: oldTime.toString() },
@@ -72,7 +72,7 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: docName,
       data: {},
       meta: { createTime: oldTime.toString() },
@@ -89,7 +89,7 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: docName,
       data: {},
       meta: { createTime: oldTime.toString() },

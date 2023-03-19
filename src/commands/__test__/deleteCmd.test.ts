@@ -15,7 +15,7 @@ beforeEach(async () => {
 });
 
 it("deletes a document based on first few letters of humanId", async () => {
-  await db.insert({ _id: "hello", data: {}, meta: { humanId: "a44quickId" } });
+  await db.put({ _id: "hello", data: {}, meta: { humanId: "a44quickId" } });
   const returned = await deleteCmd({ db: dbName, quickId: "a44" });
 
   expect(returned).toMatchObject({ _id: "hello", _deleted: true });
@@ -26,7 +26,7 @@ it("deletes a document based on first few letters of humanId", async () => {
 });
 
 it("deletes a document based on first few letters of _id", async () => {
-  await db.insert({ _id: "the_quick_brown_fox", foo: "abc" });
+  await db.put({ _id: "the_quick_brown_fox", foo: "abc" });
   const returned = await deleteCmd({ db: dbName, quickId: "the_qu" });
 
   expect(returned).toMatchObject({
@@ -40,8 +40,8 @@ it("deletes a document based on first few letters of _id", async () => {
 });
 
 it("only deletes the one document", async () => {
-  await db.insert({ _id: "id1", data: {}, meta: { humanId: "abc" } });
-  await db.insert({ _id: "id2", data: {}, meta: { humanId: "def" } });
+  await db.put({ _id: "id1", data: {}, meta: { humanId: "abc" } });
+  await db.put({ _id: "id2", data: {}, meta: { humanId: "def" } });
 
   await deleteCmd({ db: dbName, quickId: "abc" });
   await expect(db.get("id1")).rejects.toThrowError("deleted");
@@ -72,7 +72,7 @@ it("outputs a DELETED message when show is standard", async () => {
   const mockLog = jest.fn();
   console.log = mockLog;
 
-  await db.insert({
+  await db.put({
     _id: "show_me_a_message",
     data: {},
     meta: { humanId: "somethingElse" },

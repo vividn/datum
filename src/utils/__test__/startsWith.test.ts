@@ -42,10 +42,10 @@ describe("startsWith", () => {
     const dbName = "test_starts_with";
     const db = testDbLifecycle(dbName);
     test("output can be used to filter the list of _all_docs to just docs that start with the string", async () => {
-      await db.insert({ _id: "aaabc" });
-      await db.insert({ _id: "aazzz" });
-      await db.insert({ _id: "aa\ufff0\ufff0\ufff0" }); // Very high codepoint that couchdb recommend to filter (with inclusive_end: true), but should still be included with this superior method
-      await db.insert({ _id: "ab_not_included" });
+      await db.put({ _id: "aaabc" });
+      await db.put({ _id: "aazzz" });
+      await db.put({ _id: "aa\ufff0\ufff0\ufff0" }); // Very high codepoint that couchdb recommend to filter (with inclusive_end: true), but should still be included with this superior method
+      await db.put({ _id: "ab_not_included" });
 
       const doc_list = await db.list(startsWith("aa"));
       const ids = doc_list.rows.map((row) => row.id);
