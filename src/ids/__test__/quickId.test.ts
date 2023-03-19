@@ -1,4 +1,4 @@
-import { fail, testDbLifecycle } from "../../test-utils";
+import { fail, pass, resetTestDb } from "../../test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
   humanIdView,
@@ -10,11 +10,20 @@ import {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
 } from "../quickId";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 jest.retryTimes(3);
 
 const dbName = "test_quick_id";
-const db = testDbLifecycle(dbName);
+let db: PouchDB.Database<EitherPayload>;
+
+beforeEach(async () => {
+  db = await resetTestDb(dbName);
+});
+
+afterEach(async () => {
+  await db.destroy().catch(pass);
+});
 
 beforeEach(async () => {
   await insertDatumView({ db, datumView: idToHumanView });

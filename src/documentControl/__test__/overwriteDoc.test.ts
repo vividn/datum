@@ -1,6 +1,6 @@
-import { DatumPayload } from "../DatumDocument";
+import { DatumPayload, EitherPayload } from "../DatumDocument";
 import { DateTime } from "luxon";
-import { fail, setNow, testDbLifecycle } from "../../test-utils";
+import { fail, pass, resetTestDb, setNow } from "../../test-utils";
 import {
   overwriteDoc,
   NoDocToOverwriteError,
@@ -30,7 +30,15 @@ const notNowStr = "2010-11;12T13:14:15.000Z";
 
 describe("overwriteDoc", () => {
   const dbName = "overwrite_doc_test";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   beforeEach(async () => {
     setNow(nowStr);

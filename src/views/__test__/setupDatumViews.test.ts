@@ -1,11 +1,21 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import * as insertDatumViewModule from "../insertDatumView";
 import { setupDatumViews } from "../setupDatumViews";
 import { _emit } from "../emit";
 import * as getAllDatumViews from "../getAllDatumViews";
 import { DatumView } from "../DatumView";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
-const db = testDbLifecycle("setup_datum_views_test");
+const dbName = "setup_datum_views_test";
+let db: PouchDB.Database<EitherPayload>;
+
+beforeEach(async () => {
+  db = await resetTestDb(dbName);
+});
+
+afterEach(async () => {
+  await db.destroy().catch(pass);
+});
 
 function emit(key: any, value: any) {
   _emit(key, value);

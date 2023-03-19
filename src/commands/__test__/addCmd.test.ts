@@ -1,6 +1,9 @@
-import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { fail, mockedLogLifecycle, pass, resetTestDb } from "../../test-utils";
 import { BaseDataError } from "../../errors";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import {
+  DatumDocument,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
@@ -9,7 +12,17 @@ import { Show } from "../../input/outputArgs";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
-  const db = testDbLifecycle(dbName);
+
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
+
   const mockedLog = mockedLogLifecycle();
 
   let addDocSpy: SpyInstance;

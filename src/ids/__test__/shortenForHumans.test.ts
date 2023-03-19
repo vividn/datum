@@ -1,10 +1,11 @@
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";
 import { shortenForHumans } from "../shortenForHumans";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("shortenForHumans", () => {
   const mockDb = mock<PouchDB.Database<any>>();
@@ -35,7 +36,15 @@ describe("shortenForHumans", () => {
 
 describe("integration test", () => {
   const dbName = "test_shorten_for_humans";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   beforeEach(async () => {
     await insertDatumView({ db, datumView: idToHumanView });

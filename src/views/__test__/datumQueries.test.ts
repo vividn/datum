@@ -1,5 +1,8 @@
-import { DatumPayload } from "../../documentControl/DatumDocument";
-import { testDbLifecycle } from "../../test-utils";
+import {
+  DatumPayload,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
+import { pass, resetTestDb } from "../../test-utils";
 import { minHumanId, MinHumanIdError } from "../../ids/minHumanId";
 import { insertDatumView } from "../insertDatumView";
 import { subHumanIdView } from "../datumViews";
@@ -8,7 +11,15 @@ import { DatumViewMissingError } from "../../errors";
 jest.retryTimes(3);
 describe("minHumanId", () => {
   const dbName = "test_datum_queries";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   beforeEach(async () => {
     await insertDatumView({ db, datumView: subHumanIdView });

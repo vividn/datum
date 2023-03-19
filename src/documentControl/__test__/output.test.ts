@@ -1,6 +1,6 @@
 import { updateDoc } from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { fail, mockedLogLifecycle, pass, resetTestDb } from "../../test-utils";
 import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 import { overwriteDoc } from "../overwriteDoc";
@@ -8,9 +8,18 @@ import * as addDocModule from "../addDoc";
 import { addCmd } from "../../commands/addCmd";
 import { deleteDoc } from "../deleteDoc";
 import { Show } from "../../input/outputArgs";
+import { EitherPayload } from "../DatumDocument";
 
 const dbName = "doc_control_output_test";
-const db = testDbLifecycle(dbName);
+let db: PouchDB.Database<EitherPayload>;
+
+beforeEach(async () => {
+  db = await resetTestDb(dbName);
+});
+
+afterEach(async () => {
+  await db.destroy().catch(pass);
+});
 const mockedLog = mockedLogLifecycle();
 
 test("addDoc displays a CREATE: message and the document if showOutput", async () => {

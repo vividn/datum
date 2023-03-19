@@ -1,11 +1,9 @@
 import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
-import * as connectDbModule from "./auth/connectDb";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
 import { now } from "./time/timeUtils";
-import PouchDb from "pouchdb";
 import { connectDb } from "./auth/connectDb";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
@@ -46,25 +44,24 @@ export async function resetTestDb(
 ): Promise<PouchDB.Database<EitherPayload>> {
   const db = connectDb({ db: dbName });
   await db.destroy().catch(pass);
-  return connectDb({ db: dbName });
+  return connectDb({ db: dbName, createDb: true });
 }
 
-export function testDbLifecycle(
-  dbName: string
-): PouchDB.Database<EitherPayload> {
-  let db: PouchDB.Database<EitherPayload> = connectDb({ db: dbName });
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-    jest.spyOn(connectDbModule, "connectDb").mockImplementation(() => db);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
-
-  return db;
-}
+// export function testDbLifecycle(
+//   dbName: string
+// ): PouchDB.Database<EitherPayload> {
+//   let db: PouchDB.Database<EitherPayload>;
+//
+//   beforeEach(async () => {
+//     db = await resetTestDb(dbName);
+//   });
+//
+//   afterEach(async () => {
+//     await db.destroy().catch(pass);
+//   });
+//
+//   return db;
+// }
 
 export function mockedLogLifecycle(): Mock {
   const originalLog = console.log;

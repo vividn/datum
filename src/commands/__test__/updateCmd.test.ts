@@ -1,14 +1,25 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
 import { mock } from "jest-mock-extended";
 import { Show } from "../../input/outputArgs";
 
 const dbName = "update_cmd_test";
-const db = testDbLifecycle(dbName);
+let db: PouchDB.Database<EitherPayload>;
+
+beforeEach(async () => {
+  db = await resetTestDb(dbName);
+});
+
+afterEach(async () => {
+  await db.destroy().catch(pass);
+});
 
 beforeEach(async () => {
   await setupCmd({ db: dbName });

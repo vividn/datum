@@ -1,5 +1,13 @@
-import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import {
+  mockedLogLifecycle,
+  pass,
+  resetTestDb,
+  setNow,
+} from "../../test-utils";
+import {
+  DatumDocument,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 
@@ -8,7 +16,16 @@ import { DateTime, Duration, Settings } from "luxon";
 describe("addCmd undo", () => {
   const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
+
   const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
   beforeEach(() => {
     setNow(mockNow.toString());

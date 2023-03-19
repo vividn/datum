@@ -1,8 +1,9 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { editMigration } from "../editMigration";
 import { asViewDb } from "../../views/DatumView";
 import * as editInTerminal from "../../utils/editInTerminal";
 import { getMigrationId, getMigrationViewName } from "../migrations";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 const migA2B = `(doc) => {
   if (doc.a) {
@@ -22,7 +23,15 @@ const migB2A = `(doc) => {
 
 describe("editMigration", () => {
   const dbName = "edit_migration_test";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   it("creates a _design document with the text of mapFn", async () => {
     const migrationName = "rename_a_to_b";

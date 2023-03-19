@@ -1,11 +1,20 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { setupCmd } from "../setupCmd";
 import { getCmd } from "../getCmd";
 import { Show } from "../../input/outputArgs";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("getCmd", () => {
   const dbName = "get_cmd_test";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   beforeEach(async () => {
     await setupCmd({ db: dbName });

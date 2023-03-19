@@ -1,12 +1,21 @@
 import * as editInTerminal from "../../utils/editInTerminal";
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { editCmd } from "../editCmd";
 import { GenericObject } from "../../GenericObject";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("editCmd", () => {
   let editJSONInTerminalSpy: any;
   const dbName = "delete_cmd_test";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   beforeEach(async () => {
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
