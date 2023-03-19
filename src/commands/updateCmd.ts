@@ -39,7 +39,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const id = await quickId(db, args.quickId);
   const payload = handleDataArgs(args);

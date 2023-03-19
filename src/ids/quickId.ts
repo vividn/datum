@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { isCouchDbError, MyError } from "../errors";
 import { viewMap } from "../views/viewMap";
@@ -27,7 +26,7 @@ export class NoQuickIdMatchError extends MyError {
 }
 
 export async function quickId(
-  db: DocumentScope<EitherPayload>,
+  db: PouchDB.Database<EitherPayload>,
   quickString: string
 ): Promise<string> {
   try {
@@ -57,7 +56,7 @@ export async function quickId(
     throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
   }
 
-  const startsMainId = await db.list(startsWith(quickString));
+  const startsMainId = await db.allDocs(startsWith(quickString));
   if (startsMainId.rows.length === 1) {
     return startsMainId.rows[0].id;
   }

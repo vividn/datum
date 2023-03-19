@@ -12,8 +12,9 @@ export async function setupDatumViews({
   outputArgs,
 }: SetupDatumViewsType): Promise<void> {
   const allDatumViews = getAllDatumViews();
+  const dbName = db.name.split("/").at(-1) as string;
   const allDbViews = projectDir
-    ? await getDbDatumViews({ dbName: db.config.db, projectDir })
+    ? await getDbDatumViews({ dbName, projectDir })
     : [];
   const promises = allDatumViews.concat(allDbViews).map((datumView) => {
     return insertDatumView({ datumView, db, outputArgs: outputArgs });

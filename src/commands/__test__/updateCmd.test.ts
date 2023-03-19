@@ -1,21 +1,32 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
 import { mock } from "jest-mock-extended";
 import { Show } from "../../input/outputArgs";
 
 const dbName = "update_cmd_test";
-const db = testDbLifecycle(dbName);
+let db: PouchDB.Database<EitherPayload>;
+
+beforeEach(async () => {
+  db = await resetTestDb(dbName);
+});
+
+afterEach(async () => {
+  await db.destroy().catch(pass);
+});
 
 beforeEach(async () => {
   await setupCmd({ db: dbName });
 });
 
 it("can update an existing doc from the first few letters of its humanId", async () => {
-  await db.insert({
+  await db.put({
     _id: "doc_to_update",
     data: { foo: "bar" },
     meta: { humanId: "abcdefg" },
@@ -35,7 +46,7 @@ it("can update an existing doc from the first few letters of its humanId", async
 });
 
 it("can update a datonly doc from the first letters of its id", async () => {
-  await db.insert({ _id: "some_data_only", foo: "bar" });
+  await db.put({ _id: "some_data_only", foo: "bar" });
   const retDoc = await updateCmd({
     db: dbName,
     quickId: "some",
@@ -96,7 +107,7 @@ it("outputs an UPDATE message or a NODIFF message when show is standard", async 
   const mockLog = jest.fn();
   console.log = mockLog;
 
-  await db.insert({ _id: "zzz", data: { foo: "bar" }, meta: {} });
+  await db.put({ _id: "zzz", data: { foo: "bar" }, meta: {} });
   await updateCmd({
     db: dbName,
     quickId: "zzz",

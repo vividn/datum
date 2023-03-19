@@ -164,7 +164,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   });
   payload._id = _id;
 
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const { undo, "force-undo": force } = args;
   if (undo || force) {
@@ -180,8 +180,8 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       ) {
         // just get the next lowest id
         doc = (
-          await db.list({
-            start_key: _id,
+          await db.allDocs({
+            startkey: _id,
             descending: true,
             limit: 1,
             include_docs: true,
@@ -208,7 +208,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       }
       console.log("Doc created more than fifteen minutes ago");
     }
-    await db.destroy(doc._id, doc._rev);
+    await db.remove(doc._id, doc._rev);
     console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
     return doc;
   }

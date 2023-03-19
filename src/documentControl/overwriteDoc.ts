@@ -94,10 +94,10 @@ export async function overwriteDoc({
       return oldDoc;
     }
     payload._rev = oldDoc._rev;
-    await db.insert(payload);
+    await db.put(payload);
   } else {
     delete payload._rev;
-    await db.insert(payload).catch(async (e) => {
+    await db.put(payload).catch(async (e) => {
       if (e.error === "conflict") {
         const existingDoc = await db.get(newId);
         showExists(existingDoc, outputArgs);
@@ -107,7 +107,7 @@ export async function overwriteDoc({
         throw e;
       }
     });
-    await db.destroy(id, oldDoc._rev);
+    await db.remove(id, oldDoc._rev);
     showRename(id, newId, outputArgs);
   }
 

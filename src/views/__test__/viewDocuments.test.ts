@@ -3,13 +3,14 @@ import {
   DatumView,
   datumViewToViewPayload,
   StringifiedDatumView,
+  ViewPayload,
 } from "../DatumView";
 import { _emit } from "../emit";
-import { resetTestDb, testNano } from "../../test-utils";
-import { EitherPayload } from "../../documentControl/DatumDocument";
+import { pass, resetTestDb } from "../../test-utils";
 import { insertDatumView } from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";
 import * as overwriteDoc from "../../documentControl/overwriteDoc";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 function emit(key: unknown, value: unknown) {
   _emit(key, value);
@@ -204,14 +205,15 @@ describe("datumViewToViewPayload", () => {
 
 describe("insertDatumView", () => {
   const dbName = "insert_datum_view_test";
-  const db = testNano.use<EitherPayload>(dbName);
-  const viewDb = asViewDb(db);
-
+  let db: PouchDB.Database<EitherPayload>;
+  let viewDb: PouchDB.Database<ViewPayload>;
   beforeEach(async () => {
-    await resetTestDb(dbName);
+    db = await resetTestDb(dbName);
+    viewDb = asViewDb(db);
   });
-  afterAll(async () => {
-    await testNano.db.destroy(dbName);
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
   });
 
   it("turns a DatumView into a functioning view", async () => {
@@ -231,21 +233,21 @@ describe("insertDatumView", () => {
       },
     };
 
-    await db.insert({ _id: "doc1", a: 3, b: 4 });
-    await db.insert({ _id: "doc2", a: 6 });
+    await db.put({ _id: "doc1", a: 3, b: 4 });
+    await db.put({ _id: "doc2", a: 6 });
 
     await insertDatumView({ db: viewDb, datumView: summerAB });
 
-    const total = await db.view("summer", "default");
+    const total = await db.query("summer/default");
     expect(total.rows[0].value).toBe(13);
 
-    const grouped = await db.view("summer", "default", { group: true });
+    const grouped = await db.query("summer/default", { group: true });
     expect(grouped.rows).toEqual([
       { key: "a", value: 9 },
       { key: "b", value: 4 },
     ]);
 
-    const unreduced = await db.view("summer", "default", { reduce: false });
+    const unreduced = await db.query("summer/default", { reduce: false });
     expect(unreduced.total_rows).toEqual(3);
   });
 
@@ -265,21 +267,21 @@ describe("insertDatumView", () => {
       },
     };
 
-    await db.insert({ _id: "doc1", a: 3, b: 4 });
-    await db.insert({ _id: "doc2", a: 6 });
+    await db.put({ _id: "doc1", a: 3, b: 4 });
+    await db.put({ _id: "doc2", a: 6 });
 
     await insertDatumView({ db: viewDb, datumView: summerAB });
 
-    const total = await db.view("summer", "default");
+    const total = await db.query("summer/default");
     expect(total.rows[0].value).toBe(13);
 
-    const grouped = await db.view("summer", "default", { group: true });
+    const grouped = await db.query("summer/default", { group: true });
     expect(grouped.rows).toEqual([
       { key: "a", value: 9 },
       { key: "b", value: 4 },
     ]);
 
-    const unreduced = await db.view("summer", "default", { reduce: false });
+    const unreduced = await db.query("summer/default", { reduce: false });
     expect(unreduced.total_rows).toEqual(3);
   });
 

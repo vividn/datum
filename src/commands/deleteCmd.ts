@@ -15,7 +15,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function deleteCmd(args: DeleteCmdArgs): Promise<DeletedDocument> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
   const id = await quickId(db, args.quickId);
 
   return await deleteDoc({ id, db, outputArgs: args });

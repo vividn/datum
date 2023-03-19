@@ -1,68 +1,82 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import * as insertDatumViewModule from "../insertDatumView";
 import { setupDatumViews } from "../setupDatumViews";
 import { _emit } from "../emit";
 import * as getAllDatumViews from "../getAllDatumViews";
 import { DatumView } from "../DatumView";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
-const db = testDbLifecycle("setup_datum_views_test");
+describe("setupDatumViews", () => {
+  const dbName = "setup_datum_views_test";
+  let db: PouchDB.Database<EitherPayload>;
 
-function emit(key: any, value: any) {
-  _emit(key, value);
-}
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
 
-afterEach(async () => {
-  jest.resetModules();
-});
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
-it("adds all datum views and db views to an empty db", async () => {
-  const datumView1: DatumView = {
-    name: "datum_view",
-    emit,
-    map: (doc: any) => {
-      emit(doc._id, 1);
-    },
-    reduce: {
-      default: "_count",
-    },
-  };
-  const datumView2: DatumView = {
-    name: "datum_another_view",
-    emit,
-    map: (doc: any) => {
-      emit(doc._rev, null);
-    },
-  };
+  function emit(key: any, value: any) {
+    _emit(key, value);
+  }
 
-  const mockAllDatumViews = [datumView1, datumView2];
-  jest
-    .spyOn(getAllDatumViews, "getAllDatumViews")
-    .mockReturnValue(mockAllDatumViews);
+  afterEach(async () => {
+    jest.resetModules();
+  });
 
-  const dbView1: DatumView = {
-    name: "project_view",
-    emit,
-    map: (doc: any) => {
-      emit(doc._id, 3);
-    },
-  };
-  const mockDbDatumViews = [dbView1];
-  jest
-    .spyOn(getAllDatumViews, "getDbDatumViews")
-    .mockResolvedValue(mockDbDatumViews);
+  it("adds all datum views and db views to an empty db", async () => {
+    const datumView1: DatumView = {
+      name: "datum_view",
+      emit,
+      map: (doc: any) => {
+        emit(doc._id, 1);
+      },
+      reduce: {
+        default: "_count",
+      },
+    };
+    const datumView2: DatumView = {
+      name: "datum_another_view",
+      emit,
+      map: (doc: any) => {
+        emit(doc._rev, null);
+      },
+    };
 
-  const insertDatumViewsSpy = jest.spyOn(
-    insertDatumViewModule,
-    "insertDatumView"
-  );
+    const mockAllDatumViews = [datumView1, datumView2];
+    jest
+      .spyOn(getAllDatumViews, "getAllDatumViews")
+      .mockReturnValue(mockAllDatumViews);
 
-  await setupDatumViews({ db });
+    const dbView1: DatumView = {
+      name: "project_view",
+      emit,
+      map: (doc: any) => {
+        emit(doc._id, 3);
+      },
+    };
+    const mockDbDatumViews = [dbView1];
+    jest
+      .spyOn(getAllDatumViews, "getDbDatumViews")
+      .mockResolvedValue(mockDbDatumViews);
 
-  await db.get("_design/datum_view");
-  await db.get("_design/datum_another_view");
-  await expect(db.get("_design/project_view")).rejects.toThrowError("missing");
-  expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
+    const insertDatumViewsSpy = jest.spyOn(
+      insertDatumViewModule,
+      "insertDatumView"
+    );
 
-  await setupDatumViews({ db, projectDir: "./" });
-  await db.get("_design/project_view");
+    await setupDatumViews({ db });
+
+    await db.get("_design/datum_view");
+    await db.get("_design/datum_another_view");
+    await expect(
+      db.get("_design/project_view")
+    ).rejects.toThrowErrorMatchingInlineSnapshot(`"missing"`);
+    expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
+
+    await setupDatumViews({ db, projectDir: "./" });
+    await db.get("_design/project_view");
+  });
 });

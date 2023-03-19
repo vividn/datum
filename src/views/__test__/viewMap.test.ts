@@ -1,22 +1,17 @@
 import { mock } from "jest-mock-extended";
-import {
-  EitherDocument,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
-import { DocumentScope, DocumentViewResponse } from "nano";
+import { EitherDocument } from "../../documentControl/DatumDocument";
 import { DatumView, StringifiedDatumView } from "../DatumView";
 import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
-  pass,
-  testNano,
+  resetTestDb,
 } from "../../test-utils";
 import { DatumViewMissingError } from "../../errors";
 import { viewMap } from "../viewMap";
 import { insertDatumView } from "../insertDatumView";
 
-const mockDb = mock<DocumentScope<EitherDocument>>();
+const mockDb = mock<PouchDB.Database<EitherDocument>>();
 const mockDatumView = mock<DatumView>();
 
 beforeEach(() => {
@@ -29,20 +24,19 @@ it("calls the default view in the named DatumView on the db unreduced", async ()
     datumView: mockDatumView,
     params: { key: "abc" },
   });
-  expect(mockDb.view).toBeCalledWith(mockDatumView.name, "default", {
+  expect(mockDb.query).toBeCalledWith(`${mockDatumView.name}/default`, {
     reduce: false,
     key: "abc",
   });
 });
 
 it("returns the view result directly", async () => {
-  const mockViewResponse: DocumentViewResponse<unknown, EitherDocument> = {
+  const mockViewResponse: PouchDB.Query.Response<EitherDocument> = {
     total_rows: 1,
     rows: [{ key: "abc", value: 37, id: "abc__37" }],
     offset: 1337,
-    update_seq: undefined,
   };
-  mockDb.view.mockReturnValue(Promise.resolve(mockViewResponse));
+  mockDb.query.mockReturnValue(Promise.resolve(mockViewResponse));
   const returnValue = await viewMap({
     db: mockDb,
     datumView: mockDatumView,
@@ -52,7 +46,7 @@ it("returns the view result directly", async () => {
 });
 
 it("throws a DatumViewMissingError if the view document is not there or the named view is missing from the document", async () => {
-  mockDb.view
+  mockDb.query
     .mockRejectedValueOnce(mockDocMissingError)
     .mockRejectedValueOnce(mockDocDeletedError)
     .mockRejectedValueOnce(mockMissingNamedViewError)
@@ -77,9 +71,7 @@ it("throws a DatumViewMissingError if the view document is not there or the name
 
 it("can call a view that has been inserted by insertDatumView", async () => {
   const dbName = "test_view_map";
-  await testNano.db.destroy(dbName).catch(pass);
-  await testNano.db.create(dbName);
-  const db = testNano.use<EitherPayload>(dbName);
+  const db = await resetTestDb(dbName);
 
   const testDatumView: StringifiedDatumView = {
     name: "datum_test_view_datum_view",

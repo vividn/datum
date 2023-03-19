@@ -73,16 +73,15 @@ export class MergeError extends MyError {
 }
 
 export type CouchDbError = {
-  scope: "couch";
-  statusCode: number;
-  errid: string;
-  description: string;
   error: string;
   reason: string;
+  status: number;
+  name: string;
+  message: string;
 };
 
 export const isCouchDbError = (error: unknown): error is CouchDbError => {
-  return (error as CouchDbError).scope === "couch";
+  return !!(error as CouchDbError).error && !!(error as CouchDbError).reason;
 };
 
 export class DatumViewMissingError extends MyError {

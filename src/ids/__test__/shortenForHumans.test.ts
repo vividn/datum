@@ -1,14 +1,14 @@
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
-import { DocumentScope } from "nano";
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";
 import { shortenForHumans } from "../shortenForHumans";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("shortenForHumans", () => {
-  const mockDb = mock<DocumentScope<any>>();
+  const mockDb = mock<PouchDB.Database<any>>();
 
   it("calls getHumanIds with the array of ids", async () => {
     const ids = ["idA", "idB", "idNo", "idC"];
@@ -36,7 +36,15 @@ describe("shortenForHumans", () => {
 
 describe("integration test", () => {
   const dbName = "test_shorten_for_humans";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
   beforeEach(async () => {
     await insertDatumView({ db, datumView: idToHumanView });
@@ -44,17 +52,17 @@ describe("integration test", () => {
   });
 
   it("returns an array of shortened humanIds, with undefined holes for docs that have no row in the view", async () => {
-    await db.insert({
+    await db.put({
       _id: "id_w_human1",
       data: {},
       meta: { humanId: "abc-111" },
     });
-    await db.insert({
+    await db.put({
       _id: "id_w_human2",
       data: {},
       meta: { humanId: "abc-222" },
     });
-    await db.insert({
+    await db.put({
       _id: "id_no_human",
       data: {},
       meta: {},

@@ -1,7 +1,6 @@
 import { Argv } from "yargs";
 import { renderView } from "../output/renderView";
 import { mapCmd, MapCmdArgs, mapCmdYargs } from "./mapCmd";
-import { DocumentViewResponse } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { Show } from "../input/outputArgs";
 
@@ -24,7 +23,7 @@ export function builder(yargs: Argv): Argv {
 
 export async function reduceCmd(
   args: ReduceCmdArgs
-): Promise<DocumentViewResponse<unknown, EitherPayload<unknown>>> {
+): Promise<PouchDB.Query.Response<EitherPayload>> {
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
 
   // mock _count reduce function on the _all_docs list
