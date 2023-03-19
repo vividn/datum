@@ -47,7 +47,7 @@ describe("startsWith", () => {
       await db.put({ _id: "aa\ufff0\ufff0\ufff0" }); // Very high codepoint that couchdb recommend to filter (with inclusive_end: true), but should still be included with this superior method
       await db.put({ _id: "ab_not_included" });
 
-      const doc_list = await db.list(startsWith("aa"));
+      const doc_list = await db.allDocs(startsWith("aa"));
       const ids = doc_list.rows.map((row) => row.id);
       expect(ids.length).toBe(3);
       expect(ids).toEqual(["aaabc", "aazzz", "aa\ufff0\ufff0\ufff0"]);

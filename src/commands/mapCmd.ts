@@ -81,7 +81,7 @@ export async function mapCmd(
   // TODO: parse map name for /viewName
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const viewResult = useAllDocs
-    ? await db.list(viewParams)
+    ? await db.allDocs(viewParams)
     : await db.view(args.mapName, args.view ?? "default", viewParams);
   if (args.show !== Show.None) {
     renderView(viewResult);

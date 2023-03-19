@@ -57,7 +57,7 @@ export async function quickId(
     throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
   }
 
-  const startsMainId = await db.list(startsWith(quickString));
+  const startsMainId = await db.allDocs(startsWith(quickString));
   if (startsMainId.rows.length === 1) {
     return startsMainId.rows[0].id;
   }
