@@ -1,6 +1,5 @@
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
-import { DocumentScope } from "nano";
 import { testDbLifecycle } from "../../test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";

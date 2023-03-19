@@ -1,7 +1,6 @@
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { flatten } from "table/dist/src/utils";
 import * as fs from "fs";

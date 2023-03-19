@@ -1,5 +1,4 @@
 import { mock } from "jest-mock-extended";
-import { DocumentScope, DocumentViewResponse } from "nano";
 import { idToHumanView } from "../../views/datumViews";
 import { getHumanIds } from "../getHumanIds";
 import {
@@ -18,7 +17,7 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
     ["id2", "hid2"],
     ["id3", "hid3"],
   ];
-  const mockViewResult: DocumentViewResponse<string, any> = {
+  const mockViewResult: PouchDB.Query.Response<any> = {
     total_rows: 1000,
     offset: 300,
     rows: idsHids.map((idHid) => ({
@@ -26,15 +25,14 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
       key: idHid[0],
       value: idHid[1],
     })),
-    update_seq: undefined,
   };
-  dbMock.view.mockReturnValue(Promise.resolve(mockViewResult));
+  dbMock.query.mockReturnValue(Promise.resolve(mockViewResult));
 
   const inputIds = ["id1", "id2", "id_with_no_humanId", "id3"];
   const returnVal = await getHumanIds(dbMock, inputIds);
 
-  expect(dbMock.view).toHaveBeenCalledTimes(1);
-  expect(dbMock.view).toBeCalledWith(
+  expect(dbMock.query).toHaveBeenCalledTimes(1);
+  expect(dbMock.query).toBeCalledWith(
     viewName,
     "default",
     expect.objectContaining({ reduce: false, keys: inputIds })
@@ -44,7 +42,7 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
 });
 
 it("throws a DatumViewMissing if datum view is not present", async () => {
-  dbMock.view
+  dbMock.query
     .mockRejectedValueOnce(mockDocMissingError)
     .mockRejectedValueOnce(mockDocDeletedError)
     .mockRejectedValueOnce(mockMissingNamedViewError)

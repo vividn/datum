@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { getHumanIds } from "./getHumanIds";
 import { minHumanId } from "./minHumanId";

@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { DatumViewMissingError, isCouchDbError, MyError } from "../errors";
 
@@ -18,7 +17,7 @@ export async function minHumanId(
   //TODO: Create function that takes the DatumView object and does view info on it
   const docCountsPerSlice = (
     await db
-      .view("datum_sub_human_id", "default", {
+      .query(`datum_sub_human_id//default`, {
         group: true,
         keys: startingSlices(humanId),
       })

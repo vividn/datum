@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { isCouchDbError, MyError } from "../errors";
 import { viewMap } from "../views/viewMap";

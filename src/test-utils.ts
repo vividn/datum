@@ -5,6 +5,7 @@ import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
 import { now } from "./time/timeUtils";
+import PouchDb from "pouchdb";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -42,23 +43,23 @@ export const mockMissingNamedViewError: CouchDbError = {
 export async function resetTestDb(
   dbName: string
 ): Promise<PouchDB.Database<EitherPayload>> {
-  const db = new PouchDB(dbName);
+  const db = new PouchDb(dbName);
   await db.destroy().catch(pass);
-  return new PouchDB(dbName);
+  return new PouchDb(dbName);
 }
 
 export function testDbLifecycle(
   dbName: string
 ): PouchDB.Database<EitherPayload> {
-  const db = testNano.use(dbName) as PouchDB.Database<EitherPayload>;
+  let db: PouchDB.Database<EitherPayload> = new PouchDb(dbName);
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
+    db = await resetTestDb(dbName);
     jest.spyOn(connectDb, "connectDb").mockImplementation(async () => db);
   });
 
   afterEach(async () => {
-    await testNano.db.destroy(dbName).catch(pass);
+    await db.destroy().catch(pass);
   });
 
   return db;
