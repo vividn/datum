@@ -13,30 +13,27 @@ export const fail = (): never => {
 };
 
 export const mockDocMissingError: CouchDbError = {
-  scope: "couch",
-  statusCode: 404,
-  errid: "non_200",
-  description: "missing",
+  status: 404,
+  name: "missing",
   error: "not_found",
   reason: "missing",
+  message: "missing",
 };
 
 export const mockDocDeletedError: CouchDbError = {
-  scope: "couch",
-  statusCode: 404,
-  errid: "non_200",
-  description: "deleted",
+  status: 404,
+  message: "deleted",
+  name: "deleted",
   error: "not_found",
   reason: "deleted",
 };
 
 export const mockMissingNamedViewError: CouchDbError = {
-  scope: "couch",
-  statusCode: 404,
-  errid: "non_200",
-  description: "missing_named_view",
+  status: 404,
+  name: "missing_named_view",
   error: "not_found",
   reason: "missing_named_view",
+  message: "missing_named_view",
 };
 
 export async function resetTestDb(
