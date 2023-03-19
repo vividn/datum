@@ -9,6 +9,7 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
+import * as connectDbModule from "../../auth/connectDb";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
@@ -17,6 +18,7 @@ describe("addCmd", () => {
 
   beforeEach(async () => {
     db = await resetTestDb(dbName);
+    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db);
   });
 
   afterEach(async () => {
