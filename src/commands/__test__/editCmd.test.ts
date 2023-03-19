@@ -41,6 +41,8 @@ describe("editCmd", () => {
     await db.put({ _id: "abcdef", abc: "def" });
     const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
     expect(returnedDoc).toMatchObject(editedDoc);
-    await expect(db.get("abcdef")).rejects.toThrowError("deleted");
+    await expect(db.get("abcdef")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
   });
 });
