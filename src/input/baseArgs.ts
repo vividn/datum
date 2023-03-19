@@ -4,6 +4,7 @@ import { outputYargs } from "./outputArgs";
 export type BaseArgs = {
   db?: string;
   host?: string;
+  adapter?: string;
   username?: string;
   password?: string;
   env?: string;
@@ -20,6 +21,10 @@ export const baseArgs = outputYargs(
     },
     host: {
       describe: "Host and port to use, defaults to 'localhost:5984'",
+      nargs: 1,
+    },
+    adapter: {
+      describe: "PouchDb adapter to use, will default to PouchDBs choice",
       nargs: 1,
     },
     username: {
