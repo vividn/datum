@@ -33,8 +33,7 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
 
   expect(dbMock.query).toHaveBeenCalledTimes(1);
   expect(dbMock.query).toBeCalledWith(
-    viewName,
-    "default",
+    `${viewName}/default`,
     expect.objectContaining({ reduce: false, keys: inputIds })
   );
 
