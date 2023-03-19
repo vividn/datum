@@ -193,7 +193,9 @@ describe("overwriteDoc", () => {
 
     const payload1 = { _id: "new-id-1", newKey1: "newData1" };
     const newDoc1 = await overwriteDoc({ db, id: "old-id", payload: payload1 });
-    await expect(db.get("old-id")).rejects.toThrow("deleted");
+    await expect(db.get("old-id")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
     const dbDoc1 = await db.get("new-id-1");
     expect(dbDoc1).toEqual(newDoc1);
     expect(newDoc1).toMatchObject(payload1);
@@ -209,7 +211,9 @@ describe("overwriteDoc", () => {
       id: "new-id-1",
       payload: payload2,
     });
-    await expect(db.get("new-id-1")).rejects.toThrow("deleted");
+    await expect(db.get("new-id-1")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
     const dbDoc2 = await db.get("new-id-2");
     expect(dbDoc2).toEqual(newDoc2);
     expect(newDoc2).toMatchObject(payload2);
@@ -225,7 +229,9 @@ describe("overwriteDoc", () => {
       id: "new-id-2",
       payload: payload3,
     });
-    await expect(db.get("new-id-2")).rejects.toThrow("deleted");
+    await expect(db.get("new-id-2")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
     const dbDoc3 = await db.get("new-id-3");
     expect(dbDoc3).toEqual(newDoc3);
     expect(newDoc3).toMatchObject(payload3);
@@ -428,7 +434,9 @@ describe("overwriteDoc", () => {
       id: "abc",
       payload: { _rev: newDoc._rev, ...testDatumPayload },
     });
-    await expect(db.get("abc")).rejects.toThrowError("deleted");
+    await expect(db.get("abc")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
   });
 
   it("does not alter the payload", async () => {
