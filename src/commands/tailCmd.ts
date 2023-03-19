@@ -78,7 +78,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     datumView: occurTimeView,
     params: {
       descending: true,
-      start_key: "\uffff\uffff",
+      startkey: "\uffff\uffff",
       limit,
       include_docs: true,
     },

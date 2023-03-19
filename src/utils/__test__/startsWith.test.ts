@@ -8,30 +8,30 @@ describe("startsWith", () => {
     ["zzz", "zzz\uffff\uffff\uffff\uffff"],
     ["ƞ", "ƞ\uffff\uffff\uffff\uffff"],
   ])(
-    "returns end_key as the start_key plus a bunch of high value unicode letters for string start keys",
+    "returns endkey as the startkey plus a bunch of high value unicode letters for string start keys",
     (startKey, endKey) => {
       expect(startsWith(startKey)).toEqual({
-        start_key: startKey,
-        end_key: endKey,
+        startkey: startKey,
+        endkey: endKey,
       });
     }
   );
 
   it("returns number+epsilon as the endkey if startkey is a number", () => {
     expect(startsWith(127)).toMatchObject({
-      start_key: 127,
-      end_key: 127.00000000000001,
+      startkey: 127,
+      endkey: 127.00000000000001,
     });
     expect(startsWith(3460000)).toMatchObject({
-      end_key: 3460000.0000000005,
-      start_key: 3460000,
+      endkey: 3460000.0000000005,
+      startkey: 3460000,
     });
   });
 
   it("returns array end keys appropriately for arrays", () => {
     expect(startsWith(["abc"])).toEqual({
-      start_key: ["abc"],
-      end_key: [
+      startkey: ["abc"],
+      endkey: [
         "abc",
         { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
       ],

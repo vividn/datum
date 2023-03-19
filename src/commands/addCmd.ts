@@ -181,7 +181,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
         // just get the next lowest id
         doc = (
           await db.allDocs({
-            start_key: _id,
+            startkey: _id,
             descending: true,
             limit: 1,
             include_docs: true,
