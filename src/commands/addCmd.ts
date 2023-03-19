@@ -164,7 +164,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   });
   payload._id = _id;
 
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const { undo, "force-undo": force } = args;
   if (undo || force) {

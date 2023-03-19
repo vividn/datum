@@ -3,9 +3,9 @@ import dotenv from "dotenv";
 import { MainDatumArgs } from "../input/mainYargs";
 import PouchDb from "pouchdb";
 
-export async function connectDb(
+export function connectDb(
   args: MainDatumArgs
-): Promise<PouchDB.Database<EitherPayload>> {
+): PouchDB.Database<EitherPayload> {
   if (
     process.env.NODE_ENV?.includes("dev") ||
     process.env.NODE_ENV?.includes("test")

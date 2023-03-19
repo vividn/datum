@@ -1,11 +1,12 @@
 import { CouchDbError } from "./errors";
 import { EitherPayload } from "./documentControl/DatumDocument";
-import * as connectDb from "./auth/connectDb";
+import * as connectDbModule from "./auth/connectDb";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
 import { now } from "./time/timeUtils";
 import PouchDb from "pouchdb";
+import { connectDb } from "./auth/connectDb";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -43,19 +44,19 @@ export const mockMissingNamedViewError: CouchDbError = {
 export async function resetTestDb(
   dbName: string
 ): Promise<PouchDB.Database<EitherPayload>> {
-  const db = new PouchDb(dbName);
+  const db = connectDb({ db: dbName });
   await db.destroy().catch(pass);
-  return new PouchDb(dbName);
+  return connectDb({ db: dbName });
 }
 
 export function testDbLifecycle(
   dbName: string
 ): PouchDB.Database<EitherPayload> {
-  let db: PouchDB.Database<EitherPayload> = new PouchDb(dbName);
+  let db: PouchDB.Database<EitherPayload> = connectDb({ db: dbName });
 
   beforeEach(async () => {
     db = await resetTestDb(dbName);
-    jest.spyOn(connectDb, "connectDb").mockImplementation(async () => db);
+    jest.spyOn(connectDbModule, "connectDb").mockImplementation(() => db);
   });
 
   afterEach(async () => {

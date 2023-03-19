@@ -63,7 +63,7 @@ export const builder = mapCmdYargs;
 export async function mapCmd(
   args: MapCmdArgs
 ): Promise<PouchDB.Query.Response<EitherPayload>> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
   const startEndParams = args.end
     ? {
         startkey: inferType(args.start as string),

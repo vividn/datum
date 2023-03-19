@@ -34,7 +34,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   function openFd(field: string): number {
     if (!args.outputDir) {
