@@ -121,7 +121,9 @@ describe("updateDoc", () => {
     delete oldDocMeta.modifyTime;
     expect(newDoc.meta).toMatchObject(oldDocMeta);
 
-    await expect(db.get("newData")).rejects.toThrow("missing");
+    await expect(db.get("newData")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"missing"`
+    );
   });
 
   test("different combination of dataOnly and datum for oldDoc and payload call the combineData function with appropriate arguments data component", async () => {
@@ -245,7 +247,9 @@ describe("updateDoc", () => {
       payload: { _id: "new-id", other: "data" },
       updateStrategy: "preferNew",
     });
-    await expect(db.get("old-id")).rejects.toThrow("deleted");
+    await expect(db.get("old-id")).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
     expect(await db.get("new-id")).toEqual(newDoc);
     expect(newDoc).toMatchObject({ _id: "new-id", foo: "bar", other: "data" });
   });
@@ -262,7 +266,9 @@ describe("updateDoc", () => {
       payload: { foo: "new-calculated-id" },
       updateStrategy: "preferNew",
     });
-    await expect(db.get("calculated-id")).rejects.toThrow("deleted");
+    await expect(
+      db.get("calculated-id")
+    ).rejects.toThrowErrorMatchingInlineSnapshot(`"deleted"`);
     expect(newDoc._id).toEqual("new-calculated-id");
     expect(await db.get("new-calculated-id")).toEqual(newDoc);
     expect(newDoc).toHaveProperty("data.foo", "new-calculated-id");
@@ -388,7 +394,9 @@ describe("updateDoc", () => {
   });
 
   test("it can update the id with new modifyTime when idStructure is %?modifyTime%", async () => {
-    await expect(() => db.get(nowStr)).rejects.toThrow("missing");
+    await expect(() =>
+      db.get(nowStr)
+    ).rejects.toThrowErrorMatchingInlineSnapshot(`"missing"`);
     await db.put({
       _id: notNowStr,
       data: {},
@@ -400,6 +408,8 @@ describe("updateDoc", () => {
       payload: { foo: "bar" },
     });
     expect(newDoc._id).toEqual(nowStr);
-    await expect(() => db.get(notNowStr)).rejects.toThrowError("deleted");
+    await expect(() =>
+      db.get(notNowStr)
+    ).rejects.toThrowErrorMatchingInlineSnapshot(`"deleted"`);
   });
 });
