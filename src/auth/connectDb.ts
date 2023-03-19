@@ -20,36 +20,19 @@ export function connectDb(
 
   process.env.COUCHDB_HOSTNAME ??= "locahost:5984";
 
-  const couchConfig = {
-    username:
-      args.username ??
-      process.env.COUCHDB_USER ??
-      (() => {
-        throw new Error(
-          "No username set. Specify with --username, or COUCHDB_USER"
-        );
-      })(),
-    password:
-      args.password ??
-      process.env.COUCHDB_PASSWORD ??
-      (() => {
-        throw new Error(
-          "No password set. Specify with --password or COUCHDB_PASSWORD"
-        );
-      })(),
-    hostname:
-      args.host ??
-      process.env.COUCHDB_HOSTNAME ??
-      (() => {
-        throw new Error(
-          "No hostame set. Specify with --host or COUCHDB_HOSTNAME"
-        );
-      })(),
-  };
+  const hostname = args.host ?? process.env.COUCHDB_HOSTNAME;
+  if (!hostname) {
+    throw new Error("No hostame set. Specify with --host or COUCHDB_HOSTNAME");
+  }
   const { db: dbName = "datum", createDb } = args;
 
-  return new PouchDb(
-    `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}/${dbName}`,
-    { skip_setup: !createDb }
-  );
+  const couchAuth = {
+    username: args.username ?? process.env.COUCHDB_USER,
+    password: args.password ?? process.env.COUCHDB_PASSWORD,
+  };
+
+  return new PouchDb(`http://${hostname}/${dbName}`, {
+    skip_setup: !createDb,
+    auth: couchAuth,
+  });
 }
