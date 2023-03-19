@@ -1,4 +1,3 @@
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { asViewDb, MapFunction, ViewPayload } from "../views/DatumView";
 import { isCouchDbError } from "../errors";
@@ -35,7 +34,7 @@ async function editWithExplanation(mapFn: string): Promise<string> {
 }
 
 type baseMigrationType = {
-  db: DocumentScope<EitherPayload>;
+  db: PouchDB.Database<EitherPayload>;
   migrationName: string;
   outputArgs?: OutputArgs;
 };

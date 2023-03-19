@@ -70,7 +70,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const limit = args.num ?? 10;
   const viewResults = await viewMap({
@@ -78,7 +78,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     datumView: occurTimeView,
     params: {
       descending: true,
-      start_key: "\uffff\uffff",
+      startkey: "\uffff\uffff",
       limit,
       include_docs: true,
     },

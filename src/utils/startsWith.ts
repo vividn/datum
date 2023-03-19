@@ -1,17 +1,15 @@
-import { DocumentViewParams } from "nano";
-
 export function startsWith(
   value: string | number | any[]
-): Required<Pick<DocumentViewParams, "start_key" | "end_key">> {
+): Required<Pick<PouchDB.Query.Options<any, any>, "startkey" | "endkey">> {
   if (typeof value === "string") {
-    return { start_key: value, end_key: value + "\uffff\uffff\uffff\uffff" };
+    return { startkey: value, endkey: value + "\uffff\uffff\uffff\uffff" };
   } else if (typeof value === "number") {
     const endKey = nextFloat(value, +Infinity);
-    return { start_key: value, end_key: endKey };
+    return { startkey: value, endkey: endKey };
   } else {
     return {
-      start_key: value,
-      end_key: [
+      startkey: value,
+      endkey: [
         ...value,
         { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
       ],

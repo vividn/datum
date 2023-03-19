@@ -35,7 +35,7 @@ export async function deleteDoc({
     }
   }
 
-  const deletedRev = (await db.destroy(id, existingDoc._rev)).rev;
+  const deletedRev = (await db.remove(id, existingDoc._rev)).rev;
   const deletedDoc = (await db.get(id, { rev: deletedRev })) as DeletedDocument;
   showDelete(existingDoc, outputArgs);
   return deletedDoc;

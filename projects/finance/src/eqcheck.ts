@@ -8,7 +8,7 @@ import { equalityView } from "../views";
 async function main(cliInput: string | string[]) {
   const args = (await baseArgs.parse(cliInput)) as BaseArgs;
   args.db ??= "finance";
-  const db = await connectDb(args);
+  const db = connectDb(args);
   const allEqualityChecks = (await viewMap({ db, datumView: equalityView })).rows;
 
   console.log({allEqualityChecks});

@@ -26,7 +26,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function migrateEditCmd(args: MigrateEditCmdArgs): Promise<void> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   return await editMigration({
     db,

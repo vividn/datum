@@ -1,14 +1,33 @@
-import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import {
+  mockedLogLifecycle,
+  pass,
+  resetTestDb,
+  setNow,
+} from "../../test-utils";
+import {
+  DatumDocument,
+  EitherPayload,
+} from "../../documentControl/DatumDocument";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
+import * as connectDbModule from "../../auth/connectDb";
 
 // TODO: Make undo system more robust and more tested
 
 describe("addCmd undo", () => {
   const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
-  const db = testDbLifecycle(dbName);
+  let db: PouchDB.Database<EitherPayload>;
+
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
+
   const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
   beforeEach(() => {
     setNow(mockNow.toString());
@@ -32,9 +51,9 @@ describe("addCmd undo", () => {
       expect(info.doc_count).toEqual(1);
     });
     await db.get("kept");
-    await expect(db.get("this_one_should_be_deleted")).rejects.toThrowError(
-      "deleted"
-    );
+    await expect(
+      db.get("this_one_should_be_deleted")
+    ).rejects.toThrowErrorMatchingInlineSnapshot(`"deleted"`);
   });
 
   it("undoes a document with a time in the past if it contains occurTime", async () => {
@@ -45,7 +64,9 @@ describe("addCmd undo", () => {
     expect(insertedDoc.meta.idStructure).toMatch(/%occurTime%/);
 
     await addCmd({ time: inAMinute, undo: true });
-    await expect(db.get(now)).rejects.toThrowError("deleted");
+    await expect(db.get(now)).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
   });
 
   it("prevents undo if created more than 15 minutes ago", async () => {
@@ -53,7 +74,7 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: "oldDoc",
       data: {},
       meta: { createTime: oldTime.toString() },
@@ -72,13 +93,15 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: docName,
       data: {},
       meta: { createTime: oldTime.toString() },
     });
     await addCmd({ idPart: docName, "force-undo": true });
-    await expect(db.get(docName)).rejects.toThrowError("deleted");
+    await expect(db.get(docName)).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
 
     Settings.resetCaches();
   });
@@ -89,13 +112,15 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: docName,
       data: {},
       meta: { createTime: oldTime.toString() },
     });
     await addCmd({ idPart: docName, "force-undo": true, undo: true });
-    await expect(db.get(docName)).rejects.toThrowError("deleted");
+    await expect(db.get(docName)).rejects.toThrowErrorMatchingInlineSnapshot(
+      `"deleted"`
+    );
 
     Settings.resetCaches();
   });

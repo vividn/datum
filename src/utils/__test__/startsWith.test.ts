@@ -1,5 +1,6 @@
 import { startsWith } from "../startsWith";
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("startsWith", () => {
   it.each([
@@ -8,30 +9,30 @@ describe("startsWith", () => {
     ["zzz", "zzz\uffff\uffff\uffff\uffff"],
     ["ƞ", "ƞ\uffff\uffff\uffff\uffff"],
   ])(
-    "returns end_key as the start_key plus a bunch of high value unicode letters for string start keys",
+    "returns endkey as the startkey plus a bunch of high value unicode letters for string start keys",
     (startKey, endKey) => {
       expect(startsWith(startKey)).toEqual({
-        start_key: startKey,
-        end_key: endKey,
+        startkey: startKey,
+        endkey: endKey,
       });
     }
   );
 
   it("returns number+epsilon as the endkey if startkey is a number", () => {
     expect(startsWith(127)).toMatchObject({
-      start_key: 127,
-      end_key: 127.00000000000001,
+      startkey: 127,
+      endkey: 127.00000000000001,
     });
     expect(startsWith(3460000)).toMatchObject({
-      end_key: 3460000.0000000005,
-      start_key: 3460000,
+      endkey: 3460000.0000000005,
+      startkey: 3460000,
     });
   });
 
   it("returns array end keys appropriately for arrays", () => {
     expect(startsWith(["abc"])).toEqual({
-      start_key: ["abc"],
-      end_key: [
+      startkey: ["abc"],
+      endkey: [
         "abc",
         { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
       ],
@@ -40,14 +41,23 @@ describe("startsWith", () => {
 
   describe("test with db", () => {
     const dbName = "test_starts_with";
-    const db = testDbLifecycle(dbName);
-    test("output can be used to filter the list of _all_docs to just docs that start with the string", async () => {
-      await db.insert({ _id: "aaabc" });
-      await db.insert({ _id: "aazzz" });
-      await db.insert({ _id: "aa\ufff0\ufff0\ufff0" }); // Very high codepoint that couchdb recommend to filter (with inclusive_end: true), but should still be included with this superior method
-      await db.insert({ _id: "ab_not_included" });
+    let db: PouchDB.Database<EitherPayload>;
 
-      const doc_list = await db.list(startsWith("aa"));
+    beforeEach(async () => {
+      db = await resetTestDb(dbName);
+    });
+
+    afterEach(async () => {
+      await db.destroy().catch(pass);
+    });
+
+    test("output can be used to filter the list of _all_docs to just docs that start with the string", async () => {
+      await db.put({ _id: "aaabc" });
+      await db.put({ _id: "aazzz" });
+      await db.put({ _id: "aa\ufff0\ufff0\ufff0" }); // Very high codepoint that couchdb recommend to filter (with inclusive_end: true), but should still be included with this superior method
+      await db.put({ _id: "ab_not_included" });
+
+      const doc_list = await db.allDocs(startsWith("aa"));
       const ids = doc_list.rows.map((row) => row.id);
       expect(ids.length).toBe(3);
       expect(ids).toEqual(["aaabc", "aazzz", "aa\ufff0\ufff0\ufff0"]);

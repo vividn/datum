@@ -78,7 +78,7 @@ export async function addDoc({
     }
   }
   try {
-    await db.insert(payload);
+    await db.put(payload);
   } catch (error) {
     if (isCouchDbError(error) && error.error !== "conflict") {
       throw error;

@@ -1,10 +1,11 @@
-import Nano, { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
-import { pass } from "../utils/pass";
 import { MainDatumArgs } from "../input/mainYargs";
+import PouchDb from "pouchdb";
 
-export function connectNano(args: MainDatumArgs): Nano.ServerScope {
+export function connectDb(
+  args: MainDatumArgs
+): PouchDB.Database<EitherPayload> {
   if (
     process.env.NODE_ENV?.includes("dev") ||
     process.env.NODE_ENV?.includes("test")
@@ -45,19 +46,10 @@ export function connectNano(args: MainDatumArgs): Nano.ServerScope {
         );
       })(),
   };
-  return Nano(
-    `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`
-  );
-}
+  const { db: dbName = "datum", createDb } = args;
 
-export async function connectDb(
-  args: MainDatumArgs
-): Promise<DocumentScope<EitherPayload>> {
-  const nano = connectNano(args);
-  const { db: dbName = "datum" } = args;
-  if (args.createDb) {
-    await nano.db.create(dbName).catch(pass);
-  }
-  const db: DocumentScope<EitherPayload> = nano.use(dbName);
-  return db;
+  return new PouchDb(
+    `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}/${dbName}`,
+    { skip_setup: !createDb }
+  );
 }

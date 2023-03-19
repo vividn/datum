@@ -1,5 +1,4 @@
 import { EitherDocument, EitherPayload } from "./DatumDocument";
-import { DocumentScope } from "nano";
 import { OutputArgs } from "../input/outputArgs";
 
 export class DocExistsError extends Error {
@@ -16,6 +15,6 @@ export class DocExistsError extends Error {
 }
 
 export type BaseDocControlArgs = {
-  db: DocumentScope<any>;
+  db: PouchDB.Database<any>;
   outputArgs?: OutputArgs;
 };

@@ -1,46 +1,57 @@
-import { testDbLifecycle } from "../../test-utils";
+import { pass, resetTestDb } from "../../test-utils";
 import * as setupDatumViews from "../../views/setupDatumViews";
 import { setupCmd } from "../setupCmd";
 import * as connectDb from "../../auth/connectDb";
+import { EitherPayload } from "../../documentControl/DatumDocument";
 
-const dbName = "setup_cmd_test";
-const db = testDbLifecycle(dbName);
+describe("setupCmd", () => {
+  const dbName = "setup_cmd_test";
+  let db: PouchDB.Database<EitherPayload>;
 
-it("calls connectDb with createDb true by default", async () => {
-  jest
-    .spyOn(setupDatumViews, "setupDatumViews")
-    .mockImplementation(async () => {
-      return;
-    });
-  const connectDbSpy = jest.spyOn(connectDb, "connectDb");
-  await setupCmd({ db: dbName });
-  expect(connectDbSpy).toHaveBeenCalledWith(
-    expect.objectContaining({ createDb: true })
-  );
-  connectDbSpy.mockReset();
+  beforeEach(async () => {
+    db = await resetTestDb(dbName);
+  });
 
-  await setupCmd({ db: dbName, createDb: false });
-  expect(connectDbSpy).toHaveBeenCalledWith(
-    expect.objectContaining({ createDb: false })
-  );
-});
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
 
-it("calls setupDatumViews", async () => {
-  const setupDatumViewsSpy = jest
-    .spyOn(setupDatumViews, "setupDatumViews")
-    .mockImplementation(async () => {
-      return;
-    });
-  await setupCmd({ db: dbName });
-  expect(setupDatumViewsSpy).toHaveBeenCalledTimes(1);
-});
+  it("calls connectDb with createDb true by default", async () => {
+    jest
+      .spyOn(setupDatumViews, "setupDatumViews")
+      .mockImplementation(async () => {
+        return;
+      });
+    const connectDbSpy = jest.spyOn(connectDb, "connectDb");
+    await setupCmd({ db: dbName });
+    expect(connectDbSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ createDb: true })
+    );
+    connectDbSpy.mockReset();
 
-it("adds datum views into the db", async () => {
-  await setupCmd({ db: dbName });
-  await db.get("_design/datum_sub_human_id");
-});
+    await setupCmd({ db: dbName, createDb: false });
+    expect(connectDbSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ createDb: false })
+    );
+  });
 
-it("adds project views into the db", async () => {
-  await setupCmd({ db: dbName, projectDir: __dirname });
-  await db.get("_design/key_value_view");
+  it("calls setupDatumViews", async () => {
+    const setupDatumViewsSpy = jest
+      .spyOn(setupDatumViews, "setupDatumViews")
+      .mockImplementation(async () => {
+        return;
+      });
+    await setupCmd({ db: dbName });
+    expect(setupDatumViewsSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("adds datum views into the db", async () => {
+    await setupCmd({ db: dbName });
+    await db.get("_design/datum_sub_human_id");
+  });
+
+  it("adds project views into the db", async () => {
+    await setupCmd({ db: dbName, projectDir: __dirname });
+    await db.get("_design/key_value_view");
+  });
 });

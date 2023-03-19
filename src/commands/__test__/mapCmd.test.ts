@@ -14,7 +14,7 @@ describe("mapCmd", () => {
   it.todo("can display a different map function by specifying view");
   it.todo("can easily specify the startsWith");
   it.todo(
-    "uses start_key and end_key if another value is passed after startsWith"
+    "uses startkey and endkey if another value is passed after startsWith"
   );
 
   it.todo("lists available maps and reduces if no arguments are given");

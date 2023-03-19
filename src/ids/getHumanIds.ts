@@ -1,15 +1,14 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { DocumentScope } from "nano";
 import { idToHumanView } from "../views/datumViews";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 export async function getHumanIds(
-  db: DocumentScope<EitherPayload>,
+  db: PouchDB.Database<EitherPayload>,
   ids: string[]
 ): Promise<(string | undefined)[]> {
   let viewResponse;
   try {
-    viewResponse = await db.view<string>(idToHumanView.name, "default", {
+    viewResponse = await db.query<string>(`${idToHumanView.name}/default`, {
       keys: ids,
       reduce: false,
     });

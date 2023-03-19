@@ -1,6 +1,6 @@
 import { updateDoc } from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { fail, mockedLogLifecycle, pass, resetTestDb } from "../../test-utils";
 import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 import { overwriteDoc } from "../overwriteDoc";
@@ -8,9 +8,18 @@ import * as addDocModule from "../addDoc";
 import { addCmd } from "../../commands/addCmd";
 import { deleteDoc } from "../deleteDoc";
 import { Show } from "../../input/outputArgs";
+import { EitherPayload } from "../DatumDocument";
 
 const dbName = "doc_control_output_test";
-const db = testDbLifecycle(dbName);
+let db: PouchDB.Database<EitherPayload>;
+
+beforeEach(async () => {
+  db = await resetTestDb(dbName);
+});
+
+afterEach(async () => {
+  await db.destroy().catch(pass);
+});
 const mockedLog = mockedLogLifecycle();
 
 test("addDoc displays a CREATE: message and the document if showOutput", async () => {
@@ -25,7 +34,7 @@ test("addDoc displays a CREATE: message and the document if showOutput", async (
 });
 
 test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict", async () => {
-  await db.insert({ _id: "alreadyHere", foo: "bar" });
+  await db.put({ _id: "alreadyHere", foo: "bar" });
   try {
     await addDoc({
       db,
@@ -84,7 +93,7 @@ test("addDoc calls updateDoc with showOutput", async () => {
 });
 
 test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
-  await db.insert({ _id: "name", foo: "bar" });
+  await db.put({ _id: "name", foo: "bar" });
   await updateDoc({
     db,
     id: "name",
@@ -97,7 +106,7 @@ test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
 });
 
 test("updateDoc outputs a NODIFF: message if showing output and no update needed", async () => {
-  await db.insert({ _id: "name", foo: "bar" });
+  await db.put({ _id: "name", foo: "bar" });
   await updateDoc({
     db,
     id: "name",
@@ -111,7 +120,7 @@ test("updateDoc outputs a NODIFF: message if showing output and no update needed
 });
 
 test("updateDoc outputs a RENAME: UPDATE:", async () => {
-  await db.insert({
+  await db.put({
     _id: "docId",
     foo: "abc",
   });
@@ -129,11 +138,11 @@ test("updateDoc outputs a RENAME: UPDATE:", async () => {
 });
 
 test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
-  await db.insert({
+  await db.put({
     _id: "docId",
     foo: "abc",
   });
-  await db.insert({ _id: "conflictId", some: "data" });
+  await db.put({ _id: "conflictId", some: "data" });
   try {
     await updateDoc({
       db,
@@ -153,7 +162,7 @@ test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
 });
 
 test("overwriteDoc outputs OWRITE", async () => {
-  await db.insert({
+  await db.put({
     _id: "docId",
     data: { foo: "abc" },
     meta: { humanId: "abcd" },
@@ -172,7 +181,7 @@ test("overwriteDoc outputs OWRITE", async () => {
 });
 
 test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
-  await db.insert({
+  await db.put({
     _id: "docId",
     data: { foo: "abc" },
     meta: { humanId: "abcd" },
@@ -191,7 +200,7 @@ test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
 });
 
 test("overwriteDoc outputs NODIFF", async () => {
-  await db.insert({
+  await db.put({
     _id: "docId",
     data: { foo: "abc" },
     meta: { humanId: "abcd" },
@@ -209,12 +218,12 @@ test("overwriteDoc outputs NODIFF", async () => {
 });
 
 test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
-  await db.insert({
+  await db.put({
     _id: "docId",
     data: { foo: "abc" },
     meta: { humanId: "abcd" },
   });
-  await db.insert({
+  await db.put({
     _id: "conflictId",
     data: { some: "data" },
     meta: { humanId: "conlfict" },
@@ -243,7 +252,7 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
 });
 
 test("deleteDoc outputs DELETE", async () => {
-  await db.insert({ _id: "doc-to-delete" });
+  await db.put({ _id: "doc-to-delete" });
   await deleteDoc({
     db,
     id: "doc-to-delete",
