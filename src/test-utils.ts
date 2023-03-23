@@ -82,6 +82,7 @@ export function setNow(timeStr: string): DateTime {
   const parsedTime = parseTimeStr({ timeStr });
   const newNow = () => parsedTime.toMillis();
   Settings.now = newNow;
+  console.log(DateTime.utc().toString());
   return parsedTime;
 }
 

@@ -1,6 +1,8 @@
 import { BaseDocControlArgs } from "./base";
 import { isCouchDbError, MyError } from "../errors";
 import { showDelete } from "../output/output";
+import { EitherDocument, isDatumDocument } from "./DatumDocument";
+import { DateTime } from "luxon";
 
 export class NoDocToDeleteError extends MyError {
   constructor(m: unknown) {
@@ -23,7 +25,7 @@ export async function deleteDoc({
   id,
   db,
   outputArgs = {},
-}: deleteDocType): Promise<DeletedDocument> {
+}: deleteDocType): Promise<EitherDocument & { _deleted: true }> {
   let existingDoc;
   try {
     existingDoc = await db.get(id);
@@ -35,8 +37,14 @@ export async function deleteDoc({
     }
   }
 
-  const deletedRev = (await db.remove(id, existingDoc._rev)).rev;
-  const deletedDoc = (await db.get(id, { rev: deletedRev })) as DeletedDocument;
-  showDelete(existingDoc, outputArgs);
+  if (isDatumDocument(existingDoc)) {
+    existingDoc.meta.modifyTime = DateTime.utc().toString();
+  }
+
+  const deletePayload = { ...existingDoc, _deleted: true };
+  const { rev: newRev } = await db.put(deletePayload);
+
+  const deletedDoc: DeletedDocument = { ...deletePayload, _rev: newRev };
+  showDelete(deletedDoc, outputArgs);
   return deletedDoc;
 }
