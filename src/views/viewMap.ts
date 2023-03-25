@@ -21,7 +21,7 @@ export async function viewMap({
   try {
     return await db.query(`${datumView.name}/default`, viewParams);
   } catch (error) {
-    if (isCouchDbError(error) && error.error === "not_found") {
+    if (isCouchDbError(error) && error.name === "not_found") {
       throw new DatumViewMissingError(datumView.name, "default");
     } else {
       throw error;
