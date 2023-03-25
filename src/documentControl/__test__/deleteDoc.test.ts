@@ -1,4 +1,4 @@
-import { at, pass, resetTestDb, restoreNow, setNow } from "../../test-utils";
+import { pass, resetTestDb, restoreNow, setNow } from "../../test-utils";
 import { deleteDoc, NoDocToDeleteError } from "../deleteDoc";
 import { EitherPayload } from "../DatumDocument";
 
@@ -81,3 +81,4 @@ describe("deleteDoc", () => {
     restoreNow();
   });
 });
+// TODO: Consider deleting all data but keeping metadata
