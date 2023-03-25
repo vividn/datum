@@ -32,9 +32,10 @@ describe("deleteCmd", () => {
     expect(deleteDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: "hello" })
     );
-    await expect(db.get("hello")).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"deleted"`
-    );
+    await expect(db.get("hello")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("deletes a document based on first few letters of _id", async () => {
@@ -48,9 +49,10 @@ describe("deleteCmd", () => {
     expect(deleteDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: "the_quick_brown_fox" })
     );
-    await expect(
-      db.get("the_quick_brown_fox")
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`"deleted"`);
+    await expect(db.get("the_quick_brown_fox")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("only deletes the one document", async () => {
@@ -58,9 +60,10 @@ describe("deleteCmd", () => {
     await db.put({ _id: "id2", data: {}, meta: { humanId: "def" } });
 
     await deleteCmd({ db: dbName, quickId: "abc" });
-    await expect(db.get("id1")).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"deleted"`
-    );
+    await expect(db.get("id1")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
     expect(await db.get("id2")).toHaveProperty("_id");
   });
 

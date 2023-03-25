@@ -53,7 +53,10 @@ describe("addCmd undo", () => {
     await db.get("kept");
     await expect(
       db.get("this_one_should_be_deleted")
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`"deleted"`);
+    ).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("undoes a document with a time in the past if it contains occurTime", async () => {
@@ -64,9 +67,10 @@ describe("addCmd undo", () => {
     expect(insertedDoc.meta.idStructure).toMatch(/%occurTime%/);
 
     await addCmd({ time: inAMinute, undo: true });
-    await expect(db.get(now)).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"deleted"`
-    );
+    await expect(db.get(now)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("prevents undo if created more than 15 minutes ago", async () => {
@@ -99,9 +103,10 @@ describe("addCmd undo", () => {
       meta: { createTime: oldTime.toString() },
     });
     await addCmd({ idPart: docName, "force-undo": true });
-    await expect(db.get(docName)).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"deleted"`
-    );
+    await expect(db.get(docName)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
 
     Settings.resetCaches();
   });
@@ -118,9 +123,10 @@ describe("addCmd undo", () => {
       meta: { createTime: oldTime.toString() },
     });
     await addCmd({ idPart: docName, "force-undo": true, undo: true });
-    await expect(db.get(docName)).rejects.toThrowErrorMatchingInlineSnapshot(
-      `"deleted"`
-    );
+    await expect(db.get(docName)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
 
     Settings.resetCaches();
   });
