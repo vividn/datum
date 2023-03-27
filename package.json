@@ -64,7 +64,7 @@
   "dependencies": {
     "@types/lodash.get": "^4.4.7",
     "chalk": "^4.1.2",
-    "chrono-node": "^2.5.0",
+    "chrono-node": "^2.6.2",
     "dotenv": "^16.0.3",
     "ink": "^3.2.0",
     "ink-table": "^3.0.0",
