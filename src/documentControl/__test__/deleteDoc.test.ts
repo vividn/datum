@@ -17,9 +17,10 @@ describe("deleteDoc", () => {
   it("deletes the document with the given in the db", async () => {
     await db.put({ _id: "doc-to-delete" });
     await deleteDoc({ id: "doc-to-delete", db });
-    await expect(
-      db.get("doc-to-delete")
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`"deleted"`);
+    await expect(db.get("doc-to-delete")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("returns a DeletedDocument, with a new _rev", async () => {

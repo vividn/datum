@@ -98,7 +98,7 @@ export async function overwriteDoc({
   } else {
     delete payload._rev;
     await db.put(payload).catch(async (e) => {
-      if (e.error === "conflict") {
+      if (e.name === "conflict") {
         const existingDoc = await db.get(newId);
         showExists(existingDoc, outputArgs);
         showFailed(payload, outputArgs);

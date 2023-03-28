@@ -33,7 +33,7 @@ export async function quickId(
     const doc = await db.get(quickString);
     return doc._id;
   } catch (error) {
-    if (isCouchDbError(error) && error.error === "not_found") {
+    if (isCouchDbError(error) && error.name === "not_found") {
       //pass
     } else {
       throw error;
