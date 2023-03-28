@@ -378,9 +378,10 @@ describe("addDoc", () => {
   });
 
   test("it can do an id with %?createTime% as id_structure", async () => {
-    await expect(() =>
-      db.get(nowStr)
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`"missing"`);
+    await expect(() => db.get(nowStr)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "missing",
+    });
     const newDoc = await addDoc({
       db,
       payload: { data: {}, meta: { idStructure: "%?createTime%" } },
@@ -389,9 +390,10 @@ describe("addDoc", () => {
   });
 
   test("it can do an id with %?modifyTime% as id_structure", async () => {
-    await expect(() =>
-      db.get(nowStr)
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`"missing"`);
+    await expect(() => db.get(nowStr)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "missing",
+    });
     const newDoc = await addDoc({
       db,
       payload: { data: {}, meta: { idStructure: "%?modifyTime%" } },

@@ -14,7 +14,7 @@ export const fail = (): never => {
 
 export const mockDocMissingError: CouchDbError = {
   status: 404,
-  name: "missing",
+  name: "not_found",
   error: "not_found",
   reason: "missing",
   message: "missing",
@@ -23,14 +23,14 @@ export const mockDocMissingError: CouchDbError = {
 export const mockDocDeletedError: CouchDbError = {
   status: 404,
   message: "deleted",
-  name: "deleted",
+  name: "not_found",
   error: "not_found",
   reason: "deleted",
 };
 
 export const mockMissingNamedViewError: CouchDbError = {
   status: 404,
-  name: "missing_named_view",
+  name: "not_found",
   error: "not_found",
   reason: "missing_named_view",
   message: "missing_named_view",

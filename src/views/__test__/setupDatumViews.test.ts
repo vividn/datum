@@ -71,9 +71,10 @@ describe("setupDatumViews", () => {
 
     await db.get("_design/datum_view");
     await db.get("_design/datum_another_view");
-    await expect(
-      db.get("_design/project_view")
-    ).rejects.toThrowErrorMatchingInlineSnapshot(`"missing"`);
+    await expect(db.get("_design/project_view")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "missing",
+    });
     expect(insertDatumViewsSpy).toHaveBeenCalledTimes(2);
 
     await setupDatumViews({ db, projectDir: "./" });
