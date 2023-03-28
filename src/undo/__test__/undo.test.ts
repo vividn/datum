@@ -51,9 +51,7 @@ describe("addCmd undo", () => {
       expect(info.doc_count).toEqual(1);
     });
     await db.get("kept");
-    await expect(
-      db.get("this_one_should_be_deleted")
-    ).rejects.toMatchObject({
+    await expect(db.get("this_one_should_be_deleted")).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
     });
