@@ -16,15 +16,13 @@ export type DatumView<
   MapKey = unknown,
   MapValue = unknown,
   ReduceValue = unknown,
-  namedReduceValues extends Record<string, any> | undefined = {
-    default: unknown;
-  }
+  NamedReduceValues extends Record<string, any> | undefined = undefined
 > = {
   name: string;
   emit: (key: MapKey, value: MapValue) => void;
   map: MapFunction<DocType>;
   reduce?: ReduceFunction<MapKey, MapValue, ReduceValue> | BuiltInReduce;
-  namedReduce?: NamedReduceFunctions<MapKey, MapValue, namedReduceValues>;
+  namedReduce?: NamedReduceFunctions<MapKey, MapValue, NamedReduceValues>;
   options?: ViewOptions;
 };
 
