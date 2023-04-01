@@ -8,7 +8,7 @@ export async function getHumanIds(
 ): Promise<(string | undefined)[]> {
   let viewResponse;
   try {
-    viewResponse = await db.query<string>(`${idToHumanView.name}/default`, {
+    viewResponse = await db.query<string>(idToHumanView.name, {
       keys: ids,
       reduce: false,
     });

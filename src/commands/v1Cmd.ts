@@ -107,13 +107,13 @@ async function getRows(
   db: PouchDB.Database<EitherPayload>
 ): Promise<V1MapRow[]> {
   if (fields.length === 0) {
-    return (await db.query<string[]>(`${datumV1View.name}/default`))
+    return (await db.query<string[]>(datumV1View.name))
       .rows as V1MapRow[];
   }
   const groupedRows = await Promise.all(
     fields.map(async (field) => {
       return (
-        await db.query<any>(`${datumV1View.name}/default`, {
+        await db.query<any>(datumV1View.name, {
           startkey: [field],
           endkey: [field, "\uffff"],
         })

@@ -25,7 +25,7 @@ describe("viewMap", () => {
       datumView: mockDatumView,
       params: { key: "abc" },
     });
-    expect(mockDb.query).toBeCalledWith(`${mockDatumView.name}/default`, {
+    expect(mockDb.query).toBeCalledWith(mockDatumView.name, {
       reduce: false,
       key: "abc",
     });

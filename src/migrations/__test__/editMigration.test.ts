@@ -33,7 +33,7 @@ describe("editMigration", () => {
       migrationName,
       mapFn: migA2B,
     });
-    await db.query(`${viewName}/default`).catch(fail);
+    await db.query(viewName).catch(fail);
     const designDoc = await asViewDb(db).get(migrationId).catch(fail);
     expect(designDoc.views.default.map).toBe(migA2B);
   });
