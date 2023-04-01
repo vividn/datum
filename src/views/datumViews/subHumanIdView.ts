@@ -8,32 +8,24 @@ import { _emit } from "../emit";
 type DocType = EitherDocument;
 type MapKey = string;
 type MapValue = null;
-type ReduceValues = {
-  default: number;
-};
+type ReduceValue = number;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const subHumanIdView: DatumView<
-  DocType,
-  MapKey,
-  MapValue,
-  ReduceValues
-> = {
-  name: "datum_sub_human_id",
-  emit,
-  map: (doc) => {
-    if (doc.meta && doc.meta.humanId) {
-      const hid = (doc.meta as DatumMetadata).humanId as string;
-      let i = hid.length;
-      while (i--) {
-        emit(hid.slice(0, i + 1), null);
+export const subHumanIdView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
+  {
+    name: "datum_sub_human_id",
+    emit,
+    map: (doc) => {
+      if (doc.meta && doc.meta.humanId) {
+        const hid = (doc.meta as DatumMetadata).humanId as string;
+        let i = hid.length;
+        while (i--) {
+          emit(hid.slice(0, i + 1), null);
+        }
       }
-    }
-  },
-  reduce: {
-    default: "_count",
-  },
-};
+    },
+    reduce: "_count",
+  };

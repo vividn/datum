@@ -56,9 +56,7 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
       emit([data.acc2, data.curr2, data.occurTime], data.amount2);
     }
   },
-  reduce: {
-    default: "_sum",
-  },
+  reduce: "_sum",
   options: {
     collation: "raw",
   },

@@ -5,9 +5,7 @@ import { DatumView } from "../DatumView";
 type DocType = EitherDocument;
 type MapKey = string[][];
 type MapValue = null;
-type ReduceValues = {
-  default: number;
-};
+type ReduceValue = number;
 
 function emit(_key: MapKey, _value: MapValue): void {
   _emit(_key, _value);
@@ -17,7 +15,7 @@ export const structuresView: DatumView<
   DocType,
   MapKey,
   MapValue,
-  ReduceValues
+  ReduceValue
 > = {
   name: "datum_structures",
   emit,
@@ -49,7 +47,5 @@ export const structuresView: DatumView<
 
     emit(structure, null);
   },
-  reduce: {
-    default: "_count",
-  },
+  reduce: "_count",
 };
