@@ -14,7 +14,7 @@ export function connectDb(
   }
 
   const adapter = args.adapter ?? process.env.POUCHDB_ADAPTER;
-  const hostname = args.host ?? process.env.COUCHDB_HOST;
+  const hostname = args.host ?? process.env.COUCHDB_HOST ?? "http://localhost:5984";
   const { db: dbName = "datum", createDb } = args;
 
   const fullDatabaseName =
