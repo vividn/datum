@@ -1,7 +1,8 @@
+import { testDbLifecycle } from "../../test-utils";
+
 describe("mapCmd", () => {
-  // const dbName = "map_cmd_test";
-  // const db = testDbLifecycle(dbName);
-  // const mockedLog = mockedLogLifecycle();
+  const dbName = "map_cmd_test";
+  const db = testDbLifecycle(dbName);
 
   it.todo("displays all the rows of the default map function");
   it.todo(
