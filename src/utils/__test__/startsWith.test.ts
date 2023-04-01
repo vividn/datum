@@ -1,6 +1,5 @@
 import { startsWith } from "../startsWith";
-import { pass, resetTestDb, testDbLifecycle } from "../../test-utils";
-import { EitherPayload } from "../../documentControl/DatumDocument";
+import { testDbLifecycle } from "../../test-utils";
 
 describe("startsWith", () => {
   it.each([
@@ -41,7 +40,7 @@ describe("startsWith", () => {
 
   describe("test with db", () => {
     const dbName = "test_starts_with";
-const db = testDbLifecycle(dbName);
+    const db = testDbLifecycle(dbName);
 
     test("output can be used to filter the list of _all_docs to just docs that start with the string", async () => {
       await db.put({ _id: "aaabc" });

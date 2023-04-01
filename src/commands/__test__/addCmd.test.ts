@@ -1,20 +1,16 @@
-import { fail, mockedLogLifecycle, pass, resetTestDb, testDbLifecycle } from "../../test-utils";
+import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { BaseDataError } from "../../errors";
-import {
-  DatumDocument,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
-import * as connectDbModule from "../../auth/connectDb";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
 
-const db = testDbLifecycle(dbName);
+  const db = testDbLifecycle(dbName);
 
   const mockedLog = mockedLogLifecycle();
 
