@@ -13,9 +13,7 @@ export type TaskDoc = DatumDocument<{
 type DocType = TaskDoc;
 type MapKey = isoDateOrTime | "unknown";
 type MapValue = string;
-type ReduceValues = {
-  default: number;
-};
+type ReduceValue = number;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
@@ -25,7 +23,7 @@ export const inboxView: DatumView<
   DocType,
   MapKey,
   MapValue,
-  ReduceValues
+  ReduceValue
 > = {
   name: "inbox",
   emit,
@@ -49,7 +47,5 @@ export const inboxView: DatumView<
     }
     emit(createTime, `(${quickId}) ${taskName}`);
   },
-  reduce: {
-    default: "_count",
-  },
+  reduce: "_count",
 };

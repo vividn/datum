@@ -5,8 +5,8 @@ import { _emit } from "../emit";
 type DocType = EitherDocument;
 type MapKey = string[][];
 type MapValue = null;
-type ReduceValues = {
-  default: number;
+type ReduceValue = number;
+type NamedReduceValues = {
   fieldList: string[];
 };
 
@@ -17,7 +17,7 @@ function emit(_key: MapKey, _value: MapValue): void {
 const fieldListReduce: ReduceFunction<
   MapKey,
   MapValue,
-  ReduceValues["fieldList"]
+  NamedReduceValues["fieldList"]
 > = (keysAndDocIds, values, rereduce) => {
   if (!rereduce) {
     return keysAndDocIds.reduce((accum: string[], keyAndDocId) => {
@@ -46,7 +46,8 @@ export const dataStructuresView: DatumView<
   DocType,
   MapKey,
   MapValue,
-  ReduceValues
+  ReduceValue,
+  NamedReduceValues
 > = {
   name: "datum_data_structures",
   emit,
@@ -77,8 +78,8 @@ export const dataStructuresView: DatumView<
       emit(structure, null);
     }
   },
-  reduce: {
-    default: "_count",
+  reduce: "_count",
+  namedReduce: {
     fieldList: fieldListReduce,
   },
 };
