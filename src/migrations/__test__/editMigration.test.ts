@@ -35,13 +35,13 @@ describe("editMigration", () => {
     });
     await db.query(viewName).catch(fail);
     const designDoc = await asViewDb(db).get(migrationId).catch(fail);
-    expect(designDoc.views.default.map).toBe(migA2B);
+    expect(designDoc.views[viewName].map).toBe(migA2B);
   });
 
   it("opens a terminal editor if no mapFn is supplied", async () => {
     const mockedEditInTerminal = jest
       .spyOn(editInTerminal, "editInTerminal")
-      .mockImplementation(async () => migA2B);
+      .mockResolvedValue(migA2B);
 
     await editMigration({
       db: db,
@@ -51,25 +51,28 @@ describe("editMigration", () => {
     expect(mockedEditInTerminal).not.toHaveBeenCalled();
 
     const manualName = "manuallyEditedMigration";
+    const manualNameView = getMigrationViewName(manualName);
     await editMigration({ db: db, migrationName: manualName });
     expect(mockedEditInTerminal).toBeCalledTimes(1);
     const designDoc = await asViewDb(db)
       .get(getMigrationId(manualName))
       .catch(fail);
-    expect(designDoc.views.default.map).toBe(migA2B);
+    expect(designDoc.views[manualNameView].map).toBe(migA2B);
   });
 
   it("loads the current migration map for editing if one exists and no mapFn is supplied", async () => {
+    const migrationName = "savedMigration";
+    const viewName = getMigrationViewName(migrationName);
     const mockedEditInTerminal = jest
       .spyOn(editInTerminal, "editInTerminal")
-      .mockImplementation(async () => migA2B);
+      .mockResolvedValue(migA2B);
 
     await editMigration({
       db: db,
-      migrationName: "savedMigration",
+      migrationName: migrationName,
       mapFn: migB2A,
     });
-    await editMigration({ db: db, migrationName: "savedMigration" });
+    await editMigration({ db: db, migrationName });
 
     expect(mockedEditInTerminal).toBeCalledTimes(1);
     expect(mockedEditInTerminal).toHaveBeenCalledWith(
@@ -79,6 +82,6 @@ describe("editMigration", () => {
     const designDoc = await asViewDb(db)
       .get(getMigrationId("savedMigration"))
       .catch(fail);
-    expect(designDoc.views.default.map).toBe(migA2B);
+    expect(designDoc.views[viewName].map).toBe(migA2B);
   });
 });
