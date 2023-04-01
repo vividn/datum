@@ -1,10 +1,5 @@
-import {
-  DatumDocument,
-  DatumMetadata,
-  DatumPayload,
-  EitherPayload,
-} from "../DatumDocument";
-import { fail, pass, resetTestDb, setNow } from "../../test-utils";
+import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
+import { fail, setNow, testDbLifecycle } from "../../test-utils";
 import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc";
 import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";
@@ -31,15 +26,7 @@ const notNowStr = "2010-11-12T13:14:15.000Z";
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   test("it returns the updated document in the db", async () => {
     await db.put({ _id: "docId1", data: { abc: "123" }, meta: {} });

@@ -1,6 +1,5 @@
 import { startsWith } from "../startsWith";
-import { pass, resetTestDb } from "../../test-utils";
-import { EitherPayload } from "../../documentControl/DatumDocument";
+import { testDbLifecycle } from "../../test-utils";
 
 describe("startsWith", () => {
   it.each([
@@ -41,15 +40,7 @@ describe("startsWith", () => {
 
   describe("test with db", () => {
     const dbName = "test_starts_with";
-    let db: PouchDB.Database<EitherPayload>;
-
-    beforeEach(async () => {
-      db = await resetTestDb(dbName);
-    });
-
-    afterEach(async () => {
-      await db.destroy().catch(pass);
-    });
+    const db = testDbLifecycle(dbName);
 
     test("output can be used to filter the list of _all_docs to just docs that start with the string", async () => {
       await db.put({ _id: "aaabc" });

@@ -3,14 +3,12 @@ import {
   DatumView,
   datumViewToViewPayload,
   StringifiedDatumView,
-  ViewPayload,
 } from "../DatumView";
 import { _emit } from "../emit";
-import { pass, resetTestDb } from "../../test-utils";
+import { testDbLifecycle } from "../../test-utils";
 import { insertDatumView } from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";
 import * as overwriteDoc from "../../documentControl/overwriteDoc";
-import { EitherPayload } from "../../documentControl/DatumDocument";
 
 function emit(key: unknown, value: unknown) {
   _emit(key, value);
@@ -205,16 +203,8 @@ describe("datumViewToViewPayload", () => {
 
 describe("insertDatumView", () => {
   const dbName = "insert_datum_view_test";
-  let db: PouchDB.Database<EitherPayload>;
-  let viewDb: PouchDB.Database<ViewPayload>;
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-    viewDb = asViewDb(db);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
+  const viewDb = asViewDb(db);
 
   it("turns a DatumView into a functioning view", async () => {
     const summerAB: DatumView = {
