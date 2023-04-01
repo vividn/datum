@@ -3,7 +3,7 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
-import { DatumViewMissingError, MyError } from "../errors";
+import { MyError } from "../errors";
 
 export function asViewDb(
   db: PouchDB.Database<any>
