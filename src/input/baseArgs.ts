@@ -2,7 +2,7 @@ import yargs from "yargs";
 import { outputYargs } from "./outputArgs";
 
 export type BaseArgs = {
-  db?: string;
+  db?: string | PouchDB.Database;
   host?: string;
   adapter?: string;
   username?: string;

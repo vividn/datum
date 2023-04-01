@@ -12,10 +12,13 @@ export function connectDb(
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
   }
+  const { db: dbName = "datum", createDb } = args;
+  if (dbName instanceof PouchDb) {
+    return dbName;
+  }
 
   const adapter = args.adapter ?? process.env.POUCHDB_ADAPTER;
   const hostname = args.host ?? process.env.COUCHDB_HOST;
-  const { db: dbName = "datum", createDb } = args;
 
   const fullDatabaseName =
     adapter === "memory"
