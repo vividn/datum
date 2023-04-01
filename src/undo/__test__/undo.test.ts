@@ -1,32 +1,14 @@
-import {
-  mockedLogLifecycle,
-  pass,
-  resetTestDb,
-  setNow,
-} from "../../test-utils";
-import {
-  DatumDocument,
-  EitherPayload,
-} from "../../documentControl/DatumDocument";
+import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
-import * as connectDbModule from "../../auth/connectDb";
 
 // TODO: Make undo system more robust and more tested
 
 describe("addCmd undo", () => {
   const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
   beforeEach(() => {

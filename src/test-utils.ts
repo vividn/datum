@@ -5,6 +5,7 @@ import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
 import { now } from "./time/timeUtils";
 import { connectDb } from "./auth/connectDb";
+import * as connectDbModule from "./auth/connectDb";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -37,28 +38,35 @@ export const mockMissingNamedViewError: CouchDbError = {
 };
 
 export async function resetTestDb(
-  dbName: string
-): Promise<PouchDB.Database<EitherPayload>> {
-  const db = connectDb({ db: dbName });
+  db: PouchDB.Database & {
+    __opts?: PouchDB.Configuration.DatabaseConfiguration;
+    _destroyed?: boolean;
+    _closed?: boolean;
+  }
+): Promise<PouchDB.Database> {
   await db.destroy().catch(pass);
-  return connectDb({ db: dbName, createDb: true });
+  // nasty hack to reopen closed database
+  delete db._destroyed;
+  delete db._closed;
+  return db.constructor(db.name, db.__opts);
 }
 
-// export function testDbLifecycle(
-//   dbName: string
-// ): PouchDB.Database<EitherPayload> {
-//   let db: PouchDB.Database<EitherPayload>;
-//
-//   beforeEach(async () => {
-//     db = await resetTestDb(dbName);
-//   });
-//
-//   afterEach(async () => {
-//     await db.destroy().catch(pass);
-//   });
-//
-//   return db;
-// }
+export function testDbLifecycle(
+  dbName: string
+): PouchDB.Database<EitherPayload> {
+  const db = connectDb({ db: dbName });
+
+  beforeEach(async () => {
+    await resetTestDb(db);
+    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
+
+  return db;
+}
 
 export function mockedLogLifecycle(): Mock {
   const originalLog = console.log;

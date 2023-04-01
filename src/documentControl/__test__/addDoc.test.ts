@@ -3,9 +3,8 @@ import {
   DataOnlyPayload,
   DatumDocument,
   DatumPayload,
-  EitherPayload,
 } from "../DatumDocument";
-import { fail, pass, resetTestDb, setNow } from "../../test-utils";
+import { fail, setNow, testDbLifecycle } from "../../test-utils";
 import { addDoc } from "../addDoc";
 import { IdError } from "../../errors";
 import { jClone } from "../../utils/jClone";
@@ -35,15 +34,7 @@ const nowStr = "2021-06-20T18:45:00.000Z";
 
 describe("addDoc", () => {
   const dbName = "add_doc_test";
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
     setNow(nowStr);
