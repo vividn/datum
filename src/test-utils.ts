@@ -37,11 +37,17 @@ export const mockMissingNamedViewError: CouchDbError = {
 };
 
 export async function resetTestDb(
-  dbName: string
-): Promise<PouchDB.Database<EitherPayload>> {
-  const db = connectDb({ db: dbName });
+  db: PouchDB.Database & {
+    __opts?: PouchDB.Configuration.DatabaseConfiguration;
+    _destroyed?: boolean;
+    _closed?: boolean;
+  }
+): Promise<PouchDB.Database> {
   await db.destroy().catch(pass);
-  return connectDb({ db: dbName, createDb: true });
+  // nasty hack to reopen closed database
+  delete db._destroyed;
+  delete db._closed;
+  return db.constructor(db.name, db.__opts);
 }
 
 export function testDbLifecycle(
@@ -50,7 +56,7 @@ export function testDbLifecycle(
   const db = connectDb({ db: dbName });
 
   beforeEach(async () => {
-    await resetTestDb(dbName);
+    await resetTestDb(db);
   });
 
   afterEach(async () => {
