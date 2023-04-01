@@ -6,25 +6,20 @@ import { isoDateOrTime } from "../../../src/time/timeUtils";
 type DocType = FinanceDoc;
 type MapKey = [string, string, isoDateOrTime?];
 type MapValue = number;
-type ReduceValues = {
-  default: number;
-};
+type ReduceValue = number;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValues> =
-  {
-    name: "equality",
-    emit,
-    map: (doc) => {
-      const data = doc.data;
-      if (data.type === "eq") {
-        emit([data.acc, data.curr, data.occurTime], data.bal);
-      }
-    },
-    reduce: {
-      default: "_count",
-    },
-  };
+export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
+  name: "equality",
+  emit,
+  map: (doc) => {
+    const data = doc.data;
+    if (data.type === "eq") {
+      emit([data.acc, data.curr, data.occurTime], data.bal);
+    }
+  },
+  reduce: "_count",
+};
