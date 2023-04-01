@@ -1,5 +1,6 @@
 import {
-  asViewDb, ConflictingReduceError,
+  asViewDb,
+  ConflictingReduceError,
   DatumView,
   datumViewToViewPayload,
   StringifiedDatumView,
@@ -140,9 +141,10 @@ describe("datumViewToViewPayload", () => {
     }).toThrowError(ConflictingReduceError);
   });
 
-  it("has a default view with just the map document if no default reduce is given", () => {
+  it("has a default view with just the map document if named reduce functions are given without a default", () => {
+    const name = "multiple_reduce_no_default";
     const viewPayload = datumViewToViewPayload({
-      name: "multiple_reduce_no_default",
+      name,
       emit,
       map: genericMapFunction,
       namedReduce: {
@@ -150,8 +152,8 @@ describe("datumViewToViewPayload", () => {
         anotherView: genericReduceFunction,
       },
     });
-    expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
-    expect(viewPayload).not.toHaveProperty("views.default.reduce");
+    expect(viewPayload).toHaveProperty(`views.${name}.map`, genericMapStr);
+    expect(viewPayload).not.toHaveProperty(`views.${name}.reduce`);
   });
 
   it("adds an empty meta object", () => {
@@ -167,9 +169,7 @@ describe("datumViewToViewPayload", () => {
         name: "one_reduce",
         emit,
         map: genericMapFunction,
-        reduce: {
-          default: "_count",
-        },
+        reduce: "_count",
       })
     ).toHaveProperty("meta", {});
     expect(
@@ -177,7 +177,7 @@ describe("datumViewToViewPayload", () => {
         name: "several_reduce",
         emit,
         map: genericMapFunction,
-        reduce: {
+        namedReduce: {
           one: genericReduceFunction,
           two: genericReduceFunction,
         },
@@ -186,21 +186,22 @@ describe("datumViewToViewPayload", () => {
   });
 
   it("can also accept prestringified versions of map and reduce", () => {
+    const name = "stringy_input";
     const datumView = datumViewToViewPayload({
-      name: "stringy_input",
+      name,
       emit,
       map: genericMapStr,
-      reduce: {
+      namedReduce: {
         one: "_sum",
         two: genericReduceStr,
       },
     });
     expect(datumView).toMatchObject({
-      _id: "_design/stringy_input",
+      _id: `_design/${name}`,
       views: {
         one: { map: genericMapStr, reduce: "_sum" },
         two: { map: genericMapStr, reduce: genericReduceStr },
-        default: { map: genericMapStr },
+        [name]: { map: genericMapStr },
       },
       meta: {},
     });
@@ -224,9 +225,7 @@ describe("insertDatumView", () => {
           emit("b", doc.b);
         }
       },
-      reduce: {
-        default: "_sum",
-      },
+      reduce: "_sum",
     };
 
     await db.put({ _id: "doc1", a: 3, b: 4 });
@@ -234,16 +233,16 @@ describe("insertDatumView", () => {
 
     await insertDatumView({ db: viewDb, datumView: summerAB });
 
-    const total = await db.query("summer/default");
+    const total = await db.query("summer");
     expect(total.rows[0].value).toBe(13);
 
-    const grouped = await db.query("summer/default", { group: true });
+    const grouped = await db.query("summer", { group: true });
     expect(grouped.rows).toEqual([
       { key: "a", value: 9 },
       { key: "b", value: 4 },
     ]);
 
-    const unreduced = await db.query("summer/default", { reduce: false });
+    const unreduced = await db.query("summer", { reduce: false });
     expect(unreduced.total_rows).toEqual(3);
   });
 
@@ -258,9 +257,7 @@ describe("insertDatumView", () => {
           emit("b", doc.b);
         }
       }`,
-      reduce: {
-        default: "_sum",
-      },
+      reduce: "_sum",
     };
 
     await db.put({ _id: "doc1", a: 3, b: 4 });
@@ -268,16 +265,16 @@ describe("insertDatumView", () => {
 
     await insertDatumView({ db: viewDb, datumView: summerAB });
 
-    const total = await db.query("summer/default");
+    const total = await db.query("summer");
     expect(total.rows[0].value).toBe(13);
 
-    const grouped = await db.query("summer/default", { group: true });
+    const grouped = await db.query("summer", { group: true });
     expect(grouped.rows).toEqual([
       { key: "a", value: 9 },
       { key: "b", value: 4 },
     ]);
 
-    const unreduced = await db.query("summer/default", { reduce: false });
+    const unreduced = await db.query("summer", { reduce: false });
     expect(unreduced.total_rows).toEqual(3);
   });
 
@@ -286,9 +283,7 @@ describe("insertDatumView", () => {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     const newDesignDoc = await insertDatumView({
       db: viewDb,
@@ -303,21 +298,17 @@ describe("insertDatumView", () => {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     await insertDatumView({ db: viewDb, datumView: datumView1 });
     const designDoc1 = await viewDb.get("_design/datum_view");
-    expect(designDoc1.views["default"].reduce).toEqual("_count");
+    expect(designDoc1.views["datum_view"].reduce).toEqual("_count");
 
     const datumView2: DatumView = {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_stats",
-      },
+      reduce: "_stats",
     };
     const returnedDoc = await insertDatumView({
       db: viewDb,
@@ -326,7 +317,7 @@ describe("insertDatumView", () => {
     const designDoc2 = await viewDb.get("_design/datum_view");
     expect(returnedDoc).toEqual(designDoc2);
 
-    expect(designDoc2.views["default"].reduce).toEqual("_stats");
+    expect(designDoc2.views["datum_view"].reduce).toEqual("_stats");
     expect(designDoc1._rev).not.toEqual(designDoc2._rev);
   });
 
@@ -335,9 +326,7 @@ describe("insertDatumView", () => {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     await insertDatumView({ db: viewDb, datumView: datumView });
     const designDoc1 = await viewDb.get("_design/datum_view");
@@ -354,9 +343,7 @@ describe("insertDatumView", () => {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     await insertDatumView({ db: viewDb, datumView: datumView });
 
@@ -369,9 +356,7 @@ describe("insertDatumView", () => {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     await insertDatumView({ db: viewDb, datumView: datumView1 });
 
@@ -379,9 +364,7 @@ describe("insertDatumView", () => {
       name: "datum_view",
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_stats",
-      },
+      reduce: "_stats",
     };
     await insertDatumView({ db: viewDb, datumView: datumView2 });
 

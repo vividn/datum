@@ -120,9 +120,9 @@ export function isViewDocument(
 export class ConflictingReduceError extends MyError {
   constructor(reduce_name?: unknown) {
     super(
-      `Additional reduce function ${reduce_name} conflicts with the default. Please use "reduce:" or rename the function.`
+      `Named reduce function ${reduce_name} conflicts with the default. Please use reduce: directly or rename the function.`
     );
-    Object.setPrototypeOf(this, DatumViewMissingError.prototype);
+    Object.setPrototypeOf(this, ConflictingReduceError.prototype);
   }
 }
 
