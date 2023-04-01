@@ -1,22 +1,13 @@
-import { pass, resetTestDb } from "../../test-utils";
+import { testDbLifecycle } from "../../test-utils";
 import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
 import { setupCmd } from "../setupCmd";
 import { Show } from "../../input/outputArgs";
-import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("deleteCmd", () => {
   const dbName = "delete_cmd_test";
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   let deleteDocSpy: any;
   beforeEach(async () => {

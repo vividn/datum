@@ -1,20 +1,11 @@
-import { pass, resetTestDb } from "../../test-utils";
+import { testDbLifecycle } from "../../test-utils";
 import * as setupDatumViews from "../../views/setupDatumViews";
 import { setupCmd } from "../setupCmd";
 import * as connectDb from "../../auth/connectDb";
-import { EitherPayload } from "../../documentControl/DatumDocument";
 
 describe("setupCmd", () => {
   const dbName = "setup_cmd_test";
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   it("calls connectDb with createDb true by default", async () => {
     jest
