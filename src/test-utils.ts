@@ -5,6 +5,7 @@ import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
 import { now } from "./time/timeUtils";
 import { connectDb } from "./auth/connectDb";
+import * as connectDbModule from "./auth/connectDb";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -57,6 +58,7 @@ export function testDbLifecycle(
 
   beforeEach(async () => {
     await resetTestDb(db);
+    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db);
   });
 
   afterEach(async () => {
