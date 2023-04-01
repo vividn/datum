@@ -13,7 +13,6 @@ export async function getHumanIds(
       reduce: false,
     });
   } catch (error) {
-    //TODO make special error checking missingDatumView
     if (
       isCouchDbError(error) &&
       ["missing", "deleted", "missing_named_view"].includes(error.reason)

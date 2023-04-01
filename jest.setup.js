@@ -1,5 +1,4 @@
 // Prioritize ipv4 to work with test containers
-// TODO: Maybe remove this after switching to PouchDB
 import { setDefaultResultOrder } from "dns";
 setDefaultResultOrder("ipv4first");
 
