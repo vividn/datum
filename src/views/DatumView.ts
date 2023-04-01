@@ -3,6 +3,7 @@ import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
+import { DatumViewMissingError, MyError } from "../errors";
 
 export function asViewDb(
   db: PouchDB.Database<any>
@@ -10,20 +11,20 @@ export function asViewDb(
   return db as unknown as PouchDB.Database<ViewPayload>;
 }
 
-// TODO: Expand types of DatumView to include information about format of map rows and reduce values
-
 export type DatumView<
   DocType extends EitherDocument = EitherDocument,
   MapKey = unknown,
   MapValue = unknown,
-  NamedReduceValues extends Record<string, any> | undefined = {
+  ReduceValue = unknown,
+  namedReduceValues extends Record<string, any> | undefined = {
     default: unknown;
   }
 > = {
   name: string;
   emit: (key: MapKey, value: MapValue) => void;
   map: MapFunction<DocType>;
-  reduce?: NamedReduceFunctions<MapKey, MapValue, NamedReduceValues>;
+  reduce?: ReduceFunction<MapKey, MapValue, ReduceValue> | BuiltInReduce;
+  namedReduce?: NamedReduceFunctions<MapKey, MapValue, namedReduceValues>;
   options?: ViewOptions;
 };
 
@@ -32,7 +33,8 @@ type BuiltInReduce = "_sum" | "_stats" | "_count" | "_approx_count_distinct";
 export type StringifiedDatumView = {
   name: string;
   map: string;
-  reduce?: Record<string, string>;
+  reduce?: string;
+  namedReduce?: Record<string, string>;
   options?: ViewOptions;
 };
 
@@ -115,37 +117,55 @@ export function isViewDocument(
   return !!(doc._id.startsWith("_design") && (doc as ViewDocument).views);
 }
 
+export class ConflictingReduceError extends MyError {
+  constructor(reduce_name?: unknown) {
+    super(
+      `Additional reduce function ${reduce_name} conflicts with the default. Please use "reduce:" or rename the function.`
+    );
+    Object.setPrototypeOf(this, DatumViewMissingError.prototype);
+  }
+}
+
 export function datumViewToViewPayload(
   datumView:
-    | DatumView<any, any, any, Record<string, any> | undefined>
+    | DatumView<any, any, any, any, Record<string, any> | undefined>
     | StringifiedDatumView
 ): ViewPayload {
   const views: ViewPayloadViews = {};
+  const name = datumView.name;
   const mapStr = datumView.map.toString();
-  const datumReduce = datumView.reduce as
-    | NamedReduceFunctions<any, any, Record<string, any>>
-    | Record<string, string>;
   const options = datumView.options;
+  const defaultReduce = datumView.reduce;
+  const namedReduce = datumView.namedReduce;
 
-  if (datumReduce === undefined) {
-    views.default = {
+  if (datumView.reduce && datumView.namedReduce?.[name]) {
+    throw new ConflictingReduceError(name);
+  }
+
+  if (defaultReduce) {
+    views[name] = {
+      map: mapStr,
+      reduce: defaultReduce.toString(),
+      options,
+    };
+  }
+
+  if (namedReduce) {
+    for (const reduceName in datumView.namedReduce) {
+      views[reduceName] = {
+        map: mapStr,
+        reduce: namedReduce[reduceName].toString(),
+        options,
+      };
+    }
+  }
+
+  // set default view with just map function if no default reduce exists
+  if (!views[name]) {
+    views[name] = {
       map: mapStr,
       options,
     };
-  } else {
-    for (const reduceName in datumReduce) {
-      views[reduceName] = {
-        map: mapStr,
-        reduce: datumReduce[reduceName].toString(),
-        options,
-      };
-    }
-    if (!views.default) {
-      views.default = {
-        map: mapStr,
-        options,
-      };
-    }
   }
 
   return {

@@ -1,5 +1,5 @@
 import {
-  asViewDb,
+  asViewDb, ConflictingReduceError,
   DatumView,
   datumViewToViewPayload,
   StringifiedDatumView,
@@ -51,67 +51,57 @@ describe("datumViewToViewPayload", () => {
     expect(viewPayload).toHaveProperty("_id", "_design/the_name");
   });
 
-  it("has a 'default' view with stringified map doc if no reduce is given", () => {
+  it("has a default view of the same name as the design doc with a stringified map doc if no reduce is given", () => {
+    const name = "has_a_default_view";
     const datumView: DatumView = {
-      name: "has_a_default_view",
+      name,
       emit,
       map: genericMapFunction,
     };
     const viewPayload = datumViewToViewPayload(datumView);
-    expect(viewPayload).toHaveProperty("views.default");
-    expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
+    expect(viewPayload).toHaveProperty(`views.${name}`);
+    expect(viewPayload).toHaveProperty(`views.${name}.map`, genericMapStr);
+    expect(viewPayload).not.toHaveProperty(`views.${name}.reduce`);
   });
 
-  it("can create a 'default' view with stringified map and reduce", () => {
+  it("can create a default view reduce with a built in reduce function", () => {
+    const name = "with_reduce_still_has_default";
     const datumView: DatumView = {
-      name: "with_reduce_still_has_default",
+      name,
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     const viewPayload = datumViewToViewPayload(datumView);
-    expect(viewPayload).toHaveProperty("views.default");
-    expect(viewPayload).toHaveProperty("views.default.map", genericMapStr);
+    expect(viewPayload).toHaveProperty(`views.${name}`);
+    expect(viewPayload).toHaveProperty(`views.${name}.map`, genericMapStr);
+    expect(viewPayload).toHaveProperty(`views.${name}.reduce`, "_count");
   });
 
   it("stringifies reduce if it is function", () => {
+    const name = "stringified_reduce";
     const datumView: DatumView = {
-      name: "stringified_reduce",
+      name,
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: genericReduceFunction,
-      },
+      reduce: genericReduceFunction,
     };
     const viewPayload = datumViewToViewPayload(datumView);
     expect(viewPayload).toHaveProperty(
-      "views.default.reduce",
+      `views.${name}.reduce`,
       genericReduceStr
     );
   });
 
-  it("keeps the reduce string if it is a special case", () => {
+  it("can also setup addtional reduce functions as the views in the design document, all with the same map", () => {
+    const name = "multiple_reduce";
     const viewPayload = datumViewToViewPayload({
-      name: "special_reduce_string",
+      name,
       emit,
       map: genericMapFunction,
-      reduce: {
-        default: "_count",
-      },
-    });
-    expect(viewPayload).toHaveProperty("views.default.reduce", "_count");
-  });
-
-  it("uses the names of multiple reduce functions as the views in the design document, all with the same map", () => {
-    const viewPayload = datumViewToViewPayload({
-      name: "multiple_reduce",
-      emit,
-      map: genericMapFunction,
-      reduce: {
+      reduce: genericReduceFunction,
+      namedReduce: {
         count: "_count",
-        default: genericReduceFunction,
         anotherView: genericReduceFunction,
       },
     });
@@ -125,7 +115,7 @@ describe("datumViewToViewPayload", () => {
           map: genericMapStr,
           reduce: "_count",
         },
-        default: {
+        [name]: {
           map: genericMapStr,
           reduce: genericReduceStr,
         },
@@ -134,12 +124,28 @@ describe("datumViewToViewPayload", () => {
     expect(viewPayload).toMatchObject(expectedViews);
   });
 
-  it("has a default view with just the map document if no reduce is named default", () => {
+  it("throws an error if a namedReduce view name is the same as the default view name", () => {
+    expect(() => {
+      datumViewToViewPayload({
+        name: "conflicting_reduce",
+        emit,
+        map: genericMapFunction,
+        reduce: genericReduceFunction,
+        namedReduce: {
+          count: "_count",
+          anotherView: genericReduceFunction,
+          conflicting_reduce: genericReduceFunction,
+        },
+      });
+    }).toThrowError(ConflictingReduceError);
+  });
+
+  it("has a default view with just the map document if no default reduce is given", () => {
     const viewPayload = datumViewToViewPayload({
       name: "multiple_reduce_no_default",
       emit,
       map: genericMapFunction,
-      reduce: {
+      namedReduce: {
         count: "_count",
         anotherView: genericReduceFunction,
       },
