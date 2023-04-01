@@ -5,7 +5,7 @@ import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
-  resetTestDb,
+  testDbLifecycle,
 } from "../../test-utils";
 import { DatumViewMissingError } from "../../errors";
 import { viewMap } from "../viewMap";
@@ -69,18 +69,18 @@ describe("viewMap", () => {
       expect(error.message).toEqual("should not be caught");
     }
   });
-
-  it("can call a view that has been inserted by insertDatumView", async () => {
+  describe("viewMap in database", () => {
     const dbName = "test_view_map";
-    const db = await resetTestDb(dbName);
-
-    const testDatumView: StringifiedDatumView = {
-      name: "datum_test_view_datum_view",
-      map: `(doc) => {emit(doc._id, null)}`,
-    };
-    await insertDatumView({ db, datumView: testDatumView, outputArgs: {} });
-    await expect(
-      viewMap({ db, datumView: testDatumView })
-    ).resolves.toBeTruthy();
+    const db = testDbLifecycle(dbName);
+    it("can call a view that has been inserted by insertDatumView", async () => {
+      const testDatumView: StringifiedDatumView = {
+        name: "datum_test_view_datum_view",
+        map: `(doc) => {emit(doc._id, null)}`,
+      };
+      await insertDatumView({ db, datumView: testDatumView, outputArgs: {} });
+      await expect(
+        viewMap({ db, datumView: testDatumView })
+      ).resolves.toBeTruthy();
+    });
   });
 });

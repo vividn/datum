@@ -44,21 +44,21 @@ export async function resetTestDb(
   return connectDb({ db: dbName, createDb: true });
 }
 
-// export function testDbLifecycle(
-//   dbName: string
-// ): PouchDB.Database<EitherPayload> {
-//   let db: PouchDB.Database<EitherPayload>;
-//
-//   beforeEach(async () => {
-//     db = await resetTestDb(dbName);
-//   });
-//
-//   afterEach(async () => {
-//     await db.destroy().catch(pass);
-//   });
-//
-//   return db;
-// }
+export function testDbLifecycle(
+  dbName: string
+): PouchDB.Database<EitherPayload> {
+  const db = connectDb({ db: dbName });
+
+  beforeEach(async () => {
+    await resetTestDb(dbName);
+  });
+
+  afterEach(async () => {
+    await db.destroy().catch(pass);
+  });
+
+  return db;
+}
 
 export function mockedLogLifecycle(): Mock {
   const originalLog = console.log;

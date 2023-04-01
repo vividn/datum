@@ -1,4 +1,4 @@
-import { fail, mockedLogLifecycle, pass, resetTestDb } from "../../test-utils";
+import { fail, mockedLogLifecycle, pass, resetTestDb, testDbLifecycle } from "../../test-utils";
 import { BaseDataError } from "../../errors";
 import {
   DatumDocument,
@@ -14,16 +14,7 @@ import * as connectDbModule from "../../auth/connectDb";
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
 
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+const db = testDbLifecycle(dbName);
 
   const mockedLog = mockedLogLifecycle();
 

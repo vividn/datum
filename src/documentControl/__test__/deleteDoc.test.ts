@@ -1,18 +1,9 @@
-import { pass, resetTestDb } from "../../test-utils";
+import { testDbLifecycle } from "../../test-utils";
 import { deleteDoc, NoDocToDeleteError } from "../deleteDoc";
-import { EitherPayload } from "../DatumDocument";
 
 describe("deleteDoc", () => {
   const dbName = "delete_doc_test";
-  let db: PouchDB.Database<EitherPayload>;
-
-  beforeEach(async () => {
-    db = await resetTestDb(dbName);
-  });
-
-  afterEach(async () => {
-    await db.destroy().catch(pass);
-  });
+  const db = testDbLifecycle(dbName);
 
   it("deletes the document with the given in the db", async () => {
     await db.put({ _id: "doc-to-delete" });
