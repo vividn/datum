@@ -17,7 +17,7 @@ export async function minHumanId(
   //TODO: Create function that takes the DatumView object and does view info on it
   const docCountsPerSlice = (
     await db
-      .query(`datum_sub_human_id/default`, {
+      .query("datum_sub_human_id", {
         group: true,
         keys: startingSlices(humanId),
       })

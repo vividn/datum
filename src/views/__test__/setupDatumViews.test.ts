@@ -24,9 +24,7 @@ describe("setupDatumViews", () => {
       map: (doc: any) => {
         emit(doc._id, 1);
       },
-      reduce: {
-        default: "_count",
-      },
+      reduce: "_count",
     };
     const datumView2: DatumView = {
       name: "datum_another_view",

@@ -22,20 +22,13 @@ type MapValue = {
   next?: isoDateOrTime;
   lastDone: isoDateOrTime | "#not done#";
 };
-type ReduceValues = {
-  default: MapValue;
-};
+type ReduceValue = MapValue;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const choreView: DatumView<
-  DocType,
-  MapKey,
-  MapValue,
-  ReduceValues
-> = {
+export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "chores",
   emit,
   map: (doc: ChoreDoc) => {
@@ -65,22 +58,20 @@ export const choreView: DatumView<
       });
     }
   },
-  reduce: {
-    default: (keysIds, values, _rereduce) => {
-      return values.reduce((reduced, currentValue) => {
-        const isLatest = currentValue.occur > reduced.occur;
-        const latestNext = isLatest ? currentValue.next : reduced.next;
-        const latestOccur = isLatest ? currentValue.occur : reduced.occur;
-        const latestDoneOccur =
-          currentValue.lastDone > reduced.lastDone
-            ? currentValue.lastDone
-            : reduced.lastDone;
-        return {
-          occur: latestOccur,
-          next: latestNext,
-          lastDone: latestDoneOccur,
-        };
-      });
-    },
+  reduce: (keysIds, values, _rereduce) => {
+    return values.reduce((reduced, currentValue) => {
+      const isLatest = currentValue.occur > reduced.occur;
+      const latestNext = isLatest ? currentValue.next : reduced.next;
+      const latestOccur = isLatest ? currentValue.occur : reduced.occur;
+      const latestDoneOccur =
+        currentValue.lastDone > reduced.lastDone
+          ? currentValue.lastDone
+          : reduced.lastDone;
+      return {
+        occur: latestOccur,
+        next: latestNext,
+        lastDone: latestDoneOccur,
+      };
+    });
   },
 };

@@ -35,15 +35,13 @@ export type FinanceDoc = TxDoc | EqDoc | XcDoc;
 type DocType = FinanceDoc;
 type MapKey = [string, string, isoDateOrTime?];
 type MapValue = number;
-type ReduceValues = {
-  default: number;
-};
+type ReduceValue = number;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValues> = {
+export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "balance",
   emit,
   map: (doc: FinanceDoc) => {
@@ -58,9 +56,7 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValues> = {
       emit([data.acc2, data.curr2, data.occurTime], data.amount2);
     }
   },
-  reduce: {
-    default: "_sum",
-  },
+  reduce: "_sum",
   options: {
     collation: "raw",
   },

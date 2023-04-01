@@ -19,7 +19,7 @@ export async function viewMap({
 }: ViewMapType): Promise<PouchDB.Query.Response<any>> {
   const viewParams = params ? { ...params, reduce: false } : { reduce: false };
   try {
-    return await db.query(`${datumView.name}/default`, viewParams);
+    return await db.query(datumView.name, viewParams);
   } catch (error) {
     if (isCouchDbError(error) && error.name === "not_found") {
       throw new DatumViewMissingError(datumView.name, "default");

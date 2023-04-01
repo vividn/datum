@@ -6,9 +6,7 @@ import { _emit } from "../../../src/views/emit";
 type DocType = FinanceDoc;
 type MapKey = [string, string, string, isoDateOrTime?];
 type MapValue = number;
-type ReduceValues = {
-  default: number;
-};
+type ReduceValue = number;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
@@ -18,7 +16,7 @@ export const categorizedBalanceView: DatumView<
   DocType,
   MapKey,
   MapValue,
-  ReduceValues
+  ReduceValue
 > = {
   name: "categorizedBalance",
   emit,
@@ -56,7 +54,5 @@ export const categorizedBalanceView: DatumView<
       );
     }
   },
-  reduce: {
-    default: "_sum",
-  },
+  reduce: "_sum",
 };
