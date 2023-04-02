@@ -2,7 +2,7 @@ import { BaseArgs, baseArgs } from "./baseArgs";
 import { OutputArgs } from "./outputArgs";
 
 export type MainDatumArgs = {
-  _?: string[];
+  _?: (string | number)[];
 } & BaseArgs &
   OutputArgs;
 
