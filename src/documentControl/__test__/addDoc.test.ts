@@ -109,7 +109,7 @@ describe("addDoc", () => {
   it("does not write to db if identical DataOnlyDocument exists", async () => {
     const id = "existingId";
     const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
-    await db.insert(existingData);
+    await db.put(existingData);
     const existingDoc = await db.get(id);
 
     const newDoc = await addDoc({ db, payload: existingData });
@@ -129,7 +129,7 @@ describe("addDoc", () => {
       data: { foo: "abc" },
       meta: { humanId: "different metadata" },
     };
-    await db.insert(existingPayload);
+    await db.put(existingPayload);
     const existingDoc = await db.get(id);
 
     const newDoc = await addDoc({ db, payload: payloadSameData });
@@ -147,7 +147,7 @@ describe("addDoc", () => {
       },
     };
     const id = "_design/viewName";
-    await db.insert({ _id: id, views: testViews, meta: {} });
+    await db.put({ _id: id, views: testViews, meta: {} });
     const existingDoc = await db.get(id);
 
     const newDoc = await addDoc({
@@ -160,7 +160,7 @@ describe("addDoc", () => {
   it("throws error if a different document with id already exists", async () => {
     const id = "existingId";
     const existingData = { _id: id, abc: 123 } as DataOnlyPayload;
-    await db.insert(existingData);
+    await db.put(existingData);
 
     const attemptedNewPayload = {
       _id: id,
@@ -180,7 +180,7 @@ describe("addDoc", () => {
 
   it("it still fails if data is the same, but payload is datum and the existing is dataonly", async () => {
     const data = { foo: "abc" };
-    await db.insert({ _id: "dataOnly", ...data });
+    await db.put({ _id: "dataOnly", ...data });
 
     try {
       await addDoc({
@@ -199,7 +199,7 @@ describe("addDoc", () => {
 
   it("it still fails if data is the same, but payload is dataOnly and the existing is datum", async () => {
     const data = { _id: "datum", foo: "abc" };
-    await db.insert({
+    await db.put({
       _id: "datum",
       data: { ...data },
       meta: { humanId: "datumDoc" },
@@ -215,7 +215,7 @@ describe("addDoc", () => {
   it("still calls updateDoc with updateStrategy is even if data is identical", async () => {
     const spy = jest.spyOn(updateDoc, "updateDoc");
     const data = { _id: "dataonly", foo: "abc" };
-    await db.insert(data);
+    await db.put(data);
 
     const newDoc = await addDoc({ db, payload: data, conflictStrategy: "xor" });
     expect(spy).toHaveBeenCalled();
@@ -351,7 +351,7 @@ describe("addDoc", () => {
     console.log = jest.fn();
 
     const id = "conflictId";
-    await db.insert({ _id: id, foo: "abc" });
+    await db.put({ _id: id, foo: "abc" });
     try {
       await addDoc({
         db,
@@ -369,7 +369,10 @@ describe("addDoc", () => {
   });
 
   test("it can do an id with %?createTime% as id_structure", async () => {
-    await expect(() => db.get(nowStr)).rejects.toThrow("missing");
+    await expect(() => db.get(nowStr)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "missing",
+    });
     const newDoc = await addDoc({
       db,
       payload: { data: {}, meta: { idStructure: "%?createTime%" } },
@@ -378,7 +381,10 @@ describe("addDoc", () => {
   });
 
   test("it can do an id with %?modifyTime% as id_structure", async () => {
-    await expect(() => db.get(nowStr)).rejects.toThrow("missing");
+    await expect(() => db.get(nowStr)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "missing",
+    });
     const newDoc = await addDoc({
       db,
       payload: { data: {}, meta: { idStructure: "%?modifyTime%" } },

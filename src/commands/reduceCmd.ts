@@ -1,12 +1,10 @@
 import { Argv } from "yargs";
-import { connectDb } from "../auth/connectDb";
 import { renderView } from "../output/renderView";
-import { MapCmdArgs } from "./mapCmd";
-import { DocumentViewParams } from "nano";
-import { inferType } from "../utils/inferType";
-import { startsWith } from "../utils/startsWith";
+import { mapCmd, MapCmdArgs, mapCmdYargs } from "./mapCmd";
+import { EitherPayload } from "../documentControl/DatumDocument";
+import { Show } from "../input/outputArgs";
 
-export const command = "reduce <mapName> [groupLevel] [start] [end]";
+export const command = "reduce <mapName> [start] [end]";
 export const desc = "display a reduction of a map";
 
 export type ReduceCmdArgs = MapCmdArgs & {
@@ -14,64 +12,47 @@ export type ReduceCmdArgs = MapCmdArgs & {
 };
 
 export function builder(yargs: Argv): Argv {
-  return yargs
-    .positional("mapName", {
-      describe: "Name of the mapName to use",
-    })
-    .positional("groupLevel", {
+  return mapCmdYargs(yargs).options({
+    groupLevel: {
       describe: "how far to group the key arrays when reducing",
       type: "number",
-    })
-    .positional("start", {
-      describe:
-        "Limit results to keys that start with this value. If 'end' is also given, acts as the start_key parameter",
-      type: "string",
-    })
-    .positional("end", {
-      describe:
-        "If given, then start acts as start_key and this acts as end_key parameter",
-      type: "string",
-    })
-    .options({
-      // TODO: DRY out with mapCmd
-      view: {
-        describe:
-          'use a different view than "default". TODO: Can also be specified in the mapName by using a slash i.e. map/view',
-        type: "string",
-        nargs: 1,
-      },
-      reduce: {
-        describe:
-          'whether to reduce, triggered directly by the "reduce" command',
-        type: "boolean",
-      },
-      params: {
-        describe:
-          "extra params to pass to the view function. See nano's DocumentViewParams type",
-        type: "string",
-        alias: "p",
-      },
-    });
+      alias: "g",
+    },
+  });
 }
 
-export async function reduceCmd(args: ReduceCmdArgs): Promise<void> {
-  const db = await connectDb(args);
-  const viewParams: DocumentViewParams = args.params
-    ? inferType(args.params)
+export async function reduceCmd(
+  args: ReduceCmdArgs
+): Promise<PouchDB.Query.Response<EitherPayload>> {
+  const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
+
+  // mock _count reduce function on the _all_docs list
+  if (useAllDocs) {
+    const mapResult = await mapCmd({
+      ...args,
+      reduce: false,
+      show: Show.None,
+    });
+    const mockReduceResult = {
+      rows: [{ key: null, value: mapResult.rows.length, id: "" }],
+      total_rows: mapResult.total_rows,
+      offset: mapResult.offset,
+    };
+    if (args.show !== Show.None) {
+      renderView(mockReduceResult);
+    }
+    return mockReduceResult;
+  }
+
+  const groupParams = args.groupLevel
+    ? { group_level: args.groupLevel, group: true }
     : {};
-  const startEndParams = args.end
-    ? {
-        start_key: inferType(args.start as string),
-        end_key: inferType(args.end),
-      }
-    : args.start
-    ? startsWith(inferType(args.start))
-    : {};
-  const viewResult = await db.view(args.mapName, args.view ?? "default", {
+  return await mapCmd({
+    ...args,
     reduce: true,
-    group_level: args.groupLevel,
-    ...viewParams,
-    ...startEndParams,
+    params: {
+      ...groupParams,
+      ...(args.params ?? {}),
+    },
   });
-  renderView(viewResult);
 }

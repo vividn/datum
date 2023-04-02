@@ -19,7 +19,7 @@ import {
   isViewDocument,
   isViewPayload,
   ViewPayload,
-} from "../views/viewDocument";
+} from "../views/DatumView";
 import { assembleId } from "../ids/assembleId";
 
 function payloadMatchesDbData(
@@ -78,9 +78,9 @@ export async function addDoc({
     }
   }
   try {
-    await db.insert(payload);
+    await db.put(payload);
   } catch (error) {
-    if (isCouchDbError(error) && error.error !== "conflict") {
+    if (isCouchDbError(error) && error.name !== "conflict") {
       throw error;
     }
     const existingDoc = await db.get(id);

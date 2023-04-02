@@ -9,222 +9,165 @@ import { addCmd } from "../../commands/addCmd";
 import { deleteDoc } from "../deleteDoc";
 import { Show } from "../../input/outputArgs";
 
-const dbName = "doc_control_output_test";
-const db = testDbLifecycle(dbName);
-const mockedLog = mockedLogLifecycle();
+describe("output", () => {
+  const dbName = "doc_control_output_test";
+  const db = testDbLifecycle(dbName);
+  const mockedLog = mockedLogLifecycle();
 
-test("addDoc displays a CREATE: message and the document if showOutput", async () => {
-  await addDoc({
-    db,
-    payload: { _id: "added-doc", abc: "def" },
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
-});
-
-test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict", async () => {
-  await db.insert({ _id: "alreadyHere", foo: "bar" });
-  try {
+  test("addDoc displays a CREATE: message and the document if showOutput", async () => {
     await addDoc({
       db,
-      payload: { _id: "alreadyHere", baz: "bazzy" },
+      payload: { _id: "added-doc", abc: "def" },
       outputArgs: {
         show: Show.Standard,
       },
     });
-    fail();
-  } catch (e) {
-    expect(e).toBeInstanceOf(DocExistsError);
-  }
-
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
-});
-
-test("addDoc calls updateDoc with showOutput", async () => {
-  const updateDocSpy = jest.spyOn(updateDocModule, "updateDoc");
-  const payload = { _id: "docId", foo: "abce" };
-  await addDoc({
-    db,
-    payload,
-    outputArgs: {
-      show: Show.Standard,
-    },
-    conflictStrategy: "merge",
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
   });
-  expect(updateDocSpy).not.toHaveBeenCalled();
 
-  mockedLog.mockClear();
+  test("addDoc displays an EXISTS: and FAILED: message if showOuput and conlfict", async () => {
+    await db.put({ _id: "alreadyHere", foo: "bar" });
+    try {
+      await addDoc({
+        db,
+        payload: { _id: "alreadyHere", baz: "bazzy" },
+        outputArgs: {
+          show: Show.Standard,
+        },
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
 
-  await addDoc({
-    db,
-    payload,
-    outputArgs: {
-      show: Show.Standard,
-    },
-    conflictStrategy: "merge",
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
   });
-  expect(updateDocSpy.mock.calls[0][0].outputArgs?.show).toEqual(Show.Standard);
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
-  mockedLog.mockClear();
+  test("addDoc calls updateDoc with showOutput", async () => {
+    const updateDocSpy = jest.spyOn(updateDocModule, "updateDoc");
+    const payload = { _id: "docId", foo: "abce" };
+    await addDoc({
+      db,
+      payload,
+      outputArgs: {
+        show: Show.Standard,
+      },
+      conflictStrategy: "merge",
+    });
+    expect(updateDocSpy).not.toHaveBeenCalled();
 
-  await addDoc({
-    db,
-    payload: { ...payload, extraKey: 123 },
-    outputArgs: {
-      show: Show.Standard,
-    },
-    conflictStrategy: "merge",
-  });
-  expect(updateDocSpy.mock.calls[1][0].outputArgs?.show).toEqual(Show.Standard);
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-});
+    mockedLog.mockClear();
 
-test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
-  await db.insert({ _id: "name", foo: "bar" });
-  await updateDoc({
-    db,
-    id: "name",
-    payload: { foo2: "abc2" },
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-});
+    await addDoc({
+      db,
+      payload,
+      outputArgs: {
+        show: Show.Standard,
+      },
+      conflictStrategy: "merge",
+    });
+    expect(updateDocSpy.mock.calls[0][0].outputArgs?.show).toEqual(
+      Show.Standard
+    );
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
-test("updateDoc outputs a NODIFF: message if showing output and no update needed", async () => {
-  await db.insert({ _id: "name", foo: "bar" });
-  await updateDoc({
-    db,
-    id: "name",
-    payload: { foo2: "abc2" },
-    updateStrategy: "useOld",
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
-});
+    mockedLog.mockClear();
 
-test("updateDoc outputs a RENAME: UPDATE:", async () => {
-  await db.insert({
-    _id: "docId",
-    foo: "abc",
+    await addDoc({
+      db,
+      payload: { ...payload, extraKey: 123 },
+      outputArgs: {
+        show: Show.Standard,
+      },
+      conflictStrategy: "merge",
+    });
+    expect(updateDocSpy.mock.calls[1][0].outputArgs?.show).toEqual(
+      Show.Standard
+    );
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
   });
-  await updateDoc({
-    db,
-    id: "docId",
-    payload: { _id: "newId", foo: "bar" },
-    updateStrategy: "preferNew",
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-});
 
-test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
-  await db.insert({
-    _id: "docId",
-    foo: "abc",
+  test("updateDoc outputs an UPDATE: message if showOutput is true", async () => {
+    await db.put({ _id: "name", foo: "bar" });
+    await updateDoc({
+      db,
+      id: "name",
+      payload: { foo2: "abc2" },
+      outputArgs: {
+        show: Show.Standard,
+      },
+    });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
   });
-  await db.insert({ _id: "conflictId", some: "data" });
-  try {
+
+  test("updateDoc outputs a NODIFF: message if showing output and no update needed", async () => {
+    await db.put({ _id: "name", foo: "bar" });
+    await updateDoc({
+      db,
+      id: "name",
+      payload: { foo2: "abc2" },
+      updateStrategy: "useOld",
+      outputArgs: {
+        show: Show.Standard,
+      },
+    });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
+  });
+
+  test("updateDoc outputs a RENAME: UPDATE:", async () => {
+    await db.put({
+      _id: "docId",
+      foo: "abc",
+    });
     await updateDoc({
       db,
       id: "docId",
-      payload: { _id: "conflictId", foo: "bar" },
+      payload: { _id: "newId", foo: "bar" },
       updateStrategy: "preferNew",
       outputArgs: {
         show: Show.Standard,
       },
     });
-    fail();
-  } catch (e) {
-    expect(e).toBeInstanceOf(DocExistsError);
-  }
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
-});
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
+  });
 
-test("overwriteDoc outputs OWRITE", async () => {
-  await db.insert({
-    _id: "docId",
-    data: { foo: "abc" },
-    meta: { humanId: "abcd" },
+  test("updateDoc throws and outputs an EXISTS: FAILED:", async () => {
+    await db.put({
+      _id: "docId",
+      foo: "abc",
+    });
+    await db.put({ _id: "conflictId", some: "data" });
+    try {
+      await updateDoc({
+        db,
+        id: "docId",
+        payload: { _id: "conflictId", foo: "bar" },
+        updateStrategy: "preferNew",
+        outputArgs: {
+          show: Show.Standard,
+        },
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
   });
-  await overwriteDoc({
-    db,
-    id: "docId",
-    payload: { _id: "docId", data: { bar: "def" }, meta: { humanId: "defg" } },
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
-  expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
-  expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-});
 
-test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
-  await db.insert({
-    _id: "docId",
-    data: { foo: "abc" },
-    meta: { humanId: "abcd" },
-  });
-  await overwriteDoc({
-    db,
-    id: "docId",
-    payload: { _id: "newId", data: { bar: "def" }, meta: { humanId: "defg" } },
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
-  expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
-});
-
-test("overwriteDoc outputs NODIFF", async () => {
-  await db.insert({
-    _id: "docId",
-    data: { foo: "abc" },
-    meta: { humanId: "abcd" },
-  });
-  await overwriteDoc({
-    db,
-    id: "docId",
-    payload: { _id: "docId", data: { foo: "abc" }, meta: { humanId: "abcd" } },
-    outputArgs: {
-      show: Show.Standard,
-    },
-  });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
-  expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
-});
-
-test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
-  await db.insert({
-    _id: "docId",
-    data: { foo: "abc" },
-    meta: { humanId: "abcd" },
-  });
-  await db.insert({
-    _id: "conflictId",
-    data: { some: "data" },
-    meta: { humanId: "conlfict" },
-  });
-  try {
+  test("overwriteDoc outputs OWRITE", async () => {
+    await db.put({
+      _id: "docId",
+      data: { foo: "abc" },
+      meta: { humanId: "abcd" },
+    });
     await overwriteDoc({
       db,
       id: "docId",
       payload: {
-        _id: "conflictId",
+        _id: "docId",
         data: { bar: "def" },
         meta: { humanId: "defg" },
       },
@@ -232,53 +175,140 @@ test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
         show: Show.Standard,
       },
     });
-    fail();
-  } catch (e) {
-    expect(e).toBeInstanceOf(DocExistsError);
-  }
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
-  expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
-  expect(mockedLog).not.toHaveBeenCalledWith(expect.stringContaining("RENAME"));
-});
-
-test("deleteDoc outputs DELETE", async () => {
-  await db.insert({ _id: "doc-to-delete" });
-  await deleteDoc({
-    db,
-    id: "doc-to-delete",
-    outputArgs: {
-      show: Show.Standard,
-    },
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("RENAME")
+    );
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE")
+    );
   });
-  expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
-});
 
-test("show is None by default when calling a command via import or API", async () => {
-  const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
-    Promise.resolve({
-      _id: "returnDoc",
-      _rev: "1-abcd",
-      data: {},
-      meta: {},
-    })
-  );
-  await addCmd({});
-  expect(spy.mock.calls[0][0].outputArgs?.show).toBeUndefined();
-});
+  test("overwriteDoc outputs a RENAME: OWRITE:", async () => {
+    await db.put({
+      _id: "docId",
+      data: { foo: "abc" },
+      meta: { humanId: "abcd" },
+    });
+    await overwriteDoc({
+      db,
+      id: "docId",
+      payload: {
+        _id: "newId",
+        data: { bar: "def" },
+        meta: { humanId: "defg" },
+      },
+      outputArgs: {
+        show: Show.Standard,
+      },
+    });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("UPDATE")
+    );
+  });
 
-// This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings
-// test.skip("show is Standard by default when calling from the CLI", async () => {
-//   const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
-//     Promise.resolve({
-//       _id: "returnDoc",
-//       _rev: "1-abcd",
-//       data: {},
-//       meta: {},
-//     })
-//   );
-//
-//   await main(["--db", dbName, "add"]);
-//   expect(spy).toHaveBeenCalled();
-//   expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
-// });
+  test("overwriteDoc outputs NODIFF", async () => {
+    await db.put({
+      _id: "docId",
+      data: { foo: "abc" },
+      meta: { humanId: "abcd" },
+    });
+    await overwriteDoc({
+      db,
+      id: "docId",
+      payload: {
+        _id: "docId",
+        data: { foo: "abc" },
+        meta: { humanId: "abcd" },
+      },
+      outputArgs: {
+        show: Show.Standard,
+      },
+    });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("OWRITE")
+    );
+  });
+
+  test("overwriteDoc throws and outputs an EXISTS: FAILED:", async () => {
+    await db.put({
+      _id: "docId",
+      data: { foo: "abc" },
+      meta: { humanId: "abcd" },
+    });
+    await db.put({
+      _id: "conflictId",
+      data: { some: "data" },
+      meta: { humanId: "conlfict" },
+    });
+    try {
+      await overwriteDoc({
+        db,
+        id: "docId",
+        payload: {
+          _id: "conflictId",
+          data: { bar: "def" },
+          meta: { humanId: "defg" },
+        },
+        outputArgs: {
+          show: Show.Standard,
+        },
+      });
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(DocExistsError);
+    }
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("OWRITE")
+    );
+    expect(mockedLog).not.toHaveBeenCalledWith(
+      expect.stringContaining("RENAME")
+    );
+  });
+
+  test("deleteDoc outputs DELETE", async () => {
+    await db.put({ _id: "doc-to-delete" });
+    await deleteDoc({
+      db,
+      id: "doc-to-delete",
+      outputArgs: {
+        show: Show.Standard,
+      },
+    });
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
+  });
+
+  test("show is None by default when calling a command via import or API", async () => {
+    const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
+      Promise.resolve({
+        _id: "returnDoc",
+        _rev: "1-abcd",
+        data: {},
+        meta: {},
+      })
+    );
+    await addCmd({});
+    expect(spy.mock.calls[0][0].outputArgs?.show).toBeUndefined();
+  });
+
+  // This test breaks because yargs can't seem to handle the jest environment now even when just parsing strings
+  // test.skip("show is Standard by default when calling from the CLI", async () => {
+  //   const spy = jest.spyOn(addDocModule, "addDoc").mockReturnValue(
+  //     Promise.resolve({
+  //       _id: "returnDoc",
+  //       _rev: "1-abcd",
+  //       data: {},
+  //       meta: {},
+  //     })
+  //   );
+  //
+  //   await main(["--db", dbName, "add"]);
+  //   expect(spy).toHaveBeenCalled();
+  //   expect(spy.mock.calls[0][0].show).toEqual(Show.Standard);
+  // });
+});

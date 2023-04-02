@@ -1,12 +1,15 @@
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { asViewDb, MapFunction, ViewPayload } from "../views/viewDocument";
+import {
+  asViewDb,
+  MapFunction,
+  StringifiedDatumView,
+} from "../views/DatumView";
 import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
-import { addDoc } from "../documentControl/addDoc";
-import { getMigrationId } from "./migrations";
+import { getMigrationId, getMigrationViewName } from "./migrations";
 import { OutputArgs } from "../input/outputArgs";
+import { insertDatumView } from "../views/insertDatumView";
 
 const templateMigration = `(doc) => {
   data = doc.data
@@ -35,7 +38,7 @@ async function editWithExplanation(mapFn: string): Promise<string> {
 }
 
 type baseMigrationType = {
-  db: DocumentScope<EitherPayload>;
+  db: PouchDB.Database<EitherPayload>;
   migrationName: string;
   outputArgs?: OutputArgs;
 };
@@ -50,36 +53,33 @@ export async function editMigration({
   outputArgs = {},
 }: editMigrationType): Promise<void> {
   const viewDb = asViewDb(db);
-  const migrationId = getMigrationId(migrationName);
-  let designDoc: ViewPayload;
-  try {
-    designDoc = await viewDb.get(migrationId);
-  } catch (error) {
-    if (
-      !(isCouchDbError(error) && ["missing", "deleted"].includes(error.reason))
-    ) {
-      throw error;
+  const viewName = getMigrationViewName(migrationName);
+
+  let mapFnStr: string | undefined;
+  if (mapFn) {
+    mapFnStr = mapFn.toString();
+  } else {
+    const migrationId = getMigrationId(migrationName);
+    try {
+      const designDoc = await viewDb.get(migrationId);
+      mapFnStr = designDoc.views[viewName]?.map;
+    } catch (error) {
+      if (
+        !(
+          isCouchDbError(error) && ["missing", "deleted"].includes(error.reason)
+        )
+      ) {
+        throw error;
+      }
     }
-    designDoc = {
-      _id: migrationId,
-      views: {},
-      meta: {},
-    };
+    mapFnStr = await editWithExplanation(mapFnStr ?? templateMigration);
   }
 
-  const currentOrTemplate = (designDoc.views["default"]?.map ??
-    templateMigration) as string;
-
-  const mapFnStr = mapFn
-    ? mapFn.toString()
-    : await editWithExplanation(currentOrTemplate);
   if (mapFnStr === undefined) return;
 
-  designDoc.views["default"] = { map: mapFnStr };
-  await addDoc({
-    db,
-    payload: designDoc,
-    outputArgs,
-    conflictStrategy: "overwrite",
-  });
+  const migrationDatumView: StringifiedDatumView = {
+    name: viewName,
+    map: mapFnStr,
+  };
+  await insertDatumView({ db, datumView: migrationDatumView, outputArgs });
 }

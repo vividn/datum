@@ -9,6 +9,7 @@ describe("addCmd undo", () => {
   const mockedLog = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
   const db = testDbLifecycle(dbName);
+
   const mockNow = DateTime.utc(2020, 5, 10, 15, 25, 30);
   beforeEach(() => {
     setNow(mockNow.toString());
@@ -32,9 +33,10 @@ describe("addCmd undo", () => {
       expect(info.doc_count).toEqual(1);
     });
     await db.get("kept");
-    await expect(db.get("this_one_should_be_deleted")).rejects.toThrowError(
-      "deleted"
-    );
+    await expect(db.get("this_one_should_be_deleted")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("undoes a document with a time in the past if it contains occurTime", async () => {
@@ -45,7 +47,10 @@ describe("addCmd undo", () => {
     expect(insertedDoc.meta.idStructure).toMatch(/%occurTime%/);
 
     await addCmd({ time: inAMinute, undo: true });
-    await expect(db.get(now)).rejects.toThrowError("deleted");
+    await expect(db.get(now)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 
   it("prevents undo if created more than 15 minutes ago", async () => {
@@ -53,7 +58,7 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: "oldDoc",
       data: {},
       meta: { createTime: oldTime.toString() },
@@ -72,13 +77,16 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: docName,
       data: {},
       meta: { createTime: oldTime.toString() },
     });
     await addCmd({ idPart: docName, "force-undo": true });
-    await expect(db.get(docName)).rejects.toThrowError("deleted");
+    await expect(db.get(docName)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
 
     Settings.resetCaches();
   });
@@ -89,13 +97,16 @@ describe("addCmd undo", () => {
       Duration.fromObject({ minutes: 15, seconds: 30 })
     );
 
-    await db.insert({
+    await db.put({
       _id: docName,
       data: {},
       meta: { createTime: oldTime.toString() },
     });
     await addCmd({ idPart: docName, "force-undo": true, undo: true });
-    await expect(db.get(docName)).rejects.toThrowError("deleted");
+    await expect(db.get(docName)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
 
     Settings.resetCaches();
   });

@@ -1,10 +1,11 @@
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
-import { renderView } from "../output/renderView";
-import { DocumentViewParams } from "nano";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
 import { MainDatumArgs } from "../input/mainYargs";
+import { EitherPayload } from "../documentControl/DatumDocument";
+import { renderView } from "../output/renderView";
+import { Show } from "../input/outputArgs";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
@@ -15,10 +16,10 @@ export type MapCmdArgs = MainDatumArgs & {
   end?: string;
   view?: string;
   reduce?: boolean;
-  params?: string;
+  params?: PouchDB.Query.Options<any, any>;
 };
 
-export function builder(yargs: Argv): Argv {
+export function mapCmdYargs(yargs: Argv): Argv {
   return yargs
     .positional("mapName", {
       describe: "Name of the design document and the map function",
@@ -26,18 +27,18 @@ export function builder(yargs: Argv): Argv {
     })
     .positional("start", {
       describe:
-        "Limit results to keys that start with this value. If 'end' is also given, acts as the start_key parameter",
+        "Limit results to keys that start with this value. If 'end' is also given, acts as the startkey parameter",
       type: "string",
     })
     .positional("end", {
       describe:
-        "If given, then start acts as start_key and this acts as end_key parameter",
+        "If given, then start acts as startkey and this acts as endkey parameter",
       type: "string",
     })
     .options({
       view: {
         describe:
-          'use a different view than "default". Can also be speified in the mapName by using a slash i.e. map/view',
+          'use a different view than "default". TODO: Can also be speified in the mapName by using a slash i.e. map/view',
         type: "string",
         nargs: 1,
       },
@@ -45,33 +46,44 @@ export function builder(yargs: Argv): Argv {
         describe:
           'whether to reduce, triggered directly by the "reduce" command',
         type: "boolean",
+        hidden: true,
       },
       params: {
         describe:
           "extra params to pass to the view function. See nano's DocumentViewParams type",
-        type: "string",
         alias: "p",
+        coerce: (params): PouchDB.Query.Options<any, any> => {
+          return inferType(params) as PouchDB.Query.Options<any, any>;
+        },
       },
     });
 }
+export const builder = mapCmdYargs;
 
-export async function mapCmd(args: MapCmdArgs): Promise<void> {
-  const db = await connectDb(args);
-  const viewParams: DocumentViewParams = args.params
-    ? inferType(args.params)
-    : {};
+export async function mapCmd(
+  args: MapCmdArgs
+): Promise<PouchDB.Query.Response<EitherPayload>> {
+  const db = connectDb(args);
   const startEndParams = args.end
     ? {
-        start_key: inferType(args.start as string),
-        end_key: inferType(args.end),
+        startkey: inferType(args.start as string),
+        endkey: inferType(args.end),
       }
     : args.start
     ? startsWith(inferType(args.start))
     : {};
-  const viewResult = await db.view(args.mapName, args.view ?? "default", {
+  const viewParams: PouchDB.Query.Options<any, any> = {
     reduce: args.reduce ?? false,
-    ...viewParams,
     ...startEndParams,
-  });
-  renderView(viewResult);
+    ...(args.params ?? {}),
+  };
+  // TODO: parse map name for /viewName
+  const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
+  const viewResult = useAllDocs
+    ? await db.allDocs(viewParams)
+    : await db.query(`${args.mapName}/${args.view ?? "default"}`, viewParams);
+  if (args.show !== Show.None) {
+    renderView(viewResult);
+  }
+  return viewResult;
 }

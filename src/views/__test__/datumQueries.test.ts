@@ -28,8 +28,8 @@ describe("minHumanId", () => {
       data: {},
       meta: { humanId: hid2 },
     };
-    await db.insert(doc1);
-    await db.insert(doc2);
+    await db.put(doc1);
+    await db.put(doc2);
 
     expect(await minHumanId(db, hid1)).toBe("abcd_then_dif");
     expect(await minHumanId(db, hid2)).toBe("abcd_then_div");
@@ -61,10 +61,10 @@ describe("minHumanId", () => {
       data: {},
       meta: { humanId: hid4 },
     };
-    await db.insert(doc1);
-    await db.insert(doc2);
-    await db.insert(doc3);
-    await db.insert(doc4);
+    await db.put(doc1);
+    await db.put(doc2);
+    await db.put(doc3);
+    await db.put(doc4);
 
     await expect(() => minHumanId(db, hid1)).rejects.toThrow(MinHumanIdError);
     await expect(() => minHumanId(db, "initial_substring")).rejects.toThrow(
@@ -86,8 +86,8 @@ describe("minHumanId", () => {
       data: {},
       meta: { humanId: hid2 },
     };
-    await db.insert(doc1);
-    await db.insert(doc2);
+    await db.put(doc1);
+    await db.put(doc2);
 
     await expect(() => minHumanId(db, "completely_different")).rejects.toThrow(
       MinHumanIdError
@@ -96,7 +96,7 @@ describe("minHumanId", () => {
 
   it("throws if sub_human_id view does not exist", async () => {
     const viewDoc = await db.get("_design/datum_sub_human_id");
-    await db.destroy("_design/datum_sub_human_id", viewDoc._rev);
+    await db.remove("_design/datum_sub_human_id", viewDoc._rev);
 
     await expect(() => minHumanId(db, "anything")).rejects.toThrow(
       DatumViewMissingError

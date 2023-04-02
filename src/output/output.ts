@@ -182,7 +182,9 @@ function sanitizeOutputArgs(outputArgs: OutputArgs): {
   formatString?: string;
 } {
   const show =
-    (outputArgs.showAll ? Show.All : outputArgs.show) ??
-    (outputArgs.formatString ? Show.Format : Show.None);
+    outputArgs.show === Show.None
+      ? Show.None
+      : (outputArgs.showAll ? Show.All : outputArgs.show) ??
+        (outputArgs.formatString ? Show.Format : Show.None);
   return { show, formatString: outputArgs.formatString };
 }

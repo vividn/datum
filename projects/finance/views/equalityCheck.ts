@@ -1,13 +1,20 @@
 import { _emit } from "../../../src/views/emit";
 import { FinanceDoc } from "./balance";
-import { DatumView } from "../../../src/views/viewDocument";
+import { DatumView } from "../../../src/views/DatumView";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
+type DocType = FinanceDoc;
+type MapKey = [string, string, isoDateOrTime?];
+type MapValue = number;
+type ReduceValue = number;
+
+function emit(key: MapKey, value: MapValue): void {
+  _emit(key, value);
 }
 
-export const equalityView: DatumView<FinanceDoc> = {
+export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "equality",
+  emit,
   map: (doc) => {
     const data = doc.data;
     if (data.type === "eq") {

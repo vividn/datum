@@ -1,7 +1,6 @@
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
-import { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { flatten } from "table/dist/src/utils";
 import * as fs from "fs";
@@ -35,7 +34,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function v1Cmd(args: V1CmdArgs): Promise<void> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   function openFd(field: string): number {
     if (!args.outputDir) {
@@ -105,18 +104,17 @@ function createHeader(field: string): string[] {
 
 async function getRows(
   fields: string[],
-  db: DocumentScope<EitherPayload>
+  db: PouchDB.Database<EitherPayload>
 ): Promise<V1MapRow[]> {
   if (fields.length === 0) {
-    return (await db.view<string[]>(datumV1View.name, "default"))
-      .rows as V1MapRow[];
+    return (await db.query<string[]>(datumV1View.name)).rows as V1MapRow[];
   }
   const groupedRows = await Promise.all(
     fields.map(async (field) => {
       return (
-        await db.view<string[]>(datumV1View.name, "default", {
-          start_key: [field],
-          end_key: [field, "\uffff"],
+        await db.query<any>(datumV1View.name, {
+          startkey: [field],
+          endkey: [field, "\uffff"],
         })
       ).rows;
     })

@@ -17,7 +17,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function editCmd(args: EditCmdArgs): Promise<EitherDocument> {
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const id = await quickId(db, args.quickId);
   const oldDoc = await db.get(id);

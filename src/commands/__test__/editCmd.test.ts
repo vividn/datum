@@ -14,7 +14,7 @@ describe("editCmd", () => {
 
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {
     editJSONInTerminalSpy.mockImplementation(async (doc: GenericObject) => doc);
-    await db.insert({ _id: "abcdef", abc: "def" });
+    await db.put({ _id: "abcdef", abc: "def" });
     const dbDoc = await db.get("abcdef");
 
     const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
@@ -29,9 +29,12 @@ describe("editCmd", () => {
     editJSONInTerminalSpy.mockImplementation(
       async (_doc: GenericObject) => editedDoc
     );
-    await db.insert({ _id: "abcdef", abc: "def" });
+    await db.put({ _id: "abcdef", abc: "def" });
     const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
     expect(returnedDoc).toMatchObject(editedDoc);
-    await expect(db.get("abcdef")).rejects.toThrowError("deleted");
+    await expect(db.get("abcdef")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
   });
 });

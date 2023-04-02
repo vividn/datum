@@ -28,14 +28,14 @@ export async function deleteDoc({
   try {
     existingDoc = await db.get(id);
   } catch (error) {
-    if (isCouchDbError(error) && error.error === "not_found") {
+    if (isCouchDbError(error) && error.name === "not_found") {
       throw new NoDocToDeleteError(`no document exists with id: ${id}`);
     } else {
       throw error;
     }
   }
 
-  const deletedRev = (await db.destroy(id, existingDoc._rev)).rev;
+  const deletedRev = (await db.remove(id, existingDoc._rev)).rev;
   const deletedDoc = (await db.get(id, { rev: deletedRev })) as DeletedDocument;
   showDelete(existingDoc, outputArgs);
   return deletedDoc;

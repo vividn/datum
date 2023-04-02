@@ -13,7 +13,7 @@ describe("getCmd", () => {
 
   it("gets a document based on the first few letters of humanId", async () => {
     const doc = { _id: "hello", data: {}, meta: { humanId: "a44quickId" } };
-    await db.insert(doc);
+    await db.put(doc);
     const returned = await getCmd({ db: dbName, quickId: "a44" });
 
     expect(returned).toEqual({ ...doc, _rev: expect.anything() });
@@ -21,7 +21,7 @@ describe("getCmd", () => {
 
   it("gets a document based on the first few letters of _id", async () => {
     const doc = { _id: "the_quick_brown_fox", foo: "abc" };
-    await db.insert(doc);
+    await db.put(doc);
     const returned = await getCmd({ db: dbName, quickId: "the_qu" });
 
     expect(returned).toEqual({ ...doc, _rev: expect.anything() });
@@ -37,7 +37,7 @@ describe("getCmd", () => {
       data: {},
       meta: { humanId: "somethingElse" },
     };
-    await db.insert(doc);
+    await db.put(doc);
     await getCmd({ db: dbName, quickId: "show_me", show: Show.Standard });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
 

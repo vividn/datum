@@ -1,34 +1,39 @@
-import Nano, { DocumentScope } from "nano";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
-import { pass } from "../utils/pass";
 import { MainDatumArgs } from "../input/mainYargs";
+import PouchDb from "pouchdb";
+import memoryAdapter from "pouchdb-adapter-memory";
 
-export function connectNano(args: MainDatumArgs): Nano.ServerScope {
-  if (args.env !== undefined) {
-    dotenv.config({ path: args.env });
-  }
-  const env = process.env.NODE_ENV || "production";
-  const defaultHost =
-    env === "production" ? "localhost:5984" : "localhost:5983";
-  const couchConfig = {
-    username: args.username ?? process.env.COUCHDB_USER ?? "admin",
-    password: args.password ?? process.env.COUCHDB_PASSWORD ?? "password",
-    hostname: args.host ?? process.env.COUCHDB_HOSTNAME ?? defaultHost,
-  };
-  return Nano(
-    `http://${couchConfig.username}:${couchConfig.password}@${couchConfig.hostname}`
-  );
-}
+PouchDb.plugin(memoryAdapter);
 
-export async function connectDb(
+export function connectDb(
   args: MainDatumArgs
-): Promise<DocumentScope<EitherPayload>> {
-  const nano = connectNano(args);
-  const { db: dbName = "datum" } = args;
-  if (args.createDb) {
-    await nano.db.create(dbName).catch(pass);
+): PouchDB.Database<EitherPayload> {
+  if (args.env !== undefined) {
+    dotenv.config({ path: args.env, override: true });
   }
-  const db: DocumentScope<EitherPayload> = nano.use(dbName);
-  return db;
+
+  const adapter = args.adapter ?? process.env.POUCHDB_ADAPTER;
+  const hostname =
+    args.host ?? process.env.COUCHDB_HOST ?? "http://localhost:5984";
+  const { db: dbName = "datum", createDb } = args;
+
+  const fullDatabaseName =
+    adapter === "memory"
+      ? dbName
+      : !hostname
+      ? dbName
+      : hostname.at(-1) === "/"
+      ? `${hostname}${dbName}`
+      : `${hostname}/${dbName}`;
+
+  const couchAuth = {
+    username: args.username ?? process.env.COUCHDB_USER,
+    password: args.password ?? process.env.COUCHDB_PASSWORD,
+  };
+  return new PouchDb(fullDatabaseName, {
+    skip_setup: !createDb,
+    auth: couchAuth,
+    adapter,
+  });
 }

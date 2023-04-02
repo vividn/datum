@@ -9,7 +9,9 @@ import { Show } from "../../input/outputArgs";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
+
   const db = testDbLifecycle(dbName);
+
   const mockedLog = mockedLogLifecycle();
 
   let addDocSpy: SpyInstance;

@@ -1,10 +1,7 @@
-import { DatumView } from "../../../src/views/viewDocument";
+import { DatumView } from "../../../src/views/DatumView";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { _emit } from "../../../src/views/emit";
-
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
-}
+import { isoDateOrTime } from "../../../src/time/timeUtils";
 
 export type TaskDoc = DatumDocument<{
   task: string;
@@ -13,8 +10,23 @@ export type TaskDoc = DatumDocument<{
   proj?: string;
 }>;
 
-export const inboxView: DatumView<TaskDoc> = {
+type DocType = TaskDoc;
+type MapKey = isoDateOrTime | "unknown";
+type MapValue = string;
+type ReduceValue = number;
+
+function emit(key: MapKey, value: MapValue): void {
+  _emit(key, value);
+}
+
+export const inboxView: DatumView<
+  DocType,
+  MapKey,
+  MapValue,
+  ReduceValue
+> = {
   name: "inbox",
+  emit,
   map: (doc: TaskDoc) => {
     if (!doc.data) {
       return;
@@ -35,7 +47,5 @@ export const inboxView: DatumView<TaskDoc> = {
     }
     emit(createTime, `(${quickId}) ${taskName}`);
   },
-  reduce: {
-    count: "_count",
-  },
+  reduce: "_count",
 };

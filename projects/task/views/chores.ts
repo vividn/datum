@@ -1,12 +1,12 @@
 import { _emit } from "../../../src/views/emit";
 import { TaskDoc } from "./inbox";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
-import { isoDate, isoDateOrTime, isoDatetime } from "../../../src/time/timeUtils";
-import { DatumView } from "../../../src/views/viewDocument";
-
-function emit(doc: ChoreMapRow["key"], value: ChoreMapRow["value"]) {
-  _emit(doc, value);
-}
+import {
+  isoDate,
+  isoDateOrTime,
+  isoDatetime,
+} from "../../../src/time/timeUtils";
+import { DatumView } from "../../../src/views/DatumView";
 
 type ChoreDoc = TaskDoc &
   DatumDocument<{
@@ -15,17 +15,22 @@ type ChoreDoc = TaskDoc &
     nextTime?: isoDatetime;
   }>;
 
-type ChoreMapRow = {
-  key: string; // chore name
-  value: {
-    occur: isoDateOrTime;
-    next?: isoDateOrTime;
-    lastDone: isoDateOrTime | "";
-  };
+type DocType = ChoreDoc;
+type MapKey = string; // chore name;
+type MapValue = {
+  occur: isoDateOrTime;
+  next?: isoDateOrTime;
+  lastDone: isoDateOrTime | "#not done#";
 };
+type ReduceValue = MapValue;
 
-export const choreView: DatumView<ChoreDoc> = {
+function emit(key: MapKey, value: MapValue): void {
+  _emit(key, value);
+}
+
+export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "chores",
+  emit,
   map: (doc: ChoreDoc) => {
     if (doc.data && doc.data.type === "maintain" && doc.data.occurTime) {
       const { nextDate, nextTime, occurTime, done } = doc.data;
@@ -53,7 +58,7 @@ export const choreView: DatumView<ChoreDoc> = {
       });
     }
   },
-  reduce: (keysIds, values: ChoreMapRow["value"][], _rereduce) => {
+  reduce: (keysIds, values, _rereduce) => {
     return values.reduce((reduced, currentValue) => {
       const isLatest = currentValue.occur > reduced.occur;
       const latestNext = isLatest ? currentValue.next : reduced.next;
@@ -64,8 +69,8 @@ export const choreView: DatumView<ChoreDoc> = {
           : reduced.lastDone;
       return {
         occur: latestOccur,
-        lastDone: latestDoneOccur,
         next: latestNext,
+        lastDone: latestDoneOccur,
       };
     });
   },

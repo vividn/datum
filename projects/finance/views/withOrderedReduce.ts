@@ -1,17 +1,15 @@
 import { _emit } from "../../../src/views/emit";
 import { FinanceDoc } from "./balance";
-import { DatumView } from "../../../src/views/viewDocument";
+import { DatumView } from "../../../src/views/DatumView";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
 
-function emit(doc: unknown, value: unknown) {
-  _emit(doc, value);
-}
-
-type MapRowValue = {
+type DocType = FinanceDoc;
+type MapKey = [string, string, isoDateOrTime?];
+type MapValue = {
   delta?: number;
   balance?: number;
 };
-
-type RereduceRowValue = {
+type ReduceValue = {
   delta: number;
   account: string;
   currency: string;
@@ -26,8 +24,18 @@ type RereduceRowValue = {
   }[];
 } | null;
 
-export const withOrderedReduceView: DatumView<FinanceDoc> = {
+function emit(key: MapKey, value: MapValue): void {
+  _emit(key, value);
+}
+
+export const withOrderedReduceView: DatumView<
+  DocType,
+  MapKey,
+  MapValue,
+  ReduceValue
+> = {
   name: "withOrderedReduce",
+  emit,
   map: (doc: FinanceDoc) => {
     const data = doc.data;
     if (data.type === "tx") {
@@ -45,8 +53,8 @@ export const withOrderedReduceView: DatumView<FinanceDoc> = {
   },
   reduce: (keysAndIds, values, rereduce) => {
     if (!rereduce) {
-      return (values as MapRowValue[]).reduce(
-        (accum: RereduceRowValue, current, i) => {
+      return values.reduce(
+        (accum: ReduceValue, current, i) => {
           // Must group_level>2 or will get null
           if (accum === null) return null;
           const account = keysAndIds[i][0][0];
@@ -94,44 +102,39 @@ export const withOrderedReduceView: DatumView<FinanceDoc> = {
         }
       );
     }
+    return values.reduce((accum, current) => {
+      if (accum === null || current === null) return null;
+      if (
+        accum.account !== current.account ||
+        accum.currency !== current.currency
+      ) {
+        return null;
+      }
 
-    if (rereduce) {
-      return (values as RereduceRowValue[]).reduce(
-        (accum: RereduceRowValue, current: RereduceRowValue) => {
-          if (accum === null || current === null) return null;
-          if (
-            accum.account !== current.account ||
-            accum.currency !== current.currency
-          ) {
-            return null;
+      accum.delta += current.delta;
+
+      if (accum.balance !== undefined) {
+        if (current.initBalance !== undefined) {
+          // initBalance should always match the balance of the previous chunk
+          if (current.initBalance !== accum.balance) {
+            accum.error = accum.error || [];
+            accum.error.push({
+              id: current.firstBalanceId,
+              offBy: current.initBalance - accum.balance,
+            });
           }
-
-          accum.delta += current.delta;
-
-          if (accum.balance !== undefined) {
-            if (current.initBalance !== undefined) {
-              // initBalance should always match the balance of the previous chunk
-              if (current.initBalance !== accum.balance) {
-                accum.error = accum.error || [];
-                accum.error.push({
-                  id: current.firstBalanceId,
-                  offBy: current.initBalance - accum.balance,
-                });
-              }
-              accum.balance = current.balance;
-            } else {
-              accum.balance += current.delta;
-            }
-          } else {
-            if (current.balance !== undefined) {
-              accum.initBalance = (current.initBalance as number) - accum.delta;
-              accum.balance = current.balance;
-            }
-          }
-
-          return accum;
+          accum.balance = current.balance;
+        } else {
+          accum.balance += current.delta;
         }
-      );
-    }
+      } else {
+        if (current.balance !== undefined) {
+          accum.initBalance = (current.initBalance as number) - accum.delta;
+          accum.balance = current.balance;
+        }
+      }
+
+      return accum;
+    });
   },
 };

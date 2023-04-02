@@ -1,31 +1,32 @@
-import { DocumentScope, DocumentViewParams, DocumentViewResponse } from "nano";
 import {
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
-import { DatumView, StringifiedDatumView } from "./viewDocument";
+import { DatumView, StringifiedDatumView } from "./DatumView";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 type ViewMapType = {
-  db: DocumentScope<EitherPayload>;
-  datumView: DatumView<EitherDocument<any>> | StringifiedDatumView;
-  params?: Omit<DocumentViewParams, "reduce">;
+  db: PouchDB.Database<EitherPayload>;
+  datumView:
+    | DatumView<EitherDocument<any>, any, any, any>
+    | StringifiedDatumView;
+  params?: Omit<PouchDB.Query.Options<any, any>, "reduce">;
 };
 export async function viewMap({
   db,
   datumView,
   params,
-}: ViewMapType): Promise<DocumentViewResponse<any, EitherPayload>> {
-  const viewParams: DocumentViewParams = params
-    ? { ...params, reduce: false }
-    : { reduce: false };
+}: ViewMapType): Promise<PouchDB.Query.Response<any>> {
+  const viewParams = params ? { ...params, reduce: false } : { reduce: false };
   try {
-    return await db.view(datumView.name, "default", viewParams);
+    return await db.query(datumView.name, viewParams);
   } catch (error) {
-    if (isCouchDbError(error) && error.error === "not_found") {
+    if (isCouchDbError(error) && error.name === "not_found") {
       throw new DatumViewMissingError(datumView.name, "default");
     } else {
       throw error;
     }
   }
 }
+
+// TODO: Combine this functions and it's tests directly into mapCmd
