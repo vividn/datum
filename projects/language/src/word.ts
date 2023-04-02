@@ -48,7 +48,7 @@ async function main() {
     throw new Error("not implemented yet");
   }
   // const all_doc_ids = (await db.list({ ...filter })).rows.map((row) => row.id);
-  const docs = await db.list({ include_docs: true, ...filter });
+  const docs = await db.allDocs({ include_docs: true, ...filter });
 
   while (true) {
     console.clear();
