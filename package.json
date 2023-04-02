@@ -9,7 +9,7 @@
   "bin": {
     "dtm": "./build/src/index.js",
     "eqcheck": "./build/projects/finance/src/eqcheck.js",
-    "word": "./build/projects/language/src/word.js"
+    "wordview": "./build/projects/language/src/word.js"
   },
   "engines": {
     "node": ">18.0.0"
