@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import yargs from "yargs";
 import sample from "lodash.sample";
 import { homedir } from "os";
