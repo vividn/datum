@@ -8,7 +8,8 @@
   "main": "build/src/index.js",
   "bin": {
     "dtm": "./build/src/index.js",
-    "eqcheck": "./build/projects/finance/src/eqcheck.js"
+    "eqcheck": "./build/projects/finance/src/eqcheck.js",
+    "wordview": "./build/projects/language/src/word.js"
   },
   "engines": {
     "node": ">18.0.0"
@@ -34,12 +35,14 @@
     "@types/jest": "^27.4.1",
     "@types/lodash.isequal": "^4.5.6",
     "@types/lodash.isplainobject": "^4.0.7",
+    "@types/lodash.sample": "^4.2.7",
     "@types/lodash.set": "^4.3.7",
     "@types/lodash.unset": "^4.5.7",
     "@types/luxon": "^3.1.0",
     "@types/node": "^18.13.0",
     "@types/pluralize": "^0.0.29",
     "@types/pouchdb": "^6.4.0",
+    "@types/prompt-sync": "^4.2.0",
     "@types/react": "^18.0.26",
     "@types/relaxed-json": "^1.0.1",
     "@types/tmp": "^0.2.3",
@@ -71,13 +74,16 @@
     "lodash.get": "^4.4.2",
     "lodash.isequal": "^4.5.0",
     "lodash.isplainobject": "^4.0.6",
+    "lodash.sample": "^4.2.1",
     "lodash.set": "^4.3.2",
     "lodash.unset": "^4.5.2",
     "luxon": "^3.2.0",
     "parse-duration": "^1.0.2",
+    "picocolors": "^1.0.0",
     "pluralize": "^8.0.0",
     "pouchdb": "^8.0.1",
     "pouchdb-adapter-memory": "^8.0.1",
+    "prompt-sync": "^4.2.0",
     "react": "^18.2.0",
     "relaxed-json": "^1.0.3",
     "string.ify": "^1.0.64",
