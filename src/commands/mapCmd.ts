@@ -80,7 +80,10 @@ export async function mapCmd(
   const useAllDocs = ["_all_docs", "_all", "all"].includes(args.mapName);
   const viewResult = useAllDocs
     ? await db.allDocs(viewParams)
-    : await db.query(`${args.mapName}/${args.view ?? "default"}`, viewParams);
+    : await db.query(
+        `${args.mapName}/${args.view ?? args.mapName}`,
+        viewParams
+      );
   if (args.show !== Show.None) {
     renderView(viewResult);
   }
