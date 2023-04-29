@@ -16,6 +16,8 @@ export type MapCmdArgs = MainDatumArgs & {
   end?: string;
   view?: string;
   reduce?: boolean;
+  showId?: boolean;
+  hid?: boolean;
   params?: PouchDB.Query.Options<any, any>;
 };
 
@@ -48,6 +50,14 @@ export function mapCmdYargs(yargs: Argv): Argv {
         type: "boolean",
         hidden: true,
       },
+      showId: {
+        describe: "show the ids",
+        type: "boolean",
+      },
+      hid: {
+        describe: "show the humanIds",
+        type: "boolean",
+      },
       params: {
         describe:
           "extra params to pass to the view function. See nano's DocumentViewParams type",
@@ -77,6 +87,9 @@ export async function mapCmd(
     ...startEndParams,
     ...(args.params ?? {}),
   };
+  if (args.hid && !viewParams.reduce) {
+    viewParams.include_docs = true;
+  }
   // TODO: parse map name for /viewName
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const viewResult = useAllDocs
@@ -86,7 +99,7 @@ export async function mapCmd(
         viewParams
       );
   if (args.show !== Show.None) {
-    renderView(viewResult);
+    renderView(viewResult, args.showId, args.hid);
   }
   return viewResult;
 }
