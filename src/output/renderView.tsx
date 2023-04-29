@@ -9,8 +9,8 @@ const CustomSkeleton = ({ children: _children }: React.PropsWithChildren) => (
 
 export function renderView(
   viewResponse: PouchDB.Query.Response<EitherPayload>,
-  showId: boolean,
-  hid: boolean,
+  showId?: boolean,
+  hid?: boolean,
 ): void {
   const data = viewResponse.rows.map((row) => {
     const keyValue: {key: any, value: any, id?: string, hid?: string} = { key: row.key, value: row.value };
