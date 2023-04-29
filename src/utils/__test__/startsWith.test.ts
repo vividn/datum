@@ -38,6 +38,15 @@ describe("startsWith", () => {
     });
   });
 
+  it("returns very high object end keys for objects", () => {
+    expect(startsWith({ foo: "bar" })).toEqual({
+      startkey: { foo: "bar" },
+      endkey: {
+        "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff",
+      },
+    });
+  });
+
   describe("test with db", () => {
     const dbName = "test_starts_with";
     const db = testDbLifecycle(dbName);
@@ -52,6 +61,10 @@ describe("startsWith", () => {
       const ids = doc_list.rows.map((row) => row.id);
       expect(ids.length).toBe(3);
       expect(ids).toEqual(["aaabc", "aazzz", "aa\ufff0\ufff0\ufff0"]);
+    });
+
+    it("does startWith arrays for both raw-collated and normal views", async () => {
+
     });
   });
 });
