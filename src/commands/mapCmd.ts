@@ -16,6 +16,7 @@ export type MapCmdArgs = MainDatumArgs & {
   end?: string;
   view?: string;
   reduce?: boolean;
+  hid?: boolean;
   params?: PouchDB.Query.Options<any, any>;
 };
 
@@ -47,6 +48,10 @@ export function mapCmdYargs(yargs: Argv): Argv {
           'whether to reduce, triggered directly by the "reduce" command',
         type: "boolean",
         hidden: true,
+      },
+      showId: {
+        describe: "show the ids",
+        type: "boolean"
       },
       params: {
         describe:
@@ -86,7 +91,7 @@ export async function mapCmd(
         viewParams
       );
   if (args.show !== Show.None) {
-    renderView(viewResult);
+    renderView(viewResult, args.);
   }
   return viewResult;
 }
