@@ -1,7 +1,22 @@
+import { testDbLifecycle } from "../../test-utils";
+import { insertDatumView } from "../../views/insertDatumView";
+import { keyValueView } from "../../views/datumViews";
+
 describe("mapCmd", () => {
-  // const dbName = "map_cmd_test";
-  // const db = testDbLifecycle(dbName);
-  // const mockedLog = mockedLogLifecycle();
+  const dbName = "map_cmd_test";
+  const db = testDbLifecycle(dbName);
+
+  beforeEach(async () => {
+    await insertDatumView({ db, datumView: keyValueView });
+    await db.bulkDocs([
+      { _id: "1", value: "one", key: "1" },
+      { _id: "2", value: "two", key: "2" },
+      { _id: "3", value: "three", key: "3" },
+      { _id: "4", value: "four", key: "4" },
+      { _id: "5", value: "five", key: "5" },
+      { _id: "other", vey: "other", kalue: "other" },
+    ]);
+  });
 
   it.todo("displays all the rows of the default map function");
   it.todo(

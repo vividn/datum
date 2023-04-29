@@ -1,1 +1,1 @@
-export { keyValueView } from "./keyValue";
+export { mockProjectView } from "./mockProjectView";

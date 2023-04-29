@@ -43,6 +43,6 @@ describe("setupCmd", () => {
 
   it("adds project views into the db", async () => {
     await setupCmd({ db: dbName, projectDir: __dirname });
-    await db.get("_design/key_value_view");
+    await db.get("_design/mock_project_view");
   });
 });
