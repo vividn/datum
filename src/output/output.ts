@@ -11,6 +11,8 @@ import { jClone } from "../utils/jClone";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 
+chalk.level = 3;
+
 enum ACTIONS {
   Create = "CREATE",
   Delete = "DELETE",
