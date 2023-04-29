@@ -1,4 +1,5 @@
 import { DateTime, Duration, Zone } from "luxon";
+import { BadDurationError } from "../errors";
 
 export type isoDatetime = string;
 export type isoDate = string;
@@ -23,7 +24,10 @@ export function isoDurationFromDuration(dur: Duration): isoDuration {
   if (dur.valueOf() < 0) {
     return "-" + dur.negate().toISO();
   }
-  return dur.toISO();
+  if (!dur.isValid) {
+    throw new BadDurationError("invalid duration");
+  }
+  return dur.toISO() as isoDuration;
 }
 
 export function utcOffset(referenceTime: DateTime): number {
