@@ -1,7 +1,5 @@
 import { startsWith } from "../startsWith";
 import { testDbLifecycle } from "../../test-utils";
-import { insertDatumView } from "../../views/insertDatumView";
-import { keyValueView } from "../../commands/__test__/setup_cmd_test/views";
 
 describe("startsWith", () => {
   it.each([
@@ -69,6 +67,5 @@ describe("startsWith", () => {
       expect(ids.length).toBe(3);
       expect(ids).toEqual(["aaabc", "aazzz", "aa\ufff0\ufff0\ufff0"]);
     });
-    
   });
 });
