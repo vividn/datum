@@ -1,5 +1,7 @@
 import { startsWith } from "../startsWith";
 import { testDbLifecycle } from "../../test-utils";
+import { insertDatumView } from "../../views/insertDatumView";
+import { keyValueView } from "../../commands/__test__/setup_cmd_test/views";
 
 describe("startsWith", () => {
   it.each([
@@ -31,10 +33,15 @@ describe("startsWith", () => {
   it("returns array end keys appropriately for arrays", () => {
     expect(startsWith(["abc"])).toEqual({
       startkey: ["abc"],
-      endkey: [
-        "abc",
-        { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
-      ],
+      endkey: ["abc\uffff\uffff\uffff\uffff"],
+    });
+    expect(startsWith(["abc", "2022-03"])).toEqual({
+      startkey: ["abc", "2022-03"],
+      endkey: ["abc", "2022-03\uffff\uffff\uffff\uffff"],
+    });
+    expect(startsWith(["abc", ["abc", "abc"]])).toEqual({
+      startkey: ["abc", ["abc", "abc"]],
+      endkey: ["abc", ["abc", "abc\uffff\uffff\uffff\uffff"]],
     });
   });
 
@@ -62,9 +69,6 @@ describe("startsWith", () => {
       expect(ids.length).toBe(3);
       expect(ids).toEqual(["aaabc", "aazzz", "aa\ufff0\ufff0\ufff0"]);
     });
-
-    it("does startWith arrays for both raw-collated and normal views", async () => {
-
-    });
+    
   });
 });
