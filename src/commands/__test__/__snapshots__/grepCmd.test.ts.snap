@@ -1,0 +1,30 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`grepCmd finds all the docs that contain the given string 1`] = `
+Array [
+  Array [
+    "[90mEXISTS: [39m[33mdoc1[39m",
+  ],
+  Array [
+    "{ foo: [33mbar[39m }",
+  ],
+  Array [
+    "[90mEXISTS: [39m[33mdoc3[39m",
+  ],
+  Array [
+    "{ data: { foo: [33mbbarr[39m } }",
+  ],
+  Array [
+    "[90mEXISTS: [39m[33mdoc5[39m",
+  ],
+  Array [
+    "{ data: { bar: [33mfoo[39m } }",
+  ],
+  Array [
+    "[90mEXISTS: [39m[33mdoc6[39m (bar)",
+  ],
+  Array [
+    "{ abc: [33mdef[39m }",
+  ],
+]
+`;
