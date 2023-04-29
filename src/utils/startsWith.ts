@@ -9,10 +9,7 @@ export function startsWith(
   } else {
     return {
       startkey: value,
-      endkey: [
-        ...value,
-        { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
-      ],
+      endkey: [...value, "\uffff\uffff\uffff\uffff"],
     };
   }
 }
