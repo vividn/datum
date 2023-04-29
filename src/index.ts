@@ -13,6 +13,7 @@ import { migrateCmd, MigrateCmdArgs } from "./commands/migrateCmd";
 import { reduceCmd, ReduceCmdArgs } from "./commands/reduceCmd";
 import { Show } from "./input/outputArgs";
 import { MainDatumArgs, mainYargs } from "./input/mainYargs";
+import { grepCmd, GrepCmdArgs } from "./commands/grepCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
@@ -78,6 +79,10 @@ export async function main(cliInput: string | string[]): Promise<void> {
     case "migration":
     case "mig":
       await migrateCmd(args as unknown as MigrateCmdArgs);
+      break;
+
+    case "grep":
+      await grepCmd(args as unknown as GrepCmdArgs);
       break;
 
     default:
