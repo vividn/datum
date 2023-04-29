@@ -8,7 +8,6 @@ export function startsWith(
     return { startkey: value, endkey: endKey };
   } else if (Array.isArray(value)) {
     const incrementedLastValue = startsWith(value.at(-1)).endkey;
-    console.log({ value, incrementedLastValue });
     return {
       startkey: value,
       endkey: [...value.slice(0, -1), incrementedLastValue],
