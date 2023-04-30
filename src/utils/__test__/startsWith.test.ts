@@ -31,10 +31,24 @@ describe("startsWith", () => {
   it("returns array end keys appropriately for arrays", () => {
     expect(startsWith(["abc"])).toEqual({
       startkey: ["abc"],
-      endkey: [
-        "abc",
-        { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
-      ],
+      endkey: ["abc\uffff\uffff\uffff\uffff"],
+    });
+    expect(startsWith(["abc", "2022-03"])).toEqual({
+      startkey: ["abc", "2022-03"],
+      endkey: ["abc", "2022-03\uffff\uffff\uffff\uffff"],
+    });
+    expect(startsWith(["abc", ["abc", "abc"]])).toEqual({
+      startkey: ["abc", ["abc", "abc"]],
+      endkey: ["abc", ["abc", "abc\uffff\uffff\uffff\uffff"]],
+    });
+  });
+
+  it("returns very high object end keys for objects", () => {
+    expect(startsWith({ foo: "bar" })).toEqual({
+      startkey: { foo: "bar" },
+      endkey: {
+        "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff",
+      },
     });
   });
 

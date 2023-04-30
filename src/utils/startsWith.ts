@@ -1,18 +1,21 @@
 export function startsWith(
-  value: string | number | any[]
+  value: string | number | any[] | any
 ): Required<Pick<PouchDB.Query.Options<any, any>, "startkey" | "endkey">> {
   if (typeof value === "string") {
     return { startkey: value, endkey: value + "\uffff\uffff\uffff\uffff" };
   } else if (typeof value === "number") {
     const endKey = nextFloat(value, +Infinity);
     return { startkey: value, endkey: endKey };
+  } else if (Array.isArray(value)) {
+    const incrementedLastValue = startsWith(value.at(-1)).endkey;
+    return {
+      startkey: value,
+      endkey: [...value.slice(0, -1), incrementedLastValue],
+    };
   } else {
     return {
       startkey: value,
-      endkey: [
-        ...value,
-        { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
-      ],
+      endkey: { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
     };
   }
 }
