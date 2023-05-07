@@ -17,7 +17,7 @@ async function main(cliInput: string | string[]) {
 
   for (const row of allEqualityChecks) {
     const [account, currency, datetime] = row.key;
-    const expectedBalance = row.value;
+    const expectedBalance = row.value.toFixed(2);
     const actualBalance = (
       await reduceCmd({
         ...args,
@@ -26,7 +26,7 @@ async function main(cliInput: string | string[]) {
         end: `[${account}, ${currency}, "${datetime}"]`,
         show: Show.None,
       })
-    ).rows[0].value;
+    ).rows[0].value.toFixed(2);
     if (expectedBalance !== actualBalance) {
       console.error(
         `Balance mismatch for ${account} ${currency} ${datetime}: expected ${expectedBalance}, got ${actualBalance}`
