@@ -6,6 +6,12 @@ import { mapCmd } from "../../../src/commands/mapCmd";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { Show } from "../../../src/input/outputArgs";
 import { isoDateOrTime } from "../../../src/time/timeUtils";
+import { TxDoc, XcDoc } from "../views/balance";
+import printf from "printf";
+
+function fix(n: number) {
+  return n.toFixed(2);
+}
 
 async function main(cliInput: string | string[]) {
   const args = (await baseArgs.parse(cliInput)) as BaseArgs;
@@ -13,10 +19,10 @@ async function main(cliInput: string | string[]) {
   const allEqualityChecks = (
     await mapCmd({ ...args, mapName: equalityView.name, show: Show.None })
   ).rows;
-
+  let lastGoodDate = undefined;
   for (const row of allEqualityChecks) {
     const [account, currency, datetime] = row.key;
-    const expectedBalance = row.value.toFixed(2);
+    const expectedBalance = row.value;
     const actualBalance = (
       await reduceCmd({
         ...args,
@@ -25,15 +31,23 @@ async function main(cliInput: string | string[]) {
         end: `[${account}, ${currency}, "${datetime}"]`,
         show: Show.None,
       })
-    ).rows[0].value.toFixed(2);
-    if (expectedBalance !== actualBalance) {
-      console.error(
-        `Balance mismatch for ${account} ${currency} ${datetime}:\nexpected ${expectedBalance}, got ${actualBalance} (${
-          actualBalance - expectedBalance
-        })`
-      );
-      process.exit(3);
+    ).rows[0].value;
+    if (fix(expectedBalance) !== fix(actualBalance)) {
+      balanceWatcher({
+        args,
+        account,
+        currency,
+        failDate: datetime,
+        goodDate: lastGoodDate,
+      });
+      // console.error(
+      //   `Balance mismatch for ${account} ${currency} ${datetime}:\nexpected ${fix(
+      //     expectedBalance
+      //   )}, got ${fix(actualBalance)} (${actualBalance - expectedBalance})`
+      // );
+      // process.exit(3);
     }
+    lastGoodDate = datetime;
     console.info(`Balance check passed for ${account} ${currency} ${datetime}`);
   }
 }
@@ -50,21 +64,20 @@ async function balanceWatcher({
   args,
   account,
   currency,
-  goodDate,
+  goodDate = "0",
   failDate,
 }: BalanceWatcherInput) {
-  let initialGoodBalance;
-  const goodBalance = goodDate
-    ? (
-        await reduceCmd({
-          ...args,
-          mapName: balanceView.name,
-          start: `[${account}, ${currency}, "0"]`,
-          end: `[${account}, ${currency}, ${goodDate}]`,
-          show: Show.None,
-        })
-      ).rows[0].value.toFixed(2)
-    : "0";
+  let initialGoodBalance: number;
+  const goodBalance = (
+    await reduceCmd({
+      ...args,
+      mapName: balanceView.name,
+      start: `[${account}, ${currency}, "0"]`,
+      end: `[${account}, ${currency}, ${goodDate}]`,
+      show: Show.None,
+    })
+  ).rows[0].value as number;
+  initialGoodBalance ??= goodBalance;
   const failBalance = (
     await reduceCmd({
       ...args,
@@ -73,7 +86,77 @@ async function balanceWatcher({
       end: `[${account}, ${currency}, "${failDate}"]`,
       show: Show.None,
     })
-  ).rows[0].value.toFixed(2);
+  ).rows[0].value;
+
+  const expectedBalance = (
+    await mapCmd({
+      ...args,
+      mapName: equalityView.name,
+      start: failDate,
+      end: failDate,
+      show: Show.None,
+    })
+  ).rows[0].value;
+  const transactions = (
+    await mapCmd({
+      ...args,
+      mapName: balanceView.name,
+      start: `[${account}, ${currency}, "${goodDate}"]`,
+      end: `[${account}, ${currency}, "${failDate}"]`,
+      show: Show.None,
+      reverse: true,
+      params: { include_docs: true },
+    })
+  ).rows as PouchDB.Query.Response<TxDoc | XcDoc>["rows"];
+
+  const width = Math.max(Math.min(60, process.stdout.columns), 30);
+  const runningTotalWidth =
+    Math.ceil(
+      Math.log10(Math.max(Math.abs(initialGoodBalance), Math.abs(failBalance)))
+    ) + 2;
+  const amountWidth =
+    Math.ceil(
+      Math.log10(
+        Math.max(...transactions.map((row) => Math.abs(row.doc!.data.amount)))
+      )
+    ) + 2;
+  const toAccountWidth = 8;
+  const commentWidth =
+    width - runningTotalWidth - amountWidth - toAccountWidth - 4;
+  const formatString = `%-${commentWidth}s %-${toAccountWidth}s %${amountWidth}.${amountWidth}f %${runningTotalWidth}.${runningTotalWidth}f`;
+
+  console.clear();
+  console.log(`${account} ${currency} ${failDate}`);
+  console.log(
+    `E: ${fix(expectedBalance)}, got ${fix(failBalance)} (${fix(
+      failBalance - expectedBalance
+    )})`
+  );
+  console.log();
+  let reverseBalance = failBalance;
+  for (const row of transactions) {
+    const doc = row.doc!;
+    const {
+      data: { comment },
+    } = doc;
+    const toAccount = row.key[3];
+    const amount = row.value;
+    console.log(
+      printf(formatString, comment, toAccount, amount, reverseBalance)
+    );
+    reverseBalance -= amount;
+  }
+
+  if (fix(reverseBalance) !== fix(goodBalance)) {
+    console.warn(
+      `Running total does not align with data. Something went wrong. Expected: ${fix(
+        goodBalance
+      )}, got ${fix(reverseBalance)} (${fix(reverseBalance - goodBalance)})`
+    );
+  }
+  if (fix(goodBalance) !== fix(initialGoodBalance)) {
+    console.warn(`Initial balance has changed. May want to rerun.`);
+  }
 }
 
 if (require.main === module) {
