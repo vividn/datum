@@ -10,7 +10,7 @@ import { TxDoc, XcDoc } from "../views/balance";
 import printf from "printf";
 import chalk from "chalk";
 
-const zeroDate = "0000-00-00T00:00:00.000Z";
+const zeroDate = "0000-00-00";
 
 function fix(n: number) {
   return n.toFixed(2);
@@ -174,7 +174,7 @@ async function balanceWatcher({
       printf(
         formatString,
         failDate,
-        "Failed Equality Check",
+        "FAIL",
         "",
         "",
         expectedBalance - failBalance,
@@ -211,7 +211,7 @@ async function balanceWatcher({
       printf(
         formatString,
         goodDate,
-        "Equality Check",
+        "EqCheck",
         "",
         "",
         0,
