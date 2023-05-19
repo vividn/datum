@@ -111,24 +111,27 @@ async function balanceWatcher({
 
   const width = Math.max(Math.min(70, process.stdout.columns), 30);
   const dateWidth = 10;
+  const toAccountWidth = 10;
+  const arrowWidth = 1;
+  const amountWidth =
+    Math.ceil(
+      Math.log10(Math.max(...transactions.map((row) => Math.abs(row.value))))
+    ) + 4;
   const runningTotalWidth =
     Math.ceil(
       Math.log10(
         Math.max(Math.abs(initialGoodBalance ?? 0), Math.abs(failBalance))
       )
-    ) +
-    3 +
-    2;
-  const amountWidth =
-    Math.ceil(
-      Math.log10(Math.max(...transactions.map((row) => Math.abs(row.value))))
-    ) +
-    3 +
-    2;
-  const toAccountWidth = 8;
+    ) + 4;
   const commentWidth =
-    width - dateWidth - runningTotalWidth - amountWidth - toAccountWidth - 4;
-  const formatString = `%-${dateWidth}.${dateWidth}s %-${commentWidth}.${commentWidth}s %${toAccountWidth}.${toAccountWidth}s %${amountWidth}.2f %${runningTotalWidth}.2f`;
+    width -
+    dateWidth -
+    toAccountWidth -
+    arrowWidth -
+    amountWidth -
+    runningTotalWidth -
+    4;
+  const formatString = `%-${dateWidth}.${dateWidth}s %-${commentWidth}.${commentWidth}s %${toAccountWidth}.${toAccountWidth}s %${arrowWidth}.${arrowWidth}s %${amountWidth}.2f %${runningTotalWidth}.2f`;
 
   console.clear();
   console.log(`${account} ${currency}`);
@@ -138,6 +141,7 @@ async function balanceWatcher({
         formatString,
         failDate,
         "Failed Equality Check",
+        "",
         "",
         expectedBalance - failBalance,
         expectedBalance
@@ -150,16 +154,29 @@ async function balanceWatcher({
     const {
       data: { comment = "" },
     } = doc;
-    const toAccount = row.key[3];
-    const date = row.key[2];
     const amount = row.value;
+    const toAccount = row.key[3];
+    const arrow = amount > 0 ? "→" : "←";
+    const date = row.key[2];
     console.log(
-      printf(formatString, date, comment, toAccount, amount, reverseBalance)
+      printf(formatString, date, comment, toAccount, arrow, amount, reverseBalance)
     );
     reverseBalance -= amount;
   }
 
-  console.log(chalk.greenBright(printf(formatString, goodDate, "Equality Check", "", 0, goodBalance).replace(/0\.00/,"    ")));
+  console.log(
+    chalk.greenBright(
+      printf(
+        formatString,
+        goodDate,
+        "Equality Check",
+        "",
+        "",
+        0,
+        goodBalance
+      ).replace(/0\.00/, "    ")
+    )
+  );
 
   // if (fix(reverseBalance) !== fix(goodBalance)) {
   //   console.warn(
