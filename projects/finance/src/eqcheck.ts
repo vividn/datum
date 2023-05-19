@@ -10,15 +10,40 @@ import { TxDoc, XcDoc } from "../views/balance";
 import printf from "printf";
 import chalk from "chalk";
 
+const zeroDate = "0000-00-00T00:00:00.000Z";
+
 function fix(n: number) {
   return n.toFixed(2);
 }
 
+type EqCheckArgs = BaseArgs & {
+  account?: string;
+  watch?: boolean;
+};
+
+const eqCheckYargs = baseArgs
+  .option("account", {
+    alias: "a",
+    type: "string",
+    description: "Account to check",
+  })
+  .option("watch", {
+    alias: "w",
+    type: "boolean",
+    description: "Watch for changes",
+  });
+
 async function main(cliInput: string | string[]) {
-  const args = (await baseArgs.parse(cliInput)) as BaseArgs;
+  const args = (await eqCheckYargs.parse(cliInput)) as EqCheckArgs;
   args.db ??= "finance";
+  const start = args.account ? `,${args.account}` : undefined;
   const allEqualityChecks = (
-    await mapCmd({ ...args, mapName: equalityView.name, show: Show.None })
+    await mapCmd({
+      ...args,
+      mapName: equalityView.name,
+      start,
+      show: Show.None,
+    })
   ).rows;
   let lastGoodDate = undefined;
   for (const row of allEqualityChecks) {
@@ -28,8 +53,8 @@ async function main(cliInput: string | string[]) {
       await reduceCmd({
         ...args,
         mapName: balanceView.name,
-        start: `[${account}, ${currency}, "0"]`,
-        end: `[${account}, ${currency}, "${datetime}"]`,
+        start: `,${account},${currency},${zeroDate}`,
+        end: `,${account},${currency},"${datetime}"`,
         show: Show.None,
       })
     ).rows[0].value;
@@ -66,25 +91,34 @@ async function balanceWatcher({
   args,
   account,
   currency,
-  goodDate = "0",
+  goodDate = zeroDate,
   failDate,
 }: BalanceWatcherInput) {
   let initialGoodBalance: number | undefined = undefined;
-  const goodBalance = (
-    await reduceCmd({
-      ...args,
-      mapName: balanceView.name,
-      start: `,${account},${currency},"0"`,
-      end: `,${account},${currency},${goodDate}`,
-      show: Show.None,
-    })
-  ).rows[0].value as number;
+  console.log({
+    ...args,
+    mapName: balanceView.name,
+    start: `,${account},${currency},${zeroDate}`,
+    end: `,${account},${currency},${goodDate}`,
+    show: Show.None,
+  });
+
+  const goodBalance =
+    ((
+      await reduceCmd({
+        ...args,
+        mapName: balanceView.name,
+        start: `,${account},${currency},${zeroDate}`,
+        end: `,${account},${currency},${goodDate}`,
+        show: Show.None,
+      })
+    ).rows[0]?.value as number) ?? 0;
   initialGoodBalance ??= goodBalance;
   const failBalance = (
     await reduceCmd({
       ...args,
       mapName: balanceView.name,
-      start: `,${account},${currency},"0"`,
+      start: `,${account},${currency},${zeroDate}`,
       end: `,${account},${currency},"${failDate}"`,
       show: Show.None,
     })
@@ -159,7 +193,15 @@ async function balanceWatcher({
     const arrow = amount > 0 ? "→" : "←";
     const date = row.key[2];
     console.log(
-      printf(formatString, date, comment, toAccount, arrow, amount, reverseBalance)
+      printf(
+        formatString,
+        date,
+        comment,
+        toAccount,
+        arrow,
+        amount,
+        reverseBalance
+      )
     );
     reverseBalance -= amount;
   }
