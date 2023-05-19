@@ -208,28 +208,27 @@ async function balanceWatcher({
 
   console.log(
     chalk.greenBright(
-      printf(
-        formatString,
-        goodDate,
-        "EqCheck",
-        "",
-        "",
-        0,
-        goodBalance
-      ).replace(/0\.00/, "    ")
+      printf(formatString, goodDate, "EqCheck", "", "", 0, goodBalance).replace(
+        /0\.00/,
+        "    "
+      )
     )
   );
 
-  // if (fix(reverseBalance) !== fix(goodBalance)) {
-  //   console.warn(
-  //     `Running total does not align with data. Something went wrong. Expected: ${fix(
-  //       goodBalance
-  //     )}, got ${fix(reverseBalance)} (${fix(reverseBalance - goodBalance)})`
-  //   );
-  // }
-  // if (fix(goodBalance) !== fix(initialGoodBalance)) {
-  //   console.warn(`Initial balance has changed. May want to rerun.`);
-  // }
+  if (fix(reverseBalance) !== fix(goodBalance)) {
+    console.warn(
+      chalk.red.bold(
+        `Running total does not align with data. Something went wrong. Expected: ${fix(
+          goodBalance
+        )}, got ${fix(reverseBalance)} (${fix(reverseBalance - goodBalance)})`
+      )
+    );
+  }
+  if (fix(goodBalance) !== fix(initialGoodBalance)) {
+    console.warn(
+      chalk.red.bold(`Initial balance has changed. May want to rerun.`)
+    );
+  }
 }
 
 if (require.main === module) {
