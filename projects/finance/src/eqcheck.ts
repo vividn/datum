@@ -138,7 +138,7 @@ async function balanceWatcher({
         formatString,
         failDate,
         "Failed Equality Check",
-        "diff:",
+        "",
         expectedBalance - failBalance,
         expectedBalance
       )
@@ -158,6 +158,8 @@ async function balanceWatcher({
     );
     reverseBalance -= amount;
   }
+
+  console.log(chalk.greenBright(printf(formatString, goodDate, "Equality Check", "", 0, goodBalance).replace(/0\.00/,"    ")));
 
   // if (fix(reverseBalance) !== fix(goodBalance)) {
   //   console.warn(
