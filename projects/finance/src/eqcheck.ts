@@ -8,6 +8,7 @@ import { Show } from "../../../src/input/outputArgs";
 import { isoDateOrTime } from "../../../src/time/timeUtils";
 import { TxDoc, XcDoc } from "../views/balance";
 import printf from "printf";
+import chalk from "chalk";
 
 function fix(n: number) {
   return n.toFixed(2);
@@ -108,7 +109,8 @@ async function balanceWatcher({
     })
   ).rows as PouchDB.Query.Response<TxDoc | XcDoc>["rows"];
 
-  const width = Math.max(Math.min(60, process.stdout.columns), 30);
+  const width = Math.max(Math.min(70, process.stdout.columns), 30);
+  const dateWidth = 10;
   const runningTotalWidth =
     Math.ceil(
       Math.log10(
@@ -125,24 +127,23 @@ async function balanceWatcher({
     2;
   const toAccountWidth = 8;
   const commentWidth =
-    width - runningTotalWidth - amountWidth - toAccountWidth - 4;
-  const formatString = `%-${commentWidth}.${commentWidth}s %-${toAccountWidth}.${toAccountWidth}s %${amountWidth}.2f %${runningTotalWidth}.2f`;
-  console.log({
-    width,
-    runningTotalWidth,
-    amountWidth,
-    toAccountWidth,
-    commentWidth,
-    formatString,
-  });
+    width - dateWidth - runningTotalWidth - amountWidth - toAccountWidth - 4;
+  const formatString = `%-${dateWidth}.${dateWidth}s %-${commentWidth}.${commentWidth}s %${toAccountWidth}.${toAccountWidth}s %${amountWidth}.2f %${runningTotalWidth}.2f`;
+
   console.clear();
-  console.log(`${account} ${currency} ${failDate}`);
+  console.log(`${account} ${currency}`);
   console.log(
-    `E: ${fix(expectedBalance)}, got ${fix(failBalance)} (${fix(
-      failBalance - expectedBalance
-    )})`
+    chalk.redBright(
+      printf(
+        formatString,
+        failDate,
+        "Failed Equality Check",
+        "diff:",
+        expectedBalance - failBalance,
+        expectedBalance
+      )
+    )
   );
-  console.log();
   let reverseBalance = failBalance;
   for (const row of transactions) {
     const doc = row.doc!;
@@ -150,9 +151,10 @@ async function balanceWatcher({
       data: { comment = "" },
     } = doc;
     const toAccount = row.key[3];
+    const date = row.key[2];
     const amount = row.value;
     console.log(
-      printf(formatString, comment, toAccount, amount, reverseBalance)
+      printf(formatString, date, comment, toAccount, amount, reverseBalance)
     );
     reverseBalance -= amount;
   }
