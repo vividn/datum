@@ -10,10 +10,10 @@ import { TxDoc, XcDoc } from "../views/balance";
 import printf from "printf";
 import chalk from "chalk";
 import { connectDb } from "../../../src/auth/connectDb";
-import promptSync from "prompt-sync";
+import * as readline from "node:readline";
+import { stdin, stdout } from "node:process";
 
 const zeroDate = "0000-00-00";
-const prompt = promptSync({ sigint: true });
 
 function fix(n: number) {
   return n.toFixed(2);
@@ -129,12 +129,16 @@ async function balanceWatcher({
       console.error(error);
       process.exit(5);
     });
+  const rl = readline.createInterface({ input: stdin, output: stdout });
+  rl.on("line", output);
 
   while (!isBalanced) {
-    await output();
-    prompt("");
+    await new Promise((resolve) => {
+      rl.once("line", () => resolve);
+    });
   }
   await eventEmitter.cancel();
+  await rl.close();
   return;
 }
 
@@ -196,9 +200,7 @@ async function transactionView({
     ) + 4;
   const runningTotalWidth =
     Math.ceil(
-      Math.log10(
-        Math.max(Math.abs(goodBalance), Math.abs(failBalance))
-      )
+      Math.log10(Math.max(Math.abs(goodBalance), Math.abs(failBalance)))
     ) + 4;
   const commentWidth =
     width -
