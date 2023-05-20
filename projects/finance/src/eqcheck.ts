@@ -9,8 +9,12 @@ import { isoDateOrTime } from "../../../src/time/timeUtils";
 import { TxDoc, XcDoc } from "../views/balance";
 import printf from "printf";
 import chalk from "chalk";
+import { connectDb } from "../../../src/auth/connectDb";
+import promptSync from "prompt-sync";
+
 
 const zeroDate = "0000-00-00";
+const prompt = promptSync({ sigint: true });
 
 function fix(n: number) {
   return n.toFixed(2);
@@ -94,15 +98,45 @@ async function balanceWatcher({
   goodDate = zeroDate,
   failDate,
 }: BalanceWatcherInput) {
-  let initialGoodBalance: number | undefined = undefined;
-  console.log({
-    ...args,
-    mapName: balanceView.name,
-    start: `,${account},${currency},${zeroDate}`,
-    end: `,${account},${currency},${goodDate}`,
-    show: Show.None,
-  });
+  const initialGoodBalance =
+    ((
+      await reduceCmd({
+        ...args,
+        mapName: balanceView.name,
+        start: `,${account},${currency},${zeroDate}`,
+        end: `,${account},${currency},${goodDate}`,
+        show: Show.None,
+      })
+    ).rows[0]?.value as number) ?? 0;
 
+  let isBalanced = false;
+  async function output() {
+    console.clear()
+    isBalanced = await transactionView({args, account, currency, goodDate, failDate, initialGoodBalance})
+  }
+
+  const db = connectDb(args);
+  const eventEmitter = db.changes({since: "now"})
+    .on("change", output)
+    .on("error", (error) => {
+      console.error(error);
+      process.exit(5);
+    });
+
+  while(true) {
+    
+  }
+
+}
+
+async function transactionView({
+  args,
+  account,
+  currency,
+  goodDate = zeroDate,
+  failDate,
+}: BalanceWatcherInput & { initialGoodBalance: number }): boolean {
+  let initialGoodBalance: number | undefined = undefined;
   const goodBalance =
     ((
       await reduceCmd({
@@ -224,11 +258,13 @@ async function balanceWatcher({
       )
     );
   }
+
   if (fix(goodBalance) !== fix(initialGoodBalance)) {
     console.warn(
       chalk.red.bold(`Initial balance has changed. May want to rerun.`)
     );
   }
+
 }
 
 if (require.main === module) {
