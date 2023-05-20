@@ -12,7 +12,6 @@ import chalk from "chalk";
 import { connectDb } from "../../../src/auth/connectDb";
 import promptSync from "prompt-sync";
 
-
 const zeroDate = "0000-00-00";
 const prompt = promptSync({ sigint: true });
 
@@ -111,22 +110,32 @@ async function balanceWatcher({
 
   let isBalanced = false;
   async function output() {
-    console.clear()
-    isBalanced = await transactionView({args, account, currency, goodDate, failDate, initialGoodBalance})
+    console.clear();
+    isBalanced = await transactionView({
+      args,
+      account,
+      currency,
+      goodDate,
+      failDate,
+      initialGoodBalance,
+    });
   }
 
   const db = connectDb(args);
-  const eventEmitter = db.changes({since: "now"})
+  const eventEmitter = db
+    .changes({ since: "now" })
     .on("change", output)
     .on("error", (error) => {
       console.error(error);
       process.exit(5);
     });
 
-  while(true) {
-    
+  while (!isBalanced) {
+    await output();
+    prompt("");
   }
-
+  await eventEmitter.cancel();
+  return;
 }
 
 async function transactionView({
@@ -135,7 +144,7 @@ async function transactionView({
   currency,
   goodDate = zeroDate,
   failDate,
-}: BalanceWatcherInput & { initialGoodBalance: number }): boolean {
+}: BalanceWatcherInput & { initialGoodBalance: number }): Promise<boolean> {
   let initialGoodBalance: number | undefined = undefined;
   const goodBalance =
     ((
@@ -203,18 +212,31 @@ async function transactionView({
 
   console.clear();
   console.log(`${account} ${currency}`);
+  const isBalanced = fix(expectedBalance) === fix(failBalance);
   console.log(
-    chalk.redBright(
-      printf(
-        formatString,
-        failDate,
-        "FAIL",
-        "",
-        "",
-        expectedBalance - failBalance,
-        expectedBalance
-      )
-    )
+    isBalanced
+      ? chalk.greenBright(
+          printf(
+            formatString,
+            failDate,
+            "EqCheck",
+            "",
+            "",
+            expectedBalance - failBalance,
+            expectedBalance
+          )
+        )
+      : chalk.redBright(
+          printf(
+            formatString,
+            failDate,
+            "FAIL",
+            "",
+            "",
+            expectedBalance - failBalance,
+            expectedBalance
+          )
+        )
   );
   let reverseBalance = failBalance;
   for (const row of transactions) {
@@ -264,7 +286,7 @@ async function transactionView({
       chalk.red.bold(`Initial balance has changed. May want to rerun.`)
     );
   }
-
+  return isBalanced;
 }
 
 if (require.main === module) {
