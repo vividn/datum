@@ -197,7 +197,7 @@ async function transactionView({
   const runningTotalWidth =
     Math.ceil(
       Math.log10(
-        Math.max(Math.abs(initialGoodBalance ?? 0), Math.abs(failBalance))
+        Math.max(Math.abs(goodBalance), Math.abs(failBalance))
       )
     ) + 4;
   const commentWidth =
@@ -207,11 +207,11 @@ async function transactionView({
     arrowWidth -
     amountWidth -
     runningTotalWidth -
-    4;
+    5;
   const formatString = `%-${dateWidth}.${dateWidth}s %-${commentWidth}.${commentWidth}s %${toAccountWidth}.${toAccountWidth}s %${arrowWidth}.${arrowWidth}s %${amountWidth}.2f %${runningTotalWidth}.2f`;
 
   console.clear();
-  console.log(`${account} ${currency}`);
+  console.log(chalk.yellow.bold(`${account} ${currency}`));
   const isBalanced = fix(expectedBalance) === fix(failBalance);
   console.log(
     isBalanced
