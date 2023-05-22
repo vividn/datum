@@ -63,20 +63,24 @@ async function main(cliInput: string | string[]) {
       })
     ).rows[0].value;
     if (fix(expectedBalance) !== fix(actualBalance)) {
-      await balanceWatcher({
-        args,
-        account,
-        currency,
-        failDate: datetime,
-        goodDate: lastGoodDate,
-      });
-      process.exit(3);
-      // console.error(
-      //   `Balance mismatch for ${account} ${currency} ${datetime}:\nexpected ${fix(
-      //     expectedBalance
-      //   )}, got ${fix(actualBalance)} (${actualBalance - expectedBalance})`
-      // );
-      // process.exit(3);
+      if (args.watch) {
+        await balanceWatcher({
+          args,
+          account,
+          currency,
+          failDate: datetime,
+          goodDate: lastGoodDate,
+        });
+      } else {
+        await transactionView({
+          args,
+          account,
+          currency,
+          failDate: datetime,
+          goodDate: lastGoodDate,
+        });
+        process.exit(3);
+      }
     }
     lastGoodDate = datetime;
     console.info(`Balance check passed for ${account} ${currency} ${datetime}`);
@@ -98,17 +102,6 @@ async function balanceWatcher({
   goodDate = zeroDate,
   failDate,
 }: BalanceWatcherInput) {
-  const initialGoodBalance =
-    ((
-      await reduceCmd({
-        ...args,
-        mapName: balanceView.name,
-        start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},${goodDate}`,
-        show: Show.None,
-      })
-    ).rows[0]?.value as number) ?? 0;
-
   let isBalanced = false;
   async function output() {
     console.clear();
@@ -118,7 +111,6 @@ async function balanceWatcher({
       currency,
       goodDate,
       failDate,
-      initialGoodBalance,
     });
   }
 
@@ -159,7 +151,7 @@ async function transactionView({
   currency,
   goodDate = zeroDate,
   failDate,
-}: BalanceWatcherInput & { initialGoodBalance: number }): Promise<boolean> {
+}: BalanceWatcherInput): Promise<boolean> {
   const goodBalance =
     ((
       await reduceCmd({
@@ -222,7 +214,7 @@ async function transactionView({
   const arrowWidth = 1;
   const amountWidth =
     Math.ceil(
-      Math.log10(Math.max(...transactions.map((row) => Math.abs(row.value))))
+      Math.log10(Math.max(1, ...transactions.map((row) => Math.abs(row.value))))
     ) + 4;
   const runningTotalWidth =
     Math.ceil(
