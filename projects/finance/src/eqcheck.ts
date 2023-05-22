@@ -11,7 +11,7 @@ import printf from "printf";
 import chalk from "chalk";
 import { connectDb } from "../../../src/auth/connectDb";
 import * as readline from "node:readline";
-import { stdin, stdout } from "node:process";
+import { stdin } from "node:process";
 import { once } from "node:events";
 
 const zeroDate = "0000-00-00";
@@ -124,7 +124,7 @@ async function balanceWatcher({
 
   const db = connectDb(args);
   const eventEmitter = db
-    .changes({ since: "now" })
+    .changes({ since: "now", live: true })
     .on("change", output)
     .on("error", (error) => {
       console.error(error);
@@ -147,6 +147,7 @@ async function balanceWatcher({
     process.exit(3);
   });
 
+  await output();
   await once(rl, "close");
   eventEmitter.cancel();
   return;
