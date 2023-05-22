@@ -160,19 +160,27 @@ async function transactionView({
   goodDate = zeroDate,
   failDate,
 }: BalanceWatcherInput & { initialGoodBalance: number }): Promise<boolean> {
-  let initialGoodBalance: number | undefined = undefined;
-  const goodEquality = (
-    await reduceCmd({
+  const goodBalance =
+    ((
+      await reduceCmd({
+        ...args,
+        mapName: balanceView.name,
+        start: `,${account},${currency},${zeroDate}`,
+        end: `,${account},${currency},${goodDate}`,
+        show: Show.None,
+      })
+    ).rows[0]?.value as number) ?? 0;
+  const goodEqualityDoc = (
+    await mapCmd({
       ...args,
-      mapName: balanceView.name,
-      start: `,${account},${currency},${zeroDate}`,
-      end: `,${account},${currency},${goodDate}`,
+      mapName: equalityView.name,
+      start: `,${account},${currency},${goodDate}`,
       show: Show.None,
+      params: { include_docs: true },
     })
   ).rows[0];
-  const goodBalance = (goodEquality?.value as number) ?? 0;
-  const goodHid = (goodEquality?.doc?.meta?.humanId as string) ?? "";
-  initialGoodBalance ??= goodBalance;
+  const goodEquality = goodEqualityDoc.value as number;
+  const goodHid = (goodEqualityDoc?.doc?.meta?.humanId as string) ?? "";
   const failBalance = (
     await reduceCmd({
       ...args,
@@ -295,18 +303,31 @@ async function transactionView({
   }
 
   console.log(
-    chalk.greenBright(
-      printf(
-        formatString,
-        goodDate,
-        goodHid,
-        "EqCheck",
-        "",
-        "",
-        0,
-        goodBalance
-      ).replace(/0\.00/, "    ")
-    )
+    fix(goodEquality) === fix(reverseBalance)
+      ? chalk.greenBright(
+          printf(
+            formatString,
+            goodDate,
+            goodHid,
+            "EqCheck",
+            "",
+            "",
+            0,
+            goodBalance
+          ).replace(/0\.00/, "    ")
+        )
+      : chalk.redBright(
+          printf(
+            formatString,
+            goodDate,
+            goodHid,
+            "FAIL",
+            "",
+            "",
+            goodBalance - goodEquality,
+            reverseBalance
+          )
+        )
   );
 
   if (fix(reverseBalance) !== fix(goodBalance)) {
@@ -319,7 +340,7 @@ async function transactionView({
     );
   }
 
-  if (fix(goodBalance) !== fix(initialGoodBalance)) {
+  if (fix(goodBalance) !== fix(goodEquality)) {
     console.warn(
       chalk.red.bold(`Initial balance has changed. May want to rerun.`)
     );
