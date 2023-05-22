@@ -161,16 +161,17 @@ async function transactionView({
   failDate,
 }: BalanceWatcherInput & { initialGoodBalance: number }): Promise<boolean> {
   let initialGoodBalance: number | undefined = undefined;
-  const goodBalance =
-    ((
-      await reduceCmd({
-        ...args,
-        mapName: balanceView.name,
-        start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},${goodDate}`,
-        show: Show.None,
-      })
-    ).rows[0]?.value as number) ?? 0;
+  const goodEquality = (
+    await reduceCmd({
+      ...args,
+      mapName: balanceView.name,
+      start: `,${account},${currency},${zeroDate}`,
+      end: `,${account},${currency},${goodDate}`,
+      show: Show.None,
+    })
+  ).rows[0];
+  const goodBalance = (goodEquality?.value as number) ?? 0;
+  const goodHid = (goodEquality?.doc?.meta?.humanId as string) ?? "";
   initialGoodBalance ??= goodBalance;
   const failBalance = (
     await reduceCmd({
@@ -182,13 +183,18 @@ async function transactionView({
     })
   ).rows[0].value;
 
-  const expectedBalanceMap = await mapCmd({
-    ...args,
-    mapName: equalityView.name,
-    start: `,${account},${currency},${failDate}`,
-    show: Show.None,
-  });
-  const expectedBalance = expectedBalanceMap.rows[0].value;
+  const expectedEquality = (
+    await mapCmd({
+      ...args,
+      mapName: equalityView.name,
+      start: `,${account},${currency},${failDate}`,
+      show: Show.None,
+      params: { include_docs: true },
+    })
+  ).rows[0];
+  const expectedBalance = expectedEquality.value;
+  const expectedEqualityHid =
+    (expectedEquality.doc?.meta?.humanId as string) ?? "";
   const transactions = (
     await mapCmd({
       ...args,
@@ -201,8 +207,9 @@ async function transactionView({
     })
   ).rows as PouchDB.Query.Response<TxDoc | XcDoc>["rows"];
 
-  const width = Math.max(Math.min(70, process.stdout.columns), 30);
+  const width = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
+  const hidWidth = 4;
   const toAccountWidth = 10;
   const arrowWidth = 1;
   const amountWidth =
@@ -216,12 +223,20 @@ async function transactionView({
   const commentWidth =
     width -
     dateWidth -
+    hidWidth -
     toAccountWidth -
     arrowWidth -
     amountWidth -
     runningTotalWidth -
-    5;
-  const formatString = `%-${dateWidth}.${dateWidth}s %-${commentWidth}.${commentWidth}s %${toAccountWidth}.${toAccountWidth}s %${arrowWidth}.${arrowWidth}s %${amountWidth}.2f %${runningTotalWidth}.2f`;
+    6;
+  const formatString =
+    `%-${dateWidth}.${dateWidth}s ` +
+    `%-${hidWidth}.${hidWidth}s ` +
+    `%-${commentWidth}.${commentWidth}s ` +
+    `%${toAccountWidth}.${toAccountWidth}s ` +
+    `%${arrowWidth}.${arrowWidth}s ` +
+    `%${amountWidth}.2f ` +
+    `%${runningTotalWidth}.2f`;
 
   console.clear();
   console.log(chalk.yellow.bold(`${account} ${currency}`));
@@ -232,6 +247,7 @@ async function transactionView({
           printf(
             formatString,
             failDate,
+            expectedEqualityHid,
             "EqCheck",
             "",
             "",
@@ -243,6 +259,7 @@ async function transactionView({
           printf(
             formatString,
             failDate,
+            expectedEqualityHid,
             "FAIL",
             "",
             "",
@@ -257,6 +274,7 @@ async function transactionView({
     const {
       data: { comment = "" },
     } = doc;
+    const hid = doc.meta?.humanId ?? "";
     const amount = row.value;
     const toAccount = row.key[3];
     const arrow = amount > 0 ? "→" : "←";
@@ -265,6 +283,7 @@ async function transactionView({
       printf(
         formatString,
         date,
+        hid,
         comment,
         toAccount,
         arrow,
@@ -277,10 +296,16 @@ async function transactionView({
 
   console.log(
     chalk.greenBright(
-      printf(formatString, goodDate, "EqCheck", "", "", 0, goodBalance).replace(
-        /0\.00/,
-        "    "
-      )
+      printf(
+        formatString,
+        goodDate,
+        goodHid,
+        "EqCheck",
+        "",
+        "",
+        0,
+        goodBalance
+      ).replace(/0\.00/, "    ")
     )
   );
 
