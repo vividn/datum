@@ -171,7 +171,7 @@ async function transactionView({
       params: { include_docs: true },
     })
   ).rows[0];
-  const goodEquality = goodEqualityDoc.value as number;
+  const goodEquality = goodEqualityDoc?.value as number ?? 0;
   const goodHid = (goodEqualityDoc?.doc?.meta?.humanId as string) ?? "";
   const failBalance = (
     await reduceCmd({
