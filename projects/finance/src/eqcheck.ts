@@ -12,6 +12,7 @@ import chalk from "chalk";
 import { connectDb } from "../../../src/auth/connectDb";
 import * as readline from "node:readline";
 import { stdin, stdout } from "node:process";
+import { once } from "node:events";
 
 const zeroDate = "0000-00-00";
 
@@ -129,16 +130,25 @@ async function balanceWatcher({
       console.error(error);
       process.exit(5);
     });
-  const rl = readline.createInterface({ input: stdin, output: stdout });
+  const rl = readline.createInterface({ input: stdin, terminal: true });
+  stdin.setRawMode(true);
   rl.on("line", output);
+  rl.on("line", () => {
+    if (isBalanced) {
+      rl.close();
+    }
+  });
+  rl.on("close", () => {
+    stdin.setRawMode(false);
+  });
+  rl.on("SIGINT", () => {
+    rl.close();
+    eventEmitter.cancel();
+    process.exit(3);
+  });
 
-  while (!isBalanced) {
-    await new Promise((resolve) => {
-      rl.once("line", () => resolve);
-    });
-  }
-  await eventEmitter.cancel();
-  await rl.close();
+  await once(rl, "close");
+  eventEmitter.cancel();
   return;
 }
 
