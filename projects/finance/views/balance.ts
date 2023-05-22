@@ -33,7 +33,7 @@ export type XcDoc = DatumDocument<{
 export type FinanceDoc = TxDoc | EqDoc | XcDoc;
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, isoDateOrTime?];
+type MapKey = [string, string, isoDateOrTime | undefined, string];
 type MapValue = number;
 type ReduceValue = number;
 
@@ -48,12 +48,12 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     const data = doc.data;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
-      emit([data.acc, data.curr, data.occurTime], -amount);
-      emit([data.to, data.curr, data.occurTime], amount);
+      emit([data.acc, data.curr, data.occurTime, data.to], -amount);
+      emit([data.to, data.curr, data.occurTime, data.acc], amount);
     }
     if (data.type === "xc") {
-      emit([data.acc1, data.curr1, data.occurTime], -data.amount1);
-      emit([data.acc2, data.curr2, data.occurTime], data.amount2);
+      emit([data.acc1, data.curr1, data.occurTime, data.acc2], -data.amount1);
+      emit([data.acc2, data.curr2, data.occurTime, data.acc1], data.amount2);
     }
   },
   reduce: "_sum",
