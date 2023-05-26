@@ -29,7 +29,7 @@ const eqCheckYargs = baseArgs
   .option("context", {
     alias: "C",
     type: "number",
-    description: "days of context around the equality checks. default: 2",
+    description: "days of context around the equality checks. default: 3",
   })
   .option("watch", {
     alias: "w",
@@ -40,7 +40,7 @@ const eqCheckYargs = baseArgs
 async function main(cliInput: string | string[]) {
   const args = (await eqCheckYargs.parse(cliInput)) as EqCheckArgs;
   args.db ??= "finance";
-  args.context ??= 2;
+  args.context ??= 3;
   const start = args.account ? `,${args.account}` : undefined;
   const allEqualityChecks = (
     await mapCmd({
