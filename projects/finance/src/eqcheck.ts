@@ -69,13 +69,13 @@ async function main(cliInput: string | string[]) {
           ? lastGoodEquality[2]
           : undefined;
       const startDate = lastGoodDate
-        ? DateTime.fromISO(lastGoodDate)
+        ? (DateTime.fromISO(lastGoodDate)
             .minus({ days: args.context })
-            .toISODate()
+            .toISODate() as string)
         : undefined;
       const endDate = DateTime.fromISO(datetime)
         .plus({ days: args.context })
-        .toISODate();
+        .toISODate() as string;
       if (args.watch) {
         await transactionWatcher({
           args,

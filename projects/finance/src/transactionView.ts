@@ -163,7 +163,7 @@ export async function transactionView({
   let isAllBalanced = true;
 
   function displayEquality(
-    equality: PouchDB.Query.Row<EqDoc>,
+    equality: PouchDB.Query.Response<EqDoc>["rows"][0],
     currentBalance: number
   ): boolean {
     const date = equality.key[2];
@@ -187,7 +187,7 @@ export async function transactionView({
   }
 
   function displayTransaction(
-    transaction: PouchDB.Query.Row<TxDoc | XcDoc>,
+    transaction: PouchDB.Query.Response<TxDoc | XcDoc>["rows"][0],
     currentBalance: number
   ): number {
     const doc = transaction.doc!;
@@ -221,11 +221,11 @@ export async function transactionView({
       !transactions.length ||
       (equalityDate >= transactionDate && equalities.length)
     ) {
-      const balanced = displayEquality(equalities.shift(), reverseBalance);
+      const balanced = displayEquality(equalities.shift()!, reverseBalance);
       isAllBalanced &&= balanced;
     } else {
       reverseBalance -= displayTransaction(
-        transactions.shift(),
+        transactions.shift()!,
         reverseBalance
       );
     }
@@ -238,7 +238,8 @@ export async function transactionView({
       {
         key: [account, currency, zeroDate],
         value: 0,
-        doc: null,
+        id: "",
+        doc: undefined,
       },
       reverseBalance
     );
