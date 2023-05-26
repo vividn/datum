@@ -121,31 +121,6 @@ export async function transactionView({
     })
   ).rows as PouchDB.Query.Response<EqDoc>["rows"];
 
-  const goodEqualityDoc = (
-    await mapCmd({
-      ...args,
-      mapName: equalityView.name,
-      start: `,${account},${currency},${startDate}`,
-      show: Show.None,
-      params: { include_docs: true },
-    })
-  ).rows[0];
-  const goodEquality = (goodEqualityDoc?.value as number) ?? 0;
-  const goodHid = (goodEqualityDoc?.doc?.meta?.humanId as string) ?? "";
-
-  const expectedEquality = (
-    await mapCmd({
-      ...args,
-      mapName: equalityView.name,
-      start: `,${account},${currency},${endDate}`,
-      show: Show.None,
-      params: { include_docs: true },
-    })
-  ).rows[0];
-  const expectedBalance = expectedEquality.value;
-  const expectedEqualityHid =
-    (expectedEquality.doc?.meta?.humanId as string) ?? "";
-
   const width = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
   const hidWidth = 4;
@@ -174,7 +149,7 @@ export async function transactionView({
     amountWidth -
     runningTotalWidth -
     6;
-  const formatString =
+  const format =
     `%-${dateWidth}.${dateWidth}s ` +
     `%-${hidWidth}.${hidWidth}s ` +
     `%-${commentWidth}.${commentWidth}s ` +
@@ -184,102 +159,78 @@ export async function transactionView({
     `%${runningTotalWidth}.2f`;
 
   console.log(chalk.yellow.bold(`${account} ${currency}`));
-  const isBalanced = fix(expectedBalance) === fix(endBalance);
-  console.log(
-    isBalanced
-      ? chalk.greenBright(
-          printf(
-            formatString,
-            endDate,
-            expectedEqualityHid,
-            "EqCheck",
-            "",
-            "",
-            expectedBalance - endBalance,
-            expectedBalance
-          )
-        )
-      : chalk.redBright(
-          printf(
-            formatString,
-            endDate,
-            expectedEqualityHid,
-            "FAIL",
-            "",
-            "",
-            expectedBalance - endBalance,
-            expectedBalance
-          )
-        )
-  );
   let reverseBalance = endBalance;
-  for (const row of transactions) {
-    const doc = row.doc!;
+  let isAllBalanced = true;
+
+  function displayEquality(
+    equality: PouchDB.Query.Row<EqDoc>,
+    currentBalance: number
+  ): boolean {
+    const date = equality.key[3];
+    const hid = equality.doc?.meta?.humanId ?? "";
+    const eqBalance = equality.value;
+    const amount = eqBalance - currentBalance;
+    const isBalanced = fix(eqBalance) === fix(currentBalance);
+    console.log(
+      isBalanced
+        ? chalk.greenBright(
+            printf(format, date, hid, "EqCheck", "", "", 0, eqBalance).replace(
+              /0\.00/,
+              "    "
+            )
+          )
+        : chalk.redBright(
+            printf(format, date, hid, "FAIL", "", "", amount, eqBalance)
+          )
+    );
+  }
+  function displayTransaction(
+    transaction: PouchDB.Query.Row<TxDoc | XcDoc>,
+    currentBalance: number
+  ): number {
+    const doc = transaction.doc!;
     const {
       data: { comment = "" },
     } = doc;
     const hid = doc.meta?.humanId ?? "";
-    const amount = row.value;
-    const toAccount = row.key[3];
+    const amount = transaction.value;
+    const toAccount = transaction.key[3];
     const arrow = amount > 0 ? "→" : "←";
-    const date = row.key[2];
+    const date = transaction.key[2];
     console.log(
       printf(
-        formatString,
+        format,
         date,
         hid,
         comment,
         toAccount,
         arrow,
         amount,
-        reverseBalance
+        currentBalance
       )
     );
-    reverseBalance -= amount;
+    return amount;
   }
+  while (transactions.length || equalities.length) {
+    const transactionDate = transactions[0]?.key[3] ?? zeroDate;
+    const equalityDate = equalities[0]?.key[3] ?? zeroDate;
 
-  console.log(
-    fix(goodEquality) === fix(reverseBalance)
-      ? chalk.greenBright(
-          printf(
-            formatString,
-            startDate,
-            goodHid,
-            "EqCheck",
-            "",
-            "",
-            0,
-            startBalance
-          ).replace(/0\.00/, "    ")
-        )
-      : chalk.redBright(
-          printf(
-            formatString,
-            startDate,
-            goodHid,
-            "FAIL",
-            "",
-            "",
-            startBalance - goodEquality,
-            reverseBalance
-          )
-        )
-  );
+    if (equalityDate >= transactionDate) {
+      isAllBalanced &&= displayEquality(equalities.shift()!, reverseBalance);
+    } else {
+      reverseBalance -= displayTransaction(
+        transactions.shift()!,
+        reverseBalance
+      );
+    }
+  }
 
   if (fix(reverseBalance) !== fix(startBalance)) {
-    console.warn(
-      chalk.red.bold(
-        `Running total does not align with data. Something went wrong. Expected: ${fix(
-          startBalance
-        )}, got ${fix(reverseBalance)} (${fix(reverseBalance - startBalance)})`
-      )
+    throw new Error(
+      `Running total does not align with data. Something went wrong. Expected: ${fix(
+        startBalance
+      )}, got ${fix(reverseBalance)} (${fix(reverseBalance - startBalance)})`
     );
   }
-
-  if (fix(startBalance) !== fix(goodEquality)) {
-    console.warn(
-      chalk.red.bold(`Initial balance has changed. May want to rerun.`)
-    );
-  }
-  return isBalanced;
+  return isAllBalanced;
 }
