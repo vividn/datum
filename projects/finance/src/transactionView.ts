@@ -217,9 +217,12 @@ export async function transactionView({
   while (transactions.length || equalities.length) {
     const transactionDate = transactions[0]?.key[2] ?? zeroDate;
     const equalityDate = equalities[0]?.key[2] ?? zeroDate;
-
-    if (equalityDate >= transactionDate && equalities.length) {
-      isAllBalanced &&= displayEquality(equalities.shift(), reverseBalance);
+    if (
+      !transactions.length ||
+      (equalityDate >= transactionDate && equalities.length)
+    ) {
+      const balanced = displayEquality(equalities.shift(), reverseBalance);
+      isAllBalanced &&= balanced;
     } else {
       reverseBalance -= displayTransaction(
         transactions.shift(),
