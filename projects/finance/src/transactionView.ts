@@ -8,7 +8,7 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { balanceView, equalityView } from "../views";
 import { Show } from "../../../src/input/outputArgs";
 import { mapCmd } from "../../../src/commands/mapCmd";
-import { TxDoc, XcDoc } from "../views/balance";
+import { EqDoc, TxDoc, XcDoc } from "../views/balance";
 import chalk from "chalk";
 import printf from "printf";
 import { fix, zeroDate } from "./eqcheck";
@@ -76,10 +76,10 @@ export async function transactionView({
   args,
   account,
   currency,
-  startDate = zeroDate,
   endDate,
+  startDate = zeroDate,
 }: TransactionViewInput): Promise<boolean> {
-  const goodBalance =
+  const startBalance =
     ((
       await reduceCmd({
         ...args,
@@ -89,6 +89,38 @@ export async function transactionView({
         show: Show.None,
       })
     ).rows[0]?.value as number) ?? 0;
+  const endBalance = (
+    await reduceCmd({
+      ...args,
+      mapName: balanceView.name,
+      start: `,${account},${currency},${zeroDate}`,
+      end: `,${account},${currency},"${endDate}"`,
+      show: Show.None,
+    })
+  ).rows[0].value;
+  const transactions = (
+    await mapCmd({
+      ...args,
+      mapName: balanceView.name,
+      start: `,${account},${currency},"${startDate}"`,
+      end: `,${account},${currency},"${endDate}"`,
+      show: Show.None,
+      reverse: true,
+      params: { include_docs: true },
+    })
+  ).rows as PouchDB.Query.Response<TxDoc | XcDoc>["rows"];
+  const equalities = (
+    await mapCmd({
+      ...args,
+      mapName: equalityView.name,
+      start: `,${account},${currency},"${startDate}"`,
+      end: `,${account},${currency},"${endDate}"`,
+      show: Show.None,
+      reverse: true,
+      params: { include_docs: true },
+    })
+  ).rows as PouchDB.Query.Response<EqDoc>["rows"];
+
   const goodEqualityDoc = (
     await mapCmd({
       ...args,
@@ -100,15 +132,6 @@ export async function transactionView({
   ).rows[0];
   const goodEquality = (goodEqualityDoc?.value as number) ?? 0;
   const goodHid = (goodEqualityDoc?.doc?.meta?.humanId as string) ?? "";
-  const failBalance = (
-    await reduceCmd({
-      ...args,
-      mapName: balanceView.name,
-      start: `,${account},${currency},${zeroDate}`,
-      end: `,${account},${currency},"${endDate}"`,
-      show: Show.None,
-    })
-  ).rows[0].value;
 
   const expectedEquality = (
     await mapCmd({
@@ -122,17 +145,6 @@ export async function transactionView({
   const expectedBalance = expectedEquality.value;
   const expectedEqualityHid =
     (expectedEquality.doc?.meta?.humanId as string) ?? "";
-  const transactions = (
-    await mapCmd({
-      ...args,
-      mapName: balanceView.name,
-      start: `,${account},${currency},"${startDate}"`,
-      end: `,${account},${currency},"${endDate}"`,
-      show: Show.None,
-      reverse: true,
-      params: { include_docs: true },
-    })
-  ).rows as PouchDB.Query.Response<TxDoc | XcDoc>["rows"];
 
   const width = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
@@ -145,7 +157,13 @@ export async function transactionView({
     ) + 4;
   const runningTotalWidth =
     Math.ceil(
-      Math.log10(Math.max(Math.abs(goodBalance), Math.abs(failBalance)))
+      Math.log10(
+        Math.max(
+          Math.abs(startBalance),
+          Math.abs(endBalance),
+          ...equalities.map((row) => Math.abs(row.value))
+        )
+      )
     ) + 4;
   const commentWidth =
     width -
@@ -165,9 +183,8 @@ export async function transactionView({
     `%${amountWidth}.2f ` +
     `%${runningTotalWidth}.2f`;
 
-  console.clear();
   console.log(chalk.yellow.bold(`${account} ${currency}`));
-  const isBalanced = fix(expectedBalance) === fix(failBalance);
+  const isBalanced = fix(expectedBalance) === fix(endBalance);
   console.log(
     isBalanced
       ? chalk.greenBright(
@@ -178,7 +195,7 @@ export async function transactionView({
             "EqCheck",
             "",
             "",
-            expectedBalance - failBalance,
+            expectedBalance - endBalance,
             expectedBalance
           )
         )
@@ -190,12 +207,12 @@ export async function transactionView({
             "FAIL",
             "",
             "",
-            expectedBalance - failBalance,
+            expectedBalance - endBalance,
             expectedBalance
           )
         )
   );
-  let reverseBalance = failBalance;
+  let reverseBalance = endBalance;
   for (const row of transactions) {
     const doc = row.doc!;
     const {
@@ -232,7 +249,7 @@ export async function transactionView({
             "",
             "",
             0,
-            goodBalance
+            startBalance
           ).replace(/0\.00/, "    ")
         )
       : chalk.redBright(
@@ -243,23 +260,23 @@ export async function transactionView({
             "FAIL",
             "",
             "",
-            goodBalance - goodEquality,
+            startBalance - goodEquality,
             reverseBalance
           )
         )
   );
 
-  if (fix(reverseBalance) !== fix(goodBalance)) {
+  if (fix(reverseBalance) !== fix(startBalance)) {
     console.warn(
       chalk.red.bold(
         `Running total does not align with data. Something went wrong. Expected: ${fix(
-          goodBalance
-        )}, got ${fix(reverseBalance)} (${fix(reverseBalance - goodBalance)})`
+          startBalance
+        )}, got ${fix(reverseBalance)} (${fix(reverseBalance - startBalance)})`
       )
     );
   }
 
-  if (fix(goodBalance) !== fix(goodEquality)) {
+  if (fix(startBalance) !== fix(goodEquality)) {
     console.warn(
       chalk.red.bold(`Initial balance has changed. May want to rerun.`)
     );
