@@ -183,7 +183,9 @@ export async function transactionView({
             printf(format, date, hid, "FAIL", "", "", amount, eqBalance)
           )
     );
+    return isBalanced;
   }
+
   function displayTransaction(
     transaction: PouchDB.Query.Row<TxDoc | XcDoc>,
     currentBalance: number
@@ -211,6 +213,8 @@ export async function transactionView({
     );
     return amount;
   }
+
+
   while (transactions.length || equalities.length) {
     const transactionDate = transactions[0]?.key[2] ?? zeroDate;
     const equalityDate = equalities[0]?.key[2] ?? zeroDate;
