@@ -224,12 +224,18 @@ export async function transactionView({
       );
     }
   }
+  if (fix(reverseBalance) === "-0.00") {
+    reverseBalance = 0;
+  }
   if (startDate === zeroDate) {
-    displayEquality({
-      key: [account, currency, zeroDate],
-      value: 0,
-      doc: null,
-    });
+    displayEquality(
+      {
+        key: [account, currency, zeroDate],
+        value: 0,
+        doc: null,
+      },
+      reverseBalance
+    );
   }
 
   if (fix(reverseBalance) !== fix(startBalance)) {
