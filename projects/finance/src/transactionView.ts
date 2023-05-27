@@ -133,11 +133,16 @@ export async function transactionView({
   const runningTotalWidth =
     Math.ceil(
       Math.log10(
-        Math.max(
-          Math.abs(startBalance),
-          Math.abs(endBalance),
-          ...equalities.map((row) => Math.abs(row.value))
-        )
+        transactions.reduce(
+          (accum: { runningTotal: number; absMax: number }, current) => {
+            const runningTotal = current.value + accum.runningTotal;
+            return {
+              runningTotal,
+              absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
+            };
+          },
+          { runningTotal: endBalance, absMax: Math.abs(endBalance) }
+        ).absMax
       )
     ) + 4;
   const commentWidth =
