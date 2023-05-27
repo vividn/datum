@@ -38,17 +38,18 @@ export const withOrderedReduceView: DatumView<
   emit,
   map: (doc: FinanceDoc) => {
     const data = doc.data;
+    const occurTime = data.effectiveTime ?? data.occurTime;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
-      emit([data.acc, data.curr, data.occurTime], { delta: -amount });
-      emit([data.to, data.curr, data.occurTime], { delta: amount });
+      emit([data.acc, data.curr, occurTime], { delta: -amount });
+      emit([data.to, data.curr, occurTime], { delta: amount });
     }
     if (data.type === "xc") {
-      emit([data.acc1, data.curr1, data.occurTime], { delta: -data.amount1 });
-      emit([data.acc2, data.curr2, data.occurTime], { delta: data.amount2 });
+      emit([data.acc1, data.curr1, occurTime], { delta: -data.amount1 });
+      emit([data.acc2, data.curr2, occurTime], { delta: data.amount2 });
     }
     if (data.type === "eq") {
-      emit([data.acc, data.curr, data.occurTime], { balance: data.bal });
+      emit([data.acc, data.curr, occurTime], { balance: data.bal });
     }
   },
   reduce: (keysAndIds, values, rereduce) => {
