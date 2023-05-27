@@ -51,15 +51,15 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   emit,
   map: (doc: FinanceDoc) => {
     const data = doc.data;
-    const occurTime = data.effectiveTime ?? data.occurTime;
+    const occurTime = data.effectiveTime || data.occurTime;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
       emit([data.acc, data.curr, occurTime, data.to], -amount);
       emit([data.to, data.curr, occurTime, data.acc], amount);
     }
     if (data.type === "xc") {
-      const occurTime1 = data.effectiveTime1 ?? occurTime;
-      const occurTime2 = data.effectiveTime2 ?? occurTime;
+      const occurTime1 = data.effectiveTime1 || occurTime;
+      const occurTime2 = data.effectiveTime2 || occurTime;
       emit([data.acc1, data.curr1, occurTime1, data.acc2], -data.amount1);
       emit([data.acc2, data.curr2, occurTime2, data.acc1], data.amount2);
     }
