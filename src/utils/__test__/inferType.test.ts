@@ -91,8 +91,9 @@ describe("inferType with special fields", () => {
     expect(inferType("10:15", "snake_time")).toEqual(
       "2021-10-25T10:15:00.000Z"
     );
+    expect(inferType("1230", "expectedTime2")).toEqual("2021-10-25T12:30:00.000Z");
 
-    expect(parseTimeSpy).toHaveBeenCalledTimes(3);
+    expect(parseTimeSpy).toHaveBeenCalledTimes(4);
     expect(parseDateSpy).not.toHaveBeenCalled();
     expect(parseDurationSpy).not.toHaveBeenCalled();
   });
@@ -101,8 +102,9 @@ describe("inferType with special fields", () => {
     expect(inferType("-1", "date")).toEqual("2021-10-24");
     expect(inferType("dec21", "solsticeDate")).toEqual("2021-12-21");
     expect(inferType("in 3 days", "Due-Date")).toEqual("2021-10-28");
+    expect(inferType("+2", "someDate10")).toEqual("2021-10-27");
 
-    expect(parseDateSpy).toHaveBeenCalledTimes(3);
+    expect(parseDateSpy).toHaveBeenCalledTimes(4);
     expect(parseTimeSpy).not.toHaveBeenCalled();
     expect(parseDurationSpy).not.toHaveBeenCalled();
   });
@@ -112,8 +114,9 @@ describe("inferType with special fields", () => {
     expect(inferType("-5", "Duration")).toEqual("-PT5M");
     expect(inferType("3:45:20", "raceDuration")).toEqual("PT3H45M20S");
     expect(inferType("2days", "wait_dur")).toEqual("P2D");
+    expect(inferType("30sec", "duration2")).toEqual("PT30S");
 
-    expect(parseDurationSpy).toHaveBeenCalledTimes(4);
+    expect(parseDurationSpy).toHaveBeenCalledTimes(5);
     expect(parseTimeSpy).not.toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveBeenCalled();
   });
