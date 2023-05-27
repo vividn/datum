@@ -91,7 +91,9 @@ describe("inferType with special fields", () => {
     expect(inferType("10:15", "snake_time")).toEqual(
       "2021-10-25T10:15:00.000Z"
     );
-    expect(inferType("1230", "expectedTime2")).toEqual("2021-10-25T12:30:00.000Z");
+    expect(inferType("1230", "expectedTime2")).toEqual(
+      "2021-10-25T12:30:00.000Z"
+    );
 
     expect(parseTimeSpy).toHaveBeenCalledTimes(4);
     expect(parseDateSpy).not.toHaveBeenCalled();
