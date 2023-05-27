@@ -35,21 +35,24 @@ export const categorizedBalanceView: DatumView<
     };
 
     const data = doc.data;
+    const occurTime = data.effectiveTime || data.occurTime;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
       emit(
-        [getAccType(data.acc), data.curr, data.acc, data.occurTime],
+        [getAccType(data.acc), data.curr, data.acc, occurTime],
         -amount
       );
-      emit([getAccType(data.to), data.curr, data.to, data.occurTime], amount);
+      emit([getAccType(data.to), data.curr, data.to, occurTime], amount);
     }
     if (data.type === "xc") {
+      const occurTime1 = data.effectiveTime1 || occurTime;
+      const occurTime2 = data.effectiveTime2 || occurTime;
       emit(
-        [getAccType(data.acc1), data.curr1, data.acc1, data.occurTime],
+        [getAccType(data.acc1), data.curr1, data.acc1, occurTime1],
         -data.amount1
       );
       emit(
-        [getAccType(data.acc2), data.curr2, data.acc2, data.occurTime],
+        [getAccType(data.acc2), data.curr2, data.acc2, occurTime2],
         data.amount2
       );
     }

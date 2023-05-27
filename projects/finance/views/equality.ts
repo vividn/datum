@@ -17,8 +17,9 @@ export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   emit,
   map: (doc) => {
     const data = doc.data;
+    const occurTime = data.effectiveTime || data.occurTime;
     if (data.type === "eq") {
-      emit([data.acc, data.curr, data.occurTime], data.bal);
+      emit([data.acc, data.curr, occurTime], data.bal);
     }
   },
   reduce: "_count",
