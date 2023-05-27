@@ -12,8 +12,8 @@ import {
 export function inferType(value: number | string, fieldName?: string): any {
   if (fieldName !== undefined) {
     switch (true) {
-      case /(?:\b|_)time$/i.test(fieldName):
-      case /[a-z0-9]Time$/.test(fieldName):
+      case /(?:\b|_)time\d*$/i.test(fieldName):
+      case /[a-z0-9]Time\d*$/.test(fieldName):
         try {
           const parsedTime = parseTimeStr({ timeStr: String(value) });
           return isoDatetimeFromDateTime(parsedTime);
@@ -26,8 +26,8 @@ export function inferType(value: number | string, fieldName?: string): any {
         }
         break;
 
-      case /(?:\b|_)date$/i.test(fieldName!):
-      case /[a-z0-9]Date$/.test(fieldName):
+      case /(?:\b|_)date\d*$/i.test(fieldName!):
+      case /[a-z0-9]Date\d*$/.test(fieldName):
         try {
           const parsedDate = parseDateStr({ dateStr: String(value) });
           return isoDateFromDateTime(parsedDate);
@@ -40,8 +40,8 @@ export function inferType(value: number | string, fieldName?: string): any {
         }
         break;
 
-      case /(?:\b|_)dur(ation)?$/i.test(fieldName!):
-      case /[a-z0-9]Dur(ation)?$/.test(fieldName):
+      case /(?:\b|_)dur(ation)?\d*$/i.test(fieldName!):
+      case /[a-z0-9]Dur(ation)?\d*$/.test(fieldName):
         try {
           const parsedDuration = parseDurationStr({
             durationStr: String(value),
