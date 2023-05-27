@@ -135,7 +135,7 @@ export async function transactionView({
       Math.log10(
         transactions.reduce(
           (accum: { runningTotal: number; absMax: number }, current) => {
-            const runningTotal = current.value + accum.runningTotal;
+            const runningTotal = accum.runningTotal - current.value;
             return {
               runningTotal,
               absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
