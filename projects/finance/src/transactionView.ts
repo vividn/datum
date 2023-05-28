@@ -175,7 +175,7 @@ export async function transactionView({
     const hid = equality.doc?.meta?.humanId ?? "";
     const eqBalance = equality.value;
     const amount = eqBalance - currentBalance;
-    const isBalanced = fix(eqBalance) === fix(currentBalance);
+    const isBalanced = Math.abs(amount).toFixed(6) === (0).toFixed(6);
     console.log(
       isBalanced
         ? chalk.greenBright(
@@ -209,7 +209,7 @@ export async function transactionView({
         format,
         date,
         hid,
-        comment,
+        comment.toString(),
         toAccount,
         arrow,
         amount,
