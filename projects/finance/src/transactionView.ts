@@ -51,10 +51,11 @@ export async function transactionWatcher({
     });
   const rl = readline.createInterface({ input: stdin, terminal: true });
   stdin.setRawMode(true);
-  rl.on("line", output);
-  rl.on("line", () => {
+  rl.on("line", async () => {
     if (isBalanced) {
       rl.close();
+    } else {
+      await output();
     }
   });
   rl.on("close", () => {
