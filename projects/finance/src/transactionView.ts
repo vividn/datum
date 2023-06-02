@@ -86,7 +86,6 @@ export async function transactionView({
   function fix(n: number) {
     return n.toFixed(decimals);
   }
-  console.log({ decimals });
   const startBalance =
     ((
       await reduceCmd({
@@ -192,8 +191,11 @@ export async function transactionView({
       isBalanced
         ? chalk.greenBright(
             printf(format, date, hid, "EqCheck", "", "", 0, eqBalance).replace(
-              /0\.00/,
-              "    "
+              / 0\.0+ /,
+              (match) => {
+                // replace with equal number of spaces
+                return " ".repeat(match.length);
+              }
             )
           )
         : chalk.redBright(

@@ -60,15 +60,16 @@ async function main(cliInput: string | string[]) {
   for (const row of allEqualityChecks) {
     const [account, currency, datetime] = row.key;
     const expectedBalance = row.value;
-    const actualBalance = (
-      await reduceCmd({
-        ...args,
-        mapName: balanceView.name,
-        start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},"${datetime}"`,
-        show: Show.None,
-      })
-    ).rows[0].value;
+    const actualBalance =
+      (
+        await reduceCmd({
+          ...args,
+          mapName: balanceView.name,
+          start: `,${account},${currency},${zeroDate}`,
+          end: `,${account},${currency},"${datetime}"`,
+          show: Show.None,
+        })
+      ).rows[0]?.value ?? 0;
     if (fix(expectedBalance) !== fix(actualBalance)) {
       const lastGoodDate =
         account === lastGoodEquality[0] && currency === lastGoodEquality[1]
