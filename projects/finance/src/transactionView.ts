@@ -134,13 +134,13 @@ export async function transactionView({
   const toAccountWidth = 10;
   const arrowWidth = 1;
   const amountWidth =
-    Math.ceil(
+    Math.floor(
       Math.log10(Math.max(1, ...transactions.map((row) => Math.abs(row.value))))
     ) +
-    2 +
+    3 +
     decimals;
   const runningTotalWidth =
-    Math.ceil(
+    Math.floor(
       Math.log10(
         transactions.reduce(
           (accum: { runningTotal: number; absMax: number }, current) => {
@@ -154,7 +154,7 @@ export async function transactionView({
         ).absMax
       )
     ) +
-    2 +
+    3 +
     decimals;
   const commentWidth =
     width -
@@ -173,7 +173,7 @@ export async function transactionView({
     `%${arrowWidth}.${arrowWidth}s ` +
     `%${amountWidth}.${decimals}f ` +
     `%${runningTotalWidth}.${decimals}f`;
-
+  console.log({amountWidth})
   console.log(chalk.yellow.bold(`${account} ${currency}`));
   let reverseBalance = endBalance;
   let isAllBalanced = true;
