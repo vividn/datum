@@ -35,7 +35,7 @@ export const categorizedBalanceView: DatumView<
     };
 
     const data = doc.data;
-    const occurTime = data.effectiveTime || data.occurTime;
+    const occurTime = data.effectiveTime || data.effectiveDate || data.occurTime;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
       emit(
@@ -45,8 +45,8 @@ export const categorizedBalanceView: DatumView<
       emit([getAccType(data.to), data.curr, data.to, occurTime], amount);
     }
     if (data.type === "xc") {
-      const occurTime1 = data.effectiveTime1 || occurTime;
-      const occurTime2 = data.effectiveTime2 || occurTime;
+      const occurTime1 = data.effectiveTime1 || data.effectiveDate1 || occurTime;
+      const occurTime2 = data.effectiveTime2 || data.effectiveDate2 || occurTime;
       emit(
         [getAccType(data.acc1), data.curr1, data.acc1, occurTime1],
         -data.amount1

@@ -51,10 +51,11 @@ export async function transactionWatcher({
     });
   const rl = readline.createInterface({ input: stdin, terminal: true });
   stdin.setRawMode(true);
-  rl.on("line", output);
-  rl.on("line", () => {
+  rl.on("line", async () => {
     if (isBalanced) {
       rl.close();
+    } else {
+      await output();
     }
   });
   rl.on("close", () => {
@@ -133,11 +134,16 @@ export async function transactionView({
   const runningTotalWidth =
     Math.ceil(
       Math.log10(
-        Math.max(
-          Math.abs(startBalance),
-          Math.abs(endBalance),
-          ...equalities.map((row) => Math.abs(row.value))
-        )
+        transactions.reduce(
+          (accum: { runningTotal: number; absMax: number }, current) => {
+            const runningTotal = accum.runningTotal - current.value;
+            return {
+              runningTotal,
+              absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
+            };
+          },
+          { runningTotal: endBalance, absMax: Math.abs(endBalance) }
+        ).absMax
       )
     ) + 4;
   const commentWidth =
@@ -170,7 +176,7 @@ export async function transactionView({
     const hid = equality.doc?.meta?.humanId ?? "";
     const eqBalance = equality.value;
     const amount = eqBalance - currentBalance;
-    const isBalanced = fix(eqBalance) === fix(currentBalance);
+    const isBalanced = Math.abs(amount).toFixed(6) === (0).toFixed(6);
     console.log(
       isBalanced
         ? chalk.greenBright(
@@ -204,7 +210,7 @@ export async function transactionView({
         format,
         date,
         hid,
-        comment,
+        comment.toString(),
         toAccount,
         arrow,
         amount,
