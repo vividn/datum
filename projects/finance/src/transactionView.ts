@@ -12,6 +12,7 @@ import { EqDoc, TxDoc, XcDoc } from "../views/balance";
 import chalk from "chalk";
 import printf from "printf";
 import { zeroDate } from "./eqcheck";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 type TransactionViewInput = {
   args: BaseArgs;
@@ -94,7 +95,7 @@ export async function transactionView({
         ...args,
         mapName: balanceView.name,
         start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},${startDate}`,
+        end: `,${account},${currency},${startDate},${HIGH_STRING}`,
         show: Show.None,
       })
     ).rows[0]?.value as number) ?? 0;
@@ -104,7 +105,7 @@ export async function transactionView({
         ...args,
         mapName: balanceView.name,
         start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},"${endDate}"`,
+        end: `,${account},${currency},"${endDate}",${HIGH_STRING}`,
         show: Show.None,
       })
     ).rows[0]?.value ?? 0;
@@ -113,7 +114,7 @@ export async function transactionView({
       ...args,
       mapName: balanceView.name,
       start: `,${account},${currency},"${startDate}"`,
-      end: `,${account},${currency},"${endDate}"`,
+      end: `,${account},${currency},"${endDate}",${HIGH_STRING}`,
       show: Show.None,
       reverse: true,
       params: { include_docs: true },

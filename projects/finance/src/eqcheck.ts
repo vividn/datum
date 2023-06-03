@@ -7,6 +7,7 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { Show } from "../../../src/input/outputArgs";
 import { transactionWatcher, transactionView } from "./transactionView";
 import { DateTime } from "luxon";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 export const zeroDate = "0000-00-00";
 
@@ -67,7 +68,7 @@ async function eqcheck(args: EqCheckArgs) {
           ...args,
           mapName: balanceView.name,
           start: `,${account},${currency},${zeroDate}`,
-          end: `,${account},${currency},"${datetime}"`,
+          end: `,${account},${currency},"${datetime}",${HIGH_STRING}`,
           show: Show.None,
         })
       ).rows[0]?.value ?? 0;
