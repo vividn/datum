@@ -38,7 +38,7 @@ const eqCheckYargs = baseArgs
     description: "Number of decimals to show",
   });
 
-async function main(cliInput: string | string[]) {
+async function eqcheck(cliInput: string | string[]) {
   const args = (await eqCheckYargs.parse(cliInput)) as EqCheckArgs;
   args.db ??= "finance";
   args.context ??= 3;
@@ -110,7 +110,7 @@ async function main(cliInput: string | string[]) {
 }
 
 if (require.main === module) {
-  main(process.argv.slice(2)).catch((err) => {
+  eqcheck(process.argv.slice(2)).catch((err) => {
     console.error(err);
   });
 }
