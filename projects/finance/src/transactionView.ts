@@ -177,7 +177,6 @@ export async function transactionView({
     `%${arrowWidth}.${arrowWidth}s ` +
     `%${amountWidth}.${decimals}f ` +
     `%${runningTotalWidth}.${decimals}f`;
-  console.log({ amountWidth });
   console.log(chalk.yellow.bold(`${account} ${currency}`));
   let reverseBalance = endBalance;
   let isAllBalanced = true;
