@@ -11,7 +11,7 @@ import { mapCmd } from "../../../src/commands/mapCmd";
 import { EqDoc, TxDoc, XcDoc } from "../views/balance";
 import chalk from "chalk";
 import printf from "printf";
-import { fix, zeroDate } from "./eqcheck";
+import { zeroDate } from "./eqcheck";
 
 type TransactionViewInput = {
   args: BaseArgs;
@@ -19,6 +19,7 @@ type TransactionViewInput = {
   currency: string;
   endDate: isoDateOrTime;
   startDate?: isoDateOrTime;
+  decimals?: number;
 };
 
 export async function transactionWatcher({
@@ -27,9 +28,9 @@ export async function transactionWatcher({
   currency,
   startDate = zeroDate,
   endDate,
+  decimals = 2,
 }: TransactionViewInput): Promise<void> {
   let isBalanced = false;
-
   async function output() {
     console.clear();
     isBalanced = await transactionView({
@@ -38,6 +39,7 @@ export async function transactionWatcher({
       currency,
       startDate: startDate,
       endDate: endDate,
+      decimals,
     });
   }
 
@@ -79,7 +81,11 @@ export async function transactionView({
   currency,
   endDate,
   startDate = zeroDate,
+  decimals = 2,
 }: TransactionViewInput): Promise<boolean> {
+  function fix(n: number) {
+    return n.toFixed(decimals);
+  }
   const startBalance =
     ((
       await reduceCmd({
@@ -90,15 +96,16 @@ export async function transactionView({
         show: Show.None,
       })
     ).rows[0]?.value as number) ?? 0;
-  const endBalance = (
-    await reduceCmd({
-      ...args,
-      mapName: balanceView.name,
-      start: `,${account},${currency},${zeroDate}`,
-      end: `,${account},${currency},"${endDate}"`,
-      show: Show.None,
-    })
-  ).rows[0].value;
+  const endBalance =
+    (
+      await reduceCmd({
+        ...args,
+        mapName: balanceView.name,
+        start: `,${account},${currency},${zeroDate}`,
+        end: `,${account},${currency},"${endDate}"`,
+        show: Show.None,
+      })
+    ).rows[0]?.value ?? 0;
   const transactions = (
     await mapCmd({
       ...args,
@@ -128,24 +135,31 @@ export async function transactionView({
   const toAccountWidth = 10;
   const arrowWidth = 1;
   const amountWidth =
-    Math.ceil(
+    Math.floor(
       Math.log10(Math.max(1, ...transactions.map((row) => Math.abs(row.value))))
-    ) + 4;
+    ) +
+    3 +
+    decimals;
   const runningTotalWidth =
-    Math.ceil(
+    Math.floor(
       Math.log10(
-        transactions.reduce(
-          (accum: { runningTotal: number; absMax: number }, current) => {
-            const runningTotal = accum.runningTotal - current.value;
-            return {
-              runningTotal,
-              absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
-            };
-          },
-          { runningTotal: endBalance, absMax: Math.abs(endBalance) }
-        ).absMax
+        Math.max(
+          1,
+          transactions.reduce(
+            (accum: { runningTotal: number; absMax: number }, current) => {
+              const runningTotal = accum.runningTotal - current.value;
+              return {
+                runningTotal,
+                absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
+              };
+            },
+            { runningTotal: endBalance, absMax: Math.abs(endBalance) }
+          ).absMax
+        )
       )
-    ) + 4;
+    ) +
+    3 +
+    decimals;
   const commentWidth =
     width -
     dateWidth -
@@ -161,9 +175,9 @@ export async function transactionView({
     `%-${commentWidth}.${commentWidth}s ` +
     `%${toAccountWidth}.${toAccountWidth}s ` +
     `%${arrowWidth}.${arrowWidth}s ` +
-    `%${amountWidth}.2f ` +
-    `%${runningTotalWidth}.2f`;
-
+    `%${amountWidth}.${decimals}f ` +
+    `%${runningTotalWidth}.${decimals}f`;
+  console.log({ amountWidth });
   console.log(chalk.yellow.bold(`${account} ${currency}`));
   let reverseBalance = endBalance;
   let isAllBalanced = true;
@@ -181,8 +195,11 @@ export async function transactionView({
       isBalanced
         ? chalk.greenBright(
             printf(format, date, hid, "EqCheck", "", "", 0, eqBalance).replace(
-              /0\.00/,
-              "    "
+              / 0\.0+ /,
+              (match) => {
+                // replace with equal number of spaces
+                return " ".repeat(match.length);
+              }
             )
           )
         : chalk.redBright(

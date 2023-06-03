@@ -10,14 +10,11 @@ import { DateTime } from "luxon";
 
 export const zeroDate = "0000-00-00";
 
-export function fix(n: number) {
-  return n.toFixed(2);
-}
-
 type EqCheckArgs = BaseArgs & {
   account?: string;
   watch?: boolean;
   context?: number;
+  decimals?: number;
 };
 
 const eqCheckYargs = baseArgs
@@ -35,6 +32,10 @@ const eqCheckYargs = baseArgs
     alias: "w",
     type: "boolean",
     description: "Watch for changes",
+  })
+  .option("decimals", {
+    type: "number",
+    description: "Number of decimals to show",
   });
 
 async function main(cliInput: string | string[]) {
@@ -42,6 +43,11 @@ async function main(cliInput: string | string[]) {
   args.db ??= "finance";
   args.context ??= 3;
   const start = args.account ? `,${args.account}` : undefined;
+  const decimals = args.decimals ?? 2;
+  function fix(n: number) {
+    return n.toFixed(decimals);
+  }
+
   const allEqualityChecks = (
     await mapCmd({
       ...args,
@@ -54,15 +60,16 @@ async function main(cliInput: string | string[]) {
   for (const row of allEqualityChecks) {
     const [account, currency, datetime] = row.key;
     const expectedBalance = row.value;
-    const actualBalance = (
-      await reduceCmd({
-        ...args,
-        mapName: balanceView.name,
-        start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},"${datetime}"`,
-        show: Show.None,
-      })
-    ).rows[0].value;
+    const actualBalance =
+      (
+        await reduceCmd({
+          ...args,
+          mapName: balanceView.name,
+          start: `,${account},${currency},${zeroDate}`,
+          end: `,${account},${currency},"${datetime}"`,
+          show: Show.None,
+        })
+      ).rows[0]?.value ?? 0;
     if (fix(expectedBalance) !== fix(actualBalance)) {
       const lastGoodDate =
         account === lastGoodEquality[0] && currency === lastGoodEquality[1]
@@ -83,6 +90,7 @@ async function main(cliInput: string | string[]) {
           currency,
           endDate,
           startDate,
+          decimals,
         });
       } else {
         await transactionView({
@@ -91,6 +99,7 @@ async function main(cliInput: string | string[]) {
           currency,
           endDate,
           startDate,
+          decimals,
         });
         process.exit(3);
       }
