@@ -96,15 +96,16 @@ export async function transactionView({
         show: Show.None,
       })
     ).rows[0]?.value as number) ?? 0;
-  const endBalance = (
-    await reduceCmd({
-      ...args,
-      mapName: balanceView.name,
-      start: `,${account},${currency},${zeroDate}`,
-      end: `,${account},${currency},"${endDate}"`,
-      show: Show.None,
-    })
-  ).rows[0].value;
+  const endBalance =
+    (
+      await reduceCmd({
+        ...args,
+        mapName: balanceView.name,
+        start: `,${account},${currency},${zeroDate}`,
+        end: `,${account},${currency},"${endDate}"`,
+        show: Show.None,
+      })
+    ).rows[0]?.value ?? 0;
   const transactions = (
     await mapCmd({
       ...args,
@@ -173,7 +174,7 @@ export async function transactionView({
     `%${arrowWidth}.${arrowWidth}s ` +
     `%${amountWidth}.${decimals}f ` +
     `%${runningTotalWidth}.${decimals}f`;
-  console.log({amountWidth})
+  console.log({ amountWidth });
   console.log(chalk.yellow.bold(`${account} ${currency}`));
   let reverseBalance = endBalance;
   let isAllBalanced = true;
