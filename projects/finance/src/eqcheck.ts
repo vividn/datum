@@ -44,7 +44,9 @@ async function eqcheck(args: EqCheckArgs) {
   const start = args.account ? `,${args.account}` : undefined;
   const decimals = args.decimals ?? 2;
   function fix(n: number) {
-    return n.toFixed(decimals);
+    const fixed = n.toFixed(decimals);
+    // turn -0 into 0
+    return fixed.match(/^-0(\.0+)$/) ? fixed.slice(1) : fixed;
   }
 
   const allEqualityChecks = (

@@ -84,7 +84,9 @@ export async function transactionView({
   decimals = 2,
 }: TransactionViewInput): Promise<boolean> {
   function fix(n: number) {
-    return n.toFixed(decimals);
+    const fixed = n.toFixed(decimals);
+    // turn -0 into 0
+    return fixed.match(/^-0(\.0+)$/) ? fixed.slice(1) : fixed;
   }
   const startBalance =
     ((
@@ -189,7 +191,7 @@ export async function transactionView({
     const hid = equality.doc?.meta?.humanId ?? "";
     const eqBalance = equality.value;
     const amount = eqBalance - currentBalance;
-    const isBalanced = Math.abs(amount).toFixed(6) === (0).toFixed(6);
+    const isBalanced = fix(amount) === fix(0);
     console.log(
       isBalanced
         ? chalk.greenBright(
