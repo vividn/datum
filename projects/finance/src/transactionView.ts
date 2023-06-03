@@ -143,16 +143,19 @@ export async function transactionView({
   const runningTotalWidth =
     Math.floor(
       Math.log10(
-        transactions.reduce(
-          (accum: { runningTotal: number; absMax: number }, current) => {
-            const runningTotal = accum.runningTotal - current.value;
-            return {
-              runningTotal,
-              absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
-            };
-          },
-          { runningTotal: endBalance, absMax: Math.abs(endBalance) }
-        ).absMax
+        Math.max(
+          1,
+          transactions.reduce(
+            (accum: { runningTotal: number; absMax: number }, current) => {
+              const runningTotal = accum.runningTotal - current.value;
+              return {
+                runningTotal,
+                absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
+              };
+            },
+            { runningTotal: endBalance, absMax: Math.abs(endBalance) }
+          ).absMax
+        )
       )
     ) +
     3 +
