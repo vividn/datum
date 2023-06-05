@@ -14,20 +14,19 @@ function fix(n: number) {
   return fixed.match(/^-0(\.0+)$/) ? fixed.slice(1) : fixed;
 }
 
-export async function fbal(args: FBalArgs) {
+export async function fbal(args: FBalArgs): Promise<void> {
   args.db ??= "finance";
 
   const allBalances = (
     await reduceCmd({
       ...args,
       mapName: balanceView.name,
-      start: "A",
-      end: `Z${HIGH_STRING}`,
+      start: ",A",
+      end: `,Z${HIGH_STRING}`,
       groupLevel: 2,
       show: Show.None,
     })
   ).rows;
-
   const { accountWidth, currencyWidth, amountWidth } = allBalances.reduce(
     (acc, row) => {
       const account = row.key[0];
@@ -41,7 +40,7 @@ export async function fbal(args: FBalArgs) {
     { accountWidth: 1, amountWidth: 1, currencyWidth: 1 }
   );
 
-  const format = `%${accountWidth}.${accountWidth}s  %${amountWidth}.2f %${currencyWidth}.${currencyWidth}s`;
+  const format = `%${accountWidth}.${accountWidth}s  %${amountWidth}.2f %-${currencyWidth}.${currencyWidth}s`;
 
   let previousAccount = "";
   allBalances.forEach((row) => {
