@@ -12,6 +12,7 @@ import { EqDoc, TxDoc, XcDoc } from "../views/balance";
 import chalk from "chalk";
 import printf from "printf";
 import { zeroDate } from "./eqcheck";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 type TransactionViewInput = {
   args: BaseArgs;
@@ -84,7 +85,9 @@ export async function transactionView({
   decimals = 2,
 }: TransactionViewInput): Promise<boolean> {
   function fix(n: number) {
-    return n.toFixed(decimals);
+    const fixed = n.toFixed(decimals);
+    // turn -0 into 0
+    return fixed.match(/^-0(\.0+)$/) ? fixed.slice(1) : fixed;
   }
   const startBalance =
     ((
@@ -92,7 +95,7 @@ export async function transactionView({
         ...args,
         mapName: balanceView.name,
         start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},${startDate}`,
+        end: `,${account},${currency},${startDate},${HIGH_STRING}`,
         show: Show.None,
       })
     ).rows[0]?.value as number) ?? 0;
@@ -102,7 +105,7 @@ export async function transactionView({
         ...args,
         mapName: balanceView.name,
         start: `,${account},${currency},${zeroDate}`,
-        end: `,${account},${currency},"${endDate}"`,
+        end: `,${account},${currency},"${endDate}",${HIGH_STRING}`,
         show: Show.None,
       })
     ).rows[0]?.value ?? 0;
@@ -111,7 +114,7 @@ export async function transactionView({
       ...args,
       mapName: balanceView.name,
       start: `,${account},${currency},"${startDate}"`,
-      end: `,${account},${currency},"${endDate}"`,
+      end: `,${account},${currency},"${endDate}",${HIGH_STRING}`,
       show: Show.None,
       reverse: true,
       params: { include_docs: true },
@@ -177,7 +180,6 @@ export async function transactionView({
     `%${arrowWidth}.${arrowWidth}s ` +
     `%${amountWidth}.${decimals}f ` +
     `%${runningTotalWidth}.${decimals}f`;
-  console.log({ amountWidth });
   console.log(chalk.yellow.bold(`${account} ${currency}`));
   let reverseBalance = endBalance;
   let isAllBalanced = true;
@@ -190,7 +192,7 @@ export async function transactionView({
     const hid = equality.doc?.meta?.humanId ?? "";
     const eqBalance = equality.value;
     const amount = eqBalance - currentBalance;
-    const isBalanced = Math.abs(amount).toFixed(6) === (0).toFixed(6);
+    const isBalanced = fix(amount) === fix(0);
     console.log(
       isBalanced
         ? chalk.greenBright(

@@ -7,6 +7,7 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { Show } from "../../../src/input/outputArgs";
 import { transactionWatcher, transactionView } from "./transactionView";
 import { DateTime } from "luxon";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 export const zeroDate = "0000-00-00";
 
@@ -38,14 +39,15 @@ const eqCheckYargs = baseArgs
     description: "Number of decimals to show",
   });
 
-async function main(cliInput: string | string[]) {
-  const args = (await eqCheckYargs.parse(cliInput)) as EqCheckArgs;
+async function eqcheck(args: EqCheckArgs) {
   args.db ??= "finance";
   args.context ??= 3;
   const start = args.account ? `,${args.account}` : undefined;
   const decimals = args.decimals ?? 2;
   function fix(n: number) {
-    return n.toFixed(decimals);
+    const fixed = n.toFixed(decimals);
+    // turn -0 into 0
+    return fixed.match(/^-0(\.0+)$/) ? fixed.slice(1) : fixed;
   }
 
   const allEqualityChecks = (
@@ -66,7 +68,7 @@ async function main(cliInput: string | string[]) {
           ...args,
           mapName: balanceView.name,
           start: `,${account},${currency},${zeroDate}`,
-          end: `,${account},${currency},"${datetime}"`,
+          end: `,${account},${currency},"${datetime}",${HIGH_STRING}`,
           show: Show.None,
         })
       ).rows[0]?.value ?? 0;
@@ -110,7 +112,8 @@ async function main(cliInput: string | string[]) {
 }
 
 if (require.main === module) {
-  main(process.argv.slice(2)).catch((err) => {
-    console.error(err);
+  const args = eqCheckYargs.parseSync(process.argv.slice(2)) as EqCheckArgs;
+  eqcheck(args).catch((err) => {
+    throw err;
   });
 }
