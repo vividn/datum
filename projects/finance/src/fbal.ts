@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
 import { balanceView } from "../views";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
