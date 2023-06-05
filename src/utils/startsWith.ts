@@ -1,8 +1,10 @@
+export const HIGH_STRING = "\uffff\uffff\uffff\uffff" as const;
+
 export function startsWith(
   value: string | number | any[] | any
 ): Required<Pick<PouchDB.Query.Options<any, any>, "startkey" | "endkey">> {
   if (typeof value === "string") {
-    return { startkey: value, endkey: value + "\uffff\uffff\uffff\uffff" };
+    return { startkey: value, endkey: value + HIGH_STRING };
   } else if (typeof value === "number") {
     const endKey = nextFloat(value, +Infinity);
     return { startkey: value, endkey: endKey };
@@ -15,7 +17,7 @@ export function startsWith(
   } else {
     return {
       startkey: value,
-      endkey: { "\uffff\uffff\uffff\uffff": "\uffff\uffff\uffff\uffff" },
+      endkey: { [HIGH_STRING]: HIGH_STRING },
     };
   }
 }
