@@ -79,7 +79,7 @@
     "lodash.set": "^4.3.2",
     "lodash.unset": "^4.5.2",
     "luxon": "^3.3.0",
-    "parse-duration": "^1.0.3",
+    "parse-duration": "^1.1.0",
     "picocolors": "^1.0.0",
     "pluralize": "^8.0.0",
     "pouchdb": "^8.0.1",
