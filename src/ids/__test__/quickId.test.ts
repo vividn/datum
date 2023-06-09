@@ -176,3 +176,25 @@ describe("quickId", () => {
     );
   });
 });
+
+describe("quickIds", () => {
+  const dbName = "test_quick_ids";
+  const db = testDbLifecycle(dbName);
+
+  beforeEach(async () => {
+    await insertDatumView({ db, datumView: idToHumanView });
+    await insertDatumView({ db, datumView: subHumanIdView });
+    await insertDatumView({ db, datumView: humanIdView });
+  });
+
+  it.todo(
+    "can take a comma separated list of quick ids that begin with a comma"
+  );
+  it.todo(
+    "can take a comma separated list of quick ids that ends with a comma"
+  );
+  it.todo("can take an array of quick ids");
+  it.todo("can take a string surrounded by [] that is interpreted as an array")
+
+  it.todo("still errors out if any one of the quick ids produces an error");
+});

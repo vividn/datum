@@ -77,3 +77,22 @@ export async function quickId(
 
   throw new NoQuickIdMatchError(quickString);
 }
+
+export async function quickIds(
+  db: PouchDB.Database<EitherPayload>,
+  quickString: string | string[]
+): Promise<string[]> {
+  if (Array.isArray(quickString)) {
+    return Promise.all(quickString.map((str) => quickId(db, str)));
+  }
+
+  const quickStrings = /^,/.test(quickString)
+    ? quickString.slice(1).split(",")
+    : /,$/.test(quickString)
+    ? quickString.slice(0, -1).split(",")
+    : /^\[.*]$/.test(quickString)
+    ? quickString.slice(1, -1).split(",")
+    : [quickString];
+
+  return Promise.all(quickStrings.map((str) => quickId(db, str)));
+}
