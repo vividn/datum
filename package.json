@@ -44,7 +44,7 @@
     "@types/pluralize": "^0.0.29",
     "@types/pouchdb": "^6.4.0",
     "@types/prompt-sync": "^4.2.0",
-    "@types/react": "^18.2.0",
+    "@types/react": "^18.2.13",
     "@types/relaxed-json": "^1.0.1",
     "@types/tmp": "^0.2.3",
     "@types/yargs": "^17.0.24",
