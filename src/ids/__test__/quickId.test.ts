@@ -9,6 +9,7 @@ import {
   quickId,
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
+  quickIds,
 } from "../quickId";
 
 jest.retryTimes(3);
@@ -174,5 +175,56 @@ describe("quickId", () => {
     await expect(() => quickId(db, "lmnop")).rejects.toThrowError(
       NoQuickIdMatchError
     );
+  });
+});
+
+describe("quickIds", () => {
+  const dbName = "test_quick_ids";
+  const db = testDbLifecycle(dbName);
+
+  beforeEach(async () => {
+    await insertDatumView({ db, datumView: idToHumanView });
+    await insertDatumView({ db, datumView: subHumanIdView });
+    await insertDatumView({ db, datumView: humanIdView });
+    await db.put({
+      _id: "id1",
+      meta: { humanId: "abc" },
+    });
+    await db.put({
+      _id: "id2",
+      meta: { humanId: "ghi" },
+    });
+    await db.put({
+      _id: "id3",
+      meta: { humanId: "jkl" },
+    });
+  });
+
+  it("can take a comma separated list of quick ids that begin with a comma", async () => {
+    expect(await quickIds(db, ",abc,ghi")).toEqual(["id1", "id2"]);
+    expect(await quickIds(db, ",ghi,abc")).toEqual(["id2", "id1"]);
+  });
+  it("can take a comma separated list of quick ids that ends with a comma", async () => {
+    expect(await quickIds(db, "abc,ghi,")).toEqual(["id1", "id2"]);
+    expect(await quickIds(db, "jkl,abc,")).toEqual(["id3", "id1"]);
+  });
+  it("can take an array of quick ids", async () => {
+    expect(await quickIds(db, ["abc", "jkl"])).toEqual(["id1", "id3"]);
+  });
+  it("can take a string surrounded by [] that is interpreted as an array", async () => {
+    expect(await quickIds(db, "[ghi,abc]")).toEqual(["id2", "id1"]);
+  });
+
+  it("still errors out if any one of the quick ids produces an error", async () => {
+    await db.put({
+      _id: "id4",
+      meta: { humanId: "ghpo" },
+    });
+    try {
+      await quickIds(db, ",jkl,gh");
+      fail();
+    } catch (e) {
+      expect(e).toBeInstanceOf(AmbiguousQuickIdError);
+    }
   });
 });

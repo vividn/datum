@@ -53,11 +53,18 @@ describe("inferType", () => {
     });
   });
 
-  it("infers strings that start with commas as arrays", () => {
+  it("infers strings that start with a comma as arrays", () => {
     expect(inferType(",")).toEqual([]);
     expect(inferType(",3")).toEqual([3]);
     expect(inferType(",abc")).toEqual(["abc"]);
     expect(inferType(",14,abc,null")).toEqual([14, "abc", null]);
+  });
+
+  it("infers strings that end with a comma as arrays", () => {
+    expect(inferType(",")).toEqual([]);
+    expect(inferType("3,")).toEqual([3]);
+    expect(inferType("abc,")).toEqual(["abc"]);
+    expect(inferType("14,abc,null,")).toEqual([14, "abc", null]);
   });
 
   it("parses weird looking things as strings", () => {
