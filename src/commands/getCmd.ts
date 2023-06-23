@@ -1,11 +1,10 @@
 import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { quickId, quickIds } from "../ids/quickId";
+import { quickIds } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
 import { MainDatumArgs } from "../input/mainYargs";
-import { doc } from "prettier";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";

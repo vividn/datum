@@ -2,7 +2,7 @@ import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { quickId, quickIds } from "../ids/quickId";
+import { quickIds } from "../ids/quickId";
 import { editJSONInTerminal } from "../utils/editInTerminal";
 import { overwriteDoc } from "../documentControl/overwriteDoc";
 import { MainDatumArgs } from "../input/mainYargs";
@@ -22,7 +22,7 @@ export class TooManyToEditError extends MyError {
     super(m);
     Object.setPrototypeOf(this, TooManyToEditError.prototype);
   }
-};
+}
 
 export async function editCmd(args: EditCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);

@@ -85,7 +85,9 @@ describe("updateCmd", () => {
   });
 
   it("uses preferNew as the default updateStrategy", async () => {
-    jest.spyOn(quickId, "quickIds").mockImplementation(async () => ["quick_id"]);
+    jest
+      .spyOn(quickId, "quickIds")
+      .mockImplementation(async () => ["quick_id"]);
     const updateDocSpy = jest
       .spyOn(updateDoc, "updateDoc")
       .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
