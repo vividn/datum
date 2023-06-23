@@ -19,7 +19,9 @@ describe("deleteCmd", () => {
     await db.put({ _id: "hello", data: {}, meta: { humanId: "a44quickId" } });
     const returned = await deleteCmd({ db: dbName, quickId: "a44" });
 
-    expect(returned).toMatchObject({ _id: "hello", _deleted: true });
+    expect(returned).toEqual([
+      expect.objectContaining({ _id: "hello", _deleted: true }),
+    ]);
     expect(deleteDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: "hello" })
     );
@@ -33,10 +35,12 @@ describe("deleteCmd", () => {
     await db.put({ _id: "the_quick_brown_fox", foo: "abc" });
     const returned = await deleteCmd({ db: dbName, quickId: "the_qu" });
 
-    expect(returned).toMatchObject({
-      _id: "the_quick_brown_fox",
-      _deleted: true,
-    });
+    expect(returned).toEqual([
+      expect.objectContaining({
+        _id: "the_quick_brown_fox",
+        _deleted: true,
+      }),
+    ]);
     expect(deleteDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({ id: "the_quick_brown_fox" })
     );
@@ -62,17 +66,17 @@ describe("deleteCmd", () => {
     deleteDocSpy.mockReturnValue(
       Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true })
     );
-    const quickIdSpy = jest
-      .spyOn(quickId, "quickId")
-      .mockImplementation(async (db, id) => id + "_to_delete");
+    const quickIdsSpy = jest
+      .spyOn(quickId, "quickIds")
+      .mockImplementation(async (db, id) => [`${id}_to_delete`]);
 
     for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
       await deleteCmd({ db: dbName, quickId: quick });
-      expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), quick);
+      expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), quick);
       expect(deleteDocSpy).toHaveBeenCalledWith(
         expect.objectContaining({ id: quick + "_to_delete" })
       );
-      quickIdSpy.mockClear();
+      quickIdsSpy.mockClear();
       deleteDocSpy.mockClear();
     }
   });
@@ -92,5 +96,31 @@ describe("deleteCmd", () => {
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
 
     console.log = originalLog;
+  });
+
+  it("can delete multiple documents using a compound quickid", async () => {
+    await db.put({ _id: "id1", data: {}, meta: { humanId: "abc" } });
+    await db.put({ _id: "id2", data: {}, meta: { humanId: "def" } });
+    await db.put({ _id: "id3", data: {}, meta: { humanId: "ghi" } });
+
+    const returned = await deleteCmd({
+      db: dbName,
+      quickId: "abc,def,ghi,",
+    });
+
+    expect(returned).toHaveLength(3);
+    expect(returned).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ _id: "id1", _deleted: true }),
+        expect.objectContaining({ _id: "id2", _deleted: true }),
+        expect.objectContaining({ _id: "id3", _deleted: true }),
+      ])
+    );
+
+    await expect(db.get("id1")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
+    expect(deleteDocSpy).toHaveBeenCalledTimes(3);
   });
 });

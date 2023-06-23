@@ -70,6 +70,12 @@ export function inferType(value: number | string, fieldName?: string): any {
       .split(",")
       .map((v) => inferType(v));
   }
+  if (/,$/.test(value)) {
+    return value
+      .slice(0, -1)
+      .split(",")
+      .map((v) => inferType(v));
+  }
   if (/^null$/i.test(value)) {
     return null;
   }

@@ -14,17 +14,17 @@ describe("getCmd", () => {
   it("gets a document based on the first few letters of humanId", async () => {
     const doc = { _id: "hello", data: {}, meta: { humanId: "a44quickId" } };
     await db.put(doc);
-    const returned = await getCmd({ db: dbName, quickId: "a44" });
-
-    expect(returned).toEqual({ ...doc, _rev: expect.anything() });
+    const retDocs = await getCmd({ db: dbName, quickId: "a44" });
+    expect(retDocs).toHaveLength(1);
+    expect(retDocs[0]).toEqual({ ...doc, _rev: expect.anything() });
   });
 
   it("gets a document based on the first few letters of _id", async () => {
     const doc = { _id: "the_quick_brown_fox", foo: "abc" };
     await db.put(doc);
-    const returned = await getCmd({ db: dbName, quickId: "the_qu" });
-
-    expect(returned).toEqual({ ...doc, _rev: expect.anything() });
+    const retDocs = await getCmd({ db: dbName, quickId: "the_qu" });
+    expect(retDocs).toHaveLength(1);
+    expect(retDocs[0]).toEqual({ ...doc, _rev: expect.anything() });
   });
 
   it("outputs an EXISTS message when show is standard", async () => {
@@ -42,5 +42,18 @@ describe("getCmd", () => {
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
 
     console.log = originalLog;
+  });
+
+  it("can get multiple documents with a compound quickId", async () => {
+    const doc1 = { _id: "id1", data: {}, meta: { humanId: "abc" } };
+    const doc2 = { _id: "id2", data: {}, meta: { humanId: "def" } };
+    await db.put(doc1);
+    await db.put(doc2);
+
+    const returned = await getCmd({ db: dbName, quickId: "abc,def," });
+    expect(returned).toEqual([
+      expect.objectContaining(doc1),
+      expect.objectContaining(doc2),
+    ]);
   });
 });

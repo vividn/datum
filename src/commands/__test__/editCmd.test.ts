@@ -1,7 +1,8 @@
 import * as editInTerminal from "../../utils/editInTerminal";
 import { testDbLifecycle } from "../../test-utils";
-import { editCmd } from "../editCmd";
+import { editCmd, TooManyToEditError } from "../editCmd";
 import { GenericObject } from "../../GenericObject";
+import { setupCmd } from "../setupCmd";
 
 describe("editCmd", () => {
   let editJSONInTerminalSpy: any;
@@ -10,6 +11,7 @@ describe("editCmd", () => {
 
   beforeEach(async () => {
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
+    await setupCmd({ db: dbName });
   });
 
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {
@@ -36,5 +38,23 @@ describe("editCmd", () => {
       name: "not_found",
       reason: "deleted",
     });
+  });
+
+  it("errors if more than 1 document is passed with a compound quickId", async () => {
+    await db.put({
+      _id: "abcdef",
+      data: { abc: "def" },
+      meta: { humanId: "abc" },
+    });
+    await db.put({
+      _id: "ghijkl",
+      data: {
+        ghi: "jkl",
+      },
+      meta: { humanId: "jkl" },
+    });
+    await expect(
+      editCmd({ db: dbName, quickId: ",abc,jkl" })
+    ).rejects.toThrowError(TooManyToEditError);
   });
 });

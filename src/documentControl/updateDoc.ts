@@ -113,7 +113,6 @@ export async function updateDoc({
       } else {
         throw e;
       }
-      ``;
     });
     await db.remove(id, oldDoc._rev);
     showRename(id, newId, outputArgs);
