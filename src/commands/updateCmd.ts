@@ -6,7 +6,7 @@ import {
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { updateDoc } from "../documentControl/updateDoc";
-import { quickId } from "../ids/quickId";
+import { quickIds } from "../ids/quickId";
 import { Argv } from "yargs";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
@@ -38,20 +38,26 @@ export function builder(yargs: Argv): Argv {
   });
 }
 
-export async function updateCmd(args: UpdateCmdArgs): Promise<EitherDocument> {
+export async function updateCmd(
+  args: UpdateCmdArgs
+): Promise<EitherDocument[]> {
   const db = connectDb(args);
 
-  const id = await quickId(db, args.quickId);
+  const ids = await quickIds(db, args.quickId);
   const payload = handleDataArgs(args);
   const updateStrategy = args.strategy ?? "preferNew";
 
-  const doc = await updateDoc({
-    db,
-    id,
-    payload,
-    updateStrategy,
-    outputArgs: args,
-  });
+  const updatedDocs = await Promise.all(
+    ids.map((id) =>
+      updateDoc({
+        db,
+        id,
+        payload,
+        updateStrategy,
+        outputArgs: args,
+      })
+    )
+  );
 
-  return doc;
+  return updatedDocs;
 }
