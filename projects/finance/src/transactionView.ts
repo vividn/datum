@@ -140,7 +140,13 @@ export async function transactionView({
   const arrowWidth = 1;
   const amountWidth =
     Math.floor(
-      Math.log10(Math.max(1, ...transactions.map((row) => Math.abs(row.value))))
+      Math.log10(
+        Math.max(
+          1,
+          ...transactions.map((row) => Math.abs(row.value)),
+          Math.abs(endBalance - equalities[0]?.value ?? endBalance)
+        )
+      )
     ) +
     3 +
     decimals;
