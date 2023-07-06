@@ -30,7 +30,7 @@
     "postinstall": "patch-package; yarn cache clean datum"
   },
   "devDependencies": {
-    "@babel/core": "^7.21.4",
+    "@babel/core": "^7.22.6",
     "@babel/preset-env": "^7.21.4",
     "@babel/preset-typescript": "^7.21.4",
     "@types/jest": "^27.4.1",
