@@ -7,7 +7,7 @@ import { createOrAppend } from "../utils/createOrAppend";
 
 export type DataArgs = {
   data?: (string | number)[];
-  baseData?: string;
+  baseData?: string | DatumData;
   field?: string;
   comment?: string | string[];
   required?: string | string[];
