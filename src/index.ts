@@ -51,6 +51,7 @@ export async function main(cliInput: string | string[]): Promise<void> {
       break;
 
     case "reduce":
+    case "red":
       await reduceCmd(args as unknown as ReduceCmdArgs);
       break;
 
