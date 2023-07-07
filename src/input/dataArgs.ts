@@ -4,6 +4,7 @@ import { inferType } from "../utils/inferType";
 import { BaseDataError, DataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import { createOrAppend } from "../utils/createOrAppend";
+import isPlainObject from "lodash.isplainobject";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -96,7 +97,23 @@ export function dataYargs(otherYargs?: Argv): Argv {
     });
 }
 
-export const handleDataArgs = function ({
+function isParsedBaseData(baseData: DatumData | string): baseData is DatumData {
+  return isPlainObject(baseData);
+}
+
+export function parseBaseData(baseData?: DatumData | string): DatumData {
+  const parsedData: DatumData = baseData
+    ? isParsedBaseData(baseData)
+      ? baseData
+      : inferType(baseData)
+    : {};
+  if (typeof parsedData !== "object" || parsedData === null) {
+    throw new BaseDataError("base data not a valid object");
+  }
+  return parsedData;
+}
+
+export function handleDataArgs({
   data = [],
   required = [],
   optional = [],
@@ -112,10 +129,7 @@ export const handleDataArgs = function ({
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
   const remainderData = [];
 
-  const parsedData: DatumData = baseData ? inferType(baseData) : {};
-  if (typeof parsedData !== "object" || parsedData === null) {
-    throw new BaseDataError("base data not a valid object");
-  }
+  const parsedData = parseBaseData(baseData);
 
   posArgsLoop: for (const arg of data) {
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
@@ -221,4 +235,4 @@ export const handleDataArgs = function ({
   }
 
   return parsedData;
-};
+}

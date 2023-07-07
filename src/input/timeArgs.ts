@@ -4,10 +4,8 @@ import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
 import { setTimezone } from "../time/setTimezone";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDateStr } from "../time/parseDateStr";
-import { DataArgs } from "./dataArgs";
+import { DataArgs, parseBaseData } from "./dataArgs";
 import { DatumData } from "../documentControl/DatumDocument";
-import { inferType } from "../utils/inferType";
-import { BaseDataError } from "../errors";
 import { getOccurTime } from "../time/getOccurTime";
 
 export type TimeArgs = {
@@ -141,16 +139,16 @@ export function handleTimeArgs({
 export function occurredBaseArgs(
   args: ReferencedTimeArgs & Pick<DataArgs, "baseData">
 ): DatumData {
-  const parsedData: DatumData = args.baseData ? inferType(args.baseData) : {};
-  if (typeof parsedData !== "object" || parsedData === null) {
-    throw new BaseDataError("base data not a valid object");
-  }
+  const parsedData = parseBaseData(args.baseData);
   const baseOccurTime = getOccurTime(parsedData);
   const referenceTime = args.referenceTime ?? baseOccurTime;
-  const { timeStr: occurTime, utcOffset: occurUtcOffset } = handleTimeArgs({ ...args, referenceTime })
+  const { timeStr: occurTime, utcOffset: occurUtcOffset } = handleTimeArgs({
+    ...args,
+    referenceTime,
+  });
   return {
     ...parsedData,
     occurTime,
-    occurUtcOffset
+    occurUtcOffset,
   };
 }
