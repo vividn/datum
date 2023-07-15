@@ -16,7 +16,7 @@ import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
+import { timeYargs } from "../input/timeArgs";
 import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
 
@@ -41,7 +41,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 };
 const conflictChoices = Object.keys(conflictRecord);
 
-export function builder(yargs: Argv): Argv {
+export function addArgs(yargs: Argv): Argv {
   return timeYargs(dataYargs(yargs)).options({
     "no-metadata": {
       describe: "do not include meta data in document",
@@ -99,9 +99,10 @@ export function builder(yargs: Argv): Argv {
   });
 }
 
+export const builder: (yargs: Argv) => Argv = addArgs;
+
 export type AddCmdArgs = MainDatumArgs &
-  DataArgs &
-  TimeArgs & {
+  DataArgs & {
     noMetadata?: boolean;
     idPart?: string | string[];
     idDelimiter?: string;
@@ -113,14 +114,7 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
-  // Calculate timing data early to make occurTime more exact
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
-
   const payloadData = handleDataArgs(args);
-  if (occurTime !== undefined) {
-    payloadData.occurTime = occurTime;
-    payloadData.occurUtcOffset = utcOffset;
-  }
 
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data: payloadData,
