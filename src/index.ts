@@ -14,12 +14,17 @@ import { reduceCmd, ReduceCmdArgs } from "./commands/reduceCmd";
 import { Show } from "./input/outputArgs";
 import { MainDatumArgs, mainYargs } from "./input/mainYargs";
 import { grepCmd, GrepCmdArgs } from "./commands/grepCmd";
+import { occurCmd, OccurCmdArgs } from "./commands/occurCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
   switch (args._?.[0]) {
     case "add":
       await addCmd(args as unknown as AddCmdArgs);
+      break;
+
+    case "occur":
+      await occurCmd(args as unknown as OccurCmdArgs);
       break;
 
     case "get":

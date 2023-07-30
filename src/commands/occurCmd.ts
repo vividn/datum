@@ -24,26 +24,54 @@ Should include information about what the last state was for mapreduce totalling
  */
 
 import { Argv } from "yargs";
-import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
-import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
+import { handleTimeArgs, TimeArgs } from "../input/timeArgs";
+import { addArgs, AddCmdArgs } from "./addCmd";
 import { parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 
-export const command = "occur <field> [..data]";
+export const command = [
+  "occur <field> [duration] [data..]",
+  "occur --moment <field> [data..]",
+];
 export const desc = "add an occur document";
 
 export function builder(yargs: Argv): Argv {
-  return timeYargs(addArgs(yargs)).options({});
+  return addArgs(yargs)
+    .options({
+      moment: {
+        describe:
+          "don't interpret the first argument after field as a duration",
+        nargs: 0,
+      },
+    })
+    .positional("field", {
+      describe: "what is being tracked",
+      type: "string",
+      nargs: 1,
+    })
+    .positional("duration", {
+      describe:
+        "how long the event lasted, default units is minutes, but other forms can be used." +
+        " 5 = 5 minutes, 5h = 5 hours, 5:35:35 = 5 hours 35 minutes and 35 seconds, etc.",
+      type: "string",
+      nargs: 1,
+    });
 }
 
-export type OccurCmdArgs = AddCmdArgs & TimeArgs;
+export type OccurCmdArgs = AddCmdArgs &
+  TimeArgs & {
+    occurTime?: string;
+    moment?: boolean;
+  };
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
+  console.log({ args });
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   const parsedData = parseBaseData(args.baseData);
   if (occurTime !== undefined) {
     parsedData.occurTime = occurTime;
     parsedData.occurUtcOffset = utcOffset;
   }
-  return await addCmd({ ...args, baseData: parsedData });
+  return { _id: "asdf", _rev: "" };
+  // return await addCmd({ ...args, baseData: parsedData });
 }
