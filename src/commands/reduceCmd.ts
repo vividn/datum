@@ -4,7 +4,10 @@ import { mapCmd, MapCmdArgs, mapCmdYargs } from "./mapCmd";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { Show } from "../input/outputArgs";
 
-export const command = "reduce <mapName> [start] [end]";
+export const command = [
+  "reduce <mapName> [start] [end]",
+  "red <mapName> [start] [end]",
+];
 export const desc = "display a reduction of a map";
 
 export type ReduceCmdArgs = MapCmdArgs & {
