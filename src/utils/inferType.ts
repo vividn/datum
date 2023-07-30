@@ -46,6 +46,9 @@ export function inferType(value: number | string, fieldName?: string): any {
           const parsedDuration = parseDurationStr({
             durationStr: String(value),
           });
+          if (parsedDuration === undefined) {
+            return undefined;
+          }
           return isoDurationFromDuration(parsedDuration);
         } catch (e) {
           if (e instanceof BadDurationError) {

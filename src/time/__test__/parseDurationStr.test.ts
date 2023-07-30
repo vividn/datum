@@ -34,9 +34,15 @@ test.each([
   ["13.3", { minutes: 13, seconds: 18 }],
   ["-10.25", { minutes: -10, seconds: -15 }],
 ])("it parses %s as a Duration of length %s", (durationStr, durationObject) => {
-  expect(parseDurationStr({ durationStr }).toJSON()).toEqual(
+  const duration = parseDurationStr({ durationStr }) as Duration;
+  expect(duration.toJSON()).toEqual(
     Duration.fromObject(durationObject).toJSON()
   );
+});
+
+it('parses "." and "" as undefined', () => {
+  expect(parseDurationStr({ durationStr: "." })).toBeUndefined();
+  expect(parseDurationStr({ durationStr: "" })).toBeUndefined();
 });
 
 it("throws an error for a completely unparseable duration", () => {

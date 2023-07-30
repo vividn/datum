@@ -8,7 +8,11 @@ type ParseDurationStrType = {
 
 export function parseDurationStr({
   durationStr,
-}: ParseDurationStrType): Duration {
+}: ParseDurationStrType): Duration | undefined {
+  if (durationStr === "" || durationStr === ".") {
+    return undefined;
+  }
+
   let isNegative;
   switch (durationStr.charAt(0)) {
     case "-":

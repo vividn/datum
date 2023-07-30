@@ -1,4 +1,4 @@
-import { DateTime } from "luxon";
+import { DateTime, Duration } from "luxon";
 import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadTimeError } from "../errors";
@@ -47,7 +47,7 @@ export function parseTimeStr({
 
   // Also supports relative time strings, e.g., -5min
   if (timeStr.match(/^[+-]/)) {
-    const duration = parseDurationStr({ durationStr: timeStr });
+    const duration = parseDurationStr({ durationStr: timeStr }) as Duration;
     return referenceTime.plus(duration);
   }
 

@@ -124,8 +124,10 @@ describe("inferType with special fields", () => {
     expect(inferType("3:45:20", "raceDuration")).toEqual("PT3H45M20S");
     expect(inferType("2days", "wait_dur")).toEqual("P2D");
     expect(inferType("30sec", "duration2")).toEqual("PT30S");
+    expect(inferType(".", "dur")).toBeUndefined();
+    expect(inferType("", "dur")).toBeUndefined();
 
-    expect(parseDurationSpy).toHaveBeenCalledTimes(5);
+    expect(parseDurationSpy).toHaveBeenCalledTimes(7);
     expect(parseTimeSpy).not.toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveBeenCalled();
   });
