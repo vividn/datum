@@ -52,7 +52,9 @@ export function builder(yargs: Argv): Argv {
     .positional("duration", {
       describe:
         "how long the event lasted, default units is minutes, but other forms can be used." +
-        " 5 = 5 minutes, 5h = 5 hours, 5:35:35 = 5 hours 35 minutes and 35 seconds, etc.",
+        " 5 = 5 minutes, 5h = 5 hours, 5:35:35 = 5 hours 35 minutes and 35 seconds, etc." +
+        'a single period "." can be used to indicate no duration (for example to allow' +
+        " entering in of other data without specifying a duration)",
       type: "string",
       nargs: 1,
     });
