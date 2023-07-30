@@ -16,7 +16,15 @@ describe("inferType", () => {
     expect(inferType("-45.5")).toBe(-45.5);
   });
 
-  it("handles special number strings", () => {
+  it("handles special value strings", () => {
+    expect(inferType("true")).toBe(true);
+    expect(inferType("TRUE")).toBe(true);
+    expect(inferType("false")).toBe(false);
+    expect(inferType("FALSE")).toBe(false);
+
+    expect(inferType("undefined")).toBe(undefined);
+    expect(inferType("UNDEFINED")).toBe(undefined);
+
     expect(inferType("nan")).toBe("NaN");
     expect(inferType("NaN")).toBe("NaN");
     expect(inferType("NAN")).toBe("NaN");
