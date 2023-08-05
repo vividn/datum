@@ -1,7 +1,7 @@
 import { Argv } from "yargs";
-import { addArgs, addCmd } from "./addCmd";
-import { occurArgs, OccurCmdArgs } from "./occurCmd";
+import { occurArgs, occurCmd, OccurCmdArgs } from "./occurCmd";
 import { EitherDocument } from "../documentControl/DatumDocument";
+import { parseBaseData } from "../input/dataArgs";
 
 export const command = [
   "switch <field> <state> [duration] [data..]",
@@ -40,18 +40,33 @@ export const desc = "switch states of a given field";
 //     });
 // }
 export function builder(yargs: Argv): Argv {
-  return occurArgs(yargs).positional("state", {
-    describe: "the state to switch to",
-    type: "string",
-    nargs: 1,
-  });
+  return occurArgs(yargs)
+    .positional("state", {
+      describe: "the state to switch to",
+      type: "string",
+      nargs: 1,
+    })
+    .options({
+      "last-state": {
+        describe: "manually specify the last state being transitioned out of",
+        nargs: 1,
+      },
+    });
 }
 
 export type SwitchCmdArgs = OccurCmdArgs & {
   state: string;
+  lastState: string;
 };
 
 export function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
+  const parsedData = parseBaseData(args.baseData);
+  parsedData.state = args.state;
+  if (args.lastState !== undefined) {
+    parsedData.lastState = args.lastState;
+  } else {
+    // TODO: Get last state here
+  }
   console.log({ args });
-  return addCmd(args);
+  return occurCmd(args);
 }

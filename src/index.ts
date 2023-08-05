@@ -15,6 +15,8 @@ import { Show } from "./input/outputArgs";
 import { MainDatumArgs, mainYargs } from "./input/mainYargs";
 import { grepCmd, GrepCmdArgs } from "./commands/grepCmd";
 import { occurCmd, OccurCmdArgs } from "./commands/occurCmd";
+import { startCmd } from "./commands/startCmd";
+import { switchCmd, SwitchCmdArgs } from "./commands/switchCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
@@ -25,6 +27,18 @@ export async function main(cliInput: string | string[]): Promise<void> {
 
     case "occur":
       await occurCmd(args as unknown as OccurCmdArgs);
+      break;
+
+    // case "start":
+    //   await startCmd(args as unknown as StartCmdArgs);
+    //   break;
+    //
+    // case "end":
+    //   await endCmd(args as unknown as EndCmdArgs);
+    //   break;
+
+    case "switch":
+      await switchCmd(args as unknown as SwitchCmdArgs);
       break;
 
     case "get":
