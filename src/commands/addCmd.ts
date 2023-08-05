@@ -114,6 +114,7 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
+  console.log("addArgs", { args });
   const payloadData = handleDataArgs(args);
 
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({

@@ -25,9 +25,10 @@ Should include information about what the last state was for mapreduce totalling
 
 import { Argv } from "yargs";
 import { handleTimeArgs, TimeArgs } from "../input/timeArgs";
-import { addArgs, AddCmdArgs } from "./addCmd";
+import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
 import { parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
+import { inferType } from "../utils/inferType";
 
 export const command = [
   "occur <field> [duration] [data..]",
@@ -35,10 +36,11 @@ export const command = [
 ];
 export const desc = "add an occur document";
 
-export function builder(yargs: Argv): Argv {
+export function occurArgs(yargs: Argv): Argv {
   return addArgs(yargs)
     .options({
       moment: {
+        alias: "m",
         describe:
           "don't interpret the first argument after field as a duration",
         nargs: 0,
@@ -60,10 +62,13 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
+export const builder: (yargs: Argv) => Argv = occurArgs;
+
+
 export type OccurCmdArgs = AddCmdArgs &
   TimeArgs & {
-    occurTime?: string;
     moment?: boolean;
+    duration?: string;
   };
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
@@ -74,6 +79,13 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
     parsedData.occurTime = occurTime;
     parsedData.occurUtcOffset = utcOffset;
   }
-  return { _id: "asdf", _rev: "" };
-  // return await addCmd({ ...args, baseData: parsedData });
+  if (args.duration !== undefined) {
+    if (args.moment) {
+      args.data ??= [];
+      args.data.unshift(args.duration);
+    } else {
+      parsedData.dur = inferType(args.duration, "dur");
+    }
+  }
+  return await addCmd({ ...args, baseData: parsedData });
 }
