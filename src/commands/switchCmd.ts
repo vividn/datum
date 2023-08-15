@@ -5,7 +5,7 @@ import { parseBaseData } from "../input/dataArgs";
 
 export const command = [
   "switch <field> <state> [duration] [data..]",
-  "occur --moment <field> <state> [data..]",
+  "switch --moment <field> <state> [data..]",
 ];
 export const desc = "switch states of a given field";
 
