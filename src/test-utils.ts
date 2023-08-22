@@ -1,11 +1,22 @@
 import { CouchDbError } from "./errors";
-import { EitherPayload } from "./documentControl/DatumDocument";
+import {
+  DataOnlyDocument,
+  DatumData,
+  DatumDocument,
+  DatumMetadata,
+  EitherDocument,
+  EitherPayload,
+} from "./documentControl/DatumDocument";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
 import { parseTimeStr } from "./time/parseTimeStr";
 import { now } from "./time/timeUtils";
 import { connectDb } from "./auth/connectDb";
 import * as connectDbModule from "./auth/connectDb";
+import { defaultIdComponents } from "./ids/defaultIdComponents";
+import { buildIdStructure } from "./ids/buildIdStructure";
+import { defaults } from "./input/defaults";
+import { assembleId } from "./ids/assembleId";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -123,6 +134,43 @@ export function at<A extends any[], O>(
     popNow();
     return returnVal;
   };
+}
+
+// TODO: Transition all tests to use makeDoc where appropriate
+export function makeDoc(
+  data: DatumData,
+  meta: DatumMetadata | false = {},
+  include_rev = false
+): EitherDocument {
+  let doc: EitherDocument;
+  if (meta === false) {
+    doc = { ...data } as DataOnlyDocument;
+  } else {
+    doc = { ...data, meta } as DatumDocument;
+  }
+
+  meta = meta || {};
+  if (doc._id === undefined) {
+    let idStructure: string;
+    if (meta?.idStructure) {
+      idStructure = meta.idStructure;
+    } else {
+      const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
+        data,
+      });
+      idStructure = buildIdStructure({
+        idParts: defaultIdParts,
+        delimiter: defaults.idDelimiter,
+        partition: defaultPartitionParts,
+      });
+    }
+    doc._id = assembleId({payload: doc, idStructure});
+  }
+
+  if (include_rev) {
+    doc._rev = "1-foo";
+  }
+  return doc;
 }
 
 // export async function generateSampleDay(dateStr = "2022-08-14") {
