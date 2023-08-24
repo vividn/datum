@@ -1,11 +1,13 @@
-import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
-import { DatumView } from "../DatumView";
-import { _emit } from "../emit";
-import { isoDateOrTime } from "../../time/timeUtils";
+import { DatumData, EitherDocument } from "../documentControl/DatumDocument";
+import { DatumView } from "../views/DatumView";
+import { _emit } from "../views/emit";
+import { isoDateOrTime } from "../time/timeUtils";
+
+export type DatumState = string | boolean | (string | boolean)[] | null;
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
-type MapValue = string | boolean | (string | boolean)[];
+type MapValue = DatumState;
 type ReduceValues = undefined;
 
 function emit(key: MapKey, value: MapValue): void {
@@ -30,11 +32,12 @@ export const activeStateView: DatumView<
     const occurTime = data.occurTime;
     const field = data.field;
     const duration = data.duration || data.dur;
-    const state = data.state || (duration ? true : undefined);
-    if (!occurTime || !field || !state) {
+    const state =
+      data.state !== undefined ? data.state : duration ? true : undefined;
+    if (!occurTime || !field || state === undefined) {
       return;
     }
-    const lastState = data.lastState || !state;
+    const lastState = data.lastState !== undefined ? data.lastState : (state === false);
 
     function parseISODuration(duration: string) {
       const regex =

@@ -6,4 +6,4 @@ export { subHumanIdView } from "./subHumanIdView";
 export { idToHumanView } from "./idToHumanView";
 export { dataStructuresView } from "./dataStructuresView";
 export { durationView } from "./durationView";
-export { activeStateView } from "./activeStateView";
+export { activeStateView } from "../../state/activeStateView";

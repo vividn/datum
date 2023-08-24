@@ -1,5 +1,5 @@
-import * as emit from "../../emit";
-import { makeDoc } from "../../../test-utils";
+import * as emit from "../../views/emit";
+import { makeDoc } from "../../test-utils";
 import { activeStateView } from "../activeStateView";
 
 describe("activeStateView", () => {
@@ -108,11 +108,11 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", "2023-08-22T14:00:00.000Z"],
-      true
+      false
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", "2023-08-22T15:00:00.000Z"],
-      false
+      true
     );
   });
 
