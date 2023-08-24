@@ -16,16 +16,3 @@ describe("occurCmd", () => {
   it.todo("interprets a duration of 'start' or 'end' as a start or end command");
 });
 
-describe("startCmd", () => {
-  it.todo("creates an occur document with state: true");
-});
-
-describe("endCmd", () => {
-  it.todo("creates an occur document with state: false");
-});
-
-describe("switchCmd", () => {
-  it.todo("creates an occur document with a custom state");
-  it.todo("also records what it thinks the last state was");
-  it.todo("can also take in a manually specified last state");
-});
