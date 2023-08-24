@@ -69,10 +69,10 @@ export type OccurCmdArgs = AddCmdArgs &
   TimeArgs & {
     moment?: boolean;
     duration?: string;
+    field: string;
   };
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
-  console.log({ args });
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   const parsedData = parseBaseData(args.baseData);
   if (occurTime !== undefined) {

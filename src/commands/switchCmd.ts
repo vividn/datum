@@ -1,7 +1,13 @@
 import { Argv } from "yargs";
-import { occurArgs, occurCmd, OccurCmdArgs } from "./occurCmd";
+import { occurArgs, OccurCmdArgs } from "./occurCmd";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { parseBaseData } from "../input/dataArgs";
+import { handleTimeArgs } from "../input/timeArgs";
+import { getActiveState } from "../state/getActiveState";
+import { connectDb } from "../auth/connectDb";
+import { DateTime } from "luxon";
+import { inferType } from "../utils/inferType";
+import { addCmd } from "./addCmd";
 
 export const command = [
   "switch <field> <state> [duration] [data..]",
@@ -59,14 +65,31 @@ export type SwitchCmdArgs = OccurCmdArgs & {
   lastState: string;
 };
 
-export function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
+export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
+  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   const parsedData = parseBaseData(args.baseData);
+  if (occurTime !== undefined) {
+    parsedData.occurTime = occurTime;
+    parsedData.occurUtcOffset = utcOffset;
+  }
   parsedData.state = args.state;
   if (args.lastState !== undefined) {
     parsedData.lastState = args.lastState;
-  } else {
-    // TODO: Get last state here
+  } else if (occurTime !== undefined) {
+    const db = connectDb(args);
+    parsedData.lastState = await getActiveState(
+      db,
+      args.field,
+      DateTime.fromISO(occurTime)
+    );
   }
-  console.log({ args });
-  return occurCmd(args);
+  if (args.duration !== undefined) {
+    if (args.moment) {
+      args.data ??= [];
+      args.data.unshift(args.duration);
+    } else {
+      parsedData.dur = inferType(args.duration, "dur");
+    }
+  }
+  return await addCmd({ ...args, baseData: parsedData });
 }
