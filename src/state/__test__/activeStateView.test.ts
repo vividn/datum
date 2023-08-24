@@ -15,7 +15,10 @@ describe("activeStateView", () => {
       state: true,
       dur: "PT5M",
     });
-    const doc3 = makeDoc({ occurTime: "2023-08-22T15:00:00.000Z", dur: "PT10M" });
+    const doc3 = makeDoc({
+      occurTime: "2023-08-22T15:00:00.000Z",
+      dur: "PT10M",
+    });
     activeStateView.map(doc);
     activeStateView.map(doc2);
     activeStateView.map(doc3);
@@ -23,7 +26,10 @@ describe("activeStateView", () => {
   });
 
   it("emits nothing if just occurTime with no dur or state", () => {
-    const doc = makeDoc({ field: "foo", occurTime: "2023-08-22T15:00:00.000Z" });
+    const doc = makeDoc({
+      field: "foo",
+      occurTime: "2023-08-22T15:00:00.000Z",
+    });
     activeStateView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
