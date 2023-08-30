@@ -67,9 +67,9 @@ export const builder: (yargs: Argv) => Argv = occurArgs;
 
 export type OccurCmdArgs = AddCmdArgs &
   TimeArgs & {
+    field: string;
     moment?: boolean;
     duration?: string;
-    field: string;
   };
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
