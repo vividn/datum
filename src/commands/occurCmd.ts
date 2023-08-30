@@ -29,6 +29,8 @@ import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
 import { parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
+import { startCmd } from "./startCmd";
+import { endCmd } from "./endCmd";
 
 export const command = [
   "occur <field> [duration] [data..]",
@@ -64,7 +66,6 @@ export function occurArgs(yargs: Argv): Argv {
 
 export const builder: (yargs: Argv) => Argv = occurArgs;
 
-
 export type OccurCmdArgs = AddCmdArgs &
   TimeArgs & {
     field: string;
@@ -84,6 +85,12 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
       args.data ??= [];
       args.data.unshift(args.duration);
     } else {
+      if (args.duration === "start") {
+        return await startCmd({ ...args, duration: undefined });
+      }
+      if (args.duration === "end") {
+        return await endCmd({ ...args, duration: undefined });
+      }
       parsedData.dur = inferType(args.duration, "dur");
     }
   }
