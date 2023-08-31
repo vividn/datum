@@ -1,17 +1,33 @@
-import { restoreNow, setNow } from "../../test-utils";
-import { addCmd } from "../addCmd";
+import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
 
 describe("occurCmd", () => {
+  const dbName = "occur_cmd_test";
+  const db = testDbLifecycle(dbName);
+  const now = "2023-08-05T16:00:00.000Z"
+
   beforeAll(() => {
-    setNow("2023-08-05T16:00:00.000Z");
+    setNow(now);
   });
   afterAll(() => {
     restoreNow();
   });
 
-  it.todo("creates a document with an occurTime");
+  it("creates a document with an occurTime", async () => {
+    const doc = await occurCmd({ field: "field" });
+
+    await db.info().then((info) => {
+      expect(info.doc_count).toEqual(1);
+    });
+    expect(doc.data.field).toEqual("field");
+    expect(doc.data.occurTime).toEqual(now);
+
+    expect(doc._id).toEqual(`field:${now}`);
+    const dbDoc = await db.get(doc._id);
+    expect(dbDoc).toEqual(doc);
+  });
+
   it.todo(
     "does not interpret the first argument after field as duration if args.moment is true"
   );
