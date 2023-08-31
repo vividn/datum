@@ -7,7 +7,7 @@ import {
   EitherPayload,
 } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { isCouchDbError } from "../errors";
+import { IdError, isCouchDbError } from "../errors";
 import { defaults } from "../input/defaults";
 import { newHumanId } from "../meta/newHumanId";
 import chalk from "chalk";
@@ -156,6 +156,9 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     payload,
     idStructure: idStructure,
   });
+  if (_id === "") {
+    throw new IdError("Provided or derived _id is blank");
+  }
   payload._id = _id;
 
   const db = connectDb(args);

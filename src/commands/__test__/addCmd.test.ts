@@ -1,5 +1,5 @@
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
-import { BaseDataError } from "../../errors";
+import { BaseDataError, IdError } from "../../errors";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
@@ -20,11 +20,25 @@ describe("addCmd", () => {
   });
 
   it("inserts documents into couchdb", async () => {
-    await addCmd({});
+    await addCmd({ data: ["foo=bar"] });
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
     });
+  });
+
+  it("throws an error if addCmd is called with no id and no data", async () => {
+    await expect(addCmd({})).rejects.toThrow(IdError);
+  });
+
+  it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
+    await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(IdError);
+  });
+
+  it("can add a blank document if an id is provided", async () => {
+    const doc = await addCmd({ idPart: "test" });
+    expect(doc._id).toEqual("test");
+    expect(JSON.stringify(doc.data)).toBe("{}");
   });
 
   it("calls addDoc", async () => {
@@ -161,7 +175,7 @@ describe("addCmd", () => {
   });
 
   it("contains random identifiers in the metadata", async () => {
-    const doc = await addCmd({});
+    const doc = await addCmd({data: ["foo=bar"]});
     const { random, humanId } = doc?.meta;
 
     expect(random).toBeGreaterThanOrEqual(0);
