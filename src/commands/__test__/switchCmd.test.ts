@@ -6,4 +6,5 @@ describe("switchCmd", () => {
   it.todo(
     "still includes lastState if manually specified even when there is no occurTime"
   );
+  it.todo("can do a state of null");
 });

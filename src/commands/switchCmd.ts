@@ -56,13 +56,14 @@ export function builder(yargs: Argv): Argv {
       "last-state": {
         describe: "manually specify the last state being transitioned out of",
         nargs: 1,
+        // TODO: add alias l here after switching lenient to strict
       },
     });
 }
 
 export type SwitchCmdArgs = OccurCmdArgs & {
-  state: string;
-  lastState: string;
+  state: string | boolean | null;
+  lastState?: string | boolean | null;
 };
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
@@ -72,9 +73,11 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     parsedData.occurTime = occurTime;
     parsedData.occurUtcOffset = utcOffset;
   }
-  parsedData.state = args.state;
+  parsedData.state =
+    typeof args.state === "string" ? inferType(args.state) : args.state;
   if (args.lastState !== undefined) {
-    parsedData.lastState = args.lastState;
+    parsedData.lastState =
+      args.lastState === "string" ? inferType(args.lastState) : args.lastState;
   } else if (occurTime !== undefined) {
     const db = connectDb(args);
     parsedData.lastState = await getActiveState(

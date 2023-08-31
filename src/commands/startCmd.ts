@@ -1,33 +1,17 @@
 import { Argv } from "yargs";
-import { handleTimeArgs, TimeArgs } from "../input/timeArgs";
-import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
-import { parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
+import { switchCmd } from "./switchCmd";
+import { baseOccurArgs, BaseOccurArgs } from "./occurCmd";
 
 export const command = "start <field> [data..]";
 export const desc = "add a start document";
 
 export function builder(yargs: Argv): Argv {
-  return addArgs(yargs).options({}).positional("field", {
-    describe: "what is being tracked",
-    type: "string",
-    nargs: 1,
-  });
+  return baseOccurArgs(yargs);
 }
 
-export type StartCmdArgs = AddCmdArgs &
-  TimeArgs & {
-    field: string;
-    duration?: string;
-  };
+export type StartCmdArgs = BaseOccurArgs;
 
 export async function startCmd(args: StartCmdArgs): Promise<EitherDocument> {
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
-  const parsedData = parseBaseData(args.baseData);
-  parsedData.state = true;
-  if (occurTime !== undefined) {
-    parsedData.occurTime = occurTime;
-    parsedData.occurUtcOffset = utcOffset;
-  }
-  return await addCmd({ ...args, baseData: parsedData });
+  return await switchCmd({ ...args, state: true });
 }

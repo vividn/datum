@@ -16,7 +16,6 @@ import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { timeYargs } from "../input/timeArgs";
 import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
 
@@ -42,7 +41,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 const conflictChoices = Object.keys(conflictRecord);
 
 export function addArgs(yargs: Argv): Argv {
-  return timeYargs(dataYargs(yargs)).options({
+  return dataYargs(yargs).options({
     "no-metadata": {
       describe: "do not include meta data in document",
       alias: "M",

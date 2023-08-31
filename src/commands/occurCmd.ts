@@ -24,7 +24,7 @@ Should include information about what the last state was for mapreduce totalling
  */
 
 import { Argv } from "yargs";
-import { handleTimeArgs, TimeArgs } from "../input/timeArgs";
+import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
 import { parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
@@ -38,8 +38,24 @@ export const command = [
 ];
 export const desc = "add an occur document";
 
-export function occurArgs(yargs: Argv): Argv {
-  return addArgs(yargs)
+export type BaseOccurArgs = AddCmdArgs &
+  TimeArgs & {
+    field: string;
+  };
+export function baseOccurArgs(yargs: Argv): Argv {
+  return timeYargs(addArgs(yargs)).positional("field", {
+    describe: "what is being tracked",
+    type: "string",
+    nargs: 1,
+  });
+}
+
+export type DurationArgs = {
+  duration?: string;
+  moment?: boolean;
+};
+export function durationArgs(yargs: Argv): Argv {
+  return yargs
     .options({
       moment: {
         alias: "m",
@@ -47,11 +63,6 @@ export function occurArgs(yargs: Argv): Argv {
           "don't interpret the first argument after field as a duration",
         nargs: 0,
       },
-    })
-    .positional("field", {
-      describe: "what is being tracked",
-      type: "string",
-      nargs: 1,
     })
     .positional("duration", {
       describe:
@@ -63,15 +74,13 @@ export function occurArgs(yargs: Argv): Argv {
       nargs: 1,
     });
 }
+export function occurArgs(yargs: Argv): Argv {
+  return durationArgs(baseOccurArgs(yargs));
+}
 
 export const builder: (yargs: Argv) => Argv = occurArgs;
 
-export type OccurCmdArgs = AddCmdArgs &
-  TimeArgs & {
-    field: string;
-    moment?: boolean;
-    duration?: string;
-  };
+export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
@@ -86,10 +95,12 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
       args.data.unshift(args.duration);
     } else {
       if (args.duration === "start") {
-        return await startCmd({ ...args, duration: undefined });
+        delete args.duration;
+        return await startCmd(args);
       }
       if (args.duration === "end") {
-        return await endCmd({ ...args, duration: undefined });
+        delete args.duration;
+        return await endCmd(args);
       }
       parsedData.dur = inferType(args.duration, "dur");
     }
