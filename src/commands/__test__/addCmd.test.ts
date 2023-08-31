@@ -46,7 +46,6 @@ describe("addCmd", () => {
   it("tells the user if the document already exists with identical data", async () => {
     await addCmd({
       idPart: "my name is bob",
-      noTimestamp: true,
       data: ["foo=bar"],
       show: Show.Standard,
     });
@@ -59,7 +58,6 @@ describe("addCmd", () => {
 
     await addCmd({
       idPart: "my name is bob",
-      noTimestamp: true,
       data: ["foo=bar"],
       show: Show.Standard,
     });
@@ -72,7 +70,6 @@ describe("addCmd", () => {
   it("fails if addedDocument conflicts with different data", async () => {
     await addCmd({
       idPart: "my name is doug",
-      noTimestamp: true,
       data: ["foo=bar"],
       show: Show.Standard,
     });
@@ -86,7 +83,6 @@ describe("addCmd", () => {
     try {
       await addCmd({
         idPart: "my name is doug",
-        noTimestamp: true,
         data: ["different=data"],
         show: Show.Standard,
       });
@@ -214,34 +210,4 @@ describe("addCmd", () => {
   });
 
   // TODO: write tests for all of the various options
-
-  it("stores the occurTime in the data", async () => {
-    const newDoc = (await addCmd({
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
-    expect(newDoc.meta).not.toHaveProperty("occurTime");
-  });
-
-  it("stores the occurTime and utcOffset in DataOnly docs", async () => {
-    const newDoc = (await addCmd({
-      noMetadata: true,
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
-    expect(newDoc).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
-    expect(newDoc).toHaveProperty("occurUtcOffset", 0);
-  });
-
-  it("stores utcOffset", async () => {
-    const newDoc = (await addCmd({
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurUtcOffset", 0);
-  });
 });
