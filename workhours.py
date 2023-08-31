@@ -31,7 +31,7 @@ days_to_calculate = pd.date_range(
 
 def dayhours(date):
     try:
-        return activity.get_total(date)["work"] / 60
+        return activity.get_total(date)[category] / 60
     except KeyError:
         return 0
 
