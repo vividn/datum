@@ -508,10 +508,10 @@ def main(**kwargs):
         )
         draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
 
-    with tempfile.NamedTemporaryFile(suffix=imagetype) as tmp:
+    with tempfile.NamedTemporaryFile(suffix=imagetype, delete=False) as tmp:
         im.save(tmp.name)
         os.chmod(tmp.name, stat.S_IRUSR|stat.S_IWUSR|stat.S_IRGRP|stat.S_IROTH)
-        shutil.copy(tmp.name, imageout)
+        shutil.move(tmp.name, imageout)
 
 
 ###########################################################
