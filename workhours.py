@@ -7,7 +7,7 @@ import sys
 from dateutil import parser
 
 datumfile = "activity"
-category = "work"
+category = "datum"
 
 activity = Datumdata(name="activity", column="Activity", data_type="category")
 
