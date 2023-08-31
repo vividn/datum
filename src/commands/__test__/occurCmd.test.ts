@@ -13,6 +13,7 @@ describe("occurCmd", () => {
     "does not interpret the first argument after field as duration if args.moment is true"
   );
   it.todo("with no-timestamp argument it is equalivalent to an addCmd");
-  it.todo("interprets a duration of 'start' or 'end' as a start or end command");
+  it.todo(
+    "interprets a duration of 'start' or 'end' as a start or end command"
+  );
 });
-

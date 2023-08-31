@@ -37,7 +37,8 @@ export const activeStateView: DatumView<
     if (!occurTime || !field || state === undefined) {
       return;
     }
-    const lastState = data.lastState !== undefined ? data.lastState : (state === false);
+    const lastState =
+      data.lastState !== undefined ? data.lastState : state === false;
 
     function parseISODuration(duration: string) {
       const regex =

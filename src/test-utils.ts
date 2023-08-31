@@ -164,7 +164,7 @@ export function makeDoc(
         partition: defaultPartitionParts,
       });
     }
-    doc._id = assembleId({payload: doc, idStructure});
+    doc._id = assembleId({ payload: doc, idStructure });
   }
 
   if (include_rev) {
