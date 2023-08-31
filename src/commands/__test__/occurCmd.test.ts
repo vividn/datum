@@ -5,7 +5,7 @@ import { occurCmd } from "../occurCmd";
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";
   const db = testDbLifecycle(dbName);
-  const now = "2023-08-05T16:00:00.000Z"
+  const now = "2023-08-05T16:00:00.000Z";
 
   beforeAll(() => {
     setNow(now);

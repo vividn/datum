@@ -32,7 +32,9 @@ describe("addCmd", () => {
   });
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
-    await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(IdError);
+    await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(
+      IdError
+    );
   });
 
   it("can add a blank document if an id is provided", async () => {
@@ -175,7 +177,7 @@ describe("addCmd", () => {
   });
 
   it("contains random identifiers in the metadata", async () => {
-    const doc = await addCmd({data: ["foo=bar"]});
+    const doc = await addCmd({ data: ["foo=bar"] });
     const { random, humanId } = doc?.meta;
 
     expect(random).toBeGreaterThanOrEqual(0);

@@ -1,5 +1,4 @@
 import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
-import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 import { occurCmd } from "../../commands/occurCmd";
