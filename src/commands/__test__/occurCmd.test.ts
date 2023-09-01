@@ -1,6 +1,7 @@
 import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
+import { BadDurationError } from "../../errors";
 
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";
@@ -77,6 +78,16 @@ describe("occurCmd", () => {
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
     expect(doc2.data).not.toHaveProperty("dur");
+  });
+
+  it("throws an error if the duration supplied is invalid", async () => {
+    await expect(
+      occurCmd({
+        field: "field",
+        optional: "optional",
+        duration: "30asd",
+      })
+    ).rejects.toThrow(BadDurationError);
   });
 
   it("with no-timestamp argument it is equivalent to an addCmd");

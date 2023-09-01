@@ -31,6 +31,7 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
 import { startCmd } from "./startCmd";
 import { endCmd } from "./endCmd";
+import { isoDurationFromDurationStr } from "../time/parseDurationString";
 
 export const command = [
   "occur <field> [duration] [data..]",
@@ -96,7 +97,7 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
         delete args.duration;
         return await endCmd(args);
       }
-      parsedData.dur = inferType(args.duration, "dur");
+      parsedData.dur = isoDurationFromDurationStr(String(args.duration));
     }
   }
 
