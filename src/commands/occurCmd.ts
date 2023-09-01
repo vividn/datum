@@ -51,7 +51,7 @@ export function baseOccurArgs(yargs: Argv): Argv {
 }
 
 export type DurationArgs = {
-  duration?: string;
+  duration?: string | number;
   moment?: boolean;
 };
 export function durationArgs(yargs: Argv): Argv {
@@ -70,7 +70,6 @@ export function durationArgs(yargs: Argv): Argv {
         " 5 = 5 minutes, 5h = 5 hours, 5:35:35 = 5 hours 35 minutes and 35 seconds, etc." +
         'a single period "." or empty string "" can be used to indicate no duration (for example to allow' +
         " entering in of other data without specifying a duration)",
-      type: "string",
       nargs: 1,
     });
 }
@@ -83,12 +82,7 @@ export const builder: (yargs: Argv) => Argv = occurArgs;
 export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   const parsedData = parseBaseData(args.baseData);
-  if (occurTime !== undefined) {
-    parsedData.occurTime = occurTime;
-    parsedData.occurUtcOffset = utcOffset;
-  }
   if (args.duration !== undefined) {
     if (args.moment) {
       args.data ??= [];
@@ -104,6 +98,12 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
       }
       parsedData.dur = inferType(args.duration, "dur");
     }
+  }
+
+  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
+  if (occurTime !== undefined) {
+    parsedData.occurTime = occurTime;
+    parsedData.occurUtcOffset = utcOffset;
   }
   return await addCmd({ ...args, baseData: parsedData });
 }

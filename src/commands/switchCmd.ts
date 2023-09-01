@@ -67,8 +67,17 @@ export type SwitchCmdArgs = OccurCmdArgs & {
 };
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   const parsedData = parseBaseData(args.baseData);
+  if (args.duration !== undefined) {
+    if (args.moment) {
+      args.data ??= [];
+      args.data.unshift(args.duration);
+    } else {
+      parsedData.dur = inferType(args.duration, "dur");
+    }
+  }
+
+  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   if (occurTime !== undefined) {
     parsedData.occurTime = occurTime;
     parsedData.occurUtcOffset = utcOffset;
@@ -85,14 +94,6 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
       args.field,
       DateTime.fromISO(occurTime)
     );
-  }
-  if (args.duration !== undefined) {
-    if (args.moment) {
-      args.data ??= [];
-      args.data.unshift(args.duration);
-    } else {
-      parsedData.dur = inferType(args.duration, "dur");
-    }
   }
   return await addCmd({ ...args, baseData: parsedData });
 }
