@@ -2,6 +2,9 @@ import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
 import { BadDurationError } from "../../errors";
+import { setupCmd } from "../setupCmd";
+import * as endCmdModule from "../endCmd";
+import * as startCmdModule from "../startCmd";
 
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";
@@ -106,6 +109,8 @@ describe("occurCmd", () => {
   });
 
   it("interprets a duration of 'start' a start command", async () => {
+    await setupCmd({ db: dbName });
+    const startCmdSpy = jest.spyOn(startCmdModule, "startCmd");
     const startDoc = await occurCmd({
       field: "field",
       optional: "optional",
@@ -113,9 +118,12 @@ describe("occurCmd", () => {
     });
     expect(startDoc.data).toMatchObject({ field: "field", state: true });
     expect(startDoc.data).not.toHaveProperty("dur");
+    expect(startCmdSpy).toHaveBeenCalled();
   });
 
   it("interprets a duration of 'end' an end command", async () => {
+    await setupCmd({ db: dbName });
+    const endCmdSpy = jest.spyOn(endCmdModule, "endCmd");
     const endDoc = await occurCmd({
       field: "field",
       optional: "optional",
@@ -123,6 +131,7 @@ describe("occurCmd", () => {
     });
     expect(endDoc.data).toMatchObject({ field: "field", state: false });
     expect(endDoc.data).not.toHaveProperty("dur");
+    expect(endCmdSpy).toHaveBeenCalled();
   });
 
   it("stores the occurTime in the data", async () => {
