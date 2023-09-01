@@ -1,41 +1,17 @@
-/*
-Let's see here.
-I want a start command and then a corresponding stop command
-Also an occur command
-hmmmmm
-
-for block data:
-start <field>
-end <field>
-occur <field> [duration]
-/// pause <field> <duration> -- like doing `occur <field> -duration`
-if [duration] is "start" or "end", then automatically transform into the respective start or end type data
-
-for block data in the end it should be relatively equivalent to using state data with states of true and false
-
-for point data:
-occur <field>
-
-for state data:
-switch <field> <state>
-Should include information about what the last state was for mapreduce totalling later, must have some error checking function
-
-
- */
-
 import { Argv } from "yargs";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
 import { parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { inferType } from "../utils/inferType";
 import { startCmd } from "./startCmd";
 import { endCmd } from "./endCmd";
 import { isoDurationFromDurationStr } from "../time/parseDurationString";
 
 export const command = [
   "occur <field> [duration] [data..]",
+  "occur <field> . [data..]",
   "occur --moment <field> [data..]",
+  // "occur -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [duration] [optVal1] ... [optValN] [data..]",
 ];
 export const desc = "add an occur document";
 
@@ -73,6 +49,7 @@ export function durationArgs(yargs: Argv): Argv {
         " entering in of other data without specifying a duration)",
       nargs: 1,
     });
+  //TODO: Include more help here about placement of duration between required values and optional values
 }
 export function occurArgs(yargs: Argv): Argv {
   return durationArgs(baseOccurArgs(yargs));
@@ -82,10 +59,11 @@ export const builder: (yargs: Argv) => Argv = occurArgs;
 
 export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 
+// TODO: Parse duration as the first optional argument rather than explicitly
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const parsedData = parseBaseData(args.baseData);
   if (args.duration !== undefined) {
-    if (args.moment) {
+    if (args.moment || args.noTimestamp) {
       args.data ??= [];
       args.data.unshift(args.duration);
     } else {

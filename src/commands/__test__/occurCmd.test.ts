@@ -90,11 +90,40 @@ describe("occurCmd", () => {
     ).rejects.toThrow(BadDurationError);
   });
 
-  it("with no-timestamp argument it is equivalent to an addCmd");
+  it("will not record an occurTime or duration if the no-timestamp argument is given", async () => {
+    const doc = await occurCmd({
+      field: "field",
+      optional: "optional",
+      duration: 30,
+      noTimestamp: true,
+    });
+    expect(doc.data).not.toHaveProperty("occurTime");
+    expect(doc.data).not.toHaveProperty("dur");
+    expect(doc.data).toMatchObject({
+      field: "field",
+      optional: 30,
+    });
+  });
 
-  it.todo(
-    "interprets a duration of 'start' or 'end' as a start or end command"
-  );
+  it("interprets a duration of 'start' a start command", async () => {
+    const startDoc = await occurCmd({
+      field: "field",
+      optional: "optional",
+      duration: "start",
+    });
+    expect(startDoc.data).toMatchObject({ field: "field", state: true });
+    expect(startDoc.data).not.toHaveProperty("dur");
+  });
+
+  it("interprets a duration of 'end' an end command", async () => {
+    const endDoc = await occurCmd({
+      field: "field",
+      optional: "optional",
+      duration: "end",
+    });
+    expect(endDoc.data).toMatchObject({ field: "field", state: false });
+    expect(endDoc.data).not.toHaveProperty("dur");
+  });
 
   it("stores the occurTime in the data", async () => {
     const newDoc = (await occurCmd({

@@ -19,7 +19,10 @@ import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
 
-export const command = "add [data..]";
+export const command = [
+  "add [data..]",
+  "add -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]",
+];
 export const desc = "add a document";
 
 const conflictRecord: Record<ConflictStrategyNames, any> = {
