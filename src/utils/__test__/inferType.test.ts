@@ -95,7 +95,10 @@ describe("inferType with special fields", () => {
   beforeEach(() => {
     parseTimeSpy = jest.spyOn(parseTimeStr, "parseTimeStr");
     parseDateSpy = jest.spyOn(parseDateStr, "parseDateStr");
-    parseDurationSpy = jest.spyOn(parseDurationStr, "parseDurationStr");
+    parseDurationSpy = jest.spyOn(
+      parseDurationStr,
+      "isoDurationFromDurationStr"
+    );
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
