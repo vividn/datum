@@ -1,12 +1,11 @@
 import RJSON from "relaxed-json";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { BadDateError, BadDurationError, BadTimeError } from "../errors";
-import { isoDurationFromDurationStr, parseDurationStr } from "../time/parseDurationString";
+import { isoDurationFromDurationStr } from "../time/parseDurationString";
 import { parseDateStr } from "../time/parseDateStr";
 import {
   isoDateFromDateTime,
   isoDatetimeFromDateTime,
-  isoDurationFromDuration,
 } from "../time/timeUtils";
 
 export function inferType(value: number | string, fieldName?: string): any {

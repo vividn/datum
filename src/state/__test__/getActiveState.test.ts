@@ -5,7 +5,6 @@ import { switchCmd } from "../../commands/switchCmd";
 import { startCmd } from "../../commands/startCmd";
 import { endCmd } from "../../commands/endCmd";
 import { DateTime } from "luxon";
-import { activeStateView } from "../activeStateView";
 
 describe("getActiveState", () => {
   const dbName = "get_active_state_test";

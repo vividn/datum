@@ -6,7 +6,7 @@ import { startCmd } from "../startCmd";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";
-  const db = testDbLifecycle(dbName);
+  testDbLifecycle(dbName);
   beforeEach(async () => {
     await setupCmd({});
     setNow("2023-09-02,12:30");
@@ -27,4 +27,3 @@ describe("startCmd", () => {
     expect(switchCmdSpy).toBeCalledWith({ field: "mop", state: true });
   });
 });
-

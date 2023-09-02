@@ -90,7 +90,7 @@ describe("switchCmd", () => {
 
   it("can do a state of null", async () => {
     const doc = await switchCmd({ field: "vacuum", state: null });
-    const doc2 = await switchCmd({ field: "luft", state: "null"})
+    const doc2 = await switchCmd({ field: "luft", state: "null" });
     expect(doc.data).toMatchObject({
       field: "vacuum",
       state: null,
