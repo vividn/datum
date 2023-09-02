@@ -98,7 +98,7 @@ export function mockedLogLifecycle(): Mock {
 const originalNowFn = Settings.now;
 const nowStack: (() => number)[] = [];
 export function setNow(timeStr: string): DateTime {
-  const parsedTime = parseTimeStr({ timeStr });
+  const parsedTime = parseTimeStr({ timeStr, referenceTime: DateTime.now() });
   const newNow = () => parsedTime.toMillis();
   Settings.now = newNow;
   return parsedTime;

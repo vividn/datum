@@ -2,20 +2,24 @@ import { DateTime } from "luxon";
 import { activeStateView, DatumState } from "./activeStateView";
 import { now } from "../time/timeUtils";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
+import { parseTimeStr } from "../time/parseTimeStr";
 
 export async function getActiveState(
   db: PouchDB.Database,
   field: string,
-  time: DateTime = now()
+  time: DateTime | string = now()
 ): Promise<DatumState> {
-  const utcTime = time.toUTC().toISO();
+  const utcTime =
+    typeof time === "string"
+      ? parseTimeStr({ timeStr: time }).toUTC().toISO()
+      : time.toUTC().toISO();
   if (utcTime === null) {
     throw new Error("bad time");
   }
   let viewResult;
   try {
     viewResult = await db.query(activeStateView.name, {
-      startkey: [field, time.toUTC().toISO()],
+      startkey: [field, utcTime],
       descending: true,
       limit: 1,
     });
