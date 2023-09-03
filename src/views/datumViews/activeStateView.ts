@@ -1,7 +1,7 @@
-import { DatumData, EitherDocument } from "../documentControl/DatumDocument";
-import { DatumView } from "../views/DatumView";
-import { _emit } from "../views/emit";
-import { isoDateOrTime } from "../time/timeUtils";
+import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
+import { DatumView } from "../DatumView";
+import { _emit } from "../emit";
+import { isoDateOrTime } from "../../time/timeUtils";
 
 export type DatumState = string | boolean | (string | boolean)[] | null;
 

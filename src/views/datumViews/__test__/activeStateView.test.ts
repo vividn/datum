@@ -1,5 +1,5 @@
-import * as emit from "../../views/emit";
-import { makeDoc } from "../../test-utils";
+import * as emit from "../../emit";
+import { makeDoc } from "../../../test-utils";
 import { activeStateView } from "../activeStateView";
 
 describe("activeStateView", () => {
