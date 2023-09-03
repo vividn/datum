@@ -1,5 +1,8 @@
 import { DateTime } from "luxon";
-import { activeStateView, DatumState } from "../views/datumViews/activeStateView";
+import {
+  activeStateView,
+  DatumState,
+} from "../views/datumViews/activeStateView";
 import { now } from "../time/timeUtils";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 import { parseTimeStr } from "../time/parseTimeStr";
