@@ -4,6 +4,9 @@ import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
 import { setTimezone } from "../time/setTimezone";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDateStr } from "../time/parseDateStr";
+import { DataArgs, parseBaseData } from "./dataArgs";
+import { DatumData } from "../documentControl/DatumDocument";
+import { getOccurTime } from "../time/getOccurTime";
 
 export type TimeArgs = {
   date?: string;
@@ -84,7 +87,7 @@ export type TimeStrWithOffset = {
   timeStr?: isoDatetime | isoDate;
   utcOffset: number;
 };
-export const handleTimeArgs = function ({
+export function handleTimeArgs({
   date,
   time,
   yesterday,
@@ -131,4 +134,21 @@ export const handleTimeArgs = function ({
     // utc offset needs to be recalculated because DST could be different for the specified time, for example.
     utcOffset: utcOffset(referenceTime),
   };
-};
+}
+
+export function occurredBaseArgs(
+  args: ReferencedTimeArgs & Pick<DataArgs, "baseData">
+): DatumData {
+  const parsedData = parseBaseData(args.baseData);
+  const baseOccurTime = getOccurTime(parsedData);
+  const referenceTime = args.referenceTime ?? baseOccurTime;
+  const { timeStr: occurTime, utcOffset: occurUtcOffset } = handleTimeArgs({
+    ...args,
+    referenceTime,
+  });
+  return {
+    ...parsedData,
+    occurTime,
+    occurUtcOffset,
+  };
+}

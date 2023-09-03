@@ -14,8 +14,8 @@ export function renderView(
 ): void {
   const data = viewResponse.rows.map((row) => {
     const keyValue: { key: any; value: any; id?: string; hid?: string } = {
-      key: row.key,
-      value: row.value,
+      key: JSON.stringify(row.key),
+      value: JSON.stringify(row.value),
     };
     if (showId) {
       keyValue.id = row.id;

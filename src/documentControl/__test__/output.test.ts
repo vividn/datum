@@ -292,7 +292,7 @@ describe("output", () => {
         meta: {},
       })
     );
-    await addCmd({});
+    await addCmd({ idPart: "returnDoc" });
     expect(spy.mock.calls[0][0].outputArgs?.show).toBeUndefined();
   });
 

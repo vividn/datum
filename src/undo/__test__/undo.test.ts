@@ -1,7 +1,7 @@
 import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
-import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
+import { occurCmd } from "../../commands/occurCmd";
 
 // TODO: Make undo system more robust and more tested
 
@@ -42,12 +42,12 @@ describe("addCmd undo", () => {
   it("undoes a document with a time in the past if it contains occurTime", async () => {
     const now = "2021-06-28T06:30:00.000Z";
     const inAMinute = "2021-06-28T06:31:00.000Z";
-    await addCmd({ time: now });
-    const insertedDoc = (await db.get(now)) as DatumDocument;
-    expect(insertedDoc.meta.idStructure).toMatch(/%occurTime%/);
+    const insertedDoc = await occurCmd({ field: "event", time: now });
+    const expectedId = `event:${now}`;
+    expect(insertedDoc._id).toEqual(expectedId);
 
-    await addCmd({ time: inAMinute, undo: true });
-    await expect(db.get(now)).rejects.toMatchObject({
+    await occurCmd({ field: "event", time: inAMinute, undo: true });
+    await expect(db.get(expectedId)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
     });

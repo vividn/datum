@@ -1,11 +1,17 @@
 import { Settings, DateTime, Duration } from "luxon";
-import { BadDateError, BadTimeError, BadTimezoneError } from "../../errors";
+import {
+  BadDateError,
+  BadTimeError,
+  BadTimezoneError,
+  BaseDataError,
+} from "../../errors";
 import {
   handleTimeArgs,
+  occurredBaseArgs,
   ReferencedTimeArgs,
   TimeStrWithOffset,
 } from "../timeArgs";
-import { setNow } from "../../test-utils";
+import { restoreNow, setNow } from "../../test-utils";
 
 const expectTiming = (
   props: ReferencedTimeArgs,
@@ -22,6 +28,10 @@ const expectTiming = (
 describe("handleTimeArgs", () => {
   beforeEach(() => {
     setNow("2020-05-10T15:25:30Z");
+  });
+
+  afterEach(() => {
+    restoreNow();
   });
 
   it("returns timeStr as current time when no arguments are given", () => {
@@ -243,5 +253,76 @@ describe("handleTimeArgs", () => {
     expect(offset3).toBe(-3);
 
     Settings.defaultZone = "system";
+  });
+});
+
+describe("occurredBaseData", () => {
+  beforeEach(() => {
+    setNow("2023-07-07T11:20:30Z");
+  });
+
+  afterEach(() => {
+    restoreNow();
+  });
+
+  it("merges parsed time into the base data argument", () => {
+    expect(
+      occurredBaseArgs({
+        baseData: { foo: "bar", abc: 123 },
+        date: "-1",
+        time: "3",
+      })
+    ).toEqual({
+      foo: "bar",
+      abc: 123,
+      occurTime: "2023-07-06T03:00:00.000Z",
+      occurUtcOffset: 0,
+    });
+  });
+  it("uses the existing occurTime in the baseData as a reference time to the timeArgs", () => {
+    expect(
+      occurredBaseArgs({
+        baseData: {
+          foo: "bar",
+          occurTime: "2023-07-01T15:00:00.000Z",
+          occurUtcOffset: -2,
+        },
+        date: "+1",
+        time: "10",
+      })
+    ).toEqual({
+      foo: "bar",
+      occurTime: "2023-07-02T12:00:00.000Z",
+      occurUtcOffset: -2,
+    });
+  });
+
+  it("uses a given referenceTime argument preferentially over the baseData occurTime", () => {
+    expect(
+      occurredBaseArgs({
+        baseData: {
+          foo: "bar",
+          occurTime: "2023-07-01T15:00:00.000Z",
+          occurUtcOffset: -2,
+        },
+        date: "+1",
+        time: "10",
+        referenceTime: DateTime.fromISO("2023-07-10"),
+      })
+    ).toEqual({
+      foo: "bar",
+      occurTime: "2023-07-11T10:00:00.000Z",
+      occurUtcOffset: 0,
+    });
+  });
+
+  it("throws a BaseDataError if base data cannot be parsed", () => {
+    expect(() =>
+      occurredBaseArgs({
+        baseData: "abcd",
+        date: "jan31",
+        time: "10",
+      })
+    ).toThrow(BaseDataError);
   });
 });

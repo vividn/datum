@@ -16,7 +16,15 @@ describe("inferType", () => {
     expect(inferType("-45.5")).toBe(-45.5);
   });
 
-  it("handles special number strings", () => {
+  it("handles special value strings", () => {
+    expect(inferType("true")).toBe(true);
+    expect(inferType("TRUE")).toBe(true);
+    expect(inferType("false")).toBe(false);
+    expect(inferType("FALSE")).toBe(false);
+
+    expect(inferType("undefined")).toBe(undefined);
+    expect(inferType("UNDEFINED")).toBe(undefined);
+
     expect(inferType("nan")).toBe("NaN");
     expect(inferType("NaN")).toBe("NaN");
     expect(inferType("NAN")).toBe("NaN");
@@ -87,7 +95,10 @@ describe("inferType with special fields", () => {
   beforeEach(() => {
     parseTimeSpy = jest.spyOn(parseTimeStr, "parseTimeStr");
     parseDateSpy = jest.spyOn(parseDateStr, "parseDateStr");
-    parseDurationSpy = jest.spyOn(parseDurationStr, "parseDurationStr");
+    parseDurationSpy = jest.spyOn(
+      parseDurationStr,
+      "isoDurationFromDurationStr"
+    );
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
@@ -124,8 +135,10 @@ describe("inferType with special fields", () => {
     expect(inferType("3:45:20", "raceDuration")).toEqual("PT3H45M20S");
     expect(inferType("2days", "wait_dur")).toEqual("P2D");
     expect(inferType("30sec", "duration2")).toEqual("PT30S");
+    expect(inferType(".", "dur")).toBeUndefined();
+    expect(inferType("", "dur")).toBeUndefined();
 
-    expect(parseDurationSpy).toHaveBeenCalledTimes(5);
+    expect(parseDurationSpy).toHaveBeenCalledTimes(7);
     expect(parseTimeSpy).not.toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveBeenCalled();
   });
