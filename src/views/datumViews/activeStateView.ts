@@ -46,8 +46,7 @@ export const activeStateView: DatumView<
       const matches = duration.match(regex);
 
       if (!matches) {
-        // throw new Error("Invalid ISO 8601 duration format");
-        return undefined;
+        throw new Error("Invalid ISO 8601 duration format");
       }
 
       const negativeCoefficient = matches[1] ? -1 : 1;
@@ -81,9 +80,6 @@ export const activeStateView: DatumView<
 
     if (duration !== undefined) {
       const seconds = parseISODuration(duration);
-      if (seconds === undefined) {
-        return;
-      }
       if (seconds < 0) {
         const holeBegin = subtractSecondsFromTime(occurTime, Math.abs(seconds));
         emit([field, holeBegin], false);
