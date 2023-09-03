@@ -1,5 +1,5 @@
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
-import { BaseDataError } from "../../errors";
+import { BaseDataError, IdError } from "../../errors";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
@@ -20,11 +20,27 @@ describe("addCmd", () => {
   });
 
   it("inserts documents into couchdb", async () => {
-    await addCmd({});
+    await addCmd({ data: ["foo=bar"] });
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
     });
+  });
+
+  it("throws an error if addCmd is called with no id and no data", async () => {
+    await expect(addCmd({})).rejects.toThrow(IdError);
+  });
+
+  it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
+    await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(
+      IdError
+    );
+  });
+
+  it("can add a blank document if an id is provided", async () => {
+    const doc = await addCmd({ idPart: "test" });
+    expect(doc._id).toEqual("test");
+    expect(JSON.stringify(doc.data)).toBe("{}");
   });
 
   it("calls addDoc", async () => {
@@ -46,7 +62,6 @@ describe("addCmd", () => {
   it("tells the user if the document already exists with identical data", async () => {
     await addCmd({
       idPart: "my name is bob",
-      noTimestamp: true,
       data: ["foo=bar"],
       show: Show.Standard,
     });
@@ -59,7 +74,6 @@ describe("addCmd", () => {
 
     await addCmd({
       idPart: "my name is bob",
-      noTimestamp: true,
       data: ["foo=bar"],
       show: Show.Standard,
     });
@@ -72,7 +86,6 @@ describe("addCmd", () => {
   it("fails if addedDocument conflicts with different data", async () => {
     await addCmd({
       idPart: "my name is doug",
-      noTimestamp: true,
       data: ["foo=bar"],
       show: Show.Standard,
     });
@@ -86,7 +99,6 @@ describe("addCmd", () => {
     try {
       await addCmd({
         idPart: "my name is doug",
-        noTimestamp: true,
         data: ["different=data"],
         show: Show.Standard,
       });
@@ -165,7 +177,7 @@ describe("addCmd", () => {
   });
 
   it("contains random identifiers in the metadata", async () => {
-    const doc = await addCmd({});
+    const doc = await addCmd({ data: ["foo=bar"] });
     const { random, humanId } = doc?.meta;
 
     expect(random).toBeGreaterThanOrEqual(0);
@@ -214,34 +226,4 @@ describe("addCmd", () => {
   });
 
   // TODO: write tests for all of the various options
-
-  it("stores the occurTime in the data", async () => {
-    const newDoc = (await addCmd({
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
-    expect(newDoc.meta).not.toHaveProperty("occurTime");
-  });
-
-  it("stores the occurTime and utcOffset in DataOnly docs", async () => {
-    const newDoc = (await addCmd({
-      noMetadata: true,
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
-    expect(newDoc).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
-    expect(newDoc).toHaveProperty("occurUtcOffset", 0);
-  });
-
-  it("stores utcOffset", async () => {
-    const newDoc = (await addCmd({
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurUtcOffset", 0);
-  });
 });

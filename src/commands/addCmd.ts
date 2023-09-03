@@ -7,7 +7,7 @@ import {
   EitherPayload,
 } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { isCouchDbError } from "../errors";
+import { IdError, isCouchDbError } from "../errors";
 import { defaults } from "../input/defaults";
 import { newHumanId } from "../meta/newHumanId";
 import chalk from "chalk";
@@ -16,11 +16,13 @@ import { buildIdStructure } from "../ids/buildIdStructure";
 import { assembleId } from "../ids/assembleId";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { TimeArgs, timeYargs, handleTimeArgs } from "../input/timeArgs";
 import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
 
-export const command = "add [data..]";
+export const command = [
+  "add [data..]",
+  "add -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]",
+];
 export const desc = "add a document";
 
 const conflictRecord: Record<ConflictStrategyNames, any> = {
@@ -41,8 +43,8 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 };
 const conflictChoices = Object.keys(conflictRecord);
 
-export function builder(yargs: Argv): Argv {
-  return timeYargs(dataYargs(yargs)).options({
+export function addArgs(yargs: Argv): Argv {
+  return dataYargs(yargs).options({
     "no-metadata": {
       describe: "do not include meta data in document",
       alias: "M",
@@ -99,9 +101,10 @@ export function builder(yargs: Argv): Argv {
   });
 }
 
+export const builder: (yargs: Argv) => Argv = addArgs;
+
 export type AddCmdArgs = MainDatumArgs &
-  DataArgs &
-  TimeArgs & {
+  DataArgs & {
     noMetadata?: boolean;
     idPart?: string | string[];
     idDelimiter?: string;
@@ -113,14 +116,7 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
-  // Calculate timing data early to make occurTime more exact
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
-
   const payloadData = handleDataArgs(args);
-  if (occurTime !== undefined) {
-    payloadData.occurTime = occurTime;
-    payloadData.occurUtcOffset = utcOffset;
-  }
 
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data: payloadData,
@@ -162,6 +158,9 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
     payload,
     idStructure: idStructure,
   });
+  if (_id === "") {
+    throw new IdError("Provided or derived _id is blank");
+  }
   payload._id = _id;
 
   const db = connectDb(args);
