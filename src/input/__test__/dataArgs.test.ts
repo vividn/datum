@@ -25,13 +25,22 @@ describe("handleDataArgs", () => {
   });
 
   it("includes field in the data", () => {
-    expectParseDataToReturn({ field: "field", data: []}, { field: "field" });
-    expectParseDataToReturn({field: "field", data: [ "foo=bar" ]}, { field: "field", foo: "bar" });
+    expectParseDataToReturn({ field: "field", data: [] }, { field: "field" });
+    expectParseDataToReturn(
+      { field: "field", data: ["foo=bar"] },
+      { field: "field", foo: "bar" }
+    );
   });
 
   it("uses the first non explicitly assigned field in the data as field, since field is positional populuated automatically and could have data in it", async () => {
-    expectParseDataToReturn({ field: "foo=bar", data: [ "dataField" ]} , { foo: "bar", field: "dataField" });
-    expectParseDataToReturn({ field: "foo=bar", data: [ "dataField", 'another=parameter' ]} , { foo: "bar", field: "dataField", another: "parameter" });
+    expectParseDataToReturn(
+      { field: "foo=bar", data: ["dataField"] },
+      { foo: "bar", field: "dataField" }
+    );
+    expectParseDataToReturn(
+      { field: "foo=bar", data: ["dataField", "another=parameter"] },
+      { foo: "bar", field: "dataField", another: "parameter" }
+    );
   });
 
   it("keeps extra equals signs in the value string", () => {
@@ -100,7 +109,11 @@ describe("handleDataArgs", () => {
       { abc: "value", field: "field" }
     );
     expectParseDataToReturn(
-      { required: ["a", "b"], field: "abc=ghi", data: ["first", "second", "third"] },
+      {
+        required: ["a", "b"],
+        field: "abc=ghi",
+        data: ["first", "second", "third"],
+      },
       { a: "second", b: "third", field: "first", abc: "ghi" }
     );
   });
