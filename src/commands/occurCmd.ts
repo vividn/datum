@@ -11,6 +11,7 @@ export const command = [
   "occur <field> [duration] [data..]",
   "occur <field> . [data..]",
   "occur --moment <field> [data..]",
+  "occur --no-field [duration] [data..]",
   // "occur -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [duration] [optVal1] ... [optValN] [data..]",
 ];
 export const desc = "add an occur document";

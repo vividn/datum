@@ -16,11 +16,17 @@ export type DataArgs = {
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
+  fieldless?: boolean;
 };
 
 export function dataYargs(otherYargs?: Argv): Argv {
   const yarg = otherYargs ?? yargs;
   return yarg
+    .positional("field", {
+      describe:
+        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
+      type: "string",
+    })
     .positional("data", {
       describe:
         "The data to put in the document. " +
@@ -48,13 +54,6 @@ export function dataYargs(otherYargs?: Argv): Argv {
         alias: "b",
         type: "string",
       },
-      field: {
-        describe:
-          "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
-        alias: "f",
-        nargs: 1,
-        type: "string",
-      },
       comment: {
         describe: "comment to include in the data",
         alias: "c",
@@ -63,7 +62,7 @@ export function dataYargs(otherYargs?: Argv): Argv {
       },
       required: {
         describe:
-          "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown",
+          "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
         alias: ["K", "req"],
         type: "string",
         nargs: 1,
@@ -94,6 +93,11 @@ export function dataYargs(otherYargs?: Argv): Argv {
         type: "boolean",
         alias: "l",
       },
+      fieldless: {
+        describe: "do not include field as the first required key",
+        type: "boolean",
+        alias: "F",
+      },
     });
 }
 
@@ -120,6 +124,7 @@ export function handleDataArgs({
   remainder,
   stringRemainder,
   field,
+  fieldless,
   comment,
   lenient = false,
   baseData,
@@ -128,6 +133,16 @@ export function handleDataArgs({
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
   const remainderData = [];
+
+  if (!fieldless && field !== undefined) {
+    // field is not determined directly by the first positional argument
+    // so that users can specify data through key=value format before specifying the field.
+    // In this way field acts like the first required argument
+    requiredKeys.unshift("field");
+  }
+  if (field !== undefined) {
+    data.unshift(field);
+  }
 
   const parsedData = parseBaseData(baseData);
 
@@ -215,11 +230,6 @@ export function handleDataArgs({
     }
 
     parsedData[dataKey] = inferType(defaultValue, dataKey);
-  }
-
-  // put in field, overwriting if necessary
-  if (field) {
-    parsedData.field = inferType(field, "field");
   }
 
   if (comment) {
