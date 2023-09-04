@@ -1,7 +1,7 @@
 import yargs, { Argv } from "yargs";
 
 export type QuickIdArg = {
-  quickId: string;
+  quickId: string | string[];
 };
 
 export function quickIdArg(otherYargs?: Argv): Argv {
