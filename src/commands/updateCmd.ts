@@ -3,7 +3,7 @@ import {
   updateStrategies,
   UpdateStrategyNames,
 } from "../documentControl/combineData";
-import { EitherDocument } from "../documentControl/DatumDocument";
+import { DatumData, EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { updateDoc } from "../documentControl/updateDoc";
 import { quickIds } from "../ids/quickId";
@@ -43,8 +43,21 @@ export async function updateCmd(
 ): Promise<EitherDocument[]> {
   const db = connectDb(args);
 
-  const ids = await quickIds(db, args.quickId);
-  const payload = handleDataArgs(args);
+  // process quickIds like the first required argument so that data changes can be specified beforehand in the command
+  // for easier aliasing
+  if (typeof args.quickId === "string") {
+    args.required ??= [];
+    args.required = ["__quickId"].concat(args.required);
+    args.data ??= [];
+    args.data.unshift(args.quickId);
+  }
+  const {
+    __quickId,
+    ...payload
+  }: DatumData<{ __quickId?: string | string[] }> = handleDataArgs(args);
+
+  const ids = await quickIds(db, __quickId ?? args.quickId);
+
   const updateStrategy = args.strategy ?? "preferNew";
 
   const updatedDocs = await Promise.all(

@@ -37,7 +37,7 @@ describe("updateCmd", () => {
     });
   });
 
-  it("can update a datonly doc from the first letters of its id", async () => {
+  it("can update a dataonly doc from the first letters of its id", async () => {
     await db.put({ _id: "some_data_only", foo: "bar" });
     const retDocs = await updateCmd({
       db: dbName,
@@ -148,5 +148,24 @@ describe("updateCmd", () => {
     const yyy = await db.get("yyy");
     expect(zzz).toMatchObject(zzzMatchObject);
     expect(yyy).toMatchObject(yyyMatchObject);
+  });
+
+  it("can take a data specification before the quick id argument by using an ='s notation", async () => {
+    // TODO: rewrite with cmd string notation once supported
+    await db.put({
+      _id: "doc_to_update",
+      data: { foo: "bar" },
+      meta: { humanId: "abcdefg" },
+    });
+    const retDocs = await updateCmd({
+      quickId: "foo=baz",
+      data: ["abcd", "another=thing"],
+    });
+    expect(retDocs).toHaveLength(1);
+    expect(retDocs[0]).toMatchObject({
+      _id: "doc_to_update",
+      data: { foo: "baz", another: "thing" },
+      meta: { humanId: "abcdefg" },
+    });
   });
 });
