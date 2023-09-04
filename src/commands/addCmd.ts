@@ -20,8 +20,9 @@ import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
 
 export const command = [
-  "add [data..]",
-  "add -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]",
+  "add <field> [data..]",
+  "add --fieldless [data..]",
+  "add <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]",
 ];
 export const desc = "add a document";
 
@@ -116,6 +117,7 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
+  console.log({args});
   const payloadData = handleDataArgs(args);
 
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
