@@ -120,7 +120,7 @@ export type AddCmdArgs = MainDatumArgs &
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const payloadData = handleDataArgs(args);
   const payload = addIdAndMetadata(payloadData, args);
-  const _id = payload._id;
+  const _id = payload._id as string;
 
   const db = connectDb(args);
 

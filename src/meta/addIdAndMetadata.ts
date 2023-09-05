@@ -17,7 +17,7 @@ import { IdError } from "../errors";
 export function addIdAndMetadata<T>(
   data: DatumData<T>,
   args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">
-): EitherPayload<T> & { _id: string } {
+): EitherPayload<T> {
   const { noMetadata, idPart, idDelimiter, partition } = args;
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data,
