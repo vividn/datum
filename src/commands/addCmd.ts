@@ -1,24 +1,11 @@
 import { Argv } from "yargs";
-import {
-  DataOnlyPayload,
-  DatumMetadata,
-  DatumPayload,
-  EitherDocument,
-  EitherPayload,
-} from "../documentControl/DatumDocument";
+import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { IdError, isCouchDbError } from "../errors";
-import { defaults } from "../input/defaults";
-import { newHumanId } from "../meta/newHumanId";
-import chalk from "chalk";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
-import { buildIdStructure } from "../ids/buildIdStructure";
-import { assembleId } from "../ids/assembleId";
-import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
+import { primitiveUndo } from "../undo/primitiveUndo";
 
 export const command = [
   "add <field> [data..]",
@@ -112,7 +99,7 @@ export type AddCmdArgs = MainDatumArgs &
     idDelimiter?: string;
     partition?: string;
     undo?: boolean;
-    "force-undo"?: boolean;
+    forceUndo?: boolean;
     merge?: boolean;
     conflict?: ConflictStrategyNames;
   };
@@ -120,56 +107,17 @@ export type AddCmdArgs = MainDatumArgs &
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const payloadData = handleDataArgs(args);
   const payload = addIdAndMetadata(payloadData, args);
-  const _id = payload._id as string;
 
   const db = connectDb(args);
 
-  const { undo, "force-undo": force } = args;
-  if (undo || force) {
-    let doc;
-    try {
-      doc = await db.get(_id);
-    } catch (error) {
-      // if the id involves a time, then there could be some slight difference in the id
-      const idStructure = payload.meta?.idStructure ?? "";
-      if (
-        isCouchDbError(error) &&
-        error.reason === "missing" &&
-        idStructure.match(/%\??(create|modify|occur)Time%/)
-      ) {
-        // just get the next lowest id
-        doc = (
-          await db.allDocs({
-            startkey: _id,
-            descending: true,
-            limit: 1,
-            include_docs: true,
-          })
-        ).rows[0]?.doc;
-        if (doc === undefined) {
-          throw error;
-        }
-      } else {
-        throw error;
-      }
-    }
-
-    const fifteenMinutesAgo = DateTime.now().minus(
-      Duration.fromObject({ minutes: 15 })
-    );
-    if (
-      doc.meta?.createTime &&
-      DateTime.fromISO(doc.meta.createTime) < fifteenMinutesAgo
-    ) {
-      if (!force) {
-        // deletion prevention
-        throw Error("Doc created more than fifteen minutes ago");
-      }
-      console.log("Doc created more than fifteen minutes ago");
-    }
-    await db.remove(doc._id, doc._rev);
-    console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
-    return doc;
+  const { undo, forceUndo } = args;
+  if (undo || forceUndo) {
+    return await primitiveUndo({
+      db,
+      payload,
+      force: forceUndo,
+      outputArgs: args,
+    });
   }
 
   const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);

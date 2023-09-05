@@ -55,7 +55,7 @@ export function addIdAndMetadata<T>(
 
   const _id = assembleId({
     payload,
-    idStructure: idStructure,
+    idStructure,
   });
   if (_id === "") {
     throw new IdError("Provided or derived _id is blank");

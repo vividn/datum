@@ -1,7 +1,7 @@
 import { Argv } from "yargs";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
-import { parseBaseData } from "../input/dataArgs";
+import { handleDataArgs, parseBaseData } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { startCmd } from "./startCmd";
 import { endCmd } from "./endCmd";
@@ -64,15 +64,21 @@ export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const parsedData = parseBaseData(args.baseData);
   if (args.duration !== undefined) {
-    if (args.moment || args.noTimestamp) {
-      args.data ??= [];
-      args.data.unshift(args.duration);
-    } else {
-      if (args.duration === "start") {
+    args.data ??= [];
+    args.data.unshift(args.duration);
+    if (!args.moment && !args.noTimestamp) {
+      // treat duration as the first optional argument
+      args.optional ??= [];
+      args.optional = ["dur"].concat(args.optional)
+    }
+  }
+  const payloadData = handleDataArgs(args);
+      if (payloadData.dur === "start") {
         delete args.duration;
+        THINK ABOUT WHETHER TO USE STARTCMD OR IMPLEMENT DIRECTLY
         return await startCmd(args);
       }
-      if (args.duration === "end") {
+      if (payloadData.dur === "end") {
         delete args.duration;
         return await endCmd(args);
       }
