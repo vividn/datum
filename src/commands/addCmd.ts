@@ -18,6 +18,7 @@ import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
+import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 
 export const command = [
   "add <field> [data..]",
@@ -118,51 +119,8 @@ export type AddCmdArgs = MainDatumArgs &
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const payloadData = handleDataArgs(args);
-
-  const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
-    data: payloadData,
-  });
-
-  const idStructure = buildIdStructure({
-    idParts: args.idPart ?? defaultIdParts,
-    delimiter: args.idDelimiter ?? defaults.idDelimiter,
-    partition: args.partition ?? defaultPartitionParts,
-  });
-
-  const { noMetadata } = args;
-  let meta: DatumMetadata | undefined = undefined;
-  if (!noMetadata) {
-    meta = {
-      humanId: newHumanId(),
-      random: Math.random(),
-    };
-
-    // these will be overwritten later by addDoc, but useful to have them here
-    // for undo and original id building
-    const now = DateTime.utc().toString();
-    meta.createTime = now;
-    meta.modifyTime = now;
-
-    // don't include idStructure if it is just a raw string (i.e. has no field references in it)
-    // that would be a waste of bits since _id then is exactly the same
-    if (idStructure.match(/(?<!\\)%/)) {
-      meta.idStructure = idStructure;
-    }
-  }
-
-  const payload: EitherPayload =
-    meta !== undefined
-      ? ({ data: payloadData, meta: meta } as DatumPayload)
-      : ({ ...payloadData } as DataOnlyPayload);
-
-  const _id = assembleId({
-    payload,
-    idStructure: idStructure,
-  });
-  if (_id === "") {
-    throw new IdError("Provided or derived _id is blank");
-  }
-  payload._id = _id;
+  const payload = addIdAndMetadata(payloadData, args);
+  const _id = payload._id;
 
   const db = connectDb(args);
 
@@ -173,6 +131,7 @@ export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
       doc = await db.get(_id);
     } catch (error) {
       // if the id involves a time, then there could be some slight difference in the id
+      const idStructure = payload.meta?.idStructure ?? "";
       if (
         isCouchDbError(error) &&
         error.reason === "missing" &&
