@@ -8,6 +8,7 @@ import { connectDb } from "../auth/connectDb";
 import { DateTime } from "luxon";
 import { inferType } from "../utils/inferType";
 import { addCmd } from "./addCmd";
+import { flexiblePositional } from "../input/flexiblePositional";
 
 export const command = [
   "switch <field> <state> [duration] [data..]",
@@ -37,15 +38,10 @@ export type SwitchCmdArgs = OccurCmdArgs & {
 };
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
+  flexiblePositional(args, "duration", "optional", "dur");
+  flexiblePositional(args, "state", "required");
+  flexiblePositional(args, "field", "required");
   const parsedData = parseBaseData(args.baseData);
-  if (args.duration !== undefined) {
-    if (args.moment) {
-      args.data ??= [];
-      args.data.unshift(args.duration);
-    } else {
-      parsedData.dur = inferType(args.duration, "dur");
-    }
-  }
 
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   if (occurTime !== undefined) {

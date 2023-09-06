@@ -6,6 +6,10 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { startCmd } from "./startCmd";
 import { endCmd } from "./endCmd";
 import { isoDurationFromDurationStr } from "../time/parseDurationString";
+import { flexiblePositional } from "../input/flexiblePositional";
+import { addIdAndMetadata } from "../meta/addIdAndMetadata";
+import { connectDb } from "../auth/connectDb";
+import { primitiveUndo } from "../undo/primitiveUndo";
 
 export const command = [
   "occur <field> [duration] [data..]",
@@ -61,34 +65,32 @@ export const builder: (yargs: Argv) => Argv = occurArgs;
 export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
-  const parsedData = parseBaseData(args.baseData);
-  if (args.duration !== undefined) {
-    args.data ??= [];
-    args.data.unshift(args.duration);
-    if (!args.moment && !args.noTimestamp) {
-      // treat duration as the first optional argument
-      args.optional ??= [];
-      args.optional = ["dur"].concat(args.optional)
-    }
-  }
+  flexiblePositional(args, "duration", "optional", "dur");
   const payloadData = handleDataArgs(args);
-      if (payloadData.dur === "start") {
-        delete args.duration;
-        THINK ABOUT WHETHER TO USE STARTCMD OR IMPLEMENT DIRECTLY
-        return await startCmd(args);
-      }
-      if (payloadData.dur === "end") {
-        delete args.duration;
-        return await endCmd(args);
-      }
-      parsedData.dur = isoDurationFromDurationStr(String(args.duration));
-    }
+
+  if (payloadData.dur === "start") {
+    return await startCmd(args);
+  } else if (payloadData.dur === "end") {
+    return await endCmd(args);
   }
 
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   if (occurTime !== undefined) {
-    parsedData.occurTime = occurTime;
-    parsedData.occurUtcOffset = utcOffset;
+    payloadData.occurTime = occurTime;
+    payloadData.occurUtcOffset = utcOffset;
+  }
+  const payload = addIdAndMetadata(payloadData, args);
+
+  const db = connectDb(args);
+
+  const { undo, forceUndo } = args;
+  if (undo || forceUndo) {
+    return await primitiveUndo({
+      db,
+      payload,
+      force: forceUndo,
+      outputArgs: args,
+    });
   }
   return await addCmd({ ...args, baseData: parsedData });
 }
