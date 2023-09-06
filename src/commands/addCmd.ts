@@ -6,6 +6,7 @@ import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { MainDatumArgs } from "../input/mainYargs";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
+import { fieldArgs } from "../input/fieldArgs";
 
 export const command = [
   "add <field> [data..]",
@@ -33,7 +34,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 const conflictChoices = Object.keys(conflictRecord);
 
 export function addArgs(yargs: Argv): Argv {
-  return dataYargs(yargs).options({
+  return dataYargs(fieldArgs(yargs)).options({
     "no-metadata": {
       describe: "do not include meta data in document",
       alias: "M",

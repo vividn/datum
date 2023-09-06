@@ -22,11 +22,6 @@ export type DataArgs = {
 export function dataYargs(otherYargs?: Argv): Argv {
   const yarg = otherYargs ?? yargs;
   return yarg
-    .positional("field", {
-      describe:
-        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
-      type: "string",
-    })
     .positional("data", {
       describe:
         "The data to put in the document. " +
@@ -92,11 +87,6 @@ export function dataYargs(otherYargs?: Argv): Argv {
         describe: "Allow extra data without defined keys",
         type: "boolean",
         alias: "l",
-      },
-      fieldless: {
-        describe: "do not include field as the first required key",
-        type: "boolean",
-        alias: "F",
       },
     });
 }
