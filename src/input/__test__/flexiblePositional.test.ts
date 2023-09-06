@@ -15,19 +15,18 @@ describe("flexiblePositional", () => {
     expect(args).toEqual({
       field: "arg0",
       data: ["arg1", "arg2", "arg3"],
-      extraArg: "arg1",
       required: ["req1", "req2"],
       optional: ["extraArg", "opt1", "opt2"],
     });
+    expect(args).not.toHaveProperty("extraArg");
 
     flexiblePositional(args, "field", "required");
     expect(args).toEqual({
-      field: "arg0",
       data: ["arg0", "arg1", "arg2", "arg3"],
-      extraArg: "arg1",
       required: ["field", "req1", "req2"],
       optional: ["extraArg", "opt1", "opt2"],
     });
+    expect(args).not.toHaveProperty("field");
   });
 
   it("can move arguments into a data key with a custom name", () => {
@@ -41,7 +40,6 @@ describe("flexiblePositional", () => {
     flexiblePositional(args, "extraArg", "optional", "__extraArg");
     expect(args).toEqual({
       data: ["arg1", "arg2", "arg3"],
-      extraArg: "arg1",
       required: ["req1", "req2"],
       optional: ["__extraArg", "opt1"],
     });
