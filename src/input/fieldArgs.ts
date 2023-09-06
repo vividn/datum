@@ -1,6 +1,6 @@
 import yargs, { Argv } from "yargs";
 
-export type FieldArg = {
+export type FieldArgs = {
   field: string;
 };
 

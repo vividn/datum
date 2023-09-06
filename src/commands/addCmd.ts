@@ -106,10 +106,10 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
-  const payloadData = handleDataArgs(args);
-  const payload = addIdAndMetadata(payloadData, args);
-
   const db = connectDb(args);
+  const payloadData = handleDataArgs(args);
+
+  const payload = addIdAndMetadata(payloadData, args);
 
   const { undo, forceUndo } = args;
   if (undo || forceUndo) {
