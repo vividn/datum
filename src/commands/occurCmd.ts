@@ -60,7 +60,6 @@ export const builder: (yargs: Argv) => Argv = occurArgs;
 
 export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 
-// TODO: Parse duration as the first optional argument rather than explicitly
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const parsedData = parseBaseData(args.baseData);
   if (args.duration !== undefined) {
