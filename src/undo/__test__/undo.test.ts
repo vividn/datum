@@ -2,6 +2,7 @@ import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 import { occurCmd } from "../../commands/occurCmd";
+import { Show } from "../../input/outputArgs";
 
 // TODO: Make undo system more robust and more tested
 
@@ -26,7 +27,7 @@ describe("addCmd undo", () => {
     await db.get("kept");
 
     mockedLog.mockReset();
-    await addCmd({ idPart: "this_one_should_be_deleted", undo: true });
+    await addCmd({ idPart: "this_one_should_be_deleted", undo: true, show: Show.Standard });
 
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
     await db.info().then((info) => {

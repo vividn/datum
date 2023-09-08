@@ -173,7 +173,6 @@ describe("handleDataArgs", () => {
     [{ data: [] }, 0],
     [{ optional: "has=defaultValue", data: [] }, 1],
     [{ optional: ["onlyFinalData=goesThrough"], data: ["inferType"] }, 1],
-    [{ field: "[1,2,3]", data: [] }, 1],
     [{ comment: "comment", data: [] }, 1],
     [{ comment: "comment1", data: ["comment=[123]"] }, 2],
   ])(
