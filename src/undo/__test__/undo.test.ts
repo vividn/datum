@@ -2,6 +2,7 @@ import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 import { occurCmd } from "../../commands/occurCmd";
+import { Show } from "../../input/outputArgs";
 
 // TODO: Make undo system more robust and more tested
 
@@ -26,7 +27,11 @@ describe("addCmd undo", () => {
     await db.get("kept");
 
     mockedLog.mockReset();
-    await addCmd({ idPart: "this_one_should_be_deleted", undo: true });
+    await addCmd({
+      idPart: "this_one_should_be_deleted",
+      undo: true,
+      show: Show.Standard,
+    });
 
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
     await db.info().then((info) => {
@@ -71,7 +76,7 @@ describe("addCmd undo", () => {
     Settings.resetCaches();
   });
 
-  it("allows undo if force-undo", async () => {
+  it("allows undo if forceUndo", async () => {
     const docName = "oldDoc2";
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
@@ -82,7 +87,7 @@ describe("addCmd undo", () => {
       data: {},
       meta: { createTime: oldTime.toString() },
     });
-    await addCmd({ idPart: docName, "force-undo": true });
+    await addCmd({ idPart: docName, forceUndo: true });
     await expect(db.get(docName)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
@@ -91,7 +96,7 @@ describe("addCmd undo", () => {
     Settings.resetCaches();
   });
 
-  it("allows undo if both force-undo and undo", async () => {
+  it("allows undo if both forceUndo and undo", async () => {
     const docName = "oldDoc3";
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
@@ -102,7 +107,7 @@ describe("addCmd undo", () => {
       data: {},
       meta: { createTime: oldTime.toString() },
     });
-    await addCmd({ idPart: docName, "force-undo": true, undo: true });
+    await addCmd({ idPart: docName, forceUndo: true, undo: true });
     await expect(db.get(docName)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",

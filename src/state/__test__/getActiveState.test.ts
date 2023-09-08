@@ -1,4 +1,4 @@
-import { at, restoreNow, setNow, testDbLifecycle } from "../../test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
 import { setupCmd } from "../../commands/setupCmd";
 import { getActiveState } from "../getActiveState";
 import { switchCmd } from "../../commands/switchCmd";
@@ -87,44 +87,45 @@ describe("getActiveState", () => {
   it("can get the state of a field at different points in time", async () => {
     setNow("2023-09-02,7:15");
     await switchCmd({ db: dbName, field: "machine", state: "preparing" });
-    await at(
-      "7:20",
-      switchCmd
-    )({ db: dbName, field: "machine", state: "warm" });
-    await at(
-      "9",
-      switchCmd
-    )({ db: dbName, field: "machine", state: "reading" });
-    await at(
-      "10",
-      switchCmd
-    )({
+
+    setNow("7:20");
+    await switchCmd({ db: dbName, field: "machine", state: "warm" });
+
+    setNow("9");
+    await switchCmd({ db: dbName, field: "machine", state: "reading" });
+
+    setNow("10");
+    await switchCmd({
       db: dbName,
       time: "910",
       field: "machine",
       state: "thinking",
     });
-    await at(
-      "11",
-      switchCmd
-    )({
+
+    setNow("11");
+    await switchCmd({
       db: dbName,
       field: "machine",
       duration: 15,
       state: "distracted",
     });
-    await at("12:30", endCmd)({ db: dbName, field: "machine" });
-    await at("12:35", startCmd)({ db: dbName, field: "machine" });
-    await at(
-      "12:45",
-      switchCmd
-    )({ db: dbName, field: "machine", state: "overheating" });
-    await at(
-      "18",
-      switchCmd
-    )({ db: dbName, field: "machine", state: "exploded" });
-    await at("21", switchCmd)({ db: dbName, field: "machine", state: null });
-    setNow("2023-09-02,22:00");
+
+    setNow("12:30");
+    await endCmd({ db: dbName, field: "machine" });
+
+    setNow("12:35");
+    await startCmd({ db: dbName, field: "machine" });
+
+    setNow("12:45");
+    await switchCmd({ db: dbName, field: "machine", state: "overheating" });
+
+    setNow("18");
+    await switchCmd({ db: dbName, field: "machine", state: "exploded" });
+
+    setNow("21");
+    await switchCmd({ db: dbName, field: "machine", state: null });
+
+    setNow("22");
     expect(await getActiveState(db, "machine")).toBe(null);
 
     expect(await getActiveState(db, "machine", "7:14")).toBe(null);
