@@ -69,6 +69,15 @@ describe("addCmd", () => {
     });
   });
 
+  it("can skip the field with --fieldless", async () => {
+    const doc = await addCmd({
+      field: "actuallyData",
+      fieldless: true,
+      optional: "dataKey",
+    });
+    expect(doc.data).toEqual({ dataKey: "actuallyData" });
+  });
+
   it("uses the field prop to populate the field key, but can also be specified again in the data", async () => {
     expect((await addCmd({ field: "fromProps", data: [] })).data).toEqual({
       field: "fromProps",

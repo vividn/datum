@@ -61,6 +61,7 @@ describe("occurCmd", () => {
     expect(doc.data).toMatchObject({ field: "field", optional: 30 });
     expect(doc.data).not.toHaveProperty("dur");
   });
+
   it('can skip the duration if the duration is given as "" or .', async () => {
     // TODO: rewrite this test as a string based call;
     const doc = await occurCmd({
