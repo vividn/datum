@@ -87,7 +87,7 @@ describe("getActiveState", () => {
   it("can get the state of a field at different points in time", async () => {
     setNow("2023-09-02,7:15");
     await switchCmd({ db: dbName, field: "machine", state: "preparing" });
-    await at(
+    await  at(
       "7:20",
       switchCmd
     )({ db: dbName, field: "machine", state: "warm" });
