@@ -3,7 +3,7 @@ import {
   DatumData,
   DatumMetadata,
   DatumPayload,
-  EitherPayload
+  EitherPayload,
 } from "../documentControl/DatumDocument";
 import { AddCmdArgs } from "../commands/addCmd";
 import { defaultIdComponents } from "../ids/defaultIdComponents";
@@ -18,7 +18,6 @@ export function addIdAndMetadata<T>(
   data: DatumData<T>,
   args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">
 ): EitherPayload<T> {
-  const { noMetadata, idPart, idDelimiter, partition } = args;
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data,
   });
@@ -30,7 +29,7 @@ export function addIdAndMetadata<T>(
   });
 
   let meta: DatumMetadata | undefined = undefined;
-  if (!noMetadata) {
+  if (!args.noMetadata) {
     meta = {
       humanId: newHumanId(),
       random: Math.random(),

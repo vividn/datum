@@ -27,7 +27,11 @@ describe("addCmd undo", () => {
     await db.get("kept");
 
     mockedLog.mockReset();
-    await addCmd({ idPart: "this_one_should_be_deleted", undo: true, show: Show.Standard });
+    await addCmd({
+      idPart: "this_one_should_be_deleted",
+      undo: true,
+      show: Show.Standard,
+    });
 
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
     await db.info().then((info) => {

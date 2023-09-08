@@ -2,7 +2,6 @@ import { DataArgs } from "./dataArgs";
 
 export type PosArgType = "required" | "optional" | false;
 
-
 // Allows positional keys to be treated like dataArgs, so that other keys can be specified before hand (like "proj=linux").
 // This gives much more flexibility
 // NOTE: Modifies the dataArgs in place!!

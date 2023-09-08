@@ -1,6 +1,5 @@
 import { setNow, testDbLifecycle } from "../../test-utils";
 import { DateTime } from "luxon";
-import * as switchCmdModle from "../switchCmd";
 import { setupCmd } from "../setupCmd";
 import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
@@ -23,7 +22,7 @@ describe("startCmd", () => {
   });
 
   it("can start from a different state", async () => {
-    await switchCmd({field: "machine", state: "preparing"});
+    await switchCmd({ field: "machine", state: "preparing" });
     setNow("+1");
     const doc = await startCmd({ field: "machine" });
     expect(doc.data).toMatchObject({
@@ -32,5 +31,5 @@ describe("startCmd", () => {
       lastState: "preparing",
       occurTime: DateTime.now().toUTC().toISO(),
     });
-  })
+  });
 });
