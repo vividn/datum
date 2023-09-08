@@ -1,5 +1,8 @@
 import { DataArgs } from "./dataArgs";
 
+export type PosArgType = "required" | "optional" | false;
+
+
 // Allows positional keys to be treated like dataArgs, so that other keys can be specified before hand (like "proj=linux").
 // This gives much more flexibility
 // NOTE: Modifies the dataArgs in place!!
@@ -7,7 +10,7 @@ import { DataArgs } from "./dataArgs";
 export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   args: T,
   positionalKey: K,
-  argType: "optional" | "required" | false,
+  argType: PosArgType,
   keyNameInData?: string
 ): void {
   keyNameInData ??= String(positionalKey);

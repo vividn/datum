@@ -1,13 +1,9 @@
 import { Argv } from "yargs";
 import { occurArgs, OccurCmdArgs } from "./occurCmd";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { handleDataArgs, parseBaseData } from "../input/dataArgs";
+import { handleDataArgs } from "../input/dataArgs";
 import { handleTimeArgs } from "../input/timeArgs";
-import { getActiveState } from "../state/getActiveState";
 import { connectDb } from "../auth/connectDb";
-import { DateTime } from "luxon";
-import { inferType } from "../utils/inferType";
-import { addCmd } from "./addCmd";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { getLastState } from "../state/findLastState";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
@@ -43,9 +39,9 @@ export type SwitchCmdArgs = OccurCmdArgs & {
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   const db = await connectDb(args);
-  flexiblePositional(args, "duration", "optional", "dur");
+  flexiblePositional(args, "duration", !args.moment && "optional", "dur");
   flexiblePositional(args, "state", "required");
-  flexiblePositional(args, "field", "required");
+  flexiblePositional(args, "field", !args.fieldless && "required");
   const payloadData = handleDataArgs(args);
 
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
@@ -54,7 +50,12 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     payloadData.occurUtcOffset = utcOffset;
   }
 
-  payloadData.lastState = await getLastState({db, field: payloadData.field, lastState: args.lastState, time: occurTime});
+  payloadData.lastState = await getLastState({
+    db,
+    field: payloadData.field,
+    lastState: args.lastState,
+    time: occurTime,
+  });
 
   const payload = addIdAndMetadata(payloadData, args);
 

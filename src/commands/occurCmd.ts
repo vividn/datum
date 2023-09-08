@@ -1,11 +1,11 @@
 import { Argv } from "yargs";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
-import { addArgs, addCmd, AddCmdArgs } from "./addCmd";
+import { addArgs, AddCmdArgs } from "./addCmd";
 import { handleDataArgs } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { startCmd } from "./startCmd";
 import { endCmd } from "./endCmd";
-import { flexiblePositional } from "../input/flexiblePositional";
+import { flexiblePositional, PosArgType } from "../input/flexiblePositional";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { connectDb } from "../auth/connectDb";
 import { primitiveUndo } from "../undo/primitiveUndo";
@@ -41,7 +41,10 @@ export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
-  flexiblePositional(args, "duration", "optional", "dur");
+
+  flexiblePositional(args, "duration", !args.moment && "optional", "dur");
+  flexiblePositional(args, "field", !args.fieldless && "required");
+
   const payloadData = handleDataArgs(args);
 
   if (payloadData.dur === "start") {
@@ -56,7 +59,6 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
     payloadData.occurUtcOffset = utcOffset;
   }
   const payload = addIdAndMetadata(payloadData, args);
-
 
   const { undo, forceUndo } = args;
   if (undo || forceUndo) {

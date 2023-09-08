@@ -6,7 +6,8 @@ import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
 import { MainDatumArgs } from "../input/mainYargs";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
-import { fieldArgs } from "../input/fieldArgs";
+import { FieldArgs, fieldArgs } from "../input/fieldArgs";
+import { flexiblePositional } from "../input/flexiblePositional";
 
 export const command = [
   "add <field> [data..]",
@@ -94,6 +95,7 @@ export function addArgs(yargs: Argv): Argv {
 export const builder: (yargs: Argv) => Argv = addArgs;
 
 export type AddCmdArgs = MainDatumArgs &
+  FieldArgs &
   DataArgs & {
     noMetadata?: boolean;
     idPart?: string | string[];
@@ -107,6 +109,9 @@ export type AddCmdArgs = MainDatumArgs &
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
+
+  const fieldArgType = args.fieldless ? false : "required";
+  flexiblePositional(args, "field", fieldArgType);
   const payloadData = handleDataArgs(args);
 
   const payload = addIdAndMetadata(payloadData, args);

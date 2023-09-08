@@ -1,7 +1,8 @@
 import yargs, { Argv } from "yargs";
 
 export type FieldArgs = {
-  field: string;
+  field?: string;
+  fieldless?: boolean;
 };
 
 export function fieldArgs(otherYargs?: Argv): Argv {
