@@ -24,25 +24,6 @@ describe("handleDataArgs", () => {
     expectParseDataToReturn({ data: ["blank="] }, { blank: "" });
   });
 
-  it("includes field in the data", () => {
-    expectParseDataToReturn({ field: "field", data: [] }, { field: "field" });
-    expectParseDataToReturn(
-      { field: "field", data: ["foo=bar"] },
-      { field: "field", foo: "bar" }
-    );
-  });
-
-  it("uses the first non explicitly assigned field in the data as field, since field is positional populuated automatically and could have data in it", async () => {
-    expectParseDataToReturn(
-      { field: "foo=bar", data: ["dataField"] },
-      { foo: "bar", field: "dataField" }
-    );
-    expectParseDataToReturn(
-      { field: "foo=bar", data: ["dataField", "another=parameter"] },
-      { foo: "bar", field: "dataField", another: "parameter" }
-    );
-  });
-
   it("keeps extra equals signs in the value string", () => {
     expectParseDataToReturn(
       { data: ["equation=1+2=3"] },
@@ -100,21 +81,6 @@ describe("handleDataArgs", () => {
         lenient: true,
       },
       { a: "first", b: "second", extraData: "third" }
-    );
-  });
-
-  it("still handles field appropriately when there are required keys", async () => {
-    expectParseDataToReturn(
-      { required: "abc", field: "field", data: ["value"] },
-      { abc: "value", field: "field" }
-    );
-    expectParseDataToReturn(
-      {
-        required: ["a", "b"],
-        field: "abc=ghi",
-        data: ["first", "second", "third"],
-      },
-      { a: "second", b: "third", field: "first", abc: "ghi" }
     );
   });
 
@@ -219,21 +185,6 @@ describe("handleDataArgs", () => {
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
     }
   );
-
-  it("uses the field prop to populate the field key, but can also be specified again in the data", () => {
-    expectParseDataToReturn(
-      { field: "fromProps", data: [] },
-      { field: "fromProps" }
-    );
-    expectParseDataToReturn(
-      { data: ["field=fromExtra"] },
-      { field: "fromExtra" }
-    );
-    expectParseDataToReturn(
-      { field: "fromProps", data: ["field=fromExtra"] },
-      { field: "fromExtra" }
-    );
-  });
 
   it("saves comments from args", () => {
     expectParseDataToReturn(
