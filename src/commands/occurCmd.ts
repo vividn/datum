@@ -53,8 +53,12 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const payloadData = handleDataArgs(args);
 
   if (payloadData.dur === "start") {
+    delete payloadData.dur;
+    args.baseData = payloadData; // should already be the case, but here for clarity and safety
     return await startCmd(args);
   } else if (payloadData.dur === "end") {
+    delete payloadData.dur;
+    args.baseData = payloadData;
     return await endCmd(args);
   }
 
