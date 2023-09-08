@@ -3,6 +3,7 @@ import { DateTime } from "luxon";
 import * as switchCmdModle from "../switchCmd";
 import { setupCmd } from "../setupCmd";
 import { startCmd } from "../startCmd";
+import { switchCmd } from "../switchCmd";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";
@@ -21,9 +22,15 @@ describe("startCmd", () => {
     });
   });
 
-  it("calls switchCmd with state: true", async () => {
-    const switchCmdSpy = jest.spyOn(switchCmdModle, "switchCmd");
-    await startCmd({ field: "mop" });
-    expect(switchCmdSpy).toBeCalledWith({ field: "mop", state: true });
-  });
+  it("can start from a different state", async () => {
+    await switchCmd({field: "machine", state: "preparing"});
+    setNow("+1");
+    const doc = await startCmd({ field: "machine" });
+    expect(doc.data).toMatchObject({
+      field: "machine",
+      state: true,
+      lastState: "preparing",
+      occurTime: DateTime.now().toUTC().toISO(),
+    });
+  })
 });
