@@ -9,14 +9,12 @@ import isPlainObject from "lodash.isplainobject";
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
-  field?: string;
   comment?: string | string[];
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
-  fieldless?: boolean;
 };
 
 export function dataYargs(otherYargs?: Argv): Argv {
@@ -113,8 +111,6 @@ export function handleDataArgs({
   optional = [],
   remainder,
   stringRemainder,
-  field,
-  fieldless,
   comment,
   lenient = false,
   baseData,
@@ -123,16 +119,6 @@ export function handleDataArgs({
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
   const remainderData = [];
-
-  if (!fieldless && field !== undefined) {
-    // field is not determined directly by the first positional argument
-    // so that users can specify data through key=value format before specifying the field.
-    // In this way field acts like the first required argument
-    requiredKeys.unshift("field");
-  }
-  if (field !== undefined) {
-    data.unshift(field);
-  }
 
   const parsedData = parseBaseData(baseData);
 

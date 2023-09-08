@@ -7,7 +7,7 @@ import { DataArgs } from "./dataArgs";
 export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   args: T,
   positionalKey: K,
-  argType: "optional" | "required",
+  argType: "optional" | "required" | false,
   keyNameInData?: string
 ): void {
   keyNameInData ??= String(positionalKey);
@@ -17,5 +17,7 @@ export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   args.data ??= [];
   args.data.unshift(args[positionalKey] as string | number);
   delete args[positionalKey];
-  args[argType] = [keyNameInData].concat(args[argType] ?? []);
+  if (argType) {
+    args[argType] = [keyNameInData].concat(args[argType] ?? []);
+  }
 }
