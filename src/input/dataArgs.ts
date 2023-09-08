@@ -105,16 +105,21 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
   return parsedData;
 }
 
-export function handleDataArgs({
-  data = [],
-  required = [],
-  optional = [],
-  remainder,
-  stringRemainder,
-  comment,
-  lenient = false,
-  baseData,
-}: DataArgs): DatumData {
+export function handleDataArgs(args: DataArgs): DatumData {
+  args.data ??= [];
+  args.required ??= [];
+  args.optional ??= [];
+  const {
+    data,
+    required,
+    optional,
+    remainder,
+    stringRemainder,
+    comment,
+    lenient,
+    baseData,
+  } = args;
+
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
@@ -122,7 +127,8 @@ export function handleDataArgs({
 
   const parsedData = parseBaseData(baseData);
 
-  posArgsLoop: for (const arg of data) {
+  posArgsLoop: while (data.length > 0) {
+    const arg = data.shift()!;
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
     if (afterEquals !== undefined) {
@@ -218,8 +224,8 @@ export function handleDataArgs({
       (accumulator, current) => createOrAppend(accumulator, current),
       parsedData["comment"]
     );
+    delete args.comment;
   }
 
   return parsedData;
 }
-
