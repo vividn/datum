@@ -11,6 +11,7 @@ import { Argv } from "yargs";
 import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
 import { MainDatumArgs } from "../input/mainYargs";
+import { flexiblePositional } from "../input/flexiblePositional";
 
 export const command = [
   "update <quickId> [data..]",
@@ -45,12 +46,7 @@ export async function updateCmd(
 
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
   // for easier aliasing
-  if (typeof args.quickId === "string") {
-    args.required ??= [];
-    args.required = ["__quickId"].concat(args.required);
-    args.data ??= [];
-    args.data.unshift(args.quickId);
-  }
+  flexiblePositional(args, "quickId", "required", "__quickId");
   const {
     __quickId,
     ...payload

@@ -27,6 +27,70 @@ describe("addCmd", () => {
     });
   });
 
+  it("includes field in the data", async () => {
+    const doc1 = await addCmd({ field: "field", data: [] });
+    expect(doc1.data).toEqual({ field: "field" });
+    const doc2 = await addCmd({ field: "field", data: ["foo=bar"] });
+    expect(doc2.data).toEqual({ field: "field", foo: "bar" });
+  });
+
+  it("uses the first non explicitly assigned field in the data as field, since field is positional populuated automatically and could have data in it", async () => {
+    const doc1 = await addCmd({ field: "foo=bar", data: ["dataField"] });
+    expect(doc1.data).toEqual({ foo: "bar", field: "dataField" });
+    const doc2 = await addCmd({
+      field: "foo=bar",
+      data: ["dataField", "another=parameter"],
+    });
+    expect(doc2.data).toEqual({
+      foo: "bar",
+      field: "dataField",
+      another: "parameter",
+    });
+  });
+
+  it("still handles field appropriately when there are required keys", async () => {
+    const doc1 = await addCmd({
+      required: "abc",
+      field: "field",
+      data: ["value"],
+    });
+    expect(doc1.data).toEqual({ abc: "value", field: "field" });
+
+    const doc2 = await addCmd({
+      required: ["a", "b"],
+      field: "abc=ghi",
+      data: ["first", "second", "third"],
+    });
+    expect(doc2.data).toEqual({
+      a: "second",
+      b: "third",
+      field: "first",
+      abc: "ghi",
+    });
+  });
+
+  it("can skip the field with --fieldless", async () => {
+    const doc = await addCmd({
+      field: "actuallyData",
+      fieldless: true,
+      optional: "dataKey",
+    });
+    expect(doc.data).toEqual({ dataKey: "actuallyData" });
+  });
+
+  it("uses the field prop to populate the field key, but can also be specified again in the data", async () => {
+    expect((await addCmd({ field: "fromProps", data: [] })).data).toEqual({
+      field: "fromProps",
+    });
+
+    expect((await addCmd({ data: ["field=fromExtra"] })).data).toEqual({
+      field: "fromExtra",
+    });
+    expect(
+      (await addCmd({ field: "fromProps", data: ["field=fromExtra"] })).data
+    ).toEqual({ field: "fromExtra" });
+  });
+
   it("throws an error if addCmd is called with no id and no data", async () => {
     await expect(addCmd({})).rejects.toThrow(IdError);
   });

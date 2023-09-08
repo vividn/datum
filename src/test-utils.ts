@@ -126,11 +126,11 @@ export function restoreNow(): DateTime {
 
 export function at<A extends any[], O>(
   timeStr: string,
-  fn: (...args: A) => O
-): (...args: A) => O {
-  return (...args: A): O => {
+  fn: (...args: A) => Promise<O>
+): (...args: A) => Promise<O> {
+  return async (...args: A): Promise<O> => {
     pushNow(timeStr);
-    const returnVal: O = fn(...args);
+    const returnVal = await fn(...args);
     popNow();
     return returnVal;
   };

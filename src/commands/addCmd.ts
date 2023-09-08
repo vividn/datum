@@ -1,23 +1,13 @@
 import { Argv } from "yargs";
-import {
-  DataOnlyPayload,
-  DatumMetadata,
-  DatumPayload,
-  EitherDocument,
-  EitherPayload,
-} from "../documentControl/DatumDocument";
+import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { IdError, isCouchDbError } from "../errors";
-import { defaults } from "../input/defaults";
-import { newHumanId } from "../meta/newHumanId";
-import chalk from "chalk";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
-import { buildIdStructure } from "../ids/buildIdStructure";
-import { assembleId } from "../ids/assembleId";
-import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { DateTime, Duration } from "luxon";
 import { MainDatumArgs } from "../input/mainYargs";
+import { addIdAndMetadata } from "../meta/addIdAndMetadata";
+import { primitiveUndo } from "../undo/primitiveUndo";
+import { FieldArgs, fieldArgs } from "../input/fieldArgs";
+import { flexiblePositional } from "../input/flexiblePositional";
 
 export const command = [
   "add <field> [data..]",
@@ -45,7 +35,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 const conflictChoices = Object.keys(conflictRecord);
 
 export function addArgs(yargs: Argv): Argv {
-  return dataYargs(yargs).options({
+  return dataYargs(fieldArgs(yargs)).options({
     "no-metadata": {
       describe: "do not include meta data in document",
       alias: "M",
@@ -105,112 +95,35 @@ export function addArgs(yargs: Argv): Argv {
 export const builder: (yargs: Argv) => Argv = addArgs;
 
 export type AddCmdArgs = MainDatumArgs &
+  FieldArgs &
   DataArgs & {
     noMetadata?: boolean;
     idPart?: string | string[];
     idDelimiter?: string;
     partition?: string;
     undo?: boolean;
-    "force-undo"?: boolean;
+    forceUndo?: boolean;
     merge?: boolean;
     conflict?: ConflictStrategyNames;
   };
 
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
-  const payloadData = handleDataArgs(args);
-
-  const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
-    data: payloadData,
-  });
-
-  const idStructure = buildIdStructure({
-    idParts: args.idPart ?? defaultIdParts,
-    delimiter: args.idDelimiter ?? defaults.idDelimiter,
-    partition: args.partition ?? defaultPartitionParts,
-  });
-
-  const { noMetadata } = args;
-  let meta: DatumMetadata | undefined = undefined;
-  if (!noMetadata) {
-    meta = {
-      humanId: newHumanId(),
-      random: Math.random(),
-    };
-
-    // these will be overwritten later by addDoc, but useful to have them here
-    // for undo and original id building
-    const now = DateTime.utc().toString();
-    meta.createTime = now;
-    meta.modifyTime = now;
-
-    // don't include idStructure if it is just a raw string (i.e. has no field references in it)
-    // that would be a waste of bits since _id then is exactly the same
-    if (idStructure.match(/(?<!\\)%/)) {
-      meta.idStructure = idStructure;
-    }
-  }
-
-  const payload: EitherPayload =
-    meta !== undefined
-      ? ({ data: payloadData, meta: meta } as DatumPayload)
-      : ({ ...payloadData } as DataOnlyPayload);
-
-  const _id = assembleId({
-    payload,
-    idStructure: idStructure,
-  });
-  if (_id === "") {
-    throw new IdError("Provided or derived _id is blank");
-  }
-  payload._id = _id;
-
   const db = connectDb(args);
 
-  const { undo, "force-undo": force } = args;
-  if (undo || force) {
-    let doc;
-    try {
-      doc = await db.get(_id);
-    } catch (error) {
-      // if the id involves a time, then there could be some slight difference in the id
-      if (
-        isCouchDbError(error) &&
-        error.reason === "missing" &&
-        idStructure.match(/%\??(create|modify|occur)Time%/)
-      ) {
-        // just get the next lowest id
-        doc = (
-          await db.allDocs({
-            startkey: _id,
-            descending: true,
-            limit: 1,
-            include_docs: true,
-          })
-        ).rows[0]?.doc;
-        if (doc === undefined) {
-          throw error;
-        }
-      } else {
-        throw error;
-      }
-    }
+  const fieldArgType = args.fieldless ? false : "required";
+  flexiblePositional(args, "field", fieldArgType);
+  const payloadData = handleDataArgs(args);
 
-    const fifteenMinutesAgo = DateTime.now().minus(
-      Duration.fromObject({ minutes: 15 })
-    );
-    if (
-      doc.meta?.createTime &&
-      DateTime.fromISO(doc.meta.createTime) < fifteenMinutesAgo
-    ) {
-      if (!force) {
-        // deletion prevention
-        throw Error("Doc created more than fifteen minutes ago");
-      }
-      console.log("Doc created more than fifteen minutes ago");
-    }
-    await db.remove(doc._id, doc._rev);
-    console.log(chalk.grey("DELETE: ") + chalk.red(doc._id));
-    return doc;
+  const payload = addIdAndMetadata(payloadData, args);
+
+  const { undo, forceUndo } = args;
+  if (undo || forceUndo) {
+    return await primitiveUndo({
+      db,
+      payload,
+      force: forceUndo,
+      outputArgs: args,
+    });
   }
 
   const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);

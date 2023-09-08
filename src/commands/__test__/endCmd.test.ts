@@ -1,8 +1,8 @@
 import { setNow, testDbLifecycle } from "../../test-utils";
 import { endCmd } from "../endCmd";
 import { DateTime } from "luxon";
-import * as switchCmdModle from "../switchCmd";
 import { setupCmd } from "../setupCmd";
+import { switchCmd } from "../switchCmd";
 
 describe("endCmd", () => {
   const dbName = "end_cmd_test";
@@ -21,9 +21,15 @@ describe("endCmd", () => {
     });
   });
 
-  it("calls switchCmd with state: false", async () => {
-    const switchCmdSpy = jest.spyOn(switchCmdModle, "switchCmd");
-    await endCmd({ field: "mop" });
-    expect(switchCmdSpy).toBeCalledWith({ field: "mop", state: false });
+  it("can end from a different state", async () => {
+    await switchCmd({ field: "activity", state: "cello" });
+    setNow("+10");
+    const doc = await endCmd({ field: "activity" });
+    expect(doc.data).toMatchObject({
+      field: "activity",
+      state: false,
+      lastState: "cello",
+      occurTime: DateTime.now().toUTC().toISO(),
+    });
   });
 });

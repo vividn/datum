@@ -1,13 +1,14 @@
 import { Argv } from "yargs";
 import { occurArgs, OccurCmdArgs } from "./occurCmd";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { parseBaseData } from "../input/dataArgs";
+import { handleDataArgs } from "../input/dataArgs";
 import { handleTimeArgs } from "../input/timeArgs";
-import { getActiveState } from "../state/getActiveState";
 import { connectDb } from "../auth/connectDb";
-import { DateTime } from "luxon";
-import { inferType } from "../utils/inferType";
-import { addCmd } from "./addCmd";
+import { flexiblePositional } from "../input/flexiblePositional";
+import { getLastState } from "../state/findLastState";
+import { addIdAndMetadata } from "../meta/addIdAndMetadata";
+import { primitiveUndo } from "../undo/primitiveUndo";
+import { addDoc } from "../documentControl/addDoc";
 
 export const command = [
   "switch <field> <state> [duration] [data..]",
@@ -37,33 +38,43 @@ export type SwitchCmdArgs = OccurCmdArgs & {
 };
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
-  const parsedData = parseBaseData(args.baseData);
-  if (args.duration !== undefined) {
-    if (args.moment) {
-      args.data ??= [];
-      args.data.unshift(args.duration);
-    } else {
-      parsedData.dur = inferType(args.duration, "dur");
-    }
-  }
+  const db = await connectDb(args);
+  flexiblePositional(args, "duration", !args.moment && "optional", "dur");
+  flexiblePositional(args, "state", "required");
+  flexiblePositional(args, "field", !args.fieldless && "required");
+  const payloadData = handleDataArgs(args);
 
   const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
   if (occurTime !== undefined) {
-    parsedData.occurTime = occurTime;
-    parsedData.occurUtcOffset = utcOffset;
+    payloadData.occurTime = occurTime;
+    payloadData.occurUtcOffset = utcOffset;
   }
-  parsedData.state =
-    typeof args.state === "string" ? inferType(args.state) : args.state;
-  if (args.lastState !== undefined) {
-    parsedData.lastState =
-      args.lastState === "string" ? inferType(args.lastState) : args.lastState;
-  } else if (occurTime !== undefined) {
-    const db = connectDb(args);
-    parsedData.lastState = await getActiveState(
+
+  payloadData.lastState = await getLastState({
+    db,
+    field: payloadData.field,
+    lastState: args.lastState,
+    time: occurTime,
+  });
+
+  const payload = addIdAndMetadata(payloadData, args);
+
+  const { undo, forceUndo } = args;
+  if (undo || forceUndo) {
+    return await primitiveUndo({
       db,
-      args.field,
-      DateTime.fromISO(occurTime)
-    );
+      payload,
+      force: forceUndo,
+      outputArgs: args,
+    });
   }
-  return await addCmd({ ...args, baseData: parsedData });
+
+  const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);
+  const doc = await addDoc({
+    db,
+    payload,
+    conflictStrategy,
+    outputArgs: args,
+  });
+  return doc;
 }

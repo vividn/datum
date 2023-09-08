@@ -9,24 +9,17 @@ import isPlainObject from "lodash.isplainobject";
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
-  field?: string;
   comment?: string | string[];
   required?: string | string[];
   optional?: string | string[];
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
-  fieldless?: boolean;
 };
 
 export function dataYargs(otherYargs?: Argv): Argv {
   const yarg = otherYargs ?? yargs;
   return yarg
-    .positional("field", {
-      describe:
-        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
-      type: "string",
-    })
     .positional("data", {
       describe:
         "The data to put in the document. " +
@@ -93,11 +86,6 @@ export function dataYargs(otherYargs?: Argv): Argv {
         type: "boolean",
         alias: "l",
       },
-      fieldless: {
-        describe: "do not include field as the first required key",
-        type: "boolean",
-        alias: "F",
-      },
     });
 }
 
@@ -117,36 +105,30 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
   return parsedData;
 }
 
-export function handleDataArgs({
-  data = [],
-  required = [],
-  optional = [],
-  remainder,
-  stringRemainder,
-  field,
-  fieldless,
-  comment,
-  lenient = false,
-  baseData,
-}: DataArgs): DatumData {
+export function handleDataArgs(args: DataArgs): DatumData {
+  args.data ??= [];
+  args.required ??= [];
+  args.optional ??= [];
+  const {
+    data,
+    required,
+    optional,
+    remainder,
+    stringRemainder,
+    comment,
+    lenient,
+    baseData,
+  } = args;
+
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
   const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
   const remainderData = [];
 
-  if (!fieldless && field !== undefined) {
-    // field is not determined directly by the first positional argument
-    // so that users can specify data through key=value format before specifying the field.
-    // In this way field acts like the first required argument
-    requiredKeys.unshift("field");
-  }
-  if (field !== undefined) {
-    data.unshift(field);
-  }
-
   const parsedData = parseBaseData(baseData);
 
-  posArgsLoop: for (const arg of data) {
+  posArgsLoop: while (data.length > 0) {
+    const arg = data.shift()!;
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
     if (afterEquals !== undefined) {
@@ -242,6 +224,7 @@ export function handleDataArgs({
       (accumulator, current) => createOrAppend(accumulator, current),
       parsedData["comment"]
     );
+    delete args.comment;
   }
 
   return parsedData;
