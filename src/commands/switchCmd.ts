@@ -54,7 +54,7 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     payloadData.occurUtcOffset = utcOffset;
   }
 
-  payloadData.lastState = getLastState({db, field: payloadData.field, lastState: args.lastState, time: occurTime});
+  payloadData.lastState = await getLastState({db, field: payloadData.field, lastState: args.lastState, time: occurTime});
 
   const payload = addIdAndMetadata(payloadData, args);
 

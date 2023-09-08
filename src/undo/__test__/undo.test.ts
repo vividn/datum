@@ -71,7 +71,7 @@ describe("addCmd undo", () => {
     Settings.resetCaches();
   });
 
-  it("allows undo if force-undo", async () => {
+  it("allows undo if forceUndo", async () => {
     const docName = "oldDoc2";
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
@@ -82,7 +82,7 @@ describe("addCmd undo", () => {
       data: {},
       meta: { createTime: oldTime.toString() },
     });
-    await addCmd({ idPart: docName, "force-undo": true });
+    await addCmd({ idPart: docName, forceUndo: true });
     await expect(db.get(docName)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
@@ -91,7 +91,7 @@ describe("addCmd undo", () => {
     Settings.resetCaches();
   });
 
-  it("allows undo if both force-undo and undo", async () => {
+  it("allows undo if both forceUndo and undo", async () => {
     const docName = "oldDoc3";
     const oldTime = mockNow.minus(
       Duration.fromObject({ minutes: 15, seconds: 30 })
@@ -102,7 +102,7 @@ describe("addCmd undo", () => {
       data: {},
       meta: { createTime: oldTime.toString() },
     });
-    await addCmd({ idPart: docName, "force-undo": true, undo: true });
+    await addCmd({ idPart: docName, forceUndo: true, undo: true });
     await expect(db.get(docName)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
