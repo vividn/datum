@@ -5,7 +5,7 @@ import { handleDataArgs } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { startCmd } from "./startCmd";
 import { endCmd } from "./endCmd";
-import { flexiblePositional, PosArgType } from "../input/flexiblePositional";
+import { flexiblePositional } from "../input/flexiblePositional";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { connectDb } from "../auth/connectDb";
 import { primitiveUndo } from "../undo/primitiveUndo";
@@ -42,7 +42,12 @@ export type OccurCmdArgs = BaseOccurArgs & DurationArgs;
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
 
-  flexiblePositional(args, "duration", !args.moment && "optional", "dur");
+  flexiblePositional(
+    args,
+    "duration",
+    !args.moment && !args.noTimestamp && "optional",
+    "dur"
+  );
   flexiblePositional(args, "field", !args.fieldless && "required");
 
   const payloadData = handleDataArgs(args);
