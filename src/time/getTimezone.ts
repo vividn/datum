@@ -6,16 +6,13 @@ import {
 } from "luxon";
 import { BadTimezoneError } from "../errors";
 
-export function setTimezone(timezone?: string): Zone {
+export function getTimezone(timezone?: string | number): Zone {
   let zone: Zone;
   if (timezone) {
-    const tzNumber = Number(timezone);
-    if (isNaN(tzNumber)) {
-      // timezone is a named zone
-      zone = IANAZone.create(timezone);
+    if (typeof timezone === "number" || !isNaN(Number(timezone))) {
+      zone = FixedOffsetZone.instance(Number(timezone) * 60);
     } else {
-      // timezone is a utc offset "+6"
-      zone = FixedOffsetZone.instance(tzNumber * 60);
+      zone = IANAZone.create(timezone);
     }
   } else {
     zone = DateTimeSettings.defaultZone as Zone;
