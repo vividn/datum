@@ -69,7 +69,7 @@ function headerLine(action: ACTIONS, doc: EitherDocument): string {
 
 function footerLine(action: ACTIONS, doc: EitherDocument): string {
   const { data, meta } = pullOutData(doc);
-  const hidText = meta.humanId ? `(${meta.humanId.slice(0, 5)}) ` : "";
+  const hidText = meta?.humanId ? `(${meta.humanId.slice(0, 5)}) ` : "";
   const occurTime = DateTime.fromISO(data.occurTime ?? "");
   const occurTimeText = occurTime.isValid
     ? occurTime
@@ -131,7 +131,7 @@ export function showRename(
 
 export function showSingle(
   action: ACTIONS,
-  doc: EitherPayload,
+  doc: EitherDocument,
   outputArgs: OutputArgs
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
@@ -150,21 +150,18 @@ export function showSingle(
     showCustomFormat(doc, formatString, color);
   }
 
-  console.log(actionId(action, doc._id ?? "", doc.meta?.humanId));
+  console.log(headerLine(action, doc));
   if (show === Show.Minimal) {
+    console.log(footerLine(action, doc));
     return;
   }
 
   if (formatString) {
     showCustomFormat(doc, formatString, color);
-    if (show === Show.Default) {
-      return;
-    }
   }
 
   if (show === Show.All) {
     displayData(doc, color);
-    return;
   }
 
   if (
@@ -172,14 +169,14 @@ export function showSingle(
     (show === Show.Default && formatString === undefined)
   ) {
     const docClone = jClone(doc);
-    delete docClone._id;
-    delete docClone._rev;
     if (isDatumPayload(docClone)) {
       displayData(docClone.data, color);
     } else {
       displayData(docClone, color);
     }
   }
+
+  console.log(footerLine(action, doc));
 }
 export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.Create, doc, outputArgs);
@@ -207,13 +204,21 @@ export function showFailed(
   payload: EitherPayload,
   outputArgs: OutputArgs
 ): void {
-  return showSingle(ACTIONS.Failed, payload, outputArgs);
+  return showSingle(
+    ACTIONS.Failed,
+    { _id: "", _rev: "", ...payload } as EitherDocument,
+    outputArgs
+  );
 }
 export function showDelete(
   payload: EitherPayload,
   outputArgs: OutputArgs
 ): void {
-  return showSingle(ACTIONS.Delete, payload, outputArgs);
+  return showSingle(
+    ACTIONS.Delete,
+    { _id: "", _rev: "", ...payload } as EitherDocument,
+    outputArgs
+  );
 }
 
 export function showUpdate(
