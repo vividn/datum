@@ -67,7 +67,7 @@ function formatOccurTime(
       ? ""
       : dateTime.toISODate();
   const timeText =
-    dateTime.toFormat("HH:mm:ss") + chalk.dim(dateTime.toFormat("ZZ"));
+    dateTime.toFormat("HH:mm:ss") + chalk.dim(dateTime.toFormat("Z"));
   return [dateText, timeText].filter(Boolean).join(" ");
 }
 
@@ -81,7 +81,7 @@ function formatStateInfo(
         ? chalk.red(`${lastState}→`)
         : chalk.dim(`${lastState}→`)
       : "";
-  return state !== undefined ? ` ${lastState}${state}` : undefined;
+  return state !== undefined ? ` ${lastStateText}${state}` : undefined;
 }
 
 function formatDuration(dur?: string | undefined): string | undefined {
@@ -108,10 +108,8 @@ function formattedNonRedundantData(data: DatumData): string | undefined {
   formatted[formatted.length - 1] = " ";
   return formatted;
 }
-function extractFormatted(
-  action: ACTIONS,
-  doc: EitherPayload
-): {
+
+type ExtractedAndFormatted = {
   actionText: string;
   idText?: string;
   hidText?: string;
@@ -121,7 +119,11 @@ function extractFormatted(
   durText?: string;
   nonRedundantData?: string;
   entireDocument: string;
-} {
+}
+function extractFormatted(
+  action: ACTIONS,
+  doc: EitherPayload
+): ExtractedAndFormatted {
   const color = ACTION_CHALK[action];
   const { data, meta } = pullOutData(doc);
 
@@ -145,30 +147,15 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
   return actionText + color(id) + quickId;
 }
 
-function headerLine(action: ACTIONS, doc: EitherDocument): string {
-  const { meta } = pullOutData(doc);
-  const hidText = meta?.humanId ? `(${meta.humanId.slice(0, 5)}) ` : "";
-  const id = doc._id;
-  const color = ACTION_CHALK[action];
-  const actionText = color.inverse(`${action}`);
-  const idText = ` ${chalk.dim(id)}`;
-  return actionText + idText + hidText;
+function showHeaderLine(formatted: ExtractedAndFormatted): void {
+  console.log([formatted.actionText, formatted.idText, formatted.hidText].filter(Boolean).join(" "));
 }
 
-function footerLine(action: ACTIONS, doc: EitherDocument): string {
-  const { data } = pullOutData(doc);
-  const id = doc._id;
-  const color = ACTION_CHALK[action];
-  const occurTime = DateTime.fromISO(data.occurTime ?? "");
-  const occurTimeText = occurTime.isValid
-    ? occurTime
-        .setZone(getTimezone(data.occurUtcOffset))
-        .toFormat("yyyy-MM-dd (Z) HH:mm:ss") + " "
-    : "";
-  const fieldOrPartitionText = color(
-    data.field ? data.field : id.split(":")[0]
-  );
-  return occurTimeText + fieldOrPartitionText + stateText + durationText;
+function showFooterLine(formatted: ExtractedAndFormatted): void {
+  const footerLine = [formatted.occurTimeText, formatted.fieldText, formatted.stateText, formatted.durText].filter(Boolean).join(" ");
+  if (footerLine !== "") {
+    console.log(footerLine);
+  }
 }
 
 export function displayData(
@@ -192,11 +179,10 @@ export function displayData(
 export function showCustomFormat(
   payload: EitherPayload,
   formatString: string,
-  color: (val: any) => string
 ): void {
   const { data, meta } = pullOutData(payload);
   const outputString = interpolateFields({ data, meta, format: formatString });
-  console.log(color(outputString));
+  console.log(outputString);
 }
 
 export function showRename(
@@ -219,6 +205,8 @@ export function showSingle(
   outputArgs: OutputArgs
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
+  const extracted = extractFormatted(action, doc);
+
   const color = ACTION_CHALK[action];
 
   if (show === Show.None) {
@@ -231,36 +219,32 @@ export function showSingle(
         "MissingArgument: formatted show requested without a format string"
       );
     }
-    showCustomFormat(doc, formatString, color);
+    showCustomFormat(doc, formatString);
   }
 
-  console.log(headerLine(action, doc));
+  showHeaderLine(extracted);
   if (show === Show.Minimal) {
-    console.log(footerLine(action, doc));
     return;
   }
 
   if (formatString) {
-    showCustomFormat(doc, formatString, color);
+    showCustomFormat(doc, formatString);
   }
 
   if (show === Show.All) {
-    displayData(doc, color);
+    console.log(extracted.entireDocument);
   }
 
   if (
     show === Show.Standard ||
     (show === Show.Default && formatString === undefined)
   ) {
-    const docClone = jClone(doc);
-    if (isDatumPayload(docClone)) {
-      displayData(docClone.data, color);
-    } else {
-      displayData(docClone, color);
+    if (extracted.nonRedundantData !== undefined) {
+      console.log(extracted.nonRedundantData);
     }
   }
 
-  console.log(footerLine(action, doc));
+  showFooterLine(extracted);
 }
 export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.Create, doc, outputArgs);
