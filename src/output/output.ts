@@ -1,6 +1,5 @@
 import {
   DatumData,
-  DatumMetadata,
   EitherDocument,
   EitherPayload,
   isDatumPayload,
@@ -13,6 +12,7 @@ import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { DateTime, Duration } from "luxon";
 import { getTimezone } from "../time/getTimezone";
+import { DatumState } from "../views/datumViews/activeStateView";
 
 chalk.level = 3;
 
@@ -26,7 +26,7 @@ enum ACTIONS {
   NoDiff = "NODIFF",
   Failed = "FAILED",
   Start = "START↦",
-  End = "⇥ END",
+  End = "⟞  END",
   Switch = "SWITCH",
 }
 const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
@@ -42,6 +42,101 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.End]: chalk.hex("#a5ffa5"),
   [ACTIONS.Switch]: chalk.hex("#a5ffa5"),
 };
+
+function formatOccurTime(
+  occurTime?: string,
+  occurUtcOffset?: string | number
+): string | undefined {
+  if (!occurTime) {
+    return undefined;
+  }
+  // if occurTime is just a date, then return it
+  if (!occurTime.includes("T")) {
+    return occurTime;
+  }
+
+  const dateTime = DateTime.fromISO(occurTime, {
+    zone: getTimezone(occurUtcOffset),
+  });
+  if (!dateTime.isValid) {
+    return undefined;
+  }
+
+  const dateText =
+    dateTime.toISODate() === DateTime.now().toISODate()
+      ? ""
+      : dateTime.toISODate();
+  const timeText =
+    dateTime.toFormat("HH:mm:ss") + chalk.dim(dateTime.toFormat("ZZ"));
+  return [dateText, timeText].filter(Boolean).join(" ");
+}
+
+function formatStateInfo(
+  state?: DatumState,
+  lastState?: DatumState
+): string | undefined {
+  const lastStateText =
+    lastState !== undefined
+      ? lastState === state
+        ? chalk.red(`${lastState}→`)
+        : chalk.dim(`${lastState}→`)
+      : "";
+  return state !== undefined ? ` ${lastState}${state}` : undefined;
+}
+
+function formatDuration(dur?: string | undefined): string | undefined {
+  const duration = Duration.fromISO(dur || "");
+  return duration.isValid ? duration.toFormat(" ⟝ m'm'⟞ ") : undefined;
+}
+function formattedNonRedundantData(data: DatumData): string | undefined {
+  const {
+    state: _state,
+    lastState: _lastState,
+    occurTime: _occurTime,
+    occurUtcOffset: _occurUtcOffset,
+    dur: _dur,
+    duration: _duration,
+    field: _field,
+    ...filteredData
+  } = data;
+  if (Object.keys(filteredData).length === 0) {
+    return undefined;
+  }
+  const formatted = stringify(filteredData);
+  // replace starting and ending curly braces with spaces
+  formatted[0] = " ";
+  formatted[formatted.length - 1] = " ";
+  return formatted;
+}
+function extractFormatted(
+  action: ACTIONS,
+  doc: EitherPayload
+): {
+  actionText: string;
+  idText?: string;
+  hidText?: string;
+  occurTimeText?: string;
+  fieldText?: string;
+  stateText?: string;
+  durText?: string;
+  nonRedundantData?: string;
+  entireDocument: string;
+} {
+  const color = ACTION_CHALK[action];
+  const { data, meta } = pullOutData(doc);
+
+  return {
+    actionText: color.inverse(` ${action} `),
+    idText: doc._id ?? chalk.dim(doc._id),
+    hidText: meta?.humanId ? `(${meta.humanId.slice(0, 5)})` : undefined,
+    occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
+    fieldText: data?.field ?? color(data.field),
+    stateText: formatStateInfo(data.state, data.lastState),
+    durText: formatDuration(data.dur ?? data.duration),
+    nonRedundantData: formattedNonRedundantData(data),
+    entireDocument: stringify(doc),
+  };
+}
 
 function actionId(action: ACTIONS, id: string, humanId?: string): string {
   const color = ACTION_CHALK[action];
@@ -61,7 +156,7 @@ function headerLine(action: ACTIONS, doc: EitherDocument): string {
 }
 
 function footerLine(action: ACTIONS, doc: EitherDocument): string {
-  const { data, meta } = pullOutData(doc);
+  const { data } = pullOutData(doc);
   const id = doc._id;
   const color = ACTION_CHALK[action];
   const occurTime = DateTime.fromISO(data.occurTime ?? "");
@@ -73,16 +168,6 @@ function footerLine(action: ACTIONS, doc: EitherDocument): string {
   const fieldOrPartitionText = color(
     data.field ? data.field : id.split(":")[0]
   );
-  const lastState =
-    data.lastState !== undefined
-      ? data.lastState === data.state
-        ? chalk.red(`${data.lastState}→`)
-        : chalk.dim(`${data.lastState}→`)
-      : "";
-  const stateText =
-    data.state !== undefined ? ` ${lastState}${data.state}` : "";
-  const duration = Duration.fromISO(data.dur ?? data.duration);
-  const durationText = duration.isValid ? duration.toFormat(" ⟝ m'm'⟞ ") : "";
   return occurTimeText + fieldOrPartitionText + stateText + durationText;
 }
 
