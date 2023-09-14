@@ -51,33 +51,35 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 }
 
 function headerLine(action: ACTIONS, doc: EitherDocument): string {
-  const { data } = pullOutData(doc);
+  const { meta } = pullOutData(doc);
+  const hidText = meta?.humanId ? `(${meta.humanId.slice(0, 5)}) ` : "";
   const id = doc._id;
   const color = ACTION_CHALK[action];
-  const actionText = color.inverse(` ${action} `);
-  const fieldOrPartitionText = color(
-    data.field ? data.field : id.split(":")[0]
-  );
-  const stateText = ![undefined, true, false].includes(data.state)
-    ? ` ${data.state}`
-    : "";
-  const duration = Duration.fromISO(data.dur ?? data.duration);
-  const durationText = duration.isValid ? duration.toFormat(" ⟝m'm'⟞") : "";
-  const idText = id === fieldOrPartitionText ? "" : ` ${chalk.dim(id)}`;
-  return actionText + fieldOrPartitionText + stateText + durationText + idText;
+  const actionText = color.inverse(`${action}`);
+  const idText = `${chalk.dim(id)}`;
+  return actionText + idText + hidText;
 }
 
 function footerLine(action: ACTIONS, doc: EitherDocument): string {
   const { data, meta } = pullOutData(doc);
-  const hidText = meta?.humanId ? `(${meta.humanId.slice(0, 5)}) ` : "";
+  const id = doc._id;
+  const color = ACTION_CHALK[action];
   const occurTime = DateTime.fromISO(data.occurTime ?? "");
   const occurTimeText = occurTime.isValid
     ? occurTime
         .setZone(getTimezone(data.occurUtcOffset))
-        .toFormat("yyyy-MM-dd HH:mm:ss Z")
+        .toFormat("yyyy-MM-dd (Z) HH:mm:ss") + " "
     : "";
-
-  return hidText + occurTimeText;
+  const fieldOrPartitionText = color(
+    data.field ? data.field : id.split(":")[0]
+  );
+  const lastState =
+    data.lastState !== undefined ? chalk.dim(`${data.lastState}→`) : "";
+  const stateText =
+    data.state !== undefined ? ` ${lastState}${data.state}` : "";
+  const duration = Duration.fromISO(data.dur ?? data.duration);
+  const durationText = duration.isValid ? duration.toFormat(" ⟝ m'm'⟞ ") : "";
+  return occurTimeText + fieldOrPartitionText + stateText + durationText;
 }
 
 export function displayData(
