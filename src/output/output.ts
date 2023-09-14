@@ -5,14 +5,11 @@ import {
   EitherPayload,
   isDatumPayload,
 } from "../documentControl/DatumDocument";
-import chalk, { Chalk } from "chalk";
+import chalk from "chalk";
 import stringify from "string.ify";
 import { jClone } from "../utils/jClone";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
-import { pullOutData } from "../utils/pullOutData";
-import { DateTime, Duration } from "luxon";
-import { getTimezone } from "../time/getTimezone";
 
 chalk.level = 3;
 
@@ -25,59 +22,23 @@ enum ACTIONS {
   Rename = "RENAME",
   NoDiff = "NODIFF",
   Failed = "FAILED",
-  Start = "START↦",
-  End = "⇥ END",
-  Switch = "SWITCH",
 }
-const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
-  [ACTIONS.Create]: chalk.green,
-  [ACTIONS.Delete]: chalk.red,
-  [ACTIONS.Exists]: chalk.yellow,
-  [ACTIONS.Update]: chalk.cyan,
-  [ACTIONS.OWrite]: chalk.blue,
-  [ACTIONS.Rename]: chalk.cyan,
-  [ACTIONS.NoDiff]: chalk.hex("#ffa500"),
-  [ACTIONS.Failed]: chalk.red,
-  [ACTIONS.Start]: chalk.hex("#a5ffa5"),
-  [ACTIONS.End]: chalk.hex("#a5ffa5"),
-  [ACTIONS.Switch]: chalk.hex("#a5ffa5"),
+const ACTION_CHALK: { [key in ACTIONS]: (val: any) => string } = {
+  CREATE: chalk.green,
+  DELETE: chalk.red,
+  EXISTS: chalk.yellow,
+  UPDATE: chalk.cyan,
+  OWRITE: chalk.blue,
+  RENAME: chalk.cyan,
+  NODIFF: chalk.hex("#ffa500"),
+  FAILED: chalk.red,
 };
 
 function actionId(action: ACTIONS, id: string, humanId?: string): string {
   const color = ACTION_CHALK[action];
-  const actionText = color.inverse(` ${action} `);
+  const actionText = chalk.grey(action + ": ");
   const quickId = humanId ? ` (${humanId.slice(0, 5)})` : "";
   return actionText + color(id) + quickId;
-}
-
-function headerLine(action: ACTIONS, doc: EitherDocument): string {
-  const { data } = pullOutData(doc);
-  const id = doc._id;
-  const color = ACTION_CHALK[action];
-  const actionText = color.inverse(` ${action} `);
-  const fieldOrPartitionText = color(
-    data.field ? data.field : id.split(":")[0]
-  );
-  const stateText = ![undefined, true, false].includes(data.state)
-    ? ` ${data.state}`
-    : "";
-  const duration = Duration.fromISO(data.dur ?? data.duration);
-  const durationText = duration.isValid ? duration.toFormat(" ⟝m'm'⟞") : "";
-  const idText = id === fieldOrPartitionText ? "" : ` ${chalk.dim(id)}`;
-  return actionText + fieldOrPartitionText + stateText + durationText + idText;
-}
-
-function footerLine(action: ACTIONS, doc: EitherDocument): string {
-  const { data, meta } = pullOutData(doc);
-  const hidText = meta?.humanId ? `(${meta.humanId.slice(0, 5)}) ` : "";
-  const occurTime = DateTime.fromISO(data.occurTime ?? "");
-  const occurTimeText = occurTime.isValid
-    ? occurTime
-        .setZone(getTimezone(data.occurUtcOffset))
-        .toFormat("yyyy-MM-dd HH:mm:ss Z")
-    : "";
-
-  return hidText + occurTimeText;
 }
 
 export function displayData(
@@ -131,7 +92,7 @@ export function showRename(
 
 export function showSingle(
   action: ACTIONS,
-  doc: EitherDocument,
+  doc: EitherPayload,
   outputArgs: OutputArgs
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
@@ -150,18 +111,21 @@ export function showSingle(
     showCustomFormat(doc, formatString, color);
   }
 
-  console.log(headerLine(action, doc));
+  console.log(actionId(action, doc._id ?? "", doc.meta?.humanId));
   if (show === Show.Minimal) {
-    console.log(footerLine(action, doc));
     return;
   }
 
   if (formatString) {
     showCustomFormat(doc, formatString, color);
+    if (show === Show.Default) {
+      return;
+    }
   }
 
   if (show === Show.All) {
     displayData(doc, color);
+    return;
   }
 
   if (
@@ -169,31 +133,18 @@ export function showSingle(
     (show === Show.Default && formatString === undefined)
   ) {
     const docClone = jClone(doc);
+    delete docClone._id;
+    delete docClone._rev;
     if (isDatumPayload(docClone)) {
       displayData(docClone.data, color);
     } else {
       displayData(docClone, color);
     }
   }
-
-  console.log(footerLine(action, doc));
 }
 export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.Create, doc, outputArgs);
 }
-
-export function showStart(doc: EitherDocument, outputArgs: OutputArgs): void {
-  return showSingle(ACTIONS.Start, doc, outputArgs);
-}
-
-export function showEnd(doc: EitherDocument, outputArgs: OutputArgs): void {
-  return showSingle(ACTIONS.End, doc, outputArgs);
-}
-
-export function showSwitch(doc: EitherDocument, outputArgs: OutputArgs): void {
-  return showSingle(ACTIONS.Switch, doc, outputArgs);
-}
-
 export function showExists(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.Exists, doc, outputArgs);
 }
@@ -204,21 +155,13 @@ export function showFailed(
   payload: EitherPayload,
   outputArgs: OutputArgs
 ): void {
-  return showSingle(
-    ACTIONS.Failed,
-    { _id: "", _rev: "", ...payload } as EitherDocument,
-    outputArgs
-  );
+  return showSingle(ACTIONS.Failed, payload, outputArgs);
 }
 export function showDelete(
   payload: EitherPayload,
   outputArgs: OutputArgs
 ): void {
-  return showSingle(
-    ACTIONS.Delete,
-    { _id: "", _rev: "", ...payload } as EitherDocument,
-    outputArgs
-  );
+  return showSingle(ACTIONS.Delete, payload, outputArgs);
 }
 
 export function showUpdate(

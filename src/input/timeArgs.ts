@@ -1,7 +1,7 @@
 import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
 import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
-import { getTimezone } from "../time/getTimezone";
+import { setTimezone } from "../time/setTimezone";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDateStr } from "../time/parseDateStr";
 import { DataArgs, parseBaseData } from "./dataArgs";
@@ -97,7 +97,7 @@ export function handleTimeArgs({
   noTimestamp,
   referenceTime,
 }: ReferencedTimeArgs): TimeStrWithOffset {
-  const tz = getTimezone(timezone);
+  const tz = setTimezone(timezone);
   referenceTime = referenceTime ?? now(tz);
 
   if (noTimestamp) {
