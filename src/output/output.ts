@@ -56,7 +56,7 @@ function headerLine(action: ACTIONS, doc: EitherDocument): string {
   const id = doc._id;
   const color = ACTION_CHALK[action];
   const actionText = color.inverse(`${action}`);
-  const idText = `${chalk.dim(id)}`;
+  const idText = ` ${chalk.dim(id)}`;
   return actionText + idText + hidText;
 }
 
@@ -74,7 +74,11 @@ function footerLine(action: ACTIONS, doc: EitherDocument): string {
     data.field ? data.field : id.split(":")[0]
   );
   const lastState =
-    data.lastState !== undefined ? chalk.dim(`${data.lastState}→`) : "";
+    data.lastState !== undefined
+      ? data.lastState === data.state
+        ? chalk.red(`${data.lastState}→`)
+        : chalk.dim(`${data.lastState}→`)
+      : "";
   const stateText =
     data.state !== undefined ? ` ${lastState}${data.state}` : "";
   const duration = Duration.fromISO(data.dur ?? data.duration);
@@ -105,14 +109,7 @@ export function showCustomFormat(
   formatString: string,
   color: (val: any) => string
 ): void {
-  let data: DatumData;
-  let meta: DatumMetadata | undefined;
-  if (isDatumPayload(payload)) {
-    data = payload.data as DatumData;
-    meta = payload.meta;
-  } else {
-    data = payload as DatumData;
-  }
+  const { data, meta } = pullOutData(payload);
   const outputString = interpolateFields({ data, meta, format: formatString });
   console.log(color(outputString));
 }

@@ -1,7 +1,15 @@
-import { DatumData, DatumMetadata, EitherDocument, isDatumDocument } from "../documentControl/DatumDocument";
+import {
+  DatumData,
+  DatumMetadata,
+  EitherPayload,
+  isDatumPayload,
+} from "../documentControl/DatumDocument";
 
-export function pullOutData(doc: EitherDocument): { data: DatumData, meta?: DatumMetadata} {
-  if (isDatumDocument(doc)) {
+export function pullOutData(doc: EitherPayload): {
+  data: DatumData;
+  meta?: DatumMetadata;
+} {
+  if (isDatumPayload(doc)) {
     return { data: doc.data, meta: doc.meta };
   } else {
     return { data: doc };
