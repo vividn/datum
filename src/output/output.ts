@@ -86,6 +86,8 @@ function formatDuration(dur?: string | undefined): string | undefined {
 }
 function formattedNonRedundantData(data: DatumData): string | undefined {
   const {
+    _id,
+    _rev,
     state: _state,
     lastState: _lastState,
     occurTime: _occurTime,
@@ -98,10 +100,9 @@ function formattedNonRedundantData(data: DatumData): string | undefined {
   if (Object.keys(filteredData).length === 0) {
     return undefined;
   }
-  const formatted = stringify(filteredData);
+  const stringified = stringify(filteredData);
   // replace starting and ending curly braces with spaces
-  formatted[0] = " ";
-  formatted[formatted.length - 1] = " ";
+  const formatted = stringified.replace(/^\{\n?/, ' ').replace(/\n?\}$/, ' ');
   return formatted;
 }
 
@@ -125,7 +126,7 @@ function extractFormatted(
 
   return {
     actionText: color.inverse(` ${action} `),
-    idText: doc._id ?? chalk.dim(doc._id),
+    idText: doc._id ? chalk.dim(doc._id) : undefined,
     hidText: meta?.humanId ? `(${meta.humanId.slice(0, 5)})` : undefined,
     occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
     fieldText: data?.field ?? color(data.field),
