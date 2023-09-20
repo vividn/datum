@@ -2,11 +2,9 @@ import {
   DatumData,
   EitherDocument,
   EitherPayload,
-  isDatumPayload,
 } from "../documentControl/DatumDocument";
 import chalk, { Chalk } from "chalk";
 import stringify from "string.ify";
-import { jClone } from "../utils/jClone";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
@@ -62,13 +60,10 @@ function formatOccurTime(
     return undefined;
   }
 
-  const dateText =
-    dateTime.toISODate() === DateTime.now().toISODate()
-      ? ""
-      : dateTime.toISODate();
-  const timeText =
-    dateTime.toFormat("HH:mm:ss") + chalk.dim(dateTime.toFormat("Z"));
-  return [dateText, timeText].filter(Boolean).join(" ");
+  const dateText = dateTime.toISODate();
+  const offsetText = chalk.dim(dateTime.toFormat("('U'Z)"));
+  const timeText = dateTime.toFormat("HH:mm:ss");
+  return [dateText, offsetText, timeText].filter(Boolean).join(" ");
 }
 
 function formatStateInfo(
@@ -119,7 +114,7 @@ type ExtractedAndFormatted = {
   durText?: string;
   nonRedundantData?: string;
   entireDocument: string;
-}
+};
 function extractFormatted(
   action: ACTIONS,
   doc: EitherPayload
@@ -148,37 +143,30 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 }
 
 function showHeaderLine(formatted: ExtractedAndFormatted): void {
-  console.log([formatted.actionText, formatted.idText, formatted.hidText].filter(Boolean).join(" "));
+  console.log(
+    [formatted.actionText, formatted.idText, formatted.hidText]
+      .filter(Boolean)
+      .join(" ")
+  );
 }
 
 function showFooterLine(formatted: ExtractedAndFormatted): void {
-  const footerLine = [formatted.occurTimeText, formatted.fieldText, formatted.stateText, formatted.durText].filter(Boolean).join(" ");
+  const footerLine = [
+    formatted.occurTimeText,
+    formatted.fieldText,
+    formatted.stateText,
+    formatted.durText,
+  ]
+    .filter(Boolean)
+    .join(" ");
   if (footerLine !== "") {
     console.log(footerLine);
   }
 }
 
-export function displayData(
-  data: DatumData,
-  color: (val: any) => string
-): void {
-  const maxLength = process.stdout.columns;
-  console.log(
-    stringify.configure({
-      formatter: (x: any) =>
-        typeof x === "string"
-          ? color(x)
-          : typeof x === "number"
-          ? chalk.bold(color(x))
-          : undefined,
-      maxLength: maxLength,
-    })(data)
-  );
-}
-
 export function showCustomFormat(
   payload: EitherPayload,
-  formatString: string,
+  formatString: string
 ): void {
   const { data, meta } = pullOutData(payload);
   const outputString = interpolateFields({ data, meta, format: formatString });
@@ -206,8 +194,6 @@ export function showSingle(
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
   const extracted = extractFormatted(action, doc);
-
-  const color = ACTION_CHALK[action];
 
   if (show === Show.None) {
     return;
