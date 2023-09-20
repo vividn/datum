@@ -76,10 +76,10 @@ function formatStateInfo(
   const lastStateText =
     lastState !== undefined
       ? lastState === state
-        ? chalk.red(`${lastState}→`)
-        : chalk.dim(`${lastState}→`)
+        ? chalk.red(`${lastState}⇾`)
+        : chalk.dim(`${lastState}⇾`)
       : "";
-  return state !== undefined ? ` ${lastStateText}${state}` : undefined;
+  return state !== undefined ? ` ${lastStateText} ${chalk.bold(state)}` : undefined;
 }
 
 function formatDuration(dur?: string | undefined): string | undefined {
@@ -127,11 +127,11 @@ function extractFormatted(
   const { data, meta } = pullOutData(doc);
 
   return {
-    actionText: color.inverse(` ${action} `),
+    actionText: color(`${action}`),
     idText: doc._id ? chalk.dim(doc._id) : undefined,
     hidText: meta?.humanId ? `(${meta.humanId.slice(0, 5)})` : undefined,
     occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
-    fieldText: data?.field ? chalk.yellow.underline(data.field) : undefined,
+    fieldText: data?.field ? color.inverse(data.field) : undefined,
     stateText: formatStateInfo(data.state, data.lastState),
     durText: formatDuration(data.dur ?? data.duration),
     nonRedundantData: formattedNonRedundantData(data),
