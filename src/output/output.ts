@@ -60,10 +60,12 @@ function formatOccurTime(
     return undefined;
   }
 
-  const dateText = dateTime.toISODate();
-  const offsetText = chalk.dim(dateTime.toFormat("('U'Z)"));
-  const timeText = dateTime.toFormat("HH:mm:ss");
-  const fullText =  [dateText, offsetText, timeText].filter(Boolean).join(" ");
+  const date = dateTime.toISODate();
+  const dateText =
+    date === DateTime.now().toISODate() ? "" : dateTime.toISODate();
+  const offsetText = chalk.dim(dateTime.toFormat("Z"));
+  const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
+  const fullText = [dateText, timeText].filter(Boolean).join(" ");
   return dateTime > DateTime.now() ? chalk.underline(fullText) : fullText;
 }
 
@@ -102,7 +104,7 @@ function formattedNonRedundantData(data: DatumData): string | undefined {
   }
   const stringified = stringify(filteredData);
   // replace starting and ending curly braces with spaces
-  const formatted = stringified.replace(/^\{\n?/, ' ').replace(/\n?\}$/, ' ');
+  const formatted = stringified.replace(/^\{\n?/, " ").replace(/\n?\}$/, " ");
   return formatted;
 }
 
@@ -129,7 +131,7 @@ function extractFormatted(
     idText: doc._id ? chalk.dim(doc._id) : undefined,
     hidText: meta?.humanId ? `(${meta.humanId.slice(0, 5)})` : undefined,
     occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
-    fieldText: data?.field ?? color(data.field),
+    fieldText: data?.field ? chalk.yellow.underline(data.field) : undefined,
     stateText: formatStateInfo(data.state, data.lastState),
     durText: formatDuration(data.dur ?? data.duration),
     nonRedundantData: formattedNonRedundantData(data),
@@ -152,11 +154,11 @@ function showHeaderLine(formatted: ExtractedAndFormatted): void {
   );
 }
 
-function showFooterLine(formatted: ExtractedAndFormatted): void {
+function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
-    formatted.occurTimeText,
     formatted.fieldText,
     formatted.stateText,
+    formatted.occurTimeText,
     formatted.durText,
   ]
     .filter(Boolean)
@@ -208,12 +210,14 @@ export function showSingle(
       );
     }
     showCustomFormat(doc, formatString);
+    return;
   }
 
   showHeaderLine(extracted);
   if (show === Show.Minimal) {
     return;
   }
+  showMainInfoLine(extracted);
 
   if (formatString) {
     showCustomFormat(doc, formatString);
@@ -231,8 +235,6 @@ export function showSingle(
       console.log(extracted.nonRedundantData);
     }
   }
-
-  showFooterLine(extracted);
 }
 export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.Create, doc, outputArgs);
