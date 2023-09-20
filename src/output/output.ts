@@ -63,7 +63,8 @@ function formatOccurTime(
   const dateText = dateTime.toISODate();
   const offsetText = chalk.dim(dateTime.toFormat("('U'Z)"));
   const timeText = dateTime.toFormat("HH:mm:ss");
-  return [dateText, offsetText, timeText].filter(Boolean).join(" ");
+  const fullText =  [dateText, offsetText, timeText].filter(Boolean).join(" ");
+  return dateTime > DateTime.now() ? chalk.underline(fullText) : fullText;
 }
 
 function formatStateInfo(
