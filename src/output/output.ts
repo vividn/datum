@@ -84,12 +84,17 @@ function formatStateInfo(
     : undefined;
 }
 
-function formatDuration(dur?: string | undefined, invert: boolean = false): string | undefined {
+function formatDuration(
+  dur?: string | undefined,
+  invert = false
+): string | undefined {
   const duration = Duration.fromISO(dur || "");
   if (!duration.isValid) {
     return undefined;
   }
-  return (duration < Duration.fromMillis(0) !== invert) ? duration.toFormat(" ⟞ m'm' ⟝ ") : duration.toFormat(" ⟝ m'm'⟞ ");
+  return duration < Duration.fromMillis(0) !== invert
+    ? duration.toFormat(" ⟞ m'm' ⟝ ")
+    : duration.toFormat(" ⟝ m'm'⟞ ");
 }
 function formattedNonRedundantData(data: DatumData): string | undefined {
   const {
