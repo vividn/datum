@@ -140,7 +140,7 @@ function extractFormatted(
   return {
     actionText: color(`${action}`),
     idText: doc._id ? chalk.dim(doc._id) : undefined,
-    hidText: meta?.humanId ? `(${meta.humanId.slice(0, 5)})` : undefined,
+    hidText: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
     fieldText: data?.field ? color.inverse(data.field) : undefined,
     stateText: formatStateInfo(data.state, data.lastState),
@@ -159,7 +159,7 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 
 function showHeaderLine(formatted: ExtractedAndFormatted): void {
   console.log(
-    [formatted.actionText, formatted.idText, formatted.hidText]
+    [formatted.actionText, formatted.hidText, formatted.idText]
       .filter(Boolean)
       .join(" ")
   );
