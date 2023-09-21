@@ -23,9 +23,6 @@ enum ACTIONS {
   Rename = "RENAME",
   NoDiff = "NODIFF",
   Failed = "FAILED",
-  Start = "START↦",
-  End = "⟞  END",
-  Switch = "SWITCH",
 }
 const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Create]: chalk.green,
@@ -36,9 +33,6 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Rename]: chalk.cyan,
   [ACTIONS.NoDiff]: chalk.hex("#ffa500"),
   [ACTIONS.Failed]: chalk.red,
-  [ACTIONS.Start]: chalk.hex("#a5ffa5"),
-  [ACTIONS.End]: chalk.hex("#a5ffa5"),
-  [ACTIONS.Switch]: chalk.hex("#a5ffa5"),
 };
 
 function formatOccurTime(
@@ -249,18 +243,6 @@ export function showSingle(
 }
 export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
   return showSingle(ACTIONS.Create, doc, outputArgs);
-}
-
-export function showStart(doc: EitherDocument, outputArgs: OutputArgs): void {
-  return showSingle(ACTIONS.Start, doc, outputArgs);
-}
-
-export function showEnd(doc: EitherDocument, outputArgs: OutputArgs): void {
-  return showSingle(ACTIONS.End, doc, outputArgs);
-}
-
-export function showSwitch(doc: EitherDocument, outputArgs: OutputArgs): void {
-  return showSingle(ACTIONS.Switch, doc, outputArgs);
 }
 
 export function showExists(doc: EitherDocument, outputArgs: OutputArgs): void {
