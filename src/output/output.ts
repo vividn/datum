@@ -73,13 +73,21 @@ function formatStateInfo(
   state?: DatumState,
   lastState?: DatumState
 ): string | undefined {
+  if (state === true && lastState === false) {
+    return chalk.bold("start");
+  }
+  if (state === false && lastState === true) {
+    return chalk.bold("end");
+  }
   const lastStateText =
     lastState !== undefined
       ? lastState === state
         ? chalk.red(`${lastState}⇾`)
         : chalk.dim(`${lastState}⇾`)
       : "";
-  return state !== undefined ? ` ${lastStateText} ${chalk.bold(state)}` : undefined;
+  return state !== undefined
+    ? ` ${lastStateText} ${chalk.bold(state)}`
+    : undefined;
 }
 
 function formatDuration(dur?: string | undefined): string | undefined {
