@@ -90,9 +90,12 @@ function formatStateInfo(
     : undefined;
 }
 
-function formatDuration(dur?: string | undefined): string | undefined {
+function formatDuration(dur?: string | undefined, invert: boolean = false): string | undefined {
   const duration = Duration.fromISO(dur || "");
-  return duration.isValid ? duration.toFormat(" ⟝ m'm'⟞ ") : undefined;
+  if (!duration.isValid) {
+    return undefined;
+  }
+  return (duration < Duration.fromMillis(0) !== invert) ? duration.toFormat(" ⟞ m'm' ⟝ ") : duration.toFormat(" ⟝ m'm'⟞ ");
 }
 function formattedNonRedundantData(data: DatumData): string | undefined {
   const {
@@ -141,7 +144,7 @@ function extractFormatted(
     occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
     fieldText: data?.field ? color.inverse(data.field) : undefined,
     stateText: formatStateInfo(data.state, data.lastState),
-    durText: formatDuration(data.dur ?? data.duration),
+    durText: formatDuration(data.dur ?? data.duration, data.state === false),
     nonRedundantData: formattedNonRedundantData(data),
     entireDocument: stringify(doc),
   };
@@ -164,9 +167,9 @@ function showHeaderLine(formatted: ExtractedAndFormatted): void {
 
 function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
+    formatted.occurTimeText,
     formatted.fieldText,
     formatted.stateText,
-    formatted.occurTimeText,
     formatted.durText,
   ]
     .filter(Boolean)
