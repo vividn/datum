@@ -20,7 +20,7 @@ describe("addCmd", () => {
   });
 
   it("inserts documents into couchdb", async () => {
-    await addCmd({ data: ["foo=bar"] });
+    await addCmd("field foo=bar");
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);

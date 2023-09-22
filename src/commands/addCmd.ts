@@ -111,7 +111,7 @@ export type AddCmdArgs = MainDatumArgs &
 export async function addCmd(
   args: AddCmdArgs | string | string[]
 ): Promise<EitherDocument> {
-  args = await parseArgs(args, addArgs);
+  args = await parseArgs(args, addArgs, "add");
 
   const db = connectDb(args);
 
