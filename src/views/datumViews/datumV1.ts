@@ -13,8 +13,9 @@ function emit(key: MapKey, value: MapValue): void {
 }
 
 export type V1MapRow = ViewRow<MapKey, MapValue>;
+export type V1ReduceRowGroup1 = ViewRow<[string], number>;
 
-export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined, {"column_count": number}> = {
+export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
   name: "datum_v1_view",
   emit: emit,
   map: (doc) => {
@@ -70,18 +71,14 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined, {"colu
     if (state === false) {
       if (minutes === "") {
         outputArray.push("end");
-        outputArray.push("");
       } else {
         outputArray.push(String(-1 * minutes));
-        outputArray.push("");
       }
     } else if (state === true) {
       if (minutes === "") {
         outputArray.push("start");
-        outputArray.push("");
       } else {
         outputArray.push(String(minutes));
-        outputArray.push("");
       }
     } else if (state === undefined) {
       outputArray.push(String(minutes));
@@ -92,13 +89,11 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined, {"colu
 
     emit(key, outputArray);
   },
-  namedReduce: {
-    "column_count": (keysAndDocIds, values, rereduce): number => {
-      if (!rereduce) {
-        return values.reduce((acc, val) => Math.max(acc, val.length), 0);
-      } else {
-        return Math.max(...values)
-      }
+  reduce: (keysAndDocIds, values, rereduce): number => {
+    if (!rereduce) {
+      return values.reduce((acc, val) => Math.max(acc, val.length), 0);
+    } else {
+      return Math.max(...values)
     }
   }
 };
