@@ -89,6 +89,7 @@
     "prompt-sync": "^4.2.0",
     "react": "^18.2.0",
     "relaxed-json": "^1.0.3",
+    "shell-quote": "^1.8.1",
     "string.ify": "^1.0.64",
     "table": "^6.8.1",
     "tmp-promise": "^3.0.3",
