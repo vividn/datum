@@ -42,7 +42,7 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
 
     const iso8601DurationRegex =
       /(-)?P(?:([.,\d]+)Y)?(?:([.,\d]+)M)?(?:([.,\d]+)W)?(?:([.,\d]+)D)?(?:T(?:([.,\d]+)H)?(?:([.,\d]+)M)?(?:([.,\d]+)S)?)?/;
-    const matches = (data.dur || "").match(iso8601DurationRegex);
+    const matches = (data.dur || data.duration || "").match(iso8601DurationRegex);
     const durObj = matches
       ? {
           sign: matches[1] === undefined ? 1 : -1,
@@ -65,30 +65,30 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
           durObj.minutes +
           durObj.seconds / 60)
       : "";
+    const state = data.state;
 
-    outputArray.push(String(minutes));
-
-    switch (data.field) {
-      case "activity":
-        outputArray.push(data.activity);
-        outputArray.push(data.project);
-        break;
-
-      case "environment":
-        outputArray.push(data.category);
-        break;
-
-      case "call":
-        outputArray.push(data.format);
-        break;
-
-      case "consume":
-        outputArray.push(data.media);
-        break;
-
-      case "hygiene":
-        outputArray.push(data.activity);
-        break;
+    if (state === false) {
+      if (minutes === "") {
+        outputArray.push("end");
+        outputArray.push("");
+      } else {
+        outputArray.push(String(-1 * minutes));
+        outputArray.push("");
+      }
+    } else if (state === true) {
+      if (minutes === "") {
+        outputArray.push("start");
+        outputArray.push("");
+      } else {
+        outputArray.push(String(minutes));
+        outputArray.push("");
+      }
+    } else if (state === undefined) {
+      outputArray.push(String(minutes));
+      outputArray.push("");
+    } else {
+      outputArray.push(String(minutes));
+      outputArray.push(String(state));
     }
 
     emit(key, outputArray);
