@@ -8,6 +8,7 @@ import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { flexiblePositional } from "../input/flexiblePositional";
+import { parseArgs } from "../input/parseArgs";
 
 export const command = [
   "add <field> [data..]",
@@ -107,7 +108,11 @@ export type AddCmdArgs = MainDatumArgs &
     conflict?: ConflictStrategyNames;
   };
 
-export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
+export async function addCmd(
+  args: AddCmdArgs | string | string[]
+): Promise<EitherDocument> {
+  args = await parseArgs(args, addArgs);
+
   const db = connectDb(args);
 
   const fieldArgType = args.fieldless ? false : "required";
