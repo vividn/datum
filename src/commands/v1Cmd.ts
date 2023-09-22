@@ -71,7 +71,11 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
         fd = openFd(rowField);
         currentField = rowField;
 
-        fs.writeSync(fd, createHeader(currentField, columnCounts[currentField] ).join("\t") + "\n");
+        fs.writeSync(
+          fd,
+          createHeader(currentField, columnCounts[currentField]).join("\t") +
+            "\n"
+        );
       }
       fs.writeSync(fd, row.value.join("\t") + "\n");
 
