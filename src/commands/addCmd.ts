@@ -109,10 +109,9 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(
-  args: AddCmdArgs | string | string[]
+  argsOrCmd: AddCmdArgs | string | string[]
 ): Promise<EitherDocument> {
-  console.log({args2: args})
-  const newArgs = await parseArgs<AddCmdArgs>(args, "add");
+  const args = await parseArgs<AddCmdArgs>(argsOrCmd, "add");
   const db = connectDb(args);
 
   const fieldArgType = args.fieldless ? false : "required";
