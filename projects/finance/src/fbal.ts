@@ -8,7 +8,7 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import printf from "printf";
 
 type FBalArgs = BaseArgs;
-const fbalArgs = baseArgs;
+const fbalArgs = baseArgs();
 
 function fix(n: number) {
   const fixed = n.toFixed(2);

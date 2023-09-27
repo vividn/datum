@@ -20,7 +20,7 @@ import { switchCmd, SwitchCmdArgs } from "./commands/switchCmd";
 import { endCmd, EndCmdArgs } from "./commands/endCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
-  const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
+  const args = (await mainYargs().parse(cliInput)) as MainDatumArgs;
   switch (args._?.[0]) {
     case "add":
       await addCmd(args as unknown as AddCmdArgs);
@@ -112,6 +112,7 @@ export async function main(cliInput: string | string[]): Promise<void> {
 }
 
 if (require.main === module) {
+  console.log({args: process.argv.slice(2)})
   main(process.argv.slice(2)).catch((err) => {
     if (err instanceof DocExistsError) {
       process.exitCode = 11;

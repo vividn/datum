@@ -18,7 +18,7 @@ type EqCheckArgs = BaseArgs & {
   decimals?: number;
 };
 
-const eqCheckYargs = baseArgs
+const eqCheckYargs = baseArgs()
   .option("account", {
     alias: "a",
     type: "string",

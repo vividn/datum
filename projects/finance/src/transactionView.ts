@@ -291,7 +291,7 @@ export async function transactionView({
 }
 
 if (require.main === module) {
-  const args = baseArgs
+  const args = baseArgs()
     .strict(false)
     .strictOptions()
     .parseSync(process.argv.slice(2)) as MainDatumArgs;

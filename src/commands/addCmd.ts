@@ -3,7 +3,7 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
 import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs, mainYargs } from "../input/mainYargs";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
@@ -36,7 +36,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 const conflictChoices = Object.keys(conflictRecord);
 
 export function addArgs(yargs: Argv): Argv {
-  return dataYargs(fieldArgs(yargs)).options({
+  return dataYargs(fieldArgs(mainYargs(yargs))).options({
     "no-metadata": {
       describe: "do not include meta data in document",
       alias: "M",
@@ -111,8 +111,8 @@ export type AddCmdArgs = MainDatumArgs &
 export async function addCmd(
   args: AddCmdArgs | string | string[]
 ): Promise<EitherDocument> {
-  args = await parseArgs(args, addArgs, "add");
-
+  console.log({args2: args})
+  const newArgs = await parseArgs<AddCmdArgs>(args, "add");
   const db = connectDb(args);
 
   const fieldArgType = args.fieldless ? false : "required";
