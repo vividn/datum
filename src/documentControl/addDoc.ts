@@ -65,6 +65,7 @@ export async function addDoc({
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;
 
+    // reassemble id in case it depends upon createTime or modifyTime
     id = assembleId({ payload });
 
     payload._id = id;
