@@ -6,6 +6,7 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
+import { getLastDocs, LAST_DOCS_ID } from "../../documentControl/lastDocs";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
@@ -288,6 +289,12 @@ describe("addCmd", () => {
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
+
+  it("updates the local last doc reference", async () => {
+    const doc = await addCmd({ idPart: "doc-id-of-last-doc", data: ["foo=abc"] });
+    const lastDocs = await getLastDocs(db);
+    expect(lastDocs.ids).toEqual([doc._id]);
+  })
 
   // TODO: write tests for all of the various options
 });
