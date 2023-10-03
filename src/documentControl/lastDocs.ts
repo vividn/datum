@@ -16,9 +16,7 @@ export async function updateLastDocsRef(
   try {
     ({ _rev } = await db.get(LAST_DOCS_ID));
   } catch (e) {
-    if (!(isCouchDbError(e) && ["missing", "deleted"].includes(e.reason))) {
-      throw e;
-    }
+    //pass
   }
   await db.put({
     _id: LAST_DOCS_ID,

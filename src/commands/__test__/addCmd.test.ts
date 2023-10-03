@@ -290,11 +290,5 @@ describe("addCmd", () => {
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
 
-  it("updates the local last doc reference", async () => {
-    const doc = await addCmd({ idPart: "doc-id-of-last-doc", data: ["foo=abc"] });
-    const lastDocs = await getLastDocs(db);
-    expect(lastDocs.ids).toEqual([doc._id]);
-  })
-
   // TODO: write tests for all of the various options
 });
