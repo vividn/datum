@@ -2,11 +2,18 @@ import { addCmd } from "../../commands/addCmd";
 import { getLastDocs } from "../lastDocs";
 import { testDbLifecycle } from "../../test-utils";
 import { deleteCmd } from "../../commands/deleteCmd";
+import * as editInTerminal from "../../utils/editInTerminal";
+import { GenericObject } from "../../GenericObject";
+import { editCmd } from "../../commands/editCmd";
+import { setupCmd } from "../../commands/setupCmd";
 
 describe("lastDocs", () => {
   const dbName = "last_docs_test";
   const db = testDbLifecycle(dbName);
 
+  beforeEach(async () => {
+    await setupCmd({ db: dbName });
+  });
   test("addCmd updates the local last doc reference", async () => {
     const doc = await addCmd({
       idPart: "doc-id-of-last-doc",
@@ -23,6 +30,18 @@ describe("lastDocs", () => {
     await expect(getLastDocs(db)).rejects.toThrowError();
 
     await deleteCmd({ quickId: id });
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef.ids).toEqual([id]);
+  });
+
+  test("editCmd updates lastDocRef", async () => {
+    jest
+      .spyOn(editInTerminal, "editJSONInTerminal")
+      .mockImplementation(async (doc: GenericObject) => doc);
+    const id = "last-doc-edited";
+    await db.put({ _id: id, foo: "bar" });
+
+    await editCmd({ quickId: id });
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([id]);
   });

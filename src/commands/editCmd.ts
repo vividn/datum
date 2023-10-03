@@ -7,6 +7,7 @@ import { editJSONInTerminal } from "../utils/editInTerminal";
 import { overwriteDoc } from "../documentControl/overwriteDoc";
 import { MainDatumArgs } from "../input/mainYargs";
 import { MyError } from "../errors";
+import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = ["edit <quickId>"];
 export const desc = "Edit a document directly with EDITOR";
@@ -28,6 +29,7 @@ export async function editCmd(args: EditCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
 
   const ids = await quickIds(db, args.quickId);
+  await updateLastDocsRef(db, ids);
   if (ids.length !== 1) {
     throw new TooManyToEditError("Can only edit 1 document at a time");
   }
