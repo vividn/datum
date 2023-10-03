@@ -46,6 +46,10 @@ export type DatumPayload<T = unknown> = {
   meta: DatumMetadata;
 };
 
+export type DatumIdPayload<T = unknown> = DatumPayload<T> & {
+  _id: string;
+}
+
 export type DatumDocument<T = unknown> = DatumPayload<T> & {
   _id: string;
   _rev: string;
@@ -56,12 +60,17 @@ export type DataOnlyPayload<T = unknown> = {
   _rev?: string;
 } & DatumData<T>;
 
+export type DataOnlyIdPayload<T = unknown> = DataOnlyPayload<T> & {
+  _id: string;
+}
+
 export type DataOnlyDocument<T = unknown> = DataOnlyPayload<T> & {
   _id: string;
   _rev: string;
 };
 
 export type EitherPayload<T = unknown> = DatumPayload<T> | DataOnlyPayload<T>;
+export type EitherIdPayload<T = unknown> = DatumIdPayload<T> | DataOnlyIdPayload<T>;
 export type EitherDocument<T = unknown> =
   | DatumDocument<T>
   | DataOnlyDocument<T>;

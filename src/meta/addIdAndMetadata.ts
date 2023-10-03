@@ -3,6 +3,7 @@ import {
   DatumData,
   DatumMetadata,
   DatumPayload,
+  EitherIdPayload,
   EitherPayload,
 } from "../documentControl/DatumDocument";
 import { AddCmdArgs } from "../commands/addCmd";
@@ -17,7 +18,7 @@ import { IdError } from "../errors";
 export function addIdAndMetadata<T>(
   data: DatumData<T>,
   args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">
-): EitherPayload<T> {
+): EitherIdPayload<T> {
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data,
   });
@@ -59,6 +60,6 @@ export function addIdAndMetadata<T>(
   if (_id === "") {
     throw new IdError("Provided or derived _id is blank");
   }
-  payload._id = _id;
-  return payload;
+  const idPayload = { _id, ...payload };
+  return idPayload;
 }
