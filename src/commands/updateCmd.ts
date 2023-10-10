@@ -12,6 +12,7 @@ import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
 import { MainDatumArgs } from "../input/mainYargs";
 import { flexiblePositional } from "../input/flexiblePositional";
+import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = [
   "update <quickId> [data..]",
@@ -54,6 +55,9 @@ export async function updateCmd(
 
   const ids = await quickIds(db, __quickId ?? args.quickId);
 
+  // update now in case the updateDoc fails due to conflict
+  await updateLastDocsRef(db, ids);
+
   const updateStrategy = args.strategy ?? "preferNew";
 
   const updatedDocs = await Promise.all(
@@ -67,6 +71,12 @@ export async function updateCmd(
       })
     )
   );
+
+  const newIds = updatedDocs.map((doc) => doc._id);
+  if (newIds !== ids) {
+    // TODO: if changing lastDocs to history may need to change this to overwrite first update
+    await updateLastDocsRef(db, newIds);
+  }
 
   return updatedDocs;
 }
