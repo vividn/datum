@@ -12,6 +12,7 @@ import { primitiveUndo } from "../undo/primitiveUndo";
 import { DurationArgs, durationArgs } from "../input/durationArgs";
 import { FieldArgs } from "../input/fieldArgs";
 import { addDoc } from "../documentControl/addDoc";
+import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = [
   "occur <field> [duration] [data..]",
@@ -69,6 +70,9 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   }
   const payload = addIdAndMetadata(payloadData, args);
 
+  // update now in case the addDoc fails due to conflict
+  await updateLastDocsRef(db, payload._id);
+
   const { undo, forceUndo } = args;
   if (undo || forceUndo) {
     return await primitiveUndo({
@@ -85,5 +89,12 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
     conflictStrategy,
     outputArgs: args,
   });
+
+  // if addDoc has changed the id (e.g. because it relies on the modifiyTime), update lastDocRef again
+  // TODO: if changing lastDoc to history may need to change this to overwrite first update
+  if (doc._id !== payload._id) {
+    await updateLastDocsRef(db, doc._id);
+  }
+
   return doc;
 }
