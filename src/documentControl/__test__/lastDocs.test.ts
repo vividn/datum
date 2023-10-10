@@ -70,14 +70,14 @@ describe("lastDocs", () => {
 
   test("grepCmd updates lastDocRef", async () => {
     await db.bulkDocs([
-      { _id: "a", has: "match" },
-      { _id: "b", data: { also: "has match" } },
+      { _id: "a", has: "matchString" },
+      { _id: "b", data: { also: "has matchString" } },
       { _id: "c", data: { does: "not" } },
       { _id: "d", data: {} },
-      { _id: "e", match: "has" },
-      { _id: "f", data: { match: "also grepped" } },
+      { _id: "e", matchString: "has" },
+      { _id: "f", data: { matchString: "also grepped" } },
     ]);
-    const docs = await grepCmd({ patterns: ["match"] });
+    const docs = await grepCmd({ patterns: ["matchString"] });
     expect(docs.map((doc) => doc._id)).toEqual(["a", "b", "e", "f"]);
     const lastDocRef = await getLastDocs(db);
     expect(lastDocRef.ids).toEqual(["a", "b", "e", "f"]);
