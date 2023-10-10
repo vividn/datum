@@ -9,6 +9,7 @@ import { getLastState } from "../state/findLastState";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
 import { addDoc } from "../documentControl/addDoc";
+import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = [
   "switch <field> <state> [duration] [data..]",
@@ -58,6 +59,7 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   });
 
   const payload = addIdAndMetadata(payloadData, args);
+  await updateLastDocsRef(db, payload._id);
 
   const { undo, forceUndo } = args;
   if (undo || forceUndo) {
@@ -76,5 +78,12 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     conflictStrategy,
     outputArgs: args,
   });
+
+  // if addDoc has changed the id (e.g. because it relies on the modifiyTime), update lastDocRef again
+  // TODO: if changing lastDoc to history may need to change this to overwrite first update
+  if (doc._id !== payload._id) {
+    await updateLastDocsRef(db, doc._id);
+  }
+
   return doc;
 }

@@ -5,6 +5,7 @@ import { quickIds } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
 import { MainDatumArgs } from "../input/mainYargs";
+import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
@@ -21,5 +22,6 @@ export async function getCmd(args: GetCmdArgs): Promise<EitherDocument[]> {
 
   const docs = await Promise.all(ids.map((id) => db.get(id)));
   docs.forEach((doc) => showExists(doc, args));
+  await updateLastDocsRef(db, ids);
   return docs;
 }
