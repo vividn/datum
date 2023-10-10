@@ -6,7 +6,6 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
-import { getLastDocs, LAST_DOCS_ID } from "../../documentControl/lastDocs";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";

@@ -1,5 +1,3 @@
-import { isCouchDbError } from "../errors";
-
 export const LAST_DOCS_ID = "_local/datum_last" as const;
 
 export type LastDocsRef = {
