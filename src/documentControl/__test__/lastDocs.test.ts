@@ -1,6 +1,6 @@
 import { addCmd } from "../../commands/addCmd";
 import { getLastDocs } from "../lastDocs";
-import { testDbLifecycle } from "../../test-utils";
+import { setNow, testDbLifecycle } from "../../test-utils";
 import { deleteCmd } from "../../commands/deleteCmd";
 import * as editInTerminal from "../../utils/editInTerminal";
 import { GenericObject } from "../../GenericObject";
@@ -9,6 +9,11 @@ import { setupCmd } from "../../commands/setupCmd";
 import { getCmd } from "../../commands/getCmd";
 import { endCmd } from "../../commands/endCmd";
 import { grepCmd } from "../../commands/grepCmd";
+import { occurCmd } from "../../commands/occurCmd";
+import { startCmd } from "../../commands/startCmd";
+import { switchCmd } from "../../commands/switchCmd";
+import { tailCmd } from "../../commands/tailCmd";
+import { updateCmd } from "../../commands/updateCmd";
 
 describe("lastDocs", () => {
   const dbName = "last_docs_test";
@@ -76,5 +81,60 @@ describe("lastDocs", () => {
     expect(docs.map((doc) => doc._id)).toEqual(["a", "b", "e", "f"]);
     const lastDocRef = await getLastDocs(db);
     expect(lastDocRef.ids).toEqual(["a", "b", "e", "f"]);
+  });
+
+  test("occurCmd updates lastDocRef", async () => {
+    const { _id } = await occurCmd({ field: "field" });
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef.ids).toEqual([_id]);
+  });
+
+  test("startCmd updates lastDocRef", async () => {
+    const { _id } = await startCmd({ field: "field" });
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef.ids).toEqual([_id]);
+  });
+
+  test("switchCmd updates lastDocRef", async () => {
+    const { _id } = await switchCmd({ field: "field", state: "newState" });
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef.ids).toEqual([_id]);
+  });
+
+  test("tailCmd updates lastDocRef", async () => {
+    const { _id: _id1 } = await occurCmd({ field: "field" });
+    setNow("+1");
+    const { _id: _id2 } = await occurCmd({ field: "field2" });
+    setNow("+1");
+    const { _id: _id3 } = await occurCmd({ field: "field" });
+    setNow("+1");
+    const { _id: id4 } = await occurCmd({ field: "field2" });
+    setNow("+1");
+    const { _id: id5 } = await occurCmd({ field: "field" });
+    setNow("+1");
+    const { _id: id6 } = await occurCmd({ field: "field2" });
+    setNow("+1");
+
+    await tailCmd({ num: 3 });
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef.ids).toEqual([id4, id5, id6]);
+  });
+
+  test("updateCmd updates lastDocRef", async () => {
+    const { _id: firstId } = await addCmd({
+      data: ["foo=bar"],
+      idPart: "%foo",
+      field: "field",
+    });
+    expect(firstId).toEqual("field:bar");
+
+    const [{ _id: secondId }] = await updateCmd({
+      quickId: "field:bar",
+      data: ["foo=baz"],
+    });
+    expect(secondId).toEqual("field:baz");
+
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef).toEqual({ ids: [secondId] });
   });
 });
