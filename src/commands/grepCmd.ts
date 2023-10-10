@@ -3,6 +3,7 @@ import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
+import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = "grep <patterns..>";
 export const describe = "Find all docs that match pattern in the database";
@@ -33,8 +34,10 @@ export async function grepCmd(args: GrepCmdArgs): Promise<EitherDocument[]> {
     },
     []
   );
-  matchingDocs.forEach((doc) => {
+  const ids = matchingDocs.map((doc) => {
     showExists(doc, args);
+    return doc._id;
   });
+  await updateLastDocsRef(db, ids);
   return matchingDocs;
 }
