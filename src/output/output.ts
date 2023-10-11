@@ -96,7 +96,8 @@ function formatDuration(
     ? duration.toFormat(" ⟞ m'm' ⟝ ")
     : duration.toFormat(" ⟝ m'm'⟞ ");
 }
-function formattedNonRedundantData(data: DatumData): string | undefined {
+function formattedNonRedundantData(doc: EitherPayload): string | undefined {
+  const { data } = pullOutData(doc);
   const {
     _id,
     _rev,
@@ -118,6 +119,10 @@ function formattedNonRedundantData(data: DatumData): string | undefined {
   return formatted;
 }
 
+function formattedDoc(doc: EitherPayload): string {
+  return stringify(doc);
+}
+
 type ExtractedAndFormatted = {
   actionText: string;
   idText?: string;
@@ -126,14 +131,12 @@ type ExtractedAndFormatted = {
   fieldText?: string;
   stateText?: string;
   durText?: string;
-  nonRedundantData?: string;
-  entireDocument: string;
 };
 function extractFormatted(
-  action: ACTIONS,
-  doc: EitherPayload
+  doc: EitherPayload,
+  action?: ACTIONS
 ): ExtractedAndFormatted {
-  const color = ACTION_CHALK[action];
+  const color = action ? ACTION_CHALK[action] : chalk;
   const { data, meta } = pullOutData(doc);
 
   return {
@@ -144,8 +147,6 @@ function extractFormatted(
     fieldText: data?.field ? color.inverse(data.field) : undefined,
     stateText: formatStateInfo(data.state, data.lastState),
     durText: formatDuration(data.dur ?? data.duration, data.state === false),
-    nonRedundantData: formattedNonRedundantData(data),
-    entireDocument: stringify(doc),
   };
 }
 
@@ -207,7 +208,7 @@ export function showSingle(
   outputArgs: OutputArgs
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
-  const extracted = extractFormatted(action, doc);
+  const extracted = extractFormatted(doc, action);
 
   if (show === Show.None) {
     return;
@@ -234,15 +235,16 @@ export function showSingle(
   }
 
   if (show === Show.All) {
-    console.log(extracted.entireDocument);
+    console.log(formattedDoc(doc));
   }
 
   if (
     show === Show.Standard ||
     (show === Show.Default && formatString === undefined)
   ) {
-    if (extracted.nonRedundantData !== undefined) {
-      console.log(extracted.nonRedundantData);
+    const formattedData = formattedNonRedundantData(doc);
+    if (formattedData !== undefined) {
+      console.log(formattedData);
     }
   }
 }
