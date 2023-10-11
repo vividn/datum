@@ -13,8 +13,9 @@ function emit(key: MapKey, value: MapValue): void {
 }
 
 export type V1MapRow = ViewRow<MapKey, MapValue>;
+export type V1ReduceRowGroup1 = ViewRow<[string], number>;
 
-export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
+export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
   name: "datum_v1_view",
   emit: emit,
   map: (doc) => {
@@ -42,7 +43,9 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
 
     const iso8601DurationRegex =
       /(-)?P(?:([.,\d]+)Y)?(?:([.,\d]+)M)?(?:([.,\d]+)W)?(?:([.,\d]+)D)?(?:T(?:([.,\d]+)H)?(?:([.,\d]+)M)?(?:([.,\d]+)S)?)?/;
-    const matches = (data.dur || "").match(iso8601DurationRegex);
+    const matches = (data.dur || data.duration || "").match(
+      iso8601DurationRegex
+    );
     const durObj = matches
       ? {
           sign: matches[1] === undefined ? 1 : -1,
@@ -65,32 +68,34 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, undefined> = {
           durObj.minutes +
           durObj.seconds / 60)
       : "";
+    const state = data.state;
 
-    outputArray.push(String(minutes));
-
-    switch (data.field) {
-      case "activity":
-        outputArray.push(data.activity);
-        outputArray.push(data.project);
-        break;
-
-      case "environment":
-        outputArray.push(data.category);
-        break;
-
-      case "call":
-        outputArray.push(data.format);
-        break;
-
-      case "consume":
-        outputArray.push(data.media);
-        break;
-
-      case "hygiene":
-        outputArray.push(data.activity);
-        break;
+    if (state === false) {
+      if (minutes === "") {
+        outputArray.push("end");
+      } else {
+        outputArray.push(String(-1 * minutes));
+      }
+    } else if (state === true) {
+      if (minutes === "") {
+        outputArray.push("start");
+      } else {
+        outputArray.push(String(minutes));
+      }
+    } else if (state === undefined) {
+      outputArray.push(String(minutes));
+    } else {
+      outputArray.push(String(minutes));
+      outputArray.push(String(state));
     }
 
     emit(key, outputArray);
+  },
+  reduce: (keysAndDocIds, values, rereduce): number => {
+    if (!rereduce) {
+      return values.reduce((acc, val) => Math.max(acc, val.length), 0);
+    } else {
+      return Math.max(...values);
+    }
   },
 };

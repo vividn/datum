@@ -6,7 +6,7 @@ import { flatten } from "table/dist/src/utils";
 import * as fs from "fs";
 import path from "path";
 import { MainDatumArgs } from "../input/mainYargs";
-import { V1MapRow } from "../views/datumViews/datumV1";
+import { V1MapRow, V1ReduceRowGroup1 } from "../views/datumViews/datumV1";
 
 export const command = "v1 [field..]";
 export const description =
@@ -57,16 +57,25 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
     });
   }
   const rows = await getRows(args.field, db);
+  const columnCountRows = await getColumnCounts(args.field, db);
+  const columnCounts = columnCountRows.reduce((acc, row) => {
+    acc[row.key[0]] = row.value;
+    return acc;
+  }, {} as Record<string, number>);
   const { fd: finalFd } = rows.reduce(
-    (state: { currentField?: string; fd: number }, row) => {
-      let { currentField, fd } = state;
+    (current: { currentField?: string; fd: number }, row) => {
+      let { currentField, fd } = current;
       const rowField = row.key[0];
       if (rowField !== currentField) {
         closeFd(fd);
         fd = openFd(rowField);
         currentField = rowField;
 
-        fs.writeSync(fd, createHeader(currentField).join("\t") + "\n");
+        fs.writeSync(
+          fd,
+          createHeader(currentField, columnCounts[currentField]).join("\t") +
+            "\n"
+        );
       }
       fs.writeSync(fd, row.value.join("\t") + "\n");
 
@@ -79,27 +88,23 @@ export async function v1Cmd(args: V1CmdArgs): Promise<void> {
   return;
 }
 
-function createHeader(field: string): string[] {
+function createHeader(field: string, columnCount: number): string[] {
   const defaultHeader = ["Date", "Time", "Offset", "Minutes"];
+  const extraFields = [];
   switch (field) {
     case "activity":
-      return defaultHeader.concat(["Activity", "Project"]);
+      extraFields.push("Activity", "Project");
+      break;
 
     case "environment":
-      return defaultHeader.concat(["Category"]);
-
-    case "call":
-      return defaultHeader.concat(["Format"]);
-
-    case "consume":
-      return defaultHeader.concat(["Media"]);
-
-    case "hygiene":
-      return defaultHeader.concat(["Activity"]);
+      extraFields.push("Category");
+      break;
 
     default:
-      return defaultHeader;
+      extraFields.push("State");
+      break;
   }
+  return defaultHeader.concat(extraFields).slice(0, columnCount);
 }
 
 async function getRows(
@@ -107,7 +112,8 @@ async function getRows(
   db: PouchDB.Database<EitherPayload>
 ): Promise<V1MapRow[]> {
   if (fields.length === 0) {
-    return (await db.query<string[]>(datumV1View.name)).rows as V1MapRow[];
+    return (await db.query<string[]>(datumV1View.name, { reduce: false }))
+      .rows as V1MapRow[];
   }
   const groupedRows = await Promise.all(
     fields.map(async (field) => {
@@ -115,6 +121,36 @@ async function getRows(
         await db.query<any>(datumV1View.name, {
           startkey: [field],
           endkey: [field, "\uffff"],
+          reduce: false,
+        })
+      ).rows;
+    })
+  );
+  return flatten(groupedRows);
+}
+
+async function getColumnCounts(
+  fields: string[],
+  db: PouchDB.Database<EitherPayload>
+): Promise<V1ReduceRowGroup1[]> {
+  if (fields.length === 0) {
+    return (
+      await db.query<string[]>(datumV1View.name, {
+        reduce: true,
+        group_level: 1,
+        group: true,
+      })
+    ).rows as V1ReduceRowGroup1[];
+  }
+  const groupedRows = await Promise.all(
+    fields.map(async (field) => {
+      return (
+        await db.query<any>(datumV1View.name, {
+          startkey: [field],
+          endkey: [field, "\uffff"],
+          reduce: true,
+          group_level: 1,
+          group: true,
         })
       ).rows;
     })
