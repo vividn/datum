@@ -84,10 +84,10 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     const formatted = extractFormatted(doc);
     return {
       time: formatted.occurTimeText,
-      field: formatted.fieldText,
-      state: formatted.stateText,
-      duration: formatted.durText,
-      hid: formatted.hidText,
+      field: formatted.field,
+      state: formatted.state,
+      duration: formatted.dur,
+      hid: formatted.hid,
     };
   });
   const headerRow = {

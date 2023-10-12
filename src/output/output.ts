@@ -34,20 +34,20 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Failed]: chalk.red,
 };
 
-function formatOccurTime(
-  occurTime?: string,
-  occurUtcOffset?: string | number
+function formatTime(
+  time?: string,
+  utcOffset?: string | number
 ): string | undefined {
-  if (!occurTime) {
+  if (!time) {
     return undefined;
   }
-  // if occurTime is just a date, then return it
-  if (!occurTime.includes("T")) {
-    return occurTime;
+  // if time is just a date, then return it
+  if (!time.includes("T")) {
+    return time;
   }
 
-  const dateTime = DateTime.fromISO(occurTime, {
-    zone: getTimezone(occurUtcOffset),
+  const dateTime = DateTime.fromISO(time, {
+    zone: getTimezone(utcOffset),
   });
   if (!dateTime.isValid) {
     return undefined;
@@ -123,13 +123,13 @@ function formattedDoc(doc: EitherPayload): string {
 }
 
 type ExtractedAndFormatted = {
-  actionText: string;
-  idText?: string;
-  hidText?: string;
+  action: string;
+  id?: string;
+  hid?: string;
   occurTimeText?: string;
-  fieldText?: string;
-  stateText?: string;
-  durText?: string;
+  field?: string;
+  state?: string;
+  dur?: string;
 };
 export function extractFormatted(
   doc: EitherPayload,
@@ -139,13 +139,13 @@ export function extractFormatted(
   const { data, meta } = pullOutData(doc);
 
   return {
-    actionText: color(`${action}`),
-    idText: doc._id ? chalk.dim(doc._id) : undefined,
-    hidText: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
-    occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
-    fieldText: data?.field ? color.inverse(data.field) : undefined,
-    stateText: formatStateInfo(data.state, data.lastState),
-    durText: formatDuration(data.dur ?? data.duration, data.state === false),
+    action: color(`${action}`),
+    id: doc._id ? chalk.dim(doc._id) : undefined,
+    hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
+    occurTimeText: formatTime(data.occurTime, data.occurUtcOffset),
+    field: data?.field ? color.inverse(data.field) : undefined,
+    state: formatStateInfo(data.state, data.lastState),
+    dur: formatDuration(data.dur ?? data.duration, data.state === false),
   };
 }
 
@@ -158,7 +158,7 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 
 function showHeaderLine(formatted: ExtractedAndFormatted): void {
   console.log(
-    [formatted.actionText, formatted.hidText, formatted.idText]
+    [formatted.action, formatted.hid, formatted.id]
       .filter(Boolean)
       .join(" ")
   );
@@ -167,9 +167,9 @@ function showHeaderLine(formatted: ExtractedAndFormatted): void {
 function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
     formatted.occurTimeText,
-    formatted.fieldText,
-    formatted.stateText,
-    formatted.durText,
+    formatted.field,
+    formatted.state,
+    formatted.dur,
   ]
     .filter(Boolean)
     .join(" ");
