@@ -1,20 +1,14 @@
 import { Argv } from "yargs";
-import {
-  DatumData,
-  DatumMetadata,
-  EitherDocument,
-  isDatumDocument,
-  isDatumPayload,
-} from "../documentControl/DatumDocument";
+import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
 import { occurTimeView } from "../views/datumViews";
-import { getBorderCharacters, table } from "table";
-import { humanTime } from "../time/humanTime";
 import { interpolateFields } from "../utils/interpolateFields";
-import { getOccurTime } from "../time/getOccurTime";
 import { MainDatumArgs } from "../input/mainYargs";
 import { fieldArgs } from "../input/fieldArgs";
+import { pullOutData } from "../utils/pullOutData";
+import { extractFormatted } from "../output/output";
+import Table from "easy-table";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -47,11 +41,6 @@ export function builder(yargs: Argv): Argv {
     //   alias: "m",
     //   type: "string",
     // },
-    format: {
-      describe:
-        "custom format for outputting the data. To use fields in the data use %fieldName%, for fields in the metadata use %?fieldName%",
-      type: "string",
-    },
     // head: {
     //   describe: "show first rows instead of last rows",
     //   type: "boolean",
@@ -80,18 +69,10 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   });
   const rawRows = viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
-  const format = args.format;
+  const format = args.formatString;
   if (format) {
-    //TODO: factor this out better, automatically extract all docs into a similar forat to simplify code base
-    let data: DatumData;
-    let meta: DatumMetadata | undefined;
     docs.forEach((doc) => {
-      if (isDatumPayload(doc)) {
-        data = doc.data as DatumData;
-        meta = doc.meta;
-      } else {
-        data = doc as DatumData;
-      }
+      const { data, meta } = pullOutData(doc);
       console.log(
         interpolateFields({ data, meta, format, useHumanTimes: true })
       );
@@ -99,32 +80,18 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     return docs;
   }
 
-  const headerRow = ["occurTime", "hid", "id"];
-  const tableRows = [headerRow].concat(
-    docs.map((doc) => {
-      const occurTime = humanTime(getOccurTime(doc)!);
-      let hid, id;
-      if (isDatumDocument(doc)) {
-        id = doc._id;
-        hid = doc.meta.humanId?.slice(0, 5) ?? "";
-      } else {
-        hid = "";
-        id = doc._id;
-      }
-      return [occurTime, hid, id];
-    })
-  );
-
-  const output = table(tableRows, {
-    border: getBorderCharacters("void"),
-    columnDefault: {
-      paddingLeft: 0,
-      paddingRight: 1,
-    },
-    drawHorizontalLine: () => false,
+  const formattedRows = docs.map((doc) => {
+    const formatted = extractFormatted(doc);
+    return {
+      time: formatted.occurTimeText,
+      field: formatted.fieldText,
+      state: formatted.stateText,
+      dur: formatted.durText,
+      hid: formatted.hidText,
+    };
   });
 
-  console.log(output);
+  console.log(Table.print(formattedRows));
 
   return docs;
 }

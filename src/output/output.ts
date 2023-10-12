@@ -80,7 +80,7 @@ function formatStateInfo(
         : chalk.dim(`${lastState}⇾`)
       : "";
   return state !== undefined
-    ? ` ${lastStateText} ${chalk.bold(state)}`
+    ? `${lastStateText} ${chalk.bold(state)}`
     : undefined;
 }
 
@@ -132,7 +132,7 @@ type ExtractedAndFormatted = {
   stateText?: string;
   durText?: string;
 };
-function extractFormatted(
+export function extractFormatted(
   doc: EitherPayload,
   action?: ACTIONS
 ): ExtractedAndFormatted {
