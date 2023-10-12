@@ -7,88 +7,62 @@ import {
 } from "../../documentControl/DatumDocument";
 import { isoDateOrTime } from "../../time/timeUtils";
 
-type MapKey = isoDateOrTime;
-type MapValue = {
-  field?: string;
-  dur?: string;
-};
+type TimeType = "hybrid" | "occur" | "modify" | "create";
+type Field = string | null;
+type MapKey = [TimeType, Field, isoDateOrTime];
+type MapValue = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const occurTimeView: DatumView<
+export const timingView: DatumView<
   EitherDocument,
   MapKey,
   MapValue,
   undefined
 > = {
-  name: "datum_occur_time",
+  name: "datum_timing",
   emit,
   map: (doc) => {
     let data: DatumData;
+    let meta: DatumMetadata | undefined;
     if (doc.data && doc.meta) {
       data = doc.data;
+      meta = doc.meta;
     } else {
       data = doc;
     }
-    if (data.occurTime) {
-      emit(data.occurTime, {
-        field: data.field,
-        dur: data.dur,
-      });
-    }
-  },
-};
+    const field = data.field;
 
-export const createTimeView: DatumView<
-  EitherDocument,
-  MapKey,
-  MapValue,
-  undefined
-> = {
-  name: "datum_create_time",
-  emit,
-  map: (doc) => {
-    let data: DatumData;
-    let meta: DatumMetadata;
-    if (doc.data && doc.meta) {
-      meta = doc.meta;
-      data = doc.data;
-    } else {
-      return;
-    }
-    if (meta.createTime) {
-      emit(meta.createTime, {
-        field: data.field,
-        dur: data.dur,
-      });
-    }
-  },
-};
+    const occurTime = data.occurTime;
+    const modifyTime = meta && meta.modifyTime;
+    const createTime = meta && meta.createTime;
+    const hybridTime = occurTime || modifyTime;
 
-export const modifyTimeView: DatumView<
-  EitherDocument,
-  MapKey,
-  MapValue,
-  undefined
-> = {
-  name: "datum_modify_time",
-  emit,
-  map: (doc) => {
-    let data: DatumData;
-    let meta: DatumMetadata;
-    if (doc.data && doc.meta) {
-      meta = doc.meta;
-      data = doc.data;
-    } else {
-      return;
+    if (hybridTime) {
+      emit(["hybrid", null, hybridTime], null);
+      if (field !== undefined) {
+        emit(["hybrid", field, hybridTime], null);
+      }
     }
-    if (meta.modifyTime) {
-      emit(doc.meta.modifyTime, {
-        field: data.field,
-        dur: data.dur,
-      });
+    if (occurTime) {
+      emit(["occur", null, occurTime], null);
+      if (field !== undefined) {
+        emit(["occur", field, occurTime], null);
+      }
+    }
+    if (modifyTime) {
+      emit(["modify", null, modifyTime], null);
+      if (field !== undefined) {
+        emit(["modify", field, modifyTime], null);
+      }
+    }
+    if (createTime) {
+      emit(["create", null, createTime], null);
+      if (field !== undefined) {
+        emit(["create", field, createTime], null);
+      }
     }
   },
 };
