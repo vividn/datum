@@ -2,13 +2,14 @@ import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
-import { occurTimeView } from "../views/datumViews";
 import { interpolateFields } from "../utils/interpolateFields";
 import { MainDatumArgs } from "../input/mainYargs";
 import { fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
 import Table from "easy-table";
+import { TIME_METRICS, timingView } from "../views/datumViews/tail";
+import { HIGH_STRING } from "../utils/startsWith";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -35,12 +36,13 @@ export function builder(yargs: Argv): Argv {
     //   nargs: 1,
     //   type: "string",
     // },
-    // metric: {
-    //   describe: "which time to use for the sorting, default is hybrid: occur or modify",
-    //   choices: ["hybrid", "occur", "create", "modify"],
-    //   alias: "m",
-    //   type: "string",
-    // },
+    metric: {
+      describe:
+        "which time to use for the sorting, default is hybrid: occur or modify",
+      choices: TIME_METRICS,
+      alias: "m",
+      type: "string",
+    },
     // head: {
     //   describe: "show first rows instead of last rows",
     //   type: "boolean",
@@ -57,12 +59,16 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const db = connectDb(args);
 
   const limit = args.num ?? 10;
+  const metric = args.metric ?? "hybrid";
+  const field = args.field ?? null;
+
   const viewResults = await viewMap({
     db,
-    datumView: occurTimeView,
+    datumView: timingView,
     params: {
       descending: true,
-      startkey: "\uffff\uffff",
+      startkey: [metric, field, HIGH_STRING],
+      endkey: [metric, field, ""],
       limit,
       include_docs: true,
     },

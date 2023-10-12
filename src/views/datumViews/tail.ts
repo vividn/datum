@@ -7,9 +7,10 @@ import {
 } from "../../documentControl/DatumDocument";
 import { isoDateOrTime } from "../../time/timeUtils";
 
-type TimeType = "hybrid" | "occur" | "modify" | "create";
+export const TIME_METRICS = ["hybrid", "occur", "create", "modify"] as const;
+type TimeMetric = (typeof TIME_METRICS)[number];
 type Field = string | null;
-type MapKey = [TimeType, Field, isoDateOrTime];
+type MapKey = [TimeMetric, Field, isoDateOrTime];
 type MapValue = null;
 
 function emit(key: MapKey, value: MapValue): void {
