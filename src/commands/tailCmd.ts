@@ -84,9 +84,9 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     const formatted = extractFormatted(doc);
     return {
       time: formatted.occurTimeText,
-      duration: formatted.durText,
       field: formatted.fieldText,
       state: formatted.stateText,
+      duration: formatted.durText,
       hid: formatted.hidText,
     };
   });
