@@ -67,10 +67,10 @@ function formatState(state?: DatumState): string | undefined {
     return undefined;
   }
   if (state === true) {
-    return chalk.bold("start");
+    return "start";
   }
   if (state === false) {
-    return chalk.bold("end");
+    return "end";
   }
   return chalk.bold(state);
 }
