@@ -1,5 +1,4 @@
 import {
-  DatumData,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
