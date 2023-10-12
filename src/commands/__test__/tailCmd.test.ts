@@ -5,7 +5,18 @@ describe("tailCmd", () => {
   const dbName = "tail_cmd_test";
   const _db = testDbLifecycle(dbName);
 
-  it.todo("displays the last 10 occurences in the database");
-  it.todo("can display the last n occurences");
+  it.todo("displays the last 10 occurrences in the database");
+  it.todo("can display the last n occurrences");
+  it.todo("displays last occurrences of a specific field");
+  it.todo("defaults to a hybrid display of occurTime and modifyTime");
+  it.todo("can just display occurTime tail");
+  it.todo("can display modifyTime tail");
+  it.todo("can display createTime tail");
+  it.todo("can display a tail from a certain moment in time");
+  it.todo("displays all occurrences on a day if date is given without time");
+  it.todo(
+    "displays only n latest occurrences on a day if date and -n is given"
+  );
+
   it.todo("can display a custom format for the tail commands");
 });

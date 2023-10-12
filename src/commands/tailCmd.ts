@@ -14,6 +14,7 @@ import { humanTime } from "../time/humanTime";
 import { interpolateFields } from "../utils/interpolateFields";
 import { getOccurTime } from "../time/getOccurTime";
 import { MainDatumArgs } from "../input/mainYargs";
+import { fieldArgs } from "../input/fieldArgs";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -27,19 +28,13 @@ export type TailCmdArgs = MainDatumArgs & {
 };
 
 export function builder(yargs: Argv): Argv {
-  return yargs.options({
+  return fieldArgs(yargs).options({
     num: {
       alias: ["n", "number"],
       describe: "number of entries to show, defaults to 10",
       type: "number",
     },
     // TODO
-    // field: {
-    //   describe: "limit entries to a particular field of data",
-    //   alias: "f",
-    //   nargs: 1,
-    //   type: "string",
-    // },
     // date: {
     //   describe:
     //     "Show all that happened on a date instead of the most recent. Unless -n is specified, will return all",
@@ -47,8 +42,8 @@ export function builder(yargs: Argv): Argv {
     //   type: "string",
     // },
     // metric: {
-    //   describe: "which time to use for the sorting",
-    //   choices: ["occur", "create", "modify"],
+    //   describe: "which time to use for the sorting, default is hybrid: occur or modify",
+    //   choices: ["hybrid", "occur", "create", "modify"],
     //   alias: "m",
     //   type: "string",
     // },
