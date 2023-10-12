@@ -62,7 +62,19 @@ function formatTime(
   return dateTime > DateTime.now() ? chalk.underline(fullText) : fullText;
 }
 
-function formatStateInfo(
+function formatState(state?: DatumState): string | undefined {
+  if (state === undefined) {
+    return undefined;
+  }
+  if (state === true) {
+    return chalk.bold("start");
+  }
+  if (state === false) {
+    return chalk.bold("end");
+  }
+  return chalk.bold(state);
+}
+function formatStateTransition(
   state?: DatumState,
   lastState?: DatumState
 ): string | undefined {
@@ -129,6 +141,7 @@ type ExtractedAndFormatted = {
   occurTimeText?: string;
   field?: string;
   state?: string;
+  stateTransition?: string;
   dur?: string;
 };
 export function extractFormatted(
@@ -144,7 +157,8 @@ export function extractFormatted(
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     occurTimeText: formatTime(data.occurTime, data.occurUtcOffset),
     field: data?.field ? color.inverse(data.field) : undefined,
-    state: formatStateInfo(data.state, data.lastState),
+    state: formatState(data.state),
+    stateTransition: formatStateTransition(data.state, data.lastState),
     dur: formatDuration(data.dur ?? data.duration, data.state === false),
   };
 }
@@ -158,9 +172,7 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 
 function showHeaderLine(formatted: ExtractedAndFormatted): void {
   console.log(
-    [formatted.action, formatted.hid, formatted.id]
-      .filter(Boolean)
-      .join(" ")
+    [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" ")
   );
 }
 
@@ -168,7 +180,7 @@ function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
     formatted.occurTimeText,
     formatted.field,
-    formatted.state,
+    formatted.stateTransition,
     formatted.dur,
   ]
     .filter(Boolean)
