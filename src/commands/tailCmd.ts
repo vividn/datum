@@ -4,38 +4,32 @@ import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
 import { interpolateFields } from "../utils/interpolateFields";
 import { MainDatumArgs } from "../input/mainYargs";
-import { fieldArgs } from "../input/fieldArgs";
+import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
 import Table from "easy-table";
 import { TIME_METRICS, timingView } from "../views/datumViews/tail";
 import { HIGH_STRING } from "../utils/startsWith";
+import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 
 export const command = ["tail [field]"];
 export const desc =
   "show the most recently occured/modified/created entries in the db";
 
-export type TailCmdArgs = MainDatumArgs & {
-  num?: number;
-  field?: string;
-  metric?: "occur" | "create" | "modify";
-  format?: string;
-};
+export type TailCmdArgs = MainDatumArgs &
+  TimeArgs &
+  FieldArgs & {
+    n?: number;
+    metric?: "occur" | "create" | "modify";
+  };
 
 export function builder(yargs: Argv): Argv {
-  return fieldArgs(yargs).options({
-    num: {
-      alias: ["n", "number"],
+  return timeYargs(fieldArgs(yargs)).options({
+    n: {
+      alias: ["number"],
       describe: "number of entries to show, defaults to 10",
       type: "number",
     },
-    // TODO
-    // date: {
-    //   describe:
-    //     "Show all that happened on a date instead of the most recent. Unless -n is specified, will return all",
-    //   nargs: 1,
-    //   type: "string",
-    // },
     metric: {
       describe:
         "which time to use for the sorting, default is hybrid: occur or modify",
@@ -47,27 +41,24 @@ export function builder(yargs: Argv): Argv {
     //   describe: "show first rows instead of last rows",
     //   type: "boolean",
     // },
-    // view: {
-    //   describe: "specify a specific view to use instead of the built in time views",
-    //   nargs: 1,
-    //   type: "string"
-    // }
   });
 }
 
 export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const db = connectDb(args);
 
-  const limit = args.num ?? 10;
+  const limit = args.n ?? 10;
   const metric = args.metric ?? "hybrid";
   const field = args.field ?? null;
 
+  const { timeStr, isDefault: defaultTime } = handleTimeArgs(args);
+  const timeKey = defaultTime ? HIGH_STRING : timeStr ?? HIGH_STRING;
   const viewResults = await viewMap({
     db,
     datumView: timingView,
     params: {
       descending: true,
-      startkey: [metric, field, HIGH_STRING],
+      startkey: [metric, field, timeKey],
       endkey: [metric, field, ""],
       limit,
       include_docs: true,
