@@ -6,6 +6,7 @@ import { MainDatumArgs } from "../input/mainYargs";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { renderView } from "../output/renderView";
 import { Show } from "../input/outputArgs";
+import { reverseViewParams } from "../utils/reverseViewParams";
 
 export const command = "map <mapName> [start] [end]";
 export const desc = "display a map view or map reduce view";
@@ -88,7 +89,7 @@ export async function mapCmd(
     : args.start
     ? startsWith(inferType(args.start))
     : {};
-  const viewParams: PouchDB.Query.Options<any, any> = {
+  let viewParams: PouchDB.Query.Options<any, any> = {
     reduce: args.reduce ?? false,
     ...startEndParams,
     ...(args.params ?? {}),
@@ -97,13 +98,8 @@ export async function mapCmd(
     viewParams.include_docs = true;
   }
   if (args.reverse) {
-    viewParams.descending = !viewParams.descending;
-    [viewParams.startkey, viewParams.endkey] = [
-      viewParams.endkey,
-      viewParams.startkey,
-    ];
+    viewParams = reverseViewParams(viewParams)
   }
-  // TODO: parse map name for /viewName
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const viewResult = useAllDocs
     ? await db.allDocs(viewParams)
