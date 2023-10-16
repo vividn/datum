@@ -39,7 +39,7 @@ export const timingView: DatumView<
     const occurTime = data.occurTime;
     const modifyTime = meta && meta.modifyTime;
     const createTime = meta && meta.createTime;
-    const hybridTime = occurTime || modifyTime;
+    const hybridTime = occurTime || createTime;
 
     if (hybridTime) {
       emit(["hybrid", null, hybridTime], null);

@@ -1,5 +1,6 @@
 import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 
+
 describe("tailCmd", () => {
   const _mockedLog = mockedLogLifecycle();
   const dbName = "tail_cmd_test";
@@ -8,7 +9,7 @@ describe("tailCmd", () => {
   it.todo("displays the last 10 occurrences in the database");
   it.todo("can display the last n occurrences");
   it.todo("displays last occurrences of a specific field");
-  it.todo("defaults to a hybrid display of occurTime and modifyTime");
+  it.todo("defaults to a hybrid display of occurTime and createTime");
   it.todo("can just display occurTime tail");
   it.todo("can display modifyTime tail");
   it.todo("can display createTime tail");

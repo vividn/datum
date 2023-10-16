@@ -8,7 +8,7 @@ import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
 import Table from "easy-table";
-import { TIME_METRICS, timingView } from "../views/datumViews/tail";
+import { TIME_METRICS, timingView } from "../views/datumViews/timingView";
 import { HIGH_STRING, startsWith } from "../utils/startsWith";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
