@@ -294,6 +294,7 @@ describe("handleTimeArgs", () => {
         referenceTime: refTime,
       }).unmodified
     ).toBe(false);
+    expect(handleTimeArgs({noTimestamp: true}).unmodified).toBe(false);
 
     // still false even if time is equivalent to default or referenceTime
     expect(handleTimeArgs({ time: "-0" }).unmodified).toBe(false);

@@ -105,7 +105,7 @@ export function handleTimeArgs({
     return {
       timeStr: undefined,
       utcOffset: utcOffset(referenceTime),
-      unmodified: unmodified,
+      unmodified: false,
     };
   }
 
