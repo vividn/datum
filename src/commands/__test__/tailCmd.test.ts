@@ -23,6 +23,10 @@ async function generateSampleDay(date: string) {
   await startCmd({ field: "run" });
   setNow("+30");
   await endCmd({ field: "run", data: ["distance=5.4"] });
+  await startCmd( { field: "stretch" });
+  setNow("+8");
+  await endCmd({ field: "stretch" });
+  await switchCmd({ field: "environment", state: "home" });
 }
 
 describe("tailCmd", () => {
