@@ -51,7 +51,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const metric = args.metric ?? "hybrid";
   const field = args.field ?? null;
 
-  const { timeStr, isDefault: defaultTime } = handleTimeArgs(args);
+  const { timeStr, unmodified: defaultTime } = handleTimeArgs(args);
   const timeKey = defaultTime ? HIGH_STRING : timeStr ?? HIGH_STRING;
   const viewResults = await viewMap({
     db,
