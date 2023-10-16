@@ -1,12 +1,28 @@
-import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
+import { endCmd } from "../endCmd";
+import { startCmd } from "../startCmd";
+import { switchCmd } from "../switchCmd";
 
+const today = "2023-10-16";
+async function generateSampleDay(date: string) {
+  setNow(`8:30 ${date}`);
+  await endCmd({field: "sleep"});
+  setNow("+5");
+  await startCmd({field: "sleep", yesterday: 1, time: "23:20"});
+  setNow("8:40");
+  await switchCmd({field: "project", state: "german"});
+  await switchCmd({field: "text", state: "fiction_book"});
+  setNow("9:10");
+  await endCmd({field: "project"});
+  await endCmd({field: "text"});
+}
 
 describe("tailCmd", () => {
   const _mockedLog = mockedLogLifecycle();
   const dbName = "tail_cmd_test";
   const _db = testDbLifecycle(dbName);
 
-  it.todo("displays the last 10 occurrences in the database");
+  it.todo("displays by default the last 10 occurrences in the database");
   it.todo("can display the last n occurrences");
   it.todo("displays last occurrences of a specific field");
   it.todo("defaults to a hybrid display of occurTime and createTime");
