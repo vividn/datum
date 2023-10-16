@@ -9,8 +9,9 @@ import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
 import Table from "easy-table";
 import { TIME_METRICS, timingView } from "../views/datumViews/tail";
-import { HIGH_STRING } from "../utils/startsWith";
+import { HIGH_STRING, startsWith } from "../utils/startsWith";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
+import { reverseViewParams } from "../utils/reverseViewParams";
 
 export const command = ["tail [field]"];
 export const desc =
@@ -21,6 +22,7 @@ export type TailCmdArgs = MainDatumArgs &
   FieldArgs & {
     n?: number;
     metric?: "occur" | "create" | "modify";
+    head?: boolean;
   };
 
 export function builder(yargs: Argv): Argv {
@@ -37,10 +39,11 @@ export function builder(yargs: Argv): Argv {
       alias: "m",
       type: "string",
     },
-    // head: {
-    //   describe: "show first rows instead of last rows",
-    //   type: "boolean",
-    // },
+    head: {
+      describe: "show first rows instead of last rows",
+      type: "boolean",
+      hidden: true,
+    },
   });
 }
 
@@ -51,19 +54,37 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const metric = args.metric ?? "hybrid";
   const field = args.field ?? null;
 
-  const { timeStr, unmodified: defaultTime } = handleTimeArgs(args);
-  const timeKey = defaultTime ? HIGH_STRING : timeStr ?? HIGH_STRING;
+  let viewParams: PouchDB.Query.Options<any, any> = {
+    include_docs: true,
+    inclusive_end: true,
+    limit,
+  };
+
+  const { timeStr, unmodified: isDefaultTime } = handleTimeArgs(args);
+  if (isDefaultTime || timeStr === undefined) {
+    viewParams.startkey = [metric, field, ""];
+    viewParams.endkey = [metric, field, HIGH_STRING];
+  } else if (!timeStr.includes("T")) {
+    // when just a date is given, display all entries for that day unless limit is specifically given
+    viewParams = {
+      ...viewParams,
+      ...startsWith([metric, field, timeStr]),
+      limit: args.n,
+    };
+  } else {
+    viewParams.startkey = [metric, field, ""];
+    viewParams.endkey = [metric, field, timeStr];
+  }
+
+  if (args.head !== true) {
+    viewParams = reverseViewParams(viewParams);
+  }
   const viewResults = await viewMap({
     db,
     datumView: timingView,
-    params: {
-      descending: true,
-      startkey: [metric, field, timeKey],
-      endkey: [metric, field, ""],
-      limit,
-      include_docs: true,
-    },
+    params: viewParams,
   });
+
   const rawRows = viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
   const format = args.formatString;
