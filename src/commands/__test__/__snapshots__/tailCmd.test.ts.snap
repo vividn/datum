@@ -19,14 +19,39 @@ Array [
 ]
 `;
 
-exports[`tailCmd tail metrics defaults to a hybrid display of occurTime and createTime 1`] = `
+exports[`tailCmd tail metrics can display modifyTime tail 1`] = `
+Array [
+  Array [
+    "       Time  Field      State    HID  
+[90mm[39m19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+[90mm[39m21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+[90mm[39m21:01:00[2m+0[22m  [7msocialize[27m  start    w1fla
+[90mm[39m22:00:00[2m+0[22m  [7mperson[27m              en61v
+",
+  ],
+]
+`;
+
+exports[`tailCmd tail metrics can just display occurTime tail 1`] = `
 Array [
   Array [
     "      Time  Field      State    HID  
 19:00:00[2m+0[22m  [7malcohol[27m             elfuv
 19:30:00[2m+0[22m  [7msocialize[27m  start    w1fla
-            [7mperson[27m              en61v
 21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+",
+  ],
+]
+`;
+
+exports[`tailCmd tail metrics defaults to a hybrid display of occurTime and createTime 1`] = `
+Array [
+  Array [
+    "       Time  Field      State    HID  
+ 19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+ 19:30:00[2m+0[22m  [7msocialize[27m  start    w1fla
+[90mc[39m20:00:00[2m+0[22m  [7mperson[27m              en61v
+ 21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
 ",
   ],
 ]

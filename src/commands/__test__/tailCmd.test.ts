@@ -168,6 +168,7 @@ describe("tailCmd", () => {
         occur2Id,
         occur3Id,
       ]);
+      expect(mockedLog.mock.calls).toMatchSnapshot();
     });
 
     it("can display modifyTime tail", async () => {
@@ -179,6 +180,7 @@ describe("tailCmd", () => {
         occur2Id,
         addId,
       ]);
+      expect(mockedLog.mock.calls).toMatchSnapshot();
     });
 
     it("can display createTime tail", async () => {
