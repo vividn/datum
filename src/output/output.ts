@@ -43,7 +43,7 @@ function formatTime(
   }
   // if time is just a date, then return it
   if (!time.includes("T")) {
-    const future = time > (DateTime.now().toISODate() ?? time)
+    const future = time > (DateTime.now().toISODate() ?? time);
     return future ? chalk.underline(time) : time;
   }
 
@@ -75,13 +75,13 @@ function formatAllTimes(doc: EitherPayload): AllTimes {
   const hybrid = data.occurTime
     ? formatTime(data.occurTime, data.utcOffset)
     : meta?.createTime
-    ? formatTime(meta.createTime, undefined, chalk.gray("m"))
+    ? chalk.gray("c") + formatTime(meta.createTime)
     : undefined;
   const times = {
     hybrid: hybrid,
     occur: formatTime(data.occurTime, data.occurUtcOffset),
-    modify: formatTime(meta?.modifyTime, undefined, chalk.gray("m")),
-    create: formatTime(meta?.createTime, undefined, chalk.grey("c")),
+    modify: chalk.gray("m") + formatTime(meta?.modifyTime),
+    create: chalk.grey("c") + formatTime(meta?.createTime),
   };
   return times;
 }
