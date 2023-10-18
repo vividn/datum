@@ -18,3 +18,15 @@ Array [
   ],
 ]
 `;
+
+exports[`tailCmd will display all if there are less than 10 occurences in db 1`] = `
+Array [
+  Array [
+    "      Time  Field     State        HID  
+08:00:00[2m+0[22m  [7mcaffeine[27m               mkhcc
+10:00:00[2m+0[22m  [7mproject[27m   [1mhousehold[22m    p57bz
+10:30:00[2m+0[22m  [7mproject[27m   end          ruaoj
+",
+  ],
+]
+`;

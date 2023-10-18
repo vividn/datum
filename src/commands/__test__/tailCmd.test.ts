@@ -70,8 +70,37 @@ describe("tailCmd", () => {
     expect(mockedLog.mock.calls).toMatchSnapshot();
   });
 
-  it.todo("will display all if there are less than 10 occurences in db");
-  it.todo("can display the last n occurrences");
+  it("will display all if there are less than 10 occurences in db", async () => {
+    setNow(`8am ${today}`);
+    await occurCmd({ field: "caffeine", data: ["amount=100"] });
+    setNow(`10am`);
+    await switchCmd({ field: "project", state: "household" });
+    setNow(`10:30`);
+    await endCmd({ field: "project" });
+
+    const docs = await tailCmd({ show: Show.Standard });
+    expect(docs.length).toBe(3);
+    expect(mockedLog.mock.calls).toMatchSnapshot();
+  });
+
+  it("can display the last n occurrences", async () => {
+    await generateSampleMorning(today);
+    const docs = await tailCmd({ n: 5 });
+    expect(docs.length).toBe(5);
+  });
+
+  it("will display all if there are less than n occurences in db", async () => {
+    setNow(`8am ${today}`);
+    await occurCmd({ field: "caffeine", data: ["amount=100"] });
+    setNow(`10am`);
+    await switchCmd({ field: "project", state: "household" });
+    setNow(`10:30`);
+    await endCmd({ field: "project" });
+
+    const docs = await tailCmd({ n: 5 });
+    expect(docs.length).toBe(3);
+  });
+
   it.todo("displays last occurrences of a specific field");
   it.todo("defaults to a hybrid display of occurTime and createTime");
   it.todo("can just display occurTime tail");
@@ -91,3 +120,5 @@ describe("tailCmd", () => {
 
   it.todo("can display a custom format for the tail commands");
 });
+
+describe("headCmd", () => {});

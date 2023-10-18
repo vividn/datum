@@ -88,6 +88,12 @@ export async function main(cliInput: string | string[]): Promise<void> {
       await tailCmd(args as unknown as TailCmdArgs);
       break;
 
+    case "head":
+      const headArgs = args as unknown as TailCmdArgs;
+      headArgs.head = true;
+      await tailCmd(headArgs);
+      break;
+
     case "edit":
       await editCmd(args as unknown as EditCmdArgs);
       break;
