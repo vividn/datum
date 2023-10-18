@@ -1,4 +1,5 @@
 import {
+  deterministicHumanIds,
   mockedLogLifecycle,
   popNow,
   pushNow,
@@ -55,6 +56,7 @@ async function generateSampleMorning(date: string) {
 
 describe("tailCmd", () => {
   const mockedLog = mockedLogLifecycle();
+  deterministicHumanIds();
   const dbName = "tail_cmd_test";
   const db = testDbLifecycle(dbName);
 

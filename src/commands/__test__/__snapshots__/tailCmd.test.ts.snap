@@ -4,10 +4,10 @@ exports[`tailCmd defaults to a hybrid display of occurTime and createTime 1`] = 
 Array [
   Array [
     "      Time  Field      State    HID  
-19:00:00[2m+0[22m  [7malcohol[27m             o9j5u
-19:30:00[2m+0[22m  [7msocialize[27m  start    7oj49
-            [7mperson[27m              6wphr
-21:00:00[2m+0[22m  [7msocialize[27m  end      njs2z
+19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+19:30:00[2m+0[22m  [7msocialize[27m  start    d7j7m
+            [7mperson[27m              en61v
+21:00:00[2m+0[22m  [7msocialize[27m  end      w1fla
 ",
   ],
 ]
@@ -16,17 +16,17 @@ Array [
 exports[`tailCmd displays by default the last 10 occurrences in the database 3`] = `
 Array [
   Array [
-    "                 Time  Field        State      HID  
-2023-10-16 09:30:00[2m+0[22m  [7menvironment[27m  [1moutside[22m    abk0v
-2023-10-16 09:30:00[2m+0[22m  [7mstretch[27m      start      y9ww7
-2023-10-16 09:37:00[2m+0[22m  [7mrun[27m          start      jx9b4
-2023-10-16 09:37:00[2m+0[22m  [7mstretch[27m      end        8jmtj
-2023-10-16 10:07:00[2m+0[22m  [7mrun[27m          end        dzsp0
-2023-10-16 10:07:00[2m+0[22m  [7mstretch[27m      start      cahbz
-2023-10-16 10:15:00[2m+0[22m  [7menvironment[27m  [1mhome[22m       zddqt
-2023-10-16 10:15:00[2m+0[22m  [7mstretch[27m      end        zyfmb
-2023-10-16 10:18:00[2m+0[22m  [7mpushup[27m                  im9kn
-2023-10-16 11:00:00[2m+0[22m  [7mcaffeine[27m                h1kaf
+    "      Time  Field        State      HID  
+09:30:00[2m+0[22m  [7menvironment[27m  [1moutside[22m    wqynb
+09:30:00[2m+0[22m  [7mstretch[27m      start      7qaqo
+09:37:00[2m+0[22m  [7mrun[27m          start      9bcqg
+09:37:00[2m+0[22m  [7mstretch[27m      end        6m3y5
+10:07:00[2m+0[22m  [7mrun[27m          end        869r3
+10:07:00[2m+0[22m  [7mstretch[27m      start      gs6pb
+10:15:00[2m+0[22m  [7menvironment[27m  [1mhome[22m       92g32
+10:15:00[2m+0[22m  [7mstretch[27m      end        chq8f
+10:18:00[2m+0[22m  [7mpushup[27m                  getek
+11:00:00[2m+0[22m  [7mcaffeine[27m                2abgf
 ",
   ],
 ]
@@ -36,9 +36,9 @@ exports[`tailCmd will display all if there are less than 10 occurences in db 1`]
 Array [
   Array [
     "      Time  Field     State        HID  
-08:00:00[2m+0[22m  [7mcaffeine[27m               mkhcc
-10:00:00[2m+0[22m  [7mproject[27m   [1mhousehold[22m    p57bz
-10:30:00[2m+0[22m  [7mproject[27m   end          ruaoj
+08:00:00[2m+0[22m  [7mcaffeine[27m               elfuv
+10:00:00[2m+0[22m  [7mproject[27m   [1mhousehold[22m    en61v
+10:30:00[2m+0[22m  [7mproject[27m   end          d7j7m
 ",
   ],
 ]
