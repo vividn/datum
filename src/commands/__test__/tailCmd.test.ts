@@ -207,6 +207,8 @@ describe("tailCmd", () => {
   );
 
   it.todo("can display a custom format for the tail commands");
+
+  it.todo("does not display anything when show is None");
 });
 
 describe("headCmd", () => {});

@@ -35,31 +35,60 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
 };
 
 function formatTime(
+  // TODO: combine time and utcOffset into single object in data and in code
   time?: string,
-  utcOffset?: string | number
+  utcOffset?: string | number,
+  dateTimeSeparator?: string,
 ): string | undefined {
   if (!time) {
     return undefined;
   }
-  // if time is just a date, then return it
+
+  let dateText: string, timeText: string, future: boolean;
   if (!time.includes("T")) {
-    return time;
-  }
+  // time is just a date
+    dateText = time;
+    timeText = "";
+    future = time > (DateTime.now().toISODate() ?? time);
+  } else {
+    const dateTime = DateTime.fromISO(time, {
+      zone: getTimezone(utcOffset),
+    });
+    if (!dateTime.isValid) {
+      return undefined;
+    }
 
-  const dateTime = DateTime.fromISO(time, {
-    zone: getTimezone(utcOffset),
-  });
-  if (!dateTime.isValid) {
-    return undefined;
+    const date = dateTime.toISODate();
+    dateText =
+      date === DateTime.now().toISODate() ? "" : dateTime.toISODate() ?? "";
+    const offsetText = chalk.dim(dateTime.toFormat("Z"));
+    timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
+    future = dateTime > DateTime.now()
   }
+  const fullText = [dateText, timeText].filter(Boolean).join(dateTimeSeparator ?? " ");
+  return future ? chalk.underline(fullText) : fullText;
+}
 
-  const date = dateTime.toISODate();
-  const dateText =
-    date === DateTime.now().toISODate() ? "" : dateTime.toISODate();
-  const offsetText = chalk.dim(dateTime.toFormat("Z"));
-  const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
-  const fullText = [dateText, timeText].filter(Boolean).join(" ");
-  return dateTime > DateTime.now() ? chalk.underline(fullText) : fullText;
+type AllTimes = {
+  hybrid?: string;
+  occur?: string;
+  modify?: string;
+  create?: string;
+};
+function formatAllTimes(doc: EitherPayload): AllTimes {
+  const { data, meta } = pullOutData(doc);
+  const hybrid = data.occurTime
+    ? formatTime(data.occurTime, data.utcOffset)
+    : meta?.createTime
+    ? formatTime(meta.createTime, undefined, chalk.gray("m"))
+    : undefined;
+  const times = {
+    hybrid: hybrid,
+    occur: formatTime(data.occurTime, data.occurUtcOffset),
+    modify: formatTime(meta?.modifyTime, undefined, chalk.gray("m")),
+    create: formatTime(meta?.createTime, undefined, chalk.grey("c")),
+  };
+  return times;
 }
 
 function formatState(state?: DatumState): string | undefined {
@@ -138,7 +167,7 @@ type ExtractedAndFormatted = {
   action: string;
   id?: string;
   hid?: string;
-  occurTimeText?: string;
+  time: AllTimes;
   field?: string;
   state?: string;
   stateTransition?: string;
@@ -150,12 +179,11 @@ export function extractFormatted(
 ): ExtractedAndFormatted {
   const color = action ? ACTION_CHALK[action] : chalk;
   const { data, meta } = pullOutData(doc);
-
   return {
     action: color(`${action}`),
     id: doc._id ? chalk.dim(doc._id) : undefined,
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
-    occurTimeText: formatTime(data.occurTime, data.occurUtcOffset),
+    time: formatAllTimes(doc),
     field: data?.field ? color.inverse(data.field) : undefined,
     state: formatState(data.state),
     stateTransition: formatStateTransition(data.state, data.lastState),

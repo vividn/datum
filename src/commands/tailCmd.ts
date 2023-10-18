@@ -12,6 +12,7 @@ import { TIME_METRICS, timingView } from "../views/datumViews/timingView";
 import { HIGH_STRING, startsWith } from "../utils/startsWith";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
+import { Show } from "../input/outputArgs";
 
 export const command = ["tail [field]", "head [field]"];
 export const desc =
@@ -91,7 +92,8 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const rawRows = args.head ? viewResults.rows : viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
   const format = args.formatString;
-  if (format) {
+  const show = args.show;
+  if (format && show !== Show.None) {
     docs.forEach((doc) => {
       const { data, meta } = pullOutData(doc);
       console.log(
@@ -100,35 +102,35 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     });
     return docs;
   }
-
-  const formattedRows = docs.map((doc) => {
-    const formatted = extractFormatted(doc);
-    return {
-      time: formatted.occurTimeText,
-      field: formatted.field,
-      state: formatted.state,
-      duration: formatted.dur,
-      hid: formatted.hid,
+  if (format === undefined && show !== Show.None) {
+    const formattedRows = docs.map((doc) => {
+      const formatted = extractFormatted(doc);
+      return {
+        time: formatted.time?.[metric],
+        field: formatted.field,
+        state: formatted.state,
+        duration: formatted.dur,
+        hid: formatted.hid,
+      };
+    });
+    const headerRow = {
+      time: "Time",
+      duration: formattedRows.some((row) => row.duration !== undefined)
+        ? "Dur"
+        : undefined,
+      field: "Field",
+      state: formattedRows.some((row) => row.state !== undefined)
+        ? "State"
+        : undefined,
+      hid: "HID",
     };
-  });
-  const headerRow = {
-    time: "Time",
-    duration: formattedRows.some((row) => row.duration !== undefined)
-      ? "Dur"
-      : undefined,
-    field: "Field",
-    state: formattedRows.some((row) => row.state !== undefined)
-      ? "State"
-      : undefined,
-    hid: "HID",
-  };
-  const allRows = [headerRow, ...formattedRows];
-  // console.log(Table.print(formattedRows, { time: { printer: Table.padLeft } }));
-  console.log(
-    Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
-      return table.print();
-    })
-  );
 
+    const allRows = [headerRow, ...formattedRows];
+    console.log(
+      Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
+        return table.print();
+      })
+    );
+  }
   return docs;
 }
