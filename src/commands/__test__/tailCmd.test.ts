@@ -18,7 +18,7 @@ import { updateCmd } from "../updateCmd";
 
 const yesterday = "2023-10-15";
 const today = "2023-10-16";
-const tomorrow = "2023-10-17";
+// const tomorrow = "2023-10-17";
 
 async function generateSampleMorning(date: string) {
   pushNow(`8:30 ${date}`);
@@ -58,7 +58,7 @@ describe("tailCmd", () => {
   const mockedLog = mockedLogLifecycle();
   deterministicHumanIds();
   const dbName = "tail_cmd_test";
-  const db = testDbLifecycle(dbName);
+  const _db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
     await setupCmd({});
@@ -211,4 +211,4 @@ describe("tailCmd", () => {
   it.todo("does not display anything when show is None");
 });
 
-describe("headCmd", () => {});
+// describe("headCmd", () => {});

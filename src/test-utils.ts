@@ -174,19 +174,21 @@ export function makeDoc(
   return doc;
 }
 
-export async function deterministicHumanIds(seed?: number) {
+export async function deterministicHumanIds(seed?: number): Promise<void> {
   let a = seed || 20231018;
   function random() {
     const x = Math.sin(a++) * 10000;
     return x - Math.floor(x);
   }
   function mockNewHumanId(): string {
-    return random().toString(36).slice(2) + random().toString(36).slice(2)
+    return random().toString(36).slice(2) + random().toString(36).slice(2);
   }
 
   beforeEach(() => {
     a = seed || 20231018;
-    jest.spyOn(newHumanIdModule, "newHumanId").mockImplementation(mockNewHumanId);
+    jest
+      .spyOn(newHumanIdModule, "newHumanId")
+      .mockImplementation(mockNewHumanId);
   });
 }
 

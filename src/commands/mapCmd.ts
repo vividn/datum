@@ -98,7 +98,7 @@ export async function mapCmd(
     viewParams.include_docs = true;
   }
   if (args.reverse) {
-    viewParams = reverseViewParams(viewParams)
+    viewParams = reverseViewParams(viewParams);
   }
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
   const viewResult = useAllDocs
