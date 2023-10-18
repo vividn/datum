@@ -13,7 +13,7 @@ import { HIGH_STRING, startsWith } from "../utils/startsWith";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
 
-export const command = ["tail [field]"];
+export const command = ["tail [field]", "head [field]"];
 export const desc =
   "show the most recently occured/modified/created entries in the db";
 
@@ -71,6 +71,9 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
       ...startsWith([metric, field, timeStr]),
       limit: args.n,
     };
+  } else if (args.head) {
+    viewParams.startkey = [metric, field, timeStr];
+    viewParams.endkey = [metric, field, HIGH_STRING];
   } else {
     viewParams.startkey = [metric, field, ""];
     viewParams.endkey = [metric, field, timeStr];
@@ -85,7 +88,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     params: viewParams,
   });
 
-  const rawRows = viewResults.rows.reverse();
+  const rawRows = args.head ? viewResults.rows : viewResults.rows.reverse();
   const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
   const format = args.formatString;
   if (format) {
