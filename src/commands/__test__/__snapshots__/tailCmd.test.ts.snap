@@ -1,5 +1,18 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`tailCmd defaults to a hybrid display of occurTime and createTime 1`] = `
+Array [
+  Array [
+    "      Time  Field      State    HID  
+19:00:00[2m+0[22m  [7malcohol[27m             o9j5u
+19:30:00[2m+0[22m  [7msocialize[27m  start    7oj49
+            [7mperson[27m              6wphr
+21:00:00[2m+0[22m  [7msocialize[27m  end      njs2z
+",
+  ],
+]
+`;
+
 exports[`tailCmd displays by default the last 10 occurrences in the database 3`] = `
 Array [
   Array [
