@@ -201,7 +201,7 @@ function showHeaderLine(formatted: ExtractedAndFormatted): void {
 
 function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
-    formatted.occurTimeText,
+    formatted.time.occur,
     formatted.field,
     formatted.stateTransition,
     formatted.dur,
