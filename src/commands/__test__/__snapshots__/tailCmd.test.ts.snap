@@ -1,0 +1,20 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`tailCmd displays by default the last 10 occurrences in the database 3`] = `
+Array [
+  Array [
+    "                 Time  Field        State      HID  
+2023-10-16 09:30:00[2m+0[22m  [7menvironment[27m  [1moutside[22m    abk0v
+2023-10-16 09:30:00[2m+0[22m  [7mstretch[27m      start      y9ww7
+2023-10-16 09:37:00[2m+0[22m  [7mrun[27m          start      jx9b4
+2023-10-16 09:37:00[2m+0[22m  [7mstretch[27m      end        8jmtj
+2023-10-16 10:07:00[2m+0[22m  [7mrun[27m          end        dzsp0
+2023-10-16 10:07:00[2m+0[22m  [7mstretch[27m      start      cahbz
+2023-10-16 10:15:00[2m+0[22m  [7menvironment[27m  [1mhome[22m       zddqt
+2023-10-16 10:15:00[2m+0[22m  [7mstretch[27m      end        zyfmb
+2023-10-16 10:18:00[2m+0[22m  [7mpushup[27m                  im9kn
+2023-10-16 11:00:00[2m+0[22m  [7mcaffeine[27m                h1kaf
+",
+  ],
+]
+`;

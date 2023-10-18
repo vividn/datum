@@ -1,11 +1,21 @@
-import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
+import {
+  mockedLogLifecycle,
+  popNow,
+  pushNow,
+  setNow,
+  testDbLifecycle,
+} from "../../test-utils";
 import { endCmd } from "../endCmd";
 import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
+import { occurCmd } from "../occurCmd";
+import { tailCmd } from "../tailCmd";
+import { Show } from "../../input/outputArgs";
+import { setupCmd } from "../setupCmd";
 
 const today = "2023-10-16";
-async function generateSampleDay(date: string) {
-  setNow(`8:30 ${date}`);
+async function generateSampleMorning(date: string) {
+  pushNow(`8:30 ${date}`);
   await endCmd({ field: "sleep" });
   setNow("+5");
   await startCmd({ field: "sleep", yesterday: 1, time: "23:20" });
@@ -23,18 +33,43 @@ async function generateSampleDay(date: string) {
   await startCmd({ field: "run" });
   setNow("+30");
   await endCmd({ field: "run", data: ["distance=5.4"] });
-  await startCmd( { field: "stretch" });
+  await startCmd({ field: "stretch" });
   setNow("+8");
   await endCmd({ field: "stretch" });
   await switchCmd({ field: "environment", state: "home" });
+  setNow("+3");
+  await occurCmd({ field: "pushup", data: ["amount=10"] });
+  setNow("11");
+  await occurCmd({
+    field: "caffeine",
+    data: ["amount=100"],
+    comment: "coffee",
+  });
+  popNow();
 }
 
 describe("tailCmd", () => {
-  const _mockedLog = mockedLogLifecycle();
+  const mockedLog = mockedLogLifecycle();
   const dbName = "tail_cmd_test";
-  const _db = testDbLifecycle(dbName);
+  const db = testDbLifecycle(dbName);
 
-  it.todo("displays by default the last 10 occurrences in the database");
+  beforeEach(async () => {
+    await setupCmd({});
+  });
+
+  it("displays by default the last 10 occurrences in the database", async () => {
+    await generateSampleMorning(today);
+    const docs = await tailCmd({ show: Show.Standard });
+    expect(docs.length).toBe(10);
+    expect(docs[0]._id).toMatchInlineSnapshot(
+      `"environment:2023-10-16T09:30:00.000Z"`
+    );
+    expect(docs.at(-1)?._id).toMatchInlineSnapshot(
+      `"caffeine:2023-10-16T11:00:00.000Z"`
+    );
+    expect(mockedLog.mock.calls).toMatchSnapshot();
+  });
+
   it.todo("will display all if there are less than 10 occurences in db");
   it.todo("can display the last n occurrences");
   it.todo("displays last occurrences of a specific field");
