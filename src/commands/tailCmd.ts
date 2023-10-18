@@ -21,7 +21,7 @@ export type TailCmdArgs = MainDatumArgs &
   TimeArgs &
   FieldArgs & {
     n?: number;
-    metric?: "occur" | "create" | "modify";
+    metric?: "hybrid" | "occur" | "create" | "modify";
     head?: boolean;
   };
 

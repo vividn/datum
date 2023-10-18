@@ -121,42 +121,77 @@ describe("tailCmd", () => {
     );
   });
 
-  it("defaults to a hybrid display of occurTime and createTime", async () => {
-    setNow("19:00");
-    const { _id: occur1Id } = await occurCmd({ field: "alcohol" });
-    setNow("20:00");
-    const { _id: addId } = await addCmd({
-      field: "person",
-      baseData: { name: "john doe", age: 35 },
-      idPart: "%name",
-    });
-    setNow("21:00");
-    const { _id: occur2Id } = await startCmd({
-      field: "socialize",
-      time: "19:30",
-    });
-    const { _id: occur3Id } = await endCmd({ field: "socialize" });
+  describe("tail metrics", () => {
+    let occur1Id: string, occur2Id: string, occur3Id: string, addId: string;
+    beforeEach(async () => {
+      setNow("19:00");
+      ({ _id: occur1Id } = await occurCmd({ field: "alcohol" }));
+      setNow("20:00");
+      ({ _id: addId } = await addCmd({
+        field: "person",
+        baseData: { name: "john doe", age: 35 },
+        idPart: "%name",
+      }));
+      setNow("21:00");
+      ({ _id: occur3Id } = await endCmd({ field: "socialize" }));
+      setNow("+1");
+      ({ _id: occur2Id } = await startCmd({
+        field: "socialize",
+        time: "19:30",
+      }));
 
-    // modification does not change the placement in tail, since hybrid is based off of creation when there is no occurence
-    setNow("22:00");
-    await updateCmd({ quickId: addId, data: ["age=36"] });
+      // modify the doc without an occur time
+      setNow("22:00");
+      await updateCmd({ quickId: addId, data: ["age=36"] });
+    });
 
-    const docs = await tailCmd({ show: Show.Standard });
-    expect(docs.length).toBe(4);
-    expect(docs.map((doc) => doc._id)).toEqual([
-      occur1Id,
-      occur2Id,
-      addId,
-      occur3Id,
-    ]);
-    expect(mockedLog.mock.calls).toMatchSnapshot();
+    it("defaults to a hybrid display of occurTime and createTime", async () => {
+      const docs = await tailCmd({ show: Show.Standard });
+      expect(docs.length).toBe(4);
+      expect(docs.map((doc) => doc._id)).toEqual([
+        occur1Id,
+        occur2Id,
+        addId,
+        occur3Id,
+      ]);
+      expect(mockedLog.mock.calls).toMatchSnapshot();
+
+      const explicitHybridDocs = await tailCmd({ metric: "hybrid" });
+      expect(explicitHybridDocs).toEqual(docs);
+    });
+
+    it("can just display occurTime tail", async () => {
+      const docs = await tailCmd({ metric: "occur" });
+      expect(docs.length).toBe(3);
+      expect(docs.map((doc) => doc._id)).toEqual([
+        occur1Id,
+        occur2Id,
+        occur3Id,
+      ]);
+    });
+
+    it("can display modifyTime tail", async () => {
+      const docs = await tailCmd({ metric: "modify" });
+      expect(docs.length).toBe(4);
+      expect(docs.map((doc) => doc._id)).toEqual([
+        occur1Id,
+        occur3Id,
+        occur2Id,
+        addId,
+      ]);
+    });
+
+    it("can display createTime tail", async () => {
+      const docs = await tailCmd({ metric: "create" });
+      expect(docs.length).toBe(4);
+      expect(docs.map((doc) => doc._id)).toEqual([
+        occur1Id,
+        addId,
+        occur3Id,
+        occur2Id,
+      ]);
+    });
   });
-
-  it.todo("can just display occurTime tail");
-
-  it.todo("can display modifyTime tail");
-
-  it.todo("can display createTime tail");
 
   it.todo("can display a tail from a certain moment in time");
 
