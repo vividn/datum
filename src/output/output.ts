@@ -35,37 +35,32 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
 };
 
 function formatTime(
-  // TODO: combine time and utcOffset into single object in data and in code
   time?: string,
-  utcOffset?: string | number,
-  dateTimeSeparator?: string,
+  utcOffset?: string | number
 ): string | undefined {
   if (!time) {
     return undefined;
   }
-
-  let dateText: string, timeText: string, future: boolean;
+  // if time is just a date, then return it
   if (!time.includes("T")) {
-  // time is just a date
-    dateText = time;
-    timeText = "";
-    future = time > (DateTime.now().toISODate() ?? time);
-  } else {
-    const dateTime = DateTime.fromISO(time, {
-      zone: getTimezone(utcOffset),
-    });
-    if (!dateTime.isValid) {
-      return undefined;
-    }
-
-    const date = dateTime.toISODate();
-    dateText =
-      date === DateTime.now().toISODate() ? "" : dateTime.toISODate() ?? "";
-    const offsetText = chalk.dim(dateTime.toFormat("Z"));
-    timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
-    future = dateTime > DateTime.now()
+    const future = time > (DateTime.now().toISODate() ?? time)
+    return future ? chalk.underline(time) : time;
   }
-  const fullText = [dateText, timeText].filter(Boolean).join(dateTimeSeparator ?? " ");
+
+  const dateTime = DateTime.fromISO(time, {
+    zone: getTimezone(utcOffset),
+  });
+  if (!dateTime.isValid) {
+    return undefined;
+  }
+
+  const date = dateTime.toISODate();
+  const dateText =
+    date === DateTime.now().toISODate() ? "" : dateTime.toISODate();
+  const offsetText = chalk.dim(dateTime.toFormat("Z"));
+  const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
+  const fullText = [dateText, timeText].filter(Boolean).join(" ");
+  const future = dateTime > DateTime.now();
   return future ? chalk.underline(fullText) : fullText;
 }
 
