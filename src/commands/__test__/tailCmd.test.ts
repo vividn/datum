@@ -15,10 +15,11 @@ import { Show } from "../../input/outputArgs";
 import { setupCmd } from "../setupCmd";
 import { addCmd } from "../addCmd";
 import { updateCmd } from "../updateCmd";
+import { DateTime } from "luxon";
 
 const yesterday = "2023-10-15";
 const today = "2023-10-16";
-// const tomorrow = "2023-10-17";
+const tomorrow = "2023-10-17";
 
 async function generateSampleMorning(date: string) {
   pushNow(`8:30 ${date}`);
@@ -195,14 +196,47 @@ describe("tailCmd", () => {
     });
   });
 
-  it.todo("can display a tail from a certain moment in time");
+  it("can display a tail from a certain moment in time", async () => {
+    await generateSampleMorning(today);
+    const docs1 = await tailCmd({ time: "9:30" });
+    expect(docs1.length).toBe(8);
+    expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
+      `"stretch:2023-10-16T09:30:00.000Z"`
+    );
 
-  it.todo(
-    "displays future entries if no specific time is given or --no-timestamp is given"
-  );
-  it.todo(
-    "does not display future entries if now is given specifically as the time"
-  );
+    const docs2 = await tailCmd({ date: yesterday, time: "23:30" });
+    expect(docs2.length).toBe(1);
+
+    const docs3 = await tailCmd({ yesterday: 2, time: "22" });
+    expect(docs3.length).toBe(0);
+  });
+
+  it("displays future entries if no specific time is given or --no-timestamp is given", async () => {
+    setNow(`20:00 ${today}`);
+    await generateSampleMorning(today);
+    await generateSampleMorning(tomorrow);
+
+    const docs = await tailCmd({});
+    const lastOccur = docs.at(-1)?.data.occurTime;
+    expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(tomorrow);
+
+    const docsNoTimestamp = await tailCmd({});
+    const lastOccurNoTimestamp = docsNoTimestamp.at(-1)?.data.occurTime;
+    expect(DateTime.fromISO(lastOccurNoTimestamp).toISODate()).toEqual(
+      tomorrow
+    );
+  });
+
+  it("does not display future entries if now is given specifically as the time", async () => {
+    setNow(`20:00 ${today}`);
+    await generateSampleMorning(today);
+    await generateSampleMorning(tomorrow);
+
+    const docs = await tailCmd({ time: "now" });
+    const lastOccur = docs.at(-1)?.data.occurTime;
+    expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(today);
+  });
+  
   it.todo("displays all occurrences on a day if date is given without time");
   it.todo(
     "displays only n latest occurrences on a day if date and -n is given"
