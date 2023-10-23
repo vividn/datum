@@ -15,7 +15,8 @@ import { Show } from "../../input/outputArgs";
 import { setupCmd } from "../setupCmd";
 import { addCmd } from "../addCmd";
 import { updateCmd } from "../updateCmd";
-import { DateTime } from "luxon";
+import { DateTime, Settings } from "luxon";
+import { getTimezone } from "../../time/getTimezone";
 
 const yesterday = "2023-10-15";
 const today = "2023-10-16";
@@ -236,11 +237,61 @@ describe("tailCmd", () => {
     const lastOccur = docs.at(-1)?.data.occurTime;
     expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(today);
   });
-  
-  it.todo("displays all occurrences on a day if date is given without time");
+
+  it("displays all occurrences on a day if date is given without time", async () => {
+    await generateSampleMorning(today);
+    await generateSampleMorning(yesterday);
+    const docs = await tailCmd({ date: "today" });
+    const yesterdayDocs = await tailCmd({ yesterday: 1 });
+
+    expect(docs.length).toBeGreaterThan(10);
+    expect(
+      docs
+        .map((doc) => doc.data.occurTime)
+        .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
+    ).toBe(true);
+    expect(
+      yesterdayDocs
+        .map((doc) => doc.data.occurTime)
+        .every(
+          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday
+        )
+    ).toEqual(true);
+  });
+
+  it("displays occurrences on a given day properly even when user is in a different timezone", async () => {
+    // use New Zealand so that early events in the sample morning are previous day in UTC
+    Settings.defaultZone = "Pacific/Auckland";
+    await generateSampleMorning(today);
+    await generateSampleMorning(tomorrow);
+    const docs = await tailCmd({ date: "today" });
+    expect(docs.length).toBeGreaterThan(10);
+
+    // when mapping just from utc, not all should be on today
+    expect(
+      docs
+        .map((doc) => doc.data.occurTime)
+        .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
+    ).toBe(false);
+
+    expect(
+      docs
+        .map((doc) =>
+          DateTime.fromISO(doc.data.occurTime, {
+            zone: getTimezone(doc.data.occurUtcOffset),
+          }).toISODate()
+        )
+        .every((date) => date === today)
+    ).toBe(true);
+
+    Settings.defaultZone = "system";
+  });
+
   it.todo(
     "displays only n latest occurrences on a day if date and -n is given"
   );
+
+  it.todo("displays latest n occurrences on a day even with extreme timezone");
 
   it.todo("can display a custom format for the tail commands");
 
