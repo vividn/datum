@@ -8,11 +8,18 @@ import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
 import Table from "easy-table";
-import { TIME_METRICS, timingView } from "../views/datumViews/timingView";
-import { HIGH_STRING, startsWith } from "../utils/startsWith";
+import {
+  TIME_METRICS,
+  timingView,
+  TimingViewType,
+} from "../views/datumViews/timingView";
+import { HIGH_STRING } from "../utils/startsWith";
 import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
 import { Show } from "../input/outputArgs";
+import { DateTime } from "luxon";
+import { now } from "../time/timeUtils";
+import { getTimezone } from "../time/getTimezone";
 
 export const command = ["tail [field]", "head [field]"];
 export const desc =
@@ -61,17 +68,24 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     limit,
   };
 
-  const { timeStr, unmodified: isDefaultTime } = handleTimeArgs(args);
+  const { timeStr, unmodified: isDefaultTime, onlyDate } = handleTimeArgs(args);
+
   if (isDefaultTime || timeStr === undefined) {
     viewParams.startkey = [metric, field, ""];
     viewParams.endkey = [metric, field, HIGH_STRING];
-  } else if (!timeStr.includes("T")) {
+  } else if (onlyDate) {
     // when just a date is given, display all entries for that day unless limit is specifically given
-    viewParams = {
-      ...viewParams,
-      ...startsWith([metric, field, timeStr]),
-      limit: args.n,
-    };
+    // due to timezone shenanigans, must also grab the full days around the requested date and then filter later
+    viewParams.startkey = [
+      metric,
+      field,
+      DateTime.fromISO(timeStr).minus({ day: 1 }).startOf("day"),
+    ];
+    viewParams.endkey = [
+      metric,
+      field,
+      DateTime.fromISO(timeStr).plus({ day: 1 }).endOf("day"),
+    ];
   } else if (args.head) {
     viewParams.startkey = [metric, field, timeStr];
     viewParams.endkey = [metric, field, HIGH_STRING];
@@ -89,8 +103,26 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     params: viewParams,
   });
 
-  const rawRows = args.head ? viewResults.rows : viewResults.rows.reverse();
-  const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
+  // TODO factor this out better and automatically extract types from views
+  const rawRows: {
+    key: TimingViewType["MapKey"];
+    value: TimingViewType["MapValue"];
+    doc?: EitherDocument;
+  }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
+  const filteredRows = onlyDate
+    ? rawRows.filter((row) => {
+        const dateOrTime = row.key[2];
+        const utcOffset = row.key[3] ?? 0;
+        const localDate = !dateOrTime.includes("T")
+          ? dateOrTime
+          : DateTime.fromISO(dateOrTime, {
+              zone: getTimezone(utcOffset),
+            }).toISODate();
+        return localDate === timeStr;
+      })
+    : rawRows;
+
+  const docs: EitherDocument[] = filteredRows.map((row) => row.doc!);
   const format = args.formatString;
   const show = args.show;
   if (format && show !== Show.None) {

@@ -87,6 +87,7 @@ export type TimeStrWithOffset = {
   timeStr?: isoDatetime | isoDate;
   utcOffset: number;
   unmodified: boolean;
+  onlyDate: boolean;
 };
 export function handleTimeArgs({
   date,
@@ -106,6 +107,7 @@ export function handleTimeArgs({
       timeStr: undefined,
       utcOffset: utcOffset(referenceTime),
       unmodified: false,
+      onlyDate: false,
     };
   }
 
@@ -130,16 +132,17 @@ export function handleTimeArgs({
   }
 
   // if only date information is given (or marked fullDay), only record the date
-  const timeStr =
-    fullDay || ((date || yesterday) && !time && !quick)
-      ? (referenceTime.toISODate() as isoDate)
-      : (referenceTime.toUTC().toString() as isoDatetime);
+  const onlyDate = !!(fullDay || ((date || yesterday) && !time && !quick));
+  const timeStr = onlyDate
+    ? (referenceTime.toISODate() as isoDate)
+    : (referenceTime.toUTC().toString() as isoDatetime);
 
   return {
     timeStr,
     // utc offset needs to be recalculated because DST could be different for the specified time, for example.
     utcOffset: utcOffset(referenceTime),
     unmodified,
+    onlyDate,
   };
 }
 

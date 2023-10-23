@@ -302,6 +302,20 @@ describe("handleTimeArgs", () => {
       handleTimeArgs({ time: "-0", referenceTime: refTime }).unmodified
     ).toBe(false);
   });
+
+  it("returns onlyDate: true, when just timeStr is an isoDate", () => {
+    expect(handleTimeArgs({}).onlyDate).toBe(false);
+    expect(handleTimeArgs({ time: "-8" }).onlyDate).toBe(false);
+    expect(handleTimeArgs({ date: "2023-10-23", time: "14:37" }).onlyDate).toBe(
+      false
+    );
+    expect(handleTimeArgs({ date: "2023-10-23" }).onlyDate).toBe(true);
+    expect(handleTimeArgs({ yesterday: 1 }).onlyDate).toBe(true);
+    expect(handleTimeArgs({ fullDay: true }).onlyDate).toBe(true);
+    expect(
+      handleTimeArgs({ date: "-1", time: "5am", fullDay: true }).onlyDate
+    ).toBe(true);
+  });
 });
 
 describe("occurredBaseData", () => {
