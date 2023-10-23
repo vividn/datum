@@ -18,7 +18,6 @@ import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
 import { Show } from "../input/outputArgs";
 import { DateTime } from "luxon";
-import { now } from "../time/timeUtils";
 import { getTimezone } from "../time/getTimezone";
 
 export const command = ["tail [field]", "head [field]"];
@@ -91,7 +90,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.endkey = [metric, field, HIGH_STRING];
   } else {
     viewParams.startkey = [metric, field, ""];
-    viewParams.endkey = [metric, field, timeStr];
+    viewParams.endkey = [metric, field, timeStr, Infinity];
   }
 
   if (args.head !== true) {
@@ -118,10 +117,11 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
           : DateTime.fromISO(dateOrTime, {
               zone: getTimezone(utcOffset),
             }).toISODate();
+        console.info({ localDate, timeStr });
         return localDate === timeStr;
       })
     : rawRows;
-
+  console.info({ filteredRows });
   const docs: EitherDocument[] = filteredRows.map((row) => row.doc!);
   const format = args.formatString;
   const show = args.show;
