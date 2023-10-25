@@ -18,7 +18,6 @@ import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
 import { Show } from "../input/outputArgs";
 import { DateTime } from "luxon";
-import { getTimezone } from "../time/getTimezone";
 
 export const command = ["tail [field]", "head [field]"];
 export const desc =
@@ -79,7 +78,11 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.startkey = [
       metric,
       field,
-      DateTime.fromISO(timeStr).minus({ day: 1 }).startOf("day").toUTC().toISO(),
+      DateTime.fromISO(timeStr)
+        .minus({ day: 1 })
+        .startOf("day")
+        .toUTC()
+        .toISO(),
     ];
     viewParams.endkey = [
       metric,
@@ -91,7 +94,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.endkey = [metric, field, HIGH_STRING];
   } else {
     viewParams.startkey = [metric, field, ""];
-    viewParams.endkey = [metric, field, timeStr, Infinity];
+    viewParams.endkey = [metric, field, timeStr];
   }
 
   if (args.head !== true) {
@@ -110,16 +113,10 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     doc?: EitherDocument;
   }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
   const filteredRows = onlyDate
-    ? rawRows.filter((row) => {
-        const dateOrTime = row.key[2];
-        const utcOffset = row.key[3] ?? 0;
-        const localDate = !dateOrTime.includes("T")
-          ? dateOrTime
-          : DateTime.fromISO(dateOrTime, {
-              zone: getTimezone(utcOffset),
-            }).toISODate();
-        return localDate === timeStr;
-      })
+    ? rawRows
+        .filter((row) => row.value[0] === timeStr)
+        // this sort moves times that are just dates to the top
+        .sort((a, b) => (a.value > b.value ? 1 : -1))
     : rawRows;
   const docs: EitherDocument[] = filteredRows.map((row) => row.doc!);
   const format = args.formatString;

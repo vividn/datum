@@ -264,12 +264,12 @@ describe("tailCmd", () => {
     Settings.defaultZone = "Pacific/Auckland";
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
-    const docs = await tailCmd({ date: "today" });
+    const docs = await tailCmd({ date: today });
     expect(docs.length).toBeGreaterThan(10);
 
     // when mapping just from utc, not all should be on today
     const utcDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime).toISODate()
+      DateTime.fromISO(doc.data.occurTime).toUTC().toISODate()
     );
     expect(utcDates.every((date) => date === today)).toBe(false);
 
@@ -278,11 +278,14 @@ describe("tailCmd", () => {
         zone: getTimezone(doc.data.occurUtcOffset),
       }).toISODate()
     );
-    console.info({today, utcDates, localDates});
     expect(localDates.every((date) => date === today)).toBe(true);
 
     Settings.defaultZone = "system";
   });
+
+  it.todo(
+    "when requesting the entire date, have full day occurences be at the top"
+  );
 
   it.todo(
     "displays only n latest occurrences on a day if date and -n is given"
