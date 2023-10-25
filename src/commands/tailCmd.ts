@@ -74,16 +74,17 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.endkey = [metric, field, HIGH_STRING];
   } else if (onlyDate) {
     // when just a date is given, display all entries for that day unless limit is specifically given
+    viewParams.limit = args.n;
     // due to timezone shenanigans, must also grab the full days around the requested date and then filter later
     viewParams.startkey = [
       metric,
       field,
-      DateTime.fromISO(timeStr).minus({ day: 1 }).startOf("day"),
+      DateTime.fromISO(timeStr).minus({ day: 1 }).startOf("day").toUTC().toISO(),
     ];
     viewParams.endkey = [
       metric,
       field,
-      DateTime.fromISO(timeStr).plus({ day: 1 }).endOf("day"),
+      DateTime.fromISO(timeStr).plus({ day: 1 }).endOf("day").toUTC().toISO(),
     ];
   } else if (args.head) {
     viewParams.startkey = [metric, field, timeStr];
@@ -117,11 +118,9 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
           : DateTime.fromISO(dateOrTime, {
               zone: getTimezone(utcOffset),
             }).toISODate();
-        console.info({ localDate, timeStr });
         return localDate === timeStr;
       })
     : rawRows;
-  console.info({ filteredRows });
   const docs: EitherDocument[] = filteredRows.map((row) => row.doc!);
   const format = args.formatString;
   const show = args.show;

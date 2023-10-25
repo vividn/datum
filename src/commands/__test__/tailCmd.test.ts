@@ -268,21 +268,18 @@ describe("tailCmd", () => {
     expect(docs.length).toBeGreaterThan(10);
 
     // when mapping just from utc, not all should be on today
-    expect(
-      docs
-        .map((doc) => doc.data.occurTime)
-        .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
-    ).toBe(false);
+    const utcDates = docs.map((doc) =>
+      DateTime.fromISO(doc.data.occurTime).toISODate()
+    );
+    expect(utcDates.every((date) => date === today)).toBe(false);
 
-    expect(
-      docs
-        .map((doc) =>
-          DateTime.fromISO(doc.data.occurTime, {
-            zone: getTimezone(doc.data.occurUtcOffset),
-          }).toISODate()
-        )
-        .every((date) => date === today)
-    ).toBe(true);
+    const localDates = docs.map((doc) =>
+      DateTime.fromISO(doc.data.occurTime, {
+        zone: getTimezone(doc.data.occurUtcOffset),
+      }).toISODate()
+    );
+    console.info({today, utcDates, localDates});
+    expect(localDates.every((date) => date === today)).toBe(true);
 
     Settings.defaultZone = "system";
   });
