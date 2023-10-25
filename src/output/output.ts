@@ -73,7 +73,7 @@ type AllTimes = {
 function formatAllTimes(doc: EitherPayload): AllTimes {
   const { data, meta } = pullOutData(doc);
   const hybrid = data.occurTime
-    ? formatTime(data.occurTime, data.utcOffset)
+    ? formatTime(data.occurTime, data.occurUtcOffset)
     : meta?.createTime
     ? chalk.gray("c") + formatTime(meta.createTime)
     : undefined;
