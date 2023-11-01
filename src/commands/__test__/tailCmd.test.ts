@@ -283,9 +283,20 @@ describe("tailCmd", () => {
     Settings.defaultZone = "system";
   });
 
-  it.todo(
-    "when requesting the entire date, have full day occurences be at the top"
-  );
+  it("when requesting the entire date, have full day occurrences be at the top", async () => {
+    Settings.defaultZone = "Pacific/Auckland";
+    await generateSampleMorning(today);
+    await generateSampleMorning(tomorrow);
+    const lengthWithoutFullDayDocs = (await tailCmd({ date: tomorrow})).length;
+
+    const fullDayDoc1 = await occurCmd({field: "field", date: tomorrow});
+    const fullDayDoc2 = await occurCmd({field: "otherField", date: tomorrow});
+    const docs = await tailCmd({ date: tomorrow });
+    expect(docs.length).toBeGreaterThan(lengthWithoutFullDayDocs + 2);
+
+    expect(docs.slice(0, 2)).toEqual([fullDayDoc1, fullDayDoc2]);
+    Settings.defaultZone = "system";
+  });
 
   it.todo(
     "displays only n latest occurrences on a day if date and -n is given"
