@@ -287,10 +287,10 @@ describe("tailCmd", () => {
     Settings.defaultZone = "Pacific/Auckland";
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
-    const lengthWithoutFullDayDocs = (await tailCmd({ date: tomorrow})).length;
+    const lengthWithoutFullDayDocs = (await tailCmd({ date: tomorrow })).length;
 
-    const fullDayDoc1 = await occurCmd({field: "field", date: tomorrow});
-    const fullDayDoc2 = await occurCmd({field: "otherField", date: tomorrow});
+    const fullDayDoc1 = await occurCmd({ field: "field", date: tomorrow });
+    const fullDayDoc2 = await occurCmd({ field: "otherField", date: tomorrow });
     const docs = await tailCmd({ date: tomorrow });
     expect(docs.length).toEqual(lengthWithoutFullDayDocs + 2);
 
@@ -298,15 +298,42 @@ describe("tailCmd", () => {
     Settings.defaultZone = "system";
   });
 
-  it.todo(
-    "displays only n latest occurrences on a day if date and -n is given"
-  );
+  it("displays only n latest occurrences on a day if date and -n is given", async () => {
+    Settings.defaultZone = "Pacific/Auckland";
+    await generateSampleMorning(today);
+    await generateSampleMorning(tomorrow);
 
-  it.todo("displays latest n occurrences on a day even with extreme timezone");
+    const fullDayDoc1 = await occurCmd({ field: "field", date: tomorrow });
+    const fullDayDoc2 = await occurCmd({ field: "otherField", date: tomorrow });
+    const allDocs = await tailCmd({ date: tomorrow });
+    const limitedDocs = await tailCmd({ date: tomorrow, n: 5 });
 
-  it.todo("can display a custom format for the tail commands");
+    expect(limitedDocs.length).toEqual(5);
+    expect(limitedDocs).not.toContainEqual(fullDayDoc1);
+    expect(limitedDocs).not.toContainEqual(fullDayDoc2);
+    expect(limitedDocs).toEqual(allDocs.slice(-5));
+    Settings.defaultZone = "system";
+  });
 
-  it.todo("does not display anything when show is None");
+  it("can display a custom format for the tail commands", async () => {
+    await generateSampleMorning(today);
+    await generateSampleMorning(tomorrow);
+
+    await occurCmd({ formatString: "%occurTime" });
+    expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
+      Array [
+        Array [
+          "2023-10-16T20:00:00.000Z",
+        ],
+      ]
+    `);
+  });
+
+  it("does not display anything when show is None", async () => {
+    await generateSampleMorning(today);
+    await tailCmd({ show: Show.None });
+    expect(mockedLog).not.toHaveBeenCalled();
+  });
 });
 
 // describe("headCmd", () => {});

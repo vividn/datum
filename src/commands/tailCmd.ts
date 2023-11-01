@@ -73,6 +73,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.endkey = [metric, field, HIGH_STRING];
   } else if (onlyDate) {
     // due to timezone shenanigans, must also grab the full days around the requested date and then filter later
+    viewParams.limit = undefined;
     viewParams.startkey = [
       metric,
       field,
@@ -116,9 +117,12 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
         // this sort moves times that are just dates to the top
         .sort((a, b) => (a.value >= b.value ? 1 : -1))
     : rawRows;
-  const limitedRows = args.head
-    ? filteredRows.slice(0, limit)
-    : filteredRows.slice(-limit);
+  const limitedRows =
+    onlyDate && args.n === undefined
+      ? filteredRows
+      : args.head
+      ? filteredRows.slice(0, limit)
+      : filteredRows.slice(-limit);
   const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
   const format = args.formatString;
