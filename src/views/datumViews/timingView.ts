@@ -14,8 +14,8 @@ type MapKey = [TimeMetric, Field, isoDatetime];
 
 type LocalDate = isoDate;
 // MapValue is used for getting all the entries for a given day (from a local perspective)
-// utc datetime is used in the second value or null if the occurTime is just a date, for sorting date values to the top of the list in tailCmd.
-type MapValue = [LocalDate, isoDatetime | null];
+// the second value is epoch milliseconds or null if the occurTime is just a date, for sorting date values to the top of the list in tailCmd.
+type MapValue = [LocalDate, number | null];
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
@@ -47,21 +47,22 @@ export const timingView: DatumView<
     const field = data.field;
 
     function getLocalDate(
-      time: string,
+      timeStr: string,
       offset?: number | undefined
-    ): [LocalDate, isoDatetime | null] {
-      if (!time.includes("T")) {
-        return [time, null];
+    ): [LocalDate, number | null] {
+      if (!timeStr.includes("T")) {
+        return [timeStr, null];
       }
+      const dateTime = new Date(timeStr).getTime();
+
       if (offset === undefined) {
-        return [time.split("T")[0], time];
+        return [timeStr.split("T")[0], dateTime];
       }
       const msOffset = offset * 60 * 60 * 1000;
-      const dateTime = new Date(time);
-      const localDate = new Date(dateTime.getTime() + msOffset)
+      const localDate = new Date(dateTime + msOffset)
         .toISOString()
         .split("T")[0];
-      return [localDate, time];
+      return [localDate, dateTime];
     }
 
     const occurTime = data.occurTime;
