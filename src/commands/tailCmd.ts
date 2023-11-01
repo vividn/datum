@@ -116,7 +116,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     ? rawRows
         .filter((row) => row.value[0] === timeStr)
         // this sort moves times that are just dates to the top
-        .sort((a, b) => (a.value > b.value ? 1 : -1))
+        .sort((a, b) => (a.value >= b.value ? 1 : -1))
     : rawRows;
   const docs: EitherDocument[] = filteredRows.map((row) => row.doc!);
   const format = args.formatString;

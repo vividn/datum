@@ -292,7 +292,7 @@ describe("tailCmd", () => {
     const fullDayDoc1 = await occurCmd({field: "field", date: tomorrow});
     const fullDayDoc2 = await occurCmd({field: "otherField", date: tomorrow});
     const docs = await tailCmd({ date: tomorrow });
-    expect(docs.length).toBeGreaterThan(lengthWithoutFullDayDocs + 2);
+    expect(docs.length).toEqual(lengthWithoutFullDayDocs + 2);
 
     expect(docs.slice(0, 2)).toEqual([fullDayDoc1, fullDayDoc2]);
     Settings.defaultZone = "system";
