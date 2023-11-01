@@ -19,9 +19,9 @@ import { reverseViewParams } from "../utils/reverseViewParams";
 import { Show } from "../input/outputArgs";
 import { DateTime } from "luxon";
 
-export const command = ["tail [field]", "head [field]"];
+export const command = ["tail [field]"];
 export const desc =
-  "show the most recently occured/modified/created entries in the db";
+  "show the most recently occurred/modified/created entries in the db";
 
 export type TailCmdArgs = MainDatumArgs &
   TimeArgs &
@@ -31,7 +31,7 @@ export type TailCmdArgs = MainDatumArgs &
     head?: boolean;
   };
 
-export function builder(yargs: Argv): Argv {
+export function tailCmdYargs(yargs: Argv): Argv {
   return timeYargs(fieldArgs(yargs)).options({
     n: {
       alias: ["number"],
@@ -52,6 +52,8 @@ export function builder(yargs: Argv): Argv {
     },
   });
 }
+
+export const builder = tailCmdYargs;
 
 export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const db = connectDb(args);
