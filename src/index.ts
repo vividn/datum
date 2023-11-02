@@ -18,6 +18,7 @@ import { occurCmd, OccurCmdArgs } from "./commands/occurCmd";
 import { startCmd, StartCmdArgs } from "./commands/startCmd";
 import { switchCmd, SwitchCmdArgs } from "./commands/switchCmd";
 import { endCmd, EndCmdArgs } from "./commands/endCmd";
+import { headCmd, HeadCmdArgs } from "./commands/headCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
@@ -87,6 +88,11 @@ export async function main(cliInput: string | string[]): Promise<void> {
     case "tail":
       await tailCmd(args as unknown as TailCmdArgs);
       break;
+
+    case "head": {
+      await headCmd(args as unknown as HeadCmdArgs);
+      break;
+    }
 
     case "edit":
       await editCmd(args as unknown as EditCmdArgs);

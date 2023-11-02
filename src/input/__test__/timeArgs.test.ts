@@ -254,6 +254,68 @@ describe("handleTimeArgs", () => {
 
     Settings.defaultZone = "system";
   });
+
+  it("returns unmodified: true only when no modification arguments are passed", async () => {
+    const refTime = DateTime.fromISO("2023-10-16T13:12:00Z");
+    // unmodified from now or from referenceTime
+    expect(handleTimeArgs({}).unmodified).toBe(true);
+    expect(
+      handleTimeArgs({
+        referenceTime: refTime,
+      }).unmodified
+    ).toBe(true);
+
+    // any modifications will result in unmodified: false
+    expect(handleTimeArgs({ date: "-1" }).unmodified).toBe(false);
+    expect(handleTimeArgs({ time: "3:45" }).unmodified).toBe(false);
+    expect(handleTimeArgs({ yesterday: 1 }).unmodified).toBe(false);
+    expect(handleTimeArgs({ quick: 2 }).unmodified).toBe(false);
+    expect(
+      handleTimeArgs({
+        date: "2023-10-10",
+        referenceTime: refTime,
+      }).unmodified
+    ).toBe(false);
+    expect(
+      handleTimeArgs({
+        time: "3:45",
+        referenceTime: refTime,
+      }).unmodified
+    ).toBe(false);
+    expect(
+      handleTimeArgs({
+        yesterday: 1,
+        referenceTime: refTime,
+      }).unmodified
+    ).toBe(false);
+    expect(
+      handleTimeArgs({
+        quick: 2,
+        referenceTime: refTime,
+      }).unmodified
+    ).toBe(false);
+    expect(handleTimeArgs({ noTimestamp: true }).unmodified).toBe(false);
+
+    // still false even if time is equivalent to default or referenceTime
+    expect(handleTimeArgs({ time: "-0" }).unmodified).toBe(false);
+    expect(
+      handleTimeArgs({ time: "-0", referenceTime: refTime }).unmodified
+    ).toBe(false);
+  });
+
+  it("returns onlyDate: true, when just timeStr is an isoDate", () => {
+    expect(handleTimeArgs({}).onlyDate).toBe(false);
+    expect(handleTimeArgs({ time: "-8" }).onlyDate).toBe(false);
+    expect(handleTimeArgs({ date: "2023-10-23", time: "14:37" }).onlyDate).toBe(
+      false
+    );
+    expect(handleTimeArgs({ date: "2023-10-23" }).onlyDate).toBe(true);
+    expect(handleTimeArgs({ yesterday: 1 }).onlyDate).toBe(true);
+    expect(handleTimeArgs({ fullDay: true }).onlyDate).toBe(true);
+    expect(
+      handleTimeArgs({ date: "-1", time: "5am", fullDay: true }).onlyDate
+    ).toBe(true);
+  });
 });
 
 describe("occurredBaseData", () => {

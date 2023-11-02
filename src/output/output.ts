@@ -1,5 +1,4 @@
 import {
-  DatumData,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
@@ -35,20 +34,21 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Failed]: chalk.red,
 };
 
-function formatOccurTime(
-  occurTime?: string,
-  occurUtcOffset?: string | number
+function formatTime(
+  time?: string,
+  utcOffset?: string | number
 ): string | undefined {
-  if (!occurTime) {
+  if (!time) {
     return undefined;
   }
-  // if occurTime is just a date, then return it
-  if (!occurTime.includes("T")) {
-    return occurTime;
+  // if time is just a date, then return it
+  if (!time.includes("T")) {
+    const future = time > (DateTime.now().toISODate() ?? time);
+    return future ? chalk.underline(time) : time;
   }
 
-  const dateTime = DateTime.fromISO(occurTime, {
-    zone: getTimezone(occurUtcOffset),
+  const dateTime = DateTime.fromISO(time, {
+    zone: getTimezone(utcOffset),
   });
   if (!dateTime.isValid) {
     return undefined;
@@ -60,10 +60,45 @@ function formatOccurTime(
   const offsetText = chalk.dim(dateTime.toFormat("Z"));
   const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
   const fullText = [dateText, timeText].filter(Boolean).join(" ");
-  return dateTime > DateTime.now() ? chalk.underline(fullText) : fullText;
+  const future = dateTime > DateTime.now();
+  return future ? chalk.underline(fullText) : fullText;
 }
 
-function formatStateInfo(
+type AllTimes = {
+  hybrid?: string;
+  occur?: string;
+  modify?: string;
+  create?: string;
+};
+function formatAllTimes(doc: EitherPayload): AllTimes {
+  const { data, meta } = pullOutData(doc);
+  const hybrid = data.occurTime
+    ? formatTime(data.occurTime, data.occurUtcOffset)
+    : meta?.createTime
+    ? chalk.gray("c") + formatTime(meta.createTime)
+    : undefined;
+  const times = {
+    hybrid: hybrid,
+    occur: formatTime(data.occurTime, data.occurUtcOffset),
+    modify: chalk.gray("m") + formatTime(meta?.modifyTime),
+    create: chalk.grey("c") + formatTime(meta?.createTime),
+  };
+  return times;
+}
+
+function formatState(state?: DatumState): string | undefined {
+  if (state === undefined) {
+    return undefined;
+  }
+  if (state === true) {
+    return "start";
+  }
+  if (state === false) {
+    return "end";
+  }
+  return chalk.bold(state);
+}
+function formatStateTransition(
   state?: DatumState,
   lastState?: DatumState
 ): string | undefined {
@@ -80,7 +115,7 @@ function formatStateInfo(
         : chalk.dim(`${lastState}⇾`)
       : "";
   return state !== undefined
-    ? ` ${lastStateText} ${chalk.bold(state)}`
+    ? `${lastStateText} ${chalk.bold(state)}`
     : undefined;
 }
 
@@ -96,7 +131,8 @@ function formatDuration(
     ? duration.toFormat(" ⟞ m'm' ⟝ ")
     : duration.toFormat(" ⟝ m'm'⟞ ");
 }
-function formattedNonRedundantData(data: DatumData): string | undefined {
+function formattedNonRedundantData(doc: EitherPayload): string | undefined {
+  const { data } = pullOutData(doc);
   const {
     _id,
     _rev,
@@ -118,34 +154,35 @@ function formattedNonRedundantData(data: DatumData): string | undefined {
   return formatted;
 }
 
-type ExtractedAndFormatted = {
-  actionText: string;
-  idText?: string;
-  hidText?: string;
-  occurTimeText?: string;
-  fieldText?: string;
-  stateText?: string;
-  durText?: string;
-  nonRedundantData?: string;
-  entireDocument: string;
-};
-function extractFormatted(
-  action: ACTIONS,
-  doc: EitherPayload
-): ExtractedAndFormatted {
-  const color = ACTION_CHALK[action];
-  const { data, meta } = pullOutData(doc);
+function formattedDoc(doc: EitherPayload): string {
+  return stringify(doc);
+}
 
+type ExtractedAndFormatted = {
+  action: string;
+  id?: string;
+  hid?: string;
+  time: AllTimes;
+  field?: string;
+  state?: string;
+  stateTransition?: string;
+  dur?: string;
+};
+export function extractFormatted(
+  doc: EitherPayload,
+  action?: ACTIONS
+): ExtractedAndFormatted {
+  const color = action ? ACTION_CHALK[action] : chalk;
+  const { data, meta } = pullOutData(doc);
   return {
-    actionText: color(`${action}`),
-    idText: doc._id ? chalk.dim(doc._id) : undefined,
-    hidText: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
-    occurTimeText: formatOccurTime(data.occurTime, data.occurUtcOffset),
-    fieldText: data?.field ? color.inverse(data.field) : undefined,
-    stateText: formatStateInfo(data.state, data.lastState),
-    durText: formatDuration(data.dur ?? data.duration, data.state === false),
-    nonRedundantData: formattedNonRedundantData(data),
-    entireDocument: stringify(doc),
+    action: color(`${action}`),
+    id: doc._id ? chalk.dim(doc._id) : undefined,
+    hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
+    time: formatAllTimes(doc),
+    field: data?.field ? color.inverse(data.field) : undefined,
+    state: formatState(data.state),
+    stateTransition: formatStateTransition(data.state, data.lastState),
+    dur: formatDuration(data.dur ?? data.duration, data.state === false),
   };
 }
 
@@ -158,18 +195,16 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 
 function showHeaderLine(formatted: ExtractedAndFormatted): void {
   console.log(
-    [formatted.actionText, formatted.hidText, formatted.idText]
-      .filter(Boolean)
-      .join(" ")
+    [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" ")
   );
 }
 
 function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
-    formatted.occurTimeText,
-    formatted.fieldText,
-    formatted.stateText,
-    formatted.durText,
+    formatted.time.occur,
+    formatted.field,
+    formatted.stateTransition,
+    formatted.dur,
   ]
     .filter(Boolean)
     .join(" ");
@@ -207,7 +242,7 @@ export function showSingle(
   outputArgs: OutputArgs
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
-  const extracted = extractFormatted(action, doc);
+  const extracted = extractFormatted(doc, action);
 
   if (show === Show.None) {
     return;
@@ -234,15 +269,16 @@ export function showSingle(
   }
 
   if (show === Show.All) {
-    console.log(extracted.entireDocument);
+    console.log(formattedDoc(doc));
   }
 
   if (
     show === Show.Standard ||
     (show === Show.Default && formatString === undefined)
   ) {
-    if (extracted.nonRedundantData !== undefined) {
-      console.log(extracted.nonRedundantData);
+    const formattedData = formattedNonRedundantData(doc);
+    if (formattedData !== undefined) {
+      console.log(formattedData);
     }
   }
 }

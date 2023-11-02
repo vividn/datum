@@ -86,6 +86,8 @@ export type ReferencedTimeArgs = TimeArgs & {
 export type TimeStrWithOffset = {
   timeStr?: isoDatetime | isoDate;
   utcOffset: number;
+  unmodified: boolean;
+  onlyDate: boolean;
 };
 export function handleTimeArgs({
   date,
@@ -99,40 +101,48 @@ export function handleTimeArgs({
 }: ReferencedTimeArgs): TimeStrWithOffset {
   const tz = getTimezone(timezone);
   referenceTime = referenceTime ?? now(tz);
-
+  let unmodified = true;
   if (noTimestamp) {
     return {
       timeStr: undefined,
       utcOffset: utcOffset(referenceTime),
+      unmodified: false,
+      onlyDate: false,
     };
   }
 
   if (time) {
     referenceTime = parseTimeStr({ timeStr: time, referenceTime });
+    unmodified = false;
   }
 
   if (quick) {
     referenceTime = referenceTime.minus({ minutes: 5 * quick });
+    unmodified = false;
   }
 
   if (date) {
     referenceTime = parseDateStr({ dateStr: date, referenceTime });
+    unmodified = false;
   }
 
   if (yesterday) {
     referenceTime = referenceTime.minus({ days: yesterday });
+    unmodified = false;
   }
 
   // if only date information is given (or marked fullDay), only record the date
-  const timeStr =
-    fullDay || ((date || yesterday) && !time && !quick)
-      ? (referenceTime.toISODate() as isoDate)
-      : (referenceTime.toUTC().toString() as isoDatetime);
+  const onlyDate = !!(fullDay || ((date || yesterday) && !time && !quick));
+  const timeStr = onlyDate
+    ? (referenceTime.toISODate() as isoDate)
+    : (referenceTime.toUTC().toString() as isoDatetime);
 
   return {
     timeStr,
     // utc offset needs to be recalculated because DST could be different for the specified time, for example.
     utcOffset: utcOffset(referenceTime),
+    unmodified,
+    onlyDate,
   };
 }
 
