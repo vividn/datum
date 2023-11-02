@@ -22,7 +22,7 @@ const yesterday = "2023-10-15";
 const today = "2023-10-16";
 const tomorrow = "2023-10-17";
 
-export async function generateSampleMorning(date: string) {
+export async function generateSampleMorning(date: string): Promise<void> {
   pushNow(`8:30 ${date}`);
   await endCmd({ field: "sleep" });
   setNow("+5");
@@ -363,5 +363,3 @@ describe("tailCmd", () => {
     expect(mockedLog).not.toHaveBeenCalled();
   });
 });
-
-// describe("headCmd", () => {});

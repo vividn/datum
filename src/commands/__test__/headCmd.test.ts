@@ -1,8 +1,6 @@
 import {
   deterministicHumanIds,
   mockedLogLifecycle,
-  popNow,
-  pushNow,
   setNow,
   testDbLifecycle,
 } from "../../test-utils";
@@ -10,7 +8,6 @@ import { endCmd } from "../endCmd";
 import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
 import { occurCmd } from "../occurCmd";
-import { tailCmd } from "../tailCmd";
 import { Show } from "../../input/outputArgs";
 import { setupCmd } from "../setupCmd";
 import { addCmd } from "../addCmd";
@@ -24,7 +21,7 @@ const yesterday = "2023-10-31";
 const today = "2023-11-01";
 const tomorrow = "2023-11-02";
 
-describe("HeadCmd", () => {
+describe("headCmd", () => {
   const mockedLog = mockedLogLifecycle();
   deterministicHumanIds();
   const dbName = "head_cmd_test";
@@ -169,41 +166,17 @@ describe("HeadCmd", () => {
 
   it("can display a head from a certain moment in time", async () => {
     await generateSampleMorning(today);
-    const docs1 = await headCmd({ time: "9:30" });
-    expect(docs1.length).toBe(8);
-    expect(docs1.at(-1)?._id).toMatchInlineSnapshot();
+    const docs1 = await headCmd({ time: "9:45" });
+    expect(docs1.length).toBe(6);
+    expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
+      `"caffeine:2023-11-01T11:00:00.000Z"`
+    );
 
-    const docs2 = await headCmd({ date: yesterday, time: "23:30" });
+    const docs2 = await headCmd({ date: today, time: "11" });
     expect(docs2.length).toBe(1);
 
-    const docs3 = await headCmd({ yesterday: 2, time: "22" });
+    const docs3 = await headCmd({ date: tomorrow, time: "7" });
     expect(docs3.length).toBe(0);
-  });
-
-  it("displays future entries if no specific time is given or --no-timestamp is given", async () => {
-    setNow(`20:00 ${today}`);
-    await generateSampleMorning(today);
-    await generateSampleMorning(tomorrow);
-
-    const docs = await headCmd({});
-    const lastOccur = docs.at(-1)?.data.occurTime;
-    expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(tomorrow);
-
-    const docsNoTimestamp = await headCmd({});
-    const lastOccurNoTimestamp = docsNoTimestamp.at(-1)?.data.occurTime;
-    expect(DateTime.fromISO(lastOccurNoTimestamp).toISODate()).toEqual(
-      tomorrow
-    );
-  });
-
-  it("does not display future entries if now is given specifically as the time", async () => {
-    setNow(`20:00 ${today}`);
-    await generateSampleMorning(today);
-    await generateSampleMorning(tomorrow);
-
-    const docs = await headCmd({ time: "now" });
-    const lastOccur = docs.at(-1)?.data.occurTime;
-    expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(today);
   });
 
   it("displays all occurrences on a day if date is given without time", async () => {
@@ -266,7 +239,7 @@ describe("HeadCmd", () => {
     Settings.defaultZone = "system";
   });
 
-  it("displays only n latest occurrences on a day if date and -n is given", async () => {
+  it("displays only first n occurrences on a day if date and -n is given", async () => {
     Settings.defaultZone = "Pacific/Auckland";
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
@@ -277,9 +250,9 @@ describe("HeadCmd", () => {
     const limitedDocs = await headCmd({ date: tomorrow, n: 5 });
 
     expect(limitedDocs.length).toEqual(5);
-    expect(limitedDocs).not.toContainEqual(fullDayDoc1);
-    expect(limitedDocs).not.toContainEqual(fullDayDoc2);
-    expect(limitedDocs).toEqual(allDocs.slice(-5));
+    expect(limitedDocs[0]).toEqual(fullDayDoc1);
+    expect(limitedDocs[1]).toEqual(fullDayDoc2);
+    expect(limitedDocs).toEqual(allDocs.slice(0, 5));
     Settings.defaultZone = "system";
   });
 
@@ -331,5 +304,3 @@ describe("HeadCmd", () => {
     expect(mockedLog).not.toHaveBeenCalled();
   });
 });
-
-// describe("headCmd", () => {});
