@@ -1,0 +1,139 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`headCmd displays by default the first 10 occurrences in the database 3`] = `
+Array [
+  Array [
+    "                 Time  Field        State           HID  
+2023-10-31 23:20:00[2m+0[22m  [7msleep[27m        start           en61v
+           08:30:00[2m+0[22m  [7msleep[27m        end             elfuv
+           08:40:00[2m+0[22m  [7mproject[27m      [1mgerman[22m          d7j7m
+           08:40:00[2m+0[22m  [7mtext[27m         [1mfiction_book[22m    w1fla
+           09:10:00[2m+0[22m  [7mproject[27m      end             mbukz
+           09:10:00[2m+0[22m  [7mtext[27m         end             puzt1
+           09:30:00[2m+0[22m  [7menvironment[27m  [1moutside[22m         wqynb
+           09:30:00[2m+0[22m  [7mstretch[27m      start           7qaqo
+           09:37:00[2m+0[22m  [7mrun[27m          start           9bcqg
+           09:37:00[2m+0[22m  [7mstretch[27m      end             6m3y5
+",
+  ],
+]
+`;
+
+exports[`headCmd first metrics can display modifyTime head 1`] = `
+Array [
+  Array [
+    "       Time  Field      State    HID  
+[90mm[39m19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+[90mm[39m21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+[90mm[39m21:01:00[2m+0[22m  [7msocialize[27m  start    w1fla
+[90mm[39m22:00:00[2m+0[22m  [7mperson[27m              en61v
+",
+  ],
+]
+`;
+
+exports[`headCmd first metrics can just display occurTime head 1`] = `
+Array [
+  Array [
+    "      Time  Field      State    HID  
+19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+19:30:00[2m+0[22m  [7msocialize[27m  start    w1fla
+21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+",
+  ],
+]
+`;
+
+exports[`headCmd first metrics defaults to a hybrid display of occurTime and createTime 1`] = `
+Array [
+  Array [
+    "       Time  Field      State    HID  
+ 19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+ 19:30:00[2m+0[22m  [7msocialize[27m  start    w1fla
+[90mc[39m20:00:00[2m+0[22m  [7mperson[27m              en61v
+ 21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+",
+  ],
+]
+`;
+
+exports[`headCmd will display all if there are less than 10 occurrences in db 1`] = `
+Array [
+  Array [
+    "      Time  Field     State        HID  
+08:00:00[2m+0[22m  [7mcaffeine[27m               elfuv
+10:00:00[2m+0[22m  [7mproject[27m   [1mhousehold[22m    en61v
+10:30:00[2m+0[22m  [7mproject[27m   end          d7j7m
+",
+  ],
+]
+`;
+
+exports[`tailCmd displays by default the last 10 occurrences in the database 3`] = `
+Array [
+  Array [
+    "      Time  Field        State      HID  
+09:30:00[2m+0[22m  [7menvironment[27m  [1moutside[22m    wqynb
+09:30:00[2m+0[22m  [7mstretch[27m      start      7qaqo
+09:37:00[2m+0[22m  [7mrun[27m          start      9bcqg
+09:37:00[2m+0[22m  [7mstretch[27m      end        6m3y5
+10:07:00[2m+0[22m  [7mrun[27m          end        869r3
+10:07:00[2m+0[22m  [7mstretch[27m      start      gs6pb
+10:15:00[2m+0[22m  [7menvironment[27m  [1mhome[22m       92g32
+10:15:00[2m+0[22m  [7mstretch[27m      end        chq8f
+10:18:00[2m+0[22m  [7mpushup[27m                  getek
+11:00:00[2m+0[22m  [7mcaffeine[27m                2abgf
+",
+  ],
+]
+`;
+
+exports[`tailCmd tail metrics can display modifyTime tail 1`] = `
+Array [
+  Array [
+    "       Time  Field      State    HID  
+[90mm[39m19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+[90mm[39m21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+[90mm[39m21:01:00[2m+0[22m  [7msocialize[27m  start    w1fla
+[90mm[39m22:00:00[2m+0[22m  [7mperson[27m              en61v
+",
+  ],
+]
+`;
+
+exports[`tailCmd tail metrics can just display occurTime tail 1`] = `
+Array [
+  Array [
+    "      Time  Field      State    HID  
+19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+19:30:00[2m+0[22m  [7msocialize[27m  start    w1fla
+21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+",
+  ],
+]
+`;
+
+exports[`tailCmd tail metrics defaults to a hybrid display of occurTime and createTime 1`] = `
+Array [
+  Array [
+    "       Time  Field      State    HID  
+ 19:00:00[2m+0[22m  [7malcohol[27m             elfuv
+ 19:30:00[2m+0[22m  [7msocialize[27m  start    w1fla
+[90mc[39m20:00:00[2m+0[22m  [7mperson[27m              en61v
+ 21:00:00[2m+0[22m  [7msocialize[27m  end      d7j7m
+",
+  ],
+]
+`;
+
+exports[`tailCmd will display all if there are less than 10 occurrences in db 1`] = `
+Array [
+  Array [
+    "      Time  Field     State        HID  
+08:00:00[2m+0[22m  [7mcaffeine[27m               elfuv
+10:00:00[2m+0[22m  [7mproject[27m   [1mhousehold[22m    en61v
+10:30:00[2m+0[22m  [7mproject[27m   end          d7j7m
+",
+  ],
+]
+`;

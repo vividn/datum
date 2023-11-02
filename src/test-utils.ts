@@ -17,6 +17,7 @@ import { defaultIdComponents } from "./ids/defaultIdComponents";
 import { buildIdStructure } from "./ids/buildIdStructure";
 import { defaults } from "./input/defaults";
 import { assembleId } from "./ids/assembleId";
+import * as newHumanIdModule from "./meta/newHumanId";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -171,6 +172,24 @@ export function makeDoc(
     doc._rev = "1-foo";
   }
   return doc;
+}
+
+export async function deterministicHumanIds(seed?: number): Promise<void> {
+  let a = seed || 20231018;
+  function random() {
+    const x = Math.sin(a++) * 10000;
+    return x - Math.floor(x);
+  }
+  function mockNewHumanId(): string {
+    return random().toString(36).slice(2) + random().toString(36).slice(2);
+  }
+
+  beforeEach(() => {
+    a = seed || 20231018;
+    jest
+      .spyOn(newHumanIdModule, "newHumanId")
+      .mockImplementation(mockNewHumanId);
+  });
 }
 
 // export async function generateSampleDay(dateStr = "2022-08-14") {

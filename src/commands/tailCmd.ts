@@ -1,135 +1,172 @@
 import { Argv } from "yargs";
-import {
-  DatumData,
-  DatumMetadata,
-  EitherDocument,
-  isDatumDocument,
-  isDatumPayload,
-} from "../documentControl/DatumDocument";
+import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
-import { occurTimeView } from "../views/datumViews";
-import { getBorderCharacters, table } from "table";
-import { humanTime } from "../time/humanTime";
 import { interpolateFields } from "../utils/interpolateFields";
-import { getOccurTime } from "../time/getOccurTime";
 import { MainDatumArgs } from "../input/mainYargs";
+import { FieldArgs, fieldArgs } from "../input/fieldArgs";
+import { pullOutData } from "../utils/pullOutData";
+import { extractFormatted } from "../output/output";
+import Table from "easy-table";
+import {
+  TIME_METRICS,
+  timingView,
+  TimingViewType,
+} from "../views/datumViews/timingView";
+import { HIGH_STRING } from "../utils/startsWith";
+import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
+import { reverseViewParams } from "../utils/reverseViewParams";
+import { Show } from "../input/outputArgs";
+import { DateTime } from "luxon";
 
 export const command = ["tail [field]"];
 export const desc =
-  "show the most recently occured/modified/created entries in the db";
+  "show the most recently occurred/modified/created entries in the db";
 
-export type TailCmdArgs = MainDatumArgs & {
-  num?: number;
-  field?: string;
-  metric?: "occur" | "create" | "modify";
-  format?: string;
-};
+export type TailCmdArgs = MainDatumArgs &
+  TimeArgs &
+  FieldArgs & {
+    n?: number;
+    metric?: "hybrid" | "occur" | "create" | "modify";
+    head?: boolean;
+  };
 
-export function builder(yargs: Argv): Argv {
-  return yargs.options({
-    num: {
-      alias: ["n", "number"],
+export function tailCmdYargs(yargs: Argv): Argv {
+  return timeYargs(fieldArgs(yargs)).options({
+    n: {
+      alias: ["number"],
       describe: "number of entries to show, defaults to 10",
       type: "number",
     },
-    // TODO
-    // field: {
-    //   describe: "limit entries to a particular field of data",
-    //   alias: "f",
-    //   nargs: 1,
-    //   type: "string",
-    // },
-    // date: {
-    //   describe:
-    //     "Show all that happened on a date instead of the most recent. Unless -n is specified, will return all",
-    //   nargs: 1,
-    //   type: "string",
-    // },
-    // metric: {
-    //   describe: "which time to use for the sorting",
-    //   choices: ["occur", "create", "modify"],
-    //   alias: "m",
-    //   type: "string",
-    // },
-    format: {
+    metric: {
       describe:
-        "custom format for outputting the data. To use fields in the data use %fieldName%, for fields in the metadata use %?fieldName%",
+        "which time to use for the sorting, default is hybrid: occur or modify",
+      choices: TIME_METRICS,
+      alias: "m",
       type: "string",
     },
-    // head: {
-    //   describe: "show first rows instead of last rows",
-    //   type: "boolean",
-    // },
-    // view: {
-    //   describe: "specify a specific view to use instead of the built in time views",
-    //   nargs: 1,
-    //   type: "string"
-    // }
+    head: {
+      describe: "show first rows instead of last rows",
+      type: "boolean",
+      hidden: true,
+    },
   });
 }
+
+export const builder = tailCmdYargs;
 
 export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   const db = connectDb(args);
 
-  const limit = args.num ?? 10;
+  const limit = args.n ?? 10;
+  const metric = args.metric ?? "hybrid";
+  const field = args.field ?? null;
+
+  let viewParams: PouchDB.Query.Options<any, any> = {
+    include_docs: true,
+    inclusive_end: true,
+    limit,
+  };
+
+  const { timeStr, unmodified: isDefaultTime, onlyDate } = handleTimeArgs(args);
+
+  if (isDefaultTime || timeStr === undefined) {
+    viewParams.startkey = [metric, field, ""];
+    viewParams.endkey = [metric, field, HIGH_STRING];
+  } else if (onlyDate) {
+    // due to timezone shenanigans, must also grab the full days around the requested date and then filter later
+    viewParams.limit = undefined;
+    viewParams.startkey = [
+      metric,
+      field,
+      DateTime.fromISO(timeStr)
+        .minus({ day: 1 })
+        .startOf("day")
+        .toUTC()
+        .toISO(),
+    ];
+    viewParams.endkey = [
+      metric,
+      field,
+      DateTime.fromISO(timeStr).plus({ day: 1 }).endOf("day").toUTC().toISO(),
+    ];
+  } else if (args.head) {
+    viewParams.startkey = [metric, field, timeStr];
+    viewParams.endkey = [metric, field, HIGH_STRING];
+  } else {
+    viewParams.startkey = [metric, field, ""];
+    viewParams.endkey = [metric, field, timeStr];
+  }
+
+  if (args.head !== true) {
+    viewParams = reverseViewParams(viewParams);
+  }
   const viewResults = await viewMap({
     db,
-    datumView: occurTimeView,
-    params: {
-      descending: true,
-      startkey: "\uffff\uffff",
-      limit,
-      include_docs: true,
-    },
+    datumView: timingView,
+    params: viewParams,
   });
-  const rawRows = viewResults.rows.reverse();
-  const docs: EitherDocument[] = rawRows.map((row) => row.doc!);
-  const format = args.format;
-  if (format) {
-    //TODO: factor this out better, automatically extract all docs into a similar forat to simplify code base
-    let data: DatumData;
-    let meta: DatumMetadata | undefined;
+
+  // TODO factor this out better and automatically extract types from views
+  const rawRows: {
+    key: TimingViewType["MapKey"];
+    value: TimingViewType["MapValue"];
+    doc?: EitherDocument;
+  }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
+  const filteredRows = onlyDate
+    ? rawRows
+        .filter((row) => row.value[0] === timeStr)
+        // this sort moves times that are just dates to the top
+        .sort((a, b) => (a.value >= b.value ? 1 : -1))
+    : rawRows;
+  const limitedRows =
+    onlyDate && args.n === undefined
+      ? filteredRows
+      : args.head
+      ? filteredRows.slice(0, limit)
+      : filteredRows.slice(-limit);
+  const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
+
+  const format = args.formatString;
+  const show = args.show;
+  if (format && show !== Show.None) {
     docs.forEach((doc) => {
-      if (isDatumPayload(doc)) {
-        data = doc.data as DatumData;
-        meta = doc.meta;
-      } else {
-        data = doc as DatumData;
-      }
+      const { data, meta } = pullOutData(doc);
       console.log(
         interpolateFields({ data, meta, format, useHumanTimes: true })
       );
     });
     return docs;
   }
+  if (format === undefined && show !== Show.None) {
+    const formattedRows = docs.map((doc) => {
+      const formatted = extractFormatted(doc);
+      return {
+        time: formatted.time?.[metric],
+        field: formatted.field,
+        state: formatted.state,
+        duration: formatted.dur,
+        hid: formatted.hid,
+      };
+    });
+    const headerRow = {
+      time: "Time",
+      duration: formattedRows.some((row) => row.duration !== undefined)
+        ? "Dur"
+        : undefined,
+      field: "Field",
+      state: formattedRows.some((row) => row.state !== undefined)
+        ? "State"
+        : undefined,
+      hid: "HID",
+    };
 
-  const headerRow = ["occurTime", "hid", "id"];
-  const tableRows = [headerRow].concat(
-    docs.map((doc) => {
-      const occurTime = humanTime(getOccurTime(doc)!);
-      let hid, id;
-      if (isDatumDocument(doc)) {
-        id = doc._id;
-        hid = doc.meta.humanId?.slice(0, 5) ?? "";
-      } else {
-        hid = "";
-        id = doc._id;
-      }
-      return [occurTime, hid, id];
-    })
-  );
-
-  const output = table(tableRows, {
-    border: getBorderCharacters("void"),
-    columnDefault: {
-      paddingLeft: 0,
-      paddingRight: 1,
-    },
-    drawHorizontalLine: () => false,
-  });
-
-  console.log(output);
-
+    const allRows = [headerRow, ...formattedRows];
+    console.log(
+      Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
+        return table.print();
+      })
+    );
+  }
   return docs;
 }

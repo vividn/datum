@@ -16,7 +16,7 @@ export function fieldArgs(otherYargs?: Argv): Argv {
     })
     .options({
       fieldless: {
-        describe: "do not include field as the first required key",
+        describe: "do not include field as a positional argument",
         type: "boolean",
         alias: "F",
       },
