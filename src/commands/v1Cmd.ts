@@ -2,11 +2,11 @@ import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { flatten } from "table/dist/src/utils";
 import * as fs from "fs";
 import path from "path";
 import { MainDatumArgs } from "../input/mainYargs";
 import { V1MapRow, V1ReduceRowGroup1 } from "../views/datumViews/datumV1";
+import flatten from "lodash.flatten";
 
 export const command = "v1 [field..]";
 export const description =
