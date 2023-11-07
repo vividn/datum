@@ -15,13 +15,15 @@ export function builder(yargs: Argv): Argv {
   return yargs.positional("filename", {
     type: "string",
     args: 1,
-  });;
+  });
 }
 
 export async function backupCmd(args: BackupCmdArgs): Promise<void> {
   const writeStream = createWriteStream(args.filename);
   const db = connectDb(args);
-  const allDocs = (await db.allDocs({ include_docs: true, attachments: true })).rows;
+  const allDocs = (await db.allDocs({ include_docs: true })).rows.map(
+    ({ doc }) => doc
+  );
   const buffer = Buffer.from(JSON.stringify(allDocs, null, 0));
   const compressed = await brotliCompressSync(buffer);
   await writeStream.write(compressed);
