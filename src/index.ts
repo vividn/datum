@@ -20,6 +20,7 @@ import { switchCmd, SwitchCmdArgs } from "./commands/switchCmd";
 import { endCmd, EndCmdArgs } from "./commands/endCmd";
 import { headCmd, HeadCmdArgs } from "./commands/headCmd";
 import { backupCmd, BackupCmdArgs } from "./commands/backupCmd";
+import { restoreCmd, RestoreCmdArgs } from "./commands/restoreCmd";
 
 export async function main(cliInput: string | string[]): Promise<void> {
   const args = (await mainYargs.parse(cliInput)) as MainDatumArgs;
@@ -115,6 +116,10 @@ export async function main(cliInput: string | string[]): Promise<void> {
 
     case "backup":
       await backupCmd(args as unknown as BackupCmdArgs);
+      break;
+
+    case "restore":
+      await restoreCmd(args as unknown as RestoreCmdArgs);
       break;
 
     default:
