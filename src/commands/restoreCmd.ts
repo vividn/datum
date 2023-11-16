@@ -14,17 +14,30 @@ export type RestoreCmdArgs = MainDatumArgs & {
 };
 
 export function builder(yargs: Argv): Argv {
-  return yargs.positional("filename", {
-    type: "string",
-    args: 1,
-  });
+  return yargs
+    .positional("filename", {
+      type: "string",
+      args: 1,
+      desc: "backup file from which to restore",
+    })
+    .options({
+      "allow-nonempty": {
+        type: "boolean",
+        desc: "Allow restore even if the db is not empty",
+      },
+    });
 }
 
 export async function restoreCmd(args: RestoreCmdArgs): Promise<void> {
+  args.createDb ??= true;
   const db = connectDb(args);
+  const info = await db.info();
+  if (info.doc_count !== 0) {
+    throw new Error("Warning: db is not empty, aborting restore");
+  }
   const buffer = await readFileSync(args.filename);
   const decompressed = await brotliDecompressSync(buffer);
   const allDocs = JSON.parse(decompressed.toString());
   // await db.bulkDocs(allDocs, { new_edits: false });
-  console.log({allDocs});
+  console.log({ allDocs });
 }
