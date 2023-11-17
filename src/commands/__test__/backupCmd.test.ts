@@ -26,7 +26,7 @@ describe("backupCmd", () => {
     );
     dbDocs.push(
       await occurCmd({
-        field: "added_field",
+        field: "occured_field",
         baseData: { some: "data", another: "field" },
       })
     );
@@ -58,9 +58,16 @@ describe("backupCmd", () => {
       filename: backupFilePath,
     });
     expect(fs.existsSync(backupFilePath)).toBe(true);
+    const newDoc = await occurCmd({ field: "occuredField2" });
     await expect(backupCmd({ filename: backupFilePath })).rejects.toThrow(
       "File exists"
     );
+
+    expect(fs.existsSync(backupFilePath)).toBe(true);
+    const loadedBackup = JSON.parse(fs.readFileSync(backupFilePath).toString());
+    const docs = loadedBackup.docs;
+    expect(docs.length).toBe(dbDocs.length);
+    expect(docs).not.toContainEqual(newDoc);
   });
 
   it("allows clobber if --clobber is specified", async () => {
@@ -68,10 +75,16 @@ describe("backupCmd", () => {
       filename: backupFilePath,
     });
     expect(fs.existsSync(backupFilePath)).toBe(true);
+    const newDoc = await occurCmd({ field: "occuredField2" });
     await backupCmd({
       filename: backupFilePath,
       clobber: true,
     });
-    expect(fs.existsSync(backupFilePath)).toBe(false);
+
+    expect(fs.existsSync(backupFilePath)).toBe(true);
+    const loadedBackup = JSON.parse(fs.readFileSync(backupFilePath).toString());
+    const docs = loadedBackup.docs;
+    expect(docs.length).toBe(dbDocs.length + 1);
+    expect(docs).toContainEqual(newDoc);
   });
 });

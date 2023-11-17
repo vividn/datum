@@ -27,7 +27,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function backupCmd(args: BackupCmdArgs): Promise<void> {
-  if(fs.existsSync(args.filename)) {
+  if (!args.clobber && fs.existsSync(args.filename)) {
     throw new Error("File exists");
   }
   const writeStream = createWriteStream(args.filename);
