@@ -45,6 +45,7 @@ describe("backupCmd", () => {
     await backupCmd({
       filename: backupFilePath,
     });
+    console.info({ backupFilePath });
     expect(fs.existsSync(backupFilePath)).toBe(true);
     const loadedBackup = JSON.parse(fs.readFileSync(backupFilePath).toString());
     const docs = loadedBackup.docs;
