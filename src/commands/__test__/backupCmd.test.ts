@@ -97,7 +97,7 @@ describe("backupCmd", () => {
       filename: backupFilePath,
     });
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const rawBackupFile = fs.readFileSync(backupFilePath).toString()
+    const rawBackupFile = fs.readFileSync(backupFilePath).toString();
     const loadedBackup = JSON.parse(rawBackupFile);
     expect(loadedBackup.backupTime).toEqual(backupTime);
     const firstBytes = rawBackupFile.slice(0, 50);

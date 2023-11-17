@@ -84,7 +84,7 @@ describe("restoreCmd", () => {
   it("can restore over a nonempty db with the appropriate option", async () => {
     expect((await db2.info()).doc_count).toBe(0);
     jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db2);
-    const extraDoc = await addCmd({field: "extra_doc"});
+    const extraDoc = await addCmd({ field: "extra_doc" });
 
     await restoreCmd({
       filename: backupFilePath,
