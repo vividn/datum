@@ -8,6 +8,7 @@ import { setupCmd } from "../setupCmd";
 import { backupCmd } from "../backupCmd";
 import * as connectDbModule from "../../auth/connectDb";
 import { connectDb } from "../../auth/connectDb";
+import { addCmd } from "../addCmd";
 
 describe("restoreCmd", () => {
   const dbName1 = "restore_cmd_test_1";
@@ -79,6 +80,25 @@ describe("restoreCmd", () => {
       })
     ).rejects.toThrowErrorMatchingSnapshot();
   });
-  
-  it.todo("can restore over a nonempty db with the appropriate option");
+
+  it("can restore over a nonempty db with the appropriate option", async () => {
+    expect((await db2.info()).doc_count).toBe(0);
+    jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db2);
+    const extraDoc = await addCmd({field: "extra_doc"});
+
+    await restoreCmd({
+      filename: backupFilePath,
+      allowNonempty: true,
+    });
+
+    const restoredDocs = (await db2.allDocs({ include_docs: true })).rows.map(
+      ({ doc }) => doc
+    );
+    const originalDocs = (await db1.allDocs({ include_docs: true })).rows.map(
+      ({ doc }) => doc
+    );
+    expect(restoredDocs.length).toBe(originalDocs.length + 1);
+    expect(restoredDocs).toContainEqual(extraDoc);
+    expect(restoredDocs).toContainEqual(originalDocs.at(1));
+  });
 });
