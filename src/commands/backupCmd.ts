@@ -31,7 +31,6 @@ export async function backupCmd(args: BackupCmdArgs): Promise<void> {
   if (!args.overwrite && fs.existsSync(args.filename)) {
     throw new Error("File exists, overwrite with --overwrite");
   }
-  const writeStream = createWriteStream(args.filename);
   const db = connectDb(args);
   const allDocs = (await db.allDocs({ include_docs: true })).rows.map(
     ({ doc }) => doc
@@ -41,6 +40,5 @@ export async function backupCmd(args: BackupCmdArgs): Promise<void> {
   const buffer = Buffer.from(
     JSON.stringify({ backupTime, docs: allDocs }, null, 0)
   );
-  writeStream.write(buffer);
-  writeStream.end();
+  fs.writeFileSync(args.filename, buffer);
 }
