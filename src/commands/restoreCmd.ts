@@ -10,6 +10,7 @@ export const desc =
 
 export type RestoreCmdArgs = MainDatumArgs & {
   filename: string;
+  allowNonempty?: boolean;
 };
 
 export function builder(yargs: Argv): Argv {
@@ -31,7 +32,7 @@ export async function restoreCmd(args: RestoreCmdArgs): Promise<void> {
   args.createDb ??= true;
   const db = connectDb(args);
   const info = await db.info();
-  if (info.doc_count !== 0) {
+  if (!args.allowNonempty && info.doc_count !== 0) {
     throw new Error(
       "Warning: db is not empty, aborting restore. Use --allow-nonempty to override."
     );

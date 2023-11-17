@@ -14,7 +14,7 @@ describe("backupCmd", () => {
   let backupFilePath: string;
   let dbDocs: EitherDocument[] = [];
   beforeEach(async () => {
-    backupFilePath = path.join(os.tmpdir(), "backup.json.br");
+    backupFilePath = path.join(os.tmpdir(), "backup.json");
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
     }
