@@ -1,5 +1,5 @@
 import { backupCmd } from "../backupCmd";
-import { testDbLifecycle } from "../../test-utils";
+import { at, testDbLifecycle } from "../../test-utils";
 import * as fs from "fs";
 import path from "path";
 import * as os from "os";
@@ -86,5 +86,21 @@ describe("backupCmd", () => {
     const docs = loadedBackup.docs;
     expect(docs.length).toBe(dbDocs.length + 1);
     expect(docs).toContainEqual(newDoc);
+  });
+
+  it("stores the backup time in the backup file json, near the beginning of the file", async () => {
+    const backupTime = "2023-11-17T17:22:00.000Z";
+    await at(
+      backupTime,
+      backupCmd
+    )({
+      filename: backupFilePath,
+    });
+    expect(fs.existsSync(backupFilePath)).toBe(true);
+    const rawBackupFile = fs.readFileSync(backupFilePath).toString()
+    const loadedBackup = JSON.parse(rawBackupFile);
+    expect(loadedBackup.backupTime).toEqual(backupTime);
+    const firstBytes = rawBackupFile.slice(0, 50);
+    expect(firstBytes).toContain(backupTime);
   });
 });

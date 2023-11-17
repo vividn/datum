@@ -3,6 +3,7 @@ import { MainDatumArgs } from "../input/mainYargs";
 import { connectDb } from "../auth/connectDb";
 import { createWriteStream } from "fs";
 import * as fs from "fs";
+import { DateTime } from "luxon";
 
 export const command = "backup <filename>";
 export const desc = "Backup db, outputs to stdout";
@@ -36,7 +37,10 @@ export async function backupCmd(args: BackupCmdArgs): Promise<void> {
     ({ doc }) => doc
   );
   // TODO: Also backup and restore attachments (even though using attachments is considered not best practice)
-  const buffer = Buffer.from(JSON.stringify({ docs: allDocs }, null, 0));
+  const backupTime = DateTime.utc().toISO() as string;
+  const buffer = Buffer.from(
+    JSON.stringify({ backupTime, docs: allDocs }, null, 0)
+  );
   writeStream.write(buffer);
   writeStream.end();
 }
