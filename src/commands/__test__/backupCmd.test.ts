@@ -16,6 +16,7 @@ describe("backupCmd", () => {
   beforeEach(async () => {
     const tempDir = process.env["CI"] ? __dirname : os.tmpdir();
     backupFilePath = path.join(tempDir, "backup.json");
+    console.log({backupFilePath})
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
     }
