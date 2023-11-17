@@ -9,7 +9,7 @@ import { EitherDocument } from "../../documentControl/DatumDocument";
 
 describe("backupCmd", () => {
   const dbName = "backup_cmd_test";
-  const db = testDbLifecycle(dbName);
+  const _db = testDbLifecycle(dbName);
 
   let backupFilePath: string;
   let dbDocs: EitherDocument[] = [];
@@ -26,7 +26,7 @@ describe("backupCmd", () => {
     );
     dbDocs.push(
       await occurCmd({
-        field: "occured_field",
+        field: "occurred_field",
         baseData: { some: "data", another: "field" },
       })
     );
@@ -53,7 +53,7 @@ describe("backupCmd", () => {
     });
   });
 
-  it("does not clobber the backup file by default", async () => {
+  it("does not overwrite the backup file by default", async () => {
     await backupCmd({
       filename: backupFilePath,
     });
@@ -70,7 +70,7 @@ describe("backupCmd", () => {
     expect(docs).not.toContainEqual(newDoc);
   });
 
-  it("allows clobber if --clobber is specified", async () => {
+  it("allows overwrite if --overwrite is specified", async () => {
     await backupCmd({
       filename: backupFilePath,
     });
@@ -78,7 +78,7 @@ describe("backupCmd", () => {
     const newDoc = await occurCmd({ field: "occuredField2" });
     await backupCmd({
       filename: backupFilePath,
-      clobber: true,
+      overwrite: true,
     });
 
     expect(fs.existsSync(backupFilePath)).toBe(true);

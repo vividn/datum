@@ -9,7 +9,7 @@ export const desc = "Backup db, outputs to stdout";
 
 export type BackupCmdArgs = MainDatumArgs & {
   filename: string;
-  clobber?: boolean;
+  overwrite?: boolean;
 };
 
 export function builder(yargs: Argv): Argv {
@@ -19,7 +19,7 @@ export function builder(yargs: Argv): Argv {
       args: 1,
     })
     .options({
-      clobber: {
+      overwrite: {
         type: "boolean",
         default: false,
       },
@@ -27,8 +27,8 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function backupCmd(args: BackupCmdArgs): Promise<void> {
-  if (!args.clobber && fs.existsSync(args.filename)) {
-    throw new Error("File exists");
+  if (!args.overwrite && fs.existsSync(args.filename)) {
+    throw new Error("File exists, overwrite with --overwrite");
   }
   const writeStream = createWriteStream(args.filename);
   const db = connectDb(args);

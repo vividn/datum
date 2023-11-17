@@ -2,7 +2,6 @@ import { MainDatumArgs } from "../input/mainYargs";
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { readFileSync } from "fs";
-import { brotliDecompressSync } from "zlib";
 
 export const command = "restore <filename>";
 
@@ -33,11 +32,11 @@ export async function restoreCmd(args: RestoreCmdArgs): Promise<void> {
   const db = connectDb(args);
   const info = await db.info();
   if (info.doc_count !== 0) {
-    throw new Error("Warning: db is not empty, aborting restore");
+    throw new Error(
+      "Warning: db is not empty, aborting restore. Use --allow-nonempty to override."
+    );
   }
   const buffer = await readFileSync(args.filename);
-  const decompressed = await brotliDecompressSync(buffer);
-  const allDocs = JSON.parse(decompressed.toString());
-  // await db.bulkDocs(allDocs, { new_edits: false });
-  console.log({ allDocs });
+  const allDocs = JSON.parse(buffer.toString()).docs;
+  await db.bulkDocs(allDocs, { new_edits: false });
 }
