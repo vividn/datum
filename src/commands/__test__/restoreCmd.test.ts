@@ -20,7 +20,7 @@ describe("restoreCmd", () => {
 
   let backupFilePath: string;
   beforeEach(async () => {
-    const tempDir = process.env["CI"] ? __dirname : os.tmpdir();
+    const tempDir = process.env["RUNNER_TEMP"] ?? os.tmpdir();
     backupFilePath = path.join(tempDir, "backup.json");
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
