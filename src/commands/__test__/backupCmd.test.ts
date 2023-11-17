@@ -14,7 +14,7 @@ describe("backupCmd", () => {
   let backupFilePath: string;
   let dbDocs: EitherDocument[] = [];
   beforeEach(async () => {
-    const tempDir = process.env["RUNNER_TEMP"] ?? os.tmpdir();
+    const tempDir = process.env["CI"] ? __dirname : os.tmpdir();
     backupFilePath = path.join(tempDir, "backup.json");
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
