@@ -1,7 +1,6 @@
 import { Argv } from "yargs";
 import { MainDatumArgs } from "../input/mainYargs";
 import { connectDb } from "../auth/connectDb";
-import { createWriteStream } from "fs";
 import * as fs from "fs";
 import { DateTime } from "luxon";
 
