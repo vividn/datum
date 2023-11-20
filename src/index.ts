@@ -133,6 +133,7 @@ if (require.main === module) {
       process.exitCode = 11;
     } else {
       console.error(err);
+      process.exitCode = 1;
     }
   });
 }
