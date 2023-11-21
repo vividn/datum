@@ -5,7 +5,7 @@ export function defaultIdComponents({ data }: { data: DatumData }): {
   defaultPartitionParts?: string[];
 } {
   const defaultIdParts = isOccurredData(data)
-    ? ["%occurTime%"]
+    ? ["%occurTime.utc%"]
     : Object.keys(data).map((key) => `%${key.replace(/%/g, String.raw`\%`)}%`);
   const defaultPartitionParts = "field" in data ? ["%field%"] : undefined;
   return { defaultIdParts, defaultPartitionParts };

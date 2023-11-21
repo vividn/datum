@@ -1,6 +1,6 @@
 import {
   isIsoDateOrTime,
-  isoDate,
+  isoDate, isoDateOrTime,
   isoDatetime,
   isoDuration,
 } from "../time/timeUtils";
@@ -10,9 +10,15 @@ export type GenericData<T = unknown> = T & {
   [key: string]: any;
 };
 
+type IANATimeZone = string;
+export type DTime = {
+  utc: isoDateOrTime;
+  o?: number;
+  tz?: IANATimeZone;
+};
+
 export type DatumData<T = unknown> = GenericData<T> & {
-  occurTime?: isoDatetime | isoDate;
-  occurUtcOffset?: number;
+  occurTime?: DTime;
   dur?: "start" | "end" | isoDuration;
   field?: string;
 };
@@ -26,13 +32,12 @@ export function isOccurredData(
   data: DatumData | OccurredData
 ): data is OccurredData {
   const occurTime = data.occurTime;
-  return occurTime !== undefined && isIsoDateOrTime(occurTime);
+  return occurTime !== undefined && isIsoDateOrTime(occurTime.utc);
 }
 
 export type DatumMetadata = {
-  utcOffset?: number;
-  createTime?: isoDatetime;
-  modifyTime?: isoDatetime; //TODO: turn into an array of times
+  createTime?: DTime;
+  modifyTime?: DTime; //TODO: turn into an array of times
   idStructure?: string;
   random?: number;
   humanId?: string;
