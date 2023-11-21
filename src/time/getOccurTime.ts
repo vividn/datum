@@ -12,8 +12,8 @@ export function getOccurTime(
     ? (doc.data as DatumData)
     : (doc as DatumData);
   const occurTime = data.occurTime
-    ? DateTime.fromISO(data.occurTime, {
-        zone: data.occurUtcOffset
+    ? DateTime.fromISO(data.occurTime.utc, {
+        zone: data.occurTime.o
           ? FixedOffsetZone.instance(60 * data.occurUtcOffset)
           : undefined,
       })
