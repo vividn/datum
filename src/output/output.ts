@@ -1,4 +1,5 @@
 import {
+  DatumTime,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
@@ -35,20 +36,19 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
 };
 
 function formatTime(
-  time?: string,
-  utcOffset?: string | number
+  time?: DatumTime,
 ): string | undefined {
   if (!time) {
     return undefined;
   }
   // if time is just a date, then return it
-  if (!time.includes("T")) {
+  if (!time.utc.includes("T")) {
     const future = time > (DateTime.now().toISODate() ?? time);
-    return future ? chalk.underline(time) : time;
+    return future ? chalk.underline(time.utc) : time.utc;
   }
 
-  const dateTime = DateTime.fromISO(time, {
-    zone: getTimezone(utcOffset),
+  const dateTime = DateTime.fromISO(time.utc, {
+    zone: getTimezone(time.o),
   });
   if (!dateTime.isValid) {
     return undefined;
@@ -73,13 +73,13 @@ type AllTimes = {
 function formatAllTimes(doc: EitherPayload): AllTimes {
   const { data, meta } = pullOutData(doc);
   const hybrid = data.occurTime
-    ? formatTime(data.occurTime, data.occurUtcOffset)
+    ? formatTime(data.occurTime)
     : meta?.createTime
     ? chalk.gray("c") + formatTime(meta.createTime)
     : undefined;
   const times = {
     hybrid: hybrid,
-    occur: formatTime(data.occurTime, data.occurUtcOffset),
+    occur: formatTime(data.occurTime),
     modify: chalk.gray("m") + formatTime(meta?.modifyTime),
     create: chalk.grey("c") + formatTime(meta?.createTime),
   };
