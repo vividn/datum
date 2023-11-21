@@ -1,13 +1,35 @@
 import { DateTime, Duration, Zone } from "luxon";
 import { BadDurationError } from "../errors";
+import { GenericObject } from "../GenericObject";
 
 export type isoDatetime = string;
 export type isoDate = string;
 export type isoDateOrTime = isoDate | isoDatetime;
 export type isoDuration = string;
 
+type IANATimeZone = string;
+export type DatumTime = {
+  utc: isoDateOrTime;
+  o?: number;
+  tz?: IANATimeZone;
+};
+
 export function isIsoDateOrTime(str: string): str is isoDateOrTime {
   return DateTime.fromISO(str).isValid;
+}
+
+export function isDatumTime(
+  time: DatumTime | GenericObject | string
+): time is DatumTime {
+  if (typeof time === "string") {
+    return false;
+  }
+  return (
+    typeof time.utc === "string" &&
+    isIsoDateOrTime(time.utc) &&
+    (time.o === undefined || typeof time.o === "number") &&
+    (time.tz === undefined || typeof time.tz === "string")
+  );
 }
 
 export const now = (zone?: Zone | string): DateTime => DateTime.local({ zone });

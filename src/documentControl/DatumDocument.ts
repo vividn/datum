@@ -1,20 +1,8 @@
-import {
-  isIsoDateOrTime,
-  isoDate, isoDateOrTime,
-  isoDatetime,
-  isoDuration,
-} from "../time/timeUtils";
+import { DatumTime, isIsoDateOrTime, isoDuration } from "../time/timeUtils";
 import { WithRequired } from "../utils/utilityTypes";
 
 export type GenericData<T = unknown> = T & {
   [key: string]: any;
-};
-
-type IANATimeZone = string;
-export type DatumTime = {
-  utc: isoDateOrTime;
-  o?: number;
-  tz?: IANATimeZone;
 };
 
 export type DatumData<T = unknown> = GenericData<T> & {

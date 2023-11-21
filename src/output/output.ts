@@ -1,5 +1,4 @@
 import {
-  DatumTime,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
@@ -11,6 +10,7 @@ import { pullOutData } from "../utils/pullOutData";
 import { DateTime, Duration } from "luxon";
 import { getTimezone } from "../time/getTimezone";
 import { DatumState } from "../views/datumViews/activeStateView";
+import { DatumTime } from "../time/timeUtils";
 
 chalk.level = 3;
 

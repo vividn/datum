@@ -2,10 +2,9 @@ import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
 import {
   DatumData,
-  DatumMetadata, DatumTime,
-  EitherDocument,
+  DatumMetadata, EitherDocument,
 } from "../../documentControl/DatumDocument";
-import { isoDate, isoDatetime } from "../../time/timeUtils";
+import { DatumTime, isoDate, isoDatetime } from "../../time/timeUtils";
 
 export const TIME_METRICS = ["hybrid", "occur", "create", "modify"] as const;
 type TimeMetric = (typeof TIME_METRICS)[number];
