@@ -10,7 +10,7 @@ describe("getOccurTime", () => {
     const datumDoc: DatumDocument = {
       _id: "some_datum_document",
       _rev: "some_revison",
-      data: { occurTime: "2022-03-06T07:00:00.000Z", occurUtcOffset: -8 },
+      data: { occurTime: { utc: "2022-03-06T07:00:00.000Z", o: -8 }},
       meta: {},
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 23, {
@@ -24,7 +24,7 @@ describe("getOccurTime", () => {
     const datumDoc: DatumDocument = {
       _id: "some_datum_document",
       _rev: "some_revison",
-      data: { foo: "bar", occurUtcOffset: -8 },
+      data: { foo: "bar" },
       meta: {},
     };
 
@@ -37,7 +37,7 @@ describe("getOccurTime", () => {
     const datumDoc: DatumDocument = {
       _id: "some_data_only_doc",
       _rev: "some_revision",
-      data: { occurTime: "2022-03-06T07:00:00.000Z" },
+      data: { occurTime: { utc: "2022-03-06T07:00:00.000Z"} },
       meta: {},
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 22);
@@ -50,7 +50,7 @@ describe("getOccurTime", () => {
     const dataDoc: DataOnlyDocument = {
       _id: "some_datum_document",
       _rev: "some_revison",
-      occurTime: "2022-03-06T07:00:00.000Z",
+      occurTime: { utc: "2022-03-06T07:00:00.000Z" },
       occurUtcOffset: -8,
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 23, {
@@ -65,7 +65,7 @@ describe("getOccurTime", () => {
     const dataDoc: DataOnlyDocument = {
       _id: "some_data_only_doc",
       _rev: "some_revision",
-      occurTime: "2022-03-06T07:00:00.000Z",
+      occurTime: { utc: "2022-03-06T07:00:00.000Z" },
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 22);
     const returnVal = getOccurTime(dataDoc);
