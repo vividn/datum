@@ -2,7 +2,7 @@ import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
 import {
   DatumData,
-  DatumMetadata, DTime,
+  DatumMetadata, DatumTime,
   EitherDocument,
 } from "../../documentControl/DatumDocument";
 import { isoDate, isoDatetime } from "../../time/timeUtils";
@@ -65,7 +65,7 @@ export const timingView: DatumView<
       return [localDate, dateTime];
     }
 
-    function dtTransform(time: string | DTime | undefined): DTime | undefined {
+    function dtTransform(time: string | DatumTime | undefined): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {
         return { utc: time };

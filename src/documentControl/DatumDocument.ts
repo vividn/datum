@@ -11,14 +11,14 @@ export type GenericData<T = unknown> = T & {
 };
 
 type IANATimeZone = string;
-export type DTime = {
+export type DatumTime = {
   utc: isoDateOrTime;
   o?: number;
   tz?: IANATimeZone;
 };
 
 export type DatumData<T = unknown> = GenericData<T> & {
-  occurTime?: DTime;
+  occurTime?: DatumTime;
   dur?: "start" | "end" | isoDuration;
   field?: string;
 };
@@ -36,8 +36,8 @@ export function isOccurredData(
 }
 
 export type DatumMetadata = {
-  createTime?: DTime;
-  modifyTime?: DTime; //TODO: turn into an array of times
+  createTime?: DatumTime;
+  modifyTime?: DatumTime; //TODO: turn into an array of times
   idStructure?: string;
   random?: number;
   humanId?: string;

@@ -1,6 +1,13 @@
 import * as emit from "../../emit";
 import { makeDoc } from "../../../test-utils";
 import { activeStateView } from "../activeStateView";
+import { DatumTime } from "../../../documentControl/DatumDocument";
+import { DateTime } from "luxon";
+
+const occurTime: DatumTime = {
+  utc: "2023-08-22T15:00:00.000Z",
+};
+const occurDateTime: DateTime = DateTime.fromISO(occurTime.utc);
 
 describe("activeStateView", () => {
   let emitMock: any;
@@ -9,14 +16,14 @@ describe("activeStateView", () => {
   });
 
   it("emits nothing if there is no field", () => {
-    const doc = makeDoc({ occurTime: "2023-08-22T15:00:00.000Z", state: true });
+    const doc = makeDoc({ occurTime, state: true });
     const doc2 = makeDoc({
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
       state: true,
       dur: "PT5M",
     });
     const doc3 = makeDoc({
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
       dur: "PT10M",
     });
     activeStateView.map(doc);
@@ -28,7 +35,7 @@ describe("activeStateView", () => {
   it("emits nothing if just occurTime with no dur or state", () => {
     const doc = makeDoc({
       field: "foo",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
@@ -43,29 +50,23 @@ describe("activeStateView", () => {
   it("emits ([field, occurTime], state) when there is no dur", () => {
     const doc = makeDoc({
       field: "foo",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
       state: true,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(
-      ["foo", "2023-08-22T15:00:00.000Z"],
-      true
-    );
+    expect(emitMock).toHaveBeenCalledWith(["foo", occurTime.utc], true);
   });
 
   it("can handle a string state", () => {
     const doc = makeDoc({
       field: "bar",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
       state: "active",
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"],
-      "active"
-    );
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], "active");
   });
 
   it("emits entries for both state and lastState if dur is present", () => {
@@ -74,16 +75,16 @@ describe("activeStateView", () => {
       dur: "PT3M",
       state: "state1",
       lastState: "state2",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T14:57:00.000Z"], // state started 3 minutes ago
+      ["bar", occurDateTime.minus({ minutes: 3 }).toUTC().toISO()], // state started 3 minutes ago
       "state1"
     );
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"], // and then lastState was restored now
+      ["bar", occurTime.utc], // and then lastState was restored now
       "state2"
     );
   });
@@ -93,14 +94,11 @@ describe("activeStateView", () => {
       field: "bar",
       state: "state1",
       lastState: "state2",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"],
-      "state1"
-    );
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], "state1");
   });
 
   it("assumes that lastState is true if state is false", () => {
@@ -108,18 +106,15 @@ describe("activeStateView", () => {
       field: "bar",
       dur: "PT1H",
       state: false,
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T14:00:00.000Z"],
+      ["bar", occurDateTime.minus({ hours: 1 }).toUTC().toISO()],
       false
     );
-    expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"],
-      true
-    );
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], true);
   });
 
   it("assumes that lastState is false if state is not false", () => {
@@ -127,18 +122,15 @@ describe("activeStateView", () => {
       field: "bar",
       dur: "PT1H30M",
       state: true,
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T13:30:00.000Z"],
+      ["bar", occurDateTime.minus({ hours: 1, minutes: 30 }).toUTC().toISO()],
       true
     );
-    expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"],
-      false
-    );
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
 
     emitMock.mockReset();
 
@@ -146,34 +138,37 @@ describe("activeStateView", () => {
       field: "foobar",
       dur: "P1DT2H30M30S",
       state: "stringState",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc2);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["foobar", "2023-08-21T12:29:30.000Z"],
+      [
+        "foobar",
+        occurDateTime
+          .minus({ days: 1, hours: 2, minutes: 30, seconds: 30 })
+          .toUTC()
+          .toISO(),
+      ],
       "stringState"
     );
-    expect(emitMock).toHaveBeenCalledWith(
-      ["foobar", "2023-08-22T15:00:00.000Z"],
-      false
-    );
+    expect(emitMock).toHaveBeenCalledWith(["foobar", occurTime.utc], false);
   });
 
   it("assumes state is true and lastState is false if occurTime and dur are present", () => {
     const doc = makeDoc({
       field: "bar",
       dur: "PT10M",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T14:50:00.000Z"], // assumes state is true, so started dur minutes ago
+      ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is true, so started dur minutes ago
       true
     );
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"], // and then lastState (assumed to be false) is restored now
+      ["bar", occurTime.utc], // and then lastState (assumed to be false) is restored now
       false
     );
   });
@@ -183,18 +178,15 @@ describe("activeStateView", () => {
       field: "bar",
       dur: "-PT10M",
       state: true,
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T14:50:00.000Z"],
+      ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is false
       false
     );
-    expect(emitMock).toHaveBeenCalledWith(
-      ["bar", "2023-08-22T15:00:00.000Z"],
-      true
-    );
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], true);
 
     emitMock.mockReset();
 
@@ -202,16 +194,22 @@ describe("activeStateView", () => {
       field: "foobar",
       dur: "-P1DT2H30M30S",
       state: "stringState",
-      occurTime: "2023-08-22T15:00:00.000Z",
+      occurTime,
     });
     activeStateView.map(doc2);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["foobar", "2023-08-21T12:29:30.000Z"],
+      [
+        "foobar",
+        occurDateTime
+          .minus({ days: 1, hours: 2, minutes: 30, seconds: 30 })
+          .toUTC()
+          .toISO(),
+      ],
       false
     );
     expect(emitMock).toHaveBeenCalledWith(
-      ["foobar", "2023-08-22T15:00:00.000Z"],
+      ["foobar", occurTime.utc],
       "stringState"
     );
   });
