@@ -81,16 +81,19 @@ export const activeStateView: DatumView<
     if (duration !== undefined) {
       const seconds = parseISODuration(duration);
       if (seconds < 0) {
-        const holeBegin = subtractSecondsFromTime(occurTime, Math.abs(seconds));
+        const holeBegin = subtractSecondsFromTime(
+          occurTime.utc,
+          Math.abs(seconds)
+        );
         emit([field, holeBegin], false);
-        emit([field, occurTime], state);
+        emit([field, occurTime.utc], state);
       } else {
-        const blockBegin = subtractSecondsFromTime(occurTime, seconds);
+        const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
         emit([field, blockBegin], state);
-        emit([field, occurTime], lastState);
+        emit([field, occurTime.utc], lastState);
       }
     } else {
-      emit([field, occurTime], state);
+      emit([field, occurTime.utc], state);
     }
   },
 };
