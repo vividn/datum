@@ -1,5 +1,5 @@
 import { DateTime, Duration, Zone } from "luxon";
-import { BadDurationError } from "../errors";
+import { BadDurationError, BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
 
 export type isoDatetime = string;
@@ -52,8 +52,20 @@ export function isoDurationFromDuration(dur: Duration): isoDuration {
   return dur.toISO() as isoDuration;
 }
 
-export function utcOffset(referenceTime: DateTime): number {
-  const offset = referenceTime.offset / 60;
+export function utcOffset(time: DateTime): number {
+  const offset = time.offset / 60;
   // luxon sometimes gives -0 for the offset if system timezone is utc, so make it positive if necessary
   return Object.is(offset, -0) ? 0 : offset;
+}
+
+export function toDatumTime(time: DateTime): DatumTime {
+  // Checking if DateTime is valid should be done before calling this function
+  if (!time.isValid) {
+    throw new BadTimeError("invalid time was given");
+  }
+  return {
+    utc: isoDatetimeFromDateTime(time),
+    o: utcOffset(time),
+    tz: time.zone.name,
+  };
 }
