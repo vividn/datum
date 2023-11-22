@@ -35,9 +35,7 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Failed]: chalk.red,
 };
 
-function formatTime(
-  time?: DatumTime,
-): string | undefined {
+export function humanFormattedTime(time?: DatumTime): string | undefined {
   if (!time) {
     return undefined;
   }
@@ -73,15 +71,15 @@ type AllTimes = {
 function formatAllTimes(doc: EitherPayload): AllTimes {
   const { data, meta } = pullOutData(doc);
   const hybrid = data.occurTime
-    ? formatTime(data.occurTime)
+    ? humanFormattedTime(data.occurTime)
     : meta?.createTime
-    ? chalk.gray("c") + formatTime(meta.createTime)
+    ? chalk.gray("c") + humanFormattedTime(meta.createTime)
     : undefined;
   const times = {
     hybrid: hybrid,
-    occur: formatTime(data.occurTime),
-    modify: chalk.gray("m") + formatTime(meta?.modifyTime),
-    create: chalk.grey("c") + formatTime(meta?.createTime),
+    occur: humanFormattedTime(data.occurTime),
+    modify: chalk.gray("m") + humanFormattedTime(meta?.modifyTime),
+    create: chalk.grey("c") + humanFormattedTime(meta?.createTime),
   };
   return times;
 }

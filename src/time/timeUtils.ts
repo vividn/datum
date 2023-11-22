@@ -1,6 +1,8 @@
 import { DateTime, Duration, Zone } from "luxon";
 import { BadDurationError, BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
+import { getTimezone } from "./getTimezone";
+import { Settings as DateTimeSettings } from "luxon/src/settings";
 
 export type isoDatetime = string;
 export type isoDate = string;
@@ -33,6 +35,7 @@ export function isDatumTime(
 }
 
 export const now = (zone?: Zone | string): DateTime => DateTime.local({ zone });
+export const defaultZone = DateTimeSettings.defaultZone as Zone;
 
 export function isoDateFromDateTime(dt: DateTime): isoDate {
   return dt.toISODate() as isoDate;
@@ -68,4 +71,20 @@ export function toDatumTime(time: DateTime): DatumTime {
     o: utcOffset(time),
     tz: time.zone.name,
   };
+}
+
+export function datumTimeToLuxon(time: DatumTime): DateTime {
+  if (time.tz && time.o) {
+    const tzTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.tz)})
+    const oTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.o)})
+    if (tzTime.offset !== oTime.offset) {
+      console.warn(`mismatched IANA timezone and offset for ${time.utc}. zone = ${time.tz}, o = ${time.o}`);
+      return oTime;
+    }
+  }
+  const tz = time.tx ? getTimezone(time.tz) : undefined;
+  const timezone = time.tz ? time.tz
+  const dateTime = DateTime.fromISO(time.utc, {
+    zone: time.tz ? time.tz : undefined,
+  });
 }

@@ -1,6 +1,6 @@
 import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
-import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
+import { defaultZone, isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
 import { getTimezone } from "../time/getTimezone";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDateStr } from "../time/parseDateStr";

@@ -1,7 +1,7 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
 import { splitRawAndFields } from "../ids/splitRawAndFields";
 import { GenericObject } from "../GenericObject";
-import { isIsoDateOrTime } from "../time/timeUtils";
+import { isDatumTime, isIsoDateOrTime } from "../time/timeUtils";
 import { humanTimeFromISO } from "../time/humanTime";
 
 export function interpolateFields({
@@ -46,6 +46,9 @@ export function interpolateFields({
           sourceObject
         );
       if (extractedValue !== undefined) {
+        if (isDatumTime(extractedValue)) {
+
+        }
         const valueAsString =
           typeof extractedValue === "string"
             ? extractedValue
