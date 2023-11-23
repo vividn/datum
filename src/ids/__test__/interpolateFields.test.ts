@@ -7,7 +7,7 @@ describe("interpolateFields", () => {
     const data: DatumData = {
       foo: "bar",
       another: 123,
-      occurTime: "2022-05-01T22:52:00Z",
+      occurTime: { utc: "2022-05-01T22:52:00Z" },
     };
     const meta: DatumMetadata = {
       humanId: "abcde",
@@ -27,7 +27,7 @@ describe("interpolateFields", () => {
     const data: DatumData = {
       foo: "bar",
       another: 123,
-      occurTime: "2022-05-01T22:52:00Z",
+      occurTime: { utc: "2022-05-01T22:52:00Z" },
     };
     jest.spyOn(humanTime, "humanTimeFromISO").mockReturnValue("19:52");
     const interpolated = interpolateFields({
