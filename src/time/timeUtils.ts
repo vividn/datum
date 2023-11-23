@@ -67,24 +67,34 @@ export function toDatumTime(time: DateTime, onlyDate?: boolean): DatumTime {
     throw new BadTimeError("invalid time was given");
   }
   return {
-    utc: onlyDate? isoDateFromDateTime(time) : isoDatetimeFromDateTime(time),
+    utc: onlyDate ? isoDateFromDateTime(time) : isoDatetimeFromDateTime(time),
     o: utcOffset(time),
     tz: time.zone.name,
   };
 }
 
-export function datumTimeToLuxon(time: DatumTime): DateTime {
+export function datumTimeToLuxon(time: DatumTime): DateTime | undefined {
+  // returns undefined if utc is just a date or some invalid string
+  if (!isIsoDateOrTime(time.utc) || !time.utc.includes("T")) {
+    return undefined;
+  }
   if (time.tz && time.o) {
-    const tzTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.tz)})
-    const oTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.o)})
+    const tzTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.tz) });
+    const oTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.o) });
     if (tzTime.offset !== oTime.offset) {
-      console.warn(`mismatched IANA timezone and offset for ${time.utc}. zone = ${time.tz}, o = ${time.o}`);
+      console.warn(
+        `mismatched IANA timezone and offset for ${time.utc}. zone = ${time.tz}, o = ${time.o}`
+      );
       return oTime;
     }
   }
-  const tz = time.tx ? getTimezone(time.tz) : undefined;
-  const timezone = time.tz ? time.tz
+  const timezone = time.tz
+    ? getTimezone(time.tz)
+    : time.o
+    ? getTimezone(time.o)
+    : undefined;
   const dateTime = DateTime.fromISO(time.utc, {
-    zone: time.tz ? time.tz : undefined,
+    zone: timezone,
   });
+  return dateTime.isValid ? dateTime : undefined;
 }
