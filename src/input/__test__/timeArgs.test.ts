@@ -9,13 +9,13 @@ import {
   handleTimeArgs,
   occurredBaseArgs,
   ReferencedTimeArgs,
-  TimeStrWithOffset,
+  TimeFromArgs,
 } from "../timeArgs";
 import { restoreNow, setNow } from "../../test-utils";
 
 const expectTiming = (
   props: ReferencedTimeArgs,
-  expectedTimeStrOrTimings: string | Partial<TimeStrWithOffset>
+  expectedTimeStrOrTimings: string | Partial<TimeFromArgs>
 ) => {
   const expectedOutput =
     typeof expectedTimeStrOrTimings === "string"

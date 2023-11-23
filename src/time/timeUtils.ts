@@ -61,13 +61,13 @@ export function utcOffset(time: DateTime): number {
   return Object.is(offset, -0) ? 0 : offset;
 }
 
-export function toDatumTime(time: DateTime): DatumTime {
+export function toDatumTime(time: DateTime, onlyDate?: boolean): DatumTime {
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {
     throw new BadTimeError("invalid time was given");
   }
   return {
-    utc: isoDatetimeFromDateTime(time),
+    utc: onlyDate? isoDateFromDateTime(time) : isoDatetimeFromDateTime(time),
     o: utcOffset(time),
     tz: time.zone.name,
   };
