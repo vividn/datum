@@ -26,7 +26,7 @@ describe("addIdAndMetadata", () => {
   it("adds id and metadata in a sane and stable way 2", () => {
     expect(
       addIdAndMetadata(
-        { abc: "ghi", occurTime: "2023-09-05T11:20:00.000Z" },
+        { abc: "ghi", occurTime: { utc: "2023-09-05T11:20:00.000Z" } },
         {}
       )
     ).toEqual({
@@ -50,7 +50,7 @@ describe("addIdAndMetadata", () => {
       addIdAndMetadata(
         {
           abc: "ghi",
-          occurTime: "2023-09-05T11:20:00.000Z",
+          occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
         { noMetadata: true }
       )
@@ -66,7 +66,7 @@ describe("addIdAndMetadata", () => {
       addIdAndMetadata(
         {
           abc: "ghi",
-          occurTime: "2023-09-05T11:20:00.000Z",
+          occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
         { idPart: ["%abc"] }
       )
@@ -92,7 +92,7 @@ describe("addIdAndMetadata", () => {
         {
           foo: "bar",
           field: "field",
-          occurTime: "2023-09-05T11:20:00.000Z",
+          occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
         {}
       )
@@ -115,7 +115,11 @@ describe("addIdAndMetadata", () => {
 
   it("adds id and metadata in a sane and stable way 6", () => {
     const payload = addIdAndMetadata(
-      { foo: "bar", field: "field", occurTime: "2023-09-05T11:20:00.000Z" },
+      {
+        foo: "bar",
+        field: "field",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
       {
         partition: "%foo",
         idPart: "%?humanId",
@@ -137,7 +141,11 @@ describe("addIdAndMetadata", () => {
 
   it("adds id and metadata in a sane and stable way 7", () => {
     const payload = addIdAndMetadata(
-      { foo: "bar", field: "field", occurTime: "2023-09-05T11:20:00.000Z" },
+      {
+        foo: "bar",
+        field: "field",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
       {
         partition: "%foo",
         idPart: ["%occurTime", "%?humanId"],
