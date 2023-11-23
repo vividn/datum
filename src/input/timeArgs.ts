@@ -1,6 +1,6 @@
 import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
-import { DatumTime, defaultZone, isoDate, isoDatetime, now, toDatumTime, utcOffset } from "../time/timeUtils";
+import { DatumTime, now, toDatumTime } from "../time/timeUtils";
 import { getTimezone } from "../time/getTimezone";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDateStr } from "../time/parseDateStr";
@@ -131,13 +131,10 @@ export function handleTimeArgs({
 
   // if only date information is given (or marked fullDay), only record the date
   const onlyDate = !!(fullDay || ((date || yesterday) && !time && !quick));
-  const timeStr = onlyDate
-    ? (referenceTime.toISODate() as isoDate)
-    : (referenceTime.toUTC().toString() as isoDatetime);
 
   return {
-    time: toDatumTime(referenceTime),
-    luxon: referenceTime,
+    time: toDatumTime(referenceTime, onlyDate),
+    luxon: !onlyDate ? referenceTime : undefined,
     unmodified,
     onlyDate,
   };
@@ -150,13 +147,12 @@ export function occurredBaseArgs(
   const parsedData = parseBaseData(args.baseData);
   const baseOccurTime = getOccurTime(parsedData);
   const referenceTime = args.referenceTime ?? baseOccurTime;
-  const { timeStr: occurTime, utcOffset: occurUtcOffset } = handleTimeArgs({
+  const { time: occurTime } = handleTimeArgs({
     ...args,
     referenceTime,
   });
   return {
     ...parsedData,
     occurTime,
-    occurUtcOffset,
   };
 }
