@@ -42,7 +42,7 @@ export function addIdAndMetadata<T>(
     meta.createTime = toDatumTime(now());
     meta.modifyTime = toDatumTime(now());
 
-    // don't include idnowStructure if it is just a raw string (i.e. has no field references in it)
+    // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same
     if (idStructure.match(/(?<!\\)%/)) {
       meta.idStructure = idStructure;

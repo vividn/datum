@@ -19,6 +19,7 @@ import {
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
+import { now, toDatumTime } from "../time/timeUtils";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -73,7 +74,7 @@ export async function updateDoc({
       return oldDoc;
     }
     const meta = oldDoc.meta;
-    meta.modifyTime = DateTime.utc().toString();
+    meta.modifyTime = toDatumTime(now());
     updatedPayload = { data: updatedData, meta: meta };
   } else {
     const oldData = jClone(oldDoc) as DataOnlyPayload;
