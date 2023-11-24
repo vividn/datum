@@ -100,4 +100,6 @@ describe("switchCmd", () => {
       state: null,
     });
   });
+
+  it.todo("does not record a lastState if there is no occurTime", async () => {})
 });

@@ -45,18 +45,16 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   flexiblePositional(args, "field", !args.fieldless && "required");
   const payloadData = handleDataArgs(args);
 
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
+  const { time: occurTime } = handleTimeArgs(args);
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
-    payloadData.occurUtcOffset = utcOffset;
+    payloadData.lastState = await getLastState({
+      db,
+      field: payloadData.field,
+      lastState: args.lastState,
+      time: occurTime.utc,
+    });
   }
-
-  payloadData.lastState = await getLastState({
-    db,
-    field: payloadData.field,
-    lastState: args.lastState,
-    time: occurTime,
-  });
 
   const payload = addIdAndMetadata(payloadData, args);
   await updateLastDocsRef(db, payload._id);
