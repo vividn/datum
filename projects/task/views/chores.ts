@@ -52,9 +52,9 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
         next = nextDate;
       }
       emit(doc.data.task, {
-        occur: occurTime,
+        occur: occurTime.utc,
         next,
-        lastDone: done ? occurTime : "#not done#",
+        lastDone: done ? occurTime.utc : "#not done#",
       });
     }
   },

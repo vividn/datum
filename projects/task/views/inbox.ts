@@ -19,12 +19,7 @@ function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const inboxView: DatumView<
-  DocType,
-  MapKey,
-  MapValue,
-  ReduceValue
-> = {
+export const inboxView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "inbox",
   emit,
   map: (doc: TaskDoc) => {
@@ -33,7 +28,7 @@ export const inboxView: DatumView<
     }
     const data = doc.data;
     const meta = doc.meta;
-    const createTime = meta.createTime || "unknown";
+    const createTime = (meta.createTime || { utc: "unknown" }).utc;
     const taskName = data.task;
     const humanId = meta.humanId;
     if (data.proj || data.done || (data.type && data.type !== "inbox")) {
