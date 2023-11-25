@@ -13,7 +13,7 @@ export type DatumData<T = unknown> = GenericData<T> & {
 
 export type OccurredData<T = unknown> = WithRequired<
   DatumData<T>,
-  "occurTime" | "occurUtcOffset"
+  "occurTime"
 >;
 
 export function isOccurredData(

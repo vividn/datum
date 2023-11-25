@@ -337,8 +337,7 @@ describe("occurredBaseData", () => {
     ).toEqual({
       foo: "bar",
       abc: 123,
-      occurTime: "2023-07-06T03:00:00.000Z",
-      occurUtcOffset: 0,
+      occurTime: { utc: "2023-07-06T03:00:00.000Z", o: 0, tz: "UTC" },
     });
   });
   it("uses the existing occurTime in the baseData as a reference time to the timeArgs", () => {

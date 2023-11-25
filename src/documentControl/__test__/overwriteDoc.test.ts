@@ -374,8 +374,11 @@ describe("overwriteDoc", () => {
       _id: "doc-without-createTime",
       data: {
         bar: "baz",
-        occurTime: "2022-08-14T22:42:00Z",
-        occurUtcOffset: 2,
+        occurTime: {
+          utc: "2022-08-14T22:42:00Z",
+          o: 2,
+          tz: "Europe/Berlin",
+        },
       },
       meta: { humanId: "fedcba" },
     });

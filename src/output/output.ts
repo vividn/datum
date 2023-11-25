@@ -134,7 +134,6 @@ function formattedNonRedundantData(doc: EitherPayload): string | undefined {
     state: _state,
     lastState: _lastState,
     occurTime: _occurTime,
-    occurUtcOffset: _occurUtcOffset,
     dur: _dur,
     duration: _duration,
     field: _field,

@@ -216,7 +216,7 @@ describe("headCmd", () => {
 
     const localDates = docs.map((doc) =>
       DateTime.fromISO(doc.data.occurTime, {
-        zone: getTimezone(doc.data.occurUtcOffset),
+        zone: getTimezone(doc.data.occurTime.o),
       }).toISODate()
     );
     expect(localDates.every((date) => date === today)).toBe(true);
