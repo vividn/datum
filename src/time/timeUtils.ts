@@ -72,9 +72,13 @@ export function toDatumTime(time: DateTime, onlyDate?: boolean): DatumTime {
   };
 }
 
-export function datumTimeToLuxon(time: DatumTime): DateTime | undefined {
+export function datumTimeToLuxon(time?: DatumTime): DateTime | undefined {
   // returns undefined if utc is just a date or some invalid string
-  if (!isIsoDateOrTime(time.utc) || !time.utc.includes("T")) {
+  if (
+    time === undefined ||
+    !isIsoDateOrTime(time.utc) ||
+    !time.utc.includes("T")
+  ) {
     return undefined;
   }
   if (time.tz && time.o) {
