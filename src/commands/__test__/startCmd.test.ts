@@ -17,7 +17,9 @@ describe("startCmd", () => {
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
-      occurTime: DateTime.now().toUTC().toISO(),
+      occurTime: {
+        utc: DateTime.now().toUTC().toISO()
+      },
     });
   });
 
@@ -29,7 +31,9 @@ describe("startCmd", () => {
       field: "machine",
       state: true,
       lastState: "preparing",
-      occurTime: DateTime.now().toUTC().toISO(),
+      occurTime: {
+        utc: DateTime.now().toUTC().toISO()
+      },
     });
   });
 });
