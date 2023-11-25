@@ -3,10 +3,7 @@ import { parseTimeStr } from "../time/parseTimeStr";
 import { BadDateError, BadDurationError, BadTimeError } from "../errors";
 import { isoDurationFromDurationStr } from "../time/parseDurationString";
 import { parseDateStr } from "../time/parseDateStr";
-import {
-  isoDateFromDateTime,
-  isoDatetimeFromDateTime,
-} from "../time/timeUtils";
+import { toDatumTime } from "../time/timeUtils";
 
 export function inferType(value: number | string, fieldName?: string): any {
   if (fieldName !== undefined) {
@@ -15,7 +12,7 @@ export function inferType(value: number | string, fieldName?: string): any {
       case /[a-z0-9]Time\d*$/.test(fieldName):
         try {
           const parsedTime = parseTimeStr({ timeStr: String(value) });
-          return isoDatetimeFromDateTime(parsedTime);
+          return toDatumTime(parsedTime);
         } catch (e) {
           if (e instanceof BadTimeError) {
             // pass
@@ -29,7 +26,7 @@ export function inferType(value: number | string, fieldName?: string): any {
       case /[a-z0-9]Date\d*$/.test(fieldName):
         try {
           const parsedDate = parseDateStr({ dateStr: String(value) });
-          return isoDateFromDateTime(parsedDate);
+          return toDatumTime(parsedDate, true);
         } catch (e) {
           if (e instanceof BadDateError) {
             // pass
