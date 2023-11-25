@@ -378,8 +378,7 @@ describe("occurredBaseData", () => {
       })
     ).toEqual({
       foo: "bar",
-      occurTime: "2023-07-11T10:00:00.000Z",
-      occurUtcOffset: 0,
+      occurTime: { utc: "2023-07-11T10:00:00.000Z", o: 0, tz: "UTC" },
     });
   });
 

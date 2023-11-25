@@ -32,7 +32,7 @@ describe("getOccurTime", () => {
     expect(returnVal).toBeUndefined();
   });
 
-  it("formats a datum doc with the local offset, if there is no utcOffset", () => {
+  it("formats a datum doc with the local offset, if there is no offset", () => {
     Settings.defaultZone = "UTC-9";
     const datumDoc: DatumDocument = {
       _id: "some_data_only_doc",
@@ -50,8 +50,7 @@ describe("getOccurTime", () => {
     const dataDoc: DataOnlyDocument = {
       _id: "some_datum_document",
       _rev: "some_revision",
-      occurTime: { utc: "2022-03-06T07:00:00.000Z" },
-      occurUtcOffset: -8,
+      occurTime: { utc: "2022-03-06T07:00:00.000Z", o: -8 },
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 23, {
       zone: "UTC-8",

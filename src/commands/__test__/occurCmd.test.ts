@@ -147,7 +147,7 @@ describe("occurCmd", () => {
     expect(newDoc.meta).not.toHaveProperty("occurTime");
   });
 
-  it("stores the occurTime and utcOffset in DataOnly docs", async () => {
+  it("stores the occurTime in DataOnly docs", async () => {
     const newDoc = (await occurCmd({
       field: "event",
       noMetadata: true,
@@ -155,17 +155,17 @@ describe("occurCmd", () => {
       time: "12",
       timezone: "0",
     })) as DatumDocument;
-    expect(newDoc).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
-    expect(newDoc).toHaveProperty("occurUtcOffset", 0);
+    expect(newDoc).toHaveProperty("occurTime.utc", "2021-08-23T12:00:00.000Z");
+    expect(newDoc).toHaveProperty("occurTime.o", 0);
   });
 
-  it("stores utcOffset", async () => {
+  it("stores offset", async () => {
     const newDoc = (await occurCmd({
       field: "event",
       date: "2021-08-23",
       time: "12",
       timezone: "0",
     })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurUtcOffset", 0);
+    expect(newDoc.data).toHaveProperty("occurTime.o", 0);
   });
 });
