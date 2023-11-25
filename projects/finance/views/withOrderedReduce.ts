@@ -1,7 +1,7 @@
 import { _emit } from "../../../src/views/emit";
 import { FinanceDoc } from "./balance";
 import { DatumView } from "../../../src/views/DatumView";
-import { isoDateOrTime } from "../../../src/time/timeUtils";
+import { DatumTime, isoDateOrTime } from "../../../src/time/timeUtils";
 
 type DocType = FinanceDoc;
 type MapKey = [string, string, isoDateOrTime?];
@@ -38,15 +38,34 @@ export const withOrderedReduceView: DatumView<
   emit,
   map: (doc: FinanceDoc) => {
     const data = doc.data;
-    const occurTime = data.effectiveTime || data.effectiveDate || data.occurTime;
+    function dtTransform(
+      time: string | DatumTime | undefined
+    ): DatumTime | undefined {
+      // TODO: Remove this once all documents are migrated to new format
+      if (typeof time === "string") {
+        return { utc: time };
+      }
+      return time;
+    }
+    const occurDatumTime = dtTransform(
+      data.effectiveTime || data.effectiveDate || data.occurTime
+    );
+    if (occurDatumTime === undefined) {
+      return;
+    }
+    const occurTime = occurDatumTime.utc;
+    const occurTime1 = dtTransform(
+      data.effectiveTime1 || data.effectiveDate1 || occurTime
+    )!.utc;
+    const occurTime2 = dtTransform(
+      data.effectiveTime2 || data.effectiveDate2 || occurTime
+    )!.utc;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
-      emit([data.acc, data.curr, occurTime], { delta: -amount });
-      emit([data.to, data.curr, occurTime], { delta: amount });
+      emit([data.acc, data.curr, occurTime1], { delta: -amount });
+      emit([data.to, data.curr, occurTime2], { delta: amount });
     }
     if (data.type === "xc") {
-      const occurTime1 = data.effectiveTime1 || data.effectiveDate1 || occurTime;
-      const occurTime2 = data.effectiveTime2 || data.effectiveDate2 || occurTime;
       emit([data.acc1, data.curr1, occurTime1], { delta: -data.amount1 });
       emit([data.acc2, data.curr2, occurTime2], { delta: data.amount2 });
     }
