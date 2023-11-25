@@ -1,8 +1,7 @@
-import { DateTime, Duration, Zone } from "luxon";
+import { DateTime, Duration, Zone, Settings as DateTimeSettings } from "luxon";
 import { BadDurationError, BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
 import { getTimezone } from "./getTimezone";
-import { Settings as DateTimeSettings } from "luxon/src/settings";
 
 export type isoDatetime = string;
 export type isoDate = string;
