@@ -34,9 +34,15 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Failed]: chalk.red,
 };
 
-export function humanFormattedTime(time?: DatumTime): string | undefined {
+export function humanFormattedTime(
+  time?: DatumTime | string
+): string | undefined {
   if (!time) {
     return undefined;
+  }
+  // TODO: remove this once all docs are updated to use DatumTime
+  if (typeof time === "string") {
+    time = { utc: time };
   }
   // if time is just a date, then return it
   if (!time.utc.includes("T")) {

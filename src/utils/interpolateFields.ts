@@ -48,10 +48,13 @@ export function interpolateFields({
       if (extractedValue !== undefined) {
         if (isDatumTime(extractedValue)) {
           if (useHumanTimes) {
-            combined.push(humanFormattedTime(extractedValue) ?? "");
+            combined.push(
+              humanFormattedTime(extractedValue) ?? extractedValue.utc
+            );
           } else {
             combined.push(extractedValue.utc);
           }
+          return combined;
         }
         const valueAsString =
           typeof extractedValue === "string"
