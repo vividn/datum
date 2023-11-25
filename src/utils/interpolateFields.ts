@@ -1,8 +1,7 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
 import { splitRawAndFields } from "../ids/splitRawAndFields";
 import { GenericObject } from "../GenericObject";
-import { isDatumTime, isIsoDateOrTime } from "../time/timeUtils";
-import { humanTimeFromISO } from "../time/humanTime";
+import { isDatumTime } from "../time/timeUtils";
 import { humanFormattedTime } from "../output/output";
 
 export function interpolateFields({

@@ -11,10 +11,7 @@ export type DatumData<T = unknown> = GenericData<T> & {
   field?: string;
 };
 
-export type OccurredData<T = unknown> = WithRequired<
-  DatumData<T>,
-  "occurTime"
->;
+export type OccurredData<T = unknown> = WithRequired<DatumData<T>, "occurTime">;
 
 export function isOccurredData(
   data: DatumData | OccurredData
