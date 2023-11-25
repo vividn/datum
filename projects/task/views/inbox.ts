@@ -1,7 +1,7 @@
 import { DatumView } from "../../../src/views/DatumView";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { _emit } from "../../../src/views/emit";
-import { isoDateOrTime } from "../../../src/time/timeUtils";
+import { DatumTime, isoDateOrTime } from "../../../src/time/timeUtils";
 
 export type TaskDoc = DatumDocument<{
   task: string;
@@ -28,7 +28,14 @@ export const inboxView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     }
     const data = doc.data;
     const meta = doc.meta;
-    const createTime = (meta.createTime || { utc: "unknown" }).utc;
+    function dtTransform(time: string | DatumTime | undefined): DatumTime | undefined {
+      // TODO: Remove this once all documents are migrated to new format
+      if (typeof time === "string") {
+        return { utc: time };
+      }
+      return time;
+    }
+    const createTime = (dtTransform(meta.createTime) || { utc: "unknown" }).utc;
     const taskName = data.task;
     const humanId = meta.humanId;
     if (data.proj || data.done || (data.type && data.type !== "inbox")) {
