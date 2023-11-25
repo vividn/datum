@@ -11,7 +11,6 @@ import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { defaults } from "../input/defaults";
 import { newHumanId } from "./newHumanId";
-import { DateTime } from "luxon";
 import { assembleId } from "../ids/assembleId";
 import { IdError } from "../errors";
 import { now, toDatumTime } from "../time/timeUtils";

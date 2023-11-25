@@ -3,6 +3,7 @@ import { splitRawAndFields } from "../ids/splitRawAndFields";
 import { GenericObject } from "../GenericObject";
 import { isDatumTime, isIsoDateOrTime } from "../time/timeUtils";
 import { humanTimeFromISO } from "../time/humanTime";
+import { humanFormattedTime } from "../output/output";
 
 export function interpolateFields({
   data,
@@ -47,7 +48,11 @@ export function interpolateFields({
         );
       if (extractedValue !== undefined) {
         if (isDatumTime(extractedValue)) {
-
+          if (useHumanTimes) {
+            combined.push(humanFormattedTime(extractedValue) ?? "");
+          } else {
+            combined.push(extractedValue.utc);
+          }
         }
         const valueAsString =
           typeof extractedValue === "string"

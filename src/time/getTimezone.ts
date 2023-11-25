@@ -1,9 +1,4 @@
-import {
-  FixedOffsetZone,
-  IANAZone,
-  Settings as DateTimeSettings,
-  Zone,
-} from "luxon";
+import { FixedOffsetZone, IANAZone, Zone } from "luxon";
 import { BadTimezoneError } from "../errors";
 import { defaultZone } from "./timeUtils";
 

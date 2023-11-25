@@ -8,9 +8,8 @@ import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { DateTime, Duration } from "luxon";
-import { getTimezone } from "../time/getTimezone";
 import { DatumState } from "../views/datumViews/activeStateView";
-import { DatumTime } from "../time/timeUtils";
+import { DatumTime, datumTimeToLuxon } from "../time/timeUtils";
 
 chalk.level = 3;
 
@@ -45,10 +44,8 @@ export function humanFormattedTime(time?: DatumTime): string | undefined {
     return future ? chalk.underline(time.utc) : time.utc;
   }
 
-  const dateTime = DateTime.fromISO(time.utc, {
-    zone: getTimezone(time.o),
-  });
-  if (!dateTime.isValid) {
+  const dateTime = datumTimeToLuxon(time);
+  if (dateTime === undefined || !dateTime.isValid) {
     return undefined;
   }
 
