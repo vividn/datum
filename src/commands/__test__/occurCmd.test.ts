@@ -25,7 +25,7 @@ describe("occurCmd", () => {
       expect(info.doc_count).toEqual(1);
     });
     expect(doc.data.field).toEqual("field");
-    expect(doc.data.occurTime).toEqual(now);
+    expect(doc.data.occurTime.utc).toEqual(now);
 
     expect(doc._id).toEqual(`field:${now}`);
     const dbDoc = await db.get(doc._id);
@@ -143,7 +143,10 @@ describe("occurCmd", () => {
       time: "12",
       timezone: "0",
     })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurTime", "2021-08-23T12:00:00.000Z");
+    expect(newDoc.data).toHaveProperty(
+      "occurTime.utc",
+      "2021-08-23T12:00:00.000Z"
+    );
     expect(newDoc.meta).not.toHaveProperty("occurTime");
   });
 
