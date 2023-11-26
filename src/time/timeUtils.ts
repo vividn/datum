@@ -65,8 +65,11 @@ export function toDatumTime(time: DateTime, onlyDate?: boolean): DatumTime {
   if (!time.isValid) {
     throw new BadTimeError("invalid time was given");
   }
+  if (onlyDate) {
+    return { utc: isoDateFromDateTime(time) };
+  }
   return {
-    utc: onlyDate ? isoDateFromDateTime(time) : isoDatetimeFromDateTime(time),
+    utc: isoDatetimeFromDateTime(time),
     o: utcOffset(time),
     tz: time.zone.name,
   };

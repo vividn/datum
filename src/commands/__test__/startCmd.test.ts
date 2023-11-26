@@ -18,7 +18,7 @@ describe("startCmd", () => {
       field: "dance",
       state: true,
       occurTime: {
-        utc: DateTime.now().toUTC().toISO()
+        utc: DateTime.now().toUTC().toISO(),
       },
     });
   });
@@ -32,7 +32,7 @@ describe("startCmd", () => {
       state: true,
       lastState: "preparing",
       occurTime: {
-        utc: DateTime.now().toUTC().toISO()
+        utc: DateTime.now().toUTC().toISO(),
       },
     });
   });
