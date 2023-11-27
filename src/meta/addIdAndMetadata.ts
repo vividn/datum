@@ -11,9 +11,9 @@ import { defaultIdComponents } from "../ids/defaultIdComponents";
 import { buildIdStructure } from "../ids/buildIdStructure";
 import { defaults } from "../input/defaults";
 import { newHumanId } from "./newHumanId";
-import { DateTime } from "luxon";
 import { assembleId } from "../ids/assembleId";
 import { IdError } from "../errors";
+import { now, toDatumTime } from "../time/timeUtils";
 
 export function addIdAndMetadata<T>(
   data: DatumData<T>,
@@ -38,9 +38,8 @@ export function addIdAndMetadata<T>(
 
     // these will be overwritten later by addDoc, but useful to have them here
     // for undo and original id building
-    const now = DateTime.utc().toString();
-    meta.createTime = now;
-    meta.modifyTime = now;
+    meta.createTime = toDatumTime(now());
+    meta.modifyTime = toDatumTime(now());
 
     // don't include idStructure if it is just a raw string (i.e. has no field references in it)
     // that would be a waste of bits since _id then is exactly the same

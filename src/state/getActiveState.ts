@@ -3,18 +3,20 @@ import {
   activeStateView,
   DatumState,
 } from "../views/datumViews/activeStateView";
-import { now } from "../time/timeUtils";
+import { DatumTime, isDatumTime, now } from "../time/timeUtils";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 import { parseTimeStr } from "../time/parseTimeStr";
 
 export async function getActiveState(
   db: PouchDB.Database,
   field: string,
-  time: DateTime | string = now()
+  time: DateTime | DatumTime | string = now()
 ): Promise<DatumState> {
   const utcTime =
     typeof time === "string"
       ? parseTimeStr({ timeStr: time }).toUTC().toISO()
+      : isDatumTime(time)
+      ? time.utc
       : time.toUTC().toISO();
   if (utcTime === null) {
     throw new Error("bad time");

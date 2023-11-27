@@ -8,8 +8,8 @@ import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { DateTime, Duration } from "luxon";
-import { getTimezone } from "../time/getTimezone";
 import { DatumState } from "../views/datumViews/activeStateView";
+import { DatumTime, datumTimeToLuxon } from "../time/timeUtils";
 
 chalk.level = 3;
 
@@ -34,23 +34,24 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Failed]: chalk.red,
 };
 
-function formatTime(
-  time?: string,
-  utcOffset?: string | number
+export function humanFormattedTime(
+  time?: DatumTime | string
 ): string | undefined {
   if (!time) {
     return undefined;
   }
+  // TODO: remove this once all docs are updated to use DatumTime
+  if (typeof time === "string") {
+    time = { utc: time };
+  }
   // if time is just a date, then return it
-  if (!time.includes("T")) {
+  if (!time.utc.includes("T")) {
     const future = time > (DateTime.now().toISODate() ?? time);
-    return future ? chalk.underline(time) : time;
+    return future ? chalk.underline(time.utc) : time.utc;
   }
 
-  const dateTime = DateTime.fromISO(time, {
-    zone: getTimezone(utcOffset),
-  });
-  if (!dateTime.isValid) {
+  const dateTime = datumTimeToLuxon(time);
+  if (dateTime === undefined || !dateTime.isValid) {
     return undefined;
   }
 
@@ -73,15 +74,15 @@ type AllTimes = {
 function formatAllTimes(doc: EitherPayload): AllTimes {
   const { data, meta } = pullOutData(doc);
   const hybrid = data.occurTime
-    ? formatTime(data.occurTime, data.occurUtcOffset)
+    ? humanFormattedTime(data.occurTime)
     : meta?.createTime
-    ? chalk.gray("c") + formatTime(meta.createTime)
+    ? chalk.gray("c") + humanFormattedTime(meta.createTime)
     : undefined;
   const times = {
     hybrid: hybrid,
-    occur: formatTime(data.occurTime, data.occurUtcOffset),
-    modify: chalk.gray("m") + formatTime(meta?.modifyTime),
-    create: chalk.grey("c") + formatTime(meta?.createTime),
+    occur: humanFormattedTime(data.occurTime),
+    modify: chalk.gray("m") + humanFormattedTime(meta?.modifyTime),
+    create: chalk.grey("c") + humanFormattedTime(meta?.createTime),
   };
   return times;
 }
@@ -139,7 +140,6 @@ function formattedNonRedundantData(doc: EitherPayload): string | undefined {
     state: _state,
     lastState: _lastState,
     occurTime: _occurTime,
-    occurUtcOffset: _occurUtcOffset,
     dur: _dur,
     duration: _duration,
     field: _field,

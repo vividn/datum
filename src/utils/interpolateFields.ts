@@ -1,8 +1,8 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
 import { splitRawAndFields } from "../ids/splitRawAndFields";
 import { GenericObject } from "../GenericObject";
-import { isIsoDateOrTime } from "../time/timeUtils";
-import { humanTimeFromISO } from "../time/humanTime";
+import { isDatumTime } from "../time/timeUtils";
+import { humanFormattedTime } from "../output/output";
 
 export function interpolateFields({
   data,
@@ -46,15 +46,21 @@ export function interpolateFields({
           sourceObject
         );
       if (extractedValue !== undefined) {
+        if (isDatumTime(extractedValue)) {
+          if (useHumanTimes) {
+            combined.push(
+              humanFormattedTime(extractedValue) ?? extractedValue.utc
+            );
+          } else {
+            combined.push(extractedValue.utc);
+          }
+          return combined;
+        }
         const valueAsString =
           typeof extractedValue === "string"
             ? extractedValue
             : JSON.stringify(extractedValue);
-        const formattedString =
-          isIsoDateOrTime(valueAsString) && useHumanTimes
-            ? humanTimeFromISO(valueAsString)
-            : valueAsString;
-        combined.push(formattedString);
+        combined.push(valueAsString);
       }
       return combined;
     }, [])

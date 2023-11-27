@@ -68,9 +68,10 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     limit,
   };
 
-  const { timeStr, unmodified: isDefaultTime, onlyDate } = handleTimeArgs(args);
+  const { time, unmodified: isDefaultTime, onlyDate } = handleTimeArgs(args);
+  const utcTime = time?.utc;
 
-  if (isDefaultTime || timeStr === undefined) {
+  if (isDefaultTime || utcTime === undefined) {
     viewParams.startkey = [metric, field, ""];
     viewParams.endkey = [metric, field, HIGH_STRING];
   } else if (onlyDate) {
@@ -79,7 +80,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.startkey = [
       metric,
       field,
-      DateTime.fromISO(timeStr)
+      DateTime.fromISO(utcTime)
         .minus({ day: 1 })
         .startOf("day")
         .toUTC()
@@ -88,14 +89,14 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     viewParams.endkey = [
       metric,
       field,
-      DateTime.fromISO(timeStr).plus({ day: 1 }).endOf("day").toUTC().toISO(),
+      DateTime.fromISO(utcTime).plus({ day: 1 }).endOf("day").toUTC().toISO(),
     ];
   } else if (args.head) {
-    viewParams.startkey = [metric, field, timeStr];
+    viewParams.startkey = [metric, field, utcTime];
     viewParams.endkey = [metric, field, HIGH_STRING];
   } else {
     viewParams.startkey = [metric, field, ""];
-    viewParams.endkey = [metric, field, timeStr];
+    viewParams.endkey = [metric, field, utcTime];
   }
 
   if (args.head !== true) {
@@ -115,7 +116,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
   }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
   const filteredRows = onlyDate
     ? rawRows
-        .filter((row) => row.value[0] === timeStr)
+        .filter((row) => row.value[0] === utcTime)
         // this sort moves times that are just dates to the top
         .sort((a, b) => (a.value >= b.value ? 1 : -1))
     : rawRows;

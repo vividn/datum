@@ -18,7 +18,7 @@ describe("defaultIdComponents", () => {
   it("uses field as the default partition", () => {
     expect(
       defaultIdComponents({
-        data: { field: "abc", occurTime: exampleOccurTime },
+        data: { field: "abc", occurTime: { utc: exampleOccurTime } },
       })
     ).toMatchObject({
       defaultPartitionParts: ["%field%"],
@@ -32,7 +32,7 @@ describe("defaultIdComponents", () => {
           field: "works",
           with: "other",
           keys: "too",
-          occurTime: exampleOccurTime,
+          occurTime: { utc: exampleOccurTime },
         },
       })
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
@@ -46,7 +46,11 @@ describe("defaultIdComponents", () => {
   it("returns undefined for defaultPartitionParts when no field is present", () => {
     expect(
       defaultIdComponents({
-        data: { no: "field", key: "present", occurTime: exampleOccurTime },
+        data: {
+          no: "field",
+          key: "present",
+          occurTime: { utc: exampleOccurTime },
+        },
       })
     ).toMatchObject({ defaultPartitionParts: undefined });
     expect(

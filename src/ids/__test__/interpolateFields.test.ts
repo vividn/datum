@@ -1,13 +1,12 @@
 import { interpolateFields } from "../../utils/interpolateFields";
 import { DatumData, DatumMetadata } from "../../documentControl/DatumDocument";
-import * as humanTime from "../../time/humanTime";
 
 describe("interpolateFields", () => {
   it("interpolates %fields% and %?metaFields% of datum doc", async () => {
     const data: DatumData = {
       foo: "bar",
       another: 123,
-      occurTime: "2022-05-01T22:52:00Z",
+      occurTime: { utc: "2022-05-01T22:52:00Z" },
     };
     const meta: DatumMetadata = {
       humanId: "abcde",
@@ -27,15 +26,18 @@ describe("interpolateFields", () => {
     const data: DatumData = {
       foo: "bar",
       another: 123,
-      occurTime: "2022-05-01T22:52:00Z",
+      occurTime: {
+        utc: "2022-05-01T22:52:00Z",
+        o: -3,
+        tz: "America/Sao_Paulo",
+      },
     };
-    jest.spyOn(humanTime, "humanTimeFromISO").mockReturnValue("19:52");
     const interpolated = interpolateFields({
       data,
       format: "%occurTime% %foo%",
       useHumanTimes: true,
     });
 
-    expect(interpolated).toEqual("19:52 bar");
+    expect(interpolated).toMatchInlineSnapshot(`"2022-05-01 19:52:00[2m-3[22m bar"`);
   });
 });

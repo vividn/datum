@@ -20,15 +20,17 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
   emit: emit,
   map: (doc) => {
     const data = doc.data;
-    if (!data.occurTime || !data.occurUtcOffset || !data.field) {
+    const occurTime = data.occurTime;
+    const field = data.field;
+    if (!occurTime || !field) {
       return;
     }
 
-    const key: MapKey = [data.field, data.occurTime];
+    const key: MapKey = [field, occurTime.utc];
 
-    const offset = data.occurUtcOffset;
+    const offset = occurTime.o || 0;
     const msOffset = offset * 60 * 60 * 1000;
-    const dateTime = new Date(data.occurTime);
+    const dateTime = new Date(occurTime.utc);
     const offsetDateTime = new Date(dateTime.getTime() + msOffset);
 
     const outputArray = offsetDateTime.toISOString().split(/[TZ]/, 2);

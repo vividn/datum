@@ -5,7 +5,7 @@ import {
   DatumMetadata,
   EitherDocument,
 } from "../../documentControl/DatumDocument";
-import { isoDate, isoDatetime } from "../../time/timeUtils";
+import { DatumTime, isoDate, isoDatetime } from "../../time/timeUtils";
 
 export const TIME_METRICS = ["hybrid", "occur", "create", "modify"] as const;
 type TimeMetric = (typeof TIME_METRICS)[number];
@@ -65,39 +65,47 @@ export const timingView: DatumView<
       return [localDate, dateTime];
     }
 
-    const occurTime = data.occurTime;
-    const occurUtcOffset = data.occurUtcOffset;
-    const modifyTime = meta && meta.modifyTime;
-    const createTime = meta && meta.createTime;
-    const hybridTime = occurTime || createTime;
-    const hybridUtcOffset =
-      occurTime && occurUtcOffset !== undefined ? occurUtcOffset : undefined;
+    function dtTransform(
+      time: string | DatumTime | undefined
+    ): DatumTime | undefined {
+      // TODO: Remove this once all documents are migrated to new format
+      if (typeof time === "string") {
+        return { utc: time };
+      }
+      return time;
+    }
+
+    const occurTime = dtTransform(data.occurTime);
+    const modifyTime = dtTransform(meta && meta.modifyTime);
+    const createTime = dtTransform(meta && meta.createTime);
+    const hybridTime = dtTransform(occurTime || createTime);
+
     if (hybridTime) {
-      const localDate = getLocalDate(hybridTime, hybridUtcOffset);
-      emit(["hybrid", null, hybridTime], localDate);
+      const localDate = getLocalDate(hybridTime.utc, hybridTime.o);
+      emit(["hybrid", null, hybridTime.utc], localDate);
       if (field !== undefined) {
-        emit(["hybrid", field, hybridTime], localDate);
+        emit(["hybrid", field, hybridTime.utc], localDate);
       }
     }
     if (occurTime) {
-      const localDate = getLocalDate(occurTime, occurUtcOffset);
-      emit(["occur", null, occurTime], localDate);
+      const localDate = getLocalDate(occurTime.utc, occurTime.o);
+      emit(["occur", null, occurTime.utc], localDate);
       if (field !== undefined) {
-        emit(["occur", field, occurTime], localDate);
+        emit(["occur", field, occurTime.utc], localDate);
       }
     }
     if (modifyTime) {
-      const localDate = getLocalDate(modifyTime);
-      emit(["modify", null, modifyTime], localDate);
+      const localDate = getLocalDate(modifyTime.utc, modifyTime.o);
+      emit(["modify", null, modifyTime.utc], localDate);
       if (field !== undefined) {
-        emit(["modify", field, modifyTime], localDate);
+        emit(["modify", field, modifyTime.utc], localDate);
       }
     }
     if (createTime) {
-      const localDate = getLocalDate(createTime);
-      emit(["create", null, createTime], localDate);
+      const localDate = getLocalDate(createTime.utc, createTime.o);
+      emit(["create", null, createTime.utc], localDate);
       if (field !== undefined) {
-        emit(["create", field, createTime], localDate);
+        emit(["create", field, createTime.utc], localDate);
       }
     }
   },

@@ -1,9 +1,4 @@
-import {
-  isIsoDateOrTime,
-  isoDate,
-  isoDatetime,
-  isoDuration,
-} from "../time/timeUtils";
+import { DatumTime, isIsoDateOrTime, isoDuration } from "../time/timeUtils";
 import { WithRequired } from "../utils/utilityTypes";
 
 export type GenericData<T = unknown> = T & {
@@ -11,28 +6,23 @@ export type GenericData<T = unknown> = T & {
 };
 
 export type DatumData<T = unknown> = GenericData<T> & {
-  occurTime?: isoDatetime | isoDate;
-  occurUtcOffset?: number;
+  occurTime?: DatumTime;
   dur?: "start" | "end" | isoDuration;
   field?: string;
 };
 
-export type OccurredData<T = unknown> = WithRequired<
-  DatumData<T>,
-  "occurTime" | "occurUtcOffset"
->;
+export type OccurredData<T = unknown> = WithRequired<DatumData<T>, "occurTime">;
 
 export function isOccurredData(
   data: DatumData | OccurredData
 ): data is OccurredData {
   const occurTime = data.occurTime;
-  return occurTime !== undefined && isIsoDateOrTime(occurTime);
+  return occurTime !== undefined && isIsoDateOrTime(occurTime.utc);
 }
 
 export type DatumMetadata = {
-  utcOffset?: number;
-  createTime?: isoDatetime;
-  modifyTime?: isoDatetime; //TODO: turn into an array of times
+  createTime?: DatumTime;
+  modifyTime?: DatumTime; //TODO: turn into an array of times
   idStructure?: string;
   random?: number;
   humanId?: string;

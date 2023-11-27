@@ -2,6 +2,7 @@ import { _emit } from "../../../src/views/emit";
 import { TaskDoc } from "./inbox";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import {
+  DatumTime,
   isoDate,
   isoDateOrTime,
   isoDatetime,
@@ -32,8 +33,16 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "chores",
   emit,
   map: (doc: ChoreDoc) => {
+    function dtTransform(time: string | DatumTime | undefined): DatumTime | undefined {
+      // TODO: Remove this once all documents are migrated to new format
+      if (typeof time === "string") {
+        return { utc: time };
+      }
+      return time;
+    }
     if (doc.data && doc.data.type === "maintain" && doc.data.occurTime) {
-      const { nextDate, nextTime, occurTime, done } = doc.data;
+      const { nextDate, nextTime, done } = doc.data;
+      const occurTime = dtTransform(doc.data.occurTime) as DatumTime;
       let next: isoDateOrTime | null | undefined = undefined;
       if (nextTime) {
         if (nextDate) {
@@ -52,9 +61,9 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
         next = nextDate;
       }
       emit(doc.data.task, {
-        occur: occurTime,
+        occur: occurTime.utc,
         next,
-        lastDone: done ? occurTime : "#not done#",
+        lastDone: done ? occurTime.utc : "#not done#",
       });
     }
   },

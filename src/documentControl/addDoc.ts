@@ -21,6 +21,7 @@ import {
   ViewPayload,
 } from "../views/DatumView";
 import { assembleId } from "../ids/assembleId";
+import { toDatumTime } from "../time/timeUtils";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
@@ -61,7 +62,7 @@ export async function addDoc({
   payload = jClone(payload);
   let id;
   if (payload.meta) {
-    const now = DateTime.utc().toString();
+    const now = toDatumTime(DateTime.local());
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;
 

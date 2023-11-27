@@ -4,6 +4,7 @@ import * as parseDateStr from "../../time/parseDateStr";
 import * as parseDurationStr from "../../time/parseDurationString";
 import SpyInstance = jest.SpyInstance;
 import { setNow } from "../../test-utils";
+import { toDatumTime } from "../../time/timeUtils";
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {
@@ -102,15 +103,17 @@ describe("inferType with special fields", () => {
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
-    expect(inferType("3", "time")).toEqual("2021-10-25T03:00:00.000Z");
+    expect(inferType("3", "time")).toEqual(
+      toDatumTime("2021-10-25T03:00:00.000Z")
+    );
     expect(inferType("yesterday at 22:15", "expectedTime")).toEqual(
-      "2021-10-24T22:15:00.000Z"
+      toDatumTime("2021-10-24T22:15:00.000Z")
     );
     expect(inferType("10:15", "snake_time")).toEqual(
-      "2021-10-25T10:15:00.000Z"
+      toDatumTime("2021-10-25T10:15:00.000Z")
     );
     expect(inferType("1230", "expectedTime2")).toEqual(
-      "2021-10-25T12:30:00.000Z"
+      toDatumTime("2021-10-25T12:30:00.000Z")
     );
 
     expect(parseTimeSpy).toHaveBeenCalledTimes(4);
