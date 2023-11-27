@@ -104,8 +104,16 @@ describe("addDoc", () => {
     const newDoc = await addDoc({ db, payload });
 
     expect(newDoc.meta).toMatchObject({
-      createTime: nowStr,
-      modifyTime: nowStr,
+      createTime: {
+        utc: nowStr,
+        o: 0,
+        tz: "UTC",
+      },
+      modifyTime: {
+        utc: nowStr,
+        o: 0,
+        tz: "UTC",
+      },
     });
   });
 
@@ -421,7 +429,7 @@ describe("addDoc", () => {
     };
 
     const newDoc = await addDoc({ db, payload: designPayload });
-    expect(newDoc).toHaveProperty("meta.createTime", nowStr);
-    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.createTime.utc", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime.utc", nowStr);
   });
 });

@@ -71,7 +71,7 @@ describe("updateDoc", () => {
       },
     });
 
-    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime.utc", nowStr);
   });
 
   test("does not add metadata if oldDoc does not have metadata", async () => {

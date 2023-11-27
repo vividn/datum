@@ -249,9 +249,6 @@ describe("handleTimeArgs", () => {
     const offset2 = handleTimeArgs({}).time?.o;
     expect(offset2).toBe(-3);
 
-    const offset3 = handleTimeArgs({ noTimestamp: true }).time?.o;
-    expect(offset3).toBe(-3);
-
     Settings.defaultZone = "system";
   });
 
@@ -357,7 +354,8 @@ describe("occurredBaseData", () => {
       foo: "bar",
       occurTime: {
         utc: "2023-07-02T12:00:00.000Z",
-        occurUtcOffset: -2,
+        o: -2,
+        tz: "UTC-2",
       },
     });
   });
