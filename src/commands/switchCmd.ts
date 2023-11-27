@@ -48,13 +48,13 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   const { time: occurTime } = handleTimeArgs(args);
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
-    payloadData.lastState = await getLastState({
-      db,
-      field: payloadData.field,
-      lastState: args.lastState,
-      time: occurTime.utc,
-    });
   }
+  payloadData.lastState = await getLastState({
+    db,
+    field: payloadData.field,
+    lastState: args.lastState,
+    time: occurTime,
+  });
 
   const payload = addIdAndMetadata(payloadData, args);
   await updateLastDocsRef(db, payload._id);

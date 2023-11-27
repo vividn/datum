@@ -2,6 +2,7 @@ import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
+import { toDatumTime } from "../../time/timeUtils";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";
@@ -20,7 +21,7 @@ describe("switchCmd", () => {
     expect(doc.data).toMatchObject({
       field: "field",
       state: "newState",
-      occurTime: DateTime.now().toUTC().toISO(),
+      occurTime: toDatumTime(DateTime.now()),
     });
     const dbDoc = await db.get(doc._id);
     expect(dbDoc).toEqual(doc);
