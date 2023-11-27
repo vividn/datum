@@ -340,9 +340,7 @@ describe("handleDataArgs", () => {
     expectParseDataToReturn(
       { required: ["dueDate"], data: ["Dec 31, 2021"] },
       {
-        dueDate: {
-          utc: "2021-12-31"
-        },
+        dueDate: "2021-12-31",
       }
     );
   });
@@ -351,9 +349,7 @@ describe("handleDataArgs", () => {
     expectParseDataToReturn(
       { optional: "startDate", data: ["June 13, 2020"] },
       {
-        startDate: {
-          utc: "2020-06-13",
-        },
+        startDate: "2020-06-13",
       }
     );
   });
