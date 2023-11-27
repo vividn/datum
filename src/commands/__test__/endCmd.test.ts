@@ -32,7 +32,7 @@ describe("endCmd", () => {
       state: false,
       lastState: "cello",
       occurTime: {
-        utc: DateTime.now().toUTC().toISO()
+        utc: DateTime.now().toUTC().toISO(),
       },
     });
   });

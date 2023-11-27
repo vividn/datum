@@ -60,7 +60,10 @@ export function utcOffset(time: DateTime): number {
   return Object.is(offset, -0) ? 0 : offset;
 }
 
-export function toDatumTime(time: DateTime | string, onlyDate?: boolean): DatumTime {
+export function toDatumTime(
+  time: DateTime | string,
+  onlyDate?: boolean
+): DatumTime {
   if (typeof time === "string") {
     time = DateTime.fromISO(time);
   }

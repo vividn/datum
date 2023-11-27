@@ -166,7 +166,7 @@ describe("addIdAndMetadata", () => {
         field: "field",
         foo: "bar",
         occurTime: {
-          utc: "2023-09-05T11:20:00.000Z"
+          utc: "2023-09-05T11:20:00.000Z",
         },
       },
       meta: {

@@ -16,7 +16,6 @@ import { setupCmd } from "../setupCmd";
 import { addCmd } from "../addCmd";
 import { updateCmd } from "../updateCmd";
 import { DateTime, Settings } from "luxon";
-import { getTimezone } from "../../time/getTimezone";
 import { datumTimeToLuxon } from "../../time/timeUtils";
 
 const yesterday = "2023-10-15";
