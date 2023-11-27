@@ -1,7 +1,10 @@
 import { addIdAndMetadata } from "../addIdAndMetadata";
 import { setNow } from "../../test-utils";
 import { IdError } from "../../errors";
+import { toDatumTime } from "../../time/timeUtils";
 
+const nowUtc = "2023-09-05T11:35:00.000Z";
+const nowDatumTime = toDatumTime(nowUtc);
 describe("addIdAndMetadata", () => {
   beforeEach(() => {
     setNow("2023-09-05,11:35");
@@ -14,10 +17,10 @@ describe("addIdAndMetadata", () => {
         abc: "ghi",
       },
       meta: {
-        createTime: "2023-09-05T11:35:00.000Z",
+        createTime: nowDatumTime,
         humanId: expect.any(String),
         idStructure: "%abc%",
-        modifyTime: "2023-09-05T11:35:00.000Z",
+        modifyTime: nowDatumTime,
         random: expect.any(Number),
       },
     });
@@ -26,20 +29,22 @@ describe("addIdAndMetadata", () => {
   it("adds id and metadata in a sane and stable way 2", () => {
     expect(
       addIdAndMetadata(
-        { abc: "ghi", occurTime: "2023-09-05T11:20:00.000Z" },
+        { abc: "ghi", occurTime: { utc: "2023-09-05T11:20:00.000Z" } },
         {}
       )
     ).toEqual({
       _id: "2023-09-05T11:20:00.000Z",
       data: {
         abc: "ghi",
-        occurTime: "2023-09-05T11:20:00.000Z",
+        occurTime: {
+          utc: "2023-09-05T11:20:00.000Z",
+        },
       },
       meta: {
         idStructure: "%occurTime%",
-        createTime: "2023-09-05T11:35:00.000Z",
+        createTime: nowDatumTime,
         humanId: expect.any(String),
-        modifyTime: "2023-09-05T11:35:00.000Z",
+        modifyTime: nowDatumTime,
         random: expect.any(Number),
       },
     });
@@ -50,14 +55,14 @@ describe("addIdAndMetadata", () => {
       addIdAndMetadata(
         {
           abc: "ghi",
-          occurTime: "2023-09-05T11:20:00.000Z",
+          occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
         },
         { noMetadata: true }
       )
     ).toEqual({
       _id: "2023-09-05T11:20:00.000Z",
       abc: "ghi",
-      occurTime: "2023-09-05T11:20:00.000Z",
+      occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
     });
   });
 
@@ -66,7 +71,7 @@ describe("addIdAndMetadata", () => {
       addIdAndMetadata(
         {
           abc: "ghi",
-          occurTime: "2023-09-05T11:20:00.000Z",
+          occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
         { idPart: ["%abc"] }
       )
@@ -74,13 +79,15 @@ describe("addIdAndMetadata", () => {
       _id: "ghi",
       data: {
         abc: "ghi",
-        occurTime: "2023-09-05T11:20:00.000Z",
+        occurTime: {
+          utc: "2023-09-05T11:20:00.000Z",
+        },
       },
       meta: {
         idStructure: "%abc%",
-        createTime: "2023-09-05T11:35:00.000Z",
+        createTime: nowDatumTime,
         humanId: expect.any(String),
-        modifyTime: "2023-09-05T11:35:00.000Z",
+        modifyTime: nowDatumTime,
         random: expect.any(Number),
       },
     });
@@ -92,7 +99,7 @@ describe("addIdAndMetadata", () => {
         {
           foo: "bar",
           field: "field",
-          occurTime: "2023-09-05T11:20:00.000Z",
+          occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
         {}
       )
@@ -101,13 +108,15 @@ describe("addIdAndMetadata", () => {
       data: {
         field: "field",
         foo: "bar",
-        occurTime: "2023-09-05T11:20:00.000Z",
+        occurTime: {
+          utc: "2023-09-05T11:20:00.000Z",
+        },
       },
       meta: {
         idStructure: "%field%:%occurTime%",
-        createTime: "2023-09-05T11:35:00.000Z",
+        createTime: nowDatumTime,
         humanId: expect.any(String),
-        modifyTime: "2023-09-05T11:35:00.000Z",
+        modifyTime: nowDatumTime,
         random: expect.any(Number),
       },
     });
@@ -115,7 +124,11 @@ describe("addIdAndMetadata", () => {
 
   it("adds id and metadata in a sane and stable way 6", () => {
     const payload = addIdAndMetadata(
-      { foo: "bar", field: "field", occurTime: "2023-09-05T11:20:00.000Z" },
+      {
+        foo: "bar",
+        field: "field",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
+      },
       {
         partition: "%foo",
         idPart: "%?humanId",
@@ -125,7 +138,7 @@ describe("addIdAndMetadata", () => {
       data: {
         field: "field",
         foo: "bar",
-        occurTime: "2023-09-05T11:20:00.000Z",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
       meta: {
         idStructure: "%foo%:%?humanId%",
@@ -137,7 +150,11 @@ describe("addIdAndMetadata", () => {
 
   it("adds id and metadata in a sane and stable way 7", () => {
     const payload = addIdAndMetadata(
-      { foo: "bar", field: "field", occurTime: "2023-09-05T11:20:00.000Z" },
+      {
+        foo: "bar",
+        field: "field",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
       {
         partition: "%foo",
         idPart: ["%occurTime", "%?humanId"],
@@ -148,7 +165,9 @@ describe("addIdAndMetadata", () => {
       data: {
         field: "field",
         foo: "bar",
-        occurTime: "2023-09-05T11:20:00.000Z",
+        occurTime: {
+          utc: "2023-09-05T11:20:00.000Z",
+        },
       },
       meta: {
         idStructure: "%foo%:%occurTime%!!!%?humanId%",

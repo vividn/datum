@@ -2,6 +2,7 @@ import { DatumState } from "../views/datumViews/activeStateView";
 import { DateTime } from "luxon";
 import { inferType } from "../utils/inferType";
 import { getActiveState } from "./getActiveState";
+import { DatumTime } from "../time/timeUtils";
 
 export async function getLastState({
   db,
@@ -12,7 +13,7 @@ export async function getLastState({
   db: PouchDB.Database;
   field?: string;
   lastState?: DatumState;
-  time?: DateTime | string;
+  time?: DateTime | DatumTime | string;
 }): Promise<DatumState | undefined> {
   if (lastState !== undefined) {
     return lastState === "string"

@@ -63,10 +63,9 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
     return await endCmd(args);
   }
 
-  const { timeStr: occurTime, utcOffset } = handleTimeArgs(args);
+  const { time: occurTime } = handleTimeArgs(args);
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
-    payloadData.occurUtcOffset = utcOffset;
   }
   const payload = addIdAndMetadata(payloadData, args);
 

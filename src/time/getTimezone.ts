@@ -1,21 +1,19 @@
-import {
-  FixedOffsetZone,
-  IANAZone,
-  Settings as DateTimeSettings,
-  Zone,
-} from "luxon";
+import { FixedOffsetZone, IANAZone, Zone } from "luxon";
 import { BadTimezoneError } from "../errors";
+import { defaultZone } from "./timeUtils";
 
-export function getTimezone(timezone?: string | number): Zone {
+export function getTimezone(timezone?: string | number): Zone | undefined {
   let zone: Zone;
-  if (timezone) {
+  if (timezone !== undefined) {
     if (typeof timezone === "number" || !isNaN(Number(timezone))) {
-      zone = FixedOffsetZone.instance(Number(timezone) * 60);
+      zone = FixedOffsetZone.instance(Math.round(Number(timezone) * 60));
+    } else if (timezone === "system") {
+      zone = defaultZone;
     } else {
       zone = IANAZone.create(timezone);
     }
   } else {
-    zone = DateTimeSettings.defaultZone as Zone;
+    return undefined;
   }
   if (!zone.isValid) {
     throw new BadTimezoneError("timezone is invalid");

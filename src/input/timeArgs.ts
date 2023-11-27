@@ -1,6 +1,6 @@
 import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
-import { isoDate, isoDatetime, now, utcOffset } from "../time/timeUtils";
+import { DatumTime, now, toDatumTime } from "../time/timeUtils";
 import { getTimezone } from "../time/getTimezone";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDateStr } from "../time/parseDateStr";
@@ -83,9 +83,9 @@ export function timeYargs(otherYargs?: Argv): Argv {
 export type ReferencedTimeArgs = TimeArgs & {
   referenceTime?: DateTime;
 };
-export type TimeStrWithOffset = {
-  timeStr?: isoDatetime | isoDate;
-  utcOffset: number;
+export type TimeFromArgs = {
+  time?: DatumTime;
+  luxon?: DateTime;
   unmodified: boolean;
   onlyDate: boolean;
 };
@@ -98,14 +98,12 @@ export function handleTimeArgs({
   timezone,
   noTimestamp,
   referenceTime,
-}: ReferencedTimeArgs): TimeStrWithOffset {
+}: ReferencedTimeArgs): TimeFromArgs {
   const tz = getTimezone(timezone);
   referenceTime = referenceTime ?? now(tz);
   let unmodified = true;
   if (noTimestamp) {
     return {
-      timeStr: undefined,
-      utcOffset: utcOffset(referenceTime),
       unmodified: false,
       onlyDate: false,
     };
@@ -133,32 +131,28 @@ export function handleTimeArgs({
 
   // if only date information is given (or marked fullDay), only record the date
   const onlyDate = !!(fullDay || ((date || yesterday) && !time && !quick));
-  const timeStr = onlyDate
-    ? (referenceTime.toISODate() as isoDate)
-    : (referenceTime.toUTC().toString() as isoDatetime);
 
   return {
-    timeStr,
-    // utc offset needs to be recalculated because DST could be different for the specified time, for example.
-    utcOffset: utcOffset(referenceTime),
+    time: toDatumTime(referenceTime, onlyDate),
+    luxon: !onlyDate ? referenceTime : undefined,
     unmodified,
     onlyDate,
   };
 }
 
+// TODO: Consider moving this function into the test file, and creating a new function that takes a given occurTime after parsing the data as the reference time
 export function occurredBaseArgs(
   args: ReferencedTimeArgs & Pick<DataArgs, "baseData">
 ): DatumData {
   const parsedData = parseBaseData(args.baseData);
   const baseOccurTime = getOccurTime(parsedData);
   const referenceTime = args.referenceTime ?? baseOccurTime;
-  const { timeStr: occurTime, utcOffset: occurUtcOffset } = handleTimeArgs({
+  const { time: occurTime } = handleTimeArgs({
     ...args,
     referenceTime,
   });
   return {
     ...parsedData,
     occurTime,
-    occurUtcOffset,
   };
 }

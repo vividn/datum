@@ -13,9 +13,9 @@ import { setupCmd } from "../setupCmd";
 import { addCmd } from "../addCmd";
 import { updateCmd } from "../updateCmd";
 import { DateTime, Settings } from "luxon";
-import { getTimezone } from "../../time/getTimezone";
 import { generateSampleMorning } from "./tailCmd.test";
 import { headCmd } from "../headCmd";
+import { datumTimeToLuxon } from "../../time/timeUtils";
 
 const yesterday = "2023-10-31";
 const today = "2023-11-01";
@@ -188,12 +188,12 @@ describe("headCmd", () => {
     expect(docs.length).toBeGreaterThan(10);
     expect(
       docs
-        .map((doc) => doc.data.occurTime)
+        .map((doc) => doc.data.occurTime.utc)
         .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
     ).toBe(true);
     expect(
       yesterdayDocs
-        .map((doc) => doc.data.occurTime)
+        .map((doc) => doc.data.occurTime.utc)
         .every(
           (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday
         )
@@ -210,14 +210,12 @@ describe("headCmd", () => {
 
     // when mapping just from utc, not all should be on today
     const utcDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime).toUTC().toISODate()
+      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate()
     );
     expect(utcDates.every((date) => date === today)).toBe(false);
 
     const localDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime, {
-        zone: getTimezone(doc.data.occurUtcOffset),
-      }).toISODate()
+      datumTimeToLuxon(doc.data.occurTime)?.toISODate()
     );
     expect(localDates.every((date) => date === today)).toBe(true);
 

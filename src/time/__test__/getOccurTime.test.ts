@@ -9,8 +9,8 @@ describe("getOccurTime", () => {
   it("gets the occurTime of a datum doc with the right offset", () => {
     const datumDoc: DatumDocument = {
       _id: "some_datum_document",
-      _rev: "some_revison",
-      data: { occurTime: "2022-03-06T07:00:00.000Z", occurUtcOffset: -8 },
+      _rev: "some_revision",
+      data: { occurTime: { utc: "2022-03-06T07:00:00.000Z", o: -8 } },
       meta: {},
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 23, {
@@ -23,8 +23,8 @@ describe("getOccurTime", () => {
   it("returns undefined for a datum doc without an occurTime", () => {
     const datumDoc: DatumDocument = {
       _id: "some_datum_document",
-      _rev: "some_revison",
-      data: { foo: "bar", occurUtcOffset: -8 },
+      _rev: "some_revision",
+      data: { foo: "bar" },
       meta: {},
     };
 
@@ -32,12 +32,12 @@ describe("getOccurTime", () => {
     expect(returnVal).toBeUndefined();
   });
 
-  it("formats a datum doc with the local offset, if there is no utcOffset", () => {
+  it("formats a datum doc with the local offset, if there is no offset", () => {
     Settings.defaultZone = "UTC-9";
     const datumDoc: DatumDocument = {
       _id: "some_data_only_doc",
       _rev: "some_revision",
-      data: { occurTime: "2022-03-06T07:00:00.000Z" },
+      data: { occurTime: { utc: "2022-03-06T07:00:00.000Z" } },
       meta: {},
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 22);
@@ -49,9 +49,8 @@ describe("getOccurTime", () => {
   it("gets the occurTime of a data only doc with the right offset", () => {
     const dataDoc: DataOnlyDocument = {
       _id: "some_datum_document",
-      _rev: "some_revison",
-      occurTime: "2022-03-06T07:00:00.000Z",
-      occurUtcOffset: -8,
+      _rev: "some_revision",
+      occurTime: { utc: "2022-03-06T07:00:00.000Z", o: -8 },
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 23, {
       zone: "UTC-8",
@@ -65,7 +64,7 @@ describe("getOccurTime", () => {
     const dataDoc: DataOnlyDocument = {
       _id: "some_data_only_doc",
       _rev: "some_revision",
-      occurTime: "2022-03-06T07:00:00.000Z",
+      occurTime: { utc: "2022-03-06T07:00:00.000Z" },
     };
     const expectedLuxonDateTime = DateTime.local(2022, 3, 5, 22);
     const returnVal = getOccurTime(dataDoc);

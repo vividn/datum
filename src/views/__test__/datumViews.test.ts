@@ -230,9 +230,7 @@ describe("datumV1View", () => {
     _emitMock = jest.spyOn(emit, "_emit");
   });
 
-  it.todo(
-    "does not emit if there is no occurTime, or if there is no occurUtcOffset"
-  );
+  it.todo("does not emit if there is no occurTime");
 
   it.todo("emits [date, time, offset,...] for a offset of 0");
 

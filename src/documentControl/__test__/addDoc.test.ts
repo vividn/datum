@@ -19,8 +19,11 @@ const testDatumPayload: DatumPayload = {
   data: {
     abc: 123,
     foo: "bar",
-    occurTime: "2021-06-20T14:00:00Z",
-    occurUtcOffset: 2,
+    occurTime: {
+      utc: "2021-06-20T14:00:00Z",
+      o: 2,
+      tz: "Europe/Berlin",
+    },
   },
   meta: {
     random: 0.4869350234,
@@ -101,8 +104,16 @@ describe("addDoc", () => {
     const newDoc = await addDoc({ db, payload });
 
     expect(newDoc.meta).toMatchObject({
-      createTime: nowStr,
-      modifyTime: nowStr,
+      createTime: {
+        utc: nowStr,
+        o: 0,
+        tz: "UTC",
+      },
+      modifyTime: {
+        utc: nowStr,
+        o: 0,
+        tz: "UTC",
+      },
     });
   });
 
@@ -418,7 +429,7 @@ describe("addDoc", () => {
     };
 
     const newDoc = await addDoc({ db, payload: designPayload });
-    expect(newDoc).toHaveProperty("meta.createTime", nowStr);
-    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.createTime.utc", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime.utc", nowStr);
   });
 });

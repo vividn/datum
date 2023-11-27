@@ -25,6 +25,7 @@ export function humanTime(time: DateTime): string {
   return time.toFormat(dateTimeFormat);
 }
 
+// TODO: Consider removing this
 export function humanTimeFromISO(
   timeStr: isoDatetime,
   utcOffset?: number

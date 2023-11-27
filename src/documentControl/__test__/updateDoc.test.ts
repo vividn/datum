@@ -10,8 +10,11 @@ const testDatumPayload: DatumPayload = {
   data: {
     abc: 123,
     foo: "bar",
-    occurTime: "2021-06-20T14:00:00Z",
-    occurUtcOffset: 2,
+    occurTime: {
+      utc: "2021-06-20T14:00:00Z",
+      o: 2,
+      tz: "Europe/Berlin",
+    },
   },
   meta: {
     random: 0.4869350234,
@@ -68,7 +71,7 @@ describe("updateDoc", () => {
       },
     });
 
-    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime.utc", nowStr);
   });
 
   test("does not add metadata if oldDoc does not have metadata", async () => {
@@ -89,8 +92,10 @@ describe("updateDoc", () => {
     const newPayload = {
       data: {
         newKey: "newData",
-        occurTime: "2021-08-09T14:13:00Z",
-        occurUtcOffset: 1,
+        occurTime: {
+          utc: "2021-08-09T14:13:00Z",
+          o: 1,
+        },
       },
       meta: {
         idStructure: "%newKey%",

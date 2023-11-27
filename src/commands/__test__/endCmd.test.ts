@@ -17,7 +17,9 @@ describe("endCmd", () => {
     expect(doc.data).toMatchObject({
       field: "dance",
       state: false,
-      occurTime: DateTime.now().toUTC().toISO(),
+      occurTime: {
+        utc: DateTime.now().toUTC().toISO(),
+      },
     });
   });
 
@@ -29,7 +31,9 @@ describe("endCmd", () => {
       field: "activity",
       state: false,
       lastState: "cello",
-      occurTime: DateTime.now().toUTC().toISO(),
+      occurTime: {
+        utc: DateTime.now().toUTC().toISO(),
+      },
     });
   });
 });

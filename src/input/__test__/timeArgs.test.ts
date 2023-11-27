@@ -9,18 +9,18 @@ import {
   handleTimeArgs,
   occurredBaseArgs,
   ReferencedTimeArgs,
-  TimeStrWithOffset,
+  TimeFromArgs,
 } from "../timeArgs";
 import { restoreNow, setNow } from "../../test-utils";
 
 const expectTiming = (
   props: ReferencedTimeArgs,
-  expectedTimeStrOrTimings: string | Partial<TimeStrWithOffset>
+  expectedUTCOrDatumTime: string | Partial<TimeFromArgs>
 ) => {
   const expectedOutput =
-    typeof expectedTimeStrOrTimings === "string"
-      ? { timeStr: expectedTimeStrOrTimings }
-      : expectedTimeStrOrTimings;
+    typeof expectedUTCOrDatumTime === "string"
+      ? { time: { utc: expectedUTCOrDatumTime } }
+      : expectedUTCOrDatumTime;
 
   expect(handleTimeArgs(props)).toMatchObject(expectedOutput);
 };
@@ -34,8 +34,8 @@ describe("handleTimeArgs", () => {
     restoreNow();
   });
 
-  it("returns timeStr as current time when no arguments are given", () => {
-    expect(handleTimeArgs({}).timeStr).toBe("2020-05-10T15:25:30.000Z");
+  it("returns time.utc as the current time when no arguments are given", () => {
+    expect(handleTimeArgs({}).time?.utc).toBe("2020-05-10T15:25:30.000Z");
   });
 
   it("handles absolute time strings", () => {
@@ -180,7 +180,7 @@ describe("handleTimeArgs", () => {
     setNow("2020-05-10T02:00:00Z");
 
     const result = handleTimeArgs({ fullDay: true });
-    expect(result.timeStr).toBe("2020-05-09");
+    expect(result.time?.utc).toBe("2020-05-09");
     Settings.defaultZone = "system";
   });
 
@@ -188,28 +188,28 @@ describe("handleTimeArgs", () => {
     // Before DST, UTC-6
     expectTiming(
       { timezone: "America/Chicago", date: "2018-03-10", time: "10:00" },
-      { timeStr: "2018-03-10T16:00:00.000Z", utcOffset: -6 }
+      { time: { utc: "2018-03-10T16:00:00.000Z", o: -6 } }
     );
     // After DST, UTC-5
     expectTiming(
       { timezone: "America/Chicago", date: "2018-03-12", time: "10:00" },
-      { timeStr: "2018-03-12T15:00:00.000Z", utcOffset: -5 }
+      { time: { utc: "2018-03-12T15:00:00.000Z", o: -5 } }
     );
     expectTiming(
       { timezone: "+4", time: "10:00" },
-      { timeStr: "2020-05-10T06:00:00.000Z", utcOffset: 4 }
+      { time: { utc: "2020-05-10T06:00:00.000Z", o: 4 } }
     );
     expectTiming(
       { timezone: "-4", time: "10:00" },
-      { timeStr: "2020-05-10T14:00:00.000Z", utcOffset: -4 }
+      { time: { utc: "2020-05-10T14:00:00.000Z", o: -4 } }
     );
     expectTiming(
       { timezone: "0", time: "10:00" },
-      { timeStr: "2020-05-10T10:00:00.000Z", utcOffset: 0 }
+      { time: { utc: "2020-05-10T10:00:00.000Z", o: 0 } }
     );
     expectTiming(
       { timezone: "2", time: "10:00" },
-      { timeStr: "2020-05-10T08:00:00.000Z", utcOffset: 2 }
+      { time: { utc: "2020-05-10T08:00:00.000Z", o: 2 } }
     );
   });
 
@@ -230,27 +230,24 @@ describe("handleTimeArgs", () => {
   });
 
   it("does not persist timezone across runs", () => {
-    const { utcOffset: offset1 } = handleTimeArgs({ timezone: "+3" });
+    const offset1 = handleTimeArgs({ timezone: "+3" }).time?.o;
     expect(offset1).toEqual(3);
-    const { utcOffset: offset2 } = handleTimeArgs({});
+    const offset2 = handleTimeArgs({}).time?.o;
     expect(offset2).toEqual(0);
   });
 
-  it("returns an undefined timeStr if noTimestamp is requested", () => {
-    const { timeStr } = handleTimeArgs({ noTimestamp: true });
-    expect(timeStr).toBeUndefined();
+  it("returns an undefined time if noTimestamp is requested", () => {
+    const { time } = handleTimeArgs({ noTimestamp: true });
+    expect(time).toBeUndefined();
   });
 
   it("returns the locales timezone if none is specified", () => {
-    const { utcOffset: offset1 } = handleTimeArgs({});
+    const offset1 = handleTimeArgs({}).time?.o;
     expect(offset1).toBe(0);
 
     Settings.defaultZone = "Brazil/East";
-    const { utcOffset: offset2 } = handleTimeArgs({});
+    const offset2 = handleTimeArgs({}).time?.o;
     expect(offset2).toBe(-3);
-
-    const { utcOffset: offset3 } = handleTimeArgs({ noTimestamp: true });
-    expect(offset3).toBe(-3);
 
     Settings.defaultZone = "system";
   });
@@ -303,7 +300,7 @@ describe("handleTimeArgs", () => {
     ).toBe(false);
   });
 
-  it("returns onlyDate: true, when just timeStr is an isoDate", () => {
+  it("returns onlyDate: true, when the time is just a date", () => {
     expect(handleTimeArgs({}).onlyDate).toBe(false);
     expect(handleTimeArgs({ time: "-8" }).onlyDate).toBe(false);
     expect(handleTimeArgs({ date: "2023-10-23", time: "14:37" }).onlyDate).toBe(
@@ -337,8 +334,7 @@ describe("occurredBaseData", () => {
     ).toEqual({
       foo: "bar",
       abc: 123,
-      occurTime: "2023-07-06T03:00:00.000Z",
-      occurUtcOffset: 0,
+      occurTime: { utc: "2023-07-06T03:00:00.000Z", o: 0, tz: "UTC" },
     });
   });
   it("uses the existing occurTime in the baseData as a reference time to the timeArgs", () => {
@@ -346,16 +342,21 @@ describe("occurredBaseData", () => {
       occurredBaseArgs({
         baseData: {
           foo: "bar",
-          occurTime: "2023-07-01T15:00:00.000Z",
-          occurUtcOffset: -2,
+          occurTime: {
+            utc: "2023-07-01T15:00:00.000Z",
+            o: -2,
+          },
         },
         date: "+1",
         time: "10",
       })
     ).toEqual({
       foo: "bar",
-      occurTime: "2023-07-02T12:00:00.000Z",
-      occurUtcOffset: -2,
+      occurTime: {
+        utc: "2023-07-02T12:00:00.000Z",
+        o: -2,
+        tz: "UTC-2",
+      },
     });
   });
 
@@ -364,8 +365,10 @@ describe("occurredBaseData", () => {
       occurredBaseArgs({
         baseData: {
           foo: "bar",
-          occurTime: "2023-07-01T15:00:00.000Z",
-          occurUtcOffset: -2,
+          occurTime: {
+            utc: "2023-07-01T15:00:00.000Z",
+            o: -2,
+          },
         },
         date: "+1",
         time: "10",
@@ -373,8 +376,7 @@ describe("occurredBaseData", () => {
       })
     ).toEqual({
       foo: "bar",
-      occurTime: "2023-07-11T10:00:00.000Z",
-      occurUtcOffset: 0,
+      occurTime: { utc: "2023-07-11T10:00:00.000Z", o: 0, tz: "UTC" },
     });
   });
 
