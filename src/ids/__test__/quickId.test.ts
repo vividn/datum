@@ -173,7 +173,7 @@ describe("quickId", () => {
     });
 
     await expect(() => quickId(db, "lmnop")).rejects.toThrowError(
-      NoQuickIdMatchError
+      NoQuickIdMatchError,
     );
   });
 });

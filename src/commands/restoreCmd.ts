@@ -34,7 +34,7 @@ export async function restoreCmd(args: RestoreCmdArgs): Promise<void> {
   const info = await db.info();
   if (!args.allowNonempty && info.doc_count !== 0) {
     throw new Error(
-      "Warning: db is not empty, aborting restore. Use --allow-nonempty to override."
+      "Warning: db is not empty, aborting restore. Use --allow-nonempty to override.",
     );
   }
   const buffer = await readFileSync(args.filename);

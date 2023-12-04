@@ -78,7 +78,7 @@ describe("inferType", () => {
 
   it("parses weird looking things as strings", () => {
     expect(inferType("{what: even is this)) ]}")).toEqual(
-      "{what: even is this)) ]}"
+      "{what: even is this)) ]}",
     );
     expect(inferType("(1,2,3)")).toEqual("(1,2,3)");
     expect(inferType("NAN/null")).toEqual("NAN/null");
@@ -98,22 +98,22 @@ describe("inferType with special fields", () => {
     parseDateSpy = jest.spyOn(parseDateStr, "parseDateStr");
     parseDurationSpy = jest.spyOn(
       parseDurationStr,
-      "isoDurationFromDurationStr"
+      "isoDurationFromDurationStr",
     );
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
     expect(inferType("3", "time")).toEqual(
-      toDatumTime("2021-10-25T03:00:00.000Z")
+      toDatumTime("2021-10-25T03:00:00.000Z"),
     );
     expect(inferType("yesterday at 22:15", "expectedTime")).toEqual(
-      toDatumTime("2021-10-24T22:15:00.000Z")
+      toDatumTime("2021-10-24T22:15:00.000Z"),
     );
     expect(inferType("10:15", "snake_time")).toEqual(
-      toDatumTime("2021-10-25T10:15:00.000Z")
+      toDatumTime("2021-10-25T10:15:00.000Z"),
     );
     expect(inferType("1230", "expectedTime2")).toEqual(
-      toDatumTime("2021-10-25T12:30:00.000Z")
+      toDatumTime("2021-10-25T12:30:00.000Z"),
     );
 
     expect(parseTimeSpy).toHaveBeenCalledTimes(4);
@@ -148,7 +148,7 @@ describe("inferType with special fields", () => {
 
   it("leaves the value as a string for -Time -Date and -Dur values if they cannot be parsed", () => {
     expect(inferType("unparseable_time", "weirdTime")).toEqual(
-      "unparseable_time"
+      "unparseable_time",
     );
     expect(parseTimeSpy).toHaveBeenCalled();
     expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
@@ -158,7 +158,7 @@ describe("inferType with special fields", () => {
     expect(parseDateSpy).not.toHaveReturned();
 
     expect(inferType("as long as it takes", "weirdDuration")).toEqual(
-      "as long as it takes"
+      "as long as it takes",
     );
     expect(parseDurationSpy).toHaveBeenCalled();
     expect(parseDurationSpy).not.toHaveReturned();

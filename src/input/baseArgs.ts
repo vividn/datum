@@ -45,7 +45,7 @@ export const baseArgs = outputYargs(
       describe: "Create the db if it does not exist",
       type: "boolean",
     },
-  })
+  }),
 ).strict();
 
 // TODO: Middleware to enforce proper non array types

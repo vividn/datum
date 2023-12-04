@@ -78,7 +78,7 @@ export function mapCmdYargs(yargs: Argv): Argv {
 export const builder = mapCmdYargs;
 
 export async function mapCmd(
-  args: MapCmdArgs
+  args: MapCmdArgs,
 ): Promise<PouchDB.Query.Response<EitherPayload>> {
   const db = connectDb(args);
   const startEndParams = args.end
@@ -87,8 +87,8 @@ export async function mapCmd(
         endkey: inferType(args.end),
       }
     : args.start
-    ? startsWith(inferType(args.start))
-    : {};
+      ? startsWith(inferType(args.start))
+      : {};
   let viewParams: PouchDB.Query.Options<any, any> = {
     reduce: args.reduce ?? false,
     ...startEndParams,
@@ -105,7 +105,7 @@ export async function mapCmd(
     ? await db.allDocs(viewParams)
     : await db.query(
         `${args.mapName}/${args.view ?? args.mapName}`,
-        viewParams
+        viewParams,
       );
   if (args.show !== Show.None) {
     renderView(viewResult, args.showId, args.hid);

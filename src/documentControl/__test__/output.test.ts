@@ -68,7 +68,7 @@ describe("output", () => {
       conflictStrategy: "merge",
     });
     expect(updateDocSpy.mock.calls[0][0].outputArgs?.show).toEqual(
-      Show.Standard
+      Show.Standard,
     );
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
@@ -83,7 +83,7 @@ describe("output", () => {
       conflictStrategy: "merge",
     });
     expect(updateDocSpy.mock.calls[1][0].outputArgs?.show).toEqual(
-      Show.Standard
+      Show.Standard,
     );
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
   });
@@ -177,10 +177,10 @@ describe("output", () => {
     });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("RENAME")
+      expect.stringContaining("RENAME"),
     );
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE")
+      expect.stringContaining("UPDATE"),
     );
   });
 
@@ -205,7 +205,7 @@ describe("output", () => {
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("OWRITE"));
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("RENAME"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("UPDATE")
+      expect.stringContaining("UPDATE"),
     );
   });
 
@@ -229,7 +229,7 @@ describe("output", () => {
     });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("OWRITE")
+      expect.stringContaining("OWRITE"),
     );
   });
 
@@ -264,10 +264,10 @@ describe("output", () => {
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("FAILED"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("OWRITE")
+      expect.stringContaining("OWRITE"),
     );
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("RENAME")
+      expect.stringContaining("RENAME"),
     );
   });
 
@@ -290,7 +290,7 @@ describe("output", () => {
         _rev: "1-abcd",
         data: {},
         meta: {},
-      })
+      }),
     );
     await addCmd({ idPart: "returnDoc" });
     expect(spy.mock.calls[0][0].outputArgs?.show).toBeUndefined();

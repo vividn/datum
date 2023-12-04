@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 export function createOrAppend(
   existing: any[] | any,
-  toAppend: any
+  toAppend: any,
 ): any[] | any {
   if (existing === undefined) {
     return toAppend;

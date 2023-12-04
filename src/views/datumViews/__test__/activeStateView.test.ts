@@ -81,11 +81,11 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ minutes: 3 }).toUTC().toISO()], // state started 3 minutes ago
-      "state1"
+      "state1",
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurTime.utc], // and then lastState was restored now
-      "state2"
+      "state2",
     );
   });
 
@@ -112,7 +112,7 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ hours: 1 }).toUTC().toISO()],
-      false
+      false,
     );
     expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], true);
   });
@@ -128,7 +128,7 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ hours: 1, minutes: 30 }).toUTC().toISO()],
-      true
+      true,
     );
     expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
 
@@ -150,7 +150,7 @@ describe("activeStateView", () => {
           .toUTC()
           .toISO(),
       ],
-      "stringState"
+      "stringState",
     );
     expect(emitMock).toHaveBeenCalledWith(["foobar", occurTime.utc], false);
   });
@@ -165,11 +165,11 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is true, so started dur minutes ago
-      true
+      true,
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurTime.utc], // and then lastState (assumed to be false) is restored now
-      false
+      false,
     );
   });
 
@@ -184,7 +184,7 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is false
-      false
+      false,
     );
     expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], true);
 
@@ -206,11 +206,11 @@ describe("activeStateView", () => {
           .toUTC()
           .toISO(),
       ],
-      false
+      false,
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["foobar", occurTime.utc],
-      "stringState"
+      "stringState",
     );
   });
 });

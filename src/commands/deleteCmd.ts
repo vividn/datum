@@ -16,13 +16,13 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function deleteCmd(
-  args: DeleteCmdArgs
+  args: DeleteCmdArgs,
 ): Promise<DeletedDocument[]> {
   const db = connectDb(args);
   const ids = await quickIds(db, args.quickId);
 
   await updateLastDocsRef(db, ids);
   return await Promise.all(
-    ids.map((id) => deleteDoc({ id, db, outputArgs: args }))
+    ids.map((id) => deleteDoc({ id, db, outputArgs: args })),
   );
 }

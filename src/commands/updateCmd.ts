@@ -41,7 +41,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function updateCmd(
-  args: UpdateCmdArgs
+  args: UpdateCmdArgs,
 ): Promise<EitherDocument[]> {
   const db = connectDb(args);
 
@@ -68,8 +68,8 @@ export async function updateCmd(
         payload,
         updateStrategy,
         outputArgs: args,
-      })
-    )
+      }),
+    ),
   );
 
   const newIds = updatedDocs.map((doc) => doc._id);

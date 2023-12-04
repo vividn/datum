@@ -25,7 +25,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export async function reduceCmd(
-  args: ReduceCmdArgs
+  args: ReduceCmdArgs,
 ): Promise<PouchDB.Query.Response<EitherPayload>> {
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
 

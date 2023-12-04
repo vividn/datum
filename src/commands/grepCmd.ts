@@ -32,7 +32,7 @@ export async function grepCmd(args: GrepCmdArgs): Promise<EitherDocument[]> {
       }
       return accum;
     },
-    []
+    [],
   );
   const ids = matchingDocs.map((doc) => {
     showExists(doc, args);

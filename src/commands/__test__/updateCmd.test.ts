@@ -80,7 +80,7 @@ describe("updateCmd", () => {
         id: "quick_id",
         updateStrategy: "xor",
         payload: { foo: "bar" },
-      })
+      }),
     );
   });
 
@@ -94,7 +94,7 @@ describe("updateCmd", () => {
 
     await updateCmd({ db: dbName, quickId: "input_quick", data: ["foo=bar"] });
     expect(updateDocSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ updateStrategy: "preferNew" })
+      expect.objectContaining({ updateStrategy: "preferNew" }),
     );
   });
 

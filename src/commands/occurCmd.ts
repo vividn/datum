@@ -47,7 +47,7 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
     args,
     "duration",
     !args.moment && !args.noTimestamp && "optional",
-    "dur"
+    "dur",
   );
   flexiblePositional(args, "field", !args.fieldless && "required");
 
