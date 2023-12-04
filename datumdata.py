@@ -80,11 +80,13 @@ class Datumdata:
 
         # Only load in header and last 1000 lines to save time
         total_lines = int(subprocess.check_output(["/bin/sh", "-c", f"wc -l {self.datum_file}"]).split()[0])
-        to_skip=range(1, total_lines - 1000)
+        # to_skip=range(1, total_lines - 1000)
+        # skiprows=[i for i in to_skip]
+        skiprows=None
 
         # Make pandas dataframe from datum file, with the date and time combined into one field and set as the index
         self.v1_data = pd.read_csv(
-            self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0], skiprows=[i for i in to_skip]
+            self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0], skiprows=skiprows
         )
 
         # Get v2 data as well
