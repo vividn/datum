@@ -41,7 +41,7 @@
     "@types/lodash.sample": "^4.2.7",
     "@types/lodash.set": "^4.3.7",
     "@types/lodash.unset": "^4.5.7",
-    "@types/luxon": "^3.3.0",
+    "@types/luxon": "^3.3.1",
     "@types/node": "^18.13.0",
     "@types/pluralize": "^0.0.29",
     "@types/pouchdb": "^6.4.1",
