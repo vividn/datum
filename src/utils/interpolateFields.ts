@@ -43,13 +43,13 @@ export function interpolateFields({
         .split(".")
         .reduce(
           (o, subKey) => (o as undefined | GenericObject)?.[subKey],
-          sourceObject
+          sourceObject,
         );
       if (extractedValue !== undefined) {
         if (isDatumTime(extractedValue)) {
           if (useHumanTimes) {
             combined.push(
-              humanFormattedTime(extractedValue) ?? extractedValue.utc
+              humanFormattedTime(extractedValue) ?? extractedValue.utc,
             );
           } else {
             combined.push(extractedValue.utc);

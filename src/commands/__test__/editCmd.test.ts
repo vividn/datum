@@ -29,7 +29,7 @@ describe("editCmd", () => {
       def: "ghi",
     };
     editJSONInTerminalSpy.mockImplementation(
-      async (_doc: GenericObject) => editedDoc
+      async (_doc: GenericObject) => editedDoc,
     );
     await db.put({ _id: "abcdef", abc: "def" });
     const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
@@ -54,7 +54,7 @@ describe("editCmd", () => {
       meta: { humanId: "jkl" },
     });
     await expect(
-      editCmd({ db: dbName, quickId: ",abc,jkl" })
+      editCmd({ db: dbName, quickId: ",abc,jkl" }),
     ).rejects.toThrowError(TooManyToEditError);
   });
 });

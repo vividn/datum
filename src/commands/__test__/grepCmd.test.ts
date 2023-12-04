@@ -32,7 +32,7 @@ describe("grepCmd", () => {
         expect.objectContaining(doc3),
         expect.objectContaining(doc5),
         expect.objectContaining(doc6),
-      ])
+      ]),
     );
 
     expect(mockedLog.mock.calls).toMatchSnapshot();

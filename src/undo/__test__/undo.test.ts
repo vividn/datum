@@ -60,7 +60,7 @@ describe("addCmd undo", () => {
 
   it("prevents undo if created more than 15 minutes ago", async () => {
     const oldTime = mockNow.minus(
-      Duration.fromObject({ minutes: 15, seconds: 30 })
+      Duration.fromObject({ minutes: 15, seconds: 30 }),
     );
 
     await db.put({
@@ -70,7 +70,7 @@ describe("addCmd undo", () => {
     });
 
     await expect(addCmd({ idPart: "oldDoc", undo: true })).rejects.toThrowError(
-      "Doc created more than fifteen minutes ago"
+      "Doc created more than fifteen minutes ago",
     );
 
     Settings.resetCaches();
@@ -79,7 +79,7 @@ describe("addCmd undo", () => {
   it("allows undo if forceUndo", async () => {
     const docName = "oldDoc2";
     const oldTime = mockNow.minus(
-      Duration.fromObject({ minutes: 15, seconds: 30 })
+      Duration.fromObject({ minutes: 15, seconds: 30 }),
     );
 
     await db.put({
@@ -99,7 +99,7 @@ describe("addCmd undo", () => {
   it("allows undo if both forceUndo and undo", async () => {
     const docName = "oldDoc3";
     const oldTime = mockNow.minus(
-      Duration.fromObject({ minutes: 15, seconds: 30 })
+      Duration.fromObject({ minutes: 15, seconds: 30 }),
     );
 
     await db.put({

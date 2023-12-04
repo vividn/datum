@@ -48,7 +48,7 @@ export const timingView: DatumView<
 
     function getLocalDate(
       timeStr: string,
-      offset?: number | undefined
+      offset?: number | undefined,
     ): [LocalDate, number | null] {
       if (!timeStr.includes("T")) {
         return [timeStr, null];
@@ -66,7 +66,7 @@ export const timingView: DatumView<
     }
 
     function dtTransform(
-      time: string | DatumTime | undefined
+      time: string | DatumTime | undefined,
     ): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {

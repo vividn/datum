@@ -1,6 +1,9 @@
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { BaseDataError, IdError } from "../../errors";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import {
+  DatumDocument,
+  DatumMetadata,
+} from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
@@ -87,7 +90,7 @@ describe("addCmd", () => {
       field: "fromExtra",
     });
     expect(
-      (await addCmd({ field: "fromProps", data: ["field=fromExtra"] })).data
+      (await addCmd({ field: "fromProps", data: ["field=fromExtra"] })).data,
     ).toEqual({ field: "fromExtra" });
   });
 
@@ -97,7 +100,7 @@ describe("addCmd", () => {
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
     await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(
-      IdError
+      IdError,
     );
   });
 
@@ -119,7 +122,7 @@ describe("addCmd", () => {
   it("Can remove metadata entirely", async () => {
     expect(await addCmd({ idPart: "hasMetadata" })).toHaveProperty("meta");
     expect(
-      await addCmd({ idPart: "noMeta", noMetadata: true })
+      await addCmd({ idPart: "noMeta", noMetadata: true }),
     ).not.toHaveProperty("meta");
   });
 
@@ -131,7 +134,7 @@ describe("addCmd", () => {
     });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("EXISTS")
+      expect.stringContaining("EXISTS"),
     );
 
     mockedLog.mockReset();
@@ -142,7 +145,7 @@ describe("addCmd", () => {
       show: Show.Standard,
     });
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("CREATE")
+      expect.stringContaining("CREATE"),
     );
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
   });
@@ -155,7 +158,7 @@ describe("addCmd", () => {
     });
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("EXISTS")
+      expect.stringContaining("EXISTS"),
     );
 
     mockedLog.mockReset();
@@ -176,7 +179,7 @@ describe("addCmd", () => {
 
   it("inserts id structure into the metadata", async () => {
     expect(
-      await addCmd({ idPart: ["rawString", "%foo%!!"], data: ["foo=abc"] })
+      await addCmd({ idPart: ["rawString", "%foo%!!"], data: ["foo=abc"] }),
     ).toMatchObject({
       meta: { idStructure: "rawString__%foo%!!" },
     });
@@ -184,7 +187,7 @@ describe("addCmd", () => {
 
   it("can use custom base data", async () => {
     expect(
-      await addCmd({ baseData: "{a: 1, b:2, c:3 }", idPart: "basedata-doc1" })
+      await addCmd({ baseData: "{a: 1, b:2, c:3 }", idPart: "basedata-doc1" }),
     ).toMatchObject({ data: { a: 1, b: 2, c: 3 }, _id: "basedata-doc1" });
   });
 
@@ -194,7 +197,7 @@ describe("addCmd", () => {
         noMetadata: true,
         baseData: "{a: 1, b:2, c:3}",
         idPart: "basedata-doc2",
-      })
+      }),
     ).toMatchObject({
       _id: "basedata-doc2",
       a: 1,
@@ -205,7 +208,7 @@ describe("addCmd", () => {
 
   it("throws a BaseDataError if baseData is malformed", async () => {
     await expect(addCmd({ baseData: "string" })).rejects.toThrowError(
-      BaseDataError
+      BaseDataError,
     );
   });
 
@@ -215,7 +218,7 @@ describe("addCmd", () => {
         noMetadata: true,
         baseData: "{ _id: payload-id }",
         idPart: "argument-id",
-      })
+      }),
     ).toMatchObject({ _id: "payload-id" });
     expect(
       await addCmd({
@@ -223,14 +226,14 @@ describe("addCmd", () => {
         baseData: "{ _id: payload-id-2 }",
         idPart: "%keyId%",
         data: ["keyId=key-id"],
-      })
+      }),
     ).toMatchObject({ _id: "payload-id-2" });
     expect(
       await addCmd({
         noMetadata: true,
         data: ["_id=posArgs-id"],
         idPart: "idPart-id",
-      })
+      }),
     ).toMatchObject({ _id: "posArgs-id" });
   });
 
@@ -242,7 +245,7 @@ describe("addCmd", () => {
 
   it("contains random identifiers in the metadata", async () => {
     const doc = await addCmd({ data: ["foo=bar"] });
-    const { random, humanId } = doc?.meta;
+    const { random, humanId } = doc.meta as DatumMetadata;
 
     expect(random).toBeGreaterThanOrEqual(0);
     expect(random).toBeLessThanOrEqual(1);
@@ -254,14 +257,14 @@ describe("addCmd", () => {
       /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
     await addCmd({ idPart: "this-id" });
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringMatching(matchExtraKeysInAnyOrder)
+      expect.stringMatching(matchExtraKeysInAnyOrder),
     );
 
     mockedLog.mockClear();
 
     await addCmd({ idPart: "that-id", showAll: true });
     expect(mockedLog).toHaveBeenCalledWith(
-      expect.stringMatching(matchExtraKeysInAnyOrder)
+      expect.stringMatching(matchExtraKeysInAnyOrder),
     );
   });
 

@@ -72,10 +72,10 @@ describe("tailCmd", () => {
     const docs = await tailCmd({ show: Show.Standard });
     expect(docs.length).toBe(10);
     expect(docs[0]._id).toMatchInlineSnapshot(
-      `"environment:2023-10-16T09:30:00.000Z"`
+      `"environment:2023-10-16T09:30:00.000Z"`,
     );
     expect(docs.at(-1)?._id).toMatchInlineSnapshot(
-      `"caffeine:2023-10-16T11:00:00.000Z"`
+      `"caffeine:2023-10-16T11:00:00.000Z"`,
     );
     expect(mockedLog.mock.calls).toMatchSnapshot();
   });
@@ -119,7 +119,7 @@ describe("tailCmd", () => {
     const docs2 = await tailCmd({ field: "stretch" });
     expect(docs2.length).toBe(8);
     expect(docs2.map((doc) => doc.data.field)).toEqual(
-      Array(8).fill("stretch")
+      Array(8).fill("stretch"),
     );
   });
 
@@ -202,7 +202,7 @@ describe("tailCmd", () => {
     const docs1 = await tailCmd({ time: "9:30" });
     expect(docs1.length).toBe(8);
     expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
-      `"stretch:2023-10-16T09:30:00.000Z"`
+      `"stretch:2023-10-16T09:30:00.000Z"`,
     );
 
     const docs2 = await tailCmd({ date: yesterday, time: "23:30" });
@@ -224,7 +224,7 @@ describe("tailCmd", () => {
     const docsNoTimestamp = await tailCmd({});
     const lastOccurNoTimestamp = docsNoTimestamp.at(-1)?.data.occurTime.utc;
     expect(DateTime.fromISO(lastOccurNoTimestamp).toISODate()).toEqual(
-      tomorrow
+      tomorrow,
     );
   });
 
@@ -248,14 +248,16 @@ describe("tailCmd", () => {
     expect(
       docs
         .map((doc) => doc.data.occurTime.utc)
-        .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
+        .every(
+          (occurTime) => DateTime.fromISO(occurTime).toISODate() === today,
+        ),
     ).toBe(true);
     expect(
       yesterdayDocs
         .map((doc) => doc.data.occurTime.utc)
         .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday
-        )
+          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday,
+        ),
     ).toEqual(true);
   });
 
@@ -269,12 +271,12 @@ describe("tailCmd", () => {
 
     // when mapping just from utc, not all should be on today
     const utcDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate()
+      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate(),
     );
     expect(utcDates.every((date) => date === today)).toBe(false);
 
-    const localDates = docs.map((doc) =>
-      datumTimeToLuxon(doc.data.occurTime)?.toISODate()
+    const localDates = docs.map(
+      (doc) => datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
     );
     expect(localDates.every((date) => date === today)).toBe(true);
 

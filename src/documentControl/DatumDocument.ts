@@ -14,7 +14,7 @@ export type DatumData<T = unknown> = GenericData<T> & {
 export type OccurredData<T = unknown> = WithRequired<DatumData<T>, "occurTime">;
 
 export function isOccurredData(
-  data: DatumData | OccurredData
+  data: DatumData | OccurredData,
 ): data is OccurredData {
   const occurTime = data.occurTime;
   return occurTime !== undefined && isIsoDateOrTime(occurTime.utc);
@@ -68,7 +68,7 @@ export type EitherDocument<T = unknown> =
   | DataOnlyDocument<T>;
 
 export function isDatumDocument(
-  doc: DatumDocument | DataOnlyDocument
+  doc: DatumDocument | DataOnlyDocument,
 ): doc is DatumDocument {
   return (
     (doc as DatumDocument).data !== undefined &&
@@ -77,7 +77,7 @@ export function isDatumDocument(
 }
 
 export function isDatumPayload(
-  payload: DatumPayload | DataOnlyPayload
+  payload: DatumPayload | DataOnlyPayload,
 ): payload is DatumPayload {
   return (
     (payload as DatumPayload).data !== undefined &&

@@ -17,7 +17,7 @@ export function parseTimeStr({
   // This custom regex is to match a few extra strings not recognized by chrono, particularly short
   // E.g, 10 for 10:00, 1513 for 15:13, etc.
   const matches = timeStr.match(
-    /^(?<hour>\d{1,2})(:?(?<minute>\d{2})(:?(?<second>\d{2})(\.(?<milli>\d{1,3}))?)?)?(?<meridian>am?|pm?)?$/i
+    /^(?<hour>\d{1,2})(:?(?<minute>\d{2})(:?(?<second>\d{2})(\.(?<milli>\d{1,3}))?)?)?(?<meridian>am?|pm?)?$/i,
   );
   if (matches?.groups) {
     const {

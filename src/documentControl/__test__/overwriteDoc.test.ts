@@ -41,28 +41,28 @@ describe("overwriteDoc", () => {
 
   it("fails if id to be overwritten does not exist in db", async () => {
     await expect(
-      overwriteDoc({ db, id: "does-not-exist", payload: { valid: "data" } })
+      overwriteDoc({ db, id: "does-not-exist", payload: { valid: "data" } }),
     ).rejects.toThrowError(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { _id: "does-not-exist", data: "data" },
-      })
+      }),
     ).rejects.toThrowError(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { _id: "some-other-id", data: "data" },
-      })
+      }),
     ).rejects.toThrowError(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { data: { foo: "bar" }, meta: { idStructure: "%foo%" } },
-      })
+      }),
     ).rejects.toThrowError(NoDocToOverwriteError);
   });
 
@@ -412,7 +412,7 @@ describe("overwriteDoc", () => {
         db,
         id: "abc",
         payload: { _id: "abc", _rev: wrongRev, foo2: "bar2" },
-      })
+      }),
     ).rejects.toThrowError(OverwriteDocError);
     const stillOldDoc = await db.get("abc");
     expect(oldDoc).toEqual(stillOldDoc);
@@ -431,7 +431,7 @@ describe("overwriteDoc", () => {
         db,
         id: "abc",
         payload: { _rev: wrongRev, ...testDatumPayload },
-      })
+      }),
     ).rejects.toThrowError(OverwriteDocError);
     await overwriteDoc({
       db,

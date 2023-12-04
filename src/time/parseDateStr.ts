@@ -17,7 +17,7 @@ export function parseDateStr({
   const relDateMatches = dateStr.match(/^([+-])\d+$/);
   if (relDateMatches) {
     return referenceTime.plus(
-      Duration.fromObject({ days: parseInt(relDateMatches[0], 10) })
+      Duration.fromObject({ days: parseInt(relDateMatches[0], 10) }),
     );
   }
 
@@ -34,7 +34,7 @@ export function parseDateStr({
   // i.e. tomorrow is always local tomorrow not utc tomorrow
   const chronoParsed = chrono.parseDate(
     dateStr,
-    referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate()
+    referenceTime.toUTC(0, { keepLocalTime: true }).toJSDate(),
   );
   if (chronoParsed) {
     const { year, month, day } = DateTime.fromJSDate(chronoParsed, {
