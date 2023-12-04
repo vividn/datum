@@ -645,13 +645,10 @@ if __name__ == "__main__":
         fontsize=23
     )
     main(nDays=14, imagename="2week", ysize=1200)
-    # main(
-    #     imagename="allData",
-    #     begin_date=dt.date(2016,11,27),
-    #     end_date=dt.date.today(),
-    #     xsize=1000,
-    #     ysize=300000
-    # )
+    main(imagename="trip",
+         begin_date=dt.date(2023, 9, 3),
+         end_date=dt.date(2023, 11, 11),
+         xsize=1000, ysize=5000)
 
     # main(
     #     begin_date=dt.date(2021, 9, 13),
