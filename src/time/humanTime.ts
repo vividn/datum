@@ -28,7 +28,7 @@ export function humanTime(time: DateTime): string {
 // TODO: Consider removing this
 export function humanTimeFromISO(
   timeStr: isoDatetime,
-  utcOffset?: number
+  utcOffset?: number,
 ): string {
   const datetime = DateTime.fromISO(timeStr, {
     zone:

@@ -37,7 +37,7 @@ export function dataYargs(otherYargs?: Argv): Argv {
         "string-remainder",
         "lenient",
       ],
-      "Keys & Data"
+      "Keys & Data",
     )
     .options({
       "base-data": {
@@ -168,20 +168,20 @@ export function handleDataArgs(args: DataArgs): DatumData {
   if (remainderData.length > 0) {
     if (remainderKey === undefined) {
       throw new DataError(
-        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient"
+        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient",
       );
     }
 
     if (stringRemainder) {
       parsedData[remainderKey] = createOrAppend(
         parsedData[remainderKey],
-        remainderData.join(" ")
+        remainderData.join(" "),
       );
     } else {
       for (const remainder of remainderData) {
         parsedData[remainderKey] = createOrAppend(
           parsedData[remainderKey],
-          inferType(remainder, remainderKey)
+          inferType(remainder, remainderKey),
         );
       }
     }
@@ -195,7 +195,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     // Allow required keys to be given a default value via an optional key
     if (
       optionalKeys?.find((optionalWithDefault) =>
-        new RegExp(`^${requiredKey}=`).test(optionalWithDefault)
+        new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
       )
     ) {
       continue;
@@ -222,7 +222,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     ) as any[];
     parsedData.comment = inferredComments.reduce(
       (accumulator, current) => createOrAppend(accumulator, current),
-      parsedData["comment"]
+      parsedData["comment"],
     );
     delete args.comment;
   }

@@ -91,7 +91,7 @@ describe("occurCmd", () => {
         field: "field",
         optional: "optional",
         duration: "30asd",
-      })
+      }),
     ).rejects.toThrow(BadDurationError);
   });
 
@@ -145,7 +145,7 @@ describe("occurCmd", () => {
     })) as DatumDocument;
     expect(newDoc.data).toHaveProperty(
       "occurTime.utc",
-      "2021-08-23T12:00:00.000Z"
+      "2021-08-23T12:00:00.000Z",
     );
     expect(newDoc.meta).not.toHaveProperty("occurTime");
   });

@@ -54,13 +54,13 @@ describe("viewMap", () => {
       .mockRejectedValueOnce(new Error("should not be caught"));
 
     await expect(() =>
-      viewMap({ db: mockDb, datumView: mockDatumView })
+      viewMap({ db: mockDb, datumView: mockDatumView }),
     ).rejects.toThrowError(DatumViewMissingError);
     await expect(() =>
-      viewMap({ db: mockDb, datumView: mockDatumView })
+      viewMap({ db: mockDb, datumView: mockDatumView }),
     ).rejects.toThrowError(DatumViewMissingError);
     await expect(() =>
-      viewMap({ db: mockDb, datumView: mockDatumView })
+      viewMap({ db: mockDb, datumView: mockDatumView }),
     ).rejects.toThrowError(DatumViewMissingError);
     try {
       await viewMap({ db: mockDb, datumView: mockDatumView });
@@ -79,7 +79,7 @@ describe("viewMap", () => {
       };
       await insertDatumView({ db, datumView: testDatumView, outputArgs: {} });
       await expect(
-        viewMap({ db, datumView: testDatumView })
+        viewMap({ db, datumView: testDatumView }),
       ).resolves.toBeTruthy();
     });
   });

@@ -144,7 +144,7 @@ describe("getActiveState", () => {
     expect(await getActiveState(db, "machine", "22")).toBe(null);
 
     expect(await getActiveState(db, "machine", DateTime.fromISO("10:50"))).toBe(
-      "distracted"
+      "distracted",
     );
   });
 });

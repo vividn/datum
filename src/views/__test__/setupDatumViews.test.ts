@@ -53,7 +53,7 @@ describe("setupDatumViews", () => {
 
     const insertDatumViewsSpy = jest.spyOn(
       insertDatumViewModule,
-      "insertDatumView"
+      "insertDatumView",
     );
 
     await setupDatumViews({ db });

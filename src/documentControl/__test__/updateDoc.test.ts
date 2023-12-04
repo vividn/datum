@@ -134,7 +134,7 @@ describe("updateDoc", () => {
     expect(spy).toHaveBeenCalledWith(
       { _id: "data-doc-1", ...data1 },
       data2,
-      "merge"
+      "merge",
     );
     spy.mockClear();
 
@@ -149,7 +149,7 @@ describe("updateDoc", () => {
     expect(spy).toHaveBeenCalledWith(
       { _id: "data-doc-2", ...data3 },
       data4,
-      "removeConflicting"
+      "removeConflicting",
     );
     spy.mockClear();
 
@@ -175,7 +175,7 @@ describe("updateDoc", () => {
 
   test("fails if id to be updated does not exist in db", async () => {
     await expect(
-      updateDoc({ db, id: "does-not-exist", payload: { valid: "data" } })
+      updateDoc({ db, id: "does-not-exist", payload: { valid: "data" } }),
     ).rejects.toThrowError(NoDocToUpdateError);
   });
 
@@ -280,7 +280,7 @@ describe("updateDoc", () => {
         id: "abc",
         payload: { _id: "abc", _rev: wrongRev, foo2: "bar2" },
         updateStrategy: "useNew",
-      })
+      }),
     ).rejects.toThrowError(UpdateDocError);
     const stillOldDoc = await db.get("abc");
     expect(oldDoc).toEqual(stillOldDoc);
@@ -301,7 +301,7 @@ describe("updateDoc", () => {
         id: "abc",
         payload: { _rev: wrongRev, ...testDatumPayload },
         updateStrategy: "useNew",
-      })
+      }),
     ).rejects.toThrowError(UpdateDocError);
     await updateDoc({
       db,

@@ -68,7 +68,7 @@ describe("minHumanId", () => {
 
     await expect(() => minHumanId(db, hid1)).rejects.toThrow(MinHumanIdError);
     await expect(() => minHumanId(db, "initial_substring")).rejects.toThrow(
-      MinHumanIdError
+      MinHumanIdError,
     );
   });
 
@@ -90,7 +90,7 @@ describe("minHumanId", () => {
     await db.put(doc2);
 
     await expect(() => minHumanId(db, "completely_different")).rejects.toThrow(
-      MinHumanIdError
+      MinHumanIdError,
     );
   });
 
@@ -99,7 +99,7 @@ describe("minHumanId", () => {
     await db.remove("_design/datum_sub_human_id", viewDoc._rev);
 
     await expect(() => minHumanId(db, "anything")).rejects.toThrow(
-      DatumViewMissingError
+      DatumViewMissingError,
     );
   });
 });

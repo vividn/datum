@@ -124,8 +124,8 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     onlyDate && args.n === undefined
       ? filteredRows
       : args.head
-      ? filteredRows.slice(0, limit)
-      : filteredRows.slice(-limit);
+        ? filteredRows.slice(0, limit)
+        : filteredRows.slice(-limit);
   const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
   const format = args.formatString;
@@ -134,7 +134,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     docs.forEach((doc) => {
       const { data, meta } = pullOutData(doc);
       console.log(
-        interpolateFields({ data, meta, format, useHumanTimes: true })
+        interpolateFields({ data, meta, format, useHumanTimes: true }),
       );
     });
     return docs;
@@ -166,7 +166,7 @@ export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
     console.log(
       Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
         return table.print();
-      })
+      }),
     );
   }
   return docs;

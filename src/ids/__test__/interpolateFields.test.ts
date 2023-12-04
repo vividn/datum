@@ -18,7 +18,7 @@ describe("interpolateFields", () => {
       format: "raw_string_%foo%???%?humanId%--%occurTime%",
     });
     expect(interpolated).toEqual(
-      "raw_string_bar???abcde--2022-05-01T22:52:00Z"
+      "raw_string_bar???abcde--2022-05-01T22:52:00Z",
     );
   });
 
@@ -38,6 +38,8 @@ describe("interpolateFields", () => {
       useHumanTimes: true,
     });
 
-    expect(interpolated).toMatchInlineSnapshot(`"2022-05-01 19:52:00[2m-3[22m bar"`);
+    expect(interpolated).toMatchInlineSnapshot(
+      `"2022-05-01 19:52:00[2m-3[22m bar"`,
+    );
   });
 });

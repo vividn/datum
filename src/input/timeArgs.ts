@@ -31,7 +31,7 @@ export function timeYargs(otherYargs?: Argv): Argv {
         "full-day",
         "no-timestamp",
       ],
-      "Timing"
+      "Timing",
     )
     .options({
       date: {
@@ -142,7 +142,7 @@ export function handleTimeArgs({
 
 // TODO: Consider moving this function into the test file, and creating a new function that takes a given occurTime after parsing the data as the reference time
 export function occurredBaseArgs(
-  args: ReferencedTimeArgs & Pick<DataArgs, "baseData">
+  args: ReferencedTimeArgs & Pick<DataArgs, "baseData">,
 ): DatumData {
   const parsedData = parseBaseData(args.baseData);
   const baseOccurTime = getOccurTime(parsedData);

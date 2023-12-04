@@ -4,7 +4,7 @@ import { setNow } from "../../test-utils";
 
 function expectDate(
   props: ParseDateStrType,
-  timeObject: { year: number; month: number; day: number }
+  timeObject: { year: number; month: number; day: number },
 ) {
   expect(parseDateStr(props).toObject()).toMatchObject(timeObject);
 }
@@ -29,19 +29,19 @@ it("handles absolute dates with reference time", () => {
   });
   expectDate(
     { dateStr: "2018-06-30", referenceTime },
-    { year: 2018, month: 6, day: 30 }
+    { year: 2018, month: 6, day: 30 },
   );
   expectDate(
     { dateStr: "06/30", referenceTime },
-    { year: 2017, month: 6, day: 30 }
+    { year: 2017, month: 6, day: 30 },
   );
   expectDate(
     { dateStr: "sep1", referenceTime },
-    { year: 2017, month: 9, day: 1 }
+    { year: 2017, month: 9, day: 1 },
   );
   expectDate(
     { dateStr: "june 18", referenceTime },
-    { year: 2017, month: 6, day: 18 }
+    { year: 2017, month: 6, day: 18 },
   );
 });
 
@@ -63,27 +63,27 @@ it("handles relative dates from referenceTime", () => {
   });
   expectDate(
     { dateStr: "-1", referenceTime },
-    { year: 2017, month: 11, day: 28 }
+    { year: 2017, month: 11, day: 28 },
   );
   expectDate(
     { dateStr: "+3", referenceTime },
-    { year: 2017, month: 12, day: 2 }
+    { year: 2017, month: 12, day: 2 },
   );
   expectDate(
     { dateStr: "-2", referenceTime },
-    { year: 2017, month: 11, day: 27 }
+    { year: 2017, month: 11, day: 27 },
   );
   expectDate(
     { dateStr: "yesterday", referenceTime },
-    { year: 2017, month: 11, day: 28 }
+    { year: 2017, month: 11, day: 28 },
   );
   expectDate(
     { dateStr: "2 days ago", referenceTime },
-    { year: 2017, month: 11, day: 27 }
+    { year: 2017, month: 11, day: 27 },
   );
   expectDate(
     { dateStr: "a week from now", referenceTime },
-    { year: 2017, month: 12, day: 6 }
+    { year: 2017, month: 12, day: 6 },
   );
 });
 

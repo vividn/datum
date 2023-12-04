@@ -23,13 +23,13 @@ describe("backupCmd", () => {
       await addCmd({
         field: "added_field",
         baseData: { some: "data", another: "field" },
-      })
+      }),
     );
     dbDocs.push(
       await occurCmd({
         field: "occurred_field",
         baseData: { some: "data", another: "field" },
-      })
+      }),
     );
   });
 
@@ -61,7 +61,7 @@ describe("backupCmd", () => {
     expect(fs.existsSync(backupFilePath)).toBe(true);
     const newDoc = await occurCmd({ field: "occuredField2" });
     await expect(backupCmd({ filename: backupFilePath })).rejects.toThrow(
-      "File exists"
+      "File exists",
     );
 
     expect(fs.existsSync(backupFilePath)).toBe(true);
@@ -93,7 +93,7 @@ describe("backupCmd", () => {
     const backupTime = "2023-11-17T17:22:00.000Z";
     await at(
       backupTime,
-      backupCmd
+      backupCmd,
     )({
       filename: backupFilePath,
     });

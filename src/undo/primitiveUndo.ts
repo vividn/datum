@@ -50,7 +50,7 @@ export async function primitiveUndo({
   }
 
   const fifteenMinutesAgo = DateTime.now().minus(
-    Duration.fromObject({ minutes: 15 })
+    Duration.fromObject({ minutes: 15 }),
   );
   if (
     doc.meta?.createTime &&

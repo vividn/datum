@@ -16,13 +16,13 @@ describe("setupCmd", () => {
     const connectDbSpy = jest.spyOn(connectDb, "connectDb");
     await setupCmd({ db: dbName });
     expect(connectDbSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ createDb: true })
+      expect.objectContaining({ createDb: true }),
     );
     connectDbSpy.mockReset();
 
     await setupCmd({ db: dbName, createDb: false });
     expect(connectDbSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ createDb: false })
+      expect.objectContaining({ createDb: false }),
     );
   });
 

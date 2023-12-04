@@ -49,7 +49,7 @@ export function parseDurationStr({
 
     if (extra !== undefined) {
       throw new BadDurationError(
-        'could not parse duration. give a valid duration string or skip duration with a "."'
+        'could not parse duration. give a valid duration string or skip duration with a "."',
       );
     }
 
@@ -77,13 +77,13 @@ export function parseDurationStr({
     "hours",
     "minutes",
     "seconds",
-    "milliseconds"
+    "milliseconds",
   );
   return isNegative ? duration.negate() : duration;
 }
 
 export function isoDurationFromDurationStr(
-  durationStr: string
+  durationStr: string,
 ): string | undefined {
   const duration = parseDurationStr({ durationStr });
   if (duration === undefined) {

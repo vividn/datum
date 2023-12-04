@@ -7,7 +7,7 @@ import { splitRawAndFields } from "./splitRawAndFields";
 
 export function destructureIdKeys(
   datumData: DatumData,
-  idStructure?: string
+  idStructure?: string,
 ): { onlyFields: GenericObject; noFields: GenericObject } {
   const noFields = JSON.parse(JSON.stringify(datumData));
   const onlyFields = {} as GenericObject;
@@ -18,7 +18,7 @@ export function destructureIdKeys(
   }
 
   const fieldNames = splitRawAndFields(idStructure).filter(
-    (_, index) => index % 2 === 1
+    (_, index) => index % 2 === 1,
   );
 
   fieldNames.forEach((fieldName) => {
