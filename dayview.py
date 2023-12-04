@@ -475,10 +475,11 @@ def main(**kwargs):
 
         # Draw the text on the top and bottom of the display
         if fontsize > 0:
-            draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color)
             draw.text(
                 xy=(text_x, text_y_bottom), text=text_str, font=imfont, fill=text_color
             )
+            if nDays > 1:
+                draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color)
 
         # Draw a line between the top and bottom
         line_top = text_y_top + text_height + 2
