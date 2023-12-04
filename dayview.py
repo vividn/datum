@@ -83,7 +83,11 @@ def set_constants():
     global xsize
     xsize = 1080
     global ysize
-    ysize = 600
+    ysize = None # Can be set, but otherwise calculated from day_height
+
+    # Width of each day
+    global day_height
+    day_height = 60
 
     # Font
     global fontpath
@@ -218,21 +222,23 @@ def main(**kwargs):
 
     datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set)
 
-    im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
-    draw = ImageDraw.Draw(im)
-
     # Find the width of the date text on the left of the date,
     date_label_fmt = "%a, %b %d"
     text_width, text_height = imfont.getsize("Wed, Dec 88")
 
     # Calculate the height of the full day, to center of the date text
-    day_height = (
-        ysize
-        - 2 * image_padding
-        - 2 * text_height
-        - 2 * text_padding
-        - (nDays - 1) * bar_padding
-    ) / nDays
+    global ysize, day_height
+    if ysize is None:
+        ysize = day_height * nDays + 2 * image_padding + 2 * text_height + 2 * text_padding + (nDays - 1) * bar_padding
+    else:
+        day_height = (
+            ysize
+            - 2 * image_padding
+            - 2 * text_height
+            - 2 * text_padding
+            - (nDays - 1) * bar_padding
+        ) / nDays
+
 
     # Switch to 2 line date label if days are big enough
     if day_height >= 2 * text_height:
@@ -262,6 +268,10 @@ def main(**kwargs):
     l_midnight = image_padding + text_width + text_padding
     r_midnight = xsize - image_padding - total_quant_width - quant_padding
     day_lenx = r_midnight - l_midnight
+
+    # create the draw object
+    im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
+    draw = ImageDraw.Draw(im)
 
     #####################################
     # Get the dates and then draw the date text
