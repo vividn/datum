@@ -167,8 +167,28 @@ describe("occurCmd", () => {
       field: "event",
       date: "2021-08-23",
       time: "12",
-      timezone: "0",
+      timezone: "+3",
     })) as DatumDocument;
-    expect(newDoc.data).toHaveProperty("occurTime.o", 0);
+    expect(newDoc.data).toMatchObject({
+      occurTime: {
+        o: 3,
+        tz: "UTC+3",
+      },
+    });
+  });
+
+  it("stores offset from an IANA timezone", async () => {
+    const newDoc = (await occurCmd({
+      field: "event",
+      date: "2023-12-04",
+      time: "12",
+      timezone: "Europe/Berlin",
+    })) as DatumDocument;
+    expect(newDoc.data).toMatchObject({
+      occurTime: {
+        o: 1,
+        tz: "Europe/Berlin",
+      },
+    });
   });
 });

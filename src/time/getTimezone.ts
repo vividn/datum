@@ -9,6 +9,8 @@ export function getTimezone(timezone?: string | number): Zone | undefined {
       zone = FixedOffsetZone.instance(Math.round(Number(timezone) * 60));
     } else if (timezone === "system") {
       zone = defaultZone;
+    } else if (timezone.match(/^UTC/i)) {
+      zone = FixedOffsetZone.parseSpecifier(timezone);
     } else {
       zone = IANAZone.create(timezone);
     }
