@@ -1,6 +1,9 @@
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { BaseDataError, IdError } from "../../errors";
-import { DatumDocument, DatumMetadata } from "../../documentControl/DatumDocument";
+import {
+  DatumDocument,
+  DatumMetadata,
+} from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
