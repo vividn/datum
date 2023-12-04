@@ -347,7 +347,7 @@ class Datumdata:
                         .sum()[self.column]
                     )
                 else:
-                    day_total = self.data.loc[date_str].sum()[self.column]
+                    day_total = self.data.loc[date_str].sum(numeric_only=True)[self.column]
 
             except KeyError:
                 day_timing = []
@@ -453,7 +453,7 @@ class Datumdata:
 
                 if not ((mini_block_minutes >= 0) ^ bool(in_block)):
                     raise ValueError(
-                        "Number not correctly associated with blocks\n{timestamp}, {entry}"
+                        f"Number not correctly associated with blocks\n{timestamp}, {entry}"
                     )
 
                 # Assuming the number record was made at the end of when it occurred, calculate the beginning
