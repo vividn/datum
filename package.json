@@ -49,7 +49,7 @@
     "@types/react": "^18.2.17",
     "@types/relaxed-json": "^1.0.1",
     "@types/tmp": "^0.2.3",
-    "@types/yargs": "^17.0.24",
+    "@types/yargs": "^17.0.32",
     "@typescript-eslint/eslint-plugin": "^6.13.1",
     "@typescript-eslint/parser": "^6.13.1",
     "babel-jest": "^29.5.0",
@@ -93,6 +93,6 @@
     "relaxed-json": "^1.0.3",
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
-    "yargs": "^17.7.1"
+    "yargs": "^17.7.2"
   }
 }
