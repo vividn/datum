@@ -1,6 +1,6 @@
 import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
 import { BaseDataError, IdError } from "../../errors";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import { DatumDocument, DatumMetadata } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
@@ -242,7 +242,7 @@ describe("addCmd", () => {
 
   it("contains random identifiers in the metadata", async () => {
     const doc = await addCmd({ data: ["foo=bar"] });
-    const { random, humanId } = doc?.meta;
+    const { random, humanId } = doc.meta as DatumMetadata;
 
     expect(random).toBeGreaterThanOrEqual(0);
     expect(random).toBeLessThanOrEqual(1);
