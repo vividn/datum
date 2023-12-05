@@ -1583,10 +1583,10 @@
   dependencies:
     "@types/lodash" "*"
 
-"@types/lodash.sample@^4.2.7":
-  version "4.2.7"
-  resolved "https://registry.yarnpkg.com/@types/lodash.sample/-/lodash.sample-4.2.7.tgz#45555c2253069edea32512980ff63ed8c6acdaa5"
-  integrity sha512-4gJC5XsTynqOujDJL0OQiLZzuOv5SuxjIqoKlkE5qddZdWOdSpH0rTtcBGb3UBxp1w3455YRORjRtie/Pa+0Xg==
+"@types/lodash.sample@^4.2.9":
+  version "4.2.9"
+  resolved "https://registry.yarnpkg.com/@types/lodash.sample/-/lodash.sample-4.2.9.tgz#71cff3b392c893d1fc63fe61af1e8791cfc926ec"
+  integrity sha512-sKxUUQ/+257F0lM6zmozoD0KvsD8C8rvaSNOfL0gRhvgZIs3/Iwe0yJdqZN0wIfEiGw8eyO0Cgzg5NJbCzc78g==
   dependencies:
     "@types/lodash" "*"
 

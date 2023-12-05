@@ -38,7 +38,7 @@
     "@types/lodash.flatten": "^4.4.8",
     "@types/lodash.isequal": "^4.5.8",
     "@types/lodash.isplainobject": "^4.0.9",
-    "@types/lodash.sample": "^4.2.7",
+    "@types/lodash.sample": "^4.2.9",
     "@types/lodash.set": "^4.3.9",
     "@types/lodash.unset": "^4.5.9",
     "@types/luxon": "^3.3.1",
