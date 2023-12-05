@@ -7,7 +7,7 @@ export type GenericData<T = unknown> = T & {
 
 export type DatumData<T = unknown> = GenericData<T> & {
   occurTime?: DatumTime;
-  dur?: "start" | "end" | isoDuration;
+  dur?: "start" | "end" | isoDuration | null;
   field?: string;
 };
 

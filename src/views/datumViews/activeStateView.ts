@@ -78,22 +78,28 @@ export const activeStateView: DatumView<
       return newTime.toISOString();
     }
 
-    if (duration !== undefined) {
-      const seconds = parseISODuration(duration);
-      if (seconds < 0) {
-        const holeBegin = subtractSecondsFromTime(
-          occurTime.utc,
-          Math.abs(seconds),
-        );
-        emit([field, holeBegin], false);
-        emit([field, occurTime.utc], state);
-      } else {
-        const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
-        emit([field, blockBegin], state);
-        emit([field, occurTime.utc], lastState);
-      }
-    } else {
+    if (duration === null) {
+      return;
+    }
+    if (duration === undefined) {
       emit([field, occurTime.utc], state);
+      return;
+    }
+
+    const seconds = parseISODuration(duration);
+    if (seconds > 0) {
+      const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
+      emit([field, blockBegin], state);
+      emit([field, occurTime.utc], lastState);
+    } else if (seconds < 0) {
+      const holeBegin = subtractSecondsFromTime(
+        occurTime.utc,
+        Math.abs(seconds),
+      );
+      emit([field, holeBegin], false);
+      emit([field, occurTime.utc], state);
+    } else {
+      return;
     }
   },
 };

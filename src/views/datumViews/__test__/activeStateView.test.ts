@@ -213,4 +213,26 @@ describe("activeStateView", () => {
       "stringState",
     );
   });
+
+  it("emits nothing if duration is null or 0", () => {
+    const doc = makeDoc({
+      field: "bar",
+      dur: null,
+      state: true,
+      occurTime,
+    });
+    activeStateView.map(doc);
+    expect(emitMock).not.toHaveBeenCalled();
+
+    emitMock.mockReset();
+
+    const doc2 = makeDoc({
+      field: "foobar",
+      dur: "PT0S",
+      state: "stringState",
+      occurTime,
+    });
+    activeStateView.map(doc2);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
 });
