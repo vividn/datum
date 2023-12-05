@@ -1810,10 +1810,10 @@
     "@types/pouchdb-core" "*"
     "@types/pouchdb-find" "*"
 
-"@types/pouchdb@^6.4.1":
-  version "6.4.1"
-  resolved "https://registry.yarnpkg.com/@types/pouchdb/-/pouchdb-6.4.1.tgz#b411659a6b9c79114d72bb02e5fa69b758592fa1"
-  integrity sha512-GvTXWOup2REK9WttO6nHM81S+ICTssBzpMZ/waD+HBWvbNLGPeg89rOhsKm7YuUjSPRZwYkfldqh8epvaR9JdQ==
+"@types/pouchdb@^6.4.2":
+  version "6.4.2"
+  resolved "https://registry.yarnpkg.com/@types/pouchdb/-/pouchdb-6.4.2.tgz#54777533d86f4abd1a3989b272e085323623bbe1"
+  integrity sha512-YsI47rASdtzR+3V3JE2UKY58snhm0AglHBpyckQBkRYoCbTvGagXHtV0x5n8nzN04jQmvTG+Sm85cIzKT3KXBA==
   dependencies:
     "@types/pouchdb-adapter-cordova-sqlite" "*"
     "@types/pouchdb-adapter-fruitdown" "*"
