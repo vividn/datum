@@ -1555,10 +1555,10 @@
   resolved "https://registry.yarnpkg.com/@types/json5/-/json5-0.0.29.tgz#ee28707ae94e11d2b827bcbe5270bcea7f3e71ee"
   integrity sha1-7ihweulOEdK4J7y+UnC86n8+ce4=
 
-"@types/lodash.flatten@^4.4.8":
-  version "4.4.8"
-  resolved "https://registry.yarnpkg.com/@types/lodash.flatten/-/lodash.flatten-4.4.8.tgz#0514deb5de3dcda0379d1a15c783540f028e54ed"
-  integrity sha512-pjD7CGz+sG7stB2c7Glmeqz0sm4kno1ftv2FSAbGPQhBnIqOVMBxq9OC38T2z2AAfgiUCFN1MV+J0wLeEHv/Jw==
+"@types/lodash.flatten@^4.4.9":
+  version "4.4.9"
+  resolved "https://registry.yarnpkg.com/@types/lodash.flatten/-/lodash.flatten-4.4.9.tgz#0fc83527fdc014418ea83dba0ef015d339306652"
+  integrity sha512-JCW9xofpn9oJfFSccpBRF8IrB5guqmcKZIa7J9DnZqLd9wgGYbewaYnjbNw3Fb+St8BHVsnGmmS0A3j99LII3Q==
   dependencies:
     "@types/lodash" "*"
 
