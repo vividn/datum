@@ -1790,10 +1790,10 @@
   resolved "https://registry.yarnpkg.com/@types/prettier/-/prettier-2.4.1.tgz#e1303048d5389563e130f5bdd89d37a99acb75eb"
   integrity sha512-Fo79ojj3vdEZOHg3wR9ksAMRz4P3S5fDB5e/YWZiFnyFQI1WY2Vftu9XoXVVtJfxB7Bpce/QTqWSSntkz2Znrw==
 
-"@types/prompt-sync@^4.2.0":
-  version "4.2.0"
-  resolved "https://registry.yarnpkg.com/@types/prompt-sync/-/prompt-sync-4.2.0.tgz#e0bcf80211e9a2edb52891926a0700b2bffe08cb"
-  integrity sha512-5RPQYDT7MNkt+vq6xp58tSPx4THANyQcBSaw3Ni+KV7MUAgvUUbmCsQmcPVrcc8dwuURSPixz2qTJdJF6ABSKw==
+"@types/prompt-sync@^4.2.3":
+  version "4.2.3"
+  resolved "https://registry.yarnpkg.com/@types/prompt-sync/-/prompt-sync-4.2.3.tgz#b6a9fe88fc4b4cacb8ab59f87f2614d6e674e177"
+  integrity sha512-Ox77gCSx0YyeakGt/qfOZUSFNSSi+sh3ABoGOiCwiO2KODx492BJnUm9oIXS+AHJtqp12iM4RduY6viTJ9bYwA==
 
 "@types/prop-types@*":
   version "15.7.5"
