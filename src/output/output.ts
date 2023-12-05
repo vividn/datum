@@ -46,7 +46,7 @@ export function humanFormattedTime(
   }
   // if time is just a date, then return it
   if (!time.utc.includes("T")) {
-    const future = time > (DateTime.now().toISODate() ?? time);
+    const future = time.utc > (DateTime.now().toISODate() ?? time.utc);
     return future ? chalk.underline(time.utc) : time.utc;
   }
 
