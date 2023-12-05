@@ -1809,10 +1809,10 @@
     "@types/scheduler" "*"
     csstype "^3.0.2"
 
-"@types/relaxed-json@^1.0.1":
-  version "1.0.1"
-  resolved "https://registry.yarnpkg.com/@types/relaxed-json/-/relaxed-json-1.0.1.tgz#fa59a05b8b065cde9f90b68543c1fedcfc94c3b3"
-  integrity sha512-UnBKvLCa16RNrNeq8K2NoiAN6Whrw/fPjh6iWl1uYt4T+/AqykJKfQv1OL/ktkLprmwQPnBlmT3fu9xTc3o9AA==
+"@types/relaxed-json@^1.0.4":
+  version "1.0.4"
+  resolved "https://registry.yarnpkg.com/@types/relaxed-json/-/relaxed-json-1.0.4.tgz#33c6d69e3088b83c28aed7cf3c48d288cff48632"
+  integrity sha512-MulPaZU5Hh81T8ROYhsWlC7tJuuapwUT1/wX1qS8/koMI8Ypf3tyEunFZKzewoLsjutDpuf4kXVhxkF82ZtXzg==
 
 "@types/scheduler@*":
   version "0.16.2"

@@ -47,7 +47,7 @@
     "@types/pouchdb": "^6.4.2",
     "@types/prompt-sync": "^4.2.3",
     "@types/react": "^18.2.42",
-    "@types/relaxed-json": "^1.0.1",
+    "@types/relaxed-json": "^1.0.4",
     "@types/tmp": "^0.2.6",
     "@types/yargs": "^17.0.32",
     "@typescript-eslint/eslint-plugin": "^6.13.2",
