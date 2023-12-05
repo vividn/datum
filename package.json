@@ -33,7 +33,7 @@
   "devDependencies": {
     "@babel/core": "^7.23.5",
     "@babel/preset-env": "^7.23.5",
-    "@babel/preset-typescript": "^7.22.5",
+    "@babel/preset-typescript": "^7.23.3",
     "@types/jest": "^27.4.1",
     "@types/lodash.flatten": "^4.4.8",
     "@types/lodash.isequal": "^4.5.6",
