@@ -16,10 +16,10 @@ export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   if (args[positionalKey] === undefined) {
     return;
   }
-  args.data ??= [];
-  args.data.unshift(args[positionalKey] as string | number);
-  delete args[positionalKey];
   if (argType) {
     args[argType] = [keyNameInData].concat(args[argType] ?? []);
   }
+  args.data ??= [];
+  args.data.unshift(args[positionalKey] as string | number);
+  delete args[positionalKey];
 }
