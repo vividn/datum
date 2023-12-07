@@ -398,4 +398,57 @@ describe("handleDataArgs", () => {
       expect(parsedData2).toEqual(parsedData1);
     },
   );
+
+  it("uses the default value for an optional key if '.' is given as the value", () => {
+    expectParseDataToReturn(
+      {
+        required: ["req1"],
+        optional: [
+          "opt1=dotDefault",
+          "opt2=overwrittenDefault",
+          "opt3=notGivenDefault",
+        ],
+        data: ["oneValue", ".", "threeValue"],
+      },
+      {
+        req1: "oneValue",
+        opt1: "dotDefault",
+        opt2: "threeValue",
+        opt3: "notGivenDefault",
+      },
+    );
+  });
+
+  it("can use the default value if . is specified explicitly as the value for an optional key", () => {
+    expectParseDataToReturn(
+      {
+        required: ["req1"],
+        optional: [
+          "opt1=overwrittenDefault",
+          "opt2=dotDefault",
+          "opt3=notGivenDefault",
+        ],
+        data: ["opt2=.", "twoValue", "threeValue"],
+      },
+      {
+        req1: "twoValue",
+        opt1: "threeValue",
+        opt2: "dotDefault",
+        opt3: "notGivenDefault",
+      },
+    );
+    expectParseDataToReturn(
+      {
+        required: ["req1"],
+        optional: ["opt1=overwritten1", "opt2=dotDefault", "opt3=overwritten2"],
+        data: ["opt2=.", "two", "three", "four"],
+      },
+      {
+        req1: "two",
+        opt1: "three",
+        opt2: "dotDefault",
+        opt3: "four",
+      },
+    );
+  });
 });

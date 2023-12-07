@@ -160,13 +160,20 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [dataKey] = splitFirst("=", optionalKeys.shift()!);
+      const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
       if (dataKey in parsedData) {
+        if (defaultValue !== undefined && parsedData[dataKey] === ".") {
+          parsedData[dataKey] = inferType(defaultValue, dataKey);
+        }
         continue optionalKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey);
+      if (defaultValue !== undefined && dataValue === ".") {
+        parsedData[dataKey] = inferType(defaultValue, dataKey);
+      } else {
+        parsedData[dataKey] = inferType(dataValue, dataKey);
+      }
       continue posArgsLoop;
     }
 
@@ -201,6 +208,12 @@ export function handleDataArgs(args: DataArgs): DatumData {
       continue;
     }
     // Allow required keys to be given a default value via an optional key
+    // This is useful for nested aliases where a key is required in the parent,
+    // but then a child creates an optional default value for it
+    // e.g. alias tx='datum occur tx -K acc -K amount'
+    //      alias rent='tx acc=Checking -k amount=1200'
+    // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
+    // a tx doc with amount=1500
     if (
       optionalKeys?.find((optionalWithDefault) =>
         new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
@@ -215,7 +228,10 @@ export function handleDataArgs(args: DataArgs): DatumData {
   while (optionalKeys.length > 0) {
     const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
-    if (dataKey in parsedData || defaultValue === undefined) {
+    if (
+      defaultValue === undefined ||
+      (dataKey in parsedData && parsedData[dataKey] !== ".")
+    ) {
       continue;
     }
 
