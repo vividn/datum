@@ -1,4 +1,4 @@
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import * as insertDatumViewModule from "../insertDatumView";
 import { setupDatumViews } from "../setupDatumViews";
 import { _emit } from "../emit";

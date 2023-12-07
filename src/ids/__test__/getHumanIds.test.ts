@@ -5,7 +5,7 @@ import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
-} from "../../test-utils";
+} from "../../__test__/test-utils";
 import { DatumViewMissingError } from "../../errors";
 
 const dbMock = mock<PouchDB.Database<any>>();

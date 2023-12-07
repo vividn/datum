@@ -1,4 +1,4 @@
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { deleteDoc, NoDocToDeleteError } from "../deleteDoc";
 
 describe("deleteDoc", () => {

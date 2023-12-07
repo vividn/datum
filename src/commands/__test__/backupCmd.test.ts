@@ -1,5 +1,5 @@
 import { backupCmd } from "../backupCmd";
-import { at, testDbLifecycle } from "../../test-utils";
+import { at, testDbLifecycle } from "../../__test__/test-utils";
 import * as fs from "fs";
 import path from "path";
 import * as os from "os";

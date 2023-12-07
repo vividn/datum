@@ -1,6 +1,10 @@
 import { updateDoc } from "../updateDoc";
 import * as updateDocModule from "../updateDoc";
-import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import {
+  fail,
+  mockedLogLifecycle,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
 import { overwriteDoc } from "../overwriteDoc";
