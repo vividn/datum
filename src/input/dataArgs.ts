@@ -15,6 +15,7 @@ export type DataArgs = {
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
+  asStateData?: boolean;
 };
 
 export function dataYargs(otherYargs?: Argv): Argv {
@@ -85,6 +86,13 @@ export function dataYargs(otherYargs?: Argv): Argv {
         describe: "Allow extra data without defined keys",
         type: "boolean",
         alias: "l",
+      },
+      "as-state-data": {
+        hidden: true,
+        describe:
+          "Used internally to cause data to be treated as state data. All required and optional keys will also be applied to state," +
+          " and only keys that begin with '.' will be treated as normal data keys",
+        type: "boolean",
       },
     });
 }

@@ -12,17 +12,19 @@ import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = [
-  "switch <field> <state> [duration] [data..]",
-  "switch --moment <field> <state> [data..]",
+  "switch <field> [state] [duration] [data..]",
+  "switch --moment <field> [state] [data..]",
 ];
 export const desc = "switch states of a given field";
 
 export function builder(yargs: Argv): Argv {
   return occurArgs(yargs)
     .positional("state", {
-      describe: "the state to switch to",
+      describe:
+        "the state to switch to, it defaults to true--equivalent to start",
       type: "string",
       nargs: 1,
+      default: "true",
     })
     .options({
       "last-state": {
@@ -41,7 +43,7 @@ export type SwitchCmdArgs = OccurCmdArgs & {
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   const db = await connectDb(args);
   flexiblePositional(args, "duration", !args.moment && "optional", "dur");
-  flexiblePositional(args, "state", "required");
+  flexiblePositional(args, "state", "optional");
   flexiblePositional(args, "field", !args.fieldless && "required");
   const payloadData = handleDataArgs(args);
 
