@@ -1,6 +1,6 @@
 import { DateTime, Settings } from "luxon";
 import { humanTime, humanTimeFromISO } from "../humanTime";
-import { setNow } from "../../test-utils";
+import { setNow } from "../../__test__/test-utils";
 
 describe("humanTime", () => {
   beforeEach(async () => {

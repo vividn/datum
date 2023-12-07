@@ -1,4 +1,4 @@
-import { mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { mockedLogLifecycle, testDbLifecycle } from "../../__test__/test-utils";
 import { grepCmd } from "../grepCmd";
 import { Show } from "../../input/outputArgs";
 

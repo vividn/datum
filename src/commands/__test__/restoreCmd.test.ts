@@ -1,5 +1,5 @@
 import { restoreCmd } from "../restoreCmd";
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import path from "path";
 import * as os from "os";
 import * as fs from "fs";

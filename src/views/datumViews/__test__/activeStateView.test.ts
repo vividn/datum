@@ -1,5 +1,5 @@
 import * as emit from "../../emit";
-import { makeDoc } from "../../../test-utils";
+import { makeDoc } from "../../../__test__/test-utils";
 import { activeStateView } from "../activeStateView";
 import { DateTime } from "luxon";
 import { DatumTime } from "../../../time/timeUtils";

@@ -1,6 +1,6 @@
 import * as minHumanId from "../minHumanId";
 import * as getHumanIds from "../getHumanIds";
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import { idToHumanView, subHumanIdView } from "../../views/datumViews";
 import { mock } from "jest-mock-extended";

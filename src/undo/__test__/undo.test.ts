@@ -1,4 +1,4 @@
-import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../test-utils";
+import { mockedLogLifecycle, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 import { occurCmd } from "../../commands/occurCmd";

@@ -1,4 +1,4 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { setupCmd } from "../../commands/setupCmd";
 import { getActiveState } from "../getActiveState";
 import { switchCmd } from "../../commands/switchCmd";

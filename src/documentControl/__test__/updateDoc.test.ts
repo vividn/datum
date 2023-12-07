@@ -1,5 +1,5 @@
 import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
-import { fail, setNow, testDbLifecycle } from "../../test-utils";
+import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc";
 import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";

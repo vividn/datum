@@ -1,6 +1,6 @@
 import { DatumPayload } from "../DatumDocument";
 import { DateTime } from "luxon";
-import { fail, setNow, testDbLifecycle } from "../../test-utils";
+import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import {
   overwriteDoc,
   NoDocToOverwriteError,

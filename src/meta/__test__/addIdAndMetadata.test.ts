@@ -1,5 +1,5 @@
 import { addIdAndMetadata } from "../addIdAndMetadata";
-import { setNow } from "../../test-utils";
+import { setNow } from "../../__test__/test-utils";
 import { IdError } from "../../errors";
 import { toDatumTime } from "../../time/timeUtils";
 

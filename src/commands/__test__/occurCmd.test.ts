@@ -1,4 +1,4 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
 import { BadDurationError } from "../../errors";

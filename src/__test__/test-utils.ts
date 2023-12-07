@@ -1,4 +1,4 @@
-import { CouchDbError } from "./errors";
+import { CouchDbError } from "../errors";
 import {
   DataOnlyDocument,
   DatumData,
@@ -6,18 +6,18 @@ import {
   DatumMetadata,
   EitherDocument,
   EitherPayload,
-} from "./documentControl/DatumDocument";
+} from "../documentControl/DatumDocument";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
-import { parseTimeStr } from "./time/parseTimeStr";
-import { now } from "./time/timeUtils";
-import { connectDb } from "./auth/connectDb";
-import * as connectDbModule from "./auth/connectDb";
-import { defaultIdComponents } from "./ids/defaultIdComponents";
-import { buildIdStructure } from "./ids/buildIdStructure";
-import { defaults } from "./input/defaults";
-import { assembleId } from "./ids/assembleId";
-import * as newHumanIdModule from "./meta/newHumanId";
+import { parseTimeStr } from "../time/parseTimeStr";
+import { now } from "../time/timeUtils";
+import { connectDb } from "../auth/connectDb";
+import * as connectDbModule from "../auth/connectDb";
+import { defaultIdComponents } from "../ids/defaultIdComponents";
+import { buildIdStructure } from "../ids/buildIdStructure";
+import { defaults } from "../input/defaults";
+import { assembleId } from "../ids/assembleId";
+import * as newHumanIdModule from "../meta/newHumanId";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};

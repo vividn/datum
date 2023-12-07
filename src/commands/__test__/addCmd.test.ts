@@ -1,4 +1,4 @@
-import { fail, mockedLogLifecycle, testDbLifecycle } from "../../test-utils";
+import { fail, mockedLogLifecycle, testDbLifecycle } from "../../__test__/test-utils";
 import { BaseDataError, IdError } from "../../errors";
 import {
   DatumDocument,

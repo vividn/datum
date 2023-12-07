@@ -1,5 +1,5 @@
 import { DatumPayload } from "../../documentControl/DatumDocument";
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { minHumanId, MinHumanIdError } from "../../ids/minHumanId";
 import { insertDatumView } from "../insertDatumView";
 import { subHumanIdView } from "../datumViews";

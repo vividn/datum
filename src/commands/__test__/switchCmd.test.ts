@@ -1,4 +1,4 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
