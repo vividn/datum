@@ -4,12 +4,11 @@ import * as fs from "fs";
 import path from "path";
 import * as os from "os";
 import { addCmd } from "../addCmd";
-import { occurCmd } from "../occurCmd";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 
 describe("backupCmd", () => {
   const dbName = "backup_cmd_test";
-  const _db = testDbLifecycle(dbName);
+  const db = testDbLifecycle(dbName);
 
   let backupFilePath: string;
   let dbDocs: EitherDocument[] = [];
@@ -22,12 +21,12 @@ describe("backupCmd", () => {
     dbDocs.push(
       await addCmd({
         field: "added_field",
-        baseData: { some: "data", another: "field" },
+        baseData: { some: "data", another: "key" },
       }),
     );
     dbDocs.push(
-      await occurCmd({
-        field: "occurred_field",
+      await addCmd({
+        field: "field2",
         baseData: { some: "data", another: "field" },
       }),
     );
@@ -59,7 +58,7 @@ describe("backupCmd", () => {
       filename: backupFilePath,
     });
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const newDoc = await occurCmd({ field: "occuredField2" });
+    const newDoc = await addCmd({ field: "addedField2" });
     await expect(backupCmd({ filename: backupFilePath })).rejects.toThrow(
       "File exists",
     );
@@ -76,7 +75,7 @@ describe("backupCmd", () => {
       filename: backupFilePath,
     });
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const newDoc = await occurCmd({ field: "occuredField2" });
+    const newDoc = await addCmd({ field: "addedField2" });
     await backupCmd({
       filename: backupFilePath,
       overwrite: true,
