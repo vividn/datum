@@ -23,7 +23,7 @@
     "typewatch": "tsc -p tsconfig.withTests.json -w --skipLibCheck",
     "build": "rm -rf ./build; tsc -p . --skipLibCheck",
     "buildwatch": "tsc -p . -w --skipLibCheck",
-    "system": "NODE_ENV=production yarn global add $PWD",
+    "system": "yarn global add $PWD",
     "pipeline": "yarn refresh && yarn test --maxWorkers 1 && yarn build && rm -rf ./node_modules && yarn install --production && yarn system",
     "refresh": "rm -rf ./node_modules && yarn install",
     "lint": "eslint src",

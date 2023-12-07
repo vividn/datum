@@ -128,11 +128,18 @@ export async function main(cliInput: string | string[]): Promise<void> {
 }
 
 if (require.main === module) {
+  if (["", undefined].includes(process.env["NODE_ENV"])) {
+    process.env.NODE_ENV = "production";
+  }
   main(process.argv.slice(2)).catch((err) => {
     if (err instanceof DocExistsError) {
       process.exitCode = 11;
     } else {
-      console.error(err);
+      if (process.env["NODE_ENV"] === "production") {
+        console.error(`${err.name ?? "Error"}:`, err.message);
+      } else {
+        console.error(err);
+      }
       process.exitCode = 1;
     }
   });
