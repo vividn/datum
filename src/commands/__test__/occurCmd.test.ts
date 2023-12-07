@@ -17,7 +17,7 @@ describe("occurCmd", () => {
   });
   afterEach(() => {
     restoreNow();
-  })
+  });
 
   it("creates a document with an occurTime", async () => {
     const now = "2023-08-05T16:00:00.000Z";
