@@ -102,5 +102,10 @@ describe("switchCmd", () => {
     });
   });
 
+  it.todo(
+    "assumes a state of true by default",
+    // TODO: Write this once commands can be called by plain text in tests
+  );
+
   it.todo("does not record a lastState if there is no occurTime");
 });

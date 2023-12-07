@@ -13,6 +13,7 @@ import { DurationArgs, durationArgs } from "../input/durationArgs";
 import { FieldArgs } from "../input/fieldArgs";
 import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { getLastState } from "../state/findLastState";
 
 export const command = [
   "occur <field> [duration] [data..]",
@@ -67,6 +68,16 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
   }
+  const lastState = await getLastState({
+    db,
+    field: payloadData.field,
+    lastState: payloadData.lastState,
+    time: occurTime,
+  });
+  if (lastState !== false) {
+    payloadData.lastState = lastState;
+  }
+
   const payload = addIdAndMetadata(payloadData, args);
 
   // update now in case the addDoc fails due to conflict

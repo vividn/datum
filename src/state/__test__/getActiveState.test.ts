@@ -5,6 +5,7 @@ import { switchCmd } from "../../commands/switchCmd";
 import { startCmd } from "../../commands/startCmd";
 import { endCmd } from "../../commands/endCmd";
 import { DateTime } from "luxon";
+import { occurCmd } from "../../commands/occurCmd";
 
 describe("getActiveState", () => {
   const dbName = "get_active_state_test";
@@ -146,5 +147,16 @@ describe("getActiveState", () => {
     expect(await getActiveState(db, "machine", DateTime.fromISO("10:50"))).toBe(
       "distracted",
     );
+  });
+
+  it("transitions to having a false state if an occurrence or durational occurrence of the field occurs", async () => {
+    expect(await getActiveState(db, "field")).toBe(null);
+    await switchCmd({ field: "field", state: "active", duration: "5m" });
+    expect(await getActiveState(db, "field")).toBe(false);
+
+    await switchCmd({ field: "field", state: null });
+    expect(await getActiveState(db, "field")).toBe(null);
+    await occurCmd({ field: "field" });
+    expect(await getActiveState(db, "field")).toBe(false);
   });
 });

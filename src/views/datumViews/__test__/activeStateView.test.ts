@@ -32,7 +32,17 @@ describe("activeStateView", () => {
     expect(emitMock).toHaveBeenCalledTimes(0);
   });
 
-  it("emits nothing if just occurTime with no dur or state", () => {
+  it("emits nothing if just occurTime and dur is null", () => {
+    const doc = makeDoc({
+      field: "foo",
+      dur: null,
+      occurTime,
+    });
+    activeStateView.map(doc);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("emits nothing if just occurTime", () => {
     const doc = makeDoc({
       field: "foo",
       occurTime,
@@ -212,5 +222,56 @@ describe("activeStateView", () => {
       ["foobar", occurTime.utc],
       "stringState",
     );
+  });
+
+  it("emits nothing if duration is null or 0", () => {
+    const doc = makeDoc({
+      field: "bar",
+      dur: null,
+      state: true,
+      occurTime,
+    });
+    activeStateView.map(doc);
+    expect(emitMock).not.toHaveBeenCalled();
+
+    emitMock.mockReset();
+
+    const doc2 = makeDoc({
+      field: "foobar",
+      dur: "PT0S",
+      state: "stringState",
+      occurTime,
+    });
+    activeStateView.map(doc2);
+    expect(emitMock).not.toHaveBeenCalled();
+  });
+
+  it("changes the active state to false if lastState is null and duration is nonnull", () => {
+    const doc = makeDoc({
+      field: "bar",
+      dur: "PT10M",
+      state: true,
+      lastState: null,
+      occurTime,
+    });
+    activeStateView.map(doc);
+    expect(emitMock).toHaveBeenCalledTimes(2);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is false
+      true,
+    );
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
+  });
+
+  it("changes the active state to false if lastState is null and duration is null", () => {
+    const doc = makeDoc({
+      field: "bar",
+      lastState: null,
+      dur: null,
+      occurTime,
+    });
+    activeStateView.map(doc);
+    expect(emitMock).toHaveBeenCalledTimes(1);
+    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
   });
 });

@@ -5,24 +5,29 @@ import { BadDurationError } from "../../errors";
 import { setupCmd } from "../setupCmd";
 import * as endCmdModule from "../endCmd";
 import * as startCmdModule from "../startCmd";
+import { getActiveState } from "../../state/getActiveState";
+import { switchCmd } from "../switchCmd";
 
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";
   const db = testDbLifecycle(dbName);
-  const now = "2023-08-05T16:00:00.000Z";
 
-  beforeAll(() => {
-    setNow(now);
+  beforeEach(async () => {
+    await setupCmd({});
   });
-  afterAll(() => {
+  afterEach(() => {
     restoreNow();
   });
 
   it("creates a document with an occurTime", async () => {
+    const now = "2023-08-05T16:00:00.000Z";
+    setNow(now);
+
+    const docCountBefore = (await db.info()).doc_count;
     const doc = await occurCmd({ field: "field" });
 
     await db.info().then((info) => {
-      expect(info.doc_count).toEqual(1);
+      expect(info.doc_count).toEqual(docCountBefore + 1);
     });
     expect(doc.data.field).toEqual("field");
     expect(doc.data.occurTime.utc).toEqual(now);
@@ -189,6 +194,31 @@ describe("occurCmd", () => {
         o: 1,
         tz: "Europe/Berlin",
       },
+    });
+  });
+
+  it("records the lastState if the active state is not false", async () => {
+    expect(await getActiveState(db, "event")).toBe(null);
+    const newDoc = (await occurCmd({
+      field: "event",
+    })) as DatumDocument;
+    expect(newDoc.data).toMatchObject({
+      lastState: null,
+    });
+    // Even 1 occur document is enough to switch active state to false from null
+    expect(await getActiveState(db, "event")).toBe(false);
+
+    const newDoc2 = (await occurCmd({
+      field: "event",
+    })) as DatumDocument;
+    expect([false, undefined]).toContainEqual(newDoc2.data.lastState);
+
+    await switchCmd({ field: "event", state: "happening" });
+    const newDoc3 = (await occurCmd({
+      field: "event",
+    })) as DatumDocument;
+    expect(newDoc3.data).toMatchObject({
+      lastState: "happening",
     });
   });
 });
