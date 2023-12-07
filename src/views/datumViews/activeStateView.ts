@@ -31,12 +31,16 @@ export const activeStateView: DatumView<
     }
     const occurTime = data.occurTime;
     const field = data.field;
-    const duration = data.duration || data.dur;
-    const state =
-      data.state !== undefined ? data.state : duration ? true : undefined;
-    if (!occurTime || !field || state === undefined) {
+    if (!occurTime || !field) {
       return;
     }
+    const duration =
+      data.dur !== undefined
+        ? data.dur
+        : data.state === undefined
+          ? null
+          : undefined;
+    const state = data.state !== undefined ? data.state : true;
     const lastState =
       data.lastState !== undefined ? data.lastState : state === false;
 
@@ -79,6 +83,9 @@ export const activeStateView: DatumView<
     }
 
     if (duration === null) {
+      if (lastState === null && state !== null) {
+        emit([field, occurTime.utc], false);
+      }
       return;
     }
     if (duration === undefined) {
@@ -89,8 +96,9 @@ export const activeStateView: DatumView<
     const seconds = parseISODuration(duration);
     if (seconds > 0) {
       const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
+      const stateAfterBlock = lastState === null ? false : lastState;
       emit([field, blockBegin], state);
-      emit([field, occurTime.utc], lastState);
+      emit([field, occurTime.utc], stateAfterBlock);
     } else if (seconds < 0) {
       const holeBegin = subtractSecondsFromTime(
         occurTime.utc,
