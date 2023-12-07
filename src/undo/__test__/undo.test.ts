@@ -3,6 +3,7 @@ import { addCmd } from "../../commands/addCmd";
 import { DateTime, Duration, Settings } from "luxon";
 import { occurCmd } from "../../commands/occurCmd";
 import { Show } from "../../input/outputArgs";
+import { setupCmd } from "../../commands/setupCmd";
 
 // TODO: Make undo system more robust and more tested
 
@@ -45,6 +46,7 @@ describe("addCmd undo", () => {
   });
 
   it("undoes a document with a time in the past if it contains occurTime", async () => {
+    await setupCmd({});
     const now = "2021-06-28T06:30:00.000Z";
     const inAMinute = "2021-06-28T06:31:00.000Z";
     const insertedDoc = await occurCmd({ field: "event", time: now });

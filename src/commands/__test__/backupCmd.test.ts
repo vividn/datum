@@ -8,7 +8,7 @@ import { EitherDocument } from "../../documentControl/DatumDocument";
 
 describe("backupCmd", () => {
   const dbName = "backup_cmd_test";
-  const db = testDbLifecycle(dbName);
+  const _db = testDbLifecycle(dbName);
 
   let backupFilePath: string;
   let dbDocs: EitherDocument[] = [];
