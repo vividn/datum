@@ -133,14 +133,14 @@ if (require.main === module) {
   }
   main(process.argv.slice(2)).catch((err) => {
     if (err instanceof DocExistsError) {
-      process.exitCode = 11;
+      process.exit(11);
     } else {
       if (process.env["NODE_ENV"] === "production") {
         console.error(`${err.name ?? "Error"}:`, err.message);
       } else {
         console.error(err);
       }
-      process.exitCode = 1;
+      process.exit(1);
     }
   });
 }
