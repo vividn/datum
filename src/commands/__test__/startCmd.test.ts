@@ -1,4 +1,4 @@
-import { setNow, testDbLifecycle } from "../../test-utils";
+import { setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
 import { startCmd } from "../startCmd";

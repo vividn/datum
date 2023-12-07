@@ -1,4 +1,4 @@
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import * as setupDatumViews from "../../views/setupDatumViews";
 import { setupCmd } from "../setupCmd";
 import * as connectDb from "../../auth/connectDb";

@@ -12,7 +12,7 @@
     "outDir": "build",
     "declarationDir": "build/types",
     "strict": true,
-    "types": ["node", "jest"],
+    "types": ["node"],
     "typeRoots": ["./node_modules/@types", "./typings"],
     "esModuleInterop": true,
     "resolveJsonModule": true,

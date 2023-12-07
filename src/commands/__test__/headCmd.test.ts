@@ -3,7 +3,7 @@ import {
   mockedLogLifecycle,
   setNow,
   testDbLifecycle,
-} from "../../test-utils";
+} from "../../__test__/test-utils";
 import { endCmd } from "../endCmd";
 import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";

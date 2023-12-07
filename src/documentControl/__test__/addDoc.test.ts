@@ -4,7 +4,7 @@ import {
   DatumDocument,
   DatumPayload,
 } from "../DatumDocument";
-import { fail, setNow, testDbLifecycle } from "../../test-utils";
+import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { addDoc } from "../addDoc";
 import { IdError } from "../../errors";
 import { jClone } from "../../utils/jClone";

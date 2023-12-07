@@ -1,4 +1,4 @@
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { editMigration } from "../editMigration";
 import { asViewDb } from "../../views/DatumView";
 import * as editInTerminal from "../../utils/editInTerminal";

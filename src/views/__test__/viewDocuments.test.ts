@@ -6,7 +6,7 @@ import {
   StringifiedDatumView,
 } from "../DatumView";
 import { _emit } from "../emit";
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";
 import * as overwriteDoc from "../../documentControl/overwriteDoc";

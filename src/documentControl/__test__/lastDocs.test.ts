@@ -1,6 +1,6 @@
 import { addCmd } from "../../commands/addCmd";
 import { getLastDocs } from "../lastDocs";
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { deleteCmd } from "../../commands/deleteCmd";
 import * as editInTerminal from "../../utils/editInTerminal";
 import { GenericObject } from "../../GenericObject";

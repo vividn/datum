@@ -1,4 +1,4 @@
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
 import { EitherDocument } from "../../documentControl/DatumDocument";

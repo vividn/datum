@@ -1,4 +1,4 @@
-import { fail, testDbLifecycle } from "../../test-utils";
+import { fail, testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
   humanIdView,

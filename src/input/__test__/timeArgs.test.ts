@@ -11,7 +11,7 @@ import {
   ReferencedTimeArgs,
   TimeFromArgs,
 } from "../timeArgs";
-import { restoreNow, setNow } from "../../test-utils";
+import { restoreNow, setNow } from "../../__test__/test-utils";
 
 const expectTiming = (
   props: ReferencedTimeArgs,

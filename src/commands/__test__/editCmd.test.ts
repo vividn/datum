@@ -1,5 +1,5 @@
 import * as editInTerminal from "../../utils/editInTerminal";
-import { testDbLifecycle } from "../../test-utils";
+import { testDbLifecycle } from "../../__test__/test-utils";
 import { editCmd, TooManyToEditError } from "../editCmd";
 import { GenericObject } from "../../GenericObject";
 import { setupCmd } from "../setupCmd";
