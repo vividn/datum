@@ -14,7 +14,7 @@ from datumdata import Datumdata
 from dayview import get_datum_names_spans_and_colors, get_color, set_constants
 
 
-def main():
+def main(tiny=False):
     set_constants()
     home = str(Path.home()) + "/"
     data_set = "standardSet"
@@ -44,10 +44,10 @@ def main():
     imfont = ImageFont.truetype(fontpath + imfontname, fontsize)
     _, text_height = imfont.getsize("Wed, Dec 88")
 
-    xsize = 75
-    ysize = 150
+    xsize = 50 if tiny else 75
+    ysize = 80 if tiny else 150
     imagedir = home + "Analysis/Pictures"
-    imagename = "nowview"
+    imagename = "nowviewtiny" if tiny else "nowview"
     imageout = imagedir + '/' + imagename + ".png"
 
     ##########################3
@@ -131,3 +131,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+    main(tiny=True)

@@ -626,7 +626,7 @@ if __name__ == "__main__":
     main(
         nDays=1,
         imagename="singledayviewtiny",
-        xsize=1920,
+        xsize=1870,
         ysize=80,
         image_padding=2,
         bar_padding=0,
