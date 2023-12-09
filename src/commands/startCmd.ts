@@ -1,16 +1,20 @@
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { switchCmd } from "./switchCmd";
-import { baseOccurArgs, BaseOccurArgs } from "./occurCmd";
+import { occurArgs, OccurCmdArgs } from "./occurCmd";
+import { DurationArgs, durationArgs } from "../input/durationArgs";
 
 export const command = "start <field> [data..]";
 export const desc = "add a start document";
 
+export function durOccurArgs(yargs: Argv): Argv {
+  return durationArgs(occurArgs(yargs));
+}
 export function builder(yargs: Argv): Argv {
-  return baseOccurArgs(yargs);
+  return occurArgs(yargs);
 }
 
-export type StartCmdArgs = BaseOccurArgs;
+export type StartCmdArgs = OccurCmdArgs & DurationArgs;
 
 export async function startCmd(args: StartCmdArgs): Promise<EitherDocument> {
   return await switchCmd({ ...args, state: true });

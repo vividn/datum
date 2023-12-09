@@ -2,13 +2,13 @@ import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { StartCmdArgs } from "./startCmd";
 import { switchCmd } from "./switchCmd";
-import { baseOccurArgs } from "./occurCmd";
+import { occurArgs } from "./occurCmd";
 
 export const command = "end <field> [data..]";
 export const desc = "add an end document";
 
 export function builder(yargs: Argv): Argv {
-  return baseOccurArgs(yargs);
+  return occurArgs(yargs);
 }
 
 export type EndCmdArgs = StartCmdArgs;

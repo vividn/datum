@@ -10,6 +10,7 @@ import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
 import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { durationArgs, DurationArgs } from "../input/durationArgs";
 
 export const command = [
   "switch <field> [state] [duration] [data..]",
@@ -18,7 +19,7 @@ export const command = [
 export const desc = "switch states of a given field";
 
 export function builder(yargs: Argv): Argv {
-  return occurArgs(yargs)
+  return durationArgs(occurArgs(yargs))
     .positional("state", {
       describe:
         "the state to switch to, it defaults to true--equivalent to start",
@@ -35,14 +36,20 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export type SwitchCmdArgs = OccurCmdArgs & {
-  state: string | boolean | null;
-  lastState?: string | boolean | null;
-};
+export type SwitchCmdArgs = OccurCmdArgs &
+  DurationArgs & {
+    state: string | boolean | null;
+    lastState?: string | boolean | null;
+  };
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   const db = await connectDb(args);
-  flexiblePositional(args, "duration", !args.moment && "optional", "dur");
+  flexiblePositional(
+    args,
+    "duration",
+    !args.moment && !args.noTimestamp && "optional",
+    "dur",
+  );
   flexiblePositional(args, "state", "optional");
   flexiblePositional(args, "field", !args.fieldless && "required");
   const payloadData = handleDataArgs(args);
