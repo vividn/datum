@@ -251,5 +251,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     delete args.comment;
   }
 
+  // for idempotence of processing dataArgs
+  args.baseData = parsedData;
   return parsedData;
 }

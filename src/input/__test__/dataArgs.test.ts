@@ -371,7 +371,7 @@ describe("handleDataArgs", () => {
         required: ["req1", "req2"],
         optional: ["opt1", "opt2=defaultValue"],
         remainder: "remainderKey",
-        baseData: { abc: "def" },
+        baseData: '{ abc: "def" }',
         comment: "This is a comment.",
         data: ["value1", "value2", "value3", "value4", "value5", "value6"],
       };
