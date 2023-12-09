@@ -131,4 +131,4 @@ def main(tiny=False):
 
 if __name__ == "__main__":
     main()
-    main(tiny=True)
+    # main(tiny=True)
