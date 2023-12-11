@@ -5,6 +5,7 @@ import { setupCmd } from "../setupCmd";
 import { toDatumTime } from "../../time/timeUtils";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
+import { endCmd } from "../endCmd";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";
@@ -145,6 +146,40 @@ describe("switchCmd", () => {
       parseTimeStr({ timeStr: "-5m" }),
     );
     expect(intermediateState).toBe(false);
+  });
+
+  it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      moment: true,
+      optional: ["skillPoints"],
+      duration: "3",
+    });
+    expect(doc.data).toMatchObject({
+      field: "project",
+      state: "household",
+      skillPoints: 3,
+      dur: null,
+      occurTime: toDatumTime(DateTime.now()),
+    });
+  });
+
+  it("when --no-timestamp is specified, there is no positional duration argument", async () => {
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      optional: ["skillPoints"],
+      noTimestamp: true,
+      duration: "3",
+    });
+    expect(doc.data).toMatchObject({
+      field: "dance",
+      state: false,
+      skillPoints: 3,
+    });
+    expect(doc.data).not.toHaveProperty("occurTime");
+    expect(doc.data).not.toHaveProperty("dur");
   });
 
   it.todo("does not record a lastState if there is no occurTime");

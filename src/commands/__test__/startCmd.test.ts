@@ -5,6 +5,7 @@ import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
+import { toDatumTime } from "../../time/timeUtils";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";
@@ -19,9 +20,7 @@ describe("startCmd", () => {
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
   });
 
@@ -33,9 +32,7 @@ describe("startCmd", () => {
       field: "machine",
       state: true,
       lastState: "preparing",
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
   });
 
@@ -45,9 +42,7 @@ describe("startCmd", () => {
       field: "dance",
       state: true,
       dur: "PT5M",
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
   });
 
@@ -59,9 +54,7 @@ describe("startCmd", () => {
       field: "dance",
       state: true,
       dur: "-PT5M",
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
     const currentState = await getActiveState(db, "dance");
     expect(currentState).toBe(true);
@@ -73,5 +66,35 @@ describe("startCmd", () => {
     expect(intermediateState).toBe(false);
   });
 
-  it("can ")
+  it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
+    const doc = await startCmd({
+      field: "dance",
+      moment: true,
+      optional: ["skillPoints"],
+      duration: "3",
+    });
+    expect(doc.data).toMatchObject({
+      field: "dance",
+      state: true,
+      skillPoints: 3,
+      dur: null,
+      occurTime: toDatumTime(DateTime.now()),
+    });
+  });
+
+  it("when --no-timestamp is specified, there is no positional duration argument", async () => {
+    const doc = await startCmd({
+      field: "dance",
+      optional: ["skillPoints"],
+      noTimestamp: true,
+      duration: "3",
+    });
+    expect(doc.data).toMatchObject({
+      field: "dance",
+      state: true,
+      skillPoints: 3,
+    });
+    expect(doc.data).not.toHaveProperty("occurTime");
+    expect(doc.data).not.toHaveProperty("dur");
+  });
 });

@@ -6,6 +6,7 @@ import { switchCmd } from "../switchCmd";
 import { startCmd } from "../startCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
+import { toDatumTime } from "../../time/timeUtils";
 
 describe("endCmd", () => {
   const dbName = "end_cmd_test";
@@ -20,9 +21,7 @@ describe("endCmd", () => {
     expect(doc.data).toMatchObject({
       field: "dance",
       state: false,
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
   });
 
@@ -34,9 +33,7 @@ describe("endCmd", () => {
       field: "activity",
       state: false,
       lastState: "cello",
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
   });
 
@@ -48,9 +45,7 @@ describe("endCmd", () => {
       field: "dance",
       state: false,
       dur: "PT5M",
-      occurTime: {
-        utc: DateTime.now().toUTC().toISO(),
-      },
+      occurTime: toDatumTime(DateTime.now()),
     });
     const currentState = await getActiveState(db, "dance");
     expect(currentState).toBe(false);
@@ -60,5 +55,37 @@ describe("endCmd", () => {
       parseTimeStr({ timeStr: "-2.5" }),
     );
     expect(intermediateState).toBe(false);
+  });
+
+  it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
+    const doc = await endCmd({
+      field: "dance",
+      moment: true,
+      optional: ["skillPoints"],
+      duration: "3",
+    });
+    expect(doc.data).toMatchObject({
+      field: "dance",
+      state: false,
+      skillPoints: 3,
+      dur: null,
+      occurTime: toDatumTime(DateTime.now()),
+    });
+  });
+
+  it("when --no-timestamp is specified, there is no positional duration argument", async () => {
+    const doc = await endCmd({
+      field: "dance",
+      optional: ["skillPoints"],
+      noTimestamp: true,
+      duration: "3",
+    });
+    expect(doc.data).toMatchObject({
+      field: "dance",
+      state: false,
+      skillPoints: 3,
+    });
+    expect(doc.data).not.toHaveProperty("occurTime");
+    expect(doc.data).not.toHaveProperty("dur");
   });
 });
