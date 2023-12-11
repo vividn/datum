@@ -10,8 +10,7 @@ export function fieldArgs(otherYargs?: Argv): Argv {
   return yarg
     .positional("field", {
       // TODO Maybe update description of field to fit in more contexts
-      describe:
-        "field specifying what is being tracked, used by default as partition for the data, but can be changed with --partition",
+      describe: "what is being tracked",
       type: "string",
     })
     .options({

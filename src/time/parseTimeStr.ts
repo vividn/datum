@@ -2,12 +2,14 @@ import { DateTime, Duration } from "luxon";
 import { now } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadTimeError } from "../errors";
-import { parseDurationStr } from "./parseDurationString";
+import { parseDurationStr } from "./parseDurationStr";
 
 type ParseTimeStrType = {
   timeStr: string;
   referenceTime?: DateTime;
 };
+
+// TODO: Change this not to use an object input
 export function parseTimeStr({
   timeStr,
   referenceTime,
