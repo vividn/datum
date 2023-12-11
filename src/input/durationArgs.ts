@@ -10,7 +10,7 @@ export function durationArgs(yargs: Argv): Argv {
       moment: {
         alias: "m",
         describe:
-          "don't interpret the first argument after field as a duration",
+          "data with no indication of duration, just occurrence. Removes positional duration argument. Sets dur to be null. Essentially equivalent to an occur cmd",
         nargs: 0,
       },
     })

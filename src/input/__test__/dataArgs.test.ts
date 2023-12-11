@@ -375,7 +375,7 @@ describe("handleDataArgs", () => {
         required: ["req1", "req2"],
         optional: ["opt1", "opt2=defaultValue"],
         remainder: "remainderKey",
-        baseData: { abc: "def" },
+        baseData: '{ abc: "def" }',
         comment: "This is a comment.",
         data: ["value1", "value2", "value3", "value4", "value5", "value6"],
       };
@@ -475,6 +475,40 @@ describe("handleDataArgs", () => {
       },
       {
         key3: "nonEmpty",
+      },
+    );
+  });
+
+  it("uses the previously assigned value if a . is given the second time as the value", () => {
+    expectParseDataToReturn(
+      {
+        data: ["key=value", "key=."],
+      },
+      {
+        key: "value",
+      },
+    );
+    expectParseDataToReturn(
+      {
+        required: ["req1"],
+        data: ["someValue", "req1=."],
+      },
+      {
+        req1: "someValue",
+      },
+    );
+  });
+
+  it("can explicitly set an optional arg to its default value by using a . before its turn in the call chain", () => {
+    expectParseDataToReturn(
+      {
+        optional: ["key1=value1", "key2=value2", "key3=value3"],
+        data: ["key2=.", "replace1", "replace3"],
+      },
+      {
+        key1: "replace1",
+        key2: "value2",
+        key3: "replace3",
       },
     );
   });

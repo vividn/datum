@@ -1,10 +1,11 @@
 import { inferType } from "../inferType";
 import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
-import * as parseDurationStr from "../../time/parseDurationString";
+import * as parseDurationStr from "../../time/parseDurationStr";
 import SpyInstance = jest.SpyInstance;
 import { setNow } from "../../__test__/test-utils";
 import { toDatumTime } from "../../time/timeUtils";
+import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {
@@ -94,6 +95,22 @@ describe("inferType", () => {
     expect(inferType("(1,2,3)")).toEqual("(1,2,3)");
     expect(inferType("NAN/null")).toEqual("NAN/null");
   });
+
+  it("parsed . as a default value or undefined", () => {
+    expect(inferType(".")).toBe(undefined);
+    expect(inferType(".", "field")).toBe(undefined);
+    expect(inferType(".", "field", "default")).toBe("default");
+    expect(inferType(".", "field", "3")).toBe(3);
+    expect(inferType(".", "linkDur", "3")).toBe("PT3M");
+  });
+
+  it("parses a \\. as a literal period", () => {
+    expect(inferType(String.raw`\.`)).toBe(".");
+    expect(inferType(String.raw`\.`, "field", "value")).toBe(".");
+    expect(() => inferType(String.raw`\.`, "linkDur", "value")).toThrowError(
+      BadDurationError,
+    );
+  });
 });
 
 describe("inferType with special fields", () => {
@@ -107,10 +124,7 @@ describe("inferType with special fields", () => {
   beforeEach(() => {
     parseTimeSpy = jest.spyOn(parseTimeStr, "parseTimeStr");
     parseDateSpy = jest.spyOn(parseDateStr, "parseDateStr");
-    parseDurationSpy = jest.spyOn(
-      parseDurationStr,
-      "isoDurationFromDurationStr",
-    );
+    parseDurationSpy = jest.spyOn(parseDurationStr, "parseDurationStr");
   });
 
   it("infers values as datetimes if the field name is or ends in -Time", () => {
@@ -149,28 +163,33 @@ describe("inferType with special fields", () => {
     expect(inferType("3:45:20", "raceDuration")).toEqual("PT3H45M20S");
     expect(inferType("2days", "wait_dur")).toEqual("P2D");
     expect(inferType("30sec", "duration2")).toEqual("PT30S");
+    expect(parseDurationSpy).toHaveBeenCalledTimes(5);
+
+    parseDurationSpy.mockClear();
     expect(inferType(".", "dur")).toBeUndefined();
     expect(inferType("", "dur")).toBeUndefined();
+    expect(parseDurationSpy).not.toHaveBeenCalled();
 
-    expect(parseDurationSpy).toHaveBeenCalledTimes(7);
     expect(parseTimeSpy).not.toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveBeenCalled();
   });
 
-  it("leaves the value as a string for -Time -Date and -Dur values if they cannot be parsed", () => {
-    expect(inferType("unparseable_time", "weirdTime")).toEqual(
-      "unparseable_time",
+  it("throws an error for -Time -Date and -Dur values if they cannot be parsed", () => {
+    expect(() => inferType("unparseable_time", "weirdTime")).toThrowError(
+      BadTimeError,
     );
     expect(parseTimeSpy).toHaveBeenCalled();
     expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
 
-    expect(inferType("when pigs fly", "weirdDate")).toEqual("when pigs fly");
+    expect(() => inferType("when pigs fly", "weirdDate")).toThrowError(
+      BadDateError,
+    );
     expect(parseDateSpy).toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveReturned();
 
-    expect(inferType("as long as it takes", "weirdDuration")).toEqual(
-      "as long as it takes",
-    );
+    expect(() =>
+      inferType("as long as it takes", "weirdDuration"),
+    ).toThrowError(BadDurationError);
     expect(parseDurationSpy).toHaveBeenCalled();
     expect(parseDurationSpy).not.toHaveReturned();
   });

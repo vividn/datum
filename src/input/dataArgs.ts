@@ -15,7 +15,6 @@ export type DataArgs = {
   remainder?: string;
   stringRemainder?: boolean;
   lenient?: boolean;
-  asStateData?: boolean;
 };
 
 export function dataYargs(otherYargs?: Argv): Argv {
@@ -87,13 +86,6 @@ export function dataYargs(otherYargs?: Argv): Argv {
         type: "boolean",
         alias: "l",
       },
-      "as-state-data": {
-        hidden: true,
-        describe:
-          "Used internally to cause data to be treated as state data. All required and optional keys will also be applied to state," +
-          " and only keys that begin with '.' will be treated as normal data keys",
-        type: "boolean",
-      },
     });
 }
 
@@ -140,8 +132,20 @@ export function handleDataArgs(args: DataArgs): DatumData {
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
     if (afterEquals !== undefined) {
-      // explicit key is given e.g., 'key=value'
-      parsedData[beforeEquals] = inferType(afterEquals, beforeEquals);
+      // key is explicitly given e.g., 'key=value'
+      const key = beforeEquals;
+      const value = afterEquals;
+
+      // Search for default value to allow explicitly setting it to default using '.'
+      const existingValue = parsedData[key];
+      const defaultValue =
+        existingValue ??
+        optionalKeys
+          ?.find((optionalWithDefault) =>
+            new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
+          )
+          ?.split("=")[1];
+      parsedData[key] = inferType(value, key, defaultValue);
       continue posArgsLoop;
     }
 
@@ -163,17 +167,10 @@ export function handleDataArgs(args: DataArgs): DatumData {
       const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
       if (dataKey in parsedData) {
-        if (defaultValue !== undefined && parsedData[dataKey] === ".") {
-          parsedData[dataKey] = inferType(defaultValue, dataKey);
-        }
         continue optionalKeysLoop;
       }
 
-      if (defaultValue !== undefined && dataValue === ".") {
-        parsedData[dataKey] = inferType(defaultValue, dataKey);
-      } else {
-        parsedData[dataKey] = inferType(dataValue, dataKey);
-      }
+      parsedData[dataKey] = inferType(dataValue, dataKey, defaultValue);
       continue posArgsLoop;
     }
 
@@ -251,5 +248,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     delete args.comment;
   }
 
+  // for idempotence of processing dataArgs
+  args.baseData = parsedData;
   return parsedData;
 }
