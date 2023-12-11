@@ -175,8 +175,8 @@ describe("switchCmd", () => {
       duration: "3",
     });
     expect(doc.data).toMatchObject({
-      field: "dance",
-      state: false,
+      field: "project",
+      state: "household",
       skillPoints: 3,
     });
     expect(doc.data).not.toHaveProperty("occurTime");
@@ -185,6 +185,7 @@ describe("switchCmd", () => {
 
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
+    restoreNow();
     const doc = await switchCmd({
       field: "project",
       state: "household",

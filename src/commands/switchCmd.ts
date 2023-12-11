@@ -59,6 +59,9 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
   }
+  if (args.moment) {
+    payloadData.dur = null;
+  }
   payloadData.lastState = await getLastState({
     db,
     field: payloadData.field,

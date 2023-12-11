@@ -1,4 +1,4 @@
-import { setNow, testDbLifecycle } from "../../__test__/test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
 import { startCmd } from "../startCmd";
@@ -102,6 +102,7 @@ describe("startCmd", () => {
 
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
+    restoreNow();
     const doc = await startCmd({
       field: "field",
       moment: false,

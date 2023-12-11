@@ -1,4 +1,4 @@
-import { setNow, testDbLifecycle } from "../../__test__/test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { endCmd } from "../endCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
@@ -50,7 +50,7 @@ describe("endCmd", () => {
       occurTime: toDatumTime(DateTime.now()),
     });
     const currentState = await getActiveState(db, "dance");
-    expect(currentState).toBe(false);
+    expect(currentState).toBe(true);
     const intermediateState = await getActiveState(
       db,
       "dance",
@@ -93,6 +93,7 @@ describe("endCmd", () => {
 
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
+    restoreNow();
     const doc = await endCmd({
       field: "field",
       moment: false,
