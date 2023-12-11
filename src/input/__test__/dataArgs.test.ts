@@ -21,7 +21,7 @@ describe("handleDataArgs", () => {
       { data: ["first=arg", "second=another"] },
       { first: "arg", second: "another" },
     );
-    expectParseDataToReturn({ data: ["blank="] }, { });
+    expectParseDataToReturn({ data: ["blank="] }, {});
   });
 
   it("keeps extra equals signs in the value string", () => {
