@@ -21,7 +21,7 @@ describe("handleDataArgs", () => {
       { data: ["first=arg", "second=another"] },
       { first: "arg", second: "another" },
     );
-    expectParseDataToReturn({ data: ["blank="] }, { blank: "" });
+    expectParseDataToReturn({ data: ["blank="] }, {});
   });
 
   it("keeps extra equals signs in the value string", () => {
@@ -130,7 +130,11 @@ describe("handleDataArgs", () => {
     );
     expectParseDataToReturn(
       { optional: "withBlankDefault=", data: [] },
-      { withBlankDefault: "" },
+      { withBlankDefault: undefined },
+    );
+    expectParseDataToReturn(
+      { optional: "withBlankQuoteDefault=''", data: [] },
+      { withBlankQuoteDefault: "" },
     );
     expectParseDataToReturn(
       { optional: "withDefault=3", data: ["replacement"] },
@@ -448,6 +452,29 @@ describe("handleDataArgs", () => {
         opt1: "three",
         opt2: "dotDefault",
         opt3: "four",
+      },
+    );
+  });
+
+  it("can overwrite a previous defined value with undefined if an assignement with `key=` is used", () => {
+    expectParseDataToReturn(
+      {
+        data: ["key=value", "key2=value2", "key="],
+      },
+      {
+        key2: "value2",
+      },
+    );
+  });
+
+  it("assumes undefined for a default values specified with nothing, e.g. `-k key=`", () => {
+    expectParseDataToReturn(
+      {
+        optional: ["key1=", "key2=", "key3=nonEmpty"],
+        data: ["."],
+      },
+      {
+        key3: "nonEmpty",
       },
     );
   });
