@@ -8,6 +8,8 @@ type ParseTimeStrType = {
   timeStr: string;
   referenceTime?: DateTime;
 };
+
+// TODO: Change this not to use an object input
 export function parseTimeStr({
   timeStr,
   referenceTime,
