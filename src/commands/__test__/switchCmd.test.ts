@@ -6,6 +6,7 @@ import { toDatumTime } from "../../time/timeUtils";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
 import { endCmd } from "../endCmd";
+import { startCmd } from "../startCmd";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";
@@ -180,6 +181,30 @@ describe("switchCmd", () => {
     });
     expect(doc.data).not.toHaveProperty("occurTime");
     expect(doc.data).not.toHaveProperty("dur");
+  });
+
+  it("can skip the duration if the duration is given as . or ''", async () => {
+    // TODO: rewrite this test as a string based call;
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      moment: false,
+      optional: "optional",
+      duration: ".",
+      data: [50],
+    });
+    const doc2 = await switchCmd({
+      field: "project",
+      state: "household",
+      moment: false,
+      optional: "optional",
+      duration: "",
+      data: [50],
+    });
+    expect(doc.data).toMatchObject({ field: "project", optional: 50 });
+    expect(doc.data).not.toHaveProperty("dur");
+    expect(doc2.data).toMatchObject({ field: "project", optional: 50 });
+    expect(doc2.data).not.toHaveProperty("dur");
   });
 
   it.todo("does not record a lastState if there is no occurTime");

@@ -37,58 +37,6 @@ describe("occurCmd", () => {
     expect(dbDoc).toEqual(doc);
   });
 
-  it("interprets the first argument after field as duration if args.moment is false or undefined", async () => {
-    // first argument is automatically assigned ot duration in the arguments. TODO: do a text only call to the cmd after that is supported
-    const doc = await occurCmd({
-      field: "field",
-      moment: false,
-      optional: "optional",
-      duration: "30",
-    });
-    const doc2 = await occurCmd({
-      field: "field",
-      optional: "optional",
-      duration: "30",
-    });
-    expect(doc.data).toMatchObject({ field: "field", dur: "PT30M" });
-    expect(doc2.data).toMatchObject({ field: "field", dur: "PT30M" });
-    expect(doc.data).not.toHaveProperty("optional");
-    expect(doc2.data).not.toHaveProperty("optional");
-  });
-
-  it("does not interpret the first argument after field as duration if args.moment is true", async () => {
-    const doc = await occurCmd({
-      field: "field",
-      moment: true,
-      optional: "optional",
-      duration: "30",
-    });
-    expect(doc.data).toMatchObject({ field: "field", optional: 30 });
-    expect(doc.data).not.toHaveProperty("dur");
-  });
-
-  it('can skip the duration if the duration is given as "" or .', async () => {
-    // TODO: rewrite this test as a string based call;
-    const doc = await occurCmd({
-      field: "field",
-      moment: false,
-      optional: "optional",
-      duration: ".",
-      data: [50],
-    });
-    const doc2 = await occurCmd({
-      field: "field",
-      moment: false,
-      optional: "optional",
-      duration: "",
-      data: [50],
-    });
-    expect(doc.data).toMatchObject({ field: "field", optional: 50 });
-    expect(doc.data).not.toHaveProperty("dur");
-    expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
-    expect(doc2.data).not.toHaveProperty("dur");
-  });
-
   // TODO: Make inferType throw errors on bad times,dates,durations
   it.skip("throws an error if the duration supplied is invalid", async () => {
     await expect(
@@ -98,21 +46,6 @@ describe("occurCmd", () => {
         duration: "30asd",
       }),
     ).rejects.toThrow(BadDurationError);
-  });
-
-  it("will not record an occurTime or duration if the no-timestamp argument is given", async () => {
-    const doc = await occurCmd({
-      field: "field",
-      optional: "optional",
-      duration: 30,
-      noTimestamp: true,
-    });
-    expect(doc.data).not.toHaveProperty("occurTime");
-    expect(doc.data).not.toHaveProperty("dur");
-    expect(doc.data).toMatchObject({
-      field: "field",
-      optional: 30,
-    });
   });
 
   it("interprets a duration of 'start' a start command", async () => {
