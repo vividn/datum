@@ -95,6 +95,22 @@ describe("inferType", () => {
     expect(inferType("(1,2,3)")).toEqual("(1,2,3)");
     expect(inferType("NAN/null")).toEqual("NAN/null");
   });
+
+  it("parsed . as a default value or undefined", () => {
+    expect(inferType(".")).toBe(undefined);
+    expect(inferType(".", "field")).toBe(undefined);
+    expect(inferType(".", "field", "default")).toBe("default");
+    expect(inferType(".", "field", "3")).toBe(3);
+    expect(inferType(".", "linkDur", "3")).toBe("PT3M");
+  });
+
+  it("parses a \\. as a literal period", () => {
+    expect(inferType(String.raw`\.`)).toBe(".");
+    expect(inferType(String.raw`\.`, "field", "value")).toBe(".");
+    expect(() => inferType(String.raw`\.`, "linkDur", "value")).toThrowError(
+      BadDurationError,
+    );
+  });
 });
 
 describe("inferType with special fields", () => {
@@ -165,11 +181,15 @@ describe("inferType with special fields", () => {
     expect(parseTimeSpy).toHaveBeenCalled();
     expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
 
-    expect(() => inferType("when pigs fly", "weirdDate")).toThrowError(BadDateError);
+    expect(() => inferType("when pigs fly", "weirdDate")).toThrowError(
+      BadDateError,
+    );
     expect(parseDateSpy).toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveReturned();
 
-    expect(() => inferType("as long as it takes", "weirdDuration")).toThrowError(BadDurationError);
+    expect(() =>
+      inferType("as long as it takes", "weirdDuration"),
+    ).toThrowError(BadDurationError);
     expect(parseDurationSpy).toHaveBeenCalled();
     expect(parseDurationSpy).not.toHaveReturned();
   });

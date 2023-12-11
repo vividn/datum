@@ -7,13 +7,10 @@ type ParseDurationStrType = {
   durationStr: string;
 };
 
+// TODO: Use simple input args
 export function parseDurationStr({
   durationStr,
-}: ParseDurationStrType): Duration | undefined {
-  if (durationStr === "" || durationStr === ".") {
-    return undefined;
-  }
-
+}: ParseDurationStrType): Duration {
   let isNegative;
   switch (durationStr.charAt(0)) {
     case "-":
