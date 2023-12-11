@@ -39,6 +39,17 @@ describe("inferType", () => {
     expect(inferType("-infinity")).toBe("-Infinity");
   });
 
+  it("handles an empty string as undefined", () => {
+    expect(inferType("")).toBe(undefined);
+  });
+
+  it("handles a string with two double XOR single quotes as an empty string", () => {
+    expect(inferType('""')).toBe("");
+    expect(inferType("''")).toBe("");
+    expect(inferType(`'"`)).toBe(`'"`);
+    expect(inferType(`"'`)).toBe(`"'`);
+  });
+
   it("converts array looking data", () => {
     expect(inferType("[3, 4, 5]")).toEqual([3, 4, 5]);
     expect(inferType("[a, b ,c]")).toEqual(["a", "b", "c"]);
