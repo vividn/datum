@@ -14,6 +14,7 @@ export type DataArgs = {
   optional?: string | string[];
   remainder?: string;
   stringRemainder?: boolean;
+  commentRemainder?: boolean;
   lenient?: boolean;
 };
 
@@ -80,6 +81,12 @@ export function dataYargs(otherYargs?: Argv): Argv {
         alias: "S",
         type: "boolean",
       },
+      "comment-remainder": {
+        describe:
+          "All unused data will be joined into a string and stored as a comment. Equivalent to `-SR comment`",
+        alias: "C",
+        type: "boolean",
+      },
       lenient: {
         //TODO: Invert this to be strict
         describe: "Allow extra data without defined keys",
@@ -118,11 +125,16 @@ export function handleDataArgs(args: DataArgs): DatumData {
     comment,
     lenient,
     baseData,
+    commentRemainder,
   } = args;
 
   const requiredKeys = typeof required === "string" ? [required] : required;
   const optionalKeys = typeof optional === "string" ? [optional] : optional;
-  const remainderKey = remainder ?? (lenient ? "extraData" : undefined);
+
+  const remainderKey =
+    remainder ??
+    (commentRemainder ? "comment" : lenient ? "extraData" : undefined);
+  const remainderAsString = stringRemainder ?? commentRemainder;
   const remainderData = [];
 
   const parsedData = parseBaseData(baseData);
@@ -177,28 +189,6 @@ export function handleDataArgs(args: DataArgs): DatumData {
     remainderData.push(dataValue);
   }
 
-  if (remainderData.length > 0) {
-    if (remainderKey === undefined) {
-      throw new DataError(
-        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient",
-      );
-    }
-
-    if (stringRemainder) {
-      parsedData[remainderKey] = createOrAppend(
-        parsedData[remainderKey],
-        remainderData.join(" "),
-      );
-    } else {
-      for (const remainder of remainderData) {
-        parsedData[remainderKey] = createOrAppend(
-          parsedData[remainderKey],
-          inferType(remainder, remainderKey),
-        );
-      }
-    }
-  }
-
   while (requiredKeys.length > 0) {
     const requiredKey = requiredKeys.shift()!;
     if (requiredKey in parsedData) {
@@ -246,6 +236,28 @@ export function handleDataArgs(args: DataArgs): DatumData {
       parsedData["comment"],
     );
     delete args.comment;
+  }
+
+  if (remainderData.length > 0) {
+    if (remainderKey === undefined) {
+      throw new DataError(
+        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient",
+      );
+    }
+
+    if (remainderAsString) {
+      parsedData[remainderKey] = createOrAppend(
+        parsedData[remainderKey],
+        remainderData.join(" "),
+      );
+    } else {
+      for (const remainder of remainderData) {
+        parsedData[remainderKey] = createOrAppend(
+          parsedData[remainderKey],
+          inferType(remainder, remainderKey),
+        );
+      }
+    }
   }
 
   // for idempotence of processing dataArgs
