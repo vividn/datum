@@ -5,6 +5,7 @@ import * as parseDurationStr from "../../time/parseDurationString";
 import SpyInstance = jest.SpyInstance;
 import { setNow } from "../../__test__/test-utils";
 import { toDatumTime } from "../../time/timeUtils";
+import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
 
 describe("inferType", () => {
   it("leaves numbers as numbers", () => {
@@ -157,20 +158,18 @@ describe("inferType with special fields", () => {
     expect(parseDateSpy).not.toHaveBeenCalled();
   });
 
-  it("leaves the value as a string for -Time -Date and -Dur values if they cannot be parsed", () => {
-    expect(inferType("unparseable_time", "weirdTime")).toEqual(
-      "unparseable_time",
+  it("throws an error for -Time -Date and -Dur values if they cannot be parsed", () => {
+    expect(() => inferType("unparseable_time", "weirdTime")).toThrowError(
+      BadTimeError,
     );
     expect(parseTimeSpy).toHaveBeenCalled();
     expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
 
-    expect(inferType("when pigs fly", "weirdDate")).toEqual("when pigs fly");
+    expect(() => inferType("when pigs fly", "weirdDate")).toThrowError(BadDateError);
     expect(parseDateSpy).toHaveBeenCalled();
     expect(parseDateSpy).not.toHaveReturned();
 
-    expect(inferType("as long as it takes", "weirdDuration")).toEqual(
-      "as long as it takes",
-    );
+    expect(() => inferType("as long as it takes", "weirdDuration")).toThrowError(BadDurationError);
     expect(parseDurationSpy).toHaveBeenCalled();
     expect(parseDurationSpy).not.toHaveReturned();
   });
