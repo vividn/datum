@@ -3,6 +3,8 @@ import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
 import { toDatumTime } from "../../time/timeUtils";
+import { getActiveState } from "../../state/getActiveState";
+import { parseTimeStr } from "../../time/parseTimeStr";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";
@@ -106,6 +108,44 @@ describe("switchCmd", () => {
     "assumes a state of true by default",
     // TODO: Write this once commands can be called by plain text in tests
   );
+
+  it("records a block of state when specifying duration", async () => {
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      duration: "10m",
+    });
+    expect(doc.data).toMatchObject({
+      field: "project",
+      state: "household",
+      dur: "PT10M",
+    });
+    const intermediateState = await getActiveState(
+      db,
+      "project",
+      parseTimeStr({ timeStr: "-5m" }),
+    );
+    expect(intermediateState).toBe("household");
+  });
+
+  it("records a hole of time in the state when given a negative duration", async () => {
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      duration: "-10m",
+    });
+    expect(doc.data).toMatchObject({
+      field: "project",
+      state: "household",
+      dur: "-PT10M",
+    });
+    const intermediateState = await getActiveState(
+      db,
+      "project",
+      parseTimeStr({ timeStr: "-5m" }),
+    );
+    expect(intermediateState).toBe(false);
+  });
 
   it.todo("does not record a lastState if there is no occurTime");
 });
