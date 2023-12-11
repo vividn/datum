@@ -291,6 +291,54 @@ describe("handleDataArgs", () => {
     );
   });
 
+  it("can easily do a comment string remainder", () => {
+    expectParseDataToReturn(
+      {
+        commentRemainder: true,
+        optional: ["optional1"],
+        data: [
+          "the",
+          "non",
+          "filled",
+          "keys",
+          "will",
+          "key=value",
+          "be",
+          "a",
+          "comment.",
+        ],
+      },
+      {
+        optional1: "the",
+        key: "value",
+        comment: "non filled keys will be a comment.",
+      },
+    );
+  });
+
+  it("appends the comment remainder to other comments as an array", () => {
+    expectParseDataToReturn(
+      {
+        commentRemainder: true,
+        comment: "explicit comment",
+        data: ["comment", "remainder", "string"],
+      },
+      {
+        comment: ["explicit comment", "comment remainder string"],
+      },
+    );
+    expectParseDataToReturn(
+      {
+        commentRemainder: true,
+        comment: ["comment1", "comment2"],
+        data: ["comment", "remainder", "string"],
+      },
+      {
+        comment: ["comment1", "comment2", "comment remainder string"],
+      },
+    );
+  });
+
   it("fills all required keys before the optional keys", () => {
     expectParseDataToReturn(
       {
