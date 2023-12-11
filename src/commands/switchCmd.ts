@@ -11,6 +11,7 @@ import { primitiveUndo } from "../undo/primitiveUndo";
 import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { durationArgs, DurationArgs } from "../input/durationArgs";
+import { DatumState } from "../views/datumViews/activeStateView";
 
 export const command = [
   "switch <field> [state] [duration] [data..]",
@@ -36,11 +37,11 @@ export function builder(yargs: Argv): Argv {
     });
 }
 
-export type SwitchCmdArgs = OccurCmdArgs &
-  DurationArgs & {
-    state: string | boolean | null;
-    lastState?: string | boolean | null;
-  };
+export type StateArgs = {
+  state: DatumState;
+  lastState?: DatumState;
+};
+export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
   const db = await connectDb(args);
