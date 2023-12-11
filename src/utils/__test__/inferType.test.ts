@@ -1,7 +1,7 @@
 import { inferType } from "../inferType";
 import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";
-import * as parseDurationStr from "../../time/parseDurationString";
+import * as parseDurationStr from "../../time/parseDurationStr";
 import SpyInstance = jest.SpyInstance;
 import { setNow } from "../../__test__/test-utils";
 import { toDatumTime } from "../../time/timeUtils";
