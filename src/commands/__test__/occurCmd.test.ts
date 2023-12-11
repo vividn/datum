@@ -1,7 +1,6 @@
 import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
-import { BadDurationError } from "../../errors";
 import { setupCmd } from "../setupCmd";
 import * as endCmdModule from "../endCmd";
 import * as startCmdModule from "../startCmd";
@@ -35,43 +34,6 @@ describe("occurCmd", () => {
     expect(doc._id).toEqual(`field:${now}`);
     const dbDoc = await db.get(doc._id);
     expect(dbDoc).toEqual(doc);
-  });
-
-  // TODO: Make inferType throw errors on bad times,dates,durations
-  it.skip("throws an error if the duration supplied is invalid", async () => {
-    await expect(
-      occurCmd({
-        field: "field",
-        optional: "optional",
-        duration: "30asd",
-      }),
-    ).rejects.toThrow(BadDurationError);
-  });
-
-  it("interprets a duration of 'start' a start command", async () => {
-    await setupCmd({ db: dbName });
-    const startCmdSpy = jest.spyOn(startCmdModule, "startCmd");
-    const startDoc = await occurCmd({
-      field: "field",
-      optional: "optional",
-      duration: "start",
-    });
-    expect(startDoc.data).toMatchObject({ field: "field", state: true });
-    expect(startDoc.data).not.toHaveProperty("dur");
-    expect(startCmdSpy).toHaveBeenCalled();
-  });
-
-  it("interprets a duration of 'end' an end command", async () => {
-    await setupCmd({ db: dbName });
-    const endCmdSpy = jest.spyOn(endCmdModule, "endCmd");
-    const endDoc = await occurCmd({
-      field: "field",
-      optional: "optional",
-      duration: "end",
-    });
-    expect(endDoc.data).toMatchObject({ field: "field", state: false });
-    expect(endDoc.data).not.toHaveProperty("dur");
-    expect(endCmdSpy).toHaveBeenCalled();
   });
 
   it("stores the occurTime in the data", async () => {
@@ -153,5 +115,31 @@ describe("occurCmd", () => {
     expect(newDoc3.data).toMatchObject({
       lastState: "happening",
     });
+  });
+
+  it.skip("interprets an extra data arg of 'start' as start command", async () => {
+    await setupCmd({ db: dbName });
+    const startCmdSpy = jest.spyOn(startCmdModule, "startCmd");
+    const startDoc = await occurCmd({
+      field: "field",
+      optional: "optional",
+      data: ["start"],
+    });
+    expect(startDoc.data).toMatchObject({ field: "field", state: true });
+    expect(startDoc.data).not.toHaveProperty("dur");
+    expect(startCmdSpy).toHaveBeenCalled();
+  });
+
+  it.skip("interprets an extra data arg of 'end' an end command", async () => {
+    await setupCmd({ db: dbName });
+    const endCmdSpy = jest.spyOn(endCmdModule, "endCmd");
+    const endDoc = await occurCmd({
+      field: "field",
+      optional: "optional",
+      data: ["end"],
+    });
+    expect(endDoc.data).toMatchObject({ field: "field", state: false });
+    expect(endDoc.data).not.toHaveProperty("dur");
+    expect(endCmdSpy).toHaveBeenCalled();
   });
 });

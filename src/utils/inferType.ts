@@ -1,6 +1,6 @@
 import RJSON from "relaxed-json";
 import { parseTimeStr } from "../time/parseTimeStr";
-import { BadDateError, BadDurationError, BadTimeError } from "../errors";
+import { BadTimeError } from "../errors";
 import { isoDurationFromDurationStr } from "../time/parseDurationString";
 import { parseDateStr } from "../time/parseDateStr";
 import { isoDateFromDateTime, toDatumTime } from "../time/timeUtils";
@@ -24,29 +24,13 @@ export function inferType(value: number | string, fieldName?: string): any {
 
       case /(?:\b|_)date\d*$/i.test(fieldName!):
       case /[a-z0-9]Date\d*$/.test(fieldName):
-        try {
-          const parsedDate = parseDateStr({ dateStr: String(value) });
-          return isoDateFromDateTime(parsedDate);
-        } catch (e) {
-          if (e instanceof BadDateError) {
-            // pass
-          } else {
-            throw e;
-          }
-        }
+        const parsedDate = parseDateStr({ dateStr: String(value) });
+        return isoDateFromDateTime(parsedDate);
         break;
 
       case /(?:\b|_)dur(ation)?\d*$/i.test(fieldName!):
       case /[a-z0-9]Dur(ation)?\d*$/.test(fieldName):
-        try {
-          return isoDurationFromDurationStr(String(value));
-        } catch (e) {
-          if (e instanceof BadDurationError) {
-            // pass
-          } else {
-            throw e;
-          }
-        }
+        return isoDurationFromDurationStr(String(value));
         break;
     }
   }

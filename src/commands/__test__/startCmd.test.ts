@@ -6,6 +6,8 @@ import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
 import { toDatumTime } from "../../time/timeUtils";
+import { endCmd } from "../endCmd";
+import { BadDurationError } from "../../errors";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";
@@ -118,5 +120,15 @@ describe("startCmd", () => {
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
     expect(doc2.data).not.toHaveProperty("dur");
+  });
+
+  it("throws an error if the duration supplied is invalid", async () => {
+    await expect(
+      startCmd({
+        field: "field",
+        optional: "optional",
+        duration: "30asd",
+      }),
+    ).rejects.toThrow(BadDurationError);
   });
 });
