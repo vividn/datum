@@ -7,7 +7,6 @@ import { startCmd } from "../startCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
 import { toDatumTime } from "../../time/timeUtils";
-import { occurCmd } from "../occurCmd";
 import { BadDurationError } from "../../errors";
 
 describe("endCmd", () => {

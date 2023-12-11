@@ -6,7 +6,6 @@ import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
 import { toDatumTime } from "../../time/timeUtils";
-import { endCmd } from "../endCmd";
 import { BadDurationError } from "../../errors";
 
 describe("startCmd", () => {
