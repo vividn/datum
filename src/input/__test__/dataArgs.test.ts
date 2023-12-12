@@ -560,4 +560,8 @@ describe("handleDataArgs", () => {
       },
     );
   });
+
+  it("processes pathlike data keys correctly");
+  it("processes state as state.id");
+  it("processes keys that start with . as part of state");
 });
