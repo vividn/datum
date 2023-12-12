@@ -118,28 +118,23 @@ export function handleDataArgs(args: DataArgs): DatumData {
   args.data ??= [];
   args.required ??= [];
   args.optional ??= [];
-  const {
-    data,
-    required,
-    optional,
-    remainder,
-    stringRemainder,
-    comment,
-    lenient,
-    baseData,
-    commentRemainder,
-  } = args;
 
-  const requiredKeys = typeof required === "string" ? [required] : required;
-  const optionalKeys = typeof optional === "string" ? [optional] : optional;
+  const requiredKeys =
+    typeof args.required === "string" ? [args.required] : args.required;
+  const optionalKeys =
+    typeof args.optional === "string" ? [args.optional] : args.optional;
 
   const remainderKey =
-    remainder ??
-    (commentRemainder ? "comment" : lenient ? "extraData" : undefined);
-  const remainderAsString = stringRemainder ?? commentRemainder;
+    args.remainder ??
+    (args.commentRemainder
+      ? "comment"
+      : args.lenient
+        ? "extraData"
+        : undefined);
+  const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
-  const parsedData = parseBaseData(baseData);
+  const parsedData = parseBaseData(args.baseData);
   // for idempotence of processing dataArgs
   args.baseData = parsedData;
 
@@ -159,8 +154,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
   }
 
-  posArgsLoop: while (data.length > 0) {
-    const arg = data.shift()!;
+  posArgsLoop: while (args.data.length > 0) {
+    const arg = args.data.shift()!;
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
     if (afterEquals !== undefined) {
@@ -246,11 +241,11 @@ export function handleDataArgs(args: DataArgs): DatumData {
     parsedData[dataKey] = inferType(defaultValue, dataKey);
   }
 
-  if (comment) {
+  if (args.comment) {
     const inferredComments = (
-      Array.isArray(comment)
-        ? comment.map((comm) => inferType(comm, "comment"))
-        : [inferType(comment, "comment")]
+      Array.isArray(args.comment)
+        ? args.comment.map((comm) => inferType(comm, "comment"))
+        : [inferType(args.comment, "comment")]
     ) as any[];
     parsedData.comment = inferredComments.reduce(
       (accumulator, current) => createOrAppend(accumulator, current),
