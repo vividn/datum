@@ -138,6 +138,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
   const remainderData = [];
 
   const parsedData = parseBaseData(baseData);
+  // for idempotence of processing dataArgs, even when baseData is originally a string
+  args.baseData = parsedData;
 
   posArgsLoop: while (data.length > 0) {
     const arg = data.shift()!;
@@ -260,7 +262,5 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
   }
 
-  // for idempotence of processing dataArgs
-  args.baseData = parsedData;
   return parsedData;
 }

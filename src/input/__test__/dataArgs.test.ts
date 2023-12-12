@@ -560,4 +560,16 @@ describe("handleDataArgs", () => {
       },
     );
   });
+
+  describe("special case, change command", () => {
+    it("handles when optional dur arg is set to 'start'");
+    it("handles when optional dur arg is set to 'stop'");
+    it("handles when optional dur arg is set to 'switch'");
+    it("handles when optional dur arg is set to 'occur'");
+
+    it("handles when first unassigned arg is set to 'start'");
+    it("handles when first unassigned arg is set to 'stop'");
+    it("handles when first unassigned arg is set to 'switch'");
+    it("handles when first unassigned arg is set to 'occur'");
+  });
 });
