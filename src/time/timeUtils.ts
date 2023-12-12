@@ -69,7 +69,7 @@ export function toDatumTime(
   }
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {
-    throw new BadTimeError("invalid time was given");
+    throw new BadTimeError();
   }
   if (onlyDate) {
     return { utc: isoDateFromDateTime(time) };

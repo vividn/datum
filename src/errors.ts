@@ -1,5 +1,5 @@
 export class MyError extends Error {
-  constructor(m: unknown) {
+  constructor(m?: unknown) {
     if (typeof m === "string") {
       super(m);
     } else {
@@ -31,23 +31,62 @@ export class IdError extends MyError {
 }
 
 export class BadTimeError extends MyError {
-  constructor(m: unknown) {
-    super(m);
+  #key?: string;
+  #value?: string;
+
+  constructor(badTime?: string) {
+    super();
+    this.#value = badTime;
     Object.setPrototypeOf(this, BadTimeError.prototype);
+  }
+
+  get message(): string {
+    const withValue = this.#value ? `"${this.#value}" is an ` : "";
+    const withKey = this.#key ? `, key: ${this.#key}` : "";
+    return `${withValue}invalid time${withKey}`;
+  }
+  set key(key: string) {
+    this.#key = key;
   }
 }
 
 export class BadDateError extends MyError {
-  constructor(m: unknown) {
-    super(m);
+  #key?: string;
+  #value?: string;
+
+  constructor(badDate?: string) {
+    super();
+    this.#value = badDate;
     Object.setPrototypeOf(this, BadDateError.prototype);
+  }
+
+  get message(): string {
+    const withValue = this.#value ? `"${this.#value}" is an ` : "";
+    const withKey = this.#key ? `, key: ${this.#key}` : "";
+    return `${withValue}invalid date${withKey}`;
+  }
+  set key(key: string) {
+    this.#key = key;
   }
 }
 
 export class BadDurationError extends MyError {
-  constructor(m: unknown) {
-    super(m);
+  #key?: string;
+  #value?: string;
+
+  constructor(badDate?: string) {
+    super();
+    this.#value = badDate;
     Object.setPrototypeOf(this, BadDurationError.prototype);
+  }
+
+  get message(): string {
+    const withValue = this.#value ? `"${this.#value}" is an ` : "";
+    const withKey = this.#key ? `, key: ${this.#key}` : "";
+    return `${withValue}invalid duration${withKey}`;
+  }
+  set key(key: string) {
+    this.#key = key;
   }
 }
 
