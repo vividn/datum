@@ -38,7 +38,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export type StateArgs = {
-  state: DatumState;
+  state?: DatumState;
   lastState?: DatumState;
 };
 export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;

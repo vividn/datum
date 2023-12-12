@@ -5,6 +5,8 @@ import { BaseDataError, DataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import { createOrAppend } from "../utils/createOrAppend";
 import isPlainObject from "lodash.isplainobject";
+import get from "lodash.get";
+import set from "lodash.set";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -138,6 +140,24 @@ export function handleDataArgs(args: DataArgs): DatumData {
   const remainderData = [];
 
   const parsedData = parseBaseData(baseData);
+  // for idempotence of processing dataArgs
+  args.baseData = parsedData;
+
+  function addToData(path: string, value: any, append?: boolean): void {
+    const stateAwarePath =
+      path === "state"
+        ? "state.id"
+        : path.startsWith(".")
+          ? `state${path}`
+          : path;
+    if (append) {
+      const current = get(parsedData, stateAwarePath, []);
+      const newValue = createOrAppend(current, value);
+      set(parsedData, stateAwarePath, newValue);
+    } else {
+      set(parsedData, stateAwarePath, value);
+    }
+  }
 
   posArgsLoop: while (data.length > 0) {
     const arg = data.shift()!;
@@ -148,7 +168,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
       const key = beforeEquals;
       const value = afterEquals;
 
-      // Search for default value to allow explicitly setting it to default using '.'
+      // Search for default value to allow explicitly setting it to default using '.',
+      // or use an existing value if there already is one
       const existingValue = parsedData[key];
       const defaultValue =
         existingValue ??
@@ -260,7 +281,5 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
   }
 
-  // for idempotence of processing dataArgs
-  args.baseData = parsedData;
   return parsedData;
 }
