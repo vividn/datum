@@ -36,7 +36,7 @@ export class BadTimeError extends MyError {
 
   constructor(badTime?: string) {
     super();
-    this.#value = badTime ? "";
+    this.#value = badTime ?? "";
     Object.setPrototypeOf(this, BadTimeError.prototype);
   }
 
