@@ -31,12 +31,12 @@ export class IdError extends MyError {
 }
 
 export class BadTimeError extends MyError {
-  #key?: string;
-  #value?: string;
+  #key: string = "";
+  #value: string = "";
 
   constructor(badTime?: string) {
     super();
-    this.#value = badTime;
+    this.#value = badTime ? "";
     Object.setPrototypeOf(this, BadTimeError.prototype);
   }
 
@@ -48,15 +48,21 @@ export class BadTimeError extends MyError {
   set key(key: string) {
     this.#key = key;
   }
+  get key(): string {
+    return this.#key;
+  }
+  get value(): string {
+    return this.#value;
+  }
 }
 
 export class BadDateError extends MyError {
-  #key?: string;
-  #value?: string;
+  #key: string = "";
+  #value: string = "";
 
   constructor(badDate?: string) {
     super();
-    this.#value = badDate;
+    this.#value = badDate ?? "";
     Object.setPrototypeOf(this, BadDateError.prototype);
   }
 
@@ -68,15 +74,21 @@ export class BadDateError extends MyError {
   set key(key: string) {
     this.#key = key;
   }
+  get key(): string {
+    return this.#key;
+  }
+  get value(): string {
+    return this.#value;
+  }
 }
 
 export class BadDurationError extends MyError {
-  #key?: string;
-  #value?: string;
+  #key: string = "";
+  #value: string = "";
 
   constructor(badDate?: string) {
     super();
-    this.#value = badDate;
+    this.#value = badDate ?? "";
     Object.setPrototypeOf(this, BadDurationError.prototype);
   }
 
@@ -87,6 +99,12 @@ export class BadDurationError extends MyError {
   }
   set key(key: string) {
     this.#key = key;
+  }
+  get key(): string {
+    return this.#key;
+  }
+  get value(): string {
+    return this.#value;
   }
 }
 
