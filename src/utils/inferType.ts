@@ -7,6 +7,7 @@ import {
   isoDurationFromDuration,
   toDatumTime,
 } from "../time/timeUtils";
+import { BadDateError, BadDurationError, BadTimeError } from "../errors";
 
 export function inferType(
   value: number | string,
@@ -28,20 +29,43 @@ export function inferType(
     switch (true) {
       case /(?:\b|_)time\d*$/i.test(fieldName):
       case /[a-z0-9]Time\d*$/.test(fieldName): {
-        const parsedTime = parseTimeStr({ timeStr: String(value) });
-        return toDatumTime(parsedTime);
+        try {
+          const parsedTime = parseTimeStr({ timeStr: String(value) });
+          return toDatumTime(parsedTime);
+        } catch (e) {
+          if (e instanceof BadTimeError) {
+            e.key = fieldName;
+          }
+          throw e;
+        }
       }
 
       case /(?:\b|_)date\d*$/i.test(fieldName!):
       case /[a-z0-9]Date\d*$/.test(fieldName): {
-        const parsedDate = parseDateStr({ dateStr: String(value) });
-        return isoDateFromDateTime(parsedDate);
+        try {
+          const parsedDate = parseDateStr({ dateStr: String(value) });
+          return isoDateFromDateTime(parsedDate);
+        } catch (e) {
+          if (e instanceof BadDateError) {
+            e.key = fieldName;
+          }
+          throw e;
+        }
       }
 
       case /(?:\b|_)dur(ation)?\d*$/i.test(fieldName!):
       case /[a-z0-9]Dur(ation)?\d*$/.test(fieldName): {
-        const parsedDuration = parseDurationStr({ durationStr: String(value) });
-        return isoDurationFromDuration(parsedDuration);
+        try {
+          const parsedDuration = parseDurationStr({
+            durationStr: String(value),
+          });
+          return isoDurationFromDuration(parsedDuration);
+        } catch (e) {
+          if (e instanceof BadDurationError) {
+            e.key = fieldName;
+          }
+          throw e;
+        }
       }
     }
   }
