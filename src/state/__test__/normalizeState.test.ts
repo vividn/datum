@@ -1,5 +1,6 @@
 import { normalizeState } from "../normalizeState";
 import { mockedLogLifecycle } from "../../__test__/test-utils";
+import { BadStateError } from "../../errors";
 
 describe("unfoldState", () => {
   const { mockedWarn } = mockedLogLifecycle();
@@ -29,12 +30,61 @@ describe("unfoldState", () => {
   });
 
   it("assigns a state id of true if it is not defined in an object", () => {
+    expect(normalizeState({ abc: 123, key: "value" })).toBe({
+      id: true,
+      abc: 123,
+      key: "value",
+    });
+  });
 
-  })
+  it("unfolds an id into the state if id is an object", () => {
+    expect(normalizeState({ id: { abc: 123, key: "value" } })).toBe({
+      id: true,
+      abc: 123,
+      key: "value",
+    });
+    expect(normalizeState({ id: { id: "abc" } })).toEqual({ id: "abc" });
+    expect(
+      normalizeState({ id: { id: "stringId", abc: 123, key: "value" } }),
+    ).toBe({
+      id: "stringId",
+      abc: 123,
+      key: "value",
+    });
+  });
 
-  it("unfolds an id into the state if id is an object");
+  it("interpolates other fields into an unfolded id, overwriting as necessary", () => {
+    expect(
+      normalizeState({
+        id: { id: "stringId", abc: 123, key: "value" },
+        key: "replacementValue",
+      }),
+    ).toBe({
+      id: "stringId",
+      abc: 123,
+      key: "replacementValue",
+    });
+  });
 
-  it("interpolates other fields into an unfolded id, overwriting as necessary")
+  it("recursively unfolds nested ids", () => {
+    expect(
+      normalizeState({
+        id: {
+          id: { id: "deepId", key: "value1", abc: 123, untouched: "inner_key" },
+          key: "value2",
+          nested: { inner: "key" },
+        },
+        key: "value3",
+        abc: 456,
+      }),
+    ).toEqual({
+      id: "deepId",
+      key: "value3",
+      abc: 456,
+      untouched: "inner_key",
+      nested: { inner: "key" },
+    });
+  });
 
   it("turns an array state into an array of object states with the corresponding ids", () => {
     expect(normalizeState(["abcd", false, true])).toEqual([
@@ -58,21 +108,6 @@ describe("unfoldState", () => {
     ]);
   });
 
-  it("recursively unfolds state if id is an object with just id", () => {
-    expect(normalizeState({ id: { id: "abc" } })).toEqual("abc");
-  });
-
-  it("leaves a complex state with a string id, or no id as it is", () => {
-    expect(normalizeState({ id: "abc", name: "name" })).toEqual({
-      id: "abc",
-      name: "name",
-    });
-    expect(normalizeState({ name: "name", n: 3 })).toEqual({
-      name: "name",
-      n: 3,
-    });
-  });
-
   it("turns a complex state with id=true into the complex state without id", () => {
     expect(normalizeState({ id: true, name: "name", n: 3 })).toEqual({
       name: "name",
@@ -83,16 +118,29 @@ describe("unfoldState", () => {
   it("turns a complex state with id=null into just null, and warns", () => {
     expect(normalizeState({ id: null, name: "name", n: 3 })).toBe(null);
     expect(mockedWarn).toHaveBeenCalledTimes(1);
-    expect(mockedWarn.mock.calls[0][0]).toBe(
-      "unfoldState: id is null, returning null",
-    );
+    expect(mockedWarn.mock.calls[0][0]).toMatchInlineSnapshot();
   });
 
-  it.todo("turns a complex state with id=false into just false, and warns");
+  it("unfolds an array of values into an array of objects with the corresponding ids", () => {
+    expect(normalizeState(["abcd", 123, true])).toEqual([
+      { id: "abcd" },
+      { id: 123 },
+      { id: true },
+    ]);
+    expect(
+      normalizeState(["abcd", { id: "specified", name: "john" }, { no: "id" }]),
+    ).toEqual([
+      { id: "abcd" },
+      { id: "specified", name: "john" },
+      { id: true, no: "id" },
+    ]);
+  });
 
-  it("unfolds an array of ids into an array of objects with the other fields in all of them", () => {
+  it("unfolds an object with an array of ids into an array of objects with the other fields in all of them", () => {
     expect(normalizeState({ id: ["state1", "state2", "state3"] })).toEqual([
-      ["state1", "state2", "state3"],
+      { id: "state1" },
+      { id: "state2" },
+      { id: "state3" },
     ]);
     expect(
       normalizeState({
@@ -103,9 +151,32 @@ describe("unfoldState", () => {
     ).toEqual([
       { id: "state1", name: "name", n: 3 },
       { id: "state2", name: "name", n: 3 },
-      { name: "name", n: 3 },
+      { id: true, name: "name", n: 3 },
     ]);
   });
 
-  it.todo("throws an error if a null state is part of an array of states");
+  it("turns an input array of length 1 into an non array", () => {
+    expect(normalizeState(["abcd"])).toEqual({ id: "abcd" });
+    expect(normalizeState([{ id: "abcd", name: "john" }])).toEqual({
+      id: "abcd",
+      name: "john",
+    });
+    expect(normalizeState([{ id: null }])).toEqual(null);
+    expect(normalizeState([null])).toEqual(null);
+  });
+
+  it("throws an error if a null state is part of an array of states", () => {
+    expect(() => normalizeState(["abc", null])).toThrowError(BadStateError);
+    expect(() => normalizeState([null, "abc"])).toThrowError(BadStateError);
+    expect(() => normalizeState([null, null])).toThrowError(BadStateError);
+    expect(() => normalizeState(["abc", { id: null }])).toThrowError(
+      BadStateError,
+    );
+    expect(() => normalizeState([null, { id: "abc" }])).toThrowError(
+      BadStateError,
+    );
+    expect(() => normalizeState([{ id: "abc" }, { id: null }])).toThrowError(
+      BadStateError,
+    );
+  });
 });

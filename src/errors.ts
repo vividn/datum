@@ -58,6 +58,13 @@ export class BadTimezoneError extends MyError {
   }
 }
 
+export class BadStateError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, BadStateError.prototype);
+  }
+}
+
 export class MigrationError extends MyError {
   constructor(m: unknown) {
     super(m);

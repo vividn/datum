@@ -1,6 +1,12 @@
 import { DatumState } from "../views/datumViews/activeStateView";
 
-export function normalizeState(state?: ): DatumState | undefined {
+export function normalizeState(state?: unknown): DatumState | undefined {
+  if (state === undefined) {
+    return undefined;
+  }
+  if (state === null) {
+    return null;
+  }
   if (
     state === undefined ||
     state === null ||
@@ -11,3 +17,4 @@ export function normalizeState(state?: ): DatumState | undefined {
     return state;
   }
 }
+
