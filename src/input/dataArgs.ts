@@ -139,6 +139,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
   args.baseData = parsedData;
 
   function addToData(path: string, value: any, append?: boolean): void {
+    // TODO: if incoming state is already an object, then don't set it to be the id, but rather the whole state
     const stateAwarePath =
       path === "state"
         ? "state.id"

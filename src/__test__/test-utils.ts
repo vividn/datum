@@ -80,20 +80,25 @@ export function testDbLifecycle(
   return db;
 }
 
-export function mockedLogLifecycle(): Mock {
+export function mockedLogLifecycle(): { mockedLog: Mock; mockedWarn: Mock } {
   const originalLog = console.log;
+  const originalWarn = console.warn;
   const mockedLog = jest.fn() as Mock;
+  const mockedWarn = jest.fn() as Mock;
 
   beforeEach(async () => {
     console.log = mockedLog;
+    console.warn = mockedWarn;
   });
 
   afterEach(async () => {
     console.log = originalLog;
+    console.warn = originalWarn;
     mockedLog.mockReset();
+    mockedWarn.mockReset();
   });
 
-  return mockedLog;
+  return { mockedLog, mockedWarn };
 }
 
 const originalNowFn = Settings.now;

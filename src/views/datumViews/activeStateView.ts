@@ -4,12 +4,8 @@ import { _emit } from "../emit";
 import { isoDateOrTime } from "../../time/timeUtils";
 import { GenericObject } from "../../GenericObject";
 
-export type DatumState =
-  | string
-  | boolean
-  | GenericObject
-  | (string | boolean | GenericObject)[]
-  | null;
+export type StateObject = GenericObject & { id: string | boolean | number };
+export type DatumState = StateObject | StateObject[] | null;
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];

@@ -5,7 +5,7 @@ import { Show } from "../../input/outputArgs";
 describe("grepCmd", () => {
   const dbName = "grep_cmd_test";
   const db = testDbLifecycle(dbName);
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
 
   it("finds all the docs that contain the given string", async () => {
     const doc1 = { _id: "doc1", foo: "bar" };

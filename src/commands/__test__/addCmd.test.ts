@@ -19,7 +19,7 @@ describe("addCmd", () => {
 
   const db = testDbLifecycle(dbName);
 
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
 
   let addDocSpy: SpyInstance;
   beforeEach(() => {

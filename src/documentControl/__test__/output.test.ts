@@ -16,7 +16,7 @@ import { Show } from "../../input/outputArgs";
 describe("output", () => {
   const dbName = "doc_control_output_test";
   const db = testDbLifecycle(dbName);
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
 
   test("addDoc displays a CREATE: message and the document if showOutput", async () => {
     await addDoc({
