@@ -6,8 +6,5 @@ import { BaseArgs } from "../input/baseArgs";
 import { DatumState } from "../views/datumViews/activeStateView";
 
 export async function compileState(payloadData: DatumData, args: BaseArgs): DatumData {
-  const data = jClone(payloadData);
-  if (args.!== undefined) {
-    data.state = args.state;
-  }
+  const _data = jClone(payloadData);
 }

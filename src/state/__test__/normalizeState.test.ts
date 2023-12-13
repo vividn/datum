@@ -5,24 +5,20 @@ import { BadStateError } from "../../errors";
 describe("unfoldState", () => {
   const { mockedWarn } = mockedLogLifecycle();
 
-  it("returns undefined if state is undefined", () => {
-    expect(normalizeState(undefined)).toBeUndefined();
-  });
-
   it("returns null if state is null", () => {
-    expect(normalizeState({ id: null })).toBe(null);
-    expect(normalizeState(null)).toBe(null);
+    expect(normalizeState({ id: null })).toEqual(null);
+    expect(normalizeState(null)).toEqual(null);
   });
 
   it("turns a non object state into a state with the corresponding id", () => {
-    expect(normalizeState("abcd")).toBe({ id: "abcd" });
-    expect(normalizeState(false)).toBe({ id: false });
-    expect(normalizeState(true)).toBe({ id: true });
-    expect(normalizeState(123)).toBe({ id: 123 });
+    expect(normalizeState("abcd")).toEqual({ id: "abcd" });
+    expect(normalizeState(false)).toEqual({ id: false });
+    expect(normalizeState(true)).toEqual({ id: true });
+    expect(normalizeState(123)).toEqual({ id: 123 });
   });
 
   it("keeps an object state with an id as it is", () => {
-    expect(normalizeState({ id: "id", abc: 123, key: "value" })).toBe({
+    expect(normalizeState({ id: "id", abc: 123, key: "value" })).toEqual({
       id: "id",
       abc: 123,
       key: "value",
@@ -30,15 +26,18 @@ describe("unfoldState", () => {
   });
 
   it("assigns a state id of true if it is not defined in an object", () => {
-    expect(normalizeState({ abc: 123, key: "value" })).toBe({
+    expect(normalizeState({ abc: 123, key: "value" })).toEqual({
       id: true,
       abc: 123,
       key: "value",
     });
+    expect(normalizeState({})).toEqual({
+      id: true,
+    });
   });
 
   it("unfolds an id into the state if id is an object", () => {
-    expect(normalizeState({ id: { abc: 123, key: "value" } })).toBe({
+    expect(normalizeState({ id: { abc: 123, key: "value" } })).toEqual({
       id: true,
       abc: 123,
       key: "value",
@@ -46,7 +45,7 @@ describe("unfoldState", () => {
     expect(normalizeState({ id: { id: "abc" } })).toEqual({ id: "abc" });
     expect(
       normalizeState({ id: { id: "stringId", abc: 123, key: "value" } }),
-    ).toBe({
+    ).toEqual({
       id: "stringId",
       abc: 123,
       key: "value",
@@ -59,7 +58,7 @@ describe("unfoldState", () => {
         id: { id: "stringId", abc: 123, key: "value" },
         key: "replacementValue",
       }),
-    ).toBe({
+    ).toEqual({
       id: "stringId",
       abc: 123,
       key: "replacementValue",
@@ -108,17 +107,27 @@ describe("unfoldState", () => {
     ]);
   });
 
-  it("turns a complex state with id=true into the complex state without id", () => {
+  it("keeps a complex state with id=true the same", () => {
     expect(normalizeState({ id: true, name: "name", n: 3 })).toEqual({
+      id: true,
       name: "name",
       n: 3,
     });
   });
 
   it("turns a complex state with id=null into just null, and warns", () => {
-    expect(normalizeState({ id: null, name: "name", n: 3 })).toBe(null);
+    expect(normalizeState({ id: null, name: "name", n: 3 })).toEqual(null);
     expect(mockedWarn).toHaveBeenCalledTimes(1);
-    expect(mockedWarn.mock.calls[0][0]).toMatchInlineSnapshot();
+    expect(mockedWarn.mock.calls[0][0]).toMatchSnapshot();
+  });
+
+  it("turns an array of length 0 into a false state", () => {
+    expect(normalizeState([])).toEqual({ id: false });
+    expect(normalizeState({ id: [] })).toEqual({ id: false });
+    expect(normalizeState({ id: [], name: "john" })).toEqual({
+      id: false,
+      name: "john",
+    });
   });
 
   it("unfolds an array of values into an array of objects with the corresponding ids", () => {
@@ -152,6 +161,37 @@ describe("unfoldState", () => {
       { id: "state1", name: "name", n: 3 },
       { id: "state2", name: "name", n: 3 },
       { id: true, name: "name", n: 3 },
+    ]);
+  });
+
+  it("flattens nested arrays of state", () => {
+    expect(
+      normalizeState([
+        { id: ["state1", "state2", "state3"] },
+        { id: "state4" },
+        "state5",
+      ]),
+    ).toEqual([
+      { id: "state1" },
+      { id: "state2" },
+      { id: "state3" },
+      { id: "state4" },
+      { id: "state5" },
+    ]);
+    expect(
+      normalizeState({
+        id: [
+          "state1",
+          { id: "state2" },
+          { id: ["state3", ["state4", "state5"]], name: "john" },
+        ],
+      }),
+    ).toEqual([
+      { id: "state1" },
+      { id: "state2" },
+      { id: "state3", name: "john" },
+      { id: "state4", name: "john" },
+      { id: "state5", name: "john" },
     ]);
   });
 
