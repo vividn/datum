@@ -86,7 +86,7 @@ export const activeStateView: DatumView<
 
     if (duration === null) {
       if (lastState === null && state !== null) {
-        emit([field, occurTime.utc], false);
+        emit([field, occurTime.utc], { id: false });
       }
       return;
     }
@@ -106,7 +106,7 @@ export const activeStateView: DatumView<
         occurTime.utc,
         Math.abs(seconds),
       );
-      emit([field, holeBegin], false);
+      emit([field, holeBegin], { id: false });
       emit([field, occurTime.utc], state);
     } else {
       return;
