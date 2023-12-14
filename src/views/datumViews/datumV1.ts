@@ -71,24 +71,28 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
           durObj.seconds / 60)
       : "";
     const state = data.state;
-
-    if (state === false) {
+    if (state === null) {
+      outputArray.push("[end]");
+    } else if (state === undefined) {
+      outputArray.push(String(minutes));
+    } else if (Array.isArray(state)) {
+      outputArray.push(String(minutes));
+      outputArray.push(state.map((stateObj) => String(stateObj.id)).join(","));
+    } else if (state.id === false) {
       if (minutes === "") {
         outputArray.push("end");
       } else {
         outputArray.push(String(-1 * minutes));
       }
-    } else if (state === true) {
+    } else if (state.id === true) {
       if (minutes === "") {
         outputArray.push("start");
       } else {
         outputArray.push(String(minutes));
       }
-    } else if (state === undefined) {
-      outputArray.push(String(minutes));
     } else {
       outputArray.push(String(minutes));
-      outputArray.push(String(state));
+      outputArray.push(String(state.id));
     }
 
     emit(key, outputArray);
