@@ -2,10 +2,10 @@ import { DatumState } from "../views/datumViews/activeStateView";
 import flattenDeep from "lodash/flattenDeep";
 import { BadStateError } from "../errors";
 import { JsonType } from "../utils/utilityTypes";
-
+import isEqual from "lodash.isequal";
 export function normalizeState(state: JsonType): DatumState {
   if (state === null) {
-    return null;
+    return { id: null };
   }
   if (Array.isArray(state)) {
     if (state.length === 0) {
@@ -17,7 +17,7 @@ export function normalizeState(state: JsonType): DatumState {
     return flattenDeep(
       state.map((innerState) => {
         const normalized = normalizeState(innerState);
-        if (normalized === null) {
+        if (isEqual(normalized, { id: null })) {
           throw new BadStateError(
             "null is a special state to indicate that the field is not being tracked and cannot exist together with other states",
           );
@@ -48,13 +48,13 @@ export function normalizeState(state: JsonType): DatumState {
     return { id, ...otherKeys };
   }
   const normalizedId = normalizeState(id);
-  if (normalizedId === null) {
+  if (isEqual(normalizedId, { id: null })) {
     if (Object.keys(otherKeys).length > 0) {
       console.warn(
         "null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed",
       );
     }
-    return null;
+    return { id: null };
   }
 
   if (Array.isArray(normalizedId)) {

@@ -5,9 +5,9 @@ import { BadStateError } from "../../errors";
 describe("unfoldState", () => {
   const { mockedWarn } = mockedLogLifecycle();
 
-  it("returns null if state is null", () => {
-    expect(normalizeState({ id: null })).toEqual(null);
-    expect(normalizeState(null)).toEqual(null);
+  it("returns {id: null} if state is null", () => {
+    expect(normalizeState({ id: null })).toEqual({ id: null });
+    expect(normalizeState(null)).toEqual({ id: null });
   });
 
   it("turns a non object state into a state with the corresponding id", () => {
@@ -115,8 +115,8 @@ describe("unfoldState", () => {
     });
   });
 
-  it("turns a complex state with id=null into just null, and warns", () => {
-    expect(normalizeState({ id: null, name: "name", n: 3 })).toEqual(null);
+  it("turns a complex state with id=null into just {id: null}, and warns", () => {
+    expect(normalizeState({ id: null, name: "name", n: 3 })).toEqual({ id: null });
     expect(mockedWarn).toHaveBeenCalledTimes(1);
     expect(mockedWarn.mock.calls[0][0]).toMatchSnapshot();
   });
@@ -201,8 +201,8 @@ describe("unfoldState", () => {
       id: "abcd",
       name: "john",
     });
-    expect(normalizeState([{ id: null }])).toEqual(null);
-    expect(normalizeState([null])).toEqual(null);
+    expect(normalizeState([{ id: null }])).toEqual({ id: null });
+    expect(normalizeState([null])).toEqual({ id: null });
   });
 
   it("throws an error if a null state is part of an array of states", () => {
