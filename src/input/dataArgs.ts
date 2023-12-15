@@ -143,7 +143,6 @@ export function handleDataArgs(args: DataArgs): DatumData {
   args.baseData = parsedData;
 
   function addToData(path: string, value: any, append?: boolean): void {
-    // TODO: if incoming state is already an object, then don't set it to be the id, but rather the whole state
     const stateAwarePath =
       path === "state"
         ? "state.id"
@@ -178,7 +177,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
             new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
           )
           ?.split("=")[1];
-      parsedData[key] = inferType(value, key, defaultValue);
+      addToData(key, inferType(value, key, defaultValue));
       continue posArgsLoop;
     }
 
@@ -192,7 +191,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         continue requiredKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey);
+      addToData(dataKey, inferType(dataValue, dataKey));
       continue posArgsLoop;
     }
 
@@ -203,7 +202,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         continue optionalKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey, defaultValue);
+      addToData(dataKey, inferType(dataValue, dataKey, defaultValue));
       continue posArgsLoop;
     }
 
@@ -243,7 +242,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
       continue;
     }
 
-    parsedData[dataKey] = inferType(defaultValue, dataKey);
+    addToData(dataKey, inferType(defaultValue, dataKey));
   }
 
   if (args.comment) {
@@ -252,10 +251,9 @@ export function handleDataArgs(args: DataArgs): DatumData {
         ? args.comment.map((comm) => inferType(comm, "comment"))
         : [inferType(args.comment, "comment")]
     ) as any[];
-    parsedData.comment = inferredComments.reduce(
-      (accumulator, current) => createOrAppend(accumulator, current),
-      parsedData["comment"],
-    );
+    inferredComments.forEach((comment) => {
+      addToData("comment", comment, true);
+    });
     delete args.comment;
   }
 
@@ -267,16 +265,10 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
 
     if (remainderAsString) {
-      parsedData[remainderKey] = createOrAppend(
-        parsedData[remainderKey],
-        remainderData.join(" "),
-      );
+      addToData(remainderKey, remainderData.join(" "), true);
     } else {
       for (const remainder of remainderData) {
-        parsedData[remainderKey] = createOrAppend(
-          parsedData[remainderKey],
-          inferType(remainder, remainderKey),
-        );
+        addToData(remainderKey, inferType(remainder, remainderKey), true);
       }
     }
   }
