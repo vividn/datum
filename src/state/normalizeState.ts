@@ -9,7 +9,7 @@ export function normalizeState(state: JsonType): DatumState {
   }
   if (Array.isArray(state)) {
     if (state.length === 0) {
-      return { id: false };
+      return false;
     }
     if (state.length === 1) {
       return normalizeState(state[0]);

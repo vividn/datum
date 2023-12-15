@@ -4,8 +4,11 @@ import { _emit } from "../emit";
 import { isoDateOrTime } from "../../time/timeUtils";
 import { GenericObject } from "../../GenericObject";
 
-export type StateObject = GenericObject & { id: string | boolean | number | null };
-export type DatumState = StateObject | StateObject[];
+export type StateObject = GenericObject & {
+  id: string | boolean | number;
+};
+type SingleState = string | boolean | number | StateObject;
+export type DatumState = null | SingleState | SingleState[];
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
@@ -43,9 +46,7 @@ export const activeStateView: DatumView<
           ? null
           : undefined;
     const state = data.state !== undefined ? data.state : true;
-    const lastState = {
-      id: data.lastState !== undefined ? data.lastState : state.id === false;
-    }
+    const lastState = data.lastState !== undefined ? data.lastState : state === false;
 
     function parseISODuration(duration: string) {
       const regex =
