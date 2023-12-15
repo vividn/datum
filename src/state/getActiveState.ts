@@ -1,11 +1,9 @@
 import { DateTime } from "luxon";
-import {
-  activeStateView,
-  DatumState,
-} from "../views/datumViews/activeStateView";
+import { activeStateView } from "../views/datumViews/activeStateView";
 import { DatumTime, isDatumTime, now } from "../time/timeUtils";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 import { parseTimeStr } from "../time/parseTimeStr";
+import { DatumState } from "./normalizeState";
 
 export async function getActiveState(
   db: PouchDB.Database,
@@ -34,7 +32,7 @@ export async function getActiveState(
       isCouchDbError(error) &&
       ["missing", "deleted", "missing_named_view"].includes(error.reason)
     ) {
-      throw new DatumViewMissingError();
+      throw new DatumViewMissingError(activeStateView.name);
     }
     throw error;
   }

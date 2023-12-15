@@ -88,6 +88,13 @@ describe("inferType", () => {
     expect(inferType("14,abc,null,")).toEqual([14, "abc", null]);
   });
 
+  it("turns arrays with undefined in them into null", () => {
+    // TODO: maybe get RSJON to turn undefineds into null?
+    // expect(inferType("[undefined]")).toEqual([null]);
+    // expect(inferType("[undefined, 3]")).toEqual([null, 3]);
+    expect(inferType(",abc,undefined,4")).toEqual(["abc", null, 4]);
+  });
+
   it("parses weird looking things as strings", () => {
     expect(inferType("{what: even is this)) ]}")).toEqual(
       "{what: even is this)) ]}",

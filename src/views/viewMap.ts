@@ -22,7 +22,7 @@ export async function viewMap({
     return await db.query(datumView.name, viewParams);
   } catch (error) {
     if (isCouchDbError(error) && error.name === "not_found") {
-      throw new DatumViewMissingError(datumView.name, "default");
+      throw new DatumViewMissingError(datumView.name);
     } else {
       throw error;
     }

@@ -12,7 +12,7 @@ import { setupCmd } from "../../commands/setupCmd";
 // TODO: Make undo system more robust and more tested
 
 describe("addCmd undo", () => {
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
   const dbName = "undo_addcmd_test";
   const db = testDbLifecycle(dbName);
 

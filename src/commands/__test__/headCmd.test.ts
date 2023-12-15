@@ -22,7 +22,7 @@ const today = "2023-11-01";
 const tomorrow = "2023-11-02";
 
 describe("headCmd", () => {
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
   deterministicHumanIds();
   const dbName = "head_cmd_test";
   testDbLifecycle(dbName);

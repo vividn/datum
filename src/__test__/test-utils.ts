@@ -18,12 +18,15 @@ import { buildIdStructure } from "../ids/buildIdStructure";
 import { defaults } from "../input/defaults";
 import { assembleId } from "../ids/assembleId";
 import * as newHumanIdModule from "../meta/newHumanId";
+import { mock } from "jest-mock-extended";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
 export const fail = (): never => {
   throw Error;
 };
+
+export const MockDb = mock<PouchDB.Database>();
 
 export const mockDocMissingError: CouchDbError = {
   status: 404,
@@ -80,20 +83,25 @@ export function testDbLifecycle(
   return db;
 }
 
-export function mockedLogLifecycle(): Mock {
+export function mockedLogLifecycle(): { mockedLog: Mock; mockedWarn: Mock } {
   const originalLog = console.log;
+  const originalWarn = console.warn;
   const mockedLog = jest.fn() as Mock;
+  const mockedWarn = jest.fn() as Mock;
 
   beforeEach(async () => {
     console.log = mockedLog;
+    console.warn = mockedWarn;
   });
 
   afterEach(async () => {
     console.log = originalLog;
+    console.warn = originalWarn;
     mockedLog.mockReset();
+    mockedWarn.mockReset();
   });
 
-  return mockedLog;
+  return { mockedLog, mockedWarn };
 }
 
 const originalNowFn = Settings.now;

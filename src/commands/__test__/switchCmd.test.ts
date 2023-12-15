@@ -206,5 +206,17 @@ describe("switchCmd", () => {
     expect(doc2.data).not.toHaveProperty("dur");
   });
 
+  it("can make complex states by using dot syntax", async () => {
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      data: [".subtask=mop"],
+    });
+    expect(doc.data).toMatchObject({
+      field: "project",
+      state: { id: "household", subtask: "mop" },
+    });
+  });
+
   it.todo("does not record a lastState if there is no occurTime");
 });
