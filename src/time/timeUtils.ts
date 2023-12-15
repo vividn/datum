@@ -2,6 +2,7 @@ import { DateTime, Duration, Zone, Settings as DateTimeSettings } from "luxon";
 import { BadDurationError, BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
 import { getTimezone } from "./getTimezone";
+import { parseTimeStr } from "./parseTimeStr";
 
 export type isoDatetime = string;
 export type isoDate = string;
@@ -65,7 +66,7 @@ export function toDatumTime(
   onlyDate?: boolean,
 ): DatumTime {
   if (typeof time === "string") {
-    time = DateTime.fromISO(time);
+    time = parseTimeStr({ timeStr: time });
   }
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {

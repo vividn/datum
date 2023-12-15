@@ -32,7 +32,7 @@ export async function getActiveState(
       isCouchDbError(error) &&
       ["missing", "deleted", "missing_named_view"].includes(error.reason)
     ) {
-      throw new DatumViewMissingError();
+      throw new DatumViewMissingError(activeStateView.name);
     }
     throw error;
   }
