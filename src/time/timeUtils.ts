@@ -66,7 +66,7 @@ export function toDatumTime(
   onlyDate?: boolean,
 ): DatumTime {
   if (typeof time === "string") {
-    time = parseTimeStr({ timeStr: time });
+    time = DateTime.fromISO(time);
   }
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {

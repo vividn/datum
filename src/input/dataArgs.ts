@@ -108,7 +108,11 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
       ? baseData
       : inferType(baseData)
     : {};
-  if (typeof parsedData !== "object" || parsedData === null || Array.isArray(parsedData)) {
+  if (
+    typeof parsedData !== "object" ||
+    parsedData === null ||
+    Array.isArray(parsedData)
+  ) {
     throw new BaseDataError("base data not a valid object");
   }
   return parsedData as DatumData;
