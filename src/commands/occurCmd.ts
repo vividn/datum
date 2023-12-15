@@ -3,8 +3,6 @@ import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
 import { addArgs, AddCmdArgs } from "./addCmd";
 import { handleDataArgs } from "../input/dataArgs";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { startCmd } from "./startCmd";
-import { endCmd } from "./endCmd";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { connectDb } from "../auth/connectDb";

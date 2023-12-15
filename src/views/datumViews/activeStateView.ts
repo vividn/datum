@@ -40,7 +40,8 @@ export const activeStateView: DatumView<
           ? null
           : undefined;
     const state = data.state !== undefined ? data.state : true;
-    const lastState = data.lastState !== undefined ? data.lastState : state === false;
+    const lastState =
+      data.lastState !== undefined ? data.lastState : state === false;
 
     function parseISODuration(duration: string) {
       const regex =

@@ -3,7 +3,6 @@ import { parseTimeStr } from "../time/parseTimeStr";
 import { parseDurationStr } from "../time/parseDurationStr";
 import { parseDateStr } from "../time/parseDateStr";
 import {
-  DatumTime,
   isoDateFromDateTime,
   isoDurationFromDuration,
   toDatumTime,

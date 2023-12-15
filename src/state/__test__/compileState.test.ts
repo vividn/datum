@@ -1,9 +1,9 @@
 describe("compileState", () => {
-  it("does nothing if there is no state and no occurTime", async () => {
+  it("does nothing if there is no state and no occurTime", async () => {});
 
-  });
-
-  it.todo("leaves lastState as it is in the payload even if the real lastState is different");
+  it.todo(
+    "leaves lastState as it is in the payload even if the real lastState is different",
+  );
   it.todo(
     "adds lastState to the payload if is not there and there is state and occurTime",
   );

@@ -63,7 +63,7 @@ export function normalizeState(state: JsonType): DatumState {
     typeof normalizedId === "string" ||
     typeof normalizedId === "boolean"
   ) {
-    return { id: normalizedId, ...otherKeys};
+    return { id: normalizedId, ...otherKeys };
   }
 
   if (Array.isArray(normalizedId)) {
