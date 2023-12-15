@@ -1,6 +1,7 @@
 import { DatumTime, isIsoDateOrTime, isoDuration } from "../time/timeUtils";
 import { WithRequired } from "../utils/utilityTypes";
-import { DatumState } from "../views/datumViews/activeStateView";
+
+import { DatumState } from "../state/normalizeState";
 
 export type GenericData<T = unknown> = T & {
   [key: string]: any;

@@ -2,13 +2,7 @@ import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
 import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
 import { isoDateOrTime } from "../../time/timeUtils";
-import { GenericObject } from "../../GenericObject";
-
-export type StateObject = GenericObject & {
-  id: string | boolean | number;
-};
-type SingleState = string | boolean | number | StateObject;
-export type DatumState = null | SingleState | SingleState[];
+import { DatumState } from "../../state/normalizeState";
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];

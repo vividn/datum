@@ -1,11 +1,24 @@
-import { DatumState } from "../views/datumViews/activeStateView";
 import flattenDeep from "lodash/flattenDeep";
 import { BadStateError } from "../errors";
 import { JsonType } from "../utils/utilityTypes";
-import isEqual from "lodash.isequal";
+import { GenericObject } from "../GenericObject";
+
+export type StateObject = GenericObject & {
+  id: string | boolean | number;
+};
+export type SingleState = string | boolean | number | StateObject;
+export type DatumState = null | SingleState | SingleState[];
+
 export function normalizeState(state: JsonType): DatumState {
   if (state === null) {
-    return { id: null };
+    return null;
+  }
+  if (
+    typeof state === "number" ||
+    typeof state === "string" ||
+    typeof state === "boolean"
+  ) {
+    return state;
   }
   if (Array.isArray(state)) {
     if (state.length === 0) {
@@ -17,7 +30,7 @@ export function normalizeState(state: JsonType): DatumState {
     return flattenDeep(
       state.map((innerState) => {
         const normalized = normalizeState(innerState);
-        if (isEqual(normalized, { id: null })) {
+        if (normalized === null) {
           throw new BadStateError(
             "null is a special state to indicate that the field is not being tracked and cannot exist together with other states",
           );
@@ -26,44 +39,44 @@ export function normalizeState(state: JsonType): DatumState {
       }),
     );
   }
-  if (
-    typeof state === "number" ||
-    typeof state === "string" ||
-    typeof state === "boolean"
-  ) {
-    return { id: state };
-  }
   if (state.id === undefined) {
-    return { id: true, ...state };
+    state.id = true;
   }
   const id = state.id as JsonType;
   const otherKeys = { ...state };
   delete otherKeys.id;
 
-  if (
-    typeof id === "number" ||
-    typeof id === "string" ||
-    typeof id === "boolean"
-  ) {
-    return { id, ...otherKeys };
+  if (Object.keys(otherKeys).length === 0) {
+    return normalizeState(id);
   }
   const normalizedId = normalizeState(id);
-  if (isEqual(normalizedId, { id: null })) {
+  if (normalizedId === null) {
     if (Object.keys(otherKeys).length > 0) {
       console.warn(
         "null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed",
       );
     }
-    return { id: null };
+    return null;
+  }
+  if (
+    typeof normalizedId === "number" ||
+    typeof normalizedId === "string" ||
+    typeof normalizedId === "boolean"
+  ) {
+    return { id: normalizedId, ...otherKeys};
   }
 
   if (Array.isArray(normalizedId)) {
-    return flattenDeep(
-      normalizedId.map((innerState) => ({
-        ...innerState,
-        ...otherKeys,
-      })),
-    );
+    return normalizedId.map((single) => {
+      if (
+        typeof single === "number" ||
+        typeof single === "string" ||
+        typeof single === "boolean"
+      ) {
+        return { id: single, ...otherKeys };
+      }
+      return { ...single, ...otherKeys };
+    });
   }
   return { ...normalizedId, ...otherKeys };
 }

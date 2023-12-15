@@ -2,4 +2,6 @@
 
 exports[`unfoldState turns a complex state with id=null into just {id: null}, and warns 1`] = `"null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed"`;
 
+exports[`unfoldState turns a complex state with id=null into just {null, and warns 1`] = `"null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed"`;
+
 exports[`unfoldState turns a complex state with id=null into just null, and warns 1`] = `"null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed"`;

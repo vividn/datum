@@ -1,11 +1,12 @@
 import { DateTime } from "luxon";
 import {
   activeStateView,
-  DatumState,
+
 } from "../views/datumViews/activeStateView";
 import { DatumTime, isDatumTime, now } from "../time/timeUtils";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 import { parseTimeStr } from "../time/parseTimeStr";
+import { DatumState } from "./normalizeState";
 
 export async function getActiveState(
   db: PouchDB.Database,
