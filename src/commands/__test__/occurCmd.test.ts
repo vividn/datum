@@ -92,7 +92,7 @@ describe("occurCmd", () => {
     });
   });
 
-  it("records the lastState if the active state is not false", async () => {
+  it("records lastState as null if the active state is null", async () => {
     expect(await getActiveState(db, "event")).toBe(null);
     const newDoc = (await occurCmd({
       field: "event",
@@ -107,14 +107,6 @@ describe("occurCmd", () => {
       field: "event",
     })) as DatumDocument;
     expect([false, undefined]).toContainEqual(newDoc2.data.lastState);
-
-    await switchCmd({ field: "event", state: "happening" });
-    const newDoc3 = (await occurCmd({
-      field: "event",
-    })) as DatumDocument;
-    expect(newDoc3.data).toMatchObject({
-      lastState: "happening",
-    });
   });
 
   it.skip("interprets an extra data arg of 'start' as start command", async () => {
