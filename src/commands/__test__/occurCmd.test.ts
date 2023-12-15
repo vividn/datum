@@ -5,7 +5,6 @@ import { setupCmd } from "../setupCmd";
 import * as endCmdModule from "../endCmd";
 import * as startCmdModule from "../startCmd";
 import { getActiveState } from "../../state/getActiveState";
-import { switchCmd } from "../switchCmd";
 
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";

@@ -9,7 +9,6 @@ import { connectDb } from "../auth/connectDb";
 import { primitiveUndo } from "../undo/primitiveUndo";
 import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
-import { getLastState } from "../state/findLastState";
 import { compileState } from "../state/compileState";
 
 export const command = [
