@@ -565,7 +565,7 @@ describe("handleDataArgs", () => {
     expectParseDataToReturn(
       {
         required: ["a.b", "a.c"],
-        optional: ["a.d.e another.key=5"],
+        optional: ["a.d.e", "another.key=5"],
         data: ["data", "moreData", 7, "key.nested=abc"],
       },
       {
@@ -575,9 +575,12 @@ describe("handleDataArgs", () => {
           d: {
             e: 7,
           },
-          key: {
-            nested: "abc",
-          },
+        },
+        key: {
+          nested: "abc",
+        },
+        another: {
+          key: 5,
         },
       },
     );

@@ -150,7 +150,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
           ? `state${path}`
           : path;
     if (append) {
-      const current = get(parsedData, stateAwarePath, []);
+      const current = get(parsedData, stateAwarePath);
       const newValue = createOrAppend(current, value);
       set(parsedData, stateAwarePath, newValue);
     } else {
