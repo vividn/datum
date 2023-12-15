@@ -30,10 +30,10 @@ describe("compileState", () => {
   });
 
   it("also normalizes lastState", async () => {
-    for (const state of [false, null, "last"]) {
-      const returnedData = await compileState(db, { lastState: state });
-      expect(normalizeStateSpy).toHaveBeenCalledWith(state);
-      expect(returnedData.state).toEqual("normalizedState");
+    for (const lastState of [false, null, "last"]) {
+      const returnedData = await compileState(db, { lastState });
+      expect(normalizeStateSpy).toHaveBeenCalledWith(lastState);
+      expect(returnedData.lastState).toEqual("normalizedState");
       normalizeStateSpy.mockClear();
     }
     const bothStateAndLast = await compileState(db, {
