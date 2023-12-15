@@ -1,4 +1,42 @@
+import { compileState } from "../compileState";
+import { BaseArgs } from "../../input/baseArgs";
+import * as normalizeStateModule from "../normalizeState";
+
+const args: BaseArgs = {};
 describe("compileState", () => {
+  it("normalizes state if it exists", async () => {
+    const normalizeStateSpy = jest
+      .spyOn(normalizeStateModule, "normalizeState")
+      .mockReturnValue("normalizedState");
+    for (const state of ["active", true, null, ["array", "state"]]) {
+      const returnedData = await compileState({ state }, args);
+      expect(normalizeStateSpy).toHaveBeenCalledWith(state);
+      expect(returnedData.state).toEqual("normalizedState");
+      normalizeStateSpy.mockClear();
+    }
+  });
+
+  it("also normalizes lastState", async () => {
+    const normalizeStateSpy = jest
+      .spyOn(normalizeStateModule, "normalizeState")
+      .mockReturnValue("normalizedState");
+    for (const state of [false, null, "last"]) {
+      const returnedData = await compileState({ lastState }, args);
+      expect(normalizeStateSpy).toHaveBeenCalledWith(state);
+      expect(returnedData.state).toEqual("normalizedState");
+      normalizeStateSpy.mockClear();
+    }
+    const bothStateAndLast = await compileState(
+      { state: "active", lastState: "inactive" },
+      args,
+    );
+    expect(normalizeStateSpy).toHaveBeenCalledTimes(2);
+    expect(bothStateAndLast).toMatchObject({
+      state: "normalizedState",
+      lastState: "normalizedState",
+    });
+  });
+
   it("does nothing if there is no state and no occurTime", async () => {});
 
   it.todo(
