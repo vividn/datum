@@ -5,6 +5,8 @@ import { BaseDataError, DataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import { createOrAppend } from "../utils/createOrAppend";
 import isPlainObject from "lodash.isplainobject";
+import get from "lodash.get";
+import set from "lodash.set";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -101,46 +103,63 @@ function isParsedBaseData(baseData: DatumData | string): baseData is DatumData {
 }
 
 export function parseBaseData(baseData?: DatumData | string): DatumData {
-  const parsedData: DatumData = baseData
+  const parsedData = baseData
     ? isParsedBaseData(baseData)
       ? baseData
       : inferType(baseData)
     : {};
-  if (typeof parsedData !== "object" || parsedData === null) {
+  if (
+    typeof parsedData !== "object" ||
+    parsedData === null ||
+    Array.isArray(parsedData)
+  ) {
     throw new BaseDataError("base data not a valid object");
   }
-  return parsedData;
+  return parsedData as DatumData;
 }
 
 export function handleDataArgs(args: DataArgs): DatumData {
   args.data ??= [];
   args.required ??= [];
   args.optional ??= [];
-  const {
-    data,
-    required,
-    optional,
-    remainder,
-    stringRemainder,
-    comment,
-    lenient,
-    baseData,
-    commentRemainder,
-  } = args;
 
-  const requiredKeys = typeof required === "string" ? [required] : required;
-  const optionalKeys = typeof optional === "string" ? [optional] : optional;
+  const requiredKeys =
+    typeof args.required === "string" ? [args.required] : args.required;
+  const optionalKeys =
+    typeof args.optional === "string" ? [args.optional] : args.optional;
 
   const remainderKey =
-    remainder ??
-    (commentRemainder ? "comment" : lenient ? "extraData" : undefined);
-  const remainderAsString = stringRemainder ?? commentRemainder;
+    args.remainder ??
+    (args.commentRemainder
+      ? "comment"
+      : args.lenient
+        ? "extraData"
+        : undefined);
+  const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
-  const parsedData = parseBaseData(baseData);
+  const parsedData = parseBaseData(args.baseData);
+  // for idempotence of processing dataArgs
+  args.baseData = parsedData;
 
-  posArgsLoop: while (data.length > 0) {
-    const arg = data.shift()!;
+  function addToData(path: string, value: any, append?: boolean): void {
+    const stateAwarePath =
+      path === "state"
+        ? "state.id"
+        : path.startsWith(".")
+          ? `state${path}`
+          : path;
+    if (append) {
+      const current = get(parsedData, stateAwarePath);
+      const newValue = createOrAppend(current, value);
+      set(parsedData, stateAwarePath, newValue);
+    } else {
+      set(parsedData, stateAwarePath, value);
+    }
+  }
+
+  posArgsLoop: while (args.data.length > 0) {
+    const arg = args.data.shift()!;
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
     if (afterEquals !== undefined) {
@@ -148,7 +167,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
       const key = beforeEquals;
       const value = afterEquals;
 
-      // Search for default value to allow explicitly setting it to default using '.'
+      // Search for default value to allow explicitly setting it to default using '.',
+      // or use an existing value if there already is one
       const existingValue = parsedData[key];
       const defaultValue =
         existingValue ??
@@ -157,7 +177,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
             new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
           )
           ?.split("=")[1];
-      parsedData[key] = inferType(value, key, defaultValue);
+      addToData(key, inferType(value, key, defaultValue));
       continue posArgsLoop;
     }
 
@@ -171,7 +191,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         continue requiredKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey);
+      addToData(dataKey, inferType(dataValue, dataKey));
       continue posArgsLoop;
     }
 
@@ -182,7 +202,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         continue optionalKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey, defaultValue);
+      addToData(dataKey, inferType(dataValue, dataKey, defaultValue));
       continue posArgsLoop;
     }
 
@@ -222,19 +242,18 @@ export function handleDataArgs(args: DataArgs): DatumData {
       continue;
     }
 
-    parsedData[dataKey] = inferType(defaultValue, dataKey);
+    addToData(dataKey, inferType(defaultValue, dataKey));
   }
 
-  if (comment) {
+  if (args.comment) {
     const inferredComments = (
-      Array.isArray(comment)
-        ? comment.map((comm) => inferType(comm, "comment"))
-        : [inferType(comment, "comment")]
+      Array.isArray(args.comment)
+        ? args.comment.map((comm) => inferType(comm, "comment"))
+        : [inferType(args.comment, "comment")]
     ) as any[];
-    parsedData.comment = inferredComments.reduce(
-      (accumulator, current) => createOrAppend(accumulator, current),
-      parsedData["comment"],
-    );
+    inferredComments.forEach((comment) => {
+      addToData("comment", comment, true);
+    });
     delete args.comment;
   }
 
@@ -246,21 +265,13 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
 
     if (remainderAsString) {
-      parsedData[remainderKey] = createOrAppend(
-        parsedData[remainderKey],
-        remainderData.join(" "),
-      );
+      addToData(remainderKey, remainderData.join(" "), true);
     } else {
       for (const remainder of remainderData) {
-        parsedData[remainderKey] = createOrAppend(
-          parsedData[remainderKey],
-          inferType(remainder, remainderKey),
-        );
+        addToData(remainderKey, inferType(remainder, remainderKey), true);
       }
     }
   }
 
-  // for idempotence of processing dataArgs
-  args.baseData = parsedData;
   return parsedData;
 }

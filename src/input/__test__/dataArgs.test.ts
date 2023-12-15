@@ -560,4 +560,89 @@ describe("handleDataArgs", () => {
       },
     );
   });
+
+  it("processes pathlike data keys correctly", () => {
+    expectParseDataToReturn(
+      {
+        required: ["a.b", "a.c"],
+        optional: ["a.d.e", "another.key=5"],
+        data: ["data", "moreData", 7, "key.nested=abc"],
+      },
+      {
+        a: {
+          b: "data",
+          c: "moreData",
+          d: {
+            e: 7,
+          },
+        },
+        key: {
+          nested: "abc",
+        },
+        another: {
+          key: 5,
+        },
+      },
+    );
+  });
+
+  it("overwrites top level data to nest data inside", () => {
+    expectParseDataToReturn(
+      {
+        data: ["topKey=value", "topKey.nestedKey=abc"],
+      },
+      {
+        topKey: {
+          nestedKey: "abc",
+        },
+      },
+    );
+  });
+
+  it("processes state as state.id", () => {
+    expectParseDataToReturn(
+      {
+        data: ["state=active"],
+      },
+      { state: { id: "active" } },
+    );
+    expectParseDataToReturn(
+      {
+        required: ["state"],
+        data: ["inactive"],
+      },
+      {
+        state: { id: "inactive" },
+      },
+    );
+  });
+
+  it("processes keys that start with . as part of state", () => {
+    expectParseDataToReturn(
+      {
+        data: [".key=active"],
+      },
+      { state: { key: "active" } },
+    );
+    expectParseDataToReturn(
+      {
+        required: [".title"],
+        optional: [".author"],
+        data: ["The Dispossessed", "Ursula K. Le Guin"],
+      },
+      {
+        state: { title: "The Dispossessed", author: "Ursula K. Le Guin" },
+      },
+    );
+  });
+
+  it("can use both state= and the dot syntax to assemble a complex state", () => {
+    expectParseDataToReturn(
+      {
+        optional: ["state"],
+        data: ["active", ".type=common"],
+      },
+      { state: { id: "active", type: "common" } },
+    );
+  });
 });

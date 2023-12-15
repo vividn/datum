@@ -1,13 +1,17 @@
 import { DatumTime, isIsoDateOrTime, isoDuration } from "../time/timeUtils";
 import { WithRequired } from "../utils/utilityTypes";
 
+import { DatumState } from "../state/normalizeState";
+
 export type GenericData<T = unknown> = T & {
   [key: string]: any;
 };
 
 export type DatumData<T = unknown> = GenericData<T> & {
+  state?: DatumState;
+  lastState?: DatumState;
   occurTime?: DatumTime;
-  dur?: "start" | "end" | isoDuration | null;
+  dur?: isoDuration | null;
   field?: string;
 };
 

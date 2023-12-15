@@ -8,8 +8,8 @@ import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { DateTime, Duration } from "luxon";
-import { DatumState } from "../views/datumViews/activeStateView";
 import { DatumTime, datumTimeToLuxon } from "../time/timeUtils";
+import { DatumState } from "../state/normalizeState";
 
 chalk.level = 3;
 

@@ -7,12 +7,13 @@ import {
   isoDurationFromDuration,
   toDatumTime,
 } from "../time/timeUtils";
+import { JsonType } from "./utilityTypes";
 
 export function inferType(
   value: number | string,
   fieldName?: string,
   defaultToInfer?: string | number,
-): any {
+): undefined | JsonType {
   if (value === "") {
     // can use `""` or `''` to indicate an empty string, see further down
     return undefined;
@@ -59,13 +60,13 @@ export function inferType(
     return value
       .slice(1)
       .split(",")
-      .map((v) => inferType(v));
+      .map((v) => inferType(v) ?? null);
   }
   if (/,$/.test(value)) {
     return value
       .slice(0, -1)
       .split(",")
-      .map((v) => inferType(v));
+      .map((v) => inferType(v) ?? null);
   }
   if (/^true$/i.test(value)) {
     return true;

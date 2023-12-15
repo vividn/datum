@@ -58,6 +58,13 @@ export class BadTimezoneError extends MyError {
   }
 }
 
+export class BadStateError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, BadStateError.prototype);
+  }
+}
+
 export class MigrationError extends MyError {
   constructor(m: unknown) {
     super(m);
@@ -85,9 +92,9 @@ export const isCouchDbError = (error: unknown): error is CouchDbError => {
 };
 
 export class DatumViewMissingError extends MyError {
-  constructor(map_name?: unknown, reduce_name?: unknown) {
+  constructor(map_name?: unknown) {
     super(
-      `Missing internal datum view ${map_name} ${reduce_name} Please run setup on this database`,
+      `Missing internal datum view ${map_name}. Please run setup on this database`,
     );
     Object.setPrototypeOf(this, DatumViewMissingError.prototype);
   }

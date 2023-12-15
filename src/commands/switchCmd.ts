@@ -11,7 +11,9 @@ import { primitiveUndo } from "../undo/primitiveUndo";
 import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { durationArgs, DurationArgs } from "../input/durationArgs";
-import { DatumState } from "../views/datumViews/activeStateView";
+
+import { DatumState } from "../state/normalizeState";
+import { compileState } from "../state/compileState";
 
 export const command = [
   "switch <field> [state] [duration] [data..]",
@@ -38,7 +40,7 @@ export function builder(yargs: Argv): Argv {
 }
 
 export type StateArgs = {
-  state: DatumState;
+  state?: DatumState;
   lastState?: DatumState;
 };
 export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;
@@ -69,7 +71,9 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     time: occurTime,
   });
 
-  const payload = addIdAndMetadata(payloadData, args);
+  const payloadWithState = await compileState(db, payloadData);
+
+  const payload = addIdAndMetadata(payloadWithState, args);
   await updateLastDocsRef(db, payload._id);
 
   const { undo, forceUndo } = args;
