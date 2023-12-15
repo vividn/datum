@@ -1,10 +1,23 @@
 import { DatumData } from "../documentControl/DatumDocument";
 import { jClone } from "../utils/jClone";
 import { BaseArgs } from "../input/baseArgs";
+import { normalizeState } from "./normalizeState";
+import { getActiveState } from "./getActiveState";
 
 export async function compileState(
+  db: PouchDB.Database,
   payloadData: DatumData,
-  args: BaseArgs,
 ): DatumData {
-  const _data = jClone(payloadData);
+  const data = jClone(payloadData);
+  if (data.state !== undefined) {
+    data.state = normalizeState(data.state);
+  }
+  if (data.lastState !== undefined) {
+    data.lastState = normalizeState(data.lastState);
+    return data;
+  }
+  if (data.field !== undefined && data.occurTime !== undefined) {
+    const lastState = getActiveState()
+  }
+
 }

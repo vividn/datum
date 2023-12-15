@@ -18,12 +18,15 @@ import { buildIdStructure } from "../ids/buildIdStructure";
 import { defaults } from "../input/defaults";
 import { assembleId } from "../ids/assembleId";
 import * as newHumanIdModule from "../meta/newHumanId";
+import { mock } from "jest-mock-extended";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
 export const fail = (): never => {
   throw Error;
 };
+
+export const MockDb = mock<PouchDB.Database>();
 
 export const mockDocMissingError: CouchDbError = {
   status: 404,
