@@ -10,6 +10,7 @@ import { primitiveUndo } from "../undo/primitiveUndo";
 import { addDoc } from "../documentControl/addDoc";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { getLastState } from "../state/findLastState";
+import { compileState } from "../state/compileState";
 
 export const command = [
   "occur <field> [data..]",
@@ -36,17 +37,9 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   if (occurTime !== undefined) {
     payloadData.occurTime = occurTime;
   }
-  const lastState = await getLastState({
-    db,
-    field: payloadData.field,
-    lastState: payloadData.lastState,
-    time: occurTime,
-  });
-  if (lastState !== false) {
-    payloadData.lastState = lastState;
-  }
+  const payloadWithState = await compileState(db, payloadData);
 
-  const payload = addIdAndMetadata(payloadData, args);
+  const payload = addIdAndMetadata(payloadWithState, args);
 
   // update now in case the addDoc fails due to conflict
   await updateLastDocsRef(db, payload._id);

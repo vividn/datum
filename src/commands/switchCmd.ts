@@ -13,6 +13,7 @@ import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { durationArgs, DurationArgs } from "../input/durationArgs";
 
 import { DatumState } from "../state/normalizeState";
+import { compileState } from "../state/compileState";
 
 export const command = [
   "switch <field> [state] [duration] [data..]",
@@ -70,7 +71,9 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     time: occurTime,
   });
 
-  const payload = addIdAndMetadata(payloadData, args);
+  const payloadWithState = await compileState(db, payloadData);
+
+  const payload = addIdAndMetadata(payloadWithState, args);
   await updateLastDocsRef(db, payload._id);
 
   const { undo, forceUndo } = args;
