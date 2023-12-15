@@ -103,15 +103,15 @@ function isParsedBaseData(baseData: DatumData | string): baseData is DatumData {
 }
 
 export function parseBaseData(baseData?: DatumData | string): DatumData {
-  const parsedData: DatumData = baseData
+  const parsedData = baseData
     ? isParsedBaseData(baseData)
       ? baseData
       : inferType(baseData)
     : {};
-  if (typeof parsedData !== "object" || parsedData === null) {
+  if (typeof parsedData !== "object" || parsedData === null || Array.isArray(parsedData)) {
     throw new BaseDataError("base data not a valid object");
   }
-  return parsedData;
+  return parsedData as DatumData;
 }
 
 export function handleDataArgs(args: DataArgs): DatumData {
