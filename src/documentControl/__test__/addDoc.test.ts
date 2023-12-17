@@ -26,7 +26,6 @@ const testDatumPayload: DatumPayload = {
     },
   },
   meta: {
-    random: 0.4869350234,
     idStructure: "%foo%__rawString",
     humanId: "ndke4ms9",
   },

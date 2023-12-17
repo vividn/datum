@@ -32,6 +32,5 @@ export const exampleMeta: DatumMetadata = {
     o: 1,
     tz: "Europe/Berlin",
   },
-  random: 0.7368733800261729,
   humanId: "mqp4znq4cvp3qnj74fgi9",
 };

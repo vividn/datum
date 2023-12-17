@@ -103,7 +103,7 @@ describe("idToHumanView", () => {
       _id: "some_doc",
       _rev: "some_revision",
       data: {},
-      meta: { random: 0.12345 },
+      meta: { idStructure: "some_doc" },
     };
     idToHumanView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
