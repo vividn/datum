@@ -4,10 +4,7 @@ import {
   testDbLifecycle,
 } from "../../__test__/test-utils";
 import { BaseDataError, IdError } from "../../errors";
-import {
-  DatumDocument,
-  DatumMetadata,
-} from "../../documentControl/DatumDocument";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
@@ -245,15 +242,6 @@ describe("addCmd", () => {
     const returnDoc = (await addCmd({ idPart: "notAField" })) as DatumDocument;
     expect(returnDoc._id).toBe("notAField");
     expect(returnDoc.meta).not.toHaveProperty("idStructure");
-  });
-
-  it("contains random identifiers in the metadata", async () => {
-    const doc = await addCmd({ data: ["foo=bar"] });
-    const { random, humanId } = doc.meta as DatumMetadata;
-
-    expect(random).toBeGreaterThanOrEqual(0);
-    expect(random).toBeLessThanOrEqual(1);
-    expect(humanId).toEqual(expect.stringMatching(/^[0-9a-z]+$/));
   });
 
   it("can display just the data of documents or the whole documents", async () => {

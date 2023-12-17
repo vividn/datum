@@ -33,7 +33,6 @@ export function addIdAndMetadata<T>(
   if (!args.noMetadata) {
     meta = {
       humanId: newHumanId(),
-      random: Math.random(),
     };
 
     // these will be overwritten later by addDoc, but useful to have them here
