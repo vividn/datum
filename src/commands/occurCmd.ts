@@ -30,12 +30,13 @@ export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
 
   flexiblePositional(args, "field", !args.fieldless && "required");
 
-  const payloadData = handleDataArgs(args);
-
   const { time: occurTime } = handleTimeArgs(args);
   if (occurTime !== undefined) {
-    payloadData.occurTime = occurTime;
+    args.occurTime = occurTime;
   }
+
+  const payloadData = handleDataArgs(args);
+
   const payloadWithState = await compileState(db, payloadData);
 
   const payload = addIdAndMetadata(payloadWithState, args);
