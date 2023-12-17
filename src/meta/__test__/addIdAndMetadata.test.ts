@@ -21,7 +21,6 @@ describe("addIdAndMetadata", () => {
         humanId: expect.any(String),
         idStructure: "%abc%",
         modifyTime: nowDatumTime,
-        random: expect.any(Number),
       },
     });
   });
@@ -45,7 +44,6 @@ describe("addIdAndMetadata", () => {
         createTime: nowDatumTime,
         humanId: expect.any(String),
         modifyTime: nowDatumTime,
-        random: expect.any(Number),
       },
     });
   });
@@ -88,7 +86,6 @@ describe("addIdAndMetadata", () => {
         createTime: nowDatumTime,
         humanId: expect.any(String),
         modifyTime: nowDatumTime,
-        random: expect.any(Number),
       },
     });
   });
@@ -117,7 +114,6 @@ describe("addIdAndMetadata", () => {
         createTime: nowDatumTime,
         humanId: expect.any(String),
         modifyTime: nowDatumTime,
-        random: expect.any(Number),
       },
     });
   });
