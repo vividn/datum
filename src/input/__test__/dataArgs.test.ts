@@ -645,4 +645,24 @@ describe("handleDataArgs", () => {
       { state: { id: "active", type: "common" } },
     );
   });
+
+  it("can receive addtional fields from cmdData, that overwrite basedata but are overwritten by manually specified data", () => {
+    expectParseDataToReturn(
+      {
+        baseData: { base: "b", baseAndCmd: "overwritten" },
+        cmdData: {
+          baseAndCmd: "bAndC",
+          cmdAndExplicit: "overwritten",
+          justCmd: "justCmd",
+        },
+        data: ["cmdAndExplicit=cAndE"],
+      },
+      {
+        base: "b",
+        baseAndCmd: "bAndC",
+        cmdAndExplicit: "cAndE",
+        justCmd: "justCmd",
+      },
+    );
+  });
 });

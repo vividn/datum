@@ -112,8 +112,8 @@ export type AddCmdArgs = MainDatumArgs &
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
 
-  const fieldArgType = args.fieldless ? false : "required";
-  flexiblePositional(args, "field", fieldArgType);
+  flexiblePositional(args, "field", args.fieldless ? false : "required");
+
   const payloadData = handleDataArgs(args);
 
   const payloadWithState = await compileState(db, payloadData);

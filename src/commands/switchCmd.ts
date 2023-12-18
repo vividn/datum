@@ -1,19 +1,10 @@
 import { Argv } from "yargs";
-import { occurArgs, OccurCmdArgs } from "./occurCmd";
+import { occurArgs, occurCmd, OccurCmdArgs } from "./occurCmd";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { handleDataArgs } from "../input/dataArgs";
-import { handleTimeArgs } from "../input/timeArgs";
-import { connectDb } from "../auth/connectDb";
 import { flexiblePositional } from "../input/flexiblePositional";
-import { getLastState } from "../state/findLastState";
-import { addIdAndMetadata } from "../meta/addIdAndMetadata";
-import { primitiveUndo } from "../undo/primitiveUndo";
-import { addDoc } from "../documentControl/addDoc";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { durationArgs, DurationArgs } from "../input/durationArgs";
 
 import { DatumState } from "../state/normalizeState";
-import { compileState } from "../state/compileState";
 
 export const command = [
   "switch <field> [state] [duration] [data..]",
@@ -46,7 +37,6 @@ export type StateArgs = {
 export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;
 
 export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
-  const db = await connectDb(args);
   flexiblePositional(
     args,
     "duration",
@@ -54,51 +44,14 @@ export async function switchCmd(args: SwitchCmdArgs): Promise<EitherDocument> {
     "dur",
   );
   flexiblePositional(args, "state", "optional");
-  flexiblePositional(args, "field", !args.fieldless && "required");
-  const payloadData = handleDataArgs(args);
 
-  const { time: occurTime } = handleTimeArgs(args);
-  if (occurTime !== undefined) {
-    payloadData.occurTime = occurTime;
-  }
+  args.cmdData ??= {};
   if (args.moment) {
-    payloadData.dur = null;
+    args.cmdData.dur = null;
   }
-  payloadData.lastState = await getLastState({
-    db,
-    field: payloadData.field,
-    lastState: args.lastState,
-    time: occurTime,
-  });
-
-  const payloadWithState = await compileState(db, payloadData);
-
-  const payload = addIdAndMetadata(payloadWithState, args);
-  await updateLastDocsRef(db, payload._id);
-
-  const { undo, forceUndo } = args;
-  if (undo || forceUndo) {
-    return await primitiveUndo({
-      db,
-      payload,
-      force: forceUndo,
-      outputArgs: args,
-    });
+  if (args.lastState) {
+    args.cmdData.lastState = args.lastState;
   }
 
-  const conflictStrategy = args.conflict ?? (args.merge ? "merge" : undefined);
-  const doc = await addDoc({
-    db,
-    payload,
-    conflictStrategy,
-    outputArgs: args,
-  });
-
-  // if addDoc has changed the id (e.g. because it relies on the modifiyTime), update lastDocRef again
-  // TODO: if changing lastDoc to history may need to change this to overwrite first update
-  if (doc._id !== payload._id) {
-    await updateLastDocsRef(db, doc._id);
-  }
-
-  return doc;
+  return await occurCmd(args);
 }

@@ -11,6 +11,7 @@ import set from "lodash.set";
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
+  cmdData?: DatumData; // Used for passing special values between commands
   comment?: string | string[];
   required?: string | string[];
   optional?: string | string[];
@@ -138,9 +139,11 @@ export function handleDataArgs(args: DataArgs): DatumData {
   const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
-  const parsedData = parseBaseData(args.baseData);
+  const payload = { ...parseBaseData(args.baseData), ...args.cmdData };
+
   // for idempotence of processing dataArgs
-  args.baseData = parsedData;
+  args.baseData = payload;
+  delete args.cmdData;
 
   function addToData(path: string, value: any, append?: boolean): void {
     const stateAwarePath =
@@ -150,11 +153,11 @@ export function handleDataArgs(args: DataArgs): DatumData {
           ? `state${path}`
           : path;
     if (append) {
-      const current = get(parsedData, stateAwarePath);
+      const current = get(payload, stateAwarePath);
       const newValue = createOrAppend(current, value);
-      set(parsedData, stateAwarePath, newValue);
+      set(payload, stateAwarePath, newValue);
     } else {
-      set(parsedData, stateAwarePath, value);
+      set(payload, stateAwarePath, value);
     }
   }
 
@@ -169,7 +172,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
       // Search for default value to allow explicitly setting it to default using '.',
       // or use an existing value if there already is one
-      const existingValue = parsedData[key];
+      const existingValue = payload[key];
       const defaultValue =
         existingValue ??
         optionalKeys
@@ -187,7 +190,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     requiredKeysLoop: while (requiredKeys.length > 0) {
       const dataKey = requiredKeys.shift()!;
 
-      if (dataKey in parsedData) {
+      if (dataKey in payload) {
         continue requiredKeysLoop;
       }
 
@@ -198,7 +201,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     optionalKeysLoop: while (optionalKeys.length > 0) {
       const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
-      if (dataKey in parsedData) {
+      if (dataKey in payload) {
         continue optionalKeysLoop;
       }
 
@@ -211,7 +214,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   while (requiredKeys.length > 0) {
     const requiredKey = requiredKeys.shift()!;
-    if (requiredKey in parsedData) {
+    if (requiredKey in payload) {
       continue;
     }
     // Allow required keys to be given a default value via an optional key
@@ -237,7 +240,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
     if (
       defaultValue === undefined ||
-      (dataKey in parsedData && parsedData[dataKey] !== ".")
+      (dataKey in payload && payload[dataKey] !== ".")
     ) {
       continue;
     }
@@ -273,5 +276,5 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
   }
 
-  return parsedData;
+  return payload;
 }
