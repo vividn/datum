@@ -20,8 +20,9 @@ export const builder: (yargs: Argv) => Argv = occurArgs;
 export async function occurCmd(args: OccurCmdArgs): Promise<EitherDocument> {
   const { time: occurTime } = handleTimeArgs(args);
   if (occurTime !== undefined) {
-    args.occurTime = occurTime;
+    args.cmdData ??= {};
+    args.cmdData.occurTime = occurTime;
   }
 
-  return addCmd(args);
+  return await addCmd(args);
 }
