@@ -7,6 +7,7 @@ import { createOrAppend } from "../utils/createOrAppend";
 import isPlainObject from "lodash.isplainobject";
 import get from "lodash.get";
 import set from "lodash.set";
+import { JsonType } from "../utils/utilityTypes";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -139,27 +140,11 @@ export function handleDataArgs(args: DataArgs): DatumData {
   const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
-  const payload = { ...parseBaseData(args.baseData), ...args.cmdData };
+  let payload = { ...parseBaseData(args.baseData), ...args.cmdData };
 
   // for idempotence of processing dataArgs
   args.baseData = payload;
   delete args.cmdData;
-
-  function addToData(path: string, value: any, append?: boolean): void {
-    const stateAwarePath =
-      path === "state"
-        ? "state.id"
-        : path.startsWith(".")
-          ? `state${path}`
-          : path;
-    if (append) {
-      const current = get(payload, stateAwarePath);
-      const newValue = createOrAppend(current, value);
-      set(payload, stateAwarePath, newValue);
-    } else {
-      set(payload, stateAwarePath, value);
-    }
-  }
 
   posArgsLoop: while (args.data.length > 0) {
     const arg = args.data.shift()!;
@@ -180,7 +165,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
             new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
           )
           ?.split("=")[1];
-      addToData(key, inferType(value, key, defaultValue));
+      addToPayload(key, inferType(value, key, defaultValue));
       continue posArgsLoop;
     }
 
@@ -194,7 +179,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         continue requiredKeysLoop;
       }
 
-      addToData(dataKey, inferType(dataValue, dataKey));
+      addToPayload(dataKey, inferType(dataValue, dataKey));
       continue posArgsLoop;
     }
 
@@ -205,7 +190,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         continue optionalKeysLoop;
       }
 
-      addToData(dataKey, inferType(dataValue, dataKey, defaultValue));
+      addToPayload(dataKey, inferType(dataValue, dataKey, defaultValue));
       continue posArgsLoop;
     }
 
@@ -245,7 +230,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
       continue;
     }
 
-    addToData(dataKey, inferType(defaultValue, dataKey));
+    addToPayload(dataKey, inferType(defaultValue, dataKey));
   }
 
   if (args.comment) {
@@ -255,7 +240,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         : [inferType(args.comment, "comment")]
     ) as any[];
     inferredComments.forEach((comment) => {
-      addToData("comment", comment, true);
+      addToPayload("comment", comment, true);
     });
     delete args.comment;
   }
@@ -268,10 +253,10 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
 
     if (remainderAsString) {
-      addToData(remainderKey, remainderData.join(" "), true);
+      addToPayload(remainderKey, remainderData.join(" "), true);
     } else {
       for (const remainder of remainderData) {
-        addToData(remainderKey, inferType(remainder, remainderKey), true);
+        addToPayload(remainderKey, inferType(remainder, remainderKey), true);
       }
     }
   }

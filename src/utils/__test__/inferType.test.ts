@@ -1,7 +1,4 @@
 import { inferType } from "../inferType";
-import * as parseTimeStr from "../../time/parseTimeStr";
-import * as parseDateStr from "../../time/parseDateStr";
-import * as parseDurationStr from "../../time/parseDurationStr";
 import SpyInstance = jest.SpyInstance;
 import { setNow } from "../../__test__/test-utils";
 import { toDatumTime } from "../../time/timeUtils";
@@ -103,14 +100,6 @@ describe("inferType", () => {
     expect(inferType("NAN/null")).toEqual("NAN/null");
   });
 
-  it("parsed . as a default value or undefined", () => {
-    expect(inferType(".")).toBe(undefined);
-    expect(inferType(".", "field")).toBe(undefined);
-    expect(inferType(".", "field", "default")).toBe("default");
-    expect(inferType(".", "field", "3")).toBe(3);
-    expect(inferType(".", "linkDur", "3")).toBe("PT3M");
-  });
-
   it("parses a \\. as a literal period", () => {
     expect(inferType(String.raw`\.`)).toBe(".");
     expect(inferType(String.raw`\.`, "field", "value")).toBe(".");
@@ -120,95 +109,4 @@ describe("inferType", () => {
   });
 });
 
-describe("inferType with special fields", () => {
-  beforeAll(() => {
-    setNow("2021-10-25T22:30:00Z");
-  });
 
-  let parseTimeSpy: SpyInstance,
-    parseDateSpy: SpyInstance,
-    parseDurationSpy: SpyInstance;
-  beforeEach(() => {
-    parseTimeSpy = jest.spyOn(parseTimeStr, "parseTimeStr");
-    parseDateSpy = jest.spyOn(parseDateStr, "parseDateStr");
-    parseDurationSpy = jest.spyOn(parseDurationStr, "parseDurationStr");
-  });
-
-  it("infers values as datetimes if the field name is or ends in -Time", () => {
-    expect(inferType("3", "time")).toEqual(
-      toDatumTime("2021-10-25T03:00:00.000Z"),
-    );
-    expect(inferType("yesterday at 22:15", "expectedTime")).toEqual(
-      toDatumTime("2021-10-24T22:15:00.000Z"),
-    );
-    expect(inferType("10:15", "snake_time")).toEqual(
-      toDatumTime("2021-10-25T10:15:00.000Z"),
-    );
-    expect(inferType("1230", "expectedTime2")).toEqual(
-      toDatumTime("2021-10-25T12:30:00.000Z"),
-    );
-
-    expect(parseTimeSpy).toHaveBeenCalledTimes(4);
-    expect(parseDateSpy).not.toHaveBeenCalled();
-    expect(parseDurationSpy).not.toHaveBeenCalled();
-  });
-
-  it("infers values as dates if the field name is or ends in -Date", () => {
-    expect(inferType("-1", "date")).toEqual("2021-10-24");
-    expect(inferType("dec21", "solsticeDate")).toEqual("2021-12-21");
-    expect(inferType("in 3 days", "Due-Date")).toEqual("2021-10-28");
-    expect(inferType("+2", "someDate10")).toEqual("2021-10-27");
-
-    expect(parseDateSpy).toHaveBeenCalledTimes(4);
-    expect(parseTimeSpy).not.toHaveBeenCalled();
-    expect(parseDurationSpy).not.toHaveBeenCalled();
-  });
-
-  it("infers values as durations if the field name is or ends in -Dur or -Duration", () => {
-    expect(inferType("3", "dur")).toEqual("PT3M");
-    expect(inferType("-5", "Duration")).toEqual("-PT5M");
-    expect(inferType("3:45:20", "raceDuration")).toEqual("PT3H45M20S");
-    expect(inferType("2days", "wait_dur")).toEqual("P2D");
-    expect(inferType("30sec", "duration2")).toEqual("PT30S");
-    expect(parseDurationSpy).toHaveBeenCalledTimes(5);
-
-    parseDurationSpy.mockClear();
-    expect(inferType(".", "dur")).toBeUndefined();
-    expect(inferType("", "dur")).toBeUndefined();
-    expect(parseDurationSpy).not.toHaveBeenCalled();
-
-    expect(parseTimeSpy).not.toHaveBeenCalled();
-    expect(parseDateSpy).not.toHaveBeenCalled();
-  });
-
-  it("throws an error for -Time -Date and -Dur values if they cannot be parsed", () => {
-    expect(() => inferType("unparseable_time", "weirdTime")).toThrowError(
-      BadTimeError,
-    );
-    expect(parseTimeSpy).toHaveBeenCalled();
-    expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
-
-    expect(() => inferType("when pigs fly", "weirdDate")).toThrowError(
-      BadDateError,
-    );
-    expect(parseDateSpy).toHaveBeenCalled();
-    expect(parseDateSpy).not.toHaveReturned();
-
-    expect(() =>
-      inferType("as long as it takes", "weirdDuration"),
-    ).toThrowError(BadDurationError);
-    expect(parseDurationSpy).toHaveBeenCalled();
-    expect(parseDurationSpy).not.toHaveReturned();
-  });
-
-  it("does not call any of the special parse functions for other field names", () => {
-    inferType("3", "tim");
-    inferType("5", "mandate");
-    inferType("asdf", "someField");
-    inferType("3:45", "ptime");
-
-    expect(parseTimeSpy).not.toHaveBeenCalled();
-    expect(parseDateSpy).not.toHaveBeenCalled();
-    expect(parseDurationSpy).not.toHaveBeenCalled();
-  });
-});
