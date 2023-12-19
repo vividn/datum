@@ -109,4 +109,5 @@ export const activeStateView: DatumView<
       return;
     }
   },
+  reduce: "_count",
 };
