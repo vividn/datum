@@ -8,7 +8,6 @@ import * as parseDurationStr from "../../time/parseDurationStr";
 import { alterDatumData } from "../alterDatumData";
 import { DatumData } from "../../documentControl/DatumDocument";
 import { jClone } from "../jClone";
-import ArgumentsOf = jest.ArgumentsOf;
 
 function expectAlterDatumData(
   input: Parameters<typeof alterDatumData>[0],
@@ -38,9 +37,47 @@ describe("alterDatumData", () => {
     expect(datumData).toEqual({ existing: "newData", newKey: "value" });
   });
 
-  it("can add a complex path to a payload");
-  it("treats . paths as part of state");
-  it("interprets state as state.id path");
+  it("can add a complex path to a payload", () => {
+    alterDatumData({
+      datumData,
+      path: "nested.key",
+      value: "value",
+    });
+    expect(datumData).toEqual({
+      existing: "data",
+      nested: { key: "value" },
+    });
+  });
+
+  it("treats . paths as part of state", () => {
+    alterDatumData({
+      datumData,
+      path: ".key",
+      value: "value",
+    });
+    alterDatumData({
+      datumData,
+      path: ".otherKey",
+      value: "value2",
+    });
+    expect(datumData).toEqual({
+      existing: "data",
+      state: { key: "value", otherKey: "value2" },
+    });
+  });
+
+  it("interprets state as state.id path", () => {
+    alterDatumData({
+      datumData,
+      path: "state",
+      value: "value",
+    });
+    expect(datumData).toEqual({
+      existing: "data",
+      state: { id: "value" },
+    });
+  });
+
   it("parses . value as the default value for a key or undefined if no default is given", () => {
     expectAlterDatumData(
       { datumData, path: "key", value: "." },
