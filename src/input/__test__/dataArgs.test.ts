@@ -665,4 +665,16 @@ describe("handleDataArgs", () => {
       },
     );
   });
+
+  it.todo("interprets a dur field with a special value of 'start'");
+  it.todo("interprets a dur field with a special value of 'end'");
+  it.todo("interprets a dur field with a special value of 'occur'");
+  it.todo("interprets a dur field with a special value of 'switch'");
+  it.todo("interprets a trailing positional argument of 'start'");
+  it.todo("interprets a trailing positional argument of 'end'");
+  it.todo("interprets a trailing positional argument of 'occur'");
+  it.todo("interprets a trailing positional argument of 'switch'");
+  it.todo(
+    "does not switch to a different command if there is a remainderKey to grab additional arguments",
+  );
 });

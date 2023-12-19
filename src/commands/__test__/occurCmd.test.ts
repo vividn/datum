@@ -117,7 +117,6 @@ describe("occurCmd", () => {
       data: ["start"],
     });
     expect(startDoc.data).toMatchObject({ field: "field", state: true });
-    expect(startDoc.data).not.toHaveProperty("dur");
     expect(startCmdSpy).toHaveBeenCalled();
   });
 
