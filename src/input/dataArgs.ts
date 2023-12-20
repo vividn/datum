@@ -11,6 +11,11 @@ import isPlainObject from "lodash.isplainobject";
 import { alterDatumData } from "../utils/alterDatumData";
 import { datumPath } from "../utils/datumPath";
 import get from "lodash.get";
+import {
+  changeDatumCommand,
+  CommandChange,
+  commandChanges,
+} from "../utils/changeDatumCommand";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -130,8 +135,11 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   const requiredKeys =
     typeof args.required === "string" ? [args.required] : args.required;
+  args.required = requiredKeys;
+
   const optionalKeys =
     typeof args.optional === "string" ? [args.optional] : args.optional;
+  args.optional = optionalKeys;
 
   const remainderKey =
     args.remainder ??
@@ -192,6 +200,14 @@ export function handleDataArgs(args: DataArgs): DatumData {
       // TODO: Consider explicitly setting an optional key to undefined to be sufficient to bypass this step
       if (get(datumData, path) !== undefined) {
         continue optionalKeysLoop;
+      }
+
+      if (
+        path === "dur" &&
+        commandChanges.includes(dataValue as CommandChange)
+      ) {
+        changeDatumCommand(datumData, dataValue as CommandChange, args);
+        continue posArgsLoop;
       }
 
       alterDatumData({
@@ -256,6 +272,13 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   if (remainderData.length > 0) {
     if (remainderKey === undefined) {
+      // @ts-expect-error overrestrictive includes
+      if (commandChanges.includes(remainderData[0])) {
+        const command = remainderData.shift() as CommandChange;
+        changeDatumCommand(datumData, command, args);
+        args.data = remainderData;
+        return handleDataArgs(args);
+      }
       throw new ExtraDataError(remainderData);
     }
 
