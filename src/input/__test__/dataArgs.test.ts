@@ -1,6 +1,6 @@
 import { DataArgs, handleDataArgs } from "../dataArgs";
 import { GenericObject } from "../../GenericObject";
-import { DataError } from "../../errors";
+import { DataError, MissingRequiredKeyError } from "../../errors";
 import * as inferType from "../../utils/inferType";
 
 const expectParseDataToReturn = (

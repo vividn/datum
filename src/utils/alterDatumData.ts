@@ -37,7 +37,12 @@ export function alterDatumData({
   let inferredValue: JsonType | undefined;
   switch (true) {
     case value === ".": {
-      return alterDatumData({ datumData, path, value: defaultValue, append });
+      return alterDatumData({
+        datumData,
+        path,
+        value: defaultValue,
+        append,
+      });
     }
 
     case value === undefined:

@@ -1,7 +1,11 @@
 import yargs, { Argv } from "yargs";
 import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
-import { BaseDataError, DataError } from "../errors";
+import {
+  BaseDataError,
+  ExtraDataError,
+  MissingRequiredKeyError,
+} from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import isPlainObject from "lodash.isplainobject";
 import { alterDatumData } from "../utils/alterDatumData";
@@ -221,7 +225,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     ) {
       continue;
     }
-    throw new DataError(`No data given for the required key: ${requiredKey}`);
+    throw new MissingRequiredKeyError(requiredKey);
   }
 
   // If optional keys with default values are left assign them
@@ -252,9 +256,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   if (remainderData.length > 0) {
     if (remainderKey === undefined) {
-      throw new DataError(
-        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient",
-      );
+      throw new ExtraDataError(remainderData);
     }
 
     if (remainderAsString) {
