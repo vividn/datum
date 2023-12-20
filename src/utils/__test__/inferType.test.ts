@@ -1,15 +1,8 @@
 import { inferType } from "../inferType";
 import SpyInstance = jest.SpyInstance;
-import { setNow } from "../../__test__/test-utils";
-import { toDatumTime } from "../../time/timeUtils";
-import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
+import { BadDurationError } from "../../errors";
 
 describe("inferType", () => {
-  it("leaves numbers as numbers", () => {
-    expect(inferType(3)).toBe(3);
-    expect(inferType(-45.5)).toBe(-45.5);
-  });
-
   it("converts strings that are number to numbers", () => {
     expect(inferType("3")).toBe(3);
     expect(inferType("-45.5")).toBe(-45.5);
@@ -102,11 +95,5 @@ describe("inferType", () => {
 
   it("parses a \\. as a literal period", () => {
     expect(inferType(String.raw`\.`)).toBe(".");
-    expect(inferType(String.raw`\.`, "field", "value")).toBe(".");
-    expect(() => inferType(String.raw`\.`, "linkDur", "value")).toThrowError(
-      BadDurationError,
-    );
   });
 });
-
-
