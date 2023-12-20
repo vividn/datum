@@ -5,6 +5,8 @@ import { BaseDataError, DataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import isPlainObject from "lodash.isplainobject";
 import { alterDatumData } from "../utils/alterDatumData";
+import { datumPath } from "../utils/datumPath";
+import get from "lodash.get";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -149,20 +151,20 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
     if (afterEquals !== undefined) {
       // key is explicitly given e.g., 'key=value'
-      const key = beforeEquals;
+      const path = beforeEquals;
       const value = afterEquals;
 
       // Search for default value to allow explicitly setting it to default using '.',
       // or use an existing value if there already is one
-      const existingValue = datumData[key];
+      const existingValue = get(datumData, path);
       const defaultValue =
         existingValue ??
         optionalKeys
           ?.find((optionalWithDefault) =>
-            new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
+            new RegExp(`^${path}=(.*)$`).test(optionalWithDefault),
           )
           ?.split("=")[1];
-      alterDatumData({ datumData, path: key, value, defaultValue });
+      alterDatumData({ datumData, path, value, defaultValue });
       continue posArgsLoop;
     }
 
@@ -170,26 +172,27 @@ export function handleDataArgs(args: DataArgs): DatumData {
     const dataValue = beforeEquals;
 
     requiredKeysLoop: while (requiredKeys.length > 0) {
-      const dataKey = requiredKeys.shift()!;
+      const path = datumPath(requiredKeys.shift()!);
 
-      if (dataKey in datumData) {
+      if (get(datumData, path) !== undefined) {
         continue requiredKeysLoop;
       }
 
-      alterDatumData({ datumData, path: dataKey, value: dataValue });
+      alterDatumData({ datumData, path: path, value: dataValue });
       continue posArgsLoop;
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+      const [path, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
-      if (dataKey in datumData) {
+      // TODO: Consider explicitly setting an optional key to undefined to be sufficient to bypass this step
+      if (get(datumData, path) !== undefined) {
         continue optionalKeysLoop;
       }
 
       alterDatumData({
         datumData,
-        path: dataKey,
+        path: path,
         value: dataValue,
         defaultValue,
       });
@@ -201,7 +204,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   while (requiredKeys.length > 0) {
     const requiredKey = requiredKeys.shift()!;
-    if (requiredKey in datumData) {
+    if (get(datumData, requiredKey) !== undefined) {
       continue;
     }
     // Allow required keys to be given a default value via an optional key
@@ -223,16 +226,13 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   // If optional keys with default values are left assign them
   while (optionalKeys.length > 0) {
-    const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
-
+    const [path, defaultValue] = splitFirst("=", optionalKeys.shift()!);
     if (
-      defaultValue === undefined ||
-      (dataKey in datumData && datumData[dataKey] !== ".")
+      defaultValue !== undefined &&
+      [undefined, "."].includes(get(datumData, path))
     ) {
-      continue;
+      alterDatumData({ datumData, path: path, value: defaultValue });
     }
-
-    alterDatumData({ datumData, path: dataKey, value: defaultValue });
   }
 
   if (args.comment) {
