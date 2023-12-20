@@ -238,7 +238,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
   if (args.comment) {
     const commentArray = Array.isArray(args.comment)
       ? args.comment
-      : [inferType(args.comment)];
+      : [args.comment];
     commentArray.forEach((comment) => {
       alterDatumData({
         datumData,

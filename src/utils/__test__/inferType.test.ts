@@ -1,6 +1,4 @@
 import { inferType } from "../inferType";
-import SpyInstance = jest.SpyInstance;
-import { BadDurationError } from "../../errors";
 
 describe("inferType", () => {
   it("converts strings that are number to numbers", () => {
@@ -79,7 +77,7 @@ describe("inferType", () => {
   });
 
   it("turns arrays with undefined in them into null", () => {
-    // TODO: maybe get RSJON to turn undefineds into null?
+    // TODO: maybe get RJSON to turn undefineds into null?
     // expect(inferType("[undefined]")).toEqual([null]);
     // expect(inferType("[undefined, 3]")).toEqual([null, 3]);
     expect(inferType(",abc,undefined,4")).toEqual(["abc", null, 4]);
