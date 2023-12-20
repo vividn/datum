@@ -122,7 +122,7 @@ describe("alterDatumData", () => {
     });
     expect(datumData).toEqual({
       existing: ["data", "newData"],
-      newKey: ["value"],
+      newKey: "value",
     });
   });
 
@@ -152,7 +152,7 @@ describe("alterDatumData", () => {
 
       expect(datumData).toEqual({
         existing: "data",
-        firstTime: toDatumTime("2021-10-25T03:00:00.000Z"),
+        time: toDatumTime("2021-10-25T03:00:00.000Z"),
         secondTime: toDatumTime("2021-10-24T22:15:00.000Z"),
         snake_time: toDatumTime("2021-10-25T10:15:00.000Z"),
         secondTime2: toDatumTime("2021-10-25T12:30:00.000Z"),
@@ -163,17 +163,17 @@ describe("alterDatumData", () => {
     });
 
     it("infers values as dates if the field name is or ends in -Date", () => {
-      alterDatumData({ datumData, path: "date", value: "-1" });
+      alterDatumData({ datumData, path: "date", value: -1 });
       alterDatumData({ datumData, path: "solsticeDate", value: "dec21" });
       alterDatumData({ datumData, path: "Due-Date", value: "in 3 days" });
       alterDatumData({ datumData, path: "someDate10", value: "+2" });
 
       expect(datumData).toEqual({
         existing: "data",
-        date: toDatumTime("2021-10-24"),
-        solsticeDate: toDatumTime("2021-12-21"),
-        DueDate: toDatumTime("2021-10-28"),
-        someDate10: toDatumTime("2021-10-27"),
+        date: "2021-10-24",
+        solsticeDate: "2021-12-21",
+        "Due-Date": "2021-10-28",
+        someDate10: "2021-10-27",
       });
 
       expect(parseDateSpy).toHaveBeenCalledTimes(4);
@@ -183,7 +183,7 @@ describe("alterDatumData", () => {
 
     it("infers values as durations if the field name is or ends in -Dur or -Duration", () => {
       alterDatumData({ datumData, path: "dur", value: "3" });
-      alterDatumData({ datumData, path: "Duration", value: "-5" });
+      alterDatumData({ datumData, path: "Duration", value: -5 });
       alterDatumData({ datumData, path: "raceDuration", value: "3:45:20" });
       alterDatumData({ datumData, path: "wait_dur", value: "2days" });
       alterDatumData({ datumData, path: "duration2", value: "30sec" });
