@@ -23,7 +23,7 @@ export function alterDatumData({
 }: {
   datumData: DatumData;
   path: string;
-  value: JsonType;
+  value: JsonType | undefined;
   defaultValue?: JsonType;
   append?: boolean;
 }): void {

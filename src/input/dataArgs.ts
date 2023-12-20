@@ -3,11 +3,8 @@ import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
 import { BaseDataError, DataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
-import { createOrAppend } from "../utils/createOrAppend";
 import isPlainObject from "lodash.isplainobject";
-import get from "lodash.get";
-import set from "lodash.set";
-import { JsonType } from "../utils/utilityTypes";
+import { alterDatumData } from "../utils/alterDatumData";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -140,10 +137,10 @@ export function handleDataArgs(args: DataArgs): DatumData {
   const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
-  let payload = { ...parseBaseData(args.baseData), ...args.cmdData };
+  const datumData = { ...parseBaseData(args.baseData), ...args.cmdData };
 
   // for idempotence of processing dataArgs
-  args.baseData = payload;
+  args.baseData = datumData;
   delete args.cmdData;
 
   posArgsLoop: while (args.data.length > 0) {
@@ -157,7 +154,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
       // Search for default value to allow explicitly setting it to default using '.',
       // or use an existing value if there already is one
-      const existingValue = payload[key];
+      const existingValue = datumData[key];
       const defaultValue =
         existingValue ??
         optionalKeys
@@ -165,7 +162,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
             new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
           )
           ?.split("=")[1];
-      addToPayload(key, inferType(value, key, defaultValue));
+      alterDatumData({ datumData, path: key, value, defaultValue });
       continue posArgsLoop;
     }
 
@@ -175,22 +172,27 @@ export function handleDataArgs(args: DataArgs): DatumData {
     requiredKeysLoop: while (requiredKeys.length > 0) {
       const dataKey = requiredKeys.shift()!;
 
-      if (dataKey in payload) {
+      if (dataKey in datumData) {
         continue requiredKeysLoop;
       }
 
-      addToPayload(dataKey, inferType(dataValue, dataKey));
+      alterDatumData({ datumData, path: dataKey, value: dataValue });
       continue posArgsLoop;
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
       const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
 
-      if (dataKey in payload) {
+      if (dataKey in datumData) {
         continue optionalKeysLoop;
       }
 
-      addToPayload(dataKey, inferType(dataValue, dataKey, defaultValue));
+      alterDatumData({
+        datumData,
+        path: dataKey,
+        value: dataValue,
+        defaultValue,
+      });
       continue posArgsLoop;
     }
 
@@ -199,7 +201,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   while (requiredKeys.length > 0) {
     const requiredKey = requiredKeys.shift()!;
-    if (requiredKey in payload) {
+    if (requiredKey in datumData) {
       continue;
     }
     // Allow required keys to be given a default value via an optional key
@@ -225,22 +227,25 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
     if (
       defaultValue === undefined ||
-      (dataKey in payload && payload[dataKey] !== ".")
+      (dataKey in datumData && datumData[dataKey] !== ".")
     ) {
       continue;
     }
 
-    addToPayload(dataKey, inferType(defaultValue, dataKey));
+    alterDatumData({ datumData, path: dataKey, value: defaultValue });
   }
 
   if (args.comment) {
-    const inferredComments = (
-      Array.isArray(args.comment)
-        ? args.comment.map((comm) => inferType(comm, "comment"))
-        : [inferType(args.comment, "comment")]
-    ) as any[];
-    inferredComments.forEach((comment) => {
-      addToPayload("comment", comment, true);
+    const commentArray = Array.isArray(args.comment)
+      ? args.comment
+      : [inferType(args.comment)];
+    commentArray.forEach((comment) => {
+      alterDatumData({
+        datumData,
+        path: "comment",
+        value: comment,
+        append: true,
+      });
     });
     delete args.comment;
   }
@@ -253,13 +258,23 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
 
     if (remainderAsString) {
-      addToPayload(remainderKey, remainderData.join(" "), true);
+      alterDatumData({
+        datumData,
+        path: remainderKey,
+        value: remainderData.join(" "),
+        append: true,
+      });
     } else {
       for (const remainder of remainderData) {
-        addToPayload(remainderKey, inferType(remainder, remainderKey), true);
+        alterDatumData({
+          datumData,
+          path: remainderKey,
+          value: remainder,
+          append: true,
+        });
       }
     }
   }
 
-  return payload;
+  return datumData;
 }
