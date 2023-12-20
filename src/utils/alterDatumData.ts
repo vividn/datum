@@ -36,6 +36,14 @@ export function alterDatumData({
 
   let inferredValue: JsonType | undefined;
   switch (true) {
+    case value === ".": {
+      return alterDatumData({ datumData, path, value: defaultValue, append });
+    }
+
+    case value === undefined: {
+      inferredValue = undefined;
+    }
+
     case /(?:\b|_)time\d*$/i.test(stateAwarePath):
     case /[a-z0-9]Time\d*$/.test(stateAwarePath): {
       const parsedTime = parseTimeStr({ timeStr: String(value) });
@@ -54,11 +62,6 @@ export function alterDatumData({
     case /[a-z0-9]Dur(ation)?\d*$/.test(stateAwarePath): {
       const parsedDuration = parseDurationStr({ durationStr: String(value) });
       inferredValue = isoDurationFromDuration(parsedDuration);
-      break;
-    }
-
-    case value === ".": {
-      inferredValue = defaultValue;
       break;
     }
 
