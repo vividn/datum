@@ -40,8 +40,10 @@ export function alterDatumData({
       return alterDatumData({ datumData, path, value: defaultValue, append });
     }
 
-    case value === undefined: {
+    case value === undefined:
+    case value === "": {
       inferredValue = undefined;
+      break;
     }
 
     case /(?:\b|_)time\d*$/i.test(stateAwarePath):

@@ -100,6 +100,7 @@ describe("alterDatumData", () => {
     });
     expect(datumData).not.toHaveProperty("dotNoDefault");
     expect(datumData).toEqual({
+      existing: "data",
       dotWithDefault: "default",
       defaultIsInferred: 3,
       someDur: "PT3M",
@@ -198,6 +199,7 @@ describe("alterDatumData", () => {
       expect(parseDateSpy).not.toHaveBeenCalled();
 
       expect(datumData).toEqual({
+        existing: "data",
         dur: "PT3M",
         Duration: "-PT5M",
         raceDuration: "PT3H45M20S",
