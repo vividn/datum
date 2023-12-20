@@ -1,6 +1,6 @@
 import { DataArgs, handleDataArgs } from "../dataArgs";
 import { GenericObject } from "../../GenericObject";
-import { DataError, MissingRequiredKeyError } from "../../errors";
+import { ExtraDataError, MissingRequiredKeyError } from "../../errors";
 import * as inferType from "../../utils/inferType";
 
 const expectParseDataToReturn = (
@@ -33,13 +33,13 @@ describe("handleDataArgs", () => {
   });
 
   it("throws error with extra data and no leniency", () => {
-    expect(() => handleDataArgs({ data: ["keyless"] })).toThrowError(DataError);
+    expect(() => handleDataArgs({ data: ["keyless"] })).toThrow(ExtraDataError);
     expect(() =>
       handleDataArgs({ data: ["these", "data", "have", "no", "keys"] }),
-    ).toThrowError(DataError);
+    ).toThrow(ExtraDataError);
     expect(() =>
       handleDataArgs({ required: ["key1"], data: ["hasKey", "noKey"] }),
-    ).toThrowError(DataError);
+    ).toThrow(ExtraDataError);
   });
 
   it("saves extra data when lenient", () => {
@@ -85,19 +85,19 @@ describe("handleDataArgs", () => {
   });
 
   it("throws if not enough data is given for all required keys", () => {
-    expect(() => handleDataArgs({ required: "a", data: [] })).toThrowError(
-      DataError,
+    expect(() => handleDataArgs({ required: "a", data: [] })).toThrow(
+      MissingRequiredKeyError,
     );
     expect(() =>
       handleDataArgs({ required: ["a", "b"], data: ["onlyOne"] }),
-    ).toThrowError(DataError);
+    ).toThrow(MissingRequiredKeyError);
     expect(() =>
       handleDataArgs({
         required: ["a", "b"],
         data: ["lenientDoesNotHelp"],
         lenient: true,
       }),
-    ).toThrowError(DataError);
+    ).toThrow(MissingRequiredKeyError);
   });
 
   test("required keys can be specified manually without error", () => {
@@ -376,7 +376,7 @@ describe("handleDataArgs", () => {
         optional: ["opt1", "withDefaultFromOptional=noError"],
         data: ["one", "two", "three", "four"],
       }),
-    ).toThrowError(DataError);
+    ).toThrow(ExtraDataError);
   });
 
   it("infers type from key for key=value data entry", () => {
