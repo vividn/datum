@@ -1,11 +1,6 @@
 import { setNow } from "../../__test__/test-utils";
 import { toDatumTime } from "../../time/timeUtils";
-import {
-  BadDateError,
-  BadDurationError,
-  BadTimeError,
-  MissingRequiredKeyError,
-} from "../../errors";
+import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
 import SpyInstance = jest.SpyInstance;
 import * as parseTimeStr from "../../time/parseTimeStr";
 import * as parseDateStr from "../../time/parseDateStr";

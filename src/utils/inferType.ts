@@ -1,9 +1,7 @@
 import RJSON from "relaxed-json";
 import { JsonType } from "./utilityTypes";
 
-export function inferType(
-  value: string,
-): undefined | JsonType {
+export function inferType(value: string): undefined | JsonType {
   if (value === "") {
     // can use `""` or `''` to indicate an empty string, see further down
     return undefined;

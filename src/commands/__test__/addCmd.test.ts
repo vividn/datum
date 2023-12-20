@@ -284,7 +284,9 @@ describe("addCmd", () => {
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
 
-  it.todo("can do a start, end, occur, or switch command by using a trailing undefined argument")
+  it.todo(
+    "can do a start, end, occur, or switch command by using a trailing undefined argument",
+  );
 
   // TODO: write tests for all of the various options
 });
