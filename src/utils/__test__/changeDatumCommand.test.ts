@@ -144,6 +144,28 @@ describe("changeDatumCommand", () => {
       });
     });
 
+    it("does not turn a simple state: true or state: {id: true} into lastState", () => {
+      datumData = {
+        state: { id: true },
+      };
+      changeDatumCommand(datumData, "end");
+      expect(datumData).toEqual({
+        state: { id: false },
+        occurTime,
+      });
+      expect(datumData).not.toHaveProperty("lastState");
+
+      datumData = {
+        state: true,
+      };
+      changeDatumCommand(datumData, "end");
+      expect(datumData).toEqual({
+        state: { id: false },
+        occurTime,
+      });
+      expect(datumData).not.toHaveProperty("lastState");
+    })
+
     it("does not override existing lastState", () => {
       datumData = {
         state: { id: "inside" },

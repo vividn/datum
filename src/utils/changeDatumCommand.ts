@@ -7,7 +7,6 @@ import unset from "lodash.unset";
 import { toDatumTime } from "../time/timeUtils";
 import { DateTime } from "luxon";
 
-
 // TODO: Use alterDatumData to change everything here rather than set/unset
 export const commandChanges = ["occur", "start", "end", "switch"] as const;
 export type CommandChange = (typeof commandChanges)[number];
@@ -47,7 +46,12 @@ export function changeDatumCommand(
         datumData.state === undefined ||
         normalizeState(datumData.state) !== false
       ) {
-        datumData.lastState ??= datumData.state;
+        if (
+          datumData.state === undefined ||
+          normalizeState(datumData.state) !== true
+        ) {
+          datumData.lastState ??= datumData.state;
+        }
         datumData.state = { id: false };
       }
       if (datumData.dur === null) {
