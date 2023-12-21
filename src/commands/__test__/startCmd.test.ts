@@ -1,12 +1,13 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import { deterministicHumanIds, restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
 import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
-import { toDatumTime } from "../../time/timeUtils";
+import { DatumTime, toDatumTime } from "../../time/timeUtils";
 import { BadDurationError } from "../../errors";
+import { occurCmd } from "../occurCmd";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";
@@ -130,5 +131,57 @@ describe("startCmd", () => {
         duration: "30asd",
       }),
     ).rejects.toThrow(BadDurationError);
+  });
+
+  describe("change command", () => {
+    deterministicHumanIds();
+
+    let occurTime: DatumTime;
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+      occurTime = toDatumTime(DateTime.local());
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command by having occur as a trailing word", async () => {
+      expect(
+        await startCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          data: ["key=val", "optVal", "occur"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command by having start as a trailing word", async () => {
+      expect(
+        await startCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          data: ["key=val", "optVal", "end"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command by having start as a trailing word", async () => {
+      expect(
+        await startCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "5m30s",
+          data: ["key=val", "optVal", "switch", "stateName"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
   });
 });
