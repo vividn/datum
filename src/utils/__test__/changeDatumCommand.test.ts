@@ -110,6 +110,26 @@ describe("changeDatumCommand", () => {
       });
     });
 
+    it("keeps state the same if it is false or { id: false }", () => {
+      datumData = {
+        state: { id: false },
+      };
+      changeDatumCommand(datumData, "end");
+      expect(datumData).toMatchObject({
+        state: { id: false },
+      });
+      expect(datumData).not.toHaveProperty("lastState");
+
+      datumData = {
+        state: false,
+      };
+      changeDatumCommand(datumData, "end");
+      expect(datumData).toMatchObject({
+        state: false,
+      });
+      expect(datumData).not.toHaveProperty("lastState");
+    });
+
     it("turns a preexisting state into lastState and adds a state.id = false", () => {
       datumData = {
         state: { id: "outside", weather: "rainy" },
@@ -120,6 +140,21 @@ describe("changeDatumCommand", () => {
         state: { id: false },
         field: "environment",
         lastState: { id: "outside", weather: "rainy" },
+        occurTime,
+      });
+    });
+
+    it("does not override existing lastState", () => {
+      datumData = {
+        state: { id: "inside" },
+        lastState: { id: "outside", weather: "rainy" },
+        field: "environment",
+      };
+      changeDatumCommand(datumData, "end");
+      expect(datumData).toEqual({
+        lastState: { id: "outside", weather: "rainy" },
+        state: { id: false },
+        field: "environment",
         occurTime,
       });
     });
@@ -152,7 +187,7 @@ describe("changeDatumCommand", () => {
       };
       changeDatumCommand(datumData, "end");
       expect(datumData).toMatchObject({
-        state: { id: "something" },
+        state: { id: false },
       });
       expect(datumData).not.toHaveProperty("dur");
     });

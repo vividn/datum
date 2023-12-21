@@ -7,19 +7,16 @@ import unset from "lodash.unset";
 import { toDatumTime } from "../time/timeUtils";
 import { DateTime } from "luxon";
 
+
+// TODO: Use alterDatumData to change everything here rather than set/unset
 export const commandChanges = ["occur", "start", "end", "switch"] as const;
-export type CommandChange = typeof commandChanges[number];
+export type CommandChange = (typeof commandChanges)[number];
 // WARNING: Changes datumData and args in place
 export function changeDatumCommand(
   datumData: DatumData,
   command: CommandChange,
   args?: DataArgs,
 ) {
-  const isActive = !!(
-    datumData.state &&
-    normalizeState(datumData.state) &&
-    get(datumData, "state.id") !== false
-  );
   switch (command) {
     case "occur":
       datumData.occurTime ??= toDatumTime(DateTime.local());
@@ -28,6 +25,11 @@ export function changeDatumCommand(
 
     case "start":
       datumData.occurTime ??= toDatumTime(DateTime.local());
+      const isActive = !!(
+        datumData.state &&
+        normalizeState(datumData.state) &&
+        get(datumData, "state.id") !== false
+      );
       if (!isActive) {
         set(datumData, "state.id", true);
       }
@@ -41,7 +43,10 @@ export function changeDatumCommand(
 
     case "end":
       datumData.occurTime ??= toDatumTime(DateTime.local());
-      if (isActive) {
+      if (
+        datumData.state === undefined ||
+        normalizeState(datumData.state) !== false
+      ) {
         datumData.lastState ??= datumData.state;
         datumData.state = { id: false };
       }
@@ -55,7 +60,7 @@ export function changeDatumCommand(
 
     case "switch":
       datumData.occurTime ??= toDatumTime(DateTime.local());
-      unset(datumData, "state");
+      set(datumData, "state", {});
       if (Array.isArray(args?.optional)) {
         args!.optional.unshift("dur");
         args!.optional.unshift("state");

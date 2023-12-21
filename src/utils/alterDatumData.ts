@@ -14,6 +14,8 @@ import {
 import { parseDateStr } from "../time/parseDateStr";
 import { parseDurationStr } from "../time/parseDurationStr";
 
+// TODO: Always keep state keys normalized
+// TODO: write function to easily add new fields to a normalized state without data loss
 export function alterDatumData({
   datumData,
   path,
