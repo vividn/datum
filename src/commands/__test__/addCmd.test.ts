@@ -1,6 +1,9 @@
 import {
+  deterministicHumanIds,
   fail,
   mockedLogLifecycle,
+  restoreNow,
+  setNow,
   testDbLifecycle,
 } from "../../__test__/test-utils";
 import { BaseDataError, IdError } from "../../errors";
@@ -10,6 +13,9 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
+import { DatumTime, toDatumTime } from "../../time/timeUtils";
+import { DateTime } from "luxon";
+import { setupCmd } from "../setupCmd";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
@@ -17,6 +23,7 @@ describe("addCmd", () => {
   const db = testDbLifecycle(dbName);
 
   const { mockedLog } = mockedLogLifecycle();
+  deterministicHumanIds();
 
   let addDocSpy: SpyInstance;
   beforeEach(() => {
@@ -284,9 +291,67 @@ describe("addCmd", () => {
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
 
-  it.todo(
-    "can do a start, end, occur, or switch command by using a trailing undefined argument",
-  );
+  describe("change command", () => {
+    let occurTime: DatumTime;
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+      occurTime = toDatumTime(DateTime.local());
+      await setupCmd({});
+    });
+    afterAll(() => {
+      restoreNow();
+    });
 
-  // TODO: write tests for all of the various options
+    it("can become an occur command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "occur"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a start command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "start", "30 min"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "end", "30 min"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "switch", "stateName", "5m30s"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
 });

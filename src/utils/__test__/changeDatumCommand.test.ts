@@ -323,7 +323,7 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { optional: ["existingKey"] };
       changeDatumCommand(datumData, "switch", args);
-      expect(args.optional).toEqual(["state=true", "dur", "existingKey"]);
+      expect(args.optional).toEqual(["state.id=true", "dur", "existingKey"]);
     });
   });
 });

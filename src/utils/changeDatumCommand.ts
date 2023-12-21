@@ -66,7 +66,7 @@ export function changeDatumCommand(
       }
       if (Array.isArray(args?.optional)) {
         args!.optional.unshift("dur");
-        args!.optional.unshift("state=true");
+        args!.optional.unshift("state.id=true");
       }
       break;
   }
