@@ -2,6 +2,8 @@ import { DataArgs, handleDataArgs } from "../dataArgs";
 import { GenericObject } from "../../GenericObject";
 import { ExtraDataError, MissingRequiredKeyError } from "../../errors";
 import * as inferType from "../../utils/inferType";
+import spyOn = jest.spyOn;
+import * as changeDatumCommandModule from "../../utils/changeDatumCommand";
 
 const expectParseDataToReturn = (
   inputProps: DataArgs,
@@ -668,15 +670,62 @@ describe("handleDataArgs", () => {
 
   it.todo("handles deep paths for all modes of specifying a key");
 
-  it.todo("interprets a dur field with a special value of 'start'");
-  it.todo("interprets a dur field with a special value of 'end'");
-  it.todo("interprets a dur field with a special value of 'occur'");
-  it.todo("interprets a dur field with a special value of 'switch'");
-  it.todo("interprets a trailing positional argument of 'start'");
-  it.todo("interprets a trailing positional argument of 'end'");
-  it.todo("interprets a trailing positional argument of 'occur'");
-  it.todo("interprets a trailing positional argument of 'switch'");
-  it.todo(
-    "does not switch to a different command if there is a remainderKey to grab additional arguments",
-  );
+  it("calls changeDatumCommand if optional key dur is a special command", () => {
+    const changeDatumCommandSpy = spyOn(
+      changeDatumCommandModule,
+      "changeDatumCommand",
+    );
+    const data = handleDataArgs({
+      optional: ["opt1", "dur"],
+      data: ["optValue1", "start", 3],
+    });
+    expect(changeDatumCommandSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ opt1: "optValue1" }),
+      "start",
+      expect.objectContaining({ optional: [] }),
+    );
+    expect(data).toMatchObject({
+      opt1: "optValue1",
+      state: { id: true },
+      dur: "PT3M",
+    });
+  });
+
+  it("calls changeDatumCommand if an remaining data key is a special command", () => {
+    const changeDatumCommandSpy = spyOn(
+      changeDatumCommandModule,
+      "changeDatumCommand",
+    );
+    const data = handleDataArgs({
+      optional: ["opt1"],
+      data: ["optValue1", "end", 3],
+    });
+    expect(changeDatumCommandSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ opt1: "optValue1" }),
+      "end",
+      expect.objectContaining({ optional: [] }),
+    );
+    expect(data).toMatchObject({
+      opt1: "optValue1",
+      state: { id: false },
+      dur: "PT3M",
+    });
+  });
+
+  it("does not switch to a different command if there is a remainderKey to grab additional arguments", () => {
+    const changeDatumCommandSpy = spyOn(
+      changeDatumCommandModule,
+      "changeDatumCommand",
+    );
+    const data = handleDataArgs({
+      optional: ["opt1"],
+      data: ["optValue1", "end", 3],
+      remainder: "remainder",
+    });
+    expect(changeDatumCommandSpy).not.toHaveBeenCalled();
+    expect(data).toMatchObject({
+      opt1: "optValue1",
+      remainder: ["end", 3],
+    });
+  });
 });
