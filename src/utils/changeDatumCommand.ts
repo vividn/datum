@@ -61,9 +61,12 @@ export function changeDatumCommand(
     case "switch":
       datumData.occurTime ??= toDatumTime(DateTime.local());
       set(datumData, "state", {});
+      if (datumData.dur === null) {
+        unset(datumData, "dur");
+      }
       if (Array.isArray(args?.optional)) {
         args!.optional.unshift("dur");
-        args!.optional.unshift("state");
+        args!.optional.unshift("state=true");
       }
       break;
   }

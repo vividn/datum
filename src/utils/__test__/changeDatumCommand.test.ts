@@ -317,13 +317,13 @@ describe("changeDatumCommand", () => {
       });
     });
 
-    it("adds a state.id=true and a dur key to the beginning of the optional keys array", () => {
+    it("adds a state=true and a dur key to the beginning of the optional keys array", () => {
       datumData = {
         state: { id: "something" },
       };
       const args: DataArgs = { optional: ["existingKey"] };
       changeDatumCommand(datumData, "switch", args);
-      expect(args.optional).toEqual(["state.id=true", "dur", "existingKey"]);
+      expect(args.optional).toEqual(["state=true", "dur", "existingKey"]);
     });
   });
 });
