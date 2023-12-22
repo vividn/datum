@@ -101,7 +101,6 @@ export function dataYargs(otherYargs?: Argv): Argv {
         type: "boolean",
       },
       lenient: {
-        //TODO: Invert this to be strict
         describe: "Allow extra data without defined keys",
         type: "boolean",
         alias: "l",
@@ -119,11 +118,7 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
       ? baseData
       : inferType(baseData)
     : {};
-  if (
-    typeof parsedData !== "object" ||
-    parsedData === null ||
-    Array.isArray(parsedData)
-  ) {
+  if (!isPlainObject(parsedData)) {
     throw new BaseDataError("base data not a valid object");
   }
   return parsedData as DatumData;

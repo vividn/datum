@@ -19,16 +19,6 @@ export function addIdAndMetadata<T>(
   data: DatumData<T>,
   args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">,
 ): EitherIdPayload<T> {
-  const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
-    data,
-  });
-
-  const idStructure = buildIdStructure({
-    idParts: args.idPart ?? defaultIdParts,
-    delimiter: args.idDelimiter ?? defaults.idDelimiter,
-    partition: args.partition ?? defaultPartitionParts,
-  });
-
   let meta: DatumMetadata | undefined = undefined;
   if (!args.noMetadata) {
     meta = {
@@ -39,17 +29,26 @@ export function addIdAndMetadata<T>(
     // for undo and original id building
     meta.createTime = toDatumTime(now());
     meta.modifyTime = toDatumTime(now());
-
-    // don't include idStructure if it is just a raw string (i.e. has no field references in it)
-    // that would be a waste of bits since _id then is exactly the same
-    if (idStructure.match(/(?<!\\)%/)) {
-      meta.idStructure = idStructure;
-    }
   }
   const payload: EitherPayload<T> =
     meta !== undefined
       ? ({ data, meta } as DatumPayload<T>)
       : ({ ...data } as DataOnlyPayload<T>);
+  const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
+    data,
+  });
+
+  const idStructure = buildIdStructure({
+    idParts: args.idPart ?? defaultIdParts,
+    delimiter: args.idDelimiter ?? defaults.idDelimiter,
+    partition: args.partition ?? defaultPartitionParts,
+  });
+
+  // don't include idStructure if it is just a raw string (i.e. has no field references in it)
+  // that would be a waste of bits since _id then is exactly the same
+  if (meta !== undefined && idStructure.match(/(?<!\\)%/)) {
+    meta.idStructure = idStructure;
+  }
 
   const _id = assembleId({
     payload,
