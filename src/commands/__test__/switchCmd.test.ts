@@ -1,4 +1,9 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
@@ -218,5 +223,68 @@ describe("switchCmd", () => {
     });
   });
 
-  it.todo("does not record a lastState if there is no occurTime");
+  it("does not record a lastState if there is no occurTime", async () => {
+    await switchCmd({ state: "someState", field: "field" });
+    setNow("+5");
+
+    const secondDoc = await switchCmd({
+      state: "anotherState",
+      field: "field",
+      noTimestamp: true,
+    });
+    expect(secondDoc.data).not.toHaveProperty("lastState");
+  });
+
+  describe("change command", () => {
+    deterministicHumanIds();
+
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command by having occur as a trailing word", async () => {
+      expect(
+        await switchCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          state: "someState",
+          data: ["key=val", "optVal", "occur"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command by having start as a trailing word", async () => {
+      expect(
+        await switchCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          state: "someState",
+          data: ["key=val", "optVal", "end"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a start command by having start as a trailing word", async () => {
+      expect(
+        await switchCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "5m30s",
+          state: "someState",
+          data: ["key=val", "optVal", "start"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
 });

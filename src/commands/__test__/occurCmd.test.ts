@@ -1,9 +1,12 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
 import { setupCmd } from "../setupCmd";
-import * as endCmdModule from "../endCmd";
-import * as startCmdModule from "../startCmd";
 import { getActiveState } from "../../state/getActiveState";
 
 describe("occurCmd", () => {
@@ -108,29 +111,53 @@ describe("occurCmd", () => {
     expect([false, undefined]).toContainEqual(newDoc2.data.lastState);
   });
 
-  it.skip("interprets an extra data arg of 'start' as start command", async () => {
-    await setupCmd({ db: dbName });
-    const startCmdSpy = jest.spyOn(startCmdModule, "startCmd");
-    const startDoc = await occurCmd({
-      field: "field",
-      optional: "optional",
-      data: ["start"],
-    });
-    expect(startDoc.data).toMatchObject({ field: "field", state: true });
-    expect(startDoc.data).not.toHaveProperty("dur");
-    expect(startCmdSpy).toHaveBeenCalled();
-  });
+  describe("change command", () => {
+    deterministicHumanIds();
 
-  it.skip("interprets an extra data arg of 'end' an end command", async () => {
-    await setupCmd({ db: dbName });
-    const endCmdSpy = jest.spyOn(endCmdModule, "endCmd");
-    const endDoc = await occurCmd({
-      field: "field",
-      optional: "optional",
-      data: ["end"],
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
     });
-    expect(endDoc.data).toMatchObject({ field: "field", state: false });
-    expect(endDoc.data).not.toHaveProperty("dur");
-    expect(endCmdSpy).toHaveBeenCalled();
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become a start command by having start as a trailing word", async () => {
+      expect(
+        await occurCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "start", "30 min"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command by having start as a trailing word", async () => {
+      expect(
+        await occurCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "end", "30 min"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command by having start as a trailing word", async () => {
+      expect(
+        await occurCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "switch", "stateName", "5m30s"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
   });
 });

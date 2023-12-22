@@ -1,7 +1,9 @@
 import { DataArgs, handleDataArgs } from "../dataArgs";
 import { GenericObject } from "../../GenericObject";
-import { DataError } from "../../errors";
+import { ExtraDataError, MissingRequiredKeyError } from "../../errors";
 import * as inferType from "../../utils/inferType";
+import spyOn = jest.spyOn;
+import * as changeDatumCommandModule from "../../utils/changeDatumCommand";
 
 const expectParseDataToReturn = (
   inputProps: DataArgs,
@@ -33,13 +35,13 @@ describe("handleDataArgs", () => {
   });
 
   it("throws error with extra data and no leniency", () => {
-    expect(() => handleDataArgs({ data: ["keyless"] })).toThrowError(DataError);
+    expect(() => handleDataArgs({ data: ["keyless"] })).toThrow(ExtraDataError);
     expect(() =>
       handleDataArgs({ data: ["these", "data", "have", "no", "keys"] }),
-    ).toThrowError(DataError);
+    ).toThrow(ExtraDataError);
     expect(() =>
       handleDataArgs({ required: ["key1"], data: ["hasKey", "noKey"] }),
-    ).toThrowError(DataError);
+    ).toThrow(ExtraDataError);
   });
 
   it("saves extra data when lenient", () => {
@@ -85,19 +87,19 @@ describe("handleDataArgs", () => {
   });
 
   it("throws if not enough data is given for all required keys", () => {
-    expect(() => handleDataArgs({ required: "a", data: [] })).toThrowError(
-      DataError,
+    expect(() => handleDataArgs({ required: "a", data: [] })).toThrow(
+      MissingRequiredKeyError,
     );
     expect(() =>
       handleDataArgs({ required: ["a", "b"], data: ["onlyOne"] }),
-    ).toThrowError(DataError);
+    ).toThrow(MissingRequiredKeyError);
     expect(() =>
       handleDataArgs({
         required: ["a", "b"],
         data: ["lenientDoesNotHelp"],
         lenient: true,
       }),
-    ).toThrowError(DataError);
+    ).toThrow(MissingRequiredKeyError);
   });
 
   test("required keys can be specified manually without error", () => {
@@ -376,7 +378,7 @@ describe("handleDataArgs", () => {
         optional: ["opt1", "withDefaultFromOptional=noError"],
         data: ["one", "two", "three", "four"],
       }),
-    ).toThrowError(DataError);
+    ).toThrow(ExtraDataError);
   });
 
   it("infers type from key for key=value data entry", () => {
@@ -664,5 +666,66 @@ describe("handleDataArgs", () => {
         justCmd: "justCmd",
       },
     );
+  });
+
+  it.todo("handles deep paths for all modes of specifying a key");
+
+  it("calls changeDatumCommand if optional key dur is a special command", () => {
+    const changeDatumCommandSpy = spyOn(
+      changeDatumCommandModule,
+      "changeDatumCommand",
+    );
+    const data = handleDataArgs({
+      optional: ["opt1", "dur"],
+      data: ["optValue1", "start", 3],
+    });
+    expect(changeDatumCommandSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ opt1: "optValue1" }),
+      "start",
+      expect.objectContaining({ optional: [] }),
+    );
+    expect(data).toMatchObject({
+      opt1: "optValue1",
+      state: { id: true },
+      dur: "PT3M",
+    });
+  });
+
+  it("calls changeDatumCommand if an remaining data key is a special command", () => {
+    const changeDatumCommandSpy = spyOn(
+      changeDatumCommandModule,
+      "changeDatumCommand",
+    );
+    const data = handleDataArgs({
+      optional: ["opt1"],
+      data: ["optValue1", "end", 3],
+    });
+    expect(changeDatumCommandSpy).toHaveBeenCalledWith(
+      expect.objectContaining({ opt1: "optValue1" }),
+      "end",
+      expect.objectContaining({ optional: [] }),
+    );
+    expect(data).toMatchObject({
+      opt1: "optValue1",
+      state: { id: false },
+      dur: "PT3M",
+    });
+  });
+
+  it("does not switch to a different command if there is a remainderKey to grab additional arguments", () => {
+    const changeDatumCommandSpy = spyOn(
+      changeDatumCommandModule,
+      "changeDatumCommand",
+    );
+    const data = handleDataArgs({
+      optional: ["opt1"],
+      data: ["optValue1", "end", 3],
+      remainder: "remainder",
+    });
+    expect(changeDatumCommandSpy).not.toHaveBeenCalled();
+    expect(data).toMatchObject({
+      opt1: "optValue1",
+      remainder: ["end", 3],
+    });
   });
 });
