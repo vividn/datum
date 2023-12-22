@@ -4,6 +4,7 @@ import { ExtraDataError, MissingRequiredKeyError } from "../../errors";
 import * as inferType from "../../utils/inferType";
 import spyOn = jest.spyOn;
 import * as changeDatumCommandModule from "../../utils/changeDatumCommand";
+import { jClone } from "../../utils/jClone";
 
 const expectParseDataToReturn = (
   inputProps: DataArgs,
@@ -417,41 +418,28 @@ describe("handleDataArgs", () => {
     );
   });
 
-  it(
-    "modifies the baseData property to contain the parsed data," +
-      "and appropriately cleans the other properties so that calling handleDataArgs is an indempotent operation",
-    () => {
-      const args: DataArgs = {
-        required: ["req1", "req2"],
-        optional: ["opt1", "opt2=defaultValue"],
-        remainder: "remainderKey",
-        baseData: '{ abc: "def" }',
-        comment: "This is a comment.",
-        data: ["value1", "value2", "value3", "value4", "value5", "value6"],
-      };
-      const parsedData1 = handleDataArgs(args);
-      expect(parsedData1).toEqual({
-        req1: "value1",
-        req2: "value2",
-        opt1: "value3",
-        opt2: "value4",
-        remainderKey: ["value5", "value6"],
-        abc: "def",
-        comment: "This is a comment.",
-      });
-      expect(args.baseData).toEqual(parsedData1);
-      expect(args).toMatchObject({
-        required: [],
-        optional: [],
-        baseData: parsedData1,
-        data: [],
-      });
-      expect(args.comment).toBeUndefined();
-
-      const parsedData2 = handleDataArgs(args);
-      expect(parsedData2).toEqual(parsedData1);
-    },
-  );
+  it("does not modify args directly", () => {
+    const args: DataArgs = {
+      required: ["req1", "req2"],
+      optional: ["opt1", "opt2=defaultValue"],
+      remainder: "remainderKey",
+      baseData: '{ abc: "def" }',
+      comment: "This is a comment.",
+      data: ["value1", "value2", "value3", "value4", "value5", "value6"],
+    };
+    const argsClone = jClone(args);
+    const parsedData1 = handleDataArgs(args);
+    expect(parsedData1).toEqual({
+      req1: "value1",
+      req2: "value2",
+      opt1: "value3",
+      opt2: "value4",
+      remainderKey: ["value5", "value6"],
+      abc: "def",
+      comment: "This is a comment.",
+    });
+    expect(args).toEqual(argsClone);
+  });
 
   it("uses the default value for an optional key if '.' is given as the value", () => {
     expectParseDataToReturn(
@@ -703,7 +691,7 @@ describe("handleDataArgs", () => {
     expect(changeDatumCommandSpy).toHaveBeenCalledWith(
       expect.objectContaining({ opt1: "optValue1" }),
       "end",
-      expect.objectContaining({ optional: [] }),
+      expect.objectContaining({ optional: expect.arrayContaining([]) }),
     );
     expect(data).toMatchObject({
       opt1: "optValue1",
