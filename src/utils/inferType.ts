@@ -1,55 +1,13 @@
 import RJSON from "relaxed-json";
-import { parseTimeStr } from "../time/parseTimeStr";
-import { parseDurationStr } from "../time/parseDurationStr";
-import { parseDateStr } from "../time/parseDateStr";
-import {
-  isoDateFromDateTime,
-  isoDurationFromDuration,
-  toDatumTime,
-} from "../time/timeUtils";
 import { JsonType } from "./utilityTypes";
 
-export function inferType(
-  value: number | string,
-  fieldName?: string,
-  defaultToInfer?: string | number,
-): undefined | JsonType {
+export function inferType(value: string): undefined | JsonType {
   if (value === "") {
     // can use `""` or `''` to indicate an empty string, see further down
     return undefined;
   }
-  if (value === ".") {
-    if (defaultToInfer === undefined) {
-      return undefined;
-    }
-    return inferType(defaultToInfer, fieldName);
-  }
 
-  if (fieldName !== undefined) {
-    switch (true) {
-      case /(?:\b|_)time\d*$/i.test(fieldName):
-      case /[a-z0-9]Time\d*$/.test(fieldName): {
-        const parsedTime = parseTimeStr({ timeStr: String(value) });
-        return toDatumTime(parsedTime);
-      }
-
-      case /(?:\b|_)date\d*$/i.test(fieldName!):
-      case /[a-z0-9]Date\d*$/.test(fieldName): {
-        const parsedDate = parseDateStr({ dateStr: String(value) });
-        return isoDateFromDateTime(parsedDate);
-      }
-
-      case /(?:\b|_)dur(ation)?\d*$/i.test(fieldName!):
-      case /[a-z0-9]Dur(ation)?\d*$/.test(fieldName): {
-        const parsedDuration = parseDurationStr({ durationStr: String(value) });
-        return isoDurationFromDuration(parsedDuration);
-      }
-    }
-  }
-
-  if (typeof value === "number") {
-    return value;
-  }
+  // a "." is used in alterDatumData to denote using the default, so this is provided to allow a literal "."
   if (/^\\.$/.test(value)) {
     return ".";
   }

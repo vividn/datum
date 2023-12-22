@@ -1,0 +1,136 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`addCmd change command can become a start command by having start as a trailing word 1`] = `
+Object {
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": Object {
+    "dur": "PT30M",
+    "field": "field",
+    "lastState": null,
+    "occurTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": true,
+  },
+  "meta": Object {
+    "createTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`addCmd change command can become a switch command by having start as a trailing word 1`] = `
+Object {
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": Object {
+    "dur": "PT5M30S",
+    "field": "field",
+    "lastState": null,
+    "occurTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": "stateName",
+  },
+  "meta": Object {
+    "createTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`addCmd change command can become an end command by having start as a trailing word 1`] = `
+Object {
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": Object {
+    "dur": "PT30M",
+    "field": "field",
+    "lastState": null,
+    "occurTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": false,
+  },
+  "meta": Object {
+    "createTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`addCmd change command can become an occur command by having start as a trailing word 1`] = `
+Object {
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": Object {
+    "dur": null,
+    "field": "field",
+    "lastState": null,
+    "occurTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+  },
+  "meta": Object {
+    "createTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": Object {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
