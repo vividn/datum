@@ -42,7 +42,7 @@ Object {
     "dur": "PT30M",
     "field": "field",
     "key": "val",
-    "lastState": true,
+    "lastState": null,
     "occurTime": Object {
       "o": 0,
       "tz": "UTC",
