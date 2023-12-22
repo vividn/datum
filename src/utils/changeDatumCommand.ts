@@ -22,7 +22,7 @@ export function changeDatumCommand(
       datumData.dur = null;
       break;
 
-    case "start":
+    case "start": {
       datumData.occurTime ??= toDatumTime(DateTime.local());
       const isActive = !!(
         datumData.state &&
@@ -39,6 +39,7 @@ export function changeDatumCommand(
         args!.optional.unshift("dur");
       }
       break;
+    }
 
     case "end":
       datumData.occurTime ??= toDatumTime(DateTime.local());

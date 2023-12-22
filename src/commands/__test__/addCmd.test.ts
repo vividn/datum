@@ -13,8 +13,6 @@ import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
-import { DatumTime, toDatumTime } from "../../time/timeUtils";
-import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
 
 describe("addCmd", () => {
@@ -292,10 +290,8 @@ describe("addCmd", () => {
   });
 
   describe("change command", () => {
-    let occurTime: DatumTime;
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      occurTime = toDatumTime(DateTime.local());
       await setupCmd({});
     });
     afterAll(() => {

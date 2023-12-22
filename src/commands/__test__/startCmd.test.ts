@@ -1,13 +1,17 @@
-import { deterministicHumanIds, restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
 import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
-import { DatumTime, toDatumTime } from "../../time/timeUtils";
+import { toDatumTime } from "../../time/timeUtils";
 import { BadDurationError } from "../../errors";
-import { occurCmd } from "../occurCmd";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";
@@ -136,10 +140,8 @@ describe("startCmd", () => {
   describe("change command", () => {
     deterministicHumanIds();
 
-    let occurTime: DatumTime;
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      occurTime = toDatumTime(DateTime.local());
     });
     afterAll(() => {
       restoreNow();

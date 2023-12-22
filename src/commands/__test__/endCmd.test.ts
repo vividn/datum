@@ -11,7 +11,7 @@ import { switchCmd } from "../switchCmd";
 import { startCmd } from "../startCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
-import { DatumTime, toDatumTime } from "../../time/timeUtils";
+import { toDatumTime } from "../../time/timeUtils";
 import { BadDurationError } from "../../errors";
 
 describe("endCmd", () => {
@@ -131,10 +131,8 @@ describe("endCmd", () => {
   describe("change command", () => {
     deterministicHumanIds();
 
-    let occurTime: DatumTime;
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      occurTime = toDatumTime(DateTime.local());
     });
     afterAll(() => {
       restoreNow();

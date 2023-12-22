@@ -1,11 +1,15 @@
-import { deterministicHumanIds, restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
-import { DatumTime, toDatumTime } from "../../time/timeUtils";
+import { toDatumTime } from "../../time/timeUtils";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
-import { startCmd } from "../startCmd";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";
@@ -220,20 +224,22 @@ describe("switchCmd", () => {
   });
 
   it("does not record a lastState if there is no occurTime", async () => {
-    await switchCmd({ state: "someState", field: "field"});
+    await switchCmd({ state: "someState", field: "field" });
     setNow("+5");
 
-    const secondDoc = await switchCmd({ state: "anotherState", field: "field", noTimestamp: true})
+    const secondDoc = await switchCmd({
+      state: "anotherState",
+      field: "field",
+      noTimestamp: true,
+    });
     expect(secondDoc.data).not.toHaveProperty("lastState");
   });
 
-    describe("change command", () => {
+  describe("change command", () => {
     deterministicHumanIds();
 
-    let occurTime: DatumTime;
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      occurTime = toDatumTime(DateTime.local());
     });
     afterAll(() => {
       restoreNow();
@@ -281,5 +287,4 @@ describe("switchCmd", () => {
       });
     });
   });
-
 });

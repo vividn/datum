@@ -7,11 +7,7 @@ import {
 import { DatumDocument } from "../../documentControl/DatumDocument";
 import { occurCmd } from "../occurCmd";
 import { setupCmd } from "../setupCmd";
-import * as endCmdModule from "../endCmd";
-import * as startCmdModule from "../startCmd";
 import { getActiveState } from "../../state/getActiveState";
-import { DatumTime, toDatumTime } from "../../time/timeUtils";
-import { DateTime } from "luxon";
 
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";
@@ -118,10 +114,8 @@ describe("occurCmd", () => {
   describe("change command", () => {
     deterministicHumanIds();
 
-    let occurTime: DatumTime;
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      occurTime = toDatumTime(DateTime.local());
     });
     afterAll(() => {
       restoreNow();

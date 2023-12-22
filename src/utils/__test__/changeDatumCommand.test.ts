@@ -5,7 +5,7 @@ import { setNow } from "../../__test__/test-utils";
 import { DataArgs } from "../../input/dataArgs";
 
 const nowStr = "2023-12-20T17:00:00.000Z";
-const occurTime = toDatumTime("2023-12-20T17:00:00.000Z");
+const occurTime = toDatumTime(nowStr);
 setNow("2023-12-20T17:00:00.000Z");
 describe("changeDatumCommand", () => {
   let datumData: DatumData;
@@ -164,7 +164,7 @@ describe("changeDatumCommand", () => {
         occurTime,
       });
       expect(datumData).not.toHaveProperty("lastState");
-    })
+    });
 
     it("does not override existing lastState", () => {
       datumData = {
