@@ -18,7 +18,7 @@ describe("unfoldState", () => {
 
   it("stringifys number states", () => {
     expect(normalizeState(123)).toEqual("123");
-  })
+  });
 
   it("unfolds objects with just id into their simple value counterparts", () => {
     expect(normalizeState({ id: true })).toEqual(true);
