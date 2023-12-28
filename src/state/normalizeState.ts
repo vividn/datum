@@ -2,22 +2,25 @@ import flattenDeep from "lodash/flattenDeep";
 import { BadStateError } from "../errors";
 import { JsonType } from "../utils/utilityTypes";
 import { GenericObject } from "../GenericObject";
+import isPlainObject from "lodash.isplainobject";
 
 export type StateObject = GenericObject & {
-  id: string | boolean | number;
+  id: string | boolean;
 };
-export type SingleState = string | boolean | number | StateObject;
+export type SingleState = string | boolean | StateObject;
 export type DatumState = null | SingleState | SingleState[];
 
+export function isStateObject(state: SingleState): state is StateObject {
+  return isPlainObject(state);
+}
 export function normalizeState(state: JsonType): DatumState {
   if (state === null) {
     return null;
   }
-  if (
-    typeof state === "number" ||
-    typeof state === "string" ||
-    typeof state === "boolean"
-  ) {
+  if (typeof state === "number") {
+    return String(state);
+  }
+  if (typeof state === "string" || typeof state === "boolean") {
     return state;
   }
   if (Array.isArray(state)) {
@@ -58,21 +61,13 @@ export function normalizeState(state: JsonType): DatumState {
     }
     return null;
   }
-  if (
-    typeof normalizedId === "number" ||
-    typeof normalizedId === "string" ||
-    typeof normalizedId === "boolean"
-  ) {
+  if (typeof normalizedId === "string" || typeof normalizedId === "boolean") {
     return { id: normalizedId, ...otherKeys };
   }
 
   if (Array.isArray(normalizedId)) {
     return normalizedId.map((single) => {
-      if (
-        typeof single === "number" ||
-        typeof single === "string" ||
-        typeof single === "boolean"
-      ) {
+      if (typeof single === "string" || typeof single === "boolean") {
         return { id: single, ...otherKeys };
       }
       return { ...single, ...otherKeys };
