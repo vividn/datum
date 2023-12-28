@@ -14,13 +14,16 @@ describe("unfoldState", () => {
     expect(normalizeState("abcd")).toEqual("abcd");
     expect(normalizeState(false)).toEqual(false);
     expect(normalizeState(true)).toEqual(true);
-    expect(normalizeState(123)).toEqual(123);
   });
+
+  it("stringifys number states", () => {
+    expect(normalizeState(123)).toEqual("123");
+  })
 
   it("unfolds objects with just id into their simple value counterparts", () => {
     expect(normalizeState({ id: true })).toEqual(true);
     expect(normalizeState({ id: false })).toEqual(false);
-    expect(normalizeState({ id: 123 })).toEqual(123);
+    expect(normalizeState({ id: 123 })).toEqual("123");
     expect(normalizeState({ id: null })).toEqual(null);
   });
 
