@@ -9,7 +9,12 @@ import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { DateTime, Duration } from "luxon";
 import { DatumTime, datumTimeToLuxon } from "../time/timeUtils";
-import { DatumState } from "../state/normalizeState";
+import {
+  DatumState,
+  isStateObject,
+  StateObject,
+} from "../state/normalizeState";
+import isEqual from "lodash.isequal";
 
 chalk.level = 3;
 
@@ -91,32 +96,45 @@ function formatState(state?: DatumState): string | undefined {
   if (state === undefined) {
     return undefined;
   }
+  if (state === null) {
+    return chalk.bold("null");
+  }
+  if (Array.isArray(state)) {
+    return state.map(formatState).join(",");
+  }
+  if (isStateObject(state)) {
+    const stateId = (state as StateObject).id;
+    if (stateId !== undefined) {
+      return `{${stateId}}`;
+    }
+    return "{}";
+  }
   if (state === true) {
-    return "start";
+    return chalk.bold("start");
   }
   if (state === false) {
-    return "end";
+    return chalk.bold("end");
   }
-  return chalk.bold(state);
+  return state;
 }
 function formatStateTransition(
   state?: DatumState,
   lastState?: DatumState,
 ): string | undefined {
-  if (state === true && lastState === false) {
-    return chalk.bold("start");
-  }
-  if (state === false && lastState === true) {
-    return chalk.bold("end");
+  if (
+    (state === true && lastState === false) ||
+    (state === false && lastState === true)
+  ) {
+    return formatState(state);
   }
   const lastStateText =
     lastState !== undefined
-      ? lastState === state
-        ? chalk.red(`${lastState}⇾`)
-        : chalk.dim(`${lastState}⇾`)
+      ? isEqual(lastState, state)
+        ? chalk.yellow(`${formatState(lastState)}⇾`)
+        : chalk.dim(`${formatState(lastState)}⇾`)
       : "";
   return state !== undefined
-    ? `${lastStateText} ${chalk.bold(state)}`
+    ? `${lastStateText} ${formatState(state)}`
     : undefined;
 }
 
@@ -137,7 +155,7 @@ function formattedNonRedundantData(doc: EitherPayload): string | undefined {
   const {
     _id,
     _rev,
-    state: _state,
+    state,
     lastState: _lastState,
     occurTime: _occurTime,
     dur: _dur,
@@ -145,12 +163,20 @@ function formattedNonRedundantData(doc: EitherPayload): string | undefined {
     field: _field,
     ...filteredData
   } = data;
-  if (Object.keys(filteredData).length === 0) {
+  const isStateComplex = !!(
+    state &&
+    ((Array.isArray(state) && state.some(isStateObject)) ||
+      (!Array.isArray(state) && isStateObject(state)))
+  );
+  const dataToDisplay = isStateComplex
+    ? { state, ...filteredData }
+    : filteredData;
+  const isExtraData = Object.keys(dataToDisplay).length > 0;
+  if (!isExtraData) {
     return undefined;
   }
-  const stringified = stringify(filteredData);
   // replace starting and ending curly braces with spaces
-  const formatted = stringified.replace(/^\{\n?/, " ").replace(/\n?\}$/, " ");
+  const formatted = stringify(dataToDisplay).replace(/^\{\n?/, " ").replace(/\n?\}$/, " ");
   return formatted;
 }
 
