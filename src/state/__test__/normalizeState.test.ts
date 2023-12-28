@@ -190,4 +190,22 @@ describe("unfoldState", () => {
       BadStateError,
     );
   });
+
+  it("converts a state of 'start' to true", () => {
+    expect(normalizeState("start")).toBe(true);
+    expect(normalizeState(["a", "start"])).toEqual(["a", true]);
+    expect(normalizeState({ id: "start", extra: "key" })).toEqual({
+      id: true,
+      extra: "key",
+    });
+  });
+
+  it("converts a state of 'end' to false", () => {
+    expect(normalizeState("end")).toBe(false);
+    expect(normalizeState(["a", "end"])).toEqual(["a", false]);
+    expect(normalizeState({ id: "end", extra: "key" })).toEqual({
+      id: false,
+      extra: "key",
+    });
+  });
 });

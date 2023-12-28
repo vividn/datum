@@ -20,6 +20,12 @@ export function normalizeState(state: JsonType): DatumState {
   if (typeof state === "number") {
     return String(state);
   }
+  if (state === "start") {
+    return true;
+  }
+  if (state === "end") {
+    return false;
+  }
   if (typeof state === "string" || typeof state === "boolean") {
     return state;
   }
