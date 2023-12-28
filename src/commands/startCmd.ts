@@ -3,6 +3,7 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { switchCmd } from "./switchCmd";
 import { occurArgs, OccurCmdArgs } from "./occurCmd";
 import { DurationArgs, durationArgs } from "../input/durationArgs";
+import set from "lodash.set";
 
 export const command = "start <field> [duration] [data..]";
 export const desc = "add a start document";
@@ -17,5 +18,7 @@ export function builder(yargs: Argv): Argv {
 export type StartCmdArgs = OccurCmdArgs & DurationArgs;
 
 export async function startCmd(args: StartCmdArgs): Promise<EitherDocument> {
-  return await switchCmd({ ...args, state: true });
+  args.cmdData ??= {};
+  set(args.cmdData, "state.id", true);
+  return await switchCmd({ ...args });
 }

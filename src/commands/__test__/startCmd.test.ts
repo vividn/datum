@@ -137,6 +137,21 @@ describe("startCmd", () => {
     ).rejects.toThrow(BadDurationError);
   });
 
+  it("still assigns a state of true even with required keys", async () => {
+    const doc = await startCmd({
+      field: "field",
+      duration: "reqVal1", //should get assigned to first required key because of flexiblePositional
+      required: "req1",
+      data: [30],
+    });
+    expect(doc.data).toMatchObject({
+      field: "field",
+      dur: "PT30M",
+      state: true,
+      req1: "reqVal1",
+    });
+  });
+
   describe("change command", () => {
     deterministicHumanIds();
 

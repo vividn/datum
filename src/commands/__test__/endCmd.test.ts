@@ -128,6 +128,21 @@ describe("endCmd", () => {
     ).rejects.toThrow(BadDurationError);
   });
 
+  it("still assigns a state of false even with required keys", async () => {
+    const doc = await endCmd({
+      field: "field",
+      duration: "reqVal1", //should get assigned to first required key because of flexiblePositional
+      required: "req1",
+      data: [30],
+    });
+    expect(doc.data).toMatchObject({
+      field: "field",
+      dur: "PT30M",
+      state: false,
+      req1: "reqVal1",
+    });
+  });
+
   describe("change command", () => {
     deterministicHumanIds();
 
