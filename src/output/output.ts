@@ -176,7 +176,9 @@ function formattedNonRedundantData(doc: EitherPayload): string | undefined {
     return undefined;
   }
   // replace starting and ending curly braces with spaces
-  const formatted = stringify(dataToDisplay).replace(/^\{\n?/, " ").replace(/\n?\}$/, " ");
+  const formatted = stringify(dataToDisplay)
+    .replace(/^\{\n?/, " ")
+    .replace(/\n?\}$/, " ");
   return formatted;
 }
 
