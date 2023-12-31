@@ -1,0 +1,33 @@
+Name,Span,R,G,B
+# Name = Name of the datum file
+# Span = span of the data on dayview (see span table)
+# R,G,B = color to plot the data
+
+# For coloring categorical data, put the datum file name on one line
+# and then list out the categories preceded by column
+# For example:
+# data_name,span[,defaultRed,defaultGreen,defaultBlue]
+# :,cat1,R,G,B
+# :,cat2,R,G,B
+# etc.
+
+environment,full
+:,home, 20, 20, 20
+:,inside, 90, 90, 90
+:,outside, 135, 163, 102
+
+sleep,level1, 20, 40, 120
+
+
+
+
+
+
+
+
+
+
+
+
+
+

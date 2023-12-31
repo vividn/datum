@@ -79,25 +79,30 @@ class Datumdata:
 
 
         # Only load in header and last 1000 lines to save time
-        total_lines = int(subprocess.check_output(["/bin/sh", "-c", f"wc -l {self.datum_file}"]).split()[0])
+        # total_lines = int(subprocess.check_output(["/bin/sh", "-c", f"wc -l {self.datum_file}"]).split()[0])
         # to_skip=range(1, total_lines - 1000)
         # skiprows=[i for i in to_skip]
         skiprows=None
 
         # Make pandas dataframe from datum file, with the date and time combined into one field and set as the index
-        self.v1_data = pd.read_csv(
-            self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0], skiprows=skiprows
-        )
+        try:
+            self.v1_data = pd.read_csv(
+                self.datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0], skiprows=skiprows
+            )
+        except FileNotFoundError:
+            self.v1_data = None
 
         # Get v2 data as well
         try:
             self.v2_data = pd.read_csv(
                 self.v2_datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
             )
-            self.data = pd.concat([self.v1_data, self.v2_data])
+            self.data = self.v2_data if self.v1_data is None else pd.concat([self.v1_data, self.v2_data])
         except FileNotFoundError:
             self.data = self.v1_data
 
+        if self.data is None:
+            raise FileNotFoundError(f"Could not find datum file: {self.datum_file}")
 
         self.data.drop(columns=["Offset"], inplace=True)
 

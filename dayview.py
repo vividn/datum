@@ -9,6 +9,7 @@ import re
 import os
 import stat
 import sys
+import hashlib
 from PIL import Image, ImageDraw, ImageFont
 import traceback
 
@@ -27,7 +28,7 @@ all_datumdatas = {}
 def set_constants():
     # Constants and globals
     global data_set
-    data_set = "standardSet"
+    data_set = "v2Set"
 
     global quantifier_set
     quantifier_set = "quants"
@@ -53,11 +54,14 @@ def set_constants():
         "level2": (0.4, 1),
         "level3": (0.6, 1),
         "upper": (0.1, 0.3),
+        "rising": (0.3, 0.4),
         "mid": (0.4, 0.6),
+        "sinking": (0.6, 0.7),
         "lower": (0.7, 0.9),
         "floor": (0.9, 1.0),
         "ceiling": (0, 0.07),
-        "foundation": (0.94, 1.0)
+        "foundation": (0.94, 1.0),
+        "subfoundation": (0.98, 1.0)
     }
 
     # Point properties
@@ -155,8 +159,7 @@ def get_datum_names_spans_and_colors(data_set):
             if not any(np.isnan([row.R, row.G, row.B])):
                 datum_colors[row.Name] = (int(row.R), int(row.G), int(row.B))
             else:
-                global default_color
-                datum_colors[row.Name] = default_color
+                datum_colors[row.Name] = hash_string_to_rgb(row.Name)
             prev_row = row.Name
 
         else:
@@ -165,12 +168,12 @@ def get_datum_names_spans_and_colors(data_set):
 
             # If this is the first category, change the color for this data to be a hash, with the proper default
             if datum_colors[prev_row].__class__ != dict:
-                datum_colors[prev_row] = {"default": datum_colors[prev_row]}
+                datum_colors[prev_row] = {}
             # Category name is in the span column
             if not any(np.isnan([row.R, row.G, row.B])):
                 datum_colors[prev_row][row.Span] = (int(row.R), int(row.G), int(row.B))
             else:
-                datum_colors[prev_row][row.Span] = datum_colors[prev_row]["default"]
+                datum_colors[prev_row][row.Span] = hash_string_to_rgb(row.Span)
 
     return datum_names, datum_spans, datum_colors
 
@@ -328,6 +331,8 @@ def main(**kwargs):
             try:
                 data = Datumdata(name)
                 all_datumdatas[name] = data
+            except FileNotFoundError as e:
+                pass # TODO: remove this once migration is fully complete
             except Exception as e:
                 # If an error occurs, continue on, but later draw the error symbol as indication
                 error_has_occurred = True
@@ -586,13 +591,23 @@ def dayperc(time):
     # Returns the percentage through the day that a certain time is
     return time.hour / 24.0 + time.minute / (24.0 * 60) + time.second / (24.0 * 60 * 60)
 
+def hash_string_to_rgb(s):
+    # Hash the string to get a hexadecimal digest
+    hash_digest = hashlib.md5(s.encode()).hexdigest()
+
+    # Extract the first 6 characters of the hash for RGB values
+    r = int(hash_digest[0:2], 16)
+    g = int(hash_digest[2:4], 16)
+    b = int(hash_digest[4:6], 16)
+
+    return (r, g, b)
 
 def get_color(datum_name, datum_colors, category=None):
     if category is None:
         try:
             return datum_colors[datum_name]
         except KeyError:
-            return default_color
+            return hash_string_to_rgb(datum_name)
 
     else:
         try:
@@ -607,7 +622,8 @@ def get_color(datum_name, datum_colors, category=None):
             try:
                 return datum_colors[datum_name]["default"]
             except KeyError:
-                return default_color
+                return hash_string_to_rgb(category)
+
 
 if __name__ == "__main__":
     main(imagename="weekview", xsize=1078, ysize=574, quantfontsize=15)
