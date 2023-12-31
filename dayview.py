@@ -28,7 +28,7 @@ all_datumdatas = {}
 def set_constants():
     # Constants and globals
     global data_set
-    data_set = "v2Set"
+    data_set = "standardSet"
 
     global quantifier_set
     quantifier_set = "quants"
@@ -223,7 +223,19 @@ def main(**kwargs):
     else:
         nDays = len(date_array)
 
-    datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set)
+    if begin_date < datetime.date(2024,1,1):
+        datum_names_v1, datum_spans_v1, datum_colors_v1 = get_datum_names_spans_and_colors(data_set)
+        datum_names_v2, datum_spans_v2, datum_colors_v2 = get_datum_names_spans_and_colors("v2Set")
+
+        datum_names = []
+        for item in datum_names_v1 + datum_names_v2:
+            if item not in datum_names:
+                datum_names.append(item)
+        datum_spans = {**datum_spans_v1, **datum_spans_v2}
+        datum_colors = {**datum_colors_v1, **datum_colors_v2}
+    else:
+        datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors("v2Set")
+
 
     # Find the width of the date text on the left of the date,
     date_label_fmt = "%a, %b %d"
@@ -332,7 +344,8 @@ def main(**kwargs):
                 data = Datumdata(name)
                 all_datumdatas[name] = data
             except FileNotFoundError as e:
-                pass # TODO: remove this once migration is fully complete
+                print(f"no file for {name}", file=sys.stderr)
+                continue # TODO: remove this once migration is fully complete
             except Exception as e:
                 # If an error occurs, continue on, but later draw the error symbol as indication
                 error_has_occurred = True
