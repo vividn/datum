@@ -99,7 +99,7 @@ class Datumdata:
             self.v2_data = pd.read_csv(
                 self.v2_datum_file, delimiter="\t", parse_dates=[[0, 1]], index_col=[0]
             )
-            self.data = self.v2_data if self.v1_data is None else pd.concat([self.v1_data, self.v2_data])
+            self.data = self.v2_data if self.v1_data is None else pd.concat([self.v1_data, self.v2_data], axis=0)
         except FileNotFoundError:
             self.data = self.v1_data
 
@@ -224,6 +224,9 @@ class Datumdata:
 
         elif self.column == "Minutes":
             self.data_type = "block"
+
+        elif self.column == "State":
+            self.data_type = "category"
 
         else:
             # If column consists of numbers, sum by default
@@ -561,10 +564,10 @@ class Datumdata:
             if col == "start":
                 raise ValueError("start should not occur in category file")
 
-            elif col == "end":
+            elif col == "end" or (pd.isna(col) and minutes == "end"):
 
                 # If nothing is in the minutes column, end the current block (if one is active)
-                if pd.isna(minutes):
+                if pd.isna(minutes) or minutes == "end":
                     if in_block:
                         end_times.setdefault(in_block, []).append(timestamp)
                         in_block = False
@@ -654,6 +657,15 @@ class Datumdata:
                                 self.name, timestamp
                             )
                         )
+
+                elif minutes == "start" and pd.isna(col):
+                    # End the current category
+                    if in_block:
+                        end_times.setdefault(in_block, []).append(timestamp)
+
+                    # Start the new category
+                    in_block = "start"
+                    start_times.setdefault(col, []).append(timestamp)
 
                 else:
                     raise ValueError(
@@ -757,8 +769,8 @@ class Datumdata:
                 minutes = self.data[["Minutes"]].iloc[prev_ind][0]
 
                 # Day does not start in_block if category ended the previous day
-                if pd.isna(minutes):
-                    return False if catcol in ["end", "[start]", "[end]"] else catcol
+                if pd.isna(minutes) or minutes == "end":
+                    return False if pd.isna(catcol) or catcol in ["end", "[start]", "[end]"] else catcol
 
                 # If last entry on the previous day was a temporary entry, continue to previous entry and so on
                 prev_ind -= 1

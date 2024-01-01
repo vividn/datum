@@ -638,7 +638,6 @@ def get_color(datum_name, datum_colors, category=None):
 
 if __name__ == "__main__":
     main(imagename="weekview", xsize=1078, ysize=574, quantfontsize=15)
-    main(imagename="reduced", data_set="reducedSet")
     main(nDays=30, imagename="30dayview", ysize=1920)
     main(
         nDays=1,
@@ -683,10 +682,11 @@ if __name__ == "__main__":
         fontsize=23
     )
     main(nDays=14, imagename="2week", ysize=1200)
-    main(imagename="trip",
-         begin_date=dt.date(2023, 9, 3),
-         end_date=dt.date(2023, 11, 11),
-         xsize=1000, ysize=5000)
+    # main(imagename="reduced", data_set="reducedSet")
+    # main(imagename="trip",
+    #      begin_date=dt.date(2023, 9, 3),
+    #      end_date=dt.date(2023, 11, 11),
+    #      xsize=1000, ysize=5000)
 
     # main(
     #     begin_date=dt.date(2021, 9, 13),
