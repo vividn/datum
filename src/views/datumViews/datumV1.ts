@@ -88,7 +88,7 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
       outputArray.push(String(minutes));
     } else {
       outputArray.push(String(minutes));
-      outputArray.push(String(state));
+      outputArray.push(JSON.stringify(state));
     }
 
     emit(key, outputArray);
