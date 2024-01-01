@@ -160,9 +160,9 @@ def get_datum_names_spans_and_colors(*data_sets):
 
                 # Don't assign a color if one is not entered
                 if not any(np.isnan([row.R, row.G, row.B])):
-                    datum_colors[row.Name] = (int(row.R), int(row.G), int(row.B))
+                    datum_colors[row.Name] = {"start": (int(row.R), int(row.G), int(row.B))}
                 else:
-                    datum_colors[row.Name] = hash_string_to_rgb(row.Name)
+                    datum_colors[row.Name] = {"start": hash_string_to_rgb(row.Name)}
                 prev_row = row.Name
 
             else:
@@ -616,7 +616,7 @@ def hash_string_to_rgb(s):
 def get_color(datum_name, datum_colors, category=None):
     if category is None:
         try:
-            return datum_colors[datum_name]
+            return datum_colors[datum_name]["start"]
         except KeyError:
             return hash_string_to_rgb(datum_name)
 
