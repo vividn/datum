@@ -256,6 +256,26 @@ describe("switchCmd", () => {
     });
   });
 
+  it("handles dot syntax required and optional keys correctly", async () => {
+    const doc = await switchCmd({
+      required: [".medium"],
+      optional: [".title", ".author"],
+      field: "consume",
+      state: ".medium=text",
+      duration: "book_fiction",
+      data: [".", "title", "author"]
+    });
+    expect(doc.data).toMatchObject({
+      field: "consume",
+      state: {
+        medium: "text",
+        id: "book_fiction",
+        title: "title",
+        author: "author",
+      },
+    });
+  })
+
   describe("change command", () => {
     deterministicHumanIds();
 
