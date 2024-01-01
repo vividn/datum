@@ -1,3 +1,5 @@
+import time
+
 import pandas as pd
 import numpy as np
 import datetime as dt
@@ -120,7 +122,9 @@ class Datumdata:
         # The first column after Date and Time
         # or, the "Time" column if only "Date" and "Time" exist
         if self.column is None:
-            if len(self.data.columns) > 0:
+            if "State" in self.data.columns:
+                self.column = "State"
+            elif len(self.data.columns) > 0:
                 self.column = self.data.columns[0]
             else:
                 self.column = "Time"
@@ -166,8 +170,12 @@ class Datumdata:
         # TODO: Use symbols to indicate proper combination method
 
         # Load in first line as header
-        with open(self.datum_file, "r") as f:
-            header = f.readline().strip().split("\t")
+        try:
+            with open(self.datum_file, "r") as f:
+                header = f.readline().strip().split("\t")
+        except FileNotFoundError:
+            with open(self.v2_datum_file, "r") as f:
+                header = f.readline().strip().split("\t")
 
         # Split the header into an array of strings, the title of each column
         if header[0] != "Date":

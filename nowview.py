@@ -54,7 +54,7 @@ def main(tiny=False):
     # Display info about what is being processed
     print("\n#####################\n" + imagename)
 
-    datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set=data_set)
+    datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors("v2Set")
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
@@ -75,6 +75,9 @@ def main(tiny=False):
         # Get the data if it has already been loaded, otherwise use the Datumdata class to load in the data
         try:
             data = Datumdata(name)
+        except FileNotFoundError as e:
+            print(f"no file for {name}", file=sys.stderr)
+            continue # TODO: remove this once migration is fully complete
         except Exception as e:
             # If an error occurs, continue on, but later draw the error symbol as indication
             error_has_occurred = True

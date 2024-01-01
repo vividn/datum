@@ -227,6 +227,7 @@ def main(**kwargs):
         nDays = len(date_array)
 
     if end_date < datetime.date(2023,12,31):
+        print("hello")
         datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set)
     elif begin_date < datetime.date(2024,1,1):
         datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set, "v2Set")
