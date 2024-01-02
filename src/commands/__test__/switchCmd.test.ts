@@ -263,7 +263,7 @@ describe("switchCmd", () => {
       field: "consume",
       state: ".medium=text",
       duration: "book_fiction",
-      data: [".", "title", "author"]
+      data: [".", "title", "author"],
     });
     expect(doc.data).toMatchObject({
       field: "consume",
@@ -274,7 +274,7 @@ describe("switchCmd", () => {
         author: "author",
       },
     });
-  })
+  });
 
   describe("change command", () => {
     deterministicHumanIds();
