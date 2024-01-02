@@ -235,14 +235,14 @@ describe("switchCmd", () => {
     expect(secondDoc.data).not.toHaveProperty("lastState");
   });
 
-  it("handles required keys and optional keys for complex state correcty", async () => {
+  it("handles required keys and optional keys for complex state correctly", async () => {
     const doc = await switchCmd({
       field: "book",
       state: "the wind in the willows", // actually should get mapped to .title because of flexiblePositional (will make more sense when remapping argparsing which should support more readable tests)
       duration: "kenneth grahame", //gets mapped to .author
       required: [".title", ".author"],
       optional: [".genre"],
-      data: [5, "fiction"],
+      data: [".", 5, "fiction"],
     });
 
     expect(doc.data).toMatchObject({
