@@ -544,16 +544,16 @@ class Datumdata:
             block_start = dt.datetime.combine(date, dt.time())
             start_times.setdefault(start_value, []).append(block_start)
 
-        # A new data entry into categorical data should always change something (even if in another column)
-        # Therefore, if two chronologically consecutive, non-temporary entries are doing the same thing, throw an error
-        perms = df[pd.isna(df["Minutes"])].drop(["Minutes"], axis=1)
-        conflicts = (perms == perms.shift()).all(axis=1)
-        if conflicts.any():
-            raise ValueError(
-                "Redundant category: {} {}".format(
-                    self.name, conflicts[conflicts].index[0]
-                )
-            )
+        # # A new data entry into categorical data should always change something (even if in another column)
+        # # Therefore, if two chronologically consecutive, non-temporary entries are doing the same thing, throw an error
+        # perms = df[pd.isna(df["Minutes"])].drop(["Minutes"], axis=1)
+        # conflicts = (perms == perms.shift()).all(axis=1)
+        # if conflicts.any():
+        #     raise ValueError(
+        #         "Redundant category: {} {}".format(
+        #             self.name, conflicts[conflicts].index[0]
+        #         )
+        #     )
 
         # Iterate through entries on day
         for timestamp, col, minutes in df[[self.column, "Minutes"]].itertuples():
@@ -561,10 +561,18 @@ class Datumdata:
             # col can either start or change to a block of a new category or if 'end' ends the active category
             # For category data, entries may be made temporary by using numbers in the Minutes column
 
-            if col == "start":
-                raise ValueError("start should not occur in category file")
+            if minutes == "start":
+                minutes = np.nan
+                if pd.isna(col):
+                    col = "start"
 
-            elif col == "end" or (pd.isna(col) and minutes == "end"):
+            if minutes == "end":
+                minutes = np.nan
+                col = "end"
+
+            minutes = float(minutes)
+
+            if col == "end":
 
                 # If nothing is in the minutes column, end the current block (if one is active)
                 if pd.isna(minutes) or minutes == "end":
@@ -614,7 +622,6 @@ class Datumdata:
 
             else:
                 # Otherwise, treat the entry as a category name
-
                 # Behavior in this instance is dependant on minutes
                 # If minutes is NaN, start a new category
                 if pd.isna(minutes):

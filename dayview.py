@@ -416,13 +416,30 @@ def main(**kwargs):
 
                     # Draw the blocks
                     for block_start, block_end in all_blocks[cat]:
-                        # Figure out where the block starts and ends in the day on the image
-                        xmin = dayperc(block_start.time()) * day_lenx + l_midnight
-                        xmax = dayperc(block_end.time()) * day_lenx + l_midnight
 
-                        draw.rectangle(
-                            [xmin, min_block_y, xmax, max_block_y], fill=data_color
-                        )
+                        if block_start != block_end:
+                            # Figure out where the block starts and ends in the day on the image
+                            xmin = dayperc(block_start.time()) * day_lenx + l_midnight
+                            xmax = dayperc(block_end.time()) * day_lenx + l_midnight
+
+                            draw.rectangle(
+                                [xmin, min_block_y, xmax, max_block_y], fill=data_color
+                            )
+
+                        else:
+                            # If block_start and block_end are the same, there is no duration data for this entry,
+                            # So, just draw a point
+                            point_x = dayperc(block_end.time()) * day_lenx + l_midnight
+
+                            # Get the bounding box of the dot
+                            point_xy = [
+                                point_x - point_r,
+                                point_y - point_r,
+                                point_x + point_r,
+                                point_y + point_r,
+                            ]
+
+                            draw.ellipse(point_xy, fill=data_color)
 
             else:
                 # Get the appropriate data color
@@ -682,6 +699,9 @@ if __name__ == "__main__":
         fontsize=23
     )
     main(nDays=14, imagename="2week", ysize=1200)
+    #
+    #
+    #
     # main(imagename="reduced", data_set="reducedSet")
     # main(imagename="trip",
     #      begin_date=dt.date(2023, 9, 3),
