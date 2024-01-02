@@ -163,7 +163,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
     if (afterEquals !== undefined) {
       // key is explicitly given e.g., 'key=value'
-      const path = beforeEquals;
+      const path = datumPath(beforeEquals);
       const value = afterEquals;
 
       // Search for default value to allow explicitly setting it to default using '.',
@@ -195,7 +195,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [path, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+      const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+      const path = datumPath(rawPath);
 
       // TODO: Consider explicitly setting an optional key to undefined to be sufficient to bypass this step
       if (get(datumData, path) !== undefined) {
@@ -224,7 +225,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   while (requiredKeys.length > 0) {
     const requiredKey = requiredKeys.shift()!;
-    if (get(datumData, requiredKey) !== undefined) {
+    const requiredPath = datumPath(requiredKey);
+    if (get(datumData, requiredPath) !== undefined) {
       continue;
     }
     // Allow required keys to be given a default value via an optional key
@@ -234,6 +236,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     //      alias rent='tx acc=Checking -k amount=1200'
     // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
     // a tx doc with amount=1500
+    //TODO: Allow state based keys to still work if defined in separate ways
     if (
       optionalKeys?.find((optionalWithDefault) =>
         new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
@@ -246,12 +249,13 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   // If optional keys with default values are left assign them
   while (optionalKeys.length > 0) {
-    const [path, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+    const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+    const path = datumPath(rawPath);
     if (
       defaultValue !== undefined &&
       [undefined, "."].includes(get(datumData, path))
     ) {
-      alterDatumData({ datumData, path: path, value: defaultValue });
+      alterDatumData({ datumData, path, value: defaultValue });
     }
   }
 
