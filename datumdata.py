@@ -572,6 +572,13 @@ class Datumdata:
 
             minutes = float(minutes)
 
+            if pd.isna(col):
+                if minutes >= 0:
+                    col = "start"
+                if minutes < 0:
+                    col = "end"
+                    minutes = -minutes
+
             if col == "end":
 
                 # If nothing is in the minutes column, end the current block (if one is active)
@@ -614,6 +621,7 @@ class Datumdata:
             if is_number(col):
                 # Using a negative number in the category column is no longer supported
                 # Instead, use 'end' and a positive number in the Minutes column
+                print("col", col, "minutes", minutes)
                 raise ValueError(
                     "Number should not be in a category column: {} {}".format(
                         self.name, timestamp
@@ -754,7 +762,7 @@ class Datumdata:
             )
         except KeyError:
             # If no data exists before the day
-            return False
+            return None
 
         if self.data_type == "block":
             while prev_ind >= 0:

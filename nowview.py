@@ -31,11 +31,14 @@ def main(tiny=False):
         "level2": (0.4, 1),
         "level3": (0.6, 1),
         "upper": (0.1, 0.3),
+        "rising": (0.3, 0.4),
         "mid": (0.4, 0.6),
+        "sinking": (0.6, 0.7),
         "lower": (0.7, 0.9),
         "floor": (0.9, 1.0),
         "ceiling": (0, 0.07),
-        "foundation": (0.94, 1.0)
+        "foundation": (0.94, 1.0),
+        "subfoundation": (0.98, 1.0)
     }
 
     fontpath = home + ".fonts/typecatcher/"
