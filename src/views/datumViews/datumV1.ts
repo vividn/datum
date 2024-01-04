@@ -69,7 +69,9 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
           60 * durObj.hours +
           durObj.minutes +
           durObj.seconds / 60)
-      : "";
+      : data.dur === null
+        ? 0
+        : "";
     const state = data.state;
 
     if (state === false) {
