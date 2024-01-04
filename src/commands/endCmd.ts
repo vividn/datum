@@ -4,7 +4,7 @@ import { durOccurArgs, StartCmdArgs } from "./startCmd";
 import { switchCmd } from "./switchCmd";
 import set from "lodash.set";
 
-export const command = "end <field> [data..]";
+export const command = "end <field> [duration] [data..]";
 export const desc = "add an end document";
 
 export function builder(yargs: Argv): Argv {
