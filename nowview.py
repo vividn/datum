@@ -25,21 +25,6 @@ def main(tiny=False):
     error_symbol = "!"
 
     image_padding = 10
-    bar_span = {
-        "full": (0, 1),
-        "level1": (0.20, 1),
-        "level2": (0.4, 1),
-        "level3": (0.6, 1),
-        "upper": (0.1, 0.3),
-        "rising": (0.3, 0.4),
-        "mid": (0.4, 0.6),
-        "sinking": (0.6, 0.7),
-        "lower": (0.7, 0.9),
-        "floor": (0.9, 1.0),
-        "ceiling": (0, 0.07),
-        "foundation": (0.94, 1.0),
-        "subfoundation": (0.98, 1.0)
-    }
 
     fontpath = home + ".fonts/typecatcher/"
     fontsize = 18
@@ -57,7 +42,7 @@ def main(tiny=False):
     # Display info about what is being processed
     print("\n#####################\n" + imagename)
 
-    datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors("v2Set")
+    datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors("v2Set")
 
     im = Image.new("RGB", size=(xsize, ysize), color=bg_color)
     draw = ImageDraw.Draw(im)
@@ -102,8 +87,8 @@ def main(tiny=False):
 
 
         if data.active_now:
-            min_block_y = image_padding + bar_span[span][0] * day_height
-            max_block_y = image_padding + bar_span[span][1] * day_height
+            min_block_y = image_padding + named_spans[span][0] * day_height
+            max_block_y = image_padding + named_spans[span][1] * day_height
 
             if data.data_type == "block":
                 # Get the appropriate data color

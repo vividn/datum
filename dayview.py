@@ -45,24 +45,6 @@ def set_constants():
     global bg_color
     bg_color = (0, 0, 0)
 
-    # Specify the bar height classes, which can be referred to later by name
-    # 0 is the top of the bar, 1 is the bottom
-    global bar_span
-    bar_span = {
-        "full": (0, 1),
-        "level1": (0.20, 1),
-        "level2": (0.4, 1),
-        "level3": (0.6, 1),
-        "upper": (0.1, 0.3),
-        "rising": (0.3, 0.4),
-        "mid": (0.4, 0.6),
-        "sinking": (0.6, 0.7),
-        "lower": (0.7, 0.9),
-        "floor": (0.9, 1.0),
-        "ceiling": (0, 0.07),
-        "foundation": (0.94, 1.0),
-        "subfoundation": (0.98, 1.0)
-    }
 
     # Point properties
     global point_r
@@ -146,6 +128,7 @@ def get_datum_names_spans_and_colors(*data_sets):
     datum_names = []
     datum_spans = {}
     datum_colors = {}
+    named_spans = {}
 
     for data_set in data_sets:
         table_file = os.path.join(os.path.dirname(__file__), data_set + ".csv")
@@ -153,6 +136,9 @@ def get_datum_names_spans_and_colors(*data_sets):
 
         prev_row = None
         for row in datum_table.itertuples():
+            if row.Name == "Span":
+                named_spans[row.Span] = (float(row.R), float(row.G))
+                continue
             if row.Name != ":":
                 if row.Name not in datum_names:
                     datum_names += [row.Name]
@@ -178,7 +164,7 @@ def get_datum_names_spans_and_colors(*data_sets):
                 elif row.Span not in datum_colors[prev_row]:
                     datum_colors[prev_row][row.Span] = hash_string_to_rgb(row.Span)
 
-    return datum_names, datum_spans, datum_colors
+    return datum_names, datum_spans, datum_colors, named_spans
 
 def main(**kwargs):
     """
@@ -228,11 +214,12 @@ def main(**kwargs):
 
     if end_date < datetime.date(2023,12,31):
         print("hello")
-        datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set)
+        datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors(data_set)
     elif begin_date < datetime.date(2024,1,1):
-        datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors(data_set, "v2Set")
+        datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors(data_set, "v2Set")
     else:
-        datum_names, datum_spans, datum_colors = get_datum_names_spans_and_colors("v2Set")
+        datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors("v2Set")
+
 
 
     # Find the width of the date text on the left of the date,
@@ -368,8 +355,8 @@ def main(**kwargs):
                 continue
 
             # The upper and lower y values of where to draw the data
-            min_block_y = day0s[iDay] + bar_span[span][0] * day_height
-            max_block_y = day0s[iDay] + bar_span[span][1] * day_height
+            min_block_y = day0s[iDay] + named_spans[span][0] * day_height
+            max_block_y = day0s[iDay] + named_spans[span][1] * day_height
 
             # If data are points, center within the span
             point_y = (min_block_y + max_block_y) / 2
