@@ -93,6 +93,8 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
       if (typeof state === "object" && state !== null) {
         if (Array.isArray(state)) {
           outputArray.push(state.join(","));
+        } else if (state.id !== undefined && typeof state.id !== "boolean") {
+          outputArray.push(state.id);
         } else {
           outputArray.push(Object.values(state).sort().join("_"));
         }
