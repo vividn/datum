@@ -205,7 +205,7 @@ export async function transactionView({
     const isBalanced = fix(amount) === fix(0);
     console.log(
       isBalanced
-        ? chalk.greenBright(
+        ? chalk.green(
             printf(format, date, hid, "EqCheck", "", "", 0, eqBalance).replace(
               / 0\.0+ /,
               (match) => {
@@ -214,7 +214,7 @@ export async function transactionView({
               }
             )
           )
-        : chalk.redBright(
+        : chalk.red(
             printf(format, date, hid, "FAIL", "", "", amount, eqBalance)
           )
     );
@@ -299,7 +299,7 @@ if (require.main === module) {
   const [account, currency, start, end] = args._ ?? [];
   if (!account || !currency) {
     console.error(
-      chalk.redBright(
+      chalk.red(
         `Account and currency must be specified as the first two arguments.`
       )
     );
