@@ -4404,10 +4404,10 @@ inherits@2, inherits@^2.0.3, inherits@^2.0.4, inherits@~2.0.1:
   resolved "https://registry.yarnpkg.com/inherits/-/inherits-2.0.4.tgz#0fa2c64f932917c3433a0ded55363aae37416b7c"
   integrity sha512-k/vGaX4/Yla3WzyMCvTQOXYeIHvqOKtnqBduzTHpzpQZzAskKMhZ2K+EnBiSM9zGSoIFeMpXKxa4dYeZIQqewQ==
 
-ink-table@^3.0.0:
-  version "3.0.0"
-  resolved "https://registry.yarnpkg.com/ink-table/-/ink-table-3.0.0.tgz#109fb2ce0709567f0e38d14b2b82f311277a3628"
-  integrity sha512-RtcYjenHKZWjnwVNQ6zSYWMOLKwkWscDAJsqUQXftyjkYho1gGrluGss87NOoIzss0IKr74lKasd6MtlQYALiA==
+ink-table@^3.1.0:
+  version "3.1.0"
+  resolved "https://registry.yarnpkg.com/ink-table/-/ink-table-3.1.0.tgz#d450624e344702b5cb7cadcb25783c58555c7c54"
+  integrity sha512-qxVb4DIaEaJryvF9uZGydnmP9Hkmas3DCKVpEcBYC0E4eJd3qNgNe+PZKuzgCERFe9LfAS1TNWxCr9+AU4v3YA==
   dependencies:
     object-hash "^2.0.3"
 
