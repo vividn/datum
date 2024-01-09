@@ -1617,10 +1617,10 @@
   resolved "https://registry.yarnpkg.com/@types/lodash/-/lodash-4.14.176.tgz#641150fc1cda36fbfa329de603bbb175d7ee20c0"
   integrity sha512-xZmuPTa3rlZoIbtDUyJKZQimJV3bxCmzMIO2c9Pz9afyDro6kr7R79GwcB6mRhuoPmV2p1Vb66WOJH7F886WKQ==
 
-"@types/luxon@^3.3.7":
-  version "3.3.7"
-  resolved "https://registry.yarnpkg.com/@types/luxon/-/luxon-3.3.7.tgz#043d413b6492a012de47503907bdf3ec4f827933"
-  integrity sha512-gKc9P2d4g5uYwmy4s/MO/yOVPmvHyvzka1YH6i5dM03UrFofHSmgc0D0ymbDRStFWHusk6cwwF6nhLm/ckBbbQ==
+"@types/luxon@^3.4.0":
+  version "3.4.0"
+  resolved "https://registry.yarnpkg.com/@types/luxon/-/luxon-3.4.0.tgz#02c16b7c6ecea55426b404e13e4ea971fb057b87"
+  integrity sha512-PEVoA4MOfSsFNaPrZjIUGUZujBDxnO/tj2A2N9KfzlR+pNgpBdDuk0TmRvSMAVUP5q4q8IkMEZ8UOp3MIr+QgA==
 
 "@types/ms@*":
   version "0.7.31"
