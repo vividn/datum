@@ -7,7 +7,7 @@ RUN pip install pipenv
 
 RUN pipenv install --system --deploy --ignore-pipfile
 
-RUN useradd -rms /bin/bash -g root -G sudo -u 1001 user
+RUN useradd -rms /bin/bash -g 100 -u 1000 user
 USER user
 
 ENV PATH="/datum:${PATH}"

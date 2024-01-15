@@ -21,6 +21,10 @@ Span,Ceiling,0, 0.07
 Span,Foundation,0.94, 1.0
 Span,SubFoundation,0.98, 1.0
 
+Span,Environment, 0, 0.6
+
+Span,Project,0.15,0.45
+Span,Sleep,0.15,0.85
 
 
 ##################################
@@ -38,13 +42,13 @@ Span,SubFoundation,0.98, 1.0
 # :,cat2,R,G,B
 # etc.
 
-environment,Full
+environment,Environment
 :,home, 20, 20, 20
 :,inside, 90, 90, 90
 :,outside, 135, 163, 102
 
-sleep,Level1, 20, 40, 120
 
+sleep,Sleep, 15, 35, 105
 
 
 
