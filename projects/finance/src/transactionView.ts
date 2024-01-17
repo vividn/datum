@@ -147,9 +147,9 @@ export async function transactionView({
         Math.max(
           1,
           ...transactions.map((row) => Math.abs(row.value)),
-          Math.abs(endBalance - equalities[0]?.value ?? endBalance)
-        )
-      )
+          Math.abs(endBalance - equalities[0]?.value ?? endBalance),
+        ),
+      ),
     ) +
     3 +
     decimals;
@@ -166,10 +166,10 @@ export async function transactionView({
                 absMax: Math.max(accum.absMax, Math.abs(runningTotal)),
               };
             },
-            { runningTotal: endBalance, absMax: Math.abs(endBalance) }
-          ).absMax
-        )
-      )
+            { runningTotal: endBalance, absMax: Math.abs(endBalance) },
+          ).absMax,
+        ),
+      ),
     ) +
     3 +
     decimals;
@@ -196,7 +196,7 @@ export async function transactionView({
 
   function displayEquality(
     equality: PouchDB.Query.Response<EqDoc>["rows"][0],
-    currentBalance: number
+    currentBalance: number,
   ): boolean {
     const date = equality.key[2];
     const hid = equality.doc?.meta?.humanId ?? "";
@@ -211,19 +211,19 @@ export async function transactionView({
               (match) => {
                 // replace with equal number of spaces
                 return " ".repeat(match.length);
-              }
-            )
+              },
+            ),
           )
         : chalk.red(
-            printf(format, date, hid, "FAIL", "", "", amount, eqBalance)
-          )
+            printf(format, date, hid, "FAIL", "", "", amount, eqBalance),
+          ),
     );
     return isBalanced;
   }
 
   function displayTransaction(
     transaction: PouchDB.Query.Response<TxDoc | XcDoc>["rows"][0],
-    currentBalance: number
+    currentBalance: number,
   ): number {
     const doc = transaction.doc!;
     const {
@@ -243,8 +243,8 @@ export async function transactionView({
         toAccount,
         arrow,
         amount,
-        currentBalance
-      )
+        currentBalance,
+      ),
     );
     return amount;
   }
@@ -261,7 +261,7 @@ export async function transactionView({
     } else {
       reverseBalance -= displayTransaction(
         transactions.shift()!,
-        reverseBalance
+        reverseBalance,
       );
     }
   }
@@ -276,15 +276,15 @@ export async function transactionView({
         id: "",
         doc: undefined,
       },
-      reverseBalance
+      reverseBalance,
     );
   }
 
   if (fix(reverseBalance) !== fix(startBalance)) {
     throw new Error(
       `Running total does not align with data. Something went wrong. Expected: ${fix(
-        startBalance
-      )}, got ${fix(reverseBalance)} (${fix(reverseBalance - startBalance)})`
+        startBalance,
+      )}, got ${fix(reverseBalance)} (${fix(reverseBalance - startBalance)})`,
     );
   }
   return isAllBalanced;
@@ -300,8 +300,8 @@ if (require.main === module) {
   if (!account || !currency) {
     console.error(
       chalk.red(
-        `Account and currency must be specified as the first two arguments.`
-      )
+        `Account and currency must be specified as the first two arguments.`,
+      ),
     );
     process.exit(1);
   }
