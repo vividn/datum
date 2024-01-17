@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { connectDb } from "../../../src/auth/connectDb";
 import readline from "node:readline";
 import { stdin } from "node:process";
