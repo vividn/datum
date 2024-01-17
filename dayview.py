@@ -640,82 +640,117 @@ def get_color(datum_name, datum_colors, category=None):
                 return hash_string_to_rgb(category)
 
 
-if __name__ == "__main__":
-    main(imagename="weekview", xsize=1078, ysize=574, quantfontsize=15)
-    main(nDays=30, imagename="30dayview", ysize=1920)
-    main(
-        nDays=1,
-        imagename="singledayview",
-        xsize=1920,
-        ysize=120,
-        image_padding=6,
-        bar_padding=0,
-        text_padding=0,
-        quantfontsize=18,
-    )
-    main(
-        nDays=1,
-        imagename="singledayviewtiny",
-        xsize=1881,
-        ysize=80,
-        image_padding=2,
-        bar_padding=0,
-        text_padding=0,
-        quantfontsize=14,
-        fontsize=12
-    )
-    main(
-        nDays=1,
-        imagename="phoneday",
-        xsize=1080,
-        ysize=200,
-        image_padding=6,
-        bar_padding=0,
-        text_padding=0,
-        now_width=2,
-        quantfontsize=30,
-    )
-    main(
-        nDays=12,
-        imagename="phoneweek",
-        xsize=1080,
-        ysize=1600,
-        quantfontsize=25,
-        now_width=2,
-        point_r=6,
-        fontsize=23
-    )
-    main(nDays=14, imagename="2week", ysize=1200)
-    #
-    #
-    #
-    # main(imagename="reduced", data_set="reducedSet")
-    # main(imagename="trip",
-    #      begin_date=dt.date(2023, 9, 3),
-    #      end_date=dt.date(2023, 11, 11),
-    #      xsize=1000, ysize=5000)
+dayview_configs = {
+        "weekview": {
+            "imagename": "weekview", "xsize": 1078, "ysize": 574, "quantfontsize": 15
+        },
+        "30dayview": {"imagename": "30dayview", "nDays": 30, "ysize": 1920},
+        "singledayview": {
+            "imagename": "singledayview",
+            "nDays": 1,
+            "xsize": 1920,
+            "ysize": 120,
+            "image_padding": 6,
+            "bar_padding": 0,
+            "text_padding": 0,
+            "quantfontsize": 18,
+        },
+        "singledayviewtiny": {
+            "imagename": "singledayviewtiny",
+            "nDays": 1,
+            "xsize": 1881,
+            "ysize": 80,
+            "image_padding": 2,
+            "bar_padding": 0,
+            "text_padding": 0,
+            "quantfontsize": 14,
+            "fontsize": 12,
+        },
+        "phoneday": {
+            "imagename": "phoneday",
+            "nDays": 1,
+            "xsize": 1080,
+            "ysize": 200,
+            "image_padding": 6,
+            "bar_padding": 0,
+            "text_padding": 0,
+            "now_width": 2,
+            "quantfontsize": 30,
+        },
+        "phoneweek": {
+            "imagename": "phoneweek",
+            "nDays": 12,
+            "xsize": 1080,
+            "ysize": 1600,
+            "quantfontsize": 25,
+            "now_width": 2,
+            "point_r": 6,
+            "fontsize": 23,
+        },
+        "2week": {"imagename": "2week", "nDays": 14, "ysize": 1200},
+        "reduced": {"imagename": "reduced", "data_set": "reducedSet"},
+        "trip": {
+            "imagename": "trip",
+            "begin_date": dt.date(2023, 9, 3),
+            "end_date": dt.date(2023, 11, 11),
+            "xsize": 1000,
+            "ysize": 5000,
+        },
+        "crunchAndRelease": {
+            "imagename": "crunchAndRelease",
+            "begin_date": dt.date(2021, 9, 13),
+            "end_date": dt.date(2021, 9, 17),
+            "xsize": 750,
+            "ysize": 750,
+            "fontsize": 0,
+            "quantfontsize": 0,
+            "point_r": 5,
+        },
+        "interview": {
+            "imagename": "interview",
+            "begin_date": dt.date(2018, 12, 9),
+            "end_date": dt.date(2018, 12, 15),
+            "data_set": "reducedSet",
+            "xsize": 1920,
+            "ysize": 1080,
+            "fontsize": 24,
+            "quantfontsize": 30,
+            "point_r": 7,
+        },
+        "alldata": {
+                "imagename": "allData",
+                "begin_date": dt.date(2016,11,27),
+                "end_date": dt.date.today(),
+                "xsize": 1000,
+                "ysize": 300000
+        }
+    }
 
-    # main(
-    #     begin_date=dt.date(2021, 9, 13),
-    #     end_date=dt.date(2021, 9, 17),
-    #     imagename="crunchAndRelease",
-    #     xsize=750,
-    #     ysize=750,
-    #     fontsize=0,
-    #     quantfontsize=0,
-    #     point_r=5,
-    #         )
-    # main(
-    #     begin_date=dt.date(2018, 12, 9),
-    #     end_date=dt.date(2018, 12, 15),
-    #     imagename="interview",
-    #     data_set="reducedSet",
-    #     xsize=1920,
-    #     ysize=1080,
-    #     fontsize=24,
-    #     quantfontsize=30,
-    #     point_r=7,
-    # )
-    # main(date_array=[dt.date(2019,3,4), dt.date(2020,4,5), dt.date(2019,1,3)], imagename="selectedDates")
-    # main(nDays=1, imagename='sampleAct', data_set='actSample', begin_date=dt.date(2019,1,28),
-    #     xsize=1920, ysize=120, image_padding=6, bar_padding=0, text_padding=0, quantfontsize=18)
+config_sets = {
+    "today": ["singledayview", "singledayviewtiny", "phoneday"],
+    "complete": ["today", "weekview", "30dayview", "phoneweek", "2week"],
+    "ketaminix": ["singledayviewtiny"],
+    "avierna": ["weekview"],
+    "cumulonix": ["phoneday", "phoneweek"]
+
+}
+
+def generate_from_config(config_name):
+    if config_name in config_sets.keys():
+        for config in config_sets[config_name]:
+            generate_from_config(config)
+        return
+    main(**dayview_configs[config_name])
+
+if __name__ == "__main__":
+    # each arg is the dayview_config to use
+    if len(sys.argv) > 1:
+        config_names = sys.argv[1:]
+        for config_name in config_names:
+            generate_from_config(config_name)
+    elif "DAYVIEW_CONFIGS" in os.environ:
+        config_names = os.environ["DAYVIEW_CONFIGS"].split(",")
+        for config_name in config_names:
+            generate_from_config(config_name)
+    else:
+        generate_from_config("complete")

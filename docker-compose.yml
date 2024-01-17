@@ -8,3 +8,5 @@ services:
       - ~/Data/datum:/home/user/Data/datum:ro
       - ~/.fonts:/home/user/.fonts:ro
       - /etc/localtime:/etc/localtime:ro
+    environment:
+      - DAYVIEW_CONFIGS
