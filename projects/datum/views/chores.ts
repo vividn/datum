@@ -5,6 +5,7 @@ import { DatumView } from "../../../src/views/DatumView";
 
 export const ZERO_DATE = "0000-00-00" as const;
 type ChoreDoc = DatumDocument<{
+  field: string;
   nextDate?: isoDate;
   nextTime?: DatumTime;
 }>;
@@ -30,7 +31,10 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     if (!data || !meta) {
       return;
     }
-    if (!data.occurTime || !data.nextTime || !data.nextDate) {
+    if (!data.field) {
+      return;
+    }
+    if (!data.occurTime && !data.nextTime && !data.nextDate) {
       return;
     }
     const { nextDate, nextTime, occurTime } = data;
@@ -55,7 +59,7 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     } else if (nextDate) {
       next = nextDate;
     }
-    emit(doc.data.task, {
+    emit(data.field, {
       time: time.utc,
       next,
       lastOccur: occurTime ? time.utc : ZERO_DATE,
