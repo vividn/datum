@@ -34,11 +34,11 @@ async function chorelist() {
         : DateTime.fromISO(row.value.lastOccur).toISODate();
     const due = next <= now;
     const doneToday = last === now;
-    if (!due) {
-      totalDue += 1;
-    }
     if (!due && !doneToday) {
       return;
+    }
+    if (due) {
+      totalDue += 1;
     }
     const iti =
       row.value.iti === undefined ? undefined : Math.floor(row.value.iti);
@@ -55,15 +55,15 @@ async function chorelist() {
             ? chalk.yellow
             : chalk.white;
 
-    t.cell("Chore", color(row.key));
+    t.cell("Field", color(row.key));
     t.cell("ITI", color(iti));
     t.cell("Due", color(next));
-    t.cell("Last Done", color(last));
+    t.cell("Last Occur", color(last));
     t.newRow();
   });
   console.log(t.toString());
   if (totalDue === 0) {
-    console.log(chalk.green("COMPLETED!\tGOOD WORK!\t\\(◦'⌣'◦)/"));
+    console.log(chalk.green("🧹😄COMPLETED! GOOD WORK!😄🪣"));
   }
 }
 
