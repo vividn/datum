@@ -172,3 +172,11 @@ export function datumViewToViewPayload(
     meta: {},
   };
 }
+
+export type MapRow<T> = T extends DatumView<any, infer K, infer V, any, any>
+  ? {
+      id: string;
+      key: K;
+      value: V;
+    }
+  : never;

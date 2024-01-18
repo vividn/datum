@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 // function chorelist {
 // #	{
 // 	all_chores="$(couch task/_design/chores/_view/chores'?group=true' | jq '.rows |=sort_by(.value.next) | .rows[] | [.value.lastDone[0:10], .value.next[0:10], .key] | @tsv' --raw-output)"
@@ -23,3 +25,55 @@
 // 	echo -n "$(tput sgr0)"
 // #	} | columnify
 // }
+
+import { choreView } from "../views";
+import { reduceCmd } from "../../../src/commands/reduceCmd";
+import chalk from "chalk";
+import { DateTime } from "luxon";
+import { Show } from "../../../src/input/outputArgs";
+import { MapRow } from "../../../src/views/DatumView";
+
+function choreRowToLastNextChore(row: MapRow<typeof choreView>): string {
+  const { key, value } = row;
+  const last =
+    value.lastOccur === "0000-00-00"
+      ? "##NEVER## "
+      : value.lastOccur.slice(0, 10);
+  const next = value.next ? value.next.slice(0, 10) : "INACTIVE";
+  return [last, next, key].join("\t");
+}
+async function chorelist() {
+  const choresResponse = await reduceCmd({
+    mapName: choreView.name,
+    groupLevel: 1,
+    show: Show.None,
+  });
+  const chores = choresResponse.rows
+    .filter((chore) => chore.value.next !== undefined)
+    .sort((a, b) => a.value.next - b.value.next);
+  const now = DateTime.local().toISODate();
+  const due = chores.filter((row) => row.value.next <= now);
+  const future = chores.filter((row) => row.value.next > now);
+  const tenDash = "----------";
+  const header = "Last Done \tNext Date \tChore";
+  console.log(header);
+  if (due.length === 0) {
+    console.log(chalk.green("COMPLETED!\tGOOD WORK!\t\\(◦'⌣'◦)/"));
+  } else {
+    console.log(
+      chalk.red(due.map((row) => choreRowToLastNextChore(row)).join("\n")),
+    );
+    console.log(tenDash + "\t" + tenDash + "\t" + tenDash);
+  }
+  const futureColor = due.length === 0 ? chalk.green : chalk.white;
+  console.log(
+    futureColor(future.map((row) => choreRowToLastNextChore(row)).join("\n")),
+  );
+}
+
+if (require.main === module) {
+  chorelist().catch((error) => {
+    console.error(error);
+    process.exit(1);
+  });
+}
