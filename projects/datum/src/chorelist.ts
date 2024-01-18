@@ -5,6 +5,8 @@ import { DateTime } from "luxon";
 import chalk from "chalk";
 import { ReduceRow } from "../../../src/views/DatumView";
 import Table from "easy-table";
+import { baseArgs } from "../../../src/input/baseArgs";
+import { connectDb } from "../../../src/auth/connectDb";
 
 async function chorelist() {
   const choresResponse = await reduceCmd({
@@ -43,8 +45,9 @@ async function chorelist() {
     const daysOverdue = Math.floor(
       DateTime.fromISO(now).diff(DateTime.fromISO(next), "days").days,
     );
-    const color =
-      iti === undefined
+    const color = doneToday
+      ? chalk.green
+      : iti === undefined
         ? chalk.white
         : daysOverdue > iti
           ? chalk.red
@@ -65,6 +68,29 @@ async function chorelist() {
 }
 
 if (require.main === module) {
+  const args = baseArgs
+    .options({
+      watch: {
+        alias: "w",
+        desc: "Watch and update on changes to the database",
+        type: "boolean",
+      },
+    })
+    .parseSync(process.argv.slice(2));
+  if (args.watch) {
+    console.clear();
+    const db = connectDb(args);
+    db.changes({
+      since: "now",
+      live: true,
+    }).on("change", () => {
+      console.clear();
+      chorelist().catch((error) => {
+        console.error(error);
+        process.exit(1);
+      });
+    });
+  }
   chorelist().catch((error) => {
     console.error(error);
     process.exit(1);
