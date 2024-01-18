@@ -58,12 +58,16 @@ async function chorelist() {
   const header = "Last Done \tNext Date \tChore";
   console.log(header);
   if (due.length === 0) {
-    console.log(chalk.green("COMPLETED!\tGOOD WORK!\t\\(◦'⌣'◦)/"));
+    if (process.stdout.isTTY) {
+      console.log(chalk.green("COMPLETED!\tGOOD WORK!\t\\(◦'⌣'◦)/"));
+    }
   } else {
     console.log(
       chalk.red(due.map((row) => choreRowToLastNextChore(row)).join("\n")),
     );
-    console.log(tenDash + "\t" + tenDash + "\t" + tenDash);
+    if (process.stdout.isTTY) {
+      console.log(tenDash + "\t" + tenDash + "\t" + tenDash);
+    }
   }
   const futureColor = due.length === 0 ? chalk.green : chalk.white;
   console.log(
