@@ -1,3 +1,5 @@
+#!/usr/bin/env node
+
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { choreView } from "../views";
 import { Show } from "../../../src/input/outputArgs";
