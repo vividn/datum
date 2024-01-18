@@ -180,3 +180,27 @@ export type MapRow<T> = T extends DatumView<any, infer K, infer V, any, any>
       value: V;
     }
   : never;
+
+export type ReduceRow<T> = T extends DatumView<any, infer K, any, infer R, any>
+  ? {
+      id: null;
+      key: K;
+      value: R;
+    }
+  : never;
+
+export type NamedReduceRow<T, Name extends string> = T extends DatumView<
+  any,
+  infer K,
+  any,
+  any,
+  infer NR
+>
+  ? NR extends Record<Name, infer V>
+    ? {
+        id: null;
+        key: K;
+        value: V;
+      }
+    : never
+  : never;

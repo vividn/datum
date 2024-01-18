@@ -31,9 +31,9 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import chalk from "chalk";
 import { DateTime } from "luxon";
 import { Show } from "../../../src/input/outputArgs";
-import { MapRow } from "../../../src/views/DatumView";
+import { ReduceRow } from "../../../src/views/DatumView";
 
-function choreRowToLastNextChore(row: MapRow<typeof choreView>): string {
+function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
   const { key, value } = row;
   const last =
     value.lastOccur === "0000-00-00"
