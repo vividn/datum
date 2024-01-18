@@ -42,7 +42,7 @@ function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
   const next = value.next ? value.next.slice(0, 10) : "INACTIVE";
   return [last, next, key].join("\t");
 }
-async function chorelist() {
+async function nextchores() {
   const choresResponse = await reduceCmd({
     mapName: choreView.name,
     groupLevel: 1,
@@ -76,7 +76,7 @@ async function chorelist() {
 }
 
 if (require.main === module) {
-  chorelist().catch((error) => {
+  nextchores().catch((error) => {
     console.error(error);
     process.exit(1);
   });
