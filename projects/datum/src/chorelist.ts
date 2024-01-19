@@ -19,7 +19,7 @@ async function chorelist() {
   const choreRows = choresResponse.rows as ReduceRow<typeof choreView>[];
   const chores = choreRows
     .filter((chore) => chore.value.next !== undefined)
-    .sort((a, b) => a.value.iti ?? 9e99 - (b.value.iti ?? 9e99));
+    .sort((a, b) => (a.value.iti ?? 9e99) - (b.value.iti ?? 9e99));
   const now = DateTime.local().toISODate();
 
   const t = new Table();
