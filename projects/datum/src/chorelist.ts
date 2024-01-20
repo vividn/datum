@@ -7,11 +7,15 @@ import { DateTime } from "luxon";
 import chalk from "chalk";
 import { ReduceRow } from "../../../src/views/DatumView";
 import Table from "easy-table";
-import { baseArgs } from "../../../src/input/baseArgs";
+import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
 import { connectDb } from "../../../src/auth/connectDb";
+import readline from "node:readline";
+import { stdin, stdout } from "node:process";
+import { once } from "node:events";
 
-async function chorelist() {
+async function chorelist(args: BaseArgs): Promise<string> {
   const choresResponse = await reduceCmd({
+    ...args,
     mapName: choreView.name,
     groupLevel: 1,
     show: Show.None,
@@ -63,14 +67,60 @@ async function chorelist() {
     t.cell("Last Occur", color(last));
     t.newRow();
   });
-  console.log(t.toString());
-  if (totalDue === 0) {
-    console.log(chalk.green("🧹😄COMPLETED! GOOD WORK!😄🪣"));
+  const choreTable = t.toString();
+  const completionString =
+    totalDue === 0 ? "\n🧹😄COMPLETED! GOOD WORK!😄🪣" : "";
+  return choreTable + completionString;
+}
+
+async function chorelistwatch(args: BaseArgs): Promise<void> {
+  const db = connectDb(args);
+
+  async function output(): Promise<void> {
+    const choreTable = await chorelist(args);
+    console.clear();
+    console.log(choreTable);
   }
+
+  const rl = readline.createInterface({ input: stdin, output: stdout, terminal: true });
+  stdin.setRawMode(true);
+
+  const eventEmitter = db
+    .changes({
+      since: "now",
+      live: true,
+    })
+    .on("change", output)
+    .on("error", (error) => {
+      console.error(error);
+      rl.write("\u001B[?25h"); // show cursor
+      rl.close();
+      process.exit(5);
+    });
+
+  rl.on("line", async () => {
+    console.log("refreshing...");
+    await output();
+  });
+  rl.on("close", () => {
+    rl.write("\u001B[?25h"); // show cursor
+    stdin.setRawMode(false);
+  });
+  rl.on("SIGINT", () => {
+    eventEmitter.cancel();
+    rl.close();
+    process.exit(3);
+  });
+
+  rl.write("\u001B[?25l"); // hides cursor
+  await output();
+  await once(rl, "close");
+  eventEmitter.cancel();
+  return;
 }
 
 if (require.main === module) {
-  const args = baseArgs
+  const args: BaseArgs & { watch?: boolean } = baseArgs
     .options({
       watch: {
         alias: "w",
@@ -80,21 +130,18 @@ if (require.main === module) {
     })
     .parseSync(process.argv.slice(2));
   if (args.watch) {
-    console.clear();
-    const db = connectDb(args);
-    db.changes({
-      since: "now",
-      live: true,
-    }).on("change", () => {
-      console.clear();
-      chorelist().catch((error) => {
+    chorelistwatch(args).catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+  } else {
+    chorelist(args)
+      .catch((error) => {
         console.error(error);
         process.exit(1);
+      })
+      .then((table) => {
+        console.log(table);
       });
-    });
   }
-  chorelist().catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
 }
