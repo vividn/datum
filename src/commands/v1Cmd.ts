@@ -95,10 +95,6 @@ function createHeader(field: string, columnCount: number): string[] {
   const defaultHeader = ["Date", "Time", "Offset", "Minutes"];
   const extraFields = [];
   switch (field) {
-    case "activity":
-      extraFields.push("Activity", "Project");
-      break;
-
     case "environment":
       extraFields.push("Category");
       break;

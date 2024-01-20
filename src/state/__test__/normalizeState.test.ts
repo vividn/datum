@@ -14,13 +14,16 @@ describe("unfoldState", () => {
     expect(normalizeState("abcd")).toEqual("abcd");
     expect(normalizeState(false)).toEqual(false);
     expect(normalizeState(true)).toEqual(true);
-    expect(normalizeState(123)).toEqual(123);
+  });
+
+  it("stringifys number states", () => {
+    expect(normalizeState(123)).toEqual("123");
   });
 
   it("unfolds objects with just id into their simple value counterparts", () => {
     expect(normalizeState({ id: true })).toEqual(true);
     expect(normalizeState({ id: false })).toEqual(false);
-    expect(normalizeState({ id: 123 })).toEqual(123);
+    expect(normalizeState({ id: 123 })).toEqual("123");
     expect(normalizeState({ id: null })).toEqual(null);
   });
 
@@ -186,5 +189,23 @@ describe("unfoldState", () => {
     expect(() => normalizeState([{ id: "abc" }, { id: null }])).toThrowError(
       BadStateError,
     );
+  });
+
+  it("converts a state of 'start' to true", () => {
+    expect(normalizeState("start")).toBe(true);
+    expect(normalizeState(["a", "start"])).toEqual(["a", true]);
+    expect(normalizeState({ id: "start", extra: "key" })).toEqual({
+      id: true,
+      extra: "key",
+    });
+  });
+
+  it("converts a state of 'end' to false", () => {
+    expect(normalizeState("end")).toBe(false);
+    expect(normalizeState(["a", "end"])).toEqual(["a", false]);
+    expect(normalizeState({ id: "end", extra: "key" })).toEqual({
+      id: false,
+      extra: "key",
+    });
   });
 });

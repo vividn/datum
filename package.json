@@ -11,7 +11,9 @@
     "eqcheck": "./build/projects/finance/src/eqcheck.js",
     "txview": "./build/projects/finance/src/transactionView.js",
     "fbal": "./build/projects/finance/src/fbal.js",
-    "wordview": "./build/projects/language/src/word.js"
+    "wordview": "./build/projects/language/src/word.js",
+    "chorelist": "./build/projects/datum/src/chorelist.js",
+    "nextchores": "./build/projects/datum/src/nextchores.js"
   },
   "engines": {
     "node": ">18.0.0"
@@ -32,11 +34,11 @@
   },
   "devDependencies": {
     "@babel/core": "^7.23.6",
-    "@babel/preset-env": "^7.23.5",
+    "@babel/preset-env": "^7.23.7",
     "@babel/preset-typescript": "^7.23.3",
     "@types/jest": "^27.4.1",
-    "@typescript-eslint/eslint-plugin": "^6.13.2",
-    "@typescript-eslint/parser": "^6.13.2",
+    "@typescript-eslint/eslint-plugin": "^6.18.0",
+    "@typescript-eslint/parser": "^6.18.0",
     "babel-jest": "^29.7.0",
     "eslint": "^8.55.0",
     "eslint-config-prettier": "^9.1.0",
@@ -73,7 +75,7 @@
     "dotenv": "^16.3.1",
     "easy-table": "^1.2.0",
     "ink": "^3.2.0",
-    "ink-table": "^3.0.0",
+    "ink-table": "^3.1.0",
     "lodash.flatten": "^4.4.0",
     "lodash.flattendeep": "^4.4.0",
     "lodash.get": "^4.4.2",
