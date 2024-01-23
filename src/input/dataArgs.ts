@@ -1,14 +1,26 @@
 import yargs, { Argv } from "yargs";
 import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
-import { BaseDataError, DataError } from "../errors";
+import {
+  BaseDataError,
+  ExtraDataError,
+  MissingRequiredKeyError,
+} from "../errors";
 import { splitFirst } from "../utils/splitFirst";
-import { createOrAppend } from "../utils/createOrAppend";
 import isPlainObject from "lodash.isplainobject";
+import { alterDatumData } from "../utils/alterDatumData";
+import { datumPath } from "../utils/datumPath";
+import get from "lodash.get";
+import {
+  changeDatumCommand,
+  CommandChange,
+  commandChanges,
+} from "../utils/changeDatumCommand";
 
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
+  cmdData?: DatumData; // Used for passing special values between commands
   comment?: string | string[];
   required?: string | string[];
   optional?: string | string[];
@@ -101,65 +113,70 @@ function isParsedBaseData(baseData: DatumData | string): baseData is DatumData {
 }
 
 export function parseBaseData(baseData?: DatumData | string): DatumData {
-  const parsedData: DatumData = baseData
+  const parsedData = baseData
     ? isParsedBaseData(baseData)
       ? baseData
       : inferType(baseData)
     : {};
-  if (typeof parsedData !== "object" || parsedData === null) {
+  if (
+    typeof parsedData !== "object" ||
+    parsedData === null ||
+    Array.isArray(parsedData)
+  ) {
     throw new BaseDataError("base data not a valid object");
   }
-  return parsedData;
+  return parsedData as DatumData;
 }
 
 export function handleDataArgs(args: DataArgs): DatumData {
   args.data ??= [];
   args.required ??= [];
   args.optional ??= [];
-  const {
-    data,
-    required,
-    optional,
-    remainder,
-    stringRemainder,
-    comment,
-    lenient,
-    baseData,
-    commentRemainder,
-  } = args;
 
-  const requiredKeys = typeof required === "string" ? [required] : required;
-  const optionalKeys = typeof optional === "string" ? [optional] : optional;
+  const requiredKeys =
+    typeof args.required === "string" ? [args.required] : args.required;
+  args.required = requiredKeys;
+
+  const optionalKeys =
+    typeof args.optional === "string" ? [args.optional] : args.optional;
+  args.optional = optionalKeys;
 
   const remainderKey =
-    remainder ??
-    (commentRemainder ? "comment" : lenient ? "extraData" : undefined);
-  const remainderAsString = stringRemainder ?? commentRemainder;
+    args.remainder ??
+    (args.commentRemainder
+      ? "comment"
+      : args.lenient
+        ? "extraData"
+        : undefined);
+  const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
-  const parsedData = parseBaseData(baseData);
-  // for idempotence of processing dataArgs, even when baseData is originally a string
-  args.baseData = parsedData;
+  const datumData = { ...parseBaseData(args.baseData), ...args.cmdData };
 
-  posArgsLoop: while (data.length > 0) {
-    const arg = data.shift()!;
+  // for idempotence of processing dataArgs
+  args.baseData = datumData;
+  delete args.cmdData;
+
+  posArgsLoop: while (args.data.length > 0) {
+    const arg = args.data.shift()!;
     const [beforeEquals, afterEquals] = splitFirst("=", String(arg));
 
     if (afterEquals !== undefined) {
       // key is explicitly given e.g., 'key=value'
-      const key = beforeEquals;
+      const path = datumPath(beforeEquals);
       const value = afterEquals;
 
-      // Search for default value to allow explicitly setting it to default using '.'
-      const existingValue = parsedData[key];
+      // Search for default value to allow explicitly setting it to default using '.',
+      // or use an existing value if there already is one
+      const existingValue = get(datumData, path);
       const defaultValue =
         existingValue ??
         optionalKeys
           ?.find((optionalWithDefault) =>
-            new RegExp(`^${key}=(.*)$`).test(optionalWithDefault),
+            new RegExp(`^${path}=(.*)$`).test(optionalWithDefault),
           )
           ?.split("=")[1];
-      parsedData[key] = inferType(value, key, defaultValue);
+      alterDatumData({ datumData, path, value, defaultValue });
       continue posArgsLoop;
     }
 
@@ -167,24 +184,39 @@ export function handleDataArgs(args: DataArgs): DatumData {
     const dataValue = beforeEquals;
 
     requiredKeysLoop: while (requiredKeys.length > 0) {
-      const dataKey = requiredKeys.shift()!;
+      const path = datumPath(requiredKeys.shift()!);
 
-      if (dataKey in parsedData) {
+      if (get(datumData, path) !== undefined) {
         continue requiredKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey);
+      alterDatumData({ datumData, path: path, value: dataValue });
       continue posArgsLoop;
     }
 
     optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+      const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+      const path = datumPath(rawPath);
 
-      if (dataKey in parsedData) {
+      // TODO: Consider explicitly setting an optional key to undefined to be sufficient to bypass this step
+      if (get(datumData, path) !== undefined) {
         continue optionalKeysLoop;
       }
 
-      parsedData[dataKey] = inferType(dataValue, dataKey, defaultValue);
+      if (
+        path === "dur" &&
+        commandChanges.includes(dataValue as CommandChange)
+      ) {
+        changeDatumCommand(datumData, dataValue as CommandChange, args);
+        continue posArgsLoop;
+      }
+
+      alterDatumData({
+        datumData,
+        path: path,
+        value: dataValue,
+        defaultValue,
+      });
       continue posArgsLoop;
     }
 
@@ -193,7 +225,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   while (requiredKeys.length > 0) {
     const requiredKey = requiredKeys.shift()!;
-    if (requiredKey in parsedData) {
+    const requiredPath = datumPath(requiredKey);
+    if (get(datumData, requiredPath) !== undefined) {
       continue;
     }
     // Allow required keys to be given a default value via an optional key
@@ -203,6 +236,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     //      alias rent='tx acc=Checking -k amount=1200'
     // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
     // a tx doc with amount=1500
+    //TODO: Allow state based keys to still work if defined in separate ways
     if (
       optionalKeys?.find((optionalWithDefault) =>
         new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
@@ -210,57 +244,66 @@ export function handleDataArgs(args: DataArgs): DatumData {
     ) {
       continue;
     }
-    throw new DataError(`No data given for the required key: ${requiredKey}`);
+    throw new MissingRequiredKeyError(requiredKey);
   }
 
   // If optional keys with default values are left assign them
   while (optionalKeys.length > 0) {
-    const [dataKey, defaultValue] = splitFirst("=", optionalKeys.shift()!);
-
+    const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+    const path = datumPath(rawPath);
     if (
-      defaultValue === undefined ||
-      (dataKey in parsedData && parsedData[dataKey] !== ".")
+      defaultValue !== undefined &&
+      [undefined, "."].includes(get(datumData, path))
     ) {
-      continue;
+      alterDatumData({ datumData, path, value: defaultValue });
     }
-
-    parsedData[dataKey] = inferType(defaultValue, dataKey);
   }
 
-  if (comment) {
-    const inferredComments = (
-      Array.isArray(comment)
-        ? comment.map((comm) => inferType(comm, "comment"))
-        : [inferType(comment, "comment")]
-    ) as any[];
-    parsedData.comment = inferredComments.reduce(
-      (accumulator, current) => createOrAppend(accumulator, current),
-      parsedData["comment"],
-    );
+  if (args.comment) {
+    const commentArray = Array.isArray(args.comment)
+      ? args.comment
+      : [args.comment];
+    commentArray.forEach((comment) => {
+      alterDatumData({
+        datumData,
+        path: "comment",
+        value: comment,
+        append: true,
+      });
+    });
     delete args.comment;
   }
 
   if (remainderData.length > 0) {
     if (remainderKey === undefined) {
-      throw new DataError(
-        "some data do not have keys. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient",
-      );
+      // @ts-expect-error overrestrictive includes
+      if (commandChanges.includes(remainderData[0])) {
+        const command = remainderData.shift() as CommandChange;
+        changeDatumCommand(datumData, command, args);
+        args.data = remainderData;
+        return handleDataArgs(args);
+      }
+      throw new ExtraDataError(remainderData);
     }
 
     if (remainderAsString) {
-      parsedData[remainderKey] = createOrAppend(
-        parsedData[remainderKey],
-        remainderData.join(" "),
-      );
+      alterDatumData({
+        datumData,
+        path: remainderKey,
+        value: remainderData.join(" "),
+        append: true,
+      });
     } else {
       for (const remainder of remainderData) {
-        parsedData[remainderKey] = createOrAppend(
-          parsedData[remainderKey],
-          inferType(remainder, remainderKey),
-        );
+        alterDatumData({
+          datumData,
+          path: remainderKey,
+          value: remainder,
+          append: true,
+        });
       }
     }
   }
 
-  return parsedData;
+  return datumData;
 }

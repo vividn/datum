@@ -1,78 +1,13 @@
 import RJSON from "relaxed-json";
-import { parseTimeStr } from "../time/parseTimeStr";
-import { parseDurationStr } from "../time/parseDurationStr";
-import { parseDateStr } from "../time/parseDateStr";
-import {
-  isoDateFromDateTime,
-  isoDurationFromDuration,
-  toDatumTime,
-} from "../time/timeUtils";
-import { BadDateError, BadDurationError, BadTimeError } from "../errors";
+import { JsonType } from "./utilityTypes";
 
-export function inferType(
-  value: number | string,
-  fieldName?: string,
-  defaultToInfer?: string | number,
-): any {
+export function inferType(value: string): undefined | JsonType {
   if (value === "") {
     // can use `""` or `''` to indicate an empty string, see further down
     return undefined;
   }
-  if (value === ".") {
-    if (defaultToInfer === undefined) {
-      return undefined;
-    }
-    return inferType(defaultToInfer, fieldName);
-  }
 
-  if (fieldName !== undefined) {
-    switch (true) {
-      case /(?:\b|_)time\d*$/i.test(fieldName):
-      case /[a-z0-9]Time\d*$/.test(fieldName): {
-        try {
-          const parsedTime = parseTimeStr({ timeStr: String(value) });
-          return toDatumTime(parsedTime);
-        } catch (e) {
-          if (e instanceof BadTimeError) {
-            e.key = fieldName;
-          }
-          throw e;
-        }
-      }
-
-      case /(?:\b|_)date\d*$/i.test(fieldName!):
-      case /[a-z0-9]Date\d*$/.test(fieldName): {
-        try {
-          const parsedDate = parseDateStr({ dateStr: String(value) });
-          return isoDateFromDateTime(parsedDate);
-        } catch (e) {
-          if (e instanceof BadDateError) {
-            e.key = fieldName;
-          }
-          throw e;
-        }
-      }
-
-      case /(?:\b|_)dur(ation)?\d*$/i.test(fieldName!):
-      case /[a-z0-9]Dur(ation)?\d*$/.test(fieldName): {
-        try {
-          const parsedDuration = parseDurationStr({
-            durationStr: String(value),
-          });
-          return isoDurationFromDuration(parsedDuration);
-        } catch (e) {
-          if (e instanceof BadDurationError) {
-            e.key = fieldName;
-          }
-          throw e;
-        }
-      }
-    }
-  }
-
-  if (typeof value === "number") {
-    return value;
-  }
+  // a "." is used in alterDatumData to denote using the default, so this is provided to allow a literal "."
   if (/^\\.$/.test(value)) {
     return ".";
   }
@@ -83,13 +18,13 @@ export function inferType(
     return value
       .slice(1)
       .split(",")
-      .map((v) => inferType(v));
+      .map((v) => inferType(v) ?? null);
   }
   if (/,$/.test(value)) {
     return value
       .slice(0, -1)
       .split(",")
-      .map((v) => inferType(v));
+      .map((v) => inferType(v) ?? null);
   }
   if (/^true$/i.test(value)) {
     return true;

@@ -57,7 +57,7 @@ export async function generateSampleMorning(date: string): Promise<void> {
 }
 
 describe("tailCmd", () => {
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
   deterministicHumanIds();
   const dbName = "tail_cmd_test";
   testDbLifecycle(dbName);

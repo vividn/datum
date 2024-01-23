@@ -1,4 +1,9 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
@@ -206,5 +211,121 @@ describe("switchCmd", () => {
     expect(doc2.data).not.toHaveProperty("dur");
   });
 
-  it.todo("does not record a lastState if there is no occurTime");
+  it("can make complex states by using dot syntax", async () => {
+    const doc = await switchCmd({
+      field: "project",
+      state: "household",
+      data: [".subtask=mop"],
+    });
+    expect(doc.data).toMatchObject({
+      field: "project",
+      state: { id: "household", subtask: "mop" },
+    });
+  });
+
+  it("does not record a lastState if there is no occurTime", async () => {
+    await switchCmd({ state: "someState", field: "field" });
+    setNow("+5");
+
+    const secondDoc = await switchCmd({
+      state: "anotherState",
+      field: "field",
+      noTimestamp: true,
+    });
+    expect(secondDoc.data).not.toHaveProperty("lastState");
+  });
+
+  it("handles required keys and optional keys for complex state correctly", async () => {
+    const doc = await switchCmd({
+      field: "book",
+      state: "the wind in the willows", // actually should get mapped to .title because of flexiblePositional (will make more sense when remapping argparsing which should support more readable tests)
+      duration: "kenneth grahame", //gets mapped to .author
+      required: [".title", ".author"],
+      optional: [".genre"],
+      data: [".", 5, "fiction"],
+    });
+
+    expect(doc.data).toMatchObject({
+      field: "book",
+      state: {
+        title: "the wind in the willows",
+        author: "kenneth grahame",
+        genre: "fiction",
+      },
+      dur: "PT5M",
+    });
+  });
+
+  it("handles dot syntax required and optional keys correctly", async () => {
+    const doc = await switchCmd({
+      required: [".medium"],
+      optional: [".title", ".author"],
+      field: "consume",
+      state: ".medium=text",
+      duration: "book_fiction",
+      data: [".", "title", "author"],
+    });
+    expect(doc.data).toMatchObject({
+      field: "consume",
+      state: {
+        medium: "text",
+        id: "book_fiction",
+        title: "title",
+        author: "author",
+      },
+    });
+  });
+
+  describe("change command", () => {
+    deterministicHumanIds();
+
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command by having occur as a trailing word", async () => {
+      expect(
+        await switchCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          state: "someState",
+          data: ["key=val", "optVal", "occur"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command by having start as a trailing word", async () => {
+      expect(
+        await switchCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          state: "someState",
+          data: ["key=val", "optVal", "end"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a start command by having start as a trailing word", async () => {
+      expect(
+        await switchCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "5m30s",
+          state: "someState",
+          data: ["key=val", "optVal", "start"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
 });

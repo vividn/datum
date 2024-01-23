@@ -1,25 +1,27 @@
 import {
+  deterministicHumanIds,
   fail,
   mockedLogLifecycle,
+  restoreNow,
+  setNow,
   testDbLifecycle,
 } from "../../__test__/test-utils";
 import { BaseDataError, IdError } from "../../errors";
-import {
-  DatumDocument,
-  DatumMetadata,
-} from "../../documentControl/DatumDocument";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
 import { Show } from "../../input/outputArgs";
+import { setupCmd } from "../setupCmd";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
 
   const db = testDbLifecycle(dbName);
 
-  const mockedLog = mockedLogLifecycle();
+  const { mockedLog } = mockedLogLifecycle();
+  deterministicHumanIds();
 
   let addDocSpy: SpyInstance;
   beforeEach(() => {
@@ -247,15 +249,6 @@ describe("addCmd", () => {
     expect(returnDoc.meta).not.toHaveProperty("idStructure");
   });
 
-  it("contains random identifiers in the metadata", async () => {
-    const doc = await addCmd({ data: ["foo=bar"] });
-    const { random, humanId } = doc.meta as DatumMetadata;
-
-    expect(random).toBeGreaterThanOrEqual(0);
-    expect(random).toBeLessThanOrEqual(1);
-    expect(humanId).toEqual(expect.stringMatching(/^[0-9a-z]+$/));
-  });
-
   it("can display just the data of documents or the whole documents", async () => {
     const matchExtraKeysInAnyOrder =
       /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
@@ -296,5 +289,65 @@ describe("addCmd", () => {
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
 
-  // TODO: write tests for all of the various options
+  describe("change command", () => {
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+      await setupCmd({});
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "occur"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a start command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "start", "30 min"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "end", "30 min"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command by having start as a trailing word", async () => {
+      expect(
+        await addCmd({
+          field: "field",
+          required: ["req1"],
+          optional: ["opt1"],
+          data: ["reqVal", "optVal", "switch", "stateName", "5m30s"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
 });

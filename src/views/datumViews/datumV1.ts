@@ -69,7 +69,9 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
           60 * durObj.hours +
           durObj.minutes +
           durObj.seconds / 60)
-      : "";
+      : data.dur === null
+        ? 0
+        : "";
     const state = data.state;
 
     if (state === false) {
@@ -88,7 +90,17 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
       outputArray.push(String(minutes));
     } else {
       outputArray.push(String(minutes));
-      outputArray.push(String(state));
+      if (typeof state === "object" && state !== null) {
+        if (Array.isArray(state)) {
+          outputArray.push(state.join(","));
+        } else if (state.id !== undefined && typeof state.id !== "boolean") {
+          outputArray.push(state.id);
+        } else {
+          outputArray.push(Object.values(state).sort().join("_"));
+        }
+      } else {
+        outputArray.push(String(state));
+      }
     }
 
     emit(key, outputArray);

@@ -9,6 +9,7 @@ import { primitiveUndo } from "../undo/primitiveUndo";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { compileState } from "../state/compileState";
 
 export const command = [
   "add <field> [data..]",
@@ -111,11 +112,13 @@ export type AddCmdArgs = MainDatumArgs &
 export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
   const db = connectDb(args);
 
-  const fieldArgType = args.fieldless ? false : "required";
-  flexiblePositional(args, "field", fieldArgType);
+  flexiblePositional(args, "field", args.fieldless ? false : "required");
+
   const payloadData = handleDataArgs(args);
 
-  const payload = addIdAndMetadata(payloadData, args);
+  const payloadWithState = await compileState(db, payloadData);
+
+  const payload = addIdAndMetadata(payloadWithState, args);
 
   // update now in case the addDoc fails due to conflict
   await updateLastDocsRef(db, payload._id);

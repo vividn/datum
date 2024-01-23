@@ -1,4 +1,9 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { endCmd } from "../endCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
@@ -121,5 +126,70 @@ describe("endCmd", () => {
         duration: "30asd",
       }),
     ).rejects.toThrow(BadDurationError);
+  });
+
+  it("still assigns a state of false even with required keys", async () => {
+    const doc = await endCmd({
+      field: "field",
+      duration: "reqVal1", //should get assigned to first required key because of flexiblePositional
+      required: "req1",
+      data: [30],
+    });
+    expect(doc.data).toMatchObject({
+      field: "field",
+      dur: "PT30M",
+      state: false,
+      req1: "reqVal1",
+    });
+  });
+
+  describe("change command", () => {
+    deterministicHumanIds();
+
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command by having occur as a trailing word", async () => {
+      expect(
+        await endCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          data: ["key=val", "optVal", "occur"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become start command by having start as a trailing word", async () => {
+      expect(
+        await endCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "30",
+          data: ["key=val", "optVal", "start"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command by having start as a trailing word", async () => {
+      expect(
+        await endCmd({
+          field: "field",
+          optional: ["opt1"],
+          duration: "5m30s",
+          data: ["key=val", "optVal", "switch", "stateName"],
+        }),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
   });
 });

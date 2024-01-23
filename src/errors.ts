@@ -10,10 +10,21 @@ export class MyError extends Error {
   }
 }
 
-export class DataError extends MyError {
-  constructor(m: unknown) {
-    super(m);
-    Object.setPrototypeOf(this, DataError.prototype);
+export class MissingRequiredKeyError extends MyError {
+  constructor(key: string) {
+    super(`No data given for the required key: ${key}`);
+    Object.setPrototypeOf(this, MissingRequiredKeyError.prototype);
+  }
+}
+
+export class ExtraDataError extends MyError {
+  constructor(keys: string[]) {
+    super(
+      `the following data do not have keys: ${keys.join(
+        ", ",
+      )}. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient`,
+    );
+    Object.setPrototypeOf(this, ExtraDataError.prototype);
   }
 }
 export class BaseDataError extends MyError {
@@ -115,6 +126,13 @@ export class BadTimezoneError extends MyError {
   }
 }
 
+export class BadStateError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, BadStateError.prototype);
+  }
+}
+
 export class MigrationError extends MyError {
   constructor(m: unknown) {
     super(m);
@@ -142,9 +160,9 @@ export const isCouchDbError = (error: unknown): error is CouchDbError => {
 };
 
 export class DatumViewMissingError extends MyError {
-  constructor(map_name?: unknown, reduce_name?: unknown) {
+  constructor(map_name?: unknown) {
     super(
-      `Missing internal datum view ${map_name} ${reduce_name} Please run setup on this database`,
+      `Missing internal datum view ${map_name}. Please run setup on this database`,
     );
     Object.setPrototypeOf(this, DatumViewMissingError.prototype);
   }
