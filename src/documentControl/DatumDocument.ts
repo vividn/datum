@@ -13,7 +13,8 @@ export type DatumData<T = unknown> = {
   occurTime?: DatumTime;
   dur?: isoDuration | null;
   field?: string;
-} & GenericData & T;
+} & GenericData &
+  T;
 
 export type OccurredData<T = unknown> = WithRequired<DatumData<T>, "occurTime">;
 
