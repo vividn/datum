@@ -286,10 +286,13 @@ export function showSingle(
     return;
   }
 
-  showHeaderLine(extracted);
   if (show === Show.Minimal) {
+    if (action !== ACTIONS.NoDiff) {
+      showHeaderLine(extracted);
+    }
     return;
   }
+  showHeaderLine(extracted);
   showMainInfoLine(extracted);
 
   if (formatString) {
