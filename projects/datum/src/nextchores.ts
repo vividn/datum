@@ -6,6 +6,9 @@ import chalk from "chalk";
 import { DateTime } from "luxon";
 import { Show } from "../../../src/input/outputArgs";
 import { ReduceRow } from "../../../src/views/DatumView";
+import { baseArgs, BaseArgs } from "../../../src/input/baseArgs";
+import { connectDb } from "../../../src/auth/connectDb";
+import { insertDatumView } from "../../../src/views/insertDatumView";
 
 function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
   const { key, value } = row;
@@ -16,8 +19,20 @@ function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
   const next = value.next ? value.next.slice(0, 10) : "INACTIVE";
   return [last, next, key].join("\t");
 }
-async function nextchores() {
+
+let oneTimeSetup = false;
+async function nextchores(args: BaseArgs) {
+  if (!oneTimeSetup) {
+    const db = connectDb(args);
+    await insertDatumView({
+      db,
+      datumView: choreView,
+      outputArgs: { show: Show.Minimal },
+    });
+    oneTimeSetup = true;
+  }
   const choresResponse = await reduceCmd({
+    ...args,
     mapName: choreView.name,
     groupLevel: 1,
     show: Show.None,
@@ -50,7 +65,17 @@ async function nextchores() {
 }
 
 if (require.main === module) {
-  nextchores().catch((error) => {
+  const args: BaseArgs & { watch?: boolean } = baseArgs
+    .options({
+      watch: {
+        alias: "w",
+        desc: "Watch and update on changes to the database",
+        type: "boolean",
+        hidden: true,
+      },
+    })
+    .parseSync(process.argv.slice(2));
+  nextchores(args).catch((error) => {
     console.error(error);
     process.exit(1);
   });
