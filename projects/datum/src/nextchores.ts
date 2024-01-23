@@ -2,13 +2,15 @@
 
 import { choreView } from "../views";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
-import chalk from "chalk";
 import { DateTime } from "luxon";
 import { Show } from "../../../src/input/outputArgs";
 import { ReduceRow } from "../../../src/views/DatumView";
 import { baseArgs, BaseArgs } from "../../../src/input/baseArgs";
 import { connectDb } from "../../../src/auth/connectDb";
 import { insertDatumView } from "../../../src/views/insertDatumView";
+import readline from "node:readline";
+import { stdin, stdout } from "node:process";
+import { once } from "node:events";
 
 function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
   const { key, value } = row;
@@ -21,7 +23,7 @@ function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
 }
 
 let oneTimeSetup = false;
-async function nextchores(args: BaseArgs) {
+async function nextchores(args: BaseArgs): Promise<string> {
   if (!oneTimeSetup) {
     const db = connectDb(args);
     await insertDatumView({
@@ -45,23 +47,64 @@ async function nextchores(args: BaseArgs) {
   const future = chores.filter((row) => row.value.next > now);
   const tenDash = "----------";
   const header = "Last Done \tNext Date \tChore";
-  console.log(header);
-  if (due.length === 0) {
-    if (process.stdout.isTTY) {
-      console.log(chalk.green("COMPLETED!\tGOOD WORK!\t\\(◦'⌣'◦)/"));
-    }
-  } else {
-    console.log(
-      chalk.red(due.map((row) => choreRowToLastNextChore(row)).join("\n")),
-    );
-    if (process.stdout.isTTY) {
-      console.log(tenDash + "\t" + tenDash + "\t" + tenDash);
-    }
+  const dueChores = due.map((row) => choreRowToLastNextChore(row)).join("\n");
+  const dueDivider = process.stdout.isTTY
+    ? `\n${tenDash}\t${tenDash}\t${tenDash}`
+    : "";
+  const futureChores = future
+    .map((row) => choreRowToLastNextChore(row))
+    .join("\n");
+  return `${header}\n${dueChores}${dueDivider}\n${futureChores}`;
+}
+
+async function nextchoreswatch(args: BaseArgs): Promise<void> {
+  const db = connectDb(args);
+
+  async function output(): Promise<void> {
+    const choreTable = await nextchores(args);
+    console.clear();
+    console.log(choreTable);
   }
-  const futureColor = due.length === 0 ? chalk.green : chalk.white;
-  console.log(
-    futureColor(future.map((row) => choreRowToLastNextChore(row)).join("\n")),
-  );
+
+  const rl = readline.createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: true,
+  });
+  stdin.setRawMode(true);
+
+  const eventEmitter = db
+    .changes({
+      since: "now",
+      live: true,
+    })
+    .on("change", output)
+    .on("error", (error) => {
+      console.error(error);
+      rl.write("\u001B[?25h"); // show cursor
+      rl.close();
+      process.exit(5);
+    });
+
+  rl.on("line", async () => {
+    console.log("refreshing...");
+    await output();
+  });
+  rl.on("close", () => {
+    rl.write("\u001B[?25h"); // show cursor
+    stdin.setRawMode(false);
+  });
+  rl.on("SIGINT", () => {
+    eventEmitter.cancel();
+    rl.close();
+    process.exit(3);
+  });
+
+  rl.write("\u001B[?25l"); // hides cursor
+  await output();
+  await once(rl, "close");
+  eventEmitter.cancel();
+  return;
 }
 
 if (require.main === module) {
@@ -71,12 +114,22 @@ if (require.main === module) {
         alias: "w",
         desc: "Watch and update on changes to the database",
         type: "boolean",
-        hidden: true,
       },
     })
     .parseSync(process.argv.slice(2));
-  nextchores(args).catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+  if (args.watch) {
+    nextchoreswatch(args).catch((error) => {
+      console.error(error);
+      process.exit(1);
+    });
+  } else {
+    nextchores(args)
+      .catch((error) => {
+        console.error(error);
+        process.exit(1);
+      })
+      .then((table) => {
+        console.log(table);
+      });
+  }
 }
