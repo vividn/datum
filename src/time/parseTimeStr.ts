@@ -65,5 +65,5 @@ export function parseTimeStr({
     return DateTime.fromISO(chronoParsed.toISOString());
   }
 
-  throw new BadTimeError("time not parsable");
+  throw new BadTimeError(timeStr);
 }
