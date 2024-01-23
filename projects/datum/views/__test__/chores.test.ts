@@ -167,9 +167,9 @@ describe("choreView", () => {
     });
   });
 
-  describe("reduce", () => {
-    it.todo(
-      "combines the values to determine the latest time, next, lastOccur, and iti",
-    );
-  });
+  // describe("reduce", () => {
+  //   it.todo(
+  //     "combines the values to determine the latest time, next, lastOccur, and iti",
+  //   );
+  // });
 });
