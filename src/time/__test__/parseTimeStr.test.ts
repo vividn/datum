@@ -95,6 +95,15 @@ describe("relative time strings", () => {
     ["+8 hours", { hours: 8 }],
     ["+100s", { seconds: 100 }],
     ["-3sec", { seconds: -3 }],
+    ["t", { minutes: -1 }],
+    ["q", { minutes: -5 }],
+    ["ttttttt", { minutes: -7 }],
+    ["ttt", { minutes: -3 }],
+    ["ttq", { minutes: -7 }],
+    ["qqt", { minutes: -11 }],
+    ["+t", { minutes: 1 }],
+    ["+q", { minutes: 5 }],
+    ["+qqttt", { minutes: 13 }],
   ])(
     "it parses %s as a duration of %s away from now",
     (timeStr, durationObject) => {
@@ -120,6 +129,15 @@ describe("relative time strings", () => {
     ["+8 hours", { hours: 8 }],
     ["+100s", { seconds: 100 }],
     ["-3sec", { seconds: -3 }],
+    ["t", { minutes: -1 }],
+    ["q", { minutes: -5 }],
+    ["ttttttt", { minutes: -7 }],
+    ["ttt", { minutes: -3 }],
+    ["ttq", { minutes: -7 }],
+    ["qqt", { minutes: -11 }],
+    ["+t", { minutes: 1 }],
+    ["+q", { minutes: 5 }],
+    ["+qqttt", { minutes: 13 }],
   ])(
     "it parses %s as a duration of %s away from a relative time",
     (timeStr, durationObject) => {
