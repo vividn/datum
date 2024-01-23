@@ -1,5 +1,5 @@
 import yargs from "yargs";
-import { outputYargs } from "./outputArgs";
+import { OutputArgs, outputYargs } from "./outputArgs";
 
 export type BaseArgs = {
   db?: string;
@@ -9,7 +9,7 @@ export type BaseArgs = {
   password?: string;
   env?: string;
   createDb?: boolean;
-};
+} & OutputArgs;
 
 export const baseArgs = outputYargs(
   yargs.options({
