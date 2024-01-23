@@ -73,7 +73,7 @@ async function chorelist(args: BaseArgs): Promise<string> {
             : chalk.white;
 
     t.cell("Field", color(row.key));
-    t.cell("ITI", color(iti));
+    t.cell("ITI", color(iti ?? ""));
     t.cell("Due", color(next));
     t.cell("Last Occur", color(last));
     t.newRow();
