@@ -35,7 +35,7 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     if (!data.field) {
       return;
     }
-    if (!data.occurTime && !data.nextTime && !data.nextDate) {
+    if (!data.nextTime && !data.nextDate) {
       return;
     }
     const { nextDate, nextTime, occurTime } = data;
