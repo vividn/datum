@@ -3,17 +3,17 @@ import { WithRequired } from "../utils/utilityTypes";
 
 import { DatumState } from "../state/normalizeState";
 
-export type GenericData<T = unknown> = T & {
+export type GenericData = {
   [key: string]: any;
 };
 
-export type DatumData<T = unknown> = GenericData<T> & {
+export type DatumData<T = unknown> = {
   state?: DatumState;
   lastState?: DatumState;
   occurTime?: DatumTime;
   dur?: isoDuration | null;
   field?: string;
-};
+} & GenericData & T;
 
 export type OccurredData<T = unknown> = WithRequired<DatumData<T>, "occurTime">;
 
@@ -87,3 +87,5 @@ export function isDatumPayload(
     (payload as DatumPayload).meta !== undefined
   );
 }
+
+export type ExtractDataType<T> = T extends DatumDocument<infer U> ? U : never;

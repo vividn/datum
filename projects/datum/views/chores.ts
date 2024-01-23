@@ -3,8 +3,7 @@ import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { DatumTime, isoDate, isoDateOrTime } from "../../../src/time/timeUtils";
 import { DatumView } from "../../../src/views/DatumView";
 
-export const ZERO_DATE = "0000-00-00" as const;
-type ChoreDoc = DatumDocument<{
+export type ChoreDoc = DatumDocument<{
   field: string;
   nextDate?: isoDate;
   nextTime?: DatumTime;
@@ -16,7 +15,7 @@ type MapValue = {
   time: isoDateOrTime;
   next?: isoDateOrTime;
   iti?: number;
-  lastOccur: isoDateOrTime | typeof ZERO_DATE;
+  lastOccur: isoDateOrTime;
 };
 type ReduceValue = MapValue;
 
@@ -28,6 +27,7 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "chores",
   emit,
   map: (doc: ChoreDoc) => {
+    const ZERO_DATE = "0000-00-00" as const;
     const { data, meta } = doc;
     if (!data || !meta) {
       return;
@@ -92,25 +92,25 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
       iti,
     });
   },
-  reduce: (_keysIds, values, _rereduce) => {
-    return values.reduce((reduced, currentValue) => {
-      const isLatest = currentValue.time > reduced.time;
-      const latestNext = isLatest ? currentValue.next : reduced.next;
-      const latestTime = isLatest ? currentValue.time : reduced.time;
-      const latestOccur =
-        currentValue.lastOccur > reduced.lastOccur
-          ? currentValue.lastOccur
-          : reduced.lastOccur;
-      const latestIti =
-        isLatest && currentValue.iti !== undefined
-          ? currentValue.iti
-          : reduced.iti;
-      return {
-        time: latestTime,
-        next: latestNext,
-        lastOccur: latestOccur,
-        iti: latestIti,
-      };
-    });
-  },
+  // reduce: (_keysIds, values, _rereduce) => {
+  //   return values.reduce((reduced, currentValue) => {
+  //     const isLatest = currentValue.time > reduced.time;
+  //     const latestNext = isLatest ? currentValue.next : reduced.next;
+  //     const latestTime = isLatest ? currentValue.time : reduced.time;
+  //     const latestOccur =
+  //       currentValue.lastOccur > reduced.lastOccur
+  //         ? currentValue.lastOccur
+  //         : reduced.lastOccur;
+  //     const latestIti =
+  //       isLatest && currentValue.iti !== undefined
+  //         ? currentValue.iti
+  //         : reduced.iti;
+  //     return {
+  //       time: latestTime,
+  //       next: latestNext,
+  //       lastOccur: latestOccur,
+  //       iti: latestIti,
+  //     };
+  //   });
+  // },
 };
