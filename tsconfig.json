@@ -20,5 +20,5 @@
     "skipLibCheck": true
   },
   "include": ["src/**/*", "./typings", "./projects"],
-  "exclude": ["node_modules", "src/**/__test__"]
+  "exclude": ["node_modules", "src/**/__test__", "projects/**/__test__"]
 }
