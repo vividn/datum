@@ -43,6 +43,7 @@ describe("choreView", () => {
         { createTime },
       );
       choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
       expect(emitMock).toHaveBeenCalledWith(
         field,
         expect.objectContaining({
@@ -64,11 +65,63 @@ describe("choreView", () => {
       );
     });
 
-    it.todo("sets next to be nextDate with just nextDate");
-    it.todo("sets next to be nextTime with just nextTime");
-    it.todo("combines nextDate and nextTime together if both are there");
-    it.todo("still emits next if there is just createTime");
-    it.todo("generates an ITI with the proper integral part if next is a date");
+    it("sets next to be nextDate with just nextDate", () => {
+      const doc = makeDoc<ChoreDoc>({ field, occurTime, nextDate });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock).toHaveBeenCalledWith(
+        field,
+        expect.objectContaining({
+          next: nextDate,
+        }),
+      );
+    });
+
+    it("sets next to be nextTime with just nextTime", () => {
+      const doc = makeDoc<ChoreDoc>({ field, occurTime, nextTime });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock).toHaveBeenCalledWith(
+        field,
+        expect.objectContaining({
+          next: nextTime.utc,
+        }),
+      );
+    });
+
+    it("combines nextDate and nextTime together if both are there", () => {
+      const doc = makeDoc<ChoreDoc>({ field, occurTime, nextDate, nextTime });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock).toHaveBeenCalledWith(
+        field,
+        expect.objectContaining({
+          next: `${nextDate}T${nextTime.utc.slice(11)}`,
+        }),
+      );
+    });
+
+    it("still emits next if there is just createTime", () => {
+      const doc = makeDoc<ChoreDoc>({ field, nextDate }, { createTime });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      expect(emitMock).toHaveBeenCalledWith(
+        field,
+        expect.objectContaining({
+          time: createTime.utc,
+          next: nextDate,
+        }),
+      );
+    });
+
+    it("generates an ITI with the proper integral part if next is a date", () => {
+      const doc = makeDoc<ChoreDoc>({ field, occurTime, nextDate });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      const iti = emitMock.mock.calls[0][1].iti;
+      expect(Math.floor(iti)).toBe(2);
+    });
+    
     it.todo("has the right integral part even with timezone shenanigans");
     it.todo(
       "uses the percentage through the day of occurrence as the decimal part of ITI if next is a date",
