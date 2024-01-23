@@ -1,5 +1,4 @@
 import * as emit from "../../../../src/views/emit";
-import MockedFunction = jest.MockedFunction;
 import SpyInstance = jest.SpyInstance;
 import { makeDoc } from "../../../../src/__test__/test-utils";
 import { ChoreDoc, choreView } from "../chores";
