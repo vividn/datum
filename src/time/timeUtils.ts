@@ -49,7 +49,7 @@ export function isoDurationFromDuration(dur: Duration): isoDuration {
     return "-" + dur.negate().toISO();
   }
   if (!dur.isValid) {
-    throw new BadDurationError("invalid duration");
+    throw new BadDurationError();
   }
   return dur.toISO() as isoDuration;
 }

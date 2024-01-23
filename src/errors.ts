@@ -97,16 +97,16 @@ export class BadDurationError extends MyError {
   #key: string = "";
   #value: string = "";
 
-  constructor(badDate?: string) {
+  constructor(badDuration?: string) {
     super();
-    this.#value = badDate ?? "";
+    this.#value = badDuration ?? "";
     Object.setPrototypeOf(this, BadDurationError.prototype);
   }
 
   get message(): string {
     const withValue = this.#value ? `"${this.#value}" is an ` : "";
     const withKey = this.#key ? `, key: ${this.#key}` : "";
-    return `${withValue}invalid duration${withKey}`;
+    return `${withValue}invalid duration${withKey}. Give a valid duration string or skip duration with a "."`;
   }
   set key(key: string) {
     this.#key = key;

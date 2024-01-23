@@ -45,9 +45,7 @@ export function parseDurationStr({
     const [seconds, minutes, hours, days, years, extra] = colonSplits.reverse();
 
     if (extra !== undefined) {
-      throw new BadDurationError(
-        'could not parse duration. give a valid duration string or skip duration with a "."',
-      );
+      throw new BadDurationError(durationStr);
     }
 
     const duration = Duration.fromObject({
@@ -66,7 +64,7 @@ export function parseDurationStr({
   const ms = parse(durationStr);
 
   if (ms === null) {
-    throw new BadDurationError("could not parse duration");
+    throw new BadDurationError(durationStr);
   }
 
   const duration = Duration.fromObject({ milliseconds: ms }).shiftTo(
