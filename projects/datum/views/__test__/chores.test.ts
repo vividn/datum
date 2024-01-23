@@ -121,13 +121,51 @@ describe("choreView", () => {
       const iti = emitMock.mock.calls[0][1].iti;
       expect(Math.floor(iti)).toBe(2);
     });
-    
-    it.todo("has the right integral part even with timezone shenanigans");
-    it.todo(
-      "uses the percentage through the day of occurrence as the decimal part of ITI if next is a date",
-    );
-    it.todo("uses the exact ITI if next is a time");
-    it.todo("does not emit an ITI if there is no occurTime");
+
+    it("has the right integral part even with timezone shenanigans", () => {
+      const occurTime = toDatumTime("2024-01-23T18:00:00.000-12:00"); // the morning of the 24th in UTC
+      const doc = makeDoc<ChoreDoc>({
+        field,
+        occurTime,
+        nextDate: "2024-01-25",
+      });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      const iti = emitMock.mock.calls[0][1].iti;
+      expect(Math.floor(iti)).toBe(2); // based on local time
+    });
+
+    it("uses the percentage through the (local) day of occurrence as the decimal part of ITI if next is a date", () => {
+      const occurTime = toDatumTime("2024-01-23T18:00:00.000-12:00");
+      const doc = makeDoc<ChoreDoc>({
+        field,
+        occurTime,
+        nextDate: "2024-01-25",
+      });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      const iti = emitMock.mock.calls[0][1].iti;
+      expect(iti - Math.floor(iti)).toEqual(18 / 24);
+    });
+
+    it("uses the exact ITI if next is a time", () => {
+      const doc = makeDoc<ChoreDoc>({ field, occurTime, nextTime });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      const iti = emitMock.mock.calls[0][1].iti;
+      const difference =
+        (new Date(nextTime.utc).getTime() - new Date(occurTime.utc).getTime()) /
+        (1000 * 60 * 60 * 24);
+      expect(iti).toEqual(difference);
+    });
+
+    it("does not emit an ITI if there is no occurTime", () => {
+      const doc = makeDoc<ChoreDoc>({ field, nextDate }, { createTime });
+      choreView.map(doc);
+      expect(emitMock).toHaveBeenCalledTimes(1);
+      const iti = emitMock.mock.calls[0][1].iti;
+      expect(iti).toBeUndefined();
+    });
   });
 
   describe("reduce", () => {
