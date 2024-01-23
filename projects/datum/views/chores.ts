@@ -92,25 +92,25 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
       iti,
     });
   },
-  // reduce: (_keysIds, values, _rereduce) => {
-  //   return values.reduce((reduced, currentValue) => {
-  //     const isLatest = currentValue.time > reduced.time;
-  //     const latestNext = isLatest ? currentValue.next : reduced.next;
-  //     const latestTime = isLatest ? currentValue.time : reduced.time;
-  //     const latestOccur =
-  //       currentValue.lastOccur > reduced.lastOccur
-  //         ? currentValue.lastOccur
-  //         : reduced.lastOccur;
-  //     const latestIti =
-  //       isLatest && currentValue.iti !== undefined
-  //         ? currentValue.iti
-  //         : reduced.iti;
-  //     return {
-  //       time: latestTime,
-  //       next: latestNext,
-  //       lastOccur: latestOccur,
-  //       iti: latestIti,
-  //     };
-  //   });
-  // },
+  reduce: (_keysIds, values, _rereduce) => {
+    return values.reduce((reduced, currentValue) => {
+      const isLatest = currentValue.time > reduced.time;
+      const latestNext = isLatest ? currentValue.next : reduced.next;
+      const latestTime = isLatest ? currentValue.time : reduced.time;
+      const latestOccur =
+        currentValue.lastOccur > reduced.lastOccur
+          ? currentValue.lastOccur
+          : reduced.lastOccur;
+      const latestIti =
+        isLatest && currentValue.iti !== undefined
+          ? currentValue.iti
+          : reduced.iti;
+      return {
+        time: latestTime,
+        next: latestNext,
+        lastOccur: latestOccur,
+        iti: latestIti,
+      };
+    });
+  },
 };
