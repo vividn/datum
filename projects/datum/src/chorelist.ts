@@ -12,8 +12,19 @@ import { connectDb } from "../../../src/auth/connectDb";
 import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import { once } from "node:events";
+import { insertDatumView } from "../../../src/views/insertDatumView";
 
+let oneTimeSetup = false;
 async function chorelist(args: BaseArgs): Promise<string> {
+  if (!oneTimeSetup) {
+    const db = connectDb(args);
+    await insertDatumView({
+      db,
+      datumView: choreView,
+      outputArgs: { show: Show.Minimal },
+    });
+    oneTimeSetup = true;
+  }
   const choresResponse = await reduceCmd({
     ...args,
     mapName: choreView.name,
@@ -62,7 +73,7 @@ async function chorelist(args: BaseArgs): Promise<string> {
             : chalk.white;
 
     t.cell("Field", color(row.key));
-    t.cell("ITI", color(iti));
+    t.cell("ITI", color(iti ?? ""));
     t.cell("Due", color(next));
     t.cell("Last Occur", color(last));
     t.newRow();
@@ -82,7 +93,11 @@ async function chorelistwatch(args: BaseArgs): Promise<void> {
     console.log(choreTable);
   }
 
-  const rl = readline.createInterface({ input: stdin, output: stdout, terminal: true });
+  const rl = readline.createInterface({
+    input: stdin,
+    output: stdout,
+    terminal: true,
+  });
   stdin.setRawMode(true);
 
   const eventEmitter = db
