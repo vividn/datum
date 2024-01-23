@@ -65,7 +65,7 @@ export function toDatumTime(
   onlyDate?: boolean,
 ): DatumTime {
   if (typeof time === "string") {
-    time = DateTime.fromISO(time);
+    time = DateTime.fromISO(time, { setZone: true });
   }
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {
