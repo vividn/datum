@@ -16,6 +16,17 @@ export function parseTimeStr({
 }: ParseTimeStrType): DateTime {
   referenceTime = referenceTime ?? now();
 
+  // Quick relative time strings (q = 5 minutes, t = 1 minute)
+  const quickMatches = timeStr.match(/^([+-]?)([qt]+)$/i);
+  if (quickMatches) {
+    const sign = quickMatches[1] === "+" ? 1 : -1;
+    const qs = quickMatches[2].match(/q/gi)?.length ?? 0;
+    const ts = quickMatches[2].match(/t/gi)?.length ?? 0;
+    const minutes = sign * (qs * 5 + ts);
+    const duration = Duration.fromObject({ minutes });
+    return referenceTime.plus(duration);
+  }
+
   // This custom regex is to match a few extra strings not recognized by chrono, particularly short
   // E.g, 10 for 10:00, 1513 for 15:13, etc.
   const matches = timeStr.match(
