@@ -7,8 +7,16 @@ import { Show } from "../../../src/input/outputArgs";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import printf from "printf";
 
-type FBalArgs = BaseArgs;
-const fbalArgs = baseArgs;
+type FBalArgs = BaseArgs & {
+  account?: string;
+};
+const fbalArgs = baseArgs.options({
+  account: {
+    type: "string",
+    alias: "a",
+    description: "Account to show",
+  },
+});
 
 function fix(n: number) {
   const fixed = n.toFixed(2);
@@ -19,12 +27,20 @@ function fix(n: number) {
 export async function fbal(args: FBalArgs): Promise<void> {
   args.db ??= "finance";
 
+  const startEnd = args.account
+    ? {
+        start: `,${args.account}`,
+      }
+    : {
+        start: ",A",
+        end: `,Z${HIGH_STRING}`,
+      };
+
   const allBalances = (
     await reduceCmd({
       ...args,
       mapName: balanceView.name,
-      start: ",A",
-      end: `,Z${HIGH_STRING}`,
+      ...startEnd,
       groupLevel: 2,
       show: Show.None,
     })
@@ -39,7 +55,7 @@ export async function fbal(args: FBalArgs): Promise<void> {
       acc["amountWidth"] = Math.max(acc["amountWidth"], fix(amount).length);
       return acc;
     },
-    { accountWidth: 1, amountWidth: 1, currencyWidth: 1 }
+    { accountWidth: 1, amountWidth: 1, currencyWidth: 1 },
   );
 
   const format = `%${accountWidth}.${accountWidth}s  %${amountWidth}.2f %-${currencyWidth}.${currencyWidth}s`;
@@ -62,6 +78,7 @@ export async function fbal(args: FBalArgs): Promise<void> {
 
 if (require.main === module) {
   const args = fbalArgs.parseSync(process.argv.slice(2)) as FBalArgs;
+  args.account ??= args?._?.[0] as string;
   fbal(args).catch((err) => {
     throw err;
   });
