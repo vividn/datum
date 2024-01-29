@@ -25,6 +25,8 @@ async function chorelist(args: BaseArgs): Promise<string> {
     });
     oneTimeSetup = true;
   }
+  const showAll = args.show === Show.All || args.showAll;
+
   const choresResponse = await reduceCmd({
     ...args,
     mapName: choreView.name,
@@ -51,7 +53,7 @@ async function chorelist(args: BaseArgs): Promise<string> {
         : DateTime.fromISO(row.value.lastOccur).toISODate();
     const due = next <= now;
     const doneToday = last === now;
-    if (!due && !doneToday) {
+    if (!due && !doneToday && !showAll) {
       return;
     }
     if (due) {
