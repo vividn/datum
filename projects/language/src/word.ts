@@ -4,7 +4,6 @@ import yargs from "yargs";
 import sample from "lodash.sample";
 import { homedir } from "os";
 import { connectDb } from "../../../src/auth/connectDb";
-import { ViewRow } from "../../../src/utils/utilityTypes";
 import { startsWith } from "../../../src/utils/startsWith";
 import promptSync from "prompt-sync";
 import picocolors from "picocolors";
@@ -38,7 +37,7 @@ async function main() {
   args.db = "language";
   args._ = [];
 
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const filter = start
     ? end
@@ -63,8 +62,7 @@ async function main() {
 
     const prompt = promptSync({ sigint: true });
     prompt(
-      `${picocolors.yellow(picocolors.bold(text))} (${data.srcLang}-${
-        data.pos
+      `${picocolors.yellow(picocolors.bold(text))} (${data.srcLang}-${data.pos
       }) ${hid}`
     );
     const ipa = spawnSync("espeak", [
@@ -95,4 +93,4 @@ if (require.main === module) {
   main();
 }
 
-export {};
+export { };
