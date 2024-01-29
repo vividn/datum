@@ -27,12 +27,20 @@ function fix(n: number) {
 export async function fbal(args: FBalArgs): Promise<void> {
   args.db ??= "finance";
 
+  const startEnd = args.account
+    ? {
+        start: `,${args.account}`,
+      }
+    : {
+        start: ",A",
+        end: `,Z${HIGH_STRING}`,
+      };
+
   const allBalances = (
     await reduceCmd({
       ...args,
       mapName: balanceView.name,
-      start: ",A",
-      end: `,Z${HIGH_STRING}`,
+      ...startEnd,
       groupLevel: 2,
       show: Show.None,
     })
