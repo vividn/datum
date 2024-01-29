@@ -73,7 +73,7 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
           : new Date(next);
         iti = Math.ceil(
           (nextWithOffset.getTime() - new Date(time.utc).getTime()) /
-            (1000 * 60 * 60 * 24),
+          (1000 * 60 * 60 * 24),
         );
         const offsetOccur = new Date(occurTime.utc);
         offsetOccur.setHours(offsetOccur.getHours() + (occurTime.o || 0));
@@ -104,15 +104,13 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
         currentValue.lastOccur > reduced.lastOccur
           ? currentValue.lastOccur
           : reduced.lastOccur;
-      const latestIti =
-        isLatest && currentValue.iti !== undefined
-          ? currentValue.iti
-          : reduced.iti;
+      // TODO: Kind of hacky, may not grab the latest ITI if the most recent instance is a shirk
+      const iti = reduced.iti === undefined ? currentValue.iti : isLatest && currentValue.iti !== undefined ? currentValue.iti : reduced.iti;
       return {
         time: latestTime,
         next: latestNext,
         lastOccur: latestOccur,
-        iti: latestIti,
+        iti: iti,
       };
     });
   },
