@@ -1,7 +1,10 @@
 {
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
-    "lib": ["ES2020", "ESNext"],
+    "lib": [
+      "ES2020",
+      "ESNext"
+    ],
     "module": "CommonJS",
     "moduleResolution": "node",
     "target": "ES2020",
@@ -12,13 +15,26 @@
     "outDir": "build",
     "declarationDir": "build/types",
     "strict": true,
-    "types": ["node"],
-    "typeRoots": ["./node_modules/@types", "./typings"],
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "./node_modules/@types",
+      "./typings"
+    ],
     "esModuleInterop": true,
     "resolveJsonModule": true,
     "jsx": "react",
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "./typings", "./projects"],
-  "exclude": ["node_modules", "src/**/__test__", "projects/**/__test__"]
+  "include": [
+    "src/**/*",
+    "./typings",
+    "projects/**/*"
+  ],
+  "exclude": [
+    "node_modules",
+    "src/**/__test__",
+    "projects/**/__test__"
+  ]
 }

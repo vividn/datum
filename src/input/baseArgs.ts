@@ -9,6 +9,7 @@ export type BaseArgs = {
   password?: string;
   env?: string;
   createDb?: boolean;
+  _?: (string | number)[];
 } & OutputArgs;
 
 export const baseArgs = outputYargs(
@@ -46,6 +47,6 @@ export const baseArgs = outputYargs(
       type: "boolean",
     },
   }),
-).strict();
+).strictOptions();
 
 // TODO: Middleware to enforce proper non array types
