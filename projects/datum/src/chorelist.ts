@@ -15,7 +15,29 @@ import { once } from "node:events";
 import { insertDatumView } from "../../../src/views/insertDatumView";
 
 let oneTimeSetup = false;
-async function chorelist(args: BaseArgs): Promise<string> {
+type PossibleSorts = "field" | "iti" | "due" | "last";
+type ChorelistArgs = BaseArgs & { watch?: boolean; sort?: PossibleSorts };
+const sortFunctions: Record<
+  PossibleSorts,
+  (a: ReduceRow<typeof choreView>, b: ReduceRow<typeof choreView>) => number
+> = {
+  field: (a, b) => a.key.localeCompare(b.key),
+  iti: (a, b) => (a.value.iti ?? 9e99) - (b.value.iti ?? 9e99),
+  due: (a, b) => {
+    const aNext = a.value.next ?? "9999-12-31";
+    const bNext = b.value.next ?? "9999-12-31";
+    return aNext.localeCompare(bNext);
+  },
+  last: (a, b) => {
+    const aLast =
+      a.value.lastOccur === "0000-00-00" ? "9999-12-31" : a.value.lastOccur;
+    const bLast =
+      b.value.lastOccur === "0000-00-00" ? "9999-12-31" : b.value.lastOccur;
+    return aLast.localeCompare(bLast);
+  },
+};
+
+async function chorelist(args: ChorelistArgs): Promise<string> {
   if (!oneTimeSetup) {
     const db = connectDb(args);
     await insertDatumView({
@@ -26,6 +48,7 @@ async function chorelist(args: BaseArgs): Promise<string> {
     oneTimeSetup = true;
   }
   const showAll = args.show === Show.All || args.showAll;
+  const sortFn = sortFunctions[args.sort as PossibleSorts] ?? sortFunctions.iti;
 
   const choresResponse = await reduceCmd({
     ...args,
@@ -36,7 +59,7 @@ async function chorelist(args: BaseArgs): Promise<string> {
   const choreRows = choresResponse.rows as ReduceRow<typeof choreView>[];
   const chores = choreRows
     .filter((chore) => chore.value.next !== undefined)
-    .sort((a, b) => (a.value.iti ?? 9e99) - (b.value.iti ?? 9e99));
+    .sort(sortFn);
   const now = DateTime.local().toISODate();
 
   const t = new Table();
@@ -137,15 +160,22 @@ async function chorelistwatch(args: BaseArgs): Promise<void> {
 }
 
 if (require.main === module) {
-  const args: BaseArgs & { watch?: boolean } = baseArgs
+  const args = baseArgs
     .options({
       watch: {
         alias: "w",
         desc: "Watch and update on changes to the database",
         type: "boolean",
       },
+      sort: {
+        alias: "s",
+        desc: "Sort the output",
+        type: "string",
+        choices: ["field", "iti", "due", "last"],
+        default: "iti",
+      },
     })
-    .parseSync(process.argv.slice(2));
+    .parseSync(process.argv.slice(2)) as ChorelistArgs;
   if (args.watch) {
     chorelistwatch(args).catch((error) => {
       console.error(error);
