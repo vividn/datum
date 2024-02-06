@@ -13,6 +13,7 @@ import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import { once } from "node:events";
 import { insertDatumView } from "../../../src/views/insertDatumView";
+import { isoDate, isoDatetime } from "../../../src/time/timeUtils";
 
 let oneTimeSetup = false;
 type PossibleSorts = "field" | "iti" | "due" | "last";
@@ -37,6 +38,52 @@ const sortFunctions: Record<
   },
 };
 
+function timeIfTodayElseDate(dateOrTime?: isoDate | isoDatetime): string {
+  if (dateOrTime === undefined) {
+    return "";
+  }
+  if (DateTime.fromISO(dateOrTime).isValid === false) {
+    return "NEVER";
+  }
+  if (!dateOrTime.includes("T")) {
+    return dateOrTime;
+  }
+  const datetime = DateTime.fromISO(dateOrTime).toLocal();
+  const date = DateTime.fromISO(dateOrTime).toLocal().toISODate() as string;
+  return date === DateTime.local().toISODate()
+    ? datetime.toLocaleString(DateTime.TIME_24_SIMPLE)
+    : date;
+}
+
+function isDue(dateOrTime?: isoDate | isoDatetime): boolean {
+  if (dateOrTime === undefined) {
+    return false;
+  }
+  if (DateTime.fromISO(dateOrTime).isValid === false) {
+    return false;
+  }
+  if (!dateOrTime.includes("T")) {
+    return dateOrTime <= DateTime.local().toISODate();
+  }
+  return dateOrTime <= DateTime.utc().toISOTime();
+}
+
+function isDoneToday(dateOrTime?: isoDate | isoDatetime): boolean {
+  if (dateOrTime === undefined) {
+    return false;
+  }
+  if (DateTime.fromISO(dateOrTime).isValid === false) {
+    return false;
+  }
+  if (!dateOrTime.includes("T")) {
+    return dateOrTime === DateTime.local().toISODate();
+  }
+  return (
+    DateTime.fromISO(dateOrTime).toLocal().toISODate() ===
+    DateTime.local().toISODate()
+  );
+}
+
 async function chorelist(args: ChorelistArgs): Promise<string> {
   if (!oneTimeSetup) {
     const db = connectDb(args);
@@ -60,8 +107,8 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
   const chores = choreRows
     .filter((chore) => chore.value.next !== undefined)
     .sort(sortFn);
-  const now = DateTime.local().toISODate();
 
+  const today = DateTime.local().toISODate();
   const t = new Table();
 
   let totalDue = 0;
@@ -69,23 +116,20 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
     if (row.value.next === undefined) {
       return;
     }
-    const next = row.value.next.slice(0, 10);
-    const last =
-      row.value.lastOccur === "0000-00-00"
-        ? "NEVER"
-        : DateTime.fromISO(row.value.lastOccur).toISODate();
-    const due = next <= now;
-    const doneToday = last === now;
+    const due = isDue(row.value.next);
+    const doneToday = isDoneToday(row.value.lastOccur);
     if (!due && !doneToday && !showAll) {
       return;
     }
     if (due) {
       totalDue += 1;
     }
+    const next = timeIfTodayElseDate(row.value.next);
+    const last = timeIfTodayElseDate(row.value.lastOccur);
     const iti =
       row.value.iti === undefined ? undefined : Math.floor(row.value.iti);
     const daysOverdue = Math.floor(
-      DateTime.fromISO(now).diff(DateTime.fromISO(next), "days").days,
+      DateTime.fromISO(today).diff(DateTime.fromISO(next), "days").days,
     );
     const color = doneToday
       ? chalk.green
