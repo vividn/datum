@@ -1,9 +1,9 @@
-import { BaseArgs, baseArgs } from "./baseArgs";
+import { DbArgs, dbArgs } from "./dbArgs";
 import { OutputArgs } from "./outputArgs";
 
 export type MainDatumArgs = {
   _?: (string | number)[];
-} & BaseArgs &
+} & DbArgs &
   OutputArgs;
 
 export const mainYargs = baseArgs

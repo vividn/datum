@@ -15,17 +15,21 @@ export enum Show {
   All = "all",
 }
 export function outputArgs(parser: ArgumentParser): ArgumentParser {
-  parser.add_argument("--show-all", {
+  const outputGroup = parser.add_argument_group({
+    title: "Output",
+    description: "Options for display on the terminal",
+  });
+  outputGroup.add_argument("--show-all", {
     help: "Show complete document when displaying, not just data",
     action: "store_true",
     dest: "showAll",
   });
-  parser.add_argument("--show", {
+  outputGroup.add_argument("--show", {
     help: "how much of documents to show",
     choices: Object.values(Show),
     default: Show.Default,
   });
-  parser.add_argument("--format-string", {
+  outputGroup.add_argument("--format-string", {
     help: "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
     dest: "formatString",
   });

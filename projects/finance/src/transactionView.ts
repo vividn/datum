@@ -4,7 +4,7 @@ import { connectDb } from "../../../src/auth/connectDb";
 import readline from "node:readline";
 import { stdin } from "node:process";
 import { once } from "node:events";
-import { baseArgs, BaseArgs } from "../../../src/input/baseArgs";
+import { baseArgs, DbArgs } from "../../../src/input/baseArgs";
 import { isoDate, isoDateOrTime } from "../../../src/time/timeUtils";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { balanceView, equalityView } from "../views";
@@ -20,7 +20,7 @@ import { DateTime } from "luxon";
 import { parseDateStr } from "../../../src/time/parseDateStr";
 
 type TransactionViewInput = {
-  args: BaseArgs;
+  args: DbArgs;
   account: string;
   currency: string;
   endDate: isoDateOrTime;

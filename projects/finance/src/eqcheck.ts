@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
+import { DbArgs, baseArgs } from "../../../src/input/baseArgs";
 import { balanceView, equalityView } from "../views";
 import { mapCmd } from "../../../src/commands/mapCmd";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
@@ -11,7 +11,7 @@ import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 export const zeroDate = "0000-00-00";
 
-type EqCheckArgs = BaseArgs & {
+type EqCheckArgs = DbArgs & {
   account?: string;
   watch?: boolean;
   context?: number;

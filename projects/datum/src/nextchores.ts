@@ -5,7 +5,7 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { DateTime } from "luxon";
 import { Show } from "../../../src/input/outputArgs";
 import { ReduceRow } from "../../../src/views/DatumView";
-import { baseArgs, BaseArgs } from "../../../src/input/baseArgs";
+import { baseArgs, DbArgs } from "../../../src/input/baseArgs";
 import { connectDb } from "../../../src/auth/connectDb";
 import { insertDatumView } from "../../../src/views/insertDatumView";
 import readline from "node:readline";
@@ -23,7 +23,7 @@ function choreRowToLastNextChore(row: ReduceRow<typeof choreView>): string {
 }
 
 let oneTimeSetup = false;
-async function nextchores(args: BaseArgs): Promise<string> {
+async function nextchores(args: DbArgs): Promise<string> {
   if (!oneTimeSetup) {
     const db = connectDb(args);
     await insertDatumView({
@@ -60,7 +60,7 @@ async function nextchores(args: BaseArgs): Promise<string> {
   return `${header}\n${dueChores}${dueDivider}\n${futureChores}`;
 }
 
-async function nextchoreswatch(args: BaseArgs): Promise<void> {
+async function nextchoreswatch(args: DbArgs): Promise<void> {
   const db = connectDb(args);
 
   async function output(): Promise<void> {
@@ -111,7 +111,7 @@ async function nextchoreswatch(args: BaseArgs): Promise<void> {
 }
 
 if (require.main === module) {
-  const args: BaseArgs & { watch?: boolean } = baseArgs
+  const args: DbArgs & { watch?: boolean } = baseArgs
     .options({
       watch: {
         alias: "w",

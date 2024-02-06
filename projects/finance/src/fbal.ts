@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 
-import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
+import { DbArgs, baseArgs } from "../../../src/input/baseArgs";
 import { balanceView } from "../views";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
 import { Show } from "../../../src/input/outputArgs";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import printf from "printf";
 
-type FBalArgs = BaseArgs & {
+type FBalArgs = DbArgs & {
   account?: string;
 };
 const fbalArgs = baseArgs.options({

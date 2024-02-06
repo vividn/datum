@@ -7,7 +7,7 @@ import { DateTime } from "luxon";
 import chalk from "chalk";
 import { ReduceRow } from "../../../src/views/DatumView";
 import Table from "easy-table";
-import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
+import { DbArgs, baseArgs } from "../../../src/input/baseArgs";
 import { connectDb } from "../../../src/auth/connectDb";
 import readline from "node:readline";
 import { stdin, stdout } from "node:process";
@@ -17,7 +17,7 @@ import { isoDate, isoDatetime } from "../../../src/time/timeUtils";
 
 let oneTimeSetup = false;
 type PossibleSorts = "field" | "iti" | "due" | "last";
-type ChorelistArgs = BaseArgs & { watch?: boolean; sort?: PossibleSorts };
+type ChorelistArgs = DbArgs & { watch?: boolean; sort?: PossibleSorts };
 const sortFunctions: Record<
   PossibleSorts,
   (a: ReduceRow<typeof choreView>, b: ReduceRow<typeof choreView>) => number
@@ -153,7 +153,7 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
   return choreTable + completionString;
 }
 
-async function chorelistwatch(args: BaseArgs): Promise<void> {
+async function chorelistwatch(args: DbArgs): Promise<void> {
   const db = connectDb(args);
 
   async function output(): Promise<void> {
