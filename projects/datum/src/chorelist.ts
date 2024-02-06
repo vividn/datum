@@ -13,9 +13,78 @@ import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import { once } from "node:events";
 import { insertDatumView } from "../../../src/views/insertDatumView";
+import { isoDate, isoDatetime } from "../../../src/time/timeUtils";
 
 let oneTimeSetup = false;
-async function chorelist(args: BaseArgs): Promise<string> {
+type PossibleSorts = "field" | "iti" | "due" | "last";
+type ChorelistArgs = BaseArgs & { watch?: boolean; sort?: PossibleSorts };
+const sortFunctions: Record<
+  PossibleSorts,
+  (a: ReduceRow<typeof choreView>, b: ReduceRow<typeof choreView>) => number
+> = {
+  field: (a, b) => a.key.localeCompare(b.key),
+  iti: (a, b) => (a.value.iti ?? 9e99) - (b.value.iti ?? 9e99),
+  due: (a, b) => {
+    const aNext = a.value.next ?? "9999-12-31";
+    const bNext = b.value.next ?? "9999-12-31";
+    return aNext.localeCompare(bNext);
+  },
+  last: (a, b) => {
+    const aLast =
+      a.value.lastOccur === "0000-00-00" ? "9999-12-31" : a.value.lastOccur;
+    const bLast =
+      b.value.lastOccur === "0000-00-00" ? "9999-12-31" : b.value.lastOccur;
+    return aLast.localeCompare(bLast);
+  },
+};
+
+function timeIfTodayElseDate(dateOrTime?: isoDate | isoDatetime): string {
+  if (dateOrTime === undefined) {
+    return "";
+  }
+  if (DateTime.fromISO(dateOrTime).isValid === false) {
+    return "NEVER";
+  }
+  if (!dateOrTime.includes("T")) {
+    return dateOrTime;
+  }
+  const datetime = DateTime.fromISO(dateOrTime).toLocal();
+  const date = DateTime.fromISO(dateOrTime).toLocal().toISODate() as string;
+  return date === DateTime.local().toISODate()
+    ? datetime.toLocaleString(DateTime.TIME_24_SIMPLE)
+    : date;
+}
+
+function isDue(dateOrTime?: isoDate | isoDatetime): boolean {
+  if (dateOrTime === undefined) {
+    return false;
+  }
+  if (DateTime.fromISO(dateOrTime).isValid === false) {
+    return false;
+  }
+  if (!dateOrTime.includes("T")) {
+    return dateOrTime <= DateTime.local().toISODate();
+  }
+  return dateOrTime <= DateTime.utc().toISOTime();
+}
+
+function isDoneToday(dateOrTime?: isoDate | isoDatetime): boolean {
+  if (dateOrTime === undefined) {
+    return false;
+  }
+  if (DateTime.fromISO(dateOrTime).isValid === false) {
+    return false;
+  }
+  if (!dateOrTime.includes("T")) {
+    return dateOrTime === DateTime.local().toISODate();
+  }
+  return (
+    DateTime.fromISO(dateOrTime).toLocal().toISODate() ===
+    DateTime.local().toISODate()
+  );
+}
+
+async function chorelist(args: ChorelistArgs): Promise<string> {
   if (!oneTimeSetup) {
     const db = connectDb(args);
     await insertDatumView({
@@ -25,6 +94,9 @@ async function chorelist(args: BaseArgs): Promise<string> {
     });
     oneTimeSetup = true;
   }
+  const showAll = args.show === Show.All || args.showAll;
+  const sortFn = sortFunctions[args.sort as PossibleSorts] ?? sortFunctions.iti;
+
   const choresResponse = await reduceCmd({
     ...args,
     mapName: choreView.name,
@@ -34,9 +106,9 @@ async function chorelist(args: BaseArgs): Promise<string> {
   const choreRows = choresResponse.rows as ReduceRow<typeof choreView>[];
   const chores = choreRows
     .filter((chore) => chore.value.next !== undefined)
-    .sort((a, b) => (a.value.iti ?? 9e99) - (b.value.iti ?? 9e99));
-  const now = DateTime.local().toISODate();
+    .sort(sortFn);
 
+  const today = DateTime.local().toISODate();
   const t = new Table();
 
   let totalDue = 0;
@@ -44,23 +116,20 @@ async function chorelist(args: BaseArgs): Promise<string> {
     if (row.value.next === undefined) {
       return;
     }
-    const next = row.value.next.slice(0, 10);
-    const last =
-      row.value.lastOccur === "0000-00-00"
-        ? "NEVER"
-        : DateTime.fromISO(row.value.lastOccur).toISODate();
-    const due = next <= now;
-    const doneToday = last === now;
-    if (!due && !doneToday) {
+    const due = isDue(row.value.next);
+    const doneToday = isDoneToday(row.value.lastOccur);
+    if (!due && !doneToday && !showAll) {
       return;
     }
     if (due) {
       totalDue += 1;
     }
+    const next = timeIfTodayElseDate(row.value.next);
+    const last = timeIfTodayElseDate(row.value.lastOccur);
     const iti =
       row.value.iti === undefined ? undefined : Math.floor(row.value.iti);
     const daysOverdue = Math.floor(
-      DateTime.fromISO(now).diff(DateTime.fromISO(next), "days").days,
+      DateTime.fromISO(today).diff(DateTime.fromISO(next), "days").days,
     );
     const color = doneToday
       ? chalk.green
@@ -135,15 +204,22 @@ async function chorelistwatch(args: BaseArgs): Promise<void> {
 }
 
 if (require.main === module) {
-  const args: BaseArgs & { watch?: boolean } = baseArgs
+  const args = baseArgs
     .options({
       watch: {
         alias: "w",
         desc: "Watch and update on changes to the database",
         type: "boolean",
       },
+      sort: {
+        alias: "s",
+        desc: "Sort the output",
+        type: "string",
+        choices: ["field", "iti", "due", "last"],
+        default: "iti",
+      },
     })
-    .parseSync(process.argv.slice(2));
+    .parseSync(process.argv.slice(2)) as ChorelistArgs;
   if (args.watch) {
     chorelistwatch(args).catch((error) => {
       console.error(error);

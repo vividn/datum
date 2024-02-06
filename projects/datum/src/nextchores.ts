@@ -41,7 +41,10 @@ async function nextchores(args: BaseArgs): Promise<string> {
   });
   const chores = choresResponse.rows
     .filter((chore) => chore.value.next !== undefined)
-    .sort((a, b) => a.value.next - b.value.next);
+    .sort(
+      (a, b) =>
+        new Date(a.value.next).valueOf() - new Date(b.value.next).valueOf(),
+    );
   const now = DateTime.local().toISODate();
   const due = chores.filter((row) => row.value.next <= now);
   const future = chores.filter((row) => row.value.next > now);
