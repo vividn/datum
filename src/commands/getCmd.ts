@@ -1,4 +1,4 @@
-import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
+import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickIds } from "../ids/quickId";
@@ -13,7 +13,7 @@ export const desc = "display a document";
 export type GetCmdArgs = MainDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
-  return quickIdArg(yargs);
+  return quickIdArgs(yargs);
 }
 
 export async function getCmd(args: GetCmdArgs): Promise<EitherDocument[]> {

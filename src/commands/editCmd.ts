@@ -1,4 +1,4 @@
-import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
+import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
@@ -15,7 +15,7 @@ export const desc = "Edit a document directly with EDITOR";
 export type EditCmdArgs = MainDatumArgs & QuickIdArg;
 
 export function builder(yargs: Argv): Argv {
-  return quickIdArg(yargs);
+  return quickIdArgs(yargs);
 }
 
 export class TooManyToEditError extends MyError {

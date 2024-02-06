@@ -1,4 +1,3 @@
-import yargs, { Argv } from "yargs";
 import { DateTime } from "luxon";
 import { DatumTime, now, toDatumTime } from "../time/timeUtils";
 import { getTimezone } from "../time/getTimezone";
@@ -7,6 +6,7 @@ import { parseDateStr } from "../time/parseDateStr";
 import { DataArgs, parseBaseData } from "./dataArgs";
 import { DatumData } from "../documentControl/DatumDocument";
 import { getOccurTime } from "../time/getOccurTime";
+import { ArgumentParser } from "argparse";
 
 export type TimeArgs = {
   date?: string;
@@ -18,66 +18,42 @@ export type TimeArgs = {
   noTimestamp?: boolean;
 };
 
-export function timeYargs(otherYargs?: Argv): Argv {
-  const yarg = otherYargs ?? yargs;
-  return yarg
-    .group(
-      [
-        "date",
-        "yesterday",
-        "time",
-        "quick",
-        "timezone",
-        "full-day",
-        "no-timestamp",
-      ],
-      "Timing",
-    )
-    .options({
-      date: {
-        describe:
-          "date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.",
-        alias: "d",
-        nargs: 1,
-        type: "string",
-      },
-      yesterday: {
-        describe:
-          "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
-        alias: "y",
-        type: "count",
-      },
-      time: {
-        describe:
-          "specify time of the timestamp, use `+n` or `-n` for a timestamp n minutes relative to now",
-        alias: "t",
-        nargs: 1,
-        type: "string",
-      },
-      quick: {
-        describe:
-          "quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.",
-        alias: "q",
-        type: "count",
-      },
-      timezone: {
-        describe:
-          "Set the timezone to use instead of local time. Accepts both timezone names (America/Chicago) and utc offsets '-7'",
-        alias: "z",
-        type: "string",
-      },
-      "full-day": {
-        describe:
-          "make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t",
-        alias: "D",
-        type: "boolean",
-      },
-      "no-timestamp": {
-        describe: "omit the occurTime from the data",
-        alias: "T",
-        type: "boolean",
-      },
-    });
+export function timeArgs(parser: ArgumentParser): ArgumentParser {
+  const timeGroup = parser.add_argument_group({
+    title: "Timing",
+    description: "Options for specifying the time of the data",
+  });
+  timeGroup.add_argument("-d", "--date", {
+    help: "date of the timestamp, use `+n` or `-n` for a date relative to today. If no time is specified with -t, -T is assumed.",
+    nargs: 1,
+    type: "string",
+  });
+  timeGroup.add_argument("-y", "--yesterday", {
+    help: "use yesterday's date. Equivalent to `-d yesterday`. Use multiple times to go back more days",
+    type: "count",
+  });
+  timeGroup.add_argument("-t", "--time", {
+    help: "specify time of the timestamp, use `+n` or `-n` for a timestamp n minutes relative to now",
+    nargs: 1,
+    type: "string",
+  });
+  timeGroup.add_argument("-q", "--quick", {
+    help: "quick options for time, use multiple times. -q = 5 min ago, -qq = 10 min ago, etc.",
+    type: "count",
+  });
+  timeGroup.add_argument("-z", "--timezone", {
+    help: "Set the timezone to use instead of local time. Accepts both timezone names (America/Chicago) and utc offsets '-7'",
+    type: "string",
+  });
+  timeGroup.add_argument("-D", "--full-day", {
+    help: "make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t",
+    type: "boolean",
+  });
+  timeGroup.add_argument("-T", "--no-timestamp", {
+    help: "omit the occurTime from the data",
+    type: "boolean",
+  });
+  return parser;
 }
 
 export type ReferencedTimeArgs = TimeArgs & {

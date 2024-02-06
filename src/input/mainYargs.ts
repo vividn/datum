@@ -6,7 +6,7 @@ export type MainDatumArgs = {
 } & DbArgs &
   OutputArgs;
 
-export const mainYargs = baseArgs
+export const mainYargs = dbArgs
   .commandDir("../commands")
   .help("h")
   .alias("h", "help");

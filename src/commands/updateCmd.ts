@@ -8,7 +8,7 @@ import { connectDb } from "../auth/connectDb";
 import { updateDoc } from "../documentControl/updateDoc";
 import { quickIds } from "../ids/quickId";
 import { Argv } from "yargs";
-import { QuickIdArg, quickIdArg } from "../input/quickIdArg";
+import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
 import { MainDatumArgs } from "../input/mainYargs";
 import { flexiblePositional } from "../input/flexiblePositional";
@@ -27,7 +27,7 @@ export type UpdateCmdArgs = MainDatumArgs &
   };
 
 export function builder(yargs: Argv): Argv {
-  return timeYargs(dataYargs(quickIdArg(yargs))).options({
+  return timeYargs(dataYargs(quickIdArgs(yargs))).options({
     strategy: {
       describe:
         "which update strategy to use when modifying the doc." +
