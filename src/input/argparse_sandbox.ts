@@ -1,45 +1,45 @@
-import { ArgumentParser, BooleanOptionalAction } from "argparse";
-import { OutputArgs, outputYargs } from "./outputArgs";
+import { ArgumentParser } from "argparse";
+import * as shellQuote from "shell-quote";
+import { MainDatumArgs } from "./mainYargs";
 
-export type BaseArgs = {
-  db?: string;
-  host?: string;
-  adapter?: string;
-  username?: string;
-  password?: string;
-  env?: string;
-  createDb?: boolean;
-  _?: (string | number)[];
-} & OutputArgs;
+export function argparse_sandbox(cliInput: string | string[]): MainDatumArgs {
+  const input =
+    typeof cliInput === "string"
+      ? shellQuote.parse(cliInput).map(String)
+      : cliInput;
+  const parser = new ArgumentParser({
+    description: "argparse sandbox",
+  });
 
-export function dbArgs(parser: ArgumentParser): ArgumentParser {
-  parser.add_argument("--db", "--database", {
+  parser.add_argument("--db", {
     help: "The database to use, defaults to datum",
-    nargs: 1,
+    dest: "db",
   });
   parser.add_argument("--host", {
     help: "Host and port to use, defaults to 'localhost:5984'",
-    nargs: 1,
+    dest: "host",
   });
   parser.add_argument("--adapter", {
     help: "PouchDb adapter to use, will default to PouchDBs choice",
-    nargs: 1,
+    dest: "adapter",
   });
   parser.add_argument("--username", {
     help: "couchdb username to use",
-    nargs: 1,
+    dest: "username",
   });
   parser.add_argument("--password", {
     help: "couchdb password to use",
-    nargs: 1,
+    dest: "password",
   });
   parser.add_argument("--env", {
     help: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
-    nargs: 1,
+    dest: "env",
   });
   parser.add_argument("--create-db", {
     help: "Create the db if it does not exist",
-    type: BooleanOptionalAction,
+    action: "store_true",
+    dest: "createDb",
   });
-  return parser;
+
+  return parser.parse_args(input);
 }
