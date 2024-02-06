@@ -2,7 +2,7 @@ import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { renderView } from "../output/renderView";
 import { Show } from "../input/outputArgs";

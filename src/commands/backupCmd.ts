@@ -1,5 +1,5 @@
 import { Argv } from "yargs";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { connectDb } from "../auth/connectDb";
 import * as fs from "fs";
 import { DateTime } from "luxon";

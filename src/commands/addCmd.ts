@@ -1,15 +1,15 @@
-import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
-import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
-import { MainDatumArgs } from "../input/mainYargs";
+import { dataArgs, DataArgs, handleDataArgs } from "../input/dataArgs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { primitiveUndo } from "../undo/primitiveUndo";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { compileState } from "../state/compileState";
+import { ArgumentParser } from "argparse";
 
 export const command = [
   "add <field> [data..]",
@@ -36,65 +36,50 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
 };
 const conflictChoices = Object.keys(conflictRecord);
 
-export function addArgs(yargs: Argv): Argv {
-  return dataYargs(fieldArgs(yargs)).options({
-    "no-metadata": {
-      describe: "do not include meta data in document",
-      alias: "M",
-      type: "boolean",
-    },
-    // id
-    "id-part": {
-      describe:
-        "Which field(s) to use for the _id field in the document." +
-        " Can either be a single string with fields delimited by --id-delimiter" +
-        " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
-      alias: ["id", "pk", "_id"],
-      type: "string",
-    },
-    "id-delimiter": {
-      describe: "spacer between fields in the id",
-      type: "string",
-    },
-    partition: {
-      describe:
-        "field to use for the partition (default: field, specified with -f)." +
-        " Can be fields of data or raw strings surrounded by single quotes." +
-        " Like --id-part, can be used  multiple times to assemble a partition separated by --id-delimiter",
-      alias: ["P"],
-      type: "string",
-    },
-
-    // Undo
-    undo: {
-      describe: "undoes the last datum entry, can be combined with -f",
-      alias: "u",
-      type: "boolean",
-    },
-    "force-undo": {
-      describe:
-        "forces an undo, even if the datapoint was entered more than 15 minutes ago",
-      alias: "U",
-      type: "boolean",
-    },
-
-    merge: {
-      describe:
-        "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
-      alias: "x",
-      type: "boolean",
-      conflicts: "conflict",
-    },
-    conflict: {
-      describe: `on conflict, update with given strategy.`,
-      alias: "X",
-      type: "string",
-      choices: conflictChoices,
-    },
+export function addArgs(parser: ArgumentParser): ArgumentParser {
+  const argparser = dataArgs(fieldArgs(parser));
+  argparser.add_argument("--no-metadata", "M", {
+    help: "do not include meta data in document",
+    action: "store_true",
+    dest: "noMetadata",
   });
+  argparser.add_argument("--id-part", "--id", {
+    help:
+      "Which field(s) to use for the _id field in the document." +
+      " Can either be a single string with fields delimited by --id-delimiter" +
+      " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
+    action: "append",
+    dest: "idPart",
+  });
+  argparser.add_argument("--id-delimiter", {
+    help: "spacer between fields in the id",
+  });
+  argparser.add_argument("--partition", "-P", {
+    help:
+      "field to use for the partition (default: field, specified with -f)." +
+      " Can be fields of data or raw strings surrounded by single quotes." +
+      " Like --id-part, can be used  multiple times to assemble a partition separated by --id-delimiter",
+  });
+  argparser.add_argument("--undo", "-u", {
+    help: "undoes the last datum entry",
+    action: "store_true",
+  });
+  argparser.add_argument("--force-undo", "-U", {
+    help: "forces an undo, even if the datapoint was entered more than 15 minutes ago",
+    action: "store_true",
+  });
+  argparser.add_argument("--merge", "-x", {
+    help: "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
+    action: "store_const",
+    const: "merge",
+    dest: "conflict",
+  });
+  argparser.add_argument("--conflict", "-X", {
+    help: `on conflict, update with given strategy.`,
+    choices: conflictChoices,
+  });
+  return argparser;
 }
-
-export const builder: (yargs: Argv) => Argv = addArgs;
 
 export type AddCmdArgs = MainDatumArgs &
   FieldArgs &

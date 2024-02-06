@@ -3,7 +3,7 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
 import { interpolateFields } from "../utils/interpolateFields";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/MainArgs";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";

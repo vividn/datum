@@ -1,4 +1,4 @@
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";

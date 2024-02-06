@@ -1,10 +1,15 @@
 #!/usr/bin/env node
 import { DocExistsError } from "./documentControl/base";
-import { argparse_sandbox } from "./input/argparse_sandbox";
+import { mainArgs } from "./input/mainArgs";
+import { parse as shellParse } from "shell-quote";
 
 export async function main(cliInput: string | string[]): Promise<void> {
-  const args = argparse_sandbox(cliInput);
-  console.log({ args });
+  const args =
+    typeof cliInput === "string"
+      ? (shellParse(cliInput) as string[])
+      : cliInput;
+  const parsed = mainArgs.parse_args(args);
+  console.log({ parsed });
   process.exit(0);
   //
   // switch (args._?.[0]) {

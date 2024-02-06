@@ -10,7 +10,7 @@ import { quickIds } from "../ids/quickId";
 import { Argv } from "yargs";
 import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
 import { timeYargs } from "../input/timeArgs";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/MainArgs";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 

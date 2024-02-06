@@ -4,7 +4,7 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickIds } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = ["get <quickId>", "see <quickId>"];

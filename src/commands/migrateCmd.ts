@@ -1,6 +1,6 @@
 import { Argv } from "yargs";
 import { migrateEditCmd, MigrateEditCmdArgs } from "./migrate/migrateEditCmd";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 
 export const command = ["migrate", "migration", "mig"];
 export const desc = "migrate data from one state to another";

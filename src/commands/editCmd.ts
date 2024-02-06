@@ -5,7 +5,7 @@ import { connectDb } from "../auth/connectDb";
 import { quickIds } from "../ids/quickId";
 import { editJSONInTerminal } from "../utils/editInTerminal";
 import { overwriteDoc } from "../documentControl/overwriteDoc";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { MyError } from "../errors";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 

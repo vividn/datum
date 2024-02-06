@@ -15,7 +15,7 @@ import chalk from "chalk";
 import printf from "printf";
 import { zeroDate } from "./eqcheck";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
-import { MainDatumArgs } from "../../../src/input/mainYargs";
+import { MainDatumArgs } from "../../../src/input/MainArgs";
 import { DateTime } from "luxon";
 import { parseDateStr } from "../../../src/time/parseDateStr";
 

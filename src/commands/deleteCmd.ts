@@ -3,7 +3,7 @@ import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
 import { quickIds } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const command = ["delete <quickId>", "del <quickId>"];

@@ -1,6 +1,6 @@
 import { ArgumentParser } from "argparse";
 import * as shellQuote from "shell-quote";
-import { MainDatumArgs } from "./mainYargs";
+import { MainDatumArgs } from "./MainArgs";
 
 export function argparse_sandbox(cliInput: string | string[]): MainDatumArgs {
   const input =

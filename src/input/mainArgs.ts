@@ -1,12 +1,14 @@
+import { ArgumentParser } from "argparse";
 import { DbArgs, dbArgs } from "./dbArgs";
-import { OutputArgs } from "./outputArgs";
+import { outputArgs, OutputArgs } from "./outputArgs";
 
 export type MainDatumArgs = {
   _?: (string | number)[];
 } & DbArgs &
   OutputArgs;
 
-export const mainYargs = dbArgs
-  .commandDir("../commands")
-  .help("h")
-  .alias("h", "help");
+const argparser = new ArgumentParser({
+  prog: "datum",
+  description: "track data on your life",
+});
+export const mainArgs = outputArgs(dbArgs(argparser));

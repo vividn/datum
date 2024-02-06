@@ -1,4 +1,4 @@
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/MainArgs";
 import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { readFileSync } from "fs";
