@@ -1,6 +1,6 @@
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
-import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
+import { addDoc, conflictChoices, ConflictStrategyNames } from "../documentControl/addDoc";
 import { dataArgs, DataArgs, handleDataArgs } from "../input/dataArgs";
 import { MainDatumArgs } from "../input/mainArgs";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
@@ -9,36 +9,11 @@ import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { compileState } from "../state/compileState";
-import { ArgumentParser } from "argparse";
-
-export const command = [
-  "add <field> [data..]",
-  "add --fieldless [data..]",
-  "add <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]",
-];
-export const desc = "add a document";
-
-const conflictRecord: Record<ConflictStrategyNames, any> = {
-  merge: "",
-  useOld: "",
-  preferOld: "",
-  preferNew: "",
-  useNew: "",
-  removeConflicting: "",
-  xor: "",
-  intersection: "",
-  append: "",
-  prepend: "",
-  appendSort: "",
-  mergeSort: "",
-  overwrite: "",
-  delete: "",
-};
-const conflictChoices = Object.keys(conflictRecord);
+import { ArgumentParser, SubParser } from "argparse";
 
 export function addArgs(parser: ArgumentParser): ArgumentParser {
   const argparser = dataArgs(fieldArgs(parser));
-  argparser.add_argument("--no-metadata", "M", {
+  argparser.add_argument("--no-metadata", "-M", {
     help: "do not include meta data in document",
     action: "store_true",
     dest: "noMetadata",
@@ -80,6 +55,20 @@ export function addArgs(parser: ArgumentParser): ArgumentParser {
   });
   return argparser;
 }
+
+export function addCmdParser(subparsers: SubParser) {
+  const addCmd = subparsers.add_parser("add", {
+    description: "add a document",
+  });
+  return addArgs(addCmd);
+}
+
+export const command = [
+  "add <field> [data..]",
+  "add --fieldless [data..]",
+  "add <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]",
+];
+export const desc = "add a document";
 
 export type AddCmdArgs = MainDatumArgs &
   FieldArgs &
