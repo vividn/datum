@@ -14,24 +14,27 @@ export enum Show {
   Format = "format",
   All = "all",
 }
-export function outputArgs(parser: ArgumentParser): ArgumentParser {
-  const outputGroup = parser.add_argument_group({
-    title: "Output",
-    description: "Options for display on the terminal",
-  });
-  outputGroup.add_argument("--show-all", {
-    help: "Show complete document when displaying, not just data",
-    action: "store_true",
-    dest: "showAll",
-  });
-  outputGroup.add_argument("--show", {
-    help: "how much of documents to show",
-    choices: Object.values(Show),
-    default: Show.Default,
-  });
-  outputGroup.add_argument("--format-string", {
-    help: "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
-    dest: "formatString",
-  });
-  return parser;
-}
+
+const outputArgs = new ArgumentParser({
+  add_help: false,
+});
+const outputGroup = outputArgs.add_argument_group({
+  title: "Output",
+  description: "Options for display on the terminal",
+});
+outputGroup.add_argument("--show-all", {
+  help: "Show complete document when displaying, not just data",
+  action: "store_true",
+  dest: "showAll",
+});
+outputGroup.add_argument("--show", {
+  help: "how much of documents to show",
+  choices: Object.values(Show),
+  default: Show.Default,
+});
+outputGroup.add_argument("--format-string", {
+  help: "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
+  dest: "formatString",
+});
+
+export { outputArgs };

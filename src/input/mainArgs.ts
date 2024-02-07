@@ -11,9 +11,10 @@ export type MainDatumArgs = {
 const argparser = new ArgumentParser({
   prog: "datum",
   description: "track data on your life",
+  parents: [dbArgs, outputArgs],
 });
 
-const subparsers = argparser.add_subparsers({ title: "commands" });
-addCmdParser(subparsers);
+// const subparsers = argparser.add_subparsers({ title: "commands" });
+// addCmdParser(subparsers);
 
-export const mainArgs = outputArgs(dbArgs(argparser));
+export const mainArgs = argparser;
