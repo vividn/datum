@@ -45,7 +45,6 @@ def set_constants():
     global bg_color
     bg_color = (0, 0, 0)
 
-
     # Point properties
     global point_r
     point_r = 4
@@ -56,20 +55,12 @@ def set_constants():
     global now_width
     now_width = 1
 
-    # Error symbol
-    global error_bgcolor
-    error_bgcolor = (255, 0, 0)
-    global error_fgcolor
-    error_fgcolor = (0, 0, 0)
-    global error_symbol
-    error_symbol = "!"
-
     # Image properties
     # Total size of the whole image
     global xsize
     xsize = 1080
     global ysize
-    ysize = None # Can be set, but otherwise calculated from day_height
+    ysize = None  # Can be set, but otherwise calculated from day_height
 
     # Width of each day
     global day_height
@@ -88,6 +79,18 @@ def set_constants():
     quantfontsize = 16
     global quantfontname
     quantfontname = "Open Sans_800.ttf"
+
+    # Error symbol
+    global error_bgcolor
+    error_bgcolor = (255, 0, 0)
+    global error_fgcolor
+    error_fgcolor = (0, 0, 0)
+    global errorfontsize
+    errorfontsize = 12
+    global errorfontname
+    errorfontname = "Open Sans_regular.ttf"
+    global error_symbol
+    error_symbol = "!"
 
     # Padding (in pixels)
     global image_padding
@@ -146,7 +149,9 @@ def get_datum_names_spans_and_colors(*data_sets):
 
                 # Don't assign a color if one is not entered
                 if not any(np.isnan([row.R, row.G, row.B])):
-                    datum_colors[row.Name] = {"start": (int(row.R), int(row.G), int(row.B))}
+                    datum_colors[row.Name] = {
+                        "start": (int(row.R), int(row.G), int(row.B))
+                    }
                 else:
                     datum_colors[row.Name] = {"start": hash_string_to_rgb(row.Name)}
                 prev_row = row.Name
@@ -160,11 +165,16 @@ def get_datum_names_spans_and_colors(*data_sets):
                     datum_colors[prev_row] = {}
                 # Category name is in the span column
                 if not any(np.isnan([row.R, row.G, row.B])):
-                    datum_colors[prev_row][row.Span] = (int(row.R), int(row.G), int(row.B))
+                    datum_colors[prev_row][row.Span] = (
+                        int(row.R),
+                        int(row.G),
+                        int(row.B),
+                    )
                 elif row.Span not in datum_colors[prev_row]:
                     datum_colors[prev_row][row.Span] = hash_string_to_rgb(row.Span)
 
     return datum_names, datum_spans, datum_colors, named_spans
+
 
 def main(**kwargs):
     """
@@ -177,11 +187,12 @@ def main(**kwargs):
         globals()[key] = value
 
     # Set where image is saved
-    imageout = imagedir + '/' + imagename + imagetype
+    imageout = imagedir + "/" + imagename + imagetype
 
     # Generate the fonts
     imfont = ImageFont.truetype(fontpath + imfontname, fontsize)
     quantfont = ImageFont.truetype(fontpath + quantfontname, quantfontsize)
+    errorfont = ImageFont.truetype(fontpath + errorfontname, errorfontsize)
 
     # Display info about what is being processed
     print("\n#####################\n" + imagename)
@@ -203,7 +214,7 @@ def main(**kwargs):
             else:
                 # Overide nDays
                 nDays = (end_date - begin_date).days + 1
-        
+
         date_array = []
         for iDay in range(0, nDays):
             # Starting with the beginning date, add the dates to the array
@@ -212,15 +223,28 @@ def main(**kwargs):
     else:
         nDays = len(date_array)
 
-    if end_date < datetime.date(2023,12,31):
+    if end_date < datetime.date(2023, 12, 31):
         print("hello")
-        datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors(data_set)
-    elif begin_date < datetime.date(2024,1,1):
-        datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors(data_set, "v2Set")
+        (
+            datum_names,
+            datum_spans,
+            datum_colors,
+            named_spans,
+        ) = get_datum_names_spans_and_colors(data_set)
+    elif begin_date < datetime.date(2024, 1, 1):
+        (
+            datum_names,
+            datum_spans,
+            datum_colors,
+            named_spans,
+        ) = get_datum_names_spans_and_colors(data_set, "v2Set")
     else:
-        datum_names, datum_spans, datum_colors, named_spans = get_datum_names_spans_and_colors("v2Set")
-
-
+        (
+            datum_names,
+            datum_spans,
+            datum_colors,
+            named_spans,
+        ) = get_datum_names_spans_and_colors("v2Set")
 
     # Find the width of the date text on the left of the date,
     date_label_fmt = "%a, %b %d"
@@ -229,7 +253,13 @@ def main(**kwargs):
     # Calculate the height of the full day, to center of the date text
     global ysize, day_height
     if ysize is None:
-        ysize = day_height * nDays + 2 * image_padding + 2 * text_height + 2 * text_padding + (nDays - 1) * bar_padding
+        ysize = (
+            day_height * nDays
+            + 2 * image_padding
+            + 2 * text_height
+            + 2 * text_padding
+            + (nDays - 1) * bar_padding
+        )
     else:
         day_height = (
             ysize
@@ -238,7 +268,6 @@ def main(**kwargs):
             - 2 * text_padding
             - (nDays - 1) * bar_padding
         ) / nDays
-
 
     # Switch to 2 line date label if days are big enough
     if day_height >= 2 * text_height:
@@ -330,19 +359,18 @@ def main(**kwargs):
                 all_datumdatas[name] = data
             except FileNotFoundError as e:
                 print(f"no file for {name}", file=sys.stderr)
-                continue # TODO: remove this once migration is fully complete
+                continue  # TODO: remove this once migration is fully complete
             except Exception as e:
                 # If an error occurs, continue on, but later draw the error symbol as indication
                 error_has_occurred = True
                 datum_with_error += [(name, "Load")]
-                print(traceback.format_exc(),file=sys.stderr)
-                print(e,file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                print(e, file=sys.stderr)
                 continue
 
         #########################################
         # Plot the data day by day
         for iDay, date in enumerate(date_array):
-
             # Load the blocks for the given day
             try:
                 data.calculate_day(date)
@@ -350,8 +378,8 @@ def main(**kwargs):
                 # If an error occurs, continue on, but later draw the error symbol as indication
                 error_has_occurred = True
                 datum_with_error += [(name, date)]
-                print(traceback.format_exc(),file=sys.stderr)
-                print(e,file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                print(e, file=sys.stderr)
                 continue
 
             # The upper and lower y values of where to draw the data
@@ -362,14 +390,12 @@ def main(**kwargs):
             point_y = (min_block_y + max_block_y) / 2
 
             if data.data_type == "block":
-
                 # Get the appropriate data color
                 data_color = get_color(name, datum_colors)
 
                 # Draw the blocks
                 for block_start, block_end in data.timings[date]:
                     if block_start != block_end:
-
                         # Figure out where the block starts and ends in the day on the image
                         xmin = dayperc(block_start.time()) * day_lenx + l_midnight
                         xmax = dayperc(block_end.time()) * day_lenx + l_midnight
@@ -403,7 +429,6 @@ def main(**kwargs):
 
                     # Draw the blocks
                     for block_start, block_end in all_blocks[cat]:
-
                         if block_start != block_end:
                             # Figure out where the block starts and ends in the day on the image
                             xmin = dayperc(block_start.time()) * day_lenx + l_midnight
@@ -477,7 +502,10 @@ def main(**kwargs):
 
             if quantfontsize > 0:
                 draw.text(
-                    xy=(quant_x, quant_y), text=quant_str, font=quantfont, fill=quant_color
+                    xy=(quant_x, quant_y),
+                    text=quant_str,
+                    font=quantfont,
+                    fill=quant_color,
                 )
 
     # All data are now drawn
@@ -499,7 +527,9 @@ def main(**kwargs):
                 xy=(text_x, text_y_bottom), text=text_str, font=imfont, fill=text_color
             )
             if nDays > 1:
-                draw.text(xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color)
+                draw.text(
+                    xy=(text_x, text_y_top), text=text_str, font=imfont, fill=text_color
+                )
 
         # Draw a line between the top and bottom
         line_top = text_y_top + text_height + 2
@@ -526,22 +556,25 @@ def main(**kwargs):
 
     # Display error symbol if error has occured
     if error_has_occurred:
-        ex = image_padding
-        ey = ysize - image_padding - text_height
-
         # Display the error symbol plus the first 3 characters of the datum name
-        error_text = error_symbol + " " + datum_with_error[0][0][0:3]
+        error_text = f"{error_symbol} {datum_with_error[0][0][0:6]}"
+        if len(datum_with_error) > 1:
+            error_text += f"\n{error_symbol} {datum_with_error[1][0][0:6]}"
+        error_height = errorfont.getsize(error_text)[1]
 
         # To make the error more visible, put it on a bright background color
-        esize = draw.textsize(error_text, font=imfont)
+        esize = draw.textsize(error_text, font=errorfont)
+
+        ex = image_padding
+        ey = ysize - image_padding - error_height
         draw.rectangle(
             [ex, ey + 3, ex + esize[0], ey + esize[1] + 3], fill=error_bgcolor
         )
-        draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
+        draw.text(xy=(ex, ey), text=error_text, font=errorfont, fill=error_fgcolor)
 
     with tempfile.NamedTemporaryFile(suffix=imagetype, delete=False) as tmp:
         im.save(tmp.name)
-        os.chmod(tmp.name, stat.S_IRUSR|stat.S_IWUSR|stat.S_IRGRP|stat.S_IROTH)
+        os.chmod(tmp.name, stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH)
         shutil.move(tmp.name, imageout)
 
 
@@ -606,6 +639,7 @@ def dayperc(time):
     # Returns the percentage through the day that a certain time is
     return time.hour / 24.0 + time.minute / (24.0 * 60) + time.second / (24.0 * 60 * 60)
 
+
 def hash_string_to_rgb(s):
     # Hash the string to get a hexadecimal digest
     hash_digest = hashlib.md5(s.encode()).hexdigest()
@@ -616,6 +650,7 @@ def hash_string_to_rgb(s):
     b = int(hash_digest[4:6], 16)
 
     return (r, g, b)
+
 
 def get_color(datum_name, datum_colors, category=None):
     if category is None:
@@ -641,99 +676,102 @@ def get_color(datum_name, datum_colors, category=None):
 
 
 dayview_configs = {
-        "weekview": {
-            "imagename": "weekview", "xsize": 1078, "ysize": 574, "quantfontsize": 15
-        },
-        "30dayview": {"imagename": "30dayview", "nDays": 30, "ysize": 1920},
-        "singledayview": {
-            "imagename": "singledayview",
-            "nDays": 1,
-            "xsize": 1920,
-            "ysize": 120,
-            "image_padding": 6,
-            "bar_padding": 0,
-            "text_padding": 0,
-            "quantfontsize": 18,
-        },
-        "singledayviewtiny": {
-            "imagename": "singledayviewtiny",
-            "nDays": 1,
-            "xsize": 1881,
-            "ysize": 80,
-            "image_padding": 2,
-            "bar_padding": 0,
-            "text_padding": 0,
-            "quantfontsize": 14,
-            "fontsize": 12,
-        },
-        "phoneday": {
-            "imagename": "phoneday",
-            "nDays": 1,
-            "xsize": 1080,
-            "ysize": 200,
-            "image_padding": 6,
-            "bar_padding": 0,
-            "text_padding": 0,
-            "now_width": 2,
-            "quantfontsize": 30,
-        },
-        "phoneweek": {
-            "imagename": "phoneweek",
-            "nDays": 12,
-            "xsize": 1080,
-            "ysize": 1600,
-            "quantfontsize": 25,
-            "now_width": 2,
-            "point_r": 6,
-            "fontsize": 23,
-        },
-        "2week": {"imagename": "2week", "nDays": 14, "ysize": 1200},
-        "reduced": {"imagename": "reduced", "data_set": "reducedSet"},
-        "trip": {
-            "imagename": "trip",
-            "begin_date": dt.date(2023, 9, 3),
-            "end_date": dt.date(2023, 11, 11),
-            "xsize": 1000,
-            "ysize": 5000,
-        },
-        "crunchAndRelease": {
-            "imagename": "crunchAndRelease",
-            "begin_date": dt.date(2021, 9, 13),
-            "end_date": dt.date(2021, 9, 17),
-            "xsize": 750,
-            "ysize": 750,
-            "fontsize": 0,
-            "quantfontsize": 0,
-            "point_r": 5,
-        },
-        "interview": {
-            "imagename": "interview",
-            "begin_date": dt.date(2018, 12, 9),
-            "end_date": dt.date(2018, 12, 15),
-            "data_set": "reducedSet",
-            "xsize": 1920,
-            "ysize": 1080,
-            "fontsize": 24,
-            "quantfontsize": 30,
-            "point_r": 7,
-        },
-        "alldata": {
-                "imagename": "allData",
-                "begin_date": dt.date(2016,11,27),
-                "end_date": dt.date.today(),
-                "xsize": 1000,
-                "ysize": 300000
-        }
-    }
+    "weekview": {
+        "imagename": "weekview",
+        "xsize": 1078,
+        "ysize": 574,
+        "quantfontsize": 15,
+    },
+    "30dayview": {"imagename": "30dayview", "nDays": 30, "ysize": 1920},
+    "singledayview": {
+        "imagename": "singledayview",
+        "nDays": 1,
+        "xsize": 1920,
+        "ysize": 120,
+        "image_padding": 6,
+        "bar_padding": 0,
+        "text_padding": 0,
+        "quantfontsize": 18,
+    },
+    "singledayviewtiny": {
+        "imagename": "singledayviewtiny",
+        "nDays": 1,
+        "xsize": 1881,
+        "ysize": 80,
+        "image_padding": 2,
+        "bar_padding": 0,
+        "text_padding": 0,
+        "quantfontsize": 14,
+        "fontsize": 12,
+    },
+    "phoneday": {
+        "imagename": "phoneday",
+        "nDays": 1,
+        "xsize": 1080,
+        "ysize": 200,
+        "image_padding": 6,
+        "bar_padding": 0,
+        "text_padding": 0,
+        "now_width": 2,
+        "quantfontsize": 30,
+    },
+    "phoneweek": {
+        "imagename": "phoneweek",
+        "nDays": 12,
+        "xsize": 1080,
+        "ysize": 1600,
+        "quantfontsize": 25,
+        "now_width": 2,
+        "point_r": 6,
+        "fontsize": 23,
+    },
+    "2week": {"imagename": "2week", "nDays": 14, "ysize": 1200},
+    "reduced": {"imagename": "reduced", "data_set": "reducedSet"},
+    "trip": {
+        "imagename": "trip",
+        "begin_date": dt.date(2023, 9, 3),
+        "end_date": dt.date(2023, 11, 11),
+        "xsize": 1000,
+        "ysize": 5000,
+    },
+    "crunchAndRelease": {
+        "imagename": "crunchAndRelease",
+        "begin_date": dt.date(2021, 9, 13),
+        "end_date": dt.date(2021, 9, 17),
+        "xsize": 750,
+        "ysize": 750,
+        "fontsize": 0,
+        "quantfontsize": 0,
+        "point_r": 5,
+    },
+    "interview": {
+        "imagename": "interview",
+        "begin_date": dt.date(2018, 12, 9),
+        "end_date": dt.date(2018, 12, 15),
+        "data_set": "reducedSet",
+        "xsize": 1920,
+        "ysize": 1080,
+        "fontsize": 24,
+        "quantfontsize": 30,
+        "point_r": 7,
+    },
+    "alldata": {
+        "imagename": "allData",
+        "begin_date": dt.date(2016, 11, 27),
+        "end_date": dt.date.today(),
+        "xsize": 1000,
+        "ysize": 300000,
+    },
+}
 
 config_sets = {
     "today": ["singledayview", "singledayviewtiny", "phoneday"],
     "complete": ["today", "weekview", "30dayview", "phoneweek", "2week"],
     "ketaminix": ["singledayviewtiny"],
     "avierna": ["weekview"],
-    "cumulonix": ["phoneday", "phoneweek"]
-
+    "cumulonix": ["phoneday", "phoneweek"],
 }
+
 
 def generate_from_config(config_name):
     if config_name in config_sets.keys():
@@ -741,6 +779,7 @@ def generate_from_config(config_name):
             generate_from_config(config)
         return
     main(**dayview_configs[config_name])
+
 
 if __name__ == "__main__":
     # each arg is the dayview_config to use
@@ -754,3 +793,4 @@ if __name__ == "__main__":
             generate_from_config(config_name)
     else:
         generate_from_config("complete")
+
