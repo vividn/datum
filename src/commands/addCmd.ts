@@ -14,10 +14,12 @@ import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { compileState } from "../state/compileState";
 import { ArgumentParser } from "argparse";
+import { dbArgs } from "../input/dbArgs";
+import { outputArgs } from "../input/outputArgs";
 
 export const addArgs = new ArgumentParser({
   add_help: false,
-  parents: [fieldArgs, dataArgs],
+  parents: [fieldArgs, dataArgs, outputArgs, dbArgs],
 });
 addArgs.add_argument("--no-metadata", "-M", {
   help: "do not include meta data in document",
