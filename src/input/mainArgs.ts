@@ -1,5 +1,4 @@
 import { ArgumentParser } from "argparse";
-import { addCmdParser } from "../commands/addCmd";
 import { DbArgs, dbArgs } from "./dbArgs";
 import { outputArgs, OutputArgs } from "./outputArgs";
 
@@ -12,6 +11,9 @@ const argparser = new ArgumentParser({
   prog: "datum",
   description: "track data on your life",
   parents: [dbArgs, outputArgs],
+});
+argparser.add_argument("--command", {
+  help: "the command to run",
 });
 
 // const subparsers = argparser.add_subparsers({ title: "commands" });

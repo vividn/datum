@@ -18,7 +18,7 @@ const dbGroup = parser.add_argument_group({
   title: "Database Options",
   description: "Options for connecting to a CouchDb or PouchDb database",
 });
-parser.add_argument("--db", "--database", {
+dbGroup.add_argument("--db", "--database", {
   help: "The database to use, defaults to datum",
   nargs: 1,
 });

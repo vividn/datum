@@ -33,7 +33,7 @@ outputGroup.add_argument("--show", {
   default: Show.Default,
 });
 outputGroup.add_argument("--format-string", {
-  help: "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
+  help: "create a custom output string for visualizing the doc(s). Specify %%keys%% with percent signs",
   dest: "formatString",
 });
 
