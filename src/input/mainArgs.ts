@@ -11,10 +11,12 @@ const argparser = new ArgumentParser({
   prog: "datum",
   description: "track data on your life",
   parents: [dbArgs, outputArgs],
+  add_help: false,
 });
-argparser.add_argument("--command", {
+argparser.add_argument("command", {
   help: "the command to run",
 });
+
 
 // const subparsers = argparser.add_subparsers({ title: "commands" });
 // addCmdParser(subparsers);
