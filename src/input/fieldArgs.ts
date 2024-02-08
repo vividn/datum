@@ -14,7 +14,6 @@ const fieldGroup = fieldArgs.add_argument_group({
 });
 fieldGroup.add_argument("field", {
   help: "what is being tracked",
-  type: "string",
 });
 fieldGroup.add_argument("--fieldless", {
   help: "do not include field as a positional argument",
