@@ -22,46 +22,46 @@ commandParser.add_argument("command", {
 });
 
 export async function datum(cliInput: string | string[]): Promise<void> {
-  const args =
+  const cliArgs =
     typeof cliInput === "string"
       ? (shellParse(cliInput) as string[])
       : cliInput;
-  const [namespace, remaining_args] = commandParser.parse_known_args(args);
+  const [namespace, args] = commandParser.parse_known_args(cliArgs);
   const command = namespace.command;
   switch (command) {
     case "add":
-      await addCmd(remaining_args, namespace);
+      await addCmd(args, namespace);
       break;
 
     case "occur":
-      await occurCmd(remaining_args, namespace);
+      await occurCmd(args, namespace);
       break;
 
     case "start":
-      await startCmd(remaining_args, namespace);
+      await startCmd(args, namespace);
       break;
 
     case "end":
-      await endCmd(remaining_args, namespace);
+      await endCmd(args, namespace);
       break;
 
     case "switch":
-      await switchCmd(remaining_args, namespace);
+      await switchCmd(args, namespace);
       break;
 
     case "get":
-      await getCmd(remaining_args, namespace);
+      await getCmd(args, namespace);
       break;
 
     case "update": {
       namespace.strategy ??= "preferNew";
-      await updateCmd(remaining_args, namespace);
+      await updateCmd(args, namespace);
       break;
     }
 
     case "merge": {
       namespace.strategy ??= "merge";
-      await updateCmd(remaining_args, namespace);
+      await updateCmd(args, namespace);
       break;
     }
     //
