@@ -4,6 +4,9 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 
+export const occurArgs = new ArgumentParser({
+  parents: [addArgs, timeArgs],
+});
 export const occurCmdArgs = new ArgumentParser({
   description: "record the occurence of something at a single time point",
   prog: "dtm occur",
@@ -11,7 +14,7 @@ export const occurCmdArgs = new ArgumentParser({
   %(prog)s --fieldless [data..]
   %(prog)s <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]
 `,
-  parents: [addArgs, timeArgs],
+  parents: [occurArgs],
 });
 
 export type OccurCmdArgs = AddCmdArgs & TimeArgs;

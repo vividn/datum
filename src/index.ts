@@ -5,6 +5,7 @@ import { ArgumentParser } from "argparse";
 import { addCmd } from "./commands/addCmd";
 import { dbArgs } from "./input/dbArgs";
 import { occurCmd } from "./commands/occurCmd";
+import { startCmd } from "./commands/startCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -31,10 +32,10 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     case "occur":
       await occurCmd(remaining_args, namespace);
       break;
-    //
-    //   case "start":
-    //     await startCmd(args as unknown as StartCmdArgs);
-    //     break;
+
+    case "start":
+      await startCmd(remaining_args, namespace);
+      break;
     //
     //   case "end":
     //     await endCmd(args as unknown as EndCmdArgs);
