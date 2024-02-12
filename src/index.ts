@@ -9,6 +9,7 @@ import { startCmd } from "./commands/startCmd";
 import { endCmd } from "./commands/endCmd";
 import { switchCmd } from "./commands/switchCmd";
 import { getCmd } from "./commands/getCmd";
+import { updateCmd } from "./commands/updateCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -52,32 +53,30 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await getCmd(remaining_args, namespace);
       break;
 
-    //   case "update": {
-    //     const updateArgs = args as unknown as UpdateCmdArgs;
-    //     updateArgs.strategy = updateArgs.strategy ?? "preferNew";
-    //     await updateCmd(remaining_args, namesapce);
-    //     break;
-    //   }
-    //
-    //   case "merge": {
-    //     const updateArgs = args as unknown as UpdateCmdArgs;
-    //     updateArgs.strategy = updateArgs.strategy ?? "merge";
-    //     await updateCmd(remaining_args, namesapce);
-    //     break;
-    //   }
+    case "update": {
+      namespace.strategy ??= "preferNew";
+      await updateCmd(remaining_args, namespace);
+      break;
+    }
+
+    case "merge": {
+      namespace.strategy ??= "merge";
+      await updateCmd(remaining_args, namespace);
+      break;
+    }
     //
     //   case "delete":
     //   case "del":
-    //     await deleteCmd(remaining_args, namesapce);
+    //     await deleteCmd(remaining_args, namespace);
     //     break;
     //
     //   case "map":
-    //     await mapCmd(remaining_args, namesapce);
+    //     await mapCmd(remaining_args, namespace);
     //     break;
     //
     //   case "reduce":
     //   case "red":
-    //     await reduceCmd(remaining_args, namesapce);
+    //     await reduceCmd(remaining_args, namespace);
     //     break;
     //
     //   case "setup": {
@@ -85,43 +84,43 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     //     setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
     //     setupArgs.show =
     //       setupArgs.show === Show.Default ? Show.Minimal : setupArgs.show;
-    //     await setupCmd(remaining_args, namesapce);
+    //     await setupCmd(remaining_args, namespace);
     //     break;
     //   }
     //
     //   case "tail":
-    //     await tailCmd(remaining_args, namesapce);
+    //     await tailCmd(remaining_args, namespace);
     //     break;
     //
     //   case "head": {
-    //     await headCmd(remaining_args, namesapce);
+    //     await headCmd(remaining_args, namespace);
     //     break;
     //   }
     //
     //   case "edit":
-    //     await editCmd(remaining_args, namesapce);
+    //     await editCmd(remaining_args, namespace);
     //     break;
     //
     //   case "v1":
-    //     await v1Cmd(remaining_args, namesapce);
+    //     await v1Cmd(remaining_args, namespace);
     //     break;
     //
     //   case "migrate":
     //   case "migration":
     //   case "mig":
-    //     await migrateCmd(remaining_args, namesapce);
+    //     await migrateCmd(remaining_args, namespace);
     //     break;
     //
     //   case "grep":
-    //     await grepCmd(remaining_args, namesapce);
+    //     await grepCmd(remaining_args, namespace);
     //     break;
     //
     //   case "backup":
-    //     await backupCmd(remaining_args, namesapce);
+    //     await backupCmd(remaining_args, namespace);
     //     break;
     //
     //   case "restore":
-    //     await restoreCmd(remaining_args, namesapce);
+    //     await restoreCmd(remaining_args, namespace);
     //     break;
     //
     default:

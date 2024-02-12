@@ -1,4 +1,9 @@
-import { DataArgs, dataYargs, handleDataArgs } from "../input/dataArgs";
+import {
+  dataArgs,
+  DataArgs,
+  dataYargs,
+  handleDataArgs,
+} from "../input/dataArgs";
 import {
   updateStrategies,
   UpdateStrategyNames,
@@ -9,16 +14,33 @@ import { updateDoc } from "../documentControl/updateDoc";
 import { quickIds } from "../ids/quickId";
 import { Argv } from "yargs";
 import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
-import { timeYargs } from "../input/timeArgs";
-import { MainDatumArgs } from "../input/MainArgs";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { dbArgs } from "../input/dbArgs";
+import { outputArgs } from "../input/outputArgs";
+import { ArgumentParser } from "argparse";
+import { MainDatumArgs } from "../input/mainArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
 
-export const command = [
-  "update <quickId> [data..]",
-  "merge <quickId> [data..]",
-];
-export const desc = "Update the data in an existing document";
+export const updateArgs = new ArgumentParser({
+  add_help: false,
+  parents: [dataArgs, quickIdArgs, dbArgs, outputArgs],
+});
+updateArgs.add_argument("--strategy", "-X", {
+  help: "which update strategy to use when modifying the doc",
+  choices: Object.keys(updateStrategies),
+});
+
+export const updateCmdArgs = new ArgumentParser({
+  description:
+    "Update the data in an existing document." +
+    " Defaults to 'preferNew' strategy for update command." +
+    " Defaults to 'merge' for the merge command",
+  prog: "dtm update/merge",
+  usage: `%(prog)s <quickId> [data..]
+  %(prog)s --strategy <strategy> <quickId> [data..]`,
+  parents: [updateArgs],
+});
 
 export type UpdateCmdArgs = MainDatumArgs &
   DataArgs &
@@ -26,23 +48,11 @@ export type UpdateCmdArgs = MainDatumArgs &
     strategy?: UpdateStrategyNames;
   };
 
-export function builder(yargs: Argv): Argv {
-  return timeYargs(dataYargs(quickIdArgs(yargs))).options({
-    strategy: {
-      describe:
-        "which update strategy to use when modifying the doc." +
-        " Defaults to 'preferNew' for update command." +
-        " Defaults to 'merge' for merge command.",
-      type: "string",
-      alias: "X",
-      choices: Object.keys(updateStrategies),
-    },
-  });
-}
-
 export async function updateCmd(
-  args: UpdateCmdArgs,
+  args: UpdateCmdArgs | string | string[],
+  preparsed?: Partial<UpdateCmdArgs>,
 ): Promise<EitherDocument[]> {
+  args = parseIfNeeded(updateCmdArgs, args, preparsed);
   const db = connectDb(args);
 
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
