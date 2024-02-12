@@ -21,7 +21,6 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       ? (shellParse(cliInput) as string[])
       : cliInput;
   const [namespace, remaining_args] = commandParser.parse_known_args(args);
-  console.log({ namespace, remaining_args });
   const command = namespace.command;
   switch (command) {
     case "add":

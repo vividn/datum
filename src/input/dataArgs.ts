@@ -46,35 +46,35 @@ dataGroup.add_argument("data", {
     'Additional data can be specified in a "key=data" format. ' +
     "Any data that does not have a key will be put in the key specified with --remainder, unless strict mode is on",
   nargs: "*",
-  type: "string",
+  type: "str",
 });
 dataGroup.add_argument("-b", "--base-data", {
   help: "base object on which additional keys are added. Fed through relaxed-json, but must still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
   nargs: 1,
-  type: "string",
+  type: "str",
 });
 dataGroup.add_argument("-c", "--comment", {
   help: "comment to include in the data",
   nargs: 1,
-  type: "string",
+  type: "str",
   action: "append",
 });
 dataGroup.add_argument("-K", "--required", {
   help: "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
   nargs: 1,
-  type: "string",
+  type: "str",
   action: "append",
 });
 dataGroup.add_argument("-k", "--optional", {
   help: "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
   nargs: 1,
-  type: "string",
+  type: "str",
   action: "append",
 });
 dataGroup.add_argument("-R", "--remainder", {
   help: "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
   nargs: 1,
-  type: "string",
+  type: "str",
 });
 dataGroup.add_argument("-S", "--string-remainder", {
   help: "Remainder data will be a space-concatenated string rather than an array",

@@ -16,6 +16,7 @@ import { compileState } from "../state/compileState";
 import { ArgumentParser } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const addArgs = new ArgumentParser({
   add_help: false,
@@ -42,6 +43,7 @@ addArgs.add_argument("--partition", "-P", {
     "field to use for the partition (default: field, specified with -f)." +
     " Can be fields of data or raw strings surrounded by single quotes." +
     " Like --id-part, can be used  multiple times to assemble a partition separated by --id-delimiter",
+  action: "append",
 });
 addArgs.add_argument("--undo", "-u", {
   help: "undoes the last datum entry",
@@ -85,7 +87,11 @@ export type AddCmdArgs = MainDatumArgs &
     conflict?: ConflictStrategyNames;
   };
 
-export async function addCmd(args: AddCmdArgs): Promise<EitherDocument> {
+export async function addCmd(
+  args: AddCmdArgs | string | string[],
+  preparsed?: Partial<AddCmdArgs>,
+): Promise<EitherDocument> {
+  args = parseIfNeeded(addCmdArgs, args, preparsed);
   const db = connectDb(args);
 
   flexiblePositional(args, "field", args.fieldless ? false : "required");
