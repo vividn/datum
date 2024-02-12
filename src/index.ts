@@ -7,7 +7,8 @@ import { dbArgs } from "./input/dbArgs";
 import { occurCmd } from "./commands/occurCmd";
 import { startCmd } from "./commands/startCmd";
 import { endCmd } from "./commands/endCmd";
-import { switchCmd, SwitchCmdArgs } from "./commands/switchCmd";
+import { switchCmd } from "./commands/switchCmd";
+import { getCmd } from "./commands/getCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -44,39 +45,39 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "switch":
-      await switchCmd(args as unknown as SwitchCmdArgs);
+      await switchCmd(remaining_args, namespace);
       break;
 
-    //   case "get":
-    //     await getCmd(args as unknown as GetCmdArgs);
-    //     break;
-    //
+    case "get":
+      await getCmd(remaining_args, namespace);
+      break;
+
     //   case "update": {
     //     const updateArgs = args as unknown as UpdateCmdArgs;
     //     updateArgs.strategy = updateArgs.strategy ?? "preferNew";
-    //     await updateCmd(updateArgs);
+    //     await updateCmd(remaining_args, namesapce);
     //     break;
     //   }
     //
     //   case "merge": {
     //     const updateArgs = args as unknown as UpdateCmdArgs;
     //     updateArgs.strategy = updateArgs.strategy ?? "merge";
-    //     await updateCmd(updateArgs);
+    //     await updateCmd(remaining_args, namesapce);
     //     break;
     //   }
     //
     //   case "delete":
     //   case "del":
-    //     await deleteCmd(args as unknown as DeleteCmdArgs);
+    //     await deleteCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "map":
-    //     await mapCmd(args as unknown as MapCmdArgs);
+    //     await mapCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "reduce":
     //   case "red":
-    //     await reduceCmd(args as unknown as ReduceCmdArgs);
+    //     await reduceCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "setup": {
@@ -84,43 +85,43 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     //     setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
     //     setupArgs.show =
     //       setupArgs.show === Show.Default ? Show.Minimal : setupArgs.show;
-    //     await setupCmd(setupArgs);
+    //     await setupCmd(remaining_args, namesapce);
     //     break;
     //   }
     //
     //   case "tail":
-    //     await tailCmd(args as unknown as TailCmdArgs);
+    //     await tailCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "head": {
-    //     await headCmd(args as unknown as HeadCmdArgs);
+    //     await headCmd(remaining_args, namesapce);
     //     break;
     //   }
     //
     //   case "edit":
-    //     await editCmd(args as unknown as EditCmdArgs);
+    //     await editCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "v1":
-    //     await v1Cmd(args as unknown as V1CmdArgs);
+    //     await v1Cmd(remaining_args, namesapce);
     //     break;
     //
     //   case "migrate":
     //   case "migration":
     //   case "mig":
-    //     await migrateCmd(args as unknown as MigrateCmdArgs);
+    //     await migrateCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "grep":
-    //     await grepCmd(args as unknown as GrepCmdArgs);
+    //     await grepCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "backup":
-    //     await backupCmd(args as unknown as BackupCmdArgs);
+    //     await backupCmd(remaining_args, namesapce);
     //     break;
     //
     //   case "restore":
-    //     await restoreCmd(args as unknown as RestoreCmdArgs);
+    //     await restoreCmd(remaining_args, namesapce);
     //     break;
     //
     default:
