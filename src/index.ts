@@ -7,6 +7,7 @@ import { dbArgs } from "./input/dbArgs";
 import { occurCmd } from "./commands/occurCmd";
 import { startCmd } from "./commands/startCmd";
 import { endCmd } from "./commands/endCmd";
+import { switchCmd, SwitchCmdArgs } from "./commands/switchCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -42,10 +43,10 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await endCmd(remaining_args, namespace);
       break;
 
-    //   case "switch":
-    //     await switchCmd(args as unknown as SwitchCmdArgs);
-    //     break;
-    //
+    case "switch":
+      await switchCmd(args as unknown as SwitchCmdArgs);
+      break;
+
     //   case "get":
     //     await getCmd(args as unknown as GetCmdArgs);
     //     break;

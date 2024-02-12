@@ -7,6 +7,7 @@ import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const startArgs = new ArgumentParser({
+  add_help: false,
   parents: [occurArgs, durationArgs],
 });
 

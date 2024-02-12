@@ -5,6 +5,7 @@ import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const occurArgs = new ArgumentParser({
+  add_help: false,
   parents: [addArgs, timeArgs],
 });
 export const occurCmdArgs = new ArgumentParser({

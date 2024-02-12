@@ -8,6 +8,7 @@ import { occurArgs } from "./occurCmd";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const endArgs = new ArgumentParser({
+  add_help: false,
   parents: [occurArgs, durationArgs],
 });
 export const endCmdArgs = new ArgumentParser({
