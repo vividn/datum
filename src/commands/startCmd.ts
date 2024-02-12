@@ -24,7 +24,7 @@ export type StartCmdArgs = OccurCmdArgs & DurationArgs;
 
 export async function startCmd(
   args: StartCmdArgs | string | string[],
-  preparsed: Partial<StartCmdArgs>,
+  preparsed?: Partial<StartCmdArgs>,
 ): Promise<EitherDocument> {
   args = parseIfNeeded(startCmdArgs, args, preparsed);
   args.cmdData ??= {};
