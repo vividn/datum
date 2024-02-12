@@ -2,8 +2,9 @@
 import { DocExistsError } from "./documentControl/base";
 import { parse as shellParse } from "shell-quote";
 import { ArgumentParser } from "argparse";
-import { addCmd, addCmdArgs } from "./commands/addCmd";
+import { addCmd } from "./commands/addCmd";
 import { dbArgs } from "./input/dbArgs";
+import { occurCmd } from "./commands/occurCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -24,12 +25,12 @@ export async function datum(cliInput: string | string[]): Promise<void> {
   const command = namespace.command;
   switch (command) {
     case "add":
-      await addCmd(addCmdArgs.parse_args(remaining_args, namespace));
+      await addCmd(remaining_args, namespace);
       break;
 
-    //   case "occur":
-    //     await occurCmd(args as unknown as OccurCmdArgs);
-    //     break;
+    case "occur":
+      await occurCmd(remaining_args, namespace);
+      break;
     //
     //   case "start":
     //     await startCmd(args as unknown as StartCmdArgs);
