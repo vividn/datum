@@ -29,7 +29,7 @@ describe("addCmd", () => {
   });
 
   it("inserts documents into couchdb", async () => {
-    await addCmd({ data: ["foo=bar"] });
+    await addCmd("foo");
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
@@ -37,19 +37,16 @@ describe("addCmd", () => {
   });
 
   it("includes field in the data", async () => {
-    const doc1 = await addCmd({ field: "field", data: [] });
+    const doc1 = await addCmd("field");
     expect(doc1.data).toEqual({ field: "field" });
-    const doc2 = await addCmd({ field: "field", data: ["foo=bar"] });
+    const doc2 = await addCmd("field foo=bar");
     expect(doc2.data).toEqual({ field: "field", foo: "bar" });
   });
 
-  it("uses the first non explicitly assigned field in the data as field, since field is positional populuated automatically and could have data in it", async () => {
-    const doc1 = await addCmd({ field: "foo=bar", data: ["dataField"] });
+  it("uses the first non explicitly assigned field in the data as field", async () => {
+    const doc1 = await addCmd("foo=bar dataField");
     expect(doc1.data).toEqual({ foo: "bar", field: "dataField" });
-    const doc2 = await addCmd({
-      field: "foo=bar",
-      data: ["dataField", "another=parameter"],
-    });
+    const doc2 = await addCmd("foo=bar dataField another=parameter");
     expect(doc2.data).toEqual({
       foo: "bar",
       field: "dataField",
@@ -59,7 +56,7 @@ describe("addCmd", () => {
 
   it("still handles field appropriately when there are required keys", async () => {
     const doc1 = await addCmd({
-      required: "abc",
+      required: ["abc"],
       field: "field",
       data: ["value"],
     });
@@ -82,7 +79,7 @@ describe("addCmd", () => {
     const doc = await addCmd({
       field: "actuallyData",
       fieldless: true,
-      optional: "dataKey",
+      optional: ["dataKey"],
     });
     expect(doc.data).toEqual({ dataKey: "actuallyData" });
   });
