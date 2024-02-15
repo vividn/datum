@@ -15,7 +15,7 @@ export enum Show {
   All = "all",
 }
 
-const outputArgs = new ArgumentParser({
+export const outputArgs = new ArgumentParser({
   add_help: false,
 });
 const outputGroup = outputArgs.add_argument_group({
@@ -35,5 +35,3 @@ outputGroup.add_argument("--format-string", {
   help: "create a custom output string for visualizing the doc(s). Specify %%keys%% with percent signs",
   dest: "formatString",
 });
-
-export { outputArgs };

@@ -15,6 +15,8 @@ import { mapCmd } from "./commands/mapCmd";
 import { reduceCmd } from "./commands/reduceCmd";
 import { outputArgs, Show } from "./input/outputArgs";
 import { setupCmd } from "./commands/setupCmd";
+import { tailCmd } from "./commands/tailCmd";
+import { headCmd } from "./commands/headCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -89,20 +91,21 @@ export async function datum(cliInput: string | string[]): Promise<void> {
 
     case "setup": {
       namespace.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
-      namespace.show = namespace.show === Show.Default ? Show.Minimal : namespace.show;
+      namespace.show =
+        namespace.show === Show.Default ? Show.Minimal : namespace.show;
       await setupCmd(args, namespace);
       break;
     }
-    //
-    //   case "tail":
-    //     await tailCmd(args, namespace);
-    //     break;
-    //
-    //   case "head": {
-    //     await headCmd(args, namespace);
-    //     break;
-    //   }
-    //
+
+    case "tail":
+      await tailCmd(args, namespace);
+      break;
+
+    case "head": {
+      await headCmd(args, namespace);
+      break;
+    }
+
     //   case "edit":
     //     await editCmd(args, namespace);
     //     break;
