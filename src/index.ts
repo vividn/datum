@@ -22,6 +22,7 @@ import { v1Cmd } from "./commands/v1Cmd";
 import { grepCmd } from "./commands/grepCmd";
 import { backupCmd } from "./commands/backupCmd";
 import { restoreCmd } from "./commands/restoreCmd";
+import { migrateCmd } from "./commands/migrateCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -131,12 +132,12 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await restoreCmd(args, namespace);
       break;
 
-    //   case "migrate":
-    //   case "migration":
-    //   case "mig":
-    //     await migrateCmd(args, namespace);
-    //     break;
-    //
+    case "migrate":
+    case "migration":
+    case "mig":
+      await migrateCmd(args, namespace);
+      break;
+
     default:
       throw Error(`command "${command}" not recognized`);
   }

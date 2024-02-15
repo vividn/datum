@@ -12,7 +12,7 @@ export const backupArgs = new ArgumentParser({
 // TODO: make this optional and then use stdout if not specified
 backupArgs.add_argument("filename", {
   help: "file to write the backup to",
-  type: "string",
+  type: "str",
 });
 backupArgs.add_argument("--overwrite", {
   help: "overwrite file if it exists",

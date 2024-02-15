@@ -11,7 +11,7 @@ export const restoreArgs = new ArgumentParser({
 });
 restoreArgs.add_argument("filename", {
   help: "file to restore from",
-  type: "string",
+  type: "str",
 });
 restoreArgs.add_argument("--allow-nonempty", {
   help: "Allow restore even if the db is not empty",
