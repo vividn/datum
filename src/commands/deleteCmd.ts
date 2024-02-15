@@ -1,4 +1,3 @@
-import { Argv } from "yargs";
 import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
 import { quickIds } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";

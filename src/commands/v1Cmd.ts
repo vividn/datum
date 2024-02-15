@@ -83,7 +83,7 @@ export async function v1Cmd(
         fs.writeSync(
           fd,
           createHeader(currentField, columnCounts[currentField]).join("\t") +
-          "\n",
+            "\n",
         );
       }
       fs.writeSync(fd, row.value.join("\t") + "\n");
