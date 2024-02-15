@@ -1,9 +1,4 @@
-import {
-  dataArgs,
-  DataArgs,
-  dataYargs,
-  handleDataArgs,
-} from "../input/dataArgs";
+import { dataArgs, DataArgs, handleDataArgs } from "../input/dataArgs";
 import {
   updateStrategies,
   UpdateStrategyNames,
@@ -12,7 +7,6 @@ import { DatumData, EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { updateDoc } from "../documentControl/updateDoc";
 import { quickIds } from "../ids/quickId";
-import { Argv } from "yargs";
 import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
@@ -49,10 +43,10 @@ export type UpdateCmdArgs = MainDatumArgs &
   };
 
 export async function updateCmd(
-  args: UpdateCmdArgs | string | string[],
+  argsOrCli: UpdateCmdArgs | string | string[],
   preparsed?: Partial<UpdateCmdArgs>,
 ): Promise<EitherDocument[]> {
-  args = parseIfNeeded(updateCmdArgs, args, preparsed);
+  const args = parseIfNeeded(updateCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
 
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command

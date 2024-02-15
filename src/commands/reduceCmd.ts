@@ -1,6 +1,5 @@
-import { Argv } from "yargs";
 import { renderView } from "../output/renderView";
-import { mapArgs, mapCmd, MapCmdArgs, mapCmdYargs } from "./mapCmd";
+import { mapArgs, mapCmd, MapCmdArgs } from "./mapCmd";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { outputArgs, Show } from "../input/outputArgs";
 import { ArgumentParser } from "argparse";

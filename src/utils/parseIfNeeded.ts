@@ -3,13 +3,15 @@ import { parse as shellParse } from "shell-quote";
 
 export function parseIfNeeded<T>(
   parser: ArgumentParser,
-  args: T | string | string[],
+  argsOrCli: T | string | string[],
   preparsed?: Partial<T>,
 ): T {
-  if (typeof args === "string" || Array.isArray(args)) {
+  if (typeof argsOrCli === "string" || Array.isArray(argsOrCli)) {
     const argArray =
-      typeof args === "string" ? (shellParse(args) as string[]) : args;
+      typeof argsOrCli === "string"
+        ? (shellParse(argsOrCli) as string[])
+        : argsOrCli;
     return parser.parse_args(argArray, preparsed);
   }
-  return preparsed ? ({ ...preparsed, ...args } as T) : args;
+  return preparsed ? ({ ...preparsed, ...argsOrCli } as T) : argsOrCli;
 }

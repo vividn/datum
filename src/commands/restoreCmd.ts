@@ -1,10 +1,10 @@
-import { MainDatumArgs } from "../input/MainArgs";
 import { connectDb } from "../auth/connectDb";
 import { readFileSync } from "fs";
 import { dbArgs } from "../input/dbArgs";
 import { ArgumentParser } from "argparse";
 import { BackupCmdArgs } from "./backupCmd";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { MainDatumArgs } from "../input/mainArgs";
 
 export const restoreArgs = new ArgumentParser({
   add_help: false,
@@ -42,7 +42,7 @@ export async function restoreCmd(
       "Warning: db is not empty, aborting restore. Use --allow-nonempty to override.",
     );
   }
-  const buffer = await readFileSync(args.filename);
+  const buffer = readFileSync(args.filename);
   const allDocs = JSON.parse(buffer.toString()).docs;
   await db.bulkDocs(allDocs, { new_edits: false });
 }

@@ -101,14 +101,14 @@ describe("endCmd", () => {
     const doc = await endCmd({
       field: "field",
       moment: false,
-      optional: "optional",
+      optional: ["optional"],
       duration: ".",
       data: [50],
     });
     const doc2 = await endCmd({
       field: "field",
       moment: false,
-      optional: "optional",
+      optional: ["optional"],
       duration: "",
       data: [50],
     });
@@ -122,7 +122,7 @@ describe("endCmd", () => {
     await expect(
       endCmd({
         field: "field",
-        optional: "optional",
+        optional: ["optional"],
         duration: "30asd",
       }),
     ).rejects.toThrow(BadDurationError);
@@ -132,7 +132,7 @@ describe("endCmd", () => {
     const doc = await endCmd({
       field: "field",
       duration: "reqVal1", //should get assigned to first required key because of flexiblePositional
-      required: "req1",
+      required: ["req1"],
       data: [30],
     });
     expect(doc.data).toMatchObject({

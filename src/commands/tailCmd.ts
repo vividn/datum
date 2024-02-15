@@ -2,7 +2,6 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
 import { interpolateFields } from "../utils/interpolateFields";
-import { MainDatumArgs } from "../input/MainArgs";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
@@ -20,6 +19,7 @@ import { DateTime } from "luxon";
 import { ArgumentParser, SUPPRESS } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { MainDatumArgs } from "../input/mainArgs";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,
@@ -55,10 +55,10 @@ export type TailCmdArgs = MainDatumArgs &
   };
 
 export async function tailCmd(
-  args: TailCmdArgs | string | string[],
+  argsOrCli: TailCmdArgs | string | string[],
   preparsed?: Partial<TailCmdArgs>,
 ): Promise<EitherDocument[]> {
-  args = parseIfNeeded(tailCmdArgs, args, preparsed);
+  const args = parseIfNeeded(tailCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
 
   const limit = args.n ?? 10;
@@ -119,9 +119,9 @@ export async function tailCmd(
   }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
   const filteredRows = onlyDate
     ? rawRows
-      .filter((row) => row.value[0] === utcTime)
-      // this sort moves times that are just dates to the top
-      .sort((a, b) => (a.value >= b.value ? 1 : -1))
+        .filter((row) => row.value[0] === utcTime)
+        // this sort moves times that are just dates to the top
+        .sort((a, b) => (a.value >= b.value ? 1 : -1))
     : rawRows;
   const limitedRows =
     onlyDate && args.n === undefined

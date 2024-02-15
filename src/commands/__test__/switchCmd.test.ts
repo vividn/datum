@@ -193,7 +193,7 @@ describe("switchCmd", () => {
       field: "project",
       state: "household",
       moment: false,
-      optional: "optional",
+      optional: ["optional"],
       duration: ".",
       data: [50],
     });
@@ -201,7 +201,7 @@ describe("switchCmd", () => {
       field: "project",
       state: "household",
       moment: false,
-      optional: "optional",
+      optional: ["optional"],
       duration: "",
       data: [50],
     });
