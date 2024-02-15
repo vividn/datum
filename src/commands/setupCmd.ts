@@ -24,7 +24,7 @@ export type SetupCmdArgs = MainDatumArgs & {
 
 export async function setupCmd(
   args: SetupCmdArgs | string | string[],
-  preparsed: Partial<SetupCmdArgs>,
+  preparsed?: Partial<SetupCmdArgs>,
 ): Promise<void> {
   args = parseIfNeeded(setupCmdArgs, args, preparsed);
   args.createDb ??= true;

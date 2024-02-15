@@ -19,6 +19,9 @@ import { tailCmd } from "./commands/tailCmd";
 import { headCmd } from "./commands/headCmd";
 import { editCmd } from "./commands/editCmd";
 import { v1Cmd } from "./commands/v1Cmd";
+import { grepCmd } from "./commands/grepCmd";
+import { backupCmd } from "./commands/backupCmd";
+import { restoreCmd } from "./commands/restoreCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -116,18 +119,18 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await v1Cmd(args, namespace);
       break;
 
-    //   case "grep":
-    //     await grepCmd(args, namespace);
-    //     break;
-    //
-    //   case "backup":
-    //     await backupCmd(args, namespace);
-    //     break;
-    //
-    //   case "restore":
-    //     await restoreCmd(args, namespace);
-    //     break;
-    //
+    case "grep":
+      await grepCmd(args, namespace);
+      break;
+
+    case "backup":
+      await backupCmd(args, namespace);
+      break;
+
+    case "restore":
+      await restoreCmd(args, namespace);
+      break;
+
     //   case "migrate":
     //   case "migration":
     //   case "mig":

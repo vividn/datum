@@ -1,34 +1,39 @@
 import { MainDatumArgs } from "../input/MainArgs";
-import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { readFileSync } from "fs";
+import { dbArgs } from "../input/dbArgs";
+import { ArgumentParser } from "argparse";
+import { BackupCmdArgs } from "./backupCmd";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
 
-export const command = "restore <filename>";
+export const restoreArgs = new ArgumentParser({
+  add_help: false,
+});
+restoreArgs.add_argument("filename", {
+  help: "file to restore from",
+  type: "string",
+});
+restoreArgs.add_argument("--allow-nonempty", {
+  help: "Allow restore even if the db is not empty",
+  action: "store_true",
+});
 
-export const desc =
-  "Restore db from backup file, for now only use on a new empty db for best results";
-
+export const restoreCmdArgs = new ArgumentParser({
+  description:
+    "Restore db from backup file, for now only use on a new empty db for best results",
+  prog: "datum restore",
+  usage: "%(prog)s <filename>",
+  parents: [restoreArgs, dbArgs],
+});
 export type RestoreCmdArgs = MainDatumArgs & {
   filename: string;
   allowNonempty?: boolean;
 };
-
-export function builder(yargs: Argv): Argv {
-  return yargs
-    .positional("filename", {
-      type: "string",
-      args: 1,
-      desc: "backup file from which to restore",
-    })
-    .options({
-      "allow-nonempty": {
-        type: "boolean",
-        desc: "Allow restore even if the db is not empty",
-      },
-    });
-}
-
-export async function restoreCmd(args: RestoreCmdArgs): Promise<void> {
+export async function restoreCmd(
+  args: RestoreCmdArgs | string | string[],
+  preparsed?: Partial<BackupCmdArgs>,
+): Promise<void> {
+  args = parseIfNeeded(restoreCmdArgs, args, preparsed);
   args.createDb ??= true;
   const db = connectDb(args);
   const info = await db.info();
