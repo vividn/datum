@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { DbArgs } from "../../../src/input/baseArgs";
 import { balanceView, equalityView } from "../views";
 import { mapCmd } from "../../../src/commands/mapCmd";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
@@ -9,7 +8,7 @@ import { transactionWatcher, transactionView } from "./transactionView";
 import { DateTime } from "luxon";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../../../src/input/dbArgs";
+import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
 
 export const zeroDate = "0000-00-00";
