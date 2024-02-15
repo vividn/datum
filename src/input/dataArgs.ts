@@ -50,18 +50,15 @@ dataGroup.add_argument("data", {
 });
 dataGroup.add_argument("-b", "--base-data", {
   help: "base object on which additional keys are added. Fed through relaxed-json, but must still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
-  nargs: 1,
   type: "str",
 });
 dataGroup.add_argument("-c", "--comment", {
   help: "comment to include in the data",
-  nargs: 1,
   type: "str",
   action: "append",
 });
 dataGroup.add_argument("-K", "--required", {
   help: "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
-  nargs: 1,
   type: "str",
   action: "append",
 });

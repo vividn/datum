@@ -55,18 +55,10 @@ describe("addCmd", () => {
   });
 
   it("still handles field appropriately when there are required keys", async () => {
-    const doc1 = await addCmd({
-      required: ["abc"],
-      field: "field",
-      data: ["value"],
-    });
+    const doc1 = await addCmd("-K abc field value");
     expect(doc1.data).toEqual({ abc: "value", field: "field" });
 
-    const doc2 = await addCmd({
-      required: ["a", "b"],
-      field: "abc=ghi",
-      data: ["first", "second", "third"],
-    });
+    const doc2 = await addCmd("-K a -K b abc=ghi first second third");
     expect(doc2.data).toEqual({
       a: "second",
       b: "third",

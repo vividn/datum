@@ -16,7 +16,7 @@
     "declarationDir": "build/types",
     "strict": true,
     "types": [
-      "node"
+      "node",
     ],
     "typeRoots": [
       "./node_modules/@types",
