@@ -10,6 +10,9 @@ import { endCmd } from "./commands/endCmd";
 import { switchCmd } from "./commands/switchCmd";
 import { getCmd } from "./commands/getCmd";
 import { updateCmd } from "./commands/updateCmd";
+import { deleteCmd } from "./commands/deleteCmd";
+import { mapCmd } from "./commands/mapCmd";
+import { reduceCmd } from "./commands/reduceCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -70,15 +73,15 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await deleteCmd(args, namespace);
       break;
 
-    //   case "map":
-    //     await mapCmd(args, namespace);
-    //     break;
-    //
-    //   case "reduce":
-    //   case "red":
-    //     await reduceCmd(args, namespace);
-    //     break;
-    //
+    case "map":
+      await mapCmd(args, namespace);
+      break;
+
+    case "reduce":
+    case "red":
+      await reduceCmd(args, namespace);
+      break;
+
     //   case "setup": {
     //     const setupArgs = args as unknown as SetupCmdArgs;
     //     setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
