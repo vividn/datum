@@ -21,7 +21,7 @@ export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
   cmdData?: DatumData; // Used for passing special values between commands
-  comment?: string[];
+  comment?: string | string[];
   required?: string[];
   optional?: string[];
   remainder?: string;

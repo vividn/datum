@@ -34,7 +34,7 @@ describe("flexiblePositional", () => {
       data: ["arg2", "arg3"],
       extraArg: "arg1",
       required: ["req1", "req2"],
-      optional: "opt1",
+      optional: ["opt1"],
     };
 
     flexiblePositional(args, "extraArg", "optional", "__extraArg");
@@ -50,7 +50,7 @@ describe("flexiblePositional", () => {
       data: ["arg2", "arg3"],
       extraArg: "arg1",
       required: ["req1", "req2"],
-      optional: "opt1",
+      optional: ["opt1"],
     };
     flexiblePositional(args, "extraArg", false);
     expect(args).toEqual({

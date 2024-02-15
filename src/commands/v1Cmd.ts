@@ -3,12 +3,12 @@ import { datumV1View } from "../views/datumViews";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import * as fs from "fs";
 import path from "path";
-import { MainDatumArgs } from "../input/MainArgs";
 import { V1MapRow, V1ReduceRowGroup1 } from "../views/datumViews/datumV1";
 import flatten from "lodash.flatten";
 import { ArgumentParser } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { MainDatumArgs } from "../input/mainArgs";
 
 export const v1Args = new ArgumentParser({
   add_help: false,
@@ -36,10 +36,10 @@ export type V1CmdArgs = MainDatumArgs & {
 };
 
 export async function v1Cmd(
-  args: V1CmdArgs | string | string[],
+  argsOrCli: V1CmdArgs | string | string[],
   preparsed?: Partial<V1CmdArgs>,
 ): Promise<void> {
-  args = parseIfNeeded(v1CmdArgs, args, preparsed);
+  const args = parseIfNeeded(v1CmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
 
   function openFd(field: string): number {
