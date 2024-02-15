@@ -30,7 +30,6 @@ outputGroup.add_argument("--show-all", {
 outputGroup.add_argument("--show", {
   help: "how much of documents to show",
   choices: Object.values(Show),
-  default: Show.Default,
 });
 outputGroup.add_argument("--format-string", {
   help: "create a custom output string for visualizing the doc(s). Specify %%keys%% with percent signs",

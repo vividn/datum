@@ -13,12 +13,14 @@ import { updateCmd } from "./commands/updateCmd";
 import { deleteCmd } from "./commands/deleteCmd";
 import { mapCmd } from "./commands/mapCmd";
 import { reduceCmd } from "./commands/reduceCmd";
+import { outputArgs, Show } from "./input/outputArgs";
+import { setupCmd } from "./commands/setupCmd";
 
 const commandParser = new ArgumentParser({
   description:
     "Initially just parse the first positional argument as a command to forward for additional parsing",
   add_help: false,
-  parents: [dbArgs],
+  parents: [dbArgs, outputArgs],
 });
 commandParser.add_argument("command", {
   help: "the command to run",
@@ -30,6 +32,9 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       ? (shellParse(cliInput) as string[])
       : cliInput;
   const [namespace, args] = commandParser.parse_known_args(cliArgs);
+  // When calling from the command line, SHOW should be set to default
+  namespace.show = Show.Default;
+
   const command = namespace.command;
   switch (command) {
     case "add":
@@ -82,14 +87,12 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await reduceCmd(args, namespace);
       break;
 
-    //   case "setup": {
-    //     const setupArgs = args as unknown as SetupCmdArgs;
-    //     setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
-    //     setupArgs.show =
-    //       setupArgs.show === Show.Default ? Show.Minimal : setupArgs.show;
-    //     await setupCmd(args, namespace);
-    //     break;
-    //   }
+    case "setup": {
+      namespace.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
+      namespace.show = namespace.show === Show.Default ? Show.Minimal : namespace.show;
+      await setupCmd(args, namespace);
+      break;
+    }
     //
     //   case "tail":
     //     await tailCmd(args, namespace);
