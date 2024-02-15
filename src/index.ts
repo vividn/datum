@@ -64,19 +64,19 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await updateCmd(args, namespace);
       break;
     }
-    //
-    //   case "delete":
-    //   case "del":
-    //     await deleteCmd(remaining_args, namespace);
-    //     break;
-    //
+
+    case "delete":
+    case "del":
+      await deleteCmd(args, namespace);
+      break;
+
     //   case "map":
-    //     await mapCmd(remaining_args, namespace);
+    //     await mapCmd(args, namespace);
     //     break;
     //
     //   case "reduce":
     //   case "red":
-    //     await reduceCmd(remaining_args, namespace);
+    //     await reduceCmd(args, namespace);
     //     break;
     //
     //   case "setup": {
@@ -84,43 +84,43 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     //     setupArgs.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
     //     setupArgs.show =
     //       setupArgs.show === Show.Default ? Show.Minimal : setupArgs.show;
-    //     await setupCmd(remaining_args, namespace);
+    //     await setupCmd(args, namespace);
     //     break;
     //   }
     //
     //   case "tail":
-    //     await tailCmd(remaining_args, namespace);
+    //     await tailCmd(args, namespace);
     //     break;
     //
     //   case "head": {
-    //     await headCmd(remaining_args, namespace);
+    //     await headCmd(args, namespace);
     //     break;
     //   }
     //
     //   case "edit":
-    //     await editCmd(remaining_args, namespace);
+    //     await editCmd(args, namespace);
     //     break;
     //
     //   case "v1":
-    //     await v1Cmd(remaining_args, namespace);
+    //     await v1Cmd(args, namespace);
     //     break;
     //
     //   case "migrate":
     //   case "migration":
     //   case "mig":
-    //     await migrateCmd(remaining_args, namespace);
+    //     await migrateCmd(args, namespace);
     //     break;
     //
     //   case "grep":
-    //     await grepCmd(remaining_args, namespace);
+    //     await grepCmd(args, namespace);
     //     break;
     //
     //   case "backup":
-    //     await backupCmd(remaining_args, namespace);
+    //     await backupCmd(args, namespace);
     //     break;
     //
     //   case "restore":
-    //     await restoreCmd(remaining_args, namespace);
+    //     await restoreCmd(args, namespace);
     //     break;
     //
     default:
