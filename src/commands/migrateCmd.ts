@@ -34,6 +34,6 @@ export async function migrateCmd(
   preparsed?: Partial<MigrateCmdArgs>,
 ): Promise<unknown> {
   args = parseIfNeeded(migrateCmdArgs, args, preparsed);
-  console.debug({args});
+  console.debug({ args });
   return await args.subfn(args);
 }
