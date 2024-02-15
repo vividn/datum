@@ -89,23 +89,6 @@ function isDoneToday(dateOrTime?: isoDate | isoDatetime): boolean {
 
 type ChorelistArgs = { watch?: boolean; sort?: PossibleSorts } & DbArgs &
   OutputArgs;
-const chorelistArgs = new ArgumentParser({
-  description: "List chores",
-  add_help: true,
-  prog: "chorelist",
-  parents: [dbArgs, outputArgs],
-});
-chorelistArgs.add_argument("sort", {
-  type: "str",
-  help: "Sort the output",
-  choices: [...possibleSorts],
-  default: "iti",
-  nargs: "?",
-});
-chorelistArgs.add_argument("--watch", {
-  action: "store_true",
-  help: "Watch and update on changes to the database",
-});
 
 async function chorelist(args: ChorelistArgs): Promise<string> {
   if (!oneTimeSetup) {
@@ -225,6 +208,24 @@ async function chorelistwatch(args: DbArgs): Promise<void> {
   eventEmitter.cancel();
   return;
 }
+
+const chorelistArgs = new ArgumentParser({
+  description: "List chores",
+  add_help: true,
+  prog: "chorelist",
+  parents: [dbArgs, outputArgs],
+});
+chorelistArgs.add_argument("sort", {
+  type: "str",
+  help: "Sort the output",
+  choices: [...possibleSorts],
+  default: "iti",
+  nargs: "?",
+});
+chorelistArgs.add_argument("--watch", {
+  action: "store_true",
+  help: "Watch and update on changes to the database",
+});
 
 async function chorelistCmd(argsOrCli: ChorelistArgs | string | string[]) {
   const args = parseIfNeeded(chorelistArgs, argsOrCli);
