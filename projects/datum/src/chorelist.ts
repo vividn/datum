@@ -107,9 +107,7 @@ chorelistArgs.add_argument("--watch", {
   help: "Watch and update on changes to the database",
 });
 
-async function chorelist(
-  args: ChorelistArgs | string | string[],
-): Promise<string> {
+async function chorelist(args: ChorelistArgs): Promise<string> {
   if (!oneTimeSetup) {
     const db = connectDb(args);
     await insertDatumView({
