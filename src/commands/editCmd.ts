@@ -1,5 +1,4 @@
 import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
-import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { quickIds } from "../ids/quickId";
@@ -8,15 +7,22 @@ import { overwriteDoc } from "../documentControl/overwriteDoc";
 import { MainDatumArgs } from "../input/mainArgs";
 import { MyError } from "../errors";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { ArgumentParser } from "argparse";
+import { dbArgs } from "../input/dbArgs";
+import { outputArgs } from "../input/outputArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
 
-export const command = ["edit <quickId>"];
-export const desc = "Edit a document directly with EDITOR";
-
+export const editArgs = new ArgumentParser({
+  add_help: false,
+  parents: [quickIdArgs],
+});
+export const editCmdArgs = new ArgumentParser({
+  description: "Edit a document directly with EDITOR",
+  prog: "datum edit",
+  usage: "%(prog)s <quickId>",
+  parents: [editArgs, dbArgs, outputArgs],
+});
 export type EditCmdArgs = MainDatumArgs & QuickIdArg;
-
-export function builder(yargs: Argv): Argv {
-  return quickIdArgs(yargs);
-}
 
 export class TooManyToEditError extends MyError {
   constructor(m: unknown) {
@@ -25,7 +31,11 @@ export class TooManyToEditError extends MyError {
   }
 }
 
-export async function editCmd(args: EditCmdArgs): Promise<EitherDocument> {
+export async function editCmd(
+  args: EditCmdArgs | string | string[],
+  preparsed?: Partial<EditCmdArgs>,
+): Promise<EitherDocument> {
+  args = parseIfNeeded(editCmdArgs, args, preparsed);
   const db = connectDb(args);
 
   const ids = await quickIds(db, args.quickId);

@@ -17,6 +17,7 @@ import { outputArgs, Show } from "./input/outputArgs";
 import { setupCmd } from "./commands/setupCmd";
 import { tailCmd } from "./commands/tailCmd";
 import { headCmd } from "./commands/headCmd";
+import { editCmd } from "./commands/editCmd";
 
 const commandParser = new ArgumentParser({
   description:
@@ -106,18 +107,12 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
     }
 
-    //   case "edit":
-    //     await editCmd(args, namespace);
-    //     break;
-    //
+    case "edit":
+      await editCmd(args, namespace);
+      break;
+
     //   case "v1":
     //     await v1Cmd(args, namespace);
-    //     break;
-    //
-    //   case "migrate":
-    //   case "migration":
-    //   case "mig":
-    //     await migrateCmd(args, namespace);
     //     break;
     //
     //   case "grep":
@@ -130,6 +125,12 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     //
     //   case "restore":
     //     await restoreCmd(args, namespace);
+    //     break;
+    //
+    //   case "migrate":
+    //   case "migration":
+    //   case "mig":
+    //     await migrateCmd(args, namespace);
     //     break;
     //
     default:
