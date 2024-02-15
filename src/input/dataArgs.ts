@@ -64,13 +64,11 @@ dataGroup.add_argument("-K", "--required", {
 });
 dataGroup.add_argument("-k", "--optional", {
   help: "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
-  nargs: 1,
   type: "str",
   action: "append",
 });
 dataGroup.add_argument("-R", "--remainder", {
   help: "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
-  nargs: 1,
   type: "str",
 });
 dataGroup.add_argument("-S", "--string-remainder", {

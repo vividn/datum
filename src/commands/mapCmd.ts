@@ -44,7 +44,6 @@ export function mapCmdYargs(yargs: Argv): Argv {
         describe:
           'use a different view than "default". TODO: Can also be speified in the mapName by using a slash i.e. map/view',
         type: "string",
-        nargs: 1,
       },
       reduce: {
         describe:

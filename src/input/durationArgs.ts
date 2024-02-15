@@ -13,7 +13,6 @@ durationArgs.add_argument("duration", {
     " 5 = 5 minutes, 5h = 5 hours, 5:35:35 = 5 hours 35 minutes and 35 seconds, etc." +
     'a single period "." or empty string "" can be used to indicate no duration (for example to allow' +
     " entering in of other data without specifying a duration)",
-  nargs: 1,
 });
 durationArgs.add_argument("-m", "--moment", {
   help: "data with no indication of duration, just occurrence. Removes positional duration argument. Sets dur to be null. Essentially equivalent to an occur cmd",
