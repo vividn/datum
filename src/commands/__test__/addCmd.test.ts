@@ -68,39 +68,29 @@ describe("addCmd", () => {
   });
 
   it("can skip the field with --fieldless", async () => {
-    const doc = await addCmd({
-      field: "actuallyData",
-      fieldless: true,
-      optional: ["dataKey"],
-    });
+    const doc = await addCmd("--fieldless -k dataKey actuallyData");
     expect(doc.data).toEqual({ dataKey: "actuallyData" });
   });
 
   it("uses the field prop to populate the field key, but can also be specified again in the data", async () => {
-    expect((await addCmd({ field: "fromProps", data: [] })).data).toEqual({
-      field: "fromProps",
+    expect((await addCmd("--fieldless field=manual")).data).toEqual({
+      field: "manual",
     });
-
-    expect((await addCmd({ data: ["field=fromExtra"] })).data).toEqual({
-      field: "fromExtra",
+    expect((await addCmd("fromField field=fromData")).data).toEqual({
+      field: "fromData",
     });
-    expect(
-      (await addCmd({ field: "fromProps", data: ["field=fromExtra"] })).data,
-    ).toEqual({ field: "fromExtra" });
   });
 
-  it("throws an error if addCmd is called with no id and no data", async () => {
-    await expect(addCmd({})).rejects.toThrow(IdError);
+  it("throws an error if addCmd is called with no field, no id, and no data", async () => {
+    await expect(addCmd("--fieldless")).rejects.toThrow(IdError);
   });
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
-    await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(
-      IdError,
-    );
+    await expect(addCmd("field data=data --id ''")).rejects.toThrow(IdError);
   });
 
   it("can add a blank document if an id is provided", async () => {
-    const doc = await addCmd({ idPart: "test" });
+    const doc = await addCmd("--fieldless --id test");
     expect(doc._id).toEqual("test");
     expect(JSON.stringify(doc.data)).toBe("{}");
   });
