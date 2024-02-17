@@ -86,7 +86,9 @@ describe("addCmd", () => {
   });
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
-    await expect(addCmd("field data=data --id ''")).rejects.toThrow(IdError);
+    await expect(addCmd("--fieldless data=data --id ''")).rejects.toThrow(
+      IdError,
+    );
   });
 
   it("can add a blank document if an id is provided", async () => {
@@ -96,11 +98,14 @@ describe("addCmd", () => {
   });
 
   it("calls addDoc", async () => {
-    await addCmd({ idPart: "%foo%", data: ["foo=abc"] });
+    await addCmd("field foo=abc --id %foo%");
     const spyCall = addDocSpy.mock.calls[0][0];
     expect(spyCall).toMatchObject({
       db: db,
-      payload: { data: { foo: "abc" }, meta: { idStructure: "%foo%" } },
+      payload: {
+        data: { foo: "abc", field: "field" },
+        meta: { idStructure: "%field%:%foo%" },
+      },
     });
   });
 
