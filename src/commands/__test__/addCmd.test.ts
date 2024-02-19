@@ -12,7 +12,6 @@ import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
-import { Show } from "../../input/outputArgs";
 import { setupCmd } from "../setupCmd";
 
 describe("addCmd", () => {
@@ -67,13 +66,13 @@ describe("addCmd", () => {
     });
   });
 
-  it("can skip the field with --fieldless", async () => {
-    const doc = await addCmd("--fieldless -k dataKey actuallyData");
+  it("can skip the field with -F", async () => {
+    const doc = await addCmd("-F -k dataKey actuallyData");
     expect(doc.data).toEqual({ dataKey: "actuallyData" });
   });
 
   it("uses the field prop to populate the field key, but can also be specified again in the data", async () => {
-    expect((await addCmd("--fieldless field=manual")).data).toEqual({
+    expect((await addCmd("-F field=manual")).data).toEqual({
       field: "manual",
     });
     expect((await addCmd("fromField field=fromData")).data).toEqual({
@@ -82,17 +81,15 @@ describe("addCmd", () => {
   });
 
   it("throws an error if addCmd is called with no field, no id, and no data", async () => {
-    await expect(addCmd("--fieldless")).rejects.toThrow(IdError);
+    await expect(addCmd("-F")).rejects.toThrow(IdError);
   });
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
-    await expect(addCmd("--fieldless data=data --id ''")).rejects.toThrow(
-      IdError,
-    );
+    await expect(addCmd("-F data=data --id ''")).rejects.toThrow(IdError);
   });
 
   it("can add a blank document if an id is provided", async () => {
-    const doc = await addCmd("--fieldless --id test");
+    const doc = await addCmd("-F --id test");
     expect(doc._id).toEqual("test");
     expect(JSON.stringify(doc.data)).toBe("{}");
   });
@@ -116,12 +113,8 @@ describe("addCmd", () => {
     ).not.toHaveProperty("meta");
   });
 
-  it("tells the user if the document already exists with identical data", async () => {
-    await addCmd({
-      idPart: "my name is bob",
-      data: ["foo=bar"],
-      show: Show.Standard,
-    });
+  it("tells the user if the document already exists identical data", async () => {
+    await addCmd("--id 'my name is bob' foo=bar field --show standard");
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS"),
@@ -129,11 +122,7 @@ describe("addCmd", () => {
 
     mockedLog.mockReset();
 
-    await addCmd({
-      idPart: "my name is bob",
-      data: ["foo=bar"],
-      show: Show.Standard,
-    });
+    await addCmd("--id 'my name is bob' foo=bar field --show standard");
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("CREATE"),
     );
@@ -141,11 +130,7 @@ describe("addCmd", () => {
   });
 
   it("fails if addedDocument conflicts with different data", async () => {
-    await addCmd({
-      idPart: "my name is doug",
-      data: ["foo=bar"],
-      show: Show.Standard,
-    });
+    await addCmd("--id 'my name is doug' foo=bar field --show standard");
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS"),
@@ -154,11 +139,9 @@ describe("addCmd", () => {
     mockedLog.mockReset();
 
     try {
-      await addCmd({
-        idPart: "my name is doug",
-        data: ["different=data"],
-        show: Show.Standard,
-      });
+      await addCmd(
+        "--id 'my name is doug' different=data field --show standard",
+      );
       fail();
     } catch (e) {
       expect(e).toBeInstanceOf(DocExistsError);
@@ -169,27 +152,27 @@ describe("addCmd", () => {
 
   it("inserts id structure into the metadata", async () => {
     expect(
-      await addCmd({ idPart: ["rawString", "%foo%!!"], data: ["foo=abc"] }),
+      await addCmd("--id rawString --id %foo%!! foo=abc field"),
     ).toMatchObject({
-      meta: { idStructure: "rawString__%foo%!!" },
+      meta: { idStructure: "%field%:rawString__%foo%!!" },
     });
   });
 
   it("can use custom base data", async () => {
     expect(
-      await addCmd({ baseData: "{a: 1, b:2, c:3 }", idPart: "basedata-doc1" }),
-    ).toMatchObject({ data: { a: 1, b: 2, c: 3 }, _id: "basedata-doc1" });
+      await addCmd('-b "{a: 1, b:2, c:3 }" field --id "basedata-doc1"'),
+    ).toMatchObject({
+      data: { a: 1, b: 2, c: 3, field: "field" },
+      _id: "field:basedata-doc1",
+    });
   });
 
-  it("can write payloads directly by specifying base-data and no-metadata", async () => {
+  it("can write payloads directly by specifying base-data no-metadata and fieldless", async () => {
     expect(
-      await addCmd({
-        noMetadata: true,
-        baseData: "{a: 1, b:2, c:3}",
-        idPart: "basedata-doc2",
-      }),
-    ).toMatchObject({
+      await addCmd("-FM -b '{a: 1, b:2, c:3 }' --id basedata-doc2"),
+    ).toEqual({
       _id: "basedata-doc2",
+      _rev: expect.any(String),
       a: 1,
       b: 2,
       c: 3,
@@ -197,34 +180,21 @@ describe("addCmd", () => {
   });
 
   it("throws a BaseDataError if baseData is malformed", async () => {
-    await expect(addCmd({ baseData: "string" })).rejects.toThrowError(
-      BaseDataError,
-    );
+    await expect(
+      addCmd("-F -b 'string_is_not_good_basedata'"),
+    ).rejects.toThrowError(BaseDataError);
   });
 
   it("prefers the _id specified when in no-metadata mode", async () => {
     expect(
-      await addCmd({
-        noMetadata: true,
-        baseData: "{ _id: payload-id }",
-        idPart: "argument-id",
-      }),
+      await addCmd("-FM -b '{_id: payload-id}' --id argument-id"),
     ).toMatchObject({ _id: "payload-id" });
     expect(
-      await addCmd({
-        noMetadata: true,
-        baseData: "{ _id: payload-id-2 }",
-        idPart: "%keyId%",
-        data: ["keyId=key-id"],
-      }),
+      await addCmd("-FM -b '{_id: payload-id-2}' --id '%keyId%' keyId=key-id"),
     ).toMatchObject({ _id: "payload-id-2" });
-    expect(
-      await addCmd({
-        noMetadata: true,
-        data: ["_id=posArgs-id"],
-        idPart: "idPart-id",
-      }),
-    ).toMatchObject({ _id: "posArgs-id" });
+    expect(await addCmd("-FM --id 'idPart-id' _id=posArgs-id")).toMatchObject({
+      _id: "posArgs-id",
+    });
   });
 
   it("does not contain idStructure in the metadata if id does not depend on values from data", async () => {

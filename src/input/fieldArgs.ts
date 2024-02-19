@@ -16,7 +16,7 @@ fieldGroup.add_argument("field", {
   help: "what is being tracked",
   nargs: "?",
 });
-fieldGroup.add_argument("--fieldless", {
+fieldGroup.add_argument("--fieldless", "-F", {
   help: "do not include field as a positional argument",
   action: "store_true",
   dest: "fieldless",

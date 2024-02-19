@@ -51,6 +51,7 @@ dataGroup.add_argument("data", {
 dataGroup.add_argument("-b", "--base-data", {
   help: "base object on which additional keys are added. Fed through relaxed-json, but must still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
   type: "str",
+  dest: "baseData",
 });
 dataGroup.add_argument("-c", "--comment", {
   help: "comment to include in the data",
