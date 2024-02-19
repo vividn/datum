@@ -22,7 +22,7 @@ const outputGroup = outputArgs.add_argument_group({
   title: "Output",
   description: "Options for display on the terminal",
 });
-outputGroup.add_argument("--show-all", {
+outputGroup.add_argument("--show-all", "-A", {
   help: "Show complete document when displaying, not just data",
   action: "store_true",
   dest: "showAll",

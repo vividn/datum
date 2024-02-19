@@ -11,7 +11,7 @@ export function parseIfNeeded<T>(
       typeof argsOrCli === "string"
         ? (shellParse(argsOrCli) as string[])
         : argsOrCli;
-    return parser.parse_args(argArray, preparsed);
+    return parser.parse_intermixed_args(argArray, preparsed);
   }
   return preparsed ? ({ ...preparsed, ...argsOrCli } as T) : argsOrCli;
 }

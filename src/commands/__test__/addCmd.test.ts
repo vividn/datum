@@ -107,10 +107,8 @@ describe("addCmd", () => {
   });
 
   it("Can remove metadata entirely", async () => {
-    expect(await addCmd({ idPart: "hasMetadata" })).toHaveProperty("meta");
-    expect(
-      await addCmd({ idPart: "noMeta", noMetadata: true }),
-    ).not.toHaveProperty("meta");
+    expect(await addCmd("-F --id hasMetadata")).toHaveProperty("meta");
+    expect(await addCmd("-FM --id noMetadata")).not.toHaveProperty("meta");
   });
 
   it("tells the user if the document already exists identical data", async () => {
@@ -198,46 +196,45 @@ describe("addCmd", () => {
   });
 
   it("does not contain idStructure in the metadata if id does not depend on values from data", async () => {
-    const returnDoc = (await addCmd({ idPart: "notAField" })) as DatumDocument;
-    expect(returnDoc._id).toBe("notAField");
+    const returnDoc = (await addCmd("-F --id rawString")) as DatumDocument;
+    expect(returnDoc._id).toBe("rawString");
     expect(returnDoc.meta).not.toHaveProperty("idStructure");
   });
 
   it("can display just the data of documents or the whole documents", async () => {
     const matchExtraKeysInAnyOrder =
       /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
-    await addCmd({ idPart: "this-id" });
+    await addCmd("field --id this-id"); //note when called in tests like this show is "none" by default. From the main entrypoint it is "standard"
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringMatching(matchExtraKeysInAnyOrder),
     );
 
     mockedLog.mockClear();
 
-    await addCmd({ idPart: "that-id", showAll: true });
+    await addCmd("field --id that-id --show-all");
+    expect(mockedLog).toHaveBeenCalledWith(
+      expect.stringMatching(matchExtraKeysInAnyOrder),
+    );
+
+    mockedLog.mockClear();
+
+    await addCmd("field --id short-show-all -A");
     expect(mockedLog).toHaveBeenCalledWith(
       expect.stringMatching(matchExtraKeysInAnyOrder),
     );
   });
 
   it("can merge into an existing document with --merge", async () => {
-    await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
-    const newDoc = await addCmd({
-      idPart: "doc-id",
-      data: ["foo=def"],
-      merge: true,
-    });
+    await addCmd("-F --id doc-id foo=abc");
+    const newDoc = await addCmd("-F --id doc-id foo=def --merge");
     expect(newDoc).toMatchObject({ data: { foo: ["abc", "def"] } });
     expect(addDocSpy).toHaveBeenCalledTimes(2);
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("merge");
   });
 
   it("can update and existing document with --conflict", async () => {
-    await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
-    const newDoc = await addCmd({
-      idPart: "doc-id",
-      data: ["foo=def"],
-      conflict: "preferNew",
-    });
+    await addCmd("-F --id doc-id foo=abc");
+    const newDoc = await addCmd("-F --id doc-id foo=def --conflict preferNew");
     expect(addDocSpy).toHaveBeenCalledTimes(2);
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
@@ -254,12 +251,7 @@ describe("addCmd", () => {
 
     it("can become an occur command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "occur"],
-        }),
+        await addCmd("field -K req1 -k opt1 reqVal optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -267,12 +259,7 @@ describe("addCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "start", "30 min"],
-        }),
+        await addCmd("field -K req1 -k opt1 reqVal optVal start '30 min'"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -280,12 +267,7 @@ describe("addCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "end", "30 min"],
-        }),
+        await addCmd("field -K req1 -k opt1 reqVal optVal end '30 min'"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -293,12 +275,9 @@ describe("addCmd", () => {
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "switch", "stateName", "5m30s"],
-        }),
+        await addCmd(
+          "field -K req1 -k opt1 reqVal optVal switch stateName 5m30s",
+        ),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
