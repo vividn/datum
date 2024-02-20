@@ -74,8 +74,8 @@ describe("endCmd", () => {
     });
   });
 
-  it("when --no-timestamp is specified, there is no positional duration argument", async () => {
-    const doc = await endCmd("dance -k skillPoints --no-timestamp 3");
+  it("when --no-timestamp/-T is specified, there is no positional duration argument", async () => {
+    const doc = await endCmd("dance -k skillPoints -T 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: false,

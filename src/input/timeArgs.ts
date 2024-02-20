@@ -52,6 +52,7 @@ timeGroup.add_argument("-D", "--full-day", {
 timeGroup.add_argument("-T", "--no-timestamp", {
   help: "omit the occurTime from the data",
   action: BooleanOptionalAction,
+  dest: "noTimestamp",
 });
 
 export type ReferencedTimeArgs = TimeArgs & {
