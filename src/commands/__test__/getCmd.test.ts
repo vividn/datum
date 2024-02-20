@@ -8,13 +8,13 @@ describe("getCmd", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({ db: dbName });
+    await setupCmd({});
   });
 
   it("gets a document based on the first few letters of humanId", async () => {
     const doc = { _id: "hello", data: {}, meta: { humanId: "a44quickId" } };
     await db.put(doc);
-    const retDocs = await getCmd({ db: dbName, quickId: "a44" });
+    const retDocs = await getCmd("a44");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toEqual({ ...doc, _rev: expect.anything() });
   });
@@ -22,7 +22,7 @@ describe("getCmd", () => {
   it("gets a document based on the first few letters of _id", async () => {
     const doc = { _id: "the_quick_brown_fox", foo: "abc" };
     await db.put(doc);
-    const retDocs = await getCmd({ db: dbName, quickId: "the_qu" });
+    const retDocs = await getCmd("the_qu");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toEqual({ ...doc, _rev: expect.anything() });
   });
@@ -38,7 +38,7 @@ describe("getCmd", () => {
       meta: { humanId: "somethingElse" },
     };
     await db.put(doc);
-    await getCmd({ db: dbName, quickId: "show_me", show: Show.Standard });
+    await getCmd("show_me", { show: Show.Standard });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
 
     console.log = originalLog;
@@ -50,7 +50,7 @@ describe("getCmd", () => {
     await db.put(doc1);
     await db.put(doc2);
 
-    const returned = await getCmd({ db: dbName, quickId: "abc,def," });
+    const returned = await getCmd("abc,def,");
     expect(returned).toEqual([
       expect.objectContaining(doc1),
       expect.objectContaining(doc2),
