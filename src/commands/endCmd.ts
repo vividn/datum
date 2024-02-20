@@ -1,5 +1,5 @@
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { StartCmdArgs } from "./startCmd";
+import { startArgs, StartCmdArgs } from "./startCmd";
 import { switchCmd } from "./switchCmd";
 import set from "lodash.set";
 import { ArgumentParser } from "argparse";
@@ -9,7 +9,7 @@ import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const endArgs = new ArgumentParser({
   add_help: false,
-  parents: [occurArgs, durationArgs],
+  parents: [startArgs],
 });
 export const endCmdArgs = new ArgumentParser({
   description: "record the end of something that occurs in blocks of time",

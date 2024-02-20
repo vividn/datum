@@ -11,7 +11,7 @@ describe("editCmd", () => {
 
   beforeEach(async () => {
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
-    await setupCmd({ db: dbName });
+    await setupCmd({});
   });
 
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {
@@ -19,7 +19,7 @@ describe("editCmd", () => {
     await db.put({ _id: "abcdef", abc: "def" });
     const dbDoc = await db.get("abcdef");
 
-    const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
+    const returnedDoc = await editCmd("abcdef");
     expect(returnedDoc).toEqual(dbDoc);
   });
 
@@ -32,7 +32,7 @@ describe("editCmd", () => {
       async (_doc: GenericObject) => editedDoc,
     );
     await db.put({ _id: "abcdef", abc: "def" });
-    const returnedDoc = await editCmd({ db: dbName, quickId: "abcdef" });
+    const returnedDoc = await editCmd("abcdef");
     expect(returnedDoc).toMatchObject(editedDoc);
     await expect(db.get("abcdef")).rejects.toMatchObject({
       name: "not_found",
@@ -53,8 +53,6 @@ describe("editCmd", () => {
       },
       meta: { humanId: "jkl" },
     });
-    await expect(
-      editCmd({ db: dbName, quickId: ",abc,jkl" }),
-    ).rejects.toThrowError(TooManyToEditError);
+    await expect(editCmd(",abc,jkl")).rejects.toThrowError(TooManyToEditError);
   });
 });

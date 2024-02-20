@@ -20,7 +20,7 @@ import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const addArgs = new ArgumentParser({
   add_help: false,
-  parents: [fieldArgs, dataArgs, outputArgs, dbArgs],
+  parents: [fieldArgs, dataArgs],
 });
 addArgs.add_argument("--no-metadata", "-M", {
   help: "do not include meta data in document",
@@ -71,7 +71,7 @@ export const addCmdArgs = new ArgumentParser({
   %(prog)s --fieldless [data..]
   %(prog)s <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]
 `,
-  parents: [addArgs],
+  parents: [addArgs, outputArgs, dbArgs],
 });
 
 export type AddCmdArgs = MainDatumArgs &
