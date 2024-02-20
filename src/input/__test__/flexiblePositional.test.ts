@@ -56,7 +56,7 @@ describe("flexiblePositional", () => {
     expect(args).toEqual({
       data: ["arg1", "arg2", "arg3"],
       required: ["req1", "req2"],
-      optional: "opt1",
+      optional: ["opt1"],
     });
   });
 
