@@ -3,7 +3,6 @@ import * as deleteDoc from "../../documentControl/deleteDoc";
 import { deleteCmd } from "../deleteCmd";
 import * as quickId from "../../ids/quickId";
 import { setupCmd } from "../setupCmd";
-import { Show } from "../../input/outputArgs";
 
 describe("deleteCmd", () => {
   const dbName = "delete_cmd_test";
@@ -12,12 +11,12 @@ describe("deleteCmd", () => {
   let deleteDocSpy: any;
   beforeEach(async () => {
     deleteDocSpy = jest.spyOn(deleteDoc, "deleteDoc");
-    await setupCmd({ db: dbName });
+    await setupCmd({});
   });
 
   it("deletes a document based on first few letters of humanId", async () => {
     await db.put({ _id: "hello", data: {}, meta: { humanId: "a44quickId" } });
-    const returned = await deleteCmd({ db: dbName, quickId: "a44" });
+    const returned = await deleteCmd("a44q");
 
     expect(returned).toEqual([
       expect.objectContaining({ _id: "hello", _deleted: true }),
@@ -33,7 +32,7 @@ describe("deleteCmd", () => {
 
   it("deletes a document based on first few letters of _id", async () => {
     await db.put({ _id: "the_quick_brown_fox", foo: "abc" });
-    const returned = await deleteCmd({ db: dbName, quickId: "the_qu" });
+    const returned = await deleteCmd("the_qu");
 
     expect(returned).toEqual([
       expect.objectContaining({
@@ -54,7 +53,7 @@ describe("deleteCmd", () => {
     await db.put({ _id: "id1", data: {}, meta: { humanId: "abc" } });
     await db.put({ _id: "id2", data: {}, meta: { humanId: "def" } });
 
-    await deleteCmd({ db: dbName, quickId: "abc" });
+    await deleteCmd("abc");
     await expect(db.get("id1")).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
@@ -71,7 +70,7 @@ describe("deleteCmd", () => {
       .mockImplementation(async (db, id) => [`${id}_to_delete`]);
 
     for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
-      await deleteCmd({ db: dbName, quickId: quick });
+      await deleteCmd(quick);
       expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), quick);
       expect(deleteDocSpy).toHaveBeenCalledWith(
         expect.objectContaining({ id: quick + "_to_delete" }),
@@ -91,7 +90,7 @@ describe("deleteCmd", () => {
       data: {},
       meta: { humanId: "somethingElse" },
     });
-    await deleteCmd({ db: dbName, quickId: "show_me", show: Show.Standard });
+    await deleteCmd("show_me --show standard");
 
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("DELETE"));
 
@@ -103,10 +102,7 @@ describe("deleteCmd", () => {
     await db.put({ _id: "id2", data: {}, meta: { humanId: "def" } });
     await db.put({ _id: "id3", data: {}, meta: { humanId: "ghi" } });
 
-    const returned = await deleteCmd({
-      db: dbName,
-      quickId: "abc,def,ghi,",
-    });
+    const returned = await deleteCmd("abc,def,ghi,");
 
     expect(returned).toHaveLength(3);
     expect(returned).toEqual(
