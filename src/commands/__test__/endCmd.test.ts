@@ -63,7 +63,7 @@ describe("endCmd", () => {
     expect(intermediateState).toBe(false);
   });
 
-  it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
+  it("when --moment/-m is specified, dur is null and there is no duration postional argument", async () => {
     const doc = await endCmd("dance -m -k skillPoints 3");
     expect(doc.data).toMatchObject({
       field: "dance",
@@ -86,7 +86,6 @@ describe("endCmd", () => {
   });
 
   it("can skip the duration if the duration is given as . or ''", async () => {
-    // TODO: rewrite this test as a string based call;
     restoreNow();
     const doc = await endCmd("field -k optional . 50");
     const doc2 = await endCmd("field -k optional '' 50");

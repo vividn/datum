@@ -201,11 +201,8 @@ describe("headCmd", () => {
     // use New Zealand so that early events in the sample morning are previous day in UTC
     Settings.defaultZone = "Pacific/Auckland";
     setNow(`${today} 20:00`);
-    const now1 = DateTime.local().toISO();
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
-    const now2 = DateTime.local().toISO();
-    console.debug({ now1, now2, today, tomorrow });
     const docs = await headCmd(`-d today`);
     expect(docs.length).toBeGreaterThan(10);
 
@@ -218,7 +215,6 @@ describe("headCmd", () => {
     const localDates = docs.map(
       (doc) => datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
     );
-    console.debug({ localDates, today });
     expect(localDates.every((date) => date === today)).toBe(true);
 
     Settings.defaultZone = "system";
@@ -226,13 +222,17 @@ describe("headCmd", () => {
 
   it("when requesting the entire date, have full day occurrences be at the top", async () => {
     Settings.defaultZone = "Pacific/Auckland";
+    setNow(`${today} 20:00`);
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
     const lengthWithoutFullDayDocs = (await headCmd("-d +1")).length;
 
-    const fullDayDoc1 = await occurCmd("field -d tomorrow");
+    const fullDayDoc1 = await occurCmd("field -d +1");
     const fullDayDoc2 = await occurCmd(`otherField -d ${tomorrow}`);
-    console.debug({ fullDayDoc1, fullDayDoc2 })
+    console.debug({
+      one: fullDayDoc1.data.occurTime,
+      two: fullDayDoc2.data.occurTime,
+    });
     const docs = await headCmd("-d +1");
     expect(docs.length).toEqual(lengthWithoutFullDayDocs + 2);
 
@@ -242,6 +242,7 @@ describe("headCmd", () => {
 
   it("displays only first n occurrences on a day if date and -n is given", async () => {
     Settings.defaultZone = "Pacific/Auckland";
+    setNow(`${today} 20:00`);
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
 

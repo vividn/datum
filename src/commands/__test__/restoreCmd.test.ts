@@ -30,7 +30,7 @@ describe("restoreCmd", () => {
     expect((await db1.info()).doc_count).toBeGreaterThan(5);
     expect((await db2.info()).doc_count).toBe(0);
 
-    await backupCmd({ filename: backupFilePath });
+    await backupCmd(`${backupFilePath}`);
   });
   afterEach(() => {
     if (fs.existsSync(backupFilePath)) {
@@ -42,9 +42,7 @@ describe("restoreCmd", () => {
     expect((await db2.info()).doc_count).toBe(0);
 
     jest.spyOn(connectDbModule, "connectDb").mockReturnValueOnce(db2);
-    await restoreCmd({
-      filename: backupFilePath,
-    });
+    await restoreCmd(`${backupFilePath}`);
     expect((await db2.info()).doc_count).not.toBe(0);
 
     const restoredDocs = (await db2.allDocs({ include_docs: true })).rows.map(
@@ -62,10 +60,7 @@ describe("restoreCmd", () => {
     const spy = jest.spyOn(connectDbModule, "connectDb");
     spy.mockRestore();
     const unmadeDb = connectDb({ db: unmadeDbName, createDb: false });
-    await restoreCmd({
-      db: unmadeDbName,
-      filename: backupFilePath,
-    });
+    await restoreCmd(`--db ${unmadeDbName} ${backupFilePath}`);
     expect((await unmadeDb.info()).doc_count).not.toBe(0);
     await unmadeDb.destroy();
   });
@@ -76,21 +71,16 @@ describe("restoreCmd", () => {
 
     jest.spyOn(connectDbModule, "connectDb").mockReturnValueOnce(db2);
     await expect(
-      restoreCmd({
-        filename: backupFilePath,
-      }),
+      restoreCmd(`${backupFilePath}`),
     ).rejects.toThrowErrorMatchingSnapshot();
   });
 
   it("can restore over a nonempty db with the appropriate option", async () => {
     expect((await db2.info()).doc_count).toBe(0);
     jest.spyOn(connectDbModule, "connectDb").mockReturnValue(db2);
-    const extraDoc = await addCmd({ field: "extra_doc" });
+    const extraDoc = await addCmd("extra_doc");
 
-    await restoreCmd({
-      filename: backupFilePath,
-      allowNonempty: true,
-    });
+    await restoreCmd(`${backupFilePath} --allow-nonempty`);
 
     const restoredDocs = (await db2.allDocs({ include_docs: true })).rows.map(
       ({ doc }) => doc,

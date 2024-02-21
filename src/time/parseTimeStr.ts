@@ -76,7 +76,9 @@ export function parseTimeStr({
     timezone: referenceTime.zone.offset(referenceTime.toMillis()),
   });
   if (chronoParsed) {
-    return DateTime.fromISO(chronoParsed.toISOString());
+    return DateTime.fromISO(chronoParsed.toISOString(), {
+      zone: referenceTime.zone,
+    });
   }
 
   throw new BadTimeError(timeStr);
