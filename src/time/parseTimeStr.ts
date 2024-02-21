@@ -71,7 +71,10 @@ export function parseTimeStr({
   }
 
   // As a last resort, use chrono to parse the time
-  const chronoParsed = chrono.parseDate(timeStr, referenceTime.toJSDate());
+  const chronoParsed = chrono.parseDate(timeStr, {
+    instant: referenceTime.toJSDate(),
+    timezone: referenceTime.zone.offset(referenceTime.toMillis()),
+  });
   if (chronoParsed) {
     return DateTime.fromISO(chronoParsed.toISOString());
   }
