@@ -28,7 +28,7 @@ describe("headCmd", () => {
   testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
     setNow(`20:00 ${today}`);
   });
 

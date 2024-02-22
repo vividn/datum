@@ -25,7 +25,7 @@ describe("restoreCmd", () => {
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
     }
-    await setupCmd({});
+    await setupCmd("");
     await generateSampleMorning("2023-11-17");
     expect((await db1.info()).doc_count).toBeGreaterThan(5);
     expect((await db2.info()).doc_count).toBe(0);

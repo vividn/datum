@@ -8,7 +8,7 @@ describe("getCmd", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
   });
 
   it("gets a document based on the first few letters of humanId", async () => {

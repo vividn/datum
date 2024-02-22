@@ -18,7 +18,7 @@ describe("endCmd", () => {
   const dbName = "end_cmd_test";
   const db = testDbLifecycle(dbName);
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
     setNow("2023-09-02,11:45");
   });
 

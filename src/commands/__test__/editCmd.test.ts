@@ -11,7 +11,7 @@ describe("editCmd", () => {
 
   beforeEach(async () => {
     editJSONInTerminalSpy = jest.spyOn(editInTerminal, "editJSONInTerminal");
-    await setupCmd({});
+    await setupCmd("");
   });
 
   it("calls editJSONInTerminal with the oldDocument and returns the new document", async () => {

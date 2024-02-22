@@ -3,8 +3,6 @@ import { startArgs, StartCmdArgs } from "./startCmd";
 import { switchCmd } from "./switchCmd";
 import set from "lodash.set";
 import { ArgumentParser } from "argparse";
-import { durationArgs } from "../input/durationArgs";
-import { occurArgs } from "./occurCmd";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const endArgs = new ArgumentParser({

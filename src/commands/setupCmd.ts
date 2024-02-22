@@ -11,7 +11,7 @@ export const setupArgs = new ArgumentParser({
 });
 setupArgs.add_argument("--project-dir", {
   help: "where to look for additional DatumViews to setup in the database",
-  type: "string",
+  type: "str",
   dest: "projectDir",
 });
 

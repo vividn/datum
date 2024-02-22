@@ -51,6 +51,7 @@ newDocArgs.add_argument("--undo", "-u", {
 newDocArgs.add_argument("--force-undo", "-U", {
   help: "forces an undo, even if the datapoint was entered more than 15 minutes ago",
   action: "store_true",
+  dest: "forceUndo",
 });
 newDocArgs.add_argument("--merge", "-x", {
   help: "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",

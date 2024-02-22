@@ -22,8 +22,8 @@ describe("addCmd undo", () => {
   });
 
   it("can undo adding documents with a known id", async () => {
-    await addCmd({ idPart: "this_one_should_be_deleted" });
-    await addCmd({ idPart: "kept" });
+    await addCmd("--id this_one_should_be_deleted");
+    await addCmd("--id kept");
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(2);
@@ -32,9 +32,7 @@ describe("addCmd undo", () => {
     await db.get("kept");
 
     mockedLog.mockReset();
-    await addCmd({
-      idPart: "this_one_should_be_deleted",
-      undo: true,
+    await addCmd("--id this_one_should_be_deleted --undo", {
       show: Show.Standard,
     });
 
@@ -50,14 +48,14 @@ describe("addCmd undo", () => {
   });
 
   it("undoes a document with a time in the past if it contains occurTime", async () => {
-    await setupCmd({});
+    await setupCmd("");
     const now = "2021-06-28T06:30:00.000Z";
     const inAMinute = "2021-06-28T06:31:00.000Z";
-    const insertedDoc = await occurCmd({ field: "event", time: now });
+    const insertedDoc = await occurCmd(`event -t ${now}`);
     const expectedId = `event:${now}`;
     expect(insertedDoc._id).toEqual(expectedId);
 
-    await occurCmd({ field: "event", time: inAMinute, undo: true });
+    await occurCmd(`event -t ${inAMinute} --undo`);
     await expect(db.get(expectedId)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
@@ -75,7 +73,7 @@ describe("addCmd undo", () => {
       meta: { createTime: oldTime.toString() },
     });
 
-    await expect(addCmd({ idPart: "oldDoc", undo: true })).rejects.toThrowError(
+    await expect(addCmd("--id oldDoc -u")).rejects.toThrowError(
       "Doc created more than fifteen minutes ago",
     );
 
@@ -93,7 +91,7 @@ describe("addCmd undo", () => {
       data: {},
       meta: { createTime: oldTime.toString() },
     });
-    await addCmd({ idPart: docName, forceUndo: true });
+    await addCmd(` --id ${docName} -U`);
     await expect(db.get(docName)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
@@ -113,7 +111,7 @@ describe("addCmd undo", () => {
       data: {},
       meta: { createTime: oldTime.toString() },
     });
-    await addCmd({ idPart: docName, forceUndo: true, undo: true });
+    await addCmd(` --id ${docName} -U`);
     await expect(db.get(docName)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",

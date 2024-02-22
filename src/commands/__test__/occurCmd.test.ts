@@ -14,7 +14,7 @@ describe("occurCmd", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
   });
   afterEach(() => {
     restoreNow();

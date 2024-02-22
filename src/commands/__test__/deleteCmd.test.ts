@@ -11,7 +11,7 @@ describe("deleteCmd", () => {
   let deleteDocSpy: any;
   beforeEach(async () => {
     deleteDocSpy = jest.spyOn(deleteDoc, "deleteDoc");
-    await setupCmd({});
+    await setupCmd("");
   });
 
   it("deletes a document based on first few letters of humanId", async () => {

@@ -243,7 +243,7 @@ describe("addCmd", () => {
   describe("change command", () => {
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      await setupCmd({});
+      await setupCmd("");
     });
     afterAll(() => {
       restoreNow();

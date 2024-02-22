@@ -52,6 +52,7 @@ export async function updateCmd(
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
   // for easier aliasing
   flexiblePositional(args, "quickId", "required", "__quickId");
+  console.debug({args})
   const {
     __quickId,
     ...payload
