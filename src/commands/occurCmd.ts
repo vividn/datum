@@ -11,7 +11,7 @@ import { durationArgs } from "../input/durationArgs";
 
 export const occurArgs = new ArgumentParser({
   add_help: false,
-  parents: [fieldArgs, durationArgs, newDocArgs, timeArgs, dataArgs],
+  parents: [fieldArgs, newDocArgs, timeArgs, dataArgs],
 });
 export const occurCmdArgs = new ArgumentParser({
   description: "record the occurence of something at a single time point",
