@@ -3,12 +3,12 @@ import { testDbLifecycle } from "../../__test__/test-utils";
 import path from "path";
 import * as os from "os";
 import * as fs from "fs";
-import { generateSampleMorning } from "./tailCmd.test";
 import { setupCmd } from "../setupCmd";
 import { backupCmd } from "../backupCmd";
 import * as connectDbModule from "../../auth/connectDb";
 import { connectDb } from "../../auth/connectDb";
 import { addCmd } from "../addCmd";
+import { generateSampleMorning } from "../../__test__/generateSampleMorning";
 
 describe("restoreCmd", () => {
   const dbName1 = "restore_cmd_test_1";

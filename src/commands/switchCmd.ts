@@ -21,7 +21,7 @@ stateArgs.add_argument("state", {
   nargs: "?",
   default: "true",
 });
-stateArgs.add_argument("--last-state", {
+stateArgs.add_argument("--last-state", "-L", {
   help: "manually specify the last state being transitioned out of",
   dest: "lastState",
 });
@@ -53,7 +53,7 @@ export async function switchCmd(
   flexiblePositional(
     args,
     "duration",
-    !args.moment && !args.noTimestamp && "optional",
+    !args.moment && !args.omitTimestamp && "optional",
     "dur",
   );
   flexiblePositional(args, "state", "optional");

@@ -15,7 +15,7 @@ export type TimeArgs = {
   quick?: number;
   timezone?: string;
   fullDay?: boolean;
-  noTimestamp?: boolean;
+  omitTimestamp?: boolean;
 };
 
 export const timeArgs = new ArgumentParser({
@@ -49,10 +49,10 @@ timeGroup.add_argument("-D", "--full-day", {
   help: "make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t",
   action: BooleanOptionalAction,
 });
-timeGroup.add_argument("-T", "--no-timestamp", {
+timeGroup.add_argument("-T", "--omit-timestamp", {
   help: "omit the occurTime from the data",
   action: BooleanOptionalAction,
-  dest: "noTimestamp",
+  dest: "omitTimestamp",
 });
 
 export type ReferencedTimeArgs = TimeArgs & {
@@ -71,13 +71,13 @@ export function handleTimeArgs({
   quick,
   fullDay,
   timezone,
-  noTimestamp,
+  omitTimestamp,
   referenceTime,
 }: ReferencedTimeArgs): TimeFromArgs {
   const tz = getTimezone(timezone);
   referenceTime = referenceTime ?? now(tz);
   let unmodified = true;
-  if (noTimestamp) {
+  if (omitTimestamp) {
     return {
       unmodified: false,
       onlyDate: false,

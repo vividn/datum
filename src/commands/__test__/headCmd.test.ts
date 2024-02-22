@@ -13,9 +13,9 @@ import { setupCmd } from "../setupCmd";
 import { addCmd } from "../addCmd";
 import { updateCmd } from "../updateCmd";
 import { DateTime, Settings } from "luxon";
-import { generateSampleMorning } from "./tailCmd.test";
 import { headCmd } from "../headCmd";
 import { datumTimeToLuxon } from "../../time/timeUtils";
+import { generateSampleMorning } from "../../__test__/generateSampleMorning";
 
 const yesterday = "2023-10-31";
 const today = "2023-11-01";
