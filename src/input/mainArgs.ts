@@ -1,5 +1,5 @@
 import { parse as shellParse } from "shell-quote";
-import { ArgumentParser } from "argparse";
+import { ArgumentParser, BooleanOptionalAction } from "argparse";
 import { dbArgs, DbArgs } from "./dbArgs";
 import { OutputArgs, Show } from "./outputArgs";
 import { addCmd } from "../commands/addCmd";
@@ -137,6 +137,17 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     case "mig":
       await migrateCmd(args, namespace);
       break;
+
+    // case "test": {
+    //   const parser = new ArgumentParser({});
+    //   parser.add_argument("--test", {
+    //     help: "test",
+    //     action: BooleanOptionalAction,
+    //   });
+    //   const ns = parser.parse_intermixed_args(args, namespace);
+    //   console.debug({ ns });
+    //   break;
+    // }
 
     default:
       throw Error(`command "${command}" not recognized`);

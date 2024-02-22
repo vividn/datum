@@ -9,9 +9,10 @@ import { dbArgs } from "../input/dbArgs";
 export const setupArgs = new ArgumentParser({
   add_help: false,
 });
-setupArgs.add_argument("projectDir", {
+setupArgs.add_argument("--project-dir", {
   help: "where to look for additional DatumViews to setup in the database",
   type: "string",
+  dest: "projectDir",
 });
 
 export const setupCmdArgs = new ArgumentParser({

@@ -38,7 +38,7 @@ dbGroup.add_argument("--env", {
 });
 dbGroup.add_argument("--create-db", {
   help: "Create the db if it does not exist. Note: this only has an effect on couchdb instances, not local pouchdb",
-  type: BooleanOptionalAction,
+  action: BooleanOptionalAction,
   dest: "createDb",
 });
 
