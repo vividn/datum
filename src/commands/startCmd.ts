@@ -10,10 +10,11 @@ import { timeArgs } from "../input/timeArgs";
 import { dataArgs } from "../input/dataArgs";
 import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
+import { newDocArgs } from "./addCmd";
 
 export const startArgs = new ArgumentParser({
   add_help: false,
-  parents: [fieldArgs, durationArgs, timeArgs, dataArgs],
+  parents: [fieldArgs, durationArgs, newDocArgs, timeArgs, dataArgs],
 });
 
 export const startCmdArgs = new ArgumentParser({

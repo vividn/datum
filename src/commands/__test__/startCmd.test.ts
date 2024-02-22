@@ -17,12 +17,12 @@ describe("startCmd", () => {
   const dbName = "start_cmd_test";
   const db = testDbLifecycle(dbName);
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
     setNow("2023-09-02,12:30");
   });
 
   it("creates an occur document with state: true", async () => {
-    const doc = await startCmd({ field: "dance" });
+    const doc = await startCmd("dance");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -31,9 +31,9 @@ describe("startCmd", () => {
   });
 
   it("can start from a different state", async () => {
-    await switchCmd({ field: "machine", state: "preparing" });
+    await switchCmd("machine preparing");
     setNow("+1");
-    const doc = await startCmd({ field: "machine" });
+    const doc = await startCmd("machine");
     expect(doc.data).toMatchObject({
       field: "machine",
       state: true,
@@ -43,7 +43,7 @@ describe("startCmd", () => {
   });
 
   it("has an optional duration arg that creates a block of time where state was true", async () => {
-    const doc = await startCmd({ field: "dance", duration: "5" });
+    const doc = await startCmd("dance 5");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -54,8 +54,8 @@ describe("startCmd", () => {
 
   it("creates a hole of time where state was false when duration is negative", async () => {
     // Create an initial start of dancing in which to put a hole afterward
-    await startCmd({ field: "dance", time: "-20" });
-    const doc = await startCmd({ field: "dance", duration: "-5" });
+    await startCmd("dance -t -20");
+    const doc = await startCmd("dance -5");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -73,12 +73,7 @@ describe("startCmd", () => {
   });
 
   it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
-    const doc = await startCmd({
-      field: "dance",
-      moment: true,
-      optional: ["skillPoints"],
-      duration: "3",
-    });
+    const doc = await startCmd("dance -m -k skillPoints 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -88,13 +83,8 @@ describe("startCmd", () => {
     });
   });
 
-  it("when --no-timestamp is specified, there is no positional duration argument", async () => {
-    const doc = await startCmd({
-      field: "dance",
-      optional: ["skillPoints"],
-      noTimestamp: true,
-      duration: "3",
-    });
+  it("when --no-timestamp/-T is specified, there is no positional duration argument", async () => {
+    const doc = await startCmd("dance -k skillPoints -T 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -107,20 +97,8 @@ describe("startCmd", () => {
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
     restoreNow();
-    const doc = await startCmd({
-      field: "field",
-      moment: false,
-      optional: ["optional"],
-      duration: ".",
-      data: [50],
-    });
-    const doc2 = await startCmd({
-      field: "field",
-      moment: false,
-      optional: ["optional"],
-      duration: "",
-      data: [50],
-    });
+    const doc = await startCmd("field -k optional . 50");
+    const doc2 = await startCmd("field -k optional '' 50");
     expect(doc.data).toMatchObject({ field: "field", optional: 50 });
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
@@ -128,22 +106,13 @@ describe("startCmd", () => {
   });
 
   it("throws an error if the duration supplied is invalid", async () => {
-    await expect(
-      startCmd({
-        field: "field",
-        optional: ["optional"],
-        duration: "30asd",
-      }),
-    ).rejects.toThrow(BadDurationError);
+    await expect(startCmd("field -k optional 30asd")).rejects.toThrow(
+      BadDurationError,
+    );
   });
 
-  it("still assigns a state of true even with required keys", async () => {
-    const doc = await startCmd({
-      field: "field",
-      duration: "reqVal1", //should get assigned to first required key because of flexiblePositional
-      required: ["req1"],
-      data: [30],
-    });
+  it("still assigns a state of true even with required keys, and duration comes after required keys", async () => {
+    const doc = await startCmd("field reqVal1 -K req1 30");
     expect(doc.data).toMatchObject({
       field: "field",
       dur: "PT30M",
@@ -164,12 +133,7 @@ describe("startCmd", () => {
 
     it("can become an occur command by having occur as a trailing word", async () => {
       expect(
-        await startCmd({
-          field: "field",
-          optional: ["opt1"],
-          duration: "30",
-          data: ["key=val", "optVal", "occur"],
-        }),
+        await startCmd("field 30 -k opt1 key=val optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -177,12 +141,7 @@ describe("startCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await startCmd({
-          field: "field",
-          optional: ["opt1"],
-          duration: "30",
-          data: ["key=val", "optVal", "end"],
-        }),
+        await startCmd("field -k opt1 30 key=val optVal end"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -190,12 +149,7 @@ describe("startCmd", () => {
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await startCmd({
-          field: "field",
-          optional: ["opt1"],
-          duration: "5m30s",
-          data: ["key=val", "optVal", "switch", "stateName"],
-        }),
+        await startCmd("field -k opt1 5m30s key=val optVal switch stateName"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

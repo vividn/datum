@@ -18,16 +18,15 @@ import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 
-export const addArgs = new ArgumentParser({
+export const newDocArgs = new ArgumentParser({
   add_help: false,
-  parents: [fieldArgs, dataArgs],
 });
-addArgs.add_argument("--no-metadata", "-M", {
+newDocArgs.add_argument("--no-metadata", "-M", {
   help: "do not include meta data in document",
   action: "store_true",
   dest: "noMetadata",
 });
-addArgs.add_argument("--id-part", "--id", {
+newDocArgs.add_argument("--id-part", "--id", {
   help:
     "Which field(s) to use for the _id field in the document." +
     " Can either be a single string with fields delimited by --id-delimiter" +
@@ -35,35 +34,39 @@ addArgs.add_argument("--id-part", "--id", {
   action: "append",
   dest: "idPart",
 });
-addArgs.add_argument("--id-delimiter", {
+newDocArgs.add_argument("--id-delimiter", {
   help: "spacer between fields in the id",
 });
-addArgs.add_argument("--partition", "-P", {
+newDocArgs.add_argument("--partition", "-P", {
   help:
     "field to use for the partition (default: field, specified with -f)." +
     " Can be fields of data or raw strings surrounded by single quotes." +
     " Like --id-part, can be used  multiple times to assemble a partition separated by --id-delimiter",
   action: "append",
 });
-addArgs.add_argument("--undo", "-u", {
+newDocArgs.add_argument("--undo", "-u", {
   help: "undoes the last datum entry",
   action: "store_true",
 });
-addArgs.add_argument("--force-undo", "-U", {
+newDocArgs.add_argument("--force-undo", "-U", {
   help: "forces an undo, even if the datapoint was entered more than 15 minutes ago",
   action: "store_true",
 });
-addArgs.add_argument("--merge", "-x", {
+newDocArgs.add_argument("--merge", "-x", {
   help: "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
   action: "store_const",
   const: "merge",
   dest: "conflict",
 });
-addArgs.add_argument("--conflict", "-X", {
+newDocArgs.add_argument("--conflict", "-X", {
   help: `on conflict, update with given strategy.`,
   choices: conflictChoices,
 });
 
+export const addArgs = new ArgumentParser({
+  add_help: false,
+  parents: [fieldArgs, newDocArgs, dataArgs],
+});
 export const addCmdArgs = new ArgumentParser({
   description: "add a document",
   prog: "dtm add",

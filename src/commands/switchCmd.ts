@@ -11,6 +11,7 @@ import { timeArgs } from "../input/timeArgs";
 import { fieldArgs } from "../input/fieldArgs";
 import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
+import { newDocArgs } from "./addCmd";
 
 export const stateArgs = new ArgumentParser({
   add_help: false,
@@ -27,7 +28,7 @@ stateArgs.add_argument("--last-state", {
 
 export const switchArgs = new ArgumentParser({
   add_help: false,
-  parents: [fieldArgs, stateArgs, durationArgs, timeArgs, dataArgs],
+  parents: [fieldArgs, stateArgs, durationArgs, newDocArgs, timeArgs, dataArgs],
 });
 
 export const switchCmdArgs = new ArgumentParser({

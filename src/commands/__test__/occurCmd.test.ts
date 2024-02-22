@@ -51,7 +51,7 @@ describe("occurCmd", () => {
 
   it("stores the occurTime in DataOnly docs", async () => {
     const newDoc = (await occurCmd(
-      "event -m -d 2021-08-23 -t 12 -z 0",
+      "event -M -d 2021-08-23 -t 12 -z 0",
     )) as DatumDocument;
     expect(newDoc).toHaveProperty("occurTime.utc", "2021-08-23T12:00:00.000Z");
     expect(newDoc).toHaveProperty("occurTime.o", 0);
@@ -106,23 +106,25 @@ describe("occurCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await occurCmd("field -K req1 -k opt1 start 30min"),
+        await occurCmd("field -K req1 -k opt1 reqVal optVal start 30min"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
     });
 
     it("can become an end command by having start as a trailing word", async () => {
-      expect(await occurCmd("field -K req1 -k opt1 end 30min")).toMatchSnapshot(
-        {
-          _rev: expect.any(String),
-        },
-      );
+      expect(
+        await occurCmd("field -K req1 -k opt1 reqVal optVal end 30min"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
     });
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await occurCmd("field -K req1 -k opt1 switch stateName 5m30s"),
+        await occurCmd(
+          "field -K req1 -k opt1 reqVal optVal switch stateName 5m30s",
+        ),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

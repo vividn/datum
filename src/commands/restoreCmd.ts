@@ -16,6 +16,7 @@ restoreArgs.add_argument("filename", {
 restoreArgs.add_argument("--allow-nonempty", {
   help: "Allow restore even if the db is not empty",
   action: "store_true",
+  dest: "allowNonempty",
 });
 
 export const restoreCmdArgs = new ArgumentParser({

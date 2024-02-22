@@ -14,13 +14,13 @@ describe("setupCmd", () => {
         return;
       });
     const connectDbSpy = jest.spyOn(connectDb, "connectDb");
-    await setupCmd({ db: dbName });
+    await setupCmd("");
     expect(connectDbSpy).toHaveBeenCalledWith(
       expect.objectContaining({ createDb: true }),
     );
     connectDbSpy.mockReset();
 
-    await setupCmd({ db: dbName, createDb: false });
+    await setupCmd("--no-create-db");
     expect(connectDbSpy).toHaveBeenCalledWith(
       expect.objectContaining({ createDb: false }),
     );
@@ -32,17 +32,17 @@ describe("setupCmd", () => {
       .mockImplementation(async () => {
         return;
       });
-    await setupCmd({ db: dbName });
+    await setupCmd("");
     expect(setupDatumViewsSpy).toHaveBeenCalledTimes(1);
   });
 
   it("adds datum views into the db", async () => {
-    await setupCmd({ db: dbName });
+    await setupCmd("");
     await db.get("_design/datum_sub_human_id");
   });
 
   it("adds project views into the db", async () => {
-    await setupCmd({ db: dbName, projectDir: __dirname });
+    await setupCmd(`--project-dir ${__dirname}`);
     await db.get("_design/key_value_view");
   });
 });

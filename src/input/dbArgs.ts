@@ -37,8 +37,9 @@ dbGroup.add_argument("--env", {
   help: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
 });
 dbGroup.add_argument("--create-db", {
-  help: "Create the db if it does not exist",
+  help: "Create the db if it does not exist. Note: this only has an effect on couchdb instances, not local pouchdb",
   type: BooleanOptionalAction,
+  dest: "createDb",
 });
 
 export const dbArgs = parser;

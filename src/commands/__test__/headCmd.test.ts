@@ -229,10 +229,6 @@ describe("headCmd", () => {
 
     const fullDayDoc1 = await occurCmd("field -d +1");
     const fullDayDoc2 = await occurCmd(`otherField -d ${tomorrow}`);
-    console.debug({
-      one: fullDayDoc1.data.occurTime,
-      two: fullDayDoc2.data.occurTime,
-    });
     const docs = await headCmd("-d +1");
     expect(docs.length).toEqual(lengthWithoutFullDayDocs + 2);
 
