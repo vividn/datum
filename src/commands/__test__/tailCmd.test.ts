@@ -49,7 +49,7 @@ describe("tailCmd", () => {
     setNow(`8am ${today}`);
     await occurCmd("caffeine amount=100");
     setNow(`10am`);
-    await switchCmd("project househould");
+    await switchCmd("project household");
     setNow(`10:30`);
     await endCmd("project");
 
