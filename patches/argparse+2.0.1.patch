@@ -1,0 +1,14 @@
+diff --git a/node_modules/argparse/argparse.js b/node_modules/argparse/argparse.js
+index 2b8c8c6..6624e37 100644
+--- a/node_modules/argparse/argparse.js
++++ b/node_modules/argparse/argparse.js
+@@ -2051,7 +2051,8 @@ const _ActionsContainer = _camelcase_alias(_callable(class _ActionsContainer {
+         this._defaults = {}
+ 
+         // determines whether an "option" looks like a negative number
+-        this._negative_number_matcher = /^-\d+$|^-\d*\.\d+$/
++        // patched to match anything that starts with a minus sign and a number
++        this._negative_number_matcher = /^-\d/
+ 
+         // whether or not there are any optionals that look like negative
+         // numbers -- uses a list so it can be shared and edited

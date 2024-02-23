@@ -4,7 +4,6 @@ import { connectDb } from "../../../src/auth/connectDb";
 import readline from "node:readline";
 import { stdin } from "node:process";
 import { once } from "node:events";
-import { baseArgs, BaseArgs } from "../../../src/input/baseArgs";
 import { isoDate, isoDateOrTime } from "../../../src/time/timeUtils";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { balanceView, equalityView } from "../views";
@@ -15,12 +14,14 @@ import chalk from "chalk";
 import printf from "printf";
 import { zeroDate } from "./eqcheck";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
-import { MainDatumArgs } from "../../../src/input/mainYargs";
 import { DateTime } from "luxon";
 import { parseDateStr } from "../../../src/time/parseDateStr";
+import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
+import { ArgumentParser } from "argparse";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
 
 type TransactionViewInput = {
-  args: BaseArgs;
+  args: DbArgs;
   account: string;
   currency: string;
   endDate: isoDateOrTime;
@@ -292,34 +293,55 @@ export async function transactionView({
   return isAllBalanced;
 }
 
-if (require.main === module) {
-  const args = baseArgs
-    .strict(false)
-    .strictOptions()
-    .parseSync(process.argv.slice(2)) as MainDatumArgs;
-  args.db ??= "finance";
-  const [account, currency, start, end] = args._ ?? [];
-  if (!account || !currency) {
-    console.error(
-      chalk.red(
-        `Account and currency must be specified as the first two arguments.`,
-      ),
-    );
-    process.exit(1);
-  }
+const transactionViewArgs = new ArgumentParser({
+  description: "View transactions for an account",
+  prog: "txview",
+  usage: `%(prog)s <account> <currency> [start] [end]`,
+  parents: [dbArgs],
+});
+transactionViewArgs.add_argument("account", {
+  help: "The account to view",
+});
+transactionViewArgs.add_argument("currency", {
+  help: "The currency to view",
+});
+transactionViewArgs.add_argument("start", {
+  help: "The start date to view",
+  nargs: "?",
+});
+transactionViewArgs.add_argument("end", {
+  help: "The end date to view",
+  nargs: "?",
+});
+transactionViewArgs.set_defaults({ db: "finance" });
+
+type TxViewArgs = DbArgs & {
+  account: string;
+  currency: string;
+  start?: string;
+  end?: string;
+};
+
+async function transactionViewCmd(argsOrCli: TxViewArgs | string | string[]) {
+  const args = parseIfNeeded(transactionViewArgs, argsOrCli);
+  const { account, currency, start, end } = args;
   const startDate: isoDate = start
-    ? (parseDateStr({ dateStr: start.toString() }).toISODate() as string)
+    ? (parseDateStr({ dateStr: start }).toISODate() as string)
     : zeroDate;
   const endDate: isoDate = end
-    ? (parseDateStr({ dateStr: end.toString() }).toISODate() as string)
+    ? (parseDateStr({ dateStr: end }).toISODate() as string)
     : (DateTime.now().toISODate() as string);
-  transactionView({
+  await transactionView({
     args,
-    account: account.toString(),
-    currency: currency.toString(),
+    account,
+    currency,
     startDate,
     endDate,
-  }).catch((err) => {
+  });
+}
+
+if (require.main === module) {
+  transactionViewCmd(process.argv.slice(2)).catch((err) => {
     throw err;
   });
 }

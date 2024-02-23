@@ -1,9 +1,7 @@
-import { Argv } from "yargs";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
 import { interpolateFields } from "../utils/interpolateFields";
-import { MainDatumArgs } from "../input/mainYargs";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
 import { pullOutData } from "../utils/pullOutData";
 import { extractFormatted } from "../output/output";
@@ -14,14 +12,39 @@ import {
   TimingViewType,
 } from "../views/datumViews/timingView";
 import { HIGH_STRING } from "../utils/startsWith";
-import { handleTimeArgs, TimeArgs, timeYargs } from "../input/timeArgs";
+import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
-import { Show } from "../input/outputArgs";
+import { outputArgs, Show } from "../input/outputArgs";
 import { DateTime } from "luxon";
+import { ArgumentParser, SUPPRESS } from "argparse";
+import { dbArgs } from "../input/dbArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { MainDatumArgs } from "../input/mainArgs";
 
-export const command = ["tail [field]"];
-export const desc =
-  "show the most recently occurred/modified/created entries in the db";
+export const tailArgs = new ArgumentParser({
+  add_help: false,
+  parents: [fieldArgs, timeArgs],
+});
+tailArgs.add_argument("-n", {
+  help: "number of entries to show, defaults to 10",
+  type: "int",
+});
+tailArgs.add_argument("--metric", "-m", {
+  help: "which time to use for the sorting, default is hybrid: occur or modify",
+  choices: [...TIME_METRICS],
+});
+tailArgs.add_argument("--head", {
+  help: "show first rows instead of last rows" || SUPPRESS,
+  action: "store_true",
+});
+
+export const tailCmdArgs = new ArgumentParser({
+  description:
+    "show the most recently occurred/modified/created entries in the db",
+  prog: "datum tail",
+  usage: "%(prog)s [field]",
+  parents: [tailArgs, dbArgs, outputArgs],
+});
 
 export type TailCmdArgs = MainDatumArgs &
   TimeArgs &
@@ -31,31 +54,11 @@ export type TailCmdArgs = MainDatumArgs &
     head?: boolean;
   };
 
-export function tailCmdYargs(yargs: Argv): Argv {
-  return timeYargs(fieldArgs(yargs)).options({
-    n: {
-      alias: ["number"],
-      describe: "number of entries to show, defaults to 10",
-      type: "number",
-    },
-    metric: {
-      describe:
-        "which time to use for the sorting, default is hybrid: occur or modify",
-      choices: TIME_METRICS,
-      alias: "m",
-      type: "string",
-    },
-    head: {
-      describe: "show first rows instead of last rows",
-      type: "boolean",
-      hidden: true,
-    },
-  });
-}
-
-export const builder = tailCmdYargs;
-
-export async function tailCmd(args: TailCmdArgs): Promise<EitherDocument[]> {
+export async function tailCmd(
+  argsOrCli: TailCmdArgs | string | string[],
+  preparsed?: Partial<TailCmdArgs>,
+): Promise<EitherDocument[]> {
+  const args = parseIfNeeded(tailCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
 
   const limit = args.n ?? 10;

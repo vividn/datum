@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 
-import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
 import { balanceView, equalityView } from "../views";
 import { mapCmd } from "../../../src/commands/mapCmd";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
@@ -8,42 +7,49 @@ import { Show } from "../../../src/input/outputArgs";
 import { transactionWatcher, transactionView } from "./transactionView";
 import { DateTime } from "luxon";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
+import { ArgumentParser } from "argparse";
+import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
 
 export const zeroDate = "0000-00-00";
 
-type EqCheckArgs = BaseArgs & {
+type EqCheckArgs = DbArgs & {
   account?: string;
   watch?: boolean;
   context?: number;
   decimals?: number;
 };
 
-const eqCheckYargs = baseArgs
-  .option("account", {
-    alias: "a",
-    type: "string",
-    description: "Account to check",
-  })
-  .option("context", {
-    alias: "C",
-    type: "number",
-    description: "days of context around the equality checks. default: 3",
-  })
-  .option("watch", {
-    alias: "w",
-    type: "boolean",
-    description: "Watch for changes",
-  })
-  .option("decimals", {
-    type: "number",
-    description: "Number of decimals to show",
-  });
+const eqCheckArgs = new ArgumentParser({
+  description: "Check that the balances of accounts matches equality checks",
+  add_help: true,
+  prog: "eqcheck",
+  parents: [dbArgs],
+});
+eqCheckArgs.add_argument("--account", "-a", {
+  type: "str",
+  help: "Account to check",
+});
+eqCheckArgs.add_argument("--context", "-C", {
+  type: "int",
+  help: "days of context around the equality checks. default: 3",
+});
+eqCheckArgs.add_argument("--watch", "-w", {
+  action: "store_true",
+  help: "Watch for changes",
+});
+eqCheckArgs.add_argument("--decimals", {
+  type: "int",
+  help: "Number of decimals to show",
+});
+eqCheckArgs.set_defaults({ db: "finance", context: 3, decimals: 2 });
 
-async function eqcheck(args: EqCheckArgs) {
-  args.db ??= "finance";
-  args.context ??= 3;
+async function eqcheck(
+  cliOrArgs: EqCheckArgs | string | string[],
+): Promise<void> {
+  const args = parseIfNeeded(eqCheckArgs, cliOrArgs);
   const start = args.account ? `,${args.account}` : undefined;
-  const decimals = args.decimals ?? 2;
+  const decimals = args.decimals;
   function fix(n: number) {
     const fixed = n.toFixed(decimals);
     // turn -0 into 0
@@ -112,8 +118,7 @@ async function eqcheck(args: EqCheckArgs) {
 }
 
 if (require.main === module) {
-  const args = eqCheckYargs.parseSync(process.argv.slice(2)) as EqCheckArgs;
-  eqcheck(args).catch((err) => {
+  eqcheck(process.argv.slice(2)).catch((err) => {
     throw err;
   });
 }

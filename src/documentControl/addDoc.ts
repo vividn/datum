@@ -48,6 +48,24 @@ export type ConflictStrategyNames =
   | "overwrite"
   | "delete";
 
+const conflictRecord: Record<ConflictStrategyNames, any> = {
+  merge: "",
+  useOld: "",
+  preferOld: "",
+  preferNew: "",
+  useNew: "",
+  removeConflicting: "",
+  xor: "",
+  intersection: "",
+  append: "",
+  prepend: "",
+  appendSort: "",
+  mergeSort: "",
+  overwrite: "",
+  delete: "",
+};
+export const conflictChoices = Object.keys(conflictRecord);
+
 type addDocType = {
   payload: EitherPayload | ViewPayload;
   conflictStrategy?: ConflictStrategyNames;

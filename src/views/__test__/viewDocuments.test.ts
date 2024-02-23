@@ -19,7 +19,7 @@ const genericMapFunction = (doc: any) => {
   emit(doc._id, null);
 };
 
-const genericMapStr = `doc => {
+const genericMapStr = `(doc) => {
   emit(doc._id, null);
 }`;
 
@@ -30,7 +30,11 @@ const genericReduceFunction = (
 ) => {
   return 0;
 };
-const genericReduceStr = `(_keys, _values, _rereduce) => {
+const genericReduceStr = `(
+_keys,
+_values,
+_rereduce) =>
+{
   return 0;
 }`;
 

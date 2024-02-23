@@ -154,3 +154,33 @@ describe("relative time strings", () => {
     },
   );
 });
+
+describe("timezone shenanigans", () => {
+  // oof chrono-node doesn't do this correctly. TODO: Reenable after it is updated
+  it.skip("parses correctly even when called from a different timezone", () => {
+    const differentReferenceTime = DateTime.fromISO("2024-02-21T10:00:00", {
+      zone: "Pacific/Auckland",
+      setZone: true,
+    });
+    expect(
+      parseTimeStr({
+        timeStr: "yesterday 18:00",
+        referenceTime: differentReferenceTime,
+      }),
+    ).toEqual(
+      DateTime.fromISO("2024-02-20T18:00:00.000", {
+        zone: "Pacific/Auckland",
+      }),
+    );
+    expect(
+      parseTimeStr({
+        timeStr: "tomorrow 10:00",
+        referenceTime: differentReferenceTime,
+      }),
+    ).toEqual(
+      DateTime.fromISO("2024-02-22T10:00:00.000", {
+        zone: "Pacific/Auckland",
+      }),
+    );
+  });
+});

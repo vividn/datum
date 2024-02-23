@@ -16,11 +16,12 @@
     "declarationDir": "build/types",
     "strict": true,
     "types": [
-      "node"
+      "node",
+      "jest"
     ],
     "typeRoots": [
-      "./node_modules/@types",
-      "./typings"
+      "./typings",
+      "./node_modules/@types"
     ],
     "esModuleInterop": true,
     "resolveJsonModule": true,

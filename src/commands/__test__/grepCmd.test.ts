@@ -20,11 +20,7 @@ describe("grepCmd", () => {
     };
     await db.bulkDocs([doc1, doc2, doc3, doc4, doc5, doc6]);
 
-    const retDocs = await grepCmd({
-      db: dbName,
-      patterns: ["bar"],
-      show: Show.Standard,
-    });
+    const retDocs = await grepCmd("bar", { show: Show.Standard });
     expect(retDocs).toHaveLength(4);
     expect(retDocs).toEqual(
       expect.arrayContaining([

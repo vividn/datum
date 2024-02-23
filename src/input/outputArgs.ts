@@ -1,4 +1,4 @@
-import yargs, { Argv } from "yargs";
+import { ArgumentParser } from "argparse";
 
 export type OutputArgs = {
   showAll?: boolean;
@@ -15,26 +15,23 @@ export enum Show {
   All = "all",
 }
 
-export function outputYargs(otherYargs?: Argv): Argv {
-  const yarg = otherYargs ?? yargs;
-  return yarg.group(["show", "showAll", "formatString"], "Output").options({
-    "show-all": {
-      describe: "Show complete document when displaying, not just data",
-      type: "boolean",
-      alias: "A",
-    },
-    show: {
-      describe: "how much of documents to show",
-      type: "string",
-      choices: Object.values(Show),
-      default: "default",
-      conflict: "show-all",
-    },
-    "format-string": {
-      describe:
-        "create a custom output string for visualizing the doc(s). Specify %keys% with percent signs",
-      type: "string",
-      alias: "o",
-    },
-  });
-}
+export const outputArgs = new ArgumentParser({
+  add_help: false,
+});
+const outputGroup = outputArgs.add_argument_group({
+  title: "Output",
+  description: "Options for display on the terminal",
+});
+outputGroup.add_argument("--show-all", "-A", {
+  help: "Show complete document when displaying, not just data",
+  action: "store_true",
+  dest: "showAll",
+});
+outputGroup.add_argument("--show", {
+  help: "how much of documents to show",
+  choices: Object.values(Show),
+});
+outputGroup.add_argument("--format-string", {
+  help: "create a custom output string for visualizing the doc(s). Specify %%keys%% with percent signs",
+  dest: "formatString",
+});
