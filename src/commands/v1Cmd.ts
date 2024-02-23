@@ -1,39 +1,45 @@
-import { Argv } from "yargs";
 import { connectDb } from "../auth/connectDb";
 import { datumV1View } from "../views/datumViews";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import * as fs from "fs";
 import path from "path";
-import { MainDatumArgs } from "../input/mainYargs";
 import { V1MapRow, V1ReduceRowGroup1 } from "../views/datumViews/datumV1";
 import flatten from "lodash.flatten";
+import { ArgumentParser } from "argparse";
+import { dbArgs } from "../input/dbArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { MainDatumArgs } from "../input/mainArgs";
 
-export const command = "v1 [field..]";
-export const description =
-  "export in the style of the old datum format. Outputs to stdout unless --output-file or --output-dir is given";
+export const v1Args = new ArgumentParser({
+  add_help: false,
+});
+v1Args.add_argument("field", {
+  help: "field of the data. Corresponds the to the file in v1. Can list multiple. If none specified, will do all fields",
+  nargs: "*",
+});
+v1Args.add_argument("--output-dir", "-O", {
+  help: "Where to write the output files. data will be written to {{field}}.tsv",
+  type: "str",
+});
+
+export const v1CmdArgs = new ArgumentParser({
+  description:
+    "export in the style of the old datum format. Outputs to stdout unless --output-file or --output-dir is given",
+  prog: "datum v1",
+  usage: "%(prog)s [field..]",
+  parents: [v1Args, dbArgs],
+});
 
 export type V1CmdArgs = MainDatumArgs & {
   field: string[];
   outputDir?: string;
 };
 
-export function builder(yargs: Argv): Argv {
-  return yargs
-    .positional("field", {
-      describe:
-        "field of the data. Corresponds the to the file in v1. Can list multiple. If none specified, will do all fields",
-    })
-    .options({
-      "output-dir": {
-        description:
-          "Where to write the output files. data will be written to {{field}}.tsv",
-        type: "string",
-        alias: ["O"],
-      },
-    });
-}
-
-export async function v1Cmd(args: V1CmdArgs): Promise<void> {
+export async function v1Cmd(
+  argsOrCli: V1CmdArgs | string | string[],
+  preparsed?: Partial<V1CmdArgs>,
+): Promise<void> {
+  const args = parseIfNeeded(v1CmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
 
   function openFd(field: string): number {

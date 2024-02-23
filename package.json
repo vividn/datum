@@ -12,8 +12,7 @@
     "txview": "./build/projects/finance/src/transactionView.js",
     "fbal": "./build/projects/finance/src/fbal.js",
     "wordview": "./build/projects/language/src/word.js",
-    "chorelist": "./build/projects/datum/src/chorelist.js",
-    "nextchores": "./build/projects/datum/src/nextchores.js"
+    "chorelist": "./build/projects/datum/src/chorelist.js"
   },
   "engines": {
     "node": ">18.0.0"
@@ -30,7 +29,7 @@
     "refresh": "rm -rf ./node_modules && yarn install",
     "lint": "eslint src",
     "fmt": "eslint src --fix",
-    "postinstall": "yarn cache clean datum"
+    "postinstall": "patch-package && yarn cache clean datum"
   },
   "devDependencies": {
     "@babel/core": "^7.23.7",
@@ -53,6 +52,7 @@
     "ts-node": "^10.9.2"
   },
   "dependencies": {
+    "@types/argparse": "^2.0.14",
     "@types/lodash.flatten": "^4.4.9",
     "@types/lodash.flattendeep": "^4.4.9",
     "@types/lodash.get": "^4.4.9",
@@ -68,8 +68,9 @@
     "@types/prompt-sync": "^4.2.3",
     "@types/react": "^18.2.55",
     "@types/relaxed-json": "^1.0.4",
+    "@types/shell-quote": "^1.7.5",
     "@types/tmp": "^0.2.6",
-    "@types/yargs": "^17.0.32",
+    "argparse": "^2.0.1",
     "chalk": "^4.1.2",
     "chrono-node": "^2.7.5",
     "dotenv": "^16.4.4",
@@ -86,17 +87,19 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^3.4.4",
     "parse-duration": "^1.1.0",
+    "patch-package": "^8.0.0",
     "picocolors": "^1.0.0",
     "pluralize": "^8.0.0",
+    "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^8.0.1",
     "pouchdb-adapter-memory": "^8.0.1",
     "printf": "^0.6.1",
     "prompt-sync": "^4.2.0",
     "react": "^18.2.0",
     "relaxed-json": "^1.0.3",
+    "shell-quote": "^1.8.1",
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
-    "typescript": "^4.9.5",
-    "yargs": "^17.7.2"
+    "typescript": "^4.9.5"
   }
 }

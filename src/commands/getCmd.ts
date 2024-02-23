@@ -1,27 +1,37 @@
-import { quickIdArg, QuickIdArg } from "../input/quickIdArg";
-import { Argv } from "yargs";
+import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickIds } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { dbArgs } from "../input/dbArgs";
+import { OutputArgs, outputArgs } from "../input/outputArgs";
+import { ArgumentParser } from "argparse";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
 
-export type GetCmdArgs = MainDatumArgs & QuickIdArg;
+export type GetCmdArgs = MainDatumArgs & OutputArgs & QuickIdArg;
 
-export function builder(yargs: Argv): Argv {
-  return quickIdArg(yargs);
-}
+export const getCmdArgs = new ArgumentParser({
+  description: "display a document",
+  prog: "dtm get",
+  usage: `%(prog)s <quickId>`,
+  parents: [quickIdArgs, dbArgs, outputArgs],
+});
 
-export async function getCmd(args: GetCmdArgs): Promise<EitherDocument[]> {
+export async function getCmd(
+  args: GetCmdArgs | string | string[],
+  preparsed?: Partial<GetCmdArgs>,
+): Promise<EitherDocument[]> {
+  args = parseIfNeeded(getCmdArgs, args, preparsed);
   const db = connectDb(args);
   const ids = await quickIds(db, args.quickId);
 
   const docs = await Promise.all(ids.map((id) => db.get(id)));
-  docs.forEach((doc) => showExists(doc, args));
+  docs.forEach((doc) => showExists(doc, args as GetCmdArgs));
   await updateLastDocsRef(db, ids);
   return docs;
 }

@@ -2,22 +2,25 @@
 
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { choreView } from "../views";
-import { Show } from "../../../src/input/outputArgs";
+import { OutputArgs, outputArgs, Show } from "../../../src/input/outputArgs";
 import { DateTime } from "luxon";
 import chalk from "chalk";
 import { ReduceRow } from "../../../src/views/DatumView";
 import Table from "easy-table";
-import { BaseArgs, baseArgs } from "../../../src/input/baseArgs";
 import { connectDb } from "../../../src/auth/connectDb";
 import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import { once } from "node:events";
 import { insertDatumView } from "../../../src/views/insertDatumView";
 import { isoDate, isoDatetime } from "../../../src/time/timeUtils";
+import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
+import { ArgumentParser } from "argparse";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
 
 let oneTimeSetup = false;
-type PossibleSorts = "field" | "iti" | "due" | "last";
-type ChorelistArgs = BaseArgs & { watch?: boolean; sort?: PossibleSorts };
+const possibleSorts = ["field", "iti", "due", "last"] as const;
+type PossibleSorts = (typeof possibleSorts)[number];
+
 const sortFunctions: Record<
   PossibleSorts,
   (a: ReduceRow<typeof choreView>, b: ReduceRow<typeof choreView>) => number
@@ -83,6 +86,9 @@ function isDoneToday(dateOrTime?: isoDate | isoDatetime): boolean {
     DateTime.local().toISODate()
   );
 }
+
+type ChorelistArgs = { watch?: boolean; sort?: PossibleSorts } & DbArgs &
+  OutputArgs;
 
 async function chorelist(args: ChorelistArgs): Promise<string> {
   if (!oneTimeSetup) {
@@ -153,7 +159,7 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
   return choreTable + completionString;
 }
 
-async function chorelistwatch(args: BaseArgs): Promise<void> {
+async function chorelistwatch(args: DbArgs): Promise<void> {
   const db = connectDb(args);
 
   async function output(): Promise<void> {
@@ -203,36 +209,36 @@ async function chorelistwatch(args: BaseArgs): Promise<void> {
   return;
 }
 
-if (require.main === module) {
-  const args = baseArgs
-    .options({
-      watch: {
-        alias: "w",
-        desc: "Watch and update on changes to the database",
-        type: "boolean",
-      },
-      sort: {
-        alias: "s",
-        desc: "Sort the output",
-        type: "string",
-        choices: ["field", "iti", "due", "last"],
-        default: "iti",
-      },
-    })
-    .parseSync(process.argv.slice(2)) as ChorelistArgs;
+const chorelistArgs = new ArgumentParser({
+  description: "List chores",
+  add_help: true,
+  prog: "chorelist",
+  parents: [dbArgs, outputArgs],
+});
+chorelistArgs.add_argument("sort", {
+  type: "str",
+  help: "Sort the output",
+  choices: [...possibleSorts],
+  default: "iti",
+  nargs: "?",
+});
+chorelistArgs.add_argument("--watch", {
+  action: "store_true",
+  help: "Watch and update on changes to the database",
+});
+
+async function chorelistCmd(argsOrCli: ChorelistArgs | string | string[]) {
+  const args = parseIfNeeded(chorelistArgs, argsOrCli);
   if (args.watch) {
-    chorelistwatch(args).catch((error) => {
-      console.error(error);
-      process.exit(1);
-    });
+    await chorelistwatch(args);
   } else {
-    chorelist(args)
-      .catch((error) => {
-        console.error(error);
-        process.exit(1);
-      })
-      .then((table) => {
-        console.log(table);
-      });
+    const table = await chorelist(args);
+    console.log(table);
   }
+}
+
+if (require.main === module) {
+  chorelistCmd(process.argv.slice(2)).catch((err) => {
+    throw err;
+  });
 }

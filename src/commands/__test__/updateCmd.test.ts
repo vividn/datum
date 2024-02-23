@@ -12,7 +12,7 @@ describe("updateCmd", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({ db: dbName });
+    await setupCmd("");
   });
 
   it("can update an existing doc from the first few letters of its humanId", async () => {
@@ -21,12 +21,9 @@ describe("updateCmd", () => {
       data: { foo: "bar" },
       meta: { humanId: "abcdefg" },
     });
-    const retDocs = await updateCmd({
-      db: dbName,
-      quickId: "abc",
-      strategy: "preferNew",
-      data: ["foo=baz", "newField=newData"],
-    });
+    const retDocs = await updateCmd(
+      "abc --strategy preferNew foo=baz newField=newData",
+    );
     expect(retDocs).toHaveLength(1);
     const retDoc = retDocs[0];
     const dbDoc = await db.get("doc_to_update");
@@ -39,14 +36,9 @@ describe("updateCmd", () => {
 
   it("can update a dataonly doc from the first letters of its id", async () => {
     await db.put({ _id: "some_data_only", foo: "bar" });
-    const retDocs = await updateCmd({
-      db: dbName,
-      quickId: "some",
-      strategy: "merge",
-      required: ["foo"],
-      optional: ["newField"],
-      data: ["baz", "newData"],
-    });
+    const retDocs = await updateCmd(
+      "some_data_only --strategy merge -K foo -k newField baz newData",
+    );
     expect(retDocs).toHaveLength(1);
     const dbDoc = await db.get("some_data_only");
     expect(retDocs[0]).toEqual(dbDoc);
@@ -66,12 +58,7 @@ describe("updateCmd", () => {
       .spyOn(updateDoc, "updateDoc")
       .mockReturnValue(Promise.resolve(updateDocReturn));
 
-    const retDocs = await updateCmd({
-      db: dbName,
-      quickId: "input_quick",
-      strategy: "xor",
-      data: ["foo=bar"],
-    });
+    const retDocs = await updateCmd("input_quick --strategy xor foo=bar");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toBe(updateDocReturn);
     expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), "input_quick");
@@ -92,7 +79,7 @@ describe("updateCmd", () => {
       .spyOn(updateDoc, "updateDoc")
       .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
 
-    await updateCmd({ db: dbName, quickId: "input_quick", data: ["foo=bar"] });
+    await updateCmd("input_quick foo=bar");
     expect(updateDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({ updateStrategy: "preferNew" }),
     );
@@ -104,21 +91,11 @@ describe("updateCmd", () => {
     console.log = mockLog;
 
     await db.put({ _id: "zzz", data: { foo: "bar" }, meta: {} });
-    await updateCmd({
-      db: dbName,
-      quickId: "zzz",
-      data: ["foo=baz"],
-      show: Show.Standard,
-    });
+    await updateCmd("zzz foo=baz", { show: Show.Standard });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
     mockLog.mockReset();
 
-    await updateCmd({
-      db: dbName,
-      quickId: "zzz",
-      data: ["foo=baz"],
-      show: Show.Standard,
-    });
+    await updateCmd("zzz foo=baz", { show: Show.Standard });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
     console.log = originalLog;
@@ -127,11 +104,7 @@ describe("updateCmd", () => {
   it("can update multiple documents with a compound quickId", async () => {
     await db.put({ _id: "zzz", data: { foo: "bar", bar: "foo" }, meta: {} });
     await db.put({ _id: "yyy", data: { foo: "bar", bar: "foo2" }, meta: {} });
-    const returnValue = await updateCmd({
-      db: dbName,
-      quickId: ",zzz,yyy",
-      data: ["foo=baz", "newField=newData"],
-    });
+    const returnValue = await updateCmd(",zzz,yyy foo=baz newField=newData");
     const zzzMatchObject = {
       _id: "zzz",
       data: { foo: "baz", bar: "foo", newField: "newData" },
@@ -157,10 +130,7 @@ describe("updateCmd", () => {
       data: { foo: "bar" },
       meta: { humanId: "abcdefg" },
     });
-    const retDocs = await updateCmd({
-      quickId: "foo=baz",
-      data: ["abcd", "another=thing"],
-    });
+    const retDocs = await updateCmd("foo=baz abcd another=thing");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toMatchObject({
       _id: "doc_to_update",

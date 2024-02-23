@@ -16,7 +16,7 @@ describe("switchCmd", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
     setNow("2023-09-02,9:20");
   });
   afterEach(async () => {
@@ -24,7 +24,7 @@ describe("switchCmd", () => {
   });
 
   it("creates an occur document with a custom state", async () => {
-    const doc = await switchCmd({ field: "field", state: "newState" });
+    const doc = await switchCmd("field newState");
     expect(doc.data).toMatchObject({
       field: "field",
       state: "newState",
@@ -35,14 +35,14 @@ describe("switchCmd", () => {
   });
 
   it("records what it thinks the last state was", async () => {
-    const doc = await switchCmd({ field: "environment", state: "outside" });
+    const doc = await switchCmd("environment outside");
     expect(doc.data).toMatchObject({
       field: "environment",
       state: "outside",
       lastState: null,
     });
     setNow("+5");
-    const doc2 = await switchCmd({ field: "environment", state: "inside" });
+    const doc2 = await switchCmd("environment inside");
     expect(doc2.data).toMatchObject({
       field: "environment",
       state: "inside",
@@ -51,13 +51,9 @@ describe("switchCmd", () => {
   });
 
   it("can take in a manually specified last state", async () => {
-    await switchCmd({ field: "project", state: "datum" });
+    await switchCmd("project datum");
     setNow("+5");
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      lastState: "german",
-    });
+    const doc = await switchCmd("project household --last-state german");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -66,12 +62,8 @@ describe("switchCmd", () => {
   });
 
   it("does not include a lastState if there is no occurTime", async () => {
-    await switchCmd({ field: "vacuum", state: true });
-    const doc = await switchCmd({
-      field: "vacuum",
-      state: false,
-      noTimestamp: true,
-    });
+    await switchCmd("vacuum true");
+    const doc = await switchCmd("vacuum false --omit-timestamp");
     expect(doc.data).toMatchObject({
       field: "vacuum",
       state: false,
@@ -81,13 +73,8 @@ describe("switchCmd", () => {
   });
 
   it("still includes lastState if manually specified even when there is no occurTime", async () => {
-    await switchCmd({ field: "project", state: "linux" });
-    const doc = await switchCmd({
-      field: "project",
-      state: "backend",
-      lastState: "frontend",
-      noTimestamp: true,
-    });
+    await switchCmd("project linux");
+    const doc = await switchCmd("project backend -L frontend -T");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "backend",
@@ -97,8 +84,8 @@ describe("switchCmd", () => {
   });
 
   it("can do a state of null", async () => {
-    const doc = await switchCmd({ field: "vacuum", state: null });
-    const doc2 = await switchCmd({ field: "luft", state: "null" });
+    const doc = await switchCmd("vacuum null");
+    const doc2 = await switchCmd("luft null");
     expect(doc.data).toMatchObject({
       field: "vacuum",
       state: null,
@@ -109,17 +96,13 @@ describe("switchCmd", () => {
     });
   });
 
-  it.todo(
-    "assumes a state of true by default",
-    // TODO: Write this once commands can be called by plain text in tests
-  );
+  it("assumes a state of true by default", async () => {
+    const doc = await switchCmd("eat");
+    expect(doc.data.state).toBe(true);
+  });
 
   it("records a block of state when specifying duration", async () => {
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      duration: "10m",
-    });
+    const doc = await switchCmd("project household 10m");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -134,11 +117,7 @@ describe("switchCmd", () => {
   });
 
   it("records a hole of time in the state when given a negative duration", async () => {
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      duration: "-10m",
-    });
+    const doc = await switchCmd("project household -10");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -152,14 +131,8 @@ describe("switchCmd", () => {
     expect(intermediateState).toBe(false);
   });
 
-  it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      moment: true,
-      optional: ["skillPoints"],
-      duration: "3",
-    });
+  it("when --moment/-m is specified, dur is null and there is no duration postional argument", async () => {
+    const doc = await switchCmd("project household -m -k skillPoints 3");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -169,14 +142,8 @@ describe("switchCmd", () => {
     });
   });
 
-  it("when --no-timestamp is specified, there is no positional duration argument", async () => {
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      optional: ["skillPoints"],
-      noTimestamp: true,
-      duration: "3",
-    });
+  it("when --omit-timestamp/-T is specified, there is no positional duration argument", async () => {
+    const doc = await switchCmd("project household -k skillPoints -T 3");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -189,22 +156,8 @@ describe("switchCmd", () => {
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
     restoreNow();
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      moment: false,
-      optional: "optional",
-      duration: ".",
-      data: [50],
-    });
-    const doc2 = await switchCmd({
-      field: "project",
-      state: "household",
-      moment: false,
-      optional: "optional",
-      duration: "",
-      data: [50],
-    });
+    const doc = await switchCmd("project household -k optional . 50");
+    const doc2 = await switchCmd("project household -k optional '' 50");
     expect(doc.data).toMatchObject({ field: "project", optional: 50 });
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "project", optional: 50 });
@@ -212,11 +165,7 @@ describe("switchCmd", () => {
   });
 
   it("can make complex states by using dot syntax", async () => {
-    const doc = await switchCmd({
-      field: "project",
-      state: "household",
-      data: [".subtask=mop"],
-    });
+    const doc = await switchCmd("project household .subtask=mop");
     expect(doc.data).toMatchObject({
       field: "project",
       state: { id: "household", subtask: "mop" },
@@ -224,26 +173,17 @@ describe("switchCmd", () => {
   });
 
   it("does not record a lastState if there is no occurTime", async () => {
-    await switchCmd({ state: "someState", field: "field" });
+    await switchCmd("field someState");
     setNow("+5");
 
-    const secondDoc = await switchCmd({
-      state: "anotherState",
-      field: "field",
-      noTimestamp: true,
-    });
+    const secondDoc = await switchCmd("field anotherState -T");
     expect(secondDoc.data).not.toHaveProperty("lastState");
   });
 
   it("handles required keys and optional keys for complex state correctly", async () => {
-    const doc = await switchCmd({
-      field: "book",
-      state: "the wind in the willows", // actually should get mapped to .title because of flexiblePositional (will make more sense when remapping argparsing which should support more readable tests)
-      duration: "kenneth grahame", //gets mapped to .author
-      required: [".title", ".author"],
-      optional: [".genre"],
-      data: [".", 5, "fiction"],
-    });
+    const doc = await switchCmd(
+      "book -K .title -K .author -k .genre 'the wind in the willows' 'kenneth grahame' . 5 fiction",
+    );
 
     expect(doc.data).toMatchObject({
       field: "book",
@@ -257,14 +197,9 @@ describe("switchCmd", () => {
   });
 
   it("handles dot syntax required and optional keys correctly", async () => {
-    const doc = await switchCmd({
-      required: [".medium"],
-      optional: [".title", ".author"],
-      field: "consume",
-      state: ".medium=text",
-      duration: "book_fiction",
-      data: [".", "title", "author"],
-    });
+    const doc = await switchCmd(
+      "consume -K .medium -k .title -k .author .medium=text book_fiction . title author",
+    );
     expect(doc.data).toMatchObject({
       field: "consume",
       state: {
@@ -288,13 +223,7 @@ describe("switchCmd", () => {
 
     it("can become an occur command by having occur as a trailing word", async () => {
       expect(
-        await switchCmd({
-          field: "field",
-          optional: ["opt1"],
-          duration: "30",
-          state: "someState",
-          data: ["key=val", "optVal", "occur"],
-        }),
+        await switchCmd("field -k opt1 someState 30 key=val optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -302,13 +231,7 @@ describe("switchCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await switchCmd({
-          field: "field",
-          optional: ["opt1"],
-          duration: "30",
-          state: "someState",
-          data: ["key=val", "optVal", "end"],
-        }),
+        await switchCmd("field -k opt1 someState 30 key=val optVal end"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -316,13 +239,7 @@ describe("switchCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await switchCmd({
-          field: "field",
-          optional: ["opt1"],
-          duration: "5m30s",
-          state: "someState",
-          data: ["key=val", "optVal", "start"],
-        }),
+        await switchCmd("field -k opt1 someState 5m30s key=val optVal start"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

@@ -18,18 +18,8 @@ describe("backupCmd", () => {
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
     }
-    dbDocs.push(
-      await addCmd({
-        field: "added_field",
-        baseData: { some: "data", another: "key" },
-      }),
-    );
-    dbDocs.push(
-      await addCmd({
-        field: "field2",
-        baseData: { some: "data", another: "field" },
-      }),
-    );
+    dbDocs.push(await addCmd("field1 some=data"));
+    dbDocs.push(await addCmd("field2 some=data2 with=differentField"));
   });
 
   afterEach(() => {
@@ -41,9 +31,7 @@ describe("backupCmd", () => {
 
   it("creates a backup file that can contains all the documents", async () => {
     expect(fs.existsSync(backupFilePath)).toBe(false);
-    await backupCmd({
-      filename: backupFilePath,
-    });
+    await backupCmd(`${backupFilePath}`);
     expect(fs.existsSync(backupFilePath)).toBe(true);
     const loadedBackup = JSON.parse(fs.readFileSync(backupFilePath).toString());
     const docs = loadedBackup.docs;
@@ -54,14 +42,10 @@ describe("backupCmd", () => {
   });
 
   it("does not overwrite the backup file by default", async () => {
-    await backupCmd({
-      filename: backupFilePath,
-    });
+    await backupCmd(`${backupFilePath}`);
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const newDoc = await addCmd({ field: "addedField2" });
-    await expect(backupCmd({ filename: backupFilePath })).rejects.toThrow(
-      "File exists",
-    );
+    const newDoc = await addCmd("anotherField");
+    await expect(backupCmd(`${backupFilePath}`)).rejects.toThrow("File exists");
 
     expect(fs.existsSync(backupFilePath)).toBe(true);
     const loadedBackup = JSON.parse(fs.readFileSync(backupFilePath).toString());
@@ -71,15 +55,10 @@ describe("backupCmd", () => {
   });
 
   it("allows overwrite if --overwrite is specified", async () => {
-    await backupCmd({
-      filename: backupFilePath,
-    });
+    await backupCmd(`${backupFilePath}`);
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const newDoc = await addCmd({ field: "addedField2" });
-    await backupCmd({
-      filename: backupFilePath,
-      overwrite: true,
-    });
+    const newDoc = await addCmd("addedField2");
+    await backupCmd(`${backupFilePath} --overwrite`);
 
     expect(fs.existsSync(backupFilePath)).toBe(true);
     const loadedBackup = JSON.parse(fs.readFileSync(backupFilePath).toString());

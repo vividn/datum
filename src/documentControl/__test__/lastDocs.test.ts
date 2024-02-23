@@ -19,13 +19,10 @@ describe("lastDocs", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({ db: dbName });
+    await setupCmd("");
   });
   test("addCmd updates the local last doc reference", async () => {
-    const doc = await addCmd({
-      idPart: "doc-id-of-last-doc",
-      data: ["foo=abc"],
-    });
+    const doc = await addCmd("--id doc-id-of-last-doc -F foo=abc");
     const lastDocs = await getLastDocs(db);
     expect(lastDocs.ids).toEqual([doc._id]);
   });
@@ -36,7 +33,7 @@ describe("lastDocs", () => {
     await db.put({ _id: "some-other-doc", foo: "baz" });
     await expect(getLastDocs(db)).rejects.toThrowError();
 
-    await deleteCmd({ quickId: id });
+    await deleteCmd(id);
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([id]);
   });
@@ -48,13 +45,13 @@ describe("lastDocs", () => {
     const id = "last-doc-edited";
     await db.put({ _id: id, foo: "bar" });
 
-    await editCmd({ quickId: id });
+    await editCmd(id);
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([id]);
   });
 
   test("endCmd updates lastDocRef", async () => {
-    const { _id } = await endCmd({ field: "field" });
+    const { _id } = await endCmd("field");
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([_id]);
   });
@@ -62,7 +59,7 @@ describe("lastDocs", () => {
   test("getCmd updates lastDocRef", async () => {
     const id = "last-doc-gotten-1";
     await db.put({ _id: id, foo: "bar" });
-    await getCmd({ quickId: id });
+    await getCmd(id);
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([id]);
   });
@@ -76,61 +73,54 @@ describe("lastDocs", () => {
       { _id: "e", matchString: "has" },
       { _id: "f", data: { matchString: "also grepped" } },
     ]);
-    const docs = await grepCmd({ patterns: ["matchString"] });
+    const docs = await grepCmd("matchString");
     expect(docs.map((doc) => doc._id)).toEqual(["a", "b", "e", "f"]);
     const lastDocRef = await getLastDocs(db);
     expect(lastDocRef.ids).toEqual(["a", "b", "e", "f"]);
   });
 
   test("occurCmd updates lastDocRef", async () => {
-    const { _id } = await occurCmd({ field: "field" });
+    const { _id } = await occurCmd("field");
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([_id]);
   });
 
   test("startCmd updates lastDocRef", async () => {
-    const { _id } = await startCmd({ field: "field" });
+    const { _id } = await startCmd("field");
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([_id]);
   });
 
   test("switchCmd updates lastDocRef", async () => {
-    const { _id } = await switchCmd({ field: "field", state: "newState" });
+    const { _id } = await switchCmd("field newState");
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([_id]);
   });
 
   // test("tailCmd updates lastDocRef", async () => {
-  //   const { _id: _id1 } = await occurCmd({ field: "field" });
+  //   const { _id: _id1 } = await occurCmd("field");
   //   setNow("+1");
-  //   const { _id: _id2 } = await occurCmd({ field: "field2" });
+  //   const { _id: _id2 } = await occurCmd("field2");
   //   setNow("+1");
-  //   const { _id: _id3 } = await occurCmd({ field: "field" });
+  //   const { _id: _id3 } = await occurCmd("field");
   //   setNow("+1");
-  //   const { _id: id4 } = await occurCmd({ field: "field2" });
+  //   const { _id: id4 } = await occurCmd("field2");
   //   setNow("+1");
-  //   const { _id: id5 } = await occurCmd({ field: "field" });
+  //   const { _id: id5 } = await occurCmd("field");
   //   setNow("+1");
-  //   const { _id: id6 } = await occurCmd({ field: "field2" });
+  //   const { _id: id6 } = await occurCmd("field2");
   //   setNow("+1");
   //
-  //   await tailCmd({ num: 3 });
+  //   await tailCmd("-n 3");
   //   const lastDocsRef = await getLastDocs(db);
   //   expect(lastDocsRef.ids).toEqual([id4, id5, id6]);
   // });
 
   test("updateCmd updates lastDocRef", async () => {
-    const { _id: firstId } = await addCmd({
-      data: ["foo=bar"],
-      idPart: "%foo",
-      field: "field",
-    });
+    const { _id: firstId } = await addCmd("field foo=bar --id %foo");
     expect(firstId).toEqual("field:bar");
 
-    const [{ _id: secondId }] = await updateCmd({
-      quickId: "field:bar",
-      data: ["foo=baz"],
-    });
+    const [{ _id: secondId }] = await updateCmd("field:bar foo=baz");
     expect(secondId).toEqual("field:baz");
 
     const lastDocsRef = await getLastDocs(db);
