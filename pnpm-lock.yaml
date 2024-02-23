@@ -74,6 +74,9 @@ dependencies:
   easy-table:
     specifier: ^1.2.0
     version: 1.2.0
+  flattenDeep:
+    specifier: link:@types/lodash/flattenDeep
+    version: link:@types/lodash/flattenDeep
   ink:
     specifier: ^3.2.0
     version: 3.2.0(@types/react@18.2.55)(react@18.2.0)
