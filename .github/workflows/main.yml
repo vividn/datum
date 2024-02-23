@@ -5,22 +5,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Begin CI...
-        uses: actions/checkout@v2
-
-      - name: Use Node 18
-        uses: actions/setup-node@v1
+      - uses: actions/checkout@v3
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8
+      - name: Use Node.js 18
+        uses: actions/setup-node@v3
         with:
           node-version: 18.x
-
-      - name: Use cached node_modules
-        uses: actions/cache@v1
-        with:
-          path: node_modules
-          key: nodeModules-${{ hashFiles('**/pnpm-lock.yaml') }}
-          restore-keys: |
-            nodeModules-
-
+          cache: 'pnpm'
+      - name: Install dependencies
+        run: pnpm install
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
