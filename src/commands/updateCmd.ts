@@ -18,7 +18,7 @@ import { parseIfNeeded } from "../utils/parseIfNeeded";
 
 export const updateArgs = new ArgumentParser({
   add_help: false,
-  parents: [dataArgs, quickIdArgs, dbArgs, outputArgs],
+  parents: [quickIdArgs, dataArgs, dbArgs, outputArgs],
 });
 updateArgs.add_argument("--strategy", "-X", {
   help: "which update strategy to use when modifying the doc",
@@ -52,7 +52,6 @@ export async function updateCmd(
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
   // for easier aliasing
   flexiblePositional(args, "quickId", "required", "__quickId");
-  console.debug({args})
   const {
     __quickId,
     ...payload

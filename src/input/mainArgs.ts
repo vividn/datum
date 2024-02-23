@@ -1,5 +1,5 @@
 import { parse as shellParse } from "shell-quote";
-import { ArgumentParser, BooleanOptionalAction } from "argparse";
+import { ArgumentParser } from "argparse";
 import { dbArgs, DbArgs } from "./dbArgs";
 import { OutputArgs, Show } from "./outputArgs";
 import { addCmd } from "../commands/addCmd";

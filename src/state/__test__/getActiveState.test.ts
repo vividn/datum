@@ -88,7 +88,7 @@ describe("getActiveState", () => {
     await switchCmd("machine reading");
 
     setNow("10");
-    await switchCmd("machine thinking");
+    await switchCmd("machine thinking -t 910");
 
     setNow("11");
     await switchCmd("machine distracted 15");

@@ -36,7 +36,6 @@ describe("updateCmd", () => {
 
   it("can update a dataonly doc from the first letters of its id", async () => {
     const doc = await db.put({ _id: "some_data_only", foo: "bar" });
-    console.debug({ doc })
     const retDocs = await updateCmd(
       "some --strategy merge -K foo -k newField baz newData",
     );
