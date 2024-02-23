@@ -29,7 +29,7 @@
     "refresh": "rm -rf ./node_modules && yarn install",
     "lint": "eslint src",
     "fmt": "eslint src --fix",
-    "postinstall": "yarn cache clean datum"
+    "postinstall": "patch-package && yarn cache clean datum"
   },
   "devDependencies": {
     "@babel/core": "^7.23.7",
@@ -87,8 +87,10 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^3.4.4",
     "parse-duration": "^1.1.0",
+    "patch-package": "^8.0.0",
     "picocolors": "^1.0.0",
     "pluralize": "^8.0.0",
+    "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^8.0.1",
     "pouchdb-adapter-memory": "^8.0.1",
     "printf": "^0.6.1",

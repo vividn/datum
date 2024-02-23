@@ -1,5 +1,7 @@
 import {
   deterministicHumanIds,
+  popNow,
+  pushNow,
   restoreNow,
   setNow,
   testDbLifecycle,
@@ -92,6 +94,15 @@ describe("occurCmd", () => {
 
     const newDoc2 = await occurCmd("event");
     expect([false, undefined]).toContainEqual(newDoc2.data.lastState);
+  });
+
+  it("handles negative number time arguments correctly", async () => {
+    pushNow("2024-02-23,16:00");
+    const newDoc = await occurCmd("event -d -1d -t -1h");
+    expect(newDoc.data.occurTime.utc).toEqual("2024-02-22T15:00:00.000Z");
+    const newDoc2 = await occurCmd("event -t -20");
+    expect(newDoc2.data.occurTime.utc).toEqual("2024-02-23T15:40:00.000Z");
+    popNow();
   });
 
   describe("change command", () => {
