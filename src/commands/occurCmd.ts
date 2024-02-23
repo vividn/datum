@@ -7,7 +7,6 @@ import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
 import { dataArgs } from "../input/dataArgs";
 import { fieldArgs } from "../input/fieldArgs";
-import { durationArgs } from "../input/durationArgs";
 
 export const occurArgs = new ArgumentParser({
   add_help: false,
