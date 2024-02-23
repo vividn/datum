@@ -16,8 +16,7 @@
     "declarationDir": "build/types",
     "strict": true,
     "types": [
-      "node",
-      "jest"
+      "node"
     ],
     "typeRoots": [
       "./typings",
