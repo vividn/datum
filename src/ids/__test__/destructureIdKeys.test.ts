@@ -46,7 +46,7 @@ describe("destructureIdKeys", () => {
       noFields: { a: { nested2: "two" }, b: 2 },
     });
     expect(
-      destructureIdKeys(nestedObj, "%a.nested1%__%a.nested2%"),
+      destructureIdKeys(nestedObj, "%a.nested1%__%a.nested2%")
     ).toMatchObject({
       onlyFields: { a: { nested1: "one", nested2: "two" } },
       noFields: { a: {}, b: 2 },

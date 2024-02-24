@@ -22,7 +22,7 @@ describe("deleteCmd", () => {
       expect.objectContaining({ _id: "hello", _deleted: true }),
     ]);
     expect(deleteDocSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "hello" }),
+      expect.objectContaining({ id: "hello" })
     );
     await expect(db.get("hello")).rejects.toMatchObject({
       name: "not_found",
@@ -41,7 +41,7 @@ describe("deleteCmd", () => {
       }),
     ]);
     expect(deleteDocSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "the_quick_brown_fox" }),
+      expect.objectContaining({ id: "the_quick_brown_fox" })
     );
     await expect(db.get("the_quick_brown_fox")).rejects.toMatchObject({
       name: "not_found",
@@ -63,7 +63,7 @@ describe("deleteCmd", () => {
 
   it("calls quickId and deleteDoc", async () => {
     deleteDocSpy.mockReturnValue(
-      Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true }),
+      Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true })
     );
     const quickIdsSpy = jest
       .spyOn(quickId, "quickIds")
@@ -73,7 +73,7 @@ describe("deleteCmd", () => {
       await deleteCmd(quick);
       expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), quick);
       expect(deleteDocSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ id: quick + "_to_delete" }),
+        expect.objectContaining({ id: quick + "_to_delete" })
       );
       quickIdsSpy.mockClear();
       deleteDocSpy.mockClear();
@@ -110,7 +110,7 @@ describe("deleteCmd", () => {
         expect.objectContaining({ _id: "id1", _deleted: true }),
         expect.objectContaining({ _id: "id2", _deleted: true }),
         expect.objectContaining({ _id: "id3", _deleted: true }),
-      ]),
+      ])
     );
 
     await expect(db.get("id1")).rejects.toMatchObject({

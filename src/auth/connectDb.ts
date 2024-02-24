@@ -7,7 +7,7 @@ import { MainDatumArgs } from "../input/mainArgs";
 PouchDb.plugin(memoryAdapter);
 
 export function connectDb(
-  args: MainDatumArgs,
+  args: MainDatumArgs
 ): PouchDB.Database<EitherPayload> {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
@@ -22,10 +22,10 @@ export function connectDb(
     adapter === "memory"
       ? dbName
       : !hostname
-        ? dbName
-        : hostname.at(-1) === "/"
-          ? `${hostname}${dbName}`
-          : `${hostname}/${dbName}`;
+      ? dbName
+      : hostname.at(-1) === "/"
+      ? `${hostname}${dbName}`
+      : `${hostname}/${dbName}`;
 
   const couchAuth = {
     username: args.username ?? process.env.COUCHDB_USER,

@@ -33,7 +33,7 @@ export type BackupCmdArgs = MainDatumArgs & {
 
 export async function backupCmd(
   args: BackupCmdArgs | string | string[],
-  preparsed?: Partial<BackupCmdArgs>,
+  preparsed?: Partial<BackupCmdArgs>
 ): Promise<void> {
   args = parseIfNeeded(backupCmdArgs, args, preparsed);
   if (!args.overwrite && fs.existsSync(args.filename)) {
@@ -41,12 +41,12 @@ export async function backupCmd(
   }
   const db = connectDb(args);
   const allDocs = (await db.allDocs({ include_docs: true })).rows.map(
-    ({ doc }) => doc,
+    ({ doc }) => doc
   );
   // TODO: Also backup and restore attachments (even though using attachments is considered not best practice)
   const backupTime = DateTime.utc().toISO() as string;
   const buffer = Buffer.from(
-    JSON.stringify({ backupTime, docs: allDocs }, null, 0),
+    JSON.stringify({ backupTime, docs: allDocs }, null, 0)
   );
   fs.writeFileSync(args.filename, buffer);
 }

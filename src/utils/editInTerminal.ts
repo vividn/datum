@@ -26,7 +26,7 @@ export async function editInTerminal(initialText: string): Promise<string> {
     child.on("exit", async (code: number) => {
       if (code !== 0) {
         reject(
-          new EditorError(`${editor} returned non-zero exit code: ${code}`),
+          new EditorError(`${editor} returned non-zero exit code: ${code}`)
         );
       } else {
         resolve(await fs.readFile(path, "utf8"));
@@ -37,7 +37,7 @@ export async function editInTerminal(initialText: string): Promise<string> {
 }
 
 export async function editJSONInTerminal(
-  object: GenericObject,
+  object: GenericObject
 ): Promise<GenericObject> {
   const objectStr = JSON.stringify(object, null, 4);
   const editedObjectStr = await editInTerminal(objectStr);

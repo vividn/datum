@@ -21,7 +21,7 @@ export type EndCmdArgs = StartCmdArgs;
 
 export async function endCmd(
   args: StartCmdArgs | string | string[],
-  preparsed?: Partial<EndCmdArgs>,
+  preparsed?: Partial<EndCmdArgs>
 ): Promise<EitherDocument> {
   args = parseIfNeeded(endCmdArgs, args, preparsed);
   args.cmdData ??= {};

@@ -6,7 +6,7 @@ import { minHumanId } from "./minHumanId";
 // it will be interesting to compare how quickly that goes
 export async function shortenForHumans(
   db: PouchDB.Database<EitherPayload>,
-  ids: string[],
+  ids: string[]
 ): Promise<(string | undefined)[]> {
   const humanIds = await getHumanIds(db, ids);
   const shortenedHumanIds = Promise.all(
@@ -15,7 +15,7 @@ export async function shortenForHumans(
         return undefined;
       }
       return await minHumanId(db, humanId);
-    }),
+    })
   );
   return shortenedHumanIds;
 }

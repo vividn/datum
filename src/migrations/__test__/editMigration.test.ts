@@ -76,7 +76,7 @@ describe("editMigration", () => {
 
     expect(mockedEditInTerminal).toBeCalledTimes(1);
     expect(mockedEditInTerminal).toHaveBeenCalledWith(
-      expect.stringContaining(migB2A),
+      expect.stringContaining(migB2A)
     );
 
     const designDoc = await asViewDb(db)

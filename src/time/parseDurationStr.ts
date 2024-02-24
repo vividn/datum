@@ -72,13 +72,13 @@ export function parseDurationStr({
     "hours",
     "minutes",
     "seconds",
-    "milliseconds",
+    "milliseconds"
   );
   return isNegative ? duration.negate() : duration;
 }
 
 export function isoDurationFromDurationStr(
-  durationStr: string,
+  durationStr: string
 ): string | undefined {
   const duration = parseDurationStr({ durationStr });
   if (duration === undefined) {

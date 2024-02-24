@@ -26,7 +26,7 @@ export type OccurCmdArgs = AddCmdArgs & TimeArgs;
 
 export async function occurCmd(
   args: OccurCmdArgs | string | string[],
-  preparsed?: Partial<OccurCmdArgs>,
+  preparsed?: Partial<OccurCmdArgs>
 ): Promise<EitherDocument> {
   args = parseIfNeeded(occurCmdArgs, args, preparsed);
   const { time: occurTime } = handleTimeArgs(args);

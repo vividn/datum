@@ -111,7 +111,7 @@ describe("switchCmd", () => {
     const intermediateState = await getActiveState(
       db,
       "project",
-      parseTimeStr({ timeStr: "-5m" }),
+      parseTimeStr({ timeStr: "-5m" })
     );
     expect(intermediateState).toBe("household");
   });
@@ -126,7 +126,7 @@ describe("switchCmd", () => {
     const intermediateState = await getActiveState(
       db,
       "project",
-      parseTimeStr({ timeStr: "-5m" }),
+      parseTimeStr({ timeStr: "-5m" })
     );
     expect(intermediateState).toBe(false);
   });
@@ -182,7 +182,7 @@ describe("switchCmd", () => {
 
   it("handles required keys and optional keys for complex state correctly", async () => {
     const doc = await switchCmd(
-      "book -K .title -K .author -k .genre 'the wind in the willows' 'kenneth grahame' . 5 fiction",
+      "book -K .title -K .author -k .genre 'the wind in the willows' 'kenneth grahame' . 5 fiction"
     );
 
     expect(doc.data).toMatchObject({
@@ -198,7 +198,7 @@ describe("switchCmd", () => {
 
   it("handles dot syntax required and optional keys correctly", async () => {
     const doc = await switchCmd(
-      "consume -K .medium -k .title -k .author .medium=text book_fiction . title author",
+      "consume -K .medium -k .title -k .author .medium=text book_fiction . title author"
     );
     expect(doc.data).toMatchObject({
       field: "consume",
@@ -223,7 +223,7 @@ describe("switchCmd", () => {
 
     it("can become an occur command by having occur as a trailing word", async () => {
       expect(
-        await switchCmd("field -k opt1 someState 30 key=val optVal occur"),
+        await switchCmd("field -k opt1 someState 30 key=val optVal occur")
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -231,7 +231,7 @@ describe("switchCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await switchCmd("field -k opt1 someState 30 key=val optVal end"),
+        await switchCmd("field -k opt1 someState 30 key=val optVal end")
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -239,7 +239,7 @@ describe("switchCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await switchCmd("field -k opt1 someState 5m30s key=val optVal start"),
+        await switchCmd("field -k opt1 someState 5m30s key=val optVal start")
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

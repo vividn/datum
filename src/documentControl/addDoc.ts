@@ -25,7 +25,7 @@ import { toDatumTime } from "../time/timeUtils";
 
 function payloadMatchesDbData(
   payload: EitherPayload,
-  existingDoc: EitherDocument,
+  existingDoc: EitherDocument
 ) {
   const existingWithoutRev = jClone(existingDoc) as EitherPayload;
   delete existingWithoutRev._rev;

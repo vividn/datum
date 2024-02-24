@@ -66,7 +66,7 @@ describe("addDoc", () => {
 
     const returnedDoc = await addDoc({ db, payload });
     const dbDoc = (await db.get(
-      "DatumData_with_no_structure",
+      "DatumData_with_no_structure"
     )) as DatumDocument;
     expect(returnedDoc).toEqual(dbDoc);
     expect(dbDoc).toMatchObject(payload);

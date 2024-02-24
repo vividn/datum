@@ -7,7 +7,7 @@ export type LastDocsRef = {
 
 export async function updateLastDocsRef(
   db: PouchDB.Database,
-  ids: string | string[],
+  ids: string | string[]
 ): Promise<void> {
   const idArray = Array.isArray(ids) ? ids : [ids];
   let _rev: string | undefined;

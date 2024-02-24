@@ -25,7 +25,7 @@ export type DeleteCmdArgs = MainDatumArgs & QuickIdArg;
 
 export async function deleteCmd(
   args: DeleteCmdArgs | string | string[],
-  partialArgs?: Partial<DeleteCmdArgs>,
+  partialArgs?: Partial<DeleteCmdArgs>
 ): Promise<DeletedDocument[]> {
   args = parseIfNeeded(deleteCmdArgs, args, partialArgs);
   const db = connectDb(args);
@@ -33,6 +33,6 @@ export async function deleteCmd(
 
   await updateLastDocsRef(db, ids);
   return await Promise.all(
-    ids.map((id) => deleteDoc({ id, db, outputArgs: args as DeleteCmdArgs })),
+    ids.map((id) => deleteDoc({ id, db, outputArgs: args as DeleteCmdArgs }))
   );
 }

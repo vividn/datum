@@ -1,5 +1,5 @@
 export function reverseViewParams(
-  params: PouchDB.Query.Options<any, any>,
+  params: PouchDB.Query.Options<any, any>
 ): PouchDB.Query.Options<any, any> {
   return {
     ...params,

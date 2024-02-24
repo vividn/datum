@@ -52,7 +52,7 @@ type CombiningType = {
 export function combineData(
   aData: GenericObject,
   bData: GenericObject,
-  how: UpdateStrategyNames | CombiningType,
+  how: UpdateStrategyNames | CombiningType
 ): GenericObject {
   const strategy = typeof how === "string" ? updateStrategies[how] : how;
   const aClone = jClone(aData);
@@ -127,14 +127,14 @@ export const mergeValues = (
   aVal: unknown,
   bVal: unknown,
   unique = true,
-  sort = false,
+  sort = false
 ): any => {
   if (bVal === undefined) return aVal;
   if (aVal === undefined) return bVal;
 
   if (!isMergeableValue(aVal) || !isMergeableValue(bVal)) {
     throw new MergeError(
-      "mergeValues is not well defined between these types of values",
+      "mergeValues is not well defined between these types of values"
     );
   }
 
@@ -143,8 +143,8 @@ export const mergeValues = (
       ? [...aVal, ...bVal]
       : [...aVal, bVal]
     : Array.isArray(bVal)
-      ? [aVal, ...bVal]
-      : [aVal, bVal];
+    ? [aVal, ...bVal]
+    : [aVal, bVal];
 
   const maybeMerged = unique ? Array.from(new Set(appended)) : appended;
   const maybeSorted = sort ? maybeMerged.sort() : maybeMerged;

@@ -56,7 +56,7 @@ export async function overwriteDoc({
   const oldDoc = await db.get(id).catch((e) => {
     if (["missing", "deleted"].includes(e.reason)) {
       throw new NoDocToOverwriteError(
-        "doc at id specified to overwrite does not exist",
+        "doc at id specified to overwrite does not exist"
       );
     } else {
       throw e;

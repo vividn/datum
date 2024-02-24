@@ -20,7 +20,7 @@ function expectStructureAndId(
   expectedStructure: string,
   expectedIdOnTestData: string,
   testData: DatumData = exampleData,
-  testMeta: DatumMetadata | false = exampleMeta,
+  testMeta: DatumMetadata | false = exampleMeta
 ) {
   const { defaultPartitionParts, defaultIdParts } = defaultIdComponents({
     data: testData,
@@ -51,7 +51,7 @@ describe("id flow", () => {
       "%occurTime%",
       exampleOccurTime,
       exampleDataOccur,
-      exampleMeta,
+      exampleMeta
     );
   });
 
@@ -62,7 +62,7 @@ describe("id flow", () => {
       "%a%__%b%__%three%",
       "123__abc__value",
       simpleData,
-      exampleMeta,
+      exampleMeta
     );
 
     expectStructureAndId(
@@ -70,7 +70,7 @@ describe("id flow", () => {
       String.raw`%foo%__%bar%__%complex%__%array%__%num%__%wei\%rd%`,
       String.raw`abc__def__{"data":"nested"}__["various",2,"data"]__3__da%ta`,
       exampleData,
-      exampleMeta,
+      exampleMeta
     );
   });
 
@@ -84,7 +84,7 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: "manual_raw$id" },
       "manual_raw$id",
-      "manual_raw$id",
+      "manual_raw$id"
     );
   });
 
@@ -93,7 +93,7 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: "%foo%_:)_%bar%" },
       "%foo%_:)_%bar%",
-      "abc_:)_def",
+      "abc_:)_def"
     );
     expectStructureAndId({ idParts: "raw%foo" }, "raw%foo%", "rawabc");
   });
@@ -104,7 +104,7 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: ["%foo", "%bar"] },
       "%foo%__%bar%",
-      "abc__def",
+      "abc__def"
     );
   });
 
@@ -112,27 +112,27 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: ["%foo", "%bar"] },
       "%foo%__%bar%",
-      "abc__def",
+      "abc__def"
     );
     expectStructureAndId(
       { idParts: ["%foo%", "raw", "%bar"] },
       "%foo%__raw__%bar%",
-      "abc__raw__def",
+      "abc__raw__def"
     );
     expectStructureAndId(
       { idParts: ["%foo", "%bar"], delimiter: "@" },
       "%foo%@%bar%",
-      "abc@def",
+      "abc@def"
     );
     expectStructureAndId(
       { idParts: ["%foo", "%bar"], delimiter: "" },
       "%foo%%bar%",
-      "abcdef",
+      "abcdef"
     );
     expectStructureAndId(
       { idParts: ["%foo", "%bar", "rawString"], delimiter: "%" },
       "%foo%\\%%bar%\\%rawString",
-      "abc%def%rawString",
+      "abc%def%rawString"
     );
   });
 
@@ -141,7 +141,7 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: ["%foo", "%notAField", "%bar"] },
       "%foo%__%notAField%__%bar%",
-      "abc____def",
+      "abc____def"
     );
   });
 
@@ -149,12 +149,12 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: "%complex.data" },
       "%complex.data%",
-      "nested",
+      "nested"
     );
     expectStructureAndId(
       { idParts: ["%foo", "%complex.notAKey"] },
       "%foo%__%complex.notAKey%",
-      "abc__",
+      "abc__"
     );
     expectStructureAndId({ idParts: "%not.real.keys" }, "%not.real.keys%", "");
   });
@@ -164,12 +164,12 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: "%complex" },
       "%complex%",
-      '{"data":"nested"}',
+      '{"data":"nested"}'
     );
     expectStructureAndId(
       { idParts: "%array" },
       "%array%",
-      '["various",2,"data"]',
+      '["various",2,"data"]'
     );
   });
 
@@ -177,7 +177,7 @@ describe("id flow", () => {
     expectStructureAndId(
       { idParts: "raw with escaped \\%foo" },
       "raw with escaped \\%foo",
-      "raw with escaped %foo",
+      "raw with escaped %foo"
     );
     expectStructureAndId({ idParts: "%wei\\%rd" }, "%wei\\%rd%", "da%ta");
   });
@@ -187,13 +187,13 @@ describe("id flow", () => {
       {},
       "%field%:%occurTime%",
       "main:" + exampleOccurTime,
-      exampleDataOccurField,
+      exampleDataOccurField
     );
     expectStructureAndId(
       { idParts: "%foo" },
       "%field%:%foo%",
       "otherName:abc",
-      { ...exampleData, field: "otherName" },
+      { ...exampleData, field: "otherName" }
     );
     expectStructureAndId(
       {},
@@ -202,7 +202,7 @@ describe("id flow", () => {
       {
         field: "onlyField",
       },
-      false,
+      false
     );
   });
 
@@ -210,22 +210,22 @@ describe("id flow", () => {
     expectStructureAndId(
       { partition: "%foo", idParts: "%bar" },
       "%foo%:%bar%",
-      "abc:def",
+      "abc:def"
     );
     expectStructureAndId(
       { partition: "%bar", idParts: "%bar" },
       "%bar%:%bar%",
-      "def:def",
+      "def:def"
     );
     expectStructureAndId(
       { partition: "rawString", idParts: ["%foo", "raw"] },
       "rawString:%foo%__raw",
-      "rawString:abc__raw",
+      "rawString:abc__raw"
     );
     expectStructureAndId(
       { partition: ["%foo", "%bar%-with-extra"], idParts: "id" },
       "%foo%__%bar%-with-extra:id",
-      "abc__def-with-extra:id",
+      "abc__def-with-extra:id"
     );
     expectStructureAndId(
       {
@@ -234,7 +234,7 @@ describe("id flow", () => {
         delimiter: "!",
       },
       "%foo%!%bar%:some!strings",
-      "abc!def:some!strings",
+      "abc!def:some!strings"
     );
   });
 
@@ -247,7 +247,7 @@ describe("id flow", () => {
       },
       "%field%:%foo%__%?modifyTime%__rawString",
       "main:abc__2020-11-09T00:40:12.544Z__rawString",
-      exampleDataOccurField,
+      exampleDataOccurField
     );
   });
 
@@ -257,12 +257,12 @@ describe("id flow", () => {
         idParts: "%?modifyTime",
       },
       "%?modifyTime%",
-      "2020-11-09T00:40:12.544Z",
+      "2020-11-09T00:40:12.544Z"
     );
     expectStructureAndId(
       { idParts: ["%?modifyTime", "%foo", "%?humanId"] },
       "%?modifyTime%__%foo%__%?humanId%",
-      "2020-11-09T00:40:12.544Z__abc__mqp4znq4cvp3qnj74fgi9",
+      "2020-11-09T00:40:12.544Z__abc__mqp4znq4cvp3qnj74fgi9"
     );
   });
 
@@ -273,7 +273,7 @@ describe("id flow", () => {
       "now",
       {
         "?modifyTime": "now",
-      },
+      }
     );
   });
 
@@ -284,7 +284,7 @@ describe("id flow", () => {
         partition: "%?humanId",
       },
       "%?humanId%:%foo%",
-      "mqp4znq4cvp3qnj74fgi9:abc",
+      "mqp4znq4cvp3qnj74fgi9:abc"
     );
   });
 
@@ -294,7 +294,7 @@ describe("id flow", () => {
       "%key%",
       "id-from-data",
       { key: "id-from-idParts", _id: "id-from-data" },
-      false,
+      false
     );
   });
 });

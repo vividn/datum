@@ -21,8 +21,8 @@ export class ExtraDataError extends MyError {
   constructor(keys: string[]) {
     super(
       `the following data do not have keys: ${keys.join(
-        ", ",
-      )}. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient`,
+        ", "
+      )}. Assign keys with equals signs, use required/optional keys, specify a key to use as --remainder, or use --lenient`
     );
     Object.setPrototypeOf(this, ExtraDataError.prototype);
   }
@@ -42,8 +42,8 @@ export class IdError extends MyError {
 }
 
 export class BadTimeError extends MyError {
-  #key: string = "";
-  #value: string = "";
+  #key = "";
+  #value = "";
 
   constructor(badTime?: string) {
     super();
@@ -68,8 +68,8 @@ export class BadTimeError extends MyError {
 }
 
 export class BadDateError extends MyError {
-  #key: string = "";
-  #value: string = "";
+  #key = "";
+  #value = "";
 
   constructor(badDate?: string) {
     super();
@@ -94,8 +94,8 @@ export class BadDateError extends MyError {
 }
 
 export class BadDurationError extends MyError {
-  #key: string = "";
-  #value: string = "";
+  #key = "";
+  #value = "";
 
   constructor(badDuration?: string) {
     super();
@@ -162,7 +162,7 @@ export const isCouchDbError = (error: unknown): error is CouchDbError => {
 export class DatumViewMissingError extends MyError {
   constructor(map_name?: unknown) {
     super(
-      `Missing internal datum view ${map_name}. Please run setup on this database`,
+      `Missing internal datum view ${map_name}. Please run setup on this database`
     );
     Object.setPrototypeOf(this, DatumViewMissingError.prototype);
   }

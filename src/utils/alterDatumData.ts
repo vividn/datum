@@ -33,8 +33,8 @@ export function alterDatumData({
     path === "state"
       ? "state.id"
       : path.startsWith(".")
-        ? `state${path}`
-        : path;
+      ? `state${path}`
+      : path;
 
   let inferredValue: JsonType | undefined;
   switch (true) {

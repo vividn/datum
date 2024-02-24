@@ -159,7 +159,7 @@ describe("structuresView", () => {
         ["withData.nested.even"],
       ],
 
-      null,
+      null
     );
   });
 });
@@ -219,7 +219,7 @@ describe("dataStructuresView", () => {
         ["nested.aaa", "nested.deeper", "nested.zzz"],
         ["nested.deeper.value"],
       ],
-      null,
+      null
     );
   });
 });
@@ -235,7 +235,7 @@ describe("datumV1View", () => {
   it.todo("emits [date, time, offset,...] for a offset of 0");
 
   it.todo(
-    "emits [date, time, offset,...] with Time and Date corrected for the local time based on the offset",
+    "emits [date, time, offset,...] with Time and Date corrected for the local time based on the offset"
   );
 
   it.todo("emits duration, if it exists");

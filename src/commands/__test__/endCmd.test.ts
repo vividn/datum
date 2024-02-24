@@ -58,7 +58,7 @@ describe("endCmd", () => {
     const intermediateState = await getActiveState(
       db,
       "dance",
-      parseTimeStr({ timeStr: "-2.5" }),
+      parseTimeStr({ timeStr: "-2.5" })
     );
     expect(intermediateState).toBe(false);
   });
@@ -97,7 +97,7 @@ describe("endCmd", () => {
 
   it("throws an error if the duration supplied is invalid", async () => {
     await expect(endCmd("field -k optional 30asd")).rejects.toThrow(
-      BadDurationError,
+      BadDurationError
     );
   });
 
@@ -123,7 +123,7 @@ describe("endCmd", () => {
 
     it("can become an occur command by having occur as a trailing word", async () => {
       expect(
-        await endCmd("field -k opt1 30 key=val optVal occur"),
+        await endCmd("field -k opt1 30 key=val optVal occur")
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -131,7 +131,7 @@ describe("endCmd", () => {
 
     it("can become start command by having start as a trailing word", async () => {
       expect(
-        await endCmd("field -k opt1 30 key=val optVal start"),
+        await endCmd("field -k opt1 30 key=val optVal start")
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -139,7 +139,7 @@ describe("endCmd", () => {
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await endCmd("field -k opt1 5m30s key=val optVal switch stateName"),
+        await endCmd("field -k opt1 5m30s key=val optVal switch stateName")
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

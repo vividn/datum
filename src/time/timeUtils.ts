@@ -20,7 +20,7 @@ export function isIsoDateOrTime(str: string): str is isoDateOrTime {
 }
 
 export function isDatumTime(
-  time: DatumTime | GenericObject | string,
+  time: DatumTime | GenericObject | string
 ): time is DatumTime {
   if (typeof time === "string") {
     return false;
@@ -62,7 +62,7 @@ export function utcOffset(time: DateTime): number {
 
 export function toDatumTime(
   time: DateTime | string,
-  onlyDate?: boolean,
+  onlyDate?: boolean
 ): DatumTime {
   if (typeof time === "string") {
     time = DateTime.fromISO(time, { setZone: true });
@@ -95,7 +95,7 @@ export function datumTimeToLuxon(time?: DatumTime): DateTime | undefined {
     const oTime = DateTime.fromISO(time.utc, { zone: getTimezone(time.o) });
     if (tzTime.offset !== oTime.offset) {
       console.warn(
-        `mismatched IANA timezone and offset for ${time.utc}. zone = ${time.tz}, o = ${time.o}`,
+        `mismatched IANA timezone and offset for ${time.utc}. zone = ${time.tz}, o = ${time.o}`
       );
       return oTime;
     }
@@ -103,8 +103,8 @@ export function datumTimeToLuxon(time?: DatumTime): DateTime | undefined {
   const timezone = time.tz
     ? getTimezone(time.tz)
     : time.o
-      ? getTimezone(time.o)
-      : undefined;
+    ? getTimezone(time.o)
+    : undefined;
   const dateTime = DateTime.fromISO(time.utc, {
     zone: timezone,
   });

@@ -5,7 +5,7 @@ import { getActiveState } from "./getActiveState";
 
 export async function compileState(
   db: PouchDB.Database,
-  payloadData: DatumData,
+  payloadData: DatumData
 ): Promise<DatumData> {
   const data = jClone(payloadData);
   if (data.state !== undefined) {

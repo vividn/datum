@@ -93,7 +93,7 @@ export type AddCmdArgs = MainDatumArgs &
 
 export async function addCmd(
   args: AddCmdArgs | string | string[],
-  preparsed?: Partial<AddCmdArgs>,
+  preparsed?: Partial<AddCmdArgs>
 ): Promise<EitherDocument> {
   args = parseIfNeeded(addCmdArgs, args, preparsed);
   const db = connectDb(args);

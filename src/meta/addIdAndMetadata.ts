@@ -17,7 +17,7 @@ import { now, toDatumTime } from "../time/timeUtils";
 
 export function addIdAndMetadata<T>(
   data: DatumData<T>,
-  args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">,
+  args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">
 ): EitherIdPayload<T> {
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data,

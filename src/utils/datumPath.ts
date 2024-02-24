@@ -3,7 +3,7 @@ export function datumPath(path: string): string {
     path === "state"
       ? "state.id"
       : path.startsWith(".")
-        ? `state${path}`
-        : path;
+      ? `state${path}`
+      : path;
   return stateAwarePath;
 }

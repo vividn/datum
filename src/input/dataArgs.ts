@@ -130,8 +130,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
     (args.commentRemainder
       ? "comment"
       : args.lenient
-        ? "extraData"
-        : undefined);
+      ? "extraData"
+      : undefined);
   const remainderAsString = args.stringRemainder ?? args.commentRemainder;
   const remainderData = [];
 
@@ -157,7 +157,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         existingValue ??
         optionalKeys
           ?.find((optionalWithDefault) =>
-            new RegExp(`^${path}=(.*)$`).test(optionalWithDefault),
+            new RegExp(`^${path}=(.*)$`).test(optionalWithDefault)
           )
           ?.split("=")[1];
       alterDatumData({ datumData, path, value, defaultValue });
@@ -223,7 +223,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
     //TODO: Allow state based keys to still work if defined in separate ways
     if (
       optionalKeys?.find((optionalWithDefault) =>
-        new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
+        new RegExp(`^${requiredKey}=`).test(optionalWithDefault)
       )
     ) {
       continue;

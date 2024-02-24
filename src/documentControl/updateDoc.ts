@@ -51,7 +51,7 @@ export async function updateDoc({
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
     if (["missing", "deleted"].includes(e.reason)) {
       throw new NoDocToUpdateError(
-        "doc at id specified to update does not exist",
+        "doc at id specified to update does not exist"
       );
     } else {
       throw e;

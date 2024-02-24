@@ -36,18 +36,18 @@ test.each([
 ])("it parses %s as a Duration of length %s", (durationStr, durationObject) => {
   const duration = parseDurationStr({ durationStr });
   expect(duration.toJSON()).toEqual(
-    Duration.fromObject(durationObject).toJSON(),
+    Duration.fromObject(durationObject).toJSON()
   );
 });
 
 it("throws an error for a completely unparseable duration", () => {
   expect(() =>
-    parseDurationStr({ durationStr: "not a good duration" }),
+    parseDurationStr({ durationStr: "not a good duration" })
   ).toThrowError(BadDurationError);
 });
 
 it("throws an error for a number string with too many colons in it", () => {
   expect(() => parseDurationStr({ durationStr: "1:2:3:4:5:6:7" })).toThrowError(
-    BadDurationError,
+    BadDurationError
   );
 });

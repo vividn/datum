@@ -4,7 +4,7 @@ import { DatumViewMissingError, isCouchDbError } from "../errors";
 
 export async function getHumanIds(
   db: PouchDB.Database<EitherPayload>,
-  ids: string[],
+  ids: string[]
 ): Promise<(string | undefined)[]> {
   let viewResponse;
   try {

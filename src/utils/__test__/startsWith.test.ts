@@ -14,7 +14,7 @@ describe("startsWith", () => {
         startkey: startKey,
         endkey: endKey,
       });
-    },
+    }
   );
 
   it("returns number+epsilon as the endkey if startkey is a number", () => {

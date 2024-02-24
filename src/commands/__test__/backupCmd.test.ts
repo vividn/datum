@@ -71,7 +71,7 @@ describe("backupCmd", () => {
     const backupTime = "2023-11-17T17:22:00.000Z";
     await at(
       backupTime,
-      backupCmd,
+      backupCmd
     )({
       filename: backupFilePath,
     });

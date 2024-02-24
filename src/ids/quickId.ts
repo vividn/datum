@@ -27,7 +27,7 @@ export class NoQuickIdMatchError extends MyError {
 
 export async function quickId(
   db: PouchDB.Database<EitherPayload>,
-  quickString: string,
+  quickString: string
 ): Promise<string> {
   try {
     const doc = await db.get(quickString);
@@ -50,7 +50,7 @@ export async function quickId(
   }
   if (startsHumanId.rows.length > 1) {
     const possibleQuickIds = await Promise.all(
-      startsHumanId.rows.map((row) => minHumanId(db, row.key)),
+      startsHumanId.rows.map((row) => minHumanId(db, row.key))
     );
     const possibleIds = startsHumanId.rows.map((row) => row.id);
     throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
@@ -70,7 +70,7 @@ export async function quickId(
       })
     ).rows.map((row) => row.value);
     const possibleQuickIds = await Promise.all(
-      correspondingHumanIds.map((humanId) => minHumanId(db, humanId)),
+      correspondingHumanIds.map((humanId) => minHumanId(db, humanId))
     );
     throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
   }
@@ -80,7 +80,7 @@ export async function quickId(
 
 export async function quickIds(
   db: PouchDB.Database<EitherPayload>,
-  quickString: string | string[],
+  quickString: string | string[]
 ): Promise<string[]> {
   if (Array.isArray(quickString)) {
     return Promise.all(quickString.map((str) => quickId(db, str)));
@@ -89,10 +89,10 @@ export async function quickIds(
   const quickStrings = /^,/.test(quickString)
     ? quickString.slice(1).split(",")
     : /,$/.test(quickString)
-      ? quickString.slice(0, -1).split(",")
-      : /^\[.*]$/.test(quickString)
-        ? quickString.slice(1, -1).split(",")
-        : [quickString];
+    ? quickString.slice(0, -1).split(",")
+    : /^\[.*]$/.test(quickString)
+    ? quickString.slice(1, -1).split(",")
+    : [quickString];
 
   return Promise.all(quickStrings.map((str) => quickId(db, str)));
 }

@@ -12,7 +12,7 @@ function startingSlices(str: string): string[] {
 
 export async function minHumanId(
   db: PouchDB.Database<EitherPayload>,
-  humanId: string,
+  humanId: string
 ): Promise<string> {
   //TODO: Create function that takes the DatumView object and does view info on it
   const docCountsPerSlice = (
@@ -31,8 +31,9 @@ export async function minHumanId(
         throw error;
       })
   ).rows;
-  const minWithoutConflict = docCountsPerSlice.find((row) => row.value === 1)
-    ?.key;
+  const minWithoutConflict = docCountsPerSlice.find(
+    (row) => row.value === 1
+  )?.key;
   if (minWithoutConflict === undefined) {
     throw new MinHumanIdError("No substring uniquely identifies document");
   }

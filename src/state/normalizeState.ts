@@ -41,11 +41,11 @@ export function normalizeState(state: JsonType): DatumState {
         const normalized = normalizeState(innerState);
         if (normalized === null) {
           throw new BadStateError(
-            "null is a special state to indicate that the field is not being tracked and cannot exist together with other states",
+            "null is a special state to indicate that the field is not being tracked and cannot exist together with other states"
           );
         }
         return normalized;
-      }),
+      })
     );
   }
   if (state.id === undefined) {
@@ -62,7 +62,7 @@ export function normalizeState(state: JsonType): DatumState {
   if (normalizedId === null) {
     if (Object.keys(otherKeys).length > 0) {
       console.warn(
-        "null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed",
+        "null is a special state to indicate that the field is not being tracked, but additional state data was provided. It has been removed"
       );
     }
     return null;

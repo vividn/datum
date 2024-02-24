@@ -8,14 +8,14 @@ import { DatumState } from "./normalizeState";
 export async function getActiveState(
   db: PouchDB.Database,
   field: string,
-  time: DateTime | DatumTime | string = now(),
+  time: DateTime | DatumTime | string = now()
 ): Promise<DatumState> {
   const utcTime =
     typeof time === "string"
       ? parseTimeStr({ timeStr: time }).toUTC().toISO()
       : isDatumTime(time)
-        ? time.utc
-        : time.toUTC().toISO();
+      ? time.utc
+      : time.toUTC().toISO();
   if (utcTime === null) {
     throw new Error("bad time");
   }

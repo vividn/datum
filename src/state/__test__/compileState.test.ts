@@ -53,7 +53,7 @@ describe("compileState", () => {
         state: "state",
         occurTime,
         field: "field",
-      }),
+      })
     ).toEqual({
       state: "normalizedState",
       lastState: "activeState",
@@ -69,7 +69,7 @@ describe("compileState", () => {
         lastState: "lastState",
         occurTime,
         field: "field",
-      }),
+      })
     ).toEqual({
       state: "normalizedState",
       lastState: "normalizedState",
@@ -80,7 +80,7 @@ describe("compileState", () => {
       await compileState(db, {
         state: "state",
         field: "field",
-      }),
+      })
     ).toEqual({
       state: "normalizedState",
       field: "field",
@@ -89,7 +89,7 @@ describe("compileState", () => {
       await compileState(db, {
         state: "state",
         occurTime,
-      }),
+      })
     ).toEqual({
       state: "normalizedState",
       occurTime,
@@ -99,7 +99,7 @@ describe("compileState", () => {
 
   it("only adds lastState to a payload without state if lastState is null", async () => {
     expect(
-      await compileState(db, { occurTime, field: "field" }),
+      await compileState(db, { occurTime, field: "field" })
     ).not.toHaveProperty("lastState");
     expect(activeStateSpy).toHaveBeenCalled();
     activeStateSpy.mockClear();
@@ -116,10 +116,10 @@ describe("compileState", () => {
     // Still only calls if both occurTime and field
     activeStateSpy.mockResolvedValue(null);
     expect(await compileState(db, { field: "field" })).not.toHaveProperty(
-      "lastState",
+      "lastState"
     );
     expect(await compileState(db, { occurTime })).not.toHaveProperty(
-      "lastState",
+      "lastState"
     );
 
     expect(activeStateSpy).not.toHaveBeenCalled();

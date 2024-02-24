@@ -40,7 +40,7 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
 };
 
 export function humanFormattedTime(
-  time?: DatumTime | string,
+  time?: DatumTime | string
 ): string | undefined {
   if (!time) {
     return undefined;
@@ -81,8 +81,8 @@ function formatAllTimes(doc: EitherPayload): AllTimes {
   const hybrid = data.occurTime
     ? humanFormattedTime(data.occurTime)
     : meta?.createTime
-      ? chalk.gray("c") + humanFormattedTime(meta.createTime)
-      : undefined;
+    ? chalk.gray("c") + humanFormattedTime(meta.createTime)
+    : undefined;
   const times = {
     hybrid: hybrid,
     occur: humanFormattedTime(data.occurTime),
@@ -119,7 +119,7 @@ function formatState(state?: DatumState): string | undefined {
 }
 function formatStateTransition(
   state?: DatumState,
-  lastState?: DatumState,
+  lastState?: DatumState
 ): string | undefined {
   if (
     (state === true && lastState === false) ||
@@ -140,7 +140,7 @@ function formatStateTransition(
 
 function formatDuration(
   dur?: string | undefined,
-  invert = false,
+  invert = false
 ): string | undefined {
   const duration = Duration.fromISO(dur || "");
   if (!duration.isValid) {
@@ -198,7 +198,7 @@ type ExtractedAndFormatted = {
 };
 export function extractFormatted(
   doc: EitherPayload,
-  action?: ACTIONS,
+  action?: ACTIONS
 ): ExtractedAndFormatted {
   const color = action ? ACTION_CHALK[action] : chalk;
   const { data, meta } = pullOutData(doc);
@@ -223,7 +223,7 @@ function actionId(action: ACTIONS, id: string, humanId?: string): string {
 
 function showHeaderLine(formatted: ExtractedAndFormatted): void {
   console.log(
-    [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" "),
+    [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" ")
   );
 }
 
@@ -243,7 +243,7 @@ function showMainInfoLine(formatted: ExtractedAndFormatted): void {
 
 export function showCustomFormat(
   payload: EitherPayload,
-  formatString: string,
+  formatString: string
 ): void {
   const { data, meta } = pullOutData(payload);
   const outputString = interpolateFields({ data, meta, format: formatString });
@@ -253,21 +253,21 @@ export function showCustomFormat(
 export function showRename(
   beforeId: string,
   afterId: string,
-  outputArgs: OutputArgs,
+  outputArgs: OutputArgs
 ): void {
   const { show } = sanitizeOutputArgs(outputArgs);
   if (show === Show.None || show === Show.Format) {
     return;
   }
   console.log(
-    actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId),
+    actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId)
   );
 }
 
 export function showSingle(
   action: ACTIONS,
   doc: EitherDocument,
-  outputArgs: OutputArgs,
+  outputArgs: OutputArgs
 ): void {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
   const extracted = extractFormatted(doc, action);
@@ -279,7 +279,7 @@ export function showSingle(
   if (show === Show.Format) {
     if (formatString === undefined) {
       throw new Error(
-        "MissingArgument: formatted show requested without a format string",
+        "MissingArgument: formatted show requested without a format string"
       );
     }
     showCustomFormat(doc, formatString);
@@ -325,36 +325,36 @@ export function showNoDiff(doc: EitherDocument, outputArgs: OutputArgs): void {
 }
 export function showFailed(
   payload: EitherPayload,
-  outputArgs: OutputArgs,
+  outputArgs: OutputArgs
 ): void {
   return showSingle(
     ACTIONS.Failed,
     { _id: "", _rev: "", ...payload } as EitherDocument,
-    outputArgs,
+    outputArgs
   );
 }
 export function showDelete(
   payload: EitherPayload,
-  outputArgs: OutputArgs,
+  outputArgs: OutputArgs
 ): void {
   return showSingle(
     ACTIONS.Delete,
     { _id: "", _rev: "", ...payload } as EitherDocument,
-    outputArgs,
+    outputArgs
   );
 }
 
 export function showUpdate(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
-  outputArgs: OutputArgs,
+  outputArgs: OutputArgs
 ): void {
   return showSingle(ACTIONS.Update, afterDoc, outputArgs);
 }
 export function showOWrite(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
-  outputArgs: OutputArgs,
+  outputArgs: OutputArgs
 ): void {
   return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
 }

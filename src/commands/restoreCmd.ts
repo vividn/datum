@@ -32,7 +32,7 @@ export type RestoreCmdArgs = MainDatumArgs & {
 };
 export async function restoreCmd(
   args: RestoreCmdArgs | string | string[],
-  preparsed?: Partial<BackupCmdArgs>,
+  preparsed?: Partial<BackupCmdArgs>
 ): Promise<void> {
   args = parseIfNeeded(restoreCmdArgs, args, preparsed);
   args.createDb ??= true;
@@ -40,7 +40,7 @@ export async function restoreCmd(
   const info = await db.info();
   if (!args.allowNonempty && info.doc_count !== 0) {
     throw new Error(
-      "Warning: db is not empty, aborting restore. Use --allow-nonempty to override.",
+      "Warning: db is not empty, aborting restore. Use --allow-nonempty to override."
     );
   }
   const buffer = readFileSync(args.filename);

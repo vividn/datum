@@ -24,7 +24,7 @@ export const getCmdArgs = new ArgumentParser({
 
 export async function getCmd(
   args: GetCmdArgs | string | string[],
-  preparsed?: Partial<GetCmdArgs>,
+  preparsed?: Partial<GetCmdArgs>
 ): Promise<EitherDocument[]> {
   args = parseIfNeeded(getCmdArgs, args, preparsed);
   const db = connectDb(args);

@@ -85,7 +85,7 @@ describe("inferType", () => {
 
   it("parses weird looking things as strings", () => {
     expect(inferType("{what: even is this)) ]}")).toEqual(
-      "{what: even is this)) ]}",
+      "{what: even is this)) ]}"
     );
     expect(inferType("(1,2,3)")).toEqual("(1,2,3)");
     expect(inferType("NAN/null")).toEqual("NAN/null");

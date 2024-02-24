@@ -6,7 +6,7 @@ import {
 import { MyError } from "../errors";
 
 export function asViewDb(
-  db: PouchDB.Database<any>,
+  db: PouchDB.Database<any>
 ): PouchDB.Database<ViewPayload> {
   return db as unknown as PouchDB.Database<ViewPayload>;
 }
@@ -16,7 +16,7 @@ export type DatumView<
   MapKey = unknown,
   MapValue = unknown,
   ReduceValue = unknown,
-  NamedReduceValues extends Record<string, any> | undefined = undefined,
+  NamedReduceValues extends Record<string, any> | undefined = undefined
 > = {
   name: string;
   emit: (key: MapKey, value: MapValue) => void;
@@ -39,7 +39,7 @@ export type StringifiedDatumView = {
 export type NamedReduceFunctions<
   MapKey,
   MapValue,
-  NamedReduceValues extends Record<string, any> | undefined,
+  NamedReduceValues extends Record<string, any> | undefined
 > = {
   [T in keyof NamedReduceValues]:
     | ReduceFunction<MapKey, MapValue, NamedReduceValues[T]>
@@ -49,17 +49,17 @@ export type NamedReduceFunctions<
 type FirstReduceArgs<MapKey, MapValue, _ReduceValue> = [
   keysAndDocIds: [MapKey, string][],
   values: MapValue[],
-  rereduce: false,
+  rereduce: false
 ];
 type ReReduceArgs<MapKey, _MapValue, ReduceValue> = [
   keysAndDocIds: [MapKey, null][],
   values: ReduceValue[],
-  rereduce: true,
+  rereduce: true
 ];
 export type ReduceFunction<
   MapKey = unknown,
   MapValue = unknown,
-  ReduceValue = unknown,
+  ReduceValue = unknown
 > =
   | ((
       ...args:
@@ -69,7 +69,7 @@ export type ReduceFunction<
   | BuiltInReduce;
 
 export type MapFunction<D extends EitherDocument = EitherDocument> = (
-  doc: D,
+  doc: D
 ) => void;
 
 type ViewOptions = {
@@ -100,7 +100,7 @@ export type ViewDocument = ViewPayload & {
 export type DataOrDesignDocument = ViewDocument | EitherDocument;
 
 export function isViewPayload(
-  payload: EitherPayload | ViewPayload,
+  payload: EitherPayload | ViewPayload
 ): payload is ViewPayload {
   return !!(
     payload._id &&
@@ -110,7 +110,7 @@ export function isViewPayload(
 }
 
 export function isViewDocument(
-  doc: EitherDocument | ViewDocument,
+  doc: EitherDocument | ViewDocument
 ): doc is ViewDocument {
   return !!(doc._id.startsWith("_design") && (doc as ViewDocument).views);
 }
@@ -118,7 +118,7 @@ export function isViewDocument(
 export class ConflictingReduceError extends MyError {
   constructor(reduce_name?: unknown) {
     super(
-      `Named reduce function ${reduce_name} conflicts with the default. Please use reduce: directly or rename the function.`,
+      `Named reduce function ${reduce_name} conflicts with the default. Please use reduce: directly or rename the function.`
     );
     Object.setPrototypeOf(this, ConflictingReduceError.prototype);
   }
@@ -127,7 +127,7 @@ export class ConflictingReduceError extends MyError {
 export function datumViewToViewPayload(
   datumView:
     | DatumView<any, any, any, any, Record<string, any> | undefined>
-    | StringifiedDatumView,
+    | StringifiedDatumView
 ): ViewPayload {
   const views: ViewPayloadViews = {};
   const name = datumView.name;

@@ -84,13 +84,13 @@ describe("combineData", () => {
             });
           } else if (
             ["merge", "append", "prepend", "mergeSort", "appendSort"].includes(
-              conflictVal,
+              conflictVal
             )
           ) {
             test(`conflicting fields merge into single array with ${testCaseDescription}`, () => {
               expect(combined).toHaveProperty(
                 "different",
-                expect.arrayContaining(["Aa", "bB"]),
+                expect.arrayContaining(["Aa", "bB"])
               );
             });
           } else {
@@ -316,8 +316,8 @@ describe("mergeValues", () => {
       mergeValues(
         [1, "uniqueString", "duplicatedString", 2],
         [2, "anotherUnique", "duplicatedString", 5],
-        true,
-      ),
+        true
+      )
     ).toEqual([1, "uniqueString", "duplicatedString", 2, "anotherUnique", 5]);
   });
 
@@ -326,8 +326,8 @@ describe("mergeValues", () => {
       mergeValues(
         [1, "uniqueString", "duplicatedString", 2],
         [2, "anotherUnique", "duplicatedString", 5],
-        false,
-      ),
+        false
+      )
     ).toEqual([
       1,
       "uniqueString",
@@ -354,8 +354,8 @@ describe("mergeValues", () => {
         [1, "uniqueString", "duplicatedString", 2],
         [2, "anotherUnique", "duplicatedString", 5],
         false,
-        true,
-      ),
+        true
+      )
     ).toEqual([
       1,
       2,
@@ -372,13 +372,13 @@ describe("mergeValues", () => {
     expect(() => mergeValues({ abc: 123 }, "string")).toThrowError(MergeError);
     expect(() => mergeValues(3, { abc: 123 })).toThrowError(MergeError);
     expect(() => mergeValues({ someKey: "someData" }, null)).toThrowError(
-      MergeError,
+      MergeError
     );
     expect(() => mergeValues([1, 2, 3], { qwerty: "asdf" })).toThrowError(
-      MergeError,
+      MergeError
     );
     expect(() =>
-      mergeValues({ even: "two" }, { objects: "fail" }),
+      mergeValues({ even: "two" }, { objects: "fail" })
     ).toThrowError(MergeError);
     expect(mergeValues({ object: "can", merge: "with" }, undefined)).toEqual({
       object: "can",
