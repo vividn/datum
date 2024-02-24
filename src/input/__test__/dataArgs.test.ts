@@ -7,7 +7,7 @@ import * as changeDatumCommandModule from "../../utils/changeDatumCommand";
 
 const expectParseDataToReturn = (
   inputProps: DataArgs,
-  expectedOutput: GenericObject
+  expectedOutput: GenericObject,
 ) => {
   expect(handleDataArgs(inputProps)).toEqual(expectedOutput);
 };
@@ -21,7 +21,7 @@ describe("handleDataArgs", () => {
     expectParseDataToReturn({ data: ["abc=def"] }, { abc: "def" });
     expectParseDataToReturn(
       { data: ["first=arg", "second=another"] },
-      { first: "arg", second: "another" }
+      { first: "arg", second: "another" },
     );
     expectParseDataToReturn({ data: ["blank="] }, {});
   });
@@ -29,7 +29,7 @@ describe("handleDataArgs", () => {
   it("keeps extra equals signs in the value string", () => {
     expectParseDataToReturn(
       { data: ["equation=1+2=3"] },
-      { equation: "1+2=3" }
+      { equation: "1+2=3" },
     );
     expectParseDataToReturn({ data: ["eqSep====="] }, { eqSep: "====" });
   });
@@ -37,21 +37,21 @@ describe("handleDataArgs", () => {
   it("throws error with extra data and no leniency", () => {
     expect(() => handleDataArgs({ data: ["keyless"] })).toThrow(ExtraDataError);
     expect(() =>
-      handleDataArgs({ data: ["these", "data", "have", "no", "keys"] })
+      handleDataArgs({ data: ["these", "data", "have", "no", "keys"] }),
     ).toThrow(ExtraDataError);
     expect(() =>
-      handleDataArgs({ required: ["key1"], data: ["hasKey", "noKey"] })
+      handleDataArgs({ required: ["key1"], data: ["hasKey", "noKey"] }),
     ).toThrow(ExtraDataError);
   });
 
   it("saves extra data when lenient", () => {
     expectParseDataToReturn(
       { lenient: true, data: ["keyless"] },
-      { extraData: "keyless" }
+      { extraData: "keyless" },
     );
     expectParseDataToReturn(
       { lenient: true, data: [3, "[1, 2, three]", "{a: bcd}"] },
-      { extraData: [3, [1, 2, "three"], { a: "bcd" }] }
+      { extraData: [3, [1, 2, "three"], { a: "bcd" }] },
     );
     expectParseDataToReturn(
       {
@@ -63,18 +63,18 @@ describe("handleDataArgs", () => {
         be: "interspersed",
         keyed: "data",
         extraData: ["can", "with"],
-      }
+      },
     );
   });
 
   it("assigns data to required keys", () => {
     expectParseDataToReturn(
       { required: ["abc"], data: ["value"] },
-      { abc: "value" }
+      { abc: "value" },
     );
     expectParseDataToReturn(
       { required: ["a", "b"], data: ["first", "second"] },
-      { a: "first", b: "second" }
+      { a: "first", b: "second" },
     );
     expectParseDataToReturn(
       {
@@ -82,96 +82,96 @@ describe("handleDataArgs", () => {
         data: ["first", "second", "third"],
         lenient: true,
       },
-      { a: "first", b: "second", extraData: "third" }
+      { a: "first", b: "second", extraData: "third" },
     );
   });
 
   it("throws if not enough data is given for all required keys", () => {
     expect(() => handleDataArgs({ required: ["a"], data: [] })).toThrow(
-      MissingRequiredKeyError
+      MissingRequiredKeyError,
     );
     expect(() =>
-      handleDataArgs({ required: ["a", "b"], data: ["onlyOne"] })
+      handleDataArgs({ required: ["a", "b"], data: ["onlyOne"] }),
     ).toThrow(MissingRequiredKeyError);
     expect(() =>
       handleDataArgs({
         required: ["a", "b"],
         data: ["lenientDoesNotHelp"],
         lenient: true,
-      })
+      }),
     ).toThrow(MissingRequiredKeyError);
   });
 
   test("required keys can be specified manually without error", () => {
     expectParseDataToReturn(
       { required: ["abc"], data: ["abc=def"] },
-      { abc: "def" }
+      { abc: "def" },
     );
   });
 
   test("manually specified required keys overwrite already specified auto values", () => {
     expectParseDataToReturn(
       { required: ["abc"], data: ["def", "abc=ghi"] },
-      { abc: "ghi" }
+      { abc: "ghi" },
     );
   });
 
   test("future keyless data skips over manually specified required keys", () => {
     expectParseDataToReturn(
       { required: ["abc", "def", "ghi"], data: ["def=123", "xyz", "foobar"] },
-      { abc: "xyz", def: 123, ghi: "foobar" }
+      { abc: "xyz", def: 123, ghi: "foobar" },
     );
   });
 
   it("handles optional extra keys", () => {
     expectParseDataToReturn(
       { optional: ["abc"], data: ["cde"] },
-      { abc: "cde" }
+      { abc: "cde" },
     );
     expectParseDataToReturn({ optional: ["optional"], data: [] }, {});
     expectParseDataToReturn(
       { optional: ["withDefault=3"], data: [] },
-      { withDefault: 3 }
+      { withDefault: 3 },
     );
     expectParseDataToReturn(
       { optional: ["withBlankDefault="], data: [] },
-      { withBlankDefault: undefined }
+      { withBlankDefault: undefined },
     );
     expectParseDataToReturn(
       { optional: ["withBlankQuoteDefault=''"], data: [] },
-      { withBlankQuoteDefault: "" }
+      { withBlankQuoteDefault: "" },
     );
     expectParseDataToReturn(
       { optional: ["withDefault=3"], data: ["replacement"] },
-      { withDefault: "replacement" }
+      { withDefault: "replacement" },
     );
   });
 
   it("replaces default value on optional keys if explicitly specified", () => {
     expectParseDataToReturn(
       { optional: ["abc"], data: ["abc=cde", "ghi"], lenient: true },
-      { abc: "cde", extraData: "ghi" }
+      { abc: "cde", extraData: "ghi" },
     );
     expectParseDataToReturn(
       {
         optional: ["abc=123"],
         data: ["replacesAbc", "abc=replacesAgain"],
       },
-      { abc: "replacesAgain" }
+      { abc: "replacesAgain" },
     );
     expectParseDataToReturn(
       {
         optional: ["first", "second=42"],
         data: ["first=54", "[3]"],
       },
-      { first: 54, second: [3] }
+      { first: 54, second: [3] },
     );
     expectParseDataToReturn(
       {
         optional: ["first=123", "second=42"],
         data: ["second=54"],
       },
-      { first: 123, second: 54 }
+      { first: 123, second: 54 },
     );
   });
 
@@ -191,56 +191,56 @@ describe("handleDataArgs", () => {
       handleDataArgs(parseDataArgs);
 
       expect(spy).toHaveBeenCalledTimes(inferTypeCalls);
-    }
+    },
   );
 
   it("saves comments from args", () => {
     expectParseDataToReturn(
       { comment: "this is a comment.", data: [] },
-      { comment: "this is a comment." }
+      { comment: "this is a comment." },
     );
     expectParseDataToReturn(
       {
         comment: ["this is a comment.", "more comments get added in array"],
         data: [],
       },
-      { comment: ["this is a comment.", "more comments get added in array"] }
+      { comment: ["this is a comment.", "more comments get added in array"] },
     );
   });
 
   it("concats data comments to arg comments", () => {
     expectParseDataToReturn(
       { comment: "argComment", data: ["comment=dataComment"] },
-      { comment: ["dataComment", "argComment"] }
+      { comment: ["dataComment", "argComment"] },
     );
     expectParseDataToReturn(
       {
         comment: ["argComment1", "argComment2"],
         data: ["comment=dataComment"],
       },
-      { comment: ["dataComment", "argComment1", "argComment2"] }
+      { comment: ["dataComment", "argComment1", "argComment2"] },
     );
   });
 
   it("uses the remainder key for any extra data", () => {
     expectParseDataToReturn(
       { remainder: "rem", data: ["oneArgHasNoArray"] },
-      { rem: "oneArgHasNoArray" }
+      { rem: "oneArgHasNoArray" },
     );
     expectParseDataToReturn(
       { remainder: "rem", data: ["abc", "otherKey=def", "hij"] },
-      { rem: ["abc", "hij"], otherKey: "def" }
+      { rem: ["abc", "hij"], otherKey: "def" },
     );
     expectParseDataToReturn(
       { required: ["keyA"], remainder: "rem", data: ["abc", "def", "hij"] },
-      { keyA: "abc", rem: ["def", "hij"] }
+      { keyA: "abc", rem: ["def", "hij"] },
     );
   });
 
   it("appends to the remainder key if previously specified", () => {
     expectParseDataToReturn(
       { remainder: "rem", data: ["rem=abc", "def"] },
-      { rem: ["abc", "def"] }
+      { rem: ["abc", "def"] },
     );
     expectParseDataToReturn(
       {
@@ -248,7 +248,7 @@ describe("handleDataArgs", () => {
         required: ["rem", "other"],
         data: ["first", "second", "third"],
       },
-      { other: "second", rem: ["first", "third"] }
+      { other: "second", rem: ["first", "third"] },
     );
     expectParseDataToReturn(
       {
@@ -256,7 +256,7 @@ describe("handleDataArgs", () => {
         optional: ["rem", "other"],
         data: ["first", "second", "third"],
       },
-      { other: "second", rem: ["first", "third"] }
+      { other: "second", rem: ["first", "third"] },
     );
   });
 
@@ -281,7 +281,7 @@ describe("handleDataArgs", () => {
       {
         firstKey: "firstArg",
         rem: "Additional arguments get made into a single string.",
-      }
+      },
     );
   });
 
@@ -292,7 +292,7 @@ describe("handleDataArgs", () => {
         remainder: "rem",
         data: ["rem=elementInArray", "Rest", "as", "string"],
       },
-      { rem: ["elementInArray", "Rest as string"] }
+      { rem: ["elementInArray", "Rest as string"] },
     );
   });
 
@@ -317,7 +317,7 @@ describe("handleDataArgs", () => {
         optional1: "the",
         key: "value",
         comment: "non filled keys will be a comment.",
-      }
+      },
     );
   });
 
@@ -330,7 +330,7 @@ describe("handleDataArgs", () => {
       },
       {
         comment: ["explicit comment", "comment remainder string"],
-      }
+      },
     );
     expectParseDataToReturn(
       {
@@ -340,7 +340,7 @@ describe("handleDataArgs", () => {
       },
       {
         comment: ["comment1", "comment2", "comment remainder string"],
-      }
+      },
     );
   });
 
@@ -351,7 +351,7 @@ describe("handleDataArgs", () => {
         optional: ["opt1", "opt2=defaultValue"],
         data: ["value1", "value2", "value3", "value4"],
       },
-      { req1: "value1", req2: "value2", opt1: "value3", opt2: "value4" }
+      { req1: "value1", req2: "value2", opt1: "value3", opt2: "value4" },
     );
   });
 
@@ -362,7 +362,7 @@ describe("handleDataArgs", () => {
         optional: ["opt1", "withDefaultFromOptional=noError"],
         data: ["onlyOneValue"],
       },
-      { req1: "onlyOneValue", withDefaultFromOptional: "noError" }
+      { req1: "onlyOneValue", withDefaultFromOptional: "noError" },
     );
   });
 
@@ -373,14 +373,14 @@ describe("handleDataArgs", () => {
         optional: ["opt1", "withDefaultFromOptional=noError"],
         data: ["one", "two", "three"],
       },
-      { req1: "one", withDefaultFromOptional: "two", opt1: "three" }
+      { req1: "one", withDefaultFromOptional: "two", opt1: "three" },
     );
     expect(() =>
       handleDataArgs({
         required: ["req1", "withDefaultFromOptional"],
         optional: ["opt1", "withDefaultFromOptional=noError"],
         data: ["one", "two", "three", "four"],
-      })
+      }),
     ).toThrow(ExtraDataError);
   });
 
@@ -389,7 +389,7 @@ describe("handleDataArgs", () => {
       { data: ["taskDuration=3hrs"] },
       {
         taskDuration: "PT3H",
-      }
+      },
     );
   });
 
@@ -398,7 +398,7 @@ describe("handleDataArgs", () => {
       { required: ["dueDate"], data: ["Dec 31, 2021"] },
       {
         dueDate: "2021-12-31",
-      }
+      },
     );
   });
 
@@ -407,7 +407,7 @@ describe("handleDataArgs", () => {
       { optional: ["startDate"], data: ["June 13, 2020"] },
       {
         startDate: "2020-06-13",
-      }
+      },
     );
   });
 
@@ -416,7 +416,7 @@ describe("handleDataArgs", () => {
       { optional: ["duration=5"] },
       {
         duration: "PT5M",
-      }
+      },
     );
   });
 
@@ -453,7 +453,7 @@ describe("handleDataArgs", () => {
 
       const parsedData2 = handleDataArgs(args);
       expect(parsedData2).toEqual(parsedData1);
-    }
+    },
   );
 
   it("uses the default value for an optional key if '.' is given as the value", () => {
@@ -472,7 +472,7 @@ describe("handleDataArgs", () => {
         opt1: "dotDefault",
         opt2: "threeValue",
         opt3: "notGivenDefault",
-      }
+      },
     );
   });
 
@@ -492,7 +492,7 @@ describe("handleDataArgs", () => {
         opt1: "threeValue",
         opt2: "dotDefault",
         opt3: "notGivenDefault",
-      }
+      },
     );
     expectParseDataToReturn(
       {
@@ -505,7 +505,7 @@ describe("handleDataArgs", () => {
         opt1: "three",
         opt2: "dotDefault",
         opt3: "four",
-      }
+      },
     );
   });
 
@@ -516,7 +516,7 @@ describe("handleDataArgs", () => {
       },
       {
         key2: "value2",
-      }
+      },
     );
   });
 
@@ -528,7 +528,7 @@ describe("handleDataArgs", () => {
       },
       {
         key3: "nonEmpty",
-      }
+      },
     );
   });
 
@@ -539,7 +539,7 @@ describe("handleDataArgs", () => {
       },
       {
         key: "value",
-      }
+      },
     );
     expectParseDataToReturn(
       {
@@ -548,7 +548,7 @@ describe("handleDataArgs", () => {
       },
       {
         req1: "someValue",
-      }
+      },
     );
   });
 
@@ -562,7 +562,7 @@ describe("handleDataArgs", () => {
         key1: "replace1",
         key2: "value2",
         key3: "replace3",
-      }
+      },
     );
   });
 
@@ -587,7 +587,7 @@ describe("handleDataArgs", () => {
         another: {
           key: 5,
         },
-      }
+      },
     );
   });
 
@@ -600,7 +600,7 @@ describe("handleDataArgs", () => {
         topKey: {
           nestedKey: "abc",
         },
-      }
+      },
     );
   });
 
@@ -609,7 +609,7 @@ describe("handleDataArgs", () => {
       {
         data: ["state=active"],
       },
-      { state: { id: "active" } }
+      { state: { id: "active" } },
     );
     expectParseDataToReturn(
       {
@@ -618,7 +618,7 @@ describe("handleDataArgs", () => {
       },
       {
         state: { id: "inactive" },
-      }
+      },
     );
   });
 
@@ -627,7 +627,7 @@ describe("handleDataArgs", () => {
       {
         data: [".key=active"],
       },
-      { state: { key: "active" } }
+      { state: { key: "active" } },
     );
     expectParseDataToReturn(
       {
@@ -637,7 +637,7 @@ describe("handleDataArgs", () => {
       },
       {
         state: { title: "The Dispossessed", author: "Ursula K. Le Guin" },
-      }
+      },
     );
   });
 
@@ -647,7 +647,7 @@ describe("handleDataArgs", () => {
         optional: ["state"],
         data: ["active", ".type=common"],
       },
-      { state: { id: "active", type: "common" } }
+      { state: { id: "active", type: "common" } },
     );
   });
 
@@ -667,7 +667,7 @@ describe("handleDataArgs", () => {
         baseAndCmd: "bAndC",
         cmdAndExplicit: "cAndE",
         justCmd: "justCmd",
-      }
+      },
     );
   });
 
@@ -676,7 +676,7 @@ describe("handleDataArgs", () => {
   it("calls changeDatumCommand if optional key dur is a special command", () => {
     const changeDatumCommandSpy = spyOn(
       changeDatumCommandModule,
-      "changeDatumCommand"
+      "changeDatumCommand",
     );
     const data = handleDataArgs({
       optional: ["opt1", "dur"],
@@ -685,7 +685,7 @@ describe("handleDataArgs", () => {
     expect(changeDatumCommandSpy).toHaveBeenCalledWith(
       expect.objectContaining({ opt1: "optValue1" }),
       "start",
-      expect.objectContaining({ optional: [] })
+      expect.objectContaining({ optional: [] }),
     );
     expect(data).toMatchObject({
       opt1: "optValue1",
@@ -697,7 +697,7 @@ describe("handleDataArgs", () => {
   it("calls changeDatumCommand if an remaining data key is a special command", () => {
     const changeDatumCommandSpy = spyOn(
       changeDatumCommandModule,
-      "changeDatumCommand"
+      "changeDatumCommand",
     );
     const data = handleDataArgs({
       optional: ["opt1"],
@@ -706,7 +706,7 @@ describe("handleDataArgs", () => {
     expect(changeDatumCommandSpy).toHaveBeenCalledWith(
       expect.objectContaining({ opt1: "optValue1" }),
       "end",
-      expect.objectContaining({ optional: [] })
+      expect.objectContaining({ optional: [] }),
     );
     expect(data).toMatchObject({
       opt1: "optValue1",
@@ -718,7 +718,7 @@ describe("handleDataArgs", () => {
   it("does not switch to a different command if there is a remainderKey to grab additional arguments", () => {
     const changeDatumCommandSpy = spyOn(
       changeDatumCommandModule,
-      "changeDatumCommand"
+      "changeDatumCommand",
     );
     const data = handleDataArgs({
       optional: ["opt1"],

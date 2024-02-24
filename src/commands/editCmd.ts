@@ -33,7 +33,7 @@ export class TooManyToEditError extends MyError {
 
 export async function editCmd(
   args: EditCmdArgs | string | string[],
-  preparsed?: Partial<EditCmdArgs>
+  preparsed?: Partial<EditCmdArgs>,
 ): Promise<EitherDocument> {
   args = parseIfNeeded(editCmdArgs, args, preparsed);
   const db = connectDb(args);

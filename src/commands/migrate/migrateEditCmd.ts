@@ -33,7 +33,7 @@ export type MigrateEditCmdArgs = MigrateCmdArgs & {
 
 export async function migrateEditCmd(
   args: MigrateEditCmdArgs | string | string[],
-  preparsed?: Partial<MigrateEditCmdArgs>
+  preparsed?: Partial<MigrateEditCmdArgs>,
 ): Promise<void> {
   args = parseIfNeeded(migrateEditCmdArgs, args, preparsed);
   const db = connectDb(args);

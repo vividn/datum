@@ -44,7 +44,7 @@ export type UpdateCmdArgs = MainDatumArgs &
 
 export async function updateCmd(
   argsOrCli: UpdateCmdArgs | string | string[],
-  preparsed?: Partial<UpdateCmdArgs>
+  preparsed?: Partial<UpdateCmdArgs>,
 ): Promise<EitherDocument[]> {
   const args = parseIfNeeded(updateCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
@@ -72,8 +72,8 @@ export async function updateCmd(
         payload,
         updateStrategy,
         outputArgs: args,
-      })
-    )
+      }),
+    ),
   );
 
   const newIds = updatedDocs.map((doc) => doc._id);

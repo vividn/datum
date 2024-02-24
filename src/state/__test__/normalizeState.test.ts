@@ -52,7 +52,7 @@ describe("unfoldState", () => {
     });
     expect(normalizeState({ id: { id: "abc" } })).toEqual("abc");
     expect(
-      normalizeState({ id: { id: "stringId", abc: 123, key: "value" } })
+      normalizeState({ id: { id: "stringId", abc: 123, key: "value" } }),
     ).toEqual({
       id: "stringId",
       abc: 123,
@@ -65,7 +65,7 @@ describe("unfoldState", () => {
       normalizeState({
         id: { id: "stringId", abc: 123, key: "value" },
         key: "replacementValue",
-      })
+      }),
     ).toEqual({
       id: "stringId",
       abc: 123,
@@ -83,7 +83,7 @@ describe("unfoldState", () => {
         },
         key: "value3",
         abc: 456,
-      })
+      }),
     ).toEqual({
       id: "deepId",
       key: "value3",
@@ -95,7 +95,7 @@ describe("unfoldState", () => {
 
   it("recursively normalizes an array state", () => {
     expect(
-      normalizeState(["abcd", { id: "stringId" }, true, { abc: "def" }])
+      normalizeState(["abcd", { id: "stringId" }, true, { abc: "def" }]),
     ).toEqual(["abcd", "stringId", true, { id: true, abc: "def" }]);
   });
 
@@ -133,7 +133,7 @@ describe("unfoldState", () => {
         id: ["state1", "state2", true],
         name: "name",
         n: 3,
-      })
+      }),
     ).toEqual([
       { id: "state1", name: "name", n: 3 },
       { id: "state2", name: "name", n: 3 },
@@ -147,7 +147,7 @@ describe("unfoldState", () => {
         { id: ["state1", "state2", "state3"] },
         { id: "state4" },
         "state5",
-      ])
+      ]),
     ).toEqual(["state1", "state2", "state3", "state4", "state5"]);
     expect(
       normalizeState({
@@ -156,7 +156,7 @@ describe("unfoldState", () => {
           { id: "state2" },
           { id: ["state3", ["state4", "state5"]], name: "john" },
         ],
-      })
+      }),
     ).toEqual([
       "state1",
       "state2",
@@ -181,13 +181,13 @@ describe("unfoldState", () => {
     expect(() => normalizeState([null, "abc"])).toThrowError(BadStateError);
     expect(() => normalizeState([null, null])).toThrowError(BadStateError);
     expect(() => normalizeState(["abc", { id: null }])).toThrowError(
-      BadStateError
+      BadStateError,
     );
     expect(() => normalizeState([null, { id: "abc" }])).toThrowError(
-      BadStateError
+      BadStateError,
     );
     expect(() => normalizeState([{ id: "abc" }, { id: null }])).toThrowError(
-      BadStateError
+      BadStateError,
     );
   });
 

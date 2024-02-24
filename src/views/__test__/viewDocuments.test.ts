@@ -26,7 +26,7 @@ const genericMapStr = `(doc) => {
 const genericReduceFunction = (
   _keys: any[],
   _values: any[],
-  _rereduce: boolean
+  _rereduce: boolean,
 ) => {
   return 0;
 };
@@ -94,7 +94,7 @@ describe("datumViewToViewPayload", () => {
     const viewPayload = datumViewToViewPayload(datumView);
     expect(viewPayload).toHaveProperty(
       `views.${name}.reduce`,
-      genericReduceStr
+      genericReduceStr,
     );
   });
 
@@ -166,7 +166,7 @@ describe("datumViewToViewPayload", () => {
         name: "no_reduce",
         emit,
         map: genericMapFunction,
-      })
+      }),
     ).toHaveProperty("meta", {});
     expect(
       datumViewToViewPayload({
@@ -174,7 +174,7 @@ describe("datumViewToViewPayload", () => {
         emit,
         map: genericMapFunction,
         reduce: "_count",
-      })
+      }),
     ).toHaveProperty("meta", {});
     expect(
       datumViewToViewPayload({
@@ -185,7 +185,7 @@ describe("datumViewToViewPayload", () => {
           one: genericReduceFunction,
           two: genericReduceFunction,
         },
-      })
+      }),
     ).toHaveProperty("meta", {});
   });
 

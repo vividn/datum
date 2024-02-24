@@ -47,14 +47,14 @@ export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;
 
 export async function switchCmd(
   args: SwitchCmdArgs | string | string[],
-  preparsed?: Partial<SwitchCmdArgs>
+  preparsed?: Partial<SwitchCmdArgs>,
 ): Promise<EitherDocument> {
   args = parseIfNeeded(switchCmdArgs, args, preparsed);
   flexiblePositional(
     args,
     "duration",
     !args.moment && !args.omitTimestamp && "optional",
-    "dur"
+    "dur",
   );
   flexiblePositional(args, "state", "optional");
 

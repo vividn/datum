@@ -56,7 +56,7 @@ export async function resetTestDb(
     __opts?: PouchDB.Configuration.DatabaseConfiguration;
     _destroyed?: boolean;
     _closed?: boolean;
-  }
+  },
 ): Promise<PouchDB.Database> {
   await db.destroy().catch(pass);
   // nasty hack to reopen closed database
@@ -66,7 +66,7 @@ export async function resetTestDb(
 }
 
 export function testDbLifecycle(
-  dbName: string
+  dbName: string,
 ): PouchDB.Database<EitherPayload> {
   const db = connectDb({ db: dbName });
 
@@ -134,7 +134,7 @@ export function restoreNow(): DateTime {
 
 export function at<A extends any[], O>(
   timeStr: string,
-  fn: (...args: A) => Promise<O>
+  fn: (...args: A) => Promise<O>,
 ): (...args: A) => Promise<O> {
   return async (...args: A): Promise<O> => {
     pushNow(timeStr);
@@ -148,7 +148,7 @@ export function at<A extends any[], O>(
 export function makeDoc<D extends EitherDocument = EitherDocument>(
   data: DatumData<ExtractDataType<D>>,
   meta: DatumMetadata | false = {},
-  include_rev = false
+  include_rev = false,
 ): D {
   let doc: D;
   if (meta === false) {

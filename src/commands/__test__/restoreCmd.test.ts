@@ -46,10 +46,10 @@ describe("restoreCmd", () => {
     expect((await db2.info()).doc_count).not.toBe(0);
 
     const restoredDocs = (await db2.allDocs({ include_docs: true })).rows.map(
-      ({ doc }) => doc
+      ({ doc }) => doc,
     );
     const originalDocs = (await db1.allDocs({ include_docs: true })).rows.map(
-      ({ doc }) => doc
+      ({ doc }) => doc,
     );
     expect(restoredDocs.length).toBe(originalDocs.length);
     expect(restoredDocs).toEqual(originalDocs);
@@ -71,7 +71,7 @@ describe("restoreCmd", () => {
 
     jest.spyOn(connectDbModule, "connectDb").mockReturnValueOnce(db2);
     await expect(
-      restoreCmd(`${backupFilePath}`)
+      restoreCmd(`${backupFilePath}`),
     ).rejects.toThrowErrorMatchingSnapshot();
   });
 
@@ -83,10 +83,10 @@ describe("restoreCmd", () => {
     await restoreCmd(`${backupFilePath} --allow-nonempty`);
 
     const restoredDocs = (await db2.allDocs({ include_docs: true })).rows.map(
-      ({ doc }) => doc
+      ({ doc }) => doc,
     );
     const originalDocs = (await db1.allDocs({ include_docs: true })).rows.map(
-      ({ doc }) => doc
+      ({ doc }) => doc,
     );
     expect(restoredDocs.length).toBe(originalDocs.length + 1);
     expect(restoredDocs).toContainEqual(extraDoc);

@@ -46,7 +46,7 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
     const iso8601DurationRegex =
       /(-)?P(?:([.,\d]+)Y)?(?:([.,\d]+)M)?(?:([.,\d]+)W)?(?:([.,\d]+)D)?(?:T(?:([.,\d]+)H)?(?:([.,\d]+)M)?(?:([.,\d]+)S)?)?/;
     const matches = (data.dur || data.duration || "").match(
-      iso8601DurationRegex
+      iso8601DurationRegex,
     );
     const durObj = matches
       ? {
@@ -70,8 +70,8 @@ export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
           durObj.minutes +
           durObj.seconds / 60)
       : data.dur === null
-      ? 0
-      : "";
+        ? 0
+        : "";
     const state = data.state;
 
     if (state === false) {

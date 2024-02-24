@@ -7,7 +7,7 @@ import { DateTime } from "luxon";
 import { datumTimeToLuxon } from "./timeUtils";
 
 export function getOccurTime(
-  doc: EitherDocument | DatumData
+  doc: EitherDocument | DatumData,
 ): DateTime | undefined {
   const data = isDatumDocument(doc as EitherDocument)
     ? (doc.data as DatumData)

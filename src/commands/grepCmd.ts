@@ -29,7 +29,7 @@ export type GrepCmdArgs = MainDatumArgs & {
 
 export async function grepCmd(
   args: GrepCmdArgs | string | string[],
-  preparsed?: Partial<GrepCmdArgs>
+  preparsed?: Partial<GrepCmdArgs>,
 ): Promise<EitherDocument[]> {
   const parsed = parseIfNeeded(grepCmdArgs, args, preparsed);
   const db = connectDb(parsed);
@@ -42,7 +42,7 @@ export async function grepCmd(
       }
       return accum;
     },
-    []
+    [],
   );
   const ids = matchingDocs.map((doc) => {
     showExists(doc, parsed);

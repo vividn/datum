@@ -16,7 +16,7 @@ export type HeadCmdArgs = TailCmdArgs;
 
 export async function headCmd(
   args: HeadCmdArgs | string | string[],
-  preparsed?: Partial<HeadCmdArgs>
+  preparsed?: Partial<HeadCmdArgs>,
 ): Promise<EitherDocument[]> {
   args = parseIfNeeded(headCmdArgs, args, preparsed);
   return tailCmd({ ...args, head: true });

@@ -15,7 +15,7 @@ import { restoreNow, setNow } from "../../__test__/test-utils";
 
 const expectTiming = (
   props: ReferencedTimeArgs,
-  expectedUTCOrDatumTime: string | Partial<TimeFromArgs>
+  expectedUTCOrDatumTime: string | Partial<TimeFromArgs>,
 ) => {
   const expectedOutput =
     typeof expectedUTCOrDatumTime === "string"
@@ -60,61 +60,61 @@ describe("handleTimeArgs", () => {
     const dtMockNow = DateTime.utc();
     expectTiming(
       { time: "+1" },
-      dtMockNow.plus(Duration.fromObject({ minutes: 1 })).toString()
+      dtMockNow.plus(Duration.fromObject({ minutes: 1 })).toString(),
     );
     expectTiming(
       { time: "+10m" },
-      dtMockNow.plus(Duration.fromObject({ minutes: 10 })).toString()
+      dtMockNow.plus(Duration.fromObject({ minutes: 10 })).toString(),
     );
     expectTiming(
       { time: "+100min" },
-      dtMockNow.plus(Duration.fromObject({ minutes: 100 })).toString()
+      dtMockNow.plus(Duration.fromObject({ minutes: 100 })).toString(),
     );
     expectTiming(
       { time: "+87.3" },
       dtMockNow
         .plus(Duration.fromObject({ minutes: 87, seconds: 18 }))
-        .toString()
+        .toString(),
     );
     expectTiming(
       { time: "-1" },
-      dtMockNow.minus(Duration.fromObject({ minutes: 1 })).toString()
+      dtMockNow.minus(Duration.fromObject({ minutes: 1 })).toString(),
     );
     expectTiming(
       { time: "-10" },
-      dtMockNow.minus(Duration.fromObject({ minutes: 10 })).toString()
+      dtMockNow.minus(Duration.fromObject({ minutes: 10 })).toString(),
     );
     expectTiming(
       { time: "-30 minutes" },
-      dtMockNow.minus(Duration.fromObject({ minutes: 30 })).toString()
+      dtMockNow.minus(Duration.fromObject({ minutes: 30 })).toString(),
     );
     expectTiming(
       { time: "+3h" },
-      dtMockNow.plus(Duration.fromObject({ hours: 3 })).toString()
+      dtMockNow.plus(Duration.fromObject({ hours: 3 })).toString(),
     );
     expectTiming(
       { time: "-1hr" },
-      dtMockNow.minus(Duration.fromObject({ hours: 1 })).toString()
+      dtMockNow.minus(Duration.fromObject({ hours: 1 })).toString(),
     );
     expectTiming(
       { time: "-3hrs" },
-      dtMockNow.minus(Duration.fromObject({ hours: 3 })).toString()
+      dtMockNow.minus(Duration.fromObject({ hours: 3 })).toString(),
     );
     expectTiming(
       { time: "+8.5hours" },
-      dtMockNow.plus(Duration.fromObject({ hours: 8.5 })).toString()
+      dtMockNow.plus(Duration.fromObject({ hours: 8.5 })).toString(),
     );
     expectTiming(
       { time: "+8 hours" },
-      dtMockNow.plus(Duration.fromObject({ hours: 8 })).toString()
+      dtMockNow.plus(Duration.fromObject({ hours: 8 })).toString(),
     );
     expectTiming(
       { time: "+100s" },
-      dtMockNow.plus(Duration.fromObject({ seconds: 100 })).toString()
+      dtMockNow.plus(Duration.fromObject({ seconds: 100 })).toString(),
     );
     expectTiming(
       { time: "-3sec" },
-      dtMockNow.minus(Duration.fromObject({ seconds: 3 })).toString()
+      dtMockNow.minus(Duration.fromObject({ seconds: 3 })).toString(),
     );
   });
 
@@ -122,15 +122,15 @@ describe("handleTimeArgs", () => {
     const dtMockNow = DateTime.utc();
     expectTiming(
       { quick: 1 },
-      dtMockNow.minus(Duration.fromObject({ minutes: 5 })).toString()
+      dtMockNow.minus(Duration.fromObject({ minutes: 5 })).toString(),
     );
     expectTiming(
       { quick: 2 },
-      dtMockNow.minus(Duration.fromObject({ minutes: 10 })).toString()
+      dtMockNow.minus(Duration.fromObject({ minutes: 10 })).toString(),
     );
     expectTiming(
       { quick: 6 },
-      dtMockNow.minus(Duration.fromObject({ minutes: 30 })).toString()
+      dtMockNow.minus(Duration.fromObject({ minutes: 30 })).toString(),
     );
     expectTiming({ quick: 3, time: "10:15" }, "2020-05-10T10:00:00.000Z");
   });
@@ -161,7 +161,7 @@ describe("handleTimeArgs", () => {
   it("can handle date and time together", () => {
     expectTiming(
       { date: "2018-06-30", time: "15:18" },
-      "2018-06-30T15:18:00.000Z"
+      "2018-06-30T15:18:00.000Z",
     );
     expectTiming({ date: "may1", time: "10" }, "2020-05-01T10:00:00.000Z");
     expectTiming({ date: "june 18", time: "4pm" }, "2020-06-18T16:00:00.000Z");
@@ -170,7 +170,7 @@ describe("handleTimeArgs", () => {
   it("only returns date when fullDay is given", () => {
     expectTiming(
       { date: "2020-05-20", time: "15:18", fullDay: true },
-      "2020-05-20"
+      "2020-05-20",
     );
     expectTiming({ fullDay: true }, "2020-05-10");
   });
@@ -188,44 +188,44 @@ describe("handleTimeArgs", () => {
     // Before DST, UTC-6
     expectTiming(
       { timezone: "America/Chicago", date: "2018-03-10", time: "10:00" },
-      { time: { utc: "2018-03-10T16:00:00.000Z", o: -6 } }
+      { time: { utc: "2018-03-10T16:00:00.000Z", o: -6 } },
     );
     // After DST, UTC-5
     expectTiming(
       { timezone: "America/Chicago", date: "2018-03-12", time: "10:00" },
-      { time: { utc: "2018-03-12T15:00:00.000Z", o: -5 } }
+      { time: { utc: "2018-03-12T15:00:00.000Z", o: -5 } },
     );
     expectTiming(
       { timezone: "+4", time: "10:00" },
-      { time: { utc: "2020-05-10T06:00:00.000Z", o: 4 } }
+      { time: { utc: "2020-05-10T06:00:00.000Z", o: 4 } },
     );
     expectTiming(
       { timezone: "-4", time: "10:00" },
-      { time: { utc: "2020-05-10T14:00:00.000Z", o: -4 } }
+      { time: { utc: "2020-05-10T14:00:00.000Z", o: -4 } },
     );
     expectTiming(
       { timezone: "0", time: "10:00" },
-      { time: { utc: "2020-05-10T10:00:00.000Z", o: 0 } }
+      { time: { utc: "2020-05-10T10:00:00.000Z", o: 0 } },
     );
     expectTiming(
       { timezone: "2", time: "10:00" },
-      { time: { utc: "2020-05-10T08:00:00.000Z", o: 2 } }
+      { time: { utc: "2020-05-10T08:00:00.000Z", o: 2 } },
     );
   });
 
   it("throws on unparsable times and dates", () => {
     expect(() => handleTimeArgs({ time: "absolute rubbish" })).toThrowError(
-      BadTimeError
+      BadTimeError,
     );
     expect(() => handleTimeArgs({ date: "before" })).toThrowError(BadDateError);
     expect(() =>
-      handleTimeArgs({ time: "3am", date: "the end of the universe" })
+      handleTimeArgs({ time: "3am", date: "the end of the universe" }),
     ).toThrowError(BadDateError);
     expect(() =>
-      handleTimeArgs({ time: "half past nothing", yesterday: 1 })
+      handleTimeArgs({ time: "half past nothing", yesterday: 1 }),
     ).toThrowError(BadTimeError);
     expect(() => handleTimeArgs({ timezone: "rubbish/timezone" })).toThrowError(
-      BadTimezoneError
+      BadTimezoneError,
     );
   });
 
@@ -259,7 +259,7 @@ describe("handleTimeArgs", () => {
     expect(
       handleTimeArgs({
         referenceTime: refTime,
-      }).unmodified
+      }).unmodified,
     ).toBe(true);
 
     // any modifications will result in unmodified: false
@@ -271,32 +271,32 @@ describe("handleTimeArgs", () => {
       handleTimeArgs({
         date: "2023-10-10",
         referenceTime: refTime,
-      }).unmodified
+      }).unmodified,
     ).toBe(false);
     expect(
       handleTimeArgs({
         time: "3:45",
         referenceTime: refTime,
-      }).unmodified
+      }).unmodified,
     ).toBe(false);
     expect(
       handleTimeArgs({
         yesterday: 1,
         referenceTime: refTime,
-      }).unmodified
+      }).unmodified,
     ).toBe(false);
     expect(
       handleTimeArgs({
         quick: 2,
         referenceTime: refTime,
-      }).unmodified
+      }).unmodified,
     ).toBe(false);
     expect(handleTimeArgs({ omitTimestamp: true }).unmodified).toBe(false);
 
     // still false even if time is equivalent to default or referenceTime
     expect(handleTimeArgs({ time: "-0" }).unmodified).toBe(false);
     expect(
-      handleTimeArgs({ time: "-0", referenceTime: refTime }).unmodified
+      handleTimeArgs({ time: "-0", referenceTime: refTime }).unmodified,
     ).toBe(false);
   });
 
@@ -304,13 +304,13 @@ describe("handleTimeArgs", () => {
     expect(handleTimeArgs({}).onlyDate).toBe(false);
     expect(handleTimeArgs({ time: "-8" }).onlyDate).toBe(false);
     expect(handleTimeArgs({ date: "2023-10-23", time: "14:37" }).onlyDate).toBe(
-      false
+      false,
     );
     expect(handleTimeArgs({ date: "2023-10-23" }).onlyDate).toBe(true);
     expect(handleTimeArgs({ yesterday: 1 }).onlyDate).toBe(true);
     expect(handleTimeArgs({ fullDay: true }).onlyDate).toBe(true);
     expect(
-      handleTimeArgs({ date: "-1", time: "5am", fullDay: true }).onlyDate
+      handleTimeArgs({ date: "-1", time: "5am", fullDay: true }).onlyDate,
     ).toBe(true);
   });
 });
@@ -330,7 +330,7 @@ describe("occurredBaseData", () => {
         baseData: { foo: "bar", abc: 123 },
         date: "-1",
         time: "3",
-      })
+      }),
     ).toEqual({
       foo: "bar",
       abc: 123,
@@ -349,7 +349,7 @@ describe("occurredBaseData", () => {
         },
         date: "+1",
         time: "10",
-      })
+      }),
     ).toEqual({
       foo: "bar",
       occurTime: {
@@ -373,7 +373,7 @@ describe("occurredBaseData", () => {
         date: "+1",
         time: "10",
         referenceTime: DateTime.fromISO("2023-07-10"),
-      })
+      }),
     ).toEqual({
       foo: "bar",
       occurTime: { utc: "2023-07-11T10:00:00.000Z", o: 0, tz: "UTC" },
@@ -386,7 +386,7 @@ describe("occurredBaseData", () => {
         baseData: "abcd",
         date: "jan31",
         time: "10",
-      })
+      }),
     ).toThrow(BaseDataError);
   });
 });

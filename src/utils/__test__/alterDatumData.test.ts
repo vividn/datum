@@ -216,7 +216,7 @@ describe("alterDatumData", () => {
           datumData,
           path: "weirdTime",
           value: "unparseable_time",
-        })
+        }),
       ).toThrowError(BadTimeError);
       expect(parseTimeSpy).toHaveBeenCalled();
       expect(parseTimeSpy).not.toHaveReturned(); // because it threw an error
@@ -226,7 +226,7 @@ describe("alterDatumData", () => {
           datumData,
           path: "weirdDate",
           value: "when pigs fly",
-        })
+        }),
       ).toThrowError(BadDateError);
       expect(parseDateSpy).toHaveBeenCalled();
       expect(parseDateSpy).not.toHaveReturned();
@@ -236,7 +236,7 @@ describe("alterDatumData", () => {
           datumData,
           path: "weirdDuration",
           value: "as long as it takes",
-        })
+        }),
       ).toThrowError(BadDurationError);
       expect(parseDurationSpy).toHaveBeenCalled();
       expect(parseDurationSpy).not.toHaveReturned();

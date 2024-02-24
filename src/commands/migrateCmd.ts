@@ -25,13 +25,13 @@ export const migrateCmdArgs = new ArgumentParser({
 export type MigrateCmdArgs = MainDatumArgs & {
   subfn: (
     args: MigrateCmdArgs,
-    preparsed?: Partial<MigrateCmdArgs>
+    preparsed?: Partial<MigrateCmdArgs>,
   ) => Promise<unknown>;
 };
 
 export async function migrateCmd(
   args: MigrateCmdArgs | string | string[],
-  preparsed?: Partial<MigrateCmdArgs>
+  preparsed?: Partial<MigrateCmdArgs>,
 ): Promise<unknown> {
   args = parseIfNeeded(migrateCmdArgs, args, preparsed);
   return await args.subfn(args);

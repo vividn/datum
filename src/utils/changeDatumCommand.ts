@@ -14,7 +14,7 @@ export type CommandChange = (typeof commandChanges)[number];
 export function changeDatumCommand(
   datumData: DatumData,
   command: CommandChange,
-  args?: DataArgs
+  args?: DataArgs,
 ) {
   switch (command) {
     case "occur":

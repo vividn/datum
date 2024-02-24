@@ -19,7 +19,7 @@ describe("defaultIdComponents", () => {
     expect(
       defaultIdComponents({
         data: { field: "abc", occurTime: { utc: exampleOccurTime } },
-      })
+      }),
     ).toMatchObject({
       defaultPartitionParts: ["%field%"],
     });
@@ -34,12 +34,12 @@ describe("defaultIdComponents", () => {
           keys: "too",
           occurTime: { utc: exampleOccurTime },
         },
-      })
+      }),
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
     expect(
       defaultIdComponents({
         data: { field: "works", with: "other", keys: "too" },
-      })
+      }),
     ).toMatchObject({ defaultPartitionParts: ["%field%"] });
   });
 
@@ -51,12 +51,12 @@ describe("defaultIdComponents", () => {
           key: "present",
           occurTime: { utc: exampleOccurTime },
         },
-      })
+      }),
     ).toMatchObject({ defaultPartitionParts: undefined });
     expect(
       defaultIdComponents({
         data: { no: "field", key: "present" },
-      })
+      }),
     ).toMatchObject({ defaultPartitionParts: undefined });
   });
 });

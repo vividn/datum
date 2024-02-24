@@ -62,10 +62,10 @@ export const dataStructuresView: DatumView<
         if (typeof val === "object" && val !== null && !Array.isArray(val)) {
           sortedSubkeys(val).map((subkeyArray, index) => {
             const prefixedSubKeys = subkeyArray.map(
-              (subkey) => key + "." + subkey
+              (subkey) => key + "." + subkey,
             );
             (subkeysByOrder[index] = subkeysByOrder[index] || []).push(
-              ...prefixedSubKeys
+              ...prefixedSubKeys,
             );
           });
         }

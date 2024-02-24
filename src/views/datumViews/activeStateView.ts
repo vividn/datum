@@ -37,8 +37,8 @@ export const activeStateView: DatumView<
       data.dur !== undefined
         ? data.dur
         : data.state === undefined
-        ? null
-        : undefined;
+          ? null
+          : undefined;
     const state = data.state !== undefined ? data.state : true;
     const lastState =
       data.lastState !== undefined ? data.lastState : state === false;
@@ -74,7 +74,7 @@ export const activeStateView: DatumView<
     }
     function subtractSecondsFromTime(
       time: isoDateOrTime,
-      seconds: number
+      seconds: number,
     ): isoDateOrTime {
       const newTime = new Date(time);
       newTime.setSeconds(newTime.getSeconds() - seconds);
@@ -101,7 +101,7 @@ export const activeStateView: DatumView<
     } else if (seconds < 0) {
       const holeBegin = subtractSecondsFromTime(
         occurTime.utc,
-        Math.abs(seconds)
+        Math.abs(seconds),
       );
       emit([field, holeBegin], false);
       emit([field, occurTime.utc], state);

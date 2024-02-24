@@ -10,7 +10,7 @@ export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   args: T,
   positionalKey: K,
   argType: PosArgType,
-  keyNameInData?: string
+  keyNameInData?: string,
 ): void {
   keyNameInData ??= String(positionalKey);
   if (args[positionalKey] === undefined) {

@@ -29,7 +29,7 @@ describe("editCmd", () => {
       def: "ghi",
     };
     editJSONInTerminalSpy.mockImplementation(
-      async (_doc: GenericObject) => editedDoc
+      async (_doc: GenericObject) => editedDoc,
     );
     await db.put({ _id: "abcdef", abc: "def" });
     const returnedDoc = await editCmd("abcdef");

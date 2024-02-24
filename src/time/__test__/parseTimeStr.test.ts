@@ -74,7 +74,7 @@ describe("absolute time strings", () => {
       ...anotherTime,
     });
     expect(
-      parseTimeStr({ timeStr, referenceTime: differentReferenceTime })
+      parseTimeStr({ timeStr, referenceTime: differentReferenceTime }),
     ).toEqual(DateTime.fromObject(expected));
   });
 });
@@ -108,10 +108,10 @@ describe("relative time strings", () => {
     "it parses %s as a duration of %s away from now",
     (timeStr, durationObject) => {
       const expectedDateTime = mockNow.plus(
-        Duration.fromObject(durationObject)
+        Duration.fromObject(durationObject),
       );
       expect(parseTimeStr({ timeStr })).toEqual(expectedDateTime);
-    }
+    },
   );
 
   test.each([
@@ -146,12 +146,12 @@ describe("relative time strings", () => {
         ...anotherTime,
       });
       const expectedDateTime = differentReferenceTime.plus(
-        Duration.fromObject(durationObject)
+        Duration.fromObject(durationObject),
       );
       expect(
-        parseTimeStr({ timeStr, referenceTime: differentReferenceTime })
+        parseTimeStr({ timeStr, referenceTime: differentReferenceTime }),
       ).toEqual(expectedDateTime);
-    }
+    },
   );
 });
 
@@ -166,21 +166,21 @@ describe("timezone shenanigans", () => {
       parseTimeStr({
         timeStr: "yesterday 18:00",
         referenceTime: differentReferenceTime,
-      })
+      }),
     ).toEqual(
       DateTime.fromISO("2024-02-20T18:00:00.000", {
         zone: "Pacific/Auckland",
-      })
+      }),
     );
     expect(
       parseTimeStr({
         timeStr: "tomorrow 10:00",
         referenceTime: differentReferenceTime,
-      })
+      }),
     ).toEqual(
       DateTime.fromISO("2024-02-22T10:00:00.000", {
         zone: "Pacific/Auckland",
-      })
+      }),
     );
   });
 });

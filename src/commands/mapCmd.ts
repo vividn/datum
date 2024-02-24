@@ -70,7 +70,7 @@ export type MapCmdArgs = MainDatumArgs & {
 
 export async function mapCmd(
   args: MapCmdArgs | string | string[],
-  preparsed?: Partial<MapCmdArgs>
+  preparsed?: Partial<MapCmdArgs>,
 ): Promise<PouchDB.Query.Response<EitherPayload>> {
   args = parseIfNeeded(mapCmdArgs, args, preparsed);
   const db = connectDb(args);
@@ -80,8 +80,8 @@ export async function mapCmd(
         endkey: inferType(args.end),
       }
     : args.start
-    ? startsWith(inferType(args.start))
-    : {};
+      ? startsWith(inferType(args.start))
+      : {};
   let viewParams: PouchDB.Query.Options<any, any> = {
     reduce: args.reduce ?? false,
     ...startEndParams,
@@ -98,7 +98,7 @@ export async function mapCmd(
     ? await db.allDocs(viewParams)
     : await db.query(
         `${args.mapName}/${args.view ?? args.mapName}`,
-        viewParams
+        viewParams,
       );
   if (args.show !== Show.None) {
     renderView(viewResult, args.showId, args.hid);

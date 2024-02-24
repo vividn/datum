@@ -38,7 +38,7 @@ export type V1CmdArgs = MainDatumArgs & {
 
 export async function v1Cmd(
   argsOrCli: V1CmdArgs | string | string[],
-  preparsed?: Partial<V1CmdArgs>
+  preparsed?: Partial<V1CmdArgs>,
 ): Promise<void> {
   const args = parseIfNeeded(v1CmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
@@ -65,10 +65,13 @@ export async function v1Cmd(
   }
   const rows = await getRows(args.field, db);
   const columnCountRows = await getColumnCounts(args.field, db);
-  const columnCounts = columnCountRows.reduce((acc, row) => {
-    acc[row.key[0]] = row.value;
-    return acc;
-  }, {} as Record<string, number>);
+  const columnCounts = columnCountRows.reduce(
+    (acc, row) => {
+      acc[row.key[0]] = row.value;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
   const { fd: finalFd } = rows.reduce(
     (current: { currentField?: string; fd: number }, row) => {
       let { currentField, fd } = current;
@@ -81,14 +84,14 @@ export async function v1Cmd(
         fs.writeSync(
           fd,
           createHeader(currentField, columnCounts[currentField]).join("\t") +
-            "\n"
+            "\n",
         );
       }
       fs.writeSync(fd, row.value.join("\t") + "\n");
 
       return { currentField, fd };
     },
-    { currentField: undefined, fd: 0 }
+    { currentField: undefined, fd: 0 },
   );
 
   closeFd(finalFd);
@@ -112,7 +115,7 @@ function createHeader(field: string, columnCount: number): string[] {
 
 async function getRows(
   fields: string[],
-  db: PouchDB.Database<EitherPayload>
+  db: PouchDB.Database<EitherPayload>,
 ): Promise<V1MapRow[]> {
   if (fields.length === 0) {
     return (await db.query<string[]>(datumV1View.name, { reduce: false }))
@@ -127,14 +130,14 @@ async function getRows(
           reduce: false,
         })
       ).rows;
-    })
+    }),
   );
   return flatten(groupedRows);
 }
 
 async function getColumnCounts(
   fields: string[],
-  db: PouchDB.Database<EitherPayload>
+  db: PouchDB.Database<EitherPayload>,
 ): Promise<V1ReduceRowGroup1[]> {
   if (fields.length === 0) {
     return (
@@ -156,7 +159,7 @@ async function getColumnCounts(
           group: true,
         })
       ).rows;
-    })
+    }),
   );
   return flatten(groupedRows);
 }

@@ -56,7 +56,7 @@ export type TailCmdArgs = MainDatumArgs &
 
 export async function tailCmd(
   argsOrCli: TailCmdArgs | string | string[],
-  preparsed?: Partial<TailCmdArgs>
+  preparsed?: Partial<TailCmdArgs>,
 ): Promise<EitherDocument[]> {
   const args = parseIfNeeded(tailCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
@@ -127,8 +127,8 @@ export async function tailCmd(
     onlyDate && args.n === undefined
       ? filteredRows
       : args.head
-      ? filteredRows.slice(0, limit)
-      : filteredRows.slice(-limit);
+        ? filteredRows.slice(0, limit)
+        : filteredRows.slice(-limit);
   const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
   const format = args.formatString;
@@ -137,7 +137,7 @@ export async function tailCmd(
     docs.forEach((doc) => {
       const { data, meta } = pullOutData(doc);
       console.log(
-        interpolateFields({ data, meta, format, useHumanTimes: true })
+        interpolateFields({ data, meta, format, useHumanTimes: true }),
       );
     });
     return docs;
@@ -169,7 +169,7 @@ export async function tailCmd(
     console.log(
       Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
         return table.print();
-      })
+      }),
     );
   }
   return docs;

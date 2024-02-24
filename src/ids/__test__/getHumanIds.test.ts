@@ -34,7 +34,7 @@ it("calls the humanId view with the input _ids as keys, then calls minHid with t
   expect(dbMock.query).toHaveBeenCalledTimes(1);
   expect(dbMock.query).toBeCalledWith(
     viewName,
-    expect.objectContaining({ reduce: false, keys: inputIds })
+    expect.objectContaining({ reduce: false, keys: inputIds }),
   );
 
   expect(returnVal).toEqual(["hid1", "hid2", undefined, "hid3"]);
@@ -48,13 +48,13 @@ it("throws a DatumViewMissing if datum view is not present", async () => {
     .mockRejectedValueOnce(new Error("should not be caught"));
 
   await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
-    DatumViewMissingError
+    DatumViewMissingError,
   );
   await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
-    DatumViewMissingError
+    DatumViewMissingError,
   );
   await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
-    DatumViewMissingError
+    DatumViewMissingError,
   );
   try {
     await getHumanIds(dbMock, ["abc"]);
