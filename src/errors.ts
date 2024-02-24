@@ -42,8 +42,8 @@ export class IdError extends MyError {
 }
 
 export class BadTimeError extends MyError {
-  #key: string = "";
-  #value: string = "";
+  #key = "";
+  #value = "";
 
   constructor(badTime?: string) {
     super();
@@ -68,8 +68,8 @@ export class BadTimeError extends MyError {
 }
 
 export class BadDateError extends MyError {
-  #key: string = "";
-  #value: string = "";
+  #key = "";
+  #value = "";
 
   constructor(badDate?: string) {
     super();
@@ -94,8 +94,8 @@ export class BadDateError extends MyError {
 }
 
 export class BadDurationError extends MyError {
-  #key: string = "";
-  #value: string = "";
+  #key = "";
+  #value = "";
 
   constructor(badDuration?: string) {
     super();
