@@ -20,6 +20,7 @@ v1Args.add_argument("field", {
 v1Args.add_argument("--output-dir", "-O", {
   help: "Where to write the output files. data will be written to {{field}}.tsv",
   type: "str",
+  dest: "outputDir",
 });
 
 export const v1CmdArgs = new ArgumentParser({
