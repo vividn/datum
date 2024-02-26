@@ -24,12 +24,11 @@
     "typewatch": "tsc -p tsconfig.withTests.json -w --skipLibCheck",
     "build": "rm -rf ./build; npx tsc -p . --skipLibCheck",
     "buildwatch": "tsc -p . -w --skipLibCheck",
-    "system": "rm -rf ./node_modules && yarn install --production && yarn build && yarn global add $PWD",
-    "pipeline": "yarn refresh && yarn test --maxWorkers 1 && yarn system",
-    "refresh": "rm -rf ./node_modules && yarn install",
+    "system": "rm -rf ./node_modules && pnpm i --production && pnpm build && pnpm --global add $PWD",
+    "refresh": "rm -rf ./node_modules && pnpm install",
     "lint": "eslint src",
     "fmt": "eslint src --fix",
-    "postinstall": "patch-package && yarn cache clean datum"
+    "preinstall": "npx only-allow pnpm"
   },
   "devDependencies": {
     "@babel/core": "^7.23.7",
@@ -87,7 +86,6 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^3.4.4",
     "parse-duration": "^1.1.0",
-    "patch-package": "^8.0.0",
     "picocolors": "^1.0.0",
     "pluralize": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
@@ -101,5 +99,10 @@
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
     "typescript": "^4.9.5"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "argparse@2.0.1": "patches/argparse@2.0.1.patch"
+    }
   }
 }
