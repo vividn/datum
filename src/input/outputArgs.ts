@@ -31,7 +31,7 @@ outputGroup.add_argument("--show", {
   help: "how much of documents to show",
   choices: Object.values(Show),
 });
-outputGroup.add_argument("--format-string", {
+outputGroup.add_argument("--format-string", "-o", {
   help: "create a custom output string for visualizing the doc(s). Specify %%keys%% with percent signs",
   dest: "formatString",
 });
