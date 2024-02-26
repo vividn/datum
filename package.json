@@ -28,8 +28,7 @@
     "refresh": "rm -rf ./node_modules && pnpm install",
     "lint": "eslint src",
     "fmt": "eslint src --fix",
-    "preinstall": "npx only-allow pnpm",
-    "postinstall": "patch-package"
+    "preinstall": "npx only-allow pnpm"
   },
   "devDependencies": {
     "@babel/core": "^7.23.7",
@@ -87,7 +86,6 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^3.4.4",
     "parse-duration": "^1.1.0",
-    "patch-package": "^8.0.0",
     "picocolors": "^1.0.0",
     "pluralize": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
@@ -101,5 +99,10 @@
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
     "typescript": "^4.9.5"
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "argparse@2.0.1": "patches/argparse@2.0.1.patch"
+    }
   }
 }
