@@ -31,8 +31,9 @@ export async function minHumanId(
         throw error;
       })
   ).rows;
-  const minWithoutConflict = docCountsPerSlice.find((row) => row.value === 1)
-    ?.key;
+  const minWithoutConflict = docCountsPerSlice.find(
+    (row) => row.value === 1,
+  )?.key;
   if (minWithoutConflict === undefined) {
     throw new MinHumanIdError("No substring uniquely identifies document");
   }

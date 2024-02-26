@@ -236,8 +236,8 @@ describe("tailCmd", () => {
     );
     expect(utcDates.every((date) => date === today)).toBe(false);
 
-    const localDates = docs.map(
-      (doc) => datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
+    const localDates = docs.map((doc) =>
+      datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
     );
     expect(localDates.every((date) => date === today)).toBe(true);
 
