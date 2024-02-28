@@ -2,25 +2,25 @@ import { parse as shellParse } from "shell-quote";
 import { ArgumentParser } from "argparse";
 import { dbArgs, DbArgs } from "./dbArgs";
 import { OutputArgs, Show } from "./outputArgs";
-import { addCmd } from "../commands/addCmd";
-import { occurCmd } from "../commands/occurCmd";
-import { startCmd } from "../commands/startCmd";
-import { endCmd } from "../commands/endCmd";
-import { switchCmd } from "../commands/switchCmd";
-import { getCmd } from "../commands/getCmd";
-import { updateCmd } from "../commands/updateCmd";
-import { deleteCmd } from "../commands/deleteCmd";
-import { mapCmd } from "../commands/mapCmd";
-import { reduceCmd } from "../commands/reduceCmd";
-import { setupCmd } from "../commands/setupCmd";
-import { tailCmd } from "../commands/tailCmd";
-import { headCmd } from "../commands/headCmd";
-import { editCmd } from "../commands/editCmd";
-import { v1Cmd } from "../commands/v1Cmd";
-import { grepCmd } from "../commands/grepCmd";
-import { backupCmd } from "../commands/backupCmd";
-import { restoreCmd } from "../commands/restoreCmd";
-import { migrateCmd } from "../commands/migrateCmd";
+import { dtmAdd } from "../commands/dtmAdd";
+import { dtmOccur } from "../commands/dtmOccur";
+import { dtmStart } from "../commands/dtmStart";
+import { dtmEnd } from "../commands/dtmEnd";
+import { dtmSwitch } from "../commands/dtmSwitch";
+import { dtmGet } from "../commands/dtmGet";
+import { dtmUpdate } from "../commands/dtmUpdate";
+import { dtmDelete } from "../commands/dtmDelete";
+import { dtmMap } from "../commands/dtmMap";
+import { dtmReduce } from "../commands/dtmReduce";
+import { dtmSetup } from "../commands/dtmSetup";
+import { dtmTail } from "../commands/dtmTail";
+import { dtmHead } from "../commands/dtmHead";
+import { dtmEdit } from "../commands/dtmEdit";
+import { dtmV1 } from "../commands/dtmV1";
+import { dtmGrep } from "../commands/dtmGrep";
+import { dtmBackup } from "../commands/dtmBackup";
+import { dtmRestore } from "../commands/dtmRestore";
+import { dtmMigrate } from "../commands/dtmMigrate";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -54,88 +54,88 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "start":
-      await startCmd(args, namespace);
+      await dtmStart(args, namespace);
       break;
 
     case "end":
-      await endCmd(args, namespace);
+      await dtmEnd(args, namespace);
       break;
 
     case "switch":
-      await switchCmd(args, namespace);
+      await dtmSwitch(args, namespace);
       break;
 
     case "get":
-      await getCmd(args, namespace);
+      await dtmGet(args, namespace);
       break;
 
     case "update": {
       namespace.strategy ??= "preferNew";
-      await updateCmd(args, namespace);
+      await dtmUpdate(args, namespace);
       break;
     }
 
     case "merge": {
       namespace.strategy ??= "merge";
-      await updateCmd(args, namespace);
+      await dtmUpdate(args, namespace);
       break;
     }
 
     case "delete":
     case "del":
-      await deleteCmd(args, namespace);
+      await dtmDelete(args, namespace);
       break;
 
     case "map":
-      await mapCmd(args, namespace);
+      await dtmMap(args, namespace);
       break;
 
     case "reduce":
     case "red":
-      await reduceCmd(args, namespace);
+      await dtmReduce(args, namespace);
       break;
 
     case "setup": {
       namespace.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
       namespace.show =
         namespace.show === Show.Default ? Show.Minimal : namespace.show;
-      await setupCmd(args, namespace);
+      await dtmSetup(args, namespace);
       break;
     }
 
     case "tail":
-      await tailCmd(args, namespace);
+      await dtmTail(args, namespace);
       break;
 
     case "head": {
-      await headCmd(args, namespace);
+      await dtmHead(args, namespace);
       break;
     }
 
     case "edit":
-      await editCmd(args, namespace);
+      await dtmEdit(args, namespace);
       break;
 
     case "v1":
-      await v1Cmd(args, namespace);
+      await dtmV1(args, namespace);
       break;
 
     case "grep":
-      await grepCmd(args, namespace);
+      await dtmGrep(args, namespace);
       break;
 
     case "backup":
-      await backupCmd(args, namespace);
+      await dtmBackup(args, namespace);
       break;
 
     case "restore":
-      await restoreCmd(args, namespace);
+      await dtmRestore(args, namespace);
       break;
 
     case "migrate":
     case "migration":
     case "mig":
-      await migrateCmd(args, namespace);
+      await dtmMigrate(args, namespace);
       break;
 
     // case "test": {
