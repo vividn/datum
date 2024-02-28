@@ -2,7 +2,7 @@ import { testDbLifecycle } from "../../__test__/test-utils";
 import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
 import { EitherDocument } from "../../documentControl/DatumDocument";
-import { updateCmd } from "../updateCmd";
+import { dtmUpdate } from "../dtmUpdate";
 import * as quickId from "../../ids/quickId";
 import { mock } from "jest-mock-extended";
 import { Show } from "../../input/outputArgs";
@@ -21,7 +21,7 @@ describe("updateCmd", () => {
       data: { foo: "bar" },
       meta: { humanId: "abcdefg" },
     });
-    const retDocs = await updateCmd(
+    const retDocs = await dtmUpdate(
       "abc --strategy preferNew foo=baz newField=newData",
     );
     expect(retDocs).toHaveLength(1);
@@ -36,7 +36,7 @@ describe("updateCmd", () => {
 
   it("can update a dataonly doc from the first letters of its id", async () => {
     await db.put({ _id: "some_data_only", foo: "bar" });
-    const retDocs = await updateCmd(
+    const retDocs = await dtmUpdate(
       "some_data_only --strategy merge -K foo -k newField baz newData",
     );
     expect(retDocs).toHaveLength(1);
@@ -58,7 +58,7 @@ describe("updateCmd", () => {
       .spyOn(updateDoc, "updateDoc")
       .mockReturnValue(Promise.resolve(updateDocReturn));
 
-    const retDocs = await updateCmd("input_quick --strategy xor foo=bar");
+    const retDocs = await dtmUpdate("input_quick --strategy xor foo=bar");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toBe(updateDocReturn);
     expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), "input_quick");
@@ -79,7 +79,7 @@ describe("updateCmd", () => {
       .spyOn(updateDoc, "updateDoc")
       .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
 
-    await updateCmd("input_quick foo=bar");
+    await dtmUpdate("input_quick foo=bar");
     expect(updateDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({ updateStrategy: "preferNew" }),
     );
@@ -91,11 +91,11 @@ describe("updateCmd", () => {
     console.log = mockLog;
 
     await db.put({ _id: "zzz", data: { foo: "bar" }, meta: {} });
-    await updateCmd("zzz foo=baz", { show: Show.Standard });
+    await dtmUpdate("zzz foo=baz", { show: Show.Standard });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("UPDATE"));
     mockLog.mockReset();
 
-    await updateCmd("zzz foo=baz", { show: Show.Standard });
+    await dtmUpdate("zzz foo=baz", { show: Show.Standard });
     expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("NODIFF"));
 
     console.log = originalLog;
@@ -104,7 +104,7 @@ describe("updateCmd", () => {
   it("can update multiple documents with a compound quickId", async () => {
     await db.put({ _id: "zzz", data: { foo: "bar", bar: "foo" }, meta: {} });
     await db.put({ _id: "yyy", data: { foo: "bar", bar: "foo2" }, meta: {} });
-    const returnValue = await updateCmd(",zzz,yyy foo=baz newField=newData");
+    const returnValue = await dtmUpdate(",zzz,yyy foo=baz newField=newData");
     const zzzMatchObject = {
       _id: "zzz",
       data: { foo: "baz", bar: "foo", newField: "newData" },
@@ -130,7 +130,7 @@ describe("updateCmd", () => {
       data: { foo: "bar" },
       meta: { humanId: "abcdefg" },
     });
-    const retDocs = await updateCmd("foo=baz abcd another=thing");
+    const retDocs = await dtmUpdate("foo=baz abcd another=thing");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toMatchObject({
       _id: "doc_to_update",
