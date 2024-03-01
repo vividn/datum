@@ -222,7 +222,7 @@ chorelistArgs.add_argument("sort", {
   default: "iti",
   nargs: "?",
 });
-chorelistArgs.add_argument("--watch", {
+chorelistArgs.add_argument("--watch", "-w", {
   action: "store_true",
   help: "Watch and update on changes to the database",
 });
