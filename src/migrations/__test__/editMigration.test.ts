@@ -72,7 +72,7 @@ describe("editMigration", () => {
     const viewName = getMigrationViewName(migrationName);
     const mockedEditInTerminal = jest
       .spyOn(editInTerminal, "editInTerminal")
-      .mockResolvedValue(migA2B);
+      .mockResolvedValue(migB2A);
 
     await editMigration({
       db: db,
