@@ -1,4 +1,16 @@
 import { fail, testDbLifecycle } from "../../__test__/test-utils";
+
+/**
+ * Edit the migration.
+ *
+ * This function allows the user to edit a migration. It prompts the user to make changes in the terminal and updates the migration accordingly.
+ *
+ * @param {object} options - The options for editing the migration.
+ * @param {string} options.db - The database to edit the migration from.
+ * @param {string} options.migrationName - The name of the migration to be edited.
+ * @param {string} [options.mapFn] - The map function to be applied for migration.
+ * @returns {Promise<void>} - A promise that resolves when the migration has been successfully edited.
+ */
 import { editMigration } from "../editMigration";
 import { asViewDb } from "../../views/DatumView";
 import * as editInTerminal from "../../utils/editInTerminal";
