@@ -33,6 +33,10 @@ tailArgs.add_argument("--metric", "-m", {
   help: "which time to use for the sorting, default is hybrid: occur or modify",
   choices: [...TIME_METRICS],
 });
+tailArgs.add_argument("--watch", "-w", {
+  help: "watch the db for changes and update",
+  action: "store_true",
+});
 tailArgs.add_argument("--head", {
   help: "show first rows instead of last rows" || SUPPRESS,
   action: "store_true",
@@ -52,6 +56,7 @@ export type TailCmdArgs = MainDatumArgs &
     n?: number;
     metric?: "hybrid" | "occur" | "create" | "modify";
     head?: boolean;
+    watch?: boolean;
   };
 
 export async function tailCmd(
