@@ -63,7 +63,7 @@ export function humanFormattedTime(
   const date = dateTime.toISODate();
   const dateText =
     date === DateTime.now().toISODate() ? "" : dateTime.toISODate();
-  const offsetText = chalk.dim(dateTime.toFormat("Z"));
+  const offsetText = chalk.gray(dateTime.toFormat("Z"));
   const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
   const fullText = [dateText, timeText].filter(Boolean).join(" ");
   const future = dateTime > DateTime.now();
@@ -131,7 +131,7 @@ function formatStateTransition(
     lastState !== undefined
       ? isEqual(lastState, state)
         ? chalk.yellow(`${formatState(lastState)}⇾`)
-        : chalk.dim(`${formatState(lastState)}⇾`)
+        : chalk.gray(`${formatState(lastState)}⇾`)
       : "";
   return state !== undefined
     ? `${lastStateText} ${formatState(state)}`
@@ -204,7 +204,7 @@ export function extractFormatted(
   const { data, meta } = pullOutData(doc);
   return {
     action: color(`${action}`),
-    id: doc._id ? chalk.dim(doc._id) : undefined,
+    id: doc._id ? chalk.gray(doc._id) : undefined,
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     time: formatAllTimes(doc),
     field: data?.field ? color.inverse(data.field) : undefined,
