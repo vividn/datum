@@ -11,7 +11,6 @@ export function parseIfNeeded<T>(
       typeof argsOrCli === "string"
         ? (shellParse(argsOrCli) as string[])
         : argsOrCli;
-    // @ts-expect-error - these types are not yet included, made PR on DefinitelyTyped, so it should work soon
     return parser.parse_intermixed_args(argArray, preparsed);
   }
   return preparsed ? ({ ...preparsed, ...argsOrCli } as T) : argsOrCli;
