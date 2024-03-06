@@ -28,7 +28,9 @@ export const inboxView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     }
     const data = doc.data;
     const meta = doc.meta;
-    function dtTransform(time: string | DatumTime | undefined): DatumTime | undefined {
+    function dtTransform(
+      time: string | DatumTime | undefined,
+    ): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {
         return { utc: time };

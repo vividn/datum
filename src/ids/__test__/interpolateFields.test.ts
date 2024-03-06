@@ -39,7 +39,7 @@ describe("interpolateFields", () => {
     });
 
     expect(interpolated).toMatchInlineSnapshot(
-      `"2022-05-01 19:52:00[2m-3[22m bar"`,
+      `"2022-05-01 19:52:00[90m-3[39m bar"`,
     );
   });
 });
