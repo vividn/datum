@@ -261,35 +261,35 @@ describe("headCmd", () => {
     await occurCmd("", { show: Show.None });
     await headCmd(" --format '::%field%::'");
     expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
-      Array [
-        Array [
+      [
+        [
           "::sleep::",
         ],
-        Array [
+        [
           "::sleep::",
         ],
-        Array [
+        [
           "::project::",
         ],
-        Array [
+        [
           "::text::",
         ],
-        Array [
+        [
           "::project::",
         ],
-        Array [
+        [
           "::text::",
         ],
-        Array [
+        [
           "::environment::",
         ],
-        Array [
+        [
           "::stretch::",
         ],
-        Array [
+        [
           "::run::",
         ],
-        Array [
+        [
           "::stretch::",
         ],
       ]

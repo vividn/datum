@@ -1,8 +1,8 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`tailCmd displays by default the last 10 occurrences in the database 3`] = `
-Array [
-  Array [
+[
+  [
     "      Time  Field        State      HID  
 09:30:00[90m+0[39m  [7menvironment[27m  outside    wqynb
 09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      7qaqo
@@ -20,8 +20,8 @@ Array [
 `;
 
 exports[`tailCmd tail metrics can display modifyTime tail 1`] = `
-Array [
-  Array [
+[
+  [
     "       Time  Field      State    HID  
 [90mm[39m19:00:00[90m+0[39m  [7malcohol[27m             elfuv
 [90mm[39m21:00:00[90m+0[39m  [7msocialize[27m  [1mend[22m      d7j7m
@@ -33,8 +33,8 @@ Array [
 `;
 
 exports[`tailCmd tail metrics can just display occurTime tail 1`] = `
-Array [
-  Array [
+[
+  [
     "      Time  Field      State    HID  
 19:00:00[90m+0[39m  [7malcohol[27m             elfuv
 19:30:00[90m+0[39m  [7msocialize[27m  [1mstart[22m    w1fla
@@ -45,8 +45,8 @@ Array [
 `;
 
 exports[`tailCmd tail metrics defaults to a hybrid display of occurTime and createTime 1`] = `
-Array [
-  Array [
+[
+  [
     "       Time  Field      State    HID  
  19:00:00[90m+0[39m  [7malcohol[27m             elfuv
  19:30:00[90m+0[39m  [7msocialize[27m  [1mstart[22m    w1fla
@@ -58,8 +58,8 @@ Array [
 `;
 
 exports[`tailCmd will display all if there are less than 10 occurrences in db 1`] = `
-Array [
-  Array [
+[
+  [
     "      Time  Field     State        HID  
 08:00:00[90m+0[39m  [7mcaffeine[27m               elfuv
 10:00:00[90m+0[39m  [7mproject[27m   household    en61v

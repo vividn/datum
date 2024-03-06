@@ -285,35 +285,35 @@ describe("tailCmd", () => {
     await occurCmd("", { show: Show.None });
     await tailCmd("--format-string ::%field%::");
     expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
-      Array [
-        Array [
+      [
+        [
           "::environment::",
         ],
-        Array [
+        [
           "::stretch::",
         ],
-        Array [
+        [
           "::run::",
         ],
-        Array [
+        [
           "::stretch::",
         ],
-        Array [
+        [
           "::run::",
         ],
-        Array [
+        [
           "::stretch::",
         ],
-        Array [
+        [
           "::environment::",
         ],
-        Array [
+        [
           "::stretch::",
         ],
-        Array [
+        [
           "::pushup::",
         ],
-        Array [
+        [
           "::caffeine::",
         ],
       ]

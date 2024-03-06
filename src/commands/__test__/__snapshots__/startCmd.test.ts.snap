@@ -1,15 +1,15 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
 exports[`startCmd change command can become a switch command by having start as a trailing word 1`] = `
-Object {
+{
   "_id": "field:2023-12-21T14:00:00.000Z",
   "_rev": Any<String>,
-  "data": Object {
+  "data": {
     "dur": "PT5M30S",
     "field": "field",
     "key": "val",
     "lastState": null,
-    "occurTime": Object {
+    "occurTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
@@ -17,15 +17,15 @@ Object {
     "opt1": "optVal",
     "state": "stateName",
   },
-  "meta": Object {
-    "createTime": Object {
+  "meta": {
+    "createTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
-    "modifyTime": Object {
+    "modifyTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
@@ -35,15 +35,15 @@ Object {
 `;
 
 exports[`startCmd change command can become an end command by having start as a trailing word 1`] = `
-Object {
+{
   "_id": "field:2023-12-21T14:00:00.000Z",
   "_rev": Any<String>,
-  "data": Object {
+  "data": {
     "dur": "PT30M",
     "field": "field",
     "key": "val",
     "lastState": null,
-    "occurTime": Object {
+    "occurTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
@@ -51,15 +51,15 @@ Object {
     "opt1": "optVal",
     "state": false,
   },
-  "meta": Object {
-    "createTime": Object {
+  "meta": {
+    "createTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
-    "modifyTime": Object {
+    "modifyTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
@@ -69,15 +69,15 @@ Object {
 `;
 
 exports[`startCmd change command can become an occur command by having occur as a trailing word 1`] = `
-Object {
+{
   "_id": "field:2023-12-21T14:00:00.000Z",
   "_rev": Any<String>,
-  "data": Object {
+  "data": {
     "dur": null,
     "field": "field",
     "key": "val",
     "lastState": null,
-    "occurTime": Object {
+    "occurTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
@@ -85,15 +85,15 @@ Object {
     "opt1": "optVal",
     "state": true,
   },
-  "meta": Object {
-    "createTime": Object {
+  "meta": {
+    "createTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
-    "modifyTime": Object {
+    "modifyTime": {
       "o": 0,
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
