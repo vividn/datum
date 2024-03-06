@@ -50,9 +50,16 @@ describe("editMigration", () => {
     });
     expect(mockedEditInTerminal).not.toHaveBeenCalled();
 
+    const mockedEditInTerminal = jest.spyOn(editInTerminal, "editInTerminal").mockResolvedValue(migA2B);
+
     const manualName = "manuallyEditedMigration";
     const manualNameView = getMigrationViewName(manualName);
     await editMigration({ db: db, migrationName: manualName });
+    expect(mockedEditInTerminal).toBeCalledTimes(1);
+    const designDoc = await asViewDb(db)
+      .get(getMigrationId(manualName))
+      .catch(fail);
+    expect(designDoc.views[manualNameView].map).toBe(migA2B);
     expect(mockedEditInTerminal).toBeCalledTimes(1);
     const designDoc = await asViewDb(db)
       .get(getMigrationId(manualName))
