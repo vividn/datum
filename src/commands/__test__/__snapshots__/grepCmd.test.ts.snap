@@ -3,25 +3,25 @@
 exports[`grepCmd finds all the docs that contain the given string 1`] = `
 Array [
   Array [
-    "[33mEXISTS[39m [2mdoc1[22m",
+    "[33mEXISTS[39m [90mdoc1[39m",
   ],
   Array [
     "  foo: \\"bar\\"  ",
   ],
   Array [
-    "[33mEXISTS[39m [2mdoc3[22m",
+    "[33mEXISTS[39m [90mdoc3[39m",
   ],
   Array [
     "  data: { foo: \\"bbarr\\" }  ",
   ],
   Array [
-    "[33mEXISTS[39m [2mdoc5[22m",
+    "[33mEXISTS[39m [90mdoc5[39m",
   ],
   Array [
     "  data: { bar: \\"foo\\" }  ",
   ],
   Array [
-    "[33mEXISTS[39m [33mbar[39m [2mdoc6[22m",
+    "[33mEXISTS[39m [33mbar[39m [90mdoc6[39m",
   ],
   Array [
     "  abc: \\"def\\"  ",
