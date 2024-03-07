@@ -26,14 +26,14 @@ stateArgs.add_argument("--last-state", "-L", {
   dest: "lastState",
 });
 
-export const switchArgs = new ArgumentParser({
+export const dtmSwitchArgs = new ArgumentParser({
   add_help: false,
   parents: [fieldArgs, stateArgs, durationArgs, newDocArgs, timeArgs, dataArgs],
 });
 
-export const switchCmdArgs = new ArgumentParser({
-  description: "switch states of a given field",
-  prog: "dtm switch",
+export const dtmSwitchCmdArgs = new ArgumentParser({
+  description: "Switch states of a given field",
+  prog: "dtmSwitch",
   usage: `%(prog)s <field> [state] [duration] [data..]
   %(prog)s --moment <field> [state] [data..]`,
   parents: [switchArgs, dbArgs, outputArgs],
@@ -45,11 +45,11 @@ export type StateArgs = {
 };
 export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;
 
-export async function switchCmd(
+export async function dtmSwitch(
   args: SwitchCmdArgs | string | string[],
   preparsed?: Partial<SwitchCmdArgs>,
 ): Promise<EitherDocument> {
-  args = parseIfNeeded(switchCmdArgs, args, preparsed);
+  args = parseIfNeeded(dtmSwitchCmdArgs, args, preparsed);
   flexiblePositional(
     args,
     "duration",
