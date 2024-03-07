@@ -3,7 +3,7 @@ import { at, testDbLifecycle } from "../../__test__/test-utils";
 import * as fs from "fs";
 import path from "path";
 import * as os from "os";
-import { addCmd } from "../addCmd";
+import { dtmAdd } from "../addCmd";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 
 describe("backupCmd", () => {
@@ -18,8 +18,8 @@ describe("backupCmd", () => {
     if (fs.existsSync(backupFilePath)) {
       fs.unlinkSync(backupFilePath);
     }
-    dbDocs.push(await addCmd("field1 some=data"));
-    dbDocs.push(await addCmd("field2 some=data2 with=differentField"));
+    dbDocs.push(await dtmAdd("field1 some=data"));
+    dbDocs.push(await dtmAdd("field2 some=data2 with=differentField"));
   });
 
   afterEach(() => {
@@ -44,7 +44,7 @@ describe("backupCmd", () => {
   it("does not overwrite the backup file by default", async () => {
     await backupCmd(`${backupFilePath}`);
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const newDoc = await addCmd("anotherField");
+    const newDoc = await dtmAdd("anotherField");
     await expect(backupCmd(`${backupFilePath}`)).rejects.toThrow("File exists");
 
     expect(fs.existsSync(backupFilePath)).toBe(true);
@@ -57,7 +57,7 @@ describe("backupCmd", () => {
   it("allows overwrite if --overwrite is specified", async () => {
     await backupCmd(`${backupFilePath}`);
     expect(fs.existsSync(backupFilePath)).toBe(true);
-    const newDoc = await addCmd("addedField2");
+    const newDoc = await dtmAdd("addedField2");
     await backupCmd(`${backupFilePath} --overwrite`);
 
     expect(fs.existsSync(backupFilePath)).toBe(true);
