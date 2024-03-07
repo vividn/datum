@@ -14,20 +14,20 @@ export const deleteArgs = new ArgumentParser({
   parents: [quickIdArgs, dbArgs, outputArgs],
 });
 
-export const deleteCmdArgs = new ArgumentParser({
-  description: "Delete a document",
-  prog: "dtm del[ete]",
+export const dtmDeleteArgs = new ArgumentParser({
+  description: "Delete a document from the database",
+  prog: "dtmDelete",
   usage: `%(prog)s <quickId>`,
   parents: [deleteArgs],
 });
 
 export type DeleteCmdArgs = MainDatumArgs & QuickIdArg;
 
-export async function deleteCmd(
+export async function dtmDelete(
   args: DeleteCmdArgs | string | string[],
   partialArgs?: Partial<DeleteCmdArgs>,
 ): Promise<DeletedDocument[]> {
-  args = parseIfNeeded(deleteCmdArgs, args, partialArgs);
+  args = parseIfNeeded(dtmDeleteArgs, args, partialArgs);
   const db = connectDb(args);
   const ids = await quickIds(db, args.quickId);
 
