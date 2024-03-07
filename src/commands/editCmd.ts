@@ -16,9 +16,9 @@ export const editArgs = new ArgumentParser({
   add_help: false,
   parents: [quickIdArgs],
 });
-export const editCmdArgs = new ArgumentParser({
-  description: "Edit a document directly with EDITOR",
-  prog: "datum edit",
+export const dtmEditArgs = new ArgumentParser({
+  description: "Edit a document in the database",
+  prog: "dtmEdit",
   usage: "%(prog)s <quickId>",
   parents: [editArgs, dbArgs, outputArgs],
 });
@@ -31,11 +31,11 @@ export class TooManyToEditError extends MyError {
   }
 }
 
-export async function editCmd(
+export async function dtmEdit(
   args: EditCmdArgs | string | string[],
   preparsed?: Partial<EditCmdArgs>,
 ): Promise<EitherDocument> {
-  args = parseIfNeeded(editCmdArgs, args, preparsed);
+  args = parseIfNeeded(dtmEditArgs, args, preparsed);
   const db = connectDb(args);
 
   const ids = await quickIds(db, args.quickId);
