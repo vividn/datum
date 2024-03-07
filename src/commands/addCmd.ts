@@ -48,37 +48,21 @@ newDocArgs.add_argument("--undo", "-u", {
   help: "undoes the last datum entry",
   action: "store_true",
 });
-newDocArgs.add_argument("--force-undo", "-U", {
-  help: "forces an undo, even if the datapoint was entered more than 15 minutes ago",
-  action: "store_true",
-  dest: "forceUndo",
-});
-newDocArgs.add_argument("--merge", "-x", {
-  help: "on conflict with an existing document update with the merge strategy. Equivalent to `--update merge`",
-  action: "store_const",
-  const: "merge",
-  dest: "conflict",
-});
-newDocArgs.add_argument("--conflict", "-X", {
-  help: `on conflict, update with given strategy.`,
-  choices: conflictChoices,
-});
-
 export const addArgs = new ArgumentParser({
   add_help: false,
   parents: [fieldArgs, newDocArgs, dataArgs],
 });
-export const addCmdArgs = new ArgumentParser({
-  description: "add a document",
-  prog: "dtm add",
+export const dtmAddArgs = new ArgumentParser({
+  description: "Add a document to the database",
+  prog: "dtmAdd",
   usage: `%(prog)s <field> [data..]
   %(prog)s --fieldless [data..]
   %(prog)s <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]
-`,
+  Additional options can be found in the documentation.`,
   parents: [addArgs, outputArgs, dbArgs],
 });
 
-export type AddCmdArgs = MainDatumArgs &
+export type DtmAddArgs = MainDatumArgs &
   FieldArgs &
   DataArgs & {
     noMetadata?: boolean;
@@ -92,10 +76,10 @@ export type AddCmdArgs = MainDatumArgs &
   };
 
 export async function addCmd(
-  args: AddCmdArgs | string | string[],
-  preparsed?: Partial<AddCmdArgs>,
+  args: DtmAddArgs | string | string[],
+  preparsed?: Partial<DtmAddArgs>,
 ): Promise<EitherDocument> {
-  args = parseIfNeeded(addCmdArgs, args, preparsed);
+  args = parseIfNeeded(dtmAddArgs, args, preparsed);
   const db = connectDb(args);
 
   flexiblePositional(args, "field", args.fieldless ? false : "required");
