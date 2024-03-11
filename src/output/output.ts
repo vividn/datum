@@ -75,6 +75,7 @@ type AllTimes = {
   occur?: string;
   modify?: string;
   create?: string;
+  none: undefined;
 };
 function formatAllTimes(doc: EitherPayload): AllTimes {
   const { data, meta } = pullOutData(doc);
@@ -88,6 +89,7 @@ function formatAllTimes(doc: EitherPayload): AllTimes {
     occur: humanFormattedTime(data.occurTime),
     modify: chalk.gray("m") + humanFormattedTime(meta?.modifyTime),
     create: chalk.grey("c") + humanFormattedTime(meta?.createTime),
+    none: undefined,
   };
   return times;
 }

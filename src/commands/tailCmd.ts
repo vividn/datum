@@ -16,6 +16,7 @@ import { ArgumentParser, SUPPRESS } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { MainDatumArgs } from "../input/mainArgs";
+import { tableOutput } from "../output/tableOutput";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,
@@ -131,6 +132,8 @@ export async function tailCmd(
         ? filteredRows.slice(0, limit)
         : filteredRows.slice(-limit);
   const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
+
+  const output = tableOutput(docs, { ...args, timeMetric: metric });
 
   return docs;
 }
