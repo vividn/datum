@@ -35,11 +35,11 @@ export function tableOutput(
     (doc) => {
       const formatted = extractFormatted(doc);
       const baseColumns = {
-        hid: formatted.hid,
         time: formatted.time?.[metric],
         field: formatted.field,
         state: formatted.state,
         duration: formatted.dur,
+        hid: formatted.hid,
       };
       if (columns.length === 0) {
         return baseColumns;
@@ -58,7 +58,6 @@ export function tableOutput(
   );
 
   const headerRow: Record<string, string | undefined> = {
-    hid: formattedRows.some((row) => row.hid !== undefined) ? "hid" : undefined,
     time: formattedRows.some((row) => row.time !== undefined)
       ? "time"
       : undefined,
@@ -69,6 +68,7 @@ export function tableOutput(
     state: formattedRows.some((row) => row.state !== undefined)
       ? "state"
       : undefined,
+    hid: formattedRows.some((row) => row.hid !== undefined) ? "hid" : undefined,
   };
   columns.forEach((col) => {
     if (formattedRows.some((row) => row[col] !== undefined)) {

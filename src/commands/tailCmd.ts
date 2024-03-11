@@ -134,6 +134,9 @@ export async function tailCmd(
   const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
   const output = tableOutput(docs, { ...args, timeMetric: metric });
+  if (output !== undefined) {
+    console.log(output);
+  }
 
   return docs;
 }
