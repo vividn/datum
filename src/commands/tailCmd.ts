@@ -1,11 +1,7 @@
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { viewMap } from "../views/viewMap";
 import { connectDb } from "../auth/connectDb";
-import { interpolateFields } from "../utils/interpolateFields";
 import { FieldArgs, fieldArgs } from "../input/fieldArgs";
-import { pullOutData } from "../utils/pullOutData";
-import { extractFormatted } from "../output/output";
-import Table from "easy-table";
 import {
   TIME_METRICS,
   timingView,
@@ -14,7 +10,7 @@ import {
 import { HIGH_STRING } from "../utils/startsWith";
 import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
-import { outputArgs, Show } from "../input/outputArgs";
+import { outputArgs } from "../input/outputArgs";
 import { DateTime } from "luxon";
 import { ArgumentParser, SUPPRESS } from "argparse";
 import { dbArgs } from "../input/dbArgs";
@@ -136,46 +132,5 @@ export async function tailCmd(
         : filteredRows.slice(-limit);
   const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
-  const format = args.formatString;
-  const show = args.show;
-  if (format && show !== Show.None) {
-    docs.forEach((doc) => {
-      const { data, meta } = pullOutData(doc);
-      console.log(
-        interpolateFields({ data, meta, format, useHumanTimes: true }),
-      );
-    });
-    return docs;
-  }
-  if (format === undefined && show !== Show.None) {
-    const formattedRows = docs.map((doc) => {
-      const formatted = extractFormatted(doc);
-      return {
-        time: formatted.time?.[metric],
-        field: formatted.field,
-        state: formatted.state,
-        duration: formatted.dur,
-        hid: formatted.hid,
-      };
-    });
-    const headerRow = {
-      time: "Time",
-      duration: formattedRows.some((row) => row.duration !== undefined)
-        ? "Dur"
-        : undefined,
-      field: "Field",
-      state: formattedRows.some((row) => row.state !== undefined)
-        ? "State"
-        : undefined,
-      hid: "HID",
-    };
-
-    const allRows = [headerRow, ...formattedRows];
-    console.log(
-      Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
-        return table.print();
-      }),
-    );
-  }
   return docs;
 }
