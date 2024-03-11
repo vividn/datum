@@ -24,12 +24,11 @@ export function tableOutput(
     return undefined;
   }
   if (format) {
-    docs.forEach((doc) => {
+    const formattedRows = docs.map((doc) => {
       const { data, meta } = pullOutData(doc);
-      console.log(
-        interpolateFields({ data, meta, format, useHumanTimes: true }),
-      );
+      return interpolateFields({ data, meta, format, useHumanTimes: true });
     });
+    return formattedRows.join("\n");
   }
   const formattedRows: Record<string, string | undefined>[] = docs.map(
     (doc) => {
