@@ -139,7 +139,7 @@ export async function tailCmd(
     const output = tableOutput(docs, { ...args, timeMetric: metric });
     if (output !== undefined) {
       if (args.watch) {
-        console.clear()
+        console.clear();
       }
       console.log(output);
     }
