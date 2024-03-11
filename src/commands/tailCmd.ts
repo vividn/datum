@@ -147,15 +147,17 @@ export async function tailCmd(
   }
 
   if (args.watch) {
+    let returnDocs: EitherDocument[];
     const changes = db.changes({
       since: "now",
       live: true,
     });
-    changes.on("change", () => {
-      getAndDisplayTail();
+    changes.on("change", async () => {
+      returnDocs = await getAndDisplayTail();
     });
-    getAndDisplayTail();
+    returnDocs = await getAndDisplayTail();
     await once(changes, "complete");
+    return returnDocs;
   }
   return getAndDisplayTail();
 }

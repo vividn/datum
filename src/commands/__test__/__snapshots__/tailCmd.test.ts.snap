@@ -1,5 +1,55 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`tailCmd can watch tail output 1`] = `
+[
+  "      time  field        state      hid  
+09:30:00[90m+0[39m  [7menvironment[27m  outside    wqynb
+09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      7qaqo
+09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m      9bcqg
+09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m        6m3y5
+10:07:00[90m+0[39m  [7mrun[27m          [1mend[22m        869r3
+10:07:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      gs6pb
+10:15:00[90m+0[39m  [7menvironment[27m  home       92g32
+10:15:00[90m+0[39m  [7mstretch[27m      [1mend[22m        chq8f
+10:18:00[90m+0[39m  [7mpushup[27m                  getek
+11:00:00[90m+0[39m  [7mcaffeine[27m                2abgf
+",
+]
+`;
+
+exports[`tailCmd can watch tail output 2`] = `
+[
+  [
+    "      time  field        state    hid  
+09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m    7qaqo
+09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m    9bcqg
+09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m      6m3y5
+10:07:00[90m+0[39m  [7mrun[27m          [1mend[22m      869r3
+10:07:00[90m+0[39m  [7mstretch[27m      [1mstart[22m    gs6pb
+10:15:00[90m+0[39m  [7menvironment[27m  home     92g32
+10:15:00[90m+0[39m  [7mstretch[27m      [1mend[22m      chq8f
+10:18:00[90m+0[39m  [7mpushup[27m                getek
+11:00:00[90m+0[39m  [7mcaffeine[27m              2abgf
+12:00:00[90m+0[39m  [7mpushup[27m                cav6f
+",
+  ],
+  [
+    "      time  field        state    hid  
+09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m    9bcqg
+09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m      6m3y5
+10:07:00[90m+0[39m  [7mrun[27m          [1mend[22m      869r3
+10:07:00[90m+0[39m  [7mstretch[27m      [1mstart[22m    gs6pb
+10:15:00[90m+0[39m  [7menvironment[27m  home     92g32
+10:15:00[90m+0[39m  [7mstretch[27m      [1mend[22m      chq8f
+10:18:00[90m+0[39m  [7mpushup[27m                getek
+11:00:00[90m+0[39m  [7mcaffeine[27m              2abgf
+12:00:00[90m+0[39m  [7mpushup[27m                cav6f
+12:30:00[90m+0[39m  [7mcaffeine[27m              yafyz
+",
+  ],
+]
+`;
+
 exports[`tailCmd displays by default the last 10 occurrences in the database 3`] = `
 [
   [

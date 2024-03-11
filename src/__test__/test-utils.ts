@@ -200,6 +200,10 @@ export async function deterministicHumanIds(seed?: number): Promise<void> {
   });
 }
 
+export async function delay(timeout) {
+  return new Promise((resolve) => setTimeout(resolve, timeout));
+}
+
 // export async function generateSampleDay(dateStr = "2022-08-14") {
 //
 //   setNow(dateStr);
