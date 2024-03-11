@@ -17,6 +17,7 @@ import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { MainDatumArgs } from "../input/mainArgs";
 import { tableOutput } from "../output/tableOutput";
+import { once } from "events";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,
@@ -107,36 +108,54 @@ export async function tailCmd(
   if (args.head !== true) {
     viewParams = reverseViewParams(viewParams);
   }
-  const viewResults = await viewMap({
-    db,
-    datumView: timingView,
-    params: viewParams,
-  });
 
-  // TODO factor this out better and automatically extract types from views
-  const rawRows: {
-    key: TimingViewType["MapKey"];
-    value: TimingViewType["MapValue"];
-    doc?: EitherDocument;
-  }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
-  const filteredRows = onlyDate
-    ? rawRows
-        .filter((row) => row.value[0] === utcTime)
-        // this sort moves times that are just dates to the top
-        .sort((a, b) => (a.value >= b.value ? 1 : -1))
-    : rawRows;
-  const limitedRows =
-    onlyDate && args.n === undefined
-      ? filteredRows
-      : args.head
-        ? filteredRows.slice(0, limit)
-        : filteredRows.slice(-limit);
-  const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
+  async function getAndDisplayTail(): Promise<EitherDocument<unknown>[]> {
+    const viewResults = await viewMap({
+      db,
+      datumView: timingView,
+      params: viewParams,
+    });
 
-  const output = tableOutput(docs, { ...args, timeMetric: metric });
-  if (output !== undefined) {
-    console.log(output);
+    // TODO factor this out better and automatically extract types from views
+    const rawRows: {
+      key: TimingViewType["MapKey"];
+      value: TimingViewType["MapValue"];
+      doc?: EitherDocument;
+    }[] = args.head ? viewResults.rows : viewResults.rows.reverse();
+    const filteredRows = onlyDate
+      ? rawRows
+          .filter((row) => row.value[0] === utcTime)
+          // this sort moves times that are just dates to the top
+          .sort((a, b) => (a.value >= b.value ? 1 : -1))
+      : rawRows;
+    const limitedRows =
+      onlyDate && args.n === undefined
+        ? filteredRows
+        : args.head
+          ? filteredRows.slice(0, limit)
+          : filteredRows.slice(-limit);
+    const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
+
+    const output = tableOutput(docs, { ...args, timeMetric: metric });
+    if (output !== undefined) {
+      if (args.watch) {
+        console.clear()
+      }
+      console.log(output);
+    }
+    return docs;
   }
 
-  return docs;
+  if (args.watch) {
+    const changes = db.changes({
+      since: "now",
+      live: true,
+    });
+    changes.on("change", () => {
+      getAndDisplayTail();
+    });
+    getAndDisplayTail();
+    await once(changes, "complete");
+  }
+  return getAndDisplayTail();
 }
