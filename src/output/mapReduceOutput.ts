@@ -6,14 +6,6 @@ export function mapReduceOutput(
   showId?: boolean,
   hid?: boolean,
 ): string {
-  const headerRow = ["key", "value"];
-  if (showId) {
-    headerRow.push("id");
-  }
-  if (hid) {
-    headerRow.push("hid");
-  }
-
   const dataRows = viewResponse.rows.map((row) => {
     const keyValue: { key: any; value: any; id?: string; hid?: string } = {
       key: JSON.stringify(row.key),
@@ -28,6 +20,5 @@ export function mapReduceOutput(
     return keyValue;
   });
 
-  const allRows = [headerRow, ...dataRows];
-  return Table.print(allRows);
+  return Table.print(dataRows);
 }
