@@ -5,7 +5,6 @@ import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./output";
-import stringify from "string.ify";
 
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
@@ -54,7 +53,7 @@ export function tableOutput(
       columns.forEach((col) => {
         const columnValue = data[col];
         if (columnValue !== undefined) {
-          extraColumns[col] = stringify(columnValue);
+          extraColumns[col] = JSON.stringify(columnValue);
         }
       });
       return { ...baseColumns, ...extraColumns };

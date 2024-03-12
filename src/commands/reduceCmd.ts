@@ -1,10 +1,10 @@
-import { renderView } from "../output/renderView";
 import { mapArgs, mapCmd, MapCmdArgs } from "./mapCmd";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { outputArgs, Show } from "../input/outputArgs";
 import { ArgumentParser } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { mapReduceOutput } from "../output/mapReduceOutput";
 
 export const reduceArgs = new ArgumentParser({
   add_help: false,
@@ -48,7 +48,8 @@ export async function reduceCmd(
       offset: mapResult.offset,
     };
     if (args.show !== Show.None) {
-      renderView(mockReduceResult);
+      const output = mapReduceOutput(mockReduceResult);
+      console.log(output);
     }
     return mockReduceResult;
   }
