@@ -312,7 +312,7 @@ describe("tailCmd", () => {
   it("can watch tail output", async () => {
     setNow(`12:00 ${today}`);
     await generateSampleMorning(today);
-    const _tailPromise = tailCmd("-w", { show: Show.Standard });
+    tailCmd("-w", { show: Show.Standard });
     await delay(100);
     expect(mockedLog).toHaveBeenCalledTimes(1);
     expect(mockedLog.mock.calls[0]).toMatchSnapshot();
@@ -325,6 +325,8 @@ describe("tailCmd", () => {
     await delay(100);
     expect(mockedLog).toHaveBeenCalledTimes(2);
     expect(mockedLog.mock.calls).toMatchSnapshot();
+
+    // Note: the tail watch is automatically completed when the database is destoryed in the afterEach
   });
 
   it("can display extra data columns in the output", async () => {
