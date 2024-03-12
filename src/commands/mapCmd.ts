@@ -68,6 +68,12 @@ export type MapCmdArgs = MainDatumArgs & {
   params?: PouchDB.Query.Options<any, any>;
 };
 
+/**
+ * Display a map view or map reduce view.
+ * @param {MapCmdArgs | string | string[]} args - The arguments for the map command.
+ * @param {Partial<MapCmdArgs>} preparsed - Partially parsed arguments.
+ * @returns {Promise<PouchDB.Query.Response<EitherPayload>>} - A promise that resolves with the view result.
+ */
 export async function mapCmd(
   args: MapCmdArgs | string | string[],
   preparsed?: Partial<MapCmdArgs>,
