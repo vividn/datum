@@ -11,6 +11,18 @@ type TableOutputArgs = OutputArgs & {
   timeMetric?: (typeof TIME_METRICS)[number] | "none";
 };
 
+/**
+ * Generates a table output based on the provided documents and arguments.
+ * @param {EitherDocument[]} docs - The documents to generate the table output from.
+ * @param {TableOutputArgs} args - The arguments for generating the table output.
+ * @returns {string | undefined} - The generated table output as a string, or undefined if there is no data to display.
+ */
+export function tableOutput(
+ * Generates a table output based on the provided documents and arguments.
+ * @param {EitherDocument[]} docs - The documents to generate the table output from.
+ * @param {TableOutputArgs} args - The arguments for generating the table output.
+ * @returns {string | undefined} - The generated table output as a string, or undefined if there is no data to display.
+ */
 export function tableOutput(
   docs: EitherDocument[],
   args: TableOutputArgs,
