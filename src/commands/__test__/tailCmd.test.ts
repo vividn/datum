@@ -38,10 +38,10 @@ describe("tailCmd", () => {
     const docs = await tailCmd("", { show: Show.Standard });
     expect(docs.length).toBe(10);
     expect(docs[0]._id).toMatchInlineSnapshot(
-      `"environment:2023-10-16T09:30:00.000Z"`,
+      `"environment:2023-10-16T09:30:00.000Z"`
     );
     expect(docs.at(-1)?._id).toMatchInlineSnapshot(
-      `"caffeine:2023-10-16T11:00:00.000Z"`,
+      `"caffeine:2023-10-16T11:00:00.000Z"`
     );
     expect(mockedLog.mock.calls).toMatchSnapshot();
   });
@@ -85,7 +85,7 @@ describe("tailCmd", () => {
     const docs2 = await tailCmd("stretch");
     expect(docs2.length).toBe(8);
     expect(docs2.map((doc) => doc.data.field)).toEqual(
-      Array(8).fill("stretch"),
+      Array(8).fill("stretch")
     );
   });
 
@@ -96,7 +96,7 @@ describe("tailCmd", () => {
       ({ _id: occur1Id } = await occurCmd("alcohol"));
       setNow("20:00");
       ({ _id: addId } = await addCmd(
-        `person -b '{ name: "john doe", age: 35 }' --id %name`,
+        `person -b '{ name: "john doe", age: 35 }' --id %name`
       ));
       setNow("21:00");
       ({ _id: occur3Id } = await endCmd("socialize"));
@@ -163,7 +163,7 @@ describe("tailCmd", () => {
     const docs1 = await tailCmd("-t 9:30");
     expect(docs1.length).toBe(8);
     expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
-      `"stretch:2023-10-16T09:30:00.000Z"`,
+      `"stretch:2023-10-16T09:30:00.000Z"`
     );
 
     const docs2 = await tailCmd("-d yesterday -t 23:30");
@@ -185,7 +185,7 @@ describe("tailCmd", () => {
     const docsomitTimestamp = await tailCmd("");
     const lastOccuromitTimestamp = docsomitTimestamp.at(-1)?.data.occurTime.utc;
     expect(DateTime.fromISO(lastOccuromitTimestamp).toISODate()).toEqual(
-      tomorrow,
+      tomorrow
     );
   });
 
@@ -209,16 +209,14 @@ describe("tailCmd", () => {
     expect(
       docs
         .map((doc) => doc.data.occurTime.utc)
-        .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === today,
-        ),
+        .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
     ).toBe(true);
     expect(
       yesterdayDocs
         .map((doc) => doc.data.occurTime.utc)
         .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday,
-        ),
+          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday
+        )
     ).toEqual(true);
   });
 
@@ -233,12 +231,12 @@ describe("tailCmd", () => {
 
     // when mapping just from utc, not all should be on today
     const utcDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate(),
+      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate()
     );
     expect(utcDates.every((date) => date === today)).toBe(false);
 
     const localDates = docs.map((doc) =>
-      datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
+      datumTimeToLuxon(doc.data.occurTime)?.toISODate()
     );
     expect(localDates.every((date) => date === today)).toBe(true);
 
@@ -325,5 +323,29 @@ describe("tailCmd", () => {
     await delay(100);
     expect(mockedLog).toHaveBeenCalledTimes(2);
     expect(mockedLog.mock.calls).toMatchSnapshot();
+  });
+
+  it("can display extra data columns in the output", async () => {
+    await generateSampleMorning(today);
+    await tailCmd("--column amount,distance --column comment", {
+      show: Show.Standard,
+    });
+    expect(mockedLog).toHaveBeenCalledTimes(1);
+    expect(mockedLog.mock.calls[0]).toMatchInlineSnapshot(`
+      [
+        "      time  field        state      hid    amount  distance  comment 
+      09:30:00[90m+0[39m  [7menvironment[27m  outside    wqynb                            
+      09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      7qaqo                            
+      09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m      9bcqg                            
+      09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m        6m3y5                            
+      10:07:00[90m+0[39m  [7mrun[27m          [1mend[22m        869r3          5.4               
+      10:07:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      gs6pb                            
+      10:15:00[90m+0[39m  [7menvironment[27m  home       92g32                            
+      10:15:00[90m+0[39m  [7mstretch[27m      [1mend[22m        chq8f                            
+      10:18:00[90m+0[39m  [7mpushup[27m                  getek  10                        
+      11:00:00[90m+0[39m  [7mcaffeine[27m                2abgf  100               "coffee"
+      ",
+      ]
+    `);
   });
 });

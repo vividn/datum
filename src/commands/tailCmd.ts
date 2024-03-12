@@ -39,6 +39,10 @@ tailArgs.add_argument("--head", {
   help: "show first rows instead of last rows" || SUPPRESS,
   action: "store_true",
 });
+tailArgs.add_argument("--column", {
+  help: "additional columns to show. Can be specified multiple times and/or take a comma separated list",
+  action: "append",
+});
 
 export const tailCmdArgs = new ArgumentParser({
   description:
@@ -55,6 +59,7 @@ export type TailCmdArgs = MainDatumArgs &
     metric?: "hybrid" | "occur" | "create" | "modify";
     head?: boolean;
     watch?: boolean;
+    column?: string[];
   };
 
 export async function tailCmd(
@@ -67,6 +72,7 @@ export async function tailCmd(
   const limit = args.n ?? 10;
   const metric = args.metric ?? "hybrid";
   const field = args.field ?? null;
+  const columns = (args.column ?? []).map((col) => col.split(",")).flat();
 
   let viewParams: PouchDB.Query.Options<any, any> = {
     include_docs: true,
@@ -136,7 +142,7 @@ export async function tailCmd(
           : filteredRows.slice(-limit);
     const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
-    const output = tableOutput(docs, { ...args, timeMetric: metric });
+    const output = tableOutput(docs, { ...args, timeMetric: metric, columns });
     if (output !== undefined) {
       if (args.watch) {
         console.clear();

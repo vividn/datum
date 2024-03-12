@@ -75,9 +75,7 @@ export function tableOutput(
     hid: formattedRows.some((row) => row.hid !== undefined) ? "hid" : undefined,
   };
   columns.forEach((col) => {
-    if (formattedRows.some((row) => row[col] !== undefined)) {
-      headerRow[col] = col;
-    }
+    headerRow[col] = col;
   });
 
   const allRows = [headerRow, ...formattedRows];
