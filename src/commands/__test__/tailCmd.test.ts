@@ -1,4 +1,5 @@
 import {
+  delay,
   deterministicHumanIds,
   mockedLogLifecycle,
   setNow,
@@ -287,34 +288,16 @@ describe("tailCmd", () => {
     expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
       [
         [
-          "::environment::",
-        ],
-        [
-          "::stretch::",
-        ],
-        [
-          "::run::",
-        ],
-        [
-          "::stretch::",
-        ],
-        [
-          "::run::",
-        ],
-        [
-          "::stretch::",
-        ],
-        [
-          "::environment::",
-        ],
-        [
-          "::stretch::",
-        ],
-        [
-          "::pushup::",
-        ],
-        [
-          "::caffeine::",
+          "::environment::
+      ::stretch::
+      ::run::
+      ::stretch::
+      ::run::
+      ::stretch::
+      ::environment::
+      ::stretch::
+      ::pushup::
+      ::caffeine::",
         ],
       ]
     `);
@@ -324,5 +307,49 @@ describe("tailCmd", () => {
     await generateSampleMorning(today);
     await tailCmd("", { show: Show.None });
     expect(mockedLog).not.toHaveBeenCalled();
+  });
+
+  it("can watch tail output", async () => {
+    setNow(`12:00 ${today}`);
+    await generateSampleMorning(today);
+    tailCmd("-w", { show: Show.Standard });
+    await delay(100);
+    expect(mockedLog).toHaveBeenCalledTimes(1);
+    expect(mockedLog.mock.calls[0]).toMatchSnapshot();
+    mockedLog.mockClear();
+    await delay(100);
+    expect(mockedLog).not.toHaveBeenCalled();
+    await occurCmd("pushup amount=10");
+    setNow(`12:30`);
+    await occurCmd("caffeine amount=100 -c coffee");
+    await delay(100);
+    expect(mockedLog).toHaveBeenCalledTimes(2);
+    expect(mockedLog.mock.calls).toMatchSnapshot();
+
+    // Note: the tail watch is automatically completed when the database is destoryed in the afterEach
+  });
+
+  it("can display extra data columns in the output", async () => {
+    await generateSampleMorning(today);
+    await tailCmd("--column amount,distance --column comment", {
+      show: Show.Standard,
+    });
+    expect(mockedLog).toHaveBeenCalledTimes(1);
+    expect(mockedLog.mock.calls[0]).toMatchInlineSnapshot(`
+      [
+        "      time  field        state      hid    amount  distance  comment 
+      09:30:00[90m+0[39m  [7menvironment[27m  outside    wqynb                            
+      09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      7qaqo                            
+      09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m      9bcqg                            
+      09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m        6m3y5                            
+      10:07:00[90m+0[39m  [7mrun[27m          [1mend[22m        869r3          5.4               
+      10:07:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      gs6pb                            
+      10:15:00[90m+0[39m  [7menvironment[27m  home       92g32                            
+      10:15:00[90m+0[39m  [7mstretch[27m      [1mend[22m        chq8f                            
+      10:18:00[90m+0[39m  [7mpushup[27m                  getek  10                        
+      11:00:00[90m+0[39m  [7mcaffeine[27m                2abgf  100               "coffee"
+      ",
+      ]
+    `);
   });
 });
