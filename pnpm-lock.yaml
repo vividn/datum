@@ -53,8 +53,8 @@ dependencies:
     specifier: ^4.2.3
     version: 4.2.3
   '@types/react':
-    specifier: ^18.2.63
-    version: 18.2.63
+    specifier: ^18.2.65
+    version: 18.2.65
   '@types/relaxed-json':
     specifier: ^1.0.4
     version: 1.0.4
@@ -81,7 +81,7 @@ dependencies:
     version: 1.2.0
   ink:
     specifier: ^3.2.0
-    version: 3.2.0(@types/react@18.2.63)(react@18.2.0)
+    version: 3.2.0(@types/react@18.2.65)(react@18.2.0)
   ink-table:
     specifier: ^3.1.0
     version: 3.1.0(ink@3.2.0)(react@18.2.0)
@@ -2171,8 +2171,8 @@ packages:
     resolution: {integrity: sha512-JCB8C6SnDoQf0cNycqd/35A7MjcnK+ZTqE7judS6o7utxUCg6imJg3QK2qzHKszlTjcj2cn+NwMB2i96ubpj7w==}
     dev: false
 
-  /@types/react@18.2.63:
-    resolution: {integrity: sha512-ppaqODhs15PYL2nGUOaOu2RSCCB4Difu4UFrP4I3NHLloXC/ESQzQMi9nvjfT1+rudd0d2L3fQPJxRSey+rGlQ==}
+  /@types/react@18.2.65:
+    resolution: {integrity: sha512-98TsY0aW4jqx/3RqsUXwMDZSWR1Z4CUlJNue8ueS2/wcxZOsz4xmW1X8ieaWVRHcmmQM3R8xVA4XWB3dJnWwDQ==}
     dependencies:
       '@types/prop-types': 15.7.5
       '@types/scheduler': 0.16.2
@@ -3981,12 +3981,12 @@ packages:
       ink: '>=3.0.0'
       react: '>=16.8.0'
     dependencies:
-      ink: 3.2.0(@types/react@18.2.63)(react@18.2.0)
+      ink: 3.2.0(@types/react@18.2.65)(react@18.2.0)
       object-hash: 2.2.0
       react: 18.2.0
     dev: false
 
-  /ink@3.2.0(@types/react@18.2.63)(react@18.2.0):
+  /ink@3.2.0(@types/react@18.2.65)(react@18.2.0):
     resolution: {integrity: sha512-firNp1q3xxTzoItj/eOOSZQnYSlyrWks5llCTVX37nJ59K3eXbQ8PtzCguqo8YI19EELo5QxaKnJd4VxzhU8tg==}
     engines: {node: '>=10'}
     peerDependencies:
@@ -3996,7 +3996,7 @@ packages:
       '@types/react':
         optional: true
     dependencies:
-      '@types/react': 18.2.63
+      '@types/react': 18.2.65
       ansi-escapes: 4.3.2
       auto-bind: 4.0.0
       chalk: 4.1.2
