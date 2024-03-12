@@ -1,18 +1,12 @@
-import { render } from "ink";
+import Table from "easy-table";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import Table from "ink-table";
-import React from "react";
 
-const CustomSkeleton = ({ children: _children }: React.PropsWithChildren) => (
-  <React.Fragment />
-);
-
-export function renderView(
+export function mapReduceOutput(
   viewResponse: PouchDB.Query.Response<EitherPayload>,
   showId?: boolean,
   hid?: boolean,
-): void {
-  const data = viewResponse.rows.map((row) => {
+): string {
+  const dataRows = viewResponse.rows.map((row) => {
     const keyValue: { key: any; value: any; id?: string; hid?: string } = {
       key: JSON.stringify(row.key),
       value: JSON.stringify(row.value),
@@ -25,5 +19,6 @@ export function renderView(
     }
     return keyValue;
   });
-  render(<Table data={data} skeleton={CustomSkeleton} />);
+
+  return Table.print(dataRows);
 }

@@ -3,12 +3,12 @@ import { inferType } from "../utils/inferType";
 import { startsWith } from "../utils/startsWith";
 import { MainDatumArgs } from "../input/mainArgs";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { renderView } from "../output/renderView";
 import { outputArgs, Show } from "../input/outputArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
 import { ArgumentParser, SUPPRESS } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { mapReduceOutput } from "../output/mapReduceOutput";
 
 export const mapArgs = new ArgumentParser({
   add_help: false,
@@ -101,7 +101,8 @@ export async function mapCmd(
         viewParams,
       );
   if (args.show !== Show.None) {
-    renderView(viewResult, args.showId, args.hid);
+    const output = mapReduceOutput(viewResult, args.showId, args.hid);
+    console.log(output);
   }
   return viewResult;
 }
