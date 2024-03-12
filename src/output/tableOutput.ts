@@ -1,11 +1,11 @@
 import Table from "easy-table";
-import { stringify } from "querystring";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./output";
+import stringify from "string.ify";
 
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
@@ -23,6 +23,10 @@ export function tableOutput(
   if (show === Show.None) {
     return undefined;
   }
+  if (docs.length === 0 && show !== Show.Format) {
+    return "[No data]";
+  }
+
   if (format) {
     const formattedRows = docs.map((doc) => {
       const { data, meta } = pullOutData(doc);
@@ -30,6 +34,7 @@ export function tableOutput(
     });
     return formattedRows.join("\n");
   }
+
   const formattedRows: Record<string, string | undefined>[] = docs.map(
     (doc) => {
       const formatted = extractFormatted(doc);

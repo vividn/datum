@@ -192,6 +192,12 @@ export async function deterministicHumanIds(seed?: number): Promise<void> {
     return random().toString(36).slice(2) + random().toString(36).slice(2);
   }
 
+  beforeAll(() => {
+    a = seed || 20231018;
+    jest
+      .spyOn(newHumanIdModule, "newHumanId")
+      .mockImplementation(mockNewHumanId);
+  });
   beforeEach(() => {
     a = seed || 20231018;
     jest
