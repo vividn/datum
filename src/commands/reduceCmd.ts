@@ -28,6 +28,12 @@ export type ReduceCmdArgs = MapCmdArgs & {
   groupLevel?: number;
 };
 
+/**
+ * Executes a reduction of a map
+ * @param {ReduceCmdArgs | string | string[]} args - The arguments for the reduce command.
+ * @param {Partial<ReduceCmdArgs>} preparsed - Partially parsed arguments.
+ * @returns {Promise<PouchDB.Query.Response<EitherPayload>>} - A promise that resolves with the reduction result.
+ */
 export async function reduceCmd(
   args: ReduceCmdArgs | string | string[],
   preparsed?: Partial<ReduceCmdArgs>,
