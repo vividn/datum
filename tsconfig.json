@@ -12,7 +12,11 @@
     "declarationMap": true,
     "inlineSourceMap": true,
     "inlineSources": true,
-    "outDir": "build",
+    /**
+ * Configures the TypeScript compiler options for the project.
+ * Specifies the settings and options for the TypeScript build.
+ */
+"outDir": "build",
     "declarationDir": "build/types",
     "strict": true,
     "types": [
