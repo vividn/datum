@@ -206,6 +206,11 @@ export async function deterministicHumanIds(seed?: number): Promise<void> {
   });
 }
 
+/**
+ * Delays the execution for the specified amount of time.
+ * @param {number} timeoutMs - The time to delay in milliseconds.
+ * @returns {Promise<void>} - A promise that resolves after the delay.
+ */
 export async function delay(timeoutMs: number) {
   return new Promise((resolve) => setTimeout(resolve, timeoutMs));
 }
