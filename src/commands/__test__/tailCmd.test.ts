@@ -1,5 +1,5 @@
 import {
-    delay,
+  delay,
   deterministicHumanIds,
   mockedLogLifecycle,
   setNow,
