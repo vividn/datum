@@ -192,12 +192,22 @@ export async function deterministicHumanIds(seed?: number): Promise<void> {
     return random().toString(36).slice(2) + random().toString(36).slice(2);
   }
 
+  beforeAll(() => {
+    a = seed || 20231018;
+    jest
+      .spyOn(newHumanIdModule, "newHumanId")
+      .mockImplementation(mockNewHumanId);
+  });
   beforeEach(() => {
     a = seed || 20231018;
     jest
       .spyOn(newHumanIdModule, "newHumanId")
       .mockImplementation(mockNewHumanId);
   });
+}
+
+export async function delay(timeout) {
+  return new Promise((resolve) => setTimeout(resolve, timeout));
 }
 
 // export async function generateSampleDay(dateStr = "2022-08-14") {

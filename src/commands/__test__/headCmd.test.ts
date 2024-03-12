@@ -263,34 +263,16 @@ describe("headCmd", () => {
     expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
       [
         [
-          "::sleep::",
-        ],
-        [
-          "::sleep::",
-        ],
-        [
-          "::project::",
-        ],
-        [
-          "::text::",
-        ],
-        [
-          "::project::",
-        ],
-        [
-          "::text::",
-        ],
-        [
-          "::environment::",
-        ],
-        [
-          "::stretch::",
-        ],
-        [
-          "::run::",
-        ],
-        [
-          "::stretch::",
+          "::sleep::
+      ::sleep::
+      ::project::
+      ::text::
+      ::project::
+      ::text::
+      ::environment::
+      ::stretch::
+      ::run::
+      ::stretch::",
         ],
       ]
     `);
