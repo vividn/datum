@@ -33,12 +33,16 @@ mapArgs.add_argument("--reduce", {
   action: "store_true",
 });
 mapArgs.add_argument("--showId", {
-  help: "show the ids",
+  help: "show the ids on maps",
   action: "store_true",
 });
 mapArgs.add_argument("--hid", {
-  help: "show the humanIds",
+  help: "show the humanIds on maps",
   action: "store_true",
+});
+mapArgs.add_argument("--column", {
+  help: "show an extra column from the data. Can be specified multiple times, or a comma separated list",
+  action: "append",
 });
 mapArgs.add_argument("--reverse", {
   help: "flips start and end and inverts descending param for easy reverse ordering of results",
@@ -64,6 +68,7 @@ export type MapCmdArgs = MainDatumArgs & {
   reduce?: boolean;
   showId?: boolean;
   hid?: boolean;
+  column?: string[];
   reverse?: boolean;
   params?: PouchDB.Query.Options<any, any>;
 };
@@ -74,6 +79,7 @@ export async function mapCmd(
 ): Promise<PouchDB.Query.Response<EitherPayload>> {
   args = parseIfNeeded(mapCmdArgs, args, preparsed);
   const db = connectDb(args);
+  const columns = (args.column ?? []).map((col) => col.split(",")).flat();
   const startEndParams = args.end
     ? {
         startkey: inferType(args.start as string),
@@ -87,7 +93,7 @@ export async function mapCmd(
     ...startEndParams,
     ...(args.params ?? {}),
   };
-  if (args.hid && !viewParams.reduce) {
+  if (!viewParams.reduce && (args.hid || columns.length > 0)) {
     viewParams.include_docs = true;
   }
   if (args.reverse) {
@@ -101,7 +107,7 @@ export async function mapCmd(
         viewParams,
       );
   if (args.show !== Show.None) {
-    const output = mapReduceOutput(viewResult, args.showId, args.hid);
+    const output = mapReduceOutput(viewResult, args.showId, args.hid, columns);
     console.log(output);
   }
   return viewResult;
