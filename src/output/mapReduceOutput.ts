@@ -9,7 +9,12 @@ export function mapReduceOutput(
   columns?: string[],
 ): string {
   const dataRows = viewResponse.rows.map((row) => {
-    const keyValue: { key: any; value: any; id?: string; hid?: string } = {
+    const keyValue: {
+      key: any;
+      value: any;
+      id?: string;
+      hid?: string;
+    } & Record<string, any> = {
       key: JSON.stringify(row.key),
       value: JSON.stringify(row.value),
     };
