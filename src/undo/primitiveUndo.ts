@@ -8,6 +8,7 @@ import { isCouchDbError } from "../errors";
 import { DateTime, Duration } from "luxon";
 import { showDelete } from "../output/output";
 import { OutputArgs } from "../input/outputArgs";
+import { pullOutData } from "../utils/pullOutData";
 
 export async function primitiveUndo({
   db,
@@ -48,13 +49,14 @@ export async function primitiveUndo({
       throw error;
     }
   }
+  const { data, meta } = pullOutData(doc);
 
   const fifteenMinutesAgo = DateTime.now().minus(
     Duration.fromObject({ minutes: 15 }),
   );
   if (
-    doc.meta?.createTime &&
-    DateTime.fromISO(doc.meta.createTime) < fifteenMinutesAgo
+    meta?.createTime &&
+    DateTime.fromISO(meta.createTime.utc) < fifteenMinutesAgo
   ) {
     if (!force) {
       // deletion prevention
