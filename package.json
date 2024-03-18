@@ -1,7 +1,7 @@
 {
   "name": "@vividn/datum",
   "version": "2.0.1",
-  "description": "Quickly add data to couch db",
+  "description": "Quickly add data to couchdb",
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
   "license": "Apache-2.0",
