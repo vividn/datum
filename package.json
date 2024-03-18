@@ -1,10 +1,10 @@
 {
-  "name": "datum",
+  "name": "@vividn/datum",
   "version": "2.0.1",
   "description": "Quickly add data to couch db",
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "main": "build/src/index.js",
   "bin": {
     "dtm": "./build/src/index.js",
