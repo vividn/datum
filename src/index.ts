@@ -19,3 +19,5 @@ if (require.main === module) {
     }
   });
 }
+
+export { Datum } from "./Datum";
