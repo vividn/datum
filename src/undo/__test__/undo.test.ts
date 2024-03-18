@@ -70,7 +70,7 @@ describe("addCmd undo", () => {
     await db.put({
       _id: "oldDoc",
       data: {},
-      meta: { createTime: oldTime.toString() },
+      meta: { createTime: { utc: oldTime.toString() } },
     });
 
     await expect(addCmd("--id oldDoc -u")).rejects.toThrowError(
@@ -89,7 +89,7 @@ describe("addCmd undo", () => {
     await db.put({
       _id: docName,
       data: {},
-      meta: { createTime: oldTime.toString() },
+      meta: { createTime: { utc: oldTime.toString() } },
     });
     await addCmd(` --id ${docName} -U`);
     await expect(db.get(docName)).rejects.toMatchObject({
@@ -109,7 +109,7 @@ describe("addCmd undo", () => {
     await db.put({
       _id: docName,
       data: {},
-      meta: { createTime: oldTime.toString() },
+      meta: { createTime: { utc: oldTime.toString() } },
     });
     await addCmd(` --id ${docName} -U`);
     await expect(db.get(docName)).rejects.toMatchObject({
