@@ -99,10 +99,6 @@ export function alterDatumData({
     const newValue = createOrAppend(current, inferredValue);
     set(datumData, stateAwarePath, newValue);
   } else {
-    if (inferredValue === undefined) {
-      unset(datumData, stateAwarePath);
-      return;
-    }
     set(datumData, stateAwarePath, inferredValue);
   }
 }
