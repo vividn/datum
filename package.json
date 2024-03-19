@@ -6,6 +6,13 @@
   "author": "Nate Faber <nathaniel@njfaber.com>",
   "license": "Apache-2.0",
   "main": "build/src/index.js",
+  "exports": {
+    ".": {
+      "import": "./build/src/index.js",
+      "require": "./build/src/index.js",
+      "types": "./build/types/index.d.ts"
+    }
+  },
   "bin": {
     "dtm": "./build/src/index.js",
     "eqcheck": "./build/projects/finance/src/eqcheck.js",
