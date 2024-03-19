@@ -242,6 +242,28 @@ describe("alterDatumData", () => {
       expect(parseDurationSpy).not.toHaveReturned();
     });
 
+    it("can assign undefined and null to special fields without parsing", () => {
+      alterDatumData({ datumData, path: "time", value: undefined });
+      alterDatumData({ datumData, path: "date", value: null });
+      alterDatumData({ datumData, path: "dur", value: "" });
+      alterDatumData({ datumData, path: "aTime", value: "null" });
+      alterDatumData({ datumData, path: "bDate", value: "undefined" });
+      alterDatumData({ datumData, path: "cDur", value: "NULL" });
+
+      expect(datumData).toEqual({
+        existing: "data",
+        time: undefined,
+        date: null,
+        dur: undefined,
+        aTime: null,
+        bDate: undefined,
+        cDur: null,
+      });
+      expect(parseTimeSpy).not.toHaveBeenCalled();
+      expect(parseDateSpy).not.toHaveBeenCalled();
+      expect(parseDurationSpy).not.toHaveBeenCalled();
+    });
+
     it("does not call any of the special parse functions for other field names", () => {
       alterDatumData({ datumData, path: "tim", value: "3" });
       alterDatumData({ datumData, path: "mandate", value: "5" });
