@@ -262,7 +262,7 @@ describe("alterDatumData", () => {
       expect(parseTimeSpy).not.toHaveBeenCalled();
       expect(parseDateSpy).not.toHaveBeenCalled();
       expect(parseDurationSpy).not.toHaveBeenCalled();
-    })
+    });
 
     it("does not call any of the special parse functions for other field names", () => {
       alterDatumData({ datumData, path: "tim", value: "3" });
