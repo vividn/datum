@@ -48,8 +48,14 @@ export function alterDatumData({
     }
 
     case value === undefined:
-    case value === "": {
+    case value === "":
+    case /^undefined$/i.test(String(value)): {
       inferredValue = undefined;
+      break;
+    }
+
+    case /^null$/i.test(String(value)): {
+      inferredValue = null;
       break;
     }
 
