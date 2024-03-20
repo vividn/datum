@@ -124,7 +124,7 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
 
   let totalDue = 0;
   chores.forEach((row) => {
-    if (row.value.next === undefined) {
+    if (row.value.next === undefined || row.value.next === null) {
       return;
     }
     const due = isDue(row.value.next);

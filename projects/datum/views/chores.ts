@@ -13,7 +13,7 @@ type DocType = ChoreDoc;
 type MapKey = string; // chore name;
 type MapValue = {
   time: isoDateOrTime;
-  next?: isoDateOrTime;
+  next?: isoDateOrTime | null;
   iti?: number;
   lastOccur: isoDateOrTime;
 };
@@ -35,7 +35,7 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     if (!data.field) {
       return;
     }
-    if (!data.nextTime && !data.nextDate) {
+    if (data.nextTime === undefined && data.nextDate === undefined) {
       return;
     }
     const { nextDate, nextTime, occurTime } = data;
@@ -61,6 +61,10 @@ export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     } else if (nextDate) {
       next = nextDate;
       fullDay = true;
+    } else {
+      if (nextDate === null || nextTime === null) {
+        next = null;
+      }
     }
     // ITI (inter time interval) is used to sort chores by frequency of occurring
     // Round up to a full day and then add the percentage of the day when the occurrence happened so that chores that
