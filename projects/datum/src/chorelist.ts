@@ -87,7 +87,11 @@ function isDoneToday(dateOrTime?: isoDate | isoDatetime): boolean {
   );
 }
 
-type ChorelistArgs = { watch?: boolean; sort?: PossibleSorts } & DbArgs &
+type ChorelistArgs = {
+  watch?: boolean;
+  sort?: PossibleSorts;
+  update?: boolean;
+} & DbArgs &
   OutputArgs;
 
 async function chorelist(args: ChorelistArgs): Promise<string> {
@@ -97,7 +101,7 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
       db,
       datumView: choreView,
       outputArgs: { show: Show.Minimal },
-      conflictStrategy: "useOld",
+      conflictStrategy: args.update ? "overwrite" : "useOld",
     });
     oneTimeSetup = true;
   }
@@ -226,6 +230,10 @@ chorelistArgs.add_argument("sort", {
 chorelistArgs.add_argument("--watch", "-w", {
   action: "store_true",
   help: "Watch and update on changes to the database",
+});
+chorelistArgs.add_argument("--update", {
+  action: "store_true",
+  help: "Update the view before running",
 });
 
 async function chorelistCmd(argsOrCli: ChorelistArgs | string | string[]) {
