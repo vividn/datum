@@ -12,7 +12,7 @@ describe("getActiveState", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({ db: dbName });
+    await setupCmd("");
   });
 
   afterEach(() => {
@@ -25,20 +25,20 @@ describe("getActiveState", () => {
   });
 
   it("returns null even if another field has been changed to a state (both before and after alphabetically)", async () => {
-    await switchCmd({ db: dbName, field: "fald", state: "active" });
-    await switchCmd({ db: dbName, field: "fold", state: "someState" });
+    await switchCmd("fald active");
+    await switchCmd("fold someState");
     const activeState = await getActiveState(db, "field");
     expect(activeState).toBe(null);
   });
 
   it("after switching to a state the active state is that new state", async () => {
-    await switchCmd({ db: dbName, field: "field", state: "active" });
+    await switchCmd("field active");
     const activeState = await getActiveState(db, "field");
     expect(activeState).toBe("active");
   });
   it("after switching to a state the active state is that new state even if another field has been changed", async () => {
-    await switchCmd({ db: dbName, field: "field", state: "active" });
-    await switchCmd({ db: dbName, field: "different", state: "anotherState" });
+    await switchCmd("field active");
+    await switchCmd("different anotherState");
     const activeState = await getActiveState(db, "field");
     const differentState = await getActiveState(db, "different");
     expect(activeState).toBe("active");
@@ -46,85 +46,67 @@ describe("getActiveState", () => {
   });
 
   it("after starting a command the active state is true", async () => {
-    await startCmd({ db: dbName, field: "field" });
+    await startCmd("field");
     expect(await getActiveState(db, "field")).toBe(true);
   });
 
   it("after ending a command the active state is false", async () => {
-    await startCmd({ db: dbName, field: "field" });
-    const endDoc = await endCmd({ db: dbName, field: "field" });
+    await startCmd("field");
+    const endDoc = await endCmd("field");
     expect(endDoc.data.lastState).toBe(true);
     expect(await getActiveState(db, "field")).toBe(false);
   });
 
   it("it can be switched multiple times", async () => {
-    const switchDoc1 = await switchCmd({
-      db: dbName,
-      field: "field",
-      state: "active",
-    });
+    const switchDoc1 = await switchCmd("field active");
     expect(switchDoc1.data.lastState).toBe(null);
     expect(await getActiveState(db, "field")).toBe("active");
 
-    const switchDoc2 = await switchCmd({
-      db: dbName,
-      field: "field",
-      state: "inactive",
-    });
+    const switchDoc2 = await switchCmd("field inactive");
     expect(switchDoc2.data.lastState).toBe("active");
     expect(await getActiveState(db, "field")).toBe("inactive");
 
-    const endDoc = await endCmd({ db: dbName, field: "field" });
+    const endDoc = await endCmd("field");
     expect(endDoc.data.lastState).toBe("inactive");
     expect(await getActiveState(db, "field")).toBe(false);
   });
 
   it("the state can be switched to null", async () => {
-    await switchCmd({ db: dbName, field: "field", state: "active" });
-    await switchCmd({ db: dbName, field: "field", state: null });
+    await switchCmd("field active");
+    await switchCmd("field null");
     expect(await getActiveState(db, "field")).toBe(null);
   });
 
   it("can get the state of a field at different points in time", async () => {
     setNow("2023-09-02,7:15");
-    await switchCmd({ db: dbName, field: "machine", state: "preparing" });
+    await switchCmd("machine preparing");
 
     setNow("7:20");
-    await switchCmd({ db: dbName, field: "machine", state: "warm" });
+    await switchCmd("machine warm");
 
     setNow("9");
-    await switchCmd({ db: dbName, field: "machine", state: "reading" });
+    await switchCmd("machine reading");
 
     setNow("10");
-    await switchCmd({
-      db: dbName,
-      time: "910",
-      field: "machine",
-      state: "thinking",
-    });
+    await switchCmd("machine thinking -t 910");
 
     setNow("11");
-    await switchCmd({
-      db: dbName,
-      field: "machine",
-      duration: 15,
-      state: "distracted",
-    });
+    await switchCmd("machine distracted 15");
 
     setNow("12:30");
-    await endCmd({ db: dbName, field: "machine" });
+    await endCmd("machine");
 
     setNow("12:35");
-    await startCmd({ db: dbName, field: "machine" });
+    await startCmd("machine");
 
     setNow("12:45");
-    await switchCmd({ db: dbName, field: "machine", state: "overheating" });
+    await switchCmd("machine overheating");
 
     setNow("18");
-    await switchCmd({ db: dbName, field: "machine", state: "exploded" });
+    await switchCmd("machine exploded");
 
     setNow("21");
-    await switchCmd({ db: dbName, field: "machine", state: null });
+    await switchCmd("machine null");
 
     setNow("22");
     expect(await getActiveState(db, "machine")).toBe(null);
@@ -151,12 +133,12 @@ describe("getActiveState", () => {
 
   it("transitions to having a false state if an occurrence or durational occurrence of the field occurs", async () => {
     expect(await getActiveState(db, "field")).toBe(null);
-    await switchCmd({ field: "field", state: "active", duration: "5m" });
+    await switchCmd("field active 5m");
     expect(await getActiveState(db, "field")).toBe(false);
 
-    await switchCmd({ field: "field", state: null });
+    await switchCmd("field null");
     expect(await getActiveState(db, "field")).toBe(null);
-    await occurCmd({ field: "field" });
+    await occurCmd("field");
     expect(await getActiveState(db, "field")).toBe(false);
   });
 });

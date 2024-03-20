@@ -1,4 +1,3 @@
-import yargs, { Argv } from "yargs";
 import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
 import {
@@ -17,96 +16,82 @@ import {
   commandChanges,
 } from "../utils/changeDatumCommand";
 import { jClone } from "../utils/jClone";
+import { ArgumentParser } from "argparse";
 
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
   cmdData?: DatumData; // Used for passing special values between commands
   comment?: string | string[];
-  required?: string | string[];
-  optional?: string | string[];
+  required?: string[];
+  optional?: string[];
   remainder?: string;
   stringRemainder?: boolean;
   commentRemainder?: boolean;
   lenient?: boolean;
 };
 
-export function dataYargs(otherYargs?: Argv): Argv {
-  const yarg = otherYargs ?? yargs;
-  return yarg
-    .positional("data", {
-      describe:
-        "The data to put in the document. " +
-        "Data must include one argument for each key specified by --required. " +
-        "Once required keys are filled, data will be assigned to keys specified by --optional. " +
-        'Additional data can be specified in a "key=data" format. ' +
-        "Any data that does not have a key will be put in the key specified with --remainder, unless strict mode is on",
-    })
-    .group(
-      [
-        "base-data",
-        "required",
-        "optional",
-        "remainder",
-        "string-remainder",
-        "lenient",
-      ],
-      "Keys & Data",
-    )
-    .options({
-      "base-data": {
-        describe:
-          "base object on which additional keys are added. Fed through relaxed-json, but must still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
-        nargs: 1,
-        alias: "b",
-        type: "string",
-      },
-      comment: {
-        describe: "comment to include in the data",
-        alias: "c",
-        nargs: 1,
-        type: "string",
-      },
-      required: {
-        describe:
-          "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
-        alias: ["K", "req"],
-        type: "string",
-        nargs: 1,
-      },
-      optional: {
-        describe:
-          "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
-        alias: ["k", "opt"],
-        type: "string",
-        nargs: 1,
-      },
-      remainder: {
-        describe:
-          "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
-        alias: ["rem", "R"],
-        type: "string",
-        nargs: 1,
-      },
-      "string-remainder": {
-        describe:
-          "Remainder data will be a space-concatenated string rather than an array",
-        alias: "S",
-        type: "boolean",
-      },
-      "comment-remainder": {
-        describe:
-          "All unused data will be joined into a string and stored as a comment. Equivalent to `-SR comment`",
-        alias: "C",
-        type: "boolean",
-      },
-      lenient: {
-        describe: "Allow extra data without defined keys",
-        type: "boolean",
-        alias: "l",
-      },
-    });
-}
+export const dataArgs = new ArgumentParser({
+  add_help: false,
+});
+
+const dataGroup = dataArgs.add_argument_group({
+  title: "Data",
+  description: "Options for specifying data",
+});
+dataGroup.add_argument("data", {
+  help:
+    "The data to put in the document. " +
+    "Data must include one argument for each key specified by --required. " +
+    "Once required keys are filled, data will be assigned to keys specified by --optional. " +
+    'Additional data can be specified in a "key=data" format. ' +
+    "Any data that does not have a key will be put in the key specified with --remainder, unless strict mode is on",
+  nargs: "*",
+  type: "str",
+});
+dataGroup.add_argument("-b", "--base-data", {
+  help: "base object on which additional keys are added. Fed through relaxed-json, but must still parse to an object. Use with --no-metadata for raw json input into couchdb. Default: {}",
+  type: "str",
+  dest: "baseData",
+});
+dataGroup.add_argument("-c", "--comment", {
+  help: "comment to include in the data",
+  type: "str",
+  action: "append",
+});
+dataGroup.add_argument("-K", "--required", {
+  help: "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
+  type: "str",
+  action: "append",
+});
+dataGroup.add_argument("-k", "--optional", {
+  help: "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
+  type: "str",
+  action: "append",
+});
+dataGroup.add_argument("-R", "--remainder", {
+  help: "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
+  type: "str",
+});
+dataGroup.add_argument("-S", "--string-remainder", {
+  help: "Remainder data will be a space-concatenated string rather than an array",
+  action: "store_true",
+  dest: "stringRemainder",
+});
+dataGroup.add_argument("-C", "--comment-remainder", {
+  help: "All unused data will be joined into a string and stored as a comment. Equivalent to `-SR comment`",
+  action: "store_true",
+  dest: "commentRemainder",
+});
+dataGroup.add_argument("-l", "--lenient", {
+  help: "Allow extra data without defined keys",
+  action: "store_true",
+});
+dataGroup.add_argument("--strict", {
+  help: "Do not allow extra data without defined keys, default behavior. Overrides --lenient",
+  action: "store_false",
+  dest: "lenient",
+});
 
 function isParsedBaseData(baseData: DatumData | string): baseData is DatumData {
   return isPlainObject(baseData);
@@ -301,6 +286,5 @@ export function handleDataArgs(args: DataArgs): DatumData {
       }
     }
   }
-
   return datumData;
 }

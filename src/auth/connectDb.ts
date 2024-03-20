@@ -1,8 +1,8 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
 import dotenv from "dotenv";
-import { MainDatumArgs } from "../input/mainYargs";
 import PouchDb from "pouchdb";
 import memoryAdapter from "pouchdb-adapter-memory";
+import { MainDatumArgs } from "../input/mainArgs";
 
 PouchDb.plugin(memoryAdapter);
 

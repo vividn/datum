@@ -1,0 +1,17 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+deleted file mode 100644
+index dc39ed6952f87adcd961d07749e1ffe7a2b7335b..0000000000000000000000000000000000000000
+diff --git a/argparse.js b/argparse.js
+index 2b8c8c63177af9757a44926cfc3ab7d9878c9387..6624e37e82343627cba3bbbfc4b938847ff0e48d 100644
+--- a/argparse.js
++++ b/argparse.js
+@@ -2051,7 +2051,8 @@ const _ActionsContainer = _camelcase_alias(_callable(class _ActionsContainer {
+         this._defaults = {}
+ 
+         // determines whether an "option" looks like a negative number
+-        this._negative_number_matcher = /^-\d+$|^-\d*\.\d+$/
++        // patched to match anything that starts with a minus sign and a number
++        this._negative_number_matcher = /^-\d/
+ 
+         // whether or not there are any optionals that look like negative
+         // numbers -- uses a list so it can be shared and edited

@@ -95,6 +95,15 @@ describe("relative time strings", () => {
     ["+8 hours", { hours: 8 }],
     ["+100s", { seconds: 100 }],
     ["-3sec", { seconds: -3 }],
+    ["t", { minutes: -1 }],
+    ["q", { minutes: -5 }],
+    ["ttttttt", { minutes: -7 }],
+    ["ttt", { minutes: -3 }],
+    ["ttq", { minutes: -7 }],
+    ["qqt", { minutes: -11 }],
+    ["+t", { minutes: 1 }],
+    ["+q", { minutes: 5 }],
+    ["+qqttt", { minutes: 13 }],
   ])(
     "it parses %s as a duration of %s away from now",
     (timeStr, durationObject) => {
@@ -120,6 +129,15 @@ describe("relative time strings", () => {
     ["+8 hours", { hours: 8 }],
     ["+100s", { seconds: 100 }],
     ["-3sec", { seconds: -3 }],
+    ["t", { minutes: -1 }],
+    ["q", { minutes: -5 }],
+    ["ttttttt", { minutes: -7 }],
+    ["ttt", { minutes: -3 }],
+    ["ttq", { minutes: -7 }],
+    ["qqt", { minutes: -11 }],
+    ["+t", { minutes: 1 }],
+    ["+q", { minutes: 5 }],
+    ["+qqttt", { minutes: 13 }],
   ])(
     "it parses %s as a duration of %s away from a relative time",
     (timeStr, durationObject) => {
@@ -135,4 +153,34 @@ describe("relative time strings", () => {
       ).toEqual(expectedDateTime);
     },
   );
+});
+
+describe("timezone shenanigans", () => {
+  // oof chrono-node doesn't do this correctly. TODO: Reenable after it is updated
+  it.skip("parses correctly even when called from a different timezone", () => {
+    const differentReferenceTime = DateTime.fromISO("2024-02-21T10:00:00", {
+      zone: "Pacific/Auckland",
+      setZone: true,
+    });
+    expect(
+      parseTimeStr({
+        timeStr: "yesterday 18:00",
+        referenceTime: differentReferenceTime,
+      }),
+    ).toEqual(
+      DateTime.fromISO("2024-02-20T18:00:00.000", {
+        zone: "Pacific/Auckland",
+      }),
+    );
+    expect(
+      parseTimeStr({
+        timeStr: "tomorrow 10:00",
+        referenceTime: differentReferenceTime,
+      }),
+    ).toEqual(
+      DateTime.fromISO("2024-02-22T10:00:00.000", {
+        zone: "Pacific/Auckland",
+      }),
+    );
+  });
 });

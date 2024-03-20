@@ -1,32 +1,41 @@
-import { Argv } from "yargs";
-import { MainDatumArgs } from "../input/mainYargs";
+import { MainDatumArgs } from "../input/mainArgs";
 import { connectDb } from "../auth/connectDb";
 import * as fs from "fs";
 import { DateTime } from "luxon";
+import { dbArgs } from "../input/dbArgs";
+import { ArgumentParser } from "argparse";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
 
-export const command = "backup <filename>";
-export const desc = "Backup db, outputs to stdout";
+export const backupArgs = new ArgumentParser({
+  add_help: false,
+});
+// TODO: make this optional and then use stdout if not specified
+backupArgs.add_argument("filename", {
+  help: "file to write the backup to",
+  type: "str",
+});
+backupArgs.add_argument("--overwrite", {
+  help: "overwrite file if it exists",
+  action: "store_true",
+});
+
+export const backupCmdArgs = new ArgumentParser({
+  description: "Backup db, outputs to stdout",
+  prog: "datum backup",
+  usage: "%(prog)s <filename>",
+  parents: [backupArgs, dbArgs],
+});
 
 export type BackupCmdArgs = MainDatumArgs & {
   filename: string;
   overwrite?: boolean;
 };
 
-export function builder(yargs: Argv): Argv {
-  return yargs
-    .positional("filename", {
-      type: "string",
-      args: 1,
-    })
-    .options({
-      overwrite: {
-        type: "boolean",
-        default: false,
-      },
-    });
-}
-
-export async function backupCmd(args: BackupCmdArgs): Promise<void> {
+export async function backupCmd(
+  args: BackupCmdArgs | string | string[],
+  preparsed?: Partial<BackupCmdArgs>,
+): Promise<void> {
+  args = parseIfNeeded(backupCmdArgs, args, preparsed);
   if (!args.overwrite && fs.existsSync(args.filename)) {
     throw new Error("File exists, overwrite with --overwrite");
   }

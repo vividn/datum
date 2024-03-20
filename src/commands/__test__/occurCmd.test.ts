@@ -1,5 +1,7 @@
 import {
   deterministicHumanIds,
+  popNow,
+  pushNow,
   restoreNow,
   setNow,
   testDbLifecycle,
@@ -14,7 +16,7 @@ describe("occurCmd", () => {
   const db = testDbLifecycle(dbName);
 
   beforeEach(async () => {
-    await setupCmd({});
+    await setupCmd("");
   });
   afterEach(() => {
     restoreNow();
@@ -25,7 +27,7 @@ describe("occurCmd", () => {
     setNow(now);
 
     const docCountBefore = (await db.info()).doc_count;
-    const doc = await occurCmd({ field: "field" });
+    const doc = await occurCmd("field");
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(docCountBefore + 1);
@@ -39,12 +41,9 @@ describe("occurCmd", () => {
   });
 
   it("stores the occurTime in the data", async () => {
-    const newDoc = (await occurCmd({
-      field: "event",
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
+    const newDoc = (await occurCmd(
+      "event -d 2021-08-23 -t 12 -z 0",
+    )) as DatumDocument;
     expect(newDoc.data).toHaveProperty(
       "occurTime.utc",
       "2021-08-23T12:00:00.000Z",
@@ -53,24 +52,17 @@ describe("occurCmd", () => {
   });
 
   it("stores the occurTime in DataOnly docs", async () => {
-    const newDoc = (await occurCmd({
-      field: "event",
-      noMetadata: true,
-      date: "2021-08-23",
-      time: "12",
-      timezone: "0",
-    })) as DatumDocument;
+    const newDoc = (await occurCmd(
+      "event -M -d 2021-08-23 -t 12 -z 0",
+    )) as DatumDocument;
     expect(newDoc).toHaveProperty("occurTime.utc", "2021-08-23T12:00:00.000Z");
     expect(newDoc).toHaveProperty("occurTime.o", 0);
   });
 
   it("stores offset", async () => {
-    const newDoc = (await occurCmd({
-      field: "event",
-      date: "2021-08-23",
-      time: "12",
-      timezone: "+3",
-    })) as DatumDocument;
+    const newDoc = (await occurCmd(
+      "event -d 2021-08-23 -t 12 -z +3",
+    )) as DatumDocument;
     expect(newDoc.data).toMatchObject({
       occurTime: {
         o: 3,
@@ -80,12 +72,9 @@ describe("occurCmd", () => {
   });
 
   it("stores offset from an IANA timezone", async () => {
-    const newDoc = (await occurCmd({
-      field: "event",
-      date: "2023-12-04",
-      time: "12",
-      timezone: "Europe/Berlin",
-    })) as DatumDocument;
+    const newDoc = (await occurCmd(
+      "event -d 2023-12-04 -t 12 -z Europe/Berlin",
+    )) as DatumDocument;
     expect(newDoc.data).toMatchObject({
       occurTime: {
         o: 1,
@@ -96,19 +85,24 @@ describe("occurCmd", () => {
 
   it("records lastState as null if the active state is null", async () => {
     expect(await getActiveState(db, "event")).toBe(null);
-    const newDoc = (await occurCmd({
-      field: "event",
-    })) as DatumDocument;
+    const newDoc = await occurCmd("event");
     expect(newDoc.data).toMatchObject({
       lastState: null,
     });
     // Even 1 occur document is enough to switch active state to false from null
     expect(await getActiveState(db, "event")).toBe(false);
 
-    const newDoc2 = (await occurCmd({
-      field: "event",
-    })) as DatumDocument;
+    const newDoc2 = await occurCmd("event");
     expect([false, undefined]).toContainEqual(newDoc2.data.lastState);
+  });
+
+  it("handles negative number time arguments correctly", async () => {
+    pushNow("2024-02-23,16:00");
+    const newDoc = await occurCmd("event -d -1d -t -1h");
+    expect(newDoc.data.occurTime.utc).toEqual("2024-02-22T15:00:00.000Z");
+    const newDoc2 = await occurCmd("event -t -20");
+    expect(newDoc2.data.occurTime.utc).toEqual("2024-02-23T15:40:00.000Z");
+    popNow();
   });
 
   describe("change command", () => {
@@ -123,12 +117,7 @@ describe("occurCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await occurCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "start", "30 min"],
-        }),
+        await occurCmd("field -K req1 -k opt1 reqVal optVal start 30min"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -136,12 +125,7 @@ describe("occurCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await occurCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "end", "30 min"],
-        }),
+        await occurCmd("field -K req1 -k opt1 reqVal optVal end 30min"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -149,12 +133,9 @@ describe("occurCmd", () => {
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await occurCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "switch", "stateName", "5m30s"],
-        }),
+        await occurCmd(
+          "field -K req1 -k opt1 reqVal optVal switch stateName 5m30s",
+        ),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

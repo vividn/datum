@@ -43,5 +43,5 @@ export function parseDateStr({
     return referenceTime.set({ year, month, day });
   }
 
-  throw new BadDateError("date not parsable");
+  throw new BadDateError(dateStr);
 }

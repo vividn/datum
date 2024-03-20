@@ -98,7 +98,8 @@ describe("alterDatumData", () => {
       value: ".",
       defaultValue: "3",
     });
-    expect(datumData).not.toHaveProperty("dotNoDefault");
+    expect(datumData).toHaveProperty("dotNoDefault");
+    expect(datumData.dotNoDefault).toBeUndefined();
     expect(datumData).toEqual({
       existing: "data",
       dotWithDefault: "default",
@@ -206,8 +207,10 @@ describe("alterDatumData", () => {
         wait_dur: "P2D",
         duration2: "PT30S",
       });
-      expect(datumData).not.toHaveProperty("dotDur");
-      expect(datumData).not.toHaveProperty("emptyDur");
+      expect(datumData).toHaveProperty("dotDur");
+      expect(datumData.dotDur).toBeUndefined();
+      expect(datumData).toHaveProperty("emptyDur");
+      expect(datumData.emptyDur).toBeUndefined();
     });
 
     it("throws an error for -Time -Date and -Dur values if they cannot be parsed", () => {
@@ -240,6 +243,28 @@ describe("alterDatumData", () => {
       ).toThrowError(BadDurationError);
       expect(parseDurationSpy).toHaveBeenCalled();
       expect(parseDurationSpy).not.toHaveReturned();
+    });
+
+    it("can assign undefined and null to special fields without parsing", () => {
+      alterDatumData({ datumData, path: "time", value: undefined });
+      alterDatumData({ datumData, path: "date", value: null });
+      alterDatumData({ datumData, path: "dur", value: "" });
+      alterDatumData({ datumData, path: "aTime", value: "null" });
+      alterDatumData({ datumData, path: "bDate", value: "undefined" });
+      alterDatumData({ datumData, path: "cDur", value: "NULL" });
+
+      expect(datumData).toEqual({
+        existing: "data",
+        time: undefined,
+        date: null,
+        dur: undefined,
+        aTime: null,
+        bDate: undefined,
+        cDur: null,
+      });
+      expect(parseTimeSpy).not.toHaveBeenCalled();
+      expect(parseDateSpy).not.toHaveBeenCalled();
+      expect(parseDurationSpy).not.toHaveBeenCalled();
     });
 
     it("does not call any of the special parse functions for other field names", () => {

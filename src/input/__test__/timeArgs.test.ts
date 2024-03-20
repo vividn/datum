@@ -236,8 +236,8 @@ describe("handleTimeArgs", () => {
     expect(offset2).toEqual(0);
   });
 
-  it("returns an undefined time if noTimestamp is requested", () => {
-    const { time } = handleTimeArgs({ noTimestamp: true });
+  it("returns an undefined time if omitTimestamp is requested", () => {
+    const { time } = handleTimeArgs({ omitTimestamp: true });
     expect(time).toBeUndefined();
   });
 
@@ -291,7 +291,7 @@ describe("handleTimeArgs", () => {
         referenceTime: refTime,
       }).unmodified,
     ).toBe(false);
-    expect(handleTimeArgs({ noTimestamp: true }).unmodified).toBe(false);
+    expect(handleTimeArgs({ omitTimestamp: true }).unmodified).toBe(false);
 
     // still false even if time is equivalent to default or referenceTime
     expect(handleTimeArgs({ time: "-0" }).unmodified).toBe(false);

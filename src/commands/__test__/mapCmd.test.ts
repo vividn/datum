@@ -24,6 +24,7 @@ describe("mapCmd", () => {
   it.todo("can show the humanIds");
   it.todo("does not render if Show is None");
   it.todo("it does render if Show is not none");
+  it.todo("can render extra columns");
   describe("reverse", () => {
     it.todo("can reverse when start and end are specified");
     it.todo("can reverse when just start is specified");

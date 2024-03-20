@@ -2,7 +2,6 @@ import { JsonType } from "./utilityTypes";
 import get from "lodash.get";
 import { createOrAppend } from "./createOrAppend";
 import set from "lodash.set";
-import unset from "lodash.unset";
 import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "./inferType";
 import { parseTimeStr } from "../time/parseTimeStr";
@@ -48,8 +47,14 @@ export function alterDatumData({
     }
 
     case value === undefined:
-    case value === "": {
+    case value === "":
+    case /^undefined$/i.test(String(value)): {
       inferredValue = undefined;
+      break;
+    }
+
+    case /^null$/i.test(String(value)): {
+      inferredValue = null;
       break;
     }
 
@@ -93,10 +98,6 @@ export function alterDatumData({
     const newValue = createOrAppend(current, inferredValue);
     set(datumData, stateAwarePath, newValue);
   } else {
-    if (inferredValue === undefined) {
-      unset(datumData, stateAwarePath);
-      return;
-    }
     set(datumData, stateAwarePath, inferredValue);
   }
 }

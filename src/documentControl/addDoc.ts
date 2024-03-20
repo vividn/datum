@@ -46,7 +46,27 @@ function payloadMatchesDbData(
 export type ConflictStrategyNames =
   | UpdateStrategyNames
   | "overwrite"
-  | "delete";
+  | "delete"
+  | "fail";
+
+const conflictRecord: Record<ConflictStrategyNames, any> = {
+  merge: "",
+  useOld: "",
+  preferOld: "",
+  preferNew: "",
+  useNew: "",
+  removeConflicting: "",
+  xor: "",
+  intersection: "",
+  append: "",
+  prepend: "",
+  appendSort: "",
+  mergeSort: "",
+  overwrite: "",
+  delete: "",
+  fail: "",
+};
+export const conflictChoices = Object.keys(conflictRecord);
 
 type addDocType = {
   payload: EitherPayload | ViewPayload;
@@ -87,7 +107,7 @@ export async function addDoc({
     }
     const existingDoc = await db.get(id);
 
-    if (conflictStrategy !== undefined) {
+    if (conflictStrategy !== undefined && conflictStrategy !== "fail") {
       if (conflictStrategy === "overwrite") {
         return overwriteDoc({ db, id, payload, outputArgs: outputArgs });
       }

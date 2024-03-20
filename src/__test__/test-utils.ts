@@ -1,11 +1,10 @@
 import { CouchDbError } from "../errors";
 import {
-  DataOnlyDocument,
   DatumData,
-  DatumDocument,
   DatumMetadata,
   EitherDocument,
   EitherPayload,
+  ExtractDataType,
 } from "../documentControl/DatumDocument";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
@@ -23,6 +22,7 @@ import { mock } from "jest-mock-extended";
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
 export const fail = (): never => {
+  expect(true).toBe(false);
   throw Error;
 };
 
@@ -146,16 +146,16 @@ export function at<A extends any[], O>(
 }
 
 // TODO: Transition all tests to use makeDoc where appropriate
-export function makeDoc(
-  data: DatumData,
+export function makeDoc<D extends EitherDocument = EitherDocument>(
+  data: DatumData<ExtractDataType<D>>,
   meta: DatumMetadata | false = {},
   include_rev = false,
-): EitherDocument {
-  let doc: EitherDocument;
+): D {
+  let doc: D;
   if (meta === false) {
-    doc = { ...data } as DataOnlyDocument;
+    doc = { ...data } as D;
   } else {
-    doc = { ...data, meta } as DatumDocument;
+    doc = { data, meta } as unknown as D;
   }
 
   meta = meta || {};
@@ -192,12 +192,22 @@ export async function deterministicHumanIds(seed?: number): Promise<void> {
     return random().toString(36).slice(2) + random().toString(36).slice(2);
   }
 
+  beforeAll(() => {
+    a = seed || 20231018;
+    jest
+      .spyOn(newHumanIdModule, "newHumanId")
+      .mockImplementation(mockNewHumanId);
+  });
   beforeEach(() => {
     a = seed || 20231018;
     jest
       .spyOn(newHumanIdModule, "newHumanId")
       .mockImplementation(mockNewHumanId);
   });
+}
+
+export async function delay(timeoutMs: number) {
+  return new Promise((resolve) => setTimeout(resolve, timeoutMs));
 }
 
 // export async function generateSampleDay(dateStr = "2022-08-14") {

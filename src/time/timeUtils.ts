@@ -1,6 +1,8 @@
+import isPlainObject from "lodash.isplainobject";
 import { DateTime, Duration, Zone, Settings as DateTimeSettings } from "luxon";
 import { BadDurationError, BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
+import { JsonType } from "../utils/utilityTypes";
 import { getTimezone } from "./getTimezone";
 
 export type isoDatetime = string;
@@ -20,11 +22,12 @@ export function isIsoDateOrTime(str: string): str is isoDateOrTime {
 }
 
 export function isDatumTime(
-  time: DatumTime | GenericObject | string,
+  time: DatumTime | GenericObject | JsonType,
 ): time is DatumTime {
-  if (typeof time === "string") {
+  if (!isPlainObject(time)) {
     return false;
   }
+  time = time as DatumTime;
   return (
     typeof time.utc === "string" &&
     isIsoDateOrTime(time.utc) &&
@@ -49,7 +52,7 @@ export function isoDurationFromDuration(dur: Duration): isoDuration {
     return "-" + dur.negate().toISO();
   }
   if (!dur.isValid) {
-    throw new BadDurationError("invalid duration");
+    throw new BadDurationError();
   }
   return dur.toISO() as isoDuration;
 }
@@ -65,11 +68,11 @@ export function toDatumTime(
   onlyDate?: boolean,
 ): DatumTime {
   if (typeof time === "string") {
-    time = DateTime.fromISO(time);
+    time = DateTime.fromISO(time, { setZone: true });
   }
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {
-    throw new BadTimeError("invalid time was given");
+    throw new BadTimeError();
   }
   if (onlyDate) {
     return { utc: isoDateFromDateTime(time) };

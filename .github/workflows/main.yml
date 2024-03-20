@@ -5,29 +5,24 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Begin CI...
-        uses: actions/checkout@v2
-
-      - name: Use Node 18
-        uses: actions/setup-node@v1
+      - uses: actions/checkout@v3
+      - uses: pnpm/action-setup@v3
+        with:
+          version: 8
+      - name: Use Node.js 18
+        uses: actions/setup-node@v3
         with:
           node-version: 18.x
-
-      - name: Use cached node_modules
-        uses: actions/cache@v1
-        with:
-          path: node_modules
-          key: nodeModules-${{ hashFiles('**/yarn.lock') }}
-          restore-keys: |
-            nodeModules-
-
+          cache: 'pnpm'
       - name: Install dependencies
-        run: yarn install --frozen-lockfile
+        run: pnpm install
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
         env:
           CI: true
 
       - name: Lint
-        run: yarn lint
+        run: pnpm run lint
         env:
           CI: true
       
@@ -37,11 +32,11 @@ jobs:
           CI: true
       
       - name: Test
-        run: yarn test --ci --coverage --maxWorkers=2
+        run: pnpm run test --ci --coverage --maxWorkers=2
         env:
           CI: true
 
       - name: Build
-        run: yarn build
+        run: pnpm run build
         env:
           CI: true

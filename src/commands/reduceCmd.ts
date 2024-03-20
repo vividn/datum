@@ -1,32 +1,38 @@
-import { Argv } from "yargs";
-import { renderView } from "../output/renderView";
-import { mapCmd, MapCmdArgs, mapCmdYargs } from "./mapCmd";
+import { mapArgs, mapCmd, MapCmdArgs } from "./mapCmd";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { Show } from "../input/outputArgs";
+import { outputArgs, Show } from "../input/outputArgs";
+import { ArgumentParser } from "argparse";
+import { dbArgs } from "../input/dbArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { mapReduceOutput } from "../output/mapReduceOutput";
 
-export const command = [
-  "reduce <mapName> [start] [end]",
-  "red <mapName> [start] [end]",
-];
-export const desc = "display a reduction of a map";
+export const reduceArgs = new ArgumentParser({
+  add_help: false,
+  parents: [mapArgs],
+});
+reduceArgs.add_argument("--group-level", "-g", {
+  help: "how far to group the key arrays when reducing",
+  type: "int",
+  dest: "groupLevel",
+});
+
+export const reduceCmdArgs = new ArgumentParser({
+  description: "display a reduction of a map",
+  prog: "dtm red[uce]",
+  usage: `%(prog)s <mapName> [start] [end]
+  %(prog)s --group-level <level> <mapName> [start] [end]`,
+  parents: [reduceArgs, dbArgs, outputArgs],
+});
 
 export type ReduceCmdArgs = MapCmdArgs & {
   groupLevel?: number;
 };
 
-export function builder(yargs: Argv): Argv {
-  return mapCmdYargs(yargs).options({
-    groupLevel: {
-      describe: "how far to group the key arrays when reducing",
-      type: "number",
-      alias: "g",
-    },
-  });
-}
-
 export async function reduceCmd(
-  args: ReduceCmdArgs,
+  args: ReduceCmdArgs | string | string[],
+  preparsed?: Partial<ReduceCmdArgs>,
 ): Promise<PouchDB.Query.Response<EitherPayload>> {
+  args = parseIfNeeded(reduceCmdArgs, args, preparsed);
   const useAllDocs = args.mapName === "_all_docs" || args.mapName === "_all";
 
   // mock _count reduce function on the _all_docs list
@@ -42,7 +48,8 @@ export async function reduceCmd(
       offset: mapResult.offset,
     };
     if (args.show !== Show.None) {
-      renderView(mockReduceResult);
+      const output = mapReduceOutput(mockReduceResult);
+      console.log(output);
     }
     return mockReduceResult;
   }

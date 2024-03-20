@@ -70,7 +70,7 @@ describe("handleDataArgs", () => {
 
   it("assigns data to required keys", () => {
     expectParseDataToReturn(
-      { required: "abc", data: ["value"] },
+      { required: ["abc"], data: ["value"] },
       { abc: "value" },
     );
     expectParseDataToReturn(
@@ -88,7 +88,7 @@ describe("handleDataArgs", () => {
   });
 
   it("throws if not enough data is given for all required keys", () => {
-    expect(() => handleDataArgs({ required: "a", data: [] })).toThrow(
+    expect(() => handleDataArgs({ required: ["a"], data: [] })).toThrow(
       MissingRequiredKeyError,
     );
     expect(() =>
@@ -125,34 +125,37 @@ describe("handleDataArgs", () => {
   });
 
   it("handles optional extra keys", () => {
-    expectParseDataToReturn({ optional: "abc", data: ["cde"] }, { abc: "cde" });
-    expectParseDataToReturn({ optional: "optional", data: [] }, {});
     expectParseDataToReturn(
-      { optional: "withDefault=3", data: [] },
+      { optional: ["abc"], data: ["cde"] },
+      { abc: "cde" },
+    );
+    expectParseDataToReturn({ optional: ["optional"], data: [] }, {});
+    expectParseDataToReturn(
+      { optional: ["withDefault=3"], data: [] },
       { withDefault: 3 },
     );
     expectParseDataToReturn(
-      { optional: "withBlankDefault=", data: [] },
+      { optional: ["withBlankDefault="], data: [] },
       { withBlankDefault: undefined },
     );
     expectParseDataToReturn(
-      { optional: "withBlankQuoteDefault=''", data: [] },
+      { optional: ["withBlankQuoteDefault=''"], data: [] },
       { withBlankQuoteDefault: "" },
     );
     expectParseDataToReturn(
-      { optional: "withDefault=3", data: ["replacement"] },
+      { optional: ["withDefault=3"], data: ["replacement"] },
       { withDefault: "replacement" },
     );
   });
 
   it("replaces default value on optional keys if explicitly specified", () => {
     expectParseDataToReturn(
-      { optional: "abc", data: ["abc=cde", "ghi"], lenient: true },
+      { optional: ["abc"], data: ["abc=cde", "ghi"], lenient: true },
       { abc: "cde", extraData: "ghi" },
     );
     expectParseDataToReturn(
       {
-        optional: "abc=123",
+        optional: ["abc=123"],
         data: ["replacesAbc", "abc=replacesAgain"],
       },
       { abc: "replacesAgain" },
@@ -178,7 +181,7 @@ describe("handleDataArgs", () => {
     [{ data: ["extraArg"], lenient: true }, 1],
     [{ required: ["keyIs"], data: ["given"] }, 1],
     [{ data: [] }, 0],
-    [{ optional: "has=defaultValue", data: [] }, 1],
+    [{ optional: ["has=defaultValue"], data: [] }, 1],
     [{ optional: ["onlyFinalData=goesThrough"], data: ["inferType"] }, 1],
     [{ comment: "comment", data: [] }, 1],
     [{ comment: "comment1", data: ["comment=[123]"] }, 2],
@@ -263,7 +266,7 @@ describe("handleDataArgs", () => {
       {
         stringRemainder: true,
         remainder: "rem",
-        optional: "firstKey",
+        optional: ["firstKey"],
         data: [
           "firstArg",
           "Additional",
@@ -402,7 +405,7 @@ describe("handleDataArgs", () => {
 
   it("infers type from key for optional keys", () => {
     expectParseDataToReturn(
-      { optional: "startDate", data: ["June 13, 2020"] },
+      { optional: ["startDate"], data: ["June 13, 2020"] },
       {
         startDate: "2020-06-13",
       },
@@ -411,7 +414,7 @@ describe("handleDataArgs", () => {
 
   it("infers type from key for default values", () => {
     expectParseDataToReturn(
-      { optional: "duration=5" },
+      { optional: ["duration=5"] },
       {
         duration: "PT5M",
       },

@@ -1,44 +1,47 @@
 #!/usr/bin/env node
 
-import yargs from "yargs";
 import sample from "lodash.sample";
 import { homedir } from "os";
 import { connectDb } from "../../../src/auth/connectDb";
-import { ViewRow } from "../../../src/utils/utilityTypes";
 import { startsWith } from "../../../src/utils/startsWith";
 import promptSync from "prompt-sync";
 import picocolors from "picocolors";
 import { spawnSync } from "child_process";
+import { ArgumentParser } from "argparse";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
+import { MainDatumArgs } from "../../../src/input/mainArgs";
 
-async function main() {
-  const args = await yargs
-    .options({
-      start: {
-        alias: "s",
-        type: "string",
-        description:
-          "start key to use. If used without --end, then interpreted as a startsWith string",
-      },
-      end: {
-        alias: "e",
-        type: "string",
-        description: "end key to use",
-      },
-      view: {
-        alias: "v",
-        type: "string",
-        description:
-          "specify a view from which to sample. If unspecified will sample from _all_docs",
-      },
-    })
-    .strict().argv;
+export const wordCommand = new ArgumentParser({
+  description: "flash card system for word review",
+  add_help: true,
+  prog: "word",
+  usage: "word [-s START] [-e END]",
+});
+wordCommand.add_argument("-s", "--start", {
+  type: "str",
+  help: "start key to use. If used without --end, then interpreted as a startsWith string",
+});
+wordCommand.add_argument("-e", "--end", {
+  type: "str",
+  help: "end key to use",
+});
+wordCommand.add_argument("-v", "--view", {
+  type: "str",
+  help: "specify a view from which to sample. If unspecified will sample from _all_docs",
+});
+wordCommand.set_defaults({ db: "language" });
+
+export type WordArgs = {
+  start?: string;
+  end?: string;
+  view?: string;
+} & MainDatumArgs;
+
+async function word(argsOrCli: WordArgs | string | string[]): Promise<void> {
+  const args = parseIfNeeded(wordCommand, argsOrCli);
   const { start, end, view } = args;
 
-  args.env = homedir() + "/Projects/Datum/couchdb/prod.env";
-  args.db = "language";
-  args._ = [];
-
-  const db = await connectDb(args);
+  const db = connectDb(args);
 
   const filter = start
     ? end
@@ -52,6 +55,7 @@ async function main() {
   // const all_doc_ids = (await db.list({ ...filter })).rows.map((row) => row.id);
   const docs = await db.allDocs({ include_docs: true, ...filter });
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     console.clear();
     const rando = sample(docs.rows as any[]).doc;
@@ -65,7 +69,7 @@ async function main() {
     prompt(
       `${picocolors.yellow(picocolors.bold(text))} (${data.srcLang}-${
         data.pos
-      }) ${hid}`
+      }) ${hid}`,
     );
     const ipa = spawnSync("espeak", [
       "-q",
@@ -92,7 +96,7 @@ async function main() {
 
 if (require.main === module) {
   // Load command line arguments
-  main();
+  word(process.argv.slice(2));
 }
 
 export {};

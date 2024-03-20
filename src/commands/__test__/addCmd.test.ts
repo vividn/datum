@@ -12,7 +12,6 @@ import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
-import { Show } from "../../input/outputArgs";
 import { setupCmd } from "../setupCmd";
 
 describe("addCmd", () => {
@@ -29,7 +28,7 @@ describe("addCmd", () => {
   });
 
   it("inserts documents into couchdb", async () => {
-    await addCmd({ data: ["foo=bar"] });
+    await addCmd("foo");
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(1);
@@ -37,19 +36,16 @@ describe("addCmd", () => {
   });
 
   it("includes field in the data", async () => {
-    const doc1 = await addCmd({ field: "field", data: [] });
+    const doc1 = await addCmd("field");
     expect(doc1.data).toEqual({ field: "field" });
-    const doc2 = await addCmd({ field: "field", data: ["foo=bar"] });
+    const doc2 = await addCmd("field foo=bar");
     expect(doc2.data).toEqual({ field: "field", foo: "bar" });
   });
 
-  it("uses the first non explicitly assigned field in the data as field, since field is positional populuated automatically and could have data in it", async () => {
-    const doc1 = await addCmd({ field: "foo=bar", data: ["dataField"] });
+  it("uses the first non explicitly assigned field in the data as field", async () => {
+    const doc1 = await addCmd("foo=bar dataField");
     expect(doc1.data).toEqual({ foo: "bar", field: "dataField" });
-    const doc2 = await addCmd({
-      field: "foo=bar",
-      data: ["dataField", "another=parameter"],
-    });
+    const doc2 = await addCmd("foo=bar dataField another=parameter");
     expect(doc2.data).toEqual({
       foo: "bar",
       field: "dataField",
@@ -58,18 +54,10 @@ describe("addCmd", () => {
   });
 
   it("still handles field appropriately when there are required keys", async () => {
-    const doc1 = await addCmd({
-      required: "abc",
-      field: "field",
-      data: ["value"],
-    });
+    const doc1 = await addCmd("-K abc field value");
     expect(doc1.data).toEqual({ abc: "value", field: "field" });
 
-    const doc2 = await addCmd({
-      required: ["a", "b"],
-      field: "abc=ghi",
-      data: ["first", "second", "third"],
-    });
+    const doc2 = await addCmd("-K a -K b abc=ghi first second third");
     expect(doc2.data).toEqual({
       a: "second",
       b: "third",
@@ -78,66 +66,53 @@ describe("addCmd", () => {
     });
   });
 
-  it("can skip the field with --fieldless", async () => {
-    const doc = await addCmd({
-      field: "actuallyData",
-      fieldless: true,
-      optional: "dataKey",
-    });
+  it("can skip the field with -F", async () => {
+    const doc = await addCmd("-F -k dataKey actuallyData");
     expect(doc.data).toEqual({ dataKey: "actuallyData" });
   });
 
   it("uses the field prop to populate the field key, but can also be specified again in the data", async () => {
-    expect((await addCmd({ field: "fromProps", data: [] })).data).toEqual({
-      field: "fromProps",
+    expect((await addCmd("-F field=manual")).data).toEqual({
+      field: "manual",
     });
-
-    expect((await addCmd({ data: ["field=fromExtra"] })).data).toEqual({
-      field: "fromExtra",
+    expect((await addCmd("fromField field=fromData")).data).toEqual({
+      field: "fromData",
     });
-    expect(
-      (await addCmd({ field: "fromProps", data: ["field=fromExtra"] })).data,
-    ).toEqual({ field: "fromExtra" });
   });
 
-  it("throws an error if addCmd is called with no id and no data", async () => {
-    await expect(addCmd({})).rejects.toThrow(IdError);
+  it("throws an error if addCmd is called with no field, no id, and no data", async () => {
+    await expect(addCmd("-F")).rejects.toThrow(IdError);
   });
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
-    await expect(addCmd({ idPart: "", data: ["foo=bar"] })).rejects.toThrow(
-      IdError,
-    );
+    await expect(addCmd("-F data=data --id ''")).rejects.toThrow(IdError);
   });
 
   it("can add a blank document if an id is provided", async () => {
-    const doc = await addCmd({ idPart: "test" });
+    const doc = await addCmd("-F --id test");
     expect(doc._id).toEqual("test");
     expect(JSON.stringify(doc.data)).toBe("{}");
   });
 
   it("calls addDoc", async () => {
-    await addCmd({ idPart: "%foo%", data: ["foo=abc"] });
+    await addCmd("field foo=abc --id %foo%");
     const spyCall = addDocSpy.mock.calls[0][0];
     expect(spyCall).toMatchObject({
       db: db,
-      payload: { data: { foo: "abc" }, meta: { idStructure: "%foo%" } },
+      payload: {
+        data: { foo: "abc", field: "field" },
+        meta: { idStructure: "%field%:%foo%" },
+      },
     });
   });
 
   it("Can remove metadata entirely", async () => {
-    expect(await addCmd({ idPart: "hasMetadata" })).toHaveProperty("meta");
-    expect(
-      await addCmd({ idPart: "noMeta", noMetadata: true }),
-    ).not.toHaveProperty("meta");
+    expect(await addCmd("-F --id hasMetadata")).toHaveProperty("meta");
+    expect(await addCmd("-FM --id noMetadata")).not.toHaveProperty("meta");
   });
 
-  it("tells the user if the document already exists with identical data", async () => {
-    await addCmd({
-      idPart: "my name is bob",
-      data: ["foo=bar"],
-      show: Show.Standard,
-    });
+  it("tells the user if the document already exists identical data", async () => {
+    await addCmd("--id 'my name is bob' foo=bar field --show standard");
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS"),
@@ -145,11 +120,7 @@ describe("addCmd", () => {
 
     mockedLog.mockReset();
 
-    await addCmd({
-      idPart: "my name is bob",
-      data: ["foo=bar"],
-      show: Show.Standard,
-    });
+    await addCmd("--id 'my name is bob' foo=bar field --show standard");
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("CREATE"),
     );
@@ -157,11 +128,7 @@ describe("addCmd", () => {
   });
 
   it("fails if addedDocument conflicts with different data", async () => {
-    await addCmd({
-      idPart: "my name is doug",
-      data: ["foo=bar"],
-      show: Show.Standard,
-    });
+    await addCmd("--id 'my name is doug' foo=bar field --show standard");
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringContaining("EXISTS"),
@@ -170,11 +137,9 @@ describe("addCmd", () => {
     mockedLog.mockReset();
 
     try {
-      await addCmd({
-        idPart: "my name is doug",
-        data: ["different=data"],
-        show: Show.Standard,
-      });
+      await addCmd(
+        "--id 'my name is doug' different=data field --show standard",
+      );
       fail();
     } catch (e) {
       expect(e).toBeInstanceOf(DocExistsError);
@@ -185,27 +150,27 @@ describe("addCmd", () => {
 
   it("inserts id structure into the metadata", async () => {
     expect(
-      await addCmd({ idPart: ["rawString", "%foo%!!"], data: ["foo=abc"] }),
+      await addCmd("--id rawString --id %foo%!! foo=abc field"),
     ).toMatchObject({
-      meta: { idStructure: "rawString__%foo%!!" },
+      meta: { idStructure: "%field%:rawString__%foo%!!" },
     });
   });
 
   it("can use custom base data", async () => {
     expect(
-      await addCmd({ baseData: "{a: 1, b:2, c:3 }", idPart: "basedata-doc1" }),
-    ).toMatchObject({ data: { a: 1, b: 2, c: 3 }, _id: "basedata-doc1" });
+      await addCmd('-b "{a: 1, b:2, c:3 }" field --id "basedata-doc1"'),
+    ).toMatchObject({
+      data: { a: 1, b: 2, c: 3, field: "field" },
+      _id: "field:basedata-doc1",
+    });
   });
 
-  it("can write payloads directly by specifying base-data and no-metadata", async () => {
+  it("can write payloads directly by specifying base-data no-metadata and fieldless", async () => {
     expect(
-      await addCmd({
-        noMetadata: true,
-        baseData: "{a: 1, b:2, c:3}",
-        idPart: "basedata-doc2",
-      }),
-    ).toMatchObject({
+      await addCmd("-FM -b '{a: 1, b:2, c:3 }' --id basedata-doc2"),
+    ).toEqual({
       _id: "basedata-doc2",
+      _rev: expect.any(String),
       a: 1,
       b: 2,
       c: 3,
@@ -213,77 +178,63 @@ describe("addCmd", () => {
   });
 
   it("throws a BaseDataError if baseData is malformed", async () => {
-    await expect(addCmd({ baseData: "string" })).rejects.toThrowError(
-      BaseDataError,
-    );
+    await expect(
+      addCmd("-F -b 'string_is_not_good_basedata'"),
+    ).rejects.toThrowError(BaseDataError);
   });
 
   it("prefers the _id specified when in no-metadata mode", async () => {
     expect(
-      await addCmd({
-        noMetadata: true,
-        baseData: "{ _id: payload-id }",
-        idPart: "argument-id",
-      }),
+      await addCmd("-FM -b '{_id: payload-id}' --id argument-id"),
     ).toMatchObject({ _id: "payload-id" });
     expect(
-      await addCmd({
-        noMetadata: true,
-        baseData: "{ _id: payload-id-2 }",
-        idPart: "%keyId%",
-        data: ["keyId=key-id"],
-      }),
+      await addCmd("-FM -b '{_id: payload-id-2}' --id '%keyId%' keyId=key-id"),
     ).toMatchObject({ _id: "payload-id-2" });
-    expect(
-      await addCmd({
-        noMetadata: true,
-        data: ["_id=posArgs-id"],
-        idPart: "idPart-id",
-      }),
-    ).toMatchObject({ _id: "posArgs-id" });
+    expect(await addCmd("-FM --id 'idPart-id' _id=posArgs-id")).toMatchObject({
+      _id: "posArgs-id",
+    });
   });
 
   it("does not contain idStructure in the metadata if id does not depend on values from data", async () => {
-    const returnDoc = (await addCmd({ idPart: "notAField" })) as DatumDocument;
-    expect(returnDoc._id).toBe("notAField");
+    const returnDoc = (await addCmd("-F --id rawString")) as DatumDocument;
+    expect(returnDoc._id).toBe("rawString");
     expect(returnDoc.meta).not.toHaveProperty("idStructure");
   });
 
   it("can display just the data of documents or the whole documents", async () => {
     const matchExtraKeysInAnyOrder =
       /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
-    await addCmd({ idPart: "this-id" });
+    await addCmd("field --id this-id"); //note when called in tests like this show is "none" by default. From the main entrypoint it is "standard"
     expect(mockedLog).not.toHaveBeenCalledWith(
       expect.stringMatching(matchExtraKeysInAnyOrder),
     );
 
     mockedLog.mockClear();
 
-    await addCmd({ idPart: "that-id", showAll: true });
+    await addCmd("field --id that-id --show-all");
+    expect(mockedLog).toHaveBeenCalledWith(
+      expect.stringMatching(matchExtraKeysInAnyOrder),
+    );
+
+    mockedLog.mockClear();
+
+    await addCmd("field --id short-show-all -A");
     expect(mockedLog).toHaveBeenCalledWith(
       expect.stringMatching(matchExtraKeysInAnyOrder),
     );
   });
 
   it("can merge into an existing document with --merge", async () => {
-    await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
-    const newDoc = await addCmd({
-      idPart: "doc-id",
-      data: ["foo=def"],
-      merge: true,
-    });
+    await addCmd("-F --id doc-id foo=abc");
+    const newDoc = await addCmd("-F --id doc-id foo=def --merge");
     expect(newDoc).toMatchObject({ data: { foo: ["abc", "def"] } });
     expect(addDocSpy).toHaveBeenCalledTimes(2);
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("merge");
   });
 
   it("can update and existing document with --conflict", async () => {
-    await addCmd({ idPart: "doc-id", data: ["foo=abc"] });
-    const newDoc = await addCmd({
-      idPart: "doc-id",
-      data: ["foo=def"],
-      conflict: "preferNew",
-    });
+    await addCmd("-F --id doc-id foo=abc");
+    const newDoc = await addCmd("-F --id doc-id foo=def --conflict preferNew");
     expect(addDocSpy).toHaveBeenCalledTimes(2);
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
@@ -292,7 +243,7 @@ describe("addCmd", () => {
   describe("change command", () => {
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
-      await setupCmd({});
+      await setupCmd("");
     });
     afterAll(() => {
       restoreNow();
@@ -300,12 +251,7 @@ describe("addCmd", () => {
 
     it("can become an occur command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "occur"],
-        }),
+        await addCmd("field -K req1 -k opt1 reqVal optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -313,12 +259,7 @@ describe("addCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "start", "30 min"],
-        }),
+        await addCmd("field -K req1 -k opt1 reqVal optVal start '30 min'"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -326,12 +267,7 @@ describe("addCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "end", "30 min"],
-        }),
+        await addCmd("field -K req1 -k opt1 reqVal optVal end '30 min'"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -339,12 +275,9 @@ describe("addCmd", () => {
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await addCmd({
-          field: "field",
-          required: ["req1"],
-          optional: ["opt1"],
-          data: ["reqVal", "optVal", "switch", "stateName", "5m30s"],
-        }),
+        await addCmd(
+          "field -K req1 -k opt1 reqVal optVal switch stateName 5m30s",
+        ),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
