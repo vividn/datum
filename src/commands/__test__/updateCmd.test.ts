@@ -6,6 +6,7 @@ import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
 import { mock } from "jest-mock-extended";
 import { Show } from "../../input/outputArgs";
+import { addCmd } from "../addCmd";
 
 describe("updateCmd", () => {
   const dbName = "update_cmd_test";
@@ -137,5 +138,16 @@ describe("updateCmd", () => {
       data: { foo: "baz", another: "thing" },
       meta: { humanId: "abcdefg" },
     });
+  });
+
+  it("can update a key with an undefined value easily", async () => {
+    const { _id } = await addCmd("field foo=bar baz=qux --id foobar");
+    const retDocs = await updateCmd(`${_id} foo=`);
+    expect(retDocs).toHaveLength(1);
+    expect(retDocs[0].data).toEqual({
+      field: "field",
+      baz: "qux",
+    });
+    expect(retDocs[0].data.foo).toBeUndefined();
   });
 });

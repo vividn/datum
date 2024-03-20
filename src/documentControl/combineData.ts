@@ -59,11 +59,11 @@ export function combineData(
   const bClone = jClone(bData);
   const combined = {} as GenericObject;
 
-  for (const key in aClone) {
+  for (const key in aData) {
     const aVal = aClone[key];
 
     // Just in aData
-    if (!(key in bClone)) {
+    if (!(key in bData)) {
       if (strategy.justA) combined[key] = aVal;
       continue;
     }

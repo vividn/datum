@@ -260,6 +260,17 @@ describe("combineData", () => {
       onlyObjForA: "bHasAString",
     });
   });
+
+  test("it can overwrite with undefined for an explicit undefined", () => {
+    const a = { key: "value", justA: "justA" };
+    const b = { key: undefined, justB: "justB" };
+    const combined = combineData(a, b, "preferNew");
+    expect(combined).toEqual({
+      key: undefined,
+      justA: "justA",
+      justB: "justB",
+    });
+  });
 });
 
 describe("mergeValues", () => {

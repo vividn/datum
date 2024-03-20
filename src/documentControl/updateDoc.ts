@@ -47,7 +47,6 @@ export async function updateDoc({
   updateStrategy = "merge",
   outputArgs = {},
 }: updateDocType): Promise<EitherDocument> {
-  payload = jClone(payload);
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
     if (["missing", "deleted"].includes(e.reason)) {
       throw new NoDocToUpdateError(

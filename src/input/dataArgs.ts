@@ -288,6 +288,5 @@ export function handleDataArgs(args: DataArgs): DatumData {
       }
     }
   }
-
   return datumData;
 }
