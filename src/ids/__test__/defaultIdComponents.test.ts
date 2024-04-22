@@ -21,7 +21,7 @@ describe("defaultIdComponents", () => {
         data: { foo: "bar" },
         meta: { createTime: { utc: exampleOccurTime } },
       }),
-    ).toMatchObject({ defaultIdParts: ["%?createTime%"] });
+    ).toMatchObject({ defaultIdParts: ["%?createTime%c"] });
   });
 
   it("uses a concatenation of data fields if there is no occurTime and no createTime", () => {

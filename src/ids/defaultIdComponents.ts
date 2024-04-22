@@ -11,7 +11,7 @@ export function defaultIdComponents({
   data: DatumData;
   meta?: DatumMetadata;
 }): {
-  defaultIdParts?: string[];
+  defaultIdParts: string[];
   defaultPartitionParts?: string[];
 } {
   const defaultIdParts = isOccurredData(data)

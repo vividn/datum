@@ -174,7 +174,7 @@ describe("addIdAndMetadata", () => {
   });
 
   it("throws an error if the derived id is blank", () => {
-    expect(() => addIdAndMetadata({}, {})).toThrow(IdError);
+    expect(() => addIdAndMetadata({}, { noMetadata: true })).toThrow(IdError);
     expect(() => addIdAndMetadata({ foo: "bar" }, { idPart: [""] })).toThrow(
       IdError,
     );

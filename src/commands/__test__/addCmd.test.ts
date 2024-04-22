@@ -88,10 +88,16 @@ describe("addCmd", () => {
     await expect(addCmd("-FM data=data --id ''")).rejects.toThrow(IdError);
   });
 
-  it("can add a blank document if an id is provided", async () => {
+  it("can add a blank fieldless document with metadata", async () => {
+    const doc = await addCmd("-F");
+    expect(doc._id).toEqual(doc.meta.createTime.utc + "c");
+    expect(JSON.stringify(doc.data)).toBe("{}");
+  });
+
+  it("can add a completely blank document if an id is provided", async () => {
     const doc = await addCmd("-FM --id test");
     expect(doc._id).toEqual("test");
-    expect(JSON.stringify(doc.data)).toBe("{}");
+    expect(Object.keys(doc).length).toBe(2); // _id and _rev
   });
 
   it("calls addDoc", async () => {
