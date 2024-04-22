@@ -1,12 +1,26 @@
-import { DatumData, isOccurredData } from "../documentControl/DatumDocument";
+import {
+  DatumData,
+  DatumMetadata,
+  isOccurredData,
+} from "../documentControl/DatumDocument";
 
-export function defaultIdComponents({ data }: { data: DatumData }): {
-  defaultIdParts: string[];
+export function defaultIdComponents({
+  data,
+  meta,
+}: {
+  data: DatumData;
+  meta?: DatumMetadata;
+}): {
+  defaultIdParts?: string[];
   defaultPartitionParts?: string[];
 } {
   const defaultIdParts = isOccurredData(data)
     ? ["%occurTime%"]
-    : Object.keys(data).map((key) => `%${key.replace(/%/g, String.raw`\%`)}%`);
+    : meta?.createTime
+      ? ["%?createTime%c"] // notice the trailing "c" here
+      : Object.keys(data).map(
+          (key) => `%${key.replace(/%/g, String.raw`\%`)}%`,
+        );
   const defaultPartitionParts = "field" in data ? ["%field%"] : undefined;
   return { defaultIdParts, defaultPartitionParts };
 }

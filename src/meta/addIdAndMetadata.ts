@@ -34,8 +34,10 @@ export function addIdAndMetadata<T>(
     meta !== undefined
       ? ({ data, meta } as DatumPayload<T>)
       : ({ ...data } as DataOnlyPayload<T>);
+
   const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
     data,
+    meta,
   });
 
   const idStructure = buildIdStructure({
