@@ -15,6 +15,7 @@ import {
   CommandChange,
   commandChanges,
 } from "../utils/changeDatumCommand";
+import { jClone } from "../utils/jClone";
 import { ArgumentParser } from "argparse";
 
 export type DataArgs = {
@@ -102,17 +103,14 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
       ? baseData
       : inferType(baseData)
     : {};
-  if (
-    typeof parsedData !== "object" ||
-    parsedData === null ||
-    Array.isArray(parsedData)
-  ) {
+  if (!isPlainObject(parsedData)) {
     throw new BaseDataError("base data not a valid object");
   }
   return parsedData as DatumData;
 }
 
 export function handleDataArgs(args: DataArgs): DatumData {
+  args = jClone(args); // avoid modifying original args
   args.data ??= [];
   args.required ??= [];
   args.optional ??= [];
@@ -137,7 +135,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
 
   const datumData = { ...parseBaseData(args.baseData), ...args.cmdData };
 
-  // for idempotence of processing dataArgs
+  // for idempotence of processing dataArgs when called recursively internally
   args.baseData = datumData;
   delete args.cmdData;
 

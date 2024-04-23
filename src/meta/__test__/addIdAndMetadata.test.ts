@@ -12,14 +12,14 @@ describe("addIdAndMetadata", () => {
 
   it("adds id and metadata in a sane and stable way 1", () => {
     expect(addIdAndMetadata({ abc: "ghi" }, {})).toEqual({
-      _id: "ghi",
+      _id: `${nowUtc}c`,
       data: {
         abc: "ghi",
       },
       meta: {
         createTime: nowDatumTime,
         humanId: expect.any(String),
-        idStructure: "%abc%",
+        idStructure: "%?createTime%c",
         modifyTime: nowDatumTime,
       },
     });
@@ -174,7 +174,7 @@ describe("addIdAndMetadata", () => {
   });
 
   it("throws an error if the derived id is blank", () => {
-    expect(() => addIdAndMetadata({}, {})).toThrow(IdError);
+    expect(() => addIdAndMetadata({}, { noMetadata: true })).toThrow(IdError);
     expect(() => addIdAndMetadata({ foo: "bar" }, { idPart: [""] })).toThrow(
       IdError,
     );
