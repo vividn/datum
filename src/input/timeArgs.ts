@@ -48,6 +48,7 @@ timeGroup.add_argument("-z", "--timezone", {
 timeGroup.add_argument("-D", "--full-day", {
   help: "make an entry for the full day, without a specific timestamp, occurs also when -d is used without -t",
   action: BooleanOptionalAction,
+  dest: "fullDay",
 });
 timeGroup.add_argument("-T", "--omit-timestamp", {
   help: "omit the occurTime from the data",
