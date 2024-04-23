@@ -80,18 +80,24 @@ describe("addCmd", () => {
     });
   });
 
-  it("throws an error if addCmd is called with no field, no id, and no data", async () => {
-    await expect(addCmd("-F")).rejects.toThrow(IdError);
+  it("throws an error if addCmd is called with no field, no id, no createTime, and no data", async () => {
+    await expect(addCmd("-FM")).rejects.toThrow(IdError);
   });
 
   it("throws an IdError if data is provided, but the id is specified as an empty string", async () => {
-    await expect(addCmd("-F data=data --id ''")).rejects.toThrow(IdError);
+    await expect(addCmd("-FM data=data --id ''")).rejects.toThrow(IdError);
   });
 
-  it("can add a blank document if an id is provided", async () => {
-    const doc = await addCmd("-F --id test");
-    expect(doc._id).toEqual("test");
+  it("can add a blank fieldless document with metadata", async () => {
+    const doc = await addCmd("-F");
+    expect(doc._id).toEqual(doc.meta.createTime.utc + "c");
     expect(JSON.stringify(doc.data)).toBe("{}");
+  });
+
+  it("can add a completely blank document if an id is provided", async () => {
+    const doc = await addCmd("-FM --id test");
+    expect(doc._id).toEqual("test");
+    expect(Object.keys(doc).length).toBe(2); // _id and _rev
   });
 
   it("calls addDoc", async () => {
