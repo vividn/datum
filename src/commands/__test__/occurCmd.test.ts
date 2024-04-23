@@ -111,6 +111,11 @@ describe("occurCmd", () => {
     expect(newDoc.data.occurTime).toMatchObject({
       utc: "2024-04-23",
     });
+
+    const newDoc2 = await occurCmd("event --full-day");
+    expect(newDoc2.data.occurTime).toMatchObject({
+      utc: "2024-04-23",
+    });
   });
 
   describe("change command", () => {
