@@ -105,6 +105,14 @@ describe("occurCmd", () => {
     popNow();
   });
 
+  it("can occur on a full day", async () => {
+    pushNow("2024-04-23,13:30");
+    const newDoc = await occurCmd("event -D");
+    expect(newDoc.data.occurTime).toMatchObject({
+      utc: "2024-04-23",
+    });
+  });
+
   describe("change command", () => {
     deterministicHumanIds();
 
