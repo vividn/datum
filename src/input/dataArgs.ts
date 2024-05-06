@@ -164,7 +164,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
       const existingValue = get(datumData, path);
       const defaultValue =
         existingValue ??
-        optionalKeys
+        args.keys
           ?.find((optionalWithDefault) =>
             new RegExp(`^${path}=(.*)$`).test(optionalWithDefault),
           )
@@ -176,24 +176,13 @@ export function handleDataArgs(args: DataArgs): DatumData {
     // no explicit key given
     const dataValue = beforeEquals;
 
-    requiredKeysLoop: while (requiredKeys.length > 0) {
-      const path = datumPath(requiredKeys.shift()!);
-
-      if (get(datumData, path) !== undefined) {
-        continue requiredKeysLoop;
-      }
-
-      alterDatumData({ datumData, path: path, value: dataValue });
-      continue posArgsLoop;
-    }
-
-    optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+    keysLoop: while (args.keys.length > 0) {
+      const [rawPath, defaultValue] = splitFirst("=", args.keys.shift()!);
       const path = datumPath(rawPath);
 
-      // TODO: Consider explicitly setting an optional key to undefined to be sufficient to bypass this step
+      // TODO: Make the explicit setting of a key to undefined to be sufficient to bypass this step
       if (get(datumData, path) !== undefined) {
-        continue optionalKeysLoop;
+        continue keysLoop;
       }
 
       if (
@@ -216,40 +205,50 @@ export function handleDataArgs(args: DataArgs): DatumData {
     remainderData.push(dataValue);
   }
 
-  while (requiredKeys.length > 0) {
-    const requiredKey = requiredKeys.shift()!;
-    const requiredPath = datumPath(requiredKey);
-    if (get(datumData, requiredPath) !== undefined) {
+  while (args.keys.length > 0) {
+    const [rawPath, defaultValue] = splitFirst("=", args.keys.shift()!);
+    const path = datumPath(rawPath);
+    const isRequired = defaultValue === undefined;
+
+    const existingValue = get(datumData, path);
+
+    if (existingValue !== undefined && existingValue !== ".") {
+      // Manually specified or already exists in data
       continue;
     }
-    // Allow required keys to be given a default value via an optional key
-    // This is useful for nested aliases where a key is required in the parent,
-    // but then a child creates an optional default value for it
-    // e.g. alias tx='datum occur tx -K acc -K amount'
-    //      alias rent='tx acc=Checking -k amount=1200'
-    // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
-    // a tx doc with amount=1500
-    //TODO: Allow state based keys to still work if defined in separate ways
-    if (
-      optionalKeys?.find((optionalWithDefault) =>
-        new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
-      )
-    ) {
+    if (!isRequired && [undefined, "."].includes(get(datumData, path))) {
+      alterDatumData({ datumData, path, value: defaultValue });
+    }
+    if (get(datumData, path) !== undefined) {
       continue;
     }
-    throw new MissingRequiredKeyError(requiredKey);
+
+    if (isRequired) {
+      // Allow required keys to be given a default value via an optional key
+      // This is useful for nested aliases where a key is required in the parent,
+      // but then a child creates an optional default value for it
+      // e.g. alias tx='datum occur tx -k acc -k amount'
+      //      alias rent='tx acc=Checking -k amount=1200'
+      // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
+      // a tx doc with amount=1500
+      // TODO: Allow state based keys to still work if defined in separate ways
+      if (
+        args.keys?.find((alsoOptional) =>
+          new RegExp(`^${rawPath}=`).test(alsoOptional),
+        )
+      ) {
+        continue;
+      }
+      throw new MissingRequiredKeyError(rawPath);
+    }
+
+    //
   }
 
   // If optional keys with default values are left assign them
   while (optionalKeys.length > 0) {
     const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
     const path = datumPath(rawPath);
-    if (
-      defaultValue !== undefined &&
-      [undefined, "."].includes(get(datumData, path))
-    ) {
-      alterDatumData({ datumData, path, value: defaultValue });
-    }
   }
 
   if (args.comment) {

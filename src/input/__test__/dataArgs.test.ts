@@ -719,4 +719,10 @@ describe("handleDataArgs", () => {
       remainder: ["end", 3],
     });
   });
+
+  it.todo("does not allow . to be used for required keys");
+  it.todo(
+    "Uses the last default value specified for a key, but still the first position in the arg list",
+  );
+  it.todo("An optional key can be changes to be required");
 });
