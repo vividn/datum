@@ -16,15 +16,14 @@ import {
   commandChanges,
 } from "../utils/changeDatumCommand";
 import { jClone } from "../utils/jClone";
-import { ArgumentParser } from "argparse";
+import { Action, ArgumentParser, Namespace } from "argparse";
 
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
   cmdData?: DatumData; // Used for passing special values between commands
+  keys?: string[];
   comment?: string | string[];
-  required?: string[];
-  optional?: string[];
   remainder?: string;
   stringRemainder?: boolean;
   commentRemainder?: boolean;
@@ -66,13 +65,29 @@ dataGroup.add_argument("-k", "--key", {
   help: "Add a key to the data, will be filled with first keyless data. Without an '=', the key will be required. With a trailing '=', the key is optional. A default value can be specified with an '=', e.g., -k key=value",
   type: "str",
   action: "append",
-  dest: "key",
+  dest: "keys",
 });
 dataGroup.add_argument("-K", "--id-key", {
-  help: "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
+  help: "Add a key to the data and also use it as part of the id of the document. Only useful for adding new docs. Equivalent to calling `-k key --id %key`",
   type: "str",
-  action: "append",
-  dest: "idKey",
+  action: class IdKeyAction extends Action {
+    call(
+      _parser: ArgumentParser,
+      namespace: Namespace,
+      values: string[],
+      _optionString?: string | null,
+    ) {
+      if (values.length !== 1) {
+        throw new Error("--id-key must be followed by a single key");
+      }
+      const [keyName] = splitFirst("=", values[0]);
+      namespace.key ??= [];
+      namespace.idParts ??= [];
+
+      namespace.key.push(values[0]);
+      namespace.idPart.push(keyName);
+    }
+  },
 });
 dataGroup.add_argument("-R", "--remainder", {
   help: "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
@@ -117,16 +132,7 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
 export function handleDataArgs(args: DataArgs): DatumData {
   args = jClone(args); // avoid modifying original args
   args.data ??= [];
-  args.required ??= [];
-  args.optional ??= [];
-
-  const requiredKeys =
-    typeof args.required === "string" ? [args.required] : args.required;
-  args.required = requiredKeys;
-
-  const optionalKeys =
-    typeof args.optional === "string" ? [args.optional] : args.optional;
-  args.optional = optionalKeys;
+  args.keys ??= [];
 
   const remainderKey =
     args.remainder ??
