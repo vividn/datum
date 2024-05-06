@@ -42,10 +42,13 @@ const dataGroup = dataArgs.add_argument_group({
 dataGroup.add_argument("data", {
   help:
     "The data to put in the document. " +
-    "Data must include one argument for each key specified by --required. " +
-    "Once required keys are filled, data will be assigned to keys specified by --optional. " +
-    'Additional data can be specified in a "key=data" format. ' +
-    "Any data that does not have a key will be put in the key specified with --remainder, unless strict mode is on",
+    "Data must include one argument for each key specified by --key/-k. " +
+    "If a key is given with an '=' the key is optional and will have a default value" +
+    "Optional keys can be skipped over with a '.' " +
+    "e.g. `-k req` has 'req' as a required key, `-k opt=` has 'opt' as an optional key, `-k opt=default` has 'opt' as an optional key with a default value of 'default', which will be used if there is no argument or a dot given for it" +
+    "Use -K to specify a key that should also be used in the id of the document. Equivalent to `-k key --id %key`" +
+    'Additional data can be specified in a "key=data" format anywhere in the command' +
+    "Any data that does not have a key will be put in the key specified with --remainder. If --lenient is specified, defaults to 'extraData'",
   nargs: "*",
   type: "str",
 });
@@ -59,15 +62,17 @@ dataGroup.add_argument("-c", "--comment", {
   type: "str",
   action: "append",
 });
-dataGroup.add_argument("-K", "--required", {
+dataGroup.add_argument("-k", "--key", {
+  help: "Add a key to the data, will be filled with first keyless data. Without an '=', the key will be required. With a trailing '=', the key is optional. A default value can be specified with an '=', e.g., -k key=value",
+  type: "str",
+  action: "append",
+  dest: "key",
+});
+dataGroup.add_argument("-K", "--id-key", {
   help: "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
   type: "str",
   action: "append",
-});
-dataGroup.add_argument("-k", "--optional", {
-  help: "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
-  type: "str",
-  action: "append",
+  dest: "idKey",
 });
 dataGroup.add_argument("-R", "--remainder", {
   help: "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
