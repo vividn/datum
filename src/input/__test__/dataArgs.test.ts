@@ -698,7 +698,7 @@ describe("handleDataArgs", () => {
     expect(changeDatumCommandSpy).toHaveBeenCalledWith(
       expect.objectContaining({ opt1: "optValue1" }),
       "start",
-      expect.objectContaining({ optional: [] }),
+      expect.objectContaining({ keys: [] }),
     );
     expect(data).toMatchObject({
       opt1: "optValue1",
@@ -719,7 +719,7 @@ describe("handleDataArgs", () => {
     expect(changeDatumCommandSpy).toHaveBeenCalledWith(
       expect.objectContaining({ opt1: "optValue1" }),
       "end",
-      expect.objectContaining({ optional: expect.arrayContaining([]) }),
+      expect.objectContaining({ keys: expect.arrayContaining([]) }),
     );
     expect(data).toMatchObject({
       opt1: "optValue1",
