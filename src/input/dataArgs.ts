@@ -209,6 +209,8 @@ export function handleDataArgs(args: DataArgs): DatumData {
   }
 
   while (args.keys.length > 0) {
+    // if optional keys are left, fill them with default values.
+    // remaining required keys throw an error
     const [rawPath, defaultValue] = splitFirst("=", args.keys.shift()!);
     const path = datumPath(rawPath);
     const isRequired = defaultValue === undefined;
@@ -219,39 +221,10 @@ export function handleDataArgs(args: DataArgs): DatumData {
       // Manually specified or already exists in data
       continue;
     }
-    if (!isRequired && [undefined, "."].includes(get(datumData, path))) {
-      alterDatumData({ datumData, path, value: defaultValue });
-    }
-    if (get(datumData, path) !== undefined) {
-      continue;
-    }
-
     if (isRequired) {
-      // Allow required keys to be given a default value via an optional key
-      // This is useful for nested aliases where a key is required in the parent,
-      // but then a child creates an optional default value for it
-      // e.g. alias tx='datum occur tx -k acc -k amount'
-      //      alias rent='tx acc=Checking -k amount=1200'
-      // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
-      // a tx doc with amount=1500
-      // TODO: Allow state based keys to still work if defined in separate ways
-      if (
-        args.keys?.find((alsoOptional) =>
-          new RegExp(`^${rawPath}=`).test(alsoOptional),
-        )
-      ) {
-        continue;
-      }
       throw new MissingRequiredKeyError(rawPath);
     }
-
-    //
-  }
-
-  // If optional keys with default values are left assign them
-  while (optionalKeys.length > 0) {
-    const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
-    const path = datumPath(rawPath);
+    alterDatumData({ datumData, path, value: defaultValue });
   }
 
   if (args.comment) {
