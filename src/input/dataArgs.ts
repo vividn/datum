@@ -17,6 +17,7 @@ import {
 } from "../utils/changeDatumCommand";
 import { jClone } from "../utils/jClone";
 import { Action, ArgumentParser, Namespace } from "argparse";
+import { consolidateKeys } from "./consolidateKeys";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -42,12 +43,14 @@ dataGroup.add_argument("data", {
   help:
     "The data to put in the document. " +
     "Data must include one argument for each key specified by --key/-k. " +
-    "If a key is given with an '=' the key is optional and will have a default value" +
+    "If a key is given with an '=' the key is optional and will have a default value of what comes after the '='. " +
     "Optional keys can be skipped over with a '.' " +
-    "e.g. `-k req` has 'req' as a required key, `-k opt=` has 'opt' as an optional key, `-k opt=default` has 'opt' as an optional key with a default value of 'default', which will be used if there is no argument or a dot given for it" +
+    "e.g. `-k req` has 'req' as a required key, `-k opt=` has 'opt' as an optional key, `-k opt=default` has 'opt' as an optional key with a default value of 'default', which will be used if there is no argument or a dot given for it. " +
+    "If a key is given multiple times, the last appearing form (required/optional/default) is used in the first appearing position. " +
+    "e.g. `-k key -k another=value -k key=default -k third= -k another` is equivalent to `-k key=default -k another -k third=`. " +
     "Use -K to specify a key that should also be used in the id of the document. Equivalent to `-k key --id %key`" +
-    'Additional data can be specified in a "key=data" format anywhere in the command' +
-    "Any data that does not have a key will be put in the key specified with --remainder. If --lenient is specified, defaults to 'extraData'",
+    'Additional data can be specified in a "key=data" format anywhere in the command. ' +
+    "Any data that does not have a key will be put in the key specified with --remainder. If --lenient is specified, defaults to 'extraData'. ",
   nargs: "*",
   type: "str",
 });
@@ -132,7 +135,7 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
 export function handleDataArgs(args: DataArgs): DatumData {
   args = jClone(args); // avoid modifying original args
   args.data ??= [];
-  args.keys ??= [];
+  args.keys = consolidateKeys(args.keys ?? []);
 
   const remainderKey =
     args.remainder ??
