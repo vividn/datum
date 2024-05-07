@@ -53,8 +53,8 @@ export async function switchCmd(
   flexiblePositional(
     args,
     "duration",
-    !args.moment && !args.omitTimestamp && "optional",
-    "dur",
+    !args.moment && !args.omitTimestamp && "append",
+    "dur=",
   );
   flexiblePositional(args, "state", "optional");
 
