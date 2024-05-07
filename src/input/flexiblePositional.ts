@@ -8,24 +8,24 @@ type KeyPosition = "prepend" | "append" | false;
 // Be sure to call in reverse order for prepend
 export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   args: T,
-  keyName: K,
+  argName: K,
   keyPosition: KeyPosition,
-  keyNameInData?: string,
+  keyName?: string,
 ): void {
-  keyNameInData ??= String(keyName);
-  if (args[keyName] === undefined) {
+  keyName ??= String(argName);
+  if (args[argName] === undefined) {
     return;
   }
 
   if (keyPosition === "prepend") {
     args.keys ??= [];
-    args.keys.unshift(keyNameInData);
+    args.keys.unshift(keyName);
   } else if (keyPosition === "append") {
     args.keys ??= [];
-    args.keys.push(keyNameInData);
+    args.keys.push(keyName);
   }
 
   args.data ??= [];
-  args.data.unshift(args[keyName] as string | number);
-  delete args[keyName];
+  args.data.unshift(args[argName] as string | number);
+  delete args[argName];
 }
