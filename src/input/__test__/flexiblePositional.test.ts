@@ -2,82 +2,57 @@ import { DataArgs } from "../dataArgs";
 import { flexiblePositional } from "../flexiblePositional";
 
 describe("flexiblePositional", () => {
-  it("can move different arguments into optional and required keys", () => {
-    const args: DataArgs & { field: string; extraArg: string } = {
-      field: "arg0",
-      data: ["arg2", "arg3"],
-      extraArg: "arg1",
-      required: ["req1", "req2"],
-      optional: ["opt1", "opt2"],
+  it("can transform special args into data type args with a corresponding key", () => {
+    const args: DataArgs & { field: string; extraKey: string } = {
+      field: "fieldArg",
+      data: ["argl", "arg2"],
+      extraKey: "extraArg",
+      keys: ["key1", "key2"],
     };
 
-    flexiblePositional(args, "extraArg", "optional");
+    flexiblePositional(args, "extraKey", "extraKey=default");
     expect(args).toEqual({
-      field: "arg0",
-      data: ["arg1", "arg2", "arg3"],
-      required: ["req1", "req2"],
-      optional: ["extraArg", "opt1", "opt2"],
+      field: "fieldArg",
+      data: ["extraArg", "arg1", "arg2"],
+      keys: ["extraKey=default", "key1", "key2"],
     });
     expect(args).not.toHaveProperty("extraArg");
 
-    flexiblePositional(args, "field", "required");
+    flexiblePositional(args, "field", "field");
     expect(args).toEqual({
-      data: ["arg0", "arg1", "arg2", "arg3"],
-      required: ["field", "req1", "req2"],
-      optional: ["extraArg", "opt1", "opt2"],
+      data: ["fieldArg", "extraArg", "arg1", "arg2"],
+      keys: ["field", "extraKey=default", "key1", "key2"],
     });
     expect(args).not.toHaveProperty("field");
   });
 
-  it("can move arguments into a data key with a custom name", () => {
-    const args: DataArgs & { extraArg: string | number } = {
+  it("can skip adding the key and just move the value into data. useful for --fieldless, where the argparser still has the postional argument field, but it no longer corresponds to field, it's just normal data", () => {
+    const args: DataArgs & { field: string } = {
       data: ["arg2", "arg3"],
-      extraArg: "arg1",
-      required: ["req1", "req2"],
-      optional: ["opt1"],
+      field: "arg1",
+      keys: ["key1", "key2", "key3"],
     };
-
-    flexiblePositional(args, "extraArg", "optional", "__extraArg");
+    flexiblePositional(args, "field", "field", true);
     expect(args).toEqual({
       data: ["arg1", "arg2", "arg3"],
-      required: ["req1", "req2"],
-      optional: ["__extraArg", "opt1"],
+      keys: ["key1", "key2", "key3"],
     });
   });
 
-  it("can just move the value into data without adding the key to required or optional", () => {
-    const args: DataArgs & { extraArg: string | number } = {
-      data: ["arg2", "arg3"],
-      extraArg: "arg1",
-      required: ["req1", "req2"],
-      optional: ["opt1"],
-    };
-    flexiblePositional(args, "extraArg", false);
-    expect(args).toEqual({
-      data: ["arg1", "arg2", "arg3"],
-      required: ["req1", "req2"],
-      optional: ["opt1"],
-    });
-  });
-
-  it("does not change required, optional, or data, if the referenced positional key is undefined", () => {
+  it("does not change keys or data if the referenced positional key is undefined", () => {
     const args: DataArgs & { field?: string } = {
-      data: ["arg2", "arg3"],
-      required: ["req1", "req2"],
-      optional: ["opt1", "opt2"],
+      data: ["arg1", "arg2"],
+      keys: ["key1", "key2"],
     };
-    flexiblePositional(args, "field", "required");
+    flexiblePositional(args, "field", "field");
     expect(args).toEqual({
       data: ["arg2", "arg3"],
-      required: ["req1", "req2"],
-      optional: ["opt1", "opt2"],
+      keys: ["key1", "key2"],
     });
 
-    const args2: DataArgs & { field?: string } = {
-      required: ["req1"],
-    };
-    flexiblePositional(args2, "field", "optional");
+    const args2: DataArgs & { field?: string } = {};
+    flexiblePositional(args2, "field", "field");
     expect(args2).not.toHaveProperty("data");
-    expect(args2).not.toHaveProperty("optional");
+    expect(args2).not.toHaveProperty("keys");
   });
 });

@@ -98,7 +98,7 @@ export async function addCmd(
   args = parseIfNeeded(addCmdArgs, args, preparsed);
   const db = connectDb(args);
 
-  flexiblePositional(args, "field", args.fieldless ? false : "required");
+  flexiblePositional(args, "field", "field", args.fieldless);
 
   const payloadData = handleDataArgs(args);
 
