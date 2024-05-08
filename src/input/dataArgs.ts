@@ -81,7 +81,7 @@ dataGroup.add_argument("-K", "--id-key", {
       namespace.idParts ??= [];
 
       namespace.key.push(value);
-      namespace.idParts.push(keyName);
+      namespace.idParts.push(`%${keyName}`);
     }
   },
 });
