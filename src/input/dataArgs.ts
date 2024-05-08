@@ -14,6 +14,7 @@ import {
 import { jClone } from "../utils/jClone";
 import { Action, ArgumentParser, Namespace } from "argparse";
 import { consolidateKeys } from "./consolidateKeys";
+import { AddCmdArgs } from "../commands/addCmd";
 
 export type DataArgs = {
   data?: (string | number)[];
@@ -72,15 +73,15 @@ dataGroup.add_argument("-K", "--id-key", {
   action: class IdKeyAction extends Action {
     call(
       _parser: ArgumentParser,
-      namespace: Namespace,
+      namespace: DataArgs & AddCmdArgs,
       value: string,
       _optionString?: string | null,
     ) {
       const [keyName] = splitFirst("=", value);
-      namespace.key ??= [];
+      namespace.keys ??= [];
       namespace.idParts ??= [];
 
-      namespace.key.push(value);
+      namespace.keys.push(value);
       namespace.idParts.push(`%${keyName}`);
     }
   },
