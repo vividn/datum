@@ -86,13 +86,13 @@ describe("changeDatumCommand", () => {
       expect(datumData).not.toHaveProperty("dur");
     });
 
-    it("adds a dur key to the beginning of the optional keys array", () => {
+    it("adds a dur key to the beginning of the keys array", () => {
       datumData = {
         state: { id: "something" },
       };
-      const args: DataArgs = { optional: ["existingKey"] };
+      const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "start", args);
-      expect(args.optional).toEqual(["dur", "existingKey"]);
+      expect(args.keys).toEqual(["dur", "existingKey"]);
     });
   });
 
@@ -213,13 +213,13 @@ describe("changeDatumCommand", () => {
       });
       expect(datumData).not.toHaveProperty("dur");
     });
-    it("adds a dur key to the beginning of the optional keys array", () => {
+    it("adds a dur key to the beginning of the keys array", () => {
       datumData = {
         state: { id: "something" },
       };
-      const args: DataArgs = { optional: ["existingKey"] };
+      const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "end", args);
-      expect(args.optional).toEqual(["dur", "existingKey"]);
+      expect(args.keys).toEqual(["dur", "existingKey"]);
     });
   });
 
@@ -339,13 +339,13 @@ describe("changeDatumCommand", () => {
       });
     });
 
-    it("adds a state=true and a dur key to the beginning of the optional keys array", () => {
+    it("adds a state=true and a dur key to the beginning of the keys array", () => {
       datumData = {
         state: { id: "something" },
       };
-      const args: DataArgs = { optional: ["existingKey"] };
+      const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "switch", args);
-      expect(args.optional).toEqual(["state.id=true", "dur", "existingKey"]);
+      expect(args.keys).toEqual(["state.id=true", "dur", "existingKey"]);
     });
   });
 });

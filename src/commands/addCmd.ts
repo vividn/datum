@@ -32,7 +32,7 @@ newDocArgs.add_argument("--id-part", "--id", {
     " Can either be a single string with fields delimited by --id-delimiter" +
     " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
   action: "append",
-  dest: "idPart",
+  dest: "idParts",
 });
 newDocArgs.add_argument("--id-delimiter", {
   help: "spacer between fields in the id",
@@ -73,7 +73,7 @@ export const addCmdArgs = new ArgumentParser({
   prog: "dtm add",
   usage: `%(prog)s <field> [data..]
   %(prog)s --fieldless [data..]
-  %(prog)s <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]
+  %(prog)s <field> -k <reqKey> -k <optKey>=[defaultValue] ... <reqValue> [optValue] [data..]
 `,
   parents: [addArgs, outputArgs, dbArgs],
 });
@@ -82,7 +82,7 @@ export type AddCmdArgs = MainDatumArgs &
   FieldArgs &
   DataArgs & {
     noMetadata?: boolean;
-    idPart?: string | string[];
+    idParts?: string[];
     idDelimiter?: string;
     partition?: string;
     undo?: boolean;
@@ -98,7 +98,7 @@ export async function addCmd(
   args = parseIfNeeded(addCmdArgs, args, preparsed);
   const db = connectDb(args);
 
-  flexiblePositional(args, "field", args.fieldless ? false : "required");
+  flexiblePositional(args, "field", "field", args.fieldless);
 
   const payloadData = handleDataArgs(args);
 

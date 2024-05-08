@@ -34,8 +34,10 @@ export const switchArgs = new ArgumentParser({
 export const switchCmdArgs = new ArgumentParser({
   description: "switch states of a given field",
   prog: "dtm switch",
-  usage: `%(prog)s <field> [state] [duration] [data..]
-  %(prog)s --moment <field> [state] [data..]`,
+  usage: `%(prog)s <field> <state> [<duration OR .> [data..]]
+  %(prog)s --moment <field> <state> [data..]
+  %(prog)s <field> -k <reqKey> -k <optKey>=[defaultValue] ... <state> <duration OR .> <reqValue> [optValue] [data..]
+`,
   parents: [switchArgs, dbArgs, outputArgs],
 });
 
@@ -53,11 +55,10 @@ export async function switchCmd(
   flexiblePositional(
     args,
     "duration",
-    !args.moment && !args.omitTimestamp && "optional",
-    "dur",
+    "dur=",
+    args.moment || args.omitTimestamp,
   );
-  flexiblePositional(args, "state", "optional");
-
+  flexiblePositional(args, "state", "state=true");
   args.cmdData ??= {};
   if (args.moment) {
     args.cmdData.dur = null;

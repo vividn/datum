@@ -54,10 +54,10 @@ describe("addCmd", () => {
   });
 
   it("still handles field appropriately when there are required keys", async () => {
-    const doc1 = await addCmd("-K abc field value");
+    const doc1 = await addCmd("-k abc field value");
     expect(doc1.data).toEqual({ abc: "value", field: "field" });
 
-    const doc2 = await addCmd("-K a -K b abc=ghi first second third");
+    const doc2 = await addCmd("-k a -k b abc=ghi first second third");
     expect(doc2.data).toEqual({
       a: "second",
       b: "third",
@@ -67,7 +67,7 @@ describe("addCmd", () => {
   });
 
   it("can skip the field with -F", async () => {
-    const doc = await addCmd("-F -k dataKey actuallyData");
+    const doc = await addCmd("-F -k dataKey= actuallyData");
     expect(doc.data).toEqual({ dataKey: "actuallyData" });
   });
 
@@ -257,7 +257,7 @@ describe("addCmd", () => {
 
     it("can become an occur command by having start as a trailing word", async () => {
       expect(
-        await addCmd("field -K req1 -k opt1 reqVal optVal occur"),
+        await addCmd("field -k req1 -k opt1= reqVal optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -265,7 +265,7 @@ describe("addCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await addCmd("field -K req1 -k opt1 reqVal optVal start '30 min'"),
+        await addCmd("field -k req1 -k opt1= reqVal optVal start '30 min'"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -273,7 +273,7 @@ describe("addCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await addCmd("field -K req1 -k opt1 reqVal optVal end '30 min'"),
+        await addCmd("field -k req1 -k opt1= reqVal optVal end '30 min'"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -282,7 +282,7 @@ describe("addCmd", () => {
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
         await addCmd(
-          "field -K req1 -k opt1 reqVal optVal switch stateName 5m30s",
+          "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
         ),
       ).toMatchSnapshot({
         _rev: expect.any(String),

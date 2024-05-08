@@ -12,7 +12,7 @@ export const endArgs = new ArgumentParser({
 export const endCmdArgs = new ArgumentParser({
   description: "record the end of something that occurs in blocks of time",
   prog: "dtm end",
-  usage: `%(prog)s <field> [duration] [data..]
+  usage: `%(prog)s <field> [<duration OR .> [data..]]
 `,
   parents: [endArgs],
 });
