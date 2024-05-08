@@ -5,7 +5,7 @@ describe("flexiblePositional", () => {
   it("can transform special args into data type args with a corresponding key", () => {
     const args: DataArgs & { field: string; extraKey: string } = {
       field: "fieldArg",
-      data: ["argl", "arg2"],
+      data: ["arg1", "arg2"],
       extraKey: "extraArg",
       keys: ["key1", "key2"],
     };
@@ -46,7 +46,7 @@ describe("flexiblePositional", () => {
     };
     flexiblePositional(args, "field", "field");
     expect(args).toEqual({
-      data: ["arg2", "arg3"],
+      data: ["arg1", "arg2"],
       keys: ["key1", "key2"],
     });
 
