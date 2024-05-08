@@ -57,7 +57,6 @@ export async function switchCmd(
     args.moment || args.omitTimestamp,
   );
   flexiblePositional(args, "state", "state=true");
-  console.debug("switchCmd args", args);
   args.cmdData ??= {};
   if (args.moment) {
     args.cmdData.dur = null;
