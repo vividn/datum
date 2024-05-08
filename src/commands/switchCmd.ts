@@ -19,6 +19,7 @@ export const stateArgs = new ArgumentParser({
 stateArgs.add_argument("state", {
   help: "the state to switch to, it defaults to true--equivalent to start",
   nargs: "?",
+  default: "true",
 });
 stateArgs.add_argument("--last-state", "-L", {
   help: "manually specify the last state being transitioned out of",
@@ -56,7 +57,7 @@ export async function switchCmd(
     args.moment || args.omitTimestamp,
   );
   flexiblePositional(args, "state", "state=true");
-
+  console.debug("switchCmd args", args);
   args.cmdData ??= {};
   if (args.moment) {
     args.cmdData.dur = null;
