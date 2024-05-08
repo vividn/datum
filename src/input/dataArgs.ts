@@ -77,18 +77,15 @@ dataGroup.add_argument("-K", "--id-key", {
     call(
       _parser: ArgumentParser,
       namespace: Namespace,
-      values: string[],
+      value: string,
       _optionString?: string | null,
     ) {
-      if (values.length !== 1) {
-        throw new Error("--id-key must be followed by a single key");
-      }
-      const [keyName] = splitFirst("=", values[0]);
+      const [keyName] = splitFirst("=", value);
       namespace.key ??= [];
       namespace.idParts ??= [];
 
-      namespace.key.push(values[0]);
-      namespace.idPart.push(keyName);
+      namespace.key.push(value);
+      namespace.idParts.push(keyName);
     }
   },
 });

@@ -32,7 +32,7 @@ newDocArgs.add_argument("--id-part", "--id", {
     " Can either be a single string with fields delimited by --id-delimiter" +
     " or can be used multiple times to progressively assemble an id delimited by --id-delimiter",
   action: "append",
-  dest: "idPart",
+  dest: "idParts",
 });
 newDocArgs.add_argument("--id-delimiter", {
   help: "spacer between fields in the id",
@@ -82,7 +82,7 @@ export type AddCmdArgs = MainDatumArgs &
   FieldArgs &
   DataArgs & {
     noMetadata?: boolean;
-    idPart?: string | string[];
+    idParts?: string[];
     idDelimiter?: string;
     partition?: string;
     undo?: boolean;
