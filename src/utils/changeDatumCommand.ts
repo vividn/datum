@@ -35,8 +35,8 @@ export function changeDatumCommand(
       if (datumData.dur === null) {
         unset(datumData, "dur");
       }
-      if (Array.isArray(args?.optional)) {
-        args!.optional.unshift("dur");
+      if (Array.isArray(args?.keys)) {
+        args!.keys.unshift("dur");
       }
       break;
     }
@@ -58,8 +58,8 @@ export function changeDatumCommand(
       if (datumData.dur === null) {
         unset(datumData, "dur");
       }
-      if (Array.isArray(args?.optional)) {
-        args!.optional.unshift("dur");
+      if (Array.isArray(args?.keys)) {
+        args!.keys.unshift("dur");
       }
       break;
 
@@ -69,9 +69,9 @@ export function changeDatumCommand(
       if (datumData.dur === null) {
         unset(datumData, "dur");
       }
-      if (Array.isArray(args?.optional)) {
-        args!.optional.unshift("dur");
-        args!.optional.unshift("state.id=true");
+      if (Array.isArray(args?.keys)) {
+        args!.keys.unshift("dur");
+        args!.keys.unshift("state.id=true");
       }
       break;
   }

@@ -17,7 +17,10 @@ import { now, toDatumTime } from "../time/timeUtils";
 
 export function addIdAndMetadata<T>(
   data: DatumData<T>,
-  args: Pick<AddCmdArgs, "noMetadata" | "idPart" | "idDelimiter" | "partition">,
+  args: Pick<
+    AddCmdArgs,
+    "noMetadata" | "idParts" | "idDelimiter" | "partition"
+  >,
 ): EitherIdPayload<T> {
   let meta: DatumMetadata | undefined = undefined;
   if (!args.noMetadata) {
@@ -41,7 +44,7 @@ export function addIdAndMetadata<T>(
   });
 
   const idStructure = buildIdStructure({
-    idParts: args.idPart ?? defaultIdParts,
+    idParts: args.idParts ?? defaultIdParts,
     delimiter: args.idDelimiter ?? defaults.idDelimiter,
     partition: args.partition ?? defaultPartitionParts,
   });

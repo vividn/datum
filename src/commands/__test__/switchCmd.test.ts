@@ -132,7 +132,7 @@ describe("switchCmd", () => {
   });
 
   it("when --moment/-m is specified, dur is null and there is no duration postional argument", async () => {
-    const doc = await switchCmd("project household -m -k skillPoints 3");
+    const doc = await switchCmd("project household -m -k skillPoints= 3");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -143,7 +143,7 @@ describe("switchCmd", () => {
   });
 
   it("when --omit-timestamp/-T is specified, there is no positional duration argument", async () => {
-    const doc = await switchCmd("project household -k skillPoints -T 3");
+    const doc = await switchCmd("project household -k skillPoints= -T 3");
     expect(doc.data).toMatchObject({
       field: "project",
       state: "household",
@@ -156,8 +156,8 @@ describe("switchCmd", () => {
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
     restoreNow();
-    const doc = await switchCmd("project household -k optional . 50");
-    const doc2 = await switchCmd("project household -k optional '' 50");
+    const doc = await switchCmd("project household -k optional= . 50");
+    const doc2 = await switchCmd("project household -k optional= '' 50");
     expect(doc.data).toMatchObject({ field: "project", optional: 50 });
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "project", optional: 50 });
@@ -180,9 +180,9 @@ describe("switchCmd", () => {
     expect(secondDoc.data).not.toHaveProperty("lastState");
   });
 
-  it("handles required keys and optional keys for complex state correctly", async () => {
+  it("handles both required and optional keys for complex state correctly", async () => {
     const doc = await switchCmd(
-      "book -K .title -K .author -k .genre 'the wind in the willows' 'kenneth grahame' . 5 fiction",
+      "book -k .title -k .author -k .genre= . 5 'the wind in the willows' 'kenneth grahame' fiction",
     );
 
     expect(doc.data).toMatchObject({
@@ -198,7 +198,7 @@ describe("switchCmd", () => {
 
   it("handles dot syntax required and optional keys correctly", async () => {
     const doc = await switchCmd(
-      "consume -K .medium -k .title -k .author .medium=text book_fiction . title author",
+      "consume -k .medium -k .title= -k .author= .medium=text book_fiction . title author",
     );
     expect(doc.data).toMatchObject({
       field: "consume",
@@ -223,7 +223,7 @@ describe("switchCmd", () => {
 
     it("can become an occur command by having occur as a trailing word", async () => {
       expect(
-        await switchCmd("field -k opt1 someState 30 key=val optVal occur"),
+        await switchCmd("field -k opt1= someState 30 key=val optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -231,7 +231,7 @@ describe("switchCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await switchCmd("field -k opt1 someState 30 key=val optVal end"),
+        await switchCmd("field -k opt1= someState 30 key=val optVal end"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -239,7 +239,7 @@ describe("switchCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await switchCmd("field -k opt1 someState 5m30s key=val optVal start"),
+        await switchCmd("field -k opt1= someState 5m30s key=val optVal start"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

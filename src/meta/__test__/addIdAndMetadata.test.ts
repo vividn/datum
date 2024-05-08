@@ -71,7 +71,7 @@ describe("addIdAndMetadata", () => {
           abc: "ghi",
           occurTime: { utc: "2023-09-05T11:20:00.000Z" },
         },
-        { idPart: ["%abc"] },
+        { idParts: ["%abc"] },
       ),
     ).toEqual({
       _id: "ghi",
@@ -127,7 +127,7 @@ describe("addIdAndMetadata", () => {
       },
       {
         partition: "%foo",
-        idPart: "%?humanId",
+        idParts: ["%?humanId"],
       },
     );
     expect(payload).toMatchObject({
@@ -153,7 +153,7 @@ describe("addIdAndMetadata", () => {
       },
       {
         partition: "%foo",
-        idPart: ["%occurTime", "%?humanId"],
+        idParts: ["%occurTime", "%?humanId"],
         idDelimiter: "!!!",
       },
     );
@@ -175,7 +175,7 @@ describe("addIdAndMetadata", () => {
 
   it("throws an error if the derived id is blank", () => {
     expect(() => addIdAndMetadata({}, { noMetadata: true })).toThrow(IdError);
-    expect(() => addIdAndMetadata({ foo: "bar" }, { idPart: [""] })).toThrow(
+    expect(() => addIdAndMetadata({ foo: "bar" }, { idParts: [""] })).toThrow(
       IdError,
     );
   });

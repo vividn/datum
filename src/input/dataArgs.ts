@@ -1,10 +1,6 @@
 import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
-import {
-  BaseDataError,
-  ExtraDataError,
-  MissingRequiredKeyError,
-} from "../errors";
+import { BaseDataError, ExtraDataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import isPlainObject from "lodash.isplainobject";
 import { alterDatumData } from "../utils/alterDatumData";
@@ -16,15 +12,16 @@ import {
   commandChanges,
 } from "../utils/changeDatumCommand";
 import { jClone } from "../utils/jClone";
-import { ArgumentParser } from "argparse";
+import { Action, ArgumentParser } from "argparse";
+import { consolidateKeys } from "./consolidateKeys";
+import { AddCmdArgs } from "../commands/addCmd";
 
 export type DataArgs = {
   data?: (string | number)[];
   baseData?: string | DatumData;
   cmdData?: DatumData; // Used for passing special values between commands
+  keys?: string[];
   comment?: string | string[];
-  required?: string[];
-  optional?: string[];
   remainder?: string;
   stringRemainder?: boolean;
   commentRemainder?: boolean;
@@ -42,10 +39,15 @@ const dataGroup = dataArgs.add_argument_group({
 dataGroup.add_argument("data", {
   help:
     "The data to put in the document. " +
-    "Data must include one argument for each key specified by --required. " +
-    "Once required keys are filled, data will be assigned to keys specified by --optional. " +
-    'Additional data can be specified in a "key=data" format. ' +
-    "Any data that does not have a key will be put in the key specified with --remainder, unless strict mode is on",
+    "Data must include one argument for each key specified by --key/-k. " +
+    "If a key is given with an '=' the key is optional and will have a default value of what comes after the '='. " +
+    "Optional keys can be skipped over with a '.' " +
+    "e.g. `-k req` has 'req' as a required key, `-k opt=` has 'opt' as an optional key, `-k opt=default` has 'opt' as an optional key with a default value of 'default', which will be used if there is no argument or a dot given for it. " +
+    "If a key is given multiple times, the last appearing form (required/optional/default) is used in the first appearing position. " +
+    "e.g. `-k key -k another=value -k key=default -k third= -k another` is equivalent to `-k key=default -k another -k third=`. " +
+    "Use -K to specify a key that should also be used in the id of the document. Equivalent to `-k key --id %key`" +
+    'Additional data can be specified in a "key=data" format anywhere in the command. ' +
+    "Any data that does not have a key will be put in the key specified with --remainder. If --lenient is specified, defaults to 'extraData'. ",
   nargs: "*",
   type: "str",
 });
@@ -59,15 +61,30 @@ dataGroup.add_argument("-c", "--comment", {
   type: "str",
   action: "append",
 });
-dataGroup.add_argument("-K", "--required", {
-  help: "Add a required key to the data, will be filled with first keyless data. If not enough data is specified to fill all required keys, an error will be thrown.",
+dataGroup.add_argument("-k", "--key", {
+  help: "Add a key to the data, will be filled with first keyless data. Without an '=', the key will be required. With a trailing '=', the key is optional. A default value can be specified with an '=', e.g., -k key=value",
   type: "str",
   action: "append",
+  dest: "keys",
 });
-dataGroup.add_argument("-k", "--optional", {
-  help: "Add an optional key to the data, will be filled with first keyless data. A default value can be specified with an '=', e.g., -k key=value",
+dataGroup.add_argument("-K", "--id-key", {
+  help: "Add a key to the data and also use it as part of the id of the document. Only useful for adding new docs. Equivalent to calling `-k key --id %key`",
   type: "str",
-  action: "append",
+  action: class IdKeyAction extends Action {
+    call(
+      _parser: ArgumentParser,
+      namespace: DataArgs & AddCmdArgs,
+      value: string,
+      _optionString?: string | null,
+    ) {
+      const [keyName] = splitFirst("=", value);
+      namespace.keys ??= [];
+      namespace.idParts ??= [];
+
+      namespace.keys.push(value);
+      namespace.idParts.push(`%${keyName}`);
+    }
+  },
 });
 dataGroup.add_argument("-R", "--remainder", {
   help: "Any extra data supplied will be put into this key as an array. When --lenient is specified, defaults to 'extraData'",
@@ -112,16 +129,7 @@ export function parseBaseData(baseData?: DatumData | string): DatumData {
 export function handleDataArgs(args: DataArgs): DatumData {
   args = jClone(args); // avoid modifying original args
   args.data ??= [];
-  args.required ??= [];
-  args.optional ??= [];
-
-  const requiredKeys =
-    typeof args.required === "string" ? [args.required] : args.required;
-  args.required = requiredKeys;
-
-  const optionalKeys =
-    typeof args.optional === "string" ? [args.optional] : args.optional;
-  args.optional = optionalKeys;
+  args.keys = consolidateKeys(args.keys ?? []);
 
   const remainderKey =
     args.remainder ??
@@ -151,38 +159,28 @@ export function handleDataArgs(args: DataArgs): DatumData {
       // Search for default value to allow explicitly setting it to default using '.',
       // or use an existing value if there already is one
       const existingValue = get(datumData, path);
+      const correspondingKey = args.keys?.find((key) =>
+        new RegExp(`^${path}=(.*)$`).test(key),
+      );
+
       const defaultValue =
         existingValue ??
-        optionalKeys
-          ?.find((optionalWithDefault) =>
-            new RegExp(`^${path}=(.*)$`).test(optionalWithDefault),
-          )
-          ?.split("=")[1];
+        (correspondingKey ? splitFirst("=", correspondingKey)[1] : undefined);
       alterDatumData({ datumData, path, value, defaultValue });
       continue posArgsLoop;
     }
 
-    // no explicit key given
+    // no explicit key given, assign a key from the keys list
     const dataValue = beforeEquals;
 
-    requiredKeysLoop: while (requiredKeys.length > 0) {
-      const path = datumPath(requiredKeys.shift()!);
-
-      if (get(datumData, path) !== undefined) {
-        continue requiredKeysLoop;
-      }
-
-      alterDatumData({ datumData, path: path, value: dataValue });
-      continue posArgsLoop;
-    }
-
-    optionalKeysLoop: while (optionalKeys.length > 0) {
-      const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+    keysLoop: while (args.keys.length > 0) {
+      const [rawPath, defaultValue] = splitFirst("=", args.keys.shift()!);
+      const isRequired = defaultValue === undefined;
       const path = datumPath(rawPath);
 
-      // TODO: Consider explicitly setting an optional key to undefined to be sufficient to bypass this step
+      // TODO: Make the explicit setting of a key to undefined to be sufficient to bypass this step
       if (get(datumData, path) !== undefined) {
-        continue optionalKeysLoop;
+        continue keysLoop;
       }
 
       if (
@@ -198,6 +196,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         path: path,
         value: dataValue,
         defaultValue,
+        isRequired,
       });
       continue posArgsLoop;
     }
@@ -205,40 +204,20 @@ export function handleDataArgs(args: DataArgs): DatumData {
     remainderData.push(dataValue);
   }
 
-  while (requiredKeys.length > 0) {
-    const requiredKey = requiredKeys.shift()!;
-    const requiredPath = datumPath(requiredKey);
-    if (get(datumData, requiredPath) !== undefined) {
-      continue;
-    }
-    // Allow required keys to be given a default value via an optional key
-    // This is useful for nested aliases where a key is required in the parent,
-    // but then a child creates an optional default value for it
-    // e.g. alias tx='datum occur tx -K acc -K amount'
-    //      alias rent='tx acc=Checking -k amount=1200'
-    // 'rent' would create a tx doc with amount=1200, while 'rent 1500' would create
-    // a tx doc with amount=1500
-    //TODO: Allow state based keys to still work if defined in separate ways
-    if (
-      optionalKeys?.find((optionalWithDefault) =>
-        new RegExp(`^${requiredKey}=`).test(optionalWithDefault),
-      )
-    ) {
-      continue;
-    }
-    throw new MissingRequiredKeyError(requiredKey);
-  }
-
-  // If optional keys with default values are left assign them
-  while (optionalKeys.length > 0) {
-    const [rawPath, defaultValue] = splitFirst("=", optionalKeys.shift()!);
+  while (args.keys.length > 0) {
+    // if optional keys are left, fill them with default values.
+    // remaining required keys throw an error
+    const [rawPath, defaultValue] = splitFirst("=", args.keys.shift()!);
     const path = datumPath(rawPath);
-    if (
-      defaultValue !== undefined &&
-      [undefined, "."].includes(get(datumData, path))
-    ) {
-      alterDatumData({ datumData, path, value: defaultValue });
+    const isRequired = defaultValue === undefined;
+
+    const existingValue = get(datumData, path);
+
+    if (existingValue !== undefined && existingValue !== ".") {
+      // Manually specified or already exists in data
+      continue;
     }
+    alterDatumData({ datumData, path, value: defaultValue, isRequired });
   }
 
   if (args.comment) {

@@ -130,7 +130,7 @@ describe("occurCmd", () => {
 
     it("can become a start command by having start as a trailing word", async () => {
       expect(
-        await occurCmd("field -K req1 -k opt1 reqVal optVal start 30min"),
+        await occurCmd("field -k req1 -k opt1= reqVal optVal start 30min"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -138,7 +138,7 @@ describe("occurCmd", () => {
 
     it("can become an end command by having start as a trailing word", async () => {
       expect(
-        await occurCmd("field -K req1 -k opt1 reqVal optVal end 30min"),
+        await occurCmd("field -k req1 -k opt1= reqVal optVal end 30min"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -147,7 +147,7 @@ describe("occurCmd", () => {
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
         await occurCmd(
-          "field -K req1 -k opt1 reqVal optVal switch stateName 5m30s",
+          "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
         ),
       ).toMatchSnapshot({
         _rev: expect.any(String),

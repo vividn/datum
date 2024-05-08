@@ -24,6 +24,5 @@ durationGroup.add_argument("-m", "--moment", {
   help: "data with no indication of duration, just occurrence. Removes positional duration argument. Sets dur to be null. Essentially equivalent to an occur cmd",
   action: "store_true",
 });
-//TODO: Include more help here about placement of duration between required values and optional values
 
 export { durationArgs };
