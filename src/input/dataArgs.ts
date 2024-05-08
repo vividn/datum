@@ -12,7 +12,7 @@ import {
   commandChanges,
 } from "../utils/changeDatumCommand";
 import { jClone } from "../utils/jClone";
-import { Action, ArgumentParser, Namespace } from "argparse";
+import { Action, ArgumentParser } from "argparse";
 import { consolidateKeys } from "./consolidateKeys";
 import { AddCmdArgs } from "../commands/addCmd";
 
