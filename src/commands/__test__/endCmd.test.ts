@@ -64,7 +64,7 @@ describe("endCmd", () => {
   });
 
   it("when --moment/-m is specified, dur is null and there is no duration postional argument", async () => {
-    const doc = await endCmd("dance -m -k skillPoints 3");
+    const doc = await endCmd("dance -m -k skillPoints= 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: false,
@@ -75,7 +75,7 @@ describe("endCmd", () => {
   });
 
   it("when --omit-timestamp/-T is specified, there is no positional duration argument", async () => {
-    const doc = await endCmd("dance -k skillPoints -T 3");
+    const doc = await endCmd("dance -k skillPoints= -T 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: false,
@@ -87,8 +87,8 @@ describe("endCmd", () => {
 
   it("can skip the duration if the duration is given as . or ''", async () => {
     restoreNow();
-    const doc = await endCmd("field -k optional . 50");
-    const doc2 = await endCmd("field -k optional '' 50");
+    const doc = await endCmd("field -k optional= . 50");
+    const doc2 = await endCmd("field -k optional= '' 50");
     expect(doc.data).toMatchObject({ field: "field", optional: 50 });
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
@@ -96,13 +96,13 @@ describe("endCmd", () => {
   });
 
   it("throws an error if the duration supplied is invalid", async () => {
-    await expect(endCmd("field -k optional 30asd")).rejects.toThrow(
+    await expect(endCmd("field -k optional= 30asd")).rejects.toThrow(
       BadDurationError,
     );
   });
 
   it("still assigns a state of false even with required keys and duration comes before keys", async () => {
-    const doc = await endCmd("field 30 reqVal1 -K req1");
+    const doc = await endCmd("field 30 reqVal1 -k req1");
     expect(doc.data).toMatchObject({
       field: "field",
       dur: "PT30M",
@@ -123,7 +123,7 @@ describe("endCmd", () => {
 
     it("can become an occur command by having occur as a trailing word", async () => {
       expect(
-        await endCmd("field -k opt1 30 key=val optVal occur"),
+        await endCmd("field -k opt1= 30 key=val optVal occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -131,7 +131,7 @@ describe("endCmd", () => {
 
     it("can become start command by having start as a trailing word", async () => {
       expect(
-        await endCmd("field -k opt1 30 key=val optVal start"),
+        await endCmd("field -k opt1= 30 key=val optVal start"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -139,7 +139,7 @@ describe("endCmd", () => {
 
     it("can become a switch command by having start as a trailing word", async () => {
       expect(
-        await endCmd("field -k opt1 5m30s key=val optVal switch stateName"),
+        await endCmd("field -k opt1= 5m30s key=val optVal switch stateName"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

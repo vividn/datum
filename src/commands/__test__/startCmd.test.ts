@@ -73,7 +73,7 @@ describe("startCmd", () => {
   });
 
   it("when --moment is specified, dur is null and there is no duration postional argument", async () => {
-    const doc = await startCmd("dance -m -k skillPoints 3");
+    const doc = await startCmd("dance -m -k skillPoints= 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -84,7 +84,7 @@ describe("startCmd", () => {
   });
 
   it("when --omit-timestamp/-T is specified, there is no positional duration argument", async () => {
-    const doc = await startCmd("dance -k skillPoints -T 3");
+    const doc = await startCmd("dance -k skillPoints= -T 3");
     expect(doc.data).toMatchObject({
       field: "dance",
       state: true,
@@ -97,8 +97,8 @@ describe("startCmd", () => {
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
     restoreNow();
-    const doc = await startCmd("field -k optional . 50");
-    const doc2 = await startCmd("field -k optional '' 50");
+    const doc = await startCmd("field -k optional= . 50");
+    const doc2 = await startCmd("field -k optional= '' 50");
     expect(doc.data).toMatchObject({ field: "field", optional: 50 });
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
@@ -106,13 +106,13 @@ describe("startCmd", () => {
   });
 
   it("throws an error if the duration supplied is invalid", async () => {
-    await expect(startCmd("field -k optional 30asd")).rejects.toThrow(
+    await expect(startCmd("field -k optional= 30asd")).rejects.toThrow(
       BadDurationError,
     );
   });
 
   it("still assigns a state of true even with required keys, and duration comes before required keys", async () => {
-    const doc = await startCmd("field 30 reqVal1 -K req1");
+    const doc = await startCmd("field 30 reqVal1 -k req1");
     expect(doc.data).toMatchObject({
       field: "field",
       dur: "PT30M",

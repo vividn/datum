@@ -38,7 +38,7 @@ describe("updateCmd", () => {
   it("can update a dataonly doc from the first letters of its id", async () => {
     await db.put({ _id: "some_data_only", foo: "bar" });
     const retDocs = await updateCmd(
-      "some_data_only --strategy merge -K foo -k newField baz newData",
+      "some_data_only --strategy merge -k foo -k newField= baz newData",
     );
     expect(retDocs).toHaveLength(1);
     const dbDoc = await db.get("some_data_only");

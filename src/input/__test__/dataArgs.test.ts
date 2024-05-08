@@ -519,7 +519,7 @@ describe("handleDataArgs", () => {
     );
   });
 
-  it("assumes undefined for a default values specified with nothing, e.g. `-k key=`", () => {
+  it("assumes undefined if no default value is specified for an optional key, e.g. `-k key=`", () => {
     expectParseDataToReturn(
       {
         keys: ["key1=", "key2=", "key3=nonEmpty"],
