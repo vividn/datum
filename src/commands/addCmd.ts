@@ -73,7 +73,7 @@ export const addCmdArgs = new ArgumentParser({
   prog: "dtm add",
   usage: `%(prog)s <field> [data..]
   %(prog)s --fieldless [data..]
-  %(prog)s <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]
+  %(prog)s <field> -k <reqKey> -k <optKey>=[defaultValue] ... <reqValue> [optValue] [data..]
 `,
   parents: [addArgs, outputArgs, dbArgs],
 });
