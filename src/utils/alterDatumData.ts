@@ -12,6 +12,7 @@ import {
 } from "../time/timeUtils";
 import { parseDateStr } from "../time/parseDateStr";
 import { parseDurationStr } from "../time/parseDurationStr";
+import { MissingRequiredKeyError } from "../errors";
 
 // TODO: Always keep state keys normalized
 // TODO: write function to easily add new fields to a normalized state without data loss
@@ -21,12 +22,14 @@ export function alterDatumData({
   value,
   defaultValue,
   append,
+  isRequired,
 }: {
   datumData: DatumData;
   path: string;
   value: JsonType | undefined;
   defaultValue?: JsonType;
   append?: boolean;
+  isRequired?: boolean;
 }): void {
   const stateAwarePath =
     path === "state"
@@ -43,12 +46,16 @@ export function alterDatumData({
         path,
         value: defaultValue,
         append,
+        isRequired,
       });
     }
 
     case value === undefined:
     case value === "":
     case /^undefined$/i.test(String(value)): {
+      if (isRequired) {
+        throw new MissingRequiredKeyError(path);
+      }
       inferredValue = undefined;
       break;
     }

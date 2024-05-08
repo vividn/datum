@@ -751,7 +751,7 @@ describe("handleDataArgs", () => {
         keys: ["req1", "req2"],
         data: ["value1", "."],
       }),
-    ).toThrow(ExtraDataError);
+    ).toThrow(MissingRequiredKeyError);
   });
 
   it("An optional key can be changed to be required", () => {

@@ -1,10 +1,6 @@
 import { DatumData } from "../documentControl/DatumDocument";
 import { inferType } from "../utils/inferType";
-import {
-  BaseDataError,
-  ExtraDataError,
-  MissingRequiredKeyError,
-} from "../errors";
+import { BaseDataError, ExtraDataError } from "../errors";
 import { splitFirst } from "../utils/splitFirst";
 import isPlainObject from "lodash.isplainobject";
 import { alterDatumData } from "../utils/alterDatumData";
@@ -162,22 +158,23 @@ export function handleDataArgs(args: DataArgs): DatumData {
       // Search for default value to allow explicitly setting it to default using '.',
       // or use an existing value if there already is one
       const existingValue = get(datumData, path);
+      const correspondingKey = args.keys?.find((key) =>
+        new RegExp(`^${path}=(.*)$`).test(key),
+      );
+
       const defaultValue =
         existingValue ??
-        args.keys
-          ?.find((optionalWithDefault) =>
-            new RegExp(`^${path}=(.*)$`).test(optionalWithDefault),
-          )
-          ?.split("=")[1];
+        (correspondingKey ? splitFirst("=", correspondingKey)[1] : undefined);
       alterDatumData({ datumData, path, value, defaultValue });
       continue posArgsLoop;
     }
 
-    // no explicit key given
+    // no explicit key given, assign a key from the keys list
     const dataValue = beforeEquals;
 
     keysLoop: while (args.keys.length > 0) {
       const [rawPath, defaultValue] = splitFirst("=", args.keys.shift()!);
+      const isRequired = defaultValue === undefined;
       const path = datumPath(rawPath);
 
       // TODO: Make the explicit setting of a key to undefined to be sufficient to bypass this step
@@ -198,6 +195,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
         path: path,
         value: dataValue,
         defaultValue,
+        isRequired,
       });
       continue posArgsLoop;
     }
@@ -218,10 +216,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
       // Manually specified or already exists in data
       continue;
     }
-    if (isRequired) {
-      throw new MissingRequiredKeyError(rawPath);
-    }
-    alterDatumData({ datumData, path, value: defaultValue });
+    alterDatumData({ datumData, path, value: defaultValue, isRequired });
   }
 
   if (args.comment) {
