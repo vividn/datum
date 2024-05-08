@@ -101,8 +101,8 @@ describe("endCmd", () => {
     );
   });
 
-  it("still assigns a state of false even with required keys", async () => {
-    const doc = await endCmd("field reqVal1 -K req1 30");
+  it("still assigns a state of false even with required keys and duration comes before keys", async () => {
+    const doc = await endCmd("field 30 reqVal1 -K req1");
     expect(doc.data).toMatchObject({
       field: "field",
       dur: "PT30M",

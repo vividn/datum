@@ -111,8 +111,8 @@ describe("startCmd", () => {
     );
   });
 
-  it("still assigns a state of true even with required keys, and duration comes after required keys", async () => {
-    const doc = await startCmd("field reqVal1 -K req1 30");
+  it("still assigns a state of true even with required keys, and duration comes before required keys", async () => {
+    const doc = await startCmd("field 30 reqVal1 -K req1");
     expect(doc.data).toMatchObject({
       field: "field",
       dur: "PT30M",
