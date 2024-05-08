@@ -182,7 +182,7 @@ describe("switchCmd", () => {
 
   it("handles both required and optional keys for complex state correctly", async () => {
     const doc = await switchCmd(
-      "book -k .title -k .author -k .genre= 'the wind in the willows' 'kenneth grahame' . 5 fiction",
+      "book -k .title -k .author -k .genre= . 5 'the wind in the willows' 'kenneth grahame' fiction",
     );
 
     expect(doc.data).toMatchObject({
