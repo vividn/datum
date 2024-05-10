@@ -1,4 +1,4 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
+import { setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
 import { EitherDocument } from "../../documentControl/DatumDocument";
@@ -7,6 +7,8 @@ import * as quickId from "../../ids/quickId";
 import { mock } from "jest-mock-extended";
 import { Show } from "../../input/outputArgs";
 import { addCmd } from "../addCmd";
+import { getCmd } from "../getCmd";
+import { LastDocsTooOldError } from "../../errors";
 
 describe("updateCmd", () => {
   const dbName = "update_cmd_test";
@@ -149,5 +151,54 @@ describe("updateCmd", () => {
       baz: "qux",
     });
     expect(retDocs[0].data.foo).toBeUndefined();
+  });
+
+  it("can update the last added document when no quickId is provided", async () => {
+    const { _id } = await addCmd("field foo=bar --id %foo");
+    const retDocs = await updateCmd("foo=baz");
+    expect(retDocs).toHaveLength(1);
+    expect(retDocs[0]._id).toEqual(_id);
+    expect(retDocs[0].data).toEqual({
+      field: "field",
+      foo: "baz",
+    });
+    const dbDoc = await db.get(_id);
+    expect(dbDoc).toEqual(retDocs[0]);
+  });
+
+  it("can update all the of documents returned by getCmd at once", async () => {
+    // TODO: get docs based off of data once that is possible
+    const {
+      _id: id1,
+      meta: { humanId: hid1 },
+    } = await addCmd("field foo=bar");
+    const {
+      _id: id2,
+      meta: { humanId: hid2 },
+    } = await addCmd("field bar=foo");
+    getCmd(`${hid1},${hid2},`);
+
+    const retDocs = await updateCmd("foo=baz");
+    expect(retDocs).toHaveLength(2);
+    expect(retDocs[0]).toMatchObject({
+      _id: id1,
+      data: { foo: "baz" },
+    });
+    expect(retDocs[1]).toMatchObject({
+      _id: id2,
+      data: { bar: "foo", foo: "baz" },
+    });
+
+    const dbDoc1 = await db.get(id1);
+    const dbDoc2 = await db.get(id2);
+    expect(retDocs[0]).toEqual(dbDoc1);
+    expect(retDocs[1]).toEqual(dbDoc2);
+  });
+
+  it("won't update the last doc if the ref is more than 15 minutes old", async () => {
+    setNow("2024-05-10, 15:40");
+    await addCmd("field foo=bar --id %foo");
+    setNow("+16");
+    await expect(updateCmd("foo=baz")).rejects.toThrow(LastDocsTooOldError);
   });
 });

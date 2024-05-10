@@ -167,3 +167,10 @@ export class DatumViewMissingError extends MyError {
     Object.setPrototypeOf(this, DatumViewMissingError.prototype);
   }
 }
+
+export class LastDocsTooOldError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, LastDocsTooOldError.prototype);
+  }
+}
