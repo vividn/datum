@@ -1,8 +1,13 @@
+import { DateTime } from "luxon";
+import { isoDatetime } from "../time/timeUtils";
+
 export const LAST_DOCS_ID = "_local/datum_last" as const;
 
 export type LastDocsRef = {
   _id: typeof LAST_DOCS_ID;
+  _rev?: string;
   ids: string[];
+  time: isoDatetime;
 };
 
 export async function updateLastDocsRef(
@@ -16,11 +21,14 @@ export async function updateLastDocsRef(
   } catch (e) {
     //pass
   }
-  await db.put({
+  const lastDocsRef: LastDocsRef = {
     _id: LAST_DOCS_ID,
     _rev,
     ids: idArray,
-  });
+    time: DateTime.utc().toISO(),
+  };
+
+  await db.put(lastDocsRef);
 }
 
 export async function getLastDocs(db: PouchDB.Database): Promise<LastDocsRef> {
