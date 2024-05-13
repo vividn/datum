@@ -1,9 +1,10 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { isCouchDbError, MyError } from "../errors";
 import { viewMap } from "../views/viewMap";
-import { humanIdView } from "../views/datumViews";
+import { humanIdView, idToHumanView } from "../views/datumViews";
 import { startsWith } from "../utils/startsWith";
 import { splitCommaString } from "../utils/splitCommaString";
+import { minHumanId } from "./minHumanId";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -85,12 +86,17 @@ async function startsHumanId(
       // case "ask":
       //   throw new NotImplementedError("ask for id");
 
-      default:
+      default: {
+        const possibleQuickIds = await Promise.all(
+          matches.map((row) => minHumanId(db, row.key)),
+        );
+        const possibleIds = matches.map((row) => row.id);
         throw new AmbiguousQuickIdError(
           quickString,
-          matches.map((row) => row.key),
-          matches.map((row) => row.id),
+          possibleQuickIds,
+          possibleIds,
         );
+      }
     }
   }
   if (matches.length === 1) {
@@ -119,12 +125,24 @@ async function startsMainId(
       // case "ask":
       //   throw new NotImplementedError("ask for id");
 
-      default:
+      default: {
+        const possibleIds = matches.map((row) => row.id);
+        const correspondingHumanIds = (
+          await viewMap({
+            db,
+            datumView: idToHumanView,
+            params: { keys: possibleIds },
+          })
+        ).rows.map((row) => row.value);
+        const possibleQuickIds = await Promise.all(
+          correspondingHumanIds.map((humanId) => minHumanId(db, humanId)),
+        );
         throw new AmbiguousQuickIdError(
           quickString,
-          matches.map((row) => row.id),
-          matches.map((row) => row.id),
+          possibleQuickIds,
+          possibleIds,
         );
+      }
     }
   }
   if (matches.length === 1) {

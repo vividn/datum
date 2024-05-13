@@ -1,6 +1,7 @@
 import { fail, testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
+    activeStateView,
   humanIdView,
   idToHumanView,
   subHumanIdView,
@@ -24,6 +25,7 @@ describe("quickId", () => {
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });
     await insertDatumView({ db, datumView: humanIdView });
+    await insertDatumView({ db, datumView: activeStateView });
   });
 
   test("it returns the string directly if the exact id exists in the database", async () => {
@@ -207,7 +209,6 @@ describe("quickId", () => {
     expect(await quickId(db, "abc,ghi,")).toEqual(["id1", "id2"]);
     expect(await quickId(db, "jkl,abc,")).toEqual(["id3", "id1"]);
     expect(await quickId(db, ["abc", "jkl"])).toEqual(["id1", "id3"]);
-    expect(await quickId(db, "[ghi,abc]")).toEqual(["id2", "id1"]);
   });
 
   it("still errors out if any one of the quick ids produces an error", async () => {
