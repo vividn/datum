@@ -147,6 +147,13 @@ export class MergeError extends MyError {
   }
 }
 
+export class NotImplementedError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, NotImplementedError.prototype);
+  }
+}
+
 export type CouchDbError = {
   error: string;
   reason: string;

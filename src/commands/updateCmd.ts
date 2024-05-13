@@ -57,7 +57,7 @@ export async function updateCmd(
     ...payload
   }: DatumData<{ __quickId?: string | string[] }> = handleDataArgs(args);
 
-  const ids = await quickIds(db, __quickId ?? args.quickId);
+  const ids = await quickIds(db, __quickId);
 
   // update now in case the updateDoc fails due to conflict
   await updateLastDocsRef(db, ids);

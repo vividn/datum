@@ -11,6 +11,9 @@ import {
   NoQuickIdMatchError,
   quickIds,
 } from "../quickId";
+import { occurCmd } from "../../commands/occurCmd";
+import { getCmd } from "../../commands/getCmd";
+import { getLastDocs } from "../../documentControl/lastDocs";
 
 jest.retryTimes(3);
 
@@ -27,7 +30,7 @@ describe("quickId", () => {
   test("it returns the string directly if the exact id exists in the database", async () => {
     await db.put({ _id: "exact-id", data: {}, meta: {} });
     const quick = await quickId(db, "exact-id");
-    expect(quick).toBe("exact-id");
+    expect(quick).toEqual(["exact-id"]);
   });
 
   test("if the text matches the beginning of exactly one humanId, it returns the associated _id", async () => {
@@ -35,7 +38,7 @@ describe("quickId", () => {
     await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
 
     const quick = await quickId(db, "abc");
-    expect(quick).toBe("doc-id1");
+    expect(quick).toEqual(["doc-id1"]);
   });
 
   test("if the text matches more than one humanId, it throws an error, showing the possible matches", async () => {
@@ -73,10 +76,10 @@ describe("quickId", () => {
     });
 
     const quick = await quickId(db, "zzz");
-    expect(quick).toBe("zzz_this_id");
+    expect(quick).toEqual(["zzz_this_id"]);
   });
 
-  test("if no humanIds match, but several _ids match starting sub string, throw error and show possible matches", async () => {
+  test("if no humanIds match, but several _ids match starting sub string, throw error and show possible matches, or follow strategy of onAmbiguousQuickId", async () => {
     await db.put({
       _id: "zzz_this_id",
       data: {},
@@ -119,7 +122,7 @@ describe("quickId", () => {
     });
 
     const quick = await quickId(db, "abc");
-    expect(quick).toBe("another_id");
+    expect(quick).toEqual(["another_id"]);
   });
 
   test("if the string matches an id exactly and a human id exactly, prefer the id match", async () => {
@@ -131,7 +134,7 @@ describe("quickId", () => {
     });
 
     const quick = await quickId(db, "abcId");
-    expect(quick).toBe("abcId");
+    expect(quick).toEqual(["abcId"]);
   });
 
   test("if the string matches an id exactly and is the beginning of one or more human ids, prefer the id", async () => {
@@ -143,7 +146,7 @@ describe("quickId", () => {
     });
 
     const quick = await quickId(db, "abcId");
-    expect(quick).toBe("abcId");
+    expect(quick).toEqual(["abcId"]);
 
     await db.put({
       _id: "another_one_with_extra_human",
@@ -152,7 +155,7 @@ describe("quickId", () => {
     });
 
     const quick2 = await quickId(db, "abcId");
-    expect(quick2).toBe("abcId");
+    expect(quick2).toEqual(["abcId"]);
   });
 
   test("if no humanIds or ids match at all, throw a NoQuickIdMatchError", async () => {
@@ -175,6 +178,16 @@ describe("quickId", () => {
     await expect(() => quickId(db, "lmnop")).rejects.toThrowError(
       NoQuickIdMatchError,
     );
+  });
+
+  test("it returns the lastdocs ref if the quickId is _LAST", async () => {
+    const { _id: _id1 } = await occurCmd("firstField");
+    const { _id: _id2 } = await occurCmd("secondField");
+    // multi id lastDocsRef
+    await getCmd(",_id1,_id2");
+    expect((await getLastDocs(db)).ids).toEqual([_id1, _id2]);
+    const quick = await quickId(db, "_LAST");
+    expect(quick).toEqual([_id1, _id2]);
   });
 });
 
