@@ -1,9 +1,9 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { isCouchDbError, MyError } from "../errors";
 import { viewMap } from "../views/viewMap";
-import { humanIdView, idToHumanView } from "../views/datumViews";
+import { humanIdView } from "../views/datumViews";
 import { startsWith } from "../utils/startsWith";
-import { minHumanId } from "./minHumanId";
+import { splitCommaString } from "../utils/splitCommaString";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -136,74 +136,30 @@ async function startsMainId(
 export async function quickId(
   db: PouchDB.Database<EitherPayload>,
   quickString: string | string[],
-): Promise<string> {
-  if (typeof quickString === "string") {
-    
-  }
-  try {
-    const doc = await db.get(quickString);
-    return doc._id;
-  } catch (error) {
-    if (isCouchDbError(error) && error.name === "not_found") {
-      //pass
-    } else {
-      throw error;
-    }
-  }
-
-  const startsHumanId = await viewMap({
-    db,
-    datumView: humanIdView,
-    params: startsWith(quickString),
-  });
-  if (startsHumanId.rows.length === 1) {
-    return startsHumanId.rows[0].id;
-  }
-  if (startsHumanId.rows.length > 1) {
-    const possibleQuickIds = await Promise.all(
-      startsHumanId.rows.map((row) => minHumanId(db, row.key)),
-    );
-    const possibleIds = startsHumanId.rows.map((row) => row.id);
-    throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
-  }
-
-  const startsMainId = await db.allDocs(startsWith(quickString));
-  if (startsMainId.rows.length === 1) {
-    return startsMainId.rows[0].id;
-  }
-  if (startsMainId.rows.length > 1) {
-    const possibleIds = startsMainId.rows.map((row) => row.id);
-    const correspondingHumanIds = (
-      await viewMap({
-        db,
-        datumView: idToHumanView,
-        params: { keys: possibleIds },
-      })
-    ).rows.map((row) => row.value);
-    const possibleQuickIds = await Promise.all(
-      correspondingHumanIds.map((humanId) => minHumanId(db, humanId)),
-    );
-    throw new AmbiguousQuickIdError(quickString, possibleQuickIds, possibleIds);
-  }
-
-  throw new NoQuickIdMatchError(quickString);
-}
-
-export async function quickIds(
-  db: PouchDB.Database<EitherPayload>,
-  quickString: string | string[],
 ): Promise<string[]> {
-  if (Array.isArray(quickString)) {
-    return Promise.all(quickString.map((str) => quickId(db, str)));
+  if (typeof quickString === "string") {
+    const maybeSplit = splitCommaString(quickString);
+    if (Array.isArray(maybeSplit)) {
+      return quickId(db, maybeSplit);
+    }
+    return quickId(db, [quickString]);
   }
 
-  const quickStrings = /^,/.test(quickString)
-    ? quickString.slice(1).split(",")
-    : /,$/.test(quickString)
-      ? quickString.slice(0, -1).split(",")
-      : /^\[.*]$/.test(quickString)
-        ? quickString.slice(1, -1).split(",")
-        : [quickString];
+  const idPromises = quickString.map(async (str) => {
+    const exact = await exactId(db, str);
+    if (exact) {
+      return exact;
+    }
+    const matchesHumanId = await startsHumanId(db, str);
+    if (matchesHumanId.length > 0) {
+      return matchesHumanId;
+    }
+    const matchesMainId = await startsMainId(db, str);
+    if (matchesMainId.length > 0) {
+      return matchesMainId;
+    }
+    throw new NoQuickIdMatchError(str);
+  });
 
-  return Promise.all(quickStrings.map((str) => quickId(db, str)));
+  return (await Promise.all(idPromises)).flat();
 }

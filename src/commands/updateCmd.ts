@@ -6,7 +6,6 @@ import {
 import { DatumData, EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { updateDoc } from "../documentControl/updateDoc";
-import { quickIds } from "../ids/quickId";
 import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
@@ -15,6 +14,7 @@ import { outputArgs } from "../input/outputArgs";
 import { ArgumentParser } from "argparse";
 import { MainDatumArgs } from "../input/mainArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { quickId } from "../ids/quickId";
 
 export const updateArgs = new ArgumentParser({
   add_help: false,
@@ -57,7 +57,7 @@ export async function updateCmd(
     ...payload
   }: DatumData<{ __quickId?: string | string[] }> = handleDataArgs(args);
 
-  const ids = await quickIds(db, __quickId);
+  const ids = await quickId(db, __quickId);
 
   // update now in case the updateDoc fails due to conflict
   await updateLastDocsRef(db, ids);

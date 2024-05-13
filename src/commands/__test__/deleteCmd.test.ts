@@ -65,17 +65,17 @@ describe("deleteCmd", () => {
     deleteDocSpy.mockReturnValue(
       Promise.resolve({ _id: "id", _rev: "abcdf", _deleted: true }),
     );
-    const quickIdsSpy = jest
-      .spyOn(quickId, "quickIds")
+    const quickIdSpy = jest
+      .spyOn(quickId, "quickId")
       .mockImplementation(async (db, id) => [`${id}_to_delete`]);
 
     for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
       await deleteCmd(quick);
-      expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), quick);
+      expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), quick);
       expect(deleteDocSpy).toHaveBeenCalledWith(
         expect.objectContaining({ id: quick + "_to_delete" }),
       );
-      quickIdsSpy.mockClear();
+      quickIdSpy.mockClear();
       deleteDocSpy.mockClear();
     }
   });

@@ -1,6 +1,6 @@
 import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { quickIds } from "../ids/quickId";
+import { quickId } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { showExists } from "../output/output";
 import { MainDatumArgs } from "../input/mainArgs";
@@ -28,7 +28,7 @@ export async function getCmd(
 ): Promise<EitherDocument[]> {
   args = parseIfNeeded(getCmdArgs, args, preparsed);
   const db = connectDb(args);
-  const ids = await quickIds(db, args.quickId);
+  const ids = await quickId(db, args.quickId);
 
   const docs = await Promise.all(ids.map((id) => db.get(id)));
   docs.forEach((doc) => showExists(doc, args as GetCmdArgs));

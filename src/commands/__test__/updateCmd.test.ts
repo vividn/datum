@@ -54,8 +54,8 @@ describe("updateCmd", () => {
 
   it("calls quickId and updateDoc", async () => {
     const updateDocReturn = mock<EitherDocument>();
-    const quickIdsSpy = jest
-      .spyOn(quickId, "quickIds")
+    const quickIdSpy = jest
+      .spyOn(quickId, "quickId")
       .mockImplementation(async () => ["quick_id"]);
     const updateDocSpy = jest
       .spyOn(updateDoc, "updateDoc")
@@ -64,7 +64,7 @@ describe("updateCmd", () => {
     const retDocs = await updateCmd("input_quick --strategy xor foo=bar");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toBe(updateDocReturn);
-    expect(quickIdsSpy).toHaveBeenCalledWith(expect.anything(), "input_quick");
+    expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), "input_quick");
     expect(updateDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "quick_id",
@@ -75,9 +75,7 @@ describe("updateCmd", () => {
   });
 
   it("uses preferNew as the default updateStrategy", async () => {
-    jest
-      .spyOn(quickId, "quickIds")
-      .mockImplementation(async () => ["quick_id"]);
+    jest.spyOn(quickId, "quickId").mockImplementation(async () => ["quick_id"]);
     const updateDocSpy = jest
       .spyOn(updateDoc, "updateDoc")
       .mockReturnValue(Promise.resolve(mock<EitherDocument>()));
