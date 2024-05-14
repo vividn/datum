@@ -37,7 +37,7 @@ export const ON_AMBIGUOUS_QUICK_ID = [
   "all",
   "first",
   "last",
-  "ask",
+  // TODO: "ask",
 ] as const;
 
 export const _LAST_WITH_PROTECTION = "_LAST_WITH_PROTECTION";
