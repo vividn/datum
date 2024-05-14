@@ -1,4 +1,4 @@
-import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
+import { quickIdArgs, QuickIdArgs } from "../input/quickIdArg";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { quickId, _LAST } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
@@ -13,7 +13,7 @@ import { parseIfNeeded } from "../utils/parseIfNeeded";
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";
 
-export type GetCmdArgs = MainDatumArgs & OutputArgs & QuickIdArg;
+export type GetCmdArgs = MainDatumArgs & OutputArgs & QuickIdArgs;
 
 export const getCmdArgs = new ArgumentParser({
   description: "display a document",
@@ -28,7 +28,7 @@ export async function getCmd(
 ): Promise<EitherDocument[]> {
   args = parseIfNeeded(getCmdArgs, args, preparsed);
   const db = connectDb(args);
-  const ids = await quickId(db, args.quickId ?? _LAST);
+  const ids = await quickId(args.quickId ?? _LAST, args);
 
   const docs = await Promise.all(ids.map((id) => db.get(id)));
   docs.forEach((doc) => showExists(doc, args as GetCmdArgs));

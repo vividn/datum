@@ -30,7 +30,7 @@ describe("quickId", () => {
 
   test("it returns the string directly if the exact id exists in the database", async () => {
     await db.put({ _id: "exact-id", data: {}, meta: {} });
-    const quick = await quickId(db, "exact-id");
+    const quick = await quickId("exact-id", {});
     expect(quick).toEqual(["exact-id"]);
   });
 
@@ -38,7 +38,7 @@ describe("quickId", () => {
     await db.put({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
     await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
 
-    const quick = await quickId(db, "abc");
+    const quick = await quickId("abc", {});
     expect(quick).toEqual(["doc-id1"]);
   });
 
@@ -47,7 +47,7 @@ describe("quickId", () => {
     await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
 
     try {
-      await quickId(db, "ab");
+      await quickId("ab", {});
       fail();
     } catch (error) {
       expect(error).toBeInstanceOf(AmbiguousQuickIdError);
@@ -76,7 +76,7 @@ describe("quickId", () => {
       meta: { humanId: "no-matches-here" },
     });
 
-    const quick = await quickId(db, "zzz");
+    const quick = await quickId("zzz", {});
     expect(quick).toEqual(["zzz_this_id"]);
   });
 
@@ -98,7 +98,7 @@ describe("quickId", () => {
     });
 
     try {
-      await quickId(db, "zzz");
+      await quickId("zzz", {});
       fail();
     } catch (error) {
       expect(error).toBeInstanceOf(AmbiguousQuickIdError);
@@ -108,6 +108,9 @@ describe("quickId", () => {
       expect(message).toMatch(/\bd\b/);
       expect(message).toMatch(/\bzzz_same_start\b/);
     }
+
+    const quickFirst = await quickId("zzz", { onAmbiguousQuickId: "first" });
+    expect(quickFirst).toEqual(["zzz_this_id"]);
   });
 
   test("if the substring starts both an id and a human id, then it prefers the humanId", async () => {
@@ -122,7 +125,7 @@ describe("quickId", () => {
       meta: { humanId: "abcdefg" },
     });
 
-    const quick = await quickId(db, "abc");
+    const quick = await quickId("abc", {});
     expect(quick).toEqual(["another_id"]);
   });
 
@@ -134,7 +137,7 @@ describe("quickId", () => {
       meta: { humanId: "abcId" },
     });
 
-    const quick = await quickId(db, "abcId");
+    const quick = await quickId("abcId", {});
     expect(quick).toEqual(["abcId"]);
   });
 
@@ -146,7 +149,7 @@ describe("quickId", () => {
       meta: { humanId: "abcId_extra" },
     });
 
-    const quick = await quickId(db, "abcId");
+    const quick = await quickId("abcId", {});
     expect(quick).toEqual(["abcId"]);
 
     await db.put({
@@ -155,7 +158,7 @@ describe("quickId", () => {
       meta: { humanId: "abcId_and_more" },
     });
 
-    const quick2 = await quickId(db, "abcId");
+    const quick2 = await quickId("abcId", {});
     expect(quick2).toEqual(["abcId"]);
   });
 
@@ -176,7 +179,7 @@ describe("quickId", () => {
       meta: { humanId: "no-matches-here" },
     });
 
-    await expect(() => quickId(db, "lmnop")).rejects.toThrowError(
+    await expect(() => quickId("lmnop", {})).rejects.toThrowError(
       NoQuickIdMatchError,
     );
   });
@@ -187,7 +190,7 @@ describe("quickId", () => {
     // multi id lastDocsRef
     await getCmd(`,${_id1},${_id2}`);
     expect((await getLastDocs(db)).ids).toEqual([_id1, _id2]);
-    const quick = await quickId(db, "_LAST");
+    const quick = await quickId("_LAST", {});
     expect(quick).toEqual([_id1, _id2]);
   });
 
@@ -204,11 +207,11 @@ describe("quickId", () => {
       _id: "id3",
       meta: { humanId: "jkl" },
     });
-    expect(await quickId(db, ",abc,ghi")).toEqual(["id1", "id2"]);
-    expect(await quickId(db, ",ghi,abc")).toEqual(["id2", "id1"]);
-    expect(await quickId(db, "abc,ghi,")).toEqual(["id1", "id2"]);
-    expect(await quickId(db, "jkl,abc,")).toEqual(["id3", "id1"]);
-    expect(await quickId(db, ["abc", "jkl"])).toEqual(["id1", "id3"]);
+    expect(await quickId(",abc,ghi", {})).toEqual(["id1", "id2"]);
+    expect(await quickId(",ghi,abc", {})).toEqual(["id2", "id1"]);
+    expect(await quickId("abc,ghi,", {})).toEqual(["id1", "id2"]);
+    expect(await quickId("jkl,abc,", {})).toEqual(["id3", "id1"]);
+    expect(await quickId(["abc", "jkl"], {})).toEqual(["id1", "id3"]);
   });
 
   it("still errors out if any one of the quick ids produces an error", async () => {
@@ -229,7 +232,7 @@ describe("quickId", () => {
       meta: { humanId: "ghpo" },
     });
     try {
-      await quickId(db, ",jkl,gh");
+      await quickId(",jkl,gh", {});
       fail();
     } catch (e) {
       expect(e).toBeInstanceOf(AmbiguousQuickIdError);

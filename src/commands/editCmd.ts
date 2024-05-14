@@ -1,4 +1,4 @@
-import { quickIdArgs, QuickIdArg } from "../input/quickIdArg";
+import { quickIdArgs, QuickIdArgs } from "../input/quickIdArg";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { quickId, _LAST } from "../ids/quickId";
@@ -22,7 +22,7 @@ export const editCmdArgs = new ArgumentParser({
   usage: "%(prog)s <quickId>",
   parents: [editArgs, dbArgs, outputArgs],
 });
-export type EditCmdArgs = MainDatumArgs & QuickIdArg;
+export type EditCmdArgs = MainDatumArgs & QuickIdArgs;
 
 export class TooManyToEditError extends MyError {
   constructor(m: unknown) {
@@ -38,7 +38,7 @@ export async function editCmd(
   args = parseIfNeeded(editCmdArgs, args, preparsed);
   const db = connectDb(args);
 
-  const ids = await quickId(db, args.quickId ?? _LAST);
+  const ids = await quickId(args.quickId ?? _LAST, args);
   await updateLastDocsRef(db, ids);
   if (ids.length !== 1) {
     throw new TooManyToEditError("Can only edit 1 document at a time");

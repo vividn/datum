@@ -8,6 +8,9 @@ import { minHumanId } from "./minHumanId";
 import { JsonType } from "../utils/utilityTypes";
 import { getLastDocs } from "../documentControl/lastDocs";
 import { DateTime } from "luxon";
+import { MainDatumArgs } from "../input/mainArgs";
+import { QuickIdArgs } from "../input/quickIdArg";
+import { connectDb } from "../auth/connectDb";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -41,8 +44,8 @@ export const _LAST_WITH_PROTECTION = "_LAST_WITH_PROTECTION";
 export const _LAST = "_LAST";
 
 async function specialQuickId(
-  db: PouchDB.Database<EitherPayload>,
   quickString: string,
+  db: PouchDB.Database<EitherPayload>,
 ): Promise<string[]> {
   if ([_LAST, _LAST_WITH_PROTECTION].includes(quickString)) {
     const lastDocsRef = await getLastDocs(db);
@@ -61,8 +64,8 @@ async function specialQuickId(
 }
 
 async function exactId(
-  db: PouchDB.Database<EitherPayload>,
   quickString: string,
+  db: PouchDB.Database<EitherPayload>,
 ): Promise<string | undefined> {
   try {
     return (await db.get(quickString))._id;
@@ -77,8 +80,8 @@ async function exactId(
 }
 
 async function startsHumanId(
-  db: PouchDB.Database<EitherPayload>,
   quickString: string,
+  db: PouchDB.Database<EitherPayload>,
   onAmbiguous?: (typeof ON_AMBIGUOUS_QUICK_ID)[number],
 ): Promise<string[]> {
   const matches = (
@@ -132,8 +135,8 @@ async function startsHumanId(
 }
 
 async function startsMainId(
-  db: PouchDB.Database<EitherPayload>,
   quickString: string,
+  db: PouchDB.Database<EitherPayload>,
   onAmbiguous?: (typeof ON_AMBIGUOUS_QUICK_ID)[number],
 ): Promise<string[]> {
   const matches = (await db.allDocs(startsWith(quickString))).rows;
@@ -178,8 +181,8 @@ async function startsMainId(
 }
 
 export async function quickId(
-  db: PouchDB.Database<EitherPayload>,
   quickValue: string | string[] | JsonType,
+  args: MainDatumArgs & QuickIdArgs,
 ): Promise<string[]> {
   let quickArray: string[];
   if (Array.isArray(quickValue)) {
@@ -188,21 +191,22 @@ export async function quickId(
     const maybeSplit = splitCommaString(String(quickValue));
     quickArray = Array.isArray(maybeSplit) ? maybeSplit : [maybeSplit];
   }
+  const db = connectDb(args);
 
   const idPromises = quickArray.map(async (str) => {
-    const special = await specialQuickId(db, str);
+    const special = await specialQuickId(str, db);
     if (special.length > 0) {
       return special;
     }
-    const exact = await exactId(db, str);
+    const exact = await exactId(str, db);
     if (exact) {
       return exact;
     }
-    const matchesHumanId = await startsHumanId(db, str);
+    const matchesHumanId = await startsHumanId(str, db);
     if (matchesHumanId.length > 0) {
       return matchesHumanId;
     }
-    const matchesMainId = await startsMainId(db, str);
+    const matchesMainId = await startsMainId(str, db);
     if (matchesMainId.length > 0) {
       return matchesMainId;
     }

@@ -1,8 +1,9 @@
 import { ArgumentParser } from "argparse";
 import { ON_AMBIGUOUS_QUICK_ID } from "../ids/quickId";
 
-export type QuickIdArg = {
+export type QuickIdArgs = {
   quickId?: string | string[];
+  onAmbiguousQuickId?: (typeof ON_AMBIGUOUS_QUICK_ID)[number];
 };
 
 export const quickIdArgs = new ArgumentParser({
