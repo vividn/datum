@@ -113,6 +113,8 @@ describe("quickId", () => {
     expect(quickFirst).toEqual(["zzz_same_start"]); // gets first id, not first hid
     const quickLast = await quickId("zzz", { onAmbiguousQuickId: "last" });
     expect(quickLast).toEqual(["zzz_this_id"]); // gets last id, not last hid
+    const quickAll = await quickId("zzz", { onAmbiguousQuickId: "all" });
+    expect(quickAll).toContainEqual(["zzz_this_id", "zzz_same_start"]);
   });
 
   test("if the substring starts both an id and a human id, then it prefers the humanId", async () => {
