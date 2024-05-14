@@ -185,7 +185,7 @@ describe("quickId", () => {
     const { _id: _id1 } = await occurCmd("firstField");
     const { _id: _id2 } = await occurCmd("secondField");
     // multi id lastDocsRef
-    await getCmd(",_id1,_id2");
+    await getCmd(`,${_id1},${_id2}`);
     expect((await getLastDocs(db)).ids).toEqual([_id1, _id2]);
     const quick = await quickId(db, "_LAST");
     expect(quick).toEqual([_id1, _id2]);

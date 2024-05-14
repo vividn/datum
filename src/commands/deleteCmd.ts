@@ -1,5 +1,5 @@
 import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
-import { quickId } from "../ids/quickId";
+import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
 import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
 import { MainDatumArgs } from "../input/mainArgs";
@@ -29,7 +29,7 @@ export async function deleteCmd(
 ): Promise<DeletedDocument[]> {
   args = parseIfNeeded(deleteCmdArgs, args, partialArgs);
   const db = connectDb(args);
-  const ids = await quickId(db, args.quickId);
+  const ids = await quickId(db, args.quickId ?? _LAST_WITH_PROTECTION);
 
   await updateLastDocsRef(db, ids);
   return await Promise.all(
