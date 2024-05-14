@@ -14,7 +14,7 @@ import { outputArgs } from "../input/outputArgs";
 import { ArgumentParser } from "argparse";
 import { MainDatumArgs } from "../input/mainArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { quickId } from "../ids/quickId";
+import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
 import { JsonType } from "../utils/utilityTypes";
 
 export const updateArgs = new ArgumentParser({
@@ -52,11 +52,11 @@ export async function updateCmd(
 
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
   // for easier aliasing
-  flexiblePositional(args, "quickId", "__quickId=");
+  flexiblePositional(args, "quickId", `__quickId=${_LAST_WITH_PROTECTION}`);
   const { __quickId, ...payload }: DatumData<{ __quickId?: JsonType }> =
     handleDataArgs(args);
 
-  const ids = await quickId(db, __quickId);
+  const ids = await quickId(db, __quickId ?? _LAST_WITH_PROTECTION);
 
   // update now in case the updateDoc fails due to conflict
   await updateLastDocsRef(db, ids);

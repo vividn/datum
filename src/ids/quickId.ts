@@ -6,6 +6,7 @@ import { startsWith } from "../utils/startsWith";
 import { splitCommaString } from "../utils/splitCommaString";
 import { minHumanId } from "./minHumanId";
 import { JsonType } from "../utils/utilityTypes";
+import { getLastDocs } from "../documentControl/lastDocs";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -34,6 +35,19 @@ export const ON_AMBIGUOUS_QUICK_ID = [
   "last",
   "ask",
 ] as const;
+
+export const _LAST_WITH_PROTECTION = "_LAST_WITH_PROTECTION";
+export const _LAST = "_LAST";
+
+async function specialQuickId(
+  db: PouchDB.Database<EitherPayload>,
+  quickString: string,
+): Promise<string[]> {
+  if ([_LAST, _LAST_WITH_PROTECTION].includes(quickString)) {
+    const lastDocsRef = await getLastDocs(db);
+    
+  }
+}
 
 async function exactId(
   db: PouchDB.Database<EitherPayload>,
