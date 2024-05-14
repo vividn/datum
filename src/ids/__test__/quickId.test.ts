@@ -1,7 +1,7 @@
 import { fail, testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
-    activeStateView,
+  activeStateView,
   humanIdView,
   idToHumanView,
   subHumanIdView,

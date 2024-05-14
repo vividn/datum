@@ -9,7 +9,6 @@ import { Show } from "../../input/outputArgs";
 import { addCmd } from "../addCmd";
 import { getCmd } from "../getCmd";
 import { LastDocsTooOldError } from "../../errors";
-import { getLastDocs } from "../../documentControl/lastDocs";
 
 describe("updateCmd", () => {
   const dbName = "update_cmd_test";
@@ -158,7 +157,7 @@ describe("updateCmd", () => {
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]._id).not.toEqual(_id);
     const newId = "field:baz";
-    expect(retDocs[0]._id).toEqual(newId)
+    expect(retDocs[0]._id).toEqual(newId);
     expect(retDocs[0].data).toEqual({
       field: "field",
       foo: "baz",

@@ -11,7 +11,6 @@ export type LastDocsRef = {
   time: isoDatetime;
 };
 
-
 export class NoLastDocsRefError extends MyError {
   constructor(m: unknown) {
     super(m);
