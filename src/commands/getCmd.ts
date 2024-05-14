@@ -27,6 +27,7 @@ export async function getCmd(
   preparsed?: Partial<GetCmdArgs>,
 ): Promise<EitherDocument[]> {
   args = parseIfNeeded(getCmdArgs, args, preparsed);
+  args.onAmbiguousQuickId ??= "all";
   const db = connectDb(args);
   const ids = await quickId(args.quickId ?? _LAST, args);
 

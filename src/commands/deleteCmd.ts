@@ -28,6 +28,8 @@ export async function deleteCmd(
   partialArgs?: Partial<DeleteCmdArgs>,
 ): Promise<DeletedDocument[]> {
   args = parseIfNeeded(deleteCmdArgs, args, partialArgs);
+  args.onAmbiguousQuickId ??= "fail";
+
   const db = connectDb(args);
   const ids = await quickId(args.quickId ?? _LAST_WITH_PROTECTION, args);
 

@@ -48,6 +48,7 @@ export async function updateCmd(
   preparsed?: Partial<UpdateCmdArgs>,
 ): Promise<EitherDocument[]> {
   const args = parseIfNeeded(updateCmdArgs, argsOrCli, preparsed);
+  args.onAmbiguousQuickId ??= "fail";
   const db = connectDb(args);
 
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
