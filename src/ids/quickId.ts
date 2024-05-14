@@ -1,5 +1,5 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { isCouchDbError, MyError } from "../errors";
+import { isCouchDbError, LastDocsTooOldError, MyError } from "../errors";
 import { viewMap } from "../views/viewMap";
 import { humanIdView, idToHumanView } from "../views/datumViews";
 import { startsWith } from "../utils/startsWith";
@@ -7,6 +7,7 @@ import { splitCommaString } from "../utils/splitCommaString";
 import { minHumanId } from "./minHumanId";
 import { JsonType } from "../utils/utilityTypes";
 import { getLastDocs } from "../documentControl/lastDocs";
+import { DateTime } from "luxon";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -45,8 +46,18 @@ async function specialQuickId(
 ): Promise<string[]> {
   if ([_LAST, _LAST_WITH_PROTECTION].includes(quickString)) {
     const lastDocsRef = await getLastDocs(db);
-    
+    const refTime = DateTime.fromISO(lastDocsRef.time);
+    if (
+      DateTime.utc().diff(refTime, "minutes").minutes > 15 &&
+      quickString === _LAST_WITH_PROTECTION
+    ) {
+      throw new LastDocsTooOldError(
+        "Last docs changed more than 15 minutes ago. To explicitly use these documents, either `get` them again first or use '_LAST' as the quick id",
+      );
+    }
+    return lastDocsRef.ids;
   }
+  return [];
 }
 
 async function exactId(
@@ -179,6 +190,10 @@ export async function quickId(
   }
 
   const idPromises = quickArray.map(async (str) => {
+    const special = await specialQuickId(db, str);
+    if (special.length > 0) {
+      return special;
+    }
     const exact = await exactId(db, str);
     if (exact) {
       return exact;
