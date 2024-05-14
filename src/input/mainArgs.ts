@@ -145,7 +145,6 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     //     action: BooleanOptionalAction,
     //   });
     //   const ns = parser.parse_intermixed_args(args, namespace);
-    //   console.debug({ ns });
     //   break;
     // }
 

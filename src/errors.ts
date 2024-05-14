@@ -147,6 +147,13 @@ export class MergeError extends MyError {
   }
 }
 
+export class NotImplementedError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, NotImplementedError.prototype);
+  }
+}
+
 export type CouchDbError = {
   error: string;
   reason: string;
@@ -165,5 +172,12 @@ export class DatumViewMissingError extends MyError {
       `Missing internal datum view ${map_name}. Please run setup on this database`,
     );
     Object.setPrototypeOf(this, DatumViewMissingError.prototype);
+  }
+}
+
+export class LastDocsTooOldError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, LastDocsTooOldError.prototype);
   }
 }

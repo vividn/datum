@@ -1,7 +1,7 @@
 import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
-import { quickIds } from "../ids/quickId";
+import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
 import { connectDb } from "../auth/connectDb";
-import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
+import { QuickIdArgs, quickIdArgs } from "../input/quickIdArg";
 import { MainDatumArgs } from "../input/mainArgs";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { ArgumentParser } from "argparse";
@@ -21,7 +21,7 @@ export const deleteCmdArgs = new ArgumentParser({
   parents: [deleteArgs],
 });
 
-export type DeleteCmdArgs = MainDatumArgs & QuickIdArg;
+export type DeleteCmdArgs = MainDatumArgs & QuickIdArgs;
 
 export async function deleteCmd(
   args: DeleteCmdArgs | string | string[],
@@ -29,7 +29,7 @@ export async function deleteCmd(
 ): Promise<DeletedDocument[]> {
   args = parseIfNeeded(deleteCmdArgs, args, partialArgs);
   const db = connectDb(args);
-  const ids = await quickIds(db, args.quickId);
+  const ids = await quickId(args.quickId ?? _LAST_WITH_PROTECTION, args);
 
   await updateLastDocsRef(db, ids);
   return await Promise.all(
