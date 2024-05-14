@@ -202,11 +202,15 @@ export async function quickId(
     if (exact) {
       return exact;
     }
-    const matchesHumanId = await startsHumanId(str, db);
+    const matchesHumanId = await startsHumanId(
+      str,
+      db,
+      args.onAmbiguousQuickId,
+    );
     if (matchesHumanId.length > 0) {
       return matchesHumanId;
     }
-    const matchesMainId = await startsMainId(str, db);
+    const matchesMainId = await startsMainId(str, db, args.onAmbiguousQuickId);
     if (matchesMainId.length > 0) {
       return matchesMainId;
     }
