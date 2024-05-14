@@ -9,6 +9,7 @@ import { Show } from "../../input/outputArgs";
 import { addCmd } from "../addCmd";
 import { getCmd } from "../getCmd";
 import { LastDocsTooOldError } from "../../errors";
+import { getLastDocs } from "../../documentControl/lastDocs";
 
 describe("updateCmd", () => {
   const dbName = "update_cmd_test";
@@ -155,12 +156,14 @@ describe("updateCmd", () => {
     const { _id } = await addCmd("field foo=bar --id %foo");
     const retDocs = await updateCmd("foo=baz");
     expect(retDocs).toHaveLength(1);
-    expect(retDocs[0]._id).toEqual(_id);
+    expect(retDocs[0]._id).not.toEqual(_id);
+    const newId = "field:baz";
+    expect(retDocs[0]._id).toEqual(newId)
     expect(retDocs[0].data).toEqual({
       field: "field",
       foo: "baz",
     });
-    const dbDoc = await db.get(_id);
+    const dbDoc = await db.get(newId);
     expect(dbDoc).toEqual(retDocs[0]);
   });
 
@@ -174,8 +177,7 @@ describe("updateCmd", () => {
       _id: id2,
       meta: { humanId: hid2 },
     } = await addCmd("field bar=foo");
-    getCmd(`${hid1},${hid2},`);
-
+    await getCmd(`${hid1},${hid2},`);
     const retDocs = await updateCmd("foo=baz");
     expect(retDocs).toHaveLength(2);
     expect(retDocs[0]).toMatchObject({
