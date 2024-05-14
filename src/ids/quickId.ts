@@ -5,6 +5,7 @@ import { humanIdView, idToHumanView } from "../views/datumViews";
 import { startsWith } from "../utils/startsWith";
 import { splitCommaString } from "../utils/splitCommaString";
 import { minHumanId } from "./minHumanId";
+import { JsonType } from "../utils/utilityTypes";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -153,17 +154,17 @@ async function startsMainId(
 
 export async function quickId(
   db: PouchDB.Database<EitherPayload>,
-  quickString: string | string[],
+  quickValue: string | string[] | JsonType,
 ): Promise<string[]> {
-  if (typeof quickString === "string") {
-    const maybeSplit = splitCommaString(quickString);
-    if (Array.isArray(maybeSplit)) {
-      return quickId(db, maybeSplit);
-    }
-    return quickId(db, [quickString]);
+  let quickArray: string[];
+  if (Array.isArray(quickValue)) {
+    quickArray = quickValue.map(String);
+  } else {
+    const maybeSplit = splitCommaString(String(quickValue));
+    quickArray = Array.isArray(maybeSplit) ? maybeSplit : [maybeSplit];
   }
 
-  const idPromises = quickString.map(async (str) => {
+  const idPromises = quickArray.map(async (str) => {
     const exact = await exactId(db, str);
     if (exact) {
       return exact;
