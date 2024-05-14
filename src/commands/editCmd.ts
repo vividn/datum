@@ -36,8 +36,6 @@ export async function editCmd(
   preparsed?: Partial<EditCmdArgs>,
 ): Promise<EitherDocument> {
   args = parseIfNeeded(editCmdArgs, args, preparsed);
-  args.onAmbiguousQuickId ??= "fail";
-
   const db = connectDb(args);
 
   const ids = await quickId(args.quickId ?? _LAST, args);

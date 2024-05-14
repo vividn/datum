@@ -19,7 +19,8 @@ quickIdGroup.add_argument("quickId", {
   nargs: "?",
 });
 quickIdGroup.add_argument("--on-ambiguous", {
-  help: "What to do if the quickId is ambiguous. all = act on all that match. first = act on the doc with lowest sorted id. last = act on the doc with the highest sorted id. fail = throw an error.",
+  help: "What to do if the quickId is ambiguous. all = act on all that match. first = act on the doc with lowest sorted id. last = act on the doc with the highest sorted id. fail = throw an error. ask = prompt for selection. default is prompt for interactive, and fail for non interactive use.",
   choices: [...ON_AMBIGUOUS_QUICK_ID],
+  default: "fail",
   dest: "onAmbiguousQuickId",
 });
