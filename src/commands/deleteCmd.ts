@@ -29,6 +29,7 @@ export async function deleteCmd(
 ): Promise<DeletedDocument[]> {
   args = parseIfNeeded(deleteCmdArgs, args, partialArgs);
   const db = connectDb(args);
+  console.debug("deleteCmd", args);
   const ids = await quickId(args.quickId ?? _LAST_WITH_PROTECTION, args);
 
   await updateLastDocsRef(db, ids);

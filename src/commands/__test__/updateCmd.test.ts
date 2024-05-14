@@ -64,7 +64,7 @@ describe("updateCmd", () => {
     const retDocs = await updateCmd("input_quick --strategy xor foo=bar");
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0]).toBe(updateDocReturn);
-    expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), "input_quick");
+    expect(quickIdSpy).toHaveBeenCalledWith("input_quick", expect.anything());
     expect(updateDocSpy).toHaveBeenCalledWith(
       expect.objectContaining({
         id: "quick_id",

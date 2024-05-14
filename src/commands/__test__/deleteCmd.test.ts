@@ -67,11 +67,11 @@ describe("deleteCmd", () => {
     );
     const quickIdSpy = jest
       .spyOn(quickId, "quickId")
-      .mockImplementation(async (db, id) => [`${id}_to_delete`]);
+      .mockImplementation(async (id, _args) => [`${id}_to_delete`]);
 
     for (const quick of ["a", "part:lksdf", "1234", "__-sdfsdf"]) {
       await deleteCmd(quick);
-      expect(quickIdSpy).toHaveBeenCalledWith(expect.anything(), quick);
+      expect(quickIdSpy).toHaveBeenCalledWith(quick, expect.anything());
       expect(deleteDocSpy).toHaveBeenCalledWith(
         expect.objectContaining({ id: quick + "_to_delete" }),
       );
