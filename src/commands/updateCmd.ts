@@ -6,8 +6,7 @@ import {
 import { DatumData, EitherDocument } from "../documentControl/DatumDocument";
 import { connectDb } from "../auth/connectDb";
 import { updateDoc } from "../documentControl/updateDoc";
-import { quickIds } from "../ids/quickId";
-import { QuickIdArg, quickIdArgs } from "../input/quickIdArg";
+import { QuickIdArgs, quickIdArgs } from "../input/quickIdArg";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 import { dbArgs } from "../input/dbArgs";
@@ -15,6 +14,8 @@ import { outputArgs } from "../input/outputArgs";
 import { ArgumentParser } from "argparse";
 import { MainDatumArgs } from "../input/mainArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
+import { JsonType } from "../utils/utilityTypes";
 
 export const updateArgs = new ArgumentParser({
   add_help: false,
@@ -38,7 +39,7 @@ export const updateCmdArgs = new ArgumentParser({
 
 export type UpdateCmdArgs = MainDatumArgs &
   DataArgs &
-  QuickIdArg & {
+  QuickIdArgs & {
     strategy?: UpdateStrategyNames;
   };
 
@@ -51,13 +52,11 @@ export async function updateCmd(
 
   // process quickIds like the first required argument so that data changes can be specified beforehand in the command
   // for easier aliasing
-  flexiblePositional(args, "quickId", "__quickId");
-  const {
-    __quickId,
-    ...payload
-  }: DatumData<{ __quickId?: string | string[] }> = handleDataArgs(args);
+  flexiblePositional(args, "quickId", `__quickId=${_LAST_WITH_PROTECTION}`);
+  const { __quickId, ...payload }: DatumData<{ __quickId?: JsonType }> =
+    handleDataArgs(args);
 
-  const ids = await quickIds(db, __quickId ?? args.quickId);
+  const ids = await quickId(__quickId ?? _LAST_WITH_PROTECTION, args);
 
   // update now in case the updateDoc fails due to conflict
   await updateLastDocsRef(db, ids);

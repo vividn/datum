@@ -1,16 +1,19 @@
 import { fail, testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
+  activeStateView,
   humanIdView,
   idToHumanView,
   subHumanIdView,
 } from "../../views/datumViews";
 import {
-  quickId,
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
-  quickIds,
+  quickId,
 } from "../quickId";
+import { occurCmd } from "../../commands/occurCmd";
+import { getCmd } from "../../commands/getCmd";
+import { getLastDocs } from "../../documentControl/lastDocs";
 
 jest.retryTimes(3);
 
@@ -22,37 +25,45 @@ describe("quickId", () => {
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });
     await insertDatumView({ db, datumView: humanIdView });
+    await insertDatumView({ db, datumView: activeStateView });
   });
 
   test("it returns the string directly if the exact id exists in the database", async () => {
     await db.put({ _id: "exact-id", data: {}, meta: {} });
-    const quick = await quickId(db, "exact-id");
-    expect(quick).toBe("exact-id");
+    const quick = await quickId("exact-id", {});
+    expect(quick).toEqual(["exact-id"]);
   });
 
   test("if the text matches the beginning of exactly one humanId, it returns the associated _id", async () => {
     await db.put({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
     await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
 
-    const quick = await quickId(db, "abc");
-    expect(quick).toBe("doc-id1");
+    const quick = await quickId("abc", {});
+    expect(quick).toEqual(["doc-id1"]);
   });
 
-  test("if the text matches more than one humanId, it throws an error, showing the possible matches", async () => {
-    await db.put({ _id: "doc-id1", data: {}, meta: { humanId: "abcdefg" } });
-    await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abzzzzz" } });
+  test("if the text matches more than one humanId, it throws an error, showing the possible matches. Or it follows the strategy of onAmbiguousQuickId", async () => {
+    await db.put({ _id: "doc-id1", data: {}, meta: { humanId: "abzzzzz" } });
+    await db.put({ _id: "doc-id2", data: {}, meta: { humanId: "abcdefg" } });
 
     try {
-      await quickId(db, "ab");
+      await quickId("ab", {});
       fail();
     } catch (error) {
       expect(error).toBeInstanceOf(AmbiguousQuickIdError);
       const message = (error as AmbiguousQuickIdError).message;
       expect(message).toMatch(/\babc\b/);
-      expect(message).toMatch(/\bdoc-id1\b/);
-      expect(message).toMatch(/\babz\b/);
       expect(message).toMatch(/\bdoc-id2\b/);
+      expect(message).toMatch(/\babz\b/);
+      expect(message).toMatch(/\bdoc-id1\b/);
     }
+
+    const quickFirst = await quickId("ab", { onAmbiguousQuickId: "first" });
+    expect(quickFirst).toEqual(["doc-id1"]); // gets first id, not first hid
+    const quickLast = await quickId("ab", { onAmbiguousQuickId: "last" });
+    expect(quickLast).toEqual(["doc-id2"]); // gets last id, not last hid
+    const quickAll = await quickId("ab", { onAmbiguousQuickId: "all" });
+    expect(quickAll).toEqual(expect.arrayContaining(["doc-id1", "doc-id2"]));
   });
 
   test("if no human ids match, and string matches the beginning of exactly one _id, return that _id", async () => {
@@ -72,11 +83,11 @@ describe("quickId", () => {
       meta: { humanId: "no-matches-here" },
     });
 
-    const quick = await quickId(db, "zzz");
-    expect(quick).toBe("zzz_this_id");
+    const quick = await quickId("zzz", {});
+    expect(quick).toEqual(["zzz_this_id"]);
   });
 
-  test("if no humanIds match, but several _ids match starting sub string, throw error and show possible matches", async () => {
+  test("if no humanIds match, but several _ids match starting sub string, throw error and show possible matches, or follow strategy of onAmbiguousQuickId", async () => {
     await db.put({
       _id: "zzz_this_id",
       data: {},
@@ -94,7 +105,7 @@ describe("quickId", () => {
     });
 
     try {
-      await quickId(db, "zzz");
+      await quickId("zzz", {});
       fail();
     } catch (error) {
       expect(error).toBeInstanceOf(AmbiguousQuickIdError);
@@ -104,6 +115,15 @@ describe("quickId", () => {
       expect(message).toMatch(/\bd\b/);
       expect(message).toMatch(/\bzzz_same_start\b/);
     }
+
+    const quickFirst = await quickId("zzz", { onAmbiguousQuickId: "first" });
+    expect(quickFirst).toEqual(["zzz_same_start"]); // gets first id, not first hid
+    const quickLast = await quickId("zzz", { onAmbiguousQuickId: "last" });
+    expect(quickLast).toEqual(["zzz_this_id"]); // gets last id, not last hid
+    const quickAll = await quickId("zzz", { onAmbiguousQuickId: "all" });
+    expect(quickAll).toEqual(
+      expect.arrayContaining(["zzz_this_id", "zzz_same_start"]),
+    );
   });
 
   test("if the substring starts both an id and a human id, then it prefers the humanId", async () => {
@@ -118,8 +138,8 @@ describe("quickId", () => {
       meta: { humanId: "abcdefg" },
     });
 
-    const quick = await quickId(db, "abc");
-    expect(quick).toBe("another_id");
+    const quick = await quickId("abc", {});
+    expect(quick).toEqual(["another_id"]);
   });
 
   test("if the string matches an id exactly and a human id exactly, prefer the id match", async () => {
@@ -130,8 +150,8 @@ describe("quickId", () => {
       meta: { humanId: "abcId" },
     });
 
-    const quick = await quickId(db, "abcId");
-    expect(quick).toBe("abcId");
+    const quick = await quickId("abcId", {});
+    expect(quick).toEqual(["abcId"]);
   });
 
   test("if the string matches an id exactly and is the beginning of one or more human ids, prefer the id", async () => {
@@ -142,8 +162,8 @@ describe("quickId", () => {
       meta: { humanId: "abcId_extra" },
     });
 
-    const quick = await quickId(db, "abcId");
-    expect(quick).toBe("abcId");
+    const quick = await quickId("abcId", {});
+    expect(quick).toEqual(["abcId"]);
 
     await db.put({
       _id: "another_one_with_extra_human",
@@ -151,8 +171,8 @@ describe("quickId", () => {
       meta: { humanId: "abcId_and_more" },
     });
 
-    const quick2 = await quickId(db, "abcId");
-    expect(quick2).toBe("abcId");
+    const quick2 = await quickId("abcId", {});
+    expect(quick2).toEqual(["abcId"]);
   });
 
   test("if no humanIds or ids match at all, throw a NoQuickIdMatchError", async () => {
@@ -172,20 +192,22 @@ describe("quickId", () => {
       meta: { humanId: "no-matches-here" },
     });
 
-    await expect(() => quickId(db, "lmnop")).rejects.toThrowError(
+    await expect(() => quickId("lmnop", {})).rejects.toThrowError(
       NoQuickIdMatchError,
     );
   });
-});
 
-describe("quickIds", () => {
-  const dbName = "test_quick_ids";
-  const db = testDbLifecycle(dbName);
+  test("it returns the lastdocs ref if the quickId is _LAST", async () => {
+    const { _id: _id1 } = await occurCmd("firstField");
+    const { _id: _id2 } = await occurCmd("secondField");
+    // multi id lastDocsRef
+    await getCmd(`,${_id1},${_id2}`);
+    expect((await getLastDocs(db)).ids).toEqual([_id1, _id2]);
+    const quick = await quickId("_LAST", {});
+    expect(quick).toEqual([_id1, _id2]);
+  });
 
-  beforeEach(async () => {
-    await insertDatumView({ db, datumView: idToHumanView });
-    await insertDatumView({ db, datumView: subHumanIdView });
-    await insertDatumView({ db, datumView: humanIdView });
+  it("can take a comma separated list of quick ids", async () => {
     await db.put({
       _id: "id1",
       meta: { humanId: "abc" },
@@ -198,30 +220,32 @@ describe("quickIds", () => {
       _id: "id3",
       meta: { humanId: "jkl" },
     });
-  });
-
-  it("can take a comma separated list of quick ids that begin with a comma", async () => {
-    expect(await quickIds(db, ",abc,ghi")).toEqual(["id1", "id2"]);
-    expect(await quickIds(db, ",ghi,abc")).toEqual(["id2", "id1"]);
-  });
-  it("can take a comma separated list of quick ids that ends with a comma", async () => {
-    expect(await quickIds(db, "abc,ghi,")).toEqual(["id1", "id2"]);
-    expect(await quickIds(db, "jkl,abc,")).toEqual(["id3", "id1"]);
-  });
-  it("can take an array of quick ids", async () => {
-    expect(await quickIds(db, ["abc", "jkl"])).toEqual(["id1", "id3"]);
-  });
-  it("can take a string surrounded by [] that is interpreted as an array", async () => {
-    expect(await quickIds(db, "[ghi,abc]")).toEqual(["id2", "id1"]);
+    expect(await quickId(",abc,ghi", {})).toEqual(["id1", "id2"]);
+    expect(await quickId(",ghi,abc", {})).toEqual(["id2", "id1"]);
+    expect(await quickId("abc,ghi,", {})).toEqual(["id1", "id2"]);
+    expect(await quickId("jkl,abc,", {})).toEqual(["id3", "id1"]);
+    expect(await quickId(["abc", "jkl"], {})).toEqual(["id1", "id3"]);
   });
 
   it("still errors out if any one of the quick ids produces an error", async () => {
+    await db.put({
+      _id: "id1",
+      meta: { humanId: "abc" },
+    });
+    await db.put({
+      _id: "id2",
+      meta: { humanId: "ghi" },
+    });
+    await db.put({
+      _id: "id3",
+      meta: { humanId: "jkl" },
+    });
     await db.put({
       _id: "id4",
       meta: { humanId: "ghpo" },
     });
     try {
-      await quickIds(db, ",jkl,gh");
+      await quickId(",jkl,gh", {});
       fail();
     } catch (e) {
       expect(e).toBeInstanceOf(AmbiguousQuickIdError);

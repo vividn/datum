@@ -1,6 +1,6 @@
 import { addCmd } from "../../commands/addCmd";
 import { getLastDocs } from "../lastDocs";
-import { testDbLifecycle } from "../../__test__/test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { deleteCmd } from "../../commands/deleteCmd";
 import * as editInTerminal from "../../utils/editInTerminal";
 import { GenericObject } from "../../GenericObject";
@@ -97,25 +97,6 @@ describe("lastDocs", () => {
     expect(lastDocsRef.ids).toEqual([_id]);
   });
 
-  // test("tailCmd updates lastDocRef", async () => {
-  //   const { _id: _id1 } = await occurCmd("field");
-  //   setNow("+1");
-  //   const { _id: _id2 } = await occurCmd("field2");
-  //   setNow("+1");
-  //   const { _id: _id3 } = await occurCmd("field");
-  //   setNow("+1");
-  //   const { _id: id4 } = await occurCmd("field2");
-  //   setNow("+1");
-  //   const { _id: id5 } = await occurCmd("field");
-  //   setNow("+1");
-  //   const { _id: id6 } = await occurCmd("field2");
-  //   setNow("+1");
-  //
-  //   await tailCmd("-n 3");
-  //   const lastDocsRef = await getLastDocs(db);
-  //   expect(lastDocsRef.ids).toEqual([id4, id5, id6]);
-  // });
-
   test("updateCmd updates lastDocRef", async () => {
     const { _id: firstId } = await addCmd("field foo=bar --id %foo");
     expect(firstId).toEqual("field:bar");
@@ -125,5 +106,14 @@ describe("lastDocs", () => {
 
     const lastDocsRef = await getLastDocs(db);
     expect(lastDocsRef.ids).toEqual([secondId]);
+  });
+
+  test("it includes the time in the lastDocsRef", async () => {
+    setNow("2024-05-10, 15:15");
+    const { _id } = await addCmd("field foo=bar --id %foo");
+    const lastDocsRef = await getLastDocs(db);
+    expect(lastDocsRef.ids).toEqual([_id]);
+    expect(lastDocsRef.time).toEqual("2024-05-10T15:15:00.000Z");
+    restoreNow();
   });
 });
