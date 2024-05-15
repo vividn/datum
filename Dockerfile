@@ -1,11 +1,11 @@
-FROM python:3.8-slim
+FROM python:3.11-slim
 
 WORKDIR /datum
-COPY Pipfile Pipfile.lock /datum/
+COPY pyproject.toml poetry.lock /datum/
 
-RUN pip install pipenv
+RUN pip install poetry
 
-RUN pipenv install --system --deploy --ignore-pipfile
+RUN poetry install
 
 RUN useradd -rms /bin/bash -g 100 -u 1000 user
 USER user
