@@ -1,8 +1,19 @@
 import { DatumData } from "../../documentControl/DatumDocument";
 import { changeDatumCommand } from "../changeDatumCommand";
 import { toDatumTime } from "../../time/timeUtils";
-import { setNow } from "../../__test__/test-utils";
+import {
+  deterministicHumanIds,
+  restoreNow,
+  setNow,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { DataArgs } from "../../input/dataArgs";
+import { setupCmd } from "../../commands/setupCmd";
+import { addCmd } from "../../commands/addCmd";
+import { occurCmd } from "../../commands/occurCmd";
+import { endCmd } from "../../commands/endCmd";
+import { startCmd } from "../../commands/startCmd";
+import { switchCmd } from "../../commands/switchCmd";
 
 const nowStr = "2023-12-20T17:00:00.000Z";
 const occurTime = toDatumTime(nowStr);
@@ -92,7 +103,7 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "start", args);
-      expect(args.keys).toEqual(["dur", "existingKey"]);
+      expect(args.keys).toEqual(["dur=", "existingKey"]);
     });
   });
 
@@ -219,7 +230,7 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "end", args);
-      expect(args.keys).toEqual(["dur", "existingKey"]);
+      expect(args.keys).toEqual(["dur=", "existingKey"]);
     });
   });
 
@@ -345,7 +356,199 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "switch", args);
-      expect(args.keys).toEqual(["state.id=true", "dur", "existingKey"]);
+      expect(args.keys).toEqual(["state.id=true", "dur=", "existingKey"]);
+    });
+  });
+});
+
+describe("changing from one command to another", () => {
+  testDbLifecycle("change_cmd_test");
+  deterministicHumanIds();
+
+  beforeEach(async () => {
+    await setupCmd("");
+  });
+
+  describe("addCmd", () => {
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+      await setupCmd("");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command", async () => {
+      expect(
+        await addCmd("field -k req1 -k opt1= reqVal optVal occur"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a start command", async () => {
+      expect(
+        await addCmd("field -k req1 -k opt1= reqVal optVal start '30 min'"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command", async () => {
+      expect(
+        await addCmd("field -k req1 -k opt1= reqVal optVal end '30 min'"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command", async () => {
+      expect(
+        await addCmd(
+          "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
+        ),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
+
+  describe("occurCmd", () => {
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become a start command", async () => {
+      expect(
+        await occurCmd("field -k req1 -k opt1= reqVal optVal start 30min"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command", async () => {
+      expect(
+        await occurCmd("field -k req1 -k opt1= reqVal optVal end 30min"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command", async () => {
+      expect(
+        await occurCmd(
+          "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
+        ),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("doesn't require a duration to become a start command", async () => {
+      expect(
+        await occurCmd("field -k req1 -k opt1= reqVal optVal start"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
+  describe("startCmd", () => {
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command", async () => {
+      expect(
+        await startCmd("field 30 -k opt1= key=val optVal occur"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command", async () => {
+      expect(
+        await startCmd("field -k opt1= 30 key=val optVal end"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command", async () => {
+      expect(
+        await startCmd("field -k opt1= 5m30s key=val optVal switch stateName"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
+  describe("endCmd", () => {
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command", async () => {
+      expect(
+        await endCmd("field -k opt1= 30 key=val optVal occur"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become start command", async () => {
+      expect(
+        await endCmd("field -k opt1= 30 key=val optVal start"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a switch command", async () => {
+      expect(
+        await endCmd("field -k opt1= 5m30s key=val optVal switch stateName"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+  });
+  describe("switchCmd", () => {
+    beforeEach(async () => {
+      setNow("2023-12-21 14:00");
+    });
+    afterAll(() => {
+      restoreNow();
+    });
+
+    it("can become an occur command", async () => {
+      expect(
+        await switchCmd("field -k opt1= someState 30 key=val optVal occur"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become an end command", async () => {
+      expect(
+        await switchCmd("field -k opt1= someState 30 key=val optVal end"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("can become a start command", async () => {
+      expect(
+        await switchCmd("field -k opt1= someState 5m30s key=val optVal start"),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
     });
   });
 });

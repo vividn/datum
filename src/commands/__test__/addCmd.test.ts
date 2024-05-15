@@ -2,8 +2,6 @@ import {
   deterministicHumanIds,
   fail,
   mockedLogLifecycle,
-  restoreNow,
-  setNow,
   testDbLifecycle,
 } from "../../__test__/test-utils";
 import { BaseDataError, IdError } from "../../errors";
@@ -12,7 +10,6 @@ import { addCmd } from "../addCmd";
 import * as addDoc from "../../documentControl/addDoc";
 import { DocExistsError } from "../../documentControl/base";
 import SpyInstance = jest.SpyInstance;
-import { setupCmd } from "../setupCmd";
 
 describe("addCmd", () => {
   const dbName = "add_cmd_test";
@@ -244,49 +241,5 @@ describe("addCmd", () => {
     expect(addDocSpy).toHaveBeenCalledTimes(2);
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
-  });
-
-  describe("change command", () => {
-    beforeEach(async () => {
-      setNow("2023-12-21 14:00");
-      await setupCmd("");
-    });
-    afterAll(() => {
-      restoreNow();
-    });
-
-    it("can become an occur command by having start as a trailing word", async () => {
-      expect(
-        await addCmd("field -k req1 -k opt1= reqVal optVal occur"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become a start command by having start as a trailing word", async () => {
-      expect(
-        await addCmd("field -k req1 -k opt1= reqVal optVal start '30 min'"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become an end command by having start as a trailing word", async () => {
-      expect(
-        await addCmd("field -k req1 -k opt1= reqVal optVal end '30 min'"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become a switch command by having start as a trailing word", async () => {
-      expect(
-        await addCmd(
-          "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
-        ),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
   });
 });

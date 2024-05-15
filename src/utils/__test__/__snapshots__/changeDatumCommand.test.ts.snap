@@ -1,0 +1,577 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`changing from one command to another addCmd can become a start command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": true,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another addCmd can become a switch command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT5M30S",
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": "stateName",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another addCmd can become an end command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": false,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another addCmd can become an occur command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": null,
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another endCmd can become a switch command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT5M30S",
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": "stateName",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another endCmd can become an occur command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": null,
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": false,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another endCmd can become start command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": true,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another occurCmd can become a start command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": true,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another occurCmd can become a switch command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT5M30S",
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": "stateName",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another occurCmd can become an end command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": false,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another occurCmd doesn't require a duration to become a start command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "field": "field",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "req1": "reqVal",
+    "state": true,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another startCmd can become a switch command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT5M30S",
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": "stateName",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another startCmd can become an end command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": false,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another startCmd can become an occur command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": null,
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": true,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another switchCmd can become a start command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT5M30S",
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": "someState",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another switchCmd can become an end command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": "PT30M",
+    "field": "field",
+    "key": "val",
+    "lastState": "someState",
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": false,
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
+
+exports[`changing from one command to another switchCmd can become an occur command 1`] = `
+{
+  "_id": "field:2023-12-21T14:00:00.000Z",
+  "_rev": Any<String>,
+  "data": {
+    "dur": null,
+    "field": "field",
+    "key": "val",
+    "lastState": null,
+    "occurTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "opt1": "optVal",
+    "state": "someState",
+  },
+  "meta": {
+    "createTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+    "humanId": "elfuv1633zeysuyhc0l9ss",
+    "idStructure": "%field%:%occurTime%",
+    "modifyTime": {
+      "o": 0,
+      "tz": "UTC",
+      "utc": "2023-12-21T14:00:00.000Z",
+    },
+  },
+}
+`;
