@@ -1,0 +1,21 @@
+[tool.poetry]
+name = "datum"
+version = "0.1.0"
+description = ""
+authors = ["vividn <3903221+vividn@users.noreply.github.com>"]
+readme = "README.md"
+package-mode = false
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pandas = "^2.2.2"
+numpy = "^1.26.4"
+pillow = "^10.3.0"
+argparse = "^1.4.0"
+matplotlib = "^3.8.4"
+cloudant = "^2.15.0"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
