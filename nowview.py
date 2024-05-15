@@ -32,6 +32,10 @@ def main(tiny=False):
     imfont = ImageFont.truetype(fontpath + imfontname, fontsize)
     _, text_height = imfont.getsize("Wed, Dec 88")
 
+    errorfontname = "Open Sans_regular.ttf"
+    errorfontsize = 12
+    errorfont = ImageFont.truetype(fontpath + errorfontname, errorfontsize)
+
     xsize = 50 if tiny else 75
     ysize = 80 if tiny else 150
     imagedir = home + "Analysis/Pictures"
@@ -105,18 +109,21 @@ def main(tiny=False):
 
         # Display error symbol if error has occured
         if error_has_occurred:
-            ex = image_padding
-            ey = ysize - image_padding - text_height
-
             # Display the error symbol plus the first 3 characters of the datum name
-            error_text = error_symbol + " " + datum_with_error[0][0][0:3]
+            error_text = f"{error_symbol} {datum_with_error[0][0][0:6]}"
+            if len(datum_with_error) > 1:
+                error_text += f"\n{error_symbol} {datum_with_error[1][0][0:6]}"
+            error_height = errorfont.getsize(error_text)[1]
 
             # To make the error more visible, put it on a bright background color
-            esize = draw.textsize(error_text, font=imfont)
+            esize = draw.textsize(error_text, font=errorfont)
+
+            ex = image_padding
+            ey = ysize - image_padding - error_height
             draw.rectangle(
-                (ex, ey + 3, ex + esize[0], ey + esize[1] + 3), fill=error_bgcolor
+                [ex, ey + 3, ex + esize[0], ey + esize[1] + 3], fill=error_bgcolor
             )
-            draw.text(xy=(ex, ey), text=error_text, font=imfont, fill=error_fgcolor)
+            draw.text(xy=(ex, ey), text=error_text, font=errorfont, fill=error_fgcolor)
 
     im.save(imageout)
 
