@@ -619,75 +619,67 @@ class Datumdata:
                 continue
 
             if is_number(col):
-                # Using a negative number in the category column is no longer supported
-                # Instead, use 'end' and a positive number in the Minutes column
-                print("col", col, "minutes", minutes)
-                raise ValueError(
-                    "Number should not be in a category column: {} {}".format(
-                        self.name, timestamp
-                    )
-                )
+                col = str(col)
 
-            else:
-                # Otherwise, treat the entry as a category name
-                # Behavior in this instance is dependant on minutes
-                # If minutes is NaN, start a new category
-                if pd.isna(minutes):
-                    # End the current category
-                    if in_block:
-                        end_times.setdefault(in_block, []).append(timestamp)
+            # Otherwise, treat the entry as a category name
+            # Behavior in this instance is dependant on minutes
+            # If minutes is NaN, start a new category
+            if pd.isna(minutes):
+                # End the current category
+                if in_block:
+                    end_times.setdefault(in_block, []).append(timestamp)
 
-                    # Start the new category
-                    in_block = col
-                    start_times.setdefault(col, []).append(timestamp)
+                # Start the new category
+                in_block = col
+                start_times.setdefault(col, []).append(timestamp)
 
-                elif minutes >= 0:
-                    # Create a block of size minutes
+            elif minutes >= 0:
+                # Create a block of size minutes
 
-                    mini_block_start = timestamp - dt.timedelta(minutes=minutes)
-                    mini_block_end = timestamp
+                mini_block_start = timestamp - dt.timedelta(minutes=minutes)
+                mini_block_end = timestamp
 
-                    # If another block is currently active, stop it for the duration of this new category
-                    if in_block:
-                        end_times.setdefault(in_block, []).append(mini_block_start)
-                        start_times.setdefault(in_block, []).append(mini_block_end)
+                # If another block is currently active, stop it for the duration of this new category
+                if in_block:
+                    end_times.setdefault(in_block, []).append(mini_block_start)
+                    start_times.setdefault(in_block, []).append(mini_block_end)
 
-                    start_times.setdefault(col, []).append(mini_block_start)
-                    end_times.setdefault(col, []).append(mini_block_end)
+                start_times.setdefault(col, []).append(mini_block_start)
+                end_times.setdefault(col, []).append(mini_block_end)
 
-                elif minutes < 0:
-                    # Special case allowed where the category is listed with a negative number after it
-                    # The project MUST match the currently active project though
-                    if col == in_block:
-                        # Create a num sized whole in the active block
-                        whole_start = timestamp - dt.timedelta(minutes=abs(minutes))
-                        whole_end = timestamp
+            elif minutes < 0:
+                # Special case allowed where the category is listed with a negative number after it
+                # The project MUST match the currently active project though
+                if col == in_block:
+                    # Create a num sized whole in the active block
+                    whole_start = timestamp - dt.timedelta(minutes=abs(minutes))
+                    whole_end = timestamp
 
-                        end_times.setdefault(in_block, []).append(whole_start)
-                        start_times.setdefault(in_block, []).append(whole_end)
-
-                    else:
-                        raise ValueError(
-                            "Negative number used on non active category: {} {}".format(
-                                self.name, timestamp
-                            )
-                        )
-
-                elif minutes == "start" and pd.isna(col):
-                    # End the current category
-                    if in_block:
-                        end_times.setdefault(in_block, []).append(timestamp)
-
-                    # Start the new category
-                    in_block = "start"
-                    start_times.setdefault(col, []).append(timestamp)
+                    end_times.setdefault(in_block, []).append(whole_start)
+                    start_times.setdefault(in_block, []).append(whole_end)
 
                 else:
                     raise ValueError(
-                        "Improperly formatted category data: {} {}".format(
+                        "Negative number used on non active category: {} {}".format(
                             self.name, timestamp
                         )
                     )
+
+            elif minutes == "start" and pd.isna(col):
+                # End the current category
+                if in_block:
+                    end_times.setdefault(in_block, []).append(timestamp)
+
+                # Start the new category
+                in_block = "start"
+                start_times.setdefault(col, []).append(timestamp)
+
+            else:
+                raise ValueError(
+                    "Improperly formatted category data: {} {}".format(
+                        self.name, timestamp
+                    )
+                )
 
         # Being within a block at the end of a day means count to end of day (a microsecond before midnight)
         # One exception to this is if the date is today, in which case the block extends to right now.
