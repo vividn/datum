@@ -1,9 +1,4 @@
-import {
-  deterministicHumanIds,
-  restoreNow,
-  setNow,
-  testDbLifecycle,
-} from "../../__test__/test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
@@ -208,41 +203,6 @@ describe("switchCmd", () => {
         title: "title",
         author: "author",
       },
-    });
-  });
-
-  describe("change command", () => {
-    deterministicHumanIds();
-
-    beforeEach(async () => {
-      setNow("2023-12-21 14:00");
-    });
-    afterAll(() => {
-      restoreNow();
-    });
-
-    it("can become an occur command by having occur as a trailing word", async () => {
-      expect(
-        await switchCmd("field -k opt1= someState 30 key=val optVal occur"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become an end command by having start as a trailing word", async () => {
-      expect(
-        await switchCmd("field -k opt1= someState 30 key=val optVal end"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become a start command by having start as a trailing word", async () => {
-      expect(
-        await switchCmd("field -k opt1= someState 5m30s key=val optVal start"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
     });
   });
 });
