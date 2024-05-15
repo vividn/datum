@@ -103,7 +103,7 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "start", args);
-      expect(args.keys).toEqual(["dur", "existingKey"]);
+      expect(args.keys).toEqual(["dur=", "existingKey"]);
     });
   });
 
@@ -230,7 +230,7 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "end", args);
-      expect(args.keys).toEqual(["dur", "existingKey"]);
+      expect(args.keys).toEqual(["dur=", "existingKey"]);
     });
   });
 
@@ -356,7 +356,7 @@ describe("changeDatumCommand", () => {
       };
       const args: DataArgs = { keys: ["existingKey"] };
       changeDatumCommand(datumData, "switch", args);
-      expect(args.keys).toEqual(["state.id=true", "dur", "existingKey"]);
+      expect(args.keys).toEqual(["state.id=true", "dur=", "existingKey"]);
     });
   });
 });
@@ -442,6 +442,14 @@ describe("changing from one command to another", () => {
         await occurCmd(
           "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
         ),
+      ).toMatchSnapshot({
+        _rev: expect.any(String),
+      });
+    });
+
+    it("doesn't require a duration to become a start command", async () => {
+      expect(
+        await occurCmd("field -k req1 -k opt1= reqVal optVal start"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
