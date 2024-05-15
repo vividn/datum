@@ -363,6 +363,8 @@ describe("changeDatumCommand", () => {
 
 describe("changing from one command to another", () => {
   testDbLifecycle("change_cmd_test");
+  deterministicHumanIds();
+
   beforeEach(async () => {
     await setupCmd("");
   });
@@ -412,8 +414,6 @@ describe("changing from one command to another", () => {
   });
 
   describe("occurCmd", () => {
-    deterministicHumanIds();
-
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
     });
@@ -448,8 +448,6 @@ describe("changing from one command to another", () => {
     });
   });
   describe("startCmd", () => {
-    deterministicHumanIds();
-
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
     });
@@ -482,8 +480,6 @@ describe("changing from one command to another", () => {
     });
   });
   describe("endCmd", () => {
-    deterministicHumanIds();
-
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
     });
@@ -516,8 +512,6 @@ describe("changing from one command to another", () => {
     });
   });
   describe("switchCmd", () => {
-    deterministicHumanIds();
-
     beforeEach(async () => {
       setNow("2023-12-21 14:00");
     });

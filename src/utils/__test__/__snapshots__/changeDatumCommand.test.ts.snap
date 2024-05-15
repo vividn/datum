@@ -23,7 +23,7 @@ exports[`changing from one command to another addCmd can become a start command 
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
-    "humanId": "5qygds4osw5s1uelz0gcu",
+    "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
     "modifyTime": {
       "o": 0,
@@ -57,7 +57,7 @@ exports[`changing from one command to another addCmd can become a switch command
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
-    "humanId": "72zr5wkdqaf5v0dptzv4",
+    "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
     "modifyTime": {
       "o": 0,
@@ -91,7 +91,7 @@ exports[`changing from one command to another addCmd can become an end command 1
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
-    "humanId": "5hrznj5rod88yszttuxtki",
+    "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
     "modifyTime": {
       "o": 0,
@@ -124,7 +124,7 @@ exports[`changing from one command to another addCmd can become an occur command
       "tz": "UTC",
       "utc": "2023-12-21T14:00:00.000Z",
     },
-    "humanId": "w3klgwgbtnqlo7p3067f4g",
+    "humanId": "elfuv1633zeysuyhc0l9ss",
     "idStructure": "%field%:%occurTime%",
     "modifyTime": {
       "o": 0,
