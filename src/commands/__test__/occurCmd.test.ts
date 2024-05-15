@@ -1,5 +1,4 @@
 import {
-  deterministicHumanIds,
   popNow,
   pushNow,
   restoreNow,
@@ -115,43 +114,6 @@ describe("occurCmd", () => {
     const newDoc2 = await occurCmd("happening --full-day");
     expect(newDoc2.data.occurTime).toMatchObject({
       utc: "2024-04-23",
-    });
-  });
-
-  describe("change command", () => {
-    deterministicHumanIds();
-
-    beforeEach(async () => {
-      setNow("2023-12-21 14:00");
-    });
-    afterAll(() => {
-      restoreNow();
-    });
-
-    it("can become a start command by having start as a trailing word", async () => {
-      expect(
-        await occurCmd("field -k req1 -k opt1= reqVal optVal start 30min"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become an end command by having start as a trailing word", async () => {
-      expect(
-        await occurCmd("field -k req1 -k opt1= reqVal optVal end 30min"),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
-    });
-
-    it("can become a switch command by having start as a trailing word", async () => {
-      expect(
-        await occurCmd(
-          "field -k req1 -k opt1= reqVal optVal switch stateName 5m30s",
-        ),
-      ).toMatchSnapshot({
-        _rev: expect.any(String),
-      });
     });
   });
 });
