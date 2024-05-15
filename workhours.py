@@ -6,10 +6,10 @@ from functools import reduce
 import sys
 from dateutil import parser
 
-datumfile = "activity"
+datumfile = "project"
 category = "datum"
 
-activity = Datumdata(name="activity", column="Activity", data_type="category")
+project = Datumdata(name="project", column="State", data_type="category")
 
 # Determine number of hours worked this week
 today = dt.date.today()
@@ -31,7 +31,7 @@ days_to_calculate = pd.date_range(
 
 def dayhours(date):
     try:
-        return activity.get_total(date)[category] / 60
+        return project.get_total(date)[category] / 60
     except KeyError:
         return 0
 

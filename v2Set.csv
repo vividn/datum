@@ -24,8 +24,9 @@ Span,SubFoundation,0.98, 1.0
 Span,Environment, 0, 0.6
 
 Span,Project,0.15,0.45
+Span,Chores,0.20,0.25
 Span,Sleep,0.15,0.85
-
+Span,Platform,0.43,0.47
 
 ##################################
 # Data to plot from back to front
