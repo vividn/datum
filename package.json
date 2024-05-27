@@ -31,7 +31,7 @@
     "preinstall": "npx only-allow pnpm"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.1",
+    "@babel/core": "^7.24.6",
     "@babel/preset-env": "^7.24.1",
     "@babel/preset-typescript": "^7.24.1",
     "@types/jest": "^29.5.12",
