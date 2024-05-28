@@ -7,7 +7,7 @@ import stringify from "string.ify";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
-import { DateTime, Duration } from "luxon";
+import { DateTime, Duration, Interval } from "luxon";
 import { DatumTime, datumTimeToLuxon } from "../time/timeUtils";
 import {
   DatumState,
@@ -60,9 +60,24 @@ export function humanFormattedTime(
     return undefined;
   }
 
-  const date = dateTime.toISODate();
-  const dateText =
-    date === DateTime.now().toISODate() ? "" : dateTime.toISODate();
+  let dateText: string;
+  const date = dateTime.toISODate() as string;
+  const today = DateTime.now().toISODate() as string;
+  if (date === today) {
+    dateText = "";
+  } else if (date < today) {
+    const days = Interval.fromDateTimes(
+      DateTime.fromISO(date),
+      DateTime.fromISO(today),
+    ).toDuration("days").days;
+    dateText = days > 2 ? date : "-" + days + "d";
+  } else {
+    const days = Interval.fromDateTimes(
+      DateTime.fromISO(today),
+      DateTime.fromISO(date),
+    ).toDuration("days").days;
+    dateText = days > 2 ? date : "+" + days + "d";
+  }
   const offsetText = chalk.gray(dateTime.toFormat("Z"));
   const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
   const fullText = [dateText, timeText].filter(Boolean).join(" ");
