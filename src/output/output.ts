@@ -70,13 +70,13 @@ export function humanFormattedTime(
       DateTime.fromISO(date),
       DateTime.fromISO(today),
     ).toDuration("days").days;
-    dateText = days > 2 ? date : "-" + days + "d";
+    dateText = days > 3 ? date : "-" + days + "d";
   } else {
     const days = Interval.fromDateTimes(
       DateTime.fromISO(today),
       DateTime.fromISO(date),
     ).toDuration("days").days;
-    dateText = days > 2 ? date : "+" + days + "d";
+    dateText = days > 3 ? date : "+" + days + "d";
   }
   const offsetText = chalk.gray(dateTime.toFormat("Z"));
   const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
