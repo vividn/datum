@@ -7,14 +7,14 @@ import stringify from "string.ify";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
-import { DateTime, Duration, Interval } from "luxon";
-import { DatumTime, datumTimeToLuxon } from "../time/timeUtils";
+import { Duration } from "luxon";
 import {
   DatumState,
   isStateObject,
   StateObject,
 } from "../state/normalizeState";
 import isEqual from "lodash.isequal";
+import { humanTime } from "../time/humanTime";
 
 chalk.level = 3;
 
@@ -39,52 +39,6 @@ const ACTION_CHALK: { [key in ACTIONS]: Chalk } = {
   [ACTIONS.Failed]: chalk.red,
 };
 
-export function humanFormattedTime(
-  time?: DatumTime | string,
-): string | undefined {
-  if (!time) {
-    return undefined;
-  }
-  // TODO: remove this once all docs are updated to use DatumTime
-  if (typeof time === "string") {
-    time = { utc: time };
-  }
-  // if time is just a date, then return it
-  if (!time.utc.includes("T")) {
-    const future = time.utc > (DateTime.now().toISODate() ?? time.utc);
-    return future ? chalk.underline(time.utc) : time.utc;
-  }
-
-  const dateTime = datumTimeToLuxon(time);
-  if (dateTime === undefined || !dateTime.isValid) {
-    return undefined;
-  }
-
-  let dateText: string;
-  const date = dateTime.toISODate() as string;
-  const today = DateTime.now().toISODate() as string;
-  if (date === today) {
-    dateText = "";
-  } else if (date < today) {
-    const days = Interval.fromDateTimes(
-      DateTime.fromISO(date),
-      DateTime.fromISO(today),
-    ).toDuration("days").days;
-    dateText = days > 3 ? date : "-" + days + "d";
-  } else {
-    const days = Interval.fromDateTimes(
-      DateTime.fromISO(today),
-      DateTime.fromISO(date),
-    ).toDuration("days").days;
-    dateText = days > 3 ? date : "+" + days + "d";
-  }
-  const offsetText = chalk.gray(dateTime.toFormat("Z"));
-  const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
-  const fullText = [dateText, timeText].filter(Boolean).join(" ");
-  const future = dateTime > DateTime.now();
-  return future ? chalk.underline(fullText) : fullText;
-}
-
 type AllTimes = {
   hybrid?: string;
   occur?: string;
@@ -95,15 +49,15 @@ type AllTimes = {
 function formatAllTimes(doc: EitherPayload): AllTimes {
   const { data, meta } = pullOutData(doc);
   const hybrid = data.occurTime
-    ? humanFormattedTime(data.occurTime)
+    ? humanTime(data.occurTime)
     : meta?.createTime
-      ? chalk.gray("c") + humanFormattedTime(meta.createTime)
+      ? chalk.gray("c") + humanTime(meta.createTime)
       : undefined;
   const times = {
     hybrid: hybrid,
-    occur: humanFormattedTime(data.occurTime),
-    modify: chalk.gray("m") + humanFormattedTime(meta?.modifyTime),
-    create: chalk.grey("c") + humanFormattedTime(meta?.createTime),
+    occur: humanTime(data.occurTime),
+    modify: chalk.gray("m") + humanTime(meta?.modifyTime),
+    create: chalk.grey("c") + humanTime(meta?.createTime),
     none: undefined,
   };
   return times;

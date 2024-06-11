@@ -1,6 +1,7 @@
 import { DateTime, Settings } from "luxon";
-import { humanTime, humanTimeFromISO } from "../humanTime";
+import { humanTime } from "../humanTime";
 import { setNow } from "../../__test__/test-utils";
+import { toDatumTime } from "../timeUtils";
 
 describe("humanTime", () => {
   beforeEach(async () => {
@@ -9,7 +10,7 @@ describe("humanTime", () => {
   });
 
   it("displays HH:mm:ss if the DateTime is today", () => {
-    const tenThirtyOrSo = DateTime.local(2022, 2, 11, 10, 30, 19);
+    const tenThirtyOrSo = toDatumTime("today,10:30:19");
     expect(humanTime(tenThirtyOrSo)).toEqual("10:30:19");
   });
 
@@ -23,17 +24,15 @@ describe("humanTime", () => {
     expect(humanTime(tomorrowMorning)).toEqual("+1d, 07:00:00");
   });
 
-  it("displays MMM d, HH:mm:ss if same year", () => {
-    const summerSolstice = DateTime.local(2022, 6, 21, 11, 13);
-    expect(humanTime(summerSolstice)).toEqual("Jun 21, 11:13:00");
+  it("displays up to 3 days in the future or past with this format", () => {
+    fail()
   });
 
-  it("displays yyyy-MM-dd, HH:mm:ss if different year", () => {
-    const lastYearWinterSolstice = DateTime.local(2021, 12, 21, 15, 59);
-    expect(humanTime(lastYearWinterSolstice)).toEqual("2021-12-21, 15:59:00");
+  it("if a time is 4 or more days in the future or past, than it displays the iso date", () => {
+    fail()
   });
 
-  it("adds UTC+N to end if utc offset does not match locale", () => {
+  it("adds an hour offset indicator after the time", () => {
     Settings.defaultZone = "UTC+7";
     const zone5 = DateTime.local(2022, 2, 11, 10, 40, { zone: "UTC+5" });
     expect(humanTime(zone5)).toEqual("10:40:00 UTC+5");
@@ -47,35 +46,10 @@ describe("humanTime", () => {
     expect(humanTime(utcTime)).toEqual("2020-10-10, 05:05:25 UTC+0");
   });
 
-  it("does not add UTC+N if the offset is the same as locale, even if the timezone is technically different", () => {
-    Settings.defaultZone = "Europe/Berlin";
-    const copenhagenTime = DateTime.local(2022, 2, 11, 17, 22, {
-      zone: "Europe/Copenhagen",
-    });
-    expect(humanTime(copenhagenTime)).toEqual("17:22:00");
-  });
-
   it("still thinks it's today even if utc date is different than local date", () => {
     setNow("2022-02-13T23:30:00Z");
     Settings.defaultZone = "Europe/Berlin";
     const alreadyValentinesDay = DateTime.local();
     expect(humanTime(alreadyValentinesDay)).toEqual("00:30:00");
-  });
-});
-
-describe("humanTimeFromISO", () => {
-  beforeEach(async () => {
-    setNow("2022-05-01T12:20:00Z");
-    Settings.defaultZone = "UTC+2";
-  });
-
-  it("generates a humanTime in the local zone from a UTC ISO timestamp", () => {
-    const result = humanTimeFromISO("2022-05-01T19:11:50Z");
-    expect(result).toEqual("21:11:50");
-  });
-
-  it("generates a humanTime with the specified offset", () => {
-    const result = humanTimeFromISO("2021-04-30T12:00:00Z", -7);
-    expect(result).toEqual("2021-04-30, 05:00:00 UTC-7");
   });
 });

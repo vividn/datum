@@ -1,40 +1,47 @@
-import { DateTime, Duration, FixedOffsetZone } from "luxon";
-import { isoDatetime } from "./timeUtils";
+import chalk from "chalk";
+import { DateTime, Interval } from "luxon";
+import { DatumTime, datumTimeToLuxon } from "./timeUtils";
 
-export function humanTime(time: DateTime): string {
-  let dateTimeFormat;
-  const now = DateTime.now();
-  const yesterday = now.minus(Duration.fromISO("P1D"));
-  const tomorrow = now.plus(Duration.fromISO("P1D"));
-  if (now.hasSame(time, "day")) {
-    dateTimeFormat = "HH:mm:ss";
-  } else if (yesterday.hasSame(time, "day")) {
-    dateTimeFormat = "'-1d,' HH:mm:ss";
-  } else if (tomorrow.hasSame(time, "day")) {
-    dateTimeFormat = "'+1d,' HH:mm:ss";
-  } else if (now.hasSame(time, "year")) {
-    dateTimeFormat = "MMM d, HH:mm:ss";
+export function humanTime(time?: DatumTime | string): string | undefined {
+  if (!time) {
+    return undefined;
+  }
+  // TODO: remove this once all docs are updated to use DatumTime
+  if (typeof time === "string") {
+    time = { utc: time };
+  }
+  // if time is just a date, then return it
+  if (!time.utc.includes("T")) {
+    const future = time.utc > (DateTime.now().toISODate() ?? time.utc);
+    return future ? chalk.underline(time.utc) : time.utc;
+  }
+
+  const dateTime = datumTimeToLuxon(time);
+  if (dateTime === undefined || !dateTime.isValid) {
+    return undefined;
+  }
+
+  let dateText: string;
+  const date = dateTime.toISODate() as string;
+  const today = DateTime.now().toISODate() as string;
+  if (date === today) {
+    dateText = "";
+  } else if (date < today) {
+    const days = Interval.fromDateTimes(
+      DateTime.fromISO(date),
+      DateTime.fromISO(today),
+    ).toDuration("days").days;
+    dateText = days > 3 ? date : "-" + days + "d";
   } else {
-    dateTimeFormat = "yyyy-MM-dd, HH:mm:ss";
+    const days = Interval.fromDateTimes(
+      DateTime.fromISO(today),
+      DateTime.fromISO(date),
+    ).toDuration("days").days;
+    dateText = days > 3 ? date : "+" + days + "d";
   }
-
-  if (now.offset !== time.offset) {
-    dateTimeFormat += " 'UTC'Z";
-  }
-
-  return time.toFormat(dateTimeFormat);
-}
-
-// TODO: Consider removing this
-export function humanTimeFromISO(
-  timeStr: isoDatetime,
-  utcOffset?: number,
-): string {
-  const datetime = DateTime.fromISO(timeStr, {
-    zone:
-      utcOffset !== undefined
-        ? FixedOffsetZone.instance(60 * utcOffset)
-        : undefined,
-  });
-  return humanTime(datetime);
+  const offsetText = chalk.gray(dateTime.toFormat("Z"));
+  const timeText = dateTime.toFormat("HH:mm:ss") + offsetText;
+  const fullText = [dateText, timeText].filter(Boolean).join(" ");
+  const future = dateTime > DateTime.now();
+  return future ? chalk.underline(fullText) : fullText;
 }
