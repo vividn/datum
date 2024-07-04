@@ -1,5 +1,5 @@
 import {
-    coloredChalk,
+  coloredChalk,
   deterministicHumanIds,
   mockedLogLifecycle,
   setNow,

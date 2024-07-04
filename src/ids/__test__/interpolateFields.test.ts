@@ -18,7 +18,7 @@ describe("interpolateFields", () => {
       format: "raw_string_%foo%???%?humanId%--%occurTime%",
     });
     expect(interpolated).toEqual(
-      "raw_string_bar???abcde--2022-05-01T22:52:00Z"
+      "raw_string_bar???abcde--2022-05-01T22:52:00Z",
     );
   });
 

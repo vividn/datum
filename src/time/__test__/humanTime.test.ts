@@ -87,7 +87,7 @@ describe("humanTime", () => {
     expect(humanTime(toDatumTime("now"))).toMatchInlineSnapshot(
       `"10:20:00[90m+1[39m"`,
     );
-    
+
     Settings.defaultZone = "system";
   });
 });
