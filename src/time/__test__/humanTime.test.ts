@@ -1,16 +1,17 @@
 import { DateTime, Settings } from "luxon";
 import { humanTime } from "../humanTime";
-import { setNow } from "../../__test__/test-utils";
+import { colorlessChalk, setNow } from "../../__test__/test-utils";
 import chalk from "chalk";
 import { toDatumTime } from "../datumTime";
 
 describe("humanTime", () => {
+  colorlessChalk();
   beforeEach(async () => {
     setNow("2022-02-11T09:20:00Z");
     Settings.defaultZone = "system";
     process.env["FORCE_COLOR"] = "0";
-    chalk.level = 0;
   });
+
 
   it("displays HH:mm:ss if the DateTime is today", () => {
     const tenThirtyOrSo = toDatumTime("today, 10:30:19");
