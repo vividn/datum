@@ -1,7 +1,8 @@
 import { DatumView } from "../../../src/views/DatumView";
 import { FinanceDoc } from "./balance";
-import { DatumTime, isoDateOrTime } from "../../../src/time/timeUtils";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
 import { _emit } from "../../../src/views/emit";
+import { DatumTime } from "../../../src/time/datumTime";
 
 type DocType = FinanceDoc;
 type MapKey = [string, string, string, isoDateOrTime?];

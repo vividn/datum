@@ -8,3 +8,6 @@ process.env["COUCHDB_USER"] = "admin";
 process.env["COUCHDB_PASSWORD"] = "password"
 process.env["COUCHDB_HOST"] = ".pouch"
 process.env["POUCHDB_ADAPTER"] = "memory"
+
+// disable colored chalk unless specifically enabled
+process.env["FORCE_COLOR"] = "0"

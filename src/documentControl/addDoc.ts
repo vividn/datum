@@ -21,7 +21,7 @@ import {
   ViewPayload,
 } from "../views/DatumView";
 import { assembleId } from "../ids/assembleId";
-import { toDatumTime } from "../time/timeUtils";
+import { toDatumTime } from "../time/datumTime";
 
 function payloadMatchesDbData(
   payload: EitherPayload,

@@ -1,5 +1,4 @@
 import { setNow } from "../../__test__/test-utils";
-import { toDatumTime } from "../../time/timeUtils";
 import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
 import SpyInstance = jest.SpyInstance;
 import * as parseTimeStr from "../../time/parseTimeStr";
@@ -8,6 +7,8 @@ import * as parseDurationStr from "../../time/parseDurationStr";
 import { alterDatumData } from "../alterDatumData";
 import { DatumData } from "../../documentControl/DatumDocument";
 import * as inferTypeModule from "../inferType";
+import { toDatumTime } from "../../time/datumTime";
+import { DateTime } from "luxon";
 
 describe("alterDatumData", () => {
   const originalDatumData: DatumData = { existing: "data" };
@@ -154,10 +155,10 @@ describe("alterDatumData", () => {
 
       expect(datumData).toEqual({
         existing: "data",
-        time: toDatumTime("2021-10-25T03:00:00.000Z"),
-        secondTime: toDatumTime("2021-10-24T22:15:00.000Z"),
-        snake_time: toDatumTime("2021-10-25T10:15:00.000Z"),
-        secondTime2: toDatumTime("2021-10-25T12:30:00.000Z"),
+        time: toDatumTime(DateTime.fromISO("2021-10-25T03:00:00.000Z")),
+        secondTime: toDatumTime(DateTime.fromISO("2021-10-24T22:15:00.000Z")),
+        snake_time: toDatumTime(DateTime.fromISO("2021-10-25T10:15:00.000Z")),
+        secondTime2: toDatumTime(DateTime.fromISO("2021-10-25T12:30:00.000Z")),
       });
       expect(parseTimeSpy).toHaveBeenCalledTimes(4);
       expect(parseDateSpy).not.toHaveBeenCalled();

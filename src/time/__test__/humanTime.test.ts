@@ -1,6 +1,8 @@
 import { DateTime, Settings } from "luxon";
-import { humanTime, humanTimeFromISO } from "../humanTime";
+import { humanTime } from "../humanTime";
 import { setNow } from "../../__test__/test-utils";
+import chalk from "chalk";
+import { toDatumTime } from "../datumTime";
 
 describe("humanTime", () => {
   beforeEach(async () => {
@@ -9,73 +11,83 @@ describe("humanTime", () => {
   });
 
   it("displays HH:mm:ss if the DateTime is today", () => {
-    const tenThirtyOrSo = DateTime.local(2022, 2, 11, 10, 30, 19);
-    expect(humanTime(tenThirtyOrSo)).toEqual("10:30:19");
+    const tenThirtyOrSo = toDatumTime("today, 10:30:19");
+    expect(humanTime(tenThirtyOrSo)).toEqual("10:30:19+0");
   });
 
-  it("displays -1d, HH:mm:ss if yesterday", () => {
-    const yesterdayAfternoon = DateTime.local(2022, 2, 10, 16, 22);
-    expect(humanTime(yesterdayAfternoon)).toEqual("-1d, 16:22:00");
+  it("displays -1d HH:mm:ss if yesterday", () => {
+    const yesterdayAfternoon = toDatumTime("yesterday, 16:22:00");
+    expect(humanTime(yesterdayAfternoon)).toEqual("-1d 16:22:00+0");
   });
 
-  it("displays +1d, HH:mm:ss if tomorrow", () => {
-    const tomorrowMorning = DateTime.local(2022, 2, 12, 7, 0, 0);
-    expect(humanTime(tomorrowMorning)).toEqual("+1d, 07:00:00");
+  it("displays +1d HH:mm:ss if tomorrow", () => {
+    const tomorrowMorning = toDatumTime("tomorrow, 07:00:00");
+    expect(humanTime(tomorrowMorning)).toEqual("+1d 07:00:00+0");
   });
 
-  it("displays MMM d, HH:mm:ss if same year", () => {
-    const summerSolstice = DateTime.local(2022, 6, 21, 11, 13);
-    expect(humanTime(summerSolstice)).toEqual("Jun 21, 11:13:00");
+  it("displays up to 3 days in the future or past with this format", () => {
+    expect(humanTime(toDatumTime("2022-02-14, 10:00:00"))).toEqual(
+      "+3d 10:00:00+0",
+    );
+    expect(humanTime(toDatumTime("2022-02-08, 10:00:00"))).toEqual(
+      "-3d 10:00:00+0",
+    );
   });
 
-  it("displays yyyy-MM-dd, HH:mm:ss if different year", () => {
-    const lastYearWinterSolstice = DateTime.local(2021, 12, 21, 15, 59);
-    expect(humanTime(lastYearWinterSolstice)).toEqual("2021-12-21, 15:59:00");
+  it("if a time is 4 or more days in the future or past, than it displays the iso date", () => {
+    expect(humanTime(toDatumTime("2022-02-15, 10:00:00"))).toEqual(
+      "2022-02-15 10:00:00+0",
+    );
+    expect(humanTime(toDatumTime("2022-02-07, 10:00:00"))).toEqual(
+      "2022-02-07 10:00:00+0",
+    );
   });
 
-  it("adds UTC+N to end if utc offset does not match locale", () => {
+  it("adds an hour offset indicator after the time", () => {
     Settings.defaultZone = "UTC+7";
-    const zone5 = DateTime.local(2022, 2, 11, 10, 40, { zone: "UTC+5" });
-    expect(humanTime(zone5)).toEqual("10:40:00 UTC+5");
+    const zone5 = toDatumTime(
+      DateTime.local(2022, 2, 11, 10, 40, { zone: "UTC+5" }),
+    );
+    expect(humanTime(zone5)).toEqual("10:40:00+5");
 
-    const chicagoTime = DateTime.local(2022, 5, 20, 19, 34, 12, {
-      zone: "America/Chicago",
-    });
-    expect(humanTime(chicagoTime)).toEqual("May 20, 19:34:12 UTC-5");
+    const chicagoTime = toDatumTime(
+      DateTime.local(2022, 5, 20, 19, 34, 12, {
+        zone: "America/Chicago",
+      }),
+    );
+    expect(humanTime(chicagoTime)).toEqual("2022-05-20 19:34:12-5");
 
-    const utcTime = DateTime.utc(2020, 10, 10, 5, 5, 25);
-    expect(humanTime(utcTime)).toEqual("2020-10-10, 05:05:25 UTC+0");
-  });
-
-  it("does not add UTC+N if the offset is the same as locale, even if the timezone is technically different", () => {
-    Settings.defaultZone = "Europe/Berlin";
-    const copenhagenTime = DateTime.local(2022, 2, 11, 17, 22, {
-      zone: "Europe/Copenhagen",
-    });
-    expect(humanTime(copenhagenTime)).toEqual("17:22:00");
+    const utcTime = toDatumTime(DateTime.utc(2020, 10, 10, 5, 5, 25));
+    expect(humanTime(utcTime)).toEqual("2020-10-10 05:05:25+0");
   });
 
   it("still thinks it's today even if utc date is different than local date", () => {
     setNow("2022-02-13T23:30:00Z");
     Settings.defaultZone = "Europe/Berlin";
-    const alreadyValentinesDay = DateTime.local();
-    expect(humanTime(alreadyValentinesDay)).toEqual("00:30:00");
-  });
-});
-
-describe("humanTimeFromISO", () => {
-  beforeEach(async () => {
-    setNow("2022-05-01T12:20:00Z");
-    Settings.defaultZone = "UTC+2";
+    const alreadyValentinesDay = toDatumTime(DateTime.local());
+    expect(humanTime(alreadyValentinesDay)).toEqual("00:30:00+1");
   });
 
-  it("generates a humanTime in the local zone from a UTC ISO timestamp", () => {
-    const result = humanTimeFromISO("2022-05-01T19:11:50Z");
-    expect(result).toEqual("21:11:50");
-  });
+  it("displays with some nice formatting when colors are enabled", () => {
+    chalk.level = 3;
+    expect(humanTime(toDatumTime("today, 10:00:00"))).toMatchInlineSnapshot(
+      `"[4m10:00:00[90m+0[39m[24m"`,
+    );
+    expect(humanTime(toDatumTime("tomorrow, 10:00:00"))).toMatchInlineSnapshot(
+      `"[4m+1d 10:00:00[90m+0[39m[24m"`,
+    );
+    expect(humanTime(toDatumTime("yesterday, 10:00:00"))).toMatchInlineSnapshot(
+      `"-1d 10:00:00[90m+0[39m"`,
+    );
+    expect(humanTime(toDatumTime("2024-07-04, 18"))).toMatchInlineSnapshot(
+      `"[4m2024-07-04 18:00:00[90m+0[39m[24m"`,
+    );
 
-  it("generates a humanTime with the specified offset", () => {
-    const result = humanTimeFromISO("2021-04-30T12:00:00Z", -7);
-    expect(result).toEqual("2021-04-30, 05:00:00 UTC-7");
+    Settings.defaultZone = "Europe/Berlin";
+    expect(humanTime(toDatumTime("now"))).toMatchInlineSnapshot(
+      `"10:20:00[90m+1[39m"`,
+    );
+
+    Settings.defaultZone = "system";
   });
 });

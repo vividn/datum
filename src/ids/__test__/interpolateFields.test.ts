@@ -38,8 +38,6 @@ describe("interpolateFields", () => {
       useHumanTimes: true,
     });
 
-    expect(interpolated).toMatchInlineSnapshot(
-      `"2022-05-01 19:52:00[90m-3[39m bar"`,
-    );
+    expect(interpolated).toMatchInlineSnapshot(`"2022-05-01 19:52:00-3 bar"`);
   });
 });
