@@ -4,6 +4,7 @@ import { BadDurationError, BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
 import { JsonType } from "../utils/utilityTypes";
 import { getTimezone } from "./getTimezone";
+import { parseTimeStr } from "./parseTimeStr";
 
 export type isoDatetime = string;
 export type isoDate = string;
@@ -68,7 +69,7 @@ export function toDatumTime(
   onlyDate?: boolean,
 ): DatumTime {
   if (typeof time === "string") {
-    time = DateTime.fromISO(time, { setZone: true });
+    time = parseTimeStr({ timeStr: time });
   }
   // Checking if DateTime is valid should be done before calling this function
   if (!time.isValid) {
