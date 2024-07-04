@@ -224,7 +224,6 @@ export function colorlessChalk() {
     chalk.level = 0;
   });
   afterEach(() => {
-    // @ts-expect-error delete chalk level hack to reset level
-    delete chalk.level;
+    chalk.level = 3;
   });
 }
