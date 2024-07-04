@@ -26,8 +26,9 @@ describe("toDatumTime", () => {
   test.todo("the date returned matches the local date, not the utc date");
   test("it can handle an ISO string with an offset", () => {
     expect(toDatumTime("2024-01-23T18:00:00.000-12:00")).toEqual({
-      utc: "2024-01-24T06:00:00.000+0",
+      utc: "2024-01-24T06:00:00.000Z",
       o: -12,
+      tz: "UTC-12",
     });
   });
 });
