@@ -2,7 +2,7 @@ import * as emit from "../../emit";
 import { makeDoc } from "../../../__test__/test-utils";
 import { activeStateView } from "../activeStateView";
 import { DateTime } from "luxon";
-import { DatumTime } from "../../../time/timeUtils";
+import { DatumTime } from "../../../time/datumTime";
 
 const occurTime: DatumTime = {
   utc: "2023-08-22T15:00:00.000Z",

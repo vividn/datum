@@ -18,7 +18,8 @@ import {
 import isEqual from "lodash.isequal";
 import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
-import { now, toDatumTime } from "../time/timeUtils";
+import { toDatumTime } from "../time/datumTime";
+import { now } from "../time/timeUtils";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {

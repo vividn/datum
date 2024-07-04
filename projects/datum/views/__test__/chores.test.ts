@@ -2,7 +2,7 @@ import * as emit from "../../../../src/views/emit";
 import SpyInstance = jest.SpyInstance;
 import { makeDoc } from "../../../../src/__test__/test-utils";
 import { ChoreDoc, choreView } from "../chores";
-import { toDatumTime } from "../../../../src/time/timeUtils";
+import { toDatumTime } from "../../../../src/time/datumTime";
 
 describe("choreView map", () => {
   const field = "foo";
@@ -122,6 +122,7 @@ describe("choreView map", () => {
 
   it("has the right integral part even with timezone shenanigans", () => {
     const occurTime = toDatumTime("2024-01-23T18:00:00.000-12:00"); // the morning of the 24th in UTC
+    console.debug({ occurTime });
     const doc = makeDoc<ChoreDoc>({
       field,
       occurTime,

@@ -1,7 +1,8 @@
 import { _emit } from "../../../src/views/emit";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { DatumView } from "../../../src/views/DatumView";
-import { DatumTime, isoDateOrTime } from "../../../src/time/timeUtils";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
+import { DatumTime } from "../../../src/time/datumTime";
 
 export type TxDoc = DatumDocument<{
   type: "tx";
@@ -56,7 +57,7 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   emit,
   map: (doc: FinanceDoc) => {
     function dtTransform(
-      time: string | DatumTime | undefined
+      time: string | DatumTime | undefined,
     ): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {
@@ -66,17 +67,17 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     }
     const data = doc.data;
     const occurDatumTime = dtTransform(
-      data.effectiveTime || data.effectiveDate || data.occurTime
+      data.effectiveTime || data.effectiveDate || data.occurTime,
     );
     if (occurDatumTime === undefined) {
       return;
     }
     const occurTime = occurDatumTime.utc;
     const occurTime1 = dtTransform(
-      data.effectiveTime1 || data.effectiveDate1 || occurTime
+      data.effectiveTime1 || data.effectiveDate1 || occurTime,
     )!.utc;
     const occurTime2 = dtTransform(
-      data.effectiveTime2 || data.effectiveDate2 || occurTime
+      data.effectiveTime2 || data.effectiveDate2 || occurTime,
     )!.utc;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;

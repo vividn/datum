@@ -1,5 +1,4 @@
 import { setNow } from "../../__test__/test-utils";
-import { toDatumTime } from "../../time/timeUtils";
 import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
 import SpyInstance = jest.SpyInstance;
 import * as parseTimeStr from "../../time/parseTimeStr";
@@ -8,6 +7,7 @@ import * as parseDurationStr from "../../time/parseDurationStr";
 import { alterDatumData } from "../alterDatumData";
 import { DatumData } from "../../documentControl/DatumDocument";
 import * as inferTypeModule from "../inferType";
+import { toDatumTime } from "../../time/datumTime";
 
 describe("alterDatumData", () => {
   const originalDatumData: DatumData = { existing: "data" };

@@ -1,7 +1,8 @@
 import { _emit } from "../../../src/views/emit";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
-import { DatumTime, isoDate, isoDateOrTime } from "../../../src/time/timeUtils";
+import { isoDate, isoDateOrTime } from "../../../src/time/timeUtils";
 import { DatumView } from "../../../src/views/DatumView";
+import { DatumTime } from "../../../src/time/datumTime";
 
 export type ChoreDoc = DatumDocument<{
   field: string;

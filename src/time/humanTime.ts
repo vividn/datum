@@ -1,6 +1,6 @@
 import chalk from "chalk";
 import { DateTime, Interval } from "luxon";
-import { DatumTime, datumTimeToLuxon } from "./timeUtils";
+import { DatumTime, datumTimeToLuxon } from "./datumTime";
 
 export function humanTime(time?: DatumTime | string): string | undefined {
   if (!time) {
