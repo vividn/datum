@@ -12,7 +12,6 @@ describe("humanTime", () => {
     process.env["FORCE_COLOR"] = "0";
   });
 
-
   it("displays HH:mm:ss if the DateTime is today", () => {
     const tenThirtyOrSo = toDatumTime("today, 10:30:19");
     expect(humanTime(tenThirtyOrSo)).toEqual("10:30:19+0");
