@@ -1,5 +1,5 @@
 import { DateTime, Duration } from "luxon";
-import { now } from "./timeUtils";
+import { DatumTime, now, toDatumTime } from "./timeUtils";
 import * as chrono from "chrono-node";
 import { BadTimeError } from "../errors";
 import { parseDurationStr } from "./parseDurationStr";
@@ -82,4 +82,8 @@ export function parseTimeStr({
   }
 
   throw new BadTimeError(timeStr);
+}
+
+export function strToDatumTime(timeStr: string): DatumTime {
+  return toDatumTime(parseTimeStr({ timeStr }));
 }
