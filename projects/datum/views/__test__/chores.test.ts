@@ -122,7 +122,6 @@ describe("choreView map", () => {
 
   it("has the right integral part even with timezone shenanigans", () => {
     const occurTime = toDatumTime("2024-01-23T18:00:00.000-12:00"); // the morning of the 24th in UTC
-    console.debug({ occurTime });
     const doc = makeDoc<ChoreDoc>({
       field,
       occurTime,
