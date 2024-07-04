@@ -13,7 +13,8 @@ import { defaults } from "../input/defaults";
 import { newHumanId } from "./newHumanId";
 import { assembleId } from "../ids/assembleId";
 import { IdError } from "../errors";
-import { now, toDatumTime } from "../time/timeUtils";
+import { toDatumTime } from "../time/datumTime";
+import { now } from "../time/timeUtils";
 
 export function addIdAndMetadata<T>(
   data: DatumData<T>,

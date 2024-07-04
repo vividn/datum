@@ -1,6 +1,5 @@
 import { DatumData } from "../../documentControl/DatumDocument";
 import { changeDatumCommand } from "../changeDatumCommand";
-import { toDatumTime } from "../../time/timeUtils";
 import {
   deterministicHumanIds,
   restoreNow,
@@ -14,6 +13,7 @@ import { occurCmd } from "../../commands/occurCmd";
 import { endCmd } from "../../commands/endCmd";
 import { startCmd } from "../../commands/startCmd";
 import { switchCmd } from "../../commands/switchCmd";
+import { toDatumTime } from "../../time/datumTime";
 
 const nowStr = "2023-12-20T17:00:00.000Z";
 const occurTime = toDatumTime(nowStr);

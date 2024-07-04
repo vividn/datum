@@ -37,7 +37,7 @@ describe("absolute time strings", () => {
     ],
     ["16:45:04", { ...todayObj, hour: 16, minute: 45, second: 4 }],
     ["3:45:04pm", { ...todayObj, hour: 15, minute: 45, second: 4 }],
-    ["2010-05-20T10:00:00Z", { year: 2010, month: 5, day: 20, hour: 10 }],
+    ["2010-05-20T10:00:00", { year: 2010, month: 5, day: 20, hour: 10 }],
     ["yesterday at 10:17", { ...todayObj, day: 11, hour: 10, minute: 17 }],
   ])("it parses %s as DateTime from %s", (timeStr, expected) => {
     expect(parseTimeStr({ timeStr })).toEqual(DateTime.fromObject(expected));
@@ -66,7 +66,7 @@ describe("absolute time strings", () => {
     ],
     ["16:45:04", { ...anotherDate, hour: 16, minute: 45, second: 4 }],
     ["3:45:04pm", { ...anotherDate, hour: 15, minute: 45, second: 4 }],
-    ["2010-05-20T10:00:00Z", { year: 2010, month: 5, day: 20, hour: 10 }],
+    ["2010-05-20T10:00:00", { year: 2010, month: 5, day: 20, hour: 10 }],
     ["yesterday at 10:17", { ...anotherDate, day: 5, hour: 10, minute: 17 }],
   ])("it parses %s as DateTime from %s", (timeStr, expected) => {
     const differentReferenceTime = DateTime.fromObject({

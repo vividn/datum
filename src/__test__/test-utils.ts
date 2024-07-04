@@ -18,6 +18,7 @@ import { defaults } from "../input/defaults";
 import { assembleId } from "../ids/assembleId";
 import * as newHumanIdModule from "../meta/newHumanId";
 import { mock } from "jest-mock-extended";
+import chalk from "chalk";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -217,3 +218,13 @@ export async function delay(timeoutMs: number) {
 //
 //   popNow();
 // }
+
+export function coloredChalk() {
+  beforeEach(() => {
+    chalk.level = 3;
+  });
+  afterEach(() => {
+    // @ts-expect-error hacky restoration of chalk level
+    delete chalk.level;
+  });
+}

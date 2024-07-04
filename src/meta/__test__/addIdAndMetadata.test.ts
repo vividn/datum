@@ -1,7 +1,7 @@
 import { addIdAndMetadata } from "../addIdAndMetadata";
 import { setNow } from "../../__test__/test-utils";
 import { IdError } from "../../errors";
-import { toDatumTime } from "../../time/timeUtils";
+import { toDatumTime } from "../../time/datumTime";
 
 const nowUtc = "2023-09-05T11:35:00.000Z";
 const nowDatumTime = toDatumTime(nowUtc);

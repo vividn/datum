@@ -5,8 +5,8 @@ import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
-import { toDatumTime } from "../../time/timeUtils";
 import { BadDurationError } from "../../errors";
+import { toDatumTime } from "../../time/datumTime";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";

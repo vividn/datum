@@ -1,3 +1,4 @@
+import { toDatumTime } from "../datumTime";
 describe("datumTimeToLuxon", () => {
   it.todo("converts a DatumTime with just utc to a utc DateTime");
   it.todo(
@@ -23,4 +24,11 @@ describe("toDatumTime", () => {
     "returns a DatumTime with a date only utc value if onlyDate is passed as a parameter",
   );
   test.todo("the date returned matches the local date, not the utc date");
+  test("it can handle an ISO string with an offset", () => {
+    expect(toDatumTime("2024-01-23T18:00:00.000-12:00")).toEqual({
+      utc: "2024-01-24T06:00:00.000Z",
+      o: -12,
+      tz: "UTC-12",
+    });
+  });
 });

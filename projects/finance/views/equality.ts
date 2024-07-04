@@ -1,7 +1,8 @@
 import { _emit } from "../../../src/views/emit";
 import { FinanceDoc } from "./balance";
 import { DatumView } from "../../../src/views/DatumView";
-import { DatumTime, isoDateOrTime } from "../../../src/time/timeUtils";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
+import { DatumTime } from "../../../src/time/datumTime";
 
 type DocType = FinanceDoc;
 type MapKey = [string, string, isoDateOrTime?];
@@ -17,7 +18,7 @@ export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   emit,
   map: (doc) => {
     function dtTransform(
-      time: string | DatumTime | undefined
+      time: string | DatumTime | undefined,
     ): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {
@@ -26,7 +27,9 @@ export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
       return time;
     }
     const data = doc.data;
-    const occurDatumTime = dtTransform(data.effectiveTime || data.effectiveDate || data.occurTime);
+    const occurDatumTime = dtTransform(
+      data.effectiveTime || data.effectiveDate || data.occurTime,
+    );
     if (occurDatumTime === undefined) {
       return;
     }

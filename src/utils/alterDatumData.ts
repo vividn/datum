@@ -8,11 +8,11 @@ import { parseTimeStr } from "../time/parseTimeStr";
 import {
   isoDateFromDateTime,
   isoDurationFromDuration,
-  toDatumTime,
 } from "../time/timeUtils";
 import { parseDateStr } from "../time/parseDateStr";
 import { parseDurationStr } from "../time/parseDurationStr";
 import { MissingRequiredKeyError } from "../errors";
+import { toDatumTime } from "../time/datumTime";
 
 // TODO: Always keep state keys normalized
 // TODO: write function to easily add new fields to a normalized state without data loss

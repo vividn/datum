@@ -5,7 +5,8 @@ import {
   DatumMetadata,
   EitherDocument,
 } from "../../documentControl/DatumDocument";
-import { DatumTime, isoDate, isoDatetime } from "../../time/timeUtils";
+import { isoDate, isoDatetime } from "../../time/timeUtils";
+import { DatumTime } from "../../time/datumTime";
 
 export const TIME_METRICS = ["hybrid", "occur", "create", "modify"] as const;
 type TimeMetric = (typeof TIME_METRICS)[number];

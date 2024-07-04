@@ -4,7 +4,7 @@ import {
   isDatumDocument,
 } from "../documentControl/DatumDocument";
 import { DateTime } from "luxon";
-import { datumTimeToLuxon } from "./timeUtils";
+import { datumTimeToLuxon } from "./datumTime";
 
 export function getOccurTime(
   doc: EitherDocument | DatumData,

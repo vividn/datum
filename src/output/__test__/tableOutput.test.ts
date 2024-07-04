@@ -54,13 +54,13 @@ describe("tableOutput", () => {
     const table = tableOutput(docs, { show: Show.Standard });
     expect(table).toMatchInlineSnapshot(`
       "       time  field       state  dur       hid  
-       17:45:00[90m+0[39m  [7mfield1[27m                       elfuv
-       17:46:00[90m+0[39m  [7memotion[27m     happy   ⟝ 10m⟞   en61v
-       10:00:00[90m+0[39m  [7mfield2[27m                       d7j7m
-      [90mc[39m17:48:00[90m+0[39m  [7mfield2[27m                       w1fla
-       17:51:00[90m+0[39m  [7mfield3[27m      [1mstart[22m            mbukz
-       17:56:00[90m+0[39m  [7mfield3[27m      [1mend[22m     ⟞ 3m ⟝   puzt1
-       18:01:00[90m+0[39m  [7mnoMetadata[27m          ⟝ 4m⟞         
+       17:45:00+0  field1                       elfuv
+       17:46:00+0  emotion     happy   ⟝ 10m⟞   en61v
+       10:00:00+0  field2                       d7j7m
+      c17:48:00+0  field2                       w1fla
+       17:51:00+0  field3      start            mbukz
+       17:56:00+0  field3      end     ⟞ 3m ⟝   puzt1
+       18:01:00+0  noMetadata          ⟝ 4m⟞         
       "
     `);
   });
@@ -72,13 +72,13 @@ describe("tableOutput", () => {
     });
     expect(table).toMatchInlineSnapshot(`
       "       time  field       state  dur       hid  
-      [90mc[39m17:45:00[90m+0[39m  [7mfield1[27m                       elfuv
-      [90mc[39m17:46:00[90m+0[39m  [7memotion[27m     happy   ⟝ 10m⟞   en61v
-      [90mc[39m17:47:00[90m+0[39m  [7mfield2[27m                       d7j7m
-      [90mc[39m17:48:00[90m+0[39m  [7mfield2[27m                       w1fla
-      [90mc[39m17:51:00[90m+0[39m  [7mfield3[27m      [1mstart[22m            mbukz
-      [90mc[39m17:56:00[90m+0[39m  [7mfield3[27m      [1mend[22m     ⟞ 3m ⟝   puzt1
-       [90mc[39mundefined  [7mnoMetadata[27m          ⟝ 4m⟞         
+      c17:45:00+0  field1                       elfuv
+      c17:46:00+0  emotion     happy   ⟝ 10m⟞   en61v
+      c17:47:00+0  field2                       d7j7m
+      c17:48:00+0  field2                       w1fla
+      c17:51:00+0  field3      start            mbukz
+      c17:56:00+0  field3      end     ⟞ 3m ⟝   puzt1
+       cundefined  noMetadata          ⟝ 4m⟞         
       "
     `);
   });
@@ -100,13 +100,13 @@ describe("tableOutput", () => {
     });
     expect(table).toMatchInlineSnapshot(`
       "       time  field       state  dur       hid    foo   
-       17:45:00[90m+0[39m  [7mfield1[27m                       elfuv  "bar" 
-       17:46:00[90m+0[39m  [7memotion[27m     happy   ⟝ 10m⟞   en61v  "baz" 
-       10:00:00[90m+0[39m  [7mfield2[27m                       d7j7m  "foo" 
-      [90mc[39m17:48:00[90m+0[39m  [7mfield2[27m                       w1fla  "bar" 
-       17:51:00[90m+0[39m  [7mfield3[27m      [1mstart[22m            mbukz        
-       17:56:00[90m+0[39m  [7mfield3[27m      [1mend[22m     ⟞ 3m ⟝   puzt1        
-       18:01:00[90m+0[39m  [7mnoMetadata[27m          ⟝ 4m⟞           "data"
+       17:45:00+0  field1                       elfuv  "bar" 
+       17:46:00+0  emotion     happy   ⟝ 10m⟞   en61v  "baz" 
+       10:00:00+0  field2                       d7j7m  "foo" 
+      c17:48:00+0  field2                       w1fla  "bar" 
+       17:51:00+0  field3      start            mbukz        
+       17:56:00+0  field3      end     ⟞ 3m ⟝   puzt1        
+       18:01:00+0  noMetadata          ⟝ 4m⟞           "data"
       "
     `);
   });

@@ -1,4 +1,5 @@
 import {
+  coloredChalk,
   deterministicHumanIds,
   mockedLogLifecycle,
   setNow,
@@ -14,8 +15,8 @@ import { addCmd } from "../addCmd";
 import { updateCmd } from "../updateCmd";
 import { DateTime, Settings } from "luxon";
 import { headCmd } from "../headCmd";
-import { datumTimeToLuxon } from "../../time/timeUtils";
 import { generateSampleMorning } from "../../__test__/generateSampleMorning";
+import { datumTimeToLuxon } from "../../time/datumTime";
 
 const yesterday = "2023-10-31";
 const today = "2023-11-01";
@@ -24,6 +25,7 @@ const tomorrow = "2023-11-02";
 describe("headCmd", () => {
   const { mockedLog } = mockedLogLifecycle();
   deterministicHumanIds();
+  coloredChalk();
   const dbName = "head_cmd_test";
   testDbLifecycle(dbName);
 

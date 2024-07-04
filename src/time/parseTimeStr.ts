@@ -65,7 +65,7 @@ export function parseTimeStr({
   }
 
   // DateTime can parse some extra ISO type strings
-  const dateTimeParsed = DateTime.fromISO(timeStr);
+  const dateTimeParsed = DateTime.fromISO(timeStr, { setZone: true });
   if (dateTimeParsed.isValid) {
     return dateTimeParsed;
   }

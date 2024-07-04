@@ -1,4 +1,5 @@
-import { DatumTime, isoDatetime } from "../../../src/time/timeUtils";
+import { DatumTime } from "../../../src/time/datumTime";
+import { isoDatetime } from "../../../src/time/timeUtils";
 import { DatumView } from "../../../src/views/DatumView";
 import { _emit } from "../../../src/views/emit";
 import { TaskDoc } from "./inbox";

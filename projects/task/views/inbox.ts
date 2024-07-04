@@ -1,7 +1,8 @@
 import { DatumView } from "../../../src/views/DatumView";
 import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import { _emit } from "../../../src/views/emit";
-import { DatumTime, isoDateOrTime } from "../../../src/time/timeUtils";
+import { isoDateOrTime } from "../../../src/time/timeUtils";
+import { DatumTime } from "../../../src/time/datumTime";
 
 export type TaskDoc = DatumDocument<{
   task: string;

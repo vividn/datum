@@ -2,9 +2,9 @@ import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { switchCmd } from "../switchCmd";
 import { DateTime } from "luxon";
 import { setupCmd } from "../setupCmd";
-import { toDatumTime } from "../../time/timeUtils";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
+import { toDatumTime } from "../../time/datumTime";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";

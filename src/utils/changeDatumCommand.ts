@@ -4,8 +4,8 @@ import { DataArgs } from "../input/dataArgs";
 import { normalizeState } from "../state/normalizeState";
 import get from "lodash.get";
 import unset from "lodash.unset";
-import { toDatumTime } from "../time/timeUtils";
 import { DateTime } from "luxon";
+import { toDatumTime } from "../time/datumTime";
 
 // TODO: Use alterDatumData to change everything here rather than set/unset
 export const commandChanges = ["occur", "start", "end", "switch"] as const;

@@ -3,17 +3,17 @@
 exports[`headCmd displays by default the first 10 occurrences in the database 3`] = `
 [
   [
-    "                 time  field        state           hid  
-2023-10-31 23:20:00[90m+0[39m  [7msleep[27m        [1mstart[22m           en61v
-           08:30:00[90m+0[39m  [7msleep[27m        [1mend[22m             elfuv
-           08:40:00[90m+0[39m  [7mproject[27m      german          d7j7m
-           08:40:00[90m+0[39m  [7mtext[27m         fiction_book    w1fla
-           09:10:00[90m+0[39m  [7mproject[27m      [1mend[22m             mbukz
-           09:10:00[90m+0[39m  [7mtext[27m         [1mend[22m             puzt1
-           09:30:00[90m+0[39m  [7menvironment[27m  outside         wqynb
-           09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m           7qaqo
-           09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m           9bcqg
-           09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m             6m3y5
+    "          time  field        state           hid  
+-1d 23:20:00[90m+0[39m  [7msleep[27m        [1mstart[22m           en61v
+    08:30:00[90m+0[39m  [7msleep[27m        [1mend[22m             elfuv
+    08:40:00[90m+0[39m  [7mproject[27m      german          d7j7m
+    08:40:00[90m+0[39m  [7mtext[27m         fiction_book    w1fla
+    09:10:00[90m+0[39m  [7mproject[27m      [1mend[22m             mbukz
+    09:10:00[90m+0[39m  [7mtext[27m         [1mend[22m             puzt1
+    09:30:00[90m+0[39m  [7menvironment[27m  outside         wqynb
+    09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m           7qaqo
+    09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m           9bcqg
+    09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m             6m3y5
 ",
   ],
 ]

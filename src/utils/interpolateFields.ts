@@ -1,8 +1,8 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
 import { splitRawAndFields } from "../ids/splitRawAndFields";
 import { GenericObject } from "../GenericObject";
-import { isDatumTime } from "../time/timeUtils";
-import { humanFormattedTime } from "../output/output";
+import { humanTime } from "../time/humanTime";
+import { isDatumTime } from "../time/datumTime";
 
 export function interpolateFields({
   data,
@@ -48,9 +48,7 @@ export function interpolateFields({
       if (extractedValue !== undefined) {
         if (isDatumTime(extractedValue)) {
           if (useHumanTimes) {
-            combined.push(
-              humanFormattedTime(extractedValue) ?? extractedValue.utc,
-            );
+            combined.push(humanTime(extractedValue) ?? extractedValue.utc);
           } else {
             combined.push(extractedValue.utc);
           }

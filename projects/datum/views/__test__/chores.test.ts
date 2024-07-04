@@ -2,7 +2,7 @@ import * as emit from "../../../../src/views/emit";
 import SpyInstance = jest.SpyInstance;
 import { makeDoc } from "../../../../src/__test__/test-utils";
 import { ChoreDoc, choreView } from "../chores";
-import { toDatumTime } from "../../../../src/time/timeUtils";
+import { toDatumTime } from "../../../../src/time/datumTime";
 
 describe("choreView map", () => {
   const field = "foo";
