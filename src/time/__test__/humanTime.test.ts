@@ -9,7 +9,6 @@ describe("humanTime", () => {
   beforeEach(async () => {
     setNow("2022-02-11T09:20:00Z");
     Settings.defaultZone = "system";
-    process.env["FORCE_COLOR"] = "0";
   });
 
   it("displays HH:mm:ss if the DateTime is today", () => {
