@@ -1,11 +1,10 @@
 import { DateTime, Settings } from "luxon";
 import { humanTime } from "../humanTime";
-import { colorlessChalk, setNow } from "../../__test__/test-utils";
+import { setNow } from "../../__test__/test-utils";
 import chalk from "chalk";
 import { toDatumTime } from "../datumTime";
 
 describe("humanTime", () => {
-  colorlessChalk();
   beforeEach(async () => {
     setNow("2022-02-11T09:20:00Z");
     Settings.defaultZone = "system";
@@ -88,5 +87,7 @@ describe("humanTime", () => {
     expect(humanTime(toDatumTime("now"))).toMatchInlineSnapshot(
       `"10:20:00[90m+1[39m"`,
     );
+    
+    Settings.defaultZone = "system";
   });
 });

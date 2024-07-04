@@ -16,8 +16,6 @@ import {
 import isEqual from "lodash.isequal";
 import { humanTime } from "../time/humanTime";
 
-// chalk.level = 3;
-
 enum ACTIONS {
   Create = "CREATE",
   Delete = "DELETE",

@@ -1,4 +1,5 @@
 import {
+    coloredChalk,
   deterministicHumanIds,
   mockedLogLifecycle,
   setNow,
@@ -24,6 +25,7 @@ const tomorrow = "2023-11-02";
 describe("headCmd", () => {
   const { mockedLog } = mockedLogLifecycle();
   deterministicHumanIds();
+  coloredChalk();
   const dbName = "head_cmd_test";
   testDbLifecycle(dbName);
 

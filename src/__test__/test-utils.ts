@@ -219,11 +219,12 @@ export async function delay(timeoutMs: number) {
 //   popNow();
 // }
 
-export function colorlessChalk() {
+export function coloredChalk() {
   beforeEach(() => {
-    chalk.level = 0;
+    chalk.level = 3;
   });
   afterEach(() => {
-    chalk.level = 3;
+    // @ts-expect-error hacky restoration of chalk level
+    delete chalk.level;
   });
 }

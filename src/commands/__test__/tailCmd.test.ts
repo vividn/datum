@@ -1,4 +1,5 @@
 import {
+    coloredChalk,
   delay,
   deterministicHumanIds,
   mockedLogLifecycle,
@@ -25,6 +26,7 @@ const tomorrow = "2023-10-17";
 describe("tailCmd", () => {
   const { mockedLog } = mockedLogLifecycle();
   deterministicHumanIds();
+  coloredChalk();
   const dbName = "tail_cmd_test";
   testDbLifecycle(dbName);
 

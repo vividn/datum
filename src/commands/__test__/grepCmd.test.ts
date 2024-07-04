@@ -1,8 +1,13 @@
-import { mockedLogLifecycle, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  coloredChalk,
+  mockedLogLifecycle,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { grepCmd } from "../grepCmd";
 import { Show } from "../../input/outputArgs";
 
 describe("grepCmd", () => {
+  coloredChalk();
   const dbName = "grep_cmd_test";
   const db = testDbLifecycle(dbName);
   const { mockedLog } = mockedLogLifecycle();
