@@ -69,4 +69,25 @@ describe("humanTime", () => {
     const alreadyValentinesDay = toDatumTime(DateTime.local());
     expect(humanTime(alreadyValentinesDay)).toEqual("00:30:00+1");
   });
+
+  it("displays with some nice formatting when colors are enabled", () => {
+    chalk.level = 3;
+    expect(humanTime(toDatumTime("today, 10:00:00"))).toMatchInlineSnapshot(
+      `"[4m10:00:00[90m+0[39m[24m"`,
+    );
+    expect(humanTime(toDatumTime("tomorrow, 10:00:00"))).toMatchInlineSnapshot(
+      `"[4m+1d 10:00:00[90m+0[39m[24m"`,
+    );
+    expect(humanTime(toDatumTime("yesterday, 10:00:00"))).toMatchInlineSnapshot(
+      `"-1d 10:00:00[90m+0[39m"`,
+    );
+    expect(humanTime(toDatumTime("2024-07-04, 18"))).toMatchInlineSnapshot(
+      `"[4m2024-07-04 18:00:00[90m+0[39m[24m"`,
+    );
+
+    Settings.defaultZone = "Europe/Berlin";
+    expect(humanTime(toDatumTime("now"))).toMatchInlineSnapshot(
+      `"10:20:00[90m+1[39m"`,
+    );
+  });
 });
