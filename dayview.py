@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import shutil
 import tempfile
+from typing import NamedTuple
 
 import pandas as pd
 import numpy as np
@@ -15,6 +16,7 @@ import traceback
 
 from pathlib import Path
 
+DataSetRow = NamedTuple( "DataSetRow", [("Name", str), ("Span", str), ("R", float), ("G", float), ("B", float)] )
 home = str(Path.home()) + "/"
 
 # Custom class for analyzing datum files
@@ -138,7 +140,8 @@ def get_datum_names_spans_and_colors(*data_sets):
         datum_table = pd.read_csv(table_file, comment="#")
 
         prev_row = None
-        for row in datum_table.itertuples():
+        row: DataSetRow
+        for row in datum_table.itertuples(): # type: ignore
             if row.Name == "Span":
                 named_spans[row.Span] = (float(row.R), float(row.G))
                 continue
@@ -223,15 +226,14 @@ def main(**kwargs):
     else:
         nDays = len(date_array)
 
-    if end_date < datetime.date(2023, 12, 31):
-        print("hello")
+    if end_date is not None and end_date < datetime.date(2023, 12, 31):
         (
             datum_names,
             datum_spans,
             datum_colors,
             named_spans,
         ) = get_datum_names_spans_and_colors(data_set)
-    elif begin_date < datetime.date(2024, 1, 1):
+    elif begin_date is not None and begin_date < datetime.date(2024, 1, 1):
         (
             datum_names,
             datum_spans,
