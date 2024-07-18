@@ -128,7 +128,7 @@ describe("output", () => {
       db,
       id: "docId",
       payload: { _id: "newId", foo: "bar" },
-      updateStrategy: "preferNew",
+      updateStrategy: "update",
       outputArgs: {
         show: Show.Standard,
       },
@@ -148,7 +148,7 @@ describe("output", () => {
         db,
         id: "docId",
         payload: { _id: "conflictId", foo: "bar" },
-        updateStrategy: "preferNew",
+        updateStrategy: "update",
         outputArgs: {
           show: Show.Standard,
         },

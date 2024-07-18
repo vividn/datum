@@ -131,6 +131,16 @@ describe("combineData", () => {
     });
   });
 
+  test("update is just like perferNew: keeps non-conflicting keys in old, but prefers the new values", () => {
+    const ret = combineData(aData, bData, "update");
+    expect(ret).toEqual({
+      justA: "aaa",
+      justB: "bbb",
+      bothSame: "same",
+      different: "bB",
+    });
+  });
+
   test("intersection only keeps keys that are in both and agree", () => {
     const ret = combineData(aData, bData, "intersection");
     expect(ret).toEqual({
@@ -249,7 +259,7 @@ describe("combineData", () => {
       onlyObjForA: "bHasAString",
     };
 
-    const combined = combineData(deepA, deepB, "preferNew");
+    const combined = combineData(deepA, deepB, "update");
     expect(combined).toEqual({
       outerKey: {
         innerA: "aaa",
@@ -264,7 +274,7 @@ describe("combineData", () => {
   test("it can overwrite with undefined for an explicit undefined", () => {
     const a = { key: "value", justA: "justA" };
     const b = { key: undefined, justB: "justB" };
-    const combined = combineData(a, b, "preferNew");
+    const combined = combineData(a, b, "update");
     expect(combined).toEqual({
       key: undefined,
       justA: "justA",
