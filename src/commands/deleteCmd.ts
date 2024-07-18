@@ -16,7 +16,7 @@ export const deleteArgs = new ArgumentParser({
 
 export const deleteCmdArgs = new ArgumentParser({
   description: "Delete a document",
-  prog: "dtm del[ete]",
+  prog: "datum del[ete]",
   usage: `%(prog)s <quickId>`,
   parents: [deleteArgs],
 });
