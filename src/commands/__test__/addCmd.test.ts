@@ -237,9 +237,9 @@ describe("addCmd", () => {
 
   it("can update and existing document with --conflict", async () => {
     await addCmd("-F --id doc-id foo=abc");
-    const newDoc = await addCmd("-F --id doc-id foo=def --conflict preferNew");
+    const newDoc = await addCmd("-F --id doc-id foo=def --conflict update");
     expect(addDocSpy).toHaveBeenCalledTimes(2);
-    expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("preferNew");
+    expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("update");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
 });

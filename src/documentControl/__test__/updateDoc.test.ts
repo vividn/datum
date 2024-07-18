@@ -237,7 +237,7 @@ describe("updateDoc", () => {
       db,
       id: "old-id",
       payload: { _id: "new-id", other: "data" },
-      updateStrategy: "preferNew",
+      updateStrategy: "update",
     });
     await expect(db.get("old-id")).rejects.toMatchObject({
       name: "not_found",
@@ -257,7 +257,7 @@ describe("updateDoc", () => {
       db,
       id: "calculated-id",
       payload: { foo: "new-calculated-id" },
-      updateStrategy: "preferNew",
+      updateStrategy: "update",
     });
     await expect(db.get("calculated-id")).rejects.toMatchObject({
       name: "not_found",

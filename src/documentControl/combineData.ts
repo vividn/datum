@@ -7,6 +7,7 @@ export type UpdateStrategyNames =
   | "useOld"
   | "useNew"
   | "preferOld"
+  | "update"
   | "preferNew"
   | "intersection"
   | "removeConflicting"
@@ -21,6 +22,7 @@ export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
   useOld: { justA: true, justB: false, same: true, conflict: "A" },
   useNew: { justA: false, justB: true, same: true, conflict: "B" },
   preferOld: { justA: true, justB: true, same: true, conflict: "A" },
+  update: { justA: true, justB: true, same: true, conflict: "B" },
   preferNew: { justA: true, justB: true, same: true, conflict: "B" },
   intersection: { justA: false, justB: false, same: true, conflict: false },
   removeConflicting: { justA: true, justB: true, same: true, conflict: false },

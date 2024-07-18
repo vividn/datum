@@ -70,7 +70,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "update": {
-      namespace.strategy ??= "preferNew";
+      namespace.strategy ??= "update";
       await updateCmd(args, namespace);
       break;
     }

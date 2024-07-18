@@ -29,7 +29,7 @@ updateArgs.add_argument("--strategy", "-X", {
 export const updateCmdArgs = new ArgumentParser({
   description:
     "Update the data in an existing document." +
-    " Defaults to 'preferNew' strategy for update command." +
+    " Defaults to 'update' strategy for update command." +
     " Defaults to 'merge' for the merge command",
   prog: "dtm update/merge",
   usage: `%(prog)s <quickId> [data..]
@@ -61,7 +61,7 @@ export async function updateCmd(
   // update now in case the updateDoc fails due to conflict
   await updateLastDocsRef(db, ids);
 
-  const updateStrategy = args.strategy ?? "preferNew";
+  const updateStrategy = args.strategy ?? "update";
 
   const updatedDocs = await Promise.all(
     ids.map((id) =>

@@ -25,7 +25,7 @@ describe("updateCmd", () => {
       meta: { humanId: "abcdefg" },
     });
     const retDocs = await updateCmd(
-      "abc --strategy preferNew foo=baz newField=newData",
+      "abc --strategy update foo=baz newField=newData",
     );
     expect(retDocs).toHaveLength(1);
     const retDoc = retDocs[0];
@@ -74,7 +74,7 @@ describe("updateCmd", () => {
     );
   });
 
-  it("uses preferNew as the default updateStrategy", async () => {
+  it("uses update as the default updateStrategy", async () => {
     jest.spyOn(quickId, "quickId").mockImplementation(async () => ["quick_id"]);
     const updateDocSpy = jest
       .spyOn(updateDoc, "updateDoc")
@@ -82,7 +82,7 @@ describe("updateCmd", () => {
 
     await updateCmd("input_quick foo=bar");
     expect(updateDocSpy).toHaveBeenCalledWith(
-      expect.objectContaining({ updateStrategy: "preferNew" }),
+      expect.objectContaining({ updateStrategy: "update" }),
     );
   });
 

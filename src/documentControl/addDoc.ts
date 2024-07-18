@@ -53,6 +53,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
   merge: "",
   useOld: "",
   preferOld: "",
+  update: "",
   preferNew: "",
   useNew: "",
   removeConflicting: "",
