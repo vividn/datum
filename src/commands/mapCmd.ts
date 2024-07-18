@@ -54,7 +54,7 @@ mapArgs.add_argument("--params", "-p", {
 
 export const mapCmdArgs = new ArgumentParser({
   description: "display a map view or map reduce view",
-  prog: "dtm map",
+  prog: "datum map",
   usage: `%(prog)s <mapName> [start] [end]
   %(prog)s --view <view> <mapName> [start] [end]`,
   parents: [mapArgs, dbArgs, outputArgs],
