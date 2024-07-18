@@ -17,7 +17,7 @@ export type GetCmdArgs = MainDatumArgs & OutputArgs & QuickIdArgs;
 
 export const getCmdArgs = new ArgumentParser({
   description: "display a document",
-  prog: "dtm get",
+  prog: "datum get",
   usage: `%(prog)s <quickId>`,
   parents: [quickIdArgs, dbArgs, outputArgs],
 });

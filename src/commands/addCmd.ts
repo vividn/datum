@@ -70,7 +70,7 @@ export const addArgs = new ArgumentParser({
 });
 export const addCmdArgs = new ArgumentParser({
   description: "add a document",
-  prog: "dtm add",
+  prog: "datum add",
   usage: `%(prog)s <field> [data..]
   %(prog)s --fieldless [data..]
   %(prog)s <field> -k <reqKey> -k <optKey>=[defaultValue] ... <reqValue> [optValue] [data..]

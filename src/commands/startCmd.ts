@@ -19,7 +19,7 @@ export const startArgs = new ArgumentParser({
 
 export const startCmdArgs = new ArgumentParser({
   description: "record the start of something that occurs in blocks of time",
-  prog: "dtm start",
+  prog: "datum start",
   usage: `%(prog)s <field> [<duration OR .> [data..]]
   %(prog)s <field> -k <reqKey> -k <optKey>=[defaultValue] ... <duration OR .> <reqValue> [optValue] [data..]
 `,

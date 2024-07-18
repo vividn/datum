@@ -7,7 +7,7 @@
   "license": "UNLICENSED",
   "main": "build/src/index.js",
   "bin": {
-    "dtm": "./build/src/index.js",
+    "datum": "./build/src/index.js",
     "eqcheck": "./build/projects/finance/src/eqcheck.js",
     "txview": "./build/projects/finance/src/transactionView.js",
     "fbal": "./build/projects/finance/src/fbal.js",

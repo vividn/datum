@@ -31,7 +31,7 @@ export const updateCmdArgs = new ArgumentParser({
     "Update the data in an existing document." +
     " Defaults to 'update' strategy for update command." +
     " Defaults to 'merge' for the merge command",
-  prog: "dtm update/merge",
+  prog: "datum update/merge",
   usage: `%(prog)s <quickId> [data..]
   %(prog)s --strategy <strategy> <quickId> [data..]`,
   parents: [updateArgs],

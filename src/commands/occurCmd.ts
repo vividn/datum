@@ -14,7 +14,7 @@ export const occurArgs = new ArgumentParser({
 });
 export const occurCmdArgs = new ArgumentParser({
   description: "record the occurence of something at a single time point",
-  prog: "dtm occur",
+  prog: "datum occur",
   usage: `%(prog)s <field> [data..]
   %(prog)s --fieldless [data..]
   %(prog)s <field> -K <reqKey1> ... -K <reqKeyN> -k <optKey1>[=defaultVal1] ... -k <optKeyN> <reqVal1> ... <reqValN> [optVal1] ... [optValN] [data..]

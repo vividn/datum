@@ -18,7 +18,7 @@ reduceArgs.add_argument("--group-level", "-g", {
 
 export const reduceCmdArgs = new ArgumentParser({
   description: "display a reduction of a map",
-  prog: "dtm red[uce]",
+  prog: "datum red[uce]",
   usage: `%(prog)s <mapName> [start] [end]
   %(prog)s --group-level <level> <mapName> [start] [end]`,
   parents: [reduceArgs, dbArgs, outputArgs],
