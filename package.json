@@ -95,7 +95,7 @@
     "shell-quote": "^1.8.1",
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
-    "typescript": "^5.4.2"
+    "typescript": "^5.5.3"
   },
   "pnpm": {
     "patchedDependencies": {
