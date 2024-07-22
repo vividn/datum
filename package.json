@@ -84,7 +84,7 @@
     "lodash.unset": "^4.5.2",
     "luxon": "^3.4.4",
     "parse-duration": "^1.1.0",
-    "picocolors": "^1.0.0",
+    "picocolors": "^1.0.1",
     "pluralize": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^8.0.1",
