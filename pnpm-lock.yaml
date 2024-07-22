@@ -140,7 +140,7 @@ dependencies:
     specifier: ^3.0.3
     version: 3.0.3
   typescript:
-    specifier: ^5.4.2
+    specifier: ^5.5.3
     version: 5.5.3
 
 devDependencies:
