@@ -31,8 +31,8 @@
     "preinstall": "npx only-allow pnpm"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.1",
-    "@babel/preset-env": "^7.24.1",
+    "@babel/core": "^7.24.9",
+    "@babel/preset-env": "^7.24.8",
     "@babel/preset-typescript": "^7.24.7",
     "@types/jest": "^29.5.12",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
@@ -48,7 +48,7 @@
     "jest-mock-extended": "^3.0.7",
     "prettier": "^3.3.3",
     "prettier-2": "npm:prettier@^2",
-    "ts-jest": "^29.1.2",
+    "ts-jest": "^29.2.3",
     "ts-node": "^10.9.2"
   },
   "dependencies": {
