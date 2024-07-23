@@ -13,7 +13,7 @@
     "fbal": "./build/projects/finance/src/fbal.js",
     "wordview": "./build/projects/language/src/word.js",
     "chorelist": "./build/projects/datum/src/chorelist.js",
-    "inboxprocess": "./build/projects/datum/src/inboxprocess.js",
+    "inboxprocess": "./build/projects/datum/src/inboxprocess.js"
   },
   "engines": {
     "node": ">18.0.0"
