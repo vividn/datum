@@ -88,7 +88,7 @@
     "pluralize": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^9.0.0",
-    "pouchdb-adapter-memory": "^8.0.1",
+    "pouchdb-adapter-memory": "^9.0.0",
     "printf": "^0.6.1",
     "prompt-sync": "^4.2.0",
     "relaxed-json": "^1.0.3",
