@@ -47,6 +47,7 @@ export async function inboxProcess(
       break;
     }
 
+    console.clear();
     console.log(
       "`done`, `del`, or `[project] [estimatedDur] [extraKey=extraValue...]. Empty line advances to next task once project is assigned. Without a project, an empty line changes type=pending`",
     );
