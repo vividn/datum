@@ -38,11 +38,12 @@ export async function inboxProcess(
   const mapArgs: MapCmdArgs = {
     ...args,
     mapName: inboxView.name,
-    params: { limit: 1},
+    params: { limit: 1 },
     show: Show.None,
   };
   while (true) {
     const nextTask = (await mapCmd(mapArgs)).rows[0];
+    console.log({ nextTask });
     if (nextTask === undefined) {
       break;
     }
@@ -53,31 +54,36 @@ export async function inboxProcess(
     );
     let task = (await getCmd([nextTask.id], args))[0] as TaskDoc;
     while (true) {
-
       console.log("--------------------");
-      const input = await rl.question(">");
+      const input = await rl.question("> ");
       if (input === "" && task.data.type !== "inbox") {
         break;
       } else if (input === "done") {
-        task = (await updateCmd([task._id, "done=true"], args))[0] as TaskDoc;
+        task = (
+          await updateCmd([task._id, "done=true", "type=done"], args)
+        )[0] as TaskDoc;
       } else if (input === "del" || input === "delete") {
         await deleteCmd([task._id], args);
+        break;
       } else {
-        task = (await updateCmd(
-          [
-            task._id,
-            "type=pending",
-            "-k",
-            "proj=",
-            "-k",
-            "estimatedDur=",
-            ...(shellParse(input) as string[]),
-          ],
-          args,
-        ))[0] as TaskDoc;
+        task = (
+          await updateCmd(
+            [
+              task._id,
+              "type=pending",
+              "-k",
+              "proj=",
+              "-k",
+              "estimatedDur=",
+              ...(shellParse(input) as string[]),
+            ],
+            args,
+          )
+        )[0] as TaskDoc;
       }
     }
   }
+  rl.close();
 }
 if (require.main === module) {
   inboxProcess(process.argv.slice(2)).catch((err) => {
