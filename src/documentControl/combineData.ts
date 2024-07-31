@@ -2,6 +2,7 @@ import { GenericObject } from "../GenericObject";
 import { jClone } from "../utils/jClone";
 import isPlainObject from "lodash.isplainobject";
 import { MergeError } from "../errors";
+import { rekey } from "../utils/rekey";
 
 export type UpdateStrategyNames =
   | "useOld"
@@ -58,16 +59,22 @@ export const updateStrategies: Record<
   prepend: { justA: true, justB: true, same: true, conflict: "prepend" },
   mergeSort: { justA: true, justB: true, same: true, conflict: "mergeSort" },
   appendSort: { justA: true, justB: true, same: true, conflict: "appendSort" },
+  rekey: rekey,
 };
 
 export function combineData(
   aData: GenericObject,
   bData: GenericObject,
-  how: UpdateStrategyNames | CombiningType,
+  how: UpdateStrategyNames | CombiningType | CustomCombine,
 ): GenericObject {
   const strategy = typeof how === "string" ? updateStrategies[how] : how;
   const aClone = jClone(aData);
   const bClone = jClone(bData);
+
+  if (typeof strategy === "function") {
+    return strategy(aClone, bClone);
+  }
+
   const combined = {} as GenericObject;
 
   for (const key in aData) {
