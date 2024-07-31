@@ -27,6 +27,7 @@ const MigrationOps: Record<MigrationOps, any> = {
   prepend: "",
   appendSort: "",
   mergeSort: "",
+  rekey: "",
   overwrite: "",
   delete: "",
 };
@@ -38,10 +39,7 @@ type MigrationMapValue = {
   value: GenericObject;
 };
 
-export function migrationEmit(
-  key: MigrationMapValue,
-  value: MigrationMapValue,
-) {
+export function migrationEmit(key: MigrationMapKey, value: MigrationMapValue) {
   _emit(key, value);
 }
 
@@ -52,6 +50,4 @@ export type DatumMigration = DatumView<
   undefined
 > & {
   name: MigrationName;
-  reduce: undefined;
-  namedReduce: undefined;
 };
