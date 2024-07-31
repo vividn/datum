@@ -63,6 +63,7 @@ const conflictRecord: Record<ConflictStrategyNames, any> = {
   prepend: "",
   appendSort: "",
   mergeSort: "",
+  rekey: "",
   overwrite: "",
   delete: "",
   fail: "",

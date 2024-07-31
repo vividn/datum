@@ -2,6 +2,7 @@ import { GenericObject } from "../GenericObject";
 import { jClone } from "../utils/jClone";
 import isPlainObject from "lodash.isplainobject";
 import { MergeError } from "../errors";
+import { rekey } from "../utils/rekey";
 
 export type UpdateStrategyNames =
   | "useOld"
@@ -16,23 +17,8 @@ export type UpdateStrategyNames =
   | "append"
   | "prepend"
   | "mergeSort"
-  | "appendSort";
-
-export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
-  useOld: { justA: true, justB: false, same: true, conflict: "A" },
-  useNew: { justA: false, justB: true, same: true, conflict: "B" },
-  preferOld: { justA: true, justB: true, same: true, conflict: "A" },
-  update: { justA: true, justB: true, same: true, conflict: "B" },
-  preferNew: { justA: true, justB: true, same: true, conflict: "B" },
-  intersection: { justA: false, justB: false, same: true, conflict: false },
-  removeConflicting: { justA: true, justB: true, same: true, conflict: false },
-  xor: { justA: true, justB: true, same: false, conflict: false },
-  merge: { justA: true, justB: true, same: true, conflict: "merge" },
-  append: { justA: true, justB: true, same: true, conflict: "append" },
-  prepend: { justA: true, justB: true, same: true, conflict: "prepend" },
-  mergeSort: { justA: true, justB: true, same: true, conflict: "mergeSort" },
-  appendSort: { justA: true, justB: true, same: true, conflict: "appendSort" },
-};
+  | "appendSort"
+  | "rekey";
 
 export type conflictingKeyStrategies =
   | false
@@ -51,14 +37,44 @@ type CombiningType = {
   conflict: conflictingKeyStrategies;
 };
 
+type CustomCombine = (
+  aData: GenericObject,
+  bData: GenericObject,
+) => GenericObject;
+
+export const updateStrategies: Record<
+  UpdateStrategyNames,
+  CombiningType | CustomCombine
+> = {
+  useOld: { justA: true, justB: false, same: true, conflict: "A" },
+  useNew: { justA: false, justB: true, same: true, conflict: "B" },
+  preferOld: { justA: true, justB: true, same: true, conflict: "A" },
+  update: { justA: true, justB: true, same: true, conflict: "B" },
+  preferNew: { justA: true, justB: true, same: true, conflict: "B" },
+  intersection: { justA: false, justB: false, same: true, conflict: false },
+  removeConflicting: { justA: true, justB: true, same: true, conflict: false },
+  xor: { justA: true, justB: true, same: false, conflict: false },
+  merge: { justA: true, justB: true, same: true, conflict: "merge" },
+  append: { justA: true, justB: true, same: true, conflict: "append" },
+  prepend: { justA: true, justB: true, same: true, conflict: "prepend" },
+  mergeSort: { justA: true, justB: true, same: true, conflict: "mergeSort" },
+  appendSort: { justA: true, justB: true, same: true, conflict: "appendSort" },
+  rekey: rekey,
+};
+
 export function combineData(
   aData: GenericObject,
   bData: GenericObject,
-  how: UpdateStrategyNames | CombiningType,
+  how: UpdateStrategyNames | CombiningType | CustomCombine,
 ): GenericObject {
   const strategy = typeof how === "string" ? updateStrategies[how] : how;
   const aClone = jClone(aData);
   const bClone = jClone(bData);
+
+  if (typeof strategy === "function") {
+    return strategy(aClone, bClone);
+  }
+
   const combined = {} as GenericObject;
 
   for (const key in aData) {
