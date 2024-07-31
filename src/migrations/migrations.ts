@@ -4,11 +4,12 @@ import { GenericObject } from "../GenericObject";
 import { DatumView } from "../views/DatumView";
 import { _emit } from "../views/emit";
 
-export function getMigrationViewName(shortName: string): string {
-  return `migrate__${shortName}`;
+type MigrationName = `migrate_${string}`;
+export function migrationName(shortName: string): MigrationName {
+  return `migrate_${shortName}`;
 }
 export function getMigrationId(shortName: string): string {
-  return `_design/${getMigrationViewName(shortName)}`;
+  return `_design/${migrationName(shortName)}`;
 }
 
 export type MigrationOps = UpdateStrategyNames | "overwrite" | "delete";
@@ -50,7 +51,7 @@ export type DatumMigration = DatumView<
   MigrationMapValue,
   undefined
 > & {
-  name: `migrate_${string}`;
+  name: MigrationName;
   reduce: undefined;
   namedReduce: undefined;
 };
