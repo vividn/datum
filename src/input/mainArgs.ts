@@ -81,6 +81,12 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
     }
 
+    case "rekey": {
+      namespace.strategy ??= "rekey";
+      await updateCmd(args, namespace);
+      break;
+    }
+
     case "delete":
     case "del":
       await deleteCmd(args, namespace);

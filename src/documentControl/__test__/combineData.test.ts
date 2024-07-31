@@ -6,6 +6,7 @@ import {
 } from "../combineData";
 import { MergeError } from "../../errors";
 import { fail } from "../../__test__/test-utils";
+import { GenericObject } from "../../GenericObject";
 
 describe("combineData", () => {
   const aData = {
@@ -279,6 +280,35 @@ describe("combineData", () => {
       key: undefined,
       justA: "justA",
       justB: "justB",
+    });
+  });
+
+  test("it can rename keys in a", () => {
+    const a = { key: "value", justA: "justA" };
+    const b = { key: "renamed", nothingToRekey: "justB" };
+    const combined = combineData(a, b, "rekey");
+    expect(combined).toEqual({
+      renamed: "value",
+      justA: "justA",
+    });
+  });
+
+  test("it can take in a custom function to combine data", () => {
+    const customCombine = (a: GenericObject, b: GenericObject) => {
+      return { ...a, ...b, custom: "combined" };
+    };
+
+    const a = { a: 1, b: 2, c: 3 };
+    const b = { d: 4, e: 5, f: 6 };
+    const combined = combineData(a, b, customCombine);
+    expect(combined).toEqual({
+      a: 1,
+      b: 2,
+      c: 3,
+      d: 4,
+      e: 5,
+      f: 6,
+      custom: "combined",
     });
   });
 });
