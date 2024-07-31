@@ -16,23 +16,8 @@ export type UpdateStrategyNames =
   | "append"
   | "prepend"
   | "mergeSort"
-  | "appendSort";
-
-export const updateStrategies: Record<UpdateStrategyNames, CombiningType> = {
-  useOld: { justA: true, justB: false, same: true, conflict: "A" },
-  useNew: { justA: false, justB: true, same: true, conflict: "B" },
-  preferOld: { justA: true, justB: true, same: true, conflict: "A" },
-  update: { justA: true, justB: true, same: true, conflict: "B" },
-  preferNew: { justA: true, justB: true, same: true, conflict: "B" },
-  intersection: { justA: false, justB: false, same: true, conflict: false },
-  removeConflicting: { justA: true, justB: true, same: true, conflict: false },
-  xor: { justA: true, justB: true, same: false, conflict: false },
-  merge: { justA: true, justB: true, same: true, conflict: "merge" },
-  append: { justA: true, justB: true, same: true, conflict: "append" },
-  prepend: { justA: true, justB: true, same: true, conflict: "prepend" },
-  mergeSort: { justA: true, justB: true, same: true, conflict: "mergeSort" },
-  appendSort: { justA: true, justB: true, same: true, conflict: "appendSort" },
-};
+  | "appendSort"
+  | "rekey";
 
 export type conflictingKeyStrategies =
   | false
@@ -49,6 +34,30 @@ type CombiningType = {
   justB: boolean;
   same: boolean;
   conflict: conflictingKeyStrategies;
+};
+
+type CustomCombine = (
+  aData: GenericObject,
+  bData: GenericObject,
+) => GenericObject;
+
+export const updateStrategies: Record<
+  UpdateStrategyNames,
+  CombiningType | CustomCombine
+> = {
+  useOld: { justA: true, justB: false, same: true, conflict: "A" },
+  useNew: { justA: false, justB: true, same: true, conflict: "B" },
+  preferOld: { justA: true, justB: true, same: true, conflict: "A" },
+  update: { justA: true, justB: true, same: true, conflict: "B" },
+  preferNew: { justA: true, justB: true, same: true, conflict: "B" },
+  intersection: { justA: false, justB: false, same: true, conflict: false },
+  removeConflicting: { justA: true, justB: true, same: true, conflict: false },
+  xor: { justA: true, justB: true, same: false, conflict: false },
+  merge: { justA: true, justB: true, same: true, conflict: "merge" },
+  append: { justA: true, justB: true, same: true, conflict: "append" },
+  prepend: { justA: true, justB: true, same: true, conflict: "prepend" },
+  mergeSort: { justA: true, justB: true, same: true, conflict: "mergeSort" },
+  appendSort: { justA: true, justB: true, same: true, conflict: "appendSort" },
 };
 
 export function combineData(
