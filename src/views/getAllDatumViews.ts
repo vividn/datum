@@ -28,9 +28,6 @@ export async function getDbDatumViews({
     };
   } catch (e: any) {
     if (e.message.startsWith("Cannot find module")) {
-      console.warn(
-        `no folder or view index for db found in ${projectDir}/${dbName}/${subfolder}`,
-      );
       return [];
     } else {
       throw e;

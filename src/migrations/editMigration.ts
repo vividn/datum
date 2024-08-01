@@ -7,7 +7,7 @@ import {
 import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
-import { getMigrationId, getMigrationViewName } from "./migrations";
+import { getMigrationId, migrationName } from "./migrations";
 import { OutputArgs } from "../input/outputArgs";
 import { insertDatumView } from "../views/insertDatumView";
 
@@ -39,7 +39,7 @@ async function editWithExplanation(mapFn: string): Promise<string> {
 
 type baseMigrationType = {
   db: PouchDB.Database<EitherPayload>;
-  migrationName: string;
+  name: string;
   outputArgs?: OutputArgs;
 };
 
@@ -48,18 +48,18 @@ type editMigrationType = baseMigrationType & {
 };
 export async function editMigration({
   db,
-  migrationName,
+  name,
   mapFn,
   outputArgs = {},
 }: editMigrationType): Promise<void> {
   const viewDb = asViewDb(db);
-  const viewName = getMigrationViewName(migrationName);
+  const viewName = migrationName(name);
 
   let mapFnStr: string | undefined;
   if (mapFn) {
     mapFnStr = mapFn.toString();
   } else {
-    const migrationId = getMigrationId(migrationName);
+    const migrationId = getMigrationId(name);
     try {
       const designDoc = await viewDb.get(migrationId);
       mapFnStr = designDoc.views[viewName]?.map;
