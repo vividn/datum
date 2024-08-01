@@ -55,6 +55,6 @@ export async function interactiveMigration({
   }
 
   // Your migration code here
-  console.log("Migration completed");
+  console.info("Migration completed");
   rl.close();
 }

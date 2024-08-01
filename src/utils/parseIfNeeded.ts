@@ -11,6 +11,7 @@ export function parseIfNeeded<T>(
       typeof argsOrCli === "string"
         ? (shellParse(argsOrCli) as string[])
         : argsOrCli;
+    console.debug({argArray, preparsed})
     return parser.parse_intermixed_args(argArray, preparsed);
   }
   return preparsed ? ({ ...preparsed, ...argsOrCli } as T) : argsOrCli;

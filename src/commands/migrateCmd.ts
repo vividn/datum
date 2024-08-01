@@ -2,6 +2,7 @@ import { migrateEditCmdArgs } from "./migrate/migrateEditCmd";
 import { MainDatumArgs } from "../input/mainArgs";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { migrateInteractiveCmdArgs } from "./migrate/migrateInteractiveCmd";
 
 export const migrateArgs = new ArgumentParser({
   add_help: false,
@@ -13,6 +14,11 @@ subparsers.add_parser("edit", {
   aliases: ["add"],
   description: "add or edit a migration",
   parents: [migrateEditCmdArgs],
+});
+subparsers.add_parser("interactive", {
+  aliases: ["i"],
+  description: "Run a migration interactively",
+  parents: [migrateInteractiveCmdArgs],
 });
 
 export const migrateCmdArgs = new ArgumentParser({
