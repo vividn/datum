@@ -1,7 +1,7 @@
 import { UpdateStrategyNames } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { GenericObject } from "../GenericObject";
-import { DatumView } from "../views/DatumView";
+import { DatumView, MapRow } from "../views/DatumView";
 import { _emit } from "../views/emit";
 
 type MigrationName = `migrate_${string}`;
@@ -30,13 +30,13 @@ const MigrationOps: Record<MigrationOps, any> = {
   rekey: "",
   overwrite: "",
   delete: "",
-};
+} as const;
 export const migrationOps = Object.keys(MigrationOps);
 
 type MigrationMapKey = any; // user defined sort for orderin migration operations
 type MigrationMapValue = {
   op: MigrationOps;
-  value: GenericObject;
+  data: GenericObject;
 };
 
 export function migrationEmit(key: MigrationMapKey, value: MigrationMapValue) {
@@ -51,3 +51,5 @@ export type DatumMigration = DatumView<
 > & {
   name: MigrationName;
 };
+
+export type MigrationMapRow = MapRow<DatumMigration>;
