@@ -4,6 +4,7 @@ import { addCmd } from "../../commands/addCmd";
 import { migrateOne } from "../migrateOne";
 import { MigrationOps } from "../migrations";
 import { DatumDocument } from "../../documentControl/DatumDocument";
+import { MigrationError } from "../../errors";
 
 describe("migrateOne", () => {
   const db = testDbLifecycle("migrate_one_test");
@@ -24,10 +25,10 @@ describe("migrateOne", () => {
     };
     const newDoc = await migrateOne({ row, db });
     expect(newDoc.data.key).toBe("new value");
+    expect(newDoc.meta.humanId).toBe(originalDoc.meta.humanId);
 
     const newDbDoc = await db.get(docId);
-    expect(newDbDoc.data.key).toBe("new value");
-    expect(newDbDoc.meta.humanId).toBe(originalDoc.meta.humanId);
+    expect(newDbDoc).toEqual(newDoc);
   });
 
   it("can overwrite a document", async () => {
@@ -50,12 +51,46 @@ describe("migrateOne", () => {
     expect(db.get(docId)).rejects.toThrow();
 
     const newDbDoc = await db.get("new_id");
-    expect(newDbDoc.meta.humanId).toBe("newHid");
+    expect(newDbDoc).toEqual(newDoc);
   });
 
-  it.todo("can delete a document");
+  it("can delete a document", async () => {
+    const row = {
+      key: docId,
+      id: docId,
+      value: { op: "delete" as MigrationOps, data: {} },
+    };
+    const newDoc = await migrateOne({ row, db });
+    expect(newDoc).toMatchObject({ _deleted: true });
 
-  it.todo("can apply an update to a document");
+    expect(db.get(docId)).rejects.toThrow();
+  });
 
-  it.todo("throws an error if the update operator is not recognized");
+  it("can apply an update to a document", async () => {
+    const row = {
+      key: docId,
+      id: docId,
+      value: {
+        op: "merge" as MigrationOps,
+        data: { key: "new value" },
+      },
+    };
+    const newDoc = await migrateOne({ row, db });
+    expect(newDoc.data.key).toEqual(["value", "new value"]);
+
+    const newDbDoc = await db.get(docId);
+    expect(newDbDoc).toEqual(newDoc);
+  });
+
+  it("throws an error if the update operator is not recognized", async () => {
+    const row = {
+      key: docId,
+      id: docId,
+      value: {
+        op: "not a real operator" as MigrationOps,
+        data: { key: "new value" },
+      },
+    };
+    await expect(migrateOne({ row, db })).rejects.toThrow(MigrationError);
+  });
 });
