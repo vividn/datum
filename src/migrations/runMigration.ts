@@ -18,9 +18,10 @@ export async function runMigration({
   // Run all rows with the same key in parallel
   while (allMigrationRows.length) {
     const key = allMigrationRows[0].key;
+    const nextKeyIndex = allMigrationRows.findIndex((row) => row.key !== key);
     const rows = allMigrationRows.splice(
       0,
-      allMigrationRows.findIndex((row) => row.key !== key),
+      nextKeyIndex === -1 ? allMigrationRows.length : nextKeyIndex,
     );
 
     await Promise.all(
@@ -28,5 +29,7 @@ export async function runMigration({
         await migrateOne({ row, db, outputArgs });
       }),
     );
+
+    console.log({ allMigrationRows, key })
   }
 }
