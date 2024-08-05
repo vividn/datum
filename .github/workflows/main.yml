@@ -27,7 +27,7 @@ jobs:
           CI: true
       
       - name: Setup Test Database
-        run: docker-compose up -d
+        run: docker compose up -d
         env:
           CI: true
       
