@@ -46,10 +46,10 @@ export function migrationEmit(key: MigrationMapKey, value: MigrationMapValue) {
 export type DatumMigration = DatumView<
   EitherDocument,
   MigrationMapKey,
-  MigrationMapValue,
-  undefined
+  MigrationMapValue
 > & {
   name: MigrationName;
+  reduce: "_count";
 };
 
 export type MigrationMapRow = MapRow<DatumMigration>;

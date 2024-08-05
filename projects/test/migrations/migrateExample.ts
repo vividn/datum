@@ -15,4 +15,5 @@ export const migrateExample: DatumMigration = {
       emit(1, { op: "update", data: { migrationTime: "now" } });
     }
   },
+  reduce: "_count",
 };
