@@ -12,7 +12,6 @@ export const migrateExample: DatumMigration = {
     const { data } = doc;
     if (data.a) {
       emit(null, { op: "rekey", data: { a: "newKey" } });
-      emit(1, { op: "update", data: { migrationTime: "now" } });
     }
   },
   reduce: "_count",
