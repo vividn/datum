@@ -6,6 +6,7 @@ import chalk from "chalk";
 import { jClone } from "../utils/jClone";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { migrateOne } from "./migrateOne";
+import { once } from "node:events";
 
 export async function interactiveMigration({
   name,
@@ -27,13 +28,14 @@ export async function interactiveMigration({
   });
 
   while (migrationRows.length > 0) {
+    console.clear();
     const row = migrationRows[0];
     const {
       value: { op, data },
     } = row;
     console.info("----------------------");
     await getCmd(row.id, outputArgs);
-    console.info(chalk.yellow(`~~~~ OP: ${op} ~~~~`));
+    console.info(chalk.cyan(`~~~~ OP: ${op} ~~~~`));
     console.info(stringify(data));
     console.info("----------------------");
 
@@ -47,6 +49,7 @@ export async function interactiveMigration({
     } else if (answer === "y") {
       await migrateOne({ row, db, outputArgs: outputArgs });
       migrationRows.shift();
+      await once(rl, "line");
     } else if (answer === "n") {
       migrationRows.shift();
     } else {
