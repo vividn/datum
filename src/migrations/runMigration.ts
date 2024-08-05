@@ -30,6 +30,6 @@ export async function runMigration({
       }),
     );
 
-    console.log({ allMigrationRows, key })
+    console.log({ allMigrationRows, key });
   }
 }

@@ -15,7 +15,8 @@ migrateRunArgs.add_argument("name", {
 migrateRunArgs.set_defaults({ subfn: migrateRunCmd });
 
 export const migrateRunCmdArgs = new ArgumentParser({
-  description: "Run a migration. Rows with the same key are processed in parallel",
+  description:
+    "Run a migration. Rows with the same key are processed in parallel",
   prog: "datum migrate run",
   usage: "%(prog)s <name>",
   parents: [migrateRunArgs],

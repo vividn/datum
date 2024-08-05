@@ -16,7 +16,6 @@ export async function migrateOne({
   outputArgs = {},
 }: MigrateOneType): Promise<EitherDocument> {
   const {
-    key,
     id,
     value: { op, data },
   } = row;
