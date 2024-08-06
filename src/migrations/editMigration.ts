@@ -7,7 +7,7 @@ import {
 import { isCouchDbError } from "../errors";
 import { editInTerminal } from "../utils/editInTerminal";
 import { updateStrategies } from "../documentControl/combineData";
-import { getMigrationId, getMigrationViewName } from "./migrations";
+import { getMigrationId, migrationName } from "./migrations";
 import { OutputArgs } from "../input/outputArgs";
 import { insertDatumView } from "../views/insertDatumView";
 
@@ -15,7 +15,7 @@ const templateMigration = `(doc) => {
   data = doc.data
   if (data.condition === true) {
     data.condition = false;
-    emit("overwrite", doc);
+    emit(null, {op: "overwrite", data: doc});
   }
 }
 `;
@@ -25,12 +25,15 @@ async function editWithExplanation(mapFn: string): Promise<string> {
   const explanationString =
     divider +
     `
-// emit(key, value) should be:
-// emit('delete', null), emit('overwrite', completeNewDoc)
-// or have the key be one of the updateMethods, and the value be a JSON of how to apply that method:
+// emit(key, value) should be used to apply a migration to a document.
+// key: any -- provides sorting for the migration operations. Rows with the same key are processed in parallel.
+// value: { op: MigrationOps, data: {}}
+// op: is "delete" to delete the document, "overwrite" to replace the document with the data in value.data,
+// or one of the updateMethods from the documentControl/combineData module.
 // ${Object.keys(updateStrategies).join(", ")}
 // for example
-// emit("merge", { field: "value to merge in" }
+// emit(1, { op: "merge", data: { someKey: "someValue" }}
+// will merge "someValue" into the document data at someKey
 `;
   const beforeWithExplanation = mapFn + "\n\n\n" + explanationString;
   const editedWithExplanation = await editInTerminal(beforeWithExplanation);
@@ -39,7 +42,7 @@ async function editWithExplanation(mapFn: string): Promise<string> {
 
 type baseMigrationType = {
   db: PouchDB.Database<EitherPayload>;
-  migrationName: string;
+  name: string;
   outputArgs?: OutputArgs;
 };
 
@@ -48,18 +51,18 @@ type editMigrationType = baseMigrationType & {
 };
 export async function editMigration({
   db,
-  migrationName,
+  name,
   mapFn,
   outputArgs = {},
 }: editMigrationType): Promise<void> {
   const viewDb = asViewDb(db);
-  const viewName = getMigrationViewName(migrationName);
+  const viewName = migrationName(name);
 
   let mapFnStr: string | undefined;
   if (mapFn) {
     mapFnStr = mapFn.toString();
   } else {
-    const migrationId = getMigrationId(migrationName);
+    const migrationId = getMigrationId(name);
     try {
       const designDoc = await viewDb.get(migrationId);
       mapFnStr = designDoc.views[viewName]?.map;
