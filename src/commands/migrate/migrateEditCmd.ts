@@ -40,7 +40,7 @@ export async function migrateEditCmd(
 
   return await editMigration({
     db,
-    migrationName: args.name,
+    name: args.name,
     mapFn: args.function,
     outputArgs: args,
   });

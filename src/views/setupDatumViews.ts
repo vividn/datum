@@ -11,14 +11,20 @@ export async function setupDatumViews({
   db,
   outputArgs,
 }: SetupDatumViewsType): Promise<void> {
-  const allDatumViews = getAllDatumViews();
+  const coreDatumViews = getAllDatumViews();
   const dbName = db.name.split("/").at(-1) as string;
-  const allDbViews = projectDir
+  const dbViews = projectDir
     ? await getDbDatumViews({ dbName, projectDir })
     : [];
-  const promises = allDatumViews.concat(allDbViews).map((datumView) => {
-    return insertDatumView({ datumView, db, outputArgs: outputArgs });
-  });
+  const dbMigrations = projectDir
+    ? await getDbDatumViews({ dbName, projectDir, subfolder: "migrations" })
+    : [];
+  const promises = coreDatumViews
+    .concat(dbViews)
+    .concat(dbMigrations)
+    .map((datumView) => {
+      return insertDatumView({ datumView, db, outputArgs: outputArgs });
+    });
   await Promise.all(promises);
   return;
 }
