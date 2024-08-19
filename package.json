@@ -32,9 +32,6 @@
     "preinstall": "npx only-allow pnpm"
   },
   "devDependencies": {
-    "@babel/core": "^7.24.9",
-    "@babel/preset-env": "^7.24.8",
-    "@babel/preset-typescript": "^7.24.7",
     "@types/jest": "^29.5.12",
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^6.21.0",
@@ -53,6 +50,10 @@
     "ts-node": "^10.9.2"
   },
   "dependencies": {
+    "@babel/core": "^7.24.9",
+    "@babel/preset-env": "^7.24.8",
+    "@babel/preset-typescript": "^7.24.7",
+    "@types/babel__core": "^7.20.5",
     "@types/argparse": "^2.0.16",
     "@types/lodash.flatten": "^4.4.9",
     "@types/lodash.flattendeep": "^4.4.9",

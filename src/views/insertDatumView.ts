@@ -1,8 +1,4 @@
-import {
-  DatumView,
-  StringifiedDatumView,
-  ViewDocument,
-} from "./DatumView";
+import { DatumView, StringifiedDatumView, ViewDocument } from "./DatumView";
 import { datumViewToViewPayload } from "./datumViewToViewPayload";
 import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
 import { BaseDocControlArgs } from "../documentControl/base";
