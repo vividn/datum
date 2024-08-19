@@ -6,9 +6,9 @@ import {
   ViewPayloadViews,
   ConflictingReduceError,
 } from "./DatumView";
-import { transformSync } from "@babel/core";
+import { transformSync, TransformOptions } from "@babel/core";
 
-const couchdbBabelTransformOptions = {
+const couchdbBabelTransformOptions: TransformOptions = {
   filename: "view.ts",
   presets: [
     "@babel/preset-typescript",
@@ -22,6 +22,8 @@ const couchdbBabelTransformOptions = {
       },
     ],
   ],
+  sourceType: "script",
+  sourceMaps: false,
 };
 
 export class BabelTransformError extends MyError {
@@ -42,7 +44,9 @@ function toCouchDbJs(fnStr: string): string {
       "Failed to transform view function into couchdb compatible code",
     );
   }
-  return transformed.code;
+  // babel returns the function with a trailing semicolon, which is not allowed in couchdb views, so remove it
+  const code = transformed.code.slice(0, -1);
+  return code;
 }
 
 export function datumViewToViewPayload(
