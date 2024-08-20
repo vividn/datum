@@ -6,7 +6,7 @@ import {
 const emit = migrationEmit;
 export const subdataMigration: DatumMigration = {
   name: "migrate_subdata",
-  map: function (doc) {
+  map: (doc) => {
     if (doc.meta && !doc.data) {
       const { _id, _rev, meta, ...rest } = doc;
       const newDoc = {

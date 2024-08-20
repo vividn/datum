@@ -8,7 +8,7 @@ const migA2B = `(doc) => {
   if (doc.a) {
     doc.b = doc.a;
     delete doc.a;
-    emit(null, {op: "overwrite", data: doc});
+    emit(null, { op: "overwrite", data: doc });
   }
 }`;
 
@@ -16,7 +16,7 @@ const migB2A = `(doc) => {
   if (doc.a) {
     doc.a = doc.b;
     delete doc.b;
-    emit(null, {op: "overwrite", data: doc});
+    emit(null, { op: "overwrite", data: doc });
   }
 }`;
 
