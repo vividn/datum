@@ -2,7 +2,6 @@ import {
   asViewDb,
   ConflictingReduceError,
   DatumView,
-  datumViewToViewPayload,
   StringifiedDatumView,
 } from "../DatumView";
 import { _emit } from "../emit";
@@ -10,6 +9,7 @@ import { testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";
 import * as overwriteDoc from "../../documentControl/overwriteDoc";
+import { datumViewToViewPayload } from "../datumViewToViewPayload";
 
 function emit(key: unknown, value: unknown) {
   _emit(key, value);
