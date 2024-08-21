@@ -22,6 +22,7 @@ const couchdbBabelTransformOptions: TransformOptions = {
       },
     ],
   ],
+  retainLines: true,
   sourceType: "script",
   sourceMaps: false,
   babelrc: false,
