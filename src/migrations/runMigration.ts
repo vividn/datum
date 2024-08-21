@@ -29,7 +29,5 @@ export async function runMigration({
         await migrateOne({ row, db, outputArgs });
       }),
     );
-
-    console.log({ allMigrationRows, key });
   }
 }

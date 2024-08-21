@@ -22,8 +22,11 @@ const couchdbBabelTransformOptions: TransformOptions = {
       },
     ],
   ],
+  retainLines: true,
   sourceType: "script",
   sourceMaps: false,
+  babelrc: false,
+  cwd: __dirname,
 };
 
 export class BabelTransformError extends MyError {
