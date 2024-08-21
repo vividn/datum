@@ -32,7 +32,7 @@ mapArgs.add_argument("--reduce", {
     'whether to reduce, triggered directly by the "reduce" command' || SUPPRESS,
   action: "store_true",
 });
-mapArgs.add_argument("--showId", {
+mapArgs.add_argument("--showId", "--id", {
   help: "show the ids on maps",
   action: "store_true",
 });

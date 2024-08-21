@@ -4,9 +4,12 @@ import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { migrateInteractiveCmdArgs } from "./migrate/migrateInteractiveCmd";
 import { migrateRunCmdArgs } from "./migrate/migrateRunCmd";
+import { dbArgs } from "../input/dbArgs";
+import { outputArgs } from "../input/outputArgs";
 
 export const migrateArgs = new ArgumentParser({
   add_help: false,
+  parents: [dbArgs, outputArgs],
 });
 const subparsers = migrateArgs.add_subparsers({
   title: "subcommands",

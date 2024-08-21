@@ -14,6 +14,7 @@ const aTestMigration: DatumMigration = {
       emit(null, { op: "update", data });
     }
   },
+  reduce: "_count",
 };
 
 describe("runMigration", () => {
