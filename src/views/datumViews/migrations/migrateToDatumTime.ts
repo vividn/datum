@@ -8,21 +8,24 @@ export const migrateDatumTime1: DatumMigration = {
   name: "migrate_datum_time_1",
   emit,
   map: (doc) => {
-    const { data } = doc as DatumDocument;
+    const { data, meta } = doc as DatumDocument;
     if (!data) {
       return;
     }
 
-    const { occurTime, occurUtcOffset } = data;
-    if (typeof occurTime === "string" && typeof occurUtcOffset === "number") {
+    const { occurTime, occurUtcOffset, ...rest } = data;
+    // @ts-expect-error old metdata format
+    const { utcOffset } = meta;
+
+    const offset = occurUtcOffset ?? utcOffset;
+    if (typeof occurTime === "string" && typeof offset === "number") {
       const datumTime: DatumTime = {
         utc: occurTime,
-        o: occurUtcOffset,
+        o: offset,
       };
-      data.occurTime = datumTime;
-      delete data.occurUtcOffset;
+      const newData = { ...rest, occurTime: datumTime };
 
-      emit(1, { data: data, op: "useNew" });
+      emit(2, { data: newData, op: "useNew" });
     }
   },
   reduce: "_count",
