@@ -7,3 +7,6 @@ export { idToHumanView } from "./idToHumanView";
 export { dataStructuresView } from "./dataStructuresView";
 export { activeStateView } from "./activeStateView";
 export { idStructuresView } from "./idStructures";
+
+// Migrations
+export { migrateDatumTime1 } from "./migrations/migrateToDatumTime";
