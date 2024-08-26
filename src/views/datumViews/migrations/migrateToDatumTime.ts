@@ -30,3 +30,36 @@ export const migrateDatumTime1: DatumMigration = {
   },
   reduce: "_count",
 };
+
+export const migrateDatumTime2: DatumMigration = {
+  name: "migrate_datum_time_2",
+  emit,
+  map: (doc) => {
+    const { meta } = doc as DatumDocument;
+    // @ts-expect-error old metdata format
+    const { createTime, modifyTime, utcOffset, ...rest } = meta;
+
+    if (
+      typeof createTime === "string" ||
+      typeof modifyTime === "string" ||
+      typeof utcOffset !== "undefined"
+    ) {
+      const newCreateTime =
+        typeof createTime === "string"
+          ? { utc: createTime, o: utcOffset }
+          : undefined;
+      const newModifyTime =
+        typeof modifyTime === "string"
+          ? { utc: modifyTime, o: utcOffset }
+          : undefined;
+      const newMeta = {
+        ...rest,
+        createTime: newCreateTime,
+        modifyTime: newModifyTime,
+        // also handily deletes utcOffset
+      };
+      emit(3, { data: { ...doc, meta: newMeta }, op: "overwrite" });
+    }
+  },
+  reduce: "_count",
+};

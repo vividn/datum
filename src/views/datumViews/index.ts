@@ -9,4 +9,7 @@ export { activeStateView } from "./activeStateView";
 export { idStructuresView } from "./idStructures";
 
 // Migrations
-export { migrateDatumTime1 } from "./migrations/migrateToDatumTime";
+export {
+  migrateDatumTime1,
+  migrateDatumTime2,
+} from "./migrations/migrateToDatumTime";
