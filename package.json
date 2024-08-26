@@ -46,7 +46,7 @@
     "jest-mock-extended": "^3.0.7",
     "prettier": "^3.3.3",
     "prettier-2": "npm:prettier@^2",
-    "ts-jest": "^29.2.4",
+    "ts-jest": "^29.2.5",
     "ts-node": "^10.9.2"
   },
   "dependencies": {
