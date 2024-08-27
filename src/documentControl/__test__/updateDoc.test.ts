@@ -5,6 +5,10 @@ import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";
 import { jClone } from "../../utils/jClone";
 import { DocExistsError } from "../base";
+import { DatumView, ViewDocument } from "../../views/DatumView";
+import { insertDatumView } from "../../views/insertDatumView";
+import { datumViewToViewPayload } from "../../views/datumViewToViewPayload";
+import { toDatumTime } from "../../time/datumTime";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -24,7 +28,9 @@ const testDatumPayload: DatumPayload = {
 
 const testDatumPayloadId = "bar__rawString";
 const nowStr = "2021-06-20T18:45:00.000Z";
+const now = toDatumTime(nowStr);
 const notNowStr = "2010-11-12T13:14:15.000Z";
+const notNow = toDatumTime(notNowStr);
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
@@ -94,6 +100,7 @@ describe("updateDoc", () => {
         occurTime: {
           utc: "2021-08-09T14:13:00Z",
           o: 1,
+          tz: "Europe/Lisbon",
         },
       },
       meta: {
@@ -133,7 +140,7 @@ describe("updateDoc", () => {
     expect(spy).toHaveBeenCalledWith(
       { _id: "data-doc-1", ...data1 },
       data2,
-      "merge",
+      "update",
     );
     spy.mockClear();
 
@@ -406,6 +413,107 @@ describe("updateDoc", () => {
     await expect(() => db.get(notNowStr)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
+    });
+  });
+
+  describe("update view documents", () => {
+    function emit(_key: any, _value: any) {
+      // pass
+    }
+    const view1: DatumView = {
+      name: "test_view",
+      emit,
+      map: (_doc) => {
+        emit(1, 1);
+      },
+    };
+    const view1Payload = datumViewToViewPayload(view1);
+    const view2: DatumView = {
+      name: "test_view",
+      emit,
+      map: (_doc) => {
+        emit(2, 2);
+      },
+    };
+    const view2Payload = datumViewToViewPayload(view2);
+
+    test("it can update view docuements", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      expect(viewDoc._id).toEqual("_design/test_view");
+
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view2Payload,
+      })) as ViewDocument;
+      expect(updatedViewDoc._id).toEqual("_design/test_view");
+      expect(updatedViewDoc._rev).not.toEqual(viewDoc._rev);
+
+      expect(updatedViewDoc.views.test_view.map.toString()).toContain(
+        "emit(2, 2)",
+      );
+    });
+
+    test("it updates the modify time of view documents", async () => {
+      setNow(notNowStr);
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      expect(viewDoc.meta?.modifyTime).toEqual(notNow);
+
+      setNow(nowStr);
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view2Payload,
+      })) as ViewDocument;
+      expect(updatedViewDoc.meta?.modifyTime).toEqual(now);
+    });
+
+    test("it does not update view documents if they are identical", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view1Payload,
+      })) as ViewDocument;
+      expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
+    });
+
+    test("it does not update view documents if useOld is the strategy", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view2Payload,
+        updateStrategy: "useOld",
+      })) as ViewDocument;
+      expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
+    });
+
+    test("it throws an error for updating view documents with unsupported strategies", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      await expect(
+        updateDoc({
+          db,
+          id: viewDoc._id,
+          payload: view2Payload,
+          updateStrategy: "merge",
+        }),
+      ).rejects.toThrow(UpdateDocError);
     });
   });
 });
