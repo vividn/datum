@@ -47,11 +47,11 @@ export const migrateDatumTime2: DatumMigration = {
       const newCreateTime =
         typeof createTime === "string"
           ? { utc: createTime, o: utcOffset }
-          : undefined;
+          : createTime;
       const newModifyTime =
         typeof modifyTime === "string"
           ? { utc: modifyTime, o: utcOffset }
-          : undefined;
+          : modifyTime;
       const newMeta = {
         ...rest,
         createTime: newCreateTime,

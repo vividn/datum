@@ -19,17 +19,9 @@ function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
   const docClone = jClone(existingDoc) as EitherPayload;
 
-  // _rev and modifyTime don't matter
+  // _rev doesn't matter
   unset(payloadClone, "_rev");
   unset(docClone, "_rev");
-  unset(payloadClone, "meta.modifyTime");
-  unset(docClone, "meta.modifyTime");
-
-  // special case for migrating to new datumTime, always overwrite if old modifyTime is a string
-  // TODO: Remove after migration
-  if (typeof docClone.meta?.modifyTime === "string") {
-    return false;
-  }
 
   return isEqual(payloadClone, docClone);
 }
@@ -72,14 +64,6 @@ export async function overwriteDoc({
 
   if (payload._rev !== undefined && oldDoc._rev !== payload._rev) {
     throw new OverwriteDocError("_rev does not match document to overwrite");
-  }
-
-  if (payload.meta) {
-    const now = toDatumTime(DateTime.local());
-    payload.meta.modifyTime = now;
-    if (oldDoc.meta?.createTime) {
-      payload.meta.createTime = oldDoc.meta.createTime;
-    }
   }
 
   let newId: string;
