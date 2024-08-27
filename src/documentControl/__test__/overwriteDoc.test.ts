@@ -29,7 +29,6 @@ const testDatumPayload: DatumPayload = {
 const testDatumPayloadId = "bar__rawString";
 
 const nowStr = "2021-06-20T18:45:00.000Z";
-const now = toDatumTime(nowStr);
 const notNow = toDatumTime("2010-11-12T13:14:15.000Z");
 
 describe("overwriteDoc", () => {

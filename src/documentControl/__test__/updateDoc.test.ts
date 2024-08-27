@@ -8,7 +8,6 @@ import { DocExistsError } from "../base";
 import { DatumView, ViewDocument } from "../../views/DatumView";
 import { insertDatumView } from "../../views/insertDatumView";
 import { datumViewToViewPayload } from "../../views/datumViewToViewPayload";
-import isEqual from "lodash.isequal";
 import { toDatumTime } from "../../time/datumTime";
 
 const testDatumPayload: DatumPayload = {
@@ -473,7 +472,7 @@ describe("updateDoc", () => {
         payload: view2Payload,
       })) as ViewDocument;
       expect(updatedViewDoc.meta?.modifyTime).toEqual(now);
-    })
+    });
 
     test("it does not update view documents if they are identical", async () => {
       const viewDoc = await insertDatumView({
