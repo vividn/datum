@@ -7,7 +7,7 @@ type InsertDatumViewArgs = {
   datumView: DatumView<any, any, any, any> | StringifiedDatumView;
   conflictStrategy?: Extract<
     ConflictStrategyNames,
-    "overwrite" | "useOld" | "fail"
+    "update" | "useOld" | "fail"
   >;
 } & BaseDocControlArgs;
 
@@ -15,7 +15,7 @@ export async function insertDatumView({
   db,
   datumView,
   outputArgs,
-  conflictStrategy = "overwrite",
+  conflictStrategy = "update",
 }: InsertDatumViewArgs): Promise<ViewDocument> {
   const viewPayload = datumViewToViewPayload(datumView);
   const newDesignDoc = (await addDoc({

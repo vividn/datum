@@ -20,6 +20,7 @@ import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
 import { toDatumTime } from "../time/datumTime";
 import { now } from "../time/timeUtils";
+import { isViewDocument, isViewPayload } from "../views/DatumView";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -45,7 +46,7 @@ export async function updateDoc({
   db,
   id,
   payload,
-  updateStrategy = "merge",
+  updateStrategy = "update",
   outputArgs = {},
 }: updateDocType): Promise<EitherDocument> {
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
@@ -65,7 +66,26 @@ export async function updateDoc({
   const newData = isDatumPayload(payload) ? payload.data : payload;
 
   let updatedPayload: EitherPayload;
-  if (isDatumDocument(oldDoc)) {
+  if (isViewDocument(oldDoc) && isViewPayload(payload)) {
+    if (updateStrategy === "update" || updateStrategy === "useNew") {
+      // clone the payload to avoid explicit undefined values from interfering with isEqual
+      if (isEqual(oldDoc.views, jClone(payload.views))) {
+        showNoDiff(oldDoc, outputArgs);
+        return oldDoc;
+      }
+      updatedPayload = { ...oldDoc, views: payload.views };
+      if (updatedPayload.meta) {
+        updatedPayload.meta.modifyTime = toDatumTime(now());
+      }
+    } else if (updateStrategy === "useOld") {
+      showNoDiff(oldDoc, outputArgs);
+      return oldDoc;
+    } else {
+      throw new UpdateDocError(
+        `update strategy '${updateStrategy}' not supported for view documents`,
+      );
+    }
+  } else if (isDatumDocument(oldDoc)) {
     const oldData = oldDoc.data;
     const updatedData = combineData(oldData, newData, updateStrategy);
     if (isEqual(oldData, updatedData)) {

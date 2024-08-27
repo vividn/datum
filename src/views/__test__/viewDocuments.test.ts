@@ -8,7 +8,7 @@ import { _emit } from "../emit";
 import { testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../insertDatumView";
 import * as addDoc from "../../documentControl/addDoc";
-import * as overwriteDoc from "../../documentControl/overwriteDoc";
+import * as updateDoc from "../../documentControl/updateDoc";
 import { datumViewToViewPayload } from "../datumViewToViewPayload";
 
 function emit(key: unknown, value: unknown) {
@@ -354,8 +354,8 @@ describe("insertDatumView", () => {
     expect(addDocSpy).toHaveBeenCalledTimes(1);
   });
 
-  it("calls overwriteDoc when overwriting", async () => {
-    const overwriteDocSpy = jest.spyOn(overwriteDoc, "overwriteDoc");
+  it("calls updateDoc when updating a view", async () => {
+    const updateDocSpy = jest.spyOn(updateDoc, "updateDoc");
     const datumView1: DatumView = {
       name: "datum_view",
       emit,
@@ -372,6 +372,6 @@ describe("insertDatumView", () => {
     };
     await insertDatumView({ db: viewDb, datumView: datumView2 });
 
-    expect(overwriteDocSpy).toHaveBeenCalledTimes(1);
+    expect(updateDocSpy).toHaveBeenCalledTimes(1);
   });
 });

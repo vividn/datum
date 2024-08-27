@@ -1,5 +1,4 @@
 import { IdError, MyError } from "../errors";
-import { DateTime } from "luxon";
 import { jClone } from "../utils/jClone";
 import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
@@ -18,11 +17,9 @@ function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
   const docClone = jClone(existingDoc) as EitherPayload;
 
-  // _rev and modifyTime don't matter
+  // _rev doesn't matter
   unset(payloadClone, "_rev");
   unset(docClone, "_rev");
-  unset(payloadClone, "meta.modifyTime");
-  unset(docClone, "meta.modifyTime");
 
   return isEqual(payloadClone, docClone);
 }
@@ -65,14 +62,6 @@ export async function overwriteDoc({
 
   if (payload._rev !== undefined && oldDoc._rev !== payload._rev) {
     throw new OverwriteDocError("_rev does not match document to overwrite");
-  }
-
-  if (payload.meta) {
-    const now = DateTime.utc().toString();
-    payload.meta.modifyTime = now;
-    if (oldDoc.meta?.createTime) {
-      payload.meta.createTime = oldDoc.meta.createTime;
-    }
   }
 
   let newId: string;
