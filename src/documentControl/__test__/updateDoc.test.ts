@@ -9,6 +9,7 @@ import { DatumView, ViewDocument } from "../../views/DatumView";
 import { insertDatumView } from "../../views/insertDatumView";
 import { datumViewToViewPayload } from "../../views/datumViewToViewPayload";
 import isEqual from "lodash.isequal";
+import { toDatumTime } from "../../time/datumTime";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -28,7 +29,9 @@ const testDatumPayload: DatumPayload = {
 
 const testDatumPayloadId = "bar__rawString";
 const nowStr = "2021-06-20T18:45:00.000Z";
+const now = toDatumTime(nowStr);
 const notNowStr = "2010-11-12T13:14:15.000Z";
+const notNow = toDatumTime(notNowStr);
 
 describe("updateDoc", () => {
   const dbName = "update_doc_test";
@@ -98,6 +101,7 @@ describe("updateDoc", () => {
         occurTime: {
           utc: "2021-08-09T14:13:00Z",
           o: 1,
+          tz: "Europe/Lisbon",
         },
       },
       meta: {
@@ -453,6 +457,23 @@ describe("updateDoc", () => {
         "emit(2, 2)",
       );
     });
+
+    test("it updates the modify time of view documents", async () => {
+      setNow(notNowStr);
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      expect(viewDoc.meta?.modifyTime).toEqual(notNow);
+
+      setNow(nowStr);
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view2Payload,
+      })) as ViewDocument;
+      expect(updatedViewDoc.meta?.modifyTime).toEqual(now);
+    })
 
     test("it does not update view documents if they are identical", async () => {
       const viewDoc = await insertDatumView({

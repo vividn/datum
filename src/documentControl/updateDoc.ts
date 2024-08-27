@@ -74,6 +74,9 @@ export async function updateDoc({
         return oldDoc;
       }
       updatedPayload = { ...oldDoc, views: payload.views };
+      if (updatedPayload.meta) {
+        updatedPayload.meta.modifyTime = toDatumTime(now());
+      }
     } else if (updateStrategy === "useOld") {
       showNoDiff(oldDoc, outputArgs);
       return oldDoc;
