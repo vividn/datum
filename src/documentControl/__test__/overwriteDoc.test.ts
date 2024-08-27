@@ -9,6 +9,7 @@ import {
 import { jClone } from "../../utils/jClone";
 import { addDoc } from "../addDoc";
 import { DocExistsError } from "../base";
+import { toDatumTime } from "../../time/datumTime";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -28,7 +29,8 @@ const testDatumPayload: DatumPayload = {
 const testDatumPayloadId = "bar__rawString";
 
 const nowStr = "2021-06-20T18:45:00.000Z";
-const notNowStr = "2010-11;12T13:14:15.000Z";
+const now = toDatumTime(nowStr);
+const notNow = toDatumTime("2010-11-12T13:14:15.000Z");
 
 describe("overwriteDoc", () => {
   const dbName = "overwrite_doc_test";
@@ -41,28 +43,28 @@ describe("overwriteDoc", () => {
   it("fails if id to be overwritten does not exist in db", async () => {
     await expect(
       overwriteDoc({ db, id: "does-not-exist", payload: { valid: "data" } }),
-    ).rejects.toThrowError(NoDocToOverwriteError);
+    ).rejects.toThrow(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { _id: "does-not-exist", data: "data" },
       }),
-    ).rejects.toThrowError(NoDocToOverwriteError);
+    ).rejects.toThrow(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { _id: "some-other-id", data: "data" },
       }),
-    ).rejects.toThrowError(NoDocToOverwriteError);
+    ).rejects.toThrow(NoDocToOverwriteError);
     await expect(
       overwriteDoc({
         db,
         id: "does-not-exist",
         payload: { data: { foo: "bar" }, meta: { idStructure: "%foo%" } },
       }),
-    ).rejects.toThrowError(NoDocToOverwriteError);
+    ).rejects.toThrow(NoDocToOverwriteError);
   });
 
   it("fails if new id clashes with a different document in the database", async () => {
@@ -238,8 +240,8 @@ describe("overwriteDoc", () => {
   it("updates modifyTime to now for DatumPayloads", async () => {
     const data1 = { foo: "bar" };
     const data2 = { bar: "baz" };
-    const modMeta = { occurTime: notNowStr, modifyTime: notNowStr };
-    const noModMeta = { occurTime: notNowStr };
+    const modMeta = { occurTime: notNow, modifyTime: notNow };
+    const noModMeta = { occurTime: notNow };
     const modPay1 = { data: data1, meta: modMeta };
     const noModPay1 = { data: data1, meta: noModMeta };
     // These next two are used to avoid having equivalent payload and docs
@@ -252,7 +254,7 @@ describe("overwriteDoc", () => {
       id: "data-only-payload-1",
       payload: noModPay1,
     });
-    expect(newDoc1).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc1).toHaveProperty("meta.modifyTime", now);
 
     await db.put({ _id: "data-only-payload-2", ...data1 });
     const newDoc2 = await overwriteDoc({
@@ -260,7 +262,7 @@ describe("overwriteDoc", () => {
       id: "data-only-payload-2",
       payload: modPay1,
     });
-    expect(newDoc2).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc2).toHaveProperty("meta.modifyTime", now);
 
     await db.put({
       _id: "datum-without-modifyTime-1",
@@ -271,7 +273,7 @@ describe("overwriteDoc", () => {
       id: "datum-without-modifyTime-1",
       payload: noModPay2,
     });
-    expect(newDoc3).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc3).toHaveProperty("meta.modifyTime", now);
 
     await db.put({
       _id: "datum-without-modifyTime-2",
@@ -282,7 +284,7 @@ describe("overwriteDoc", () => {
       id: "datum-without-modifyTime-2",
       payload: modPay2,
     });
-    expect(newDoc4).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc4).toHaveProperty("meta.modifyTime", now);
 
     await db.put({ _id: "datum-with-modifyTime-1", ...modPay1 });
     const newDoc5 = await overwriteDoc({
@@ -290,7 +292,7 @@ describe("overwriteDoc", () => {
       id: "datum-with-modifyTime-1",
       payload: noModPay2,
     });
-    expect(newDoc5).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc5).toHaveProperty("meta.modifyTime", now);
 
     await db.put({ _id: "datum-with-modifyTime-2", ...modPay1 });
     const newDoc6 = await overwriteDoc({
@@ -298,7 +300,7 @@ describe("overwriteDoc", () => {
       id: "datum-with-modifyTime-2",
       payload: modPay2,
     });
-    expect(newDoc6).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc6).toHaveProperty("meta.modifyTime", now);
   });
 
   it("if metadata exists on both documents it uses the createTime of the old document, but otherwise all other metadata from the new document", async () => {
@@ -412,7 +414,7 @@ describe("overwriteDoc", () => {
         id: "abc",
         payload: { _id: "abc", _rev: wrongRev, foo2: "bar2" },
       }),
-    ).rejects.toThrowError(OverwriteDocError);
+    ).rejects.toThrow(OverwriteDocError);
     const stillOldDoc = await db.get("abc");
     expect(oldDoc).toEqual(stillOldDoc);
 
@@ -431,7 +433,7 @@ describe("overwriteDoc", () => {
         id: "abc",
         payload: { _rev: wrongRev, ...testDatumPayload },
       }),
-    ).rejects.toThrowError(OverwriteDocError);
+    ).rejects.toThrow(OverwriteDocError);
     await overwriteDoc({
       db,
       id: "abc",
@@ -514,7 +516,7 @@ describe("overwriteDoc", () => {
           map: "(doc) => {emit(doc._id, null);}",
         },
       },
-      meta: { modifyTime: notNowStr },
+      meta: { modifyTime: notNow },
     };
     const viewDoc2 = {
       _id: "_design/someView",
@@ -532,7 +534,7 @@ describe("overwriteDoc", () => {
       id: "_design/someView",
       payload: viewDoc2,
     });
-    expect(newDoc).toHaveProperty("meta.modifyTime", nowStr);
+    expect(newDoc).toHaveProperty("meta.modifyTime", now);
   });
 
   it("does not write to db if view is identical", async () => {
@@ -543,7 +545,7 @@ describe("overwriteDoc", () => {
           map: "(doc) => {emit(doc._id, null);}",
         },
       },
-      meta: { modifyTime: notNowStr },
+      meta: { modifyTime: notNow },
     };
     await db.put(viewDoc1);
     const dbDoc = await db.get("_design/someView");

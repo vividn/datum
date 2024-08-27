@@ -5,6 +5,8 @@ import { addDoc } from "../addDoc";
 import * as combineData from "../combineData";
 import { jClone } from "../../utils/jClone";
 import { DocExistsError } from "../base";
+import { DatumView, ViewDocument } from "../../views/DatumView";
+import { insertDatumView } from "../../views/insertDatumView";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -406,6 +408,88 @@ describe("updateDoc", () => {
     await expect(() => db.get(notNowStr)).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
+    });
+  });
+
+  describe("update view documents", () => {
+    function emit(_key: any, _value: any) {
+      // pass
+    }
+    const view1: DatumView = {
+      name: "test_view",
+      emit,
+      map: (_doc) => {
+        emit(1, 1);
+      },
+    };
+    const view2: DatumView = {
+      name: "test_view",
+      emit,
+      map: (_doc) => {
+        emit(2, 2);
+      },
+    };
+
+    test("it can update view docuements", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      expect(viewDoc._id).toEqual("_design/test_view");
+
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view2,
+      })) as ViewDocument;
+      expect(updatedViewDoc._id).toEqual("_design/test_view");
+      expect(updatedViewDoc._rev).not.toEqual(viewDoc._rev);
+
+      expect(updatedViewDoc.views.test_view.map.toString()).toContain(
+        "emit(2, 2)",
+      );
+    });
+
+    test("it does not update view documents if they are identical", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view1,
+      })) as ViewDocument;
+      expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
+    });
+
+    test("it does not update view documents if useOld is the strategy", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      const updatedViewDoc = (await updateDoc({
+        db,
+        id: viewDoc._id,
+        payload: view2,
+        updateStrategy: "useOld",
+      })) as ViewDocument;
+      expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
+    });
+
+    test("it throws an error for updating view documents with unsupported strategies", async () => {
+      const viewDoc = await insertDatumView({
+        db,
+        datumView: view1,
+      });
+      await expect(
+        updateDoc({
+          db,
+          id: viewDoc._id,
+          payload: view2,
+          updateStrategy: "merge",
+        }),
+      ).rejects.toThrow(UpdateDocError);
     });
   });
 });

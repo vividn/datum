@@ -20,6 +20,7 @@ import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
 import { toDatumTime } from "../time/datumTime";
 import { now } from "../time/timeUtils";
+import { isViewDocument, isViewPayload } from "../views/DatumView";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -75,6 +76,21 @@ export async function updateDoc({
     const meta = oldDoc.meta;
     meta.modifyTime = toDatumTime(now());
     updatedPayload = { data: updatedData, meta: meta };
+  } else if (isViewDocument(oldDoc) && isViewPayload(payload)) {
+    if (updateStrategy === "update" || updateStrategy === "useNew") {
+      if (isEqual(oldDoc.views, payload.views)) {
+        showNoDiff(oldDoc, outputArgs);
+        return oldDoc;
+      }
+      updatedPayload = { ...oldDoc, views: payload.views };
+    } else if (updateStrategy === "useOld") {
+      showNoDiff(oldDoc, outputArgs);
+      return oldDoc;
+    } else {
+      throw new UpdateDocError(
+        `update strategy '${updateStrategy}' not supported for view documents`,
+      );
+    }
   } else {
     const oldData = jClone(oldDoc) as DataOnlyPayload;
     delete oldData._rev;

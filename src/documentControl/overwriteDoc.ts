@@ -13,6 +13,7 @@ import {
 } from "../output/output";
 import { assembleId } from "../ids/assembleId";
 import { EitherDocument, EitherPayload } from "./DatumDocument";
+import { toDatumTime } from "../time/datumTime";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);
@@ -23,6 +24,12 @@ function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   unset(docClone, "_rev");
   unset(payloadClone, "meta.modifyTime");
   unset(docClone, "meta.modifyTime");
+
+  // special case for migrating to new datumTime, always overwrite if old modifyTime is a string
+  // TODO: Remove after migration
+  if (typeof docClone.meta?.modifyTime === "string") {
+    return false;
+  }
 
   return isEqual(payloadClone, docClone);
 }
@@ -68,7 +75,7 @@ export async function overwriteDoc({
   }
 
   if (payload.meta) {
-    const now = DateTime.utc().toString();
+    const now = toDatumTime(DateTime.local());
     payload.meta.modifyTime = now;
     if (oldDoc.meta?.createTime) {
       payload.meta.createTime = oldDoc.meta.createTime;
