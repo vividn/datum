@@ -68,12 +68,12 @@ export async function updateDoc({
   let updatedPayload: EitherPayload;
   if (isViewDocument(oldDoc) && isViewPayload(payload)) {
     if (updateStrategy === "update" || updateStrategy === "useNew") {
-      if (isEqual(oldDoc.views, payload.views)) {
+      // clone the payload to avoid explicit undefined values from interfering with isEqual
+      if (isEqual(oldDoc.views, jClone(payload.views))) {
         showNoDiff(oldDoc, outputArgs);
         return oldDoc;
       }
       updatedPayload = { ...oldDoc, views: payload.views };
-      console.debug({ updatedPayload });
     } else if (updateStrategy === "useOld") {
       showNoDiff(oldDoc, outputArgs);
       return oldDoc;

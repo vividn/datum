@@ -101,7 +101,7 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
       db,
       datumView: choreView,
       outputArgs: { show: Show.Minimal },
-      conflictStrategy: args.update ? "overwrite" : "useOld",
+      conflictStrategy: args.update ? "update" : "useOld",
     });
     oneTimeSetup = true;
   }

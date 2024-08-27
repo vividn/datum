@@ -464,15 +464,6 @@ describe("updateDoc", () => {
         id: viewDoc._id,
         payload: view1Payload,
       })) as ViewDocument;
-      console.debug({
-        updated: view1Payload.views.test_view.map,
-        original: viewDoc.views.test_view.map,
-        equal: isEqual(
-          view1Payload.views.test_view.map,
-          viewDoc.views.test_view.map,
-        ),
-        viewEqual: isEqual(updatedViewDoc.views, viewDoc.views)
-      });
       expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
     });
 
