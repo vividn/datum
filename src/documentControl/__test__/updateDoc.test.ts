@@ -7,6 +7,8 @@ import { jClone } from "../../utils/jClone";
 import { DocExistsError } from "../base";
 import { DatumView, ViewDocument } from "../../views/DatumView";
 import { insertDatumView } from "../../views/insertDatumView";
+import { datumViewToViewPayload } from "../../views/datumViewToViewPayload";
+import isEqual from "lodash.isequal";
 
 const testDatumPayload: DatumPayload = {
   data: {
@@ -135,7 +137,7 @@ describe("updateDoc", () => {
     expect(spy).toHaveBeenCalledWith(
       { _id: "data-doc-1", ...data1 },
       data2,
-      "merge",
+      "update",
     );
     spy.mockClear();
 
@@ -422,6 +424,7 @@ describe("updateDoc", () => {
         emit(1, 1);
       },
     };
+    const view1Payload = datumViewToViewPayload(view1);
     const view2: DatumView = {
       name: "test_view",
       emit,
@@ -429,6 +432,7 @@ describe("updateDoc", () => {
         emit(2, 2);
       },
     };
+    const view2Payload = datumViewToViewPayload(view2);
 
     test("it can update view docuements", async () => {
       const viewDoc = await insertDatumView({
@@ -440,7 +444,7 @@ describe("updateDoc", () => {
       const updatedViewDoc = (await updateDoc({
         db,
         id: viewDoc._id,
-        payload: view2,
+        payload: view2Payload,
       })) as ViewDocument;
       expect(updatedViewDoc._id).toEqual("_design/test_view");
       expect(updatedViewDoc._rev).not.toEqual(viewDoc._rev);
@@ -458,8 +462,17 @@ describe("updateDoc", () => {
       const updatedViewDoc = (await updateDoc({
         db,
         id: viewDoc._id,
-        payload: view1,
+        payload: view1Payload,
       })) as ViewDocument;
+      console.debug({
+        updated: view1Payload.views.test_view.map,
+        original: viewDoc.views.test_view.map,
+        equal: isEqual(
+          view1Payload.views.test_view.map,
+          viewDoc.views.test_view.map,
+        ),
+        viewEqual: isEqual(updatedViewDoc.views, viewDoc.views)
+      });
       expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
     });
 
@@ -471,7 +484,7 @@ describe("updateDoc", () => {
       const updatedViewDoc = (await updateDoc({
         db,
         id: viewDoc._id,
-        payload: view2,
+        payload: view2Payload,
         updateStrategy: "useOld",
       })) as ViewDocument;
       expect(updatedViewDoc._rev).toEqual(viewDoc._rev);
@@ -486,7 +499,7 @@ describe("updateDoc", () => {
         updateDoc({
           db,
           id: viewDoc._id,
-          payload: view2,
+          payload: view2Payload,
           updateStrategy: "merge",
         }),
       ).rejects.toThrow(UpdateDocError);

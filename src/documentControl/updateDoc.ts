@@ -46,7 +46,7 @@ export async function updateDoc({
   db,
   id,
   payload,
-  updateStrategy = "merge",
+  updateStrategy = "update",
   outputArgs = {},
 }: updateDocType): Promise<EitherDocument> {
   const oldDoc: EitherDocument = await db.get(id).catch((e) => {
@@ -66,7 +66,23 @@ export async function updateDoc({
   const newData = isDatumPayload(payload) ? payload.data : payload;
 
   let updatedPayload: EitherPayload;
-  if (isDatumDocument(oldDoc)) {
+  if (isViewDocument(oldDoc) && isViewPayload(payload)) {
+    if (updateStrategy === "update" || updateStrategy === "useNew") {
+      if (isEqual(oldDoc.views, payload.views)) {
+        showNoDiff(oldDoc, outputArgs);
+        return oldDoc;
+      }
+      updatedPayload = { ...oldDoc, views: payload.views };
+      console.debug({ updatedPayload });
+    } else if (updateStrategy === "useOld") {
+      showNoDiff(oldDoc, outputArgs);
+      return oldDoc;
+    } else {
+      throw new UpdateDocError(
+        `update strategy '${updateStrategy}' not supported for view documents`,
+      );
+    }
+  } else if (isDatumDocument(oldDoc)) {
     const oldData = oldDoc.data;
     const updatedData = combineData(oldData, newData, updateStrategy);
     if (isEqual(oldData, updatedData)) {
@@ -76,21 +92,6 @@ export async function updateDoc({
     const meta = oldDoc.meta;
     meta.modifyTime = toDatumTime(now());
     updatedPayload = { data: updatedData, meta: meta };
-  } else if (isViewDocument(oldDoc) && isViewPayload(payload)) {
-    if (updateStrategy === "update" || updateStrategy === "useNew") {
-      if (isEqual(oldDoc.views, payload.views)) {
-        showNoDiff(oldDoc, outputArgs);
-        return oldDoc;
-      }
-      updatedPayload = { ...oldDoc, views: payload.views };
-    } else if (updateStrategy === "useOld") {
-      showNoDiff(oldDoc, outputArgs);
-      return oldDoc;
-    } else {
-      throw new UpdateDocError(
-        `update strategy '${updateStrategy}' not supported for view documents`,
-      );
-    }
   } else {
     const oldData = jClone(oldDoc) as DataOnlyPayload;
     delete oldData._rev;
