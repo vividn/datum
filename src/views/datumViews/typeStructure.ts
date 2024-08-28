@@ -18,10 +18,10 @@ type typeName =
   | "boolean"
   | "object"
   | "null"
+  | "unknown"
   | `{${string}}`
-  | `${typeName}|${typeName}`
-  | `${typeName}[]`
-  | `(${typeName})[]`;
+  | `${string}[]`;
+
 
 export const typeStructureView: DatumView<
   DocType,

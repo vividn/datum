@@ -7,6 +7,7 @@ export { idToHumanView } from "./idToHumanView";
 export { dataStructuresView } from "./dataStructuresView";
 export { activeStateView } from "./activeStateView";
 export { idStructuresView } from "./idStructures";
+export { typeStructureView } from "./typeStructure";
 
 // Migrations
 export {

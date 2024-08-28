@@ -22,12 +22,12 @@ describe("typeStructureView", () => {
     };
     tsv.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(6);
-    expect(emitMock).toHaveBeenCalledWith(["_id", "<string>"]);
-    expect(emitMock).toHaveBeenCalledWith(["_rev", "<string>"]);
-    expect(emitMock).toHaveBeenCalledWith(["key1", "<string>"]);
-    expect(emitMock).toHaveBeenCalledWith(["key2", "<number>"]);
-    expect(emitMock).toHaveBeenCalledWith(["key3", "<null>"]);
-    expect(emitMock).toHaveBeenCalledWith(["key4", "<boolean>"]);
+    expect(emitMock).toHaveBeenCalledWith(["_id", "<string>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["_rev", "<string>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["key1", "<string>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["key2", "<number>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["key3", "<null>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["key4", "<boolean>"], null);
   });
 
   it("emits nested keys by lengthening the array, but also high level object type", () => {
@@ -45,21 +45,17 @@ describe("typeStructureView", () => {
 
     tsv.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(7);
-    expect(emitMock).toHaveBeenCalledWith(["data", "<object>"]);
-    expect(emitMock).toHaveBeenCalledWith(["data", "level2", "<object>"]);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "level2",
-      "nested",
-      "<string>",
-    ]);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "level2",
-      "num",
-      "<number>",
-    ]);
-    expect(emitMock).toHaveBeenCalledWith(["data", "key", "<string>"]);
+    expect(emitMock).toHaveBeenCalledWith(["data", "<object>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["data", "level2", "<object>"], null);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "level2", "nested", "<string>"],
+      null,
+    );
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "level2", "num", "<number>"],
+      null,
+    );
+    expect(emitMock).toHaveBeenCalledWith(["data", "key", "<string>"], null);
   });
 
   it("emits special types for dates, times, etc", () => {
@@ -69,9 +65,15 @@ describe("typeStructureView", () => {
       effectiveDate: { utc: "2024-08-28" },
     });
     tsv.map(doc);
-    expect(emitMock).toHaveBeenCalledWith(["data", "dur", "<duration>"]);
-    expect(emitMock).toHaveBeenCalledWith(["data", "occurTime", "<time>"]);
-    expect(emitMock).toHaveBeenCalledWith(["data", "effectiveDate", "<date>"]);
+    expect(emitMock).toHaveBeenCalledWith(["data", "dur", "<duration>"], null);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "occurTime", "<time>"],
+      null,
+    );
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "effectiveDate", "<date>"],
+      null,
+    );
   });
 
   it("emits a sorted summary type for arrays", () => {
@@ -83,22 +85,19 @@ describe("typeStructureView", () => {
     });
     tsv.map(doc);
 
-    expect(emitMock).toHaveBeenCalledWith(["data", "arr", "<string[]>"]);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "multi",
-      "<(boolean|number|string)[]>",
-    ]);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "sameSort",
-      "<(boolean|number|string)[]>",
-    ]);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "complexType",
-      "<(string|object|time)[]>",
-    ]);
+    expect(emitMock).toHaveBeenCalledWith(["data", "arr", "<string[]>"], null);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "multi", "<(boolean|number|string)[]>"],
+      null,
+    );
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "sameSort", "<(boolean|number|string)[]>"],
+      null,
+    );
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "complexType", "<(string|object|time)[]>"],
+      null,
+    );
   });
 
   it("can handle nested arrays", () => {
@@ -110,16 +109,14 @@ describe("typeStructureView", () => {
       ],
     });
     tsv.map(doc);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "simpleNest",
-      "<string[][]>",
-    ]);
-    expect(emitMock).toHaveBeenCalledWith([
-      "data",
-      "multiNest",
-      "<((null|number|string)[]|string[])[]>",
-    ]);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "simpleNest", "<string[][]>"],
+      null,
+    );
+    expect(emitMock).toHaveBeenCalledWith(
+      ["data", "multiNest", "<((null|number|string)[]|string[])[]>"],
+      null,
+    );
   });
 
   it("does not traverse into objects inside of arrays", () => {
@@ -130,8 +127,8 @@ describe("typeStructureView", () => {
     };
     tsv.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(3);
-    expect(emitMock).toHaveBeenCalledWith(["_id", "<string>"]);
-    expect(emitMock).toHaveBeenCalledWith(["_rev", "<string>"]);
-    expect(emitMock).toHaveBeenCalledWith(["arr", "<object>[]"]);
+    expect(emitMock).toHaveBeenCalledWith(["_id", "<string>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["_rev", "<string>"], null);
+    expect(emitMock).toHaveBeenCalledWith(["arr", "<object[]>"], null);
   });
 });
