@@ -48,6 +48,16 @@ mapArgs.add_argument("--reverse", {
   help: "flips start and end and inverts descending param for easy reverse ordering of results",
   action: "store_true",
 });
+mapArgs.add_argument("--group-level", "-g", {
+  help: "how far to group the key arrays when reducing. When used while mapping, it automatically sets reduce to true",
+  type: "int",
+  dest: "groupLevel",
+});
+mapArgs.add_argument("--max-group-level", "-G", {
+  help: "set maximum group level for the view",
+  action: "store_true",
+  dest: "maxGroupLevel",
+});
 mapArgs.add_argument("--params", "-p", {
   help: "extra params to pass to the view function. See PouchDB.Query.Options type", // TODO: change to pouchDB
 });
@@ -70,6 +80,8 @@ export type MapCmdArgs = MainDatumArgs & {
   hid?: boolean;
   column?: string[];
   reverse?: boolean;
+  groupLevel?: number;
+  maxGroupLevel?: boolean;
   params?: PouchDB.Query.Options<any, any>;
 };
 
@@ -80,6 +92,7 @@ export async function mapCmd(
   args = parseIfNeeded(mapCmdArgs, args, preparsed);
   const db = connectDb(args);
   const columns = (args.column ?? []).map((col) => col.split(",")).flat();
+
   const startEndParams = args.end
     ? {
         startkey: inferType(args.start as string),
@@ -88,9 +101,16 @@ export async function mapCmd(
     : args.start
       ? startsWith(inferType(args.start))
       : {};
+
+  const groupParams = args.maxGroupLevel
+    ? { group: true, reduce: true }
+    : args.groupLevel
+      ? { group_level: args.groupLevel, group: true, reduce: true }
+      : {};
   let viewParams: PouchDB.Query.Options<any, any> = {
     reduce: args.reduce ?? false,
     ...startEndParams,
+    ...groupParams,
     ...(args.params ?? {}),
   };
   if (!viewParams.reduce && (args.hid || columns.length > 0)) {
