@@ -132,7 +132,7 @@ export function combineData(
   return combined;
 }
 
-const isMergeableValue = (val: any) => {
+const isMergeableValue = (val: unknown) => {
   return (
     typeof val === "string" ||
     typeof val === "number" ||
@@ -146,7 +146,7 @@ export const mergeValues = (
   bVal: unknown,
   unique = true,
   sort = false,
-): any => {
+): unknown => {
   if (bVal === undefined) return aVal;
   if (aVal === undefined) return bVal;
 

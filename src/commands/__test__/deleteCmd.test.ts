@@ -8,7 +8,7 @@ describe("deleteCmd", () => {
   const dbName = "delete_cmd_test";
   const db = testDbLifecycle(dbName);
 
-  let deleteDocSpy: any;
+  let deleteDocSpy: jest.SpyInstance;
   beforeEach(async () => {
     deleteDocSpy = jest.spyOn(deleteDoc, "deleteDoc");
     await setupCmd("");

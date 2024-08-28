@@ -1,6 +1,7 @@
 import { _emit } from "../emit";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { DatumView } from "../DatumView";
+import { JsonObject } from "../../utils/utilityTypes";
 
 type DocType = EitherDocument;
 type MapKey = string[][];
@@ -16,7 +17,7 @@ export const structuresView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
     name: "datum_structures",
     emit,
     map: (doc) => {
-      function sortedSubkeys(obj: { [key: string]: any }): string[][] {
+      function sortedSubkeys(obj: JsonObject): string[][] {
         const subkeysByDepth: string[][] = [];
         const topOrderKeys: string[] = [];
         const keys = Object.keys(obj).sort();

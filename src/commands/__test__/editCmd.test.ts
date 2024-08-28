@@ -5,7 +5,7 @@ import { GenericObject } from "../../GenericObject";
 import { setupCmd } from "../setupCmd";
 
 describe("editCmd", () => {
-  let editJSONInTerminalSpy: any;
+  let editJSONInTerminalSpy: jest.SpyInstance;
   const dbName = "delete_cmd_test";
   const db = testDbLifecycle(dbName);
 

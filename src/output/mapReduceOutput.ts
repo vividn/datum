@@ -10,8 +10,8 @@ export function mapReduceOutput(
 ): string {
   const dataRows = viewResponse.rows.map((row) => {
     const keyValue: {
-      key: any;
-      value: any;
+      key: unknown;
+      value: unknown;
       id?: string;
       hid?: string;
     } & Record<string, any> = {

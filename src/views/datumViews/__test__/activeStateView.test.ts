@@ -10,7 +10,7 @@ const occurTime: DatumTime = {
 const occurDateTime: DateTime = DateTime.fromISO(occurTime.utc);
 
 describe("activeStateView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });
