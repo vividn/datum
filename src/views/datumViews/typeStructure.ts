@@ -46,7 +46,7 @@ export const typeStructureView: DatumView<
         return "null";
       }
       if (typeof v === "object") {
-        return typeof v._type === "string" ? `{${v._type}}` : "object";
+        return typeof v._t === "string" ? `{${v._t}}` : "object";
       }
       if (typeof v === "number") {
         return "number";
