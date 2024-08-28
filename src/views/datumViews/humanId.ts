@@ -1,8 +1,8 @@
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
 
-type DocType = EitherDocument;
+type DocType = DatumDocument;
 type MapKey = string;
 type MapValue = null;
 type ReduceValues = undefined;

@@ -1,11 +1,8 @@
 import { DatumView } from "../DatumView";
-import {
-  DatumMetadata,
-  EitherDocument,
-} from "../../documentControl/DatumDocument";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { _emit } from "../emit";
 
-type DocType = EitherDocument;
+type DocType = DatumDocument;
 type MapKey = string;
 type MapValue = string;
 type ReduceValues = undefined;
@@ -19,14 +16,8 @@ export const idToHumanView: DatumView<DocType, MapKey, MapValue, ReduceValues> =
     name: "datum_id_to_human_id",
     emit,
     map: (doc) => {
-      let meta: DatumMetadata;
-      if (!doc.meta) {
-        return;
-      } else {
-        meta = doc.meta;
-      }
-      if (meta.humanId) {
-        emit(doc._id, meta.humanId);
+      if (doc.meta?.humanId) {
+        emit(doc._id, doc.meta.humanId);
       }
     },
   };

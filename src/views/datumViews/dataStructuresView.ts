@@ -1,5 +1,5 @@
 import { DatumView, ReduceFunction } from "../DatumView";
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
 import { _emit } from "../emit";
 import { JsonObject } from "../../utils/utilityTypes";
 
@@ -75,7 +75,7 @@ export const dataStructuresView: DatumView<
     }
 
     if (doc.data) {
-      const structure = sortedSubkeys(doc.data);
+      const structure = sortedSubkeys(doc.data as DatumData);
       emit(structure, null);
     }
   },

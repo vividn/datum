@@ -179,7 +179,7 @@ export function extractFormatted(
     field: data?.field ? color.inverse(data.field) : undefined,
     state: formatState(data.state),
     stateTransition: formatStateTransition(data.state, data.lastState),
-    dur: formatDuration(data.dur ?? data.duration, data.state === false),
+    dur: formatDuration(data.dur, data.state === false),
   };
 }
 

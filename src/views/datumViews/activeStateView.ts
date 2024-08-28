@@ -24,7 +24,7 @@ export const activeStateView: DatumView<
   map: (doc) => {
     let data: DatumData;
     if (doc.data && doc.meta) {
-      data = doc.data;
+      data = doc.data as DatumData;
     } else {
       data = doc;
     }
