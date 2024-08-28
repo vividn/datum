@@ -17,7 +17,7 @@ export const structuresView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
     emit,
     map: (doc) => {
       function sortedSubkeys(obj: { [key: string]: any }): string[][] {
-        const subkeysByOrder: string[][] = [];
+        const subkeysByDepth: string[][] = [];
         const topOrderKeys: string[] = [];
         const keys = Object.keys(obj).sort();
         for (const key of keys) {
@@ -28,13 +28,13 @@ export const structuresView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
               const prefixedSubKeys = subkeyArray.map(
                 (subkey) => key + "." + subkey,
               );
-              (subkeysByOrder[index] = subkeysByOrder[index] || []).push(
+              (subkeysByDepth[index] = subkeysByDepth[index] || []).push(
                 ...prefixedSubKeys,
               );
             });
           }
         }
-        return [topOrderKeys, ...subkeysByOrder];
+        return [topOrderKeys, ...subkeysByDepth];
       }
 
       delete (doc as any)["_rev"];
