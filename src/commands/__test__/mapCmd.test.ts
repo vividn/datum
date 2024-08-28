@@ -25,6 +25,7 @@ describe("mapCmd", () => {
   it.todo("does not render if Show is None");
   it.todo("it does render if Show is not none");
   it.todo("can render extra columns");
+  it.todo("can switch to reduce command by specifying group level");
   describe("reverse", () => {
     it.todo("can reverse when start and end are specified");
     it.todo("can reverse when just start is specified");

@@ -10,23 +10,16 @@ export const reduceArgs = new ArgumentParser({
   add_help: false,
   parents: [mapArgs],
 });
-reduceArgs.add_argument("--group-level", "-g", {
-  help: "how far to group the key arrays when reducing",
-  type: "int",
-  dest: "groupLevel",
-});
 
 export const reduceCmdArgs = new ArgumentParser({
   description: "display a reduction of a map",
   prog: "datum red[uce]",
   usage: `%(prog)s <mapName> [start] [end]
-  %(prog)s --group-level <level> <mapName> [start] [end]`,
+  %(prog)s -g <groupLevel> <mapName> [start] [end]`,
   parents: [reduceArgs, dbArgs, outputArgs],
 });
 
-export type ReduceCmdArgs = MapCmdArgs & {
-  groupLevel?: number;
-};
+export type ReduceCmdArgs = MapCmdArgs;
 
 export async function reduceCmd(
   args: ReduceCmdArgs | string | string[],
@@ -53,16 +46,8 @@ export async function reduceCmd(
     }
     return mockReduceResult;
   }
-
-  const groupParams = args.groupLevel
-    ? { group_level: args.groupLevel, group: true }
-    : {};
   return await mapCmd({
     ...args,
     reduce: true,
-    params: {
-      ...groupParams,
-      ...(args.params ?? {}),
-    },
   });
 }
