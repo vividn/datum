@@ -83,21 +83,42 @@ describe("typeStructureView", () => {
     });
     tsv.map(doc);
 
-    expect(emitMock).toHaveBeenCalledWith(["data", "arr", "<string>[]"]);
+    expect(emitMock).toHaveBeenCalledWith(["data", "arr", "<string[]>"]);
     expect(emitMock).toHaveBeenCalledWith([
       "data",
       "multi",
-      "<boolean|number|string>[]",
+      "<(boolean|number|string)[]>",
     ]);
     expect(emitMock).toHaveBeenCalledWith([
       "data",
       "sameSort",
-      "<boolean|number|string>[]",
+      "<(boolean|number|string)[]>",
     ]);
     expect(emitMock).toHaveBeenCalledWith([
       "data",
       "complexType",
-      "<string|object|time>[]",
+      "<(string|object|time)[]>",
+    ]);
+  });
+
+  it("can handle nested arrays", () => {
+    const doc = makeDoc({
+      simpleNest: [["one"], ["two", "three"]],
+      multiNest: [
+        ["one", 2, null],
+        ["four", "five", "six"],
+      ],
+    });
+    tsv.map(doc);
+    expect(emitMock).toHaveBeenCalledWith([
+      "data",
+      "simpleNest",
+      "<string[][]>",
+    ]);
+    expect(emitMock).toHaveBeenCalledWith([
+      "data",
+      "multiNest",
+      "<((null|number|string)[]|string[])[]>",
     ]);
   });
 

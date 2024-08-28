@@ -4,6 +4,7 @@ import { WithRequired } from "../utils/utilityTypes";
 import { DatumState } from "../state/normalizeState";
 import { DatumTime } from "../time/datumTime";
 
+//TODO: change all instances to JsonObject and fix problems
 export type GenericData = {
   [key: string]: any;
 };
