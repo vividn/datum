@@ -22,7 +22,6 @@ type typeName =
   | `{${string}}`
   | `${string}[]`;
 
-
 export const typeStructureView: DatumView<
   DocType,
   MapKey,
