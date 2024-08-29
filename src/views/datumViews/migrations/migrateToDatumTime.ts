@@ -1,4 +1,4 @@
-import { DatumDocument } from "../../../documentControl/DatumDocument";
+import { DatumDocument, DatumMetadata } from "../../../documentControl/DatumDocument";
 import { DatumMigration, migrationEmit } from "../../../migrations/migrations";
 import { DatumTime } from "../../../time/datumTime";
 
@@ -57,7 +57,7 @@ export const migrateDatumTime2: DatumMigration = {
         createTime: newCreateTime,
         modifyTime: newModifyTime,
         // also handily deletes utcOffset
-      };
+      } as DatumMetadata;
       emit(3, { data: { ...doc, meta: newMeta }, op: "overwrite" });
     }
   },

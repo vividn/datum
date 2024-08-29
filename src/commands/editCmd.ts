@@ -45,7 +45,7 @@ export async function editCmd(
   }
   const id = ids[0];
   const oldDoc = await db.get(id);
-  const newDoc = await editJSONInTerminal(oldDoc);
+  const newDoc = await editJSONInTerminal(oldDoc as EitherDocument);
 
   const doc = await overwriteDoc({ db, id, payload: newDoc, outputArgs: args });
 
