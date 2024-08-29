@@ -31,7 +31,7 @@ describe("lastDocs", () => {
     const id = "last-doc-deleted";
     await db.put({ _id: id, foo: "bar" });
     await db.put({ _id: "some-other-doc", foo: "baz" });
-    await expect(getLastDocs(db)).rejects.toThrowError();
+    await expect(getLastDocs(db)).rejects.toThrow();
 
     await deleteCmd(id);
     const lastDocsRef = await getLastDocs(db);

@@ -55,13 +55,13 @@ describe("viewMap", () => {
 
     await expect(() =>
       viewMap({ db: mockDb, datumView: mockDatumView }),
-    ).rejects.toThrowError(DatumViewMissingError);
+    ).rejects.toThrow(DatumViewMissingError);
     await expect(() =>
       viewMap({ db: mockDb, datumView: mockDatumView }),
-    ).rejects.toThrowError(DatumViewMissingError);
+    ).rejects.toThrow(DatumViewMissingError);
     await expect(() =>
       viewMap({ db: mockDb, datumView: mockDatumView }),
-    ).rejects.toThrowError(DatumViewMissingError);
+    ).rejects.toThrow(DatumViewMissingError);
     try {
       await viewMap({ db: mockDb, datumView: mockDatumView });
     } catch (error: any) {

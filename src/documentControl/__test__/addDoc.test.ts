@@ -54,7 +54,7 @@ describe("addDoc", () => {
 
   it("throws error if trying to add dataOnly payload without _id", async () => {
     const payload = { a: 1, c: "dataString" };
-    await expect(addDoc({ db, payload })).rejects.toThrowError(IdError);
+    await expect(addDoc({ db, payload })).rejects.toThrow(IdError);
   });
 
   it("adds a datum payload to db with _id if there is no idStructure", async () => {
@@ -95,7 +95,7 @@ describe("addDoc", () => {
       data: { abc: "123" },
       meta: { humanId: "ndke4ms9" },
     } as DatumPayload;
-    await expect(addDoc({ db, payload })).rejects.toThrowError(IdError);
+    await expect(addDoc({ db, payload })).rejects.toThrow(IdError);
   });
 
   it("adds createTime and modifyTime to metadata of datumPayload", async () => {

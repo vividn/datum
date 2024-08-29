@@ -53,6 +53,6 @@ describe("editCmd", () => {
       },
       meta: { humanId: "jkl" },
     });
-    await expect(editCmd(",abc,jkl")).rejects.toThrowError(TooManyToEditError);
+    await expect(editCmd(",abc,jkl")).rejects.toThrow(TooManyToEditError);
   });
 });

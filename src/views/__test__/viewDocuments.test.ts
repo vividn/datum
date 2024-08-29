@@ -136,7 +136,7 @@ describe("datumViewToViewPayload", () => {
           conflicting_reduce: genericReduceFunction,
         },
       });
-    }).toThrowError(ConflictingReduceError);
+    }).toThrow(ConflictingReduceError);
   });
 
   it("has a default view with just the map document if named reduce functions are given without a default", () => {
@@ -295,7 +295,7 @@ describe("insertDatumView", () => {
     expect(designDoc1.views["datum_view"].reduce).toEqual("_count");
 
     const datumView2: DatumView = {
-      name: "datum_view",
+      name: "datum_view_2",
       map: genericMapFunction,
       reduce: "_stats",
     };

@@ -420,17 +420,17 @@ describe("mergeValues", () => {
   });
 
   test("throws error if trying to merge an object with anything (except undefined)", () => {
-    expect(() => mergeValues({ abc: 123 }, "string")).toThrowError(MergeError);
-    expect(() => mergeValues(3, { abc: 123 })).toThrowError(MergeError);
-    expect(() => mergeValues({ someKey: "someData" }, null)).toThrowError(
+    expect(() => mergeValues({ abc: 123 }, "string")).toThrow(MergeError);
+    expect(() => mergeValues(3, { abc: 123 })).toThrow(MergeError);
+    expect(() => mergeValues({ someKey: "someData" }, null)).toThrow(
       MergeError,
     );
-    expect(() => mergeValues([1, 2, 3], { qwerty: "asdf" })).toThrowError(
+    expect(() => mergeValues([1, 2, 3], { qwerty: "asdf" })).toThrow(
       MergeError,
     );
-    expect(() =>
-      mergeValues({ even: "two" }, { objects: "fail" }),
-    ).toThrowError(MergeError);
+    expect(() => mergeValues({ even: "two" }, { objects: "fail" })).toThrow(
+      MergeError,
+    );
     expect(mergeValues({ object: "can", merge: "with" }, undefined)).toEqual({
       object: "can",
       merge: "with",

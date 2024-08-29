@@ -177,16 +177,12 @@ describe("unfoldState", () => {
   });
 
   it("throws an error if a null state is part of an array of states", () => {
-    expect(() => normalizeState(["abc", null])).toThrowError(BadStateError);
-    expect(() => normalizeState([null, "abc"])).toThrowError(BadStateError);
-    expect(() => normalizeState([null, null])).toThrowError(BadStateError);
-    expect(() => normalizeState(["abc", { id: null }])).toThrowError(
-      BadStateError,
-    );
-    expect(() => normalizeState([null, { id: "abc" }])).toThrowError(
-      BadStateError,
-    );
-    expect(() => normalizeState([{ id: "abc" }, { id: null }])).toThrowError(
+    expect(() => normalizeState(["abc", null])).toThrow(BadStateError);
+    expect(() => normalizeState([null, "abc"])).toThrow(BadStateError);
+    expect(() => normalizeState([null, null])).toThrow(BadStateError);
+    expect(() => normalizeState(["abc", { id: null }])).toThrow(BadStateError);
+    expect(() => normalizeState([null, { id: "abc" }])).toThrow(BadStateError);
+    expect(() => normalizeState([{ id: "abc" }, { id: null }])).toThrow(
       BadStateError,
     );
   });

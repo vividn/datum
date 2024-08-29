@@ -43,11 +43,11 @@ test.each([
 it("throws an error for a completely unparseable duration", () => {
   expect(() =>
     parseDurationStr({ durationStr: "not a good duration" }),
-  ).toThrowError(BadDurationError);
+  ).toThrow(BadDurationError);
 });
 
 it("throws an error for a number string with too many colons in it", () => {
-  expect(() => parseDurationStr({ durationStr: "1:2:3:4:5:6:7" })).toThrowError(
+  expect(() => parseDurationStr({ durationStr: "1:2:3:4:5:6:7" })).toThrow(
     BadDurationError,
   );
 });

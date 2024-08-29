@@ -182,7 +182,7 @@ describe("updateDoc", () => {
   test("fails if id to be updated does not exist in db", async () => {
     await expect(
       updateDoc({ db, id: "does-not-exist", payload: { valid: "data" } }),
-    ).rejects.toThrowError(NoDocToUpdateError);
+    ).rejects.toThrow(NoDocToUpdateError);
   });
 
   test("fails if new id clashes with a different document in the database", async () => {
@@ -287,7 +287,7 @@ describe("updateDoc", () => {
         payload: { _id: "abc", _rev: wrongRev, foo2: "bar2" },
         updateStrategy: "useNew",
       }),
-    ).rejects.toThrowError(UpdateDocError);
+    ).rejects.toThrow(UpdateDocError);
     const stillOldDoc = await db.get("abc");
     expect(oldDoc).toEqual(stillOldDoc);
 
@@ -308,7 +308,7 @@ describe("updateDoc", () => {
         payload: { _rev: wrongRev, ...testDatumPayload },
         updateStrategy: "useNew",
       }),
-    ).rejects.toThrowError(UpdateDocError);
+    ).rejects.toThrow(UpdateDocError);
     await updateDoc({
       db,
       id: "abc",

@@ -181,9 +181,9 @@ describe("addCmd", () => {
   });
 
   it("throws a BaseDataError if baseData is malformed", async () => {
-    await expect(
-      addCmd("-F -b 'string_is_not_good_basedata'"),
-    ).rejects.toThrowError(BaseDataError);
+    await expect(addCmd("-F -b 'string_is_not_good_basedata'")).rejects.toThrow(
+      BaseDataError,
+    );
   });
 
   it("prefers the _id specified when in no-metadata mode", async () => {
