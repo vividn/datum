@@ -1,5 +1,6 @@
 // This is method is only temporary until better undo infrastructure is developed.
 import {
+    DatumMetadata,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
@@ -27,7 +28,8 @@ export async function primitiveUndo({
     doc = await db.get(_id);
   } catch (error) {
     // if the id involves a time, then there could be some slight difference in the id
-    const idStructure = payload.meta?.idStructure ?? "";
+    const meta = payload.meta as DatumMetadata | undefined;
+    const idStructure = meta?.idStructure ?? "";
     if (
       isCouchDbError(error) &&
       error.reason === "missing" &&

@@ -74,10 +74,16 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     }
     const occurTime = occurDatumTime.utc;
     const occurTime1 = dtTransform(
-      data.effectiveTime1 || data.effectiveDate1 || occurTime,
+      (data.effectiveTime1 || data.effectiveDate1 || occurTime) as
+        | DatumTime
+        | string
+        | undefined,
     )!.utc;
     const occurTime2 = dtTransform(
-      data.effectiveTime2 || data.effectiveDate2 || occurTime,
+      (data.effectiveTime2 || data.effectiveDate2 || occurTime) as
+        | DatumTime
+        | string
+        | undefined,
     )!.utc;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;

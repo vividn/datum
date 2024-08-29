@@ -1,6 +1,8 @@
 import {
   DatumData,
+  DatumDocument,
   DatumMetadata,
+  DatumPayload,
   EitherPayload,
   isDatumPayload,
 } from "../documentControl/DatumDocument";
@@ -16,16 +18,16 @@ export const assembleId = function ({
   payload,
   idStructure,
 }: assembleIdType): string {
-  let data: DatumData;
+  let data;
   let meta: DatumMetadata | undefined;
   if (isDatumPayload(payload)) {
     data = payload.data as DatumData;
     meta = payload.meta;
   } else {
-    data = payload as DatumData;
+    data = payload as DatumPayload;
   }
 
-  if (meta === undefined && data["_id"] !== undefined) {
+  if (meta === undefined && typeof data["_id"] === "string") {
     // in no metadata mode, a manually specified _id takes precedence
     return data["_id"];
   }

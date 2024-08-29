@@ -40,7 +40,7 @@ export const withOrderedReduceView: DatumView<
   map: (doc: FinanceDoc) => {
     const data = doc.data;
     function dtTransform(
-      time: string | DatumTime | undefined
+      time: string | DatumTime | undefined,
     ): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {
@@ -49,17 +49,23 @@ export const withOrderedReduceView: DatumView<
       return time;
     }
     const occurDatumTime = dtTransform(
-      data.effectiveTime || data.effectiveDate || data.occurTime
+      data.effectiveTime || data.effectiveDate || data.occurTime,
     );
     if (occurDatumTime === undefined) {
       return;
     }
     const occurTime = occurDatumTime.utc;
     const occurTime1 = dtTransform(
-      data.effectiveTime1 || data.effectiveDate1 || occurTime
+      (data.effectiveTime1 || data.effectiveDate1 || occurTime) as
+        | string
+        | DatumTime
+        | undefined,
     )!.utc;
     const occurTime2 = dtTransform(
-      data.effectiveTime2 || data.effectiveDate2 || occurTime
+      (data.effectiveTime2 || data.effectiveDate2 || occurTime) as
+        | string
+        | DatumTime
+        | undefined,
     )!.utc;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
@@ -122,7 +128,7 @@ export const withOrderedReduceView: DatumView<
           delta: 0,
           account: keysAndIds[0][0][0],
           currency: keysAndIds[0][0][1],
-        }
+        },
       );
     }
     return values.reduce((accum, current) => {

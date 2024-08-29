@@ -83,7 +83,7 @@ export async function addDoc({
 }: addDocType): Promise<DataOrDesignDocument> {
   payload = jClone(payload);
   let id;
-  if (payload.meta) {
+  if (isDatumPayload(payload)) {
     const now = toDatumTime(DateTime.local());
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;

@@ -108,7 +108,7 @@ function formatStateTransition(
 }
 
 function formatDuration(
-  dur?: string | undefined,
+  dur?: string | undefined | null,
   invert = false,
 ): string | undefined {
   const duration = Duration.fromISO(dur || "");
