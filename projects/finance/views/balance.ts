@@ -44,7 +44,7 @@ export type XcDoc = DatumDocument<{
 export type FinanceDoc = TxDoc | EqDoc | XcDoc;
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, isoDateOrTime | undefined, string];
+type MapKey = [string, string, isoDateOrTime | null, string];
 type MapValue = number;
 type ReduceValue = number;
 
@@ -54,7 +54,6 @@ function emit(key: MapKey, value: MapValue): void {
 
 export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "balance",
-  emit,
   map: (doc: FinanceDoc) => {
     function dtTransform(
       time: string | DatumTime | undefined,

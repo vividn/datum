@@ -1,6 +1,5 @@
 import {
   DatumData,
-  DatumDocument,
   DatumMetadata,
   DatumPayload,
   EitherPayload,

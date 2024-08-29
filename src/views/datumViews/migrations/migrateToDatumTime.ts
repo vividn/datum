@@ -1,4 +1,7 @@
-import { DatumDocument, DatumMetadata } from "../../../documentControl/DatumDocument";
+import {
+  DatumDocument,
+  DatumMetadata,
+} from "../../../documentControl/DatumDocument";
 import { DatumMigration, migrationEmit } from "../../../migrations/migrations";
 import { DatumTime } from "../../../time/datumTime";
 
@@ -6,7 +9,6 @@ const emit = migrationEmit;
 
 export const migrateDatumTime1: DatumMigration = {
   name: "migrate_datum_time_1",
-  emit,
   map: (doc) => {
     const { data, meta } = doc as DatumDocument;
     if (!data) {
@@ -33,7 +35,6 @@ export const migrateDatumTime1: DatumMigration = {
 
 export const migrateDatumTime2: DatumMigration = {
   name: "migrate_datum_time_2",
-  emit,
   map: (doc) => {
     const { meta } = doc as DatumDocument;
     // @ts-expect-error old metdata format

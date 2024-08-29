@@ -51,7 +51,6 @@ export const dataStructuresView: DatumView<
   NamedReduceValues
 > = {
   name: "datum_data_structures",
-  emit,
   map: (doc) => {
     function sortedSubkeys(obj: JsonObject): string[][] {
       const subkeysByOrder: string[][] = [];

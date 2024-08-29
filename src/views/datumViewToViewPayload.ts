@@ -53,9 +53,7 @@ function toCouchDbJs(fnStr: string): string {
 }
 
 export function datumViewToViewPayload(
-  datumView:
-    | DatumView<any, any, any, any, Record<string, any> | undefined>
-    | StringifiedDatumView,
+  datumView: DatumView | StringifiedDatumView,
 ): ViewPayload {
   const views: ViewPayloadViews = {};
   const name = datumView.name;

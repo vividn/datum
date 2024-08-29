@@ -5,7 +5,7 @@ import { isoDateOrTime } from "../../../src/time/timeUtils";
 import { DatumTime } from "../../../src/time/datumTime";
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, isoDateOrTime?];
+type MapKey = [string, string, isoDateOrTime | null];
 type MapValue = {
   delta?: number;
   balance?: number;
@@ -36,7 +36,6 @@ export const withOrderedReduceView: DatumView<
   ReduceValue
 > = {
   name: "withOrderedReduce",
-  emit,
   map: (doc: FinanceDoc) => {
     const data = doc.data;
     function dtTransform(

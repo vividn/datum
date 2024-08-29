@@ -12,7 +12,6 @@ export const reduceOrderingView: DatumView<
   { keysIds: any; values: any; rereduce: boolean }
 > = {
   name: "reduce_ordering_view",
-  emit,
   map: (_doc) => {
     emit(Math.random(), Math.random());
     emit(Math.random(), Math.random());

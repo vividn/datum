@@ -8,7 +8,6 @@ const emit = migrationEmit;
 
 export const migrateExample: DatumMigration = {
   name: "migrate_example",
-  emit,
   map: (doc) => {
     const { data } = doc as DatumDocument<{ a: string }>;
     if (data && data.a) {

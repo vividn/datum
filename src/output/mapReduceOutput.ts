@@ -1,6 +1,7 @@
 import Table from "easy-table";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { pullOutData } from "../utils/pullOutData";
+import { JsonObject } from "../utils/utilityTypes";
 
 export function mapReduceOutput(
   viewResponse: PouchDB.Query.Response<EitherPayload>,
@@ -14,7 +15,7 @@ export function mapReduceOutput(
       value: unknown;
       id?: string;
       hid?: string;
-    } & Record<string, any> = {
+    } & JsonObject = {
       key: JSON.stringify(row.key),
       value: JSON.stringify(row.value),
     };

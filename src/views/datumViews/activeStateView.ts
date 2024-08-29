@@ -20,7 +20,6 @@ export const activeStateView: DatumView<
   ReduceValues
 > = {
   name: "active_state",
-  emit,
   map: (doc) => {
     let data: DatumData;
     if (doc.data && doc.meta) {

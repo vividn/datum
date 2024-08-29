@@ -15,7 +15,6 @@ function emit(_key: MapKey, _value: MapValue): void {
 export const structuresView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
   {
     name: "datum_structures",
-    emit,
     map: (doc) => {
       function sortedSubkeys(obj: JsonObject): string[][] {
         const subkeysByDepth: string[][] = [];

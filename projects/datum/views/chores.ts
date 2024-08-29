@@ -26,7 +26,6 @@ function emit(key: MapKey, value: MapValue): void {
 
 export const choreView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "chores",
-  emit,
   map: (doc: ChoreDoc) => {
     const ZERO_DATE = "0000-00-00" as const;
     const { data, meta } = doc;

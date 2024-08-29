@@ -35,7 +35,6 @@ export const timingView: DatumView<
   undefined
 > = {
   name: "datum_timing",
-  emit,
   map: (doc) => {
     let data: DatumData;
     let meta: DatumMetadata | undefined;

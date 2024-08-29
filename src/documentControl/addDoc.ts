@@ -49,7 +49,7 @@ export type ConflictStrategyNames =
   | "delete"
   | "fail";
 
-const conflictRecord: Record<ConflictStrategyNames, any> = {
+const conflictRecord: Record<ConflictStrategyNames, ""> = {
   merge: "",
   useOld: "",
   preferOld: "",

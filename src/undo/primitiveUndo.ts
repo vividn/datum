@@ -1,6 +1,6 @@
 // This is method is only temporary until better undo infrastructure is developed.
 import {
-    DatumMetadata,
+  DatumMetadata,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";

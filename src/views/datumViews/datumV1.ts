@@ -17,7 +17,6 @@ export type V1ReduceRowGroup1 = ViewRow<[string], number>;
 
 export const datumV1View: DatumView<DocType, MapKey, MapValue, number> = {
   name: "datum_v1_view",
-  emit: emit,
   map: (doc) => {
     const data = doc.data;
     const occurTime = data.occurTime;

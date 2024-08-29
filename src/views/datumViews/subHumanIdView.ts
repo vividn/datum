@@ -17,7 +17,6 @@ function emit(key: MapKey, value: MapValue): void {
 export const subHumanIdView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
   {
     name: "datum_sub_human_id",
-    emit,
     map: (doc) => {
       if (doc.meta?.humanId) {
         const hid = (doc.meta as DatumMetadata).humanId as string;

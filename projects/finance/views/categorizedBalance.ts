@@ -5,7 +5,7 @@ import { _emit } from "../../../src/views/emit";
 import { DatumTime } from "../../../src/time/datumTime";
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, string, isoDateOrTime?];
+type MapKey = [string, string, string, isoDateOrTime | null];
 type MapValue = number;
 type ReduceValue = number;
 
@@ -20,7 +20,6 @@ export const categorizedBalanceView: DatumView<
   ReduceValue
 > = {
   name: "categorizedBalance",
-  emit,
   map: (doc: FinanceDoc) => {
     const getAccType = (name: string) => {
       switch (true) {

@@ -13,7 +13,6 @@ function emit(key: MapKey, value: MapValue): void {
 
 export const humanIdView: DatumView<DocType, MapKey, MapValue, ReduceValues> = {
   name: "datum_human_id",
-  emit,
   map: (doc) => {
     if (doc.meta && doc.meta.humanId) {
       emit(doc.meta.humanId as string, null);
