@@ -1,10 +1,9 @@
 import { BadStateError } from "../errors";
-import { JsonType } from "../utils/utilityTypes";
-import { GenericObject } from "../GenericObject";
+import { JsonObject, JsonType } from "../utils/utilityTypes";
 import isPlainObject from "lodash.isplainobject";
 import flattenDeep from "lodash.flattendeep";
 
-export type StateObject = GenericObject & {
+export type StateObject = JsonObject & {
   id: string | boolean;
 };
 export type SingleState = string | boolean | StateObject;

@@ -1,6 +1,7 @@
 import { UpdateStrategyNames } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { GenericObject } from "../GenericObject";
+import { JsonObject } from "../utils/utilityTypes";
 import { DatumView, MapRow } from "../views/DatumView";
 import { _emit } from "../views/emit";
 
@@ -36,7 +37,7 @@ export const migrationOps = Object.keys(MigrationOps);
 type MigrationMapKey = any; // user defined sort for orderin migration operations
 type MigrationMapValue = {
   op: MigrationOps;
-  data: GenericObject;
+  data: JsonObject;
 };
 
 export function migrationEmit(key: MigrationMapKey, value: MigrationMapValue) {

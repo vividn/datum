@@ -5,6 +5,7 @@ import RJSON from "relaxed-json";
 import child_process from "child_process";
 import { GenericObject } from "../GenericObject";
 import { MyError } from "../errors";
+import { JsonObject } from "./utilityTypes";
 
 export class EditorError extends MyError {
   constructor(m: unknown) {
@@ -37,8 +38,8 @@ export async function editInTerminal(initialText: string): Promise<string> {
 }
 
 export async function editJSONInTerminal(
-  object: GenericObject,
-): Promise<GenericObject> {
+  object: JsonObject,
+): Promise<JsonObject> {
   const objectStr = JSON.stringify(object, null, 4);
   const editedObjectStr = await editInTerminal(objectStr);
   return RJSON.parse(editedObjectStr);

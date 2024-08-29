@@ -2,7 +2,7 @@ import isPlainObject from "lodash.isplainobject";
 import { DateTime } from "luxon";
 import { BadTimeError } from "../errors";
 import { GenericObject } from "../GenericObject";
-import { JsonType } from "../utils/utilityTypes";
+import { JsonObject, JsonType } from "../utils/utilityTypes";
 import { getTimezone } from "./getTimezone";
 import { parseTimeStr } from "./parseTimeStr";
 import {
@@ -72,7 +72,7 @@ export function datumTimeToLuxon(time?: DatumTime): DateTime | undefined {
 }
 
 export function isDatumTime(
-  time: DatumTime | GenericObject | JsonType,
+  time: DatumTime | JsonObject | JsonType,
 ): time is DatumTime {
   if (!isPlainObject(time)) {
     return false;
