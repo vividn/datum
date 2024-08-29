@@ -1,6 +1,5 @@
 import { UpdateStrategyNames } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { GenericObject } from "../GenericObject";
 import { JsonObject } from "../utils/utilityTypes";
 import { DatumView, MapRow } from "../views/DatumView";
 import { _emit } from "../views/emit";

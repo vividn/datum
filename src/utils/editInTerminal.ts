@@ -3,7 +3,6 @@ import { promises as fs } from "fs";
 import RJSON from "relaxed-json";
 
 import child_process from "child_process";
-import { GenericObject } from "../GenericObject";
 import { MyError } from "../errors";
 import { JsonObject } from "./utilityTypes";
 
