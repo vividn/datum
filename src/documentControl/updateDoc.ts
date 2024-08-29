@@ -1,5 +1,6 @@
 import {
   DataOnlyPayload,
+  DatumMetadata,
   EitherDocument,
   EitherPayload,
   isDatumDocument,
@@ -74,7 +75,8 @@ export async function updateDoc({
         return oldDoc;
       }
       updatedPayload = { ...oldDoc, views: payload.views };
-      if (isDatumPayload(updatedPayload)) {
+      if (updatedPayload.meta) {
+        updatedPayload.meta = updatedPayload.meta as DatumMetadata;
         updatedPayload.meta.modifyTime = toDatumTime(now());
       }
     } else if (updateStrategy === "useOld") {

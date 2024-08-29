@@ -1,4 +1,5 @@
 import {
+  DatumMetadata,
   EitherDocument,
   EitherPayload,
   isDatumDocument,
@@ -83,7 +84,8 @@ export async function addDoc({
 }: addDocType): Promise<DataOrDesignDocument> {
   payload = jClone(payload);
   let id;
-  if (isDatumPayload(payload)) {
+  if (payload.meta) {
+    payload.meta = payload.meta as DatumMetadata;
     const now = toDatumTime(DateTime.local());
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;

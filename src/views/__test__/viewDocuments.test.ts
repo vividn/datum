@@ -295,7 +295,7 @@ describe("insertDatumView", () => {
     expect(designDoc1.views["datum_view"].reduce).toEqual("_count");
 
     const datumView2: DatumView = {
-      name: "datum_view_2",
+      name: "datum_view",
       map: genericMapFunction,
       reduce: "_stats",
     };
