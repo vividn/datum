@@ -17,4 +17,14 @@ export type JsonType =
   | JsonType[]
   | { [key: string]: JsonType };
 
+export type GenericType =
+  | JsonType
+  | undefined
+  | GenericType[]
+  | { [key: string]: GenericType };
+
 export type JsonObject = { [key: string]: JsonType };
+
+export type GenericObject = { [key: string]: GenericType };
+
+export type QueryOptions = PouchDB.Query.Options<any, any>;

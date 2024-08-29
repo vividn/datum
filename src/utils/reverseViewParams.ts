@@ -1,6 +1,6 @@
-export function reverseViewParams(
-  params: PouchDB.Query.Options<any, any>,
-): PouchDB.Query.Options<any, any> {
+import { QueryOptions } from "./utilityTypes";
+
+export function reverseViewParams(params: QueryOptions): QueryOptions {
   return {
     ...params,
     descending: !params.descending,

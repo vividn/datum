@@ -8,7 +8,7 @@ import { humanIdView, idToHumanView, subHumanIdView } from "../datumViews";
 import { dataStructuresView, structuresView } from "../datumViews";
 
 describe("humanIdView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });
@@ -38,7 +38,7 @@ describe("humanIdView", () => {
 });
 
 describe("subHumanIdView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });
@@ -81,7 +81,7 @@ describe("subHumanIdView", () => {
 });
 
 describe("idToHumanView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });
@@ -111,7 +111,7 @@ describe("idToHumanView", () => {
 });
 
 describe("structuresView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });
@@ -165,7 +165,7 @@ describe("structuresView", () => {
 });
 
 describe("dataStructuresView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });
@@ -225,7 +225,7 @@ describe("dataStructuresView", () => {
 });
 
 describe("datumV1View", () => {
-  let _emitMock: any;
+  let _emitMock: jest.SpyInstance;
   beforeEach(() => {
     _emitMock = jest.spyOn(emit, "_emit");
   });

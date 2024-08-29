@@ -1,8 +1,9 @@
 import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
 import { splitRawAndFields } from "../ids/splitRawAndFields";
-import { GenericObject } from "../GenericObject";
 import { humanTime } from "../time/humanTime";
 import { isDatumTime } from "../time/datumTime";
+import { JsonObject, JsonType } from "./utilityTypes";
+import isPlainObject from "lodash.isplainobject";
 
 export function interpolateFields({
   data,
@@ -39,12 +40,13 @@ export function interpolateFields({
       }
 
       // retrieve deeper values with dot notation
-      const extractedValue = key
+      const extractedValue: JsonType | undefined = key
         .split(".")
-        .reduce(
-          (o, subKey) => (o as undefined | GenericObject)?.[subKey],
-          sourceObject,
-        );
+        .reduce((o: JsonType | undefined, subKey) => {
+          if (isPlainObject(o) && subKey in (o as JsonObject)) {
+            return (o as JsonObject)[subKey];
+          }
+        }, sourceObject);
       if (extractedValue !== undefined) {
         if (isDatumTime(extractedValue)) {
           if (useHumanTimes) {

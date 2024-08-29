@@ -73,7 +73,7 @@ describe("addCmd undo", () => {
       meta: { createTime: { utc: oldTime.toString() } },
     });
 
-    await expect(addCmd("--id oldDoc -u")).rejects.toThrowError(
+    await expect(addCmd("--id oldDoc -u")).rejects.toThrow(
       "Doc created more than fifteen minutes ago",
     );
 

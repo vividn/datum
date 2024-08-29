@@ -6,6 +6,7 @@ import { startCmd } from "../../commands/startCmd";
 import { endCmd } from "../../commands/endCmd";
 import { DateTime } from "luxon";
 import { occurCmd } from "../../commands/occurCmd";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 
 describe("getActiveState", () => {
   const dbName = "get_active_state_test";
@@ -52,21 +53,21 @@ describe("getActiveState", () => {
 
   it("after ending a command the active state is false", async () => {
     await startCmd("field");
-    const endDoc = await endCmd("field");
+    const endDoc = (await endCmd("field")) as DatumDocument;
     expect(endDoc.data.lastState).toBe(true);
     expect(await getActiveState(db, "field")).toBe(false);
   });
 
   it("it can be switched multiple times", async () => {
-    const switchDoc1 = await switchCmd("field active");
+    const switchDoc1 = (await switchCmd("field active")) as DatumDocument;
     expect(switchDoc1.data.lastState).toBe(null);
     expect(await getActiveState(db, "field")).toBe("active");
 
-    const switchDoc2 = await switchCmd("field inactive");
+    const switchDoc2 = (await switchCmd("field inactive")) as DatumDocument;
     expect(switchDoc2.data.lastState).toBe("active");
     expect(await getActiveState(db, "field")).toBe("inactive");
 
-    const endDoc = await endCmd("field");
+    const endDoc = (await endCmd("field")) as DatumDocument;
     expect(endDoc.data.lastState).toBe("inactive");
     expect(await getActiveState(db, "field")).toBe(false);
   });

@@ -7,7 +7,7 @@ import { DatumState } from "../../state/normalizeState";
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
 type MapValue = DatumState;
-type ReduceValues = undefined;
+type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
@@ -20,11 +20,10 @@ export const activeStateView: DatumView<
   ReduceValues
 > = {
   name: "active_state",
-  emit,
   map: (doc) => {
     let data: DatumData;
     if (doc.data && doc.meta) {
-      data = doc.data;
+      data = doc.data as DatumData;
     } else {
       data = doc;
     }

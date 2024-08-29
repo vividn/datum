@@ -21,7 +21,6 @@ export const idStructuresView: DatumView<
   ReduceValue
 > = {
   name: "id_structures",
-  emit,
   map: (doc) => {
     const { meta } = doc as DatumDocument;
     if (meta && meta.idStructure) {

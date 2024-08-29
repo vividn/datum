@@ -1,22 +1,16 @@
 import { isIsoDateOrTime, isoDuration } from "../time/timeUtils";
-import { WithRequired } from "../utils/utilityTypes";
+import { JsonObject, WithRequired } from "../utils/utilityTypes";
 
 import { DatumState } from "../state/normalizeState";
 import { DatumTime } from "../time/datumTime";
 
-//TODO: change all instances to JsonObject and fix problems
-export type GenericData = {
-  [key: string]: any;
-};
-
-export type DatumData<T = unknown> = {
+export type DatumData<T = unknown> = JsonObject & {
   state?: DatumState;
   lastState?: DatumState;
   occurTime?: DatumTime;
   dur?: isoDuration | null;
   field?: string;
-} & GenericData &
-  T;
+} & T;
 
 export type OccurredData<T = unknown> = WithRequired<DatumData<T>, "occurTime">;
 

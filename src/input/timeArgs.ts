@@ -128,6 +128,9 @@ export function occurredBaseArgs(
     ...args,
     referenceTime,
   });
+  if (occurTime === undefined) {
+    return parsedData;
+  }
   return {
     ...parsedData,
     occurTime,

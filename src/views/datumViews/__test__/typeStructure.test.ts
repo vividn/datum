@@ -4,7 +4,7 @@ import * as emit from "../../emit";
 import { typeStructureView } from "../typeStructure";
 
 describe("typeStructureView", () => {
-  let emitMock: any;
+  let emitMock: jest.SpyInstance;
   const tsv = typeStructureView;
 
   beforeEach(() => {

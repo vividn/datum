@@ -1,6 +1,7 @@
 import { DatumView, ReduceFunction } from "../DatumView";
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
 import { _emit } from "../emit";
+import { JsonObject } from "../../utils/utilityTypes";
 
 type DocType = EitherDocument;
 type MapKey = string[][];
@@ -50,9 +51,8 @@ export const dataStructuresView: DatumView<
   NamedReduceValues
 > = {
   name: "datum_data_structures",
-  emit,
   map: (doc) => {
-    function sortedSubkeys(obj: { [key: string]: any }): string[][] {
+    function sortedSubkeys(obj: JsonObject): string[][] {
       const subkeysByOrder: string[][] = [];
       const topOrderKeys: string[] = [];
       const keys = Object.keys(obj).sort();
@@ -74,7 +74,7 @@ export const dataStructuresView: DatumView<
     }
 
     if (doc.data) {
-      const structure = sortedSubkeys(doc.data);
+      const structure = sortedSubkeys(doc.data as DatumData);
       emit(structure, null);
     }
   },

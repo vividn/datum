@@ -24,8 +24,8 @@ describe("assembleId", () => {
           meta: { modifyTime: "2020-11-09T00:40:12.544Z" },
         },
       }),
-    ).toThrowError(IdError);
-    expect(() => assembleId({ payload: { abc: "123" } })).toThrowError(IdError);
+    ).toThrow(IdError);
+    expect(() => assembleId({ payload: { abc: "123" } })).toThrow(IdError);
   });
 
   it.todo("doesn't allow recursive %?idStructure% as a part of the id");

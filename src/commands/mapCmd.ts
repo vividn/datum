@@ -9,6 +9,7 @@ import { ArgumentParser, SUPPRESS } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { mapReduceOutput } from "../output/mapReduceOutput";
+import { QueryOptions } from "../utils/utilityTypes";
 
 export const mapArgs = new ArgumentParser({
   add_help: false,
@@ -82,7 +83,7 @@ export type MapCmdArgs = MainDatumArgs & {
   reverse?: boolean;
   groupLevel?: number;
   maxGroupLevel?: boolean;
-  params?: PouchDB.Query.Options<any, any>;
+  params?: QueryOptions;
 };
 
 export async function mapCmd(
@@ -107,7 +108,7 @@ export async function mapCmd(
     : args.groupLevel
       ? { group_level: args.groupLevel, group: true, reduce: true }
       : {};
-  let viewParams: PouchDB.Query.Options<any, any> = {
+  let viewParams: QueryOptions = {
     reduce: args.reduce ?? false,
     ...startEndParams,
     ...groupParams,

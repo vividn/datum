@@ -47,13 +47,13 @@ it("throws a DatumViewMissing if datum view is not present", async () => {
     .mockRejectedValueOnce(mockMissingNamedViewError)
     .mockRejectedValueOnce(new Error("should not be caught"));
 
-  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrow(
     DatumViewMissingError,
   );
-  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrow(
     DatumViewMissingError,
   );
-  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrowError(
+  await expect(() => getHumanIds(dbMock, ["abc"])).rejects.toThrow(
     DatumViewMissingError,
   );
   try {

@@ -1,8 +1,10 @@
+import { QueryOptions } from "./utilityTypes";
+
 export const HIGH_STRING = "\uffff\uffff\uffff\uffff" as const;
 
 export function startsWith(
   value: string | number | any[] | any,
-): Required<Pick<PouchDB.Query.Options<any, any>, "startkey" | "endkey">> {
+): Required<Pick<QueryOptions, "startkey" | "endkey">> {
   if (typeof value === "string") {
     return { startkey: value, endkey: value + HIGH_STRING };
   } else if (typeof value === "number") {

@@ -20,7 +20,6 @@ describe("setupDatumViews", () => {
   it("adds all datum views and db views to an empty db", async () => {
     const datumView1: DatumView = {
       name: "datum_view",
-      emit,
       map: (doc: any) => {
         emit(doc._id, 1);
       },
@@ -28,7 +27,6 @@ describe("setupDatumViews", () => {
     };
     const datumView2: DatumView = {
       name: "datum_another_view",
-      emit,
       map: (doc: any) => {
         emit(doc._rev, null);
       },
@@ -41,7 +39,6 @@ describe("setupDatumViews", () => {
 
     const dbView1: DatumView = {
       name: "project_view",
-      emit,
       map: (doc: any) => {
         emit(doc._id, 3);
       },

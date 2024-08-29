@@ -192,7 +192,7 @@ describe("quickId", () => {
       meta: { humanId: "no-matches-here" },
     });
 
-    await expect(() => quickId("lmnop", {})).rejects.toThrowError(
+    await expect(() => quickId("lmnop", {})).rejects.toThrow(
       NoQuickIdMatchError,
     );
   });

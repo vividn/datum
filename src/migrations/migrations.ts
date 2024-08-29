@@ -1,6 +1,6 @@
 import { UpdateStrategyNames } from "../documentControl/combineData";
 import { EitherDocument } from "../documentControl/DatumDocument";
-import { GenericObject } from "../GenericObject";
+import { JsonObject, JsonType } from "../utils/utilityTypes";
 import { DatumView, MapRow } from "../views/DatumView";
 import { _emit } from "../views/emit";
 
@@ -13,7 +13,7 @@ export function getMigrationId(shortName: string): string {
 }
 
 export type MigrationOps = UpdateStrategyNames | "overwrite" | "delete";
-const MigrationOps: Record<MigrationOps, any> = {
+const MigrationOps: Record<MigrationOps, ""> = {
   merge: "",
   useOld: "",
   preferOld: "",
@@ -33,10 +33,10 @@ const MigrationOps: Record<MigrationOps, any> = {
 } as const;
 export const migrationOps = Object.keys(MigrationOps);
 
-type MigrationMapKey = any; // user defined sort for orderin migration operations
+type MigrationMapKey = JsonType; // user defined sort for orderin migration operations
 type MigrationMapValue = {
   op: MigrationOps;
-  data: GenericObject;
+  data: JsonObject;
 };
 
 export function migrationEmit(key: MigrationMapKey, value: MigrationMapValue) {
