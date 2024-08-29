@@ -1,4 +1,5 @@
 import { testDbLifecycle } from "../../__test__/test-utils";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 import { insertDatumView } from "../../views/insertDatumView";
 import { DatumMigration, migrationEmit } from "../migrations";
 
@@ -6,9 +7,8 @@ const emit = migrationEmit;
 
 const aTestMigration: DatumMigration = {
   name: "migrate_test_run_migration",
-  emit,
   map: (doc) => {
-    const { data } = doc;
+    const { data } = doc as DatumDocument;
     if (data.condition === true) {
       data.condition = false;
       emit(null, { op: "update", data });

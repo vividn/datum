@@ -214,17 +214,17 @@ describe("handleTimeArgs", () => {
   });
 
   it("throws on unparsable times and dates", () => {
-    expect(() => handleTimeArgs({ time: "absolute rubbish" })).toThrowError(
+    expect(() => handleTimeArgs({ time: "absolute rubbish" })).toThrow(
       BadTimeError,
     );
-    expect(() => handleTimeArgs({ date: "before" })).toThrowError(BadDateError);
+    expect(() => handleTimeArgs({ date: "before" })).toThrow(BadDateError);
     expect(() =>
       handleTimeArgs({ time: "3am", date: "the end of the universe" }),
-    ).toThrowError(BadDateError);
+    ).toThrow(BadDateError);
     expect(() =>
       handleTimeArgs({ time: "half past nothing", yesterday: 1 }),
-    ).toThrowError(BadTimeError);
-    expect(() => handleTimeArgs({ timezone: "rubbish/timezone" })).toThrowError(
+    ).toThrow(BadTimeError);
+    expect(() => handleTimeArgs({ timezone: "rubbish/timezone" })).toThrow(
       BadTimezoneError,
     );
   });

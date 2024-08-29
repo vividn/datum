@@ -1,5 +1,4 @@
 import * as emit from "../../../../src/views/emit";
-import SpyInstance = jest.SpyInstance;
 import { makeDoc } from "../../../../src/__test__/test-utils";
 import { ChoreDoc, choreView } from "../chores";
 import { toDatumTime } from "../../../../src/time/datumTime";
@@ -11,7 +10,7 @@ describe("choreView map", () => {
   const nextTime = toDatumTime("2024-01-26T13:00:00.000Z");
   const createTime = toDatumTime("2024-01-23T18:00:00.000Z");
 
-  let emitMock: SpyInstance<void, [any, any]>;
+  let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
   });

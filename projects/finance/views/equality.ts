@@ -5,7 +5,7 @@ import { isoDateOrTime } from "../../../src/time/timeUtils";
 import { DatumTime } from "../../../src/time/datumTime";
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, isoDateOrTime?];
+type MapKey = [string, string, isoDateOrTime | null];
 type MapValue = number;
 type ReduceValue = number;
 
@@ -15,7 +15,6 @@ function emit(key: MapKey, value: MapValue): void {
 
 export const equalityView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "equality",
-  emit,
   map: (doc) => {
     function dtTransform(
       time: string | DatumTime | undefined,

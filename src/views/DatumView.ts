@@ -4,6 +4,7 @@ import {
   EitherPayload,
 } from "../documentControl/DatumDocument";
 import { MyError } from "../errors";
+import { JsonType } from "../utils/utilityTypes";
 
 export function asViewDb(
   db: PouchDB.Database<any>,
@@ -13,13 +14,12 @@ export function asViewDb(
 
 export type DatumView<
   DocType extends EitherDocument = EitherDocument,
-  MapKey = unknown,
-  MapValue = unknown,
-  ReduceValue = unknown,
-  NamedReduceValues extends Record<string, any> | undefined = undefined,
+  MapKey extends JsonType = JsonType,
+  MapValue extends JsonType = JsonType,
+  ReduceValue extends JsonType = JsonType,
+  NamedReduceValues extends Record<string, JsonType> | undefined = undefined,
 > = {
   name: string;
-  emit: (key: MapKey, value: MapValue) => void;
   map: MapFunction<DocType>;
   reduce?: ReduceFunction<MapKey, MapValue, ReduceValue> | BuiltInReduce;
   namedReduce?: NamedReduceFunctions<MapKey, MapValue, NamedReduceValues>;

@@ -22,7 +22,6 @@ function emit(key: MapKey, value: MapValue): void {
 
 export const projectView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "project",
-  emit,
   map: (doc: TaskDoc) => {
     if (!doc.data) {
       return;

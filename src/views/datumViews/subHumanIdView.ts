@@ -1,11 +1,11 @@
 import { DatumView } from "../DatumView";
 import {
+  DatumDocument,
   DatumMetadata,
-  EitherDocument,
 } from "../../documentControl/DatumDocument";
 import { _emit } from "../emit";
 
-type DocType = EitherDocument;
+type DocType = DatumDocument;
 type MapKey = string;
 type MapValue = null;
 type ReduceValue = number;
@@ -17,9 +17,8 @@ function emit(key: MapKey, value: MapValue): void {
 export const subHumanIdView: DatumView<DocType, MapKey, MapValue, ReduceValue> =
   {
     name: "datum_sub_human_id",
-    emit,
     map: (doc) => {
-      if (doc.meta && doc.meta.humanId) {
+      if (doc.meta?.humanId) {
         const hid = (doc.meta as DatumMetadata).humanId as string;
         let i = hid.length;
         while (i--) {

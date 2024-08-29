@@ -18,6 +18,5 @@ export const subdataMigration: DatumMigration = {
       emit(null, { op: "overwrite", data: newDoc });
     }
   },
-  emit,
   reduce: "_count",
 };

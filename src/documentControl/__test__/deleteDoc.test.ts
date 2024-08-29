@@ -28,7 +28,7 @@ describe("deleteDoc", () => {
   });
 
   it("throws if doc at id does not exist", async () => {
-    await expect(deleteDoc({ id: "does-not-exist", db })).rejects.toThrowError(
+    await expect(deleteDoc({ id: "does-not-exist", db })).rejects.toThrow(
       NoDocToDeleteError,
     );
   });

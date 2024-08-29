@@ -29,7 +29,6 @@ export const typeStructureView: DatumView<
   ReduceValue
 > = {
   name: "datum_type_structure",
-  emit,
   map: (doc) => {
     function typeOf(v: JsonType): typeName {
       if (Array.isArray(v)) {

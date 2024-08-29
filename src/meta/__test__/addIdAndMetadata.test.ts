@@ -2,6 +2,7 @@ import { addIdAndMetadata } from "../addIdAndMetadata";
 import { setNow } from "../../__test__/test-utils";
 import { IdError } from "../../errors";
 import { toDatumTime } from "../../time/datumTime";
+import { DatumPayload } from "../../documentControl/DatumDocument";
 
 const nowUtc = "2023-09-05T11:35:00.000Z";
 const nowDatumTime = toDatumTime(nowUtc);
@@ -129,7 +130,7 @@ describe("addIdAndMetadata", () => {
         partition: "%foo",
         idParts: ["%?humanId"],
       },
-    );
+    ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
         field: "field",
@@ -156,7 +157,7 @@ describe("addIdAndMetadata", () => {
         idParts: ["%occurTime", "%?humanId"],
         idDelimiter: "!!!",
       },
-    );
+    ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
         field: "field",

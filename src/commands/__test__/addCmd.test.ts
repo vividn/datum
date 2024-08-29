@@ -86,8 +86,8 @@ describe("addCmd", () => {
   });
 
   it("can add a blank fieldless document with metadata", async () => {
-    const doc = await addCmd("-F");
-    expect(doc._id).toEqual(doc.meta.createTime.utc + "c");
+    const doc = (await addCmd("-F")) as DatumDocument;
+    expect(doc._id).toEqual(doc.meta.createTime?.utc + "c");
     expect(JSON.stringify(doc.data)).toBe("{}");
   });
 
@@ -181,9 +181,9 @@ describe("addCmd", () => {
   });
 
   it("throws a BaseDataError if baseData is malformed", async () => {
-    await expect(
-      addCmd("-F -b 'string_is_not_good_basedata'"),
-    ).rejects.toThrowError(BaseDataError);
+    await expect(addCmd("-F -b 'string_is_not_good_basedata'")).rejects.toThrow(
+      BaseDataError,
+    );
   });
 
   it("prefers the _id specified when in no-metadata mode", async () => {

@@ -18,6 +18,7 @@ import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { MainDatumArgs } from "../input/mainArgs";
 import { tableOutput } from "../output/tableOutput";
 import { once } from "events";
+import { QueryOptions } from "../utils/utilityTypes";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,
@@ -74,7 +75,7 @@ export async function tailCmd(
   const field = args.field ?? null;
   const columns = (args.column ?? []).map((col) => col.split(",")).flat();
 
-  let viewParams: PouchDB.Query.Options<any, any> = {
+  let viewParams: QueryOptions = {
     include_docs: true,
     inclusive_end: true,
     limit,

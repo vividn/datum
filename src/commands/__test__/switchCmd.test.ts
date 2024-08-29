@@ -5,6 +5,7 @@ import { setupCmd } from "../setupCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
 import { toDatumTime } from "../../time/datumTime";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";
@@ -92,7 +93,7 @@ describe("switchCmd", () => {
   });
 
   it("assumes a state of true by default", async () => {
-    const doc = await switchCmd("eat");
+    const doc = (await switchCmd("eat")) as DatumDocument;
     expect(doc.data.state).toBe(true);
   });
 

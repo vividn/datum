@@ -1,3 +1,4 @@
+import { DatumDocument } from "../../../src/documentControl/DatumDocument";
 import {
   DatumMigration,
   migrationEmit,
@@ -7,10 +8,9 @@ const emit = migrationEmit;
 
 export const migrateExample: DatumMigration = {
   name: "migrate_example",
-  emit,
   map: (doc) => {
-    const { data } = doc;
-    if (data.a) {
+    const { data } = doc as DatumDocument<{ a: string }>;
+    if (data && data.a) {
       emit(null, { op: "rekey", data: { a: "newKey" } });
     }
   },

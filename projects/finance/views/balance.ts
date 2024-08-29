@@ -44,7 +44,7 @@ export type XcDoc = DatumDocument<{
 export type FinanceDoc = TxDoc | EqDoc | XcDoc;
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, isoDateOrTime | undefined, string];
+type MapKey = [string, string, isoDateOrTime | null, string];
 type MapValue = number;
 type ReduceValue = number;
 
@@ -54,7 +54,6 @@ function emit(key: MapKey, value: MapValue): void {
 
 export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
   name: "balance",
-  emit,
   map: (doc: FinanceDoc) => {
     function dtTransform(
       time: string | DatumTime | undefined,
@@ -74,10 +73,16 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     }
     const occurTime = occurDatumTime.utc;
     const occurTime1 = dtTransform(
-      data.effectiveTime1 || data.effectiveDate1 || occurTime,
+      (data.effectiveTime1 || data.effectiveDate1 || occurTime) as
+        | DatumTime
+        | string
+        | undefined,
     )!.utc;
     const occurTime2 = dtTransform(
-      data.effectiveTime2 || data.effectiveDate2 || occurTime,
+      (data.effectiveTime2 || data.effectiveDate2 || occurTime) as
+        | DatumTime
+        | string
+        | undefined,
     )!.utc;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;

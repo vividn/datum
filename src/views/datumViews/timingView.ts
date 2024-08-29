@@ -28,20 +28,14 @@ export type TimingViewType = {
   MapValue: MapValue;
 };
 
-export const timingView: DatumView<
-  EitherDocument,
-  MapKey,
-  MapValue,
-  undefined
-> = {
+export const timingView: DatumView<EitherDocument, MapKey, MapValue> = {
   name: "datum_timing",
-  emit,
   map: (doc) => {
     let data: DatumData;
     let meta: DatumMetadata | undefined;
     if (doc.data && doc.meta) {
-      data = doc.data;
-      meta = doc.meta;
+      data = doc.data as DatumData;
+      meta = doc.meta as DatumMetadata;
     } else {
       data = doc;
     }

@@ -5,7 +5,7 @@ import { _emit } from "../../../src/views/emit";
 import { DatumTime } from "../../../src/time/datumTime";
 
 type DocType = FinanceDoc;
-type MapKey = [string, string, string, isoDateOrTime?];
+type MapKey = [string, string, string, isoDateOrTime | null];
 type MapValue = number;
 type ReduceValue = number;
 
@@ -20,7 +20,6 @@ export const categorizedBalanceView: DatumView<
   ReduceValue
 > = {
   name: "categorizedBalance",
-  emit,
   map: (doc: FinanceDoc) => {
     const getAccType = (name: string) => {
       switch (true) {
@@ -35,7 +34,7 @@ export const categorizedBalanceView: DatumView<
       }
     };
     function dtTransform(
-      time: string | DatumTime | undefined
+      time: string | DatumTime | undefined,
     ): DatumTime | undefined {
       // TODO: Remove this once all documents are migrated to new format
       if (typeof time === "string") {
@@ -45,17 +44,23 @@ export const categorizedBalanceView: DatumView<
     }
     const data = doc.data;
     const occurDatumTime = dtTransform(
-      data.effectiveTime || data.effectiveDate || data.occurTime
+      data.effectiveTime || data.effectiveDate || data.occurTime,
     );
     if (occurDatumTime === undefined) {
       return;
     }
     const occurTime = occurDatumTime.utc;
     const occurTime1 = dtTransform(
-      data.effectiveTime1 || data.effectiveDate1 || occurTime
+      (data.effectiveTime1 || data.effectiveDate1 || occurTime) as
+        | DatumTime
+        | string
+        | undefined,
     )!.utc;
     const occurTime2 = dtTransform(
-      data.effectiveTime2 || data.effectiveDate2 || occurTime
+      (data.effectiveTime2 || data.effectiveDate2 || occurTime) as
+        | DatumTime
+        | string
+        | undefined,
     )!.utc;
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
@@ -65,11 +70,11 @@ export const categorizedBalanceView: DatumView<
     if (data.type === "xc") {
       emit(
         [getAccType(data.acc1), data.curr1, data.acc1, occurTime1],
-        -data.amount1
+        -data.amount1,
       );
       emit(
         [getAccType(data.acc2), data.curr2, data.acc2, occurTime2],
-        data.amount2
+        data.amount2,
       );
     }
   },

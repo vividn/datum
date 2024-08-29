@@ -1,11 +1,11 @@
 import * as editInTerminal from "../../utils/editInTerminal";
 import { testDbLifecycle } from "../../__test__/test-utils";
 import { editCmd, TooManyToEditError } from "../editCmd";
-import { GenericObject } from "../../GenericObject";
 import { setupCmd } from "../setupCmd";
+import { GenericObject } from "../../utils/utilityTypes";
 
 describe("editCmd", () => {
-  let editJSONInTerminalSpy: any;
+  let editJSONInTerminalSpy: jest.SpyInstance;
   const dbName = "delete_cmd_test";
   const db = testDbLifecycle(dbName);
 
@@ -53,6 +53,6 @@ describe("editCmd", () => {
       },
       meta: { humanId: "jkl" },
     });
-    await expect(editCmd(",abc,jkl")).rejects.toThrowError(TooManyToEditError);
+    await expect(editCmd(",abc,jkl")).rejects.toThrow(TooManyToEditError);
   });
 });

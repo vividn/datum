@@ -1,4 +1,5 @@
 import {
+  DatumMetadata,
   EitherDocument,
   EitherPayload,
   isDatumDocument,
@@ -49,7 +50,7 @@ export type ConflictStrategyNames =
   | "delete"
   | "fail";
 
-const conflictRecord: Record<ConflictStrategyNames, any> = {
+const conflictRecord: Record<ConflictStrategyNames, ""> = {
   merge: "",
   useOld: "",
   preferOld: "",
@@ -84,6 +85,7 @@ export async function addDoc({
   payload = jClone(payload);
   let id;
   if (payload.meta) {
+    payload.meta = payload.meta as DatumMetadata;
     const now = toDatumTime(DateTime.local());
     payload.meta.createTime = now;
     payload.meta.modifyTime = now;
