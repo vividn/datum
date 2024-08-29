@@ -26,13 +26,13 @@ describe("occurCmd", () => {
     setNow(now);
 
     const docCountBefore = (await db.info()).doc_count;
-    const doc = await occurCmd("field");
+    const doc = (await occurCmd("field")) as DatumDocument;
 
     await db.info().then((info) => {
       expect(info.doc_count).toEqual(docCountBefore + 1);
     });
     expect(doc.data.field).toEqual("field");
-    expect(doc.data.occurTime.utc).toEqual(now);
+    expect(doc.data.occurTime?.utc).toEqual(now);
 
     expect(doc._id).toEqual(`field:${now}`);
     const dbDoc = await db.get(doc._id);
@@ -91,27 +91,27 @@ describe("occurCmd", () => {
     // Even 1 occur document is enough to switch active state to false from null
     expect(await getActiveState(db, "event")).toBe(false);
 
-    const newDoc2 = await occurCmd("event");
+    const newDoc2 = (await occurCmd("event")) as DatumDocument;
     expect([false, undefined]).toContainEqual(newDoc2.data.lastState);
   });
 
   it("handles negative number time arguments correctly", async () => {
     pushNow("2024-02-23,16:00");
-    const newDoc = await occurCmd("event -d -1d -t -1h");
-    expect(newDoc.data.occurTime.utc).toEqual("2024-02-22T15:00:00.000Z");
-    const newDoc2 = await occurCmd("event -t -20");
-    expect(newDoc2.data.occurTime.utc).toEqual("2024-02-23T15:40:00.000Z");
+    const newDoc = (await occurCmd("event -d -1d -t -1h")) as DatumDocument;
+    expect(newDoc.data.occurTime?.utc).toEqual("2024-02-22T15:00:00.000Z");
+    const newDoc2 = (await occurCmd("event -t -20")) as DatumDocument;
+    expect(newDoc2.data.occurTime?.utc).toEqual("2024-02-23T15:40:00.000Z");
     popNow();
   });
 
   it("can occur on a full day", async () => {
     pushNow("2024-04-23,13:30");
-    const newDoc = await occurCmd("event -D");
+    const newDoc = (await occurCmd("event -D")) as DatumDocument;
     expect(newDoc.data.occurTime).toMatchObject({
       utc: "2024-04-23",
     });
 
-    const newDoc2 = await occurCmd("happening --full-day");
+    const newDoc2 = (await occurCmd("happening --full-day")) as DatumDocument;
     expect(newDoc2.data.occurTime).toMatchObject({
       utc: "2024-04-23",
     });

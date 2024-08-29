@@ -3,7 +3,6 @@ import { getLastDocs } from "../lastDocs";
 import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { deleteCmd } from "../../commands/deleteCmd";
 import * as editInTerminal from "../../utils/editInTerminal";
-import { GenericObject } from "../../GenericObject";
 import { editCmd } from "../../commands/editCmd";
 import { setupCmd } from "../../commands/setupCmd";
 import { getCmd } from "../../commands/getCmd";
@@ -13,6 +12,7 @@ import { occurCmd } from "../../commands/occurCmd";
 import { startCmd } from "../../commands/startCmd";
 import { switchCmd } from "../../commands/switchCmd";
 import { updateCmd } from "../../commands/updateCmd";
+import { JsonObject } from "../../utils/utilityTypes";
 
 describe("lastDocs", () => {
   const dbName = "last_docs_test";
@@ -41,7 +41,7 @@ describe("lastDocs", () => {
   test("editCmd updates lastDocRef", async () => {
     jest
       .spyOn(editInTerminal, "editJSONInTerminal")
-      .mockImplementation(async (doc: GenericObject) => doc);
+      .mockImplementation(async (doc: JsonObject) => doc);
     const id = "last-doc-edited";
     await db.put({ _id: id, foo: "bar" });
 

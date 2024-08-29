@@ -47,7 +47,6 @@ describe("datumViewToViewPayload", () => {
   it("turns the name into a _design id", () => {
     const datumView: DatumView = {
       name: "the_name",
-      emit,
       map: (_doc) => {
         return;
       },
@@ -60,7 +59,6 @@ describe("datumViewToViewPayload", () => {
     const name = "has_a_default_view";
     const datumView: DatumView = {
       name,
-      emit,
       map: genericMapFunction,
     };
     const viewPayload = datumViewToViewPayload(datumView);
@@ -73,7 +71,6 @@ describe("datumViewToViewPayload", () => {
     const name = "with_reduce_still_has_default";
     const datumView: DatumView = {
       name,
-      emit,
       map: genericMapFunction,
       reduce: "_count",
     };
@@ -87,7 +84,6 @@ describe("datumViewToViewPayload", () => {
     const name = "stringified_reduce";
     const datumView: DatumView = {
       name,
-      emit,
       map: genericMapFunction,
       reduce: genericReduceFunction,
     };
@@ -102,7 +98,6 @@ describe("datumViewToViewPayload", () => {
     const name = "multiple_reduce";
     const viewPayload = datumViewToViewPayload({
       name,
-      emit,
       map: genericMapFunction,
       reduce: genericReduceFunction,
       namedReduce: {
@@ -133,7 +128,6 @@ describe("datumViewToViewPayload", () => {
     expect(() => {
       datumViewToViewPayload({
         name: "conflicting_reduce",
-        emit,
         map: genericMapFunction,
         reduce: genericReduceFunction,
         namedReduce: {
@@ -149,7 +143,6 @@ describe("datumViewToViewPayload", () => {
     const name = "multiple_reduce_no_default";
     const viewPayload = datumViewToViewPayload({
       name,
-      emit,
       map: genericMapFunction,
       namedReduce: {
         count: "_count",
@@ -164,14 +157,12 @@ describe("datumViewToViewPayload", () => {
     expect(
       datumViewToViewPayload({
         name: "no_reduce",
-        emit,
         map: genericMapFunction,
       }),
     ).toHaveProperty("meta", {});
     expect(
       datumViewToViewPayload({
         name: "one_reduce",
-        emit,
         map: genericMapFunction,
         reduce: "_count",
       }),
@@ -179,7 +170,6 @@ describe("datumViewToViewPayload", () => {
     expect(
       datumViewToViewPayload({
         name: "several_reduce",
-        emit,
         map: genericMapFunction,
         namedReduce: {
           one: genericReduceFunction,
@@ -193,7 +183,6 @@ describe("datumViewToViewPayload", () => {
     const name = "stringy_input";
     const datumView = datumViewToViewPayload({
       name,
-      emit,
       map: genericMapStr,
       namedReduce: {
         one: "_sum",
@@ -220,7 +209,6 @@ describe("insertDatumView", () => {
   it("turns a DatumView into a functioning view", async () => {
     const summerAB: DatumView = {
       name: "summer",
-      emit,
       map: (doc: any) => {
         if (doc.a) {
           emit("a", doc.a);
@@ -285,7 +273,6 @@ describe("insertDatumView", () => {
   it("returns the new viewDoc", async () => {
     const datumView1: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_count",
     };
@@ -300,7 +287,6 @@ describe("insertDatumView", () => {
   it("overwrites an existing view if DatumView has same name but different contents", async () => {
     const datumView1: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_count",
     };
@@ -310,7 +296,6 @@ describe("insertDatumView", () => {
 
     const datumView2: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_stats",
     };
@@ -328,7 +313,6 @@ describe("insertDatumView", () => {
   it("does not overwrite if view is identical", async () => {
     const datumView: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_count",
     };
@@ -345,7 +329,6 @@ describe("insertDatumView", () => {
     const addDocSpy = jest.spyOn(addDoc, "addDoc");
     const datumView: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_count",
     };
@@ -358,7 +341,6 @@ describe("insertDatumView", () => {
     const updateDocSpy = jest.spyOn(updateDoc, "updateDoc");
     const datumView1: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_count",
     };
@@ -366,7 +348,6 @@ describe("insertDatumView", () => {
 
     const datumView2: DatumView = {
       name: "datum_view",
-      emit,
       map: genericMapFunction,
       reduce: "_stats",
     };

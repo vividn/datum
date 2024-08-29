@@ -17,6 +17,7 @@ import { DateTime, Settings } from "luxon";
 import { headCmd } from "../headCmd";
 import { generateSampleMorning } from "../../__test__/generateSampleMorning";
 import { datumTimeToLuxon } from "../../time/datumTime";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 
 const yesterday = "2023-10-31";
 const today = "2023-11-01";
@@ -85,9 +86,9 @@ describe("headCmd", () => {
     const docs = await headCmd("stretch");
     expect(docs.length).toBe(4);
     await generateSampleMorning(yesterday);
-    const docs2 = await headCmd("stretch");
+    const docs2 = (await headCmd("stretch")) as DatumDocument[];
     expect(docs2.length).toBe(8);
-    expect(docs2.map((doc) => doc.data.field)).toEqual(
+    expect(docs2.map((doc) => doc.data.field as string)).toEqual(
       Array(8).fill("stretch"),
     );
   });
@@ -179,22 +180,24 @@ describe("headCmd", () => {
   it("displays all occurrences on a day if date is given without time", async () => {
     await generateSampleMorning(today);
     await generateSampleMorning(yesterday);
-    const docs = await headCmd(`-d ${today}`);
-    const yesterdayDocs = await headCmd("-y");
+    const docs = (await headCmd(`-d ${today}`)) as DatumDocument[];
+    const yesterdayDocs = (await headCmd("-y")) as DatumDocument[];
 
     expect(docs.length).toBeGreaterThan(10);
     expect(
       docs
-        .map((doc) => doc.data.occurTime.utc)
+        .map((doc) => doc.data.occurTime?.utc)
         .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === today,
+          (occurTime) =>
+            DateTime.fromISO(occurTime ?? "").toISODate() === today,
         ),
     ).toBe(true);
     expect(
       yesterdayDocs
-        .map((doc) => doc.data.occurTime.utc)
+        .map((doc) => doc.data.occurTime?.utc)
         .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday,
+          (occurTime) =>
+            DateTime.fromISO(occurTime ?? "").toISODate() === yesterday,
         ),
     ).toEqual(true);
   });
@@ -205,13 +208,17 @@ describe("headCmd", () => {
     setNow(`${today} 20:00`);
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
-    const docs = await headCmd(`-d today`);
+    const docs = (await headCmd(`-d today`)) as DatumDocument[];
     expect(docs.length).toBeGreaterThan(10);
 
     // when mapping just from utc, not all should be on today
-    const utcDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate(),
-    );
+    const utcDates = docs.map((doc) => {
+      const utc = doc.data.occurTime?.utc;
+      if (!utc) {
+        throw Error("bad occurTime");
+      }
+      return DateTime.fromISO(utc).toUTC().toISODate();
+    });
     expect(utcDates.every((date) => date === today)).toBe(false);
 
     const localDates = docs.map((doc) =>

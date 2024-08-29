@@ -86,8 +86,8 @@ describe("addCmd", () => {
   });
 
   it("can add a blank fieldless document with metadata", async () => {
-    const doc = await addCmd("-F");
-    expect(doc._id).toEqual(doc.meta.createTime.utc + "c");
+    const doc = (await addCmd("-F")) as DatumDocument;
+    expect(doc._id).toEqual(doc.meta.createTime?.utc + "c");
     expect(JSON.stringify(doc.data)).toBe("{}");
   });
 

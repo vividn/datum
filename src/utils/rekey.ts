@@ -1,6 +1,6 @@
 import isPlainObject from "lodash.isplainobject";
 import { MyError } from "../errors";
-import { JsonObject } from "./utilityTypes";
+import { GenericObject, JsonObject } from "./utilityTypes";
 
 export class RekeyError extends MyError {
   constructor(m: unknown) {
@@ -9,8 +9,8 @@ export class RekeyError extends MyError {
   }
 }
 
-export function rekey(aData: JsonObject, bData: JsonObject): JsonObject {
-  const newData: JsonObject = {};
+export function rekey(aData: GenericObject, bData: GenericObject): JsonObject {
+  const newData: GenericObject = {};
 
   for (const key in aData) {
     if (!Object.keys(bData).includes(key)) {
@@ -19,7 +19,10 @@ export function rekey(aData: JsonObject, bData: JsonObject): JsonObject {
       continue;
     }
     if (isPlainObject(aData[key]) && isPlainObject(bData[key])) {
-      newData[key] = rekey(aData[key] as JsonObject, bData[key] as JsonObject);
+      newData[key] = rekey(
+        aData[key] as GenericObject,
+        bData[key] as GenericObject,
+      );
       continue;
     }
 
@@ -30,5 +33,5 @@ export function rekey(aData: JsonObject, bData: JsonObject): JsonObject {
     newData[bData[key]] = aData[key];
   }
 
-  return newData;
+  return newData as JsonObject;
 }

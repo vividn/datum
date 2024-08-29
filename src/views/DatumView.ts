@@ -16,7 +16,7 @@ export type DatumView<
   DocType extends EitherDocument = EitherDocument,
   MapKey extends JsonType = JsonType,
   MapValue extends JsonType = JsonType,
-  ReduceValue extends JsonType | undefined = JsonType | undefined,
+  ReduceValue extends JsonType = JsonType,
   NamedReduceValues extends Record<string, JsonType> | undefined = undefined,
 > = {
   name: string;

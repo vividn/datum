@@ -422,7 +422,6 @@ describe("updateDoc", () => {
     }
     const view1: DatumView = {
       name: "test_view",
-      emit,
       map: (_doc) => {
         emit(1, 1);
       },
@@ -430,7 +429,6 @@ describe("updateDoc", () => {
     const view1Payload = datumViewToViewPayload(view1);
     const view2: DatumView = {
       name: "test_view",
-      emit,
       map: (_doc) => {
         emit(2, 2);
       },

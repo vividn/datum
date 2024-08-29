@@ -1,8 +1,8 @@
-import { GenericObject } from "../GenericObject";
 import { jClone } from "../utils/jClone";
 import isPlainObject from "lodash.isplainobject";
 import { MergeError } from "../errors";
 import { rekey } from "../utils/rekey";
+import { GenericObject, GenericType, JsonObject } from "../utils/utilityTypes";
 
 export type UpdateStrategyNames =
   | "useOld"
@@ -37,10 +37,7 @@ type CombiningType = {
   conflict: conflictingKeyStrategies;
 };
 
-type CustomCombine = (
-  aData: GenericObject,
-  bData: GenericObject,
-) => GenericObject;
+type CustomCombine = (aData: GenericObject, bData: GenericObject) => JsonObject;
 
 export const updateStrategies: Record<
   UpdateStrategyNames,
@@ -66,13 +63,13 @@ export function combineData(
   aData: GenericObject,
   bData: GenericObject,
   how: UpdateStrategyNames | CombiningType | CustomCombine,
-): GenericObject {
+): JsonObject {
   const strategy = typeof how === "string" ? updateStrategies[how] : how;
   const aClone = jClone(aData);
   const bClone = jClone(bData);
 
   if (typeof strategy === "function") {
-    return strategy(aClone, bClone);
+    return strategy(aClone, bClone) as JsonObject;
   }
 
   const combined = {} as GenericObject;
@@ -90,7 +87,11 @@ export function combineData(
 
     // If objects in both, then recurse and run strategy on sub object
     if (isPlainObject(aVal) && isPlainObject(bVal)) {
-      combined[key] = combineData(aVal, bVal, how);
+      combined[key] = combineData(
+        aVal as GenericObject,
+        bVal as GenericObject,
+        how,
+      );
       continue;
     }
 
@@ -129,7 +130,7 @@ export function combineData(
     }
   }
 
-  return combined;
+  return combined as JsonObject;
 }
 
 const isMergeableValue = (val: unknown) => {
@@ -142,11 +143,11 @@ const isMergeableValue = (val: unknown) => {
 };
 
 export const mergeValues = (
-  aVal: unknown,
-  bVal: unknown,
+  aVal: GenericType,
+  bVal: GenericType,
   unique = true,
   sort = false,
-): unknown => {
+): GenericType => {
   if (bVal === undefined) return aVal;
   if (aVal === undefined) return bVal;
 

@@ -6,7 +6,7 @@ import {
 } from "../combineData";
 import { MergeError } from "../../errors";
 import { fail } from "../../__test__/test-utils";
-import { GenericObject } from "../../GenericObject";
+import { GenericObject } from "../../utils/utilityTypes";
 
 describe("combineData", () => {
   const aData = {

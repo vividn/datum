@@ -142,7 +142,10 @@ describe("addDoc", () => {
     await db.put(existingPayload);
     const existingDoc = await db.get(id);
 
-    const newDoc = await addDoc({ db, payload: payloadSameData });
+    const newDoc = (await addDoc({
+      db,
+      payload: payloadSameData,
+    })) as DatumDocument;
     expect(newDoc).toEqual(existingDoc);
     expect(await db.get(id)).toHaveProperty("_rev", existingDoc._rev);
     expect(newDoc.meta.humanId).toEqual("meta can be different");

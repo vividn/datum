@@ -5,7 +5,7 @@ import { _emit } from "../emit";
 type DocType = DatumDocument;
 type MapKey = string;
 type MapValue = null;
-type ReduceValues = undefined;
+type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);

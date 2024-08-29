@@ -1,8 +1,8 @@
 import * as editInTerminal from "../../utils/editInTerminal";
 import { testDbLifecycle } from "../../__test__/test-utils";
 import { editCmd, TooManyToEditError } from "../editCmd";
-import { GenericObject } from "../../GenericObject";
 import { setupCmd } from "../setupCmd";
+import { GenericObject } from "../../utils/utilityTypes";
 
 describe("editCmd", () => {
   let editJSONInTerminalSpy: jest.SpyInstance;

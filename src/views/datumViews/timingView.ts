@@ -28,12 +28,7 @@ export type TimingViewType = {
   MapValue: MapValue;
 };
 
-export const timingView: DatumView<
-  EitherDocument,
-  MapKey,
-  MapValue,
-  undefined
-> = {
+export const timingView: DatumView<EitherDocument, MapKey, MapValue> = {
   name: "datum_timing",
   map: (doc) => {
     let data: DatumData;

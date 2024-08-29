@@ -18,6 +18,7 @@ import { updateCmd } from "../updateCmd";
 import { DateTime, Settings } from "luxon";
 import { generateSampleMorning } from "../../__test__/generateSampleMorning";
 import { datumTimeToLuxon } from "../../time/datumTime";
+import { DatumDocument } from "../../documentControl/DatumDocument";
 
 const yesterday = "2023-10-15";
 const today = "2023-10-16";
@@ -81,10 +82,10 @@ describe("tailCmd", () => {
 
   it("displays last occurrences of a specific field", async () => {
     await generateSampleMorning(today);
-    const docs = await tailCmd("stretch");
+    const docs = (await tailCmd("stretch")) as DatumDocument[];
     expect(docs.length).toBe(4);
     await generateSampleMorning(yesterday);
-    const docs2 = await tailCmd("stretch");
+    const docs2 = (await tailCmd("stretch")) as DatumDocument[];
     expect(docs2.length).toBe(8);
     expect(docs2.map((doc) => doc.data.field)).toEqual(
       Array(8).fill("stretch"),
@@ -180,13 +181,14 @@ describe("tailCmd", () => {
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
 
-    const docs = await tailCmd("");
-    const lastOccur = docs.at(-1)?.data.occurTime.utc;
-    expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(tomorrow);
+    const docs = (await tailCmd("")) as DatumDocument[];
+    const lastOccur = docs.at(-1)?.data.occurTime?.utc;
+    expect(DateTime.fromISO(lastOccur ?? "").toISODate()).toEqual(tomorrow);
 
-    const docsomitTimestamp = await tailCmd("");
-    const lastOccuromitTimestamp = docsomitTimestamp.at(-1)?.data.occurTime.utc;
-    expect(DateTime.fromISO(lastOccuromitTimestamp).toISODate()).toEqual(
+    const docsomitTimestamp = (await tailCmd("")) as DatumDocument[];
+    const lastOccuromitTimestamp =
+      docsomitTimestamp.at(-1)?.data.occurTime?.utc;
+    expect(DateTime.fromISO(lastOccuromitTimestamp ?? "").toISODate()).toEqual(
       tomorrow,
     );
   });
@@ -196,28 +198,28 @@ describe("tailCmd", () => {
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
 
-    const docs = await tailCmd("-t now");
-    const lastOccur = docs.at(-1)?.data.occurTime.utc;
-    expect(DateTime.fromISO(lastOccur).toISODate()).toEqual(today);
+    const docs = (await tailCmd("-t now")) as DatumDocument[];
+    const lastOccur = docs.at(-1)?.data.occurTime?.utc;
+    expect(DateTime.fromISO(lastOccur ?? "").toISODate()).toEqual(today);
   });
 
   it("displays all occurrences on a day if date is given without time", async () => {
     await generateSampleMorning(today);
     await generateSampleMorning(yesterday);
-    const docs = await tailCmd("-d today");
-    const yesterdayDocs = await tailCmd("-y");
+    const docs = (await tailCmd("-d today")) as DatumDocument[];
+    const yesterdayDocs = (await tailCmd("-y")) as DatumDocument[];
 
     expect(docs.length).toBeGreaterThan(10);
     expect(
       docs
-        .map((doc) => doc.data.occurTime.utc)
+        .map((doc) => doc.data.occurTime?.utc ?? "")
         .every(
           (occurTime) => DateTime.fromISO(occurTime).toISODate() === today,
         ),
     ).toBe(true);
     expect(
       yesterdayDocs
-        .map((doc) => doc.data.occurTime.utc)
+        .map((doc) => doc.data.occurTime?.utc ?? "")
         .every(
           (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday,
         ),
@@ -230,13 +232,17 @@ describe("tailCmd", () => {
     setNow(`${today} 20:00`);
     await generateSampleMorning(today);
     await generateSampleMorning(tomorrow);
-    const docs = await tailCmd(`-d ${today}`);
+    const docs = (await tailCmd(`-d ${today}`)) as DatumDocument[];
     expect(docs.length).toBeGreaterThan(10);
 
     // when mapping just from utc, not all should be on today
-    const utcDates = docs.map((doc) =>
-      DateTime.fromISO(doc.data.occurTime.utc).toUTC().toISODate(),
-    );
+    const utcDates = docs.map((doc) => {
+      const utc = doc.data.occurTime?.utc;
+      if (!utc) {
+        throw Error("bad occurTime");
+      }
+      return DateTime.fromISO(utc).toUTC().toISODate();
+    });
     expect(utcDates.every((date) => date === today)).toBe(false);
 
     const localDates = docs.map((doc) =>

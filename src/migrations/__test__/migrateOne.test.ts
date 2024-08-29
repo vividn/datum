@@ -23,7 +23,7 @@ describe("migrateOne", () => {
       id: docId,
       value: { op: "update" as MigrationOps, data: { key: "new value" } },
     };
-    const newDoc = await migrateOne({ row, db });
+    const newDoc = (await migrateOne({ row, db })) as DatumDocument;
     expect(newDoc.data.key).toBe("new value");
     expect(newDoc.meta.humanId).toBe(originalDoc.meta.humanId);
 
@@ -44,7 +44,7 @@ describe("migrateOne", () => {
         },
       },
     };
-    const newDoc = await migrateOne({ row, db });
+    const newDoc = (await migrateOne({ row, db })) as DatumDocument;
     expect(newDoc.data.differentKey).toBe("new value");
     expect(newDoc.data.key).toBeUndefined();
 
@@ -75,7 +75,7 @@ describe("migrateOne", () => {
         data: { key: "new value" },
       },
     };
-    const newDoc = await migrateOne({ row, db });
+    const newDoc = (await migrateOne({ row, db })) as DatumDocument;
     expect(newDoc.data.key).toEqual(["value", "new value"]);
 
     const newDbDoc = await db.get(docId);

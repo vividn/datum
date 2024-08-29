@@ -1,11 +1,12 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { DatumView, StringifiedDatumView } from "./DatumView";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
+import { QueryOptions } from "../utils/utilityTypes";
 
 type ViewMapType = {
   db: PouchDB.Database<EitherPayload>;
   datumView: DatumView<any, any, any, any> | StringifiedDatumView;
-  params?: Omit<PouchDB.Query.Options<any, any>, "reduce">;
+  params?: Omit<QueryOptions, "reduce">;
 };
 export async function viewMap({
   db,

@@ -5,12 +5,7 @@ function emit(key: unknown, value: unknown): void {
   _emit(key, value);
 }
 
-export const reduceOrderingView: DatumView<
-  any,
-  any,
-  any,
-  { keysIds: any; values: any; rereduce: boolean }
-> = {
+export const reduceOrderingView: DatumView = {
   name: "reduce_ordering_view",
   map: (_doc) => {
     emit(Math.random(), Math.random());

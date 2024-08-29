@@ -1,7 +1,10 @@
 import { setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { setupCmd } from "../setupCmd";
 import * as updateDoc from "../../documentControl/updateDoc";
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import {
+  DatumDocument,
+  EitherDocument,
+} from "../../documentControl/DatumDocument";
 import { updateCmd } from "../updateCmd";
 import * as quickId from "../../ids/quickId";
 import { mock } from "jest-mock-extended";
@@ -142,7 +145,7 @@ describe("updateCmd", () => {
 
   it("can update a key with an undefined value easily", async () => {
     const { _id } = await addCmd("field foo=bar baz=qux --id foobar");
-    const retDocs = await updateCmd(`${_id} foo=`);
+    const retDocs = (await updateCmd(`${_id} foo=`)) as DatumDocument[];
     expect(retDocs).toHaveLength(1);
     expect(retDocs[0].data).toEqual({
       field: "field",
@@ -171,11 +174,11 @@ describe("updateCmd", () => {
     const {
       _id: id1,
       meta: { humanId: hid1 },
-    } = await addCmd("field foo=bar");
+    } = (await addCmd("field foo=bar")) as DatumDocument;
     const {
       _id: id2,
       meta: { humanId: hid2 },
-    } = await addCmd("field bar=foo");
+    } = (await addCmd("field bar=foo")) as DatumDocument;
     await getCmd(`${hid1},${hid2},`);
     const retDocs = await updateCmd("foo=baz");
     expect(retDocs).toHaveLength(2);

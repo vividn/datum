@@ -7,7 +7,7 @@ import { DatumState } from "../../state/normalizeState";
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
 type MapValue = DatumState;
-type ReduceValues = undefined;
+type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
