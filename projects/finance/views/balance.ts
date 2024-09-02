@@ -87,7 +87,16 @@ export const balanceView: DatumView<DocType, MapKey, MapValue, ReduceValue> = {
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
       emit([data.acc, data.curr, occurTime1, data.to], -amount);
-      emit([data.to, data.curr, occurTime2, data.acc], amount);
+
+      if (Array.isArray(data.to)) {
+        const nTo = data.to.length;
+        const amountPer = amount / nTo;
+        data.to.forEach((to) => {
+          emit([to, data.curr, occurTime2, data.acc], amountPer);
+        });
+      } else {
+        emit([data.to, data.curr, occurTime2, data.acc], amount);
+      }
     }
     if (data.type === "xc") {
       const occurTime1 =

@@ -65,7 +65,16 @@ export const categorizedBalanceView: DatumView<
     if (data.type === "tx") {
       const amount = data.reverse === true ? data.amount * -1 : data.amount;
       emit([getAccType(data.acc), data.curr, data.acc, occurTime1], -amount);
-      emit([getAccType(data.to), data.curr, data.to, occurTime2], amount);
+
+      if (Array.isArray(data.to)) {
+        const nTo = data.to.length;
+        const amountPer = amount / nTo;
+        data.to.forEach((to) => {
+          emit([getAccType(to), data.curr, to, occurTime2], amountPer);
+        });
+      } else {
+        emit([getAccType(data.to), data.curr, data.to, occurTime2], amount);
+      }
     }
     if (data.type === "xc") {
       emit(
