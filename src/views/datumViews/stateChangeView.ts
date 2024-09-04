@@ -6,20 +6,22 @@ import { DatumState } from "../../state/normalizeState";
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
-type MapValue = DatumState;
+type LastState = DatumState;
+type ActiveState = DatumState;
+type MapValue = [LastState, ActiveState];
 type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const activeStateView: DatumView<
+export const stateChangeView: DatumView<
   DocType,
   MapKey,
   MapValue,
   ReduceValues
 > = {
-  name: "active_state",
+  name: "state_change",
   map: (doc) => {
     let data: DatumData;
     if (doc.data && doc.meta) {
@@ -40,7 +42,9 @@ export const activeStateView: DatumView<
           : undefined;
     const state = data.state !== undefined ? data.state : true;
     const lastState =
-      data.lastState !== undefined ? data.lastState : state === false;
+      data.lastState !== undefined
+        ? (data.lastState as DatumState)
+        : state === false;
 
     function parseISODuration(duration: string) {
       const regex =
@@ -82,28 +86,30 @@ export const activeStateView: DatumView<
 
     if (duration === null) {
       if (lastState === null && state !== null) {
-        emit([field, occurTime.utc], false);
+        // if an occurrence is recorded when the field is not being tracked, start tracking it
+        emit([field, occurTime.utc], [lastState, false]);
       }
       return;
     }
     if (duration === undefined) {
-      emit([field, occurTime.utc], state);
+      emit([field, occurTime.utc], [lastState, state]);
       return;
     }
 
     const seconds = parseISODuration(duration);
     if (seconds > 0) {
       const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
+      // if a block occurs when the field is not being tracked, start tracking it
       const stateAfterBlock = lastState === null ? false : lastState;
-      emit([field, blockBegin], state);
-      emit([field, occurTime.utc], stateAfterBlock);
+      emit([field, blockBegin], [lastState, state]);
+      emit([field, occurTime.utc], [state, stateAfterBlock]);
     } else if (seconds < 0) {
       const holeBegin = subtractSecondsFromTime(
         occurTime.utc,
         Math.abs(seconds),
       );
-      emit([field, holeBegin], false);
-      emit([field, occurTime.utc], state);
+      emit([field, holeBegin], [state, false]);
+      emit([field, occurTime.utc], [false, state]);
     } else {
       return;
     }

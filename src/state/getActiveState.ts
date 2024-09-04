@@ -1,5 +1,5 @@
 import { DateTime } from "luxon";
-import { activeStateView } from "../views/datumViews/activeStateView";
+import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { DatumViewMissingError, isCouchDbError } from "../errors";
 import { parseTimeStr } from "../time/parseTimeStr";
 import { DatumState } from "./normalizeState";
@@ -22,7 +22,7 @@ export async function getActiveState(
   }
   let viewResult;
   try {
-    viewResult = await db.query(activeStateView.name, {
+    viewResult = await db.query(stateChangeView.name, {
       startkey: [field, utcTime],
       descending: true,
       limit: 1,
@@ -33,7 +33,7 @@ export async function getActiveState(
       isCouchDbError(error) &&
       ["missing", "deleted", "missing_named_view"].includes(error.reason)
     ) {
-      throw new DatumViewMissingError(activeStateView.name);
+      throw new DatumViewMissingError(stateChangeView.name);
     }
     throw error;
   }
@@ -43,7 +43,8 @@ export async function getActiveState(
   }
   const activeStateRow = viewResult.rows[0];
   if (activeStateRow.key[0] !== field) {
+    // the case where there are no states for the field so the view returns the preivous field with limit: 1
     return null;
   }
-  return activeStateRow.value;
+  return activeStateRow.value[1];
 }

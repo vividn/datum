@@ -5,7 +5,7 @@ export { datumV1View } from "./datumV1";
 export { subHumanIdView } from "./subHumanIdView";
 export { idToHumanView } from "./idToHumanView";
 export { dataStructuresView } from "./dataStructuresView";
-export { activeStateView } from "./activeStateView";
+export { stateChangeView as activeStateView } from "./stateChangeView";
 export { idStructuresView } from "./idStructures";
 export { typeStructureView } from "./typeStructure";
 
