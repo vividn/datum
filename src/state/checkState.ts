@@ -1,7 +1,6 @@
 import { isoDatetime } from "../time/timeUtils";
 import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
-import { EitherDocument } from "../documentControl/DatumDocument";
 import { durationBlockView } from "../views/datumViews";
 import { MyError } from "../errors";
 import { HIGH_STRING } from "../utils/startsWith";
