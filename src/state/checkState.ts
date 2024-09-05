@@ -49,7 +49,6 @@ export async function checkState({
     // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
     const blockCheckStart = context[0].key[1];
     const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
-    const endkey = context[context.length - 1].key;
     await checkOverlappingBlocks({
       db,
       field,
