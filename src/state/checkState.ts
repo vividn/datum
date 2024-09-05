@@ -23,7 +23,7 @@ export async function checkState({
   const endkey = [field, endTime ?? HIGH_STRING];
 
   const stateChangeRows = (
-    await db.query(stateChangeView.map, {
+    await db.query(stateChangeView.name, {
       reduce: false,
       startkey,
       endkey,
@@ -72,7 +72,7 @@ export async function checkOverlappingBlocks({
   const startkey = [field, startTime ?? "0000-00-00"];
   const endkey = [field, endTime ?? HIGH_STRING];
   const blockTimeRows = (
-    await db.query(durationBlockView.map, {
+    await db.query(durationBlockView.name, {
       reduce: false,
       startkey,
       endkey,

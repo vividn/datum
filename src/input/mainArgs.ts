@@ -21,6 +21,7 @@ import { grepCmd } from "../commands/grepCmd";
 import { backupCmd } from "../commands/backupCmd";
 import { restoreCmd } from "../commands/restoreCmd";
 import { migrateCmd } from "../commands/migrateCmd";
+import { checkCmd } from "../commands/checkCmd";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -142,6 +143,10 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     case "migration":
     case "mig":
       await migrateCmd(args, namespace);
+      break;
+
+    case "check":
+      await checkCmd(args, namespace);
       break;
 
     // case "test": {
