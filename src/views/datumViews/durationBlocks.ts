@@ -5,7 +5,7 @@ import { _emit } from "../emit";
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
-type MapValue = boolean;
+type MapValue = number; // 1 for in block, -1 for not in a block, 0 for state changes that aren't block based
 type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
@@ -29,7 +29,12 @@ export const durationBlockView: DatumView<
     const occurTime = data.occurTime;
     const field = data.field;
     const dur = data.dur;
-    if (!occurTime || !field || !dur) {
+    if (!occurTime || !field) {
+      return;
+    }
+
+    if (!dur) {
+      emit([field, occurTime.utc], 0);
       return;
     }
 
@@ -75,16 +80,18 @@ export const durationBlockView: DatumView<
     if (seconds > 0) {
       const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
       const blockEnd = occurTime.utc;
-      emit([field, blockBegin], true);
-      emit([field, blockEnd], false);
+      emit([field, blockBegin], 1);
+      emit([field, blockEnd], -1);
     } else if (seconds < 0) {
       const blockBegin = subtractSecondsFromTime(
         occurTime.utc,
         Math.abs(seconds),
       );
       const blockEnd = occurTime.utc;
-      emit([field, blockBegin], true);
-      emit([field, blockEnd], false);
+      emit([field, blockBegin], 1);
+      emit([field, blockEnd], -1);
+    } else {
+      emit([field, occurTime.utc], 0);
     }
   },
 };
