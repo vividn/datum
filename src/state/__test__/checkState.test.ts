@@ -1,12 +1,18 @@
 import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import { setupCmd } from "../../commands/setupCmd";
 import { switchCmd } from "../../commands/switchCmd";
 import { DatumDocument } from "../../documentControl/DatumDocument";
-import { checkState } from "../checkState";
+import {
+  checkState,
+  LastStateError,
+  OverlappingBlockError,
+} from "../checkState";
 
 describe("checkState", () => {
   const db = testDbLifecycle("check_state_test");
 
   beforeEach(() => {
+    setupCmd({});
     setNow("2024-09-05 10:15:00");
   });
 
@@ -24,24 +30,57 @@ describe("checkState", () => {
     setNow("+5");
     const doc2 = (await switchCmd("field state2")) as DatumDocument; // automatically adds the lastState
     expect(doc2.data.lastState).toEqual("state1");
-    setNow("+5");
+    setNow("+10");
     const doc3 = (await switchCmd(
       "field state3 --last-state state2",
     )) as DatumDocument; // explicit lastState
     expect(doc3.data.lastState).toEqual("state2");
 
+    const doc4 = (await switchCmd(
+      "field tempState dur=4 -t -4",
+    )) as DatumDocument; // puts a block in the middle of state2
+    expect(doc4.data.lastState).toEqual("state2");
+
     const retVal = await checkState({ db, field: "field" });
     expect(retVal).toBe(true);
   });
-  it.todo(
-    "throws an IncorrectLastStateError if lastState does not reflect the last state correctly",
-  );
-  it.todo(
-    "throws an OverlappingBlockError if a state change block is inserted and overlaps another state change",
-  );
-  it.todo(
-    "throws an OverlappingBLockError if a state change is added in the middle of an existing block",
-  );
+
+  it("throws an IncorrectLastStateError if lastState does not reflect the last state correctly", async () => {
+    await switchCmd("field state1");
+    setNow("+5");
+    await switchCmd("field newState --last-state wrongState");
+
+    await expect(checkState({ db, field: "field" })).rejects.toThrow(
+      LastStateError,
+    );
+  });
+
+  it("throws an OverlappingBlockError if a state change block is inserted and overlaps another state change", async () => {
+    setNow("10:45");
+    await switchCmd("project emails");
+    setNow("11");
+    await switchCmd("project meetings");
+    setNow("11:10");
+    await switchCmd("project overlapping dur=15");
+
+    await expect(checkState({ db, field: "project" })).rejects.toThrow(
+      OverlappingBlockError,
+    );
+  });
+
+  it("throws an OverlappingBLockError if a state change is added in the middle of an existing block", async () => {
+    setNow("11");
+    await switchCmd("project emails");
+    setNow("11:30");
+    await switchCmd("project frontend dur=15");
+    setNow("11:45");
+    await switchCmd("project backend -t 11:20"); // starts in the middle of the frontend block
+
+    await expect(checkState({ db, field: "project" })).rejects.toThrow(
+      OverlappingBlockError,
+    );
+  });
+
   it.todo("throws an OverlappingBlockError if two blocks overlap an edge");
   it.todo(
     "throws an IncorrectLastStateError if one block is nested in another, but has the wrong lastState",

@@ -3,6 +3,7 @@ import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { durationBlockView } from "../views/datumViews";
+import { MyError } from "../errors";
 
 type CheckStateType = {
   db: PouchDB.Database;
@@ -76,16 +77,33 @@ async function determineAndThrowStateChangeError(
       endkey,
     })
   ).rows as MapRow<typeof durationBlockView>[];
-  blockTimeRows
-    .map((row) => row.value)
-    .reduce((prev, curr) => {
-      // must alternate between true and false, otherwise there is an overlap
-      if (curr !== !prev) {
-        throw new Error("Overlapping blocks");
-      }
-      return curr;
-    });
+  console.debug({ context, blockTimeRows })
+  if (blockTimeRows.length !== 0) {
+    blockTimeRows
+      .map((row) => row.value)
+      .reduce((prev, curr) => {
+        // must alternate between true and false, otherwise there is an overlap
+        if (curr !== !prev) {
+          throw new OverlappingBlockError(context);
+        }
+        return curr;
+      });
+  }
 
   // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
-  throw new Error("incorrect lastState");
+  throw new LastStateError(context);
+}
+
+export class LastStateError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, LastStateError.prototype);
+  }
+}
+
+export class OverlappingBlockError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, OverlappingBlockError.prototype);
+  }
 }
