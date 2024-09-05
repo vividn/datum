@@ -4,21 +4,24 @@ import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { durationBlockView } from "../views/datumViews";
 import { MyError } from "../errors";
+import { HIGH_STRING } from "../utils/startsWith";
 
 type CheckStateType = {
   db: PouchDB.Database;
   field: string;
   startTime?: isoDatetime;
+  endTime?: isoDatetime;
 };
 
 export async function checkState({
   db,
   field,
   startTime,
+  endTime,
 }: CheckStateType): Promise<boolean> {
   type StateChangeRow = MapRow<typeof stateChangeView>;
   const startkey = [field, startTime ?? "0000-00-00"];
-  const endkey = [field, "9999-99-99"];
+  const endkey = [field, endTime ?? HIGH_STRING];
 
   const stateChangeRows = (
     await db.query(stateChangeView.map, {
@@ -43,55 +46,65 @@ export async function checkState({
       continue;
     }
     const context = [previousRow, ...stateChangeRows.slice(i, i + 2)];
-    await determineAndThrowStateChangeError(db, context);
-    throw new Error("Unreachable--you found a bug");
+    // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
+    const blockCheckStart = context[0].key[1];
+    const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
+    const endkey = context[context.length - 1].key;
+    await checkOverlappingBlocks({
+      db,
+      field,
+      startTime: blockCheckStart,
+      endTime: blockCheckEnd,
+    });
+
+    // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
+    throw new LastStateError(context);
   }
 
   return true;
 }
 
-async function determineAndThrowStateChangeError(
-  db: PouchDB.Database,
-  context: MapRow<typeof stateChangeView>[],
-): Promise<never> {
-  // this should always be called with context[0] being the last good state change, and context[1] reflecting some incorrect previous state
-  if (context[0].value[1] === context[1].value[0]) {
-    throw new Error(
-      "determineAndThrowStateChangeError called when no state change error has occured",
-    );
-  }
-
-  const ids = context.map((row) => row.id);
-  const docs = (await Promise.all(
-    ids.map((id) => db.get(id)),
-  )) as EitherDocument[];
-  context = context.map((row, i) => ({ ...row, doc: docs[i] }));
-
-  // use the block times view to determine if two blocks are overlapping
-  const startkey = context[0].key;
-  const endkey = context[context.length - 1].key;
+export async function checkOverlappingBlocks({
+  db,
+  field,
+  startTime,
+  endTime,
+}: CheckStateType): Promise<boolean> {
+  type DurationBlockRow = MapRow<typeof durationBlockView>;
+  const startkey = [field, startTime ?? "0000-00-00"];
+  const endkey = [field, endTime ?? HIGH_STRING];
   const blockTimeRows = (
     await db.query(durationBlockView.map, {
       reduce: false,
       startkey,
       endkey,
     })
-  ).rows as MapRow<typeof durationBlockView>[];
-  console.debug({ context, blockTimeRows })
-  if (blockTimeRows.length !== 0) {
-    blockTimeRows
-      .map((row) => row.value)
-      .reduce((prev, curr) => {
-        // must alternate between true and false, otherwise there is an overlap
-        if (curr !== !prev) {
-          throw new OverlappingBlockError(context);
-        }
-        return curr;
-      });
-  }
+  ).rows as DurationBlockRow[];
 
-  // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
-  throw new LastStateError(context);
+  // starting value is determined from the first nonzero value, which is assumed to correctly indicate block state
+  const firstBlockChange = blockTimeRows.find((row) => row.value !== 0);
+  if (blockTimeRows.length === 0 || firstBlockChange === undefined) {
+    return true;
+  }
+  const initialDurationBlockRow: DurationBlockRow = {
+    ...firstBlockChange,
+    value: firstBlockChange.value * -1,
+  };
+
+  blockTimeRows.reduce((lastBlock, curr) => {
+    if (lastBlock.value === 1 && curr.value !== -1) {
+      throw new OverlappingBlockError(blockTimeRows);
+    }
+    if (lastBlock.value === -1 && curr.value === -1) {
+      throw new OverlappingBlockError(blockTimeRows);
+    }
+    if (curr.value !== 0) {
+      return curr;
+    }
+    return lastBlock;
+  }, initialDurationBlockRow);
+
+  return true;
 }
 
 export class LastStateError extends MyError {
