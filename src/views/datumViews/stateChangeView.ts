@@ -114,4 +114,5 @@ export const stateChangeView: DatumView<
       return;
     }
   },
+  reduce: "_count",
 };

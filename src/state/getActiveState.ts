@@ -26,6 +26,7 @@ export async function getActiveState(
       startkey: [field, utcTime],
       descending: true,
       limit: 1,
+      reduce: false,
     });
   } catch (error) {
     //TODO make special error checking missingDatumView
