@@ -161,7 +161,11 @@ describe("checkState", () => {
     await expect(checkState({ db, field: "field2" })).resolves.toBe(true);
   });
 
-  it.todo(
-    "does not throw an error if the first row does not have a null lastState when a startTime is given",
-  );
+  it("does not throw an error if the first row does not have a null lastState when a startTime is given", async () => {
+    setNow("2024-09-05T13:00:00Z");
+    await switchCmd("field newState --last-state false");
+    await expect(
+      checkState({ db, field: "field", startTime: "2024-09-05T12:55:00Z" }),
+    ).resolves.toBe(true);
+  });
 });

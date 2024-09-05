@@ -12,7 +12,7 @@ describe("unfoldState", () => {
 
   it("returns null if state is 'null'", () => {
     expect(normalizeState("null")).toEqual(null);
-  })
+  });
 
   it("returns non object state without modification", () => {
     expect(normalizeState("abcd")).toEqual("abcd");
