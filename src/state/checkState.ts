@@ -56,7 +56,9 @@ export async function checkState({
     });
 
     // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
-    throw new LastStateError(context);
+    throw new LastStateError(
+      `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}`,
+    );
   }
 
   return true;
@@ -91,10 +93,14 @@ export async function checkOverlappingBlocks({
 
   blockTimeRows.reduce((lastBlock, curr) => {
     if (lastBlock.value === 1 && curr.value !== -1) {
-      throw new OverlappingBlockError(blockTimeRows);
+      throw new OverlappingBlockError(
+        `Overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
+      );
     }
     if (lastBlock.value === -1 && curr.value === -1) {
-      throw new OverlappingBlockError(blockTimeRows);
+      throw new OverlappingBlockError(
+        `Overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
+      );
     }
     if (curr.value !== 0) {
       return curr;

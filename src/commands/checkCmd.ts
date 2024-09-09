@@ -33,7 +33,7 @@ export async function checkCmd(
   const args = parseIfNeeded(checkCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
   const fields = args.field?.split(",") ?? (await allCheckFields(db)); // TODO: get all fields
-  await Promise.allSettled(fields.map((field) => checkState({ db, field })));
+  await Promise.all(fields.map((field) => checkState({ db, field })));
   return true;
 }
 
