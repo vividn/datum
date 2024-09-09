@@ -1,7 +1,7 @@
 import { isoDatetime } from "../time/timeUtils";
 import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
-import { durationBlockView } from "../views/datumViews";
+import { overlappingBlockView } from "../views/datumViews";
 import { MyError } from "../errors";
 import { HIGH_STRING } from "../utils/startsWith";
 
@@ -68,23 +68,23 @@ export async function checkOverlappingBlocks({
   startTime,
   endTime,
 }: CheckStateType): Promise<boolean> {
-  type DurationBlockRow = MapRow<typeof durationBlockView>;
+  type overlappingBlockRow = MapRow<typeof overlappingBlockView>;
   const startkey = [field, startTime ?? "0000-00-00"];
   const endkey = [field, endTime ?? HIGH_STRING];
   const blockTimeRows = (
-    await db.query(durationBlockView.name, {
+    await db.query(overlappingBlockView.name, {
       reduce: false,
       startkey,
       endkey,
     })
-  ).rows as DurationBlockRow[];
+  ).rows as overlappingBlockRow[];
 
   // starting value is determined from the first nonzero value, which is assumed to correctly indicate block state
   const firstBlockChange = blockTimeRows.find((row) => row.value !== 0);
   if (blockTimeRows.length === 0 || firstBlockChange === undefined) {
     return true;
   }
-  const initialDurationBlockRow: DurationBlockRow = {
+  const initialoverlappingBlockRow: overlappingBlockRow = {
     ...firstBlockChange,
     value: firstBlockChange.value * -1,
   };
@@ -100,7 +100,7 @@ export async function checkOverlappingBlocks({
       return curr;
     }
     return lastBlock;
-  }, initialDurationBlockRow);
+  }, initialoverlappingBlockRow);
 
   return true;
 }

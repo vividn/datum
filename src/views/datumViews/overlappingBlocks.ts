@@ -12,7 +12,7 @@ function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const durationBlockView: DatumView<
+export const overlappingBlockView: DatumView<
   DocType,
   MapKey,
   MapValue,
