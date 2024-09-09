@@ -5,20 +5,20 @@ import { _emit } from "../emit";
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
-type MapValue = number; // 1 for in block, -1 for not in a block, 0 for state changes that aren't block based
+type MapValue = boolean; // goes true when entering a block, false when leaving
 type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const overlappingBlockView: DatumView<
+export const durationBlockView: DatumView<
   DocType,
   MapKey,
   MapValue,
   ReduceValues
 > = {
-  name: "overlapping_blocks",
+  name: "duration_blocks",
   map: (doc) => {
     let data: DatumData;
     if (doc.data && doc.meta) {
@@ -29,12 +29,7 @@ export const overlappingBlockView: DatumView<
     const occurTime = data.occurTime;
     const field = data.field;
     const dur = data.dur;
-    if (!occurTime || !field) {
-      return;
-    }
-
-    if (!dur) {
-      emit([field, occurTime.utc], 0);
+    if (!occurTime || !field || !dur) {
       return;
     }
 
@@ -80,18 +75,16 @@ export const overlappingBlockView: DatumView<
     if (seconds > 0) {
       const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
       const blockEnd = occurTime.utc;
-      emit([field, blockBegin], 1);
-      emit([field, blockEnd], -1);
+      emit([field, blockBegin], true);
+      emit([field, blockEnd], false);
     } else if (seconds < 0) {
       const blockBegin = subtractSecondsFromTime(
         occurTime.utc,
         Math.abs(seconds),
       );
       const blockEnd = occurTime.utc;
-      emit([field, blockBegin], 1);
-      emit([field, blockEnd], -1);
-    } else {
-      emit([field, occurTime.utc], 0);
+      emit([field, blockBegin], true);
+      emit([field, blockEnd], false);
     }
   },
 };
