@@ -9,6 +9,7 @@ export { dataStructuresView } from "./dataStructuresView";
 export { stateChangeView } from "./stateChangeView";
 export { idStructuresView } from "./idStructures";
 export { typeStructureView } from "./typeStructure";
+export { fieldView } from "./fieldView";
 
 // Migrations
 export {
