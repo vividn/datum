@@ -16,6 +16,10 @@ checkArgs.add_argument("field", {
   help: "the data to check. Defaults to check all fields",
   nargs: "?",
 });
+checkArgs.add_argument("--fix", {
+  help: "attempt to fix the data where possible",
+  action: "store_true",
+});
 
 export const checkCmdArgs = new ArgumentParser({
   description: "Check for problems in the data",
@@ -24,7 +28,10 @@ export const checkCmdArgs = new ArgumentParser({
   parents: [checkArgs],
 });
 
-export type CheckCmdArgs = FieldArgs & MainDatumArgs;
+export type CheckCmdArgs = FieldArgs &
+  MainDatumArgs & {
+    fix?: boolean;
+  };
 
 export async function checkCmd(
   argsOrCli: CheckCmdArgs | string | string[],
@@ -33,7 +40,11 @@ export async function checkCmd(
   const args = parseIfNeeded(checkCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
   const fields = args.field?.split(",") ?? (await allCheckFields(db)); // TODO: get all fields
-  await Promise.all(fields.map((field) => checkState({ db, field })));
+  await Promise.all(
+    fields.map((field) =>
+      checkState({ db, field, fix: args.fix, outputArgs: args }),
+    ),
+  );
   return true;
 }
 

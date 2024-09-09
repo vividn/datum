@@ -4,12 +4,21 @@ import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { overlappingBlockView } from "../views/datumViews";
 import { MyError } from "../errors";
 import { HIGH_STRING } from "../utils/startsWith";
+import { pullOutData } from "../utils/pullOutData";
+import { updateDoc } from "../documentControl/updateDoc";
+import { EitherDocument } from "../documentControl/DatumDocument";
+import { OutputArgs } from "../input/outputArgs";
+import isEqual from "lodash.isequal";
+import { mapCmd } from "../commands/mapCmd";
+import { mapReduceOutput } from "../output/mapReduceOutput";
 
 type CheckStateType = {
   db: PouchDB.Database;
   field: string;
   startTime?: isoDatetime;
   endTime?: isoDatetime;
+  fix?: boolean;
+  outputArgs?: OutputArgs;
 };
 
 export async function checkState({
@@ -17,6 +26,8 @@ export async function checkState({
   field,
   startTime,
   endTime,
+  fix,
+  outputArgs,
 }: CheckStateType): Promise<boolean> {
   type StateChangeRow = MapRow<typeof stateChangeView>;
   const startkey = [field, startTime ?? "0000-00-00"];
@@ -40,7 +51,7 @@ export async function checkState({
     value: startTime ? [null, stateChangeRows[0].value[0]] : [null, null],
   };
   for (let i = 0; i < stateChangeRows.length; i++) {
-    if (previousRow.value[1] === stateChangeRows[i].value[0]) {
+    if (isEqual(previousRow.value[1], stateChangeRows[i].value[0])) {
       previousRow = stateChangeRows[i];
       continue;
     }
@@ -56,6 +67,24 @@ export async function checkState({
     });
 
     // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
+    if (fix) {
+      const oldDoc = (await db.get(context[1].id)) as EitherDocument;
+      const { data } = pullOutData(oldDoc);
+      if (data.lastState === context[1].value[0]) {
+        await updateDoc({
+          db,
+          id: context[1].id,
+          payload: { lastState: context[0].value[1] },
+          outputArgs,
+        });
+        continue;
+      } else {
+        throw new LastStateError(
+          `Attempted to fix last state error, but last state did not match expected
+${mapReduceOutput(context, true)}`
+        );
+      }
+    }
     throw new LastStateError(
       `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}`,
     );

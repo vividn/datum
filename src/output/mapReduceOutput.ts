@@ -1,15 +1,20 @@
 import Table from "easy-table";
-import { EitherPayload } from "../documentControl/DatumDocument";
+import { EitherDocument, EitherPayload } from "../documentControl/DatumDocument";
 import { pullOutData } from "../utils/pullOutData";
 import { JsonObject } from "../utils/utilityTypes";
+import { MapRow } from "../views/DatumView";
 
 export function mapReduceOutput(
-  viewResponse: PouchDB.Query.Response<EitherPayload>,
+  viewResponse: PouchDB.Query.Response<EitherPayload> | MapRow<any>[],
   showId?: boolean,
   hid?: boolean,
   columns?: string[],
 ): string {
-  const dataRows = viewResponse.rows.map((row) => {
+  const rows = Array.isArray(viewResponse)
+    ? viewResponse
+    : ((viewResponse as PouchDB.Query.Response<EitherPayload>)
+        .rows as MapRow<any>[]);
+  const dataRows = rows.map((row) => {
     const keyValue: {
       key: unknown;
       value: unknown;
@@ -25,7 +30,7 @@ export function mapReduceOutput(
     if (!row.doc) {
       return keyValue;
     }
-    const { data, meta } = pullOutData(row.doc);
+    const { data, meta } = pullOutData(row.doc as EitherDocument);
     if (hid) {
       keyValue.hid = meta?.humanId?.slice(0, 6);
     }
