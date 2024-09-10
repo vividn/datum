@@ -1,5 +1,8 @@
 import Table from "easy-table";
-import { EitherDocument, EitherPayload } from "../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../documentControl/DatumDocument";
 import { pullOutData } from "../utils/pullOutData";
 import { JsonObject } from "../utils/utilityTypes";
 import { MapRow } from "../views/DatumView";

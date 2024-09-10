@@ -190,14 +190,22 @@ export async function checkOverlappingBlocks({
 
   blockTimeRows.reduce((lastBlock, curr) => {
     if (lastBlock.value === 1 && curr.value !== -1) {
-      throw new OverlappingBlockError(
-        `Overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
-      );
+      const messagePrefix =
+        curr.value === 1
+          ? "Block starts within another"
+          : "A state transition occurs within a block";
+      throw new OverlappingBlockError({
+        message: `${messagePrefix} in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
+        occurTime: curr.key[1],
+        ids: [lastBlock.id, curr.id],
+      });
     }
     if (lastBlock.value === -1 && curr.value === -1) {
-      throw new OverlappingBlockError(
-        `Overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
-      );
+      throw new OverlappingBlockError({
+        message: `A block ends after another ends indicating overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
+        occurTime: curr.key[1],
+        ids: [lastBlock.id, curr.id],
+      });
     }
     if (curr.value !== 0) {
       return curr;
