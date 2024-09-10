@@ -150,7 +150,7 @@ export async function transactionView({
         Math.max(
           1,
           ...transactions.map((row) => Math.abs(row.value)),
-          Math.abs(endBalance - equalities[0]?.value ?? endBalance),
+          Math.abs(endBalance - (equalities[0]?.value ?? endBalance)),
         ),
       ),
     ) +
