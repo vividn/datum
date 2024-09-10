@@ -10,6 +10,42 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { OutputArgs } from "../input/outputArgs";
 import isEqual from "lodash.isequal";
 import { mapReduceOutput } from "../output/mapReduceOutput";
+import { MigrationMapRow } from "../migrations/migrations";
+
+type StateChangeErrorType = {
+  message?: string;
+  occurTime: isoDatetime;
+  ids: string[];
+  possibleFixes?: MigrationMapRow[][];
+};
+
+export class StateChangeError extends MyError implements StateChangeErrorType {
+  occurTime: isoDatetime;
+  ids: string[];
+  possibleFixes?: MigrationMapRow[][];
+
+  constructor(args: StateChangeErrorType) {
+    super(args.message ?? "State change error");
+    this.occurTime = args.occurTime;
+    this.ids = args.ids;
+    this.possibleFixes = args.possibleFixes;
+
+    Object.setPrototypeOf(this, StateChangeError.prototype);
+  }
+}
+export class LastStateError extends StateChangeError {
+  constructor(args: StateChangeErrorType) {
+    super(args);
+    Object.setPrototypeOf(this, LastStateError.prototype);
+  }
+}
+
+export class OverlappingBlockError extends StateChangeError {
+  constructor(args: StateChangeErrorType) {
+    super(args);
+    Object.setPrototypeOf(this, OverlappingBlockError.prototype);
+  }
+}
 
 type CheckStateType = {
   db: PouchDB.Database;
@@ -20,6 +56,13 @@ type CheckStateType = {
   outputArgs?: OutputArgs;
 };
 
+type StateErrorSummary = {
+  ok: boolean;
+  errors: StateChangeError[];
+};
+
+type StateChangeRow = MapRow<typeof stateChangeView>;
+
 export async function checkState({
   db,
   field,
@@ -27,76 +70,95 @@ export async function checkState({
   endTime,
   fix,
   outputArgs,
-}: CheckStateType): Promise<boolean> {
-  type StateChangeRow = MapRow<typeof stateChangeView>;
-  const startkey = [field, startTime ?? "0000-00-00"];
-  const endkey = [field, endTime ?? HIGH_STRING];
-
-  const stateChangeRows = (
-    await db.query(stateChangeView.name, {
-      reduce: false,
-      startkey,
-      endkey,
-    })
-  ).rows as StateChangeRow[];
-
-  if (stateChangeRows.length === 0) {
-    return true;
-  }
-
-  let previousRow: StateChangeRow = {
-    id: "initial_null_state",
-    key: [field, "0000-00-00"],
-    value: startTime ? [null, stateChangeRows[0].value[0]] : [null, null],
+}: CheckStateType): Promise<StateErrorSummary> {
+  const summary: StateErrorSummary = {
+    ok: true,
+    errors: [],
   };
-  for (let i = 0; i < stateChangeRows.length; i++) {
-    if (isEqual(previousRow.value[1], stateChangeRows[i].value[0])) {
-      previousRow = stateChangeRows[i];
-      continue;
-    }
-    const context = [previousRow, ...stateChangeRows.slice(i, i + 2)];
-    // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
-    const blockCheckStart = context[0].key[1];
-    const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
-    await checkOverlappingBlocks({
-      db,
-      field,
-      startTime: blockCheckStart,
-      endTime: blockCheckEnd,
-    });
+  let startKeyTime = startTime ?? "0000-00-00";
+  const endKeyTime = endTime ?? HIGH_STRING;
 
-    // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
-    if (fix) {
-      const oldDoc = (await db.get(context[1].id)) as EitherDocument;
-      const { data } = pullOutData(oldDoc);
-      console.debug({
-        lastState: data.lastState,
-        context0: context[0].value[1],
-        isEqual: isEqual(data.lastState, context[1].value[0]),
+  refreshFromDbLoop: while (true) {
+    const startkey = [field, startKeyTime];
+    const endkey = [field, endKeyTime];
+
+    const stateChangeRows = (
+      await db.query(stateChangeView.name, {
+        reduce: false,
+        startkey,
+        endkey,
+      })
+    ).rows as StateChangeRow[];
+
+    if (stateChangeRows.length === 0) {
+      break;
+    }
+
+    let previousRow: StateChangeRow = {
+      id: "initial_null_state",
+      key: [field, "0000-00-00"],
+      value: startTime ? [null, stateChangeRows[0].value[0]] : [null, null],
+    };
+    processRowsLoop: for (let i = 0; i < stateChangeRows.length; i++) {
+      if (isEqual(previousRow.value[1], stateChangeRows[i].value[0])) {
+        previousRow = stateChangeRows[i];
+        continue processRowsLoop;
+      }
+      const context = [previousRow, ...stateChangeRows.slice(i, i + 2)];
+      // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
+      const blockCheckStart = context[0].key[1];
+      const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
+      await checkOverlappingBlocks({
+        db,
+        field,
+        startTime: blockCheckStart,
+        endTime: blockCheckEnd,
       });
-      if (isEqual(data.lastState, context[1].value[0])) {
-        await updateDoc({
-          db,
-          id: context[1].id,
-          payload: { lastState: context[0].value[1] },
-          outputArgs,
+
+      // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
+      if (fix) {
+        const oldDoc = (await db.get(context[1].id)) as EitherDocument;
+        const { data } = pullOutData(oldDoc);
+        console.debug({
+          lastState: data.lastState,
+          context0: context[0].value[1],
+          isEqual: isEqual(data.lastState, context[1].value[0]),
         });
-        continue;
-      } else {
-        throw new LastStateError(
-          `Attempted to fix last state error, but last state did not match expected.
+        if (isEqual(data.lastState, context[1].value[0])) {
+          await updateDoc({
+            db,
+            id: context[1].id,
+            payload: { lastState: context[0].value[1] },
+            outputArgs,
+          });
+          startKeyTime = context[0].key[1];
+          continue refreshFromDbLoop;
+        } else {
+          summary.ok = false;
+          summary.errors.push(
+            new LastStateError({
+              message: `Attempted to fix last state error, but last state did not match expected.
 data.lastState: ${JSON.stringify(data.lastState)}
 context[1].value[0]: ${JSON.stringify(context[1].value[0])}
 ${mapReduceOutput(context, true)}`,
-        );
+              ids: [context[0].id, context[1].id],
+              occurTime: context[1].key[1],
+            }),
+          );
+        }
       }
+      summary.ok = false;
+      summary.errors.push(
+        new LastStateError({
+          message: `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}]`,
+          ids: [context[0].id, context[1].id],
+          occurTime: context[1].key[1],
+        }),
+      );
     }
-    throw new LastStateError(
-      `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}`,
-    );
+    return summary;
   }
-
-  return true;
+  return summary;
 }
 
 export async function checkOverlappingBlocks({
@@ -144,18 +206,4 @@ export async function checkOverlappingBlocks({
   }, initialoverlappingBlockRow);
 
   return true;
-}
-
-export class LastStateError extends MyError {
-  constructor(m: unknown) {
-    super(m);
-    Object.setPrototypeOf(this, LastStateError.prototype);
-  }
-}
-
-export class OverlappingBlockError extends MyError {
-  constructor(m: unknown) {
-    super(m);
-    Object.setPrototypeOf(this, OverlappingBlockError.prototype);
-  }
 }
