@@ -198,4 +198,10 @@ describe("checkState --fix", () => {
     const newCheck = await checkState({ db, field: "field" });
     expect(newCheck).toBe(true);
   });
+
+  it.todo("can fix multiple LastStateErrors");
+
+  it.todo(
+    "can fix many LastStateErros caused by duration blocks built upon a false state",
+  );
 });
