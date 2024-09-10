@@ -9,7 +9,6 @@ import { updateDoc } from "../documentControl/updateDoc";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { OutputArgs } from "../input/outputArgs";
 import isEqual from "lodash.isequal";
-import { mapCmd } from "../commands/mapCmd";
 import { mapReduceOutput } from "../output/mapReduceOutput";
 
 type CheckStateType = {
@@ -70,7 +69,12 @@ export async function checkState({
     if (fix) {
       const oldDoc = (await db.get(context[1].id)) as EitherDocument;
       const { data } = pullOutData(oldDoc);
-      if (data.lastState === context[1].value[0]) {
+      console.debug({
+        lastState: data.lastState,
+        context0: context[0].value[1],
+        isEqual: isEqual(data.lastState, context[1].value[0]),
+      });
+      if (isEqual(data.lastState, context[1].value[0])) {
         await updateDoc({
           db,
           id: context[1].id,
@@ -80,8 +84,10 @@ export async function checkState({
         continue;
       } else {
         throw new LastStateError(
-          `Attempted to fix last state error, but last state did not match expected
-${mapReduceOutput(context, true)}`
+          `Attempted to fix last state error, but last state did not match expected.
+data.lastState: ${JSON.stringify(data.lastState)}
+context[1].value[0]: ${JSON.stringify(context[1].value[0])}
+${mapReduceOutput(context, true)}`,
         );
       }
     }
