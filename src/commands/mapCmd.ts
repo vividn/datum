@@ -29,8 +29,7 @@ mapArgs.add_argument("--view", {
   help: 'use a different view than "default". TODO: Can also be speified in the mapName by using a slash i.e. map/view',
 });
 mapArgs.add_argument("--reduce", {
-  help:
-    'whether to reduce, triggered directly by the "reduce" command' || SUPPRESS,
+  help: SUPPRESS, // @dev: whether to reduce, triggered directly by the "reduce" command
   action: "store_true",
 });
 mapArgs.add_argument("--showId", "--id", {

@@ -37,7 +37,7 @@ tailArgs.add_argument("--watch", "-w", {
   action: "store_true",
 });
 tailArgs.add_argument("--head", {
-  help: "show first rows instead of last rows" || SUPPRESS,
+  help: SUPPRESS, // @dev: show first rows instead of last rows. Used by headCmd
   action: "store_true",
 });
 tailArgs.add_argument("--column", {
@@ -163,6 +163,7 @@ export async function tailCmd(
       returnDocs = await getAndDisplayTail();
     });
     returnDocs = await getAndDisplayTail();
+    // @ts-expect-error: PouchDB hasn't changed its even emitter to to match EventTarget yet
     await once(changes, "complete");
     return returnDocs;
   }
