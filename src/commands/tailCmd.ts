@@ -163,6 +163,7 @@ export async function tailCmd(
       returnDocs = await getAndDisplayTail();
     });
     returnDocs = await getAndDisplayTail();
+    // @ts-expect-error: PouchDB hasn't changed its even emitter to to match EventTarget yet
     await once(changes, "complete");
     return returnDocs;
   }
