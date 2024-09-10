@@ -45,8 +45,6 @@ export async function backupCmd(
   );
   // TODO: Also backup and restore attachments (even though using attachments is considered not best practice)
   const backupTime = DateTime.utc().toISO() as string;
-  const buffer = Buffer.from(
-    JSON.stringify({ backupTime, docs: allDocs }, null, 0),
-  );
-  fs.writeFileSync(args.filename, buffer);
+  const backupData = JSON.stringify({ backupTime, docs: allDocs }, null, 0);
+  fs.writeFileSync(args.filename, backupData);
 }
