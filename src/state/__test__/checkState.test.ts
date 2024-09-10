@@ -151,7 +151,7 @@ describe("checkState", () => {
     ).resolves.toBe(true);
   });
 
-  it("throws an IncorrectLastStateError if the lastState of the first ever row for a field is not null", async () => {
+  it("throws a LastStateError if the lastState of the first ever row for a field is not null", async () => {
     await switchCmd("field newState --last-state false");
     await expect(checkState({ db, field: "field" })).rejects.toThrow(
       LastStateError,
@@ -167,5 +167,35 @@ describe("checkState", () => {
     await expect(
       checkState({ db, field: "field", startTime: "2024-09-05T12:55:00Z" }),
     ).resolves.toBe(true);
+  });
+});
+
+describe("checkState --fix", () => {
+  const db = testDbLifecycle("check_state_fix_test");
+
+  beforeEach(() => {
+    setupCmd({});
+    setNow("2024-09-10 15:00:00");
+  });
+
+  afterEach(() => {
+    restoreNow();
+  });
+
+  it("fixes a LastStateError by updating the lastState", async () => {
+    await switchCmd("field state1");
+    setNow("+5");
+    await switchCmd("field state2");
+    setNow("+10");
+    const doc3 = await switchCmd("field state3 --last-state wrongState");
+
+    const retVal = await checkState({ db, field: "field", fix: true });
+    expect(retVal).toBe(true);
+
+    const newDoc3 = (await db.get(doc3._id)) as DatumDocument;
+    expect(newDoc3.data.lastState).toEqual("state2");
+
+    const newCheck = await checkState({ db, field: "field" });
+    expect(newCheck).toBe(true);
   });
 });
