@@ -79,9 +79,11 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors).toHaveLength(2);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[0]).toMatchSnapshot();
+    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
+    expect(errors.errors).toMatchSnapshot();
   });
 
   it("throws an OverlappingBLockError if a state change is added in the middle of an existing block", async () => {
@@ -123,8 +125,10 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors).toHaveLength(2);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
@@ -145,8 +149,10 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors).toHaveLength(2);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
@@ -193,7 +199,11 @@ describe("checkState", () => {
       }),
     ).resolves.toEqual(noErrors);
 
-    const allErrors = await checkState({ db, field: "field" });
+    const allErrors = await checkState({
+      db,
+      field: "field",
+      failOnError: false,
+    });
     expect(allErrors.ok).toBe(false);
     expect(allErrors.errors).toHaveLength(4);
     expect(allErrors.errors).toMatchSnapshot();

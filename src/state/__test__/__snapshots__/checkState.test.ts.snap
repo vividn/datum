@@ -1,3 +1,18 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`checkState correctly handles based off of a given startTime and/or endTime 1`] = `
+[
+  [LastStateError: Last state error in field field at 2024-09-05T13:15:00.000Z. ids: [field:2024-09-05T13:05:00.000Z, field:2024-09-05T13:15:00.000Z]],
+  [OverlappingBlockError: A state transition occurs within a block in field field at 2024-09-05T14:00:00.000Z. ids: [field:2024-09-05T14:05:00.000Z, field:2024-09-05T14:00:00.000Z ]}],
+  [OverlappingBlockError: A state transition occurs within a block in field field at 2024-09-05T14:00:00.000Z. ids: [field:2024-09-05T14:05:00.000Z, field:2024-09-05T14:00:00.000Z ]}],
+  [OverlappingBlockError: A state transition occurs within a block in field field at 2024-09-05T14:00:00.000Z. ids: [field:2024-09-05T14:05:00.000Z, field:2024-09-05T14:00:00.000Z ]}],
+]
+`;
+
 exports[`checkState throws a LastStateError if lastState does not reflect the last state correctly 1`] = `[LastStateError: Last state error in field field at 2024-09-05T10:20:00.000Z. ids: [field:2024-09-05T10:15:00.000Z, field:2024-09-05T10:20:00.000Z]]`;
+
+exports[`checkState throws an OverlappingBLockError if a state change is added in the middle of an existing block 1`] = `[OverlappingBlockError: A state transition occurs within a block in field project at 2024-09-05T11:20:00.000Z. ids: [project:2024-09-05T11:30:00.000Z, project:2024-09-05T11:20:00.000Z ]}]`;
+
+exports[`checkState throws an OverlappingBlockError if one block is nested in another, and has the wrong lastState 1`] = `[OverlappingBlockError: A block starts within another in field project at 2024-09-05T12:15:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:25:00.000Z ]}]`;
+
+exports[`checkState throws an OverlappingBlockError if two blocks overlap an edge 1`] = `[OverlappingBlockError: A block starts within another in field project at 2024-09-05T12:25:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:40:00.000Z ]}]`;

@@ -111,12 +111,24 @@ export async function checkState({
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
       const blockCheckStart = context[0].key[1];
       const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
-      await checkOverlappingBlocks({
+      const overlappingBlocks = await checkOverlappingBlocks({
         db,
         field,
         startTime: blockCheckStart,
         endTime: blockCheckEnd,
+        failOnError,
       });
+      if (!overlappingBlocks.ok) {
+        if (failOnError) {
+          throw overlappingBlocks.errors[0];
+        }
+        summary.ok = false;
+        summary.errors.push(...overlappingBlocks.errors);
+        // checked context already includes the next row, so skip it
+        i++;
+        previousRow = stateChangeRows[i];
+        continue processRowsLoop;
+      }
 
       // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
       if (fix) {
