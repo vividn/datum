@@ -1,0 +1,3 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`checkState throws a LastStateError if lastState does not reflect the last state correctly 1`] = `[LastStateError: Last state error in field field at 2024-09-05T10:20:00.000Z. ids: [field:2024-09-05T10:15:00.000Z, field:2024-09-05T10:20:00.000Z]]`;

@@ -55,6 +55,11 @@ describe("checkState", () => {
     await expect(checkState({ db, field: "field" })).rejects.toThrow(
       LastStateError,
     );
+    const errors = await checkState({ db, field: "field", failOnError: false });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors[0]).toBeInstanceOf(LastStateError);
+    expect(errors.errors[0]).toMatchSnapshot();
   });
 
   it("throws an OverlappingBlockError if a state change block is inserted and overlaps another state change", async () => {
@@ -68,6 +73,15 @@ describe("checkState", () => {
     await expect(checkState({ db, field: "project" })).rejects.toThrow(
       OverlappingBlockError,
     );
+    const errors = await checkState({
+      db,
+      field: "project",
+      failOnError: false,
+    });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).toMatchSnapshot();
   });
 
   it("throws an OverlappingBLockError if a state change is added in the middle of an existing block", async () => {
@@ -81,6 +95,15 @@ describe("checkState", () => {
     await expect(checkState({ db, field: "project" })).rejects.toThrow(
       OverlappingBlockError,
     );
+    const errors = await checkState({
+      db,
+      field: "project",
+      failOnError: false,
+    });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).toMatchSnapshot();
   });
 
   it("throws an OverlappingBlockError if two blocks overlap an edge", async () => {
@@ -94,6 +117,15 @@ describe("checkState", () => {
     await expect(checkState({ db, field: "project" })).rejects.toThrow(
       OverlappingBlockError,
     );
+    const errors = await checkState({
+      db,
+      field: "project",
+      failOnError: false,
+    });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).toMatchSnapshot();
   });
 
   it("throws an OverlappingBlockError if one block is nested in another, and has the wrong lastState", async () => {
@@ -107,6 +139,15 @@ describe("checkState", () => {
     await expect(checkState({ db, field: "project" })).rejects.toThrow(
       OverlappingBlockError,
     );
+    const errors = await checkState({
+      db,
+      field: "project",
+      failOnError: false,
+    });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).toMatchSnapshot();
   });
 
   it("correctly handles based off of a given startTime and/or endTime", async () => {
@@ -151,6 +192,11 @@ describe("checkState", () => {
         startTime: "2024-09-05T14:55:00Z",
       }),
     ).resolves.toEqual(noErrors);
+
+    const allErrors = await checkState({ db, field: "field" });
+    expect(allErrors.ok).toBe(false);
+    expect(allErrors.errors).toHaveLength(4);
+    expect(allErrors.errors).toMatchSnapshot();
   });
 
   it("throws a LastStateError if the lastState of the first ever row for a field is not null", async () => {
