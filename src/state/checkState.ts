@@ -108,6 +108,7 @@ export async function checkState({
         continue processRowsLoop;
       }
       const context = [previousRow, ...stateChangeRows.slice(i, i + 2)];
+      console.debug({ context: JSON.stringify(context, null, 2) });
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
       const blockCheckStart = context[0].key[1];
       const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
@@ -125,7 +126,7 @@ export async function checkState({
         summary.ok = false;
         summary.errors.push(...overlappingBlocks.errors);
         // checked context already includes the next row, so skip it
-        i++;
+        i += 2;
         previousRow = stateChangeRows[i];
         continue processRowsLoop;
       }
@@ -210,12 +211,14 @@ export async function checkOverlappingBlocks({
   if (blockTimeRows.length === 0 || firstBlockChange === undefined) {
     return summary;
   }
-  const initialoverlappingBlockRow: OverlappingBlockRow = {
-    ...firstBlockChange,
+  const initialOverlappingBlockRow: OverlappingBlockRow = {
+    key: [field, "<see doc>"],
+    id: firstBlockChange.id,
     value: firstBlockChange.value * -1,
   };
 
-  blockTimeRows.reduce((lastBlock, curr) => {
+  blockTimeRows.reduce((lastBlock, curr, i) => {
+    console.debug({ lastBlock, curr, i });
     if (lastBlock.value === 1 && curr.value !== -1) {
       const messagePrefix =
         curr.value === 1
@@ -251,7 +254,7 @@ export async function checkOverlappingBlocks({
       return curr;
     }
     return lastBlock;
-  }, initialoverlappingBlockRow);
+  }, initialOverlappingBlockRow);
 
   return summary;
 }
