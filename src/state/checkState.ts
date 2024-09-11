@@ -95,8 +95,10 @@ export async function checkState({
 
     if (stateChangeRows.length === 0) {
       break;
-    }
+          }
 
+
+    
     let previousRow: StateChangeRow = {
       id: "initial_null_state",
       key: [field, "0000-00-00"],
