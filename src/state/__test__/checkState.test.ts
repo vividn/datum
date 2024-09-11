@@ -154,10 +154,24 @@ describe("checkState", () => {
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
-  it("detects both a LastStateError and an OverlappingBlockError", async () => {
+  it("detects a LastStateError that occurs immediately after an OverlappingBlockError", async () => {
     setNow("2024-09-11 16:30");
-    await switchCmd("project datum");
-    
+    await switchCmd("machine on");
+    await switchCmd("machine reboot -t 16:50 10");
+    await switchCmd("machine ready -t 16:45");
+    await switchCmd(
+      "machine off -t 16:55 --last-state not-ready-but-should-be",
+    );
+
+    const errors = await checkState({
+      db,
+      field: "machine",
+      failOnError: false,
+    });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(2);
+    expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[1]).toBeInstanceOf(LastStateError);
   });
 
   it("correctly handles based off of a given startTime and/or endTime", async () => {
