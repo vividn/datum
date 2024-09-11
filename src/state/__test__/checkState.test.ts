@@ -6,8 +6,10 @@ import {
   checkState,
   LastStateError,
   OverlappingBlockError,
+  StateErrorSummary,
 } from "../checkState";
 
+const noErrors: StateErrorSummary = { ok: true, errors: [] };
 describe("checkState", () => {
   const db = testDbLifecycle("check_state_test");
 
@@ -20,12 +22,12 @@ describe("checkState", () => {
     restoreNow();
   });
 
-  it("returns true for a field with no data", async () => {
+  it("returns no errors for a field with no data", async () => {
     const retVal = await checkState({ db, field: "test" });
-    expect(retVal).toBe(true);
+    expect(retVal).toEqual(noErrors);
   });
 
-  it("returns true if every state transistions properly to the next state", async () => {
+  it("returns no errors if every state transistions properly to the next state", async () => {
     await switchCmd("field state1");
     setNow("+5");
     const doc2 = (await switchCmd("field state2")) as DatumDocument; // automatically adds the lastState
@@ -42,7 +44,7 @@ describe("checkState", () => {
     expect(doc4.data.lastState).toEqual("state2");
 
     const retVal = await checkState({ db, field: "field" });
-    expect(retVal).toBe(true);
+    expect(retVal).toEqual(noErrors);
   });
 
   it("throws a LastStateError if lastState does not reflect the last state correctly", async () => {
@@ -136,19 +138,19 @@ describe("checkState", () => {
         startTime: "2024-09-05T12:00:00Z",
         endTime: "2024-09-05T13:10:00Z",
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual(noErrors);
     // await expect({
     //   db,
     //   field: "field",
     //   endTime: "2024-09-05T13:10:00Z",
-    // }).resolves.toBe(true);
+    // }).resolves.toEqual(noErrors);
     await expect(
       checkState({
         db,
         field: "field",
         startTime: "2024-09-05T14:55:00Z",
       }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual(noErrors);
   });
 
   it("throws a LastStateError if the lastState of the first ever row for a field is not null", async () => {
@@ -158,7 +160,9 @@ describe("checkState", () => {
     );
 
     await switchCmd("field2 newState --last-state null");
-    await expect(checkState({ db, field: "field2" })).resolves.toBe(true);
+    await expect(checkState({ db, field: "field2" })).resolves.toEqual(
+      noErrors,
+    );
   });
 
   it("does not throw an error if the first row does not have a null lastState when a startTime is given", async () => {
@@ -166,7 +170,7 @@ describe("checkState", () => {
     await switchCmd("field newState --last-state false");
     await expect(
       checkState({ db, field: "field", startTime: "2024-09-05T12:55:00Z" }),
-    ).resolves.toBe(true);
+    ).resolves.toEqual(noErrors);
   });
 });
 
@@ -190,13 +194,13 @@ describe("checkState --fix", () => {
     const doc3 = await switchCmd("field state3 --last-state wrongState");
 
     const retVal = await checkState({ db, field: "field", fix: true });
-    expect(retVal).toBe(true);
+    expect(retVal).toEqual(noErrors);
 
     const newDoc3 = (await db.get(doc3._id)) as DatumDocument;
     expect(newDoc3.data.lastState).toEqual("state2");
 
     const newCheck = await checkState({ db, field: "field" });
-    expect(newCheck).toBe(true);
+    expect(newCheck).toEqual(noErrors);
   });
 
   it.todo("can fix multiple LastStateErrors");

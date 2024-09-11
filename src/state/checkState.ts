@@ -52,11 +52,12 @@ type CheckStateType = {
   field: string;
   startTime?: isoDatetime;
   endTime?: isoDatetime;
+  failOnError?: boolean;
   fix?: boolean;
   outputArgs?: OutputArgs;
 };
 
-type StateErrorSummary = {
+export type StateErrorSummary = {
   ok: boolean;
   errors: StateChangeError[];
 };
@@ -68,9 +69,11 @@ export async function checkState({
   field,
   startTime,
   endTime,
+  failOnError,
   fix,
   outputArgs,
 }: CheckStateType): Promise<StateErrorSummary> {
+  failOnError ??= true;
   const summary: StateErrorSummary = {
     ok: true,
     errors: [],
@@ -134,27 +137,33 @@ export async function checkState({
           startKeyTime = context[0].key[1];
           continue refreshFromDbLoop;
         } else {
-          summary.ok = false;
-          summary.errors.push(
-            new LastStateError({
-              message: `Attempted to fix last state error, but last state did not match expected.
+          const error = new LastStateError({
+            message: `Attempted to fix last state error, but last state did not match expected.
 data.lastState: ${JSON.stringify(data.lastState)}
 context[1].value[0]: ${JSON.stringify(context[1].value[0])}
 ${mapReduceOutput(context, true)}`,
-              ids: [context[0].id, context[1].id],
-              occurTime: context[1].key[1],
-            }),
-          );
+            ids: [context[0].id, context[1].id],
+            occurTime: context[1].key[1],
+          });
+          if (failOnError) {
+            throw error;
+          } else {
+            summary.ok = false;
+            summary.errors.push(error);
+          }
         }
       }
-      summary.ok = false;
-      summary.errors.push(
-        new LastStateError({
-          message: `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}]`,
-          ids: [context[0].id, context[1].id],
-          occurTime: context[1].key[1],
-        }),
-      );
+      const error = new LastStateError({
+        message: `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}]`,
+        ids: [context[0].id, context[1].id],
+        occurTime: context[1].key[1],
+      });
+      if (failOnError) {
+        throw error;
+      } else {
+        summary.ok = false;
+        summary.errors.push(error);
+      }
     }
     return summary;
   }
@@ -166,8 +175,14 @@ export async function checkOverlappingBlocks({
   field,
   startTime,
   endTime,
-}: CheckStateType): Promise<boolean> {
-  type overlappingBlockRow = MapRow<typeof overlappingBlockView>;
+  failOnError,
+}: CheckStateType): Promise<StateErrorSummary> {
+  type OverlappingBlockRow = MapRow<typeof overlappingBlockView>;
+  failOnError ??= true;
+  const summary: StateErrorSummary = {
+    ok: true,
+    errors: [],
+  };
   const startkey = [field, startTime ?? "0000-00-00"];
   const endkey = [field, endTime ?? HIGH_STRING];
   const blockTimeRows = (
@@ -176,14 +191,14 @@ export async function checkOverlappingBlocks({
       startkey,
       endkey,
     })
-  ).rows as overlappingBlockRow[];
+  ).rows as OverlappingBlockRow[];
 
   // starting value is determined from the first nonzero value, which is assumed to correctly indicate block state
   const firstBlockChange = blockTimeRows.find((row) => row.value !== 0);
   if (blockTimeRows.length === 0 || firstBlockChange === undefined) {
-    return true;
+    return summary;
   }
-  const initialoverlappingBlockRow: overlappingBlockRow = {
+  const initialoverlappingBlockRow: OverlappingBlockRow = {
     ...firstBlockChange,
     value: firstBlockChange.value * -1,
   };
@@ -192,20 +207,33 @@ export async function checkOverlappingBlocks({
     if (lastBlock.value === 1 && curr.value !== -1) {
       const messagePrefix =
         curr.value === 1
-          ? "Block starts within another"
+          ? "A block starts within another"
           : "A state transition occurs within a block";
-      throw new OverlappingBlockError({
+      const error = new OverlappingBlockError({
         message: `${messagePrefix} in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
         occurTime: curr.key[1],
         ids: [lastBlock.id, curr.id],
       });
+      if (failOnError) {
+        throw error;
+      } else {
+        summary.ok = false;
+        summary.errors.push(error);
+      }
     }
+
     if (lastBlock.value === -1 && curr.value === -1) {
-      throw new OverlappingBlockError({
+      const error = new OverlappingBlockError({
         message: `A block ends after another ends indicating overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
         occurTime: curr.key[1],
         ids: [lastBlock.id, curr.id],
       });
+      if (failOnError) {
+        throw error;
+      } else {
+        summary.ok = false;
+        summary.errors.push(error);
+      }
     }
     if (curr.value !== 0) {
       return curr;
@@ -213,5 +241,5 @@ export async function checkOverlappingBlocks({
     return lastBlock;
   }, initialoverlappingBlockRow);
 
-  return true;
+  return summary;
 }
