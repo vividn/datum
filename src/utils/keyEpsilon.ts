@@ -2,6 +2,8 @@ import { JsonType } from "./utilityTypes";
 
 export const HIGH_STRING = "\uffff\uffff\uffff\uffff" as const;
 
+export const couchdbCollationOrder = `\`^_-,;:!?.'"()[]{}@*/\\&#%+<=>|~$0123456789aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ`;
+
 export function incrementString(str: string): string {
   return str + "\u0001";
 }
@@ -11,6 +13,10 @@ export function decrementString(str: string): string {
   if (lastChar === "\u0001") {
     return str.slice(0, -1);
   } else {
+    const couchDbIndex = couchdbCollationOrder.indexOf(lastChar);
+    if (couchDbIndex !== -1) {
+      
+    if (couchdbCollationOrder.indexOf(lastChar) === -1) {
     return (
       str.slice(0, -1) +
       String.fromCharCode(lastChar.charCodeAt(0) - 1) +
