@@ -2,26 +2,17 @@ import { JsonType } from "./utilityTypes";
 
 export const HIGH_STRING = "\uffff\uffff\uffff\uffff" as const;
 
-export const couchdbCollationOrder = `\`^_-,;:!?.'"()[]{}@*/\\&#%+<=>|~$0123456789aAbBcCdDeEfFgGhHiIjJkKlLmMnNoOpPqQrRsStTuUvVwWxXyYzZ`;
-
 export function incrementString(str: string): string {
   return str + "\u0001";
 }
 
 export function decrementString(str: string): string {
   const lastChar = str.slice(-1);
-  if (lastChar === "\u0001") {
+  if (lastChar === "\u0001" || lastChar === "\u0000") {
     return str.slice(0, -1);
   } else {
-    const couchDbIndex = couchdbCollationOrder.indexOf(lastChar);
-    if (couchDbIndex !== -1) {
-      
-    if (couchdbCollationOrder.indexOf(lastChar) === -1) {
-    return (
-      str.slice(0, -1) +
-      String.fromCharCode(lastChar.charCodeAt(0) - 1) +
-      HIGH_STRING
-    );
+    const oneLess = String.fromCharCode(lastChar.charCodeAt(0) - 1);
+    return str.slice(0, -1) + oneLess + HIGH_STRING;
   }
 }
 
@@ -70,14 +61,11 @@ export function incrementKey(key: JsonType): JsonType {
     return true;
   }
   if (key === true) {
-    return -Infinity;
+    return -Number.MAX_VALUE;
   }
   if (typeof key === "number") {
-    if (key === +Infinity) {
+    if (key === Number.MAX_VALUE) {
       return "";
-    }
-    if (key === -Infinity) {
-      return -Number.MAX_VALUE;
     }
     return nextFloat(key, +Infinity);
   }
@@ -110,10 +98,10 @@ export function decrementKey(key: JsonType): JsonType {
     return false;
   }
   if (typeof key === "number") {
-    if (key === -Infinity) {
+    if (key === -Number.MAX_VALUE) {
       return true;
     }
-    if (key === +Infinity) {
+    if (key === Number.MAX_VALUE) {
       return "";
     }
     return nextFloat(key, -Infinity);
@@ -127,7 +115,7 @@ export function decrementKey(key: JsonType): JsonType {
     }
     const lastKey = key.at(-1)!;
     if (lastKey === null) {
-      return [...key.slice(0, -2), { [HIGH_STRING]: HIGH_STRING }];
+      return key.slice(0, -1);
     }
     const decrementedLastValue = decrementKey(key.at(-1)!);
     return [...key.slice(0, -1), decrementedLastValue];
