@@ -3,7 +3,7 @@ import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { overlappingBlockView } from "../views/datumViews";
 import { MyError } from "../errors";
-import { HIGH_STRING } from "../utils/startsWith";
+import { decrementString, HIGH_STRING } from "../utils/startsWith";
 import { pullOutData } from "../utils/pullOutData";
 import { updateDoc } from "../documentControl/updateDoc";
 import { EitherDocument } from "../documentControl/DatumDocument";
@@ -229,19 +229,17 @@ export async function checkOverlappingBlocks({
     }),
   });
   // look backward in time to see if currently in a block or not
-  const lastBlockChanges: MapRow<typeof durationBlockView>[] = (
-    await db.query(durationBlockView.name, {
-      reduce: false,
-      startkey,
-      endkey: [field, "0000-00-00"],
-      descending: true,
-      limit: 2,
-    })
-  ).rows;
-
-  // skip the first row if it occurs at the same time as the startkey to get the first one in the past
-  const lastBlockChange =
-    lastBlockChanges[lastBlockChanges[0].key[1] === startkey[1] ? 1 : 0] ??
+  const nonInclusiveStartKey = [startkey[0], decrementString(startkey[1])];
+  const lastBlockChange: MapRow<typeof durationBlockView> =
+    (
+      await db.query(durationBlockView.name, {
+        reduce: false,
+        startkey: nonInclusiveStartKey,
+        endkey: [field, "0000-00-00"],
+        descending: true,
+        limit: 1,
+      })
+    ).rows[0] ??
     ({
       key: [field, "0000-00-00"],
       value: false, // default not in a block

@@ -60,3 +60,21 @@ function nextFloat(start: number, direction: number) {
     return start + direction;
   }
 }
+
+export function incrementString(str: string): string {
+  const lastChar = str.slice(-1);
+  if (lastChar === "\uffff") {
+    return str + "\uffff";
+  } else {
+    return str.slice(0, -1) + String.fromCharCode(lastChar.charCodeAt(0) + 1);
+  }
+}
+
+export function decrementString(str: string): string {
+  const lastChar = str.slice(-1);
+  if (lastChar === "\u0000") {
+    return str.slice(0, -1);
+  } else {
+    return str.slice(0, -1) + String.fromCharCode(lastChar.charCodeAt(0) - 1);
+  }
+}
