@@ -11,8 +11,6 @@ exports[`checkState correctly handles based off of a given startTime and/or endT
 
 exports[`checkState throws a LastStateError if lastState does not reflect the last state correctly 1`] = `[LastStateError: Last state error in field field at 2024-09-05T10:20:00.000Z. ids: [field:2024-09-05T10:15:00.000Z, field:2024-09-05T10:20:00.000Z]]`;
 
-exports[`checkState throws an OverlappingBLockError if a state change is added in the middle of an existing block 1`] = `[OverlappingBlockError: A state transition occurs within a block in field project at 2024-09-05T11:20:00.000Z. ids: [project:2024-09-05T11:30:00.000Z, project:2024-09-05T11:20:00.000Z ]}]`;
-
 exports[`checkState throws an OverlappingBlockError if a state change block is inserted and overlaps another state change 1`] = `
 [
   [OverlappingBlockError: A state transition occurs within a block in field project at 2024-09-05T11:00:00.000Z. ids: [project:2024-09-05T11:10:00.000Z, project:2024-09-05T11:00:00.000Z ]}],

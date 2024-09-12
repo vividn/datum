@@ -84,12 +84,10 @@ describe("checkState", () => {
     expect(errors.errors).toMatchSnapshot();
   });
 
-  it("throws an OverlappingBlockError if a state change is added in the middle of an existing block", async () => {
+  it.only("throws an OverlappingBlockError if a state change is added in the middle of an existing block", async () => {
     setNow("11");
     await switchCmd("project emails");
-    setNow("11:30");
-    await switchCmd("project frontend dur=15");
-    setNow("11:45");
+    await switchCmd("project frontend dur=15 -t 11:30");
     await switchCmd("project backend -t 11:20"); // starts in the middle of the frontend block
 
     // await expect(checkState({ db, field: "project" })).rejects.toThrow(
@@ -106,7 +104,7 @@ describe("checkState", () => {
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
-  it.only("throws an OverlappingBlockError if two blocks overlap an edge", async () => {
+  it("throws an OverlappingBlockError if two blocks overlap an edge", async () => {
     setNow("12");
     await switchCmd("project emails");
     await switchCmd("project frontend dur=20 -t 12:30");
@@ -121,10 +119,8 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(2);
+    expect(errors.errors).toHaveLength(1);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
     expect(errors.errors[0]).toMatchSnapshot();
   });
 

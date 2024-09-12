@@ -218,22 +218,30 @@ export async function checkOverlappingBlocks({
     })
   ).rows as OverlappingBlockRow[];
 
-  // look backward in time to see if currently in a block or not
   console.debug({
     startkey,
-    skip: blockTimeRows[0].key[1] === startkey[1] ? 1 : 0,
+    query: await db.query(durationBlockView.name, {
+      reduce: false,
+      startkey,
+      endkey: [field, "0000-00-00"],
+      descending: true,
+      limit: 2,
+    }),
   });
-  const lastBlockChange: MapRow<typeof durationBlockView> =
-    (
-      await db.query(durationBlockView.name, {
-        reduce: false,
-        startkey,
-        endkey: [field, "0000-00-00"],
-        descending: true,
-        limit: 1,
-        skip: blockTimeRows[0].key[1] === startkey[1] ? 1 : 0,
-      })
-    ).rows[0] ??
+  // look backward in time to see if currently in a block or not
+  const lastBlockChanges: MapRow<typeof durationBlockView>[] = (
+    await db.query(durationBlockView.name, {
+      reduce: false,
+      startkey,
+      endkey: [field, "0000-00-00"],
+      descending: true,
+      limit: 2,
+    })
+  ).rows;
+
+  // skip the first row if it occurs at the same time as the startkey to get the first one in the past
+  const lastBlockChange =
+    lastBlockChanges[lastBlockChanges[0].key[1] === startkey[1] ? 1 : 0] ??
     ({
       key: [field, "0000-00-00"],
       value: false, // default not in a block
