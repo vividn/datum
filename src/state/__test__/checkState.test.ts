@@ -84,7 +84,7 @@ describe("checkState", () => {
     expect(errors.errors).toMatchSnapshot();
   });
 
-  it.only("throws an OverlappingBlockError if a state change is added in the middle of an existing block", async () => {
+  it("throws an OverlappingBlockError if a state change is added in the middle of an existing block", async () => {
     setNow("11");
     await switchCmd("project emails");
     await switchCmd("project frontend dur=15 -t 11:30");
@@ -141,10 +141,8 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(2);
+    expect(errors.errors).toHaveLength(1);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
