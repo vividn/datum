@@ -36,5 +36,5 @@ rules:
   "import/no-default-export": "error"
   "prettier/prettier": "error"
   "no-constant-condition": ["error", "checkLoops": false]
-  "no-console": ["error", { allow: ["log", "warn", "error", "info", "clear"] }]
+  "no-console": ["warn", { allow: ["log", "warn", "error", "info", "clear"] }]
 

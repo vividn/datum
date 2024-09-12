@@ -11,6 +11,7 @@ import { OutputArgs } from "../input/outputArgs";
 import isEqual from "lodash.isequal";
 import { mapReduceOutput } from "../output/mapReduceOutput";
 import { MigrationMapRow } from "../migrations/migrations";
+import { durationBlockView } from "../views/datumViews/durationBlocks";
 
 type StateChangeErrorType = {
   message?: string;
@@ -95,14 +96,23 @@ export async function checkState({
 
     if (stateChangeRows.length === 0) {
       break;
-          }
+    }
 
+    let previousRow = (
+      await db.query(stateChangeView.name, {
+        reduce: false,
+        startkey,
+        endkey: [field, "0000-00-00"],
+        descending: true,
+        skip: stateChangeRows[0].key[1] === startkey[1] ? 1 : 0,
+        limit: 1,
+      })
+    ).rows[0] as StateChangeRow;
 
-    
-    let previousRow: StateChangeRow = {
+    previousRow ??= {
       id: "initial_null_state",
       key: [field, "0000-00-00"],
-      value: startTime ? [null, stateChangeRows[0].value[0]] : [null, null],
+      value: [null, null],
     };
     processRowsLoop: for (let i = 0; i < stateChangeRows.length; i++) {
       if (isEqual(previousRow.value[1], stateChangeRows[i].value[0])) {
@@ -208,15 +218,30 @@ export async function checkOverlappingBlocks({
     })
   ).rows as OverlappingBlockRow[];
 
-  // starting value is determined from the first nonzero value, which is assumed to correctly indicate block state
-  const firstBlockChange = blockTimeRows.find((row) => row.value !== 0);
-  if (blockTimeRows.length === 0 || firstBlockChange === undefined) {
-    return summary;
-  }
+  // look backward in time to see if currently in a block or not
+  console.debug({
+    startkey,
+    skip: blockTimeRows[0].key[1] === startkey[1] ? 1 : 0,
+  });
+  const lastBlockChange: MapRow<typeof durationBlockView> =
+    (
+      await db.query(durationBlockView.name, {
+        reduce: false,
+        startkey,
+        endkey: [field, "0000-00-00"],
+        descending: true,
+        limit: 1,
+        skip: blockTimeRows[0].key[1] === startkey[1] ? 1 : 0,
+      })
+    ).rows[0] ??
+    ({
+      key: [field, "0000-00-00"],
+      value: false, // default not in a block
+      id: "initial_state",
+    } as MapRow<typeof durationBlockView>);
   const initialOverlappingBlockRow: OverlappingBlockRow = {
-    key: [field, "<see doc>"],
-    id: firstBlockChange.id,
-    value: firstBlockChange.value * -1,
+    ...lastBlockChange,
+    value: lastBlockChange.value ? 1 : -1,
   };
 
   blockTimeRows.reduce((lastBlock, curr, i) => {
