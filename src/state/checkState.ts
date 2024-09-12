@@ -3,7 +3,6 @@ import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { overlappingBlockView } from "../views/datumViews";
 import { MyError } from "../errors";
-import { decrementString, HIGH_STRING } from "../utils/startsWith";
 import { pullOutData } from "../utils/pullOutData";
 import { updateDoc } from "../documentControl/updateDoc";
 import { EitherDocument } from "../documentControl/DatumDocument";
@@ -12,6 +11,7 @@ import isEqual from "lodash.isequal";
 import { mapReduceOutput } from "../output/mapReduceOutput";
 import { MigrationMapRow } from "../migrations/migrations";
 import { durationBlockView } from "../views/datumViews/durationBlocks";
+import { decrementKey, HIGH_STRING } from "../utils/keyEpsilon";
 
 type StateChangeErrorType = {
   message?: string;
@@ -98,6 +98,7 @@ export async function checkState({
       break;
     }
 
+    // CHANGE THIS TO BE INITIAL STATE AND USE THE NEW DECREMENT KEY FUNCTION
     let previousRow = (
       await db.query(stateChangeView.name, {
         reduce: false,
@@ -119,7 +120,7 @@ export async function checkState({
         previousRow = stateChangeRows[i];
         continue processRowsLoop;
       }
-      const context = [previousRow, ...stateChangeRows.slice(i, i + 2)];
+      const context = [previousRow, stateChangeRows[i]];
       console.debug({ context: JSON.stringify(context, null, 2) });
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
       const blockCheckStart = context[0].key[1];
@@ -229,12 +230,11 @@ export async function checkOverlappingBlocks({
     }),
   });
   // look backward in time to see if currently in a block or not
-  const nonInclusiveStartKey = [startkey[0], decrementString(startkey[1])];
   const lastBlockChange: MapRow<typeof durationBlockView> =
     (
       await db.query(durationBlockView.name, {
         reduce: false,
-        startkey: nonInclusiveStartKey,
+        startkey: decrementKey(startkey),
         endkey: [field, "0000-00-00"],
         descending: true,
         limit: 1,
