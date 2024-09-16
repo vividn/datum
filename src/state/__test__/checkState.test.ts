@@ -119,9 +119,11 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors).toHaveLength(2);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[0]).toMatchSnapshot();
+    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
+    expect(errors.errors).toMatchSnapshot();
   });
 
   it("throws an OverlappingBlockError if one block is nested in another, and has the wrong lastState", async () => {
@@ -141,9 +143,11 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(errors.ok).toBe(false);
-    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors).toHaveLength(2);
     expect(errors.errors[0]).toBeInstanceOf(OverlappingBlockError);
-    expect(errors.errors[0]).toMatchSnapshot();
+    expect(errors.errors[1]).toBeInstanceOf(OverlappingBlockError);
+    expect(errors.errors[0]).not.toEqual(errors.errors[1]);
+    expect(errors.errors).toMatchSnapshot();
   });
 
   it("detects a LastStateError that occurs immediately after an OverlappingBlockError", async () => {

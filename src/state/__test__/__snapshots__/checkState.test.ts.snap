@@ -19,6 +19,16 @@ exports[`checkState throws an OverlappingBlockError if a state change block is i
 
 exports[`checkState throws an OverlappingBlockError if a state change is added in the middle of an existing block 1`] = `[OverlappingBlockError: A state transition occurs within a block in field project at 2024-09-05T11:20:00.000Z. ids: [project:2024-09-05T11:30:00.000Z, project:2024-09-05T11:20:00.000Z ]}]`;
 
-exports[`checkState throws an OverlappingBlockError if one block is nested in another, and has the wrong lastState 1`] = `[OverlappingBlockError: A block starts within another in field project at 2024-09-05T12:15:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:25:00.000Z ]}]`;
+exports[`checkState throws an OverlappingBlockError if one block is nested in another, and has the wrong lastState 1`] = `
+[
+  [OverlappingBlockError: A block starts within another in field project at 2024-09-05T12:15:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:25:00.000Z ]}],
+  [OverlappingBlockError: A block ends after another ends indicating overlapping blocks in field project at 2024-09-05T12:30:00.000Z. ids: [project:2024-09-05T12:25:00.000Z, project:2024-09-05T12:30:00.000Z ]}],
+]
+`;
 
-exports[`checkState throws an OverlappingBlockError if two blocks overlap an edge 1`] = `[OverlappingBlockError: A block starts within another in field project at 2024-09-05T12:25:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:40:00.000Z ]}]`;
+exports[`checkState throws an OverlappingBlockError if two blocks overlap an edge 1`] = `
+[
+  [OverlappingBlockError: A block starts within another in field project at 2024-09-05T12:25:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:40:00.000Z ]}],
+  [OverlappingBlockError: A block ends after another ends indicating overlapping blocks in field project at 2024-09-05T12:40:00.000Z. ids: [project:2024-09-05T12:30:00.000Z, project:2024-09-05T12:40:00.000Z ]}],
+]
+`;
