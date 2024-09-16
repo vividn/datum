@@ -3,7 +3,11 @@ import { FieldArgs } from "../input/fieldArgs";
 import { outputArgs } from "../input/outputArgs";
 import { dbArgs } from "../input/dbArgs";
 import { MainDatumArgs } from "../input/mainArgs";
-import { checkState, StateChangeError, StateErrorSummary } from "../state/checkState";
+import {
+  checkState,
+  StateChangeError,
+  StateErrorSummary,
+} from "../state/checkState";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { connectDb } from "../auth/connectDb";
 import { stateChangeView } from "../views/datumViews";
@@ -67,7 +71,7 @@ export async function checkCmd(
             ok: false,
             errors: accum.errors.concat(fieldErrors.value.errors),
           };
-      }
+        }
         return accum;
       }
       return {
