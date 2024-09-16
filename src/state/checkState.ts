@@ -186,7 +186,7 @@ export async function checkState({
         }
       }
       const occurTime = thisRow.key[1];
-      const problem = "lastState does not match actual last state"
+      const problem = "lastState does not match actual last state";
       const error = new LastStateError({
         message: `${field} ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
         ids: [previousRow.id, thisRow.id],
@@ -255,7 +255,7 @@ export async function checkOverlappingBlocks({
       const problem =
         curr.value === 1
           ? "Block starts within a block"
-          : "State change within a block";
+          : "State changes within a block";
       const error = new OverlappingBlockError({
         message: `${field} ${occurTime}: ${problem}. ids: [${lastBlock.id}, ${curr.id} ]}`,
         occurTime,
