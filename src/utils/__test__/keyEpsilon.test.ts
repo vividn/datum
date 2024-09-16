@@ -46,16 +46,14 @@ describe("keyIncrement and keyDecrement", () => {
     await setupCmd({});
     await insertDatumView({ db, datumView: keyValueView });
     for (const key of sortedKeys) {
-      const doc = await addCmd({
+      await addCmd({
         baseData: { key, value: null },
         idParts: [String(Math.random())],
       });
-      console.debug(doc);
     }
   });
 
   it("sorts keys in the expected order", async () => {
-    console.debug(await db.query(keyValueView.name, { reduce: false }));
     const keys = (
       await db.query(keyValueView.name, { reduce: false })
     ).rows.map((row) => row.key);
