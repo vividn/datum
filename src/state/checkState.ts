@@ -254,8 +254,8 @@ export async function checkOverlappingBlocks({
       const occurTime = curr.key[1];
       const problem =
         curr.value === 1
-          ? "A block starts within another block"
-          : "A state change occurs within a block";
+          ? "Block starts within a block"
+          : "State change within a block";
       const error = new OverlappingBlockError({
         message: `${field} ${occurTime}: ${problem}. ids: [${lastBlock.id}, ${curr.id} ]}`,
         occurTime,
@@ -272,7 +272,7 @@ export async function checkOverlappingBlocks({
 
     if (lastBlock.value === -1 && curr.value === -1) {
       const occurTime = curr.key[1];
-      const problem = "A block ends after another ends";
+      const problem = "Block ends within a block";
       const error = new OverlappingBlockError({
         message: `${field} ${occurTime}: ${problem}. ids: [${lastBlock.id}, ${curr.id} ]}`,
         occurTime,
