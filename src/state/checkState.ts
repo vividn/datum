@@ -102,7 +102,7 @@ export async function checkState({
     const initialRow = ((
       await db.query(stateChangeView.name, {
         reduce: false,
-        startkey: [field, startTime?.slice(0, -1) ?? ""],
+        startkey: [field, startKeyTime?.slice(0, -1) ?? ""],
         endkey: [field, ""],
         descending: true,
         limit: 1,
@@ -115,7 +115,6 @@ export async function checkState({
     processRowsLoop: for (let i = 0; i < stateChangeRows.length; i++) {
       const previousRow = i === 0 ? initialRow : stateChangeRows[i - 1];
       const thisRow = stateChangeRows[i];
-      console.debug({ previousRow, thisRow, i, length: stateChangeRows.length });
       if (isEqual(previousRow.value[1], thisRow.value[0])) {
         continue processRowsLoop;
       }
@@ -130,7 +129,6 @@ export async function checkState({
         ]
           .sort()
           .at(-1) ?? blockCheckStart;
-      console.debug({ blockCheckStart, blockCheckEnd });
       const overlappingBlocks = await checkOverlappingBlocks({
         db,
         field,
@@ -158,11 +156,6 @@ export async function checkState({
       if (fix) {
         const oldDoc = (await db.get(thisRow.id)) as EitherDocument;
         const { data } = pullOutData(oldDoc);
-        console.debug({
-          lastState: data.lastState,
-          context0: previousRow.value[1],
-          isEqual: isEqual(data.lastState, thisRow.value[0]),
-        });
         if (isEqual(data.lastState, thisRow.value[0])) {
           await updateDoc({
             db,
@@ -230,7 +223,6 @@ export async function checkOverlappingBlocks({
   ).rows as OverlappingBlockRow[];
 
   // look backward in time to see if currently in a block or not
-  console.debug({ startTime, slice: startTime?.slice(0, -1) });
   const lastBlockChange: MapRow<typeof durationBlockView> =
     (
       await db.query(durationBlockView.name, {
@@ -252,7 +244,6 @@ export async function checkOverlappingBlocks({
   };
 
   blockTimeRows.reduce((lastBlock, curr, i) => {
-    console.debug({ lastBlock, curr, i });
     if (lastBlock.value === 1 && curr.value !== -1) {
       const messagePrefix =
         curr.value === 1
