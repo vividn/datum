@@ -284,9 +284,62 @@ describe("checkState --fix", () => {
     expect(newCheck).toEqual(noErrors);
   });
 
-  it.todo("can fix multiple LastStateErrors");
+  it("can fix multiple LastStateErrors", async () => {
+    setNow("2024-09-16 17:45");
+    const doc1 = await switchCmd("field state1");
+    setNow("+5");
+    const doc2 = await switchCmd("field state2 -L wrongState1");
+    setNow("+5");
+    const doc3 = await switchCmd("field state3 --last-state wrongState2");
 
-  it.todo(
-    "can fix many LastStateErros caused by duration blocks built upon a false state",
-  );
+    const retVal = await checkState({
+      db,
+      field: "field",
+      fix: true,
+    });
+    expect(retVal).toEqual(noErrors);
+
+    const retVal2 = await checkState({ db, field: "field" });
+    expect(retVal2).toEqual(noErrors);
+
+    const newDoc1 = (await db.get(doc1._id)) as DatumDocument;
+    const newDoc2 = (await db.get(doc2._id)) as DatumDocument;
+    const newDoc3 = (await db.get(doc3._id)) as DatumDocument;
+
+    expect(newDoc1.data.lastState).toEqual(null);
+    expect(newDoc1).toEqual(doc1);
+    expect(newDoc2.data.lastState).toEqual("state1");
+    expect(newDoc3.data.lastState).toEqual("state2");
+  });
+
+  it("can fix many LastStateErros caused by duration blocks built upon a false state", async () => {
+    setNow("2024-09-16 17:30");
+    const doc1 = await switchCmd("field falseState");
+    setNow("18:00");
+    const doc2 = await switchCmd("field tempState1 dur=10");
+    setNow("18:15");
+    const doc3 = await switchCmd("field tempState2 dur=5");
+    setNow("18:30");
+    const doc4 = await switchCmd("field tempState3 dur=8");
+    const doc5 = await switchCmd("field realBaseState -t 17:45");
+
+    const retVal = await checkState({ db, field: "field", fix: true });
+    expect(retVal).toEqual(noErrors);
+
+    const newDoc1 = (await db.get(doc1._id)) as DatumDocument;
+    const newDoc2 = (await db.get(doc2._id)) as DatumDocument;
+    const newDoc3 = (await db.get(doc3._id)) as DatumDocument;
+    const newDoc4 = (await db.get(doc4._id)) as DatumDocument;
+    const newDoc5 = (await db.get(doc5._id)) as DatumDocument;
+
+    expect(newDoc1).toEqual(doc1);
+    expect(newDoc5).toEqual(doc5);
+
+    expect(newDoc2.data.lastState).toEqual("realBaseState");
+    expect(newDoc3.data.lastState).toEqual("realBaseState");
+    expect(newDoc4.data.lastState).toEqual("realBaseState");
+
+    const retVal2 = await checkState({ db, field: "field" });
+    expect(retVal2).toEqual(noErrors);
+  });
 });
