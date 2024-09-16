@@ -11,7 +11,7 @@ import isEqual from "lodash.isequal";
 import { mapReduceOutput } from "../output/mapReduceOutput";
 import { MigrationMapRow } from "../migrations/migrations";
 import { durationBlockView } from "../views/datumViews/durationBlocks";
-import { decrementKey, HIGH_STRING } from "../utils/keyEpsilon";
+import { HIGH_STRING } from "../utils/keyEpsilon";
 
 type StateChangeErrorType = {
   message?: string;
@@ -79,7 +79,7 @@ export async function checkState({
     ok: true,
     errors: [],
   };
-  let startKeyTime = startTime ?? "0000-00-00";
+  let startKeyTime = startTime ?? "";
   const endKeyTime = endTime ?? HIGH_STRING;
 
   refreshFromDbLoop: while (true) {
@@ -98,33 +98,28 @@ export async function checkState({
       break;
     }
 
-    // CHANGE THIS TO BE INITIAL STATE AND USE THE NEW DECREMENT KEY FUNCTION
-    let previousRow = (
+    const initialRow = ((
       await db.query(stateChangeView.name, {
         reduce: false,
-        startkey,
-        endkey: [field, "0000-00-00"],
+        startkey: [field, startTime?.slice(0, -1) ?? ""],
+        endkey: [field, ""],
         descending: true,
-        skip: stateChangeRows[0].key[1] === startkey[1] ? 1 : 0,
         limit: 1,
       })
-    ).rows[0] as StateChangeRow;
-
-    previousRow ??= {
+    ).rows[0] as StateChangeRow) ?? {
       id: "initial_null_state",
       key: [field, "0000-00-00"],
       value: [null, null],
     };
     processRowsLoop: for (let i = 0; i < stateChangeRows.length; i++) {
-      if (isEqual(previousRow.value[1], stateChangeRows[i].value[0])) {
-        previousRow = stateChangeRows[i];
+      const previousRow = i === 0 ? initialRow : stateChangeRows[i - 1];
+      const thisRow = stateChangeRows[i];
+      if (isEqual(previousRow.value[1], thisRow.value[0])) {
         continue processRowsLoop;
       }
-      const context = [previousRow, stateChangeRows[i]];
-      console.debug({ context: JSON.stringify(context, null, 2) });
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
-      const blockCheckStart = context[0].key[1];
-      const blockCheckEnd = context.at(-1)?.key[1] ?? blockCheckStart;
+      const blockCheckStart = previousRow.key[1];
+      const blockCheckEnd = thisRow.key[1];
       const overlappingBlocks = await checkOverlappingBlocks({
         db,
         field,
@@ -138,38 +133,35 @@ export async function checkState({
         }
         summary.ok = false;
         summary.errors.push(...overlappingBlocks.errors);
-        // checked context already includes the next row, so skip it
-        i += 2;
-        previousRow = stateChangeRows[i];
         continue processRowsLoop;
       }
 
       // if no blocks are overlapping then this error is recoverable just by changing the lastState value on the offending entry
       if (fix) {
-        const oldDoc = (await db.get(context[1].id)) as EitherDocument;
+        const oldDoc = (await db.get(thisRow.id)) as EitherDocument;
         const { data } = pullOutData(oldDoc);
         console.debug({
           lastState: data.lastState,
-          context0: context[0].value[1],
-          isEqual: isEqual(data.lastState, context[1].value[0]),
+          context0: previousRow.value[1],
+          isEqual: isEqual(data.lastState, thisRow.value[0]),
         });
-        if (isEqual(data.lastState, context[1].value[0])) {
+        if (isEqual(data.lastState, thisRow.value[0])) {
           await updateDoc({
             db,
-            id: context[1].id,
-            payload: { lastState: context[0].value[1] },
+            id: thisRow.id,
+            payload: { lastState: previousRow.value[1] },
             outputArgs,
           });
-          startKeyTime = context[0].key[1];
+          startKeyTime = previousRow.key[1];
           continue refreshFromDbLoop;
         } else {
           const error = new LastStateError({
             message: `Attempted to fix last state error, but last state did not match expected.
 data.lastState: ${JSON.stringify(data.lastState)}
-context[1].value[0]: ${JSON.stringify(context[1].value[0])}
-${mapReduceOutput(context, true)}`,
-            ids: [context[0].id, context[1].id],
-            occurTime: context[1].key[1],
+context[1].value[0]: ${JSON.stringify(thisRow.value[0])}
+${mapReduceOutput(stateChangeRows.slice(i - 1, i + 2), true)}`,
+            ids: [previousRow.id, thisRow.id],
+            occurTime: thisRow.key[1],
           });
           if (failOnError) {
             throw error;
@@ -180,9 +172,9 @@ ${mapReduceOutput(context, true)}`,
         }
       }
       const error = new LastStateError({
-        message: `Last state error in field ${field} at ${context[1].key[1]}. ids: [${context[0].id}, ${context[1].id}]`,
-        ids: [context[0].id, context[1].id],
-        occurTime: context[1].key[1],
+        message: `Last state error in field ${field} at ${thisRow.key[1]}. ids: [${previousRow.id}, ${thisRow.id}]`,
+        ids: [previousRow.id, thisRow.id],
+        occurTime: thisRow.key[1],
       });
       if (failOnError) {
         throw error;
@@ -209,7 +201,7 @@ export async function checkOverlappingBlocks({
     ok: true,
     errors: [],
   };
-  const startkey = [field, startTime ?? "0000-00-00"];
+  const startkey = [field, startTime ?? ""];
   const endkey = [field, endTime ?? HIGH_STRING];
   const blockTimeRows = (
     await db.query(overlappingBlockView.name, {
@@ -219,29 +211,20 @@ export async function checkOverlappingBlocks({
     })
   ).rows as OverlappingBlockRow[];
 
-  console.debug({
-    startkey,
-    query: await db.query(durationBlockView.name, {
-      reduce: false,
-      startkey,
-      endkey: [field, "0000-00-00"],
-      descending: true,
-      limit: 2,
-    }),
-  });
   // look backward in time to see if currently in a block or not
+  console.debug({ startTime, slice: startTime?.slice(0, -1) });
   const lastBlockChange: MapRow<typeof durationBlockView> =
     (
       await db.query(durationBlockView.name, {
         reduce: false,
-        startkey: decrementKey(startkey),
-        endkey: [field, "0000-00-00"],
+        startkey: [field, startTime?.slice(0, -1) ?? ""], // quick and dirty implementation to skip rows actually occurring at startTime
+        endkey: [field, ""],
         descending: true,
         limit: 1,
       })
     ).rows[0] ??
     ({
-      key: [field, "0000-00-00"],
+      key: [field, ""],
       value: false, // default not in a block
       id: "initial_state",
     } as MapRow<typeof durationBlockView>);
