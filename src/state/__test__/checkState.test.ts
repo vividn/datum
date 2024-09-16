@@ -52,9 +52,9 @@ describe("checkState", () => {
     setNow("+5");
     await switchCmd("field newState --last-state wrongState");
 
-    // await expect(checkState({ db, field: "field" })).rejects.toThrow(
-    //   LastStateError,
-    // );
+    await expect(checkState({ db, field: "field" })).rejects.toThrow(
+      LastStateError,
+    );
     const errors = await checkState({ db, field: "field", failOnError: false });
     expect(errors.ok).toBe(false);
     expect(errors.errors).toHaveLength(1);
@@ -70,9 +70,9 @@ describe("checkState", () => {
     setNow("11:10");
     await switchCmd("project overlapping dur=15");
 
-    // await expect(checkState({ db, field: "project" })).rejects.toThrow(
-    //   OverlappingBlockError,
-    // );
+    await expect(checkState({ db, field: "project" })).rejects.toThrow(
+      OverlappingBlockError,
+    );
     const errors = await checkState({
       db,
       field: "project",
@@ -90,9 +90,9 @@ describe("checkState", () => {
     await switchCmd("project frontend dur=15 -t 11:30");
     await switchCmd("project backend -t 11:20"); // starts in the middle of the frontend block
 
-    // await expect(checkState({ db, field: "project" })).rejects.toThrow(
-    //   OverlappingBlockError,
-    // );
+    await expect(checkState({ db, field: "project" })).rejects.toThrow(
+      OverlappingBlockError,
+    );
     const errors = await checkState({
       db,
       field: "project",
@@ -200,11 +200,13 @@ describe("checkState", () => {
         endTime: "2024-09-05T13:10:00Z",
       }),
     ).resolves.toEqual(noErrors);
-    // await expect({
-    //   db,
-    //   field: "field",
-    //   endTime: "2024-09-05T13:10:00Z",
-    // }).resolves.toEqual(noErrors);
+    await expect(
+      checkState({
+        db,
+        field: "field",
+        endTime: "2024-09-05T13:10:00Z",
+      }),
+    ).resolves.toEqual(noErrors);
     await expect(
       checkState({
         db,

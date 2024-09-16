@@ -115,6 +115,7 @@ export async function checkState({
     processRowsLoop: for (let i = 0; i < stateChangeRows.length; i++) {
       const previousRow = i === 0 ? initialRow : stateChangeRows[i - 1];
       const thisRow = stateChangeRows[i];
+      console.debug({ previousRow, thisRow, i, length: stateChangeRows.length });
       if (isEqual(previousRow.value[1], thisRow.value[0])) {
         continue processRowsLoop;
       }
@@ -129,6 +130,7 @@ export async function checkState({
         ]
           .sort()
           .at(-1) ?? blockCheckStart;
+      console.debug({ blockCheckStart, blockCheckEnd });
       const overlappingBlocks = await checkOverlappingBlocks({
         db,
         field,
@@ -143,7 +145,7 @@ export async function checkState({
         summary.ok = false;
         summary.errors.push(...overlappingBlocks.errors);
         // if there is an overlapping block error then assume all rows checked are bad and skip to next
-        while (stateChangeRows[i].key[1] <= blockCheckEnd) {
+        while (stateChangeRows[i].key[1] < blockCheckEnd) {
           i++;
           if (i >= stateChangeRows.length) {
             break processRowsLoop;
