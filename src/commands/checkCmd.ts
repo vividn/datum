@@ -3,7 +3,7 @@ import { FieldArgs } from "../input/fieldArgs";
 import { outputArgs } from "../input/outputArgs";
 import { dbArgs } from "../input/dbArgs";
 import { MainDatumArgs } from "../input/mainArgs";
-import { checkState } from "../state/checkState";
+import { checkState, StateErrorSummary } from "../state/checkState";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { connectDb } from "../auth/connectDb";
 import { stateChangeView } from "../views/datumViews";
@@ -36,16 +36,44 @@ export type CheckCmdArgs = FieldArgs &
 export async function checkCmd(
   argsOrCli: CheckCmdArgs | string | string[],
   preparsed?: Partial<CheckCmdArgs>,
-): Promise<boolean> {
+): Promise<StateErrorSummary> {
   const args = parseIfNeeded(checkCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
   const fields = args.field?.split(",") ?? (await allCheckFields(db)); // TODO: get all fields
-  await Promise.all(
-    fields.map((field) =>
-      checkState({ db, field, fix: args.fix, outputArgs: args }),
-    ),
+  const allFieldErrors = await Promise.allSettled(
+    fields.map(async (field) => {
+      const fieldErrors = await checkState({
+        db,
+        field,
+        fix: args.fix,
+        outputArgs: args,
+        failOnError: false,
+      });
+      if (!fieldErrors.ok) {
+        const errorMessage =
+          `${field}: \n` +
+          fieldErrors.errors
+            .map((error) => error.occurTime + ": " + error.message)
+            .join("\n") +
+          "\n";
+        console.error(errorMessage);
+      }
+      return fieldErrors;
+    }),
   );
-  return true;
+  const allErrors = allFieldErrors.reduce(
+    (accum, fieldErrors) => {
+      if (fieldErrors.status === "fulfilled") {
+        return accum;
+      }
+      return {
+        ok: false,
+        errors: accum.errors.concat(fieldErrors.reason),
+      };
+    },
+    { ok: true, errors: [] },
+  );
+  return allErrors;
 }
 
 async function allCheckFields(db: PouchDB.Database): Promise<string[]> {
