@@ -221,7 +221,7 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(allErrors.ok).toBe(false);
-    expect(allErrors.errors).toHaveLength(4);
+    expect(allErrors.errors).toHaveLength(2);
     expect(allErrors.errors).toMatchSnapshot();
   });
 
@@ -237,12 +237,21 @@ describe("checkState", () => {
     );
   });
 
-  it("does not throw an error if the first row does not have a null lastState when a startTime is given", async () => {
+  it("detects if the first row does not have the correct lastState when a startTime is given", async () => {
     setNow("2024-09-05T13:00:00Z");
     await switchCmd("field newState --last-state false");
     await expect(
       checkState({ db, field: "field", startTime: "2024-09-05T12:55:00Z" }),
-    ).resolves.toEqual(noErrors);
+    ).rejects.toThrow(LastStateError);
+
+    setNow("2024-09-05T13:30:00Z");
+    await expect(
+      checkState({ db, field: "field", startTime: "2024-09-05T13:25:00Z" }),
+    ).resolves.toEqual(noErrors),
+      await switchCmd("field newState --last-state incorrect");
+    await expect(
+      checkState({ db, field: "field", startTime: "2024-09-05T13:25:00Z" }),
+    ).rejects.toThrow(LastStateError);
   });
 });
 
