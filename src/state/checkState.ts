@@ -8,7 +8,6 @@ import { updateDoc } from "../documentControl/updateDoc";
 import { EitherDocument } from "../documentControl/DatumDocument";
 import { OutputArgs } from "../input/outputArgs";
 import isEqual from "lodash.isequal";
-import { mapReduceOutput } from "../output/mapReduceOutput";
 import { MigrationMapRow } from "../migrations/migrations";
 import { durationBlockView } from "../views/datumViews/durationBlocks";
 import { HIGH_STRING } from "../utils/keyEpsilon";
@@ -16,18 +15,21 @@ import { extractTimeFromId } from "../utils/extractTimeFromId";
 
 type StateChangeErrorType = {
   message?: string;
+  field: string;
   occurTime: isoDatetime;
   ids: string[];
   possibleFixes?: MigrationMapRow[][];
 };
 
 export class StateChangeError extends MyError implements StateChangeErrorType {
+  field: string;
   occurTime: isoDatetime;
   ids: string[];
   possibleFixes?: MigrationMapRow[][];
 
   constructor(args: StateChangeErrorType) {
     super(args.message ?? "State change error");
+    this.field = args.field;
     this.occurTime = args.occurTime;
     this.ids = args.ids;
     this.possibleFixes = args.possibleFixes;
@@ -166,13 +168,14 @@ export async function checkState({
           startKeyTime = previousRow.key[1];
           continue refreshFromDbLoop;
         } else {
+          const occurTime = thisRow.key[1];
+          const problem =
+            "Attempted to fix, but an unexpected lastState was encountered";
           const error = new LastStateError({
-            message: `Attempted to fix last state error, but last state did not match expected.
-data.lastState: ${JSON.stringify(data.lastState)}
-context[1].value[0]: ${JSON.stringify(thisRow.value[0])}
-${mapReduceOutput(stateChangeRows.slice(i - 1, i + 2), true)}`,
+            message: `${field}, ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
             ids: [previousRow.id, thisRow.id],
             occurTime: thisRow.key[1],
+            field,
           });
           if (failOnError) {
             throw error;
@@ -182,10 +185,13 @@ ${mapReduceOutput(stateChangeRows.slice(i - 1, i + 2), true)}`,
           }
         }
       }
+      const occurTime = thisRow.key[1];
+      const problem = "lastState does not match actual last state"
       const error = new LastStateError({
-        message: `Last state error in field ${field} at ${thisRow.key[1]}. ids: [${previousRow.id}, ${thisRow.id}]`,
+        message: `${field} ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
         ids: [previousRow.id, thisRow.id],
         occurTime: thisRow.key[1],
+        field,
       });
       if (failOnError) {
         throw error;
@@ -243,15 +249,17 @@ export async function checkOverlappingBlocks({
     value: lastBlockChange.value ? 1 : -1,
   };
 
-  blockTimeRows.reduce((lastBlock, curr, i) => {
+  blockTimeRows.reduce((lastBlock, curr) => {
     if (lastBlock.value === 1 && curr.value !== -1) {
-      const messagePrefix =
+      const occurTime = curr.key[1];
+      const problem =
         curr.value === 1
-          ? "A block starts within another"
-          : "A state transition occurs within a block";
+          ? "A block starts within another block"
+          : "A state change occurs within a block";
       const error = new OverlappingBlockError({
-        message: `${messagePrefix} in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
-        occurTime: curr.key[1],
+        message: `${field} ${occurTime}: ${problem}. ids: [${lastBlock.id}, ${curr.id} ]}`,
+        occurTime,
+        field,
         ids: [lastBlock.id, curr.id],
       });
       if (failOnError) {
@@ -263,9 +271,12 @@ export async function checkOverlappingBlocks({
     }
 
     if (lastBlock.value === -1 && curr.value === -1) {
+      const occurTime = curr.key[1];
+      const problem = "A block ends after another ends";
       const error = new OverlappingBlockError({
-        message: `A block ends after another ends indicating overlapping blocks in field ${field} at ${curr.key[1]}. ids: [${lastBlock.id}, ${curr.id} ]}`,
-        occurTime: curr.key[1],
+        message: `${field} ${occurTime}: ${problem}. ids: [${lastBlock.id}, ${curr.id} ]}`,
+        occurTime,
+        field,
         ids: [lastBlock.id, curr.id],
       });
       if (failOnError) {

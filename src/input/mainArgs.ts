@@ -145,10 +145,13 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await migrateCmd(args, namespace);
       break;
 
-    case "check":
-      await checkCmd(args, namespace);
+    case "check": {
+      const errors = await checkCmd(args, namespace);
+      if (!errors.ok) {
+        process.exit(1);
+      }
       break;
-
+    }
     // case "test": {
     //   const parser = new ArgumentParser({});
     //   parser.add_argument("--test", {

@@ -3,7 +3,7 @@ import { FieldArgs } from "../input/fieldArgs";
 import { outputArgs } from "../input/outputArgs";
 import { dbArgs } from "../input/dbArgs";
 import { MainDatumArgs } from "../input/mainArgs";
-import { checkState, StateErrorSummary } from "../state/checkState";
+import { checkState, StateChangeError, StateErrorSummary } from "../state/checkState";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { connectDb } from "../auth/connectDb";
 import { stateChangeView } from "../views/datumViews";
@@ -52,9 +52,7 @@ export async function checkCmd(
       if (!fieldErrors.ok) {
         const errorMessage =
           `${field}: \n` +
-          fieldErrors.errors
-            .map((error) => error.occurTime + ": " + error.message)
-            .join("\n") +
+          fieldErrors.errors.map((error) => error.message).join("\n") +
           "\n";
         console.error(errorMessage);
       }
@@ -64,6 +62,12 @@ export async function checkCmd(
   const allErrors = allFieldErrors.reduce(
     (accum, fieldErrors) => {
       if (fieldErrors.status === "fulfilled") {
+        if (fieldErrors.value.ok === false) {
+          return {
+            ok: false,
+            errors: accum.errors.concat(fieldErrors.value.errors),
+          };
+      }
         return accum;
       }
       return {
@@ -71,7 +75,7 @@ export async function checkCmd(
         errors: accum.errors.concat(fieldErrors.reason),
       };
     },
-    { ok: true, errors: [] },
+    { ok: true, errors: [] as StateChangeError[] },
   );
   return allErrors;
 }
