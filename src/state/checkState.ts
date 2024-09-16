@@ -12,6 +12,7 @@ import { mapReduceOutput } from "../output/mapReduceOutput";
 import { MigrationMapRow } from "../migrations/migrations";
 import { durationBlockView } from "../views/datumViews/durationBlocks";
 import { HIGH_STRING } from "../utils/keyEpsilon";
+import { extractTimeFromId } from "../utils/extractTimeFromId";
 
 type StateChangeErrorType = {
   message?: string;
@@ -119,7 +120,15 @@ export async function checkState({
       }
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
       const blockCheckStart = previousRow.key[1];
-      const blockCheckEnd = thisRow.key[1];
+      // for duration based blocks, use the time in the id to determine the end time
+      const blockCheckEnd =
+        [
+          thisRow.key[1],
+          extractTimeFromId(previousRow.id) ?? "",
+          extractTimeFromId(thisRow.id) ?? "",
+        ]
+          .sort()
+          .at(-1) ?? blockCheckStart;
       const overlappingBlocks = await checkOverlappingBlocks({
         db,
         field,
@@ -133,6 +142,13 @@ export async function checkState({
         }
         summary.ok = false;
         summary.errors.push(...overlappingBlocks.errors);
+        // if there is an overlapping block error then assume all rows checked are bad and skip to next
+        while (stateChangeRows[i].key[1] <= blockCheckEnd) {
+          i++;
+          if (i >= stateChangeRows.length) {
+            break processRowsLoop;
+          }
+        }
         continue processRowsLoop;
       }
 
