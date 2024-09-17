@@ -3,7 +3,7 @@ import { EitherDocument } from "../documentControl/DatumDocument";
 import { flexiblePositional } from "../input/flexiblePositional";
 import { durationArgs, DurationArgs } from "../input/durationArgs";
 
-import { DatumState } from "../state/normalizeState";
+import { DatumState, normalizeState } from "../state/normalizeState";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { dataArgs } from "../input/dataArgs";
@@ -12,6 +12,7 @@ import { fieldArgs } from "../input/fieldArgs";
 import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
 import { newDocArgs } from "./addCmd";
+import { inferType } from "../utils/inferType";
 
 export const stateArgs = new ArgumentParser({
   add_help: false,
@@ -42,8 +43,8 @@ export const switchCmdArgs = new ArgumentParser({
 });
 
 export type StateArgs = {
-  state?: DatumState;
-  lastState?: DatumState;
+  state?: DatumState | string;
+  lastState?: DatumState | string;
 };
 export type SwitchCmdArgs = OccurCmdArgs & DurationArgs & StateArgs;
 
@@ -64,7 +65,13 @@ export async function switchCmd(
     args.cmdData.dur = null;
   }
   if (args.lastState) {
-    args.cmdData.lastState = args.lastState;
+    const lastState =
+      typeof args.lastState === "string"
+        ? inferType(args.lastState)
+        : args.lastState;
+    if (lastState !== undefined) {
+      args.cmdData.lastState = normalizeState(lastState);
+    }
   }
 
   return await occurCmd(args);

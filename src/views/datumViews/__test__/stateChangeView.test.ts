@@ -1,6 +1,6 @@
 import * as emit from "../../emit";
 import { makeDoc } from "../../../__test__/test-utils";
-import { activeStateView } from "../activeStateView";
+import { stateChangeView } from "../stateChangeView";
 import { DateTime } from "luxon";
 import { DatumTime } from "../../../time/datumTime";
 
@@ -9,7 +9,7 @@ const occurTime: DatumTime = {
 };
 const occurDateTime: DateTime = DateTime.fromISO(occurTime.utc);
 
-describe("activeStateView", () => {
+describe("stateChangeView", () => {
   let emitMock: jest.SpyInstance;
   beforeEach(() => {
     emitMock = jest.spyOn(emit, "_emit");
@@ -26,9 +26,9 @@ describe("activeStateView", () => {
       occurTime,
       dur: "PT10M",
     });
-    activeStateView.map(doc);
-    activeStateView.map(doc2);
-    activeStateView.map(doc3);
+    stateChangeView.map(doc);
+    stateChangeView.map(doc2);
+    stateChangeView.map(doc3);
     expect(emitMock).toHaveBeenCalledTimes(0);
   });
 
@@ -38,7 +38,7 @@ describe("activeStateView", () => {
       dur: null,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
 
@@ -47,25 +47,29 @@ describe("activeStateView", () => {
       field: "foo",
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
 
   it("emits nothing if just dur and state with no occurTime", () => {
     const doc = makeDoc({ field: "foo", dur: "PT3M", state: true });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
   });
 
-  it("emits ([field, occurTime], state) when there is no dur", () => {
+  it("emits ([field, occurTime], [lastState, state]) when there is no dur", () => {
     const doc = makeDoc({
       field: "foo",
       occurTime,
       state: true,
+      lastState: "lastState",
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(["foo", occurTime.utc], true);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["foo", occurTime.utc],
+      ["lastState", true],
+    );
   });
 
   it("can handle a string state", () => {
@@ -74,41 +78,47 @@ describe("activeStateView", () => {
       occurTime,
       state: "active",
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], "active");
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      [expect.anything(), "active"],
+    );
   });
 
   it("emits entries for both state and lastState if dur is present", () => {
     const doc = makeDoc({
       field: "bar",
       dur: "PT3M",
-      state: "state1",
-      lastState: "state2",
+      state: "newState",
+      lastState: "previousState",
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ minutes: 3 }).toUTC().toISO()], // state started 3 minutes ago
-      "state1",
+      ["previousState", "newState"],
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurTime.utc], // and then lastState was restored now
-      "state2",
+      ["newState", "previousState"],
     );
   });
 
-  it("emits only entry for state and not last state if dur is not present", () => {
+  it("emits only one entry for change from lastState to state if dur is not present", () => {
     const doc = makeDoc({
       field: "bar",
-      state: "state1",
-      lastState: "state2",
+      state: "newState",
+      lastState: "previousState",
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], "state1");
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      ["previousState", "newState"],
+    );
   });
 
   it("assumes that lastState is true if state is false", () => {
@@ -118,13 +128,16 @@ describe("activeStateView", () => {
       state: false,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ hours: 1 }).toUTC().toISO()],
-      false,
+      [true, false],
     );
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], true);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      [false, true],
+    );
   });
 
   it("assumes that lastState is false if state is not false", () => {
@@ -134,13 +147,16 @@ describe("activeStateView", () => {
       state: true,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ hours: 1, minutes: 30 }).toUTC().toISO()],
-      true,
+      [false, true],
     );
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      [true, false],
+    );
 
     emitMock.mockReset();
 
@@ -150,7 +166,7 @@ describe("activeStateView", () => {
       state: "stringState",
       occurTime,
     });
-    activeStateView.map(doc2);
+    stateChangeView.map(doc2);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       [
@@ -160,9 +176,12 @@ describe("activeStateView", () => {
           .toUTC()
           .toISO(),
       ],
-      "stringState",
+      [false, "stringState"],
     );
-    expect(emitMock).toHaveBeenCalledWith(["foobar", occurTime.utc], false);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["foobar", occurTime.utc],
+      ["stringState", false],
+    );
   });
 
   it("assumes state is true and lastState is false if occurTime and dur are present", () => {
@@ -171,15 +190,15 @@ describe("activeStateView", () => {
       dur: "PT10M",
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is true, so started dur minutes ago
-      true,
+      [false, true],
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurTime.utc], // and then lastState (assumed to be false) is restored now
-      false,
+      [true, false],
     );
   });
 
@@ -190,13 +209,16 @@ describe("activeStateView", () => {
       state: true,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is false
-      false,
+      [true, false],
     );
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], true);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      [false, true],
+    );
 
     emitMock.mockReset();
 
@@ -206,7 +228,7 @@ describe("activeStateView", () => {
       state: "stringState",
       occurTime,
     });
-    activeStateView.map(doc2);
+    stateChangeView.map(doc2);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
       [
@@ -216,11 +238,11 @@ describe("activeStateView", () => {
           .toUTC()
           .toISO(),
       ],
-      false,
+      ["stringState", false],
     );
     expect(emitMock).toHaveBeenCalledWith(
       ["foobar", occurTime.utc],
-      "stringState",
+      [false, "stringState"],
     );
   });
 
@@ -231,7 +253,7 @@ describe("activeStateView", () => {
       state: true,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).not.toHaveBeenCalled();
 
     emitMock.mockReset();
@@ -242,7 +264,7 @@ describe("activeStateView", () => {
       state: "stringState",
       occurTime,
     });
-    activeStateView.map(doc2);
+    stateChangeView.map(doc2);
     expect(emitMock).not.toHaveBeenCalled();
   });
 
@@ -254,13 +276,16 @@ describe("activeStateView", () => {
       lastState: null,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(2);
     expect(emitMock).toHaveBeenCalledWith(
-      ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()], // assumes state is false
-      true,
+      ["bar", occurDateTime.minus({ minutes: 10 }).toUTC().toISO()],
+      [null, true],
     );
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      [true, false],
+    ); // after the block the state changes to false rather than back to null
   });
 
   it("changes the active state to false if lastState is null and duration is null", () => {
@@ -270,8 +295,11 @@ describe("activeStateView", () => {
       dur: null,
       occurTime,
     });
-    activeStateView.map(doc);
+    stateChangeView.map(doc);
     expect(emitMock).toHaveBeenCalledTimes(1);
-    expect(emitMock).toHaveBeenCalledWith(["bar", occurTime.utc], false);
+    expect(emitMock).toHaveBeenCalledWith(
+      ["bar", occurTime.utc],
+      [null, false],
+    );
   });
 });

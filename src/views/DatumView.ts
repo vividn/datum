@@ -125,11 +125,12 @@ export class ConflictingReduceError extends MyError {
 }
 
 export type MapRow<T> =
-  T extends DatumView<any, infer K, infer V, any, any>
+  T extends DatumView<infer D | any, infer K, infer V, any, any>
     ? {
         id: string;
         key: K;
         value: V;
+        doc?: D;
       }
     : never;
 

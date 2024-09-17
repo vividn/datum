@@ -13,7 +13,7 @@ export function isStateObject(state: SingleState): state is StateObject {
   return isPlainObject(state);
 }
 export function normalizeState(state: JsonType): DatumState {
-  if (state === null) {
+  if (state === null || state === "null") {
     return null;
   }
   if (typeof state === "number") {

@@ -1,6 +1,6 @@
 import { OutputArgs } from "../input/outputArgs";
 import { migrateOne } from "./migrateOne";
-import { migrationName } from "./migrations";
+import { MigrationMapRow, migrationName } from "./migrations";
 
 export async function runMigration({
   name,
@@ -13,7 +13,7 @@ export async function runMigration({
 }): Promise<void> {
   const allMigrationRows = (
     await db.query(migrationName(name), { reduce: false })
-  ).rows;
+  ).rows as MigrationMapRow[];
 
   // Run all rows with the same key in parallel
   while (allMigrationRows.length) {
