@@ -9,7 +9,7 @@ function emit(key: unknown, value: unknown): void {
 export const keyValueView: DatumView<DatumDocument> = {
   name: "key_value_view",
   map: (doc) => {
-    if (doc.data.key !== undefined && doc.data.value !== undefined) {
+    if (doc.data.key && doc.data.value) {
       emit(doc.data.key, doc.data.value);
     }
   },

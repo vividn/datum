@@ -13,12 +13,12 @@ import { EqDoc, TxDoc, XcDoc } from "../views/balance";
 import chalk from "chalk";
 import printf from "printf";
 import { zeroDate } from "./eqcheck";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 import { DateTime } from "luxon";
 import { parseDateStr } from "../../../src/time/parseDateStr";
 import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 type TransactionViewInput = {
   args: DbArgs;

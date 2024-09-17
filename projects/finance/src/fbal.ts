@@ -2,13 +2,13 @@
 
 import { balanceView } from "../views";
 
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 import { Show } from "../../../src/input/outputArgs";
 import { reduceCmd } from "../../../src/commands/reduceCmd";
 import printf from "printf";
 import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 type FBalArgs = DbArgs & {
   account?: string;

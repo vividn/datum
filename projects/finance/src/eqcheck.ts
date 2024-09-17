@@ -6,10 +6,10 @@ import { reduceCmd } from "../../../src/commands/reduceCmd";
 import { Show } from "../../../src/input/outputArgs";
 import { transactionWatcher, transactionView } from "./transactionView";
 import { DateTime } from "luxon";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 import { ArgumentParser } from "argparse";
 import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 export const zeroDate = "0000-00-00";
 
