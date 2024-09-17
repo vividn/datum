@@ -1,4 +1,5 @@
 import { QueryOptions } from "./utilityTypes";
+import { nextFloat } from "./nextFloat";
 
 export const HIGH_STRING = "\uffff\uffff\uffff\uffff" as const;
 

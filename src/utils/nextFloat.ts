@@ -3,7 +3,7 @@
 // This function is released under the Creative Commons licensing terms [(CC BY-SA 4.0)](https://creativecommons.org/licenses/by-sa/4.0/) as per StackOverflow's Terms of Service
 
 // A JavaScript implementation of OpenJDK's `Double.nextAfter` method.
-function nextFloat(start: number, direction: number) {
+export function nextFloat(start: number, direction: number) {
   // These arrays share their underlying memory, letting us use them to do what
   // Java's `Double.doubleToRawLongBits` and `Double.longBitsToDouble` do.
   const f64 = new Float64Array(1);
