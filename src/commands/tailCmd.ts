@@ -7,7 +7,6 @@ import {
   timingView,
   TimingViewType,
 } from "../views/datumViews/timingView";
-import { HIGH_STRING } from "../utils/startsWith";
 import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs";
 import { reverseViewParams } from "../utils/reverseViewParams";
 import { outputArgs } from "../input/outputArgs";
@@ -19,6 +18,7 @@ import { MainDatumArgs } from "../input/mainArgs";
 import { tableOutput } from "../output/tableOutput";
 import { once } from "events";
 import { QueryOptions } from "../utils/utilityTypes";
+import { HIGH_STRING } from "../utils/startsWith";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,

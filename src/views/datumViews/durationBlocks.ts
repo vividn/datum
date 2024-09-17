@@ -1,25 +1,24 @@
 import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
+import { isoDateOrTime } from "../../time/timeUtils";
 import { DatumView } from "../DatumView";
 import { _emit } from "../emit";
-import { isoDateOrTime } from "../../time/timeUtils";
-import { DatumState } from "../../state/normalizeState";
 
 type DocType = EitherDocument;
 type MapKey = [string, isoDateOrTime];
-type MapValue = DatumState;
+type MapValue = boolean; // goes true when entering a block, false when leaving
 type ReduceValues = null;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
 }
 
-export const activeStateView: DatumView<
+export const durationBlockView: DatumView<
   DocType,
   MapKey,
   MapValue,
   ReduceValues
 > = {
-  name: "active_state",
+  name: "duration_blocks",
   map: (doc) => {
     let data: DatumData;
     if (doc.data && doc.meta) {
@@ -29,18 +28,10 @@ export const activeStateView: DatumView<
     }
     const occurTime = data.occurTime;
     const field = data.field;
-    if (!occurTime || !field) {
+    const dur = data.dur;
+    if (!occurTime || !field || !dur) {
       return;
     }
-    const duration =
-      data.dur !== undefined
-        ? data.dur
-        : data.state === undefined
-          ? null
-          : undefined;
-    const state = data.state !== undefined ? data.state : true;
-    const lastState =
-      data.lastState !== undefined ? data.lastState : state === false;
 
     function parseISODuration(duration: string) {
       const regex =
@@ -80,32 +71,20 @@ export const activeStateView: DatumView<
       return newTime.toISOString();
     }
 
-    if (duration === null) {
-      if (lastState === null && state !== null) {
-        emit([field, occurTime.utc], false);
-      }
-      return;
-    }
-    if (duration === undefined) {
-      emit([field, occurTime.utc], state);
-      return;
-    }
-
-    const seconds = parseISODuration(duration);
+    const seconds = parseISODuration(dur);
     if (seconds > 0) {
       const blockBegin = subtractSecondsFromTime(occurTime.utc, seconds);
-      const stateAfterBlock = lastState === null ? false : lastState;
-      emit([field, blockBegin], state);
-      emit([field, occurTime.utc], stateAfterBlock);
+      const blockEnd = occurTime.utc;
+      emit([field, blockBegin], true);
+      emit([field, blockEnd], false);
     } else if (seconds < 0) {
-      const holeBegin = subtractSecondsFromTime(
+      const blockBegin = subtractSecondsFromTime(
         occurTime.utc,
         Math.abs(seconds),
       );
-      emit([field, holeBegin], false);
-      emit([field, occurTime.utc], state);
-    } else {
-      return;
+      const blockEnd = occurTime.utc;
+      emit([field, blockBegin], true);
+      emit([field, blockEnd], false);
     }
   },
 };
