@@ -18,7 +18,7 @@ import { parseDateStr } from "../../../src/time/parseDateStr";
 import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { HIGH_STRING } from "../../../src/utils/keyEpsilon";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 type TransactionViewInput = {
   args: DbArgs;

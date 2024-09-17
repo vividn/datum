@@ -9,7 +9,7 @@ import { DateTime } from "luxon";
 import { ArgumentParser } from "argparse";
 import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { HIGH_STRING } from "../../../src/utils/keyEpsilon";
+import { HIGH_STRING } from "../../../src/utils/startsWith";
 
 export const zeroDate = "0000-00-00";
 

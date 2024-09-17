@@ -18,7 +18,7 @@ import { MainDatumArgs } from "../input/mainArgs";
 import { tableOutput } from "../output/tableOutput";
 import { once } from "events";
 import { QueryOptions } from "../utils/utilityTypes";
-import { HIGH_STRING } from "../utils/keyEpsilon";
+import { HIGH_STRING } from "../utils/startsWith";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,

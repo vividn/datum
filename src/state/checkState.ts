@@ -10,8 +10,8 @@ import { OutputArgs } from "../input/outputArgs";
 import isEqual from "lodash.isequal";
 import { MigrationMapRow } from "../migrations/migrations";
 import { durationBlockView } from "../views/datumViews/durationBlocks";
-import { HIGH_STRING } from "../utils/keyEpsilon";
 import { extractTimeFromId } from "../utils/extractTimeFromId";
+import { HIGH_STRING } from "../utils/startsWith";
 
 type StateChangeErrorType = {
   message?: string;
