@@ -64,9 +64,10 @@ export async function initCmd(
       name: "project_dir",
       type: "text",
       message: "Project directory",
+      hint: "this is a hint",
     },
   ];
 
-  const answers = await prompts(questions);
+  const answers = await prompts(questions, { onCancel: () => process.exit(1) });
   console.log({ answers });
 }
