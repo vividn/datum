@@ -59,12 +59,31 @@ export async function initCmd(
     );
   }
 
+  let isLocalCouchRunning;
+  try {
+    await fetch("http://localhost:5984");
+    isLocalCouchRunning = true;
+  } catch {
+    isLocalCouchRunning = false;
+  }
+
   const questions: PromptObject[] = [
     {
-      name: "project_dir",
+      name: "projectDir",
       type: "text",
-      message: "Project directory",
-      hint: "this is a hint",
+      message:
+        "Project directory. This is where you will set up and maintain your custom views, specs, hardcoded data documents, and other files. Datum then uses this directory to automatically setup each database. It is recommended to put this under version control.",
+      initial: "~/datum",
+    },
+    {
+      name: "dbType",
+      type: "select",
+      message: "Database type",
+      choices: [
+        { title: "CouchDB", value: "couchdb" },
+        { title: "PouchDB", value: "pouchdb" },
+      ],
+      initial: isLocalCouchRunning ? 0 : 1,
     },
   ];
 
