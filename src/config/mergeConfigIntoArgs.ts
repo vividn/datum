@@ -17,5 +17,6 @@ export async function mergeConfigAndEnvIntoArgs(
   args.host ??= process.env["COUCHDB_HOST"] || config.connection?.host;
   args.user ??= process.env["COUCHDB_USER"] || config.connection?.user;
   args.password ??=
-    process.env["COUCHDB_PASSWORD"] || config.connection?.password;
+    (process.env["COUCHDB_PASSWORD"] || config.connection?.password) ??
+    undefined;
 }

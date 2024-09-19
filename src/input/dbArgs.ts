@@ -5,7 +5,7 @@ export type DbArgs = {
   host?: string;
   adapter?: string;
   user?: string;
-  password?: string | null;
+  password?: string;
   env?: string;
   createDb?: boolean;
   configFile?: string;
