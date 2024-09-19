@@ -14,11 +14,6 @@ export function mergeConfigAndEnvIntoArgs(
   args.projectDir ??= config.project_dir;
   args.db ??= config.db;
 
-  console.debug({
-    argsHost: args.host,
-    envHost: process.env["COUCHDB_HOST"],
-    configHost: config.connection?.host,
-  });
   args.host ??= process.env["COUCHDB_HOST"] || config.connection?.host;
   args.user ??= process.env["COUCHDB_USER"] || config.connection?.user;
   args.password ??=

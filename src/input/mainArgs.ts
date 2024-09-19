@@ -44,8 +44,6 @@ export async function datum(cliInput: string | string[]): Promise<void> {
   const [namespace, args] = commandParser.parse_known_args(cliArgs);
   // When calling from the command line, SHOW should be set to default
   namespace.show = Show.Default;
-  
-  
 
   const command = namespace.command;
   switch (command) {
