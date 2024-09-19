@@ -36,14 +36,13 @@ export async function initCmd(
 
   const xdgConfig =
     process.env.XDG_CONFIG_HOME ?? `${process.env.HOME}/.config`;
-  const configDir = args.global ? xdgConfig : process.cwd();
+  const configDir = args.global ? `${xdgConfig}/datum` : process.cwd();
 
   if (!args.global) {
     throw new Error("only --global initialization is supported at the moment");
-  } else {
-    await fs.mkdir(configDir, { recursive: true });
   }
 
+  await fs.mkdir(configDir, { recursive: true });
   const filepath = `${configDir}/datumrc.yml`;
   let fileExists;
   try {
@@ -59,5 +58,6 @@ export async function initCmd(
     );
   }
 
-  await initConfig();
+  const newConfig = await initConfig();
+  await fs.writeFile(filepath, newConfig.toString(), { encoding: "utf-8" });
 }

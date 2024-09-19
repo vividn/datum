@@ -2,7 +2,11 @@ import prompts, { PromptObject } from "prompts";
 import yaml from "yaml";
 import fs from "fs";
 
-export async function initConfig() {
+export async function initConfig(): Promise<yaml.Document> {
+  const newConfig = yaml.parseDocument(
+    fs.readFileSync(__dirname + "/defaultConfig.yml", "utf8"),
+  );
+
   let isLocalCouchRunning;
   try {
     await fetch("http://localhost:5984");
@@ -61,10 +65,15 @@ export async function initConfig() {
 
   const answers = await prompts(questions, { onCancel: () => process.exit(1) });
 
-  const defaultConfig = yaml.parseDocument(
-    fs.readFileSync(__dirname + "/defaultConfig.yml", "utf8"),
-  );
-  console.log({ defaultConfig: defaultConfig.toString() });
+  newConfig.set("project_dir", answers.projectDir);
+  newConfig.set("db", answers.db);
+  newConfig.setIn(["connection", "host"], answers.host);
+  if (answers.user) {
+    newConfig.setIn(["connection", "user"], answers.user);
+  }
+  if (answers.password) {
+    newConfig.setIn(["connection", "password"], answers.password);
+  }
 
-  console.log({ answers });
+  return newConfig;
 }
