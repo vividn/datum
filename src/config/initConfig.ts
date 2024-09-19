@@ -1,0 +1,70 @@
+import prompts, { PromptObject } from "prompts";
+import yaml from "yaml";
+import fs from "fs";
+
+export async function initConfig() {
+  let isLocalCouchRunning;
+  try {
+    await fetch("http://localhost:5984");
+    isLocalCouchRunning = true;
+  } catch {
+    isLocalCouchRunning = false;
+  }
+
+  const questions: PromptObject[] = [
+    {
+      name: "projectDir",
+      type: "text",
+      message:
+        "Project directory. This is where you will set up and maintain your custom views, specs, hardcoded data documents, and other files. Datum then uses this directory to automatically setup each database. It is recommended to put this under version control.",
+      initial: "~/datum",
+    },
+    {
+      name: "dbType",
+      type: "select",
+      message: "Database type",
+      choices: [
+        { title: "CouchDB", value: "couchdb" },
+        { title: "PouchDB", value: "pouchdb" },
+      ],
+      initial: isLocalCouchRunning ? 0 : 1,
+    },
+    {
+      name: "host",
+      type: "text",
+      message: (_, values) =>
+        values.dbType === "couchdb"
+          ? "CouchDB location with port"
+          : "PouchDB database root location. %DATA% is the XDG_DATA_HOME directory",
+      initial: (_, values) =>
+        values.dbType === "couchdb" ? "http://localhost:5984" : "%DATA%/datum",
+    },
+    {
+      name: "user",
+      type: (_, values) => (values.dbType === "couchdb" ? "text" : null),
+      message: "Default CouchDB username",
+      initial: "user",
+    },
+    {
+      name: "password",
+      type: (_, values) => (values.dbType === "couchdb" ? "password" : null),
+      message:
+        "Couchdb password. WARNING: entering here will store in plain text in the config file. Leave blank to prompt at runtime. Can also use $COUCHDB_PASSWORD or --password",
+    },
+    {
+      name: "db",
+      type: "text",
+      message: "Default database name",
+      initial: "datum",
+    },
+  ];
+
+  const answers = await prompts(questions, { onCancel: () => process.exit(1) });
+
+  const defaultConfig = yaml.parseDocument(
+    fs.readFileSync(__dirname + "/defaultConfig.yml", "utf8"),
+  );
+  console.log({ defaultConfig: defaultConfig.toString() });
+
+  console.log({ answers });
+}
