@@ -11,22 +11,27 @@ export function connectDb(
 ): PouchDB.Database<EitherPayload> {
   mergeConfigAndEnvIntoArgs(args);
 
-  const hostname = args.host;
-  const adapter = hostname === "%MEMORY%" ? "memory" : undefined;
+  const host = args.host;
+  const adapter = host === "%MEMORY%" ? "memory" : undefined;
   const { db: dbName = "datum", createDb } = args;
+
+  if (host === undefined) {
+    // TODO: when going into the browser, maybe support this?
+    throw new Error("No hostname provided for database connection");
+  }
 
   const fullDatabaseName =
     adapter === "memory"
       ? dbName
-      : !hostname
+      : !host
         ? dbName
-        : hostname.at(-1) === "/"
-          ? `${hostname}${dbName}`
-          : `${hostname}/${dbName}`;
+        : host.at(-1) === "/"
+          ? `${host}${dbName}`
+          : `${host}/${dbName}`;
 
   const couchAuth = {
     username: args.user,
-    password: args.password
+    password: args.password,
   };
   return new PouchDb(fullDatabaseName, {
     skip_setup: !createDb,

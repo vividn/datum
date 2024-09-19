@@ -5,7 +5,6 @@ import { initConfig } from "../config/initConfig";
 
 export type InitCmdArgs = {
   overwrite?: boolean;
-  global?: boolean;
   nonInteractive?: boolean;
 };
 
@@ -17,10 +16,6 @@ export const initCmdArgs = new ArgumentParser({
 
 initCmdArgs.add_argument("--overwrite", {
   help: "overwrite the existing configuration file",
-  action: "store_true",
-});
-initCmdArgs.add_argument("--global", {
-  help: "initialize the global configuration file",
   action: "store_true",
 });
 initCmdArgs.add_argument("--non-interactive", {
@@ -36,11 +31,7 @@ export async function initCmd(
 
   const xdgConfig =
     process.env.XDG_CONFIG_HOME ?? `${process.env.HOME}/.config`;
-  const configDir = args.global ? `${xdgConfig}/datum` : process.cwd();
-
-  if (!args.global) {
-    throw new Error("only --global initialization is supported at the moment");
-  }
+  const configDir = `${xdgConfig}/datum`;
 
   await fs.mkdir(configDir, { recursive: true });
   const filepath = `${configDir}/datumrc.yml`;

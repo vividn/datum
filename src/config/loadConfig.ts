@@ -1,4 +1,4 @@
-import { promises as fs } from "fs";
+import fs from "fs";
 import yaml from "yaml";
 import { MainDatumArgs } from "../input/mainArgs";
 
@@ -12,14 +12,14 @@ export type DatumConfig = {
   };
 };
 
-export async function loadConfig(args: MainDatumArgs): Promise<DatumConfig> {
+export function loadConfig(args: MainDatumArgs): DatumConfig {
   // modifies args in place, but only adds new keys, so doesn't replace values, just allows for defaults
   const configDir =
     process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
   const configFile = args.configFile ?? `${configDir}/datum/datumrc.yml`;
   try {
     return yaml
-      .parseDocument(await fs.readFile(configFile, "utf8"))
+      .parseDocument(fs.readFileSync(configFile, "utf8"))
       .toJSON() as DatumConfig;
   } catch (e: any) {
     if (e.code === "ENOENT") {

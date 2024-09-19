@@ -3,17 +3,22 @@ import dotenv from "dotenv";
 import { loadConfig } from "./loadConfig";
 import { SetupCmdArgs } from "../commands/setupCmd";
 
-export async function mergeConfigAndEnvIntoArgs(
+export function mergeConfigAndEnvIntoArgs(
   args: MainDatumArgs & SetupCmdArgs,
-): Promise<void> {
+): void {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
   }
-  const config = await loadConfig(args);
+  const config = loadConfig(args);
 
   args.projectDir ??= config.project_dir;
   args.db ??= config.db;
 
+  console.debug({
+    argsHost: args.host,
+    envHost: process.env["COUCHDB_HOST"],
+    configHost: config.connection?.host,
+  });
   args.host ??= process.env["COUCHDB_HOST"] || config.connection?.host;
   args.user ??= process.env["COUCHDB_USER"] || config.connection?.user;
   args.password ??=

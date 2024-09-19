@@ -110,7 +110,6 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "setup": {
-      namespace.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
       namespace.show =
         namespace.show === Show.Default ? Show.Minimal : namespace.show;
       await setupCmd(args, namespace);
