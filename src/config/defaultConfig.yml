@@ -11,7 +11,6 @@ connection:
   # host can be 
   #   - a URL of a couchdb instance, e.g. http://localhost:5984
   #   - a root directory where to store db files with pouchdb, use %DATA% for XDG_DATA_HOME
-  #   - %MEMORY% to use the pouchdb memory adapter to store data in memory
   # Override with $COUCHDB_HOST or with --host
   host: "%DATA%/datum"
 
