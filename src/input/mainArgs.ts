@@ -22,6 +22,7 @@ import { backupCmd } from "../commands/backupCmd";
 import { restoreCmd } from "../commands/restoreCmd";
 import { migrateCmd } from "../commands/migrateCmd";
 import { checkCmd } from "../commands/checkCmd";
+import { dayviewCmd } from "../commands/dayviewCmd";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -152,6 +153,11 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       }
       break;
     }
+
+    case "dayview":
+      await dayviewCmd(args, namespace);
+      break;
+
     // case "test": {
     //   const parser = new ArgumentParser({});
     //   parser.add_argument("--test", {
