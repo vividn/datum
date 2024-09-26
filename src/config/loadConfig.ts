@@ -17,7 +17,7 @@ export function loadConfig(args: MainDatumArgs): DatumConfig {
   const configDir =
     process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
   const configFile = args.configFile ?? `${configDir}/datum/datumrc.yml`;
-  const config: DatumConfig;
+  let config: DatumConfig;
   try {
     config = yaml
       .parseDocument(fs.readFileSync(configFile, "utf8"))
@@ -37,20 +37,26 @@ export function loadConfig(args: MainDatumArgs): DatumConfig {
   }
 
   if (config.project_dir) {
-    config.project_dir.replaceAll("%HOME%", process.env["HOME"]!);
-    config.project_dir.replaceAll("~", process.env["HOME"]!);
-    config.project_dir.replaceAll(
+    config.project_dir = config.project_dir.replaceAll(
+      /%HOME%|~/g,
+      process.env["HOME"]!,
+    );
+    config.project_dir = config.project_dir.replaceAll(
       "%DATA%",
       process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share",
     );
   }
 
   if (config.connection?.host) {
-    config.connection.host.replaceAll("%HOME%", process.env["HOME"]!);
-    config.connection.host.replaceAll("~", process.env["HOME"]!);
-    config.connection.host.replaceAll(
+    config.connection.host = config.connection.host.replaceAll(
+      /%HOME%|~/g,
+      process.env["HOME"]!,
+    );
+    config.connection.host = config.connection.host.replaceAll(
       "%DATA%",
       process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share",
     );
   }
+
+  return config;
 }
