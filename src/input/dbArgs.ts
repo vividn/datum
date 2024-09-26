@@ -8,6 +8,7 @@ export type DbArgs = {
   password?: string;
   env?: string;
   createDb?: boolean;
+  projectDir?: string;
   configFile?: string;
 };
 
@@ -37,6 +38,12 @@ dbGroup.add_argument("--password", {
 dbGroup.add_argument("--env", {
   help: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
 });
+dbGroup.add_argument("--project-dir", {
+  help: "The directory to use for custom views, specs, and other files to setup your db",
+  type: "str",
+  dest: "projectDir",
+});
+
 dbGroup.add_argument("--config", {
   help: "datum configuration file to use rather than the default at ~/.config/datum/datumrc.yml",
   dest: "configFile",

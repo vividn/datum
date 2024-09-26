@@ -1,11 +1,8 @@
 import { MainDatumArgs } from "../input/mainArgs";
 import dotenv from "dotenv";
 import { loadConfig } from "./loadConfig";
-import { SetupCmdArgs } from "../commands/setupCmd";
 
-export function mergeConfigAndEnvIntoArgs(
-  args: MainDatumArgs & SetupCmdArgs,
-): void {
+export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
   }
