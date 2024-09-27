@@ -1,7 +1,9 @@
 import fs from "fs";
 import { initCmd } from "../initCmd";
 
-const defaultConfigFile = fs.readFileSync(`${__dirname}/../../config/defaultConfig.yml`;
+const defaultConfigFile = fs.readFileSync(
+  `${__dirname}/../../config/defaultConfig.yml`,
+);
 
 describe("initCmd", () => {
   it("writes datumrc into the xdg_config directory", async () => {
@@ -9,7 +11,7 @@ describe("initCmd", () => {
     await initCmd({});
     fs.accessSync("/tmp/datum/datumrc.yml");
     const configFile = fs.readFileSync("/tmp/datum/datumrc.yml", "utf-8");
-    expect(configFile).toEqual(defaultConfigFile)
+    expect(configFile).toEqual(defaultConfigFile);
   });
 
   it("fails if datumrc exists and --overwrite is not specified", async () => {
@@ -24,6 +26,6 @@ describe("initCmd", () => {
     await initCmd({ overwrite: true });
     fs.accessSync("/tmp/datum/datumrc.yml");
     const configFile = fs.readFileSync("/tmp/datum/datumrc.yml", "utf-8");
-    expect(configFile).toEqual(defaultConfigFile)
+    expect(configFile).toEqual(defaultConfigFile);
   });
 });
