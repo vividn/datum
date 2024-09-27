@@ -13,4 +13,4 @@ process.env["POUCHDB_ADAPTER"] = "memory"
 process.env["FORCE_COLOR"] = "0"
 
 // mock load config
-jest.mock("config/loadConfig");
+jest.mock("./src/config/loadConfig");
