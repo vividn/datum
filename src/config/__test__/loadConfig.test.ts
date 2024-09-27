@@ -2,6 +2,7 @@ import { loadConfig } from "../loadConfig";
 
 const configFile = `${__dirname}/__fixtures__/test_datumrc.yml`;
 
+jest.unmock("../loadConfig");
 describe("loadConfig", () => {
   it("should load a config file", () => {
     const args = {
