@@ -80,5 +80,5 @@ export async function dayview(_rows: MapRow<typeof stateChangeView>[]) {
     .attr("height", (d) => d.height)
     .attr("fill", (d) => d.color);
 
-  return svg.node();
+  return svg.node()?.outerHTML;
 }
