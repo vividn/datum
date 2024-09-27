@@ -12,7 +12,10 @@ export function connectDb(
   mergeConfigAndEnvIntoArgs(args);
 
   const host = args.host;
-  const adapter = process.env["POUCHDB_ADAPTER"] || undefined;
+  const adapter =
+    process.env["POUCHDB_ADAPTER"] || host === "%MEMORY%"
+      ? "memory"
+      : undefined;
   const { db: dbName = "datum", createDb } = args;
 
   if (host === undefined) {

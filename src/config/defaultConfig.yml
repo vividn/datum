@@ -19,7 +19,6 @@ connection:
   user: "user"
 
   # password to use for couchdb instances. Has no effect on pouchdb
-  # Leave null to prompt for password
   # Override wtih $COUCHDB_PASSWORD or with --password
   password: null
 
