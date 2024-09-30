@@ -13,7 +13,7 @@ describe("loadConfig", () => {
       project_dir: process.env["HOME"] + "/some/project/dir/path",
       db: "test_db",
       connection: {
-        host: process.env["XDG_DATA_HOME"] + "/test_host",
+        host: process.env["HOME"] + "/.local/share/test_host",
         user: "test_user",
         password: "test_password",
       },
