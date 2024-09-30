@@ -34,7 +34,7 @@ const MigrationOps: Record<MigrationOps, ""> = {
 export const migrationOps = Object.keys(MigrationOps);
 
 type MigrationMapKey = JsonType; // user defined sort for orderin migration operations
-type MigrationMapValue = {
+export type MigrationMapValue = {
   op: MigrationOps;
   data: JsonObject;
 };

@@ -9,20 +9,13 @@ import { dbArgs } from "../input/dbArgs";
 export const setupArgs = new ArgumentParser({
   add_help: false,
 });
-setupArgs.add_argument("--project-dir", {
-  help: "where to look for additional DatumViews to setup in the database",
-  type: "str",
-  dest: "projectDir",
-});
 
 export const setupCmdArgs = new ArgumentParser({
   description: "setup the database for use with datum",
   parents: [setupArgs, dbArgs, outputArgs],
 });
 
-export type SetupCmdArgs = MainDatumArgs & {
-  projectDir?: string;
-};
+export type SetupCmdArgs = MainDatumArgs;
 
 export async function setupCmd(
   args: SetupCmdArgs | string | string[],

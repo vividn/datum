@@ -1,7 +1,7 @@
 import { fail, testDbLifecycle } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
-  activeStateView,
+  stateChangeView,
   humanIdView,
   idToHumanView,
   subHumanIdView,
@@ -25,7 +25,7 @@ describe("quickId", () => {
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });
     await insertDatumView({ db, datumView: humanIdView });
-    await insertDatumView({ db, datumView: activeStateView });
+    await insertDatumView({ db, datumView: stateChangeView });
   });
 
   test("it returns the string directly if the exact id exists in the database", async () => {
