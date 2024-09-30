@@ -1,0 +1,9 @@
+project_dir: "%HOME%/some/project/dir/path"
+db: "test_db"
+
+connection:
+  host: "%DATA%/test_host"
+  user: "test_user"
+  password: "test_password"
+
+

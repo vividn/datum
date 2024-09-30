@@ -4,10 +4,12 @@ export type DbArgs = {
   db?: string;
   host?: string;
   adapter?: string;
-  username?: string;
+  user?: string;
   password?: string;
   env?: string;
   createDb?: boolean;
+  projectDir?: string;
+  configFile?: string;
 };
 
 const parser = new ArgumentParser({
@@ -35,6 +37,16 @@ dbGroup.add_argument("--password", {
 });
 dbGroup.add_argument("--env", {
   help: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
+});
+dbGroup.add_argument("--project-dir", {
+  help: "The directory to use for custom views, specs, and other files to setup your db",
+  type: "str",
+  dest: "projectDir",
+});
+
+dbGroup.add_argument("--config", {
+  help: "datum configuration file to use rather than the default at ~/.config/datum/datumrc.yml",
+  dest: "configFile",
 });
 dbGroup.add_argument("--create-db", {
   help: "Create the db if it does not exist. Note: this only has an effect on couchdb instances, not local pouchdb",
