@@ -37,6 +37,5 @@ export async function getDbDatumViews({
   for (const viewName in dbViews) {
     allDbViews.push(dbViews[viewName]);
   }
-  console.debug({allDbViews});
   return allDbViews;
 }
