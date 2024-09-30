@@ -1,35 +1,40 @@
 import { EitherPayload } from "../documentControl/DatumDocument";
-import dotenv from "dotenv";
 import PouchDb from "pouchdb";
 import memoryAdapter from "pouchdb-adapter-memory";
 import { MainDatumArgs } from "../input/mainArgs";
+import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs";
 
 PouchDb.plugin(memoryAdapter);
 
 export function connectDb(
   args: MainDatumArgs,
 ): PouchDB.Database<EitherPayload> {
-  if (args.env !== undefined) {
-    dotenv.config({ path: args.env, override: true });
-  }
+  mergeConfigAndEnvIntoArgs(args);
 
-  const adapter = args.adapter ?? process.env.POUCHDB_ADAPTER;
-  const hostname =
-    args.host ?? process.env.COUCHDB_HOST ?? "http://localhost:5984";
+  const host = args.host;
+  const adapter =
+    process.env["POUCHDB_ADAPTER"] || host === "%MEMORY%"
+      ? "memory"
+      : undefined;
   const { db: dbName = "datum", createDb } = args;
+
+  if (host === undefined) {
+    // TODO: when going into the browser, maybe support this?
+    throw new Error("No hostname provided for database connection");
+  }
 
   const fullDatabaseName =
     adapter === "memory"
       ? dbName
-      : !hostname
+      : !host
         ? dbName
-        : hostname.at(-1) === "/"
-          ? `${hostname}${dbName}`
-          : `${hostname}/${dbName}`;
+        : host.at(-1) === "/"
+          ? `${host}${dbName}`
+          : `${host}/${dbName}`;
 
   const couchAuth = {
-    username: args.username ?? process.env.COUCHDB_USER,
-    password: args.password ?? process.env.COUCHDB_PASSWORD,
+    username: args.user,
+    password: args.password,
   };
   return new PouchDb(fullDatabaseName, {
     skip_setup: !createDb,
