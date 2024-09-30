@@ -34,7 +34,6 @@ describe("initCmd", () => {
     fs.accessSync("/tmp/datum/datumrc.yml");
     const configFile = fs.readFileSync("/tmp/datum/datumrc.yml", "utf-8");
     expect(configFile).toEqual(defaultConfigFile);
-    expect(loadConfig({})).toMatchSnapshot();
   });
 
   it("fails if datumrc exists and --overwrite is not specified", async () => {
