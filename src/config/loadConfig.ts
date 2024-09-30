@@ -13,7 +13,6 @@ export type DatumConfig = {
 };
 
 export function loadConfig(args: MainDatumArgs): DatumConfig {
-  // modifies args in place, but only adds new keys, so doesn't replace values, just allows for defaults
   const configDir =
     process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
   const configFile = args.configFile ?? `${configDir}/datum/datumrc.yml`;

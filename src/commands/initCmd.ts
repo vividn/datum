@@ -2,8 +2,9 @@ import { promises as fs } from "fs";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { initConfig } from "../config/initConfig";
+import { MainDatumArgs } from "../input/mainArgs";
 
-export type InitCmdArgs = {
+export type InitCmdArgs = MainDatumArgs & {
   overwrite?: boolean;
   nonInteractive?: boolean;
 };
@@ -49,6 +50,6 @@ export async function initCmd(
     );
   }
 
-  const newConfig = await initConfig();
+  const newConfig = await initConfig(args);
   await fs.writeFile(filepath, newConfig.toString(), { encoding: "utf-8" });
 }

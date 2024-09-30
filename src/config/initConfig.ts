@@ -1,11 +1,14 @@
 import prompts, { PromptObject } from "prompts";
 import yaml from "yaml";
 import fs from "fs";
+import { InitCmdArgs } from "../commands/initCmd";
 
-export async function initConfig(): Promise<yaml.Document> {
+export async function initConfig(args: InitCmdArgs): Promise<yaml.Document> {
   const newConfig = yaml.parseDocument(
     fs.readFileSync(__dirname + "/defaultConfig.yml", "utf8"),
   );
+
+  // prompts.override({ projectDir: "abcde" });
 
   let isLocalCouchRunning;
   try {
@@ -15,13 +18,32 @@ export async function initConfig(): Promise<yaml.Document> {
     isLocalCouchRunning = false;
   }
 
+  const defaults = {
+    projectDir: args.projectDir ?? (newConfig.get("project_dir") as string),
+    dbType: isLocalCouchRunning ? "couchdb" : "pouchdb",
+    host:
+      args.host ??
+      process.env["COUCHDB_HOST"] ??
+      (isLocalCouchRunning ? "http://localhost:5984" : "%DATA%/datum"),
+    user:
+      args.user ??
+      process.env["COUCHDB_USER"] ??
+      (newConfig.getIn(["connection", "user"]) as string | null),
+    password: null,
+    db: args.db ?? (newConfig.get("db") as string),
+  };
+
+  if (args.nonInteractive) {
+    prompts.override(defaults);
+  }
+
   const questions: PromptObject[] = [
     {
       name: "projectDir",
       type: "text",
       message:
         "Project directory. This is where you will set up and maintain your custom views, specs, hardcoded data documents, and other files. Datum then uses this directory to automatically setup each database. It is recommended to put this under version control.",
-      initial: "~/datum",
+      initial: defaults.projectDir,
     },
     {
       name: "dbType",
@@ -41,13 +63,17 @@ export async function initConfig(): Promise<yaml.Document> {
           ? "CouchDB location with port"
           : "PouchDB database root location. %DATA% is the XDG_DATA_HOME directory",
       initial: (_, values) =>
-        values.dbType === "couchdb" ? "http://localhost:5984" : "%DATA%/datum",
+        args.host ??
+        (process.env["COUCHDB_HOST"] ||
+          (values.dbType === "couchdb"
+            ? "http://localhost:5984"
+            : "%DATA%/datum")),
     },
     {
       name: "user",
       type: (_, values) => (values.dbType === "couchdb" ? "text" : null),
       message: "Default CouchDB username",
-      initial: "user",
+      initial: defaults.user ?? "user",
     },
     {
       name: "password",
