@@ -5,7 +5,7 @@
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
   "license": "AGPL-3.0",
-  "main": "build/src/index.js",
+  "main": "build/index.js",
   "bin": {
     "datum": "./build/index.js"
   },
