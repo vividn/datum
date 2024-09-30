@@ -2,7 +2,6 @@ import fs from "fs";
 import { initCmd } from "../initCmd";
 import { pass } from "../../__test__/test-utils";
 import yaml from "yaml";
-import { loadConfig } from "../../config/loadConfig";
 
 const defaultConfigFile = fs.readFileSync(
   `${__dirname}/../../config/defaultConfig.yml`,
