@@ -31,12 +31,10 @@
   },
   "include": [
     "src/**/*",
-    "./typings",
-    "projects/**/*"
+    "./typings"
   ],
   "exclude": [
     "node_modules",
-    "src/**/__test__",
-    "projects/**/__test__"
+    "src/**/__test__"
   ]
 }
