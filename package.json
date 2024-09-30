@@ -1,19 +1,13 @@
 {
   "name": "datum",
-  "version": "2.0.1",
-  "description": "Quickly add data to couch db",
+  "version": "2.1.0-alpha.0",
+  "description": "Record and track and analyze data on your life",
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
-  "license": "UNLICENSED",
-  "main": "build/src/index.js",
+  "license": "AGPL-3.0",
+  "main": "build/index.js",
   "bin": {
-    "datum": "./build/src/index.js",
-    "eqcheck": "./build/projects/finance/src/eqcheck.js",
-    "txview": "./build/projects/finance/src/transactionView.js",
-    "fbal": "./build/projects/finance/src/fbal.js",
-    "wordview": "./build/projects/language/src/word.js",
-    "chorelist": "./build/projects/datum/src/chorelist.js",
-    "inboxprocess": "./build/projects/task/src/inboxprocess.js"
+    "datum": "./build/index.js"
   },
   "engines": {
     "node": ">18.0.0"
