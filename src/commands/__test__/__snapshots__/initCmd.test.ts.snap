@@ -1,0 +1,13 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`initCmd writes datumrc into the xdg_config directory 1`] = `
+{
+  "connection": {
+    "host": "%MEMORY%",
+    "password": "password",
+    "user": "user",
+  },
+  "db": "test",
+  "project_dir": "/tmp",
+}
+`;

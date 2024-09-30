@@ -21,5 +21,3 @@ connection:
   # password to use for couchdb instances. Has no effect on pouchdb
   # Override wtih $COUCHDB_PASSWORD or with --password
   password: null
-
-

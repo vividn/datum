@@ -33,10 +33,6 @@ export async function initConfig(args: InitCmdArgs): Promise<yaml.Document> {
     db: args.db ?? (newConfig.get("db") as string),
   };
 
-  if (args.nonInteractive) {
-    prompts.override(defaults);
-  }
-
   const questions: PromptObject[] = [
     {
       name: "projectDir",
@@ -89,7 +85,9 @@ export async function initConfig(args: InitCmdArgs): Promise<yaml.Document> {
     },
   ];
 
-  const answers = await prompts(questions, { onCancel: () => process.exit(1) });
+  const answers = args.nonInteractive
+    ? defaults
+    : await prompts(questions, { onCancel: () => process.exit(1) });
 
   newConfig.set("project_dir", answers.projectDir);
   newConfig.set("db", answers.db);
