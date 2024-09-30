@@ -7,7 +7,7 @@
   "license": "AGPL-3.0",
   "main": "build/src/index.js",
   "bin": {
-    "datum": "./build/src/index.js"
+    "datum": "./build/index.js"
   },
   "engines": {
     "node": ">18.0.0"
