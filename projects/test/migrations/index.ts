@@ -1,0 +1,1 @@
+export { migrateExample } from "./migrateExample";
