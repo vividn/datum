@@ -75,7 +75,7 @@
     "@types/tmp": "^0.2.6",
     "argparse": "^2.0.1",
     "chalk": "^4.1.2",
-    "chrono-node": "^2.7.6",
+    "chrono-node": "^2.7.7",
     "dotenv": "^16.4.5",
     "easy-table": "^1.2.0",
     "lodash.flatten": "^4.4.0",
