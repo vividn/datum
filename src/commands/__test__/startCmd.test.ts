@@ -5,7 +5,7 @@ import { startCmd } from "../startCmd";
 import { switchCmd } from "../switchCmd";
 import { getActiveState } from "../../state/getActiveState";
 import { parseTimeStr } from "../../time/parseTimeStr";
-import { BadDurationError } from "../../errors";
+import { BadDurationError, ExtraDataError } from "../../errors";
 import { toDatumTime } from "../../time/datumTime";
 
 describe("startCmd", () => {
@@ -114,5 +114,10 @@ describe("startCmd", () => {
       state: true,
       req1: "reqVal1",
     });
+  });
+
+  it("fails when using a full day and a duration", async () => {
+    // mistyped -y instead of -t, but does not get mapped to a duration
+    await expect(startCmd("field -y 315")).rejects.toThrow(ExtraDataError);
   });
 });
