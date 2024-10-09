@@ -23,6 +23,7 @@ import { restoreCmd } from "../commands/restoreCmd";
 import { migrateCmd } from "../commands/migrateCmd";
 import { checkCmd } from "../commands/checkCmd";
 import { dayviewCmd } from "../commands/dayviewCmd";
+import { initCmd } from "../commands/initCmd";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -47,6 +48,10 @@ export async function datum(cliInput: string | string[]): Promise<void> {
 
   const command = namespace.command;
   switch (command) {
+    case "init":
+      await initCmd(args, namespace);
+      break;
+
     case "add":
       await addCmd(args, namespace);
       break;
@@ -104,7 +109,6 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "setup": {
-      namespace.projectDir ??= process.env["HOME"] + "/.projectDatumViews";
       namespace.show =
         namespace.show === Show.Default ? Show.Minimal : namespace.show;
       await setupCmd(args, namespace);
