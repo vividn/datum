@@ -29,7 +29,16 @@ export async function occurCmd(
   preparsed?: Partial<OccurCmdArgs>,
 ): Promise<EitherDocument> {
   args = parseIfNeeded(occurCmdArgs, args, preparsed);
-  const { time: occurTime } = handleTimeArgs(args);
+  const { time: occurTime, onlyDate } = handleTimeArgs(args);
+
+  // if the time is only a date, and duration is one of the keys, remove it to prevent accidental adding of duration to full day events
+  const durKeyIndex =
+    args.keys?.findIndex((key) => key === "dur" || key.startsWith("dur=")) ??
+    -1;
+  if (onlyDate && durKeyIndex !== -1) {
+    args.keys?.splice(durKeyIndex, 1);
+  }
+
   if (occurTime !== undefined) {
     args.cmdData ??= {};
     args.cmdData.occurTime = occurTime;

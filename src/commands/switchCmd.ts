@@ -53,6 +53,7 @@ export async function switchCmd(
   preparsed?: Partial<SwitchCmdArgs>,
 ): Promise<EitherDocument> {
   args = parseIfNeeded(switchCmdArgs, args, preparsed);
+
   flexiblePositional(
     args,
     "duration",
