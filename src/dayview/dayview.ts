@@ -2,6 +2,12 @@ import * as d3 from "d3";
 import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { JSDOM } from "jsdom";
+import { DatumState } from "../state/normalizeState";
+import md5 from "md5";
+
+function md5Color(str: string) {
+  return "#" + md5(str).substring(0, 6);
+}
 
 const rows: MapRow<typeof stateChangeView>[] = [
   {
@@ -74,7 +80,13 @@ export async function dayview(_rows: MapRow<typeof stateChangeView>[]) {
     .append("g")
     .attr("transform", `translate(${margin.left},${margin.top})`);
 
-  const data = rows.map((row) => ({
+  type DBlock = {
+    field: string;
+    time: Date;
+    state: DatumState;
+  };
+
+  const data: DBlock[] = rows.map((row) => ({
     field: row.key[0],
     time: new Date(row.key[1]),
     state: row.value[1],
@@ -92,27 +104,20 @@ export async function dayview(_rows: MapRow<typeof stateChangeView>[]) {
     .attr("transform", `translate(0,${dataHeight})`)
     .call(xAxis);
 
-  // const data = []
-  // const minTime = d3.min(data, (d) => d.key[1]);
-  // const maxTime = d3.max(data, (d) => d.key[1]);
+  const dataPairs = d3.pairs(data);
+  type Pair = [DBlock, DBlock];
 
-  // const rectangles = [
-  //   { x: 10, y: 10, width: 200, height: 100, color: "red" },
-  //   { x: 50, y: 50, width: 200, height: 100, color: "blue" },
-  //   { x: 100, y: 20, width: 200, height: 100, color: "green" },
-  //   { x: 150, y: 70, width: 200, height: 100, color: "purple" },
-  // ];
-  //
-  // d3.pairs(rows),
-  //   (a, b) => {
-  //     dataArea
-  //       .append("rect")
-  //       .attr("x", a.key[1])
-  //       .attr("y", 10)
-  //       .attr("width", 10)
-  //       .attr("height", 10)
-  //       .attr("fill", "red");
-  //   };
+  dataArea
+    .selectAll(".rect")
+    .data(dataPairs)
+    .enter()
+    .append("rect")
+    .attr("class", "rect")
+    .attr("x", (d: Pair) => timeScale(d[0].time))
+    .attr("y", 10)
+    .attr("width", (d) => timeScale(d[1].time) - timeScale(d[0].time))
+    .attr("height", 10)
+    .attr("fill", (d) => md5Color(String(d[0].state)));
 
   return svg.node()?.outerHTML;
 }
