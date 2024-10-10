@@ -71,16 +71,16 @@ async function word(argsOrCli: WordArgs | string | string[]): Promise<void> {
         data.pos
       }) ${hid}`,
     );
-    const ipa = spawnSync("espeak", [
-      "-q",
-      "-v",
-      data.srcLang,
-      "--ipa",
-      data.source,
-    ])
-      .stdout.toString()
-      .trim();
-    console.log(ipa);
+    // const ipa = spawnSync("espeak", [
+    //   "-q",
+    //   "-v",
+    //   data.srcLang,
+    //   "--ipa",
+    //   data.source,
+    // ])
+    //   .stdout.toString()
+    //   .trim();
+    // console.log(ipa);
     console.log("---------------");
     const english = data.en;
     if (Array.isArray(english)) {
