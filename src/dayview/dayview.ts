@@ -3,11 +3,8 @@ import { MapRow } from "../views/DatumView";
 import { stateChangeView } from "../views/datumViews/stateChangeView";
 import { JSDOM } from "jsdom";
 import { DatumState } from "../state/normalizeState";
-import md5 from "md5";
+import { md5Color } from "../utils/md5Color";
 
-function md5Color(str: string) {
-  return "#" + md5(str).substring(0, 6);
-}
 
 const rows: MapRow<typeof stateChangeView>[] = [
   {
