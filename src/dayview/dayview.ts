@@ -40,9 +40,9 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .select(document.body)
     .append("svg")
     .attr("min-height", "200px")
-    .attr("min-width", "500px");
-  // .attr("width", "100%")
-  // .attr("height", "100%");
+    .attr("min-width", "500px")
+    .attr("width", "1000px")
+    .attr("height", "300px");
 
   const _background = svg
     .append("rect")
@@ -68,11 +68,20 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const timeScale = d3
     .scaleTime()
     .domain([new Date(startUtc), new Date(endUtc)])
-    .range([0, 1]);
+    .range([0, 10000]);
 
   const xAxis = d3.axisBottom(timeScale);
 
-  plot.append("g").attr("width", "100%").call(xAxis);
+  const axis = plot
+    .append("svg")
+    .attr("y", "98%")
+    .attr("height", "2%")
+    .attr("width", "100%")
+    .attr("viewBox", [0, 0, 10000, 20])
+    .attr("preserveAspectRatio", "xMinYMid meet");
+
+  axis.append("g").call(xAxis).selectAll("text").attr("font-size", "48px");
+  // axis.call(xAxis);
 
   const dataArea = plot
     .append("svg")
@@ -95,5 +104,11 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
 
   // return svg.node()!.outerHTML;
   fs.writeFileSync("dayview.svg", svg.node()!.outerHTML);
+
+  // auto refresh html
+  const meta = document.createElement("meta");
+  meta.setAttribute("http-equiv", "refresh");
+  meta.setAttribute("content", "10");
+  document.head.append(meta);
   fs.writeFileSync("dayview.html", document.documentElement.outerHTML);
 }
