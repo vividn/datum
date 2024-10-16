@@ -21,7 +21,11 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
 
   const startUtc = DateTime.local().startOf("day").toUTC().toISO();
-  const endUtc = DateTime.local().endOf("day").toUTC().toISO();
+  const endUtc = DateTime.local()
+    .startOf("day")
+    .plus({ day: 1 })
+    .toUTC()
+    .toISO();
 
   const allFields = await occurredFields(db);
   const sortableGroups = await Promise.all(
@@ -70,7 +74,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .domain([new Date(startUtc), new Date(endUtc)])
     .range([0, 10000]);
 
-  const xAxis = d3.axisBottom(timeScale);
+  const xAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(3), "%H");
 
   const axis = plot
     .append("svg")
@@ -80,7 +84,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("viewBox", [0, 0, 10000, 20])
     .attr("preserveAspectRatio", "xMinYMid meet");
 
-  axis.append("g").call(xAxis).selectAll("text").attr("font-size", "48px");
+  axis.append("g").call(xAxis).selectAll("text").attr("font-size", "40px");
   // axis.call(xAxis);
 
   const dataArea = plot
