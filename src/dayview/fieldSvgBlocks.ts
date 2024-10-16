@@ -1,4 +1,5 @@
-import d3 from "d3";
+import * as d3 from "d3";
+import { JSDOM } from "jsdom";
 import { StateChangeRow } from "../state/checkState";
 import { DatumState } from "../state/normalizeState";
 import { isoDatetime } from "../time/timeUtils";
@@ -18,6 +19,7 @@ type DBlock = {
 };
 export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const { db, field, startUtc, endUtc } = args;
+
   const rows = (
     await db.query(stateChangeView.name, {
       reduce: false,
@@ -53,37 +55,48 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   type DPair = [DBlock, DBlock];
   const dataPairs: DPair[] = d3.pairs(blocks);
 
+  const document = new JSDOM().window.document;
+  const svg = d3
+    .select(document.body)
+    .append("svg")
+    .attr("class", `${field}`)
+    .attr("viewBox", "0 0 1 1")
+    .attr("preserveAspectRatio", "none");
+
   const timeScale = d3
     .scaleTime()
     .domain([new Date(startUtc), new Date(endUtc)])
     .range([0, 1]);
 
-  const group = d3
-    .create("g")
-    .data(dataPairs)
-    .enter()
-    .append("rect")
-    .attr("x", (d: DPair) => timeScale(d[0].time))
-    .attr("y", 0)
-    .attr("width", (d: DPair) => timeScale(d[1].time) - timeScale(d[0].time))
-    .attr("height", 1)
-    .attr("fill", (d) => {
-      const state = d[0].state;
-      if (state === null) {
-        return "white";
-      }
-      if (state === true) {
-        return md5Color(field);
-      }
-      if (state === false) {
-        return "black";
-      }
-      if (typeof state === "string") {
-        return md5Color(state);
-      } else {
-        return md5Color(String(state));
-      }
-    });
+  dataPairs.forEach(([curr, next]) => {
+    const state = curr.state;
+    if (state === null || state === false) {
+      return;
+    }
+    const color =
+      state === true
+        ? md5Color(field)
+        : typeof state === "string"
+          ? md5Color(state)
+          : md5Color(String(state));
+    svg
+      .append("rect")
+      .attr("class", `${field} ${state} block`)
+      .attr("x", timeScale(curr.time))
+      .attr("y", 0)
+      .attr("width", `${100 * (timeScale(next.time) - timeScale(curr.time))}%`)
+      .attr("height", "100%")
+      .attr("fill", color);
+  });
 
-  return group;
+  if (svg.selectChildren("rect").size() === 0) {
+    svg.remove();
+    return null;
+  }
+
+  const node = svg.node();
+  if (node === null) {
+    throw new Error("field data incorrectly created");
+  }
+  return node;
 }
