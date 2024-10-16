@@ -7,8 +7,20 @@ import { connectDb } from "../auth/connectDb";
 import { occurredFields } from "../field/occurredFields";
 import { DateTime } from "luxon";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
+import { DAYVIEW_SPANS } from "../field/tempExampleSpans";
 
-function md5Span(field: string) {
+function getSpan(field: string): [number, number] {
+  const customSpan = DAYVIEW_SPANS[field];
+  if (customSpan) {
+    return customSpan;
+  }
+
+  const hash = md5(field);
+  const y1 = (parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32)) * 0.1;
+  return [y1, y1 + 0.005];
+}
+
+function md5Span(field: string, limit: [number, number]) {
   // use md5 to generate 2 random numbers between 0 and 1
   const hash = md5(field);
   const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
@@ -30,7 +42,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const allFields = await occurredFields(db);
   const sortableGroups = await Promise.all(
     allFields.map(async (field) => {
-      const [y1, y2] = md5Span(field);
+      const [y1, y2] = getSpan(field);
       const g = await fieldSvgBlocks({ db, field, startUtc, endUtc });
       return { field, y1, y2, g };
     }),
