@@ -22,8 +22,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const startUtc = DateTime.local().startOf("day").toUTC().toISO();
   const endUtc = DateTime.local().endOf("day").toUTC().toISO();
 
-  const _allFields = await occurredFields(db);
-  const allFields = ["project"];
+  const allFields = await occurredFields(db);
   const sortableGroups = await Promise.all(
     allFields.map(async (field) => {
       const [y1, y2] = md5Span(field);
@@ -92,7 +91,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     }
     const g = dataArea.append(() => group.g);
     g.attr("y", y).attr("height", fieldHeight);
-    g.attr("x", 0).attr("width", dataWidth);
+    g.attr("x", 0).attr("width", "100%");
   });
 
   return svg.node()!.outerHTML;
