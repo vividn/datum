@@ -22,7 +22,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const startUtc = DateTime.local().startOf("day").toUTC().toISO();
   const endUtc = DateTime.local().endOf("day").toUTC().toISO();
 
-  const allFields = await occurredFields(db);
+  const _allFields = await occurredFields(db);
+  const allFields = ["project"];
   const sortableGroups = await Promise.all(
     allFields.map(async (field) => {
       const [y1, y2] = md5Span(field);
