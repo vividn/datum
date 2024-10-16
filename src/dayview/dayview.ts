@@ -1,3 +1,4 @@
+import fs from "fs";
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
 import md5 from "md5";
@@ -11,12 +12,12 @@ function md5Span(field: string) {
   // use md5 to generate 2 random numbers between 0 and 1
   const hash = md5(field);
   const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
-  // const y2 = parseInt(hash.slice(8, 16), 16) / Math.pow(2, 32);
-  const y2 = y1 + 0.04;
+  const y2 = parseInt(hash.slice(8, 16), 16) / Math.pow(2, 32);
+  // const y2 = y1 + 0.04;
   return [y1, y2].sort();
 }
 
-export async function dayview(args: DayviewCmdArgs): Promise<string> {
+export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
 
   const startUtc = DateTime.local().startOf("day").toUTC().toISO();
@@ -34,31 +35,29 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const sortedGroups = sortableGroups.sort((a, b) => a.y1 - b.y1);
 
   const document = new JSDOM().window.document;
-  const width = 960;
-  const height = 500;
-  const margin = { top: 20, right: 20, bottom: 30, left: 40 };
-  const dataWidth = width - margin.left - margin.right;
-  const dataHeight = height - margin.top - margin.bottom;
 
   const svg = d3
     .select(document.body)
     .append("svg")
-    .attr("viewBox", [0, 0, width, height]);
+    .attr("min-height", "200px")
+    .attr("min-width", "500px");
+  // .attr("width", "100%")
+  // .attr("height", "100%");
 
   const _background = svg
     .append("rect")
-    .attr("width", width)
-    .attr("height", height)
+    .attr("width", "100%")
+    .attr("height", "100%")
     .attr("fill", "lightgray");
 
+  const marginPercent = 1;
   const plot = svg
-    .append("g")
+    .append("svg")
     .attr("class", "plot")
-    .attr("transform", `translate(${margin.left},${margin.top})`)
-    // .attr("x", margin.left)
-    // .attr("y", margin.top)
-    .attr("width", dataWidth)
-    .attr("height", dataHeight);
+    .attr("x", marginPercent + "%")
+    .attr("y", marginPercent + "%")
+    .attr("width", 100 - 2 * marginPercent + "%")
+    .attr("height", 100 - 2 * marginPercent + "%");
 
   // dataArea
   //   .append("rect")
@@ -69,17 +68,17 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const timeScale = d3
     .scaleTime()
     .domain([new Date(startUtc), new Date(endUtc)])
-    .range([0, dataWidth]);
+    .range([0, 1]);
 
   const xAxis = d3.axisBottom(timeScale);
 
-  plot.append("g").attr("transform", `translate(0,${dataHeight})`).call(xAxis);
+  plot.append("g").attr("width", "100%").call(xAxis);
 
   const dataArea = plot
     .append("svg")
     .attr("class", "dataArea")
-    .attr("width", dataWidth)
-    .attr("height", dataHeight)
+    .attr("width", "100%")
+    .attr("height", "100%")
     .attr("viewBox", [0, 0, 1, 1])
     .attr("preserveAspectRatio", "none");
 
@@ -94,5 +93,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     g.attr("x", 0).attr("width", "100%");
   });
 
-  return svg.node()!.outerHTML;
+  // return svg.node()!.outerHTML;
+  fs.writeFileSync("dayview.svg", svg.node()!.outerHTML);
+  fs.writeFileSync("dayview.html", document.documentElement.outerHTML);
 }

@@ -47,8 +47,12 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     time: new Date(startUtc),
     state: initialState,
   });
+
+  const now = new Date();
+  const endTime = new Date(endUtc);
+  const lastBlockTime = now < endTime ? now : endTime;
   blocks.push({
-    time: new Date(endUtc),
+    time: lastBlockTime,
     state: blocks.at(-1)!.state,
   });
 
