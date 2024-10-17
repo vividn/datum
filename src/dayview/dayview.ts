@@ -57,14 +57,14 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .append("svg")
     .attr("min-height", "200px")
     .attr("min-width", "500px")
-    .attr("width", "1000px")
-    .attr("height", "300px");
+    .attr("width", "100%")
+    .attr("height", "100%");
 
   const _background = svg
     .append("rect")
     .attr("width", "100%")
     .attr("height", "100%")
-    .attr("fill", "lightgray");
+    .attr("fill", "black");
 
   const marginPercent = 1;
   const plot = svg
@@ -96,14 +96,19 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("viewBox", [0, 0, 10000, 20])
     .attr("preserveAspectRatio", "xMinYMid meet");
 
-  axis.append("g").call(xAxis).selectAll("text").attr("font-size", "40px");
+  axis
+    .append("g")
+    .call(xAxis)
+    .selectAll("text")
+    .attr("font-size", "40px")
+    .attr("fill", "white");
   // axis.call(xAxis);
 
   const dataArea = plot
     .append("svg")
     .attr("class", "dataArea")
     .attr("width", "100%")
-    .attr("height", "100%")
+    .attr("height", "98%")
     .attr("viewBox", [0, 0, 1, 1])
     .attr("preserveAspectRatio", "none");
 
