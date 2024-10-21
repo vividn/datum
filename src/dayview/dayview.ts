@@ -55,10 +55,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const svg = d3
     .select(document.body)
     .append("svg")
-    .attr("min-height", "200px")
-    .attr("min-width", "500px")
-    .attr("width", "100%")
-    .attr("height", "100%");
+    .attr("width", "1500px")
+    .attr("height", "800px");
 
   const _background = svg
     .append("rect")
@@ -124,12 +122,13 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   });
 
   // return svg.node()!.outerHTML;
-  fs.writeFileSync("dayview.svg", svg.node()!.outerHTML);
+  const dir = "/tmp/";
+  fs.writeFileSync(dir + "dayview.svg", svg.node()!.outerHTML);
 
   // auto refresh html
   const meta = document.createElement("meta");
   meta.setAttribute("http-equiv", "refresh");
   meta.setAttribute("content", "10");
   document.head.append(meta);
-  fs.writeFileSync("dayview.html", document.documentElement.outerHTML);
+  fs.writeFileSync(dir + "dayview.html", document.documentElement.outerHTML);
 }
