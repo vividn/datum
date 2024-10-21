@@ -104,4 +104,5 @@ export const timingView: DatumView<EitherDocument, MapKey, MapValue> = {
       }
     }
   },
+  reduce: "_count",
 };

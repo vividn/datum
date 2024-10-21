@@ -66,7 +66,7 @@ export type StateErrorSummary = {
   errors: StateChangeError[];
 };
 
-type StateChangeRow = MapRow<typeof stateChangeView>;
+export type StateChangeRow = MapRow<typeof stateChangeView>;
 
 export async function checkState({
   db,
