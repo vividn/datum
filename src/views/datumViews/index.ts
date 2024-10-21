@@ -11,6 +11,7 @@ export { stateChangeView } from "./stateChangeView";
 export { idStructuresView } from "./idStructures";
 export { typeStructureView } from "./typeStructure";
 export { fieldView } from "./fieldView";
+export { pointDataView } from "./pointDataView";
 
 // Migrations
 export {
