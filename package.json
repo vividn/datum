@@ -94,7 +94,7 @@
     "luxon": "^3.5.0",
     "md5": "^2.3.0",
     "parse-duration": "^1.1.0",
-    "picocolors": "^1.1.0",
+    "picocolors": "^1.1.1",
     "pluralize": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^9.0.0",
