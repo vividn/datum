@@ -51,7 +51,7 @@
   },
   "dependencies": {
     "@babel/core": "^7.25.2",
-    "@babel/preset-env": "^7.25.4",
+    "@babel/preset-env": "^7.25.8",
     "@babel/preset-typescript": "^7.24.7",
     "@types/argparse": "^2.0.16",
     "@types/babel__core": "^7.20.5",
