@@ -39,24 +39,18 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .toUTC()
     .toISO();
 
-  const allFields = await occurredFields(db);
-  const sortableGroups = await Promise.all(
-    allFields.map(async (field) => {
-      const [y1, y2] = getSpan(field);
-      const g = await fieldSvgBlocks({ db, field, startUtc, endUtc });
-      return { field, y1, y2, g };
-    }),
-  );
-
-  const sortedGroups = sortableGroups.sort((a, b) => a.y1 - b.y1);
 
   const document = new JSDOM().window.document;
+
+  const width = 1500;
+  const height = 800;
+  const margin = 10;
 
   const svg = d3
     .select(document.body)
     .append("svg")
-    .attr("width", "1500px")
-    .attr("height", "800px");
+    .attr("width", width)
+    .attr("height", height);
 
   const _background = svg
     .append("rect")
@@ -64,14 +58,16 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("height", "100%")
     .attr("fill", "black");
 
-  const marginPercent = 1;
+  const plotWidth = width - 2 * margin;
+  const plotHeight = height - 2 * margin;
+
   const plot = svg
     .append("svg")
     .attr("class", "plot")
-    .attr("x", marginPercent + "%")
-    .attr("y", marginPercent + "%")
-    .attr("width", 100 - 2 * marginPercent + "%")
-    .attr("height", 100 - 2 * marginPercent + "%");
+    .attr("x", margin)
+    .attr("y", margin)
+    .attr("width", plotWidth)
+    .attr("height", plotHeight);
 
   // dataArea
   //   .append("rect")
@@ -110,6 +106,16 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("viewBox", [0, 0, 1, 1])
     .attr("preserveAspectRatio", "none");
 
+  const allFields = await occurredFields(db);
+  const sortableGroups = await Promise.all(
+    allFields.map(async (field) => {
+      const [y1, y2] = getSpan(field);
+      const g = await fieldSvgBlocks({ db, field, startUtc, endUtc });
+      return { field, y1, y2, g };
+    }),
+  );
+
+  const sortedGroups = sortableGroups.sort((a, b) => a.y1 - b.y1);
   sortedGroups.forEach((group) => {
     const y = group.y1;
     const fieldHeight = group.y2 - group.y1;
@@ -128,7 +134,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   // auto refresh html
   const meta = document.createElement("meta");
   meta.setAttribute("http-equiv", "refresh");
-  meta.setAttribute("content", "10");
+  meta.setAttribute("content", "1");
   document.head.append(meta);
   fs.writeFileSync(dir + "dayview.html", document.documentElement.outerHTML);
 }
