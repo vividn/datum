@@ -15,10 +15,9 @@ function getSpan(field: string): [number, number] {
     return [customSpan[0], customSpan[1] - customSpan[0]];
   }
 
-  // const hash = md5(field);
-  // const y1 = (parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32)) * 0.1;
-  const y1 = Math.random() * 0.1;
-  return [y1, 0.015];
+  const hash = md5(field);
+  const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
+  return [y1, 0.02];
 }
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
