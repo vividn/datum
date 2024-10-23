@@ -13,13 +13,15 @@ export type FieldSvgBlocksType = {
   field: string;
   startUtc: isoDatetime;
   endUtc: isoDatetime;
+  width: number;
+  height: number;
 };
 type DBlock = {
   time: Date;
   state: DatumState;
 };
 export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
-  const { db, field, startUtc, endUtc } = args;
+  const { db, field, startUtc, endUtc, width, height } = args;
 
   const [blockRows, pointRows] = await Promise.all([
     (
@@ -80,13 +82,13 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .select(document.body)
     .append("svg")
     .attr("class", `${field}`)
-    .attr("viewBox", "0 0 1 1")
+    .attr("viewBox", [0, 0, width, height])
     .attr("preserveAspectRatio", "none");
 
   const timeScale = d3
     .scaleTime()
     .domain([new Date(startUtc), new Date(endUtc)])
-    .range([0, 1]);
+    .range([0, width]);
 
   dataPairs.forEach(([curr, next]) => {
     const state = curr.state;
@@ -104,10 +106,13 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("class", `${field} ${state} block`)
       .attr("x", timeScale(curr.time))
       .attr("y", 0)
-      .attr("width", `${100 * (timeScale(next.time) - timeScale(curr.time))}%`)
+      .attr("width", timeScale(next.time) - timeScale(curr.time))
       .attr("height", "100%")
       .attr("fill", color);
   });
+
+  const two_minutes = timeScale(new Date(startUtc).valueOf() + 2 * 60 * 1000);
+  const circle_r = Math.min(two_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
     const state = point.state;
     const color =
@@ -121,8 +126,8 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .append("circle")
       .attr("class", `${field} ${state} point`)
       .attr("cx", timeScale(point.time))
-      .attr("cy", 0.5)
-      .attr("r", 0.1)
+      .attr("cy", height / 2)
+      .attr("r", circle_r)
       .attr("fill", color);
   });
 
