@@ -111,8 +111,8 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("fill", color);
   });
 
-  const two_minutes = timeScale(new Date(startUtc).valueOf() + 2 * 60 * 1000);
-  const circle_r = Math.min(two_minutes, height / 2, width / 4, 10);
+  const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
+  const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
     const state = point.state;
     const color =
@@ -137,9 +137,5 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     return null;
   }
 
-  const node = svg.node();
-  if (node === null) {
-    throw new Error("field data incorrectly created");
-  }
-  return node;
+  return svg.node();
 }

@@ -12,21 +12,13 @@ import { DAYVIEW_SPANS } from "../field/tempExampleSpans";
 function getSpan(field: string): [number, number] {
   const customSpan = DAYVIEW_SPANS[field];
   if (customSpan) {
-    return customSpan;
+    return [customSpan[0], customSpan[1] - customSpan[0]];
   }
 
-  const hash = md5(field);
-  const y1 = (parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32)) * 0.1;
-  return [y1, y1 + 0.005];
-}
-
-function md5Span(field: string, limit: [number, number]) {
-  // use md5 to generate 2 random numbers between 0 and 1
-  const hash = md5(field);
-  const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
-  const y2 = parseInt(hash.slice(8, 16), 16) / Math.pow(2, 32);
-  // const y2 = y1 + 0.04;
-  return [y1, y2].sort();
+  // const hash = md5(field);
+  // const y1 = (parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32)) * 0.1;
+  const y1 = Math.random() * 0.1;
+  return [y1, 0.015];
 }
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
@@ -114,29 +106,31 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const allFields = await occurredFields(db);
   const sortableGroups = await Promise.all(
     allFields.map(async (field) => {
-      const [y1, y2] = getSpan(field);
-      const g = await fieldSvgBlocks({
+      const [p1, pHeight] = getSpan(field);
+      const y1 = p1 * dataHeight;
+      const fieldHeight = dataHeight * pHeight;
+      const fieldSvg = await fieldSvgBlocks({
         db,
         field,
         startUtc,
         endUtc,
         width: dataWidth,
-        height: dataHeight,
+        height: fieldHeight,
       });
-      return { field, y1, y2, g };
+      return { field, y1, fieldHeight, svg: fieldSvg };
     }),
   );
 
   const sortedGroups = sortableGroups.sort((a, b) => a.y1 - b.y1);
-  sortedGroups.forEach((group) => {
-    const y = group.y1 * dataHeight;
-    const fieldHeight = dataHeight * (group.y2 - group.y1);
-    if (group.g === null) {
-      return;
+  sortedGroups.forEach((field) => {
+    if (field.svg !== null) {
+      const fieldSvg = dataArea.append(() => field.svg);
+      fieldSvg
+        .attr("x", 0)
+        .attr("y", field.y1)
+        .attr("width", dataWidth)
+        .attr("height", field.fieldHeight);
     }
-    const g = dataArea.append(() => group.g);
-    g.attr("y", y).attr("height", fieldHeight);
-    g.attr("x", 0).attr("width", "100%");
   });
 
   // return svg.node()!.outerHTML;
@@ -144,9 +138,9 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   fs.writeFileSync(dir + "dayview.svg", svg.node()!.outerHTML);
 
   // auto refresh html
-  // const meta = document.createElement("meta");
-  // meta.setAttribute("http-equiv", "refresh");
-  // meta.setAttribute("content", "1");
-  // document.head.append(meta);
+  const meta = document.createElement("meta");
+  meta.setAttribute("http-equiv", "refresh");
+  meta.setAttribute("content", "1");
+  document.head.append(meta);
   fs.writeFileSync(dir + "dayview.html", document.documentElement.outerHTML);
 }
