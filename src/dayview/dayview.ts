@@ -42,8 +42,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
 
   const document = new JSDOM().window.document;
 
-  const width = 1500;
-  const height = 800;
+  const width = 1850;
+  const height = 700;
   const margin = 10;
 
   const svg = d3

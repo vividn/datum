@@ -6,6 +6,7 @@ import { isoDatetime } from "../time/timeUtils";
 import { HIGH_STRING } from "../utils/startsWith";
 import { stateChangeView } from "../views/datumViews";
 import { md5Color } from "../utils/md5Color";
+import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -20,13 +21,22 @@ type DBlock = {
 export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const { db, field, startUtc, endUtc } = args;
 
-  const rows = (
-    await db.query(stateChangeView.name, {
-      reduce: false,
-      startkey: [field, startUtc ?? ""],
-      endkey: [field, endUtc ?? HIGH_STRING],
-    })
-  ).rows as StateChangeRow[];
+  const [blockRows, pointRows] = await Promise.all([
+    (
+      await db.query(stateChangeView.name, {
+        reduce: false,
+        startkey: [field, startUtc ?? ""],
+        endkey: [field, endUtc ?? HIGH_STRING],
+      })
+    ).rows as StateChangeRow[],
+    (
+      await db.query(pointDataView.name, {
+        reduce: false,
+        startkey: [field, startUtc ?? ""],
+        endkey: [field, endUtc ?? HIGH_STRING],
+      })
+    ).rows as PointDataRow[],
+  ]);
   const initialState: DatumState =
     (
       await db.query(stateChangeView.name, {
@@ -37,10 +47,16 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         limit: 1,
       })
     ).rows[0]?.value[1] ?? null;
-  const blocks: DBlock[] = rows.map((row) => {
+  const blocks: DBlock[] = blockRows.map((row) => {
     return {
       time: new Date(row.key[1]),
       state: row.value[1],
+    };
+  });
+  const points = pointRows.map((row) => {
+    return {
+      time: new Date(row.key[1]),
+      state: row.value,
     };
   });
   blocks.unshift({
@@ -92,8 +108,26 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("height", "100%")
       .attr("fill", color);
   });
+  points.forEach((point) => {
+    const state = point.state;
+    const color =
+      state === null || state === false
+        ? "black"
+        : state === true
+          ? md5Color(field)
+          : md5Color(String(state));
 
-  if (svg.selectChildren("rect").size() === 0) {
+    svg
+      .append("circle")
+      .attr("class", `${field} ${state} point`)
+      .attr("cx", timeScale(point.time))
+      .attr("cy", 0.5)
+      .attr("r", 0.1)
+      .attr("fill", color);
+  });
+
+  // don't append an svg block for empty data
+  if (svg.selectChildren().size() === 0) {
     svg.remove();
     return null;
   }
