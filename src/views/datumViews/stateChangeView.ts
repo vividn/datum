@@ -9,7 +9,7 @@ type MapKey = [string, isoDateOrTime];
 type LastState = DatumState;
 type ActiveState = DatumState;
 type MapValue = [LastState, ActiveState];
-type ReduceValues = null;
+type ReduceValues = number;
 
 function emit(key: MapKey, value: MapValue): void {
   _emit(key, value);
