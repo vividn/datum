@@ -23,8 +23,6 @@ export async function dayviewCmd(
   preparsed?: Partial<DayviewCmdArgs>,
 ) {
   args = parseIfNeeded(dayviewCmdArgs, args, preparsed);
-  const svg = await dayview(args);
-  if (svg !== null) {
-    console.log(svg);
-  }
+  await dayview(args);
+  console.log(new Date());
 }
