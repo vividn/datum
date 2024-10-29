@@ -1,17 +1,21 @@
+import { JSDOM } from "jsdom";
 import { DateTime } from "luxon";
 import { occurredFields } from "../field/occurredFields";
 import { getSpan } from "./getSpan";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
+import d3 from "d3";
+import { allFieldsSvg } from "./allFieldsSvg";
 
 export type SingleDayArgs = {
   db: PouchDB.Database;
   date: string;
-  width: number;
   height: number;
+  dataWidth: number;
+  labelWidth: number;
 };
 
 export async function singleDay(args: SingleDayArgs) {
-  const { db, date, width, height } = args;
+  const { db, date, dataWidth, height } = args;
 
   // For now just use local time
   // TODO: get timezone stats and handle timezone changes
@@ -20,47 +24,20 @@ export async function singleDay(args: SingleDayArgs) {
   const startUtc = day.startOf("day").toUTC().toISO();
   const endUtc = day.endOf("day").toUTC().toISO();
 
-  const allFields = await occurredFields(db);
-  const sortedWithSpans = allFields
-    .map((field) => {
-      const [p1, pHeight] = getSpan(field);
-      const y1 = p1 * height;
-      const fieldHeight = pHeight * height;
-      return { field, y1, fieldHeight };
-    })
-    .sort((a, b) => a.y1 - b.y1);
+  const document = new JSDOM().window.document;
+  const svg = d3
+    .select(document.body)
+    .append("svg")
+    .attr("class", `day ${day.toISODate()}`)
 
-  const fieldSvgs = await Promise.all(
-    sortedWithSpans.map(async (fieldSpan) => {
-      const fieldSvg = await fieldSvgBlocks({
-        db,
-        field: fieldSpan.field,
-        startUtc,
-        endUtc,
-        width,
-        height: fieldSpan.fieldHeight,
-      });
-      if (fieldSvg === null) {
-        return null;
-      }
+  const dayData = await allFieldsSvg({
+    db,
+    startUtc,
+    endUtc,
+    width: dataWidth,
+    height,
+  });
+  svg.append(() => dayData);
 
-    }),
-  );
-  )
-  const sortableGroups = await Promise.all(
-    allFields.map(async (field) => {
-      const [p1, pHeight] = getSpan(field);
-      const y1 = p1 * width;
-      const fieldHeight = height * pHeight;
-      const fieldSvg = await fieldSvgBlocks({
-        db,
-        field,
-        startUtc,
-        endUtc,
-        width,
-        height,
-      });
-      return { field, y1, fieldHeight, svg: fieldSvg };
-    }),
-  );
+  return svg.node();
 }
