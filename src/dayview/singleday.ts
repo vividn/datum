@@ -1,9 +1,6 @@
 import { JSDOM } from "jsdom";
 import { DateTime } from "luxon";
-import { occurredFields } from "../field/occurredFields";
-import { getSpan } from "./getSpan";
-import { fieldSvgBlocks } from "./fieldSvgBlocks";
-import d3 from "d3";
+import * as d3 from "d3";
 import { allFieldsSvg } from "./allFieldsSvg";
 
 export type SingleDayArgs = {
@@ -28,7 +25,7 @@ export async function singleDay(args: SingleDayArgs) {
   const svg = d3
     .select(document.body)
     .append("svg")
-    .attr("class", `day ${day.toISODate()}`)
+    .attr("class", `day ${day.toISODate()}`);
 
   const dayData = await allFieldsSvg({
     db,

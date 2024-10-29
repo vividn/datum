@@ -26,9 +26,9 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
     })
     .sort((a, b) => a.y1 - b.y1);
 
-  await Promise.all(
+  const fieldSvgs = await Promise.all(
     sortedWithSpans.map(async (fieldSpan) => {
-      const fieldSvg = await fieldSvgBlocks({
+      return fieldSvgBlocks({
         db,
         field: fieldSpan.field,
         startUtc,
@@ -36,18 +36,20 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
         width,
         height: fieldSpan.fieldHeight,
       });
-      if (fieldSvg === null) {
-        return null;
-      }
-
-      return svg
-        .append(() => fieldSvg)
-        .attr("x", 0)
-        .attr("y", fieldSpan.y1)
-        .attr("width", width)
-        .attr("height", fieldSpan.fieldHeight);
     }),
   );
+  fieldSvgs.forEach((fieldSvg, i) => {
+    if (fieldSvg === null) {
+      return
+    }
+    const fieldSpan = sortedWithSpans[i];
+    svg
+      .append(() => fieldSvg)
+      .attr("x", 0)
+      .attr("y", fieldSpan.y1)
+      .attr("width", width)
+      .attr("height", fieldSpan.fieldHeight);
+  });
 
   return svg.node();
 }

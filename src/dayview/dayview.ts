@@ -1,30 +1,22 @@
 import fs from "fs";
 import * as d3 from "d3";
 import { JSDOM } from "jsdom";
-import md5 from "md5";
 import { DayviewCmdArgs } from "../commands/dayviewCmd";
 import { connectDb } from "../auth/connectDb";
-import { occurredFields } from "../field/occurredFields";
 import { DateTime } from "luxon";
-import { fieldSvgBlocks } from "./fieldSvgBlocks";
-import { getSpan } from "./getSpan";
-
+import { singleDay } from "./singleday";
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
-
-  const startUtc = DateTime.local().startOf("day").toUTC().toISO();
-  const endUtc = DateTime.local()
-    .startOf("day")
-    .plus({ day: 1 })
-    .toUTC()
-    .toISO();
+  const nDays = 7;
+  const endDate = DateTime.local();
 
   const document = new JSDOM().window.document;
 
   const width = 1850;
   const height = 700;
   const margin = 10;
+  const interdayMargin = 10;
 
   const svg = d3
     .select(document.body)
@@ -56,8 +48,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   //   .attr("fill", "orange");
 
   const timeScale = d3
-    .scaleTime()
-    .domain([new Date(startUtc), new Date(endUtc)])
+    .scaleUtc()
+    .domain([new Date("2024-10-31"), new Date("2024-11-01")]) // 🎃
     .range([0, plotWidth]);
 
   const xAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
@@ -92,44 +84,35 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("width", dataWidth)
     .attr("height", dataHeight);
 
-  const allFields = await occurredFields(db);
-  const sortableGroups = await Promise.all(
-    allFields.map(async (field) => {
-      const [p1, pHeight] = getSpan(field);
-      const y1 = p1 * dataHeight;
-      const fieldHeight = dataHeight * pHeight;
-      const fieldSvg = await fieldSvgBlocks({
+  // array of the last seven iso dates
+  const days = Array.from({ length: nDays }, (_, i) => {
+    return endDate.minus({ days: nDays - 1 - i }).toISODate();
+  });
+  const dayHeight = (dataHeight - interdayMargin * (nDays - 1)) / nDays;
+
+  await Promise.all(
+    days.map(async (date, i) => {
+      const y = i * (dayHeight + interdayMargin);
+      const daySvg = await singleDay({
         db,
-        field,
-        startUtc,
-        endUtc,
-        width: dataWidth,
-        height: fieldHeight,
+        date,
+        dataWidth,
+        height: dayHeight,
+        labelWidth: 0,
       });
-      return { field, y1, fieldHeight, svg: fieldSvg };
+
+      dataArea.append(() => daySvg).attr("y", y);
     }),
   );
-
-  const sortedGroups = sortableGroups.sort((a, b) => a.y1 - b.y1);
-  sortedGroups.forEach((field) => {
-    if (field.svg !== null) {
-      const fieldSvg = dataArea.append(() => field.svg);
-      fieldSvg
-        .attr("x", 0)
-        .attr("y", field.y1)
-        .attr("width", dataWidth)
-        .attr("height", field.fieldHeight);
-    }
-  });
 
   // return svg.node()!.outerHTML;
   const dir = "/tmp/";
   fs.writeFileSync(dir + "dayview.svg", svg.node()!.outerHTML);
 
   // auto refresh html
-  const meta = document.createElement("meta");
-  meta.setAttribute("http-equiv", "refresh");
-  meta.setAttribute("content", "1");
-  document.head.append(meta);
+  // const meta = document.createElement("meta");
+  // meta.setAttribute("http-equiv", "refresh");
+  // meta.setAttribute("content", "1");
+  // document.head.append(meta);
   fs.writeFileSync(dir + "dayview.html", document.documentElement.outerHTML);
 }
