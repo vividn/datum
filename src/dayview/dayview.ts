@@ -7,18 +7,8 @@ import { connectDb } from "../auth/connectDb";
 import { occurredFields } from "../field/occurredFields";
 import { DateTime } from "luxon";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
-import { DAYVIEW_SPANS } from "../field/tempExampleSpans";
+import { getSpan } from "./getSpan";
 
-function getSpan(field: string): [number, number] {
-  const customSpan = DAYVIEW_SPANS[field];
-  if (customSpan) {
-    return [customSpan[0], customSpan[1] - customSpan[0]];
-  }
-
-  const hash = md5(field);
-  const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
-  return [y1, 0.02];
-}
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
@@ -70,7 +60,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .domain([new Date(startUtc), new Date(endUtc)])
     .range([0, plotWidth]);
 
-  const xAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(3), "%H");
+  const xAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
 
   const axisHeight = 20;
   const axis = plot
