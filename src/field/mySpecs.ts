@@ -201,4 +201,6 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
   trim: { kind: "occur", color: "#712000", y: 0.9, height: 0.05 },
 
   caffeine: { kind: "occur", color: "#643200", y: 0.75 },
+  alcohol: { color: "#00ffff", y: 0.75 },
+  cannabis: { color: "#00c800", y: 0.75 },
 } as const;
