@@ -1,6 +1,5 @@
 import * as d3 from "d3";
 import { occurredFields } from "../field/occurredFields";
-import { getSpan } from "./getSpan";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
 import { domdoc } from "./domdoc";
 import { FIELD_SPECS } from "../field/mySpecs";
@@ -22,8 +21,19 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
   const sortedWithSpans = allFields
     .map((field) => {
       const spec = FIELD_SPECS[field] ?? {};
-      const pY = spec.y ?? parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32);
-      const pHeight = spec.height ?? 0.05;
+      const specY =
+        spec.y ?? parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32);
+      const defaultHeight = 0.075;
+
+      let pY: number, pHeight: number;
+      if (spec.height) {
+        pY = specY;
+        pHeight = spec.height;
+      } else {
+        pY = specY - defaultHeight / 2;
+        pHeight = defaultHeight;
+      }
+
       const y1 = pY * height;
       const zIndex = spec.zIndex ?? pY;
       const fieldHeight = pHeight * height;

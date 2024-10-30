@@ -99,8 +99,8 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
   },
   sleep: {
     kind: "start",
-    y: 0.15,
-    height: 0.7,
+    y: 0.25,
+    height: 0.55,
     color: "#142878",
   },
   therapy: {
