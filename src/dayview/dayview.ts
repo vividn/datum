@@ -16,7 +16,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const width = 1850;
   const height = 700;
   const margin = 10;
-  const interdayMargin = 10;
+  const interdayMargin = 15;
 
   const svg = d3
     .select(document.body)

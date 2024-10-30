@@ -6,11 +6,13 @@ export function domdoc() {
 <html>
   <head>
     <title>dayview</title>
+    <meta http-equiv="refresh" content="5">
   </head>
   <body>
     <h1>dayview</h1>
     <div id="app"></div>
   </body>
+</html>
 `);
   return document;
 }
