@@ -9,5 +9,5 @@ export function getSpan(field: string): [number, number] {
 
   const hash = md5(field);
   const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
-  return [y1, 0.03];
+  return [y1, 0.05];
 }
