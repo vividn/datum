@@ -104,7 +104,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         ? fieldColor
         : typeof state === "string"
           ? (spec?.states?.[state]?.color ?? md5Color(state))
-          : md5Color(String(state));
+          : md5Color(JSON.stringify(state));
     svg
       .append("rect")
       .attr("class", `${field} ${state} block`)
@@ -126,7 +126,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
           ? fieldColor
           : typeof state === "string"
             ? (spec?.states?.[state]?.color ?? md5Color(state))
-            : md5Color(String(state));
+            : md5Color(JSON.stringify(state));
 
     svg
       .append("circle")
