@@ -199,4 +199,6 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
   bath: { kind: "start", color: "#00648c", y: 0.8, height: 0.2 },
   shave: { kind: "occur", color: "#a62505", y: 0.72, height: 0.05 },
   trim: { kind: "occur", color: "#712000", y: 0.9, height: 0.05 },
+
+  caffeine: { kind: "occur", color: "#643200", y: 0.75 },
 } as const;
