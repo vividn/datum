@@ -8,6 +8,7 @@ import { md5Color } from "../utils/md5Color";
 import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 import { domdoc } from "./domdoc";
 import { FIELD_SPECS } from "../field/mySpecs";
+import { simplifyState } from "../state/simplifyState";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -95,7 +96,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .range([0, width]);
 
   dataPairs.forEach(([curr, next]) => {
-    const state = curr.state;
+    const state = simplifyState(curr.state);
     if (state === null || state === false) {
       return;
     }
@@ -118,7 +119,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
   const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
-    const state = point.state;
+    const state = simplifyState(point.state);
     const color =
       state === null || state === false
         ? "black"
