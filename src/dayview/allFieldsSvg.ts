@@ -1,8 +1,9 @@
 import * as d3 from "d3";
 import { occurredFields } from "../field/occurredFields";
-import { getSpan } from "./getSpan";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
 import { domdoc } from "./domdoc";
+import { FIELD_SPECS } from "../field/mySpecs";
+import md5 from "md5";
 export type AllFieldsSvgType = {
   db: PouchDB.Database;
   startUtc: string;
@@ -19,12 +20,26 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
   const allFields = await occurredFields(db);
   const sortedWithSpans = allFields
     .map((field) => {
-      const [p1, pHeight] = getSpan(field);
-      const y1 = p1 * height;
+      const spec = FIELD_SPECS[field] ?? {};
+      const specY =
+        spec.y ?? parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32);
+      const defaultHeight = 0.08;
+
+      let pY: number, pHeight: number;
+      if (spec.height) {
+        pY = specY;
+        pHeight = spec.height;
+      } else {
+        pY = specY - defaultHeight / 2;
+        pHeight = defaultHeight;
+      }
+
+      const y1 = pY * height;
+      const zIndex = spec.zIndex ?? pY;
       const fieldHeight = pHeight * height;
-      return { field, y1, fieldHeight };
+      return { field, y1, fieldHeight, zIndex };
     })
-    .sort((a, b) => a.y1 - b.y1);
+    .sort((a, b) => a.zIndex - b.zIndex);
 
   const fieldSvgs = await Promise.all(
     sortedWithSpans.map(async (fieldSpan) => {

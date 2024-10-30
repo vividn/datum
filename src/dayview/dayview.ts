@@ -13,8 +13,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
 
   const document = domdoc();
 
-  const width = 1850;
-  const height = 700;
+  const width = 1078;
+  const height = 574;
   const margin = 10;
   const interdayMargin = 15;
 
