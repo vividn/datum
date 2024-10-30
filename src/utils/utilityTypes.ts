@@ -28,3 +28,7 @@ export type JsonObject = { [key: string]: JsonType };
 export type GenericObject = { [key: string]: GenericType };
 
 export type QueryOptions = PouchDB.Query.Options<any, any>;
+
+export function isJsonObject(obj: any): obj is JsonObject {
+  return typeof obj === "object" && !Array.isArray(obj) && obj !== null;
+}
