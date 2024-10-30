@@ -1,6 +1,9 @@
 // TODO: Remove this file after proper specs are setup
 export const DAYVIEW_SPANS: Record<string, [number, number]> = {
-  environment: [0, 0.6],
+  address: [0, 0],
+  country: [0, 0.025],
+  city: [0.025, 0.05],
+  environment: [0.05, 0.6],
   festival: [0.03, 1],
   body: [0.6, 1],
   sleep: [0.15, 0.85],
