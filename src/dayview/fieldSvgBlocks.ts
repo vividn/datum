@@ -7,6 +7,8 @@ import { stateChangeView } from "../views/datumViews";
 import { md5Color } from "../utils/md5Color";
 import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 import { domdoc } from "./domdoc";
+import { FIELD_SPECS } from "../field/mySpecs";
+import { simplifyState } from "../state/simplifyState";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -22,6 +24,9 @@ type DBlock = {
 };
 export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const { db, field, startUtc, endUtc, width, height } = args;
+
+  const spec = FIELD_SPECS[field] ?? {};
+  const fieldColor = spec.color ?? md5Color(field);
 
   const [blockRows, pointRows] = await Promise.all([
     (
@@ -91,16 +96,16 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .range([0, width]);
 
   dataPairs.forEach(([curr, next]) => {
-    const state = curr.state;
+    const state = simplifyState(curr.state);
     if (state === null || state === false) {
       return;
     }
     const color =
       state === true
-        ? md5Color(field)
+        ? fieldColor
         : typeof state === "string"
-          ? md5Color(state)
-          : md5Color(String(state));
+          ? (spec?.states?.[state]?.color ?? md5Color(state))
+          : md5Color(JSON.stringify(state));
     svg
       .append("rect")
       .attr("class", `${field} ${state} block`)
@@ -114,13 +119,15 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
   const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
-    const state = point.state;
+    const state = simplifyState(point.state);
     const color =
       state === null || state === false
         ? "black"
         : state === true
-          ? md5Color(field)
-          : md5Color(String(state));
+          ? fieldColor
+          : typeof state === "string"
+            ? (spec?.states?.[state]?.color ?? md5Color(state))
+            : md5Color(JSON.stringify(state));
 
     svg
       .append("circle")
