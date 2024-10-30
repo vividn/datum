@@ -1,13 +1,12 @@
 import md5 from "md5";
-import { DAYVIEW_SPANS } from "../field/tempExampleSpans";
+import { FIELD_SPECS } from "../field/mySpecs";
 
 export function getSpan(field: string): [number, number] {
-  const customSpan = DAYVIEW_SPANS[field];
-  if (customSpan) {
-    return [customSpan[0], customSpan[1] - customSpan[0]];
-  }
+  const spec = FIELD_SPECS[field] ?? {};
+  const { y, height } = spec;
 
   const hash = md5(field);
-  const y1 = parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
-  return [y1, 0.05];
+  const y1 = y ?? parseInt(hash.slice(0, 8), 16) / Math.pow(2, 32);
+  const h = height ?? 0.05;
+  return [y1, h];
 }

@@ -7,6 +7,7 @@ import { stateChangeView } from "../views/datumViews";
 import { md5Color } from "../utils/md5Color";
 import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 import { domdoc } from "./domdoc";
+import { FIELD_SPECS } from "../field/mySpecs";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -22,6 +23,9 @@ type DBlock = {
 };
 export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const { db, field, startUtc, endUtc, width, height } = args;
+
+  const spec = FIELD_SPECS[field] ?? {};
+  const fieldColor = spec.color ?? md5Color(field);
 
   const [blockRows, pointRows] = await Promise.all([
     (
@@ -97,9 +101,9 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     }
     const color =
       state === true
-        ? md5Color(field)
+        ? fieldColor
         : typeof state === "string"
-          ? md5Color(state)
+          ? (spec?.states?.[state]?.color ?? md5Color(state))
           : md5Color(String(state));
     svg
       .append("rect")
@@ -119,8 +123,10 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       state === null || state === false
         ? "black"
         : state === true
-          ? md5Color(field)
-          : md5Color(String(state));
+          ? fieldColor
+          : typeof state === "string"
+            ? (spec?.states?.[state]?.color ?? md5Color(state))
+            : md5Color(String(state));
 
     svg
       .append("circle")
