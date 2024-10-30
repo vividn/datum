@@ -1,17 +1,17 @@
 import fs from "fs";
 import * as d3 from "d3";
-import { JSDOM } from "jsdom";
 import { DayviewCmdArgs } from "../commands/dayviewCmd";
 import { connectDb } from "../auth/connectDb";
 import { DateTime } from "luxon";
 import { singleDay } from "./singleday";
+import { domdoc } from "./domdoc";
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
   const nDays = 7;
   const endDate = DateTime.local();
 
-  const document = new JSDOM().window.document;
+  const document = domdoc();
 
   const width = 1850;
   const height = 700;

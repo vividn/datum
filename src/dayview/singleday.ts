@@ -1,7 +1,7 @@
-import { JSDOM } from "jsdom";
 import { DateTime } from "luxon";
 import * as d3 from "d3";
 import { allFieldsSvg } from "./allFieldsSvg";
+import { domdoc } from "./domdoc";
 
 export type SingleDayArgs = {
   db: PouchDB.Database;
@@ -21,7 +21,7 @@ export async function singleDay(args: SingleDayArgs) {
   const startUtc = day.startOf("day").toUTC().toISO();
   const endUtc = day.endOf("day").toUTC().toISO();
 
-  const document = new JSDOM().window.document;
+  const document = domdoc();
   const svg = d3
     .select(document.body)
     .append("svg")

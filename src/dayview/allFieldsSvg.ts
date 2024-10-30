@@ -1,8 +1,8 @@
 import * as d3 from "d3";
-import { JSDOM } from "jsdom";
 import { occurredFields } from "../field/occurredFields";
 import { getSpan } from "./getSpan";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
+import { domdoc } from "./domdoc";
 export type AllFieldsSvgType = {
   db: PouchDB.Database;
   startUtc: string;
@@ -13,7 +13,7 @@ export type AllFieldsSvgType = {
 
 export async function allFieldsSvg(args: AllFieldsSvgType) {
   const { db, startUtc, endUtc, width, height } = args;
-  const document = new JSDOM().window.document;
+  const document = domdoc();
   const svg = d3.select(document.body).append("svg").attr("class", `timechunk`);
 
   const allFields = await occurredFields(db);
@@ -40,7 +40,7 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
   );
   fieldSvgs.forEach((fieldSvg, i) => {
     if (fieldSvg === null) {
-      return
+      return;
     }
     const fieldSpan = sortedWithSpans[i];
     svg
