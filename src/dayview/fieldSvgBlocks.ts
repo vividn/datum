@@ -1,5 +1,4 @@
 import * as d3 from "d3";
-import { JSDOM } from "jsdom";
 import { StateChangeRow } from "../state/checkState";
 import { DatumState } from "../state/normalizeState";
 import { isoDatetime } from "../time/timeUtils";
@@ -7,6 +6,7 @@ import { HIGH_STRING } from "../utils/startsWith";
 import { stateChangeView } from "../views/datumViews";
 import { md5Color } from "../utils/md5Color";
 import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
+import { domdoc } from "./domdoc";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -77,7 +77,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   type DPair = [DBlock, DBlock];
   const dataPairs: DPair[] = d3.pairs(blocks);
 
-  const document = new JSDOM().window.document;
+  const document = domdoc();
   const svg = d3
     .select(document.body)
     .append("svg")
