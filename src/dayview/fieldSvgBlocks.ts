@@ -82,7 +82,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .select(document.body)
     .append("svg")
     .attr("class", `${field}`)
-    .attr("viewBox", [0, 0, width, height])
+    .attr("viewBox", [0, 0, width, height].join(" "))
     .attr("preserveAspectRatio", "none");
 
   const timeScale = d3
