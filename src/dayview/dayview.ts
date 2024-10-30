@@ -3,12 +3,12 @@ import * as d3 from "d3";
 import { DayviewCmdArgs } from "../commands/dayviewCmd";
 import { connectDb } from "../auth/connectDb";
 import { DateTime } from "luxon";
-import { singleDay } from "./singleday";
 import { domdoc } from "./domdoc";
+import { singleDay } from "./singleday";
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
-  const nDays = 7;
+  const nDays = 8;
   const endDate = DateTime.local();
 
   const document = domdoc();
@@ -41,54 +41,61 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("width", plotWidth)
     .attr("height", plotHeight);
 
-  // dataArea
-  //   .append("rect")
-  //   .attr("width", dataWidth)
-  //   .attr("height", dataHeight)
-  //   .attr("fill", "orange");
+  const timeAxisHeight = 20;
+
+  const dataHeight = plotHeight - timeAxisHeight;
+  const days = Array.from({ length: nDays }, (_, i) => {
+    return endDate.minus({ days: nDays - 1 - i }).toISODate();
+  });
+  const dayHeight = (dataHeight - interdayMargin * (nDays - 1)) / nDays;
+  const dayLabelFmt = "ccc\nLLL dd\nyyyy";
+
+  const dateAxis = plot.append("g");
+  days.forEach((date, i) => {
+    const y = i * (dayHeight + interdayMargin);
+    const dayLabels = DateTime.fromISO(date).toFormat(dayLabelFmt).split("\n");
+    const nLabels = dayLabels.length;
+    const g = dateAxis.append("g").attr("transform", `translate(0, ${y})`);
+
+    dayLabels.forEach((dayLabel, j) => {
+      g.append("text")
+        .attr("x", "-0.5em")
+        .attr("y", ((j + 0.5) * dayHeight) / nLabels)
+        .attr("dy", "0.35em")
+        .attr("fill", "white")
+        .attr("text-anchor", "end")
+        .text(dayLabel);
+    });
+  });
+  // TODO: once actually rendering with a frontend make this dynamic
+  const labelWidth = 70;
+
+  dateAxis.attr("transform", `translate(${labelWidth}, 0)`);
+  const dataWidth = plotWidth - labelWidth;
 
   const timeScale = d3
     .scaleUtc()
     .domain([new Date("2024-10-31"), new Date("2024-11-01")]) // 🎃
-    .range([0, plotWidth]);
+    .range([0, dataWidth]);
 
-  const xAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
+  const timeAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
 
-  const axisHeight = 20;
   const axis = plot
     .append("g")
-    .attr("transform", `translate(0, ${plotHeight - axisHeight})`);
-  // .attr("fill", "white")
-  // .attr("stroke", "white");
-  // .attr("y", plotHeight - axisHeight)
-  // .attr("height", axisHeight)
-  // .attr("width", plotWidth)
-  // .attr("viewBox", [0, 0, plotWidth, axisHeight])
-  // .attr("preserveAspectRatio", "xMinYMid meet");
-
-  axis.call(xAxis).selectAll("path").attr("stroke", "white");
-  axis.call(xAxis).selectAll("line").attr("stroke", "white");
-  axis.call(xAxis).selectAll("text").attr("stroke", "white");
-  // .selectAll("text")
-  // .attr("fill", "white");
-  // .attr("font-size", axisHeight / 2)
-  // axis.call(xAxis);
-  //
-
-  const dataWidth = plotWidth;
-  const dataHeight = plotHeight - axisHeight;
+    .attr(
+      "transform",
+      `translate(${labelWidth}, ${plotHeight - timeAxisHeight})`,
+    );
+  axis.call(timeAxis).selectAll("path").attr("stroke", "white");
+  axis.call(timeAxis).selectAll("line").attr("stroke", "white");
+  axis.call(timeAxis).selectAll("text").attr("stroke", "white");
 
   const dataArea = plot
     .append("svg")
     .attr("class", "dataArea")
     .attr("width", dataWidth)
-    .attr("height", dataHeight);
-
-  // array of the last seven iso dates
-  const days = Array.from({ length: nDays }, (_, i) => {
-    return endDate.minus({ days: nDays - 1 - i }).toISODate();
-  });
-  const dayHeight = (dataHeight - interdayMargin * (nDays - 1)) / nDays;
+    .attr("height", dataHeight)
+    .attr("x", labelWidth);
 
   await Promise.all(
     days.map(async (date, i) => {
