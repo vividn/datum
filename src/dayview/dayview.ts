@@ -32,8 +32,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .append("defs")
     .append("symbol")
     .attr("id", "warning-icon")
-    .append("g")
-    .append(warning_icon);
+    .html(() => warning_icon);
 
   const _background = svg
     .append("rect")

@@ -146,15 +146,16 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     endTime: endUtc,
   });
 
+  const warning_r = circle_r * 1.5;
   for (const error of fieldErrors.errors) {
     console.error(error.message);
     svg
       .append("use")
       .attr("xlink:href", "#warning-icon")
-      .attr("x", timeScale(new Date(error.occurTime)))
-      .attr("y", height / 2)
-      .attr("width", circle_r * 2)
-      .attr("height", circle_r * 2);
+      .attr("x", timeScale(new Date(error.occurTime)) - warning_r)
+      .attr("y", height / 2 - warning_r)
+      .attr("width", warning_r * 2)
+      .attr("height", warning_r * 2);
   }
 
   // don't append an svg block for empty data
