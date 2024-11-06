@@ -108,23 +108,8 @@ export async function checkState({
       key: [field, "0000-00-00"],
       value: [null, null],
     };
-    return summary;
-  }
-  return summary;
-}
 
-export async function checkStateChangeRows({
-  rows,
-}: {
-  rows: MapRow<typeof stateChangeView>[];
-}) {
-  processRowsLoop: for (let i = 1; i < rows.length; i++) {
-    const previousRow = rows[i - 1];
-    const thisRow = rows[i];
-    if (isEqual(previousRow.value[1], thisRow.value[0])) {
-      continue processRowsLoop;
-    }
-    const field = thisRow.key[0];
+
     // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
     const blockCheckStart = previousRow.key[1];
     // for duration based blocks, use the time in the id to determine the end time
@@ -190,6 +175,29 @@ export async function checkStateChangeRows({
         }
       }
     }
+    return summary;
+  }
+  return summary;
+}
+
+export async function checkStateChangeRows({
+  rows,
+  failOnError,
+}: {
+  rows: StateChangeRow[];
+  failOnError?: boolean;
+}) {
+  const summary: StateErrorSummary = {
+    ok: true,
+    errors: [],
+  };
+  for (let i = 1; i < rows.length; i++) {
+    const previousRow = rows[i - 1];
+    const thisRow = rows[i];
+    if (isEqual(previousRow.value[1], thisRow.value[0])) {
+      continue;
+    }
+    const field = thisRow.key[0];
     const occurTime = thisRow.key[1];
     const problem = "lastState does not match actual last state";
     const error = new LastStateError({
