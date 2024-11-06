@@ -2,12 +2,8 @@ import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
 import { setupCmd } from "../../commands/setupCmd";
 import { switchCmd } from "../../commands/switchCmd";
 import { DatumDocument } from "../../documentControl/DatumDocument";
-import {
-  checkState,
-  LastStateError,
-  OverlappingBlockError,
-  StateErrorSummary,
-} from "../checkState";
+import { checkState, LastStateError, StateErrorSummary } from "../checkState";
+import { OverlappingBlockError } from "../overlappingBlocks";
 
 const noErrors: StateErrorSummary = { ok: true, errors: [] };
 describe("checkState", () => {

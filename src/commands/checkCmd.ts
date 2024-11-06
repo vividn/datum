@@ -3,14 +3,11 @@ import { FieldArgs } from "../input/fieldArgs";
 import { outputArgs } from "../input/outputArgs";
 import { dbArgs } from "../input/dbArgs";
 import { MainDatumArgs } from "../input/mainArgs";
-import {
-  checkState,
-  StateChangeError,
-  StateErrorSummary,
-} from "../state/checkState";
+import { checkState, StateErrorSummary } from "../state/checkState";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { connectDb } from "../auth/connectDb";
 import { stateChangeView } from "../views/datumViews";
+import { StateChangeError } from "../state/stateChangeError";
 
 export const checkArgs = new ArgumentParser({
   add_help: false,

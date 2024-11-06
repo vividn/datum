@@ -2,14 +2,11 @@ import { HIGH_STRING } from "../utils/startsWith";
 import { MapRow } from "../views/DatumView";
 import { durationBlockView } from "../views/datumViews";
 import { overlappingBlockView } from "../views/datumViews/overlappingBlocks";
-import {
-  CheckStateType,
-  StateChangeError,
-  StateChangeErrorType,
-  StateErrorSummary,
-} from "./checkState";
+import { CheckStateType, StateErrorSummary } from "./checkState";
+import { StateChangeError, StateChangeErrorType } from "./stateChangeError";
 
 type OverlappingBlockRow = MapRow<typeof overlappingBlockView>;
+
 export class OverlappingBlockError extends StateChangeError {
   constructor(args: StateChangeErrorType) {
     super(args);
