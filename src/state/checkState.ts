@@ -93,7 +93,9 @@ export async function checkState({
           rows: stateChangeRows,
           failOnError: true,
         });
-        return innerSummary;
+        summary.ok = summary.ok && innerSummary.ok;
+        summary.errors.push(...innerSummary.errors);
+        return summary;
       } catch (e) {
         if (!(e instanceof LastStateError)) {
           throw e;
