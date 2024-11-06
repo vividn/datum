@@ -13,8 +13,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
 
   const document = domdoc();
 
-  const width = 1078;
-  const height = 574;
+  const width = 1200;
+  const height = 550;
   const margin = 10;
   const interdayMargin = 15;
 
@@ -23,6 +23,17 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .append("svg")
     .attr("width", width)
     .attr("height", height);
+
+  const warning_icon = fs.readFileSync(
+    __dirname + "/symbols/warning_sign.svg",
+    "utf8",
+  );
+  svg
+    .append("defs")
+    .append("symbol")
+    .attr("id", "warning-icon")
+    .append("g")
+    .append(warning_icon);
 
   const _background = svg
     .append("rect")

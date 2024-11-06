@@ -149,12 +149,12 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   for (const error of fieldErrors.errors) {
     console.error(error.message);
     svg
-      .append("image")
-      .attr("href", "./symbols/warning_sign.svg")
+      .append("use")
+      .attr("xlink:href", "#warning-icon")
       .attr("x", timeScale(new Date(error.occurTime)))
       .attr("y", height / 2)
-      .attr("width", circle_r)
-      .attr("height", circle_r);
+      .attr("width", circle_r * 2)
+      .attr("height", circle_r * 2);
   }
 
   // don't append an svg block for empty data
