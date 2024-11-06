@@ -13,8 +13,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
 
   const document = domdoc();
 
-  const width = 1078;
-  const height = 574;
+  const width = 1200;
+  const height = 550;
   const margin = 10;
   const interdayMargin = 15;
 
@@ -23,6 +23,16 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .append("svg")
     .attr("width", width)
     .attr("height", height);
+
+  const warning_icon = fs.readFileSync(
+    __dirname + "/symbols/warning_sign.svg",
+    "utf8",
+  );
+  svg
+    .append("defs")
+    .append("symbol")
+    .attr("id", "warning-icon")
+    .html(() => warning_icon);
 
   const _background = svg
     .append("rect")
@@ -111,6 +121,31 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
       dataArea.append(() => daySvg).attr("y", y);
     }),
   );
+
+  const allErrors = dataArea.selectAll(".error");
+  if (allErrors.size() > 0) {
+    const _errorIcon = svg
+      .append("use")
+      .attr("href", "#warning-icon")
+      .attr("x", 0)
+      .attr("y", 0)
+      .attr("width", 20)
+      .attr("height", 20);
+
+    const erroredFields = new Set<string>();
+    allErrors.each(function () {
+      const field = d3.select(this).attr("field");
+      erroredFields.add(field);
+    });
+    const _errorText = svg
+      .append("text")
+      .attr("x", 25)
+      .attr("y", 10)
+      .attr("dy", "0.35em")
+      .attr("fill", "red")
+      .attr("text-anchor", "start")
+      .text(Array.from(erroredFields).join(", "));
+  }
 
   // return svg.node()!.outerHTML;
   const dir = "/tmp/";
