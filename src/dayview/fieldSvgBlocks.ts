@@ -1,5 +1,5 @@
 import * as d3 from "d3";
-import { StateChangeRow } from "../state/checkState";
+import { checkState, StateChangeRow } from "../state/checkState";
 import { DatumState } from "../state/normalizeState";
 import { isoDatetime } from "../time/timeUtils";
 import { HIGH_STRING } from "../utils/startsWith";
@@ -137,6 +137,25 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("r", circle_r)
       .attr("fill", color);
   });
+
+  const fieldErrors = await checkState({
+    db,
+    field,
+    failOnError: false,
+    startTime: startUtc,
+    endTime: endUtc,
+  });
+
+  for (const error of fieldErrors.errors) {
+    console.error(error.message);
+    svg
+      .append("image")
+      .attr("href", "./symbols/warning_sign.svg")
+      .attr("x", timeScale(new Date(error.occurTime)))
+      .attr("y", height / 2)
+      .attr("width", circle_r)
+      .attr("height", circle_r);
+  }
 
   // don't append an svg block for empty data
   if (svg.selectChildren().size() === 0) {
