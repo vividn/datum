@@ -155,7 +155,9 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("x", timeScale(new Date(error.occurTime)) - warning_r)
       .attr("y", height / 2 - warning_r)
       .attr("width", warning_r * 2)
-      .attr("height", warning_r * 2);
+      .attr("height", warning_r * 2)
+      .attr("class", `${field} error`)
+      .attr("field", field);
   }
 
   // don't append an svg block for empty data

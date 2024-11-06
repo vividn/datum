@@ -122,6 +122,31 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     }),
   );
 
+  const allErrors = dataArea.selectAll(".error");
+  if (allErrors.size() > 0) {
+    const _errorIcon = svg
+      .append("use")
+      .attr("href", "#warning-icon")
+      .attr("x", 0)
+      .attr("y", 0)
+      .attr("width", 20)
+      .attr("height", 20);
+
+    const erroredFields = new Set<string>();
+    allErrors.each(function () {
+      const field = d3.select(this).attr("field");
+      erroredFields.add(field);
+    });
+    const _errorText = svg
+      .append("text")
+      .attr("x", 25)
+      .attr("y", 10)
+      .attr("dy", "0.35em")
+      .attr("fill", "red")
+      .attr("text-anchor", "start")
+      .text(Array.from(erroredFields).join(", "));
+  }
+
   // return svg.node()!.outerHTML;
   const dir = "/tmp/";
   fs.writeFileSync(dir + "dayview.svg", svg.node()!.outerHTML);
