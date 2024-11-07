@@ -5,7 +5,10 @@ import { md5Color } from "../utils/md5Color";
 import { FIELD_SPECS } from "./mySpecs";
 import { SimpleSingleState } from "../state/simplifyState";
 
-export function getFieldColor(field: string): string {
+export function getFieldColor(field?: string): string {
+  if (field === undefined) {
+    return "white"
+  }
   const spec = FIELD_SPECS[field] ?? {};
   const fieldColor = spec.color ?? md5Color(field);
   return fieldColor;
@@ -25,11 +28,11 @@ export function getStateColor({
   state,
   field,
 }: {
-  state: string | boolean | null;
+  state?: string | boolean | null;
   field?: string;
 }): string {
-  if (state === true) {
-    return getFieldColor(field ?? "");
+  if (state === true || state === undefined) {
+    return getFieldColor(field);
   }
   if (state === false) {
     return "#000000";
@@ -46,14 +49,14 @@ export function stateChalk({
   state,
   field,
 }: {
-  state: string | boolean | null;
+  state?: string | boolean | null;
   field?: string;
 }): (text: string) => string {
-  const fieldColor = getFieldColor(field ?? "");
+  const fieldColor = getFieldColor(field);
   if (state === true) {
-    return fieldChalk({ field: field ?? "" });
+    return fieldChalk({ field: field});
   }
-  if (state === false) {
+  if (state === false || state === undefined) {
     return chalk.hex(fieldColor);
   }
   if (state === null) {

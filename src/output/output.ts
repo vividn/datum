@@ -19,6 +19,7 @@ import { humanTime } from "../time/humanTime";
 import { FIELD_SPECS } from "../field/mySpecs";
 import { md5Color } from "../utils/md5Color";
 import { simplifyState } from "../state/simplifyState";
+import { fieldChalk, stateChalk } from "../field/fieldColor";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -69,43 +70,24 @@ function formatField(field?: string): string | undefined {
   if (field === undefined) {
     return undefined;
   }
-  const spec = FIELD_SPECS[field] ?? {};
-  const fieldColor = spec.color ?? md5Color(field);
-  return chalk.hex(fieldColor).inverse(field);
+  return fieldChalk({ field })(field);
 }
 
-function formatFieldState(data: DatumData): {
-  field?: string;
-  state?: string;
-  stateTransition?: string;
-  dur?: string;
-} {
-  const { field, dur } = data;
-  const state =
-    data.state !== undefined ? simplifyState(data.state) : undefined;
-  const lastState =
-    data.lastState !== undefined ? simplifyState(data.lastState) : undefined;
-
-  const spec = FIELD_SPECS[field ?? ""] ?? {};
-  const fieldColor = spec.color ?? md5Color(field);
-  const stateColor =
-    state === true
-      ? fieldColor
-      : typeof state === "string"
-        ? (spec?.states?.[state]?.color ?? md5Color(state))
-        : md5Color(JSON.stringify(state));
-}
 
 function formatState(data: DatumData): string | undefined {
-  const { state, lastState, field, occurTime } = data;
-  const occurred = occurTime !== undefined;
+  const { state, lastState, field, occurTime, dur } = data;
+
+  const beforeChalk = stateChalk({ field, state: lastState });
+  if (dur === null || (dur === undefined && state === undefined)) {
+
+  }
 
 
   if (state === undefined) {
     return undefined;
   }
   if (state === null) {
-    return chalk.bold("null");
+    return chalk.bold("∅");
   }
   if (Array.isArray(state)) {
     return state.map({ state: formatState }).join(",");
