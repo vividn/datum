@@ -1,4 +1,5 @@
 import {
+  DatumData,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
@@ -15,6 +16,9 @@ import {
 } from "../state/normalizeState";
 import isEqual from "lodash.isequal";
 import { humanTime } from "../time/humanTime";
+import { FIELD_SPECS } from "../field/mySpecs";
+import { md5Color } from "../utils/md5Color";
+import { simplifyState } from "../state/simplifyState";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -61,7 +65,42 @@ function formatAllTimes(doc: EitherPayload): AllTimes {
   return times;
 }
 
-function formatState(state?: DatumState): string | undefined {
+function formatField(field?: string): string | undefined {
+  if (field === undefined) {
+    return undefined;
+  }
+  const spec = FIELD_SPECS[field] ?? {};
+  const fieldColor = spec.color ?? md5Color(field);
+  return chalk.hex(fieldColor).inverse(field);
+}
+
+function formatFieldState(data: DatumData): {
+  field?: string;
+  state?: string;
+  stateTransition?: string;
+  dur?: string;
+} {
+  const { field, dur } = data;
+  const state =
+    data.state !== undefined ? simplifyState(data.state) : undefined;
+  const lastState =
+    data.lastState !== undefined ? simplifyState(data.lastState) : undefined;
+
+  const spec = FIELD_SPECS[field ?? ""] ?? {};
+  const fieldColor = spec.color ?? md5Color(field);
+  const stateColor =
+    state === true
+      ? fieldColor
+      : typeof state === "string"
+        ? (spec?.states?.[state]?.color ?? md5Color(state))
+        : md5Color(JSON.stringify(state));
+}
+
+function formatState(data: DatumData): string | undefined {
+  const { state, lastState, field, occurTime } = data;
+  const occurred = occurTime !== undefined;
+
+
   if (state === undefined) {
     return undefined;
   }
@@ -69,7 +108,7 @@ function formatState(state?: DatumState): string | undefined {
     return chalk.bold("null");
   }
   if (Array.isArray(state)) {
-    return state.map(formatState).join(",");
+    return state.map({ state: formatState }).join(",");
   }
   if (isStateObject(state)) {
     const stateId = (state as StateObject).id;
@@ -85,26 +124,6 @@ function formatState(state?: DatumState): string | undefined {
     return chalk.bold("end");
   }
   return state;
-}
-function formatStateTransition(
-  state?: DatumState,
-  lastState?: DatumState,
-): string | undefined {
-  if (
-    (state === true && lastState === false) ||
-    (state === false && lastState === true)
-  ) {
-    return formatState(state);
-  }
-  const lastStateText =
-    lastState !== undefined
-      ? isEqual(lastState, state)
-        ? chalk.yellow(`${formatState(lastState)}⇾`)
-        : chalk.gray(`${formatState(lastState)}⇾`)
-      : "";
-  return state !== undefined
-    ? `${lastStateText} ${formatState(state)}`
-    : undefined;
 }
 
 function formatDuration(
