@@ -99,8 +99,11 @@ function formatState(data: DatumData): string | undefined {
     (noStateChange && !isNegativeDur) ||
     (!noStateChange && isNegativeDur)
   ) {
-    beforeText = beforeChalk.hex(
-      getContrastTextColor(getStateColor({ field, state: lastState })),
+    beforeText = beforeChalk.bold.hex(
+      getContrastTextColor(
+        getStateColor({ field, state: lastState }),
+        "warning",
+      ),
     )(WARNING);
   } else if (lastState === null) {
     beforeText = beforeChalk(NULL);
@@ -212,7 +215,7 @@ export function extractFormatted(
     id: doc._id ? chalk.gray(doc._id) : undefined,
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     time: formatAllTimes(doc),
-    field: data?.field ? color.inverse(data.field) : undefined,
+    field: formatField(data.field),
     state: formatState(data),
     dur: formatDuration(data.dur),
   };
