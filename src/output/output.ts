@@ -74,9 +74,10 @@ function formatField(field?: string): string | undefined {
 
 const DOT = "●" as const;
 const NON_OCCUR = "¢" as const;
-const SHADING = "▒" as const;
+const SHADING = "▚" as const;
 const WARNING = "!" as const;
 const NULL = "∅" as const;
+
 function formatState(data: DatumData): string | undefined {
   const { state, lastState, field, occurTime, dur } = data;
 
@@ -92,9 +93,9 @@ function formatState(data: DatumData): string | undefined {
   const beforeChalk = stateChalk({ field, state: lastState });
   let beforeText: string;
   if (occurTime === undefined) {
-    beforeText = fieldChalk({ field })(NON_OCCUR);
+    beforeText = chalk.hex(fieldColor)(NON_OCCUR);
   } else if (isPoint) {
-    beforeText = beforeChalk.hex(getFieldColor(field))(DOT);
+    beforeText = beforeChalk.hex(fieldColor)(DOT);
   } else if (
     (noStateChange && !isNegativeDur) ||
     (!noStateChange && isNegativeDur)
@@ -107,6 +108,8 @@ function formatState(data: DatumData): string | undefined {
     )(WARNING);
   } else if (lastState === null) {
     beforeText = beforeChalk(NULL);
+  } else if (Array.isArray(lastState)) {
+    beforeText = beforeChalk(SHADING);
   } else {
     beforeText = beforeChalk(" ");
   }
@@ -147,6 +150,8 @@ function formatState(data: DatumData): string | undefined {
     afterText = "";
   } else if (dur !== undefined) {
     afterText = beforeChalk(" ");
+  } else if (Array.isArray(state)) {
+    afterText = currentChalk(SHADING);
   } else {
     afterText = currentChalk(" ");
   }
