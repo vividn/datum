@@ -9,17 +9,16 @@ import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { Duration } from "luxon";
-import {
-  DatumState,
-  isStateObject,
-  StateObject,
-} from "../state/normalizeState";
+import { isStateObject, StateObject } from "../state/normalizeState";
 import isEqual from "lodash.isequal";
 import { humanTime } from "../time/humanTime";
-import { FIELD_SPECS } from "../field/mySpecs";
-import { md5Color } from "../utils/md5Color";
-import { simplifyState } from "../state/simplifyState";
-import { fieldChalk, stateChalk } from "../field/fieldColor";
+import {
+  fieldChalk,
+  getFieldColor,
+  getStateColor,
+  stateChalk,
+} from "../field/fieldColor";
+import { getContrastTextColor } from "../utils/colorUtils";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -73,52 +72,89 @@ function formatField(field?: string): string | undefined {
   return fieldChalk({ field })(field);
 }
 
-
+const DOT = "●" as const;
+const NON_OCCUR = "¢" as const;
+const SHADING = "▒" as const;
+const WARNING = "!" as const;
+const NULL = "∅" as const;
 function formatState(data: DatumData): string | undefined {
   const { state, lastState, field, occurTime, dur } = data;
 
+  const fieldColor = getFieldColor(field);
+  const stateColor = getStateColor({ field, state });
+
+  const isNonOccur = occurTime === undefined;
+  const isNegativeDur = Duration.fromISO(dur || "").as("milliseconds") < 0;
+  const isPoint = dur === null || (dur === undefined && state === undefined);
+  const isFalseState = state === false;
+  const noStateChange = isEqual(state, lastState) && state !== undefined;
+
   const beforeChalk = stateChalk({ field, state: lastState });
-  if (dur === null || (dur === undefined && state === undefined)) {
-
+  let beforeText: string;
+  if (occurTime === undefined) {
+    beforeText = fieldChalk({ field })(NON_OCCUR);
+  } else if (isPoint) {
+    beforeText = beforeChalk.hex(getFieldColor(field))(DOT);
+  } else if (
+    (noStateChange && !isNegativeDur) ||
+    (!noStateChange && isNegativeDur)
+  ) {
+    beforeText = beforeChalk.hex(
+      getContrastTextColor(getStateColor({ field, state: lastState })),
+    )(WARNING);
+  } else if (lastState === null) {
+    beforeText = beforeChalk(NULL);
+  } else {
+    beforeText = beforeChalk(" ");
   }
 
-
+  const currentChalk = stateChalk({ field, state });
+  let currentText: string;
   if (state === undefined) {
-    return undefined;
-  }
-  if (state === null) {
-    return chalk.bold("∅");
-  }
-  if (Array.isArray(state)) {
-    return state.map({ state: formatState }).join(",");
-  }
-  if (isStateObject(state)) {
+    currentText = "";
+  } else if (state === null) {
+    currentText = currentChalk(NULL);
+  } else if (Array.isArray(state)) {
+    currentText = !isNegativeDur
+      ? state
+          .map((substate) =>
+            stateChalk({ field, state: substate })(`${substate},`),
+          )
+          .join("")
+          .slice(0, -1)
+      : stateChalk({ field, state: false })(state.join(","));
+  } else if (isStateObject(state)) {
     const stateId = (state as StateObject).id;
-    if (stateId !== undefined) {
-      return `{${stateId}}`;
-    }
-    return "{}";
+    currentText =
+      stateId !== undefined ? currentChalk(`{${stateId}}`) : currentChalk("{}");
+  } else if (state === true) {
+    currentText = currentChalk("start");
+  } else if (state === false) {
+    currentText = currentChalk("end");
+  } else {
+    currentText = currentChalk(state);
   }
-  if (state === true) {
-    return chalk.bold("start");
+
+  let afterText: string;
+  if (isNonOccur || isPoint) {
+    afterText = "";
+  } else if (isFalseState) {
+    afterText = "";
+  } else if (dur !== undefined) {
+    afterText = beforeChalk(" ");
+  } else {
+    afterText = currentChalk(" ");
   }
-  if (state === false) {
-    return chalk.bold("end");
-  }
-  return state;
+
+  return beforeText + currentText + afterText;
 }
 
-function formatDuration(
-  dur?: string | undefined | null,
-  invert = false,
-): string | undefined {
+function formatDuration(dur?: string | undefined | null): string | undefined {
   const duration = Duration.fromISO(dur || "");
   if (!duration.isValid) {
     return undefined;
   }
-  return duration < Duration.fromMillis(0) !== invert
-    ? duration.toFormat(" ⟞ m'm' ⟝ ")
-    : duration.toFormat(" ⟝ m'm'⟞ ");
+  return duration.toFormat("m'm'");
 }
 function formattedNonRedundantData(doc: EitherPayload): string | undefined {
   const { data } = pullOutData(doc);
@@ -163,7 +199,6 @@ type ExtractedAndFormatted = {
   time: AllTimes;
   field?: string;
   state?: string;
-  stateTransition?: string;
   dur?: string;
 };
 export function extractFormatted(
@@ -178,9 +213,8 @@ export function extractFormatted(
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     time: formatAllTimes(doc),
     field: data?.field ? color.inverse(data.field) : undefined,
-    state: formatState(data.state),
-    stateTransition: formatStateTransition(data.state, data.lastState),
-    dur: formatDuration(data.dur, data.state === false),
+    state: formatState(data),
+    dur: formatDuration(data.dur),
   };
 }
 
@@ -201,7 +235,7 @@ function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   const footerLine = [
     formatted.time.occur,
     formatted.field,
-    formatted.stateTransition,
+    formatted.state,
     formatted.dur,
   ]
     .filter(Boolean)
