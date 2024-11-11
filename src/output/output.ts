@@ -111,7 +111,9 @@ function formatState(data: DatumData): string | undefined {
     beforeText = beforeChalk(" ");
   }
 
-  const currentChalk = stateChalk({ field, state });
+  const currentChalk = isNegativeDur
+    ? chalk.hex(stateColor)
+    : stateChalk({ field, state });
   let currentText: string;
   if (state === undefined) {
     currentText = "";
