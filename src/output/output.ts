@@ -95,7 +95,7 @@ function formatState(data: DatumData): string | undefined {
   if (occurTime === undefined) {
     beforeText = chalk.hex(fieldColor)(NON_OCCUR);
   } else if (isPoint) {
-    beforeText = beforeChalk.hex(fieldColor)(DOT);
+    beforeText = beforeChalk.hex(stateColor)(DOT);
   } else if (
     (noStateChange && !isNegativeDur) ||
     (!noStateChange && isNegativeDur)
@@ -114,9 +114,10 @@ function formatState(data: DatumData): string | undefined {
     beforeText = beforeChalk(" ");
   }
 
-  const currentChalk = isNegativeDur
-    ? chalk.hex(stateColor)
-    : stateChalk({ field, state });
+  const currentChalk =
+    isNegativeDur || isPoint
+      ? chalk.hex(stateColor)
+      : stateChalk({ field, state });
   let currentText: string;
   if (state === undefined) {
     currentText = "";
