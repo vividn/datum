@@ -5,6 +5,8 @@ import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./output";
+import stringWidth from "string-width";
+
 
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
@@ -67,10 +69,16 @@ export function tableOutput(
     duration: formattedRows.some((row) => row.duration !== undefined)
       ? "dur"
       : undefined,
-    field: "field",
-    state: formattedRows.some((row) => row.state !== undefined)
-      ? "state"
-      : undefined,
+    field: formattedRows.some((row) => row.field === undefined)
+      ? undefined
+      : formattedRows.some((row) => stringWidth(row.field ?? "") >= 5)
+        ? "field"
+        : "f",
+    state: formattedRows.some((row) => row.state === undefined)
+      ? undefined
+      : formattedRows.some((row) => stringWidth(row.state ?? "") >= 5)
+        ? "state"
+        : "s",
     hid: formattedRows.some((row) => row.hid !== undefined) ? "hid" : undefined,
   };
   columns.forEach((col) => {
