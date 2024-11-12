@@ -130,11 +130,12 @@ function formatState(data: DatumData): string | undefined {
   } else if (Array.isArray(state)) {
     currentText = !isNegativeDur
       ? state
-          .map((substate) =>
-            stateChalk({ field, state: substate })(`${substate},`),
+          .map((substate, i) =>
+            stateChalk({ field, state: substate })(
+              `${i > 0 ? "," : ""}${substate}`,
+            ),
           )
           .join("")
-          .slice(0, -1)
       : stateChalk({ field, state: false })(state.join(","));
   } else if (isStateObject(state)) {
     const stateId = (state as StateObject).id;
