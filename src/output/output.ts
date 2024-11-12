@@ -152,10 +152,10 @@ function formatState(data: DatumData): string | undefined {
   let afterText: string;
   if (isNonOccur || isPoint) {
     afterText = "";
-  } else if (isFalseState) {
-    afterText = "";
   } else if (dur !== undefined) {
     afterText = beforeChalk(" ");
+  } else if (isFalseState) {
+    afterText = "";
   } else if (Array.isArray(state)) {
     afterText = currentChalk(SHADING);
   } else {
