@@ -19,6 +19,7 @@ import { assembleId } from "../ids/assembleId";
 import * as newHumanIdModule from "../meta/newHumanId";
 import { mock } from "jest-mock-extended";
 import chalk from "chalk";
+import * as mySpecsModule from "../field/mySpecs";
 
 // eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
@@ -227,4 +228,11 @@ export function coloredChalk() {
     // @ts-expect-error hacky restoration of chalk level
     delete chalk.level;
   });
+}
+
+export function mockSpecs() {
+  // TODO: remove this once specs are added as a db feature rather than hardcoded
+  return jest.spyOn(mySpecsModule, "getFieldSpec").mockImplementation((_field) => {
+    return {};
+  }
 }

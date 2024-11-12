@@ -2,14 +2,14 @@ import chalk, { Chalk } from "chalk";
 import { DatumState } from "../state/normalizeState";
 import { getContrastTextColor } from "../utils/colorUtils";
 import { md5Color } from "../utils/md5Color";
-import { FIELD_SPECS } from "./mySpecs";
+import { getFieldSpec } from "./mySpecs";
 import { simplifyState } from "../state/simplifyState";
 
 export function getFieldColor(field?: string): string {
   if (field === undefined) {
     return "white";
   }
-  const spec = FIELD_SPECS[field] ?? {};
+  const spec = getFieldSpec(field);
   const fieldColor = spec.color ?? md5Color(field);
   return fieldColor;
 }
@@ -43,7 +43,7 @@ export function getStateColor({
   if (Array.isArray(state)) {
     return getStateColor({ state: state[0], field });
   }
-  const spec = FIELD_SPECS[field ?? ""] ?? {};
+  const spec = getFieldSpec(field);
   const color = spec.states?.[state]?.color ?? md5Color(state);
   return color;
 }
@@ -64,7 +64,7 @@ export function stateChalk({
     return fieldChalk({ field: field });
   }
   if (state === false || state === undefined) {
-    return chalk.hex(fieldColor);
+    return chalk;
   }
   if (state === null) {
     return chalk.bgHex("#888888").hex("#666666");
