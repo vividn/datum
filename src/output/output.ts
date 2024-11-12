@@ -74,12 +74,16 @@ function formatField(field?: string): string | undefined {
 
 const DOT = "●" as const;
 const NON_OCCUR = "¢" as const;
-const SHADING = "▚" as const;
+const SHADING = "▞" as const;
 const WARNING = "!" as const;
 const NULL = "∅" as const;
 
 function formatState(data: DatumData): string | undefined {
   const { state, lastState, field, occurTime, dur } = data;
+
+  if (field === undefined && occurTime === undefined) {
+    return;
+  }
 
   const fieldColor = getFieldColor(field);
   const stateColor = getStateColor({ field, state });
@@ -243,7 +247,7 @@ function showHeaderLine(formatted: ExtractedAndFormatted): void {
 }
 
 function showMainInfoLine(formatted: ExtractedAndFormatted): void {
-  const footerLine = [
+  const infoLine = [
     formatted.time.occur,
     formatted.field,
     formatted.state,
@@ -251,8 +255,8 @@ function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   ]
     .filter(Boolean)
     .join(" ");
-  if (footerLine !== "") {
-    console.log(footerLine);
+  if (infoLine !== "") {
+    console.log(infoLine);
   }
 }
 

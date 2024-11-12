@@ -7,7 +7,7 @@ import { simplifyState } from "../state/simplifyState";
 
 export function getFieldColor(field?: string): string {
   if (field === undefined) {
-    return "white";
+    return "#ffffff";
   }
   const spec = getFieldSpec(field);
   const fieldColor = spec.color ?? md5Color(field);

@@ -9,6 +9,7 @@ import { switchCmd } from "../../commands/switchCmd";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { Show } from "../../input/outputArgs";
 import {
+  coloredChalk,
   deterministicHumanIds,
   pass,
   resetTestDb,
@@ -19,6 +20,7 @@ import { tableOutput } from "../tableOutput";
 
 describe("tableOutput", () => {
   deterministicHumanIds();
+  coloredChalk();
   const docs: EitherDocument[] = [];
   beforeAll(async () => {
     // tmp db to generate docs easily

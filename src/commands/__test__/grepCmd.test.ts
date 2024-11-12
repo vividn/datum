@@ -1,6 +1,7 @@
 import {
   coloredChalk,
   mockedLogLifecycle,
+  mockSpecs,
   testDbLifecycle,
 } from "../../__test__/test-utils";
 import { grepCmd } from "../grepCmd";
@@ -11,6 +12,7 @@ describe("grepCmd", () => {
   const dbName = "grep_cmd_test";
   const db = testDbLifecycle(dbName);
   const { mockedLog } = mockedLogLifecycle();
+  mockSpecs();
 
   it("finds all the docs that contain the given string", async () => {
     const doc1 = { _id: "doc1", foo: "bar" };

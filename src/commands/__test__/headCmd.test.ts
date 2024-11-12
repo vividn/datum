@@ -165,7 +165,7 @@ describe("headCmd", () => {
   it("can display a head from a certain moment in time", async () => {
     await generateSampleMorning(today);
     const docs1 = await headCmd("-t 9:45");
-    expect(docs1.length).toBe(6);
+    expect(docs1.length).toBe(7);
     expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
       `"caffeine:2023-11-01T11:00:00.000Z"`,
     );
