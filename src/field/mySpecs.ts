@@ -12,3 +12,7 @@ type FieldSpec = {
 };
 
 export const FIELD_SPECS: Record<string, FieldSpec> = {} as const;
+
+export function getFieldSpec(field?: string): FieldSpec {
+  return FIELD_SPECS[field ?? ""] ?? {};
+}
