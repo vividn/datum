@@ -3,6 +3,7 @@ import {
   delay,
   deterministicHumanIds,
   mockedLogLifecycle,
+  mockSpecs,
   setNow,
   testDbLifecycle,
 } from "../../__test__/test-utils";
@@ -30,6 +31,7 @@ describe("tailCmd", () => {
   coloredChalk();
   const dbName = "tail_cmd_test";
   testDbLifecycle(dbName);
+  mockSpecs();
 
   beforeEach(async () => {
     await setupCmd("");
@@ -41,7 +43,7 @@ describe("tailCmd", () => {
     const docs = await tailCmd("", { show: Show.Standard });
     expect(docs.length).toBe(10);
     expect(docs[0]._id).toMatchInlineSnapshot(
-      `"environment:2023-10-16T09:30:00.000Z"`,
+      `"stretch:2023-10-16T09:30:00.000Z"`,
     );
     expect(docs.at(-1)?._id).toMatchInlineSnapshot(
       `"caffeine:2023-10-16T11:00:00.000Z"`,
@@ -296,8 +298,7 @@ describe("tailCmd", () => {
     expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
       [
         [
-          "::environment::
-      ::stretch::
+          "::stretch::
       ::run::
       ::stretch::
       ::run::
@@ -305,6 +306,7 @@ describe("tailCmd", () => {
       ::environment::
       ::stretch::
       ::pushup::
+      ::environment::
       ::caffeine::",
         ],
       ]
@@ -345,17 +347,17 @@ describe("tailCmd", () => {
     expect(mockedLog).toHaveBeenCalledTimes(1);
     expect(mockedLog.mock.calls[0]).toMatchInlineSnapshot(`
       [
-        "      time  field        state      hid    amount  distance  comment 
-      09:30:00[90m+0[39m  [7menvironment[27m  outside    wqynb                            
-      09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      7qaqo                            
-      09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m      9bcqg                            
-      09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m        6m3y5                            
-      10:07:00[90m+0[39m  [7mrun[27m          [1mend[22m        869r3          5.4               
-      10:07:00[90m+0[39m  [7mstretch[27m      [1mstart[22m      gs6pb                            
-      10:15:00[90m+0[39m  [7menvironment[27m  home       92g32                            
-      10:15:00[90m+0[39m  [7mstretch[27m      [1mend[22m        chq8f                            
-      10:18:00[90m+0[39m  [7mpushup[27m                  getek  10                        
-      11:00:00[90m+0[39m  [7mcaffeine[27m                2abgf  100               "coffee"
+        "      time  field        state      dur  hid    amount  distance  comment 
+      09:30:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m         7qaqo                            
+      09:37:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;165;49;8m[38;2;255;255;255mstart[39m[49m[48;2;165;49;8m[38;2;255;255;255m [39m[49m         9bcqg                            
+      09:37:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;126;132;148m[38;2;0;0;0m [39m[49mend            6m3y5                            
+      10:07:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;165;49;8m[38;2;255;255;255m [39m[49mend            869r3          5.4               
+      10:07:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m       [48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m         gs6pb                            
+      10:15:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;195;1;99m[38;2;255;255;255m [39m[49m[48;2;16;106;108m[38;2;255;255;255mhome[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m          92g32                            
+      10:15:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;126;132;148m[38;2;0;0;0m [39m[49mend            chq8f                            
+      10:18:00[90m+0[39m  [48;2;148;83;231m[38;2;255;255;255mpushup[39m[49m       [48;2;136;136;136m[38;2;102;102;102m[38;2;148;83;231m●[39m[39m[49m               getek  10                        
+      10:30:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;16;106;108m[38;2;255;255;255m [39m[49m[48;2;195;1;99m[38;2;255;255;255moutside[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m  5m   2abgf                            
+      11:00:00[90m+0[39m  [48;2;231;36;248m[38;2;255;255;255mcaffeine[39m[49m     [48;2;136;136;136m[38;2;102;102;102m[38;2;231;36;248m●[39m[39m[49m               cav6f  100               "coffee"
       ",
       ]
     `);

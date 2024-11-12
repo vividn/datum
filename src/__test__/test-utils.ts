@@ -232,7 +232,9 @@ export function coloredChalk() {
 
 export function mockSpecs() {
   // TODO: remove this once specs are added as a db feature rather than hardcoded
-  return jest.spyOn(mySpecsModule, "getFieldSpec").mockImplementation((_field) => {
-    return {};
-  }
+  beforeEach(() => {
+    jest
+      .spyOn(mySpecsModule, "getFieldSpec")
+      .mockImplementation((_field) => ({}));
+  });
 }
