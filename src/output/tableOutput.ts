@@ -7,7 +7,6 @@ import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./output";
 import stringWidth from "string-width";
 
-
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
   timeMetric?: (typeof TIME_METRICS)[number] | "none";
