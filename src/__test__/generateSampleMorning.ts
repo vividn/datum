@@ -30,7 +30,7 @@ export async function generateSampleMorning(date: string): Promise<void> {
   setNow("+3");
   await occurCmd("pushup amount=10");
   setNow("10:30");
-  await switchCmd("environment outside 5")
+  await switchCmd("environment outside 5");
   setNow("11");
   await occurCmd("caffeine amount=100 -c coffee");
   popNow();
