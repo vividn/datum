@@ -2,6 +2,7 @@ import {
   coloredChalk,
   deterministicHumanIds,
   mockedLogLifecycle,
+  mockSpecs,
   setNow,
   testDbLifecycle,
 } from "../../__test__/test-utils";
@@ -29,6 +30,7 @@ describe("headCmd", () => {
   coloredChalk();
   const dbName = "head_cmd_test";
   testDbLifecycle(dbName);
+  mockSpecs();
 
   beforeEach(async () => {
     await setupCmd("");
