@@ -204,3 +204,7 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
   alcohol: { color: "#00ffff", y: 0.75 },
   cannabis: { color: "#00c800", y: 0.75 },
 } as const;
+
+export function getFieldSpec(field?: string): FieldSpec {
+  return FIELD_SPECS[field ?? ""] ?? {};
+}

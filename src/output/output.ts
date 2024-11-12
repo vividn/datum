@@ -1,4 +1,5 @@
 import {
+  DatumData,
   EitherDocument,
   EitherPayload,
 } from "../documentControl/DatumDocument";
@@ -8,13 +9,16 @@ import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { Duration } from "luxon";
-import {
-  DatumState,
-  isStateObject,
-  StateObject,
-} from "../state/normalizeState";
+import { isStateObject, StateObject } from "../state/normalizeState";
 import isEqual from "lodash.isequal";
 import { humanTime } from "../time/humanTime";
+import {
+  fieldChalk,
+  getFieldColor,
+  getStateColor,
+  stateChalk,
+} from "../field/fieldColor";
+import { getContrastTextColor } from "../utils/colorUtils";
 
 enum ACTIONS {
   Create = "CREATE",
@@ -61,63 +65,111 @@ function formatAllTimes(doc: EitherPayload): AllTimes {
   return times;
 }
 
-function formatState(state?: DatumState): string | undefined {
-  if (state === undefined) {
+function formatField(field?: string): string | undefined {
+  if (field === undefined) {
     return undefined;
   }
-  if (state === null) {
-    return chalk.bold("null");
-  }
-  if (Array.isArray(state)) {
-    return state.map(formatState).join(",");
-  }
-  if (isStateObject(state)) {
-    const stateId = (state as StateObject).id;
-    if (stateId !== undefined) {
-      return `{${stateId}}`;
-    }
-    return "{}";
-  }
-  if (state === true) {
-    return chalk.bold("start");
-  }
-  if (state === false) {
-    return chalk.bold("end");
-  }
-  return state;
-}
-function formatStateTransition(
-  state?: DatumState,
-  lastState?: DatumState,
-): string | undefined {
-  if (
-    (state === true && lastState === false) ||
-    (state === false && lastState === true)
-  ) {
-    return formatState(state);
-  }
-  const lastStateText =
-    lastState !== undefined
-      ? isEqual(lastState, state)
-        ? chalk.yellow(`${formatState(lastState)}⇾`)
-        : chalk.gray(`${formatState(lastState)}⇾`)
-      : "";
-  return state !== undefined
-    ? `${lastStateText} ${formatState(state)}`
-    : undefined;
+  return fieldChalk({ field })(field);
 }
 
-function formatDuration(
-  dur?: string | undefined | null,
-  invert = false,
-): string | undefined {
+const DOT = "●" as const;
+const NON_OCCUR = "¢" as const;
+const SHADING = "▞" as const;
+const WARNING = "!" as const;
+const NULL = "∅" as const;
+
+function formatState(data: DatumData): string | undefined {
+  const { state, lastState, field, occurTime, dur } = data;
+
+  if (field === undefined && occurTime === undefined) {
+    return;
+  }
+
+  const fieldColor = getFieldColor(field);
+  const stateColor = getStateColor({ field, state });
+
+  const isNonOccur = occurTime === undefined;
+  const isNegativeDur = Duration.fromISO(dur || "").as("milliseconds") < 0;
+  const isPoint = dur === null || (dur === undefined && state === undefined);
+  const isFalseState = state === false;
+  const noStateChange = isEqual(state, lastState) && state !== undefined;
+
+  const beforeChalk = stateChalk({ field, state: lastState });
+  let beforeText: string;
+  if (occurTime === undefined) {
+    beforeText = chalk.hex(fieldColor)(NON_OCCUR);
+  } else if (isPoint) {
+    beforeText = beforeChalk.hex(stateColor)(DOT);
+  } else if (
+    (noStateChange && !isNegativeDur) ||
+    (!noStateChange && isNegativeDur)
+  ) {
+    beforeText = beforeChalk.bold.hex(
+      getContrastTextColor(
+        getStateColor({ field, state: lastState }),
+        "warning",
+      ),
+    )(WARNING);
+  } else if (lastState === null) {
+    beforeText = beforeChalk(NULL);
+  } else if (Array.isArray(lastState)) {
+    beforeText = beforeChalk(SHADING);
+  } else {
+    beforeText = beforeChalk(" ");
+  }
+
+  const currentChalk =
+    isNegativeDur || isPoint
+      ? chalk.hex(stateColor)
+      : stateChalk({ field, state });
+  let currentText: string;
+  if (state === undefined) {
+    currentText = "";
+  } else if (state === null) {
+    currentText = currentChalk(NULL);
+  } else if (Array.isArray(state)) {
+    currentText = !isNegativeDur
+      ? state
+          .map((substate) =>
+            stateChalk({ field, state: substate })(`${substate},`),
+          )
+          .join("")
+          .slice(0, -1)
+      : stateChalk({ field, state: false })(state.join(","));
+  } else if (isStateObject(state)) {
+    const stateId = (state as StateObject).id;
+    currentText =
+      stateId !== undefined ? currentChalk(`{${stateId}}`) : currentChalk("{}");
+  } else if (state === true) {
+    currentText = currentChalk("start");
+  } else if (state === false) {
+    currentText = currentChalk("end");
+  } else {
+    currentText = currentChalk(state);
+  }
+
+  let afterText: string;
+  if (isNonOccur || isPoint) {
+    afterText = "";
+  } else if (isFalseState) {
+    afterText = "";
+  } else if (dur !== undefined) {
+    afterText = beforeChalk(" ");
+  } else if (Array.isArray(state)) {
+    afterText = currentChalk(SHADING);
+  } else {
+    afterText = currentChalk(" ");
+  }
+
+  return beforeText + currentText + afterText;
+}
+
+function formatDuration(dur?: string | undefined | null): string | undefined {
   const duration = Duration.fromISO(dur || "");
   if (!duration.isValid) {
     return undefined;
   }
-  return duration < Duration.fromMillis(0) !== invert
-    ? duration.toFormat(" ⟞ m'm' ⟝ ")
-    : duration.toFormat(" ⟝ m'm'⟞ ");
+  return duration.toFormat("m'm'");
 }
 function formattedNonRedundantData(doc: EitherPayload): string | undefined {
   const { data } = pullOutData(doc);
@@ -162,7 +214,6 @@ type ExtractedAndFormatted = {
   time: AllTimes;
   field?: string;
   state?: string;
-  stateTransition?: string;
   dur?: string;
 };
 export function extractFormatted(
@@ -176,10 +227,9 @@ export function extractFormatted(
     id: doc._id ? chalk.gray(doc._id) : undefined,
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     time: formatAllTimes(doc),
-    field: data?.field ? color.inverse(data.field) : undefined,
-    state: formatState(data.state),
-    stateTransition: formatStateTransition(data.state, data.lastState),
-    dur: formatDuration(data.dur, data.state === false),
+    field: formatField(data.field),
+    state: formatState(data),
+    dur: formatDuration(data.dur),
   };
 }
 
@@ -197,16 +247,16 @@ function showHeaderLine(formatted: ExtractedAndFormatted): void {
 }
 
 function showMainInfoLine(formatted: ExtractedAndFormatted): void {
-  const footerLine = [
+  const infoLine = [
     formatted.time.occur,
     formatted.field,
-    formatted.stateTransition,
+    formatted.state,
     formatted.dur,
   ]
     .filter(Boolean)
     .join(" ");
-  if (footerLine !== "") {
-    console.log(footerLine);
+  if (infoLine !== "") {
+    console.log(infoLine);
   }
 }
 

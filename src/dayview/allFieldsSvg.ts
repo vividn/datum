@@ -2,7 +2,7 @@ import * as d3 from "d3";
 import { occurredFields } from "../field/occurredFields";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
 import { domdoc } from "./domdoc";
-import { FIELD_SPECS } from "../field/mySpecs";
+import { getFieldSpec } from "../field/mySpecs";
 import md5 from "md5";
 export type AllFieldsSvgType = {
   db: PouchDB.Database;
@@ -20,7 +20,7 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
   const allFields = await occurredFields(db);
   const sortedWithSpans = allFields
     .map((field) => {
-      const spec = FIELD_SPECS[field] ?? {};
+      const spec = getFieldSpec(field);
       const specY =
         spec.y ?? parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32);
       const defaultHeight = 0.08;

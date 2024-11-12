@@ -3,17 +3,17 @@
 exports[`headCmd displays by default the first 10 occurrences in the database 3`] = `
 [
   [
-    "          time  field        state           hid  
--1d 23:20:00[90m+0[39m  [7msleep[27m        [1mstart[22m           en61v
-    08:30:00[90m+0[39m  [7msleep[27m        [1mend[22m             elfuv
-    08:40:00[90m+0[39m  [7mproject[27m      german          d7j7m
-    08:40:00[90m+0[39m  [7mtext[27m         fiction_book    w1fla
-    09:10:00[90m+0[39m  [7mproject[27m      [1mend[22m             mbukz
-    09:10:00[90m+0[39m  [7mtext[27m         [1mend[22m             puzt1
-    09:30:00[90m+0[39m  [7menvironment[27m  outside         wqynb
-    09:30:00[90m+0[39m  [7mstretch[27m      [1mstart[22m           7qaqo
-    09:37:00[90m+0[39m  [7mrun[27m          [1mstart[22m           9bcqg
-    09:37:00[90m+0[39m  [7mstretch[27m      [1mend[22m             6m3y5
+    "          time  field        state             hid  
+-1d 23:20:00[90m+0[39m  [48;2;201;250;179m[38;2;0;0;0msleep[39m[49m        [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;201;250;179m[38;2;0;0;0mstart[39m[49m[48;2;201;250;179m[38;2;0;0;0m [39m[49m           en61v
+    08:30:00[90m+0[39m  [48;2;201;250;179m[38;2;0;0;0msleep[39m[49m        [48;2;136;136;136m[38;2;102;102;102m∅[39m[49mend              elfuv
+    08:40:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m      [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;166;212;20m[38;2;0;0;0mgerman[39m[49m[48;2;166;212;20m[38;2;0;0;0m [39m[49m          d7j7m
+    08:40:00[90m+0[39m  [48;2;28;178;81m[38;2;255;255;255mtext[39m[49m         [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;6;222;95m[38;2;0;0;0mfiction_book[39m[49m[48;2;6;222;95m[38;2;0;0;0m [39m[49m    w1fla
+    09:10:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m      [48;2;166;212;20m[38;2;0;0;0m [39m[49mend              mbukz
+    09:10:00[90m+0[39m  [48;2;28;178;81m[38;2;255;255;255mtext[39m[49m         [48;2;6;222;95m[38;2;0;0;0m [39m[49mend              puzt1
+    09:30:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;195;1;99m[38;2;255;255;255moutside[39m[49m[48;2;195;1;99m[38;2;255;255;255m [39m[49m         wqynb
+    09:30:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m           7qaqo
+    09:37:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;165;49;8m[38;2;255;255;255mstart[39m[49m[48;2;165;49;8m[38;2;255;255;255m [39m[49m           9bcqg
+    09:37:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;126;132;148m[38;2;0;0;0m [39m[49mend              6m3y5
 ",
   ],
 ]
@@ -22,11 +22,11 @@ exports[`headCmd displays by default the first 10 occurrences in the database 3`
 exports[`headCmd first metrics can display modifyTime head 1`] = `
 [
   [
-    "       time  field      state    hid  
-[90mm[39m19:00:00[90m+0[39m  [7malcohol[27m             elfuv
-[90mm[39m21:00:00[90m+0[39m  [7msocialize[27m  [1mend[22m      d7j7m
-[90mm[39m21:01:00[90m+0[39m  [7msocialize[27m  [1mstart[22m    w1fla
-[90mm[39m22:00:00[90m+0[39m  [7mperson[27m              en61v
+    "       time  field      state      hid  
+[90mm[39m19:00:00[90m+0[39m  [48;2;186;191;136m[38;2;0;0;0malcohol[39m[49m    [48;2;136;136;136m[38;2;102;102;102m[38;2;186;191;136m●[39m[39m[49m          elfuv
+[90mm[39m21:00:00[90m+0[39m  [48;2;111;238;105m[38;2;0;0;0msocialize[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49mend       d7j7m
+[90mm[39m21:01:00[90m+0[39m  [48;2;111;238;105m[38;2;0;0;0msocialize[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;111;238;105m[38;2;0;0;0mstart[39m[49m[48;2;111;238;105m[38;2;0;0;0m [39m[49m    w1fla
+[90mm[39m22:00:00[90m+0[39m  [48;2;139;10;68m[38;2;255;255;255mperson[39m[49m     [38;2;139;10;68m¢[39m          en61v
 ",
   ],
 ]
@@ -35,10 +35,10 @@ exports[`headCmd first metrics can display modifyTime head 1`] = `
 exports[`headCmd first metrics can just display occurTime head 1`] = `
 [
   [
-    "      time  field      state    hid  
-19:00:00[90m+0[39m  [7malcohol[27m             elfuv
-19:30:00[90m+0[39m  [7msocialize[27m  [1mstart[22m    w1fla
-21:00:00[90m+0[39m  [7msocialize[27m  [1mend[22m      d7j7m
+    "      time  field      state      hid  
+19:00:00[90m+0[39m  [48;2;186;191;136m[38;2;0;0;0malcohol[39m[49m    [48;2;136;136;136m[38;2;102;102;102m[38;2;186;191;136m●[39m[39m[49m          elfuv
+19:30:00[90m+0[39m  [48;2;111;238;105m[38;2;0;0;0msocialize[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;111;238;105m[38;2;0;0;0mstart[39m[49m[48;2;111;238;105m[38;2;0;0;0m [39m[49m    w1fla
+21:00:00[90m+0[39m  [48;2;111;238;105m[38;2;0;0;0msocialize[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49mend       d7j7m
 ",
   ],
 ]
@@ -47,11 +47,11 @@ exports[`headCmd first metrics can just display occurTime head 1`] = `
 exports[`headCmd first metrics defaults to a hybrid display of occurTime and createTime 1`] = `
 [
   [
-    "       time  field      state    hid  
- 19:00:00[90m+0[39m  [7malcohol[27m             elfuv
- 19:30:00[90m+0[39m  [7msocialize[27m  [1mstart[22m    w1fla
-[90mc[39m20:00:00[90m+0[39m  [7mperson[27m              en61v
- 21:00:00[90m+0[39m  [7msocialize[27m  [1mend[22m      d7j7m
+    "       time  field      state      hid  
+ 19:00:00[90m+0[39m  [48;2;186;191;136m[38;2;0;0;0malcohol[39m[49m    [48;2;136;136;136m[38;2;102;102;102m[38;2;186;191;136m●[39m[39m[49m          elfuv
+ 19:30:00[90m+0[39m  [48;2;111;238;105m[38;2;0;0;0msocialize[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;111;238;105m[38;2;0;0;0mstart[39m[49m[48;2;111;238;105m[38;2;0;0;0m [39m[49m    w1fla
+[90mc[39m20:00:00[90m+0[39m  [48;2;139;10;68m[38;2;255;255;255mperson[39m[49m     [38;2;139;10;68m¢[39m          en61v
+ 21:00:00[90m+0[39m  [48;2;111;238;105m[38;2;0;0;0msocialize[39m[49m  [48;2;136;136;136m[38;2;102;102;102m∅[39m[49mend       d7j7m
 ",
   ],
 ]
@@ -60,10 +60,10 @@ exports[`headCmd first metrics defaults to a hybrid display of occurTime and cre
 exports[`headCmd will display all if there are less than 10 occurrences in db 1`] = `
 [
   [
-    "      time  field     state        hid  
-08:00:00[90m+0[39m  [7mcaffeine[27m               elfuv
-10:00:00[90m+0[39m  [7mproject[27m   household    en61v
-10:30:00[90m+0[39m  [7mproject[27m   [1mend[22m          d7j7m
+    "      time  field     state          hid  
+08:00:00[90m+0[39m  [48;2;231;36;248m[38;2;255;255;255mcaffeine[39m[49m  [48;2;136;136;136m[38;2;102;102;102m[38;2;231;36;248m●[39m[39m[49m              elfuv
+10:00:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m   [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;242;221;108m[38;2;0;0;0mhousehold[39m[49m[48;2;242;221;108m[38;2;0;0;0m [39m[49m    en61v
+10:30:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m   [48;2;242;221;108m[38;2;0;0;0m [39m[49mend           d7j7m
 ",
   ],
 ]

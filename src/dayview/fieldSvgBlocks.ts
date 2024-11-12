@@ -4,11 +4,10 @@ import { DatumState } from "../state/normalizeState";
 import { isoDatetime } from "../time/timeUtils";
 import { HIGH_STRING } from "../utils/startsWith";
 import { stateChangeView } from "../views/datumViews";
-import { md5Color } from "../utils/md5Color";
 import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 import { domdoc } from "./domdoc";
-import { FIELD_SPECS } from "../field/mySpecs";
 import { simplifyState } from "../state/simplifyState";
+import { getStateColor } from "../field/fieldColor";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -24,9 +23,6 @@ type DBlock = {
 };
 export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const { db, field, startUtc, endUtc, width, height } = args;
-
-  const spec = FIELD_SPECS[field] ?? {};
-  const fieldColor = spec.color ?? md5Color(field);
 
   const [blockRows, pointRows] = await Promise.all([
     (
@@ -96,16 +92,14 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .range([0, width]);
 
   dataPairs.forEach(([curr, next]) => {
-    const state = simplifyState(curr.state);
+    const simpleState = simplifyState(curr.state);
+    const state = Array.isArray(simpleState) // TODO: make a pattern representing array states
+      ? JSON.stringify(simpleState)
+      : simpleState;
     if (state === null || state === false) {
       return;
     }
-    const color =
-      state === true
-        ? fieldColor
-        : typeof state === "string"
-          ? (spec?.states?.[state]?.color ?? md5Color(state))
-          : md5Color(JSON.stringify(state));
+    const color = getStateColor({ state, field });
     svg
       .append("rect")
       .attr("class", `${field} ${state} block`)
@@ -119,15 +113,11 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
   const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
-    const state = simplifyState(point.state);
-    const color =
-      state === null || state === false
-        ? "black"
-        : state === true
-          ? fieldColor
-          : typeof state === "string"
-            ? (spec?.states?.[state]?.color ?? md5Color(state))
-            : md5Color(JSON.stringify(state));
+    const simpleState = simplifyState(point.state);
+    const state = Array.isArray(simpleState) // TODO: make a pattern representing array states
+      ? JSON.stringify(simpleState)
+      : simpleState;
+    const color = getStateColor({ state, field });
 
     svg
       .append("circle")
