@@ -91,14 +91,14 @@ describe("tableOutput", () => {
     const table = tableOutput([doc1, doc2, doc3], { show: Show.Standard });
 
     expect(table?.split("\n")[0]).toMatchInlineSnapshot(
-      `"      time  f   s       hid  "`
+      `"      time  f   s       hid  "`,
     );
     const doc4 = await switchCmd("hijklmnop qrstuvwx");
     const table2 = tableOutput([doc1, doc2, doc3, doc4], {
       show: Show.Standard,
     });
     expect(table2?.split("\n")[0]).toMatchInlineSnapshot(
-      `"      time  field      state         hid  "`
+      `"      time  field      state         hid  "`,
     );
   });
 
