@@ -9,7 +9,6 @@ import { switchCmd } from "../../commands/switchCmd";
 import { EitherDocument } from "../../documentControl/DatumDocument";
 import { Show } from "../../input/outputArgs";
 import {
-  coloredChalk,
   deterministicHumanIds,
   pass,
   resetTestDb,
