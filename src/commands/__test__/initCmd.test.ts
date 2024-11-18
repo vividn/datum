@@ -2,11 +2,7 @@ import fs from "fs";
 import { initCmd } from "../initCmd";
 import { pass } from "../../__test__/test-utils";
 import yaml from "yaml";
-
-const defaultConfigFile = fs.readFileSync(
-  `${__dirname}/../../config/defaultConfig.yml`,
-  "utf-8",
-);
+import { defaultConfigYml } from "../../config/defaultConfigYml";
 
 describe("initCmd", () => {
   beforeEach(() => {
@@ -32,7 +28,7 @@ describe("initCmd", () => {
     await initCmd({ nonInteractive: true });
     fs.accessSync("/tmp/datum/datumrc.yml");
     const configFile = fs.readFileSync("/tmp/datum/datumrc.yml", "utf-8");
-    expect(configFile).toEqual(defaultConfigFile);
+    expect(configFile).toEqual(defaultConfigYml);
   });
 
   it("fails if datumrc exists and --overwrite is not specified", async () => {
@@ -47,7 +43,7 @@ describe("initCmd", () => {
     await initCmd({ nonInteractive: true, overwrite: true });
     fs.accessSync("/tmp/datum/datumrc.yml");
     const configFile = fs.readFileSync("/tmp/datum/datumrc.yml", "utf-8");
-    expect(configFile).toEqual(defaultConfigFile);
+    expect(configFile).toEqual(defaultConfigYml);
   });
 
   it("uses environment variables if they are set", async () => {
