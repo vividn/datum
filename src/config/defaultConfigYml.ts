@@ -1,5 +1,4 @@
-export const defaultConfigYml = `
-# Datum Configuration
+export const defaultConfigYml = `# Datum Configuration
 
 # the directory where you will store you datum views, specs, and other (version controlled) files to setup your database
 project_dir: "%HOME%/datum"
