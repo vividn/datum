@@ -1,3 +1,4 @@
+export const defaultConfigYml = `
 # Datum Configuration
 
 # the directory where you will store you datum views, specs, and other (version controlled) files to setup your database
@@ -21,3 +22,4 @@ connection:
   # password to use for couchdb instances. Has no effect on pouchdb
   # Override wtih $COUCHDB_PASSWORD or with --password
   password: null
+` as const;

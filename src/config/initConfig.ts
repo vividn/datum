@@ -1,14 +1,10 @@
 import prompts, { PromptObject } from "prompts";
 import yaml from "yaml";
-import fs from "fs";
 import { InitCmdArgs } from "../commands/initCmd";
+import { defaultConfigYml } from "./defaultConfigYml";
 
 export async function initConfig(args: InitCmdArgs): Promise<yaml.Document> {
-  const newConfig = yaml.parseDocument(
-    fs.readFileSync(__dirname + "/defaultConfig.yml", "utf8"),
-  );
-
-  // prompts.override({ projectDir: "abcde" });
+  const newConfig = yaml.parseDocument(defaultConfigYml);
 
   let isLocalCouchRunning;
   try {
