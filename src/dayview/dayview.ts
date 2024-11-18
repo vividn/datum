@@ -135,18 +135,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .domain([new Date("2024-10-31"), new Date("2024-11-01")]) // 🎃
     .range([0, dataWidth]);
 
-  const timeAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
-
-  const axis = plot
-    .append("g")
-    .attr(
-      "transform",
-      `translate(${labelWidth}, ${plotHeight - timeAxisHeight})`,
-    );
-  axis.call(timeAxis).selectAll("path").attr("stroke", "white");
-  axis.call(timeAxis).selectAll("line").attr("stroke", "white");
-  axis.call(timeAxis).selectAll("text").attr("stroke", "white");
-
   const dataArea = plot
     .append("svg")
     .attr("class", "dataArea")
@@ -169,6 +157,35 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     }),
   );
 
+  const timeAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
+
+  const axis = plot
+    .append("g")
+    .attr(
+      "transform",
+      `translate(${labelWidth}, ${plotHeight - timeAxisHeight})`,
+    );
+  axis.call(timeAxis).selectAll("path").attr("stroke", "white");
+  axis.call(timeAxis).selectAll("line").attr("stroke", "white");
+  axis.call(timeAxis).selectAll("text").attr("stroke", "white");
+
+  // Add vertical grid lines every 3 hours
+  const gridLines = plot
+    .append("g")
+    .attr("transform", `translate(${labelWidth}, 0)`)
+    .selectAll(".gridline")
+    .data(timeScale.ticks(d3.utcHour.every(1)!))
+    .enter()
+    .append("line")
+    .attr("class", "gridline")
+    .attr("x1", (d) => timeScale(d))
+    .attr("x2", (d) => timeScale(d))
+    .attr("y1", 0)
+    .attr("y2", plotHeight - timeAxisHeight)
+    .attr("stroke", "white")
+    .attr("stroke-opacity", (d) => (d.getUTCHours() % 3 === 0 ? 0.4 : 0.1));
+
+  // Add warning icon at the top if there are any errors
   const allErrors = dataArea.selectAll(".error");
   if (allErrors.size() > 0) {
     const _errorIcon = svg
