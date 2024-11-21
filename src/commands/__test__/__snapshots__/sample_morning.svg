@@ -11,233 +11,233 @@
     </defs>
     <rect fill="black" height="100%" width="100%"/>
     <svg height="115" width="996" y="2" x="2" class="plot">
-        <g transform="translate(96, 0)">
+        <g transform="translate(80, 0)">
             <g transform="translate(0, 0)">
-                <text font-size="24" text-anchor="end" fill="white" dy="0.35em" y="16.666666666666668" x="-0.5em">
+                <text font-size="20" text-anchor="end" fill="white" dy="0.35em" y="16.666666666666668" x="-0.5em">
                     Wed
                 </text>
-                <text font-size="24" text-anchor="end" fill="white" dy="0.35em" y="50" x="-0.5em">
+                <text font-size="20" text-anchor="end" fill="white" dy="0.35em" y="50" x="-0.5em">
                     Nov 20
                 </text>
-                <text font-size="24" text-anchor="end" fill="white" dy="0.35em" y="83.33333333333333" x="-0.5em">
+                <text font-size="20" text-anchor="end" fill="white" dy="0.35em" y="83.33333333333333" x="-0.5em">
                     2024
                 </text>
             </g>
         </g>
-        <svg x="96" height="100" width="900" class="dataArea">
+        <svg x="80" height="100" width="916" class="dataArea">
             <svg y="0" class="day 2024-11-20">
                 <svg class="timechunk">
-                    <svg height="8" width="900" y="7.20959473773837" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="text">
-                        <rect fill="#06de5f" height="100%" width="18.750000217013906" y="0" x="325.0000037615741" class="text fiction_book block"/>
+                    <svg height="8" width="916" y="7.20959473773837" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="text">
+                        <rect fill="#06de5f" height="100%" width="19.08333355420524" y="0" x="330.7777816062243" class="text fiction_book block"/>
                     </svg>
-                    <svg height="8" width="900" y="23.72283353842795" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="project">
-                        <rect fill="#a6d414" height="100%" width="18.750000217013906" y="0" x="325.0000037615741" class="project german block"/>
+                    <svg height="8" width="916" y="23.72283353842795" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="project">
+                        <rect fill="#a6d414" height="100%" width="19.08333355420524" y="0" x="330.7777816062243" class="project german block"/>
                     </svg>
-                    <svg height="8" width="900" y="45.42104974761605" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="stretch">
-                        <rect fill="#7e8494" height="100%" width="4.375000050636572" y="0" x="356.2500041232639" class="stretch true block"/>
-                        <rect fill="#7e8494" height="100%" width="5.000000057870352" y="0" x="379.3750043909144" class="stretch true block"/>
+                    <svg height="8" width="916" y="45.42104974761605" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="stretch">
+                        <rect fill="#7e8494" height="100%" width="4.452777829314584" y="0" x="362.5833375298997" class="stretch true block"/>
+                        <rect fill="#7e8494" height="100%" width="5.088888947788064" y="0" x="386.11944891341955" class="stretch true block"/>
                     </svg>
-                    <svg height="8" width="900" y="53.940528308972716" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="pushup">
-                        <circle fill="#9453e7" r="3.125000036168982" cy="4" cx="386.25000447048615" class="pushup true point"/>
+                    <svg height="8" width="916" y="53.940528308972716" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="pushup">
+                        <circle fill="#9453e7" r="3.1805555923675417" cy="4" cx="393.1166712166281" class="pushup true point"/>
                     </svg>
-                    <svg height="8" width="900" y="60.52794650103897" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="run">
-                        <rect fill="#a53108" height="100%" width="18.750000217013906" y="0" x="360.6250041739005" class="run true block"/>
+                    <svg height="8" width="916" y="60.52794650103897" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="run">
+                        <rect fill="#a53108" height="100%" width="19.08333355420524" y="0" x="367.0361153592143" class="run true block"/>
                     </svg>
-                    <svg height="8" width="900" y="74.89816309325397" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="sleep">
-                        <rect fill="#c9fab3" height="100%" width="318.7500036892361" y="0" x="0" class="sleep true block"/>
-                        <use field="sleep" class="sleep error" height="9.375000108506946" width="9.375000108506946" y="-0.6875000542534728" x="314.06250363498265" href="#warning-icon"/>
+                    <svg height="8" width="916" y="74.89816309325397" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="sleep">
+                        <rect fill="#c9fab3" height="100%" width="324.41667042148924" y="0" x="0" class="sleep true block"/>
+                        <use field="sleep" class="sleep error" height="9.541666777102625" width="9.541666777102625" y="-0.7708333885513126" x="319.64583703293795" href="#warning-icon"/>
                     </svg>
-                    <svg height="8" width="900" y="86.29078911989927" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="caffeine">
-                        <circle fill="#e724f8" r="3.125000036168982" cy="4" cx="412.50000477430564" class="caffeine true point"/>
+                    <svg height="8" width="916" y="86.29078911989927" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="caffeine">
+                        <circle fill="#e724f8" r="3.1805555923675417" cy="4" cx="419.8333381925155" class="caffeine true point"/>
                     </svg>
-                    <svg height="8" width="900" y="87.01698424201459" x="0" preserveAspectRatio="none" viewBox="0 0 900 8" class="environment">
-                        <rect fill="#c30163" height="100%" width="28.12500032552083" y="0" x="356.2500041232639" class="environment outside block"/>
-                        <rect fill="#106a6c" height="100%" width="6.2500000723379685" y="0" x="384.37500444878475" class="environment home block"/>
-                        <rect fill="#c30163" height="100%" width="3.1250000361690127" y="0" x="390.6250045211227" class="environment outside block"/>
-                        <rect fill="#106a6c" height="100%" width="506.24999544270827" y="0" x="393.75000455729173" class="environment home block"/>
+                    <svg height="8" width="916" y="87.01698424201459" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="environment">
+                        <rect fill="#c30163" height="100%" width="28.625000331307888" y="0" x="362.5833375298997" class="environment outside block"/>
+                        <rect fill="#106a6c" height="100%" width="6.36111118473508" y="0" x="391.2083378612076" class="environment home block"/>
+                        <rect fill="#c30163" height="100%" width="3.1805555923675684" y="0" x="397.5694490459427" class="environment outside block"/>
+                        <rect fill="#106a6c" height="100%" width="515.2499953616898" y="0" x="400.75000463831026" class="environment home block"/>
                     </svg>
                 </svg>
             </svg>
         </svg>
-        <g text-anchor="middle" font-family="sans-serif" font-size="10" fill="none" transform="translate(96, 100)">
-            <path d="M0.5,6V0.5H900.5V6" stroke="white" class="domain"/>
+        <g text-anchor="middle" font-family="sans-serif" font-size="10" fill="none" transform="translate(80, 100)">
+            <path d="M0.5,6V0.5H916.5V6" stroke="white" class="domain"/>
             <g transform="translate(0.5,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     00
                 </text>
             </g>
-            <g transform="translate(38,0)" opacity="1" class="tick">
+            <g transform="translate(38.666666666666664,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     01
                 </text>
             </g>
-            <g transform="translate(75.5,0)" opacity="1" class="tick">
+            <g transform="translate(76.83333333333333,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     02
                 </text>
             </g>
-            <g transform="translate(113,0)" opacity="1" class="tick">
+            <g transform="translate(115,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     03
                 </text>
             </g>
-            <g transform="translate(150.5,0)" opacity="1" class="tick">
+            <g transform="translate(153.16666666666666,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     04
                 </text>
             </g>
-            <g transform="translate(188,0)" opacity="1" class="tick">
+            <g transform="translate(191.33333333333334,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     05
                 </text>
             </g>
-            <g transform="translate(225.5,0)" opacity="1" class="tick">
+            <g transform="translate(229.5,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     06
                 </text>
             </g>
-            <g transform="translate(263,0)" opacity="1" class="tick">
+            <g transform="translate(267.6666666666667,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     07
                 </text>
             </g>
-            <g transform="translate(300.5,0)" opacity="1" class="tick">
+            <g transform="translate(305.8333333333333,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     08
                 </text>
             </g>
-            <g transform="translate(338,0)" opacity="1" class="tick">
+            <g transform="translate(344,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     09
                 </text>
             </g>
-            <g transform="translate(375.5,0)" opacity="1" class="tick">
+            <g transform="translate(382.1666666666667,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     10
                 </text>
             </g>
-            <g transform="translate(413,0)" opacity="1" class="tick">
+            <g transform="translate(420.3333333333333,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     11
                 </text>
             </g>
-            <g transform="translate(450.5,0)" opacity="1" class="tick">
+            <g transform="translate(458.5,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     12
                 </text>
             </g>
-            <g transform="translate(487.99999999999994,0)" opacity="1" class="tick">
+            <g transform="translate(496.66666666666663,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     13
                 </text>
             </g>
-            <g transform="translate(525.5,0)" opacity="1" class="tick">
+            <g transform="translate(534.8333333333334,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     14
                 </text>
             </g>
-            <g transform="translate(563,0)" opacity="1" class="tick">
+            <g transform="translate(573,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     15
                 </text>
             </g>
-            <g transform="translate(600.5,0)" opacity="1" class="tick">
+            <g transform="translate(611.1666666666666,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     16
                 </text>
             </g>
-            <g transform="translate(638,0)" opacity="1" class="tick">
+            <g transform="translate(649.3333333333334,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     17
                 </text>
             </g>
-            <g transform="translate(675.5,0)" opacity="1" class="tick">
+            <g transform="translate(687.5,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     18
                 </text>
             </g>
-            <g transform="translate(713,0)" opacity="1" class="tick">
+            <g transform="translate(725.6666666666666,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     19
                 </text>
             </g>
-            <g transform="translate(750.5,0)" opacity="1" class="tick">
+            <g transform="translate(763.8333333333334,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     20
                 </text>
             </g>
-            <g transform="translate(788,0)" opacity="1" class="tick">
+            <g transform="translate(802,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     21
                 </text>
             </g>
-            <g transform="translate(825.5,0)" opacity="1" class="tick">
+            <g transform="translate(840.1666666666666,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     22
                 </text>
             </g>
-            <g transform="translate(863,0)" opacity="1" class="tick">
+            <g transform="translate(878.3333333333334,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     23
                 </text>
             </g>
-            <g transform="translate(900.5,0)" opacity="1" class="tick">
+            <g transform="translate(916.5,0)" opacity="1" class="tick">
                 <line y2="6" stroke="white"/>
                 <text style="font-size:9px" stroke="white" dy="0.71em" y="9" fill="white">
                     00
                 </text>
             </g>
         </g>
-        <g transform="translate(96, 0)">
+        <g transform="translate(80, 0)">
             <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="0" x1="0" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="37.5" x1="37.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="75" x1="75" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="112.5" x1="112.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="150" x1="150" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="187.5" x1="187.5" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="225" x1="225" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="262.5" x1="262.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="300" x1="300" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="337.5" x1="337.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="375" x1="375" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="412.5" x1="412.5" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="450" x1="450" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="487.49999999999994" x1="487.49999999999994" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="525" x1="525" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="562.5" x1="562.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="600" x1="600" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="637.5" x1="637.5" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="675" x1="675" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="712.5" x1="712.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="750" x1="750" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="787.5" x1="787.5" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="825" x1="825" class="gridline"/>
-            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="862.5" x1="862.5" class="gridline"/>
-            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="900" x1="900" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="38.166666666666664" x1="38.166666666666664" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="76.33333333333333" x1="76.33333333333333" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="114.5" x1="114.5" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="152.66666666666666" x1="152.66666666666666" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="190.83333333333334" x1="190.83333333333334" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="229" x1="229" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="267.1666666666667" x1="267.1666666666667" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="305.3333333333333" x1="305.3333333333333" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="343.5" x1="343.5" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="381.6666666666667" x1="381.6666666666667" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="419.8333333333333" x1="419.8333333333333" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="458" x1="458" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="496.16666666666663" x1="496.16666666666663" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="534.3333333333334" x1="534.3333333333334" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="572.5" x1="572.5" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="610.6666666666666" x1="610.6666666666666" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="648.8333333333334" x1="648.8333333333334" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="687" x1="687" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="725.1666666666666" x1="725.1666666666666" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="763.3333333333334" x1="763.3333333333334" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="801.5" x1="801.5" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="839.6666666666666" x1="839.6666666666666" class="gridline"/>
+            <line stroke-opacity="0.1" stroke="white" y2="100" y1="0" x2="877.8333333333334" x1="877.8333333333334" class="gridline"/>
+            <line stroke-opacity="0.4" stroke="white" y2="100" y1="0" x2="916" x1="916" class="gridline"/>
         </g>
     </svg>
     <use height="20" width="20" y="0" x="0" href="#warning-icon"/>

@@ -105,7 +105,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   });
   const dayLabelFmt = "ccc\nLLL dd\nyyyy";
   const nLabels = dayLabelFmt.split("\n").length;
-  const fontSize = Math.min(dayHeight / nLabels - 6, 24);
+  const fontSize = Math.min(dayHeight / nLabels - 6, 20);
   const labelWidth = fontSize * 4;
 
   const dateAxis = plot.append("g");
