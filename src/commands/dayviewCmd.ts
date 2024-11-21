@@ -47,7 +47,6 @@ dayviewArgs.add_argument("--day-height", {
 dayviewArgs.add_argument("--output-file", "-o", {
   help: "output file, should have a .html or .svg extension",
   type: "str",
-  required: true,
   dest: "outputFile",
 });
 
@@ -71,7 +70,7 @@ export type DayviewCmdArgs = MainDatumArgs & {
   width?: number;
   height?: number;
   dayHeight?: number;
-  outputFile: string;
+  outputFile?: string;
   watch?: boolean;
 };
 
@@ -99,5 +98,4 @@ export async function dayviewCmd(
   }
 
   await dayview(args);
-  console.log(new Date());
 }

@@ -108,6 +108,7 @@
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
     "typescript": "^5.6.2",
+    "xml-formatter": "^3.6.3",
     "yaml": "^2.5.1"
   },
   "pnpm": {
