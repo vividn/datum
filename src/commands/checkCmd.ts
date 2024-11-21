@@ -58,7 +58,7 @@ export async function checkCmd(
           `${field}: \n` +
           fieldErrors.errors.map((error) => error.message).join("\n") +
           "\n";
-        console.error(errorMessage);
+        console.warn(errorMessage);
       }
       return fieldErrors;
     }),
