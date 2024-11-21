@@ -31,8 +31,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   }
 
   const width = args.width ?? 2000;
-  const margin = 10;
-  const timeAxisHeight = 20;
+  const margin = 2;
+  const timeAxisHeight = args.timeAxisHeight ?? 15;
 
   const plotWidth = width - 2 * margin;
 
@@ -104,12 +104,14 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     return endDate.minus({ days: nDays - 1 - i }).toISODate();
   });
   const dayLabelFmt = "ccc\nLLL dd\nyyyy";
+  const nLabels = dayLabelFmt.split("\n").length;
+  const fontSize = Math.min(dayHeight / nLabels - 6, 20);
+  const labelWidth = fontSize * 4;
 
   const dateAxis = plot.append("g");
   days.forEach((date, i) => {
     const y = i * (dayHeight + interdayMargin);
     const dayLabels = DateTime.fromISO(date).toFormat(dayLabelFmt).split("\n");
-    const nLabels = dayLabels.length;
     const g = dateAxis.append("g").attr("transform", `translate(0, ${y})`);
 
     dayLabels.forEach((dayLabel, j) => {
@@ -119,11 +121,10 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
         .attr("dy", "0.35em")
         .attr("fill", "white")
         .attr("text-anchor", "end")
+        .attr("font-size", fontSize)
         .text(dayLabel);
     });
   });
-  // TODO: once actually rendering with a frontend make this dynamic
-  const labelWidth = 70;
 
   dateAxis.attr("transform", `translate(${labelWidth}, 0)`);
   const dataWidth = plotWidth - labelWidth;
@@ -162,10 +163,19 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr(
       "transform",
       `translate(${labelWidth}, ${plotHeight - timeAxisHeight})`,
-    );
-  axis.call(timeAxis).selectAll("path").attr("stroke", "white");
-  axis.call(timeAxis).selectAll("line").attr("stroke", "white");
-  axis.call(timeAxis).selectAll("text").attr("stroke", "white");
+    )
+    .call(timeAxis);
+  axis.selectAll("path").attr("stroke", "white");
+  axis.selectAll("line").attr("stroke", "white");
+  if (timeAxisHeight <= 6) {
+    axis.selectAll("text").remove();
+  } else {
+    axis
+      .selectAll("text")
+      .attr("stroke", "white")
+      .attr("fill", "white")
+      .style("font-size", `${timeAxisHeight - 6}px`);
+  }
 
   // Add vertical grid lines every 3 hours
   const gridLines = plot
