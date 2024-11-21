@@ -44,6 +44,12 @@ dayviewArgs.add_argument("--day-height", {
   dest: "dayHeight",
 });
 
+dayviewArgs.add_argument("--time-axis-height", {
+  help: "height of the time axis",
+  type: "int",
+  dest: "timeAxisHeight",
+});
+
 dayviewArgs.add_argument("--output-file", "-o", {
   help: "output file, should have a .html or .svg extension",
   type: "str",
@@ -69,6 +75,7 @@ export type DayviewCmdArgs = MainDatumArgs & {
   endDate?: string;
   width?: number;
   height?: number;
+  timeAxisHeight?: number;
   dayHeight?: number;
   outputFile?: string;
   watch?: boolean;
