@@ -6,6 +6,7 @@ import { DateTime } from "luxon";
 import { domdoc } from "./domdoc";
 import { singleDay } from "./singleday";
 import { parseDateStr } from "../time/parseDateStr";
+import { warningIcon } from "./symbols/warningIcon";
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
@@ -78,15 +79,11 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("width", width)
     .attr("height", height);
 
-  const warning_icon = fs.readFileSync(
-    __dirname + "/symbols/warning_sign.svg",
-    "utf8",
-  );
   svg
     .append("defs")
     .append("symbol")
     .attr("id", "warning-icon")
-    .html(() => warning_icon);
+    .html(() => warningIcon);
 
   const _background = svg
     .append("rect")
