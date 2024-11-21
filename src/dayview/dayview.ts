@@ -7,8 +7,9 @@ import { domdoc } from "./domdoc";
 import { singleDay } from "./singleday";
 import { parseDateStr } from "../time/parseDateStr";
 import { warningIcon } from "./symbols/warningIcon";
+import xmlFormatter from "xml-formatter";
 
-export async function dayview(args: DayviewCmdArgs): Promise<void> {
+export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const db = connectDb(args);
   const endDate: DateTime<true> = args.endDate
     ? parseDateStr({ dateStr: args.endDate })
@@ -210,10 +211,17 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
 
   // return svg.node()!.outerHTML;
   const outputFile = args.outputFile;
+  const prettySvg = xmlFormatter(svg.node()!.outerHTML);
+  if (outputFile === undefined) {
+    return prettySvg;
+  }
   if (outputFile.endsWith(".svg")) {
-    fs.writeFileSync(outputFile, svg.node()!.outerHTML);
+    fs.writeFileSync(outputFile, prettySvg);
+    return prettySvg;
   } else if (outputFile.endsWith(".html")) {
-    fs.writeFileSync(outputFile, document.documentElement.outerHTML);
+    const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
+    fs.writeFileSync(outputFile, prettyHtml);
+    return prettySvg;
   } else {
     throw new Error("output file must have a .html or .svg, or extension");
   }
