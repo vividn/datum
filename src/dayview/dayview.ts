@@ -212,13 +212,12 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   }
 
   // return svg.node()!.outerHTML;
-  const dir = "/tmp/";
-  fs.writeFileSync(dir + "dayview.svg", svg.node()!.outerHTML);
-
-  // auto refresh html
-  // const meta = document.createElement("meta");
-  // meta.setAttribute("http-equiv", "refresh");
-  // meta.setAttribute("content", "1");
-  // document.head.append(meta);
-  fs.writeFileSync(dir + "dayview.html", document.documentElement.outerHTML);
+  const outputFile = args.outputFile;
+  if (outputFile.endsWith(".svg")) {
+    fs.writeFileSync(outputFile, svg.node()!.outerHTML);
+  } else if (outputFile.endsWith(".html")) {
+    fs.writeFileSync(outputFile, document.documentElement.outerHTML);
+  } else {
+    throw new Error("output file must have a .html or .svg, or extension");
+  }
 }
