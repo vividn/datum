@@ -1,4 +1,8 @@
-import { mockedLogLifecycle, mockSpecs, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  mockedLogLifecycle,
+  mockSpecs,
+  testDbLifecycle,
+} from "../../__test__/test-utils";
 import { generateSampleMorning } from "../../__test__/generateSampleMorning";
 import { setupCmd } from "../setupCmd";
 import { dayviewCmd } from "../dayviewCmd";
