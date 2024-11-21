@@ -31,8 +31,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   }
 
   const width = args.width ?? 2000;
-  const margin = 10;
-  const timeAxisHeight = 20;
+  const margin = 2;
+  const timeAxisHeight = args.timeAxisHeight ?? 15;
 
   const plotWidth = width - 2 * margin;
 
@@ -162,10 +162,19 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr(
       "transform",
       `translate(${labelWidth}, ${plotHeight - timeAxisHeight})`,
-    );
-  axis.call(timeAxis).selectAll("path").attr("stroke", "white");
-  axis.call(timeAxis).selectAll("line").attr("stroke", "white");
-  axis.call(timeAxis).selectAll("text").attr("stroke", "white");
+    )
+    .call(timeAxis);
+  axis.selectAll("path").attr("stroke", "white");
+  axis.selectAll("line").attr("stroke", "white");
+  if (timeAxisHeight <= 6) {
+    axis.selectAll("text").remove();
+  } else {
+    axis
+      .selectAll("text")
+      .attr("stroke", "white")
+      .attr("fill", "white")
+      .style("font-size", `${timeAxisHeight - 6}px`);
+  }
 
   // Add vertical grid lines every 3 hours
   const gridLines = plot
