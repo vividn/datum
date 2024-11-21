@@ -138,7 +138,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
 
   const warning_r = circle_r * 1.5;
   for (const error of fieldErrors.errors) {
-    console.error(error.message);
+    console.warn(error.message);
     svg
       .append("use")
       .attr("xlink:href", "#warning-icon")

@@ -6,9 +6,9 @@ export function domdoc() {
 <html>
   <head>
     <title>dayview</title>
-    <atem http-equiv="refresh" content="5">
+    <script type="text/javascript" src="https://livejs.com/live.js"></script>
   </head>
-  <body>
+  <body style="background-color: black">
   </body>
 </html>
 `);

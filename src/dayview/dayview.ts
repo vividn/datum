@@ -5,18 +5,72 @@ import { connectDb } from "../auth/connectDb";
 import { DateTime } from "luxon";
 import { domdoc } from "./domdoc";
 import { singleDay } from "./singleday";
+import { parseDateStr } from "../time/parseDateStr";
 
 export async function dayview(args: DayviewCmdArgs): Promise<void> {
   const db = connectDb(args);
-  const nDays = 8;
-  const endDate = DateTime.local();
+  const endDate: DateTime<true> = args.endDate
+    ? parseDateStr({ dateStr: args.endDate })
+    : DateTime.local();
+
+  let nDays = args.nDays;
+  if (args.startDate !== undefined) {
+    const startDate = parseDateStr({ dateStr: args.startDate });
+    const diffDays = endDate.diff(startDate, "days").days + 1;
+    if (nDays === undefined) {
+      nDays = diffDays;
+    } else if (nDays !== diffDays) {
+      throw new Error(
+        `nDays ${nDays} does not match the difference between startDate and endDate`,
+      );
+    }
+  } else if (nDays === undefined) {
+    nDays = 1;
+  }
+
+  const width = args.width ?? 2000;
+  const margin = 10;
+  const timeAxisHeight = 20;
+
+  const plotWidth = width - 2 * margin;
+
+  let height: number,
+    dayHeight: number,
+    dataHeight: number,
+    plotHeight: number,
+    interdayMargin: number;
+  if (args.height === undefined && args.dayHeight === undefined) {
+    dayHeight = 100;
+    interdayMargin = 15;
+    dataHeight = nDays * (dayHeight + interdayMargin) - interdayMargin;
+    plotHeight = dataHeight + timeAxisHeight;
+    height = plotHeight + 2 * margin;
+  } else if (args.height !== undefined && args.dayHeight === undefined) {
+    height = args.height;
+    plotHeight = height - 2 * margin;
+    dataHeight = plotHeight - timeAxisHeight;
+    interdayMargin = 15;
+    dayHeight = (dataHeight + interdayMargin) / nDays - interdayMargin;
+  } else if (args.height === undefined && args.dayHeight !== undefined) {
+    dayHeight = args.dayHeight;
+    interdayMargin = 15;
+    dataHeight = nDays * dayHeight + (nDays - 1) * interdayMargin;
+    plotHeight = dataHeight + timeAxisHeight;
+    height = plotHeight + 2 * margin;
+  } else {
+    height = args.height!;
+    dayHeight = args.dayHeight!;
+    plotHeight = height - 2 * margin;
+    dataHeight = plotHeight - timeAxisHeight;
+    interdayMargin = (dataHeight - dayHeight * nDays) / (nDays - 1);
+    if (interdayMargin < 0) {
+      throw new Error(
+        "days are overlapping, set larget height or smaller day height",
+      );
+    }
+  }
 
   const document = domdoc();
-
-  const width = 1200;
-  const height = 550;
-  const margin = 10;
-  const interdayMargin = 15;
 
   const svg = d3
     .select(document.body)
@@ -40,9 +94,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("height", "100%")
     .attr("fill", "black");
 
-  const plotWidth = width - 2 * margin;
-  const plotHeight = height - 2 * margin;
-
   const plot = svg
     .append("svg")
     .attr("class", "plot")
@@ -51,13 +102,9 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
     .attr("width", plotWidth)
     .attr("height", plotHeight);
 
-  const timeAxisHeight = 20;
-
-  const dataHeight = plotHeight - timeAxisHeight;
   const days = Array.from({ length: nDays }, (_, i) => {
     return endDate.minus({ days: nDays - 1 - i }).toISODate();
   });
-  const dayHeight = (dataHeight - interdayMargin * (nDays - 1)) / nDays;
   const dayLabelFmt = "ccc\nLLL dd\nyyyy";
 
   const dateAxis = plot.append("g");
@@ -165,13 +212,12 @@ export async function dayview(args: DayviewCmdArgs): Promise<void> {
   }
 
   // return svg.node()!.outerHTML;
-  const dir = "/tmp/";
-  fs.writeFileSync(dir + "dayview.svg", svg.node()!.outerHTML);
-
-  // auto refresh html
-  // const meta = document.createElement("meta");
-  // meta.setAttribute("http-equiv", "refresh");
-  // meta.setAttribute("content", "1");
-  // document.head.append(meta);
-  fs.writeFileSync(dir + "dayview.html", document.documentElement.outerHTML);
+  const outputFile = args.outputFile;
+  if (outputFile.endsWith(".svg")) {
+    fs.writeFileSync(outputFile, svg.node()!.outerHTML);
+  } else if (outputFile.endsWith(".html")) {
+    fs.writeFileSync(outputFile, document.documentElement.outerHTML);
+  } else {
+    throw new Error("output file must have a .html or .svg, or extension");
+  }
 }
