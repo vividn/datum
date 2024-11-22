@@ -53,6 +53,7 @@ const FLAGS: Record<string, string> = {
   nl: "🇳🇱",
   da: "🇩🇰",
   sv: "🇸🇪",
+  hi: "🇮🇳"
 } as const;
 
 async function word(argsOrCli: WordArgs | string | string[]): Promise<void> {
@@ -88,9 +89,25 @@ async function word(argsOrCli: WordArgs | string | string[]): Promise<void> {
         : undefined;
     const bulletedEnglish = english?.map((en) => `• ${en}`).join("\n");
 
-    header = `${FLAGS[data.srcLang] ?? data.srcLang} ${data.pos} ${picocolors.dim(hid)}`;
-    srcWord = picocolors.yellow(picocolors.bold(text));
-    translation = bulletedEnglish ?? " <english missing>";
+    const textToTranslate = english ? english[0] : "";
+    const externalLang = "hi";
+
+    if (args.start != externalLang) {
+        header = `${FLAGS[data.srcLang] ?? data.srcLang} ${data.pos} ${picocolors.dim(hid)}`;
+        srcWord = picocolors.yellow(picocolors.bold(text));
+        translation = bulletedEnglish ?? " <english missing>";
+    } else {
+        exec(`trans :${externalLang} "${textToTranslate}" | head -n 5 | tail -n 2 | tr "\n" " "`,
+            (error, stdout, stderr) => {
+          if (error || stderr) {
+            console.log(`Translation to ${externalLang} failed`);
+          } else {
+                header = `${FLAGS[externalLang] ?? externalLang} ${picocolors.dim(hid)}`;
+                srcWord = picocolors.yellow(picocolors.bold(stdout.trim()));
+                translation = textToTranslate ?? " <english missing>";
+          }
+        });
+    }
   }
 
   let inPrompt = false;
