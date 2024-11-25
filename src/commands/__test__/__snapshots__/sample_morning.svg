@@ -241,7 +241,7 @@
         </g>
     </svg>
     <use height="20" width="20" y="99" x="0" href="#warning-icon"/>
-    <rect fill="red" height="20" width="32.5" y="99" x="25"/>
+    <rect fill="red" height="20" width="40" y="99" x="25"/>
     <text text-anchor="start" fill="black" dy="0.35em" y="109" x="25">
         sleep
     </text>
