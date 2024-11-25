@@ -26,15 +26,15 @@ rules:
   eqeqeq: error
   "@typescript-eslint/no-explicit-any": off
   "@typescript-eslint/no-non-null-assertion": off
-  semi: ["error", "always"]
+  semi: ["warn", "always"]
   "@typescript-eslint/no-unused-vars": "off"
-  "unused-imports/no-unused-imports": "error"
+  "unused-imports/no-unused-imports": "warn"
   "unused-imports/no-unused-vars": [
       "warn",
       { "vars": "all", "varsIgnorePattern": "^_", "args": "after-used", "argsIgnorePattern": "^_" }
   ]
   "import/no-default-export": "error"
-  "prettier/prettier": "error"
+  "prettier/prettier": "warn"
   "no-constant-condition": ["error", "checkLoops": false]
   "no-console": ["warn", { allow: ["log", "warn", "error", "info", "clear"] }]
 
