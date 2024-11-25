@@ -193,14 +193,14 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("stroke", "white")
     .attr("stroke-opacity", (d) => (d.getUTCHours() % 3 === 0 ? 0.4 : 0.1));
 
-  // Add warning icon at the top if there are any errors
+  // Add warning icon at the bottom if there are any errors
   const allErrors = dataArea.selectAll(".error");
   if (allErrors.size() > 0) {
     const _errorIcon = svg
       .append("use")
       .attr("href", "#warning-icon")
       .attr("x", 0)
-      .attr("y", 0)
+      .attr("y", height - 20)
       .attr("width", 20)
       .attr("height", 20);
 
@@ -209,14 +209,24 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
       const field = d3.select(this).attr("field");
       erroredFields.add(field);
     });
+
+    const errorText = Array.from(erroredFields).join(", ");
+    const _errorBackground = svg
+      .append("rect")
+      .attr("x", 25)
+      .attr("y", height - 20)
+      .attr("width", errorText.length * 8)
+      .attr("height", 20)
+      .attr("fill", "red");
+
     const _errorText = svg
       .append("text")
       .attr("x", 25)
-      .attr("y", 10)
+      .attr("y", height - 10)
       .attr("dy", "0.35em")
-      .attr("fill", "red")
+      .attr("fill", "black")
       .attr("text-anchor", "start")
-      .text(Array.from(erroredFields).join(", "));
+      .text(errorText);
   }
 
   // return svg.node()!.outerHTML;
