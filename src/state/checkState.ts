@@ -128,7 +128,7 @@ export async function checkState({
         if (isEqual(thisRow.value[0], thisRow.value[1])) {
           const occurTime = thisRow.key[1];
           const problem = `state ${JSON.stringify(thisRow.value[0])} is repeated`;
-          const error = new StateChangeError({
+          const error = new RepeatedStateError({
             message: `${field} ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
             ids: [previousRow.id, thisRow.id],
             occurTime: thisRow.key[1],

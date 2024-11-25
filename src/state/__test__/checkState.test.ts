@@ -6,6 +6,7 @@ import {
   checkState,
   LastStateError,
   OverlappingBlockError,
+  RepeatedStateError,
   StateErrorSummary,
 } from "../checkState";
 
@@ -62,7 +63,17 @@ describe("checkState", () => {
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
-  it("throws a StateChange error if ")
+  it("throws a RepeatedStateError if the same state is repeated", async () => {
+    await switchCmd("field state1");
+    setNow("+5");
+    await switchCmd("field state1");
+
+    const errors = await checkState({ db, field: "field", failOnError: false });
+    expect(errors.ok).toBe(false);
+    expect(errors.errors).toHaveLength(1);
+    expect(errors.errors[0].name).toEqual("RepeatedStateError");
+    expect(errors.errors[0]).toMatchSnapshot();
+  });
 
   it("throws an OverlappingBlockError if a state change block is inserted and overlaps another state change", async () => {
     setNow("10:45");
@@ -184,6 +195,10 @@ describe("checkState", () => {
     setNow("+5");
     await switchCmd("field overlappingBlock dur=10");
     setNow("2024-09-05T15:00:00Z");
+    await switchCmd("field repeatedState");
+    setNow("+10");
+    await switchCmd("field repeatedState");
+    setNow("2024-09-05T16:00:00Z");
     await switchCmd("field state5");
     setNow("+10");
     await switchCmd("field state6");
@@ -194,6 +209,9 @@ describe("checkState", () => {
     await expect(
       checkState({ db, field: "field", startTime: "2024-09-05T13:55:00Z" }),
     ).rejects.toThrow(OverlappingBlockError);
+    await expect(
+      checkState({ db, field: "field", startTime: "2024-09-05T14:45:00Z" }),
+    ).rejects.toThrow(RepeatedStateError);
     await expect(
       checkState({
         db,
@@ -213,7 +231,7 @@ describe("checkState", () => {
       checkState({
         db,
         field: "field",
-        startTime: "2024-09-05T14:55:00Z",
+        startTime: "2024-09-05T15:55:00Z",
       }),
     ).resolves.toEqual(noErrors);
 
@@ -223,7 +241,7 @@ describe("checkState", () => {
       failOnError: false,
     });
     expect(allErrors.ok).toBe(false);
-    expect(allErrors.errors).toHaveLength(2);
+    expect(allErrors.errors).toHaveLength(3);
     expect(allErrors.errors).toMatchSnapshot();
   });
 
