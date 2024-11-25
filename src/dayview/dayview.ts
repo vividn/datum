@@ -215,7 +215,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
       .append("rect")
       .attr("x", 25)
       .attr("y", height - 20)
-      .attr("width", errorText.length * 6.5)
+      .attr("width", errorText.length * 8)
       .attr("height", 20)
       .attr("fill", "red");
 
