@@ -4,10 +4,13 @@ exports[`checkState correctly handles based off of a given startTime and/or endT
 [
   [LastStateError: field 2024-09-05T13:15:00.000Z: lastState does not match actual last state. ids: [field:2024-09-05T13:05:00.000Z, field:2024-09-05T13:15:00.000Z]],
   [OverlappingBlockError: field 2024-09-05T14:00:00.000Z: State changes within a block. ids: [field:2024-09-05T14:05:00.000Z, field:2024-09-05T14:00:00.000Z ]}],
+  [RepeatedStateError: field 2024-09-05T15:10:00.000Z: state "repeatedState" is repeated. ids: [field:2024-09-05T15:00:00.000Z, field:2024-09-05T15:10:00.000Z]],
 ]
 `;
 
 exports[`checkState throws a LastStateError if lastState does not reflect the last state correctly 1`] = `[LastStateError: field 2024-09-05T10:20:00.000Z: lastState does not match actual last state. ids: [field:2024-09-05T10:15:00.000Z, field:2024-09-05T10:20:00.000Z]]`;
+
+exports[`checkState throws a RepeatedStateError if the same state is repeated 1`] = `[RepeatedStateError: field 2024-09-05T10:20:00.000Z: state "state1" is repeated. ids: [field:2024-09-05T10:15:00.000Z, field:2024-09-05T10:20:00.000Z]]`;
 
 exports[`checkState throws an OverlappingBlockError if a state change block is inserted and overlaps another state change 1`] = `
 [

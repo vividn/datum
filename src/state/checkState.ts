@@ -43,6 +43,12 @@ export class LastStateError extends StateChangeError {
     Object.setPrototypeOf(this, LastStateError.prototype);
   }
 }
+export class RepeatedStateError extends StateChangeError {
+  constructor(args: StateChangeErrorType) {
+    super(args);
+    Object.setPrototypeOf(this, RepeatedStateError.prototype);
+  }
+}
 
 export class OverlappingBlockError extends StateChangeError {
   constructor(args: StateChangeErrorType) {
@@ -118,6 +124,23 @@ export async function checkState({
       const previousRow = i === 0 ? initialRow : stateChangeRows[i - 1];
       const thisRow = stateChangeRows[i];
       if (isEqual(previousRow.value[1], thisRow.value[0])) {
+        // if state does not change at all, then also an error
+        if (isEqual(thisRow.value[0], thisRow.value[1])) {
+          const occurTime = thisRow.key[1];
+          const problem = `state ${JSON.stringify(thisRow.value[0])} is repeated`;
+          const error = new RepeatedStateError({
+            message: `${field} ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
+            ids: [previousRow.id, thisRow.id],
+            occurTime: thisRow.key[1],
+            field,
+          });
+          if (failOnError) {
+            throw error;
+          } else {
+            summary.ok = false;
+            summary.errors.push(error);
+          }
+        }
         continue processRowsLoop;
       }
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
