@@ -43,6 +43,12 @@ export class LastStateError extends StateChangeError {
     Object.setPrototypeOf(this, LastStateError.prototype);
   }
 }
+export class RepeatedStateError extends StateChangeError {
+  constructor(args: StateChangeErrorType) {
+    super(args);
+    Object.setPrototypeOf(this, RepeatedStateError.prototype);
+  }
+}
 
 export class OverlappingBlockError extends StateChangeError {
   constructor(args: StateChangeErrorType) {
@@ -121,7 +127,7 @@ export async function checkState({
         // if state does not change at all, then also an error
         if (isEqual(thisRow.value[0], thisRow.value[1])) {
           const occurTime = thisRow.key[1];
-          const problem = "State does not change";
+          const problem = `state ${JSON.stringify(thisRow.value[0])} is repeated`;
           const error = new StateChangeError({
             message: `${field} ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
             ids: [previousRow.id, thisRow.id],

@@ -62,6 +62,8 @@ describe("checkState", () => {
     expect(errors.errors[0]).toMatchSnapshot();
   });
 
+  it("throws a StateChange error if ")
+
   it("throws an OverlappingBlockError if a state change block is inserted and overlaps another state change", async () => {
     setNow("10:45");
     await switchCmd("project emails");
