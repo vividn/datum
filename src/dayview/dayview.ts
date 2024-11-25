@@ -209,14 +209,24 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
       const field = d3.select(this).attr("field");
       erroredFields.add(field);
     });
+
+    const errorText = Array.from(erroredFields).join(", ");
+    const _errorBackground = svg
+      .append("rect")
+      .attr("x", 25)
+      .attr("y", height - 20)
+      .attr("width", errorText.length * 6.5)
+      .attr("height", 20)
+      .attr("fill", "red");
+
     const _errorText = svg
       .append("text")
       .attr("x", 25)
       .attr("y", height - 10)
       .attr("dy", "0.35em")
-      .attr("fill", "red")
+      .attr("fill", "black")
       .attr("text-anchor", "start")
-      .text(Array.from(erroredFields).join(", "));
+      .text(errorText);
   }
 
   // return svg.node()!.outerHTML;
