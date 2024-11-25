@@ -178,7 +178,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   }
 
   // Add vertical grid lines every 3 hours
-  const gridLines = plot
+  const _gridLines = plot
     .append("g")
     .attr("transform", `translate(${labelWidth}, 0)`)
     .selectAll(".gridline")

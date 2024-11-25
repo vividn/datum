@@ -27,8 +27,8 @@
     "buildwatch": "tsc -p . -w --skipLibCheck",
     "system": "rm -rf ./node_modules && pnpm i --production && pnpm build && pnpm --global add $PWD",
     "refresh": "rm -rf ./node_modules && pnpm install",
-    "lint": "eslint src",
-    "fmt": "eslint src --fix",
+    "lint": "eslint src --max-warnings 0",
+    "fmt": "eslint src --fix --max-warnings 0",
     "preinstall": "npx only-allow pnpm"
   },
   "devDependencies": {
