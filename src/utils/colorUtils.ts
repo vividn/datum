@@ -37,14 +37,14 @@ export function getContrastTextColor(
   switch (messageType) {
     case "warning":
       // Use darker yellow if background is bright or yellowish
-      if (isBright || (bgR > 200 && bgG > 200)) {
-        return "#8B8000"; // Dark yellow
+      if (bgR > 200 && bgG > 200) {
+        return "#bB8000"; // Yellow orange
       }
       return "#FFD700"; // Bright yellow
 
     case "error":
       // Use darker red if background is bright or reddish
-      if (isBright || bgR > 200) {
+      if (bgR > 200) {
         return "#8B0000"; // Dark red
       }
       return "#FF0000"; // Bright red
