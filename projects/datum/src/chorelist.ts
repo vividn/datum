@@ -147,7 +147,7 @@ async function chorelist(args: ChorelistArgs): Promise<string> {
       : iti === undefined
         ? chalk.white
         : daysOverdue > iti
-          ? chalk.red
+          ? chalk.red.inverse
           : daysOverdue > iti / 2
             ? chalk.yellow
             : chalk.white;
