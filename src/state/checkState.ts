@@ -118,6 +118,23 @@ export async function checkState({
       const previousRow = i === 0 ? initialRow : stateChangeRows[i - 1];
       const thisRow = stateChangeRows[i];
       if (isEqual(previousRow.value[1], thisRow.value[0])) {
+        // if state does not change at all, then also an error
+        if (isEqual(thisRow.value[0], thisRow.value[1])) {
+          const occurTime = thisRow.key[1];
+          const problem = "State does not change";
+          const error = new StateChangeError({
+            message: `${field} ${occurTime}: ${problem}. ids: [${previousRow.id}, ${thisRow.id}]`,
+            ids: [previousRow.id, thisRow.id],
+            occurTime: thisRow.key[1],
+            field,
+          });
+          if (failOnError) {
+            throw error;
+          } else {
+            summary.ok = false;
+            summary.errors.push(error);
+          }
+        }
         continue processRowsLoop;
       }
       // use the block times view to determine if two blocks are overlapping or a block is overlapping with a state change
