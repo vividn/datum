@@ -23,7 +23,7 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
       const spec = getFieldSpec(field);
       const specY =
         spec.y ?? parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32);
-      const defaultHeight = 0.08;
+      const defaultHeight = 0.12;
 
       let pY: number, pHeight: number;
       if (spec.height) {
