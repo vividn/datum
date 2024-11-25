@@ -27,30 +27,30 @@
         <svg x="80" height="100" width="916" class="dataArea">
             <svg y="0" class="day 2024-11-20">
                 <svg class="timechunk">
-                    <svg height="8" width="916" y="7.20959473773837" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="text">
+                    <svg height="12" width="916" y="5.209594737738371" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="text">
                         <rect fill="#06de5f" height="100%" width="19.08333355420524" y="0" x="330.7777816062243" class="text fiction_book block"/>
                     </svg>
-                    <svg height="8" width="916" y="23.72283353842795" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="project">
+                    <svg height="12" width="916" y="21.72283353842795" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="project">
                         <rect fill="#a6d414" height="100%" width="19.08333355420524" y="0" x="330.7777816062243" class="project german block"/>
                     </svg>
-                    <svg height="8" width="916" y="45.42104974761605" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="stretch">
+                    <svg height="12" width="916" y="43.42104974761605" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="stretch">
                         <rect fill="#7e8494" height="100%" width="4.452777829314584" y="0" x="362.5833375298997" class="stretch true block"/>
                         <rect fill="#7e8494" height="100%" width="5.088888947788064" y="0" x="386.11944891341955" class="stretch true block"/>
                     </svg>
-                    <svg height="8" width="916" y="53.940528308972716" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="pushup">
-                        <circle fill="#9453e7" r="3.1805555923675417" cy="4" cx="393.1166712166281" class="pushup true point"/>
+                    <svg height="12" width="916" y="51.94052830897271" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="pushup">
+                        <circle fill="#9453e7" r="3.1805555923675417" cy="6" cx="393.1166712166281" class="pushup true point"/>
                     </svg>
-                    <svg height="8" width="916" y="60.52794650103897" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="run">
+                    <svg height="12" width="916" y="58.52794650103896" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="run">
                         <rect fill="#a53108" height="100%" width="19.08333355420524" y="0" x="367.0361153592143" class="run true block"/>
                     </svg>
-                    <svg height="8" width="916" y="74.89816309325397" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="sleep">
+                    <svg height="12" width="916" y="72.89816309325397" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="sleep">
                         <rect fill="#c9fab3" height="100%" width="324.41667042148924" y="0" x="0" class="sleep true block"/>
-                        <use field="sleep" class="sleep error" height="9.541666777102625" width="9.541666777102625" y="-0.7708333885513126" x="319.64583703293795" href="#warning-icon"/>
+                        <use field="sleep" class="sleep error" height="9.541666777102625" width="9.541666777102625" y="1.2291666114486874" x="319.64583703293795" href="#warning-icon"/>
                     </svg>
-                    <svg height="8" width="916" y="86.29078911989927" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="caffeine">
-                        <circle fill="#e724f8" r="3.1805555923675417" cy="4" cx="419.8333381925155" class="caffeine true point"/>
+                    <svg height="12" width="916" y="84.29078911989927" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="caffeine">
+                        <circle fill="#e724f8" r="3.1805555923675417" cy="6" cx="419.8333381925155" class="caffeine true point"/>
                     </svg>
-                    <svg height="8" width="916" y="87.01698424201459" x="0" preserveAspectRatio="none" viewBox="0 0 916 8" class="environment">
+                    <svg height="12" width="916" y="85.01698424201459" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="environment">
                         <rect fill="#c30163" height="100%" width="28.625000331307888" y="0" x="362.5833375298997" class="environment outside block"/>
                         <rect fill="#106a6c" height="100%" width="6.36111118473508" y="0" x="391.2083378612076" class="environment home block"/>
                         <rect fill="#c30163" height="100%" width="3.1805555923675684" y="0" x="397.5694490459427" class="environment outside block"/>
