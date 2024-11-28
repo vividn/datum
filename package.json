@@ -103,7 +103,7 @@
     "prompt-sync": "^4.2.0",
     "prompts": "^2.4.2",
     "relaxed-json": "^1.0.3",
-    "shell-quote": "^1.8.1",
+    "shell-quote": "^1.8.2",
     "string-width": "^4.2.0",
     "string.ify": "^1.0.64",
     "tmp-promise": "^3.0.3",
