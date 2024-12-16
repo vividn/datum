@@ -11,7 +11,6 @@ import { Show } from "../../../src/input/outputArgs";
 import { mapCmd } from "../../../src/commands/mapCmd";
 import { EqDoc, TxDoc, XcDoc } from "../views/balance";
 import chalk from "chalk";
-import printf from "printf";
 import { zeroDate } from "./eqcheck";
 import { HIGH_STRING } from "../../../src/utils/startsWith";
 import { DateTime } from "luxon";
@@ -19,6 +18,8 @@ import { parseDateStr } from "../../../src/time/parseDateStr";
 import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
 import { ArgumentParser } from "argparse";
 import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
+import Table from "cli-table3";
+import { sprintf } from "sprintf-js";
 
 type TransactionViewInput = {
   args: DbArgs;
@@ -139,11 +140,13 @@ export async function transactionView({
     })
   ).rows as PouchDB.Query.Response<EqDoc>["rows"];
 
+  console.log(chalk.yellow.bold(`${account} ${currency}`));
+
   const width = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
   const hidWidth = 4;
   const toAccountWidth = 10;
-  const arrowWidth = 1;
+  const arrowWidth = 3;
   const amountWidth =
     Math.floor(
       Math.log10(
@@ -185,15 +188,43 @@ export async function transactionView({
     amountWidth -
     runningTotalWidth -
     6;
-  const format =
-    `%-${dateWidth}.${dateWidth}s ` +
-    `%-${hidWidth}.${hidWidth}s ` +
-    `%-${commentWidth}.${commentWidth}s ` +
-    `%${toAccountWidth}.${toAccountWidth}s ` +
-    `%${arrowWidth}.${arrowWidth}s ` +
-    `%${amountWidth}.${decimals}f ` +
-    `%${runningTotalWidth}.${decimals}f`;
-  console.log(chalk.yellow.bold(`${account} ${currency}`));
+
+  const table = new Table({
+    head: ["Date", "HID", "Comment", "To Account", "↔", "Amount", "Balance"],
+    style: {
+      head: ["yellow"],
+      border: ["grey"],
+      "padding-left": 0,
+      "padding-right": 0,
+    },
+    chars: {
+      top: "",
+      "top-mid": "",
+      "top-left": "",
+      "top-right": "",
+      bottom: "",
+      "bottom-mid": "",
+      "bottom-left": "",
+      "bottom-right": "",
+      left: "",
+      "left-mid": "",
+      mid: "",
+      "mid-mid": "",
+      right: "",
+      "right-mid": "",
+      middle: " ",
+    },
+    colWidths: [
+      dateWidth,
+      hidWidth,
+      commentWidth,
+      toAccountWidth,
+      arrowWidth,
+      amountWidth,
+      runningTotalWidth,
+    ],
+  });
+
   let reverseBalance = endBalance;
   let isAllBalanced = true;
 
@@ -201,26 +232,34 @@ export async function transactionView({
     equality: PouchDB.Query.Response<EqDoc>["rows"][0],
     currentBalance: number,
   ): boolean {
-    const date = equality.key[2];
-    const hid = equality.doc?.meta?.humanId ?? "";
+    const date = equality.key[2].slice(0, dateWidth);
+    const hid = equality.doc?.meta?.humanId?.slice(0, hidWidth) ?? "";
     const eqBalance = equality.value;
     const amount = eqBalance - currentBalance;
-    const isBalanced = fix(amount) === fix(0);
-    console.log(
-      isBalanced
-        ? chalk.green(
-            printf(format, date, hid, "EqCheck", "", "", 0, eqBalance).replace(
-              / 0\.0+ /,
-              (match) => {
-                // replace with equal number of spaces
-                return " ".repeat(match.length);
-              },
-            ),
-          )
-        : chalk.red(
-            printf(format, date, hid, "FAIL", "", "", amount, eqBalance),
-          ),
+    const formattedAmount = sprintf(
+      `%${amountWidth}.${decimals}f`,
+      fix(amount),
     );
+    const formattedEqBalance = sprintf(
+      `%${runningTotalWidth}.${decimals}f`,
+      fix(eqBalance),
+    );
+    const isBalanced = fix(amount) === fix(0);
+
+    const row = [
+      date,
+      hid,
+      isBalanced ? "EqCheck" : "FAIL",
+      "",
+      "",
+      formattedAmount,
+      formattedEqBalance,
+    ];
+
+    table.push(
+      row.map((cell) => (isBalanced ? chalk.green(cell) : chalk.red(cell))),
+    );
+
     return isBalanced;
   }
 
@@ -232,23 +271,30 @@ export async function transactionView({
     const {
       data: { comment = "" },
     } = doc;
-    const hid = doc.meta?.humanId ?? "";
+    const hid = doc.meta?.humanId?.slice(0, hidWidth) ?? "";
     const amount = transaction.value;
+    const formattedAmount = sprintf(
+      `%${amountWidth}.${decimals}f`,
+      fix(amount),
+    );
+    const formattedBalance = sprintf(
+      `%${runningTotalWidth}.${decimals}f`,
+      fix(currentBalance),
+    );
     const toAccount = transaction.key[3];
     const arrow = amount > 0 ? "→" : "←";
-    const date = transaction.key[2];
-    console.log(
-      printf(
-        format,
-        date,
-        hid,
-        comment.toString(),
-        toAccount,
-        arrow,
-        amount,
-        currentBalance,
-      ),
-    );
+    const date = transaction.key[2].slice(0, dateWidth);
+
+    table.push([
+      date,
+      hid,
+      comment.toString(),
+      toAccount,
+      arrow,
+      formattedAmount,
+      formattedBalance,
+    ]);
+
     return amount;
   }
 
@@ -268,6 +314,7 @@ export async function transactionView({
       );
     }
   }
+
   if (fix(reverseBalance) === "-0.00") {
     reverseBalance = 0;
   }
@@ -282,6 +329,8 @@ export async function transactionView({
       reverseBalance,
     );
   }
+
+  console.log(table.toString());
 
   if (fix(reverseBalance) !== fix(startBalance)) {
     throw new Error(
