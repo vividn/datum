@@ -191,6 +191,7 @@ export async function transactionView({
 
   const table = new Table({
     head: ["Date", "HID", "Comment", "To Account", "↔", "Amount", "Balance"],
+    colAligns: ["left", "left", "left", "right", "center", "right", "right"],
     style: {
       head: ["yellow"],
       border: ["grey"],
