@@ -146,7 +146,7 @@ export async function transactionView({
   const dateWidth = 10;
   const hidWidth = 4;
   const toAccountWidth = 10;
-  const arrowWidth = 3;
+  const arrowWidth = 1;
   const amountWidth =
     Math.floor(
       Math.log10(
