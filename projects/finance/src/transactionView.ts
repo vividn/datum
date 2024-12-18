@@ -142,6 +142,7 @@ export async function transactionView({
 
   console.log(chalk.yellow.bold(`${account} ${currency}`));
 
+
   const width = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
   const hidWidth = 4;
@@ -189,9 +190,25 @@ export async function transactionView({
     runningTotalWidth -
     6;
 
+  type Column = {
+    header: string;
+    width: number;
+    active: boolean;
+    align?: "left" | "right" | "center";
+  }
+  const columns: Column[] = [
+    { header: "Date", width: dateWidth, active: true },
+    { header: "HID", width: hidWidth, active: true },
+    { header: "Comment", width: commentWidth, active: true },
+    { header: "To Account", width: toAccountWidth, active: true },
+    { header: "↔", width: arrowWidth, active: true, align: "center" },
+    { header: "Amount", width: amountWidth, active: true },
+    { header: "Balance", width: runningTotalWidth, active: true },
+  ];
+
   const table = new Table({
-    head: ["Date", "HID", "Comment", "To Account", "↔", "Amount", "Balance"],
-    colAligns: ["left", "left", "left", "right", "center", "right", "right"],
+    head: columns.map(col => col.header),
+    colAligns: columns.map(col => col.align ?? "left"),
     style: {
       head: ["yellow"],
       border: ["grey"],
