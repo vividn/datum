@@ -142,11 +142,10 @@ export async function transactionView({
 
   console.log(chalk.yellow.bold(`${account} ${currency}`));
 
-
   const width = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
   const hidWidth = 4;
-  const toAccountWidth = 10;
+  const accountWidth = 10;
   const arrowWidth = 1;
   const amountWidth =
     Math.floor(
@@ -184,7 +183,7 @@ export async function transactionView({
     width -
     dateWidth -
     hidWidth -
-    toAccountWidth -
+    accountWidth -
     arrowWidth -
     amountWidth -
     runningTotalWidth -
@@ -193,22 +192,24 @@ export async function transactionView({
   type Column = {
     header: string;
     width: number;
-    active: boolean;
+    enabled: boolean;
     align?: "left" | "right" | "center";
-  }
+  };
   const columns: Column[] = [
-    { header: "Date", width: dateWidth, active: true },
-    { header: "HID", width: hidWidth, active: true },
-    { header: "Comment", width: commentWidth, active: true },
-    { header: "To Account", width: toAccountWidth, active: true },
-    { header: "↔", width: arrowWidth, active: true, align: "center" },
-    { header: "Amount", width: amountWidth, active: true },
-    { header: "Balance", width: runningTotalWidth, active: true },
+    { header: "Date", width: dateWidth, enabled: true },
+    { header: "HID", width: hidWidth, enabled: true },
+    { header: "Comment", width: commentWidth, enabled: true },
+    { header: "Acc", width: accountWidth, enabled: true },
+    { header: "↔", width: arrowWidth, enabled: true, align: "center" },
+    { header: "To", width: accountWidth, enabled: true },
+    { header: "Cur", width: 4, enabled: true}
+    { header: "Amount", width: amountWidth, enabled: true },
+    { header: "Balance", width: runningTotalWidth, enabled: true },
   ];
 
   const table = new Table({
-    head: columns.map(col => col.header),
-    colAligns: columns.map(col => col.align ?? "left"),
+    head: columns.map((col) => col.header),
+    colAligns: columns.map((col) => col.align ?? "left"),
     style: {
       head: ["yellow"],
       border: ["grey"],
@@ -232,15 +233,7 @@ export async function transactionView({
       "right-mid": "",
       middle: " ",
     },
-    colWidths: [
-      dateWidth,
-      hidWidth,
-      commentWidth,
-      toAccountWidth,
-      arrowWidth,
-      amountWidth,
-      runningTotalWidth,
-    ],
+    colWidths: columns.map((col) => (col.width)),
   });
 
   let reverseBalance = endBalance;
