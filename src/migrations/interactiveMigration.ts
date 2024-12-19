@@ -34,7 +34,7 @@ export async function interactiveMigration({
       value: { op, data },
     } = row;
     console.info("----------------------");
-    await getCmd(row.id, outputArgs);
+    await getCmd([row.id], outputArgs);
     console.info(chalk.cyan(`~~~~ OP: ${op} ~~~~`));
     console.info(stringify(data));
     console.info("----------------------");
