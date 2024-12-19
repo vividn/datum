@@ -142,7 +142,7 @@ export async function transactionView({
 
   console.log(chalk.yellow.bold(`${account} ${currency}`));
 
-  const width = Math.max(Math.min(80, process.stdout.columns), 30);
+  const screenWidth = Math.max(Math.min(80, process.stdout.columns), 30);
   const dateWidth = 10;
   const hidWidth = 4;
   const accountWidth = 10;
@@ -179,15 +179,6 @@ export async function transactionView({
     ) +
     3 +
     decimals;
-  const commentWidth =
-    width -
-    dateWidth -
-    hidWidth -
-    accountWidth -
-    arrowWidth -
-    amountWidth -
-    runningTotalWidth -
-    6;
 
   type Column = {
     header: string;
@@ -195,17 +186,33 @@ export async function transactionView({
     enabled: boolean;
     align?: "left" | "right" | "center";
   };
-  const columns: Column[] = [
+  const columnDefs: Column[] = [
     { header: "Date", width: dateWidth, enabled: true },
     { header: "HID", width: hidWidth, enabled: true },
-    { header: "Comment", width: commentWidth, enabled: true },
+    { header: "Comment", width: 50, enabled: true },
     { header: "Acc", width: accountWidth, enabled: true },
     { header: "↔", width: arrowWidth, enabled: true, align: "center" },
     { header: "To", width: accountWidth, enabled: true },
-    { header: "Cur", width: 4, enabled: true}
+    { header: "Cur", width: 4, enabled: true},
     { header: "Amount", width: amountWidth, enabled: true },
     { header: "Balance", width: runningTotalWidth, enabled: true },
   ];
+
+  // remove disabled columns
+  const columns = columnDefs.filter((col) => col.enabled);
+
+
+  // reduce comment width to fit screen
+  const totalWidth = columns.reduce((accum, col) => accum + col.width, 0) + columns.length - 1;
+  const commentCol = columns.find((col) => col.header === "Comment");
+  if (commentCol) {
+    const commentWidth = Math.min(
+      commentCol.width,
+      screenWidth - totalWidth + commentCol.width - 1,
+    );
+    commentCol.width = commentWidth;
+  }
+
 
   const table = new Table({
     head: columns.map((col) => col.header),
