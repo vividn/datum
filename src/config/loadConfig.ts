@@ -3,13 +3,10 @@ import yaml from "yaml";
 import { MainDatumArgs } from "../input/mainArgs";
 
 export type DatumConfig = {
-  project_dir?: string;
   db?: string;
-  connection?: {
-    host?: string;
-    user?: string;
-    password?: string | null;
-  };
+  host?: string;
+  user?: string;
+  password?: string;
 };
 
 export function loadConfig(args: MainDatumArgs): DatumConfig {
@@ -26,9 +23,9 @@ export function loadConfig(args: MainDatumArgs): DatumConfig {
       if (args.configFile) {
         throw new Error(`Config file not found: ${args.configFile}`);
       } else {
-        throw new Error(
-          `Datum config file not found. Please run 'datum init' to create one.`,
-        );
+        console.info(`Welcome to datum!`);
+        console.info(`Creating a configuration file at ${configFile}`);
+        
       }
     } else {
       throw e;

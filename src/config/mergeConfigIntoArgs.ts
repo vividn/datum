@@ -8,12 +8,10 @@ export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
   }
   const config = loadConfig(args);
 
-  args.projectDir ??= config.project_dir;
   args.db ??= config.db;
 
-  args.host ??= process.env["COUCHDB_HOST"] || config.connection?.host;
-  args.user ??= process.env["COUCHDB_USER"] || config.connection?.user;
+  args.host ??= process.env["COUCHDB_HOST"] || config?.host;
+  args.user ??= process.env["COUCHDB_USER"] || config?.user;
   args.password ??=
-    (process.env["COUCHDB_PASSWORD"] || config.connection?.password) ??
-    undefined;
+    (process.env["COUCHDB_PASSWORD"] || config?.password) ?? undefined;
 }

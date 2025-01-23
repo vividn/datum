@@ -29,12 +29,11 @@ describe("loadConfig", () => {
     );
   });
 
-  it("should throw an error if the default config file doesn't exist and no file was specified", () => {
+  it("write a default config if no config path is specified and no config file exists at the default location", () => {
     process.env["XDG_CONFIG_HOME"] = __dirname;
     const args = {};
-    expect(() => loadConfig(args)).toThrow(
-      "Datum config file not found. Please run 'datum init' to create one.",
-    );
+    loadConfig(args);
+    fail();
   });
 
   it("should replace environment variables in the config", () => {
