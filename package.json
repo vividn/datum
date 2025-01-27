@@ -23,7 +23,7 @@
     "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json --skipLibCheck",
     "typewatch": "tsc -p tsconfig.withTests.json -w --skipLibCheck",
-    "build": "rm -rf ./build; npx tsc -p . --skipLibCheck",
+    "build": "rm -rf ./build; tsc -p . --skipLibCheck",
     "buildwatch": "tsc -p . -w --skipLibCheck",
     "system": "rm -rf ./node_modules && pnpm i --production && pnpm build && pnpm --global add $PWD",
     "refresh": "rm -rf ./node_modules && pnpm install",
