@@ -1,3 +1,7 @@
+const configDir =
+  process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
+export const defaultConfigPath = `${configDir}/datum/datumrc.yml`;
+
 export const defaultConfigYml = `# Datum Configuration
 
 # default database to use 

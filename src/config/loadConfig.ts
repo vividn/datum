@@ -1,7 +1,8 @@
-import fs from "fs";
+import fs from "fs/promises";
 import yaml from "yaml";
 import { MainDatumArgs } from "../input/mainArgs";
 import { initConfig } from "./initConfig";
+import { defaultConfigPath } from "./defaultConfigYml";
 
 export type DatumConfig = {
   db?: string;
@@ -10,14 +11,12 @@ export type DatumConfig = {
   password?: string;
 };
 
-export function loadConfig(args: MainDatumArgs): DatumConfig {
-  const configDir =
-    process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
-  const configFile = args.configFile ?? `${configDir}/datum/datumrc.yml`;
+export async function loadConfig(args: MainDatumArgs): Promise<DatumConfig> {
+  const configFile = args.configFile ?? defaultConfigPath;
   let config: DatumConfig;
   try {
     config = yaml
-      .parseDocument(fs.readFileSync(configFile, "utf8"))
+      .parseDocument(await fs.readFile(configFile, "utf8"))
       .toJSON() as DatumConfig;
   } catch (e: any) {
     if (e.code === "ENOENT") {
@@ -26,7 +25,7 @@ export function loadConfig(args: MainDatumArgs): DatumConfig {
       } else {
         console.info(`Welcome to datum!`);
         console.info(`Creating a configuration file at ${configFile}`);
-        initConfig(configFile);
+        config = await initConfig();
       }
     } else {
       throw e;

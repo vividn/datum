@@ -110,9 +110,18 @@
     "xml-formatter": "^3.6.3",
     "yaml": "^2.5.1"
   },
+  "overrides": {
+    "node-fetch@2.x": {
+      "whatwg-url": "14.x"
+    }
+  },
   "pnpm": {
     "patchedDependencies": {
       "argparse@2.0.1": "patches/argparse@2.0.1.patch"
+    },
+    "overrides": {
+      "whatwg-url": "14.x",
+      "tough-cookie": "5.x"
     }
   }
 }
