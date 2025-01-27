@@ -2,13 +2,13 @@ import { MainDatumArgs } from "../input/mainArgs";
 import dotenv from "dotenv";
 import { loadConfig } from "./loadConfig";
 
-export async function mergeConfigAndEnvIntoArgs(
+export function mergeConfigAndEnvIntoArgs(
   args: MainDatumArgs,
-): Promise<void> {
+): void {
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
   }
-  const config = await loadConfig(args);
+  const config = loadConfig(args);
 
   args.db ??= config.db;
 

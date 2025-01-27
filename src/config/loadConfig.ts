@@ -1,4 +1,4 @@
-import fs from "fs/promises";
+import fs from "fs";
 import yaml from "yaml";
 import { MainDatumArgs } from "../input/mainArgs";
 import { initConfig } from "./initConfig";
@@ -11,12 +11,12 @@ export type DatumConfig = {
   password?: string;
 };
 
-export async function loadConfig(args: MainDatumArgs): Promise<DatumConfig> {
+export function loadConfig(args: MainDatumArgs): DatumConfig {
   const configFile = args.configFile ?? defaultConfigPath;
   let config: DatumConfig;
   try {
     config = yaml
-      .parseDocument(await fs.readFile(configFile, "utf8"))
+      .parseDocument(fs.readFileSync(configFile, "utf8"))
       .toJSON() as DatumConfig;
   } catch (e: any) {
     if (e.code === "ENOENT") {
@@ -25,7 +25,7 @@ export async function loadConfig(args: MainDatumArgs): Promise<DatumConfig> {
       } else {
         console.info(`Welcome to datum!`);
         console.info(`Creating a configuration file at ${configFile}`);
-        config = await initConfig();
+        config = initConfig();
       }
     } else {
       throw e;
