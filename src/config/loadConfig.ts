@@ -1,6 +1,7 @@
 import fs from "fs";
 import yaml from "yaml";
 import { MainDatumArgs } from "../input/mainArgs";
+import { initConfig } from "./initConfig";
 
 export type DatumConfig = {
   db?: string;
@@ -25,30 +26,16 @@ export function loadConfig(args: MainDatumArgs): DatumConfig {
       } else {
         console.info(`Welcome to datum!`);
         console.info(`Creating a configuration file at ${configFile}`);
-        
+        initConfig(configFile);
       }
     } else {
       throw e;
     }
   }
 
-  if (config.project_dir) {
-    config.project_dir = config.project_dir.replaceAll(
-      /%HOME%|~/g,
-      process.env["HOME"]!,
-    );
-    config.project_dir = config.project_dir.replaceAll(
-      "%DATA%",
-      process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share",
-    );
-  }
-
-  if (config.connection?.host) {
-    config.connection.host = config.connection.host.replaceAll(
-      /%HOME%|~/g,
-      process.env["HOME"]!,
-    );
-    config.connection.host = config.connection.host.replaceAll(
+  if (config?.host) {
+    config.host = config.host.replaceAll(/%HOME%|~/g, process.env["HOME"]!);
+    config.host = config.host.replaceAll(
       "%DATA%",
       process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share",
     );

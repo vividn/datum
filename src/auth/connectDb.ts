@@ -3,6 +3,7 @@ import PouchDb from "pouchdb";
 import memoryAdapter from "pouchdb-adapter-memory";
 import { MainDatumArgs } from "../input/mainArgs";
 import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs";
+import fs from "fs";
 
 PouchDb.plugin(memoryAdapter);
 
@@ -31,6 +32,13 @@ export function connectDb(
         : host.at(-1) === "/"
           ? `${host}${dbName}`
           : `${host}/${dbName}`;
+
+  if (host.startsWith("/") && adapter !== "memory") {
+    // create parent directories
+    if (!fs.existsSync(fullDatabaseName)) {
+      fs.mkdirSync(fullDatabaseName, { recursive: true });
+    }
+  }
 
   const couchAuth = {
     username: args.user,
