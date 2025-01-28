@@ -23,13 +23,12 @@
     "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json --skipLibCheck",
     "typewatch": "tsc -p tsconfig.withTests.json -w --skipLibCheck",
-    "build": "rm -rf ./build; npx tsc -p . --skipLibCheck",
+    "build": "rm -rf ./build; tsc -p . --skipLibCheck",
     "buildwatch": "tsc -p . -w --skipLibCheck",
     "system": "rm -rf ./node_modules && pnpm i --production && pnpm build && pnpm --global add $PWD",
     "refresh": "rm -rf ./node_modules && pnpm install",
     "lint": "eslint src --max-warnings 0",
-    "fmt": "eslint src --fix --max-warnings 0",
-    "preinstall": "npx only-allow pnpm"
+    "fmt": "eslint src --fix --max-warnings 0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
@@ -111,9 +110,18 @@
     "xml-formatter": "^3.6.3",
     "yaml": "^2.5.1"
   },
+  "overrides": {
+    "node-fetch@2.x": {
+      "whatwg-url": "14.x"
+    }
+  },
   "pnpm": {
     "patchedDependencies": {
       "argparse@2.0.1": "patches/argparse@2.0.1.patch"
+    },
+    "overrides": {
+      "whatwg-url": "14.x",
+      "tough-cookie": "5.x"
     }
   }
 }

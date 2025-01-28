@@ -1,4 +1,6 @@
 import { loadConfig } from "../loadConfig";
+import * as initConfigModule from "../initConfig";
+import fs from "fs";
 
 const configFile = `${__dirname}/__fixtures__/test_datumrc.yml`;
 
@@ -10,31 +12,36 @@ describe("loadConfig", () => {
     };
     const config = loadConfig(args);
     expect(config).toEqual({
-      project_dir: process.env["HOME"] + "/some/project/dir/path",
       db: "test_db",
-      connection: {
-        host: process.env["HOME"] + "/.local/share/test_host",
-        user: "test_user",
-        password: "test_password",
-      },
+      host: process.env["HOME"] + "/.local/share/test_host",
+      user: "test_user",
+      password: "test_password",
     });
   });
 
   it("should throw an error if the config file doesn't exist", () => {
+    const initConfigSpy = jest
+      .spyOn(initConfigModule, "initConfig")
+      .mockReturnValue({ db: "default_db" });
     const args = {
       configFile: "/test/fixtures/nonexistent.yml",
     };
     expect(() => loadConfig(args)).toThrow(
       "Config file not found: /test/fixtures/nonexistent.yml",
     );
+    expect(initConfigSpy).not.toHaveBeenCalled();
   });
 
-  it("should throw an error if the default config file doesn't exist and no file was specified", () => {
-    process.env["XDG_CONFIG_HOME"] = __dirname;
-    const args = {};
-    expect(() => loadConfig(args)).toThrow(
-      "Datum config file not found. Please run 'datum init' to create one.",
-    );
+  it("write a default config if no config path is specified and no config file exists at the default location, creating parent folders as needed", () => {
+    const initConfigSpy = jest
+      .spyOn(initConfigModule, "initConfig")
+      .mockReturnValue({ db: "default_db" });
+    jest.spyOn(fs, "readFileSync").mockImplementation(() => {
+      throw { code: "ENOENT" };
+    });
+    const config = loadConfig({});
+    expect(initConfigSpy).toHaveBeenCalled();
+    expect(config).toEqual({ db: "default_db" });
   });
 
   it("should replace environment variables in the config", () => {
@@ -45,13 +52,10 @@ describe("loadConfig", () => {
     };
     const config = loadConfig(args);
     expect(config).toEqual({
-      project_dir: "/home/test/some/project/dir/path",
       db: "test_db",
-      connection: {
-        host: "/home/test/.local/share/test_host",
-        user: "test_user",
-        password: "test_password",
-      },
+      host: "/home/test/.local/share/test_host",
+      user: "test_user",
+      password: "test_password",
     });
   });
 });

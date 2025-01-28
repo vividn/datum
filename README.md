@@ -32,16 +32,11 @@ Even record non time based arbitrary data:
 in repo: `pnpm run system`
 
 
-## Setting up CouchDB
-Datum uses CouchDB/PouchDB as it's database backend. If you want to use CouchDB, you'll need to set it up on your computer.
+## CouchDB
+Datum uses PouchDB as its default database backend. However, you can use `datum` to talk directly to CouchDB if you would like. Use `--host` or change the `host:` option in the config to point to a CouchDb server and then either set the $COUCHDB_USER and $COUCHDB_PASSWORD environment variables or set the values in the config.
 
-See installation instructions here: https://docs.couchdb.org/en/stable/
+See installation instructions here for installing a CouchDb: https://docs.couchdb.org/en/stable/
 
-As admin, setup a `datum` database inside of couchdb and make sure your user has admin rights to this database.
-
-If you want to use PouchDB locally on your file system, no steps are required.
-
-## Initializing Datum
-`datum init` - this sets up a datumrc file at `$XDG_CONFIG_HOME/datum/datumrc.yml`. It will automatically detect if you have CouchDB running on http://localhost:5984 and set up options for you
+As admin, setup a `datum` database inside of CouchDb and make sure your user has admin rights to this database.
 
 
