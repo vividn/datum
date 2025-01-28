@@ -251,4 +251,22 @@ describe("quickId", () => {
       expect(e).toBeInstanceOf(AmbiguousQuickIdError);
     }
   });
+
+  it("prefers an id match with commas over splitting by commas", async () => {
+    await db.put({
+      _id: "id1,ghi,and more",
+      meta: { humanId: "abc" },
+    });
+    await db.put({
+      _id: "id1",
+      meta: { humanId: "ghi" },
+    });
+    await db.put({
+      _id: "id2",
+      meta: { humanId: "jkl" },
+    });
+    expect(await quickId("id1,ghi,and more", {})).toEqual(["id1,ghi,and more"]);
+    expect(await quickId("id1,ghi", {})).toEqual(["id1,ghi,and more"]);
+    expect(await quickId("id1,jkl", {})).toEqual(["id1", "id2"]);
+  });
 });

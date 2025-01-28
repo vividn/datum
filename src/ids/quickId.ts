@@ -180,18 +180,62 @@ async function startsMainId(
   return [];
 }
 
+async function searchForQuickId(
+  quickString: string,
+  db: PouchDB.Database<EitherPayload>,
+  onAmbiguous?: (typeof ON_AMBIGUOUS_QUICK_ID)[number],
+): Promise<string[]> {
+  const special = await specialQuickId(quickString, db);
+  if (special.length > 0) {
+    return special;
+  }
+  const exact = await exactId(quickString, db);
+  if (exact) {
+    return [exact];
+  }
+  const matchesHumanId = await startsHumanId(quickString, db, onAmbiguous);
+  if (matchesHumanId.length > 0) {
+    return matchesHumanId;
+  }
+  const matchesMainId = await startsMainId(quickString, db, onAmbiguous);
+  if (matchesMainId.length > 0) {
+    return matchesMainId;
+  }
+  throw new NoQuickIdMatchError(quickString);
+}
+
 export async function quickId(
   quickValue: string | string[] | JsonType,
   args: MainDatumArgs & QuickIdArgs,
 ): Promise<string[]> {
+  const db = connectDb(args);
+
   let quickArray: string[];
   if (Array.isArray(quickValue)) {
     quickArray = quickValue.map(String);
   } else {
     const maybeSplit = splitCommaString(String(quickValue));
-    quickArray = Array.isArray(maybeSplit) ? maybeSplit : [maybeSplit];
+    if (Array.isArray(maybeSplit)) {
+      // try for the speical case where the id has commas in it and no splitting is wanted
+      try {
+        const matchedWithComma = await searchForQuickId(
+          String(quickValue),
+          db,
+          args.onAmbiguousQuickId,
+        );
+        return matchedWithComma;
+      } catch (error) {
+        if (error instanceof NoQuickIdMatchError) {
+          // pass
+        } else {
+          throw error;
+        }
+      }
+      quickArray = maybeSplit;
+    } else {
+      quickArray = [maybeSplit];
+    }
   }
-  const db = connectDb(args);
 
   const idPromises = quickArray.map(async (str) => {
     const special = await specialQuickId(str, db);
