@@ -4,7 +4,7 @@ import fs from "fs";
 import { DatumConfig } from "./loadConfig";
 
 export function initConfig(): DatumConfig {
-  const newConfig = yaml.parseDocument(defaultConfigYml);
+  const newConfig = defaultConfigYml;
   fs.mkdirSync(defaultConfigPath.replace(/\/[^/]+$/, ""), { recursive: true });
   fs.writeFileSync(defaultConfigPath, newConfig.toString(), {
     encoding: "utf-8",

@@ -1,8 +1,10 @@
-const configDir =
-  process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
-export const defaultConfigPath = `${configDir}/datum/datumrc.yml`;
+import yaml from "yaml";
 
-export const defaultConfigYml = `# Datum Configuration
+export const defaultConfigDir =
+  process.env["XDG_CONFIG_HOME"] || `${process.env["HOME"]}/.config`;
+export const defaultConfigPath = `${defaultConfigDir}/datum/datumrc.yml`;
+
+export const defaultConfigYml = yaml.parseDocument(`# Datum Configuration
 
 # default database to use 
 # override with --db
@@ -19,4 +21,4 @@ host: "%DATA%/datum"
 # Leave blank or null to prompt
 # user: null
 # password: null
-`;
+`);
