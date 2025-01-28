@@ -237,29 +237,9 @@ export async function quickId(
     }
   }
 
-  const idPromises = quickArray.map(async (str) => {
-    const special = await specialQuickId(str, db);
-    if (special.length > 0) {
-      return special;
-    }
-    const exact = await exactId(str, db);
-    if (exact) {
-      return exact;
-    }
-    const matchesHumanId = await startsHumanId(
-      str,
-      db,
-      args.onAmbiguousQuickId,
-    );
-    if (matchesHumanId.length > 0) {
-      return matchesHumanId;
-    }
-    const matchesMainId = await startsMainId(str, db, args.onAmbiguousQuickId);
-    if (matchesMainId.length > 0) {
-      return matchesMainId;
-    }
-    throw new NoQuickIdMatchError(str);
-  });
+  const idPromises = quickArray.map(async (str) =>
+    searchForQuickId(str, db, args.onAmbiguousQuickId),
+  );
 
   return (await Promise.all(idPromises)).flat();
 }
