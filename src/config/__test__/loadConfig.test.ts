@@ -1,5 +1,6 @@
-import { DatumConfig, loadConfig } from "../loadConfig";
+import { loadConfig } from "../loadConfig";
 import * as initConfigModule from "../initConfig";
+import fs from "fs";
 
 const configFile = `${__dirname}/__fixtures__/test_datumrc.yml`;
 
@@ -35,11 +36,12 @@ describe("loadConfig", () => {
     const initConfigSpy = jest
       .spyOn(initConfigModule, "initConfig")
       .mockReturnValue({ db: "default_db" });
-    process.env["XDG_CONFIG_HOME"] = __dirname;
-    const args = {};
-    const config = loadConfig(args);
-    expect(config).toEqual({ db: "default_db" });
+    jest.spyOn(fs, "readFileSync").mockImplementation(() => {
+      throw { code: "ENOENT" };
+    });
+    const config = loadConfig({});
     expect(initConfigSpy).toHaveBeenCalled();
+    expect(config).toEqual({ db: "default_db" });
   });
 
   it("should replace environment variables in the config", () => {

@@ -1,4 +1,3 @@
-import yaml from "yaml";
 import { defaultConfigPath, defaultConfigYml } from "./defaultConfigYml";
 import fs from "fs";
 import { DatumConfig } from "./loadConfig";
