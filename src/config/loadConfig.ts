@@ -25,6 +25,7 @@ export function loadConfig(args: MainDatumArgs): DatumConfig {
       } else {
         console.info(`Welcome to datum!`);
         console.info(`Creating a configuration file at ${configFile}`);
+        console.info("");
         config = initConfig();
       }
     } else {
