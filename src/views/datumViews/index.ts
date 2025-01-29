@@ -3,6 +3,7 @@ export { structuresView } from "./structure";
 export { timingView } from "./timingView";
 export { overlappingBlockView } from "./overlappingBlocks";
 export { durationBlockView } from "./durationBlocks";
+export { durationSumView } from "./durationSumView";
 export { datumV1View } from "./datumV1";
 export { subHumanIdView } from "./subHumanIdView";
 export { idToHumanView } from "./idToHumanView";
