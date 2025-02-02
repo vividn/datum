@@ -10,7 +10,7 @@ export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
 
   args.db ??= config.db;
 
-  args.host ??= process.env["COUCHDB_HOST"] || config?.host;
+  args.host ??= process.env["DATUM_HOST"] || config?.host;
   args.user ??= process.env["COUCHDB_USER"] || config?.user;
   args.password ??=
     (process.env["COUCHDB_PASSWORD"] || config?.password) ?? undefined;
