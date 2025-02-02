@@ -12,16 +12,18 @@ export function connectDb(
 ): PouchDB.Database<EitherPayload> {
   mergeConfigAndEnvIntoArgs(args);
 
-  const host = args.host;
+  let host = args.host;
   const adapter =
     process.env["POUCHDB_ADAPTER"] || host === "%MEMORY%"
       ? "memory"
       : undefined;
   const { db: dbName = "datum", createDb } = args;
 
-  if (host === undefined) {
-    // TODO: when going into the browser, maybe support this?
-    throw new Error("No hostname provided for database connection");
+  if (host === undefined || host === "") {
+    // TODO: when going into the browser, maybe need to specify this to use the indexeddb somehow
+    const dataDir =
+      process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share";
+    host = `${dataDir}/datum`;
   }
 
   const fullDatabaseName =
