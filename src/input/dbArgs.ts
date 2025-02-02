@@ -36,7 +36,7 @@ dbGroup.add_argument("--password", {
   help: "couchdb password to use",
 });
 dbGroup.add_argument("--env", {
-  help: "Environment file to read with COUCHDB_USER, COUCHDB_PASSWORD, COUCHDB_HOST",
+  help: "Environment file to read with $DATUM_HOST, $COUCHDB_USER, $COUCHDB_PASSWORD",
 });
 dbGroup.add_argument("--project-dir", {
   help: "The directory to use for custom views, specs, and other files to setup your db",
