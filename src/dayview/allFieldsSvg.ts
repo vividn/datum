@@ -26,7 +26,7 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
       const defaultHeight = 0.12;
 
       let pY: number, pHeight: number;
-      if (spec.height) {
+      if (spec.height !== undefined) {
         pY = specY;
         pHeight = spec.height;
       } else {
