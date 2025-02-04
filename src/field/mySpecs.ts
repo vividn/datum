@@ -103,6 +103,16 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
     height: 0.55,
     color: "#142878",
   },
+  poop: {
+    kind: "occur",
+    color: "#422501",
+    y: 0.85,
+  },
+  pee: {
+    kind: "occur",
+    color: "#eeee00",
+    y: 0.85,
+  },
   therapy: {
     kind: "start",
     y: 0.25,
