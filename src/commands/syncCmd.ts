@@ -5,7 +5,6 @@ import { outputArgs } from "../input/outputArgs";
 import { MainDatumArgs } from "../input/mainArgs";
 import { connectDb } from "../auth/connectDb";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { jClone } from "../utils/jClone";
 
 export const syncArgs = new ArgumentParser({
   add_help: false,
@@ -13,7 +12,6 @@ export const syncArgs = new ArgumentParser({
 });
 syncArgs.add_argument("remote", {
   help: "the remote host to sync with",
-  nargs: 1,
 });
 syncArgs.add_argument("--watch", "-w", {
   help: "watch for changes and sync continuously",
