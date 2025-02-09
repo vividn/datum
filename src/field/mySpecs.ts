@@ -15,7 +15,7 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
   address: {
     kind: "switch",
     y: 0,
-    height: 0,
+    height: 0.001, // TODO: make this 0 once all bugs are worked out (inkscape transfroms svg in a weird way to png with 0 height blocks)
   },
   country: {
     kind: "switch",
@@ -102,6 +102,16 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
     y: 0.25,
     height: 0.55,
     color: "#142878",
+  },
+  poop: {
+    kind: "occur",
+    color: "#422501",
+    y: 0.85,
+  },
+  pee: {
+    kind: "occur",
+    color: "#bbaa00",
+    y: 0.85,
   },
   therapy: {
     kind: "start",
