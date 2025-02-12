@@ -8,10 +8,10 @@
 
 2. Installation
 ```bash
-git clone https://github.com/yourusername/datum.git
+git clone https://github.com/vividn/datum.git
 cd datum
+pnpm run system    # Installs globally
 pnpm install
-pnpm run system
 ```
 
 ## Development Workflow
@@ -23,13 +23,20 @@ git checkout -b feature/your-feature
 
 2. Run tests
 ```bash
-pnpm test         # Run all tests
-pnpm test:watch   # Run tests in watch mode
+pnpm test[watch]     # Run all tests
+```
+
+3. Formatting and typechecking
+```bash
+pnpm type[watch]     # Run typechecking
+pnpm fmt             # Fix linting problems
+
 ```
 
 3. Build locally
 ```bash
 pnpm build
+pnpm buildwatch  # Build continuously with changes
 ```
 
 ## Code Guidelines
@@ -37,8 +44,6 @@ pnpm build
 - Write TypeScript with strict type checking
 - Add tests for new features
 - Follow existing code style
-- Use async/await for database operations
-- Document public APIs
 
 ## Pull Request Process
 
