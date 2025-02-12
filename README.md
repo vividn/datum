@@ -42,6 +42,7 @@ Datum provides multiple ways to visualize and analyze your data:
   ```bash
   datum dayview            # View today's tracked time blocks
   datum dayview -d 2024-02-01  # View specific date
+  datum dayview -n 7       # Show the last week of data
   ```
   Generates a SVG timeline showing all tracked activities for a given day, with color-coding by category.
 
@@ -51,7 +52,6 @@ Datum provides multiple ways to visualize and analyze your data:
   datum tail -n 50        # Show the last 50 entries
   datum tail project      # Show the last entries for the project field
   ```
-  Shows patterns and trends for specific activities over time.
 
 - **Data Querying**
 For more information see the [CouchDB](https://docs.couchdb.org/en/stable/ddocs/views/intro.html) and [PouchDB](https://pouchdb.com/guides/queries.html) documentation
