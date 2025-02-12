@@ -47,22 +47,27 @@ Datum provides multiple ways to visualize and analyze your data:
 
 - **Activity Analysis**
   ```bash
-  datum v1 sleep          # Timeline view of sleep records
-  datum v1 project        # Project time allocation
+  datum tail              # Show the last 10 datum data entered
+  datum tail -n 50        # Show the last 50 entries
+  datum tail project      # Show the last entries for the project field
   ```
   Shows patterns and trends for specific activities over time.
 
 - **Data Querying**
+For more information see the [CouchDB](https://docs.couchdb.org/en/stable/ddocs/views/intro.html) and [PouchDB](https://pouchdb.com/guides/queries.html) documentation
   ```bash
-  datum map field         # List all unique fields
-  datum reduce field      # Count occurrences by field
+  datum map <view_name>     # Show the key/value table for the given view
+  datum map <view_name> <key> # show just the rows in the table starting with key
+  datum map <view_name> <start_key> <end_key> # Show the rows between the two keys
+  datum reduce <view_name>      # Run the specified reduce function
+  datum reduce <view_name> -g 2 # Run the specifed reduce function with group level 2
   datum grep "search"     # Search through records
   ```
 
-- **State Analysis**
+- ** Check for problems in the data
   ```bash
-  datum check            # View current state
-  datum check -f project # Check specific field state
+  datum check            # Check if there are repeated states or other problems in the data
+  datum check --fix      # Fix automatically fixable errors
   ```
 
 ## Installation
