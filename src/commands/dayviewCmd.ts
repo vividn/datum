@@ -22,7 +22,7 @@ dayviewArgs.add_argument("--start-date", {
   dest: "startDate",
 });
 
-dayviewArgs.add_argument("--end-date", {
+dayviewArgs.add_argument("--end-date", "-d", {
   help: "end date to show. Defaults to today",
   type: "str",
   dest: "endDate",
