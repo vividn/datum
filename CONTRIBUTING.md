@@ -3,7 +3,7 @@
 ## Development Setup
 
 1. Prerequisites
-   - Node.js (v16+)
+   - Node.js (v18+)
    - pnpm
 
 2. Installation
@@ -51,11 +51,22 @@ pnpm build
 
 ```
 src/
+  auth/         # Connecting to CouchDb and PouchDb 
   commands/     # CLI commands
-  views/        # Database views
+  config/       # Parsing config options
+  dayview/      # Generating the dayview svg output of data
+  documentControl/ # Interface for writing/updating the JSON documents inside the database
+  field/        # Spec and field management
+  ids/          # Generating and managing ids of documents
+  input/        # Parsing CLI options, and definitions of general arg parsers
+  meta/         # Handling metadata of the documents 
+  migrations/   # Tools for changing the data structure across many documents at once
+  output/       # CLI formatting of data for printing to the command line
+  state/        # Managing state of fields
   time/         # Time handling utilities
-  state/        # State management
-  projects/     # Project-specific features
+  undo/         # handling undoing of commands
+  utils/        # General utils and abstractions
+  views/        # built in couchdb views for interacting and analyzing data
 ```
 
 ## Release Process
@@ -63,6 +74,7 @@ src/
 1. Update version in `package.json`
 2. Create a release PR
 3. Tag release after merge
+4. Publish to npm
 
 ## Questions?
 
