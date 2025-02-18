@@ -141,18 +141,43 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("height", dataHeight)
     .attr("x", labelWidth);
 
-  await Promise.all(
+  // Add debugging for data loading
+  const dayResults = await Promise.all(
     days.map(async (date, i) => {
       const y = i * (dayHeight + interdayMargin);
-      const daySvg = await singleDay({
-        db,
-        date,
-        dataWidth,
-        height: dayHeight,
-        labelWidth: 0,
-      });
+      try {
+        const daySvg = await singleDay({
+          db,
+          date,
+          dataWidth,
+          height: dayHeight,
+          labelWidth: 0,
+        });
+        return { date, svg: daySvg, y };
+      } catch (error) {
+        console.error(`Error loading data for ${date}:`, error);
+        return { date, error, y };
+      }
+    }),
+  );
 
-      dataArea.append(() => daySvg).attr("y", y);
+  // Debug errors
+  const allErrors = dataArea.selectAll(".error");
+
+  if (allErrors.size() > 0) {
+    console.log("Error details:");
+    const erroredFields = new Set<string>();
+    allErrors.each(function () {
+      const field = d3.select(this).attr("field");
+      console.log("Error field:", field);
+      erroredFields.add(field);
+    });
+    console.log("All errored fields:", Array.from(erroredFields));
+  }
+
+  await Promise.all(
+    dayResults.map(({ date, svg, y }) => {
+      dataArea.append(() => svg).attr("y", y);
     }),
   );
 
@@ -194,7 +219,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("stroke-opacity", (d) => (d.getUTCHours() % 3 === 0 ? 0.4 : 0.1));
 
   // Add warning icon at the bottom if there are any errors
-  const allErrors = dataArea.selectAll(".error");
   if (allErrors.size() > 0) {
     const _errorIcon = svg
       .append("use")
@@ -203,12 +227,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
       .attr("y", height - 20)
       .attr("width", 20)
       .attr("height", 20);
-
-    const erroredFields = new Set<string>();
-    allErrors.each(function () {
-      const field = d3.select(this).attr("field");
-      erroredFields.add(field);
-    });
 
     const errorText = Array.from(erroredFields).join(", ");
     const _errorBackground = svg
@@ -232,17 +250,32 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   // return svg.node()!.outerHTML;
   const outputFile = args.outputFile;
   const prettySvg = xmlFormatter(svg.node()!.outerHTML);
+
   if (outputFile === undefined) {
     return prettySvg;
   }
   if (outputFile.endsWith(".svg")) {
-    fs.writeFileSync(outputFile, prettySvg);
+    // Add XML declaration, SVG namespace, and ensure all required namespaces are included
+    const xmlDeclaration = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
+    let svgWithNamespace = prettySvg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"');
+
+    // Ensure all nested SVG elements have proper namespaces
+    svgWithNamespace = svgWithNamespace.replace(/<svg\s+(?!xmlns)/g, '<svg xmlns="http://www.w3.org/2000/svg" ');
+
+    // Add style to ensure nested SVGs render properly
+    svgWithNamespace = svgWithNamespace.replace('</defs>', `
+      <style>
+        svg { overflow: visible; }
+      </style>
+    </defs>`);
+
+    fs.writeFileSync(outputFile, xmlDeclaration + svgWithNamespace);
     return prettySvg;
   } else if (outputFile.endsWith(".html")) {
     const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
     fs.writeFileSync(outputFile, prettyHtml);
     return prettySvg;
   } else {
-    throw new Error("output file must have a .html or .svg, or extension");
+    throw new Error("output file must have a .html or .svg extension");
   }
 }
