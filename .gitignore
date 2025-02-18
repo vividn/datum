@@ -111,3 +111,6 @@ build/
 !*.secret
 .vscode/
 .pouch
+
+.DS_Store
+pnpm-lock.yaml
