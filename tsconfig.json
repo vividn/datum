@@ -10,9 +10,10 @@
     ],
     "module": "CommonJS",
     "moduleResolution": "node",
-    "target": "ES2020",
+    "target": "es6",
     "declaration": true,
     "declarationMap": true,
+    "esModuleInterop": true,
     "inlineSourceMap": true,
     "inlineSources": true,
     "outDir": "build",
@@ -27,12 +28,14 @@
     ],
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "jsx": "react"
   },
   "include": [
     "src/**/*",
     "./typings",
-    "projects/**/*"
+    "projects/**/*",
+    "api"
   ],
   "exclude": [
     "node_modules",
