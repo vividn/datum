@@ -82,11 +82,12 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("width", width)
     .attr("height", height);
 
-  svg
-    .append("defs")
+  const defs = svg.append("defs");
+  defs
     .append("symbol")
     .attr("id", "warning-icon")
     .html(() => warningIcon);
+  defs.append("style").text(`svg { overflow: visible; }`);
 
   const _background = svg
     .append("rect")
@@ -260,18 +261,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     // Add XML declaration, SVG namespace, and ensure all required namespaces are included
     const xmlDeclaration =
       '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
-
-    // Add style to ensure nested SVGs render properly
-    const svgWithNamespace = prettySvg.replace(
-      "</defs>",
-      `
-      <style>
-        svg { overflow: visible; }
-      </style>
-    </defs>`,
-    );
-
-    fs.writeFileSync(outputFile, xmlDeclaration + svgWithNamespace);
+    fs.writeFileSync(outputFile, xmlDeclaration + prettySvg);
     return prettySvg;
   } else if (outputFile.endsWith(".html")) {
     const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
