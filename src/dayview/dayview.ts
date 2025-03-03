@@ -77,6 +77,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const svg = d3
     .select(document.body)
     .append("svg")
+    .attr("xmlns", "http://www.w3.org/2000/svg")
+    .attr("xmlns:xlink", "http://www.w3.org/1999/xlink")
     .attr("width", width)
     .attr("height", height);
 
@@ -256,18 +258,18 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   }
   if (outputFile.endsWith(".svg")) {
     // Add XML declaration, SVG namespace, and ensure all required namespaces are included
-    const xmlDeclaration = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
-    let svgWithNamespace = prettySvg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"');
-
-    // Ensure all nested SVG elements have proper namespaces
-    svgWithNamespace = svgWithNamespace.replace(/<svg\s+(?!xmlns)/g, '<svg xmlns="http://www.w3.org/2000/svg" ');
+    const xmlDeclaration =
+      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
 
     // Add style to ensure nested SVGs render properly
-    svgWithNamespace = svgWithNamespace.replace('</defs>', `
+    const svgWithNamespace = prettySvg.replace(
+      "</defs>",
+      `
       <style>
         svg { overflow: visible; }
       </style>
-    </defs>`);
+    </defs>`,
+    );
 
     fs.writeFileSync(outputFile, xmlDeclaration + svgWithNamespace);
     return prettySvg;
