@@ -33,7 +33,11 @@ importers:
         specifier: ^7.20.5
         version: 7.20.5
       '@types/d3':
+<<<<<<< HEAD
         specifier: ^6.7.8
+=======
+        specifier: ^6.7.0
+>>>>>>> 548ba1e (Update lock)
         version: 6.7.8
       '@types/jsdom':
         specifier: ^21.1.7
@@ -180,7 +184,11 @@ importers:
         specifier: ^1.8.1
         version: 1.8.1
       string-width:
+<<<<<<< HEAD
         specifier: ^4.2.3
+=======
+        specifier: ^4.2.0
+>>>>>>> 548ba1e (Update lock)
         version: 4.2.3
       string.ify:
         specifier: ^1.0.64
