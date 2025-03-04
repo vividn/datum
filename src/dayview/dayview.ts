@@ -204,11 +204,9 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const allErrors = dataArea.selectAll(".error");
 
   if (allErrors.size() > 0) {
-    console.log("Error details:");
     const erroredFields = new Set<string>();
     allErrors.each(function () {
       const field = d3.select(this).attr("field");
-      console.log("Error field:", field);
       erroredFields.add(field);
     });
     console.log("All errored fields:", Array.from(erroredFields));
