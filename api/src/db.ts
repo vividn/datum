@@ -15,10 +15,10 @@ export async function getDb() {
   const config = getConfig();
 
   // Create a separate database for the API
-  const apiDb = new PouchDB<EitherPayload>(`${config.path || 'datum'}-api`);
+  const apiDb = new PouchDB<EitherPayload>(`${config.db || 'datum'}-api`);
 
   // Set up two-way sync with the main database
-  const mainDb = new PouchDB<EitherPayload>(config.path || 'datum');
+  const mainDb = new PouchDB<EitherPayload>(config.db || 'datum');
 
   // Set up continuous bidirectional sync
   syncHandler = apiDb.sync(mainDb, {
