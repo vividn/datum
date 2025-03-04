@@ -17,6 +17,7 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "nano": "^10.1.4",
+    "pouchdb-find": "^9.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.7.3"
   },
