@@ -148,26 +148,20 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const dayResults = await Promise.all(
     days.map(async (date, i) => {
       const y = i * (dayHeight + interdayMargin);
-      try {
-        const daySvg = await singleDay({
-          db,
-          date,
-          dataWidth,
-          height: dayHeight,
-          labelWidth: 0,
-        });
-        return { date, svg: daySvg, y };
-      } catch (error) {
-        console.error(`Error loading data for ${date}:`, error);
-        return { date, error, y, svg: null };
-      }
+      const daySvg = await singleDay({
+        db,
+        date,
+        dataWidth,
+        height: dayHeight,
+        labelWidth: 0,
+      });
+      return { date, svg: daySvg, y };
     }),
   );
 
   dayResults.forEach(({ svg, y }) => {
     dataArea.append(() => svg).attr("y", y);
   });
-
 
   const timeAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
 
