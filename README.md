@@ -122,6 +122,7 @@ The web interface consists of two parts that need to be running simultaneously:
 1. **API Server** (Terminal 1)
    ```bash
    cd api
+   pnpm install
    pnpm dev
    ```
    The API will be available at http://localhost:3001
@@ -129,6 +130,7 @@ The web interface consists of two parts that need to be running simultaneously:
 2. **Frontend** (Terminal 2)
    ```bash
    cd frontend
+   pnpm install
    pnpm start
    ```
    The web interface will open automatically at http://localhost:3000
