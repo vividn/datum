@@ -159,30 +159,15 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
         return { date, svg: daySvg, y };
       } catch (error) {
         console.error(`Error loading data for ${date}:`, error);
-        return { date, error, y };
+        return { date, error, y, svg: null };
       }
     }),
   );
 
-  // Debug errors
-  const allErrors = dataArea.selectAll(".error");
+  dayResults.forEach(({ svg, y }) => {
+    dataArea.append(() => svg).attr("y", y);
+  });
 
-  if (allErrors.size() > 0) {
-    console.log("Error details:");
-    const erroredFields = new Set<string>();
-    allErrors.each(function () {
-      const field = d3.select(this).attr("field");
-      console.log("Error field:", field);
-      erroredFields.add(field);
-    });
-    console.log("All errored fields:", Array.from(erroredFields));
-  }
-
-  await Promise.all(
-    dayResults.map(({ date, svg, y }) => {
-      dataArea.append(() => svg).attr("y", y);
-    }),
-  );
 
   const timeAxis = d3.axisBottom(timeScale).ticks(d3.timeHour.every(1), "%H");
 
@@ -222,7 +207,17 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("stroke-opacity", (d) => (d.getUTCHours() % 3 === 0 ? 0.4 : 0.1));
 
   // Add warning icon at the bottom if there are any errors
+  const allErrors = dataArea.selectAll(".error");
+
   if (allErrors.size() > 0) {
+    console.log("Error details:");
+    const erroredFields = new Set<string>();
+    allErrors.each(function () {
+      const field = d3.select(this).attr("field");
+      console.log("Error field:", field);
+      erroredFields.add(field);
+    });
+    console.log("All errored fields:", Array.from(erroredFields));
     const _errorIcon = svg
       .append("use")
       .attr("href", "#warning-icon")
