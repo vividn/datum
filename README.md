@@ -92,6 +92,18 @@ pnpm install
 pnpm run system
 ```
 
+### Running the API Server
+```bash
+cd api
+pnpm dev
+```
+
+### Running the Web Interface
+```bash
+cd frontend
+pnpm start
+```
+
 ## Database Configuration
 
 Datum uses PouchDB by default for local storage. For remote synchronization or multi-device usage, you can connect to CouchDB:
