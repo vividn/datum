@@ -92,18 +92,6 @@ pnpm install
 pnpm run system
 ```
 
-### Running the API Server
-```bash
-cd api
-pnpm dev
-```
-
-### Running the Web Interface
-```bash
-cd frontend
-pnpm start
-```
-
 ## Database Configuration
 
 Datum uses PouchDB by default for local storage. For remote synchronization or multi-device usage, you can connect to CouchDB:
@@ -133,14 +121,14 @@ The web interface consists of two parts that need to be running simultaneously:
 
 1. **API Server** (Terminal 1)
    ```bash
-   cd projects/datum-api
+   cd api
    pnpm dev
    ```
    The API will be available at http://localhost:3001
 
 2. **Frontend** (Terminal 2)
    ```bash
-   cd projects/datum-frontend
+   cd frontend
    pnpm start
    ```
    The web interface will open automatically at http://localhost:3000
