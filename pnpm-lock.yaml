@@ -33,7 +33,7 @@ importers:
         specifier: ^7.20.5
         version: 7.20.5
       '@types/d3':
-        specifier: ^6.7.0
+        specifier: ^6.7.8
         version: 6.7.8
       '@types/jsdom':
         specifier: ^21.1.7
@@ -180,7 +180,7 @@ importers:
         specifier: ^1.8.1
         version: 1.8.1
       string-width:
-        specifier: ^4.2.0
+        specifier: ^4.2.3
         version: 4.2.3
       string.ify:
         specifier: ^1.0.64
@@ -5489,7 +5489,8 @@ snapshots:
 
   camelcase@6.3.0: {}
 
-  caniuse-lite@1.0.30001660: {}
+  /caniuse-lite@1.0.30001660:
+    resolution: {integrity: sha512-GacvNTTuATm26qC74pt+ad1fW15mlQ/zuTzzY1ZoIzECTP8HURDfF43kNxPgf7H1jmelCBQTTbBNxdSXOA7Bqg==}
 
   catering@2.1.1: {}
 

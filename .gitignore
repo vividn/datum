@@ -113,4 +113,4 @@ build/
 .pouch
 
 .DS_Store
-**/pnpm-lock.yaml
+**/.DS_Store
