@@ -27,14 +27,19 @@ export async function singleDay(args: SingleDayArgs) {
     .append("svg")
     .attr("class", `day ${day.toISODate()}`);
 
-  const dayData = await allFieldsSvg({
-    db,
-    startUtc,
-    endUtc,
-    width: dataWidth,
-    height,
-  });
-  svg.append(() => dayData);
+  try {
+    const dayData = await allFieldsSvg({
+      db,
+      startUtc,
+      endUtc,
+      width: dataWidth,
+      height,
+    });
+    svg.append(() => dayData);
+  } catch (error) {
+    console.error(`Error loading data for ${date}:`, error);
+    svg.append("use").attr("href", "#warning-icon").attr("height", height);
+  }
 
   return svg.node();
 }
