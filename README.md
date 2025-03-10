@@ -114,3 +114,31 @@ Datum uses PouchDB by default for local storage. For remote synchronization or m
 ## Contributing
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
+
+### Running the Web Interface
+
+The web interface consists of two parts that need to be running simultaneously:
+
+1. **API Server** (Terminal 1)
+   ```bash
+   cd api
+   pnpm install
+   pnpm dev
+   ```
+   The API will be available at http://localhost:3001
+
+2. **Frontend** (Terminal 2)
+   ```bash
+   cd frontend
+   pnpm install
+   pnpm start
+   ```
+   The web interface will open automatically at http://localhost:3000
+
+Both services will automatically reload when you make changes to the code.
+
+### Development Tips
+- The API server must be running for the frontend to work
+- The frontend will proxy API requests to port 3001
+- SVG files are cached in `~/.datum/svgs/`
+- Use `pnpm run build` in either project directory to create production builds
