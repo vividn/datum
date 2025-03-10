@@ -1,6 +1,6 @@
 {
   "name": "@vividn/datum",
-  "version": "2.1.0-alpha.0",
+  "version": "2.1.0-alpha.1",
   "description": "Record and track and analyze data on your life",
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
