@@ -76,7 +76,6 @@ app.get('/api/tail', async (req, res) => {
   console.log('Tail endpoint called with params:', req.query);
 
   const limit = parseInt(req.query.limit as string) || 10;
-  const metric = req.query.metric as string || 'hybrid';
   const field = req.query.field as string || '';
 
   // Build arguments for datum tail command - use default output format
@@ -85,10 +84,6 @@ app.get('/api/tail', async (req, res) => {
   // Add the limit parameter
   args.push('-n', limit.toString());
 
-  // Add metric if specified
-  if (metric !== 'hybrid') {
-    args.push('--metric', metric);
-  }
 
   // Add field if specified
   if (field) {

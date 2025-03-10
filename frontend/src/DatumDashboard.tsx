@@ -110,7 +110,6 @@ const DatumDashboard: React.FC = () => {
   };
 
   // New state for tail settings
-  const [tailMetric, setTailMetric] = useState<'hybrid' | 'occur' | 'create' | 'modify'>('hybrid');
   const [tailField, setTailField] = useState<string>('');
 
   // New function to fetch tail data
@@ -121,7 +120,6 @@ const DatumDashboard: React.FC = () => {
       // Build query parameters
       const params = new URLSearchParams({
         limit: tailLimit.toString(),
-        metric: tailMetric
       });
 
       if (tailField.trim()) {
@@ -426,21 +424,6 @@ const DatumDashboard: React.FC = () => {
                     <option value={20}>20</option>
                     <option value={50}>50</option>
                     <option value={100}>100</option>
-                  </select>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <label htmlFor="tail-metric" className="text-sm">Metric:</label>
-                  <select
-                    id="tail-metric"
-                    value={tailMetric}
-                    onChange={(e) => setTailMetric(e.target.value as 'hybrid' | 'occur' | 'create' | 'modify')}
-                    className="border rounded p-1"
-                  >
-                    <option value="hybrid">Hybrid</option>
-                    <option value="occur">Occurred</option>
-                    <option value="create">Created</option>
-                    <option value="modify">Modified</option>
                   </select>
                 </div>
 
