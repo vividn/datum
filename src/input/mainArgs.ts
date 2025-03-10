@@ -23,6 +23,7 @@ import { restoreCmd } from "../commands/restoreCmd";
 import { migrateCmd } from "../commands/migrateCmd";
 import { checkCmd } from "../commands/checkCmd";
 import { dayviewCmd } from "../commands/dayviewCmd";
+import { syncCmd } from "../commands/syncCmd";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -166,6 +167,10 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     //   const ns = parser.parse_intermixed_args(args, namespace);
     //   break;
     // }
+
+    case "sync":
+      await syncCmd(args, namespace);
+      break;
 
     default:
       throw Error(`command "${command}" not recognized`);
