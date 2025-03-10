@@ -1,42 +1,116 @@
-NOTE: This software is still in alpha phase and is not feature complete. Expect breaking changes and instability until version 2.1.0 is released
-
 # Datum
-Datum is a personal database for collecting and analyzing data on your life
 
-Record timestamped occur data for point-based time series data tracking:
-`datum occur alcohol type=beer`
-`datum occur vitamin -t 9:15am` # flexibly control time of occurence, relative and absolute
+> A command-line personal analytics database for life tracking and data analysis
 
-Record start/end data for block-based time series data tracking:
-`datum start sleep`
-`datum end sleep`
+![Alpha Version](https://img.shields.io/badge/status-alpha-orange)
 
+Datum helps you collect, track, and analyze personal data through an intuitive command-line interface. It supports multiple types of time-series data collection and arbitrary data storage.
 
-Record state based time series data:
-`datum switch project emails`
-`datum switch project meeting`
-`datum switch project end`
+## Features
 
+### Data Collection
 
-Even record non time based arbitrary data:
-`datum add person name=Nate city=Berlin`
+- **Point-in-time Events**
+  ```bash
+  datum occur alcohol type=beer
+  datum occur vitamin -t 9:15am  # Flexible timestamp control
+  ```
 
+- **Duration Tracking**
+  ```bash
+  datum start sleep
+  datum end sleep
+  ```
+
+- **State Management**
+  ```bash
+  datum switch project emails
+  datum switch project meeting
+  datum switch project end
+  ```
+
+- **General Data Storage**
+  ```bash
+  datum add person name=Nate city=Berlin
+  ```
+
+### Data Visualization
+
+Datum provides multiple ways to visualize and analyze your data:
+
+- **Daily Timeline View**
+  ```bash
+  datum dayview            # View today's tracked time blocks
+  datum dayview -d 2024-02-01  # View specific date
+  datum dayview -n 7       # Show the last week of data
+  ```
+  Generates a SVG timeline showing all tracked activities for a given day, with color-coding by category.
+
+- **Activity Analysis**
+  ```bash
+  datum tail              # Show the last 10 datum data entered
+  datum tail -n 50        # Show the last 50 entries
+  datum tail project      # Show the last entries for the project field
+  ```
+
+- **Data Querying**
+For more information see the [CouchDB](https://docs.couchdb.org/en/stable/ddocs/views/intro.html) and [PouchDB](https://pouchdb.com/guides/queries.html) documentation
+  ```bash
+  datum map <view_name>     # Show the key/value table for the given view
+  datum map <view_name> <key> # show just the rows in the table starting with key
+  datum map <view_name> <start_key> <end_key> # Show the rows between the two keys
+  datum reduce <view_name>      # Run the specified reduce function
+  datum reduce <view_name> -g 2 # Run the specifed reduce function with group level 2
+  datum grep "search"     # Search through records
+  ```
+
+- ** Check for problems in the data
+  ```bash
+  datum check            # Check if there are repeated states or other problems in the data
+  datum check --fix      # Fix automatically fixable errors
+  ```
 
 ## Installation
-#### Latest Release
-`pnpm install --global @vividn/datum`
-`npm install -g @vividn/datum`
-`yarn global add @vividn/datum`
 
-#### Development
-in repo: `pnpm run system`
+### Package Managers
+```bash
+# pnpm (recommended)
+pnpm install --global @vividn/datum
 
+# npm
+npm install -g @vividn/datum
 
-## CouchDB
-Datum uses PouchDB as its default database backend. However, you can use `datum` to talk directly to CouchDB if you would like. Use `--host` or change the `host:` option in the config to point to a CouchDb server and then either set the $COUCHDB_USER and $COUCHDB_PASSWORD environment variables or set the values in the config.
+# yarn
+yarn global add @vividn/datum
+```
 
-See installation instructions here for installing a CouchDb: https://docs.couchdb.org/en/stable/
+### Development Setup
+```bash
+git clone https://github.com/your-repo/datum.git
+cd datum
+pnpm install
+pnpm run system
+```
 
-As admin, setup a `datum` database inside of CouchDb and make sure your user has admin rights to this database.
+## Database Configuration
 
+Datum uses PouchDB by default for local storage. For remote synchronization or multi-device usage, you can connect to CouchDB:
 
+1. Install CouchDB following the [official documentation](https://docs.couchdb.org/en/stable/)
+2. Create a `datum` database and configure user permissions
+3. Configure Datum via either:
+   - Environment variables: `COUCHDB_USER` and `COUCHDB_PASSWORD`
+   - Config file: Update `host:` and credentials
+   - CLI: Use the `--host` flag
+
+## Status
+
+⚠️ Alpha Software Warning: Datum is under active development. Expect breaking changes and instability until version 2.1.0.
+
+## License
+
+[License Type] - See LICENSE file for details
+
+## Contributing
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for development setup and guidelines.
