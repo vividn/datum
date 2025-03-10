@@ -13,6 +13,14 @@ export const syncArgs = new ArgumentParser({
 syncArgs.add_argument("remote", {
   help: "the remote host to sync with",
 });
+syncArgs.add_argument("--remote-user", {
+  help: "the username to use for the remote host if different than --user",
+  dest: "remoteUser",
+});
+syncArgs.add_argument("--remote-password", {
+  help: "the password to use for the remote host if different than --password",
+  dest: "remotePassword",
+});
 syncArgs.add_argument("--watch", "-w", {
   help: "watch for changes and sync continuously",
   action: "store_true",
@@ -27,6 +35,8 @@ export const syncCmdArgs = new ArgumentParser({
 
 export type SyncCmdArgs = MainDatumArgs & {
   remote: string;
+  remoteUser?: string;
+  remotePassword?: string;
   watch?: boolean;
 };
 
@@ -37,11 +47,11 @@ export async function syncCmd(
   const args = parseIfNeeded(syncCmdArgs, argsOrCli, preparsed);
   const db = connectDb(args);
 
-  // TODO: allow using different username/password for remote
   const couchAuth = {
-    username: args.user,
-    password: args.password,
+    username: args.remoteUser ?? args.user,
+    password: args.remotePassword ?? args.password,
   }
+
   const remote = args.remote;
   const remoteDb = new PouchDb(remote, { auth: couchAuth });
 
