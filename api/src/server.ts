@@ -15,6 +15,14 @@ const port = process.env.PORT || 3001;
 // Load config early to catch any issues
 const config = getConfig();
 
+// Temporary directory for tail output JSON files
+const TAIL_DIR = path.join(__dirname, '../temp/tail');
+
+// Ensure the directory exists
+if (!fs.existsSync(TAIL_DIR)) {
+  fs.mkdirSync(TAIL_DIR, { recursive: true });
+}
+
 // Ensure SVG directory exists
 const SVG_DIR = path.join(process.env.HOME || '', '.datum', 'svgs');
 fs.mkdirSync(SVG_DIR, { recursive: true });
@@ -58,6 +66,144 @@ app.get('/api/dayview/:startDate/:endDate?', (req, res) => {
     res.contentType('image/svg+xml');
     res.send(svgContent);
   });
+});
+
+/**
+ * GET /api/tail
+ * Returns the most recent datum entries (similar to datum tail CLI command)
+ */
+app.get('/api/tail', async (req, res) => {
+  console.log('Tail endpoint called with params:', req.query);
+
+  const limit = parseInt(req.query.limit as string) || 10;
+  const metric = req.query.metric as string || 'hybrid';
+  const field = req.query.field as string || '';
+
+  // Build arguments for datum tail command - use default output format
+  const args = ['tail'];
+
+  // Add the limit parameter
+  args.push('-n', limit.toString());
+
+  // Add metric if specified
+  if (metric !== 'hybrid') {
+    args.push('--metric', metric);
+  }
+
+  // Add field if specified
+  if (field) {
+    args.push(field);
+  }
+
+  console.log('Running command: datum', args.join(' '));
+
+  try {
+    const process = spawn('datum', args);
+
+    let outputData = '';
+    let errorOutput = '';
+
+    process.stdout.on('data', (data) => {
+      outputData += data.toString();
+    });
+
+    process.stderr.on('data', (data) => {
+      errorOutput += data.toString();
+      console.error(`Tail stderr: ${data}`);
+    });
+
+    // Use a Promise to wait for the process to complete
+    await new Promise((resolve, reject) => {
+      process.on('close', (code) => {
+        console.log(`Tail process exited with code ${code}`);
+        if (code !== 0) {
+          reject(new Error(`Process exited with code ${code}: ${errorOutput}`));
+        } else {
+          resolve(null);
+        }
+      });
+    });
+
+    console.log('Raw output sample:', outputData.substring(0, 200));
+
+    // Now parse the default output format
+    // Split by lines and process each line to extract entry data
+    const lines = outputData.split('\n')
+      .filter(line => line.trim())
+      // Skip header line and remove 'line' prefix
+      .filter(line => !line.includes('time  field'))
+      .map(line => line.replace(/^line\s+/, ''));
+
+    // Create entries from the output
+    const entries = [];
+    let currentEntry = null;
+
+    for (const line of lines) {
+      // Detect if this is a header line (with date, ID, etc.)
+      if (line.match(/^\d{4}-\d{2}-\d{2}/) || line.match(/^\s*\d{2}:\d{2}:\d{2}/)) {
+        if (currentEntry) {
+          entries.push(currentEntry);
+        }
+
+        // Start a new entry
+        currentEntry = {
+          id: '',
+          timestamp: '',
+          text: '',
+          category: '',
+          type: ''
+        };
+
+        // Parse the line into columns (handling multiple spaces as separators)
+        const parts = line.trim().split(/\s+/);
+
+        // Handle timestamp
+        if (parts[0].includes(':')) {
+          // Time-only format (e.g., "12:14:21+1")
+          currentEntry.timestamp = DateTime.now().toFormat('yyyy-MM-dd') + ' ' + parts[0].replace('+1', '');
+        } else {
+          // Full date-time format (e.g., "2025-02-21 15:54:01+1")
+          currentEntry.timestamp = `${parts[0]} ${parts[1].replace('+1', '')}`;
+        }
+
+        currentEntry.category = parts[2] || '';
+        currentEntry.type = parts[3] || '';
+        currentEntry.id = parts[4] || '';
+      } else if (currentEntry) {
+        // If not a header, then this is content for the current entry
+        currentEntry.text += (currentEntry.text ? '\n' : '') + line;
+      }
+    }
+
+    // Don't forget to add the last entry
+    if (currentEntry) {
+      entries.push(currentEntry);
+    }
+    console.log("Entries", entries);
+
+    console.log(`Parsed ${entries.length} entries from command output`);
+
+    // If we couldn't parse any entries, generate a dummy entry with the raw output for debugging
+    if (entries.length === 0) {
+      entries.push({
+        id: `temp-${Date.now()}`,
+        timestamp: new Date().toISOString(),
+        text: 'Failed to parse entries from command output. Raw output:\n\n' + outputData,
+        category: 'error',
+        type: 'error'
+      });
+    }
+
+    // Send the entries
+    res.json(entries);
+
+  } catch (error) {
+    console.error('Error in tail endpoint:', error);
+    res.status(500).json({
+      error: 'Failed to generate tail data',
+      details: error instanceof Error ? error.message : String(error)
+    });
+  }
 });
 
 // Test DB connection on startup

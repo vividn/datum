@@ -6,6 +6,11 @@
   "author": "Nate Faber <nathaniel@njfaber.com>",
   "license": "UNLICENSED",
   "main": "build/src/index.js",
+  "exports": {
+    ".": "./build/src/index.js",
+    "./src/field/fieldColor": "./build/src/field/fieldColor.js",
+    "./src/utils/colorUtils": "./build/src/utils/colorUtils.js"
+  },
   "bin": {
     "datum": "./build/src/index.js",
     "eqcheck": "./build/projects/finance/src/eqcheck.js",

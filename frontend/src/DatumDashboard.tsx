@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DateTime } from 'luxon'; // Add for better date handling
+import { getStateColor, getFieldColor } from '@vividn/datum/src/field/fieldColor';
+import { getContrastTextColor } from '@vividn/datum/src/utils/colorUtils';
 
 // Use fetch or a proper API method instead of window.fs
 const fetchDayviewData = async (startDate: string, width: number, endDate?: string) => {
@@ -30,6 +32,14 @@ interface DatumStats {
   mostActiveHour: string;
 }
 
+interface DatumEntry {
+  id: string;
+  timestamp: string;
+  text: string;
+  category?: string;
+  type?: string;
+}
+
 const DatumDashboard: React.FC = () => {
   const today = DateTime.now();
   const tomorrow = today.plus({ days: 1 });
@@ -39,9 +49,17 @@ const DatumDashboard: React.FC = () => {
   const [endDate, setEndDate] = useState(tomorrow.toISODate());
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month'>('day');
+  const [viewMode, setViewMode] = useState<'day' | 'week' | 'month' | 'tail'>('day');
   const [autoRefresh, setAutoRefresh] = useState(false);
   const [stats, setStats] = useState<DatumStats | null>(null);
+
+  // New state for datum tail feature
+  const [tailEntries, setTailEntries] = useState<DatumEntry[]>([]);
+  const [tailLoading, setTailLoading] = useState(false);
+  const [tailError, setTailError] = useState<string | null>(null);
+  const [tailLimit, setTailLimit] = useState(20);
+  const [tailAutoScroll, setTailAutoScroll] = useState(true);
+  const tailEndRef = useRef<HTMLDivElement>(null);
 
   // Quick select buttons for common ranges
   const setDateRange = (days: number) => {
@@ -60,6 +78,8 @@ const DatumDashboard: React.FC = () => {
   };
 
   const loadDayview = async () => {
+    if (viewMode === 'tail') return; // Skip loading dayview when in tail mode
+
     setError(null);
     setIsLoading(true);
     try {
@@ -89,44 +109,157 @@ const DatumDashboard: React.FC = () => {
     }
   };
 
-  // const loadStats = async () => {
-  //   try {
-  //     const endDateParam = startDate !== endDate ? `?endDate=${endDate}` : '';
-  //     const response = await fetch(`http://localhost:3001/api/stats/${startDate}${endDateParam}`);
-  //     if (!response.ok) throw new Error('Failed to fetch stats');
-  //     const data = await response.json();
-  //     setStats(data);
-  //   } catch (error) {
-  //     console.error('Failed to load stats:', error);
-  //   }
-  // };
+  // New state for tail settings
+  const [tailMetric, setTailMetric] = useState<'hybrid' | 'occur' | 'create' | 'modify'>('hybrid');
+  const [tailField, setTailField] = useState<string>('');
 
-  // Auto-refresh timer
+  // New function to fetch tail data
+  const fetchTailData = async () => {
+    setTailLoading(true);
+    setTailError(null);
+    try {
+      // Build query parameters
+      const params = new URLSearchParams({
+        limit: tailLimit.toString(),
+        metric: tailMetric
+      });
+
+      if (tailField.trim()) {
+        params.append('field', tailField);
+      }
+
+      const response = await fetch(`http://localhost:3001/api/tail?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch tail data');
+      }
+      const data = await response.json();
+      setTailEntries(data);
+    } catch (error) {
+      console.error('Error fetching tail data:', error);
+      setTailError(error instanceof Error ? error.message : 'Failed to load tail data');
+    } finally {
+      setTailLoading(false);
+    }
+  };
+
+  // Scroll to bottom of tail entries when new entries come in
+  useEffect(() => {
+    if (tailAutoScroll && tailEndRef.current && viewMode === 'tail') {
+      tailEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [tailEntries, tailAutoScroll, viewMode]);
+
+  // Auto-refresh timer for dayview
   useEffect(() => {
     if (!autoRefresh) return;
 
     const timer = setInterval(() => {
-      loadDayview();
+      if (viewMode === 'tail') {
+        fetchTailData();
+      } else {
+        loadDayview();
+      }
     }, 60000); // Refresh every minute
 
     return () => clearInterval(timer);
-  }, [autoRefresh, startDate, endDate]);
+  }, [autoRefresh, startDate, endDate, viewMode, tailLimit]);
 
   useEffect(() => {
     const handleResize = () => {
-      loadDayview();
+      if (viewMode !== 'tail') {
+        loadDayview();
+      }
     };
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
-  }, [startDate, endDate]); // Re-run when dates change
+  }, [startDate, endDate, viewMode]); // Re-run when dates or viewMode change
 
   useEffect(() => {
-    loadDayview();
-  }, [startDate, endDate]);
+    if (viewMode === 'tail') {
+      fetchTailData();
+    } else {
+      loadDayview();
+    }
+  }, [startDate, endDate, viewMode, tailLimit]);
 
-  // useEffect(() => {
-  //   loadStats();
-  // }, [startDate, endDate]);
+  // Format timestamp for display in tail view
+  const formatTimestamp = (timestamp: string) => {
+    try {
+      // Ensure timestamp is in ISO format by replacing space with 'T'
+      const isoTimestamp = timestamp.replace(' ', 'T');
+      return DateTime.fromISO(isoTimestamp).toFormat('yyyy-MM-dd HH:mm:ss');
+    } catch (e) {
+      console.error('Error parsing timestamp:', timestamp, e);
+      return timestamp;
+    }
+  };
+
+  // Function to determine the color based on entry category or type
+  const getCategoryColor = (entry: DatumEntry) => {
+    const category = entry.category?.toLowerCase() || entry.type?.toLowerCase();
+
+    if (!category) return 'bg-gray-100';
+
+    if (category.includes('work')) return 'bg-blue-100';
+    if (category.includes('personal')) return 'bg-green-100';
+    if (category.includes('meeting')) return 'bg-purple-100';
+    if (category.includes('break') || category.includes('rest')) return 'bg-yellow-100';
+    if (category.includes('exercise')) return 'bg-orange-100';
+    if (category.includes('learning')) return 'bg-indigo-100';
+    if (category.includes('error')) return 'bg-red-100';
+
+    // Hash the category string to get a consistent color
+    const hash = category.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    const colors = [
+      'bg-blue-100', 'bg-green-100', 'bg-yellow-100',
+      'bg-purple-100', 'bg-pink-100', 'bg-indigo-100'
+    ];
+    return colors[hash % colors.length];
+  };
+
+  const TailEntry = ({ entry }: { entry: DatumEntry }) => {
+    const timestamp = formatTimestamp(entry.timestamp);
+
+    // Get colors for the field and state
+    const fieldColor = getFieldColor(entry.category);
+    const stateColor = getStateColor({
+      state: entry.type,
+      field: entry.category
+    });
+
+    // Get contrasting text colors
+    const fieldTextColor = getContrastTextColor(fieldColor);
+    const stateTextColor = getContrastTextColor(stateColor);
+
+    return (
+      <div style={{
+        fontFamily: 'monospace',
+        whiteSpace: 'pre',
+        margin: '2px 0'
+      }}>
+        {timestamp}
+        <span style={{
+          backgroundColor: fieldColor,
+          color: fieldTextColor,
+          padding: '0 4px',
+          marginLeft: '2px',
+          marginRight: '2px'
+        }}>
+          {entry.category?.padEnd(12)}
+        </span>
+        <span style={{
+          backgroundColor: stateColor,
+          color: stateTextColor,
+          padding: '0 4px'
+        }}>
+          {entry.type?.padEnd(10)}
+        </span>
+        <span style={{ marginLeft: '4px', color: '#666' }}>
+          {entry.id?.padEnd(6)}
+        </span>
+      </div>
+    );
+  };
 
   return (
     <div className="p-4 max-w-6xl mx-auto">
@@ -136,7 +269,7 @@ const DatumDashboard: React.FC = () => {
         {/* View mode selector */}
         <div className="flex items-center gap-4">
           <div className="flex bg-gray-100 rounded-lg p-1">
-            {(['day', 'week', 'month'] as const).map(mode => (
+            {(['day', 'week', 'month', 'tail'] as const).map(mode => (
               <button
                 key={mode}
                 onClick={() => {
@@ -144,6 +277,7 @@ const DatumDashboard: React.FC = () => {
                   if (mode === 'day') setDateRange(1);
                   if (mode === 'week') setDateRange(7);
                   if (mode === 'month') setDateRange(30);
+                  if (mode === 'tail') fetchTailData();
                 }}
                 className={`px-4 py-2 rounded-md ${
                   viewMode === mode
@@ -151,7 +285,7 @@ const DatumDashboard: React.FC = () => {
                     : 'hover:bg-gray-200'
                 }`}
               >
-                {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                {mode === 'tail' ? 'Tail' : mode.charAt(0).toUpperCase() + mode.slice(1)}
               </button>
             ))}
           </div>
@@ -169,160 +303,208 @@ const DatumDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="bg-white shadow-sm rounded-lg p-4 mb-4">
-        {/* Quick select buttons */}
-        <div className="flex gap-2 mb-4">
-          <button
-            onClick={() => {
-              const today = DateTime.now();
-              setStartDate(today.toISODate());
-              setEndDate(today.toISODate()); // Set to same day instead of tomorrow
-            }}
-            className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-          >
-            Today
-          </button>
-          <button
-            onClick={() => setDateRange(3)}
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-          >
-            Last 3 Days
-          </button>
-          <button
-            onClick={() => setDateRange(7)}
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-          >
-            Last Week
-          </button>
-          <button
-            onClick={() => setDateRange(30)}
-            className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
-          >
-            Last Month
-          </button>
-          <button
-            onClick={() => {
-              const start = DateTime.now().startOf('week');
-              setStartDate(start.toISODate());
-              setEndDate(start.plus({ days: 6 }).toISODate());
-            }}
-            className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-          >
-            This Week
-          </button>
-        </div>
-
-        {/* Date range inputs */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center">
-            <label htmlFor="start-date" className="mr-2">From:</label>
-            <input
-              id="start-date"
-              type="date"
-              value={startDate}
-              onChange={(e) => setStartDate(e.target.value)}
-              className="border p-2"
-            />
-          </div>
-
-          <div className="flex items-center">
-            <label htmlFor="end-date" className="mr-2">To:</label>
-            <input
-              id="end-date"
-              type="date"
-              value={endDate}
-              min={startDate}
-              onChange={(e) => setEndDate(e.target.value)}
-              className="border p-2"
-            />
-          </div>
-
-          <button
-            onClick={loadDayview}
-            className="ml-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-blue-300"
-            disabled={isLoading}
-          >
-            {isLoading ? 'Loading...' : 'Refresh'}
-          </button>
-        </div>
-      </div>
-
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-          {error}
-        </div>
-      )}
-
-      {isLoading ? (
-        <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
-          <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
-        </div>
-      ) : dayviewData ? (
-        <div className="bg-white shadow-sm rounded-lg overflow-hidden">
-          <div
-            dangerouslySetInnerHTML={{ __html: dayviewData }}
-            className="overflow-auto"
-          />
-        </div>
-      ) : (
-        <div className="text-center py-12 bg-gray-50 rounded-lg">
-          <p className="text-gray-500">No data available for selected dates</p>
-        </div>
-      )}
-
-      {/* Statistics Panel
-      <div className="mt-6 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="text-lg font-semibold mb-2">Total Hours</h3>
-          {stats ? (
-            <div className="text-3xl font-bold text-blue-600">
-              {stats.totalHours}
-              <span className="text-sm text-gray-500 ml-1">hrs</span>
+      {viewMode !== 'tail' ? (
+        // Dayview controls and display
+        <>
+          <div className="bg-white shadow-sm rounded-lg p-4 mb-4">
+            {/* Quick select buttons */}
+            <div className="flex gap-2 mb-4">
+              <button
+                onClick={() => {
+                  const today = DateTime.now();
+                  setStartDate(today.toISODate());
+                  setEndDate(today.toISODate()); // Set to same day instead of tomorrow
+                }}
+                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                Today
+              </button>
+              <button
+                onClick={() => setDateRange(3)}
+                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Last 3 Days
+              </button>
+              <button
+                onClick={() => setDateRange(7)}
+                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Last Week
+              </button>
+              <button
+                onClick={() => setDateRange(30)}
+                className="px-3 py-1 bg-gray-200 rounded hover:bg-gray-300"
+              >
+                Last Month
+              </button>
+              <button
+                onClick={() => {
+                  const start = DateTime.now().startOf('week');
+                  setStartDate(start.toISODate());
+                  setEndDate(start.plus({ days: 6 }).toISODate());
+                }}
+                className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+              >
+                This Week
+              </button>
             </div>
-          ) : (
-            <div className="animate-pulse h-8 bg-gray-200 rounded w-24" />
-          )}
-        </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="text-lg font-semibold mb-2">Most Active Times</h3>
-          {stats ? (
-            <div>
-              <div className="text-xl font-medium text-gray-700">
-                {stats.mostActiveHour}
+            {/* Date range inputs */}
+            <div className="flex items-center gap-4">
+              <div className="flex items-center">
+                <label htmlFor="start-date" className="mr-2">From:</label>
+                <input
+                  id="start-date"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="border p-2"
+                />
               </div>
-              <div className="text-sm text-gray-500">Peak activity</div>
-            </div>
-          ) : (
-            <div className="animate-pulse h-8 bg-gray-200 rounded w-32" />
-          )}
-        </div>
 
-        <div className="bg-white p-4 rounded-lg shadow-sm">
-          <h3 className="text-lg font-semibold mb-2">Top Categories</h3>
-          {stats ? (
-            <div className="space-y-2">
-              {Object.entries(stats.categories)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 3)
-                .map(([category, minutes]) => (
-                  <div key={category} className="flex justify-between items-center">
-                    <span className="text-gray-700">{category}</span>
-                    <span className="text-gray-500">
-                      {Math.round(minutes / 60 * 10) / 10}hrs
-                    </span>
-                  </div>
-                ))}
+              <div className="flex items-center">
+                <label htmlFor="end-date" className="mr-2">To:</label>
+                <input
+                  id="end-date"
+                  type="date"
+                  value={endDate}
+                  min={startDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="border p-2"
+                />
+              </div>
+
+              <button
+                onClick={loadDayview}
+                className="ml-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-blue-300"
+                disabled={isLoading}
+              >
+                {isLoading ? 'Loading...' : 'Refresh'}
+              </button>
+            </div>
+          </div>
+
+          {error && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {error}
+            </div>
+          )}
+
+          {isLoading ? (
+            <div className="flex items-center justify-center h-64 bg-gray-50 rounded-lg">
+              <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent"></div>
+            </div>
+          ) : dayviewData ? (
+            <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+              <div
+                dangerouslySetInnerHTML={{ __html: dayviewData }}
+                className="overflow-auto"
+              />
             </div>
           ) : (
-            <div className="space-y-2">
-              {[1, 2, 3].map(i => (
-                <div key={i} className="animate-pulse h-6 bg-gray-200 rounded" />
-              ))}
+            <div className="text-center py-12 bg-gray-50 rounded-lg">
+              <p className="text-gray-500">No data available for selected dates</p>
+            </div>
+          )}
+        </>
+      ) : (
+        // Tail View
+        <div className="bg-white shadow-sm rounded-lg p-4">
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold">Recent Entries</h2>
+
+                          <div className="flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-2">
+                  <label htmlFor="tail-limit" className="text-sm">Limit:</label>
+                  <select
+                    id="tail-limit"
+                    value={tailLimit}
+                    onChange={(e) => setTailLimit(Number(e.target.value))}
+                    className="border rounded p-1"
+                  >
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label htmlFor="tail-metric" className="text-sm">Metric:</label>
+                  <select
+                    id="tail-metric"
+                    value={tailMetric}
+                    onChange={(e) => setTailMetric(e.target.value as 'hybrid' | 'occur' | 'create' | 'modify')}
+                    className="border rounded p-1"
+                  >
+                    <option value="hybrid">Hybrid</option>
+                    <option value="occur">Occurred</option>
+                    <option value="create">Created</option>
+                    <option value="modify">Modified</option>
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <label htmlFor="tail-field" className="text-sm">Field:</label>
+                  <input
+                    type="text"
+                    id="tail-field"
+                    value={tailField}
+                    onChange={(e) => setTailField(e.target.value)}
+                    placeholder="Filter by field"
+                    className="border rounded p-1 w-28"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="tail-autoscroll"
+                    checked={tailAutoScroll}
+                    onChange={(e) => setTailAutoScroll(e.target.checked)}
+                    className="rounded"
+                  />
+                  <label htmlFor="tail-autoscroll" className="text-sm">Auto-scroll</label>
+                </div>
+
+                <button
+                  onClick={fetchTailData}
+                  className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-blue-300"
+                  disabled={tailLoading}
+                >
+                  {tailLoading ? 'Loading...' : 'Refresh'}
+                </button>
+              </div>
+          </div>
+
+          {tailError && (
+            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+              {tailError}
+            </div>
+          )}
+
+          {tailLoading && tailEntries.length === 0 ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="animate-spin rounded-full h-8 w-8 border-4 border-blue-500 border-t-transparent"></div>
+            </div>
+          ) : (
+            <div className="overflow-y-auto max-h-screen">
+              {tailEntries.length === 0 ? (
+                <div className="text-center py-8 text-gray-500">
+                  No entries found
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {tailEntries.map((entry, index) => (
+                    <TailEntry key={entry.id || `entry-${index}`} entry={entry} />
+                  ))}
+                  <div ref={tailEndRef} /> {/* Invisible element for auto-scrolling */}
+                </div>
+              )}
             </div>
           )}
         </div>
-      </div> */}
+      )}
     </div>
   );
 };
