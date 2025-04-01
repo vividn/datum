@@ -5,8 +5,6 @@ import { MainDatumArgs } from "../input/mainArgs";
 export function connectDbFile(
   args: MainDatumArgs,
 ): PouchDB.Database<EitherPayload> {
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const fs = require("fs");
   const { db: dbName = "datum", createDb } = args;
 
   let host = args.host;
@@ -28,10 +26,12 @@ export function connectDbFile(
       : `${host}/${dbName}`;
 
   if (host.startsWith("/")) {
-    // create parent directories
-    if (!fs.existsSync(fullDatabaseName)) {
-      fs.mkdirSync(fullDatabaseName, { recursive: true });
-    }
+    import("fs").then((fs) => {
+      // create parent directories
+      if (!fs.existsSync(fullDatabaseName)) {
+        fs.mkdirSync(fullDatabaseName, { recursive: true });
+      }
+    })
   }
 
   const couchAuth = {
