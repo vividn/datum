@@ -115,7 +115,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       return `${hours}:${minutes}`;
     };
 
-    // Calculate duration
+    // Calculate duration for display
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationMins = Math.round(durationMs / (60 * 1000));
     const durationHours = Math.floor(durationMins / 60);
@@ -125,11 +125,21 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         ? `${durationHours}h ${remainingMins}m`
         : `${durationMins}m`;
 
-    if (Array.isArray(state)) {
-      // Calculate dimensions
-      const blockWidth = timeScale(next.time) - timeScale(curr.time);
-      const x = timeScale(curr.time);
+    // Format states for display
+    const stateText = Array.isArray(state)
+      ? state.join(", ")
+      : JSON.stringify(state);
 
+    // Calculate dimensions
+    const blockWidth = timeScale(next.time) - timeScale(curr.time);
+    const x = timeScale(curr.time);
+
+    let fillPattern: string;
+    let className: string;
+    if (!Array.isArray(state)) {
+      fillPattern = getStateColor({ state, field });
+      className = `${field} ${state} block`;
+    } else {
       // Create a unique pattern ID for this specific state combination
       const patternId = `stripe-pattern-${state.join("-")}-${x}`;
 
@@ -154,45 +164,25 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
           .attr("fill", color);
       });
 
-      // Format states for display
-      const stateDisplay = state.join(", ");
-
-      // Add the rectangle with the pattern fill and mouseover data
-      svg
-        .append("rect")
-        .attr("class", `${field} multi-state block`)
-        .attr("x", x)
-        .attr("y", 0)
-        .attr("width", blockWidth)
-        .attr("height", height)
-        .attr("fill", `url(#${patternId})`)
-        .attr("data-field", field)
-        .attr("data-state", JSON.stringify(state))
-        .attr("data-time", curr.time.toISOString())
-        .attr("data-end-time", next.time.toISOString())
-        .append("title")
-        .text(
-          `Field: ${field}\nState: ${stateDisplay}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
-        );
-    } else {
-      const color = getStateColor({ state, field });
-      svg
-        .append("rect")
-        .attr("class", `${field} ${state} block`)
-        .attr("x", timeScale(curr.time))
-        .attr("y", 0)
-        .attr("width", timeScale(next.time) - timeScale(curr.time))
-        .attr("height", "100%")
-        .attr("fill", color)
-        .attr("data-field", field)
-        .attr("data-state", state)
-        .attr("data-time", curr.time.toISOString())
-        .attr("data-end-time", next.time.toISOString())
-        .append("title")
-        .text(
-          `Field: ${field}\nState: ${state}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
-        );
+      className = `${field} multi-state block`;
+      fillPattern = `url(#${patternId})`;
     }
+    svg
+      .append("rect")
+      .attr("class", className)
+      .attr("fill", fillPattern)
+      .attr("x", x)
+      .attr("y", 0)
+      .attr("width", blockWidth)
+      .attr("height", height)
+      .attr("data-field", field)
+      .attr("data-state", stateText)
+      .attr("data-time", curr.time.toISOString())
+      .attr("data-end-time", next.time.toISOString())
+      .append("title")
+      .text(
+        `Field: ${field}\nState: ${stateText}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
+      );
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
@@ -216,7 +206,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("r", circle_r)
       .attr("fill", color)
       .attr("data-field", field)
-      .attr("data-state", state ?? (state === null ? "null" : "undefined"))
+      .attr("data-state", JSON.stringify(state))
       .attr("data-time", point.time.toISOString())
       .append("title")
       .text(`Field: ${field}\nState: ${state}\nTime: ${formattedTime}`);
