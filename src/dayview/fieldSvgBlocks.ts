@@ -138,7 +138,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .append("pattern")
         .attr("id", patternId)
         .attr("patternUnits", "userSpaceOnUse")
-        .attr("width", fiveMinWidth * state.length)
+        .attr("width", blockWidth)
         .attr("height", height)
         .attr("patternTransform", "rotate(45)");
 
@@ -146,19 +146,21 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       const stripeWidth = fiveMinWidth;
 
       // Add colored stripes to the pattern
-      state.forEach((subState, index) => {
-        const color = getStateColor({ state: subState, field });
-        pattern
-          .append("rect")
-          .attr("x", index * stripeWidth)
-          .attr("y", -height)
-          .attr("width", stripeWidth)
-          .attr("height", height * 3)
-          .attr("fill", color);
-      });
+      let currentX = 0;
+      while (currentX < blockWidth * 2) {
+        state.forEach((subState, index) => {
+          const color = getStateColor({ state: subState, field });
+          pattern
+            .append("rect")
+            .attr("x", currentX)
+            .attr("y", 0)
+            .attr("width", stripeWidth)
+            .attr("height", height * 2)
+            .attr("fill", color);
 
-      // Format states for display
-      const stateDisplay = state.join(", ");
+          currentX += stripeWidth;
+        });
+      }
 
       // Add the rectangle with the pattern fill and mouseover data
       svg
@@ -168,15 +170,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .attr("y", 0)
         .attr("width", blockWidth)
         .attr("height", height)
-        .attr("fill", `url(#${patternId})`)
-        .attr("data-field", field)
-        .attr("data-state", JSON.stringify(state))
-        .attr("data-time", curr.time.toISOString())
-        .attr("data-end-time", next.time.toISOString())
-        .append("title")
-        .text(
-          `Field: ${field}\nState: ${stateDisplay}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
-        );
+        .attr("fill", `url(#${patternId})`);
     } else {
       const color = getStateColor({ state, field });
       svg
@@ -186,16 +180,36 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .attr("y", 0)
         .attr("width", timeScale(next.time) - timeScale(curr.time))
         .attr("height", "100%")
-        .attr("fill", color)
-        .attr("data-field", field)
-        .attr("data-state", state)
-        .attr("data-time", curr.time.toISOString())
-        .attr("data-end-time", next.time.toISOString())
-        .append("title")
-        .text(
-          `Field: ${field}\nState: ${state}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
-        );
+        .attr("fill", color);
     }
+  });
+
+  // Create diagonal stripe masks (45 degree angle)
+  [0, 1].forEach((index) => {
+    const maskId = `diagonal-stripe-${index}`;
+    const pattern = defs
+      .append("pattern")
+      .attr("id", `${maskId}-pattern`)
+      .attr("patternUnits", "userSpaceOnUse")
+      .attr("width", "8")
+      .attr("height", "8");
+
+    pattern
+      .append("rect")
+      .attr("x", index * 4)
+      .attr("y", "-4")
+      .attr("width", "4")
+      .attr("height", "16")
+      .attr("transform", "rotate(45)")
+      .attr("fill", "white");
+
+    const mask = defs.append("mask").attr("id", maskId);
+
+    mask
+      .append("rect")
+      .attr("width", "100%")
+      .attr("height", "100%")
+      .attr("fill", `url(#${maskId}-pattern)`);
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
