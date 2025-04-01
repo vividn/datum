@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { connectDb } from '@/lib/connectDb';
-import type PouchDB from 'pouchdb';
+import { connectDb } from '../../../src/auth/connectDb';
 
 interface Doc {
   _id: string;
@@ -18,7 +17,7 @@ export default function Home() {
   useEffect(() => {
     async function loadData() {
       try {
-        const db = await connectDb();
+        const db = await connectDb({});
         const result = await db.allDocs({
           include_docs: true,
           attachments: true
