@@ -1,11 +1,12 @@
 import PouchDb from "pouchdb";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { MainDatumArgs } from "../input/mainArgs";
-import fs from "fs";
 
 export function connectDbFile(
   args: MainDatumArgs,
 ): PouchDB.Database<EitherPayload> {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const fs = require("fs");
   const { db: dbName = "datum", createDb } = args;
 
   let host = args.host;
