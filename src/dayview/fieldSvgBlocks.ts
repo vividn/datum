@@ -101,6 +101,25 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       return;
     }
 
+    // Format times in a more human-readable way
+    const startTime = new Date(curr.time);
+    const endTime = new Date(next.time);
+    const formatTime = (date: Date) => {
+      const hours = date.getHours().toString().padStart(2, "0");
+      const minutes = date.getMinutes().toString().padStart(2, "0");
+      return `${hours}:${minutes}`;
+    };
+
+    // Calculate duration
+    const durationMs = endTime.getTime() - startTime.getTime();
+    const durationMins = Math.round(durationMs / (60 * 1000));
+    const durationHours = Math.floor(durationMins / 60);
+    const remainingMins = durationMins % 60;
+    const durationText =
+      durationHours > 0
+        ? `${durationHours}h ${remainingMins}m`
+        : `${durationMins}m`;
+
     if (Array.isArray(state)) {
       // Calculate dimensions
       const blockWidth = timeScale(next.time) - timeScale(curr.time);
@@ -119,7 +138,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .append("pattern")
         .attr("id", patternId)
         .attr("patternUnits", "userSpaceOnUse")
-        .attr("width", fiveMinWidth * state.length) // Pattern width is 5 minutes * number of states
+        .attr("width", fiveMinWidth * state.length)
         .attr("height", height)
         .attr("patternTransform", "rotate(45)");
 
@@ -132,11 +151,14 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         pattern
           .append("rect")
           .attr("x", index * stripeWidth)
-          .attr("y", -height) // Ensure the rotated rectangle covers the entire height
+          .attr("y", -height)
           .attr("width", stripeWidth)
-          .attr("height", height * 3) // Make it tall enough to cover after rotation
+          .attr("height", height * 3)
           .attr("fill", color);
       });
+
+      // Format states for display
+      const stateDisplay = state.join(", ");
 
       // Add the rectangle with the pattern fill and mouseover data
       svg
@@ -153,7 +175,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .attr("data-end-time", next.time.toISOString())
         .append("title")
         .text(
-          `Field: ${field}\nState: ${JSON.stringify(state)}\nTime: ${curr.time.toISOString()}`,
+          `Field: ${field}\nState: ${stateDisplay}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
         );
     } else {
       const color = getStateColor({ state, field });
@@ -171,48 +193,23 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .attr("data-end-time", next.time.toISOString())
         .append("title")
         .text(
-          `Field: ${field}\nState: ${state}\nTime: ${curr.time.toISOString()}`,
+          `Field: ${field}\nState: ${state}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
         );
     }
   });
-
-  // Remove the unused diagonal stripe masks
-  // Create diagonal stripe masks (45 degree angle)
-  // [0, 1].forEach((index) => {
-  //   const maskId = `diagonal-stripe-${index}`;
-  //   const pattern = defs
-  //     .append("pattern")
-  //     .attr("id", `${maskId}-pattern`)
-  //     .attr("patternUnits", "userSpaceOnUse")
-  //     .attr("width", "8")
-  //     .attr("height", "8");
-
-  //   pattern
-  //     .append("rect")
-  //     .attr("x", index * 4)
-  //     .attr("y", "-4")
-  //     .attr("width", "4")
-  //     .attr("height", "16")
-  //     .attr("transform", "rotate(45)")
-  //     .attr("fill", "white");
-
-  //   const mask = defs.append("mask").attr("id", maskId);
-
-  //   mask
-  //     .append("rect")
-  //     .attr("width", "100%")
-  //     .attr("height", "100%")
-  //     .attr("fill", `url(#${maskId}-pattern)`);
-  // });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
   const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
     const simpleState = simplifyState(point.state);
-    const state = Array.isArray(simpleState) // TODO: make a pattern representing array states
-      ? JSON.stringify(simpleState)
+    const state = Array.isArray(simpleState)
+      ? simpleState.join(", ")
       : simpleState;
     const color = getStateColor({ state, field });
+
+    // Format time in a more human-readable way
+    const pointTime = new Date(point.time);
+    const formattedTime = `${pointTime.getHours().toString().padStart(2, "0")}:${pointTime.getMinutes().toString().padStart(2, "0")}`;
 
     svg
       .append("circle")
@@ -220,7 +217,12 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("cx", timeScale(point.time))
       .attr("cy", height / 2)
       .attr("r", circle_r)
-      .attr("fill", color);
+      .attr("fill", color)
+      .attr("data-field", field)
+      .attr("data-state", state)
+      .attr("data-time", point.time.toISOString())
+      .append("title")
+      .text(`Field: ${field}\nState: ${state}\nTime: ${formattedTime}`);
   });
 
   const fieldErrors = await checkState({
