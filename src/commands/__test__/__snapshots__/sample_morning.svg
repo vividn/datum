@@ -43,13 +43,46 @@ Duration: 30m
                         </rect>
                     </svg>
                     <svg height="12" width="916" y="21.72283353842795" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="project">
-                        <defs/>
+                        <defs>
+                            <pattern patternTransform="rotate(45)" height="12" width="6.361111184735083" patternUnits="userSpaceOnUse" id="stripe-pattern-emails-tasks-419.8333381925155">
+                                <rect fill="#af67ca" height="36" width="3.1805555923675417" y="-12" x="0"/>
+                                <rect fill="#2cb1ad" height="36" width="3.1805555923675417" y="-12" x="3.1805555923675417"/>
+                            </pattern>
+                            <pattern patternTransform="rotate(45)" height="12" width="6.361111184735083" patternUnits="userSpaceOnUse" id="stripe-pattern-emails-tasks-438.91667174672074">
+                                <rect fill="#af67ca" height="36" width="3.1805555923675417" y="-12" x="0"/>
+                                <rect fill="#2cb1ad" height="36" width="3.1805555923675417" y="-12" x="3.1805555923675417"/>
+                            </pattern>
+                        </defs>
                         <rect data-end-time="2024-11-20T09:10:00.000Z" data-time="2024-11-20T08:40:00.000Z" data-state="german" data-field="project" height="12" width="19.08333355420524" y="0" x="330.7777816062243" fill="#a6d414" class="project german block">
                             <title>
                                 Field: project
 State: german
 Time: 08:40 - 09:10
 Duration: 30m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T11:20:00.000Z" data-time="2024-11-20T11:00:00.000Z" data-state="emails, tasks" data-field="project" height="12" width="12.72222236947016" y="0" x="419.8333381925155" fill="url(#stripe-pattern-emails-tasks-419.8333381925155)" class="project multi-state block">
+                            <title>
+                                Field: project
+State: emails, tasks
+Time: 11:00 - 11:20
+Duration: 20m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T11:30:00.000Z" data-time="2024-11-20T11:20:00.000Z" data-state="meeting" data-field="project" height="12" width="6.36111118473508" y="0" x="432.55556056198566" fill="#d48788" class="project meeting block">
+                            <title>
+                                Field: project
+State: meeting
+Time: 11:20 - 11:30
+Duration: 10m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T11:45:00.000Z" data-time="2024-11-20T11:30:00.000Z" data-state="emails, tasks" data-field="project" height="12" width="9.541666777102648" y="0" x="438.91667174672074" fill="url(#stripe-pattern-emails-tasks-438.91667174672074)" class="project multi-state block">
+                            <title>
+                                Field: project
+State: emails, tasks
+Time: 11:30 - 11:45
+Duration: 15m
                             </title>
                         </rect>
                     </svg>
