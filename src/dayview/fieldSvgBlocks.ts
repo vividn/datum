@@ -128,7 +128,9 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     // Format states for display
     const stateText = Array.isArray(state)
       ? state.join(", ")
-      : JSON.stringify(state);
+      : typeof state === "string"
+        ? state
+        : JSON.stringify(state);
 
     const hoverText = `Field: ${field}\nState: ${stateText}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`;
 

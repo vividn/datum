@@ -32,33 +32,123 @@
             <svg y="0" class="day 2024-11-20">
                 <svg class="timechunk">
                     <svg height="12" width="916" y="5.209594737738371" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="text">
-                        <rect fill="#06de5f" height="100%" width="19.08333355420524" y="0" x="330.7777816062243" class="text fiction_book block"/>
+                        <defs/>
+                        <rect data-end-time="2024-11-20T09:10:00.000Z" data-time="2024-11-20T08:40:00.000Z" data-state="fiction_book" data-field="text" height="12" width="19.08333355420524" y="0" x="330.7777816062243" fill="#06de5f" class="text fiction_book block">
+                            <title>
+                                Field: text
+State: fiction_book
+Time: 08:40 - 09:10
+Duration: 30m
+                            </title>
+                        </rect>
                     </svg>
                     <svg height="12" width="916" y="21.72283353842795" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="project">
-                        <rect fill="#a6d414" height="100%" width="19.08333355420524" y="0" x="330.7777816062243" class="project german block"/>
+                        <defs/>
+                        <rect data-end-time="2024-11-20T09:10:00.000Z" data-time="2024-11-20T08:40:00.000Z" data-state="german" data-field="project" height="12" width="19.08333355420524" y="0" x="330.7777816062243" fill="#a6d414" class="project german block">
+                            <title>
+                                Field: project
+State: german
+Time: 08:40 - 09:10
+Duration: 30m
+                            </title>
+                        </rect>
                     </svg>
                     <svg height="12" width="916" y="43.42104974761605" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="stretch">
-                        <rect fill="#7e8494" height="100%" width="4.452777829314584" y="0" x="362.5833375298997" class="stretch true block"/>
-                        <rect fill="#7e8494" height="100%" width="5.088888947788064" y="0" x="386.11944891341955" class="stretch true block"/>
+                        <defs/>
+                        <rect data-end-time="2024-11-20T09:37:00.000Z" data-time="2024-11-20T09:30:00.000Z" data-state="true" data-field="stretch" height="12" width="4.452777829314584" y="0" x="362.5833375298997" fill="#7e8494" class="stretch true block">
+                            <title>
+                                Field: stretch
+State: true
+Time: 09:30 - 09:37
+Duration: 7m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T10:15:00.000Z" data-time="2024-11-20T10:07:00.000Z" data-state="true" data-field="stretch" height="12" width="5.088888947788064" y="0" x="386.11944891341955" fill="#7e8494" class="stretch true block">
+                            <title>
+                                Field: stretch
+State: true
+Time: 10:07 - 10:15
+Duration: 8m
+                            </title>
+                        </rect>
                     </svg>
                     <svg height="12" width="916" y="51.94052830897271" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="pushup">
-                        <circle fill="#9453e7" r="3.1805555923675417" cy="6" cx="393.1166712166281" class="pushup true point"/>
+                        <defs/>
+                        <circle data-time="2024-11-20T10:18:00.000Z" data-state="true" data-field="pushup" fill="#9453e7" r="3.1805555923675417" cy="6" cx="393.1166712166281" class="pushup true point">
+                            <title>
+                                Field: pushup
+State: true
+Time: 10:18
+                            </title>
+                        </circle>
                     </svg>
                     <svg height="12" width="916" y="58.52794650103896" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="run">
-                        <rect fill="#a53108" height="100%" width="19.08333355420524" y="0" x="367.0361153592143" class="run true block"/>
+                        <defs/>
+                        <rect data-end-time="2024-11-20T10:07:00.000Z" data-time="2024-11-20T09:37:00.000Z" data-state="true" data-field="run" height="12" width="19.08333355420524" y="0" x="367.0361153592143" fill="#a53108" class="run true block">
+                            <title>
+                                Field: run
+State: true
+Time: 09:37 - 10:07
+Duration: 30m
+                            </title>
+                        </rect>
                     </svg>
                     <svg height="12" width="916" y="72.89816309325397" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="sleep">
-                        <rect fill="#c9fab3" height="100%" width="324.41667042148924" y="0" x="0" class="sleep true block"/>
+                        <defs/>
+                        <rect data-end-time="2024-11-20T08:30:00.000Z" data-time="2024-11-20T00:00:00.000Z" data-state="true" data-field="sleep" height="12" width="324.41667042148924" y="0" x="0" fill="#c9fab3" class="sleep true block">
+                            <title>
+                                Field: sleep
+State: true
+Time: 00:00 - 08:30
+Duration: 8h 30m
+                            </title>
+                        </rect>
                         <use field="sleep" class="sleep error" height="9.541666777102625" width="9.541666777102625" y="1.2291666114486874" x="319.64583703293795" href="#warning-icon"/>
                     </svg>
                     <svg height="12" width="916" y="84.29078911989927" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="caffeine">
-                        <circle fill="#e724f8" r="3.1805555923675417" cy="6" cx="419.8333381925155" class="caffeine true point"/>
+                        <defs/>
+                        <circle data-time="2024-11-20T11:00:00.000Z" data-state="true" data-field="caffeine" fill="#e724f8" r="3.1805555923675417" cy="6" cx="419.8333381925155" class="caffeine true point">
+                            <title>
+                                Field: caffeine
+State: true
+Time: 11:00
+                            </title>
+                        </circle>
                     </svg>
                     <svg height="12" width="916" y="85.01698424201459" x="0" preserveAspectRatio="none" viewBox="0 0 916 12" class="environment">
-                        <rect fill="#c30163" height="100%" width="28.625000331307888" y="0" x="362.5833375298997" class="environment outside block"/>
-                        <rect fill="#106a6c" height="100%" width="6.36111118473508" y="0" x="391.2083378612076" class="environment home block"/>
-                        <rect fill="#c30163" height="100%" width="3.1805555923675684" y="0" x="397.5694490459427" class="environment outside block"/>
-                        <rect fill="#106a6c" height="100%" width="515.2499953616898" y="0" x="400.75000463831026" class="environment home block"/>
+                        <defs/>
+                        <rect data-end-time="2024-11-20T10:15:00.000Z" data-time="2024-11-20T09:30:00.000Z" data-state="outside" data-field="environment" height="12" width="28.625000331307888" y="0" x="362.5833375298997" fill="#c30163" class="environment outside block">
+                            <title>
+                                Field: environment
+State: outside
+Time: 09:30 - 10:15
+Duration: 45m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T10:25:00.000Z" data-time="2024-11-20T10:15:00.000Z" data-state="home" data-field="environment" height="12" width="6.36111118473508" y="0" x="391.2083378612076" fill="#106a6c" class="environment home block">
+                            <title>
+                                Field: environment
+State: home
+Time: 10:15 - 10:25
+Duration: 10m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T10:30:00.000Z" data-time="2024-11-20T10:25:00.000Z" data-state="outside" data-field="environment" height="12" width="3.1805555923675684" y="0" x="397.5694490459427" fill="#c30163" class="environment outside block">
+                            <title>
+                                Field: environment
+State: outside
+Time: 10:25 - 10:30
+Duration: 5m
+                            </title>
+                        </rect>
+                        <rect data-end-time="2024-11-20T23:59:59.999Z" data-time="2024-11-20T10:30:00.000Z" data-state="home" data-field="environment" height="12" width="515.2499953616898" y="0" x="400.75000463831026" fill="#106a6c" class="environment home block">
+                            <title>
+                                Field: environment
+State: home
+Time: 10:30 - 23:59
+Duration: 13h 30m
+                            </title>
+                        </rect>
                     </svg>
                 </svg>
             </svg>
