@@ -7,7 +7,7 @@ export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
   if (window !== undefined) {
     return;
   }
-  
+
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
   }
