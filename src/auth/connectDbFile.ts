@@ -1,6 +1,9 @@
-import PouchDb from "pouchdb";
+import PouchDb from "pouchdb-core";
+import levelAdapter from "pouchdb-adapter-leveldb";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { MainDatumArgs } from "../input/mainArgs";
+
+PouchDb.plugin(levelAdapter);
 
 export function connectDbFile(
   args: MainDatumArgs,
@@ -8,10 +11,6 @@ export function connectDbFile(
   const { db: dbName = "datum", createDb } = args;
 
   let host = args.host;
-  const adapter =
-    process.env["POUCHDB_ADAPTER"] || host === "%MEMORY%"
-      ? "memory"
-      : undefined;
 
   if (host === undefined || host === "") {
     const dataDir =
@@ -26,12 +25,11 @@ export function connectDbFile(
       : `${host}/${dbName}`;
 
   if (host.startsWith("/")) {
-    import("fs").then((fs) => {
-      // create parent directories
-      if (!fs.existsSync(fullDatabaseName)) {
-        fs.mkdirSync(fullDatabaseName, { recursive: true });
-      }
-    })
+    const fs = eval("require('fs')");
+    // create parent directories
+    if (!fs.existsSync(fullDatabaseName)) {
+      fs.mkdirSync(fullDatabaseName, { recursive: true });
+    }
   }
 
   const couchAuth = {
@@ -41,6 +39,5 @@ export function connectDbFile(
   return new PouchDb(fullDatabaseName, {
     skip_setup: !createDb,
     auth: couchAuth,
-    adapter,
   });
 }

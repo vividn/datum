@@ -6,9 +6,8 @@ const nextConfig: NextConfig = {
       // Don't attempt to load native modules on the server
       config.resolve.fallback = {
         ...config.resolve.fallback,
-        "pouchdb": require.resolve("pouchdb"),
-        "fs": false,
-        "path": false
+        fs: false,
+        path: false,
       };
     }
     return config;

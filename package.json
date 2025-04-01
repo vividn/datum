@@ -24,7 +24,7 @@
     "node": ">18.0.0"
   },
   "scripts": {
-    "frontend": "cd frontend && next dev --turbopack",
+    "frontend": "cd frontend && next dev",
     "test": "jest",
     "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json --skipLibCheck",
@@ -38,6 +38,7 @@
   },
   "devDependencies": {
     "@types/jest": "^29.5.12",
+    "@types/react": "19.0.12",
     "@typescript-eslint/eslint-plugin": "^7.18.0",
     "@typescript-eslint/parser": "^6.21.0",
     "babel-jest": "^29.7.0",
@@ -58,6 +59,7 @@
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.4",
     "@babel/preset-typescript": "^7.24.7",
+    "@tailwindcss/postcss": "^4.0.17",
     "@types/argparse": "^2.0.16",
     "@types/babel__core": "^7.20.5",
     "@types/d3": "^6.7.8",
@@ -104,7 +106,10 @@
     "pluralize": "^8.0.0",
     "postinstall-postinstall": "^2.1.0",
     "pouchdb": "^9.0.0",
+    "pouchdb-adapter-idb": "^9.0.0",
+    "pouchdb-adapter-leveldb": "^9.0.0",
     "pouchdb-adapter-memory": "^9.0.0",
+    "pouchdb-core": "^9.0.0",
     "printf": "^0.6.1",
     "prompt-sync": "^4.2.0",
     "prompts": "^2.4.2",

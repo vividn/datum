@@ -1,7 +1,7 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import { connectDb } from '../../../src/auth/connectDb';
+import { useEffect, useState } from "react";
+import { connectDb } from "../../../src/auth/connectDb";
 
 interface Doc {
   _id: string;
@@ -20,13 +20,15 @@ export default function Home() {
         const db = await connectDb({});
         const result = await db.allDocs({
           include_docs: true,
-          attachments: true
+          attachments: true,
         });
 
-        setDocs(result.rows.map(row => row.doc!));
+        setDocs(result.rows.map((row) => row.doc!));
       } catch (err) {
-        console.error('Failed to load docs:', err);
-        setError(err instanceof Error ? err.message : 'Failed to load documents');
+        console.error("Failed to load docs:", err);
+        setError(
+          err instanceof Error ? err.message : "Failed to load documents",
+        );
       } finally {
         setLoading(false);
       }
@@ -42,7 +44,7 @@ export default function Home() {
     <main className="p-4">
       <h1 className="text-2xl font-bold mb-4">Database Contents</h1>
       <div className="space-y-4">
-        {docs.map(doc => (
+        {docs.map((doc) => (
           <div key={doc._id} className="p-4 border rounded">
             <h2 className="font-bold">{doc._id}</h2>
             <pre className="mt-2 bg-gray-100 p-2 rounded">
