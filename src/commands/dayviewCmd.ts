@@ -84,7 +84,7 @@ export type DayviewCmdArgs = MainDatumArgs & {
 export async function dayviewCmd(
   args: DayviewCmdArgs | string | string[],
   preparsed?: Partial<DayviewCmdArgs>,
-) {
+): Promise<string> {
   args = parseIfNeeded(dayviewCmdArgs, args, preparsed);
   const db = connectDb(args);
 
@@ -104,5 +104,5 @@ export async function dayviewCmd(
     }
   }
 
-  await dayview(args);
+  return await dayview(args);
 }

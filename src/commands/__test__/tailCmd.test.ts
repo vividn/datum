@@ -42,11 +42,9 @@ describe("tailCmd", () => {
     await generateSampleMorning(today);
     const docs = await tailCmd("", { show: Show.Standard });
     expect(docs.length).toBe(10);
-    expect(docs[0]._id).toMatchInlineSnapshot(
-      `"stretch:2023-10-16T09:30:00.000Z"`,
-    );
+    expect(docs[0]._id).toMatchInlineSnapshot(`"run:2023-10-16T10:07:00.000Z"`);
     expect(docs.at(-1)?._id).toMatchInlineSnapshot(
-      `"caffeine:2023-10-16T11:00:00.000Z"`,
+      `"project:2023-10-16T11:45:00.000Z"`
     );
     expect(mockedLog.mock.calls).toMatchSnapshot();
   });
@@ -90,7 +88,7 @@ describe("tailCmd", () => {
     const docs2 = (await tailCmd("stretch")) as DatumDocument[];
     expect(docs2.length).toBe(8);
     expect(docs2.map((doc) => doc.data.field)).toEqual(
-      Array(8).fill("stretch"),
+      Array(8).fill("stretch")
     );
   });
 
@@ -101,7 +99,7 @@ describe("tailCmd", () => {
       ({ _id: occur1Id } = await occurCmd("alcohol"));
       setNow("20:00");
       ({ _id: addId } = await addCmd(
-        `person -b '{ name: "john doe", age: 35 }' --id %name`,
+        `person -b '{ name: "john doe", age: 35 }' --id %name`
       ));
       setNow("21:00");
       ({ _id: occur3Id } = await endCmd("socialize"));
@@ -168,7 +166,7 @@ describe("tailCmd", () => {
     const docs1 = await tailCmd("-t 9:30");
     expect(docs1.length).toBe(8);
     expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
-      `"stretch:2023-10-16T09:30:00.000Z"`,
+      `"stretch:2023-10-16T09:30:00.000Z"`
     );
 
     const docs2 = await tailCmd("-d yesterday -t 23:30");
@@ -191,7 +189,7 @@ describe("tailCmd", () => {
     const lastOccuromitTimestamp =
       docsomitTimestamp.at(-1)?.data.occurTime?.utc;
     expect(DateTime.fromISO(lastOccuromitTimestamp ?? "").toISODate()).toEqual(
-      tomorrow,
+      tomorrow
     );
   });
 
@@ -215,16 +213,14 @@ describe("tailCmd", () => {
     expect(
       docs
         .map((doc) => doc.data.occurTime?.utc ?? "")
-        .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === today,
-        ),
+        .every((occurTime) => DateTime.fromISO(occurTime).toISODate() === today)
     ).toBe(true);
     expect(
       yesterdayDocs
         .map((doc) => doc.data.occurTime?.utc ?? "")
         .every(
-          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday,
-        ),
+          (occurTime) => DateTime.fromISO(occurTime).toISODate() === yesterday
+        )
     ).toEqual(true);
   });
 
@@ -248,7 +244,7 @@ describe("tailCmd", () => {
     expect(utcDates.every((date) => date === today)).toBe(false);
 
     const localDates = docs.map((doc) =>
-      datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
+      datumTimeToLuxon(doc.data.occurTime)?.toISODate()
     );
     expect(localDates.every((date) => date === today)).toBe(true);
 
@@ -298,16 +294,16 @@ describe("tailCmd", () => {
     expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
       [
         [
-          "::stretch::
-      ::run::
-      ::stretch::
-      ::run::
+          "::run::
       ::stretch::
       ::environment::
       ::stretch::
       ::pushup::
       ::environment::
-      ::caffeine::",
+      ::caffeine::
+      ::project::
+      ::project::
+      ::project::",
         ],
       ]
     `);
@@ -347,17 +343,17 @@ describe("tailCmd", () => {
     expect(mockedLog).toHaveBeenCalledTimes(1);
     expect(mockedLog.mock.calls[0]).toMatchInlineSnapshot(`
       [
-        "      time  field        state      dur  hid    amount  distance  comment 
-      09:30:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m         7qaqo                            
-      09:37:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;136;136;136m[38;2;102;102;102m∅[39m[49m[48;2;165;49;8m[38;2;255;255;255mstart[39m[49m[48;2;165;49;8m[38;2;255;255;255m [39m[49m         9bcqg                            
-      09:37:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;126;132;148m[38;2;0;0;0m [39m[49mend            6m3y5                            
-      10:07:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;165;49;8m[38;2;255;255;255m [39m[49mend            869r3          5.4               
-      10:07:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m       [48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m         gs6pb                            
-      10:15:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;195;1;99m[38;2;255;255;255m [39m[49m[48;2;16;106;108m[38;2;255;255;255mhome[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m          92g32                            
-      10:15:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;126;132;148m[38;2;0;0;0m [39m[49mend            chq8f                            
-      10:18:00[90m+0[39m  [48;2;148;83;231m[38;2;255;255;255mpushup[39m[49m       [48;2;136;136;136m[38;2;102;102;102m[38;2;148;83;231m●[39m[39m[49m               getek  10                        
-      10:30:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;16;106;108m[38;2;255;255;255m [39m[49m[48;2;195;1;99m[38;2;255;255;255moutside[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m  5m   2abgf                            
-      11:00:00[90m+0[39m  [48;2;231;36;248m[38;2;255;255;255mcaffeine[39m[49m     [48;2;136;136;136m[38;2;102;102;102m[38;2;231;36;248m●[39m[39m[49m               cav6f  100               "coffee"
+        "      time  field        state           dur  hid    amount  distance  comment 
+      10:07:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;165;49;8m[38;2;255;255;255m [39m[49mend                 869r3          5.4               
+      10:07:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m       [48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m              gs6pb                            
+      10:15:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;195;1;99m[38;2;255;255;255m [39m[49m[48;2;16;106;108m[38;2;255;255;255mhome[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m               92g32                            
+      10:15:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m      [48;2;126;132;148m[38;2;0;0;0m [39m[49mend                 chq8f                            
+      10:18:00[90m+0[39m  [48;2;148;83;231m[38;2;255;255;255mpushup[39m[49m       [48;2;136;136;136m[38;2;102;102;102m[38;2;148;83;231m●[39m[39m[49m                    getek  10                        
+      10:30:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;16;106;108m[38;2;255;255;255m [39m[49m[48;2;195;1;99m[38;2;255;255;255moutside[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m       5m   2abgf                            
+      11:00:00[90m+0[39m  [48;2;231;36;248m[38;2;255;255;255mcaffeine[39m[49m     [48;2;136;136;136m[38;2;102;102;102m[38;2;231;36;248m●[39m[39m[49m                    cav6f  100               "coffee"
+      11:00:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m       [48;2;175;103;202m[38;2;0;0;0memails[39m[49m[48;2;44;177;173m[38;2;0;0;0m,tasks[39m[49m[48;2;175;103;202m[38;2;44;177;173m▞[39m[49m       yafyz                            
+      11:30:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m      [48;2;175;103;202m[38;2;44;177;173m▞[39m[49m[48;2;212;135;136m[38;2;0;0;0mmeeting[39m[49m[48;2;175;103;202m[38;2;44;177;173m [39m[49m       10m  989x0                            
+      11:45:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m      [48;2;175;103;202m[38;2;44;177;173m▞[39m[49mend                 q9nko                            
       ",
       ]
     `);
