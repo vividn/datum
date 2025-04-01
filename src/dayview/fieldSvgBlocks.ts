@@ -91,23 +91,101 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .domain([new Date(startUtc), new Date(endUtc)])
     .range([0, width]);
 
+  // Add SVG definitions for patterns
+  const defs = svg.append("defs");
+
   dataPairs.forEach(([curr, next]) => {
     const simpleState = simplifyState(curr.state);
-    const state = Array.isArray(simpleState) // TODO: make a pattern representing array states
-      ? JSON.stringify(simpleState)
-      : simpleState;
+    const state = Array.isArray(simpleState) ? simpleState : simpleState;
     if (state === null || state === false) {
       return;
     }
-    const color = getStateColor({ state, field });
-    svg
+
+    if (Array.isArray(state)) {
+      // Calculate dimensions
+      const blockWidth = timeScale(next.time) - timeScale(curr.time);
+      const x = timeScale(curr.time);
+
+      // Create a unique pattern ID for this specific state combination
+      const patternId = `stripe-pattern-${state.join("-")}-${x}`;
+
+      // Create a pattern with diagonal stripes for each state
+      const pattern = defs
+        .append("pattern")
+        .attr("id", patternId)
+        .attr("patternUnits", "userSpaceOnUse")
+        .attr("width", blockWidth)
+        .attr("height", height)
+        .attr("patternTransform", "rotate(45)");
+
+      // Calculate stripe width - make it narrower for more frequent repetition
+      const stripeWidth = blockWidth / (state.length * 15); // Increased from 5 to 15 for more stripes
+
+      // Add colored stripes to the pattern
+      let currentX = 0;
+      while (currentX < blockWidth * 2) {
+        state.forEach((subState, index) => {
+          const color = getStateColor({ state: subState, field });
+          pattern
+            .append("rect")
+            .attr("x", currentX)
+            .attr("y", 0)
+            .attr("width", stripeWidth)
+            .attr("height", height * 2)
+            .attr("fill", color);
+
+          currentX += stripeWidth;
+        });
+      }
+
+      // Add the rectangle with the pattern fill
+      svg
+        .append("rect")
+        .attr("class", `${field} multi-state block`)
+        .attr("x", x)
+        .attr("y", 0)
+        .attr("width", blockWidth)
+        .attr("height", height)
+        .attr("fill", `url(#${patternId})`);
+    } else {
+      const color = getStateColor({ state, field });
+      svg
+        .append("rect")
+        .attr("class", `${field} ${state} block`)
+        .attr("x", timeScale(curr.time))
+        .attr("y", 0)
+        .attr("width", timeScale(next.time) - timeScale(curr.time))
+        .attr("height", "100%")
+        .attr("fill", color);
+    }
+  });
+
+  // Create diagonal stripe masks (45 degree angle)
+  [0, 1].forEach((index) => {
+    const maskId = `diagonal-stripe-${index}`;
+    const pattern = defs
+      .append("pattern")
+      .attr("id", `${maskId}-pattern`)
+      .attr("patternUnits", "userSpaceOnUse")
+      .attr("width", "8")
+      .attr("height", "8");
+
+    pattern
       .append("rect")
-      .attr("class", `${field} ${state} block`)
-      .attr("x", timeScale(curr.time))
-      .attr("y", 0)
-      .attr("width", timeScale(next.time) - timeScale(curr.time))
+      .attr("x", index * 4)
+      .attr("y", "-4")
+      .attr("width", "4")
+      .attr("height", "16")
+      .attr("transform", "rotate(45)")
+      .attr("fill", "white");
+
+    const mask = defs.append("mask").attr("id", maskId);
+
+    mask
+      .append("rect")
+      .attr("width", "100%")
       .attr("height", "100%")
-      .attr("fill", color);
+      .attr("fill", `url(#${maskId}-pattern)`);
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
