@@ -20,10 +20,14 @@ export function connectDb(
   const { db: dbName = "datum", createDb } = args;
 
   if (host === undefined || host === "") {
-    // TODO: when going into the browser, maybe need to specify this to use the indexeddb somehow
-    const dataDir =
-      process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share";
-    host = `${dataDir}/datum`;
+    if (typeof window !== "undefined") {
+      // just use database name if in the browser
+      host = "";
+    } else {
+      const dataDir =
+        process.env["XDG_DATA_HOME"] ?? process.env["HOME"] + "/.local/share";
+      host = `${dataDir}/datum`;
+    }
   }
 
   const fullDatabaseName =
