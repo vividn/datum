@@ -39,5 +39,6 @@ export function connectDbFile(
   return new PouchDb(fullDatabaseName, {
     skip_setup: !createDb,
     auth: couchAuth,
+    adapter: "leveldb",
   });
 }

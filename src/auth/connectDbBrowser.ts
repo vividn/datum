@@ -10,5 +10,5 @@ export function connectDbBrowser(
 ): PouchDB.Database<EitherPayload> {
   const { db: dbName = "datum" } = args;
 
-  return new PouchDb(dbName, { adapter: "indexeddb" });
+  return new PouchDb(dbName, { adapter: "idb" });
 }
