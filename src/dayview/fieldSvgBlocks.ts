@@ -130,6 +130,8 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       ? state.join(", ")
       : JSON.stringify(state);
 
+    const hoverText = `Field: ${field}\nState: ${stateText}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`;
+
     // Calculate dimensions
     const blockWidth = timeScale(next.time) - timeScale(curr.time);
     const x = timeScale(curr.time);
@@ -180,9 +182,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("data-time", curr.time.toISOString())
       .attr("data-end-time", next.time.toISOString())
       .append("title")
-      .text(
-        `Field: ${field}\nState: ${stateText}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`,
-      );
+      .text(hoverText);
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
