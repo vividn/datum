@@ -3,6 +3,11 @@ import dotenv from "dotenv";
 import { loadConfig } from "./loadConfig";
 
 export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
+  // TODO: have settings for use in the browser and load them here
+  if (window !== undefined) {
+    return;
+  }
+  
   if (args.env !== undefined) {
     dotenv.config({ path: args.env, override: true });
   }
