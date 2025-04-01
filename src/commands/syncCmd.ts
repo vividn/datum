@@ -50,7 +50,7 @@ export async function syncCmd(
   const couchAuth = {
     username: args.remoteUser ?? args.user,
     password: args.remotePassword ?? args.password,
-  }
+  };
 
   const remote = args.remote;
   const remoteDb = new PouchDb(remote, { auth: couchAuth });
