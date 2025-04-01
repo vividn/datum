@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { connectDb } from "../../../src/auth/connectDb";
+import { Dashboard } from "../components/Dashboard";
 
 interface Doc {
   _id: string;
@@ -42,6 +43,7 @@ export default function Home() {
 
   return (
     <main className="p-4">
+      <Dashboard />
       <h1 className="text-2xl font-bold mb-4">Database Contents</h1>
       <div className="space-y-4">
         {docs.map((doc) => (

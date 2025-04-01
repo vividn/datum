@@ -10,8 +10,12 @@ export function connectDb(
 ): PouchDB.Database<EitherPayload> {
   mergeConfigAndEnvIntoArgs(args);
 
+  try {
   if (window !== undefined) {
     return connectDbBrowser(args);
+  }
+  } catch (e) {
+    // pass
   }
 
   const host = args.host;

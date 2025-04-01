@@ -1,10 +1,10 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { connectDb } from '@/lib/connectDb_old';
-import { getStateColor, getFieldColor } from '@vividn/datum/src/field/fieldColor';
-import { getContrastTextColor } from '@vividn/datum/src/utils/colorUtils';
-import { DatumDoc } from '@vividn/datum/src/types';
+import { useState, useEffect } from "react";
+import { connectDb } from "../../../../src/auth/connectDb";
+import { getContrastTextColor } from "../../../../src/utils/colorUtils";
+import { getFieldColor, getStateColor } from "../../../../src/field/fieldColor";
+import { DatumDocument } from "../../../../src/documentControl/DatumDocument";
 
 interface TailEntry {
   _id: string;
@@ -26,26 +26,28 @@ export function TailPanel({ date }: TailPanelProps) {
     async function fetchTail() {
       try {
         setLoading(true);
-        const db = await connectDb();
+        const db = connectDb({});
 
         // Query the database directly
-        const result = await db.query('datum/by_timestamp', {
+        const result = await db.query("datum/by_timestamp", {
           descending: true,
           limit: 20,
           startkey: date,
-          include_docs: true
+          include_docs: true,
         });
 
-        const data = result.rows.map(row => ({
+        const data = result.rows.map((row) => ({
           _id: row.id,
-          field: (row.doc as DatumDoc).field,
-          state: (row.doc as DatumDoc).state,
-          timestamp: (row.doc as DatumDoc).timestamp
+          field: (row.doc as DatumDocument).data.field,
+          state: (row.doc as DatumDocument).data.state,
+          timestamp: (row.doc as DatumDocument).data.occurTime,
         }));
 
         setEntries(data);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load tail data');
+        setError(
+          err instanceof Error ? err.message : "Failed to load tail data",
+        );
       } finally {
         setLoading(false);
       }
@@ -58,12 +60,14 @@ export function TailPanel({ date }: TailPanelProps) {
     <div className="bg-black rounded-lg p-4">
       <h2 className="text-xl font-bold mb-4">Recent Events</h2>
       {loading ? (
-        <div className="flex items-center justify-center h-[400px]">Loading...</div>
+        <div className="flex items-center justify-center h-[400px]">
+          Loading...
+        </div>
       ) : error ? (
         <div className="text-red-500">{error}</div>
       ) : (
         <div className="space-y-2 max-h-[600px] overflow-auto">
-          {entries.map(entry => {
+          {entries.map((entry) => {
             const fieldColor = getFieldColor(entry.field);
             const stateColor = getStateColor(entry.state);
             const textColor = getContrastTextColor(fieldColor);
@@ -80,13 +84,16 @@ export function TailPanel({ date }: TailPanelProps) {
                     className="px-2 py-1 rounded"
                     style={{
                       backgroundColor: stateColor,
-                      color: getContrastTextColor(stateColor)
+                      color: getContrastTextColor(stateColor),
                     }}
                   >
                     {entry.state}
                   </span>
                 </div>
-                <div className="text-sm opacity-75" style={{ color: textColor }}>
+                <div
+                  className="text-sm opacity-75"
+                  style={{ color: textColor }}
+                >
                   {new Date(entry.timestamp).toLocaleString()}
                 </div>
               </div>
@@ -97,3 +104,4 @@ export function TailPanel({ date }: TailPanelProps) {
     </div>
   );
 }
+
