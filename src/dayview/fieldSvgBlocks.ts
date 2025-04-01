@@ -91,12 +91,17 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .domain([new Date(startUtc), new Date(endUtc)])
     .range([0, width]);
 
+  // When there are multiple states, create stripes
+  const stripeWidthMinutes = 5;
+  const stripeWidth =
+    timeScale(new Date(startUtc).valueOf() + stripeWidthMinutes * 60 * 1000) -
+    timeScale(new Date(startUtc).valueOf());
+
   // Add SVG definitions for patterns
   const defs = svg.append("defs");
 
   dataPairs.forEach(([curr, next]) => {
-    const simpleState = simplifyState(curr.state);
-    const state = Array.isArray(simpleState) ? simpleState : simpleState;
+    const state = simplifyState(curr.state);
     if (state === null || state === false) {
       return;
     }
@@ -125,11 +130,6 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       const blockWidth = timeScale(next.time) - timeScale(curr.time);
       const x = timeScale(curr.time);
 
-      // Calculate the width of a 5-minute period on the time scale
-      const fiveMinWidth =
-        timeScale(new Date(curr.time.getTime() + 5 * 60 * 1000)) -
-        timeScale(curr.time);
-
       // Create a unique pattern ID for this specific state combination
       const patternId = `stripe-pattern-${state.join("-")}-${x}`;
 
@@ -138,12 +138,9 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .append("pattern")
         .attr("id", patternId)
         .attr("patternUnits", "userSpaceOnUse")
-        .attr("width", fiveMinWidth * state.length)
+        .attr("width", stripeWidth * state.length)
         .attr("height", height)
         .attr("patternTransform", "rotate(45)");
-
-      // Each state gets a stripe of 5-minute width
-      const stripeWidth = fiveMinWidth;
 
       // Add colored stripes to the pattern
       state.forEach((subState, index) => {
@@ -219,7 +216,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("r", circle_r)
       .attr("fill", color)
       .attr("data-field", field)
-      .attr("data-state", state)
+      .attr("data-state", state ?? (state === null ? "null" : "undefined"))
       .attr("data-time", point.time.toISOString())
       .append("title")
       .text(`Field: ${field}\nState: ${state}\nTime: ${formattedTime}`);
