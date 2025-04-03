@@ -267,8 +267,8 @@ describe("checkState", () => {
     setNow("2024-09-05T13:30:00Z");
     await expect(
       checkState({ db, field: "field", startTime: "2024-09-05T13:25:00Z" }),
-    ).resolves.toEqual(noErrors),
-      await switchCmd("field newState --last-state incorrect");
+    ).resolves.toEqual(noErrors);
+    await switchCmd("field newState --last-state incorrect");
     await expect(
       checkState({ db, field: "field", startTime: "2024-09-05T13:25:00Z" }),
     ).rejects.toThrow(LastStateError);
