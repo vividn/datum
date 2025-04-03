@@ -44,10 +44,10 @@ describe("headCmd", () => {
     const docs = await headCmd("", { show: Show.Standard });
     expect(docs.length).toBe(10);
     expect(docs[0]._id).toMatchInlineSnapshot(
-      `"sleep:2023-10-31T23:20:00.000Z"`
+      `"sleep:2023-10-31T23:20:00.000Z"`,
     );
     expect(docs.at(-1)?._id).toMatchInlineSnapshot(
-      `"stretch:2023-11-01T09:37:00.000Z"`
+      `"stretch:2023-11-01T09:37:00.000Z"`,
     );
     expect(mockedLog.mock.calls).toMatchSnapshot();
   });
@@ -91,7 +91,7 @@ describe("headCmd", () => {
     const docs2 = (await headCmd("stretch")) as DatumDocument[];
     expect(docs2.length).toBe(8);
     expect(docs2.map((doc) => doc.data.field as string)).toEqual(
-      Array(8).fill("stretch")
+      Array(8).fill("stretch"),
     );
   });
 
@@ -102,7 +102,7 @@ describe("headCmd", () => {
       ({ _id: occur1Id } = await occurCmd("alcohol"));
       setNow("20:00");
       ({ _id: addId } = await addCmd(
-        "person name='john doe' age=35 --id %name"
+        "person name='john doe' age=35 --id %name",
       ));
       setNow("21:00");
       ({ _id: occur3Id } = await endCmd("socialize"));
@@ -169,7 +169,7 @@ describe("headCmd", () => {
     const docs1 = await headCmd("-t 10:15");
     expect(docs1.length).toBe(8);
     expect(docs1.at(-1)?._id).toMatchInlineSnapshot(
-      `"project:2023-11-01T11:45:00.000Z"`
+      `"project:2023-11-01T11:45:00.000Z"`,
     );
 
     const docs2 = await headCmd(`-d today -t 11`);
@@ -190,16 +190,17 @@ describe("headCmd", () => {
       docs
         .map((doc) => doc.data.occurTime?.utc)
         .every(
-          (occurTime) => DateTime.fromISO(occurTime ?? "").toISODate() === today
-        )
+          (occurTime) =>
+            DateTime.fromISO(occurTime ?? "").toISODate() === today,
+        ),
     ).toBe(true);
     expect(
       yesterdayDocs
         .map((doc) => doc.data.occurTime?.utc)
         .every(
           (occurTime) =>
-            DateTime.fromISO(occurTime ?? "").toISODate() === yesterday
-        )
+            DateTime.fromISO(occurTime ?? "").toISODate() === yesterday,
+        ),
     ).toEqual(true);
   });
 
@@ -223,7 +224,7 @@ describe("headCmd", () => {
     expect(utcDates.every((date) => date === today)).toBe(false);
 
     const localDates = docs.map((doc) =>
-      datumTimeToLuxon(doc.data.occurTime)?.toISODate()
+      datumTimeToLuxon(doc.data.occurTime)?.toISODate(),
     );
     expect(localDates.every((date) => date === today)).toBe(true);
 
