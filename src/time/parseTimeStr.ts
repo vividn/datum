@@ -43,7 +43,7 @@ export function parseTimeStr({
 
     // fairly dirty implementation, but built for speed
     const correctedHour =
-      meridian?.toLowerCase() === "pm"
+      meridian?.[0]?.toLowerCase() === "p"
         ? parseInt(hour, 10) + 12
         : parseInt(hour, 10);
 
