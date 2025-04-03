@@ -33,9 +33,9 @@ export async function generateSampleMorning(date: string): Promise<void> {
   await switchCmd("environment outside 5");
   setNow("11");
   await occurCmd("caffeine amount=100 -c coffee");
-  await switchCmd("project emails,tasks,")
-  setNow("11:45")
-  await switchCmd("project meeting -t 11:30 10")
-  await endCmd("project")
+  await switchCmd("project emails,tasks,");
+  setNow("11:45");
+  await switchCmd("project meeting -t 11:30 10");
+  await endCmd("project");
   popNow();
 }
