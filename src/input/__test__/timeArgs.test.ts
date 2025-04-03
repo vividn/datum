@@ -43,6 +43,8 @@ describe("handleTimeArgs", () => {
     expectTiming({ time: "15:15" }, "2020-05-10T15:15:00.000Z");
     expectTiming({ time: "3:15am" }, "2020-05-10T03:15:00.000Z");
     expectTiming({ time: "3:15pm" }, "2020-05-10T15:15:00.000Z");
+    expectTiming({ time: "4:15a" }, "2020-05-10T04:15:00.000Z");
+    expectTiming({ time: "4:15p" }, "2020-05-10T16:15:00.000Z");
     expectTiming({ time: "315" }, "2020-05-10T03:15:00.000Z");
     expectTiming({ time: "0315" }, "2020-05-10T03:15:00.000Z");
     expectTiming({ time: "2315" }, "2020-05-10T23:15:00.000Z");
