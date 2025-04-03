@@ -18,7 +18,7 @@ export default function Home() {
   useEffect(() => {
     async function loadData() {
       try {
-        const db = await connectDb({});
+        const db = connectDb({});
         const result = await db.allDocs({
           include_docs: true,
           attachments: true,

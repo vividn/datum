@@ -2,9 +2,18 @@ diff --git a/CHANGELOG.md b/CHANGELOG.md
 deleted file mode 100644
 index dc39ed6952f87adcd961d07749e1ffe7a2b7335b..0000000000000000000000000000000000000000
 diff --git a/argparse.js b/argparse.js
-index 2b8c8c63177af9757a44926cfc3ab7d9878c9387..6624e37e82343627cba3bbbfc4b938847ff0e48d 100644
+index 2b8c8c63177af9757a44926cfc3ab7d9878c9387..c3d286df23dc7fc9f1e9200f45828b85eb0e5327 100644
 --- a/argparse.js
 +++ b/argparse.js
+@@ -95,7 +95,7 @@ function get_argv() {
+ 
+ function get_terminal_size() {
+     return {
+-        columns: +process.env.COLUMNS || process.stdout.columns || 80
++        columns: +process.env.COLUMNS || (process.stdout && process.stdout.columns) || 80
+     }
+ }
+ 
 @@ -2051,7 +2051,8 @@ const _ActionsContainer = _camelcase_alias(_callable(class _ActionsContainer {
          this._defaults = {}
  
@@ -15,3 +24,20 @@ index 2b8c8c63177af9757a44926cfc3ab7d9878c9387..6624e37e82343627cba3bbbfc4b93884
  
          // whether or not there are any optionals that look like negative
          // numbers -- uses a list so it can be shared and edited
+@@ -2166,16 +2167,7 @@ const _ActionsContainer = _camelcase_alias(_callable(class _ActionsContainer {
+ 
+         // raise an error if the metavar does not match the type
+         if ('_get_formatter' in this) {
+-            try {
+                 this._get_formatter()._format_args(action, undefined)
+-            } catch (err) {
+-                // check for 'invalid nargs value' is an artifact of TypeError and ValueError in js being the same
+-                if (err instanceof TypeError && err.message !== 'invalid nargs value') {
+-                    throw new TypeError('length of metavar tuple does not match nargs')
+-                } else {
+-                    throw err
+-                }
+-            }
+         }
+ 
+         return this._add_action(action)

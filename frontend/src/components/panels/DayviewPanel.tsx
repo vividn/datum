@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { dayview } from "../../../../src/dayview/dayview";
+import { dayviewCmd } from "../../../../src/commands/dayviewCmd";
 
 interface DayviewPanelProps {
   date: string;
@@ -21,7 +22,7 @@ export function DayviewPanel({ date }: DayviewPanelProps) {
         const width = Math.min(window.innerWidth * 0.45, 800);
         const height = Math.min(window.innerHeight * 0.8, 600);
 
-        const dayviewSvg = await dayview({
+        const dayviewSvg = await dayviewCmd({
           endDate: date,
           width,
           height,
