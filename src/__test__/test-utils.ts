@@ -21,7 +21,6 @@ import { mock } from "jest-mock-extended";
 import chalk from "chalk";
 import * as mySpecsModule from "../field/mySpecs";
 
-// eslint-disable-next-line @typescript-eslint/no-empty-function
 export const pass = (): void => {};
 export const fail = (): never => {
   expect(true).toBe(false);
