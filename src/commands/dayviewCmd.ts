@@ -10,11 +10,7 @@ export const dayviewArgs = new ArgumentParser({
   parents: [],
 });
 
-dayviewArgs.add_argument("--n-days", "-n", {
-  help: "number of days to show",
-  type: "int",
-  dest: "nDays",
-});
+console.log("process", process);
 
 dayviewArgs.add_argument("--start-date", {
   help: "start date to show",
@@ -26,6 +22,13 @@ dayviewArgs.add_argument("--end-date", "-d", {
   help: "end date to show. Defaults to today",
   type: "str",
   dest: "endDate",
+});
+
+dayviewArgs.add_argument("--n-days", "-n", {
+  metavar: "N",
+  help: "number of days to show",
+  type: "int",
+  dest: "nDays",
 });
 
 dayviewArgs.add_argument("--width", {

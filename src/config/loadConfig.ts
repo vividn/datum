@@ -1,4 +1,3 @@
-import fs from "fs";
 import yaml from "yaml";
 import { MainDatumArgs } from "../input/mainArgs";
 import { initConfig } from "./initConfig";
@@ -12,6 +11,7 @@ export type DatumConfig = {
 };
 
 export function loadConfig(args: MainDatumArgs): DatumConfig {
+  const fs = eval("require('fs')");
   const configFile = args.configFile ?? defaultConfigPath;
   let config: DatumConfig;
   try {
