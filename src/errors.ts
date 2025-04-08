@@ -44,17 +44,20 @@ export class IdError extends MyError {
 export class BadTimeError extends MyError {
   #key = "";
   #value = "";
+  #message = "";
 
-  constructor(badTime?: string) {
+  constructor(badTime?: string, extraMessage? : string) {
     super();
     this.#value = badTime ?? "";
+    this.#message = extraMessage ?? "";
     Object.setPrototypeOf(this, BadTimeError.prototype);
   }
 
   get message(): string {
     const withValue = this.#value ? `"${this.#value}" is an ` : "";
     const withKey = this.#key ? `, key: ${this.#key}` : "";
-    return `${withValue}invalid time${withKey}`;
+    const withMessage = this.#message ? `, ${this.#message}` : "";
+    return `${withValue}invalid time${withKey}${withMessage}`;
   }
   set key(key: string) {
     this.#key = key;

@@ -16,6 +16,26 @@ export function parseTimeStr({
 }: ParseTimeStrType): DateTime {
   referenceTime = referenceTime ?? now();
 
+  // Check for trailing + or - to enforce future or past
+  let enforceFuture = false;
+  let enforcePast = false;
+  if (timeStr.endsWith("+")) {
+    enforceFuture = true;
+    timeStr = timeStr.slice(0, -1);
+  } else if (timeStr.endsWith("-")) {
+    enforcePast = true;
+    timeStr = timeStr.slice(0, -1);
+  }
+
+  function checkTimeDirection(newTime: DateTime): DateTime {
+    if (enforceFuture && newTime < referenceTime!) {
+      throw new BadTimeError(timeStr, "Time is in the past");
+    } else if (enforcePast && newTime > referenceTime!) {
+      return newTime.minus({ days: 1 });
+    }
+    return newTime;
+  }
+
   // Quick relative time strings (q = 5 minutes, t = 1 minute)
   const quickMatches = timeStr.match(/^([+-]?)([qt]+)$/i);
   if (quickMatches) {
@@ -50,12 +70,21 @@ export function parseTimeStr({
     // if less than all three millisecond digits are given, fill the remaining zeroes
     const millisecond = parseInt((milli + "000").substring(0, 3), 10);
 
-    return referenceTime.set({
+    let parsedTime = referenceTime.set({
       hour: correctedHour,
       minute: parseInt(minute, 10),
       second: parseInt(second, 10),
       millisecond,
     });
+
+    // Adjust based on + or - suffix
+    if (enforceFuture && parsedTime < referenceTime) {
+      parsedTime = parsedTime.plus({ days: 1 });
+    } else if (enforcePast && parsedTime > referenceTime) {
+      parsedTime = parsedTime.minus({ days: 1 });
+    }
+
+    return checkTimeDirection(parsedTime);
   }
 
   // Also supports relative time strings, e.g., -5min
@@ -67,7 +96,18 @@ export function parseTimeStr({
   // DateTime can parse some extra ISO type strings
   const dateTimeParsed = DateTime.fromISO(timeStr, { setZone: true });
   if (dateTimeParsed.isValid) {
-    return dateTimeParsed;
+    let result = dateTimeParsed;
+    
+    // Apply future/past enforcement to ISO dates if they don't already include time component
+    if (timeStr.match(/^\d{4}-\d{2}-\d{2}$/)) {
+      if (enforceFuture && result < referenceTime) {
+        result = result.plus({ days: 1 });
+      } else if (enforcePast && result > referenceTime) {
+        result = result.minus({ days: 1 });
+      }
+    }
+    
+    return result;
   }
 
   // As a last resort, use chrono to parse the time
