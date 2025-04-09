@@ -1,5 +1,5 @@
 import { parse as shellParse } from "shell-quote";
-import { ArgumentParser } from "argparse";
+import { ArgumentParser, RawDescriptionHelpFormatter } from "argparse";
 import { dbArgs, DbArgs } from "./dbArgs";
 import { OutputArgs, Show } from "./outputArgs";
 import { addCmd } from "../commands/addCmd";
@@ -42,6 +42,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     typeof cliInput === "string"
       ? (shellParse(cliInput) as string[])
       : cliInput;
+      formatter_class: RawDescriptionHelpFormatter,
   const [namespace, args] = commandParser.parse_known_args(cliArgs);
   // When calling from the command line, SHOW should be set to default
   namespace.show = Show.Default;
