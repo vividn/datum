@@ -33,8 +33,10 @@ const commandParser = new ArgumentParser({
   add_help: false,
   parents: [dbArgs],
 });
+
 commandParser.add_argument("command", {
   help: "the command to run",
+  nargs: "?",
 });
 
 export async function datum(cliInput: string | string[]): Promise<void> {
