@@ -122,6 +122,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "end":
+    case "stop":
       await endCmd(args, namespace);
       break;
 
