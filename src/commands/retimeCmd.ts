@@ -9,7 +9,6 @@ import { outputArgs } from "../input/outputArgs";
 import { MainDatumArgs } from "../input/mainArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
-import { flexiblePositional } from "../input/flexiblePositional";
 import { updateLastDocsRef } from "../documentControl/lastDocs";
 
 export const retimeCmdArgs = new ArgumentParser({
@@ -36,7 +35,6 @@ export async function retimeCmd(
 
   // Get the time from args
   const { time: occurTime } = handleTimeArgs(args);
-
 
   // Create payload with new occurTime
   const payload = { occurTime };
