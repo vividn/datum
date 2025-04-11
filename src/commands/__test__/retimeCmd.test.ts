@@ -147,7 +147,7 @@ describe("retimeCmd", () => {
 
   it("can remove the occur time if --omit-timestamp is requested", async () => {
     const { _id } = await occurCmd("field foo=bar");
-    const returnValue = await retimeCmd([_id, "--omitTimestamp"]);
+    const returnValue = await retimeCmd([_id, "--omit-timestamp"]);
 
     expect(returnValue).toHaveLength(1);
     const updatedDoc = returnValue[0] as DatumDocument;
