@@ -91,17 +91,12 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .domain([new Date(startUtc), new Date(endUtc)])
     .range([0, width]);
 
-  // When there are multiple states, create stripes
-  const stripeWidthMinutes = 5;
-  const stripeWidth =
-    timeScale(new Date(startUtc).valueOf() + stripeWidthMinutes * 60 * 1000) -
-    timeScale(new Date(startUtc).valueOf());
-
   // Add SVG definitions for patterns
   const defs = svg.append("defs");
 
   dataPairs.forEach(([curr, next]) => {
-    const state = simplifyState(curr.state);
+    const simpleState = simplifyState(curr.state);
+    const state = Array.isArray(simpleState) ? simpleState : simpleState;
     if (state === null || state === false) {
       return;
     }
@@ -115,7 +110,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       return `${hours}:${minutes}`;
     };
 
-    // Calculate duration for display
+    // Calculate duration
     const durationMs = endTime.getTime() - startTime.getTime();
     const durationMins = Math.round(durationMs / (60 * 1000));
     const durationHours = Math.floor(durationMins / 60);
@@ -125,25 +120,16 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         ? `${durationHours}h ${remainingMins}m`
         : `${durationMins}m`;
 
-    // Format states for display
-    const stateText = Array.isArray(state)
-      ? state.join(", ")
-      : typeof state === "string"
-        ? state
-        : JSON.stringify(state);
+    if (Array.isArray(state)) {
+      // Calculate dimensions
+      const blockWidth = timeScale(next.time) - timeScale(curr.time);
+      const x = timeScale(curr.time);
 
-    const hoverText = `Field: ${field}\nState: ${stateText}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`;
+      // Calculate the width of a 5-minute period on the time scale
+      const fiveMinWidth =
+        timeScale(new Date(curr.time.getTime() + 5 * 60 * 1000)) -
+        timeScale(curr.time);
 
-    // Calculate dimensions
-    const blockWidth = timeScale(next.time) - timeScale(curr.time);
-    const x = timeScale(curr.time);
-
-    let fillPattern: string;
-    let className: string;
-    if (!Array.isArray(state)) {
-      fillPattern = getStateColor({ state, field });
-      className = `${field} ${state} block`;
-    } else {
       // Create a unique pattern ID for this specific state combination
       const patternId = `stripe-pattern-${state.join("-")}-${x}`;
 
@@ -152,39 +138,78 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
         .append("pattern")
         .attr("id", patternId)
         .attr("patternUnits", "userSpaceOnUse")
-        .attr("width", stripeWidth * state.length)
+        .attr("width", blockWidth)
         .attr("height", height)
         .attr("patternTransform", "rotate(45)");
 
-      // Add colored stripes to the pattern
-      state.forEach((subState, index) => {
-        const color = getStateColor({ state: subState, field });
-        pattern
-          .append("rect")
-          .attr("x", index * stripeWidth)
-          .attr("y", -height)
-          .attr("width", stripeWidth)
-          .attr("height", height * 3)
-          .attr("fill", color);
-      });
+      // Each state gets a stripe of 5-minute width
+      const stripeWidth = fiveMinWidth;
 
-      className = `${field} multi-state block`;
-      fillPattern = `url(#${patternId})`;
+      // Add colored stripes to the pattern
+      let currentX = 0;
+      while (currentX < blockWidth * 2) {
+        state.forEach((subState, index) => {
+          const color = getStateColor({ state: subState, field });
+          pattern
+            .append("rect")
+            .attr("x", currentX)
+            .attr("y", 0)
+            .attr("width", stripeWidth)
+            .attr("height", height * 2)
+            .attr("fill", color);
+
+          currentX += stripeWidth;
+        });
+      }
+
+      // Add the rectangle with the pattern fill and mouseover data
+      svg
+        .append("rect")
+        .attr("class", `${field} multi-state block`)
+        .attr("x", x)
+        .attr("y", 0)
+        .attr("width", blockWidth)
+        .attr("height", height)
+        .attr("fill", `url(#${patternId})`);
+    } else {
+      const color = getStateColor({ state, field });
+      svg
+        .append("rect")
+        .attr("class", `${field} ${state} block`)
+        .attr("x", timeScale(curr.time))
+        .attr("y", 0)
+        .attr("width", timeScale(next.time) - timeScale(curr.time))
+        .attr("height", "100%")
+        .attr("fill", color);
     }
-    svg
+  });
+
+  // Create diagonal stripe masks (45 degree angle)
+  [0, 1].forEach((index) => {
+    const maskId = `diagonal-stripe-${index}`;
+    const pattern = defs
+      .append("pattern")
+      .attr("id", `${maskId}-pattern`)
+      .attr("patternUnits", "userSpaceOnUse")
+      .attr("width", "8")
+      .attr("height", "8");
+
+    pattern
       .append("rect")
-      .attr("class", className)
-      .attr("fill", fillPattern)
-      .attr("x", x)
-      .attr("y", 0)
-      .attr("width", blockWidth)
-      .attr("height", height)
-      .attr("data-field", field)
-      .attr("data-state", stateText)
-      .attr("data-time", curr.time.toISOString())
-      .attr("data-end-time", next.time.toISOString())
-      .append("title")
-      .text(hoverText);
+      .attr("x", index * 4)
+      .attr("y", "-4")
+      .attr("width", "4")
+      .attr("height", "16")
+      .attr("transform", "rotate(45)")
+      .attr("fill", "white");
+
+    const mask = defs.append("mask").attr("id", maskId);
+
+    mask
+      .append("rect")
+      .attr("width", "100%")
+      .attr("height", "100%")
+      .attr("fill", `url(#${maskId}-pattern)`);
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
@@ -193,8 +218,14 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     const simpleState = simplifyState(point.state);
     const state = Array.isArray(simpleState)
       ? simpleState.join(", ")
+    const state = Array.isArray(simpleState)
+      ? simpleState.join(", ")
       : simpleState;
     const color = getStateColor({ state, field });
+
+    // Format time in a more human-readable way
+    const pointTime = new Date(point.time);
+    const formattedTime = `${pointTime.getHours().toString().padStart(2, "0")}:${pointTime.getMinutes().toString().padStart(2, "0")}`;
 
     // Format time in a more human-readable way
     const pointTime = new Date(point.time);
@@ -208,7 +239,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("r", circle_r)
       .attr("fill", color)
       .attr("data-field", field)
-      .attr("data-state", JSON.stringify(state))
+      .attr("data-state", state)
       .attr("data-time", point.time.toISOString())
       .append("title")
       .text(`Field: ${field}\nState: ${state}\nTime: ${formattedTime}`);
