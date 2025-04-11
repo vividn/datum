@@ -218,8 +218,14 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     const simpleState = simplifyState(point.state);
     const state = Array.isArray(simpleState)
       ? simpleState.join(", ")
+    const state = Array.isArray(simpleState)
+      ? simpleState.join(", ")
       : simpleState;
     const color = getStateColor({ state, field });
+
+    // Format time in a more human-readable way
+    const pointTime = new Date(point.time);
+    const formattedTime = `${pointTime.getHours().toString().padStart(2, "0")}:${pointTime.getMinutes().toString().padStart(2, "0")}`;
 
     // Format time in a more human-readable way
     const pointTime = new Date(point.time);

@@ -3,25 +3,27 @@ on:
   push:
     branches:
       - main
-  pull_request_target:
+  pull_request:
     types: [opened, synchronize, reopened]
 
 jobs:
-  build:
+  lint_test_build:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+
       - uses: pnpm/action-setup@v3
         with:
           version: 8
+          
       - name: Use Node.js 18
         uses: actions/setup-node@v3
         with:
           node-version: 18.x
           cache: 'pnpm'
-      - name: Install dependencies
-        run: pnpm install
+          cache-dependency-path: '**/pnpm-lock.yaml'
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
         env:
