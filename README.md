@@ -123,7 +123,7 @@ datum add book title="The Hobbit"  # ID: book:2025-04-14T08:15:00.000Zc  (the "c
 
 ### Composite Fields
 
-You can create composite fields using the `%fieldName%` syntax, which allows fields to be composed from other data:
+You can create composite fields using the `%keyName%` syntax, which allows fields to be composed from other data:
 
 ```bash
 # Create an entry with a composite field from project and task

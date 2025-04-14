@@ -14,7 +14,7 @@ export const buildIdStructure = function ({
   // Handle the id parts only (field is handled separately in assembleId)
   const inputArray = typeof idParts === "string" ? [idParts] : idParts;
 
-  // for convenience, user can use just "%fieldName" rather than the full "%fieldName%", this adds the missing percent at the end
+  // for convenience, user can use just "%keyName" rather than the full "%keyName%", this adds the missing percent at the end
   const appendedTrailingPercent = inputArray.map((idComponent) => {
     // skip escaped percents
     const percentCount = (idComponent.match(/(?<!\\)%/g) || []).length;
