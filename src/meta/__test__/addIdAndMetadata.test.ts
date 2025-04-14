@@ -111,7 +111,7 @@ describe("addIdAndMetadata", () => {
         },
       },
       meta: {
-        idStructure: "%field%:%occurTime%",
+        idStructure: "%occurTime%",
         createTime: nowDatumTime,
         humanId: expect.any(String),
         modifyTime: nowDatumTime,
@@ -127,7 +127,6 @@ describe("addIdAndMetadata", () => {
         occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
       {
-        partition: "%foo",
         idParts: ["%?humanId"],
       },
     ) as DatumPayload;
@@ -138,11 +137,11 @@ describe("addIdAndMetadata", () => {
         occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
       meta: {
-        idStructure: "%foo%:%?humanId%",
+        idStructure: "%?humanId%",
       },
     });
     const hid = payload.meta.humanId;
-    expect(payload._id).toEqual(`bar:${hid}`);
+    expect(payload._id).toEqual(`field:${hid}`);
   });
 
   it("adds id and metadata in a sane and stable way 7", () => {
@@ -153,7 +152,6 @@ describe("addIdAndMetadata", () => {
         occurTime: { utc: "2023-09-05T11:20:00.000Z" },
       },
       {
-        partition: "%foo",
         idParts: ["%occurTime", "%?humanId"],
         idDelimiter: "!!!",
       },
@@ -167,11 +165,11 @@ describe("addIdAndMetadata", () => {
         },
       },
       meta: {
-        idStructure: "%foo%:%occurTime%!!!%?humanId%",
+        idStructure: "%occurTime%!!!%?humanId%",
       },
     });
     const hid = payload.meta.humanId;
-    expect(payload._id).toEqual(`bar:2023-09-05T11:20:00.000Z!!!${hid}`);
+    expect(payload._id).toEqual(`field:2023-09-05T11:20:00.000Z!!!${hid}`);
   });
 
   it("throws an error if the derived id is blank", () => {
@@ -179,5 +177,28 @@ describe("addIdAndMetadata", () => {
     expect(() => addIdAndMetadata({ foo: "bar" }, { idParts: [""] })).toThrow(
       IdError,
     );
+  });
+  
+  it("handles composite field syntax correctly", () => {
+    const payload = addIdAndMetadata(
+      {
+        prefix: "test",
+        state: "active",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
+      {
+        field: "%prefix%_%state%",
+      },
+    ) as DatumPayload;
+    
+    expect(payload.data).toMatchObject({
+      prefix: "test",
+      state: "active",
+      field: "test_active",
+      occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+    });
+    
+    expect(payload._id).toEqual("test_active:2023-09-05T11:20:00.000Z");
+    expect(payload.meta.idStructure).toEqual("%occurTime%");
   });
 });

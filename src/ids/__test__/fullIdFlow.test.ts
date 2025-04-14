@@ -182,59 +182,18 @@ describe("id flow", () => {
     expectStructureAndId({ idParts: "%wei\\%rd" }, "%wei\\%rd%", "da%ta");
   });
 
-  it("prepends the partition field if provided", () => {
+  it("uses field as partition", () => {
     expectStructureAndId(
       {},
-      "%field%:%occurTime%",
+      "%occurTime%",
       "main:" + exampleOccurTime,
       exampleDataOccurField,
     );
     expectStructureAndId(
       { idParts: "%foo" },
-      "%field%:%foo%",
+      "%foo%",
       "otherName:abc",
       { ...exampleData, field: "otherName" },
-    );
-    expectStructureAndId(
-      {},
-      "%field%:%field%",
-      "onlyField:onlyField",
-      {
-        field: "onlyField",
-      },
-      false,
-    );
-  });
-
-  it("can use other fields, strings, and combinations as partition", () => {
-    expectStructureAndId(
-      { partition: "%foo", idParts: "%bar" },
-      "%foo%:%bar%",
-      "abc:def",
-    );
-    expectStructureAndId(
-      { partition: "%bar", idParts: "%bar" },
-      "%bar%:%bar%",
-      "def:def",
-    );
-    expectStructureAndId(
-      { partition: "rawString", idParts: ["%foo", "raw"] },
-      "rawString:%foo%__raw",
-      "rawString:abc__raw",
-    );
-    expectStructureAndId(
-      { partition: ["%foo", "%bar%-with-extra"], idParts: "id" },
-      "%foo%__%bar%-with-extra:id",
-      "abc__def-with-extra:id",
-    );
-    expectStructureAndId(
-      {
-        partition: ["%foo", "%bar"],
-        idParts: ["some", "strings"],
-        delimiter: "!",
-      },
-      "%foo%!%bar%:some!strings",
-      "abc!def:some!strings",
     );
   });
 
@@ -243,9 +202,8 @@ describe("id flow", () => {
       {
         idParts: ["%foo", "%?modifyTime", "rawString"],
         delimiter: "__",
-        partition: "%field",
       },
-      "%field%:%foo%__%?modifyTime%__rawString",
+      "%foo%__%?modifyTime%__rawString",
       "main:abc__2020-11-09T00:40:12.544Z__rawString",
       exampleDataOccurField,
     );
@@ -274,17 +232,6 @@ describe("id flow", () => {
       {
         "?modifyTime": "now",
       },
-    );
-  });
-
-  it("can use metadata fields in the partition", () => {
-    expectStructureAndId(
-      {
-        idParts: "%foo",
-        partition: "%?humanId",
-      },
-      "%?humanId%:%foo%",
-      "mqp4znq4cvp3qnj74fgi9:abc",
     );
   });
 

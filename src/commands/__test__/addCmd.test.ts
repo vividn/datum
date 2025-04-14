@@ -104,7 +104,7 @@ describe("addCmd", () => {
       db: db,
       payload: {
         data: { foo: "abc", field: "field" },
-        meta: { idStructure: "%field%:%foo%" },
+        meta: { idStructure: "%foo%" },
       },
     });
   });
@@ -155,7 +155,7 @@ describe("addCmd", () => {
     expect(
       await addCmd("--id rawString --id %foo%!! foo=abc field"),
     ).toMatchObject({
-      meta: { idStructure: "%field%:rawString__%foo%!!" },
+      meta: { idStructure: "rawString__%foo%!!" },
     });
   });
 
