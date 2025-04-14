@@ -183,22 +183,27 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("data-state", stateText)
       .attr("data-time", curr.time.toISOString())
       .attr("data-end-time", next.time.toISOString())
-      .append("title")
-      .text(hoverText);
+      .attr("data-hover-text", hoverText);
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
   const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
-    const simpleState = simplifyState(point.state);
-    const state = Array.isArray(simpleState)
-      ? simpleState.join(", ")
-      : simpleState;
+    const state = simplifyState(point.state);
     const color = getStateColor({ state, field });
 
     // Format time in a more human-readable way
     const pointTime = new Date(point.time);
     const formattedTime = `${pointTime.getHours().toString().padStart(2, "0")}:${pointTime.getMinutes().toString().padStart(2, "0")}`;
+
+    // Format states for display
+    const stateText = Array.isArray(state)
+      ? state.join(", ")
+      : typeof state === "string"
+        ? state
+        : JSON.stringify(state);
+
+    const hoverText = `Field: ${field}\nState: ${stateText}\nTime: ${formattedTime}`;
 
     svg
       .append("circle")
@@ -208,11 +213,61 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("r", circle_r)
       .attr("fill", color)
       .attr("data-field", field)
-      .attr("data-state", JSON.stringify(state))
+      .attr("data-state", stateText)
       .attr("data-time", point.time.toISOString())
-      .append("title")
-      .text(`Field: ${field}\nState: ${state}\nTime: ${formattedTime}`);
+      .attr("data-hover-text", hoverText);
   });
+
+  // Add CSS and JavaScript for custom popover
+  const popoverStyle = `
+    .popover {
+      position: absolute;
+      background: rgba(0, 0, 0, 0.8);
+      color: white;
+      padding: 8px;
+      border-radius: 4px;
+      font-family: sans-serif;
+      font-size: 12px;
+      pointer-events: none;
+      white-space: pre-line;
+      z-index: 1000;
+      max-width: 250px;
+      display: none;
+    }
+  `;
+
+  const popoverScript = `
+    (function() {
+      // Create popover element
+      const popover = document.createElement('div');
+      popover.className = 'popover';
+      document.body.appendChild(popover);
+
+      // Add event listeners to all elements with hover text
+      const hoverElements = document.querySelectorAll('[data-hover-text]');
+      hoverElements.forEach(el => {
+        el.addEventListener('mouseover', (e) => {
+          const text = e.target.getAttribute('data-hover-text');
+          popover.textContent = text;
+          popover.style.display = 'block';
+        });
+
+        el.addEventListener('mousemove', (e) => {
+          // Position the popover near the cursor
+          popover.style.left = (e.pageX + 10) + 'px';
+          popover.style.top = (e.pageY + 10) + 'px';
+        });
+
+        el.addEventListener('mouseout', () => {
+          popover.style.display = 'none';
+        });
+      });
+    })();
+  `;
+
+  // Add style and script to the SVG
+  defs.append("style").text(popoverStyle);
+  svg.append("script").attr("type", "text/javascript").text(popoverScript);
 
   const fieldErrors = await checkState({
     db,
