@@ -111,8 +111,8 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     const startTime = new Date(curr.time);
     const endTime = new Date(next.time);
     const formatTime = (date: Date) => {
-      const hours = date.getHours().toString().padStart(2, '0');
-      const minutes = date.getMinutes().toString().padStart(2, '0');
+      const hours = date.getHours().toString().padStart(2, "0");
+      const minutes = date.getMinutes().toString().padStart(2, "0");
       return `${hours}:${minutes}`;
     };
 
@@ -121,9 +121,10 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     const durationMins = Math.round(durationMs / (60 * 1000));
     const durationHours = Math.floor(durationMins / 60);
     const remainingMins = durationMins % 60;
-    const durationText = durationHours > 0
-      ? `${durationHours}h ${remainingMins}m`
-      : `${durationMins}m`;
+    const durationText =
+      durationHours > 0
+        ? `${durationHours}h ${remainingMins}m`
+        : `${durationMins}m`;
 
     // Format states for display
     const stateText = Array.isArray(state)
@@ -140,10 +141,12 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       const x = timeScale(curr.time);
 
       // Calculate the width of a 5-minute period on the time scale
-      const fiveMinWidth = timeScale(new Date(curr.time.getTime() + 5 * 60 * 1000)) - timeScale(curr.time);
+      const fiveMinWidth =
+        timeScale(new Date(curr.time.getTime() + 5 * 60 * 1000)) -
+        timeScale(curr.time);
 
       // Create a unique pattern ID for this specific state combination
-      const patternId = `stripe-pattern-${state.join('-')}-${x}`;
+      const patternId = `stripe-pattern-${state.join("-")}-${x}`;
 
       // Create a pattern with diagonal stripes for each state
       const pattern = defs
@@ -212,7 +215,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
 
     // Format time in a more human-readable way
     const pointTime = new Date(point.time);
-    const formattedTime = `${pointTime.getHours().toString().padStart(2, '0')}:${pointTime.getMinutes().toString().padStart(2, '0')}`;
+    const formattedTime = `${pointTime.getHours().toString().padStart(2, "0")}:${pointTime.getMinutes().toString().padStart(2, "0")}`;
 
     const hoverText = `Field: ${field}\nState: ${state}\nTime: ${formattedTime}`;
 
