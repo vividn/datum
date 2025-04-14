@@ -65,10 +65,22 @@ function formatAllTimes(doc: EitherPayload): AllTimes {
   return times;
 }
 
-function formatField(field?: string): string | undefined {
+function formatField(field?: string, doc?: EitherPayload): string | undefined {
   if (field === undefined) {
     return undefined;
   }
+  
+  // If field contains % syntax and we have document data, interpolate it
+  if (field.includes("%") && doc) {
+    const { data, meta } = pullOutData(doc);
+    const interpolatedField = interpolateFields({
+      data,
+      meta,
+      format: field,
+    });
+    return fieldChalk({ field: interpolatedField })(interpolatedField);
+  }
+  
   return fieldChalk({ field })(field);
 }
 
@@ -231,7 +243,7 @@ export function extractFormatted(
     id: doc._id ? chalk.gray(doc._id) : undefined,
     hid: meta?.humanId ? color(meta.humanId.slice(0, 5)) : undefined,
     time: formatAllTimes(doc),
-    field: formatField(data.field),
+    field: formatField(data.field, doc),
     state: formatState(data),
     dur: formatDuration(data.dur),
   };
