@@ -21,7 +21,7 @@ import { mock } from "jest-mock-extended";
 import chalk from "chalk";
 import * as mySpecsModule from "../field/mySpecs";
 
-export const pass = (): void => {};
+export const pass = (): void => { };
 export const fail = (): never => {
   expect(true).toBe(false);
   throw Error;
@@ -84,15 +84,21 @@ export function testDbLifecycle(
   return db;
 }
 
-export function mockedLogLifecycle(): { mockedLog: Mock; mockedWarn: Mock } {
+export function mockedLogLifecycle(): {
+  mockedLog: Mock;
+  mockedWarn: Mock;
+  mockedInfo: Mock;
+} {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const mockedLog = jest.fn() as Mock;
   const mockedWarn = jest.fn() as Mock;
+  const mockedInfo = jest.fn() as Mock;
 
   beforeEach(async () => {
     console.log = mockedLog;
     console.warn = mockedWarn;
+    console.info = mockedInfo;
   });
 
   afterEach(async () => {
@@ -100,9 +106,10 @@ export function mockedLogLifecycle(): { mockedLog: Mock; mockedWarn: Mock } {
     console.warn = originalWarn;
     mockedLog.mockReset();
     mockedWarn.mockReset();
+    mockedInfo.mockReset();
   });
 
-  return { mockedLog, mockedWarn };
+  return { mockedLog, mockedWarn, mockedInfo };
 }
 
 const originalNowFn = Settings.now;

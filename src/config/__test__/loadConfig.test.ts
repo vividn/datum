@@ -1,11 +1,14 @@
 import { loadConfig } from "../loadConfig";
 import * as initConfigModule from "../initConfig";
 import fs from "fs";
+import { mockedLogLifecycle } from "../../__test__/test-utils";
+import { defaultConfigPath } from "../defaultConfigYml";
 
 const configFile = `${__dirname}/__fixtures__/test_datumrc.yml`;
 
 jest.unmock("../loadConfig");
 describe("loadConfig", () => {
+  const { mockedInfo } = mockedLogLifecycle();
   it("should load a config file", () => {
     const args = {
       configFile,
@@ -27,7 +30,7 @@ describe("loadConfig", () => {
       configFile: "/test/fixtures/nonexistent.yml",
     };
     expect(() => loadConfig(args)).toThrow(
-      "Config file not found: /test/fixtures/nonexistent.yml",
+      "Config file not found: /test/fixtures/nonexistent.yml"
     );
     expect(initConfigSpy).not.toHaveBeenCalled();
   });
@@ -39,8 +42,22 @@ describe("loadConfig", () => {
     jest.spyOn(fs, "readFileSync").mockImplementation(() => {
       throw { code: "ENOENT" };
     });
+    jest.spyOn(fs, "writeFileSync").mockImplementation(() => {});
     const config = loadConfig({});
     expect(initConfigSpy).toHaveBeenCalled();
+    expect(mockedInfo.mock.calls).toMatchInlineSnapshot(`
+      [
+        [
+          "Welcome to datum!",
+        ],
+        [
+          "Creating a configuration file at ${defaultConfigPath}",
+        ],
+        [
+          "",
+        ],
+      ]
+    `);
     expect(config).toEqual({ db: "default_db" });
   });
 
