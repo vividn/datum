@@ -69,7 +69,7 @@ function formatField(field?: string, doc?: EitherPayload): string | undefined {
   if (field === undefined) {
     return undefined;
   }
-  
+
   // If field contains % syntax and we have document data, interpolate it
   if (field.includes("%") && doc) {
     const { data, meta } = pullOutData(doc);
@@ -80,7 +80,7 @@ function formatField(field?: string, doc?: EitherPayload): string | undefined {
     });
     return fieldChalk({ field: interpolatedField })(interpolatedField);
   }
-  
+
   return fieldChalk({ field })(field);
 }
 

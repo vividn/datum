@@ -25,3 +25,4 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Error handling should be explicit with proper typing
 - When adding new tests or documentation: any date examples should be on today's date as a sort of record of when it was added--purely for style
 - When removing tests or chunks of code, don't leave a comment behind explaining that something was removed.
+- Use eslint --fix to format after making any changes
