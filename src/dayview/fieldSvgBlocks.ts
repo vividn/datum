@@ -190,17 +190,21 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
   const circle_r = Math.min(five_minutes, height / 2, width / 4, 10);
   points.forEach((point) => {
-    const simpleState = simplifyState(point.state);
-    const state = Array.isArray(simpleState)
-      ? simpleState.join(", ")
-      : simpleState;
+    const state = simplifyState(point.state);
     const color = getStateColor({ state, field });
 
     // Format time in a more human-readable way
     const pointTime = new Date(point.time);
     const formattedTime = `${pointTime.getHours().toString().padStart(2, "0")}:${pointTime.getMinutes().toString().padStart(2, "0")}`;
 
-    const hoverText = `Field: ${field}\nState: ${state}\nTime: ${formattedTime}`;
+    // Format states for display
+    const stateText = Array.isArray(state)
+      ? state.join(", ")
+      : typeof state === "string"
+        ? state
+        : JSON.stringify(state);
+
+    const hoverText = `Field: ${field}\nState: ${stateText}\nTime: ${formattedTime}`;
 
     svg
       .append("circle")
@@ -210,7 +214,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("r", circle_r)
       .attr("fill", color)
       .attr("data-field", field)
-      .attr("data-state", state)
+      .attr("data-state", stateText)
       .attr("data-time", point.time.toISOString())
       .attr("data-hover-text", hoverText);
   });
