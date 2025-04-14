@@ -174,6 +174,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "retime":
+    case "rt":
       await retimeCmd(args, namespace);
       break;
 
