@@ -43,18 +43,18 @@ describe("occurCmd", () => {
 
   it("stores the occurTime in the data", async () => {
     const newDoc = (await occurCmd(
-      "event -d 2021-08-23 -t 12 -z 0"
+      "event -d 2021-08-23 -t 12 -z 0",
     )) as DatumDocument;
     expect(newDoc.data).toHaveProperty(
       "occurTime.utc",
-      "2021-08-23T12:00:00.000Z"
+      "2021-08-23T12:00:00.000Z",
     );
     expect(newDoc.meta).not.toHaveProperty("occurTime");
   });
 
   it("stores the occurTime in DataOnly docs", async () => {
     const newDoc = (await occurCmd(
-      "event -M -d 2021-08-23 -t 12 -z 0"
+      "event -M -d 2021-08-23 -t 12 -z 0",
     )) as DatumDocument;
     expect(newDoc).toHaveProperty("occurTime.utc", "2021-08-23T12:00:00.000Z");
     expect(newDoc).toHaveProperty("occurTime.o", 0);
@@ -62,7 +62,7 @@ describe("occurCmd", () => {
 
   it("stores offset", async () => {
     const newDoc = (await occurCmd(
-      "event -d 2021-08-23 -t 12 -z +3"
+      "event -d 2021-08-23 -t 12 -z +3",
     )) as DatumDocument;
     expect(newDoc.data).toMatchObject({
       occurTime: {
@@ -74,7 +74,7 @@ describe("occurCmd", () => {
 
   it("stores offset from an IANA timezone", async () => {
     const newDoc = (await occurCmd(
-      "event -d 2023-12-04 -t 12 -z Europe/Berlin"
+      "event -d 2023-12-04 -t 12 -z Europe/Berlin",
     )) as DatumDocument;
     expect(newDoc.data).toMatchObject({
       occurTime: {
@@ -126,17 +126,17 @@ describe("occurCmd", () => {
     // Test with composite field using one data value
     await occurCmd("%task% task=Testing --show standard");
     expect(mockedLog.mock.calls[1][0]).toMatchInlineSnapshot(
-      `"13:30:00+0 Testing ●"`
+      `"13:30:00+0 Testing ●"`,
     );
 
     mockedLog.mockClear();
 
     // Test with composite field using multiple data values
     await occurCmd(
-      "%project%-%task% project=Output task=Interpolation --show standard"
+      "%project%-%task% project=Output task=Interpolation --show standard",
     );
     expect(mockedLog.mock.calls[1][0]).toMatchInlineSnapshot(
-      `"13:30:00+0 Output-Interpolation ●"`
+      `"13:30:00+0 Output-Interpolation ●"`,
     );
 
     popNow();
