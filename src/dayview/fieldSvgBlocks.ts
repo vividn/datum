@@ -183,8 +183,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .attr("data-state", stateText)
       .attr("data-time", curr.time.toISOString())
       .attr("data-end-time", next.time.toISOString())
-      .append("title")
-      .text(hoverText);
+      .attr("data-hover-text", hoverText);
   });
 
   const five_minutes = timeScale(new Date(startUtc).valueOf() + 5 * 60 * 1000);
