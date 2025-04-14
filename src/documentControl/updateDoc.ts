@@ -21,7 +21,12 @@ import { BaseDocControlArgs, DocExistsError } from "./base";
 import { assembleId } from "../ids/assembleId";
 import { toDatumTime } from "../time/datumTime";
 import { now } from "../time/timeUtils";
-import { isViewDocument, isViewPayload } from "../views/DatumView";
+import {
+  isViewDocument,
+  isViewPayload,
+  ViewPayloadViews,
+} from "../views/DatumView";
+import { GenericObject } from "../utils/utilityTypes";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -39,7 +44,7 @@ export class NoDocToUpdateError extends MyError {
 
 type updateDocType = {
   id: string;
-  payload: EitherPayload;
+  payload: GenericObject;
   updateStrategy?: UpdateStrategyNames;
 } & BaseDocControlArgs;
 
@@ -64,17 +69,19 @@ export async function updateDoc({
     throw new UpdateDocError("_rev does not match document to update");
   }
 
-  const newData = isDatumPayload(payload) ? payload.data : payload;
+  const newData = isDatumPayload(payload as EitherPayload)
+    ? (payload.data as GenericObject)
+    : (payload as GenericObject);
 
   let updatedPayload: EitherPayload;
-  if (isViewDocument(oldDoc) && isViewPayload(payload)) {
+  if (isViewDocument(oldDoc) && isViewPayload(payload as EitherPayload)) {
     if (updateStrategy === "update" || updateStrategy === "useNew") {
       // clone the payload to avoid explicit undefined values from interfering with isEqual
       if (isEqual(oldDoc.views, jClone(payload.views))) {
         showNoDiff(oldDoc, outputArgs);
         return oldDoc;
       }
-      updatedPayload = { ...oldDoc, views: payload.views };
+      updatedPayload = { ...oldDoc, views: payload.views as ViewPayloadViews };
       if (updatedPayload.meta) {
         updatedPayload.meta = updatedPayload.meta as DatumMetadata;
         updatedPayload.meta.modifyTime = toDatumTime(now());

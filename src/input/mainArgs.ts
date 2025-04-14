@@ -24,6 +24,7 @@ import { migrateCmd } from "../commands/migrateCmd";
 import { checkCmd } from "../commands/checkCmd";
 import { dayviewCmd } from "../commands/dayviewCmd";
 import { syncCmd } from "../commands/syncCmd";
+import { retimeCmd } from "../commands/retimeCmd";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -170,6 +171,11 @@ export async function datum(cliInput: string | string[]): Promise<void> {
 
     case "sync":
       await syncCmd(args, namespace);
+      break;
+
+    case "retime":
+    case "rt":
+      await retimeCmd(args, namespace);
       break;
 
     default:
