@@ -165,7 +165,7 @@ export function makeDoc<D extends EitherDocument = EitherDocument>(
     if (meta?.idStructure) {
       idStructure = meta.idStructure;
     } else {
-      const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
+      const { defaultIdParts } = defaultIdComponents({
         data,
       });
       idStructure = buildIdStructure({

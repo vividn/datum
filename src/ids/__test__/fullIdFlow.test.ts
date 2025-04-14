@@ -22,7 +22,7 @@ function expectStructureAndId(
   testData: DatumData = exampleData,
   testMeta: DatumMetadata | false = exampleMeta,
 ) {
-  const { defaultPartitionParts, defaultIdParts } = defaultIdComponents({
+  const { defaultIdParts } = defaultIdComponents({
     data: testData,
   });
   const payload: EitherPayload = testMeta
