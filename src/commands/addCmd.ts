@@ -37,13 +37,6 @@ newDocArgs.add_argument("--id-part", "--id", {
 newDocArgs.add_argument("--id-delimiter", {
   help: "spacer between fields in the id",
 });
-newDocArgs.add_argument("--partition", "-P", {
-  help:
-    "field to use for the partition (default: field, specified with -f)." +
-    " Can be fields of data or raw strings surrounded by single quotes." +
-    " Like --id-part, can be used  multiple times to assemble a partition separated by --id-delimiter",
-  action: "append",
-});
 newDocArgs.add_argument("--undo", "-u", {
   help: "undoes the last datum entry",
   action: "store_true",
@@ -84,7 +77,6 @@ export type AddCmdArgs = MainDatumArgs &
     noMetadata?: boolean;
     idParts?: string[];
     idDelimiter?: string;
-    partition?: string;
     undo?: boolean;
     forceUndo?: boolean;
     merge?: boolean;

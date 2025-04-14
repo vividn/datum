@@ -30,49 +30,4 @@ describe("defaultIdComponents", () => {
       defaultIdParts: ["%firstKey%", "%secondKey%"],
     });
   });
-
-  it("uses field as the default partition", () => {
-    expect(
-      defaultIdComponents({
-        data: { field: "abc", occurTime: { utc: exampleOccurTime } },
-      }),
-    ).toMatchObject({
-      defaultPartitionParts: ["%field%"],
-    });
-    expect(defaultIdComponents({ data: { field: "abc" } })).toMatchObject({
-      defaultPartitionParts: ["%field%"],
-    });
-    expect(
-      defaultIdComponents({
-        data: {
-          field: "works",
-          with: "other",
-          keys: "too",
-          occurTime: { utc: exampleOccurTime },
-        },
-      }),
-    ).toMatchObject({ defaultPartitionParts: ["%field%"] });
-    expect(
-      defaultIdComponents({
-        data: { field: "works", with: "other", keys: "too" },
-      }),
-    ).toMatchObject({ defaultPartitionParts: ["%field%"] });
-  });
-
-  it("returns undefined for defaultPartitionParts when no field is present", () => {
-    expect(
-      defaultIdComponents({
-        data: {
-          no: "field",
-          key: "present",
-          occurTime: { utc: exampleOccurTime },
-        },
-      }),
-    ).toMatchObject({ defaultPartitionParts: undefined });
-    expect(
-      defaultIdComponents({
-        data: { no: "field", key: "present" },
-      }),
-    ).toMatchObject({ defaultPartitionParts: undefined });
-  });
 });

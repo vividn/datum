@@ -24,7 +24,7 @@ exports[`changing from one command to another addCmd can become a start command 
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -58,7 +58,7 @@ exports[`changing from one command to another addCmd can become a switch command
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -92,7 +92,7 @@ exports[`changing from one command to another addCmd can become an end command 1
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -125,7 +125,7 @@ exports[`changing from one command to another addCmd can become an occur command
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -159,7 +159,7 @@ exports[`changing from one command to another endCmd can become a switch command
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -193,7 +193,7 @@ exports[`changing from one command to another endCmd can become an occur command
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -227,7 +227,7 @@ exports[`changing from one command to another endCmd can become start command 1`
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -261,7 +261,7 @@ exports[`changing from one command to another occurCmd can become a start comman
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -295,7 +295,7 @@ exports[`changing from one command to another occurCmd can become a switch comma
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -329,7 +329,7 @@ exports[`changing from one command to another occurCmd can become an end command
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -362,7 +362,7 @@ exports[`changing from one command to another occurCmd doesn't require a duratio
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -396,7 +396,7 @@ exports[`changing from one command to another startCmd can become a switch comma
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -430,7 +430,7 @@ exports[`changing from one command to another startCmd can become an end command
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -464,7 +464,7 @@ exports[`changing from one command to another startCmd can become an occur comma
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -498,7 +498,7 @@ exports[`changing from one command to another switchCmd can become a start comma
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -532,7 +532,7 @@ exports[`changing from one command to another switchCmd can become an end comman
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",
@@ -566,7 +566,7 @@ exports[`changing from one command to another switchCmd can become an occur comm
       "utc": "2023-12-21T14:00:00.000Z",
     },
     "humanId": "elfuv1633zeysuyhc0l9ss",
-    "idStructure": "%field%:%occurTime%",
+    "idStructure": "%occurTime%",
     "modifyTime": {
       "o": 0,
       "tz": "UTC",

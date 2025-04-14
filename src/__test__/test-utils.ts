@@ -165,13 +165,12 @@ export function makeDoc<D extends EitherDocument = EitherDocument>(
     if (meta?.idStructure) {
       idStructure = meta.idStructure;
     } else {
-      const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
+      const { defaultIdParts } = defaultIdComponents({
         data,
       });
       idStructure = buildIdStructure({
         idParts: defaultIdParts,
         delimiter: defaults.idDelimiter,
-        partition: defaultPartitionParts,
       });
     }
     doc._id = assembleId({ payload: doc, idStructure });
