@@ -1,4 +1,5 @@
 import {
+  mockedLogLifecycle,
   popNow,
   pushNow,
   restoreNow,
@@ -13,6 +14,7 @@ import { getActiveState } from "../../state/getActiveState";
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";
   const db = testDbLifecycle(dbName);
+  const { mockedLog } = mockedLogLifecycle();
 
   beforeEach(async () => {
     await setupCmd("");
@@ -115,5 +117,26 @@ describe("occurCmd", () => {
     expect(newDoc2.data.occurTime).toMatchObject({
       utc: "2024-04-23",
     });
+  });
+
+  it("correctly displays interpolated field values in output", async () => {
+    pushNow("2025-04-14,13:30");
+    mockedLog.mockClear();
+
+    // Test with composite field using one data value
+    await occurCmd("%task% task=Testing --show standard");
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("Testing"));
+
+    mockedLog.mockClear();
+
+    // Test with composite field using multiple data values
+    await occurCmd(
+      "%project%-%task% project=Output task=Interpolation --show standard",
+    );
+    expect(mockedLog).toHaveBeenCalledWith(
+      expect.stringContaining("Output-Interpolation"),
+    );
+
+    popNow();
   });
 });

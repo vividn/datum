@@ -242,4 +242,14 @@ describe("addCmd", () => {
     expect(addDocSpy.mock.calls[1][0].conflictStrategy).toEqual("update");
     expect(newDoc).toMatchObject({ data: { foo: "def" } });
   });
+
+  it("correctly displays interpolated field values in output", async () => {
+    mockedLog.mockClear();
+    await addCmd("%project%_%activity% project=Testing activity=Fields --show standard");
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("Testing_Fields"));
+    
+    mockedLog.mockClear();
+    await addCmd("%project%-%name% project=Composite name=Test --show standard");
+    expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("Composite-Test"));
+  });
 });
