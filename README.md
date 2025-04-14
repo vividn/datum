@@ -129,7 +129,7 @@ You can create composite fields using the `%keyName%` syntax, which allows field
 # Create an entry with a composite field from project and task
 datum add field="%project%_%task%" project=website task=homepage
 
-# Entry will have field "website_homepage" and ID: website_homepage:2025-04-14T08:30:00.000Z
+# Entry will have field "website_homepage" and ID: website_homepage:2025-04-14T08:30:00.000Zc
 ```
 
 ### Custom ID Structure

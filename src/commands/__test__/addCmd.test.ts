@@ -118,14 +118,14 @@ describe("addCmd", () => {
     await addCmd("--id 'my name is bob' foo=bar field --show standard");
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("EXISTS"),
+      expect.stringContaining("EXISTS")
     );
 
     mockedLog.mockReset();
 
     await addCmd("--id 'my name is bob' foo=bar field --show standard");
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("CREATE"),
+      expect.stringContaining("CREATE")
     );
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("EXISTS"));
   });
@@ -134,14 +134,14 @@ describe("addCmd", () => {
     await addCmd("--id 'my name is doug' foo=bar field --show standard");
     expect(mockedLog).toHaveBeenCalledWith(expect.stringContaining("CREATE"));
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringContaining("EXISTS"),
+      expect.stringContaining("EXISTS")
     );
 
     mockedLog.mockReset();
 
     try {
       await addCmd(
-        "--id 'my name is doug' different=data field --show standard",
+        "--id 'my name is doug' different=data field --show standard"
       );
       fail();
     } catch (e) {
@@ -153,7 +153,7 @@ describe("addCmd", () => {
 
   it("inserts id structure into the metadata", async () => {
     expect(
-      await addCmd("--id rawString --id %foo%!! foo=abc field"),
+      await addCmd("--id rawString --id %foo%!! foo=abc field")
     ).toMatchObject({
       meta: { idStructure: "rawString__%foo%!!" },
     });
@@ -161,7 +161,7 @@ describe("addCmd", () => {
 
   it("can use custom base data", async () => {
     expect(
-      await addCmd('-b "{a: 1, b:2, c:3 }" field --id "basedata-doc1"'),
+      await addCmd('-b "{a: 1, b:2, c:3 }" field --id "basedata-doc1"')
     ).toMatchObject({
       data: { a: 1, b: 2, c: 3, field: "field" },
       _id: "field:basedata-doc1",
@@ -170,7 +170,7 @@ describe("addCmd", () => {
 
   it("can write payloads directly by specifying base-data no-metadata and fieldless", async () => {
     expect(
-      await addCmd("-FM -b '{a: 1, b:2, c:3 }' --id basedata-doc2"),
+      await addCmd("-FM -b '{a: 1, b:2, c:3 }' --id basedata-doc2")
     ).toEqual({
       _id: "basedata-doc2",
       _rev: expect.any(String),
@@ -182,16 +182,16 @@ describe("addCmd", () => {
 
   it("throws a BaseDataError if baseData is malformed", async () => {
     await expect(addCmd("-F -b 'string_is_not_good_basedata'")).rejects.toThrow(
-      BaseDataError,
+      BaseDataError
     );
   });
 
   it("prefers the _id specified when in no-metadata mode", async () => {
     expect(
-      await addCmd("-FM -b '{_id: payload-id}' --id argument-id"),
+      await addCmd("-FM -b '{_id: payload-id}' --id argument-id")
     ).toMatchObject({ _id: "payload-id" });
     expect(
-      await addCmd("-FM -b '{_id: payload-id-2}' --id '%keyId%' keyId=key-id"),
+      await addCmd("-FM -b '{_id: payload-id-2}' --id '%keyId%' keyId=key-id")
     ).toMatchObject({ _id: "payload-id-2" });
     expect(await addCmd("-FM --id 'idPart-id' _id=posArgs-id")).toMatchObject({
       _id: "posArgs-id",
@@ -209,21 +209,21 @@ describe("addCmd", () => {
       /^(?=[\s\S]*_id:)(?=[\s\S]*data:)(?=[\s\S]*meta:)/;
     await addCmd("field --id this-id"); //note when called in tests like this show is "none" by default. From the main entrypoint it is "standard"
     expect(mockedLog).not.toHaveBeenCalledWith(
-      expect.stringMatching(matchExtraKeysInAnyOrder),
+      expect.stringMatching(matchExtraKeysInAnyOrder)
     );
 
     mockedLog.mockClear();
 
     await addCmd("field --id that-id --show-all");
     expect(mockedLog).toHaveBeenCalledWith(
-      expect.stringMatching(matchExtraKeysInAnyOrder),
+      expect.stringMatching(matchExtraKeysInAnyOrder)
     );
 
     mockedLog.mockClear();
 
     await addCmd("field --id short-show-all -A");
     expect(mockedLog).toHaveBeenCalledWith(
-      expect.stringMatching(matchExtraKeysInAnyOrder),
+      expect.stringMatching(matchExtraKeysInAnyOrder)
     );
   });
 
@@ -246,18 +246,18 @@ describe("addCmd", () => {
   it("correctly displays interpolated field values in output", async () => {
     mockedLog.mockClear();
     await addCmd(
-      "%project%_%activity% project=Testing activity=Fields --show standard",
+      "%project%_%activity% project=Testing activity=Fields --show standard"
     );
-    expect(mockedLog).toHaveBeenCalledWith(
-      expect.stringContaining("Testing_Fields"),
+    expect(mockedLog.mock.calls[1][0]).toMatchInlineSnapshot(
+      `"Testing_Fields ¢"`
     );
 
     mockedLog.mockClear();
     await addCmd(
-      "%project%-%name% project=Composite name=Test --show standard",
+      "%project%-%name% project=Composite name=Test --show standard"
     );
-    expect(mockedLog).toHaveBeenCalledWith(
-      expect.stringContaining("Composite-Test"),
+    expect(mockedLog.mock.calls[1][0]).toMatchInlineSnapshot(
+      `"Composite-Test ¢"`
     );
   });
 });
