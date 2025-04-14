@@ -145,6 +145,8 @@ datum add book title="The Hobbit" author="J.R.R. Tolkien" --id "%title%_by_%auth
 
 Composite fields are especially useful for categorizing data hierarchically or creating more descriptive document IDs.
 
+> **⚠️ Note:** Field values cannot contain colons (`:`) as they are used as delimiters in document IDs. An error will be thrown if a field contains a colon.
+
 ## Status
 
 ⚠️ Alpha Software Warning: Datum is under active development. Expect breaking changes and instability until version 2.1.0.

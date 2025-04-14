@@ -1,6 +1,6 @@
 import { addIdAndMetadata } from "../addIdAndMetadata";
 import { setNow } from "../../__test__/test-utils";
-import { IdError } from "../../errors";
+import { IdError, FieldError } from "../../errors";
 import { toDatumTime } from "../../time/datumTime";
 import { DatumPayload } from "../../documentControl/DatumDocument";
 
@@ -177,6 +177,24 @@ describe("addIdAndMetadata", () => {
     expect(() => addIdAndMetadata({ foo: "bar" }, { idParts: [""] })).toThrow(
       IdError,
     );
+  });
+  
+  it("throws an error if field contains a colon", () => {
+    expect(() => 
+      addIdAndMetadata({ field: "invalid:field" }, {})
+    ).toThrow(FieldError);
+    
+    expect(() => 
+      addIdAndMetadata({}, { field: "invalid:field" })
+    ).toThrow(FieldError);
+    
+    // Test composite field that would generate a field with a colon
+    expect(() =>
+      addIdAndMetadata(
+        { part1: "first", part2: "second" },
+        { field: "%part1%:%part2%" }
+      )
+    ).toThrow(FieldError);
   });
   
   it("handles composite field syntax correctly", () => {
