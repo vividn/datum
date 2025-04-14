@@ -12,7 +12,6 @@ export function defaultIdComponents({
   meta?: DatumMetadata;
 }): {
   defaultIdParts: string[];
-  defaultPartitionParts?: string[];
 } {
   const defaultIdParts = isOccurredData(data)
     ? ["%occurTime%"]
@@ -21,6 +20,5 @@ export function defaultIdComponents({
       : Object.keys(data).map(
           (key) => `%${key.replace(/%/g, String.raw`\%`)}%`,
         );
-  const defaultPartitionParts = "field" in data ? ["%field%"] : undefined;
-  return { defaultIdParts, defaultPartitionParts };
+  return { defaultIdParts };
 }

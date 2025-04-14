@@ -22,7 +22,7 @@ function expectStructureAndId(
   testData: DatumData = exampleData,
   testMeta: DatumMetadata | false = exampleMeta,
 ) {
-  const { defaultPartitionParts, defaultIdParts } = defaultIdComponents({
+  const { defaultIdParts } = defaultIdComponents({
     data: testData,
   });
   const payload: EitherPayload = testMeta
@@ -31,7 +31,6 @@ function expectStructureAndId(
 
   const buildIdStructureProps: buildIdStructureType = {
     idParts: props.idParts ?? defaultIdParts,
-    partition: props.partition ?? defaultPartitionParts,
     delimiter: props.delimiter,
   };
   const idStructure = buildIdStructure(buildIdStructureProps);
@@ -182,22 +181,20 @@ describe("id flow", () => {
     expectStructureAndId({ idParts: "%wei\\%rd" }, "%wei\\%rd%", "da%ta");
   });
 
-  it("prepends the partition field if provided", () => {
+  it("uses field as partition", () => {
     expectStructureAndId(
       {},
-      "%field%:%occurTime%",
+      "%occurTime%",
       "main:" + exampleOccurTime,
       exampleDataOccurField,
     );
+    expectStructureAndId({ idParts: "%foo" }, "%foo%", "otherName:abc", {
+      ...exampleData,
+      field: "otherName",
+    });
     expectStructureAndId(
-      { idParts: "%foo" },
-      "%field%:%foo%",
-      "otherName:abc",
-      { ...exampleData, field: "otherName" },
-    );
-    expectStructureAndId(
-      {},
-      "%field%:%field%",
+      { idParts: "%field" },
+      "%field%",
       "onlyField:onlyField",
       {
         field: "onlyField",
@@ -206,48 +203,19 @@ describe("id flow", () => {
     );
   });
 
-  it("can use other fields, strings, and combinations as partition", () => {
-    expectStructureAndId(
-      { partition: "%foo", idParts: "%bar" },
-      "%foo%:%bar%",
-      "abc:def",
-    );
-    expectStructureAndId(
-      { partition: "%bar", idParts: "%bar" },
-      "%bar%:%bar%",
-      "def:def",
-    );
-    expectStructureAndId(
-      { partition: "rawString", idParts: ["%foo", "raw"] },
-      "rawString:%foo%__raw",
-      "rawString:abc__raw",
-    );
-    expectStructureAndId(
-      { partition: ["%foo", "%bar%-with-extra"], idParts: "id" },
-      "%foo%__%bar%-with-extra:id",
-      "abc__def-with-extra:id",
-    );
-    expectStructureAndId(
-      {
-        partition: ["%foo", "%bar"],
-        idParts: ["some", "strings"],
-        delimiter: "!",
-      },
-      "%foo%!%bar%:some!strings",
-      "abc!def:some!strings",
-    );
-  });
-
   it("handles this example", () => {
     expectStructureAndId(
       {
         idParts: ["%foo", "%?modifyTime", "rawString"],
         delimiter: "__",
-        partition: "%field",
       },
-      "%field%:%foo%__%?modifyTime%__rawString",
-      "main:abc__2020-11-09T00:40:12.544Z__rawString",
-      exampleDataOccurField,
+      "%foo%__%?modifyTime%__rawString",
+      "multipart_field:abc__2020-11-09T00:40:12.544Z__rawString",
+      {
+        ...exampleDataOccur,
+        composite: "multipart",
+        field: "%composite%_field",
+      },
     );
   });
 
@@ -266,6 +234,17 @@ describe("id flow", () => {
     );
   });
 
+  it("can use metadata fields in the field partition", () => {
+    expectStructureAndId(
+      {
+        idParts: "%foo",
+      },
+      "%foo%",
+      "mqp4znq4cvp3qnj74fgi9:abc",
+      { ...exampleData, field: "%?humanId%" },
+    );
+  });
+
   it("can use a dataField that starts with a question mark by escaping the question", () => {
     expectStructureAndId(
       { idParts: "%\\?modifyTime%" },
@@ -274,17 +253,6 @@ describe("id flow", () => {
       {
         "?modifyTime": "now",
       },
-    );
-  });
-
-  it("can use metadata fields in the partition", () => {
-    expectStructureAndId(
-      {
-        idParts: "%foo",
-        partition: "%?humanId",
-      },
-      "%?humanId%:%foo%",
-      "mqp4znq4cvp3qnj74fgi9:abc",
     );
   });
 
