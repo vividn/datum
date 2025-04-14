@@ -260,4 +260,13 @@ describe("addCmd", () => {
       `"Composite-Test ¢"`,
     );
   });
+
+  it("can add a remainder comment easily", async () => {
+    const doc = await addCmd("field -C foo=bar comment remainder");
+    expect(doc.data).toEqual({
+      field: "field",
+      foo: "bar",
+      comment: "comment remainder",
+    });
+  });
 });

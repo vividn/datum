@@ -138,7 +138,7 @@ export function handleDataArgs(args: DataArgs): DatumData {
       : args.lenient
         ? "extraData"
         : undefined);
-  const remainderAsString = args.stringRemainder ?? args.commentRemainder;
+  const remainderAsString = args.stringRemainder || args.commentRemainder;
   const remainderData = [];
 
   const datumData = { ...parseBaseData(args.baseData), ...args.cmdData };
