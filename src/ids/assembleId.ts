@@ -44,9 +44,7 @@ export const assembleId = function ({
   }
 
   // For backwards compatibility, check if the id structure already starts with field: (to avoid double field prefixing)
-  if (idStructure.startsWith("field:")) {
-    idStructure = idStructure.slice(6);
-  }
+  idStructure = idStructure.replace(/^%field%:/, "");
 
   // Generate the main part of the ID
   const mainId = interpolateFields({ data, meta, format: idStructure });
