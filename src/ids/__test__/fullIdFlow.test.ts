@@ -234,6 +234,17 @@ describe("id flow", () => {
     );
   });
 
+  it("can use metadata fields in the field partition", () => {
+    expectStructureAndId(
+      {
+        idParts: "%foo",
+      },
+      "%foo%",
+      "mqp4znq4cvp3qnj74fgi9:abc",
+      { ...exampleData, field: "%?humanId%" },
+    );
+  });
+
   it("can use a dataField that starts with a question mark by escaping the question", () => {
     expectStructureAndId(
       { idParts: "%\\?modifyTime%" },
