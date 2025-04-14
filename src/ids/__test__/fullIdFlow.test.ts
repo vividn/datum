@@ -192,6 +192,15 @@ describe("id flow", () => {
       ...exampleData,
       field: "otherName",
     });
+    expectStructureAndId(
+      { idParts: "%field" },
+      "%field%",
+      "onlyField:onlyField",
+      {
+        field: "onlyField",
+      },
+      false,
+    );
   });
 
   it("handles this example", () => {
@@ -201,8 +210,12 @@ describe("id flow", () => {
         delimiter: "__",
       },
       "%foo%__%?modifyTime%__rawString",
-      "main:abc__2020-11-09T00:40:12.544Z__rawString",
-      exampleDataOccurField,
+      "multipart_field:abc__2020-11-09T00:40:12.544Z__rawString",
+      {
+        ...exampleDataOccur,
+        composite: "multipart",
+        field: "%composite%_field",
+      },
     );
   });
 
