@@ -45,16 +45,20 @@ export const assembleId = function ({
 
   // Generate the main part of the ID
   const mainId = interpolateFields({ data, meta, format: structure });
-  
+
   // Add field partition if available
   if ("field" in data && data.field) {
     // Check if the ID already starts with field: (to avoid double field prefixing)
     if (mainId.startsWith(`${data.field}:`)) {
       return mainId;
     }
-    const partition = interpolateFields({ data, meta, format: String(data.field) });
+    const partition = interpolateFields({
+      data,
+      meta,
+      format: String(data.field),
+    });
     return `${partition}:${mainId}`;
   }
-  
+
   return mainId;
 };

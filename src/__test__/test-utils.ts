@@ -171,7 +171,6 @@ export function makeDoc<D extends EitherDocument = EitherDocument>(
       idStructure = buildIdStructure({
         idParts: defaultIdParts,
         delimiter: defaults.idDelimiter,
-        partition: defaultPartitionParts,
       });
     }
     doc._id = assembleId({ payload: doc, idStructure });

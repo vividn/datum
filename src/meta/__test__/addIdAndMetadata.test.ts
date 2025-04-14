@@ -178,25 +178,25 @@ describe("addIdAndMetadata", () => {
       IdError,
     );
   });
-  
+
   it("throws an error if field contains a colon", () => {
-    expect(() => 
-      addIdAndMetadata({ field: "invalid:field" }, {})
-    ).toThrow(FieldError);
-    
-    expect(() => 
-      addIdAndMetadata({}, { field: "invalid:field" })
-    ).toThrow(FieldError);
-    
+    expect(() => addIdAndMetadata({ field: "invalid:field" }, {})).toThrow(
+      FieldError,
+    );
+
+    expect(() => addIdAndMetadata({}, { field: "invalid:field" })).toThrow(
+      FieldError,
+    );
+
     // Test composite field that would generate a field with a colon
     expect(() =>
       addIdAndMetadata(
         { part1: "first", part2: "second" },
-        { field: "%part1%:%part2%" }
-      )
+        { field: "%part1%:%part2%" },
+      ),
     ).toThrow(FieldError);
   });
-  
+
   it("handles composite field syntax correctly", () => {
     const payload = addIdAndMetadata(
       {
@@ -208,14 +208,14 @@ describe("addIdAndMetadata", () => {
         field: "%prefix%_%state%",
       },
     ) as DatumPayload;
-    
+
     expect(payload.data).toMatchObject({
       prefix: "test",
       state: "active",
       field: "test_active",
       occurTime: { utc: "2023-09-05T11:20:00.000Z" },
     });
-    
+
     expect(payload._id).toEqual("test_active:2023-09-05T11:20:00.000Z");
     expect(payload.meta.idStructure).toEqual("%occurTime%");
   });

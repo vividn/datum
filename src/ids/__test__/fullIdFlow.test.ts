@@ -31,7 +31,6 @@ function expectStructureAndId(
 
   const buildIdStructureProps: buildIdStructureType = {
     idParts: props.idParts ?? defaultIdParts,
-    partition: props.partition ?? defaultPartitionParts,
     delimiter: props.delimiter,
   };
   const idStructure = buildIdStructure(buildIdStructureProps);
@@ -189,12 +188,10 @@ describe("id flow", () => {
       "main:" + exampleOccurTime,
       exampleDataOccurField,
     );
-    expectStructureAndId(
-      { idParts: "%foo" },
-      "%foo%",
-      "otherName:abc",
-      { ...exampleData, field: "otherName" },
-    );
+    expectStructureAndId({ idParts: "%foo" }, "%foo%", "otherName:abc", {
+      ...exampleData,
+      field: "otherName",
+    });
   });
 
   it("handles this example", () => {

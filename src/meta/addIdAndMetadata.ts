@@ -37,12 +37,14 @@ export function addIdAndMetadata<T>(
   }
 
   // Check if specified field parameter contains colon before processing
-  if (args.field && args.field.includes(':')) {
-    throw new FieldError(`Field cannot contain colons (:) as they are used as ID delimiters. Got: "${args.field}"`);
+  if (args.field && args.field.includes(":")) {
+    throw new FieldError(
+      `Field cannot contain colons (:) as they are used as ID delimiters. Got: "${args.field}"`,
+    );
   }
 
   // Process field if it contains % syntax
-  if (args.field && args.field.includes('%')) {
+  if (args.field && args.field.includes("%")) {
     // Create a copy of data to avoid modifying the original
     data = { ...data };
     const processedField = interpolateFields({
@@ -50,18 +52,27 @@ export function addIdAndMetadata<T>(
       meta,
       format: args.field,
     });
-    
+
     // Verify the processed field doesn't contain a colon
-    if (processedField.includes(':')) {
-      throw new FieldError(`Composite field cannot contain colons (:) as they are used as ID delimiters. Got: "${processedField}" from template "${args.field}"`);
+    if (processedField.includes(":")) {
+      throw new FieldError(
+        `Composite field cannot contain colons (:) as they are used as ID delimiters. Got: "${processedField}" from template "${args.field}"`,
+      );
     }
-    
+
     data.field = processedField;
   }
-  
+
   // Check if field contains a colon, which would break ID parsing
-  if ("field" in data && data.field && typeof data.field === "string" && data.field.includes(':')) {
-    throw new FieldError(`Field cannot contain colons (:) as they are used as ID delimiters. Got: "${data.field}"`);
+  if (
+    "field" in data &&
+    data.field &&
+    typeof data.field === "string" &&
+    data.field.includes(":")
+  ) {
+    throw new FieldError(
+      `Field cannot contain colons (:) as they are used as ID delimiters. Got: "${data.field}"`,
+    );
   }
 
   const payload: EitherPayload<T> =
@@ -90,11 +101,11 @@ export function addIdAndMetadata<T>(
     payload,
     idStructure: mainIdStructure,
   });
-  
+
   if (_id === "") {
     throw new IdError("Provided or derived _id is blank");
   }
-  
+
   const idPayload = { _id, ...payload };
   return idPayload;
 }
