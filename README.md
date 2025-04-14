@@ -118,7 +118,7 @@ For standard field values:
 
 ```bash
 datum occur sleep     # ID: sleep:2025-04-14T07:30:00.000Z
-datum add book title="The Hobbit"  # ID: book:2025-04-14T08:15:00.000Z
+datum add book title="The Hobbit"  # ID: book:2025-04-14T08:15:00.000Zc  (the "c" at the end of the timestamp is for createTime)
 ```
 
 ### Composite Fields
