@@ -34,28 +34,29 @@ export const assembleId = function ({
     throw new IdError("idStructure in meta and argument do not match");
   }
 
-  const structure = idStructure ?? meta?.idStructure;
+  idStructure ??= meta?.idStructure;
 
-  if (structure === undefined) {
+  if (idStructure === undefined) {
     if (payload._id !== undefined) {
       return payload._id;
     }
     throw new IdError("Cannot determine the id");
   }
 
+  // For backwards compatibility, check if the id structure already starts with field: (to avoid double field prefixing)
+  if (idStructure.startsWith("field:")) {
+    idStructure = idStructure.slice(6);
+  }
+
   // Generate the main part of the ID
-  const mainId = interpolateFields({ data, meta, format: structure });
+  const mainId = interpolateFields({ data, meta, format: idStructure });
 
   // Add field partition if available
   if ("field" in data && data.field) {
-    // Check if the ID already starts with field: (to avoid double field prefixing)
-    if (mainId.startsWith(`${data.field}:`)) {
-      return mainId;
-    }
     const partition = interpolateFields({
       data,
       meta,
-      format: String(data.field),
+      format: data.field,
     });
     return `${partition}:${mainId}`;
   }
