@@ -123,7 +123,7 @@ describe("addIdAndMetadata", () => {
     const payload = addIdAndMetadata(
       {
         foo: "bar",
-        field: "field",
+        field: "%foo",
         occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
       {
@@ -132,7 +132,7 @@ describe("addIdAndMetadata", () => {
     ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
-        field: "field",
+        field: "%foo",
         foo: "bar",
         occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
@@ -141,14 +141,14 @@ describe("addIdAndMetadata", () => {
       },
     });
     const hid = payload.meta.humanId;
-    expect(payload._id).toEqual(`field:${hid}`);
+    expect(payload._id).toEqual(`bar:${hid}`);
   });
 
   it("adds id and metadata in a sane and stable way 7", () => {
     const payload = addIdAndMetadata(
       {
         foo: "bar",
-        field: "field",
+        field: "%foo%",
         occurTime: { utc: "2023-09-05T11:20:00.000Z" },
       },
       {
@@ -158,7 +158,7 @@ describe("addIdAndMetadata", () => {
     ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
-        field: "field",
+        field: "%foo%",
         foo: "bar",
         occurTime: {
           utc: "2023-09-05T11:20:00.000Z",
@@ -169,7 +169,7 @@ describe("addIdAndMetadata", () => {
       },
     });
     const hid = payload.meta.humanId;
-    expect(payload._id).toEqual(`field:2023-09-05T11:20:00.000Z!!!${hid}`);
+    expect(payload._id).toEqual(`bar:2023-09-05T11:20:00.000Z!!!${hid}`);
   });
 
   it("throws an error if the derived id is blank", () => {
