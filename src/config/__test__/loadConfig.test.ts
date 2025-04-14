@@ -30,7 +30,7 @@ describe("loadConfig", () => {
       configFile: "/test/fixtures/nonexistent.yml",
     };
     expect(() => loadConfig(args)).toThrow(
-      "Config file not found: /test/fixtures/nonexistent.yml"
+      "Config file not found: /test/fixtures/nonexistent.yml",
     );
     expect(initConfigSpy).not.toHaveBeenCalled();
   });

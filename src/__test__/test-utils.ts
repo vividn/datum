@@ -21,7 +21,7 @@ import { mock } from "jest-mock-extended";
 import chalk from "chalk";
 import * as mySpecsModule from "../field/mySpecs";
 
-export const pass = (): void => { };
+export const pass = (): void => {};
 export const fail = (): never => {
   expect(true).toBe(false);
   throw Error;
