@@ -237,8 +237,6 @@ describe("id flow", () => {
     );
   });
 
-  // Note: This test has been moved to compileField.test.ts to better test the
-  // field interpolation system with metadata values
 
   it("can use a dataField that starts with a question mark by escaping the question", () => {
     expectStructureAndId(
