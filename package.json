@@ -19,6 +19,7 @@
     "node": ">18.0.0"
   },
   "scripts": {
+    "dev": "NODE_ENV=development ts-node ./src/index.ts --config ./datumrc_test.yml",
     "test": "jest",
     "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json --skipLibCheck",
