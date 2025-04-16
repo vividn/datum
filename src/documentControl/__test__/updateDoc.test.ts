@@ -354,6 +354,56 @@ describe("updateDoc", () => {
 
   test.todo("how does it handle _ids for dataonly docs?");
 
+  test("it updates fieldStructure in metadata when updating composite field", async () => {
+    // Create a document with a simple field
+    await db.put({
+      _id: "simple-field-doc",
+      data: { field: "simple", something: "else" },
+      meta: {},
+    });
+
+    // Update with a composite field
+    const newDoc = await updateDoc({
+      db,
+      id: "simple-field-doc",
+      payload: { field: "composite_%something%" },
+    });
+
+    // Check field is interpolated and fieldStructure is stored
+    expect(newDoc).toHaveProperty("data.field", "composite_else");
+    expect(newDoc).toHaveProperty(
+      "meta.fieldStructure",
+      "composite_%something%",
+    );
+
+    // Update again with a different composite field
+    const updatedDoc = await updateDoc({
+      db,
+      id: "simple-field-doc",
+      payload: { field: "%something%_updated" },
+    });
+
+    // Check field structure is updated
+    expect(updatedDoc).toHaveProperty("data.field", "else_updated");
+    expect(updatedDoc).toHaveProperty(
+      "meta.fieldStructure",
+      "%something%_updated",
+    );
+
+    // Update with a simple field (not a template)
+    const finalDoc = (await updateDoc({
+      db,
+      id: "simple-field-doc",
+      payload: { field: "back-to-simple" },
+    })) as DatumDocument;
+
+    // Check that fieldStructure is removed
+    expect(finalDoc).toHaveProperty("data.field", "back-to-simple");
+    // Check meta exists before accessing fieldStructure
+    expect(finalDoc).toHaveProperty("meta");
+    expect(finalDoc.meta?.fieldStructure).toBeUndefined();
+  });
+
   test("it does not write to database if updated data document is identical", async () => {
     await db.put({ _id: "datadoc-id", foo: "abc" });
     const currentDoc = await db.get("datadoc-id");
@@ -411,6 +461,64 @@ describe("updateDoc", () => {
     });
     expect(newDoc._id).toEqual(nowStr);
     await expect(() => db.get(notNowStr)).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
+  });
+
+  test("it properly handles field and id changes when field is part of the id", async () => {
+    // Create a document with a field that's used in the id
+    await db.put({
+      _id: "original_field:test_id",
+      data: {
+        field: "original_field",
+        category: "test",
+      },
+      meta: {
+        idStructure: "%field%:%category%_id",
+      },
+    });
+
+    // Update with a composite field
+    const newDoc = await updateDoc({
+      db,
+      id: "original_field:test_id",
+      payload: {
+        field: "%category%_field",
+      },
+    });
+
+    // Check that field is interpolated, fieldStructure is stored, and ID is updated
+    expect(newDoc).toHaveProperty("data.field", "test_field");
+    expect(newDoc).toHaveProperty("meta.fieldStructure", "%category%_field");
+    expect(newDoc._id).toEqual("test_field:test_id");
+
+    // Verify old document is removed
+    await expect(db.get("original_field:test_id")).rejects.toMatchObject({
+      name: "not_found",
+      reason: "deleted",
+    });
+
+    // Update again changing both field and a value that affects the field interpolation
+    const updatedDoc = await updateDoc({
+      db,
+      id: "test_field:test_id",
+      payload: {
+        field: "%category%_updated",
+        category: "new",
+      },
+    });
+
+    // Check that everything is updated correctly
+    expect(updatedDoc).toHaveProperty("data.field", "new_updated");
+    expect(updatedDoc).toHaveProperty(
+      "meta.fieldStructure",
+      "%category%_updated",
+    );
+    expect(updatedDoc._id).toEqual("new_updated:new_id");
+
+    // Verify previous document is removed
+    await expect(db.get("test_field:test_id")).rejects.toMatchObject({
       name: "not_found",
       reason: "deleted",
     });

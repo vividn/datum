@@ -27,6 +27,7 @@ import {
   ViewPayloadViews,
 } from "../views/DatumView";
 import { GenericObject } from "../utils/utilityTypes";
+import { compileField } from "../field/compileField";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {
@@ -103,7 +104,13 @@ export async function updateDoc({
     }
     const meta = oldDoc.meta;
     meta.modifyTime = toDatumTime(now());
+
+    // Handle field updates for composite fields
+    if ("field" in newData) {
+      meta.fieldStructure = newData.field as string | undefined;
+    }
     updatedPayload = { data: updatedData, meta: meta };
+    compileField(updatedPayload);
   } else {
     const oldData = jClone(oldDoc) as DataOnlyPayload;
     delete oldData._rev;
