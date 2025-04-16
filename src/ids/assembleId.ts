@@ -1,7 +1,6 @@
 import {
   DatumData,
   DatumMetadata,
-  DatumPayload,
   EitherPayload,
   isDatumPayload,
 } from "../documentControl/DatumDocument";
@@ -23,7 +22,7 @@ export const assembleId = function ({
     data = payload.data as DatumData;
     meta = payload.meta;
   } else {
-    data = payload as DatumPayload;
+    data = payload as DatumData;
   }
 
   if (meta === undefined && typeof data["_id"] === "string") {
@@ -50,13 +49,8 @@ export const assembleId = function ({
   const mainId = interpolateFields({ data, meta, format: idStructure });
 
   // Add field partition if available
-  if ("field" in data && data.field) {
-    const partition = interpolateFields({
-      data,
-      meta,
-      format: data.field,
-    });
-    return `${partition}:${mainId}`;
+  if (data.field) {
+    return `${data.field}:${mainId}`;
   }
 
   return mainId;
