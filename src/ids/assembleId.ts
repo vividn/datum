@@ -12,7 +12,7 @@ type assembleIdType = {
   idStructure?: string;
 };
 
-export const assembleId = function({
+export const assembleId = function ({
   payload,
   idStructure,
 }: assembleIdType): string {

@@ -56,7 +56,6 @@ export function addIdAndMetadata<T>(
     meta.idStructure = mainIdStructure;
   }
 
-
   // Assemble the ID (assembleId now handles adding the field partition)
   const _id = assembleId({
     payload,

@@ -1,10 +1,10 @@
 import { isIsoDateOrTime, isoDuration } from "../time/timeUtils";
-import { GenericObject, JsonObject, WithRequired } from "../utils/utilityTypes";
+import { JsonObject, WithRequired } from "../utils/utilityTypes";
 
 import { DatumState } from "../state/normalizeState";
 import { DatumTime } from "../time/datumTime";
 
-export type DatumData<T = unknown> = GenericObject & {
+export type DatumData<T = unknown> = JsonObject & {
   state?: DatumState;
   lastState?: DatumState;
   occurTime?: DatumTime;

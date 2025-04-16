@@ -17,7 +17,6 @@ import { ArgumentParser } from "argparse";
 import { dbArgs } from "../input/dbArgs";
 import { outputArgs } from "../input/outputArgs";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { interpolateFields } from "../utils/interpolateFields";
 
 export const newDocArgs = new ArgumentParser({
   add_help: false,
