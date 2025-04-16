@@ -391,11 +391,11 @@ describe("updateDoc", () => {
     );
 
     // Update with a simple field (not a template)
-    const finalDoc = await updateDoc({
+    const finalDoc = (await updateDoc({
       db,
       id: "simple-field-doc",
       payload: { field: "back-to-simple" },
-    }) as DatumDocument;
+    })) as DatumDocument;
 
     // Check that fieldStructure is removed
     expect(finalDoc).toHaveProperty("data.field", "back-to-simple");
