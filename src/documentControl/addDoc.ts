@@ -23,6 +23,7 @@ import {
 } from "../views/DatumView";
 import { assembleId } from "../ids/assembleId";
 import { toDatumTime } from "../time/datumTime";
+import { interpolateFields } from "../utils/interpolateFields";
 
 function payloadMatchesDbData(
   payload: EitherPayload,

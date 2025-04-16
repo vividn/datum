@@ -1,10 +1,10 @@
 import { isIsoDateOrTime, isoDuration } from "../time/timeUtils";
-import { JsonObject, WithRequired } from "../utils/utilityTypes";
+import { GenericObject, JsonObject, WithRequired } from "../utils/utilityTypes";
 
 import { DatumState } from "../state/normalizeState";
 import { DatumTime } from "../time/datumTime";
 
-export type DatumData<T = unknown> = JsonObject & {
+export type DatumData<T = unknown> = GenericObject & {
   state?: DatumState;
   lastState?: DatumState;
   occurTime?: DatumTime;
@@ -25,6 +25,7 @@ export type DatumMetadata = {
   createTime?: DatumTime;
   modifyTime?: DatumTime; //TODO: turn into an array of times
   idStructure?: string;
+  fieldStructure?: string;
   humanId?: string;
   // [key: string]: any;
 };

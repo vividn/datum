@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Run all tests: `pnpm test`
 - Run single test: `jest path/to/test.test.ts`
 - Watch tests: `pnpm testwatch`
+- Run development code: `ts-node src/index.ts`
 
 ## Code Style Guidelines
 - TypeScript with strict typing enabled
