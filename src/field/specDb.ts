@@ -1,6 +1,6 @@
 import PouchDB from "pouchdb";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { FieldSpec, getFieldSpec, setSpecCache, FIELD_SPECS } from "./mySpecs";
+import { FieldSpec, setSpecCache, FIELD_SPECS } from "./mySpecs";
 import { addDoc } from "../documentControl/addDoc";
 import { updateDoc } from "../documentControl/updateDoc";
 
@@ -20,14 +20,14 @@ export async function getSpecFromDb(
   field: string,
 ): Promise<FieldSpec | null> {
   try {
-    const doc = await db.get(specDocId(field)) as EitherPayload;
+    const doc = (await db.get(specDocId(field))) as EitherPayload;
     const spec = doc.data as unknown as FieldSpec;
-    
+
     // Update the cache with the spec from the database
     if (spec) {
       setSpecCache(field, spec);
     }
-    
+
     return spec;
   } catch (error) {
     // Document not found or other error, return null
@@ -44,17 +44,17 @@ export async function saveSpecToDb(
   spec: FieldSpec,
 ): Promise<void> {
   const docId = specDocId(field);
-  
+
   try {
     // Try to get the existing document
     await db.get(docId);
-    
+
     // Update existing document
     await updateDoc({
       db,
       id: docId,
       payload: { data: spec },
-      updateStrategy: "update"
+      updateStrategy: "update",
     });
   } catch (error: any) {
     // Document doesn't exist or other error, create new document
@@ -64,14 +64,14 @@ export async function saveSpecToDb(
         payload: {
           _id: docId,
           data: spec,
-          meta: {}  // Include empty meta object so addDoc will add createTime, etc.
-        }
+          meta: {}, // Include empty meta object so addDoc will add createTime, etc.
+        },
       });
     } else {
       throw error;
     }
   }
-  
+
   // Update the cache with the new spec
   setSpecCache(field, spec);
 }
@@ -85,29 +85,29 @@ export async function loadAllSpecsFromDb(
   try {
     const result = await db.allDocs({
       include_docs: true,
-      startkey: 'SPEC:',
-      endkey: 'SPEC:\ufff0',
+      startkey: "SPEC:",
+      endkey: "SPEC:\ufff0",
     });
-    
+
     const specs: Record<string, FieldSpec> = {};
-    
-    result.rows.forEach(row => {
+
+    result.rows.forEach((row) => {
       if (row.doc) {
         const doc = row.doc as EitherPayload;
-        if (doc._id && doc._id.startsWith('SPEC:')) {
+        if (doc._id && doc._id.startsWith("SPEC:")) {
           const field = doc._id.substring(5); // Remove 'SPEC:' prefix
           const spec = doc.data as unknown as FieldSpec;
           specs[field] = spec;
-          
+
           // Update the cache
           setSpecCache(field, spec);
         }
       }
     });
-    
+
     return specs;
   } catch (error) {
-    console.error('Error loading specs from database:', error);
+    console.error("Error loading specs from database:", error);
     return {};
   }
 }
@@ -120,7 +120,7 @@ export async function deleteSpecFromDb(
   field: string,
 ): Promise<void> {
   const docId = specDocId(field);
-  
+
   try {
     const doc = await db.get(docId);
     await db.remove(doc);
@@ -144,10 +144,10 @@ export async function migrateSpecsToDb(
 ): Promise<void> {
   // Use FIELD_SPECS directly to ensure we always have specs to migrate
   // even if the cache has been modified
-  
+
   // Get all fields with specs from the hardcoded defaults
   const fields = Object.keys(FIELD_SPECS);
-  
+
   for (const field of fields) {
     const spec = FIELD_SPECS[field];
     if (spec && Object.keys(spec).length > 0) {
