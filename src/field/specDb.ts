@@ -1,6 +1,6 @@
 import PouchDB from "pouchdb";
 import { EitherPayload } from "../documentControl/DatumDocument";
-import { FieldSpec, getFieldSpec, setSpecCache } from "./mySpecs";
+import { FieldSpec, getFieldSpec, setSpecCache, FIELD_SPECS } from "./mySpecs";
 import { addDoc } from "../documentControl/addDoc";
 import { updateDoc } from "../documentControl/updateDoc";
 
@@ -142,13 +142,15 @@ export function isValidColor(color: string): boolean {
 export async function migrateSpecsToDb(
   db: PouchDB.Database<EitherPayload>,
 ): Promise<void> {
+  // Use FIELD_SPECS directly to ensure we always have specs to migrate
+  // even if the cache has been modified
+  
   // Get all fields with specs from the hardcoded defaults
-  const specCache = getFieldSpec();
-  const fields = Object.keys(specCache);
+  const fields = Object.keys(FIELD_SPECS);
   
   for (const field of fields) {
-    const spec = getFieldSpec(field);
-    if (Object.keys(spec).length > 0) {
+    const spec = FIELD_SPECS[field];
+    if (spec && Object.keys(spec).length > 0) {
       await saveSpecToDb(db, field, spec);
     }
   }
