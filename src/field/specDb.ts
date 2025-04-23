@@ -50,17 +50,22 @@ export async function saveSpecToDb(
     await db.get(docId);
     
     // Update existing document
-    await updateDoc(db, docId, { 
-      strategy: "update",
-      data: spec
+    await updateDoc({
+      db,
+      id: docId,
+      payload: { data: spec },
+      updateStrategy: "update"
     });
   } catch (error: any) {
     // Document doesn't exist or other error, create new document
     if (error.status === 404) {
-      await addDoc(db, {
-        _id: docId,
-        data: spec,
-        meta: {}  // Include empty meta object so addDoc will add createTime, etc.
+      await addDoc({
+        db,
+        payload: {
+          _id: docId,
+          data: spec,
+          meta: {}  // Include empty meta object so addDoc will add createTime, etc.
+        }
       });
     } else {
       throw error;
@@ -87,14 +92,16 @@ export async function loadAllSpecsFromDb(
     const specs: Record<string, FieldSpec> = {};
     
     result.rows.forEach(row => {
-      const doc = row.doc as EitherPayload;
-      if (doc && doc._id.startsWith('SPEC:')) {
-        const field = doc._id.substring(5); // Remove 'SPEC:' prefix
-        const spec = doc.data as unknown as FieldSpec;
-        specs[field] = spec;
-        
-        // Update the cache
-        setSpecCache(field, spec);
+      if (row.doc) {
+        const doc = row.doc as EitherPayload;
+        if (doc._id && doc._id.startsWith('SPEC:')) {
+          const field = doc._id.substring(5); // Remove 'SPEC:' prefix
+          const spec = doc.data as unknown as FieldSpec;
+          specs[field] = spec;
+          
+          // Update the cache
+          setSpecCache(field, spec);
+        }
       }
     });
     
