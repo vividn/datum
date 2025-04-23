@@ -1,6 +1,6 @@
 // TODO: Remove this file after proper specs are setup
 
-type FieldSpec = {
+export type FieldSpec = {
   kind?: "occur" | "start" | "switch";
   color?: string;
   y?: number; // 0 to 1
@@ -215,6 +215,34 @@ export const FIELD_SPECS: Record<string, FieldSpec> = {
   cannabis: { color: "#00c800", y: 0.75 },
 } as const;
 
+// Store the hardcoded specs in memory, for use by getFieldSpec and specCache
+let specCache: Record<string, FieldSpec> = { ...FIELD_SPECS };
+
+/**
+ * Get a field specification, either from the cache or the hardcoded defaults
+ */
 export function getFieldSpec(field?: string): FieldSpec {
-  return FIELD_SPECS[field ?? ""] ?? {};
+  if (!field) return {};
+  return specCache[field] ?? {};
+}
+
+/**
+ * Set the spec cache for a field
+ */
+export function setSpecCache(field: string, spec: FieldSpec): void {
+  specCache[field] = spec;
+}
+
+/**
+ * Reset the spec cache to the hardcoded defaults
+ */
+export function resetSpecCache(): void {
+  specCache = { ...FIELD_SPECS };
+}
+
+/**
+ * Get the entire spec cache
+ */
+export function getSpecCache(): Record<string, FieldSpec> {
+  return { ...specCache };
 }
