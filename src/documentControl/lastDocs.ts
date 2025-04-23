@@ -26,8 +26,7 @@ export async function updateLastDocsRef(
   let _rev: string | undefined;
   try {
     ({ _rev } = await db.get(LAST_DOCS_ID));
-    // eslint-disable-next-line unused-imports/no-unused-vars
-  } catch (_error) {
+  } catch {
     //pass
   }
   const lastDocsRef: LastDocsRef = {

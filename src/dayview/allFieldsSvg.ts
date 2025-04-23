@@ -3,7 +3,7 @@ import { occurredFields } from "../field/occurredFields";
 import { fieldSvgBlocks } from "./fieldSvgBlocks";
 import { domdoc } from "./domdoc";
 import { getFieldSpec } from "../field/mySpecs";
-import md5 from "md5";
+import { md5Random } from "../field/fieldColor";
 export type AllFieldsSvgType = {
   db: PouchDB.Database;
   startUtc: string;
@@ -21,22 +21,14 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
   const sortedWithSpans = allFields
     .map((field) => {
       const spec = getFieldSpec(field);
-      const specY =
-        spec.y ?? parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32);
+      const specY = spec.y ?? md5Random(field);
       const defaultHeight = 0.12;
 
-      let pY: number, pHeight: number;
-      if (spec.height !== undefined) {
-        pY = specY;
-        pHeight = spec.height;
-      } else {
-        pY = specY - defaultHeight / 2;
-        pHeight = defaultHeight;
-      }
+      const specHeight = spec.height ?? defaultHeight;
 
-      const y1 = pY * height;
-      const zIndex = spec.zIndex ?? pY;
-      const fieldHeight = pHeight * height;
+      const y1 = specY * height;
+      const zIndex = spec.zIndex ?? specY;
+      const fieldHeight = specHeight * height;
       return { field, y1, fieldHeight, zIndex };
     })
     .sort((a, b) => a.zIndex - b.zIndex);
