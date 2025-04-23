@@ -14,6 +14,7 @@ import {
   generateRandomColor,
 } from "../field/colorUtils";
 import { getContrastTextColor } from "../utils/colorUtils";
+import { getFieldY } from "../field/fieldColor";
 
 export const specArgs = new ArgumentParser({
   add_help: false,
@@ -79,7 +80,10 @@ function parseFieldAndState(fieldInput: string): {
 }
 
 // Helper function to ask for spec properties interactively
-async function promptForSpec(initialSpec: FieldSpec = {}): Promise<FieldSpec> {
+async function promptForSpec(
+  field: string,
+  initialSpec: FieldSpec = {},
+): Promise<FieldSpec> {
   const kindChoices = [
     { title: "occur", value: "occur", description: "Point data (events)" },
     { title: "start", value: "start", description: "Block data with duration" },
@@ -114,22 +118,23 @@ async function promptForSpec(initialSpec: FieldSpec = {}): Promise<FieldSpec> {
   const yResponse = await prompts({
     type: "number",
     name: "y",
-    message: "Y position (0-1)",
-    initial: initialSpec.y !== undefined ? initialSpec.y : 0.5,
+    message: "y position (0-1)",
+    initial: initialSpec.y ?? getFieldY(field),
     min: 0,
     max: 1,
   });
 
-  // Height is required for start and switch, optional for occur
+  const maxHeight = 1 - yResponse.y;
+
   let heightResponse = { height: initialSpec.height };
   if (kindResponse.kind === "start" || kindResponse.kind === "switch") {
     heightResponse = await prompts({
       type: "number",
       name: "height",
-      message: "Height (0-1)",
-      initial: initialSpec.height !== undefined ? initialSpec.height : 0.1,
+      message: `height (0-${maxHeight})`,
+      initial: initialSpec.height ?? Math.min(0.1, maxHeight),
       min: 0.001,
-      max: 1,
+      max: maxHeight,
     });
   }
 
@@ -524,7 +529,7 @@ export async function specCmd(
     });
 
     if (createResponse.create) {
-      const newSpec = await promptForSpec();
+      const newSpec = await promptForSpec(field);
       await saveSpecToDb(db, field, newSpec);
       console.log(`Created spec for field: ${field}`);
       displaySpec(field, newSpec);
