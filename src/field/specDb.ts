@@ -29,7 +29,7 @@ export async function getSpecFromDb(
     }
 
     return spec;
-  } catch (error) {
+  } catch {
     // Document not found or other error, return null
     return null;
   }
@@ -124,7 +124,7 @@ export async function deleteSpecFromDb(
   try {
     const doc = await db.get(docId);
     await db.remove(doc);
-  } catch (error) {
+  } catch {
     // Ignore if document doesn't exist
   }
 }

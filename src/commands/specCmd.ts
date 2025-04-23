@@ -14,7 +14,7 @@ import {
   generateRandomColor,
 } from "../field/colorUtils";
 import { getContrastTextColor } from "../utils/colorUtils";
-import { getFieldY } from "../field/fieldColor";
+import { getFieldY, getFieldColor } from "../field/fieldColor";
 
 export const specArgs = new ArgumentParser({
   add_help: false,
@@ -138,6 +138,13 @@ async function promptForSpec(
     });
   }
 
+  // Get the current field color using getFieldColor
+  const currentColor = getFieldColor(field);
+
+  // Show the current color before prompting
+  console.log("\nCurrent color:");
+  displayColorSample(currentColor, field);
+
   // Color selection
   const colorTypeResponse = await prompts({
     type: "select",
@@ -151,7 +158,7 @@ async function promptForSpec(
     ],
   });
 
-  let finalColor = initialSpec.color || "#000000";
+  let finalColor = initialSpec.color || currentColor;
 
   if (colorTypeResponse.colorType === "common") {
     const colorResponse = await prompts({
@@ -177,7 +184,7 @@ async function promptForSpec(
         /^#[0-9A-Fa-f]{6}$/.test(value)
           ? true
           : "Please enter a valid hex color",
-      initial: initialSpec.color || "#000000",
+      initial: initialSpec.color || currentColor,
     });
     finalColor = hexResponse.color;
   } else if (colorTypeResponse.colorType === "name") {
@@ -237,7 +244,11 @@ async function promptForSpec(
 }
 
 // Helper to prompt for state-specific color
-async function promptForStateColor(initialColor?: string): Promise<string> {
+async function promptForStateColor(
+  field: string,
+  state: string,
+  initialColor?: string,
+): Promise<string> {
   const colorChoices = [
     "red",
     "blue",
@@ -253,6 +264,14 @@ async function promptForStateColor(initialColor?: string): Promise<string> {
     "white",
   ];
 
+  // Get the current field color to use as a default if no state color exists
+  const currentFieldColor = getFieldColor(field);
+  const defaultColor = initialColor || currentFieldColor;
+
+  // Show the current color before prompting
+  console.log("\nCurrent color:");
+  displayColorSample(defaultColor, `${field}:${state}`);
+
   const colorTypeResponse = await prompts({
     type: "select",
     name: "colorType",
@@ -265,7 +284,7 @@ async function promptForStateColor(initialColor?: string): Promise<string> {
     ],
   });
 
-  let finalColor = initialColor || "#000000";
+  let finalColor = defaultColor;
 
   if (colorTypeResponse.colorType === "common") {
     const colorResponse = await prompts({
@@ -291,7 +310,7 @@ async function promptForStateColor(initialColor?: string): Promise<string> {
         /^#[0-9A-Fa-f]{6}$/.test(value)
           ? true
           : "Please enter a valid hex color",
-      initial: initialColor || "#000000",
+      initial: defaultColor,
     });
     finalColor = hexResponse.color;
   } else if (colorTypeResponse.colorType === "name") {
@@ -503,6 +522,8 @@ export async function specCmd(
 
     // Prompt for color
     const stateColor = await promptForStateColor(
+      field,
+      state,
       existingSpec.states[state].color,
     );
     existingSpec.states[state].color = stateColor;
