@@ -5,6 +5,22 @@ import { md5Color } from "../utils/md5Color";
 import { getFieldSpec } from "./mySpecs";
 import { simplifyState } from "../state/simplifyState";
 
+export function md5Random(field: string): number {
+  return parseInt(md5Color(field).slice(0, 8), 16) / Math.pow(2, 32);
+}
+
+export function getFieldY(field: string): number {
+  const spec = getFieldSpec(field);
+  const y = spec.y ?? md5Random(field);
+  return y;
+}
+
+export function getFieldHeight(field: string): number {
+  const spec = getFieldSpec(field);
+  const height = spec.height ?? 0.12;
+  return height;
+}
+
 export function getFieldColor(field?: string): string {
   if (field === undefined) {
     return "#ffffff";
