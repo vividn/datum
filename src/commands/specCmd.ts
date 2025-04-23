@@ -84,9 +84,20 @@ async function promptForSpec(
   field: string,
   initialSpec: FieldSpec = {},
 ): Promise<FieldSpec> {
+  // Common options for all prompts
+  const promptOptions = {
+    onCancel: () => {
+      console.log("\nCancelled spec creation");
+      process.exit(1);
+    },
+  };
   const kindChoices = [
     { title: "occur", value: "occur", description: "Point data (events)" },
-    { title: "start", value: "start", description: "Block data with duration" },
+    {
+      title: "start/end",
+      value: "start",
+      description: "Block data with duration",
+    },
     { title: "switch", value: "switch", description: "State changes" },
   ];
 
@@ -113,6 +124,7 @@ async function promptForSpec(
     initial: initialSpec.kind
       ? kindChoices.findIndex((c) => c.value === initialSpec.kind)
       : 0,
+    ...promptOptions,
   });
 
   const yResponse = await prompts({
@@ -122,6 +134,7 @@ async function promptForSpec(
     initial: initialSpec.y ?? getFieldY(field),
     min: 0,
     max: 1,
+    ...promptOptions,
   });
 
   const maxHeight = 1 - yResponse.y;
@@ -135,6 +148,7 @@ async function promptForSpec(
       initial: initialSpec.height ?? Math.min(0.1, maxHeight),
       min: 0.001,
       max: maxHeight,
+      ...promptOptions,
     });
   }
 
@@ -156,8 +170,8 @@ async function promptForSpec(
       { title: "Enter color name", value: "name" },
       { title: "Generate random color", value: "random" },
     ],
+    ...promptOptions,
   });
-
   let finalColor = initialSpec.color || currentColor;
 
   if (colorTypeResponse.colorType === "common") {
