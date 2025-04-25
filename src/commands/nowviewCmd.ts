@@ -66,7 +66,8 @@ export async function nowviewCmd(
 
       if (args.outputFile) {
         if (args.outputFile.endsWith(".svg")) {
-          const xmlDeclaration = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
+          const xmlDeclaration =
+            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
           const prettySvg = xmlFormatter(svgContent);
           fs.writeFileSync(args.outputFile, xmlDeclaration + prettySvg);
         } else if (args.outputFile.endsWith(".html")) {
@@ -123,7 +124,8 @@ export async function nowviewCmd(
 
   if (args.outputFile.endsWith(".svg")) {
     // Add XML declaration, SVG namespace, and ensure all required namespaces are included
-    const xmlDeclaration = '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
+    const xmlDeclaration =
+      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
     const prettySvg = xmlFormatter(svgContent);
     fs.writeFileSync(args.outputFile, xmlDeclaration + prettySvg);
     return prettySvg;

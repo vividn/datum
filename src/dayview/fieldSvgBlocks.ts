@@ -92,7 +92,11 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .range([0, width]);
 
   // When there are multiple states, create stripes
-  const stripeWidthMinutes = 5;
+  const stripeWidthMinutesonFullDay = 10;
+  const windowWidth = new Date(endUtc).valueOf() - new Date(startUtc).valueOf();
+  const fullDayMs = 24 * 60 * 60 * 1000; // milliseconds in a day
+  const stripeWidthMinutes =
+    (windowWidth / fullDayMs) * stripeWidthMinutesonFullDay;
   const stripeWidth =
     timeScale(new Date(startUtc).valueOf() + stripeWidthMinutes * 60 * 1000) -
     timeScale(new Date(startUtc).valueOf());
