@@ -103,6 +103,50 @@ Datum uses PouchDB by default for local storage. For remote synchronization or m
    - Config file: Update `host:` and credentials
    - CLI: Use the `--host` flag
 
+## Document ID Structure
+
+Datum automatically generates document IDs based on the data you provide. By default, document IDs follow this pattern:
+
+```
+field:value
+```
+
+Where `field` is the field value and `value` is based on the timestamp or other provided data.
+
+### Basic ID Generation
+For standard field values:
+
+```bash
+datum occur sleep     # ID: sleep:2025-04-14T07:30:00.000Z
+datum add book title="The Hobbit"  # ID: book:2025-04-14T08:15:00.000Zc  (the "c" at the end of the timestamp is for createTime)
+```
+
+### Composite Fields
+
+You can create composite fields using the `%keyName%` syntax, which allows fields to be composed from other data:
+
+```bash
+# Create an entry with a composite field from project and task
+datum add field="%project%_%task%" project=website task=homepage
+
+# Entry will have field "website_homepage" and ID: website_homepage:2025-04-14T08:30:00.000Zc
+```
+
+### Custom ID Structure
+
+You can customize the ID structure using the `--id` option:
+
+```bash
+# Create an entry with custom ID structure
+datum add book title="The Hobbit" author="J.R.R. Tolkien" --id "%title%_by_%author%"
+
+# ID: book:The Hobbit_by_J.R.R. Tolkien
+```
+
+Composite fields are especially useful for categorizing data hierarchically or creating more descriptive document IDs.
+
+> **⚠️ Note:** Field values cannot contain colons (`:`) as they are used as delimiters in document IDs. An error will be thrown if a field contains a colon.
+
 ## Status
 
 ⚠️ Alpha Software Warning: Datum is under active development. Expect breaking changes and instability until version 2.1.0.

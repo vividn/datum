@@ -84,15 +84,21 @@ export function testDbLifecycle(
   return db;
 }
 
-export function mockedLogLifecycle(): { mockedLog: Mock; mockedWarn: Mock } {
+export function mockedLogLifecycle(): {
+  mockedLog: Mock;
+  mockedWarn: Mock;
+  mockedInfo: Mock;
+} {
   const originalLog = console.log;
   const originalWarn = console.warn;
   const mockedLog = jest.fn() as Mock;
   const mockedWarn = jest.fn() as Mock;
+  const mockedInfo = jest.fn() as Mock;
 
   beforeEach(async () => {
     console.log = mockedLog;
     console.warn = mockedWarn;
+    console.info = mockedInfo;
   });
 
   afterEach(async () => {
@@ -100,9 +106,10 @@ export function mockedLogLifecycle(): { mockedLog: Mock; mockedWarn: Mock } {
     console.warn = originalWarn;
     mockedLog.mockReset();
     mockedWarn.mockReset();
+    mockedInfo.mockReset();
   });
 
-  return { mockedLog, mockedWarn };
+  return { mockedLog, mockedWarn, mockedInfo };
 }
 
 const originalNowFn = Settings.now;
@@ -165,13 +172,12 @@ export function makeDoc<D extends EitherDocument = EitherDocument>(
     if (meta?.idStructure) {
       idStructure = meta.idStructure;
     } else {
-      const { defaultIdParts, defaultPartitionParts } = defaultIdComponents({
+      const { defaultIdParts } = defaultIdComponents({
         data,
       });
       idStructure = buildIdStructure({
         idParts: defaultIdParts,
         delimiter: defaults.idDelimiter,
-        partition: defaultPartitionParts,
       });
     }
     doc._id = assembleId({ payload: doc, idStructure });

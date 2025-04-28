@@ -25,6 +25,7 @@ export type DatumMetadata = {
   createTime?: DatumTime;
   modifyTime?: DatumTime; //TODO: turn into an array of times
   idStructure?: string;
+  fieldStructure?: string;
   humanId?: string;
   // [key: string]: any;
 };
