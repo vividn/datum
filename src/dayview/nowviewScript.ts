@@ -7,7 +7,7 @@ export const getNowviewScript = () => `
     const svg = document.querySelector('svg');
     const dataArea = svg.querySelector('.dataArea');
 
-    // Calculate pixel shift based on time difference
+    // Calculate pixel shift based on time difference (TODO: complete this)
     const timeShiftDiff = targetTimeshift - timeShiftMinutes;
     const minuteWidth = dataArea.getBoundingClientRect().width / 15; // 15 minutes total width
     const pixelShift = timeShiftDiff * minuteWidth / 5; // 5 minutes per shift

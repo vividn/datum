@@ -45,6 +45,8 @@ export type NowviewCmdArgs = MainDatumArgs & {
   width?: number;
   height?: number;
   outputFile?: string;
+  timeAxisHeight?: number;
+  timeshift?: string;
   watch?: boolean;
 };
 
