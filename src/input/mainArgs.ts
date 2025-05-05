@@ -31,13 +31,12 @@ export type MainDatumArgs = DbArgs & OutputArgs;
 const commandParser = new ArgumentParser({
   prog: "datum",
   description: "track data on your life",
-  add_help: false,
+  add_help: true,
   parents: [dbArgs],
 });
 
 commandParser.add_argument("command", {
   help: "the command to run",
-  nargs: "?",
 });
 
 export async function datum(cliInput: string | string[]): Promise<void> {
@@ -46,11 +45,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       ? (shellParse(cliInput) as string[])
       : cliInput;
 
-  if (
-    cliArgs.includes("-h") ||
-    cliArgs.includes("--help") ||
-    cliArgs.length === 0
-  ) {
+  if (cliArgs.length === 0 || cliArgs[0] === "-h" || cliArgs[0] === "--help") {
     const helpParser = new ArgumentParser({
       prog: "datum",
       description: `
@@ -84,6 +79,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
             check       Check for problems in the data and optionally fix them.
             dayview     Generate a visual representation of data for a day.
             sync        Synchronize the database with a remote host.
+            retime      Change the time of an existing document.
             
           Options:
             --db, --database <name>    Specify the database to use (default: "datum").
