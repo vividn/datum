@@ -58,99 +58,20 @@ export async function nowviewCmd(
   const db = connectDb(args);
 
   if (args.watch) {
-    console.log("watching for changes");
+    console.log("watching");
     const emitter = db.changes({ since: "now", live: true });
-
-    // Function to redraw the view
-    const redraw = async () => {
-      console.log("redrawing nowview");
-      const svgContent = await nowview(args);
-
-      if (args.outputFile) {
-        if (args.outputFile.endsWith(".svg")) {
-          const xmlDeclaration =
-            '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
-          const prettySvg = xmlFormatter(svgContent);
-          fs.writeFileSync(args.outputFile, xmlDeclaration + prettySvg);
-        } else if (args.outputFile.endsWith(".html")) {
-          const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Nowview - Last 15 Minutes</title>
-  <style>
-    body { margin: 0; padding: 0; background: #000; }
-    svg { display: block; margin: 0 auto; }
-  </style>
-</head>
-<body>
-  ${svgContent}
-</body>
-</html>`;
-          const prettyHtml = xmlFormatter(htmlContent);
-          fs.writeFileSync(args.outputFile, prettyHtml);
-        } else {
-          throw new Error("output file must have a .html or .svg extension");
-        }
-      }
-
-      return svgContent;
-    };
-
-    // Initial draw
-    await redraw();
-
-    // Set up redraw on changes or every minute
     while (true) {
+      console.log("redrawing");
       await Promise.all([
-        // Wait for either a database change or 1 minute to pass
+        nowview(args),
+        // redraw every minute or when data changes
         new Promise((resolve) => {
-          const timeout = setTimeout(resolve, 60 * 1000); // 1 minute
-          emitter.once("change", () => {
-            clearTimeout(timeout);
-            resolve(undefined);
-          });
+          setTimeout(resolve, 1000 * 60);
+          emitter.once("change", resolve);
         }),
-        redraw(),
       ]);
     }
   }
 
-  // Single run mode
-  const svgContent = await nowview(args);
-
-  if (args.outputFile === undefined) {
-    return svgContent;
-  }
-
-  if (args.outputFile.endsWith(".svg")) {
-    // Add XML declaration, SVG namespace, and ensure all required namespaces are included
-    const xmlDeclaration =
-      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
-    const prettySvg = xmlFormatter(svgContent);
-    fs.writeFileSync(args.outputFile, xmlDeclaration + prettySvg);
-    return prettySvg;
-  } else if (args.outputFile.endsWith(".html")) {
-    const htmlContent = `
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="UTF-8">
-  <title>Nowview - Last 15 Minutes</title>
-  <style>
-    body { margin: 0; padding: 0; background: #000; }
-    svg { display: block; margin: 0 auto; }
-  </style>
-</head>
-<body>
-  ${svgContent}
-</body>
-</html>`;
-    const prettyHtml = xmlFormatter(htmlContent);
-    fs.writeFileSync(args.outputFile, prettyHtml);
-    return svgContent;
-  } else {
-    throw new Error("output file must have a .html or .svg extension");
-  }
+  return await nowview(args);
 }

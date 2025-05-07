@@ -1,10 +1,11 @@
+import fs from "fs"
 import * as d3 from "d3";
 import { DateTime } from "luxon";
 import { connectDb } from "../auth/connectDb";
 import { NowviewCmdArgs } from "../commands/nowviewCmd";
 import { domdoc } from "./domdoc";
-import { getNowviewScript } from "./nowviewScript"; // TODO: Complete this
 import { allFieldsSvg } from "../dayview/allFieldsSvg";
+import xmlFormatter from "xml-formatter";
 
 const DEFAULT_WIDTH = 400;
 const DEFAULT_HEIGHT = 300;
@@ -37,7 +38,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const plotHeight = height - margin.top - margin.bottom;
   const dataHeight = plotHeight - timeAxisHeight;
 
-  const document = domdoc();
+  const document = domdoc("nowview");
   const svg = d3
     .select(document.body)
     .append("svg")
@@ -193,10 +194,22 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("stroke", "white")
     .attr("stroke-opacity", 0.4);
 
-  // Add keyboard navigation script
-  const script = document.createElement("script");
-  script.textContent = getNowviewScript();
-  document.body.appendChild(script);
+  const outputFile = args.outputFile;
+  const prettySvg = xmlFormatter(svg.node()!.outerHTML);
 
-  return document.documentElement.outerHTML;
+  if (outputFile === undefined) {
+    return prettySvg;
+  }
+  if (outputFile.endsWith(".svg")) {
+    const xmlDeclaration =
+      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
+    fs.writeFileSync(outputFile, xmlDeclaration + prettySvg);
+    return prettySvg;
+  } else if (outputFile.endsWith(".html")) {
+    const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
+    fs.writeFileSync(outputFile, prettyHtml);
+    return prettySvg;
+  } else {
+    throw new Error("output file must have a .html or .svg extension");
+  }
 }
