@@ -28,6 +28,12 @@ nowviewArgs.add_argument("--output-file", "-o", {
   dest: "outputFile",
 });
 
+nowviewArgs.add_argument("--time-axis-height", {
+  help: "height of the time axis",
+  type: "int",
+  dest: "timeAxisHeight",
+});
+
 nowviewArgs.add_argument("--watch", "-w", {
   help: "watch for changes and update every minute",
   action: "store_true",
@@ -46,7 +52,6 @@ export type NowviewCmdArgs = MainDatumArgs & {
   height?: number;
   outputFile?: string;
   timeAxisHeight?: number;
-  timeshift?: string;
   watch?: boolean;
 };
 

@@ -1,29 +1,18 @@
-import fs from "fs"
+import fs from "fs";
 import * as d3 from "d3";
-import { DateTime } from "luxon";
 import { connectDb } from "../auth/connectDb";
 import { NowviewCmdArgs } from "../commands/nowviewCmd";
 import { domdoc } from "./domdoc";
 import { allFieldsSvg } from "../dayview/allFieldsSvg";
 import xmlFormatter from "xml-formatter";
+import { now } from "../time/timeUtils";
+import { DateTime } from "luxon";
 
 const DEFAULT_WIDTH = 400;
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;
 const TIMELINE_WIDTH_RATIO = 0.6;
 const STATE_PANEL_WIDTH_RATIO = 0.4;
-
-// Extract time-related calculations into a helper function
-function calculateTimeRange(timeShiftMinutes: number) {
-  const viewportEnd = DateTime.now().minus({ minutes: timeShiftMinutes });
-  const viewportStart = viewportEnd.minus({ minutes: 15 });
-  return {
-    viewportEnd,
-    viewportStart,
-    startUtc: viewportStart.toUTC().toISO(),
-    endUtc: viewportEnd.toUTC().toISO(),
-  };
-}
 
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
@@ -37,6 +26,11 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const plotWidth = width - margin.left - margin.right;
   const plotHeight = height - margin.top - margin.bottom;
   const dataHeight = plotHeight - timeAxisHeight;
+
+  const endTime = now() as DateTime<true>;
+  const startTime = endTime.minus({ minutes: 15 });
+  const startUtc = startTime.toUTC().toISO();
+  const endUtc = endTime.toUTC().toISO();
 
   const document = domdoc("nowview");
   const svg = d3
@@ -57,11 +51,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("width", "100%")
     .attr("height", "100%")
     .attr("fill", "black");
-
-  // Get timeshift and calculate time range
-  const timeShiftMinutes = args.timeshift ? parseInt(args.timeshift, 10) : 0;
-  const { viewportEnd, viewportStart, startUtc, endUtc } =
-    calculateTimeRange(timeShiftMinutes);
 
   // Create main plot area similar to dayview
   const plot = svg
@@ -105,13 +94,12 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("x", dataWidth);
 
   // Get current state data using allFieldsSvg with a tiny time window
-  const stateEndUtc = viewportEnd.toUTC().toISO();
-  const stateStartUtc = viewportEnd.minus({ milliseconds: 1 }).toUTC().toISO(); // Small window to get current state
+  const sliverBeforeEndUtc = endTime.minus({ milliseconds: 1 }).toUTC().toISO(); // Small window to get current state
 
   const stateFieldsSvg = await allFieldsSvg({
     db,
-    startUtc: stateStartUtc,
-    endUtc: stateEndUtc,
+    startUtc: sliverBeforeEndUtc,
+    endUtc: endUtc,
     width: stateWidth,
     height: dataHeight,
   });
@@ -135,15 +123,15 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   // Create time scale with current time at right edge of timeline
   const timeScale = d3
     .scaleTime()
-    .domain([viewportStart.toJSDate(), viewportEnd.toJSDate()])
+    .domain([startTime.toJSDate(), endTime.toJSDate()])
     .range([0, dataWidth]);
 
   // Add a vertical line indicating the current time
   plot
     .append("line")
     .attr("class", "current-time-line")
-    .attr("x1", timeScale(viewportEnd.toJSDate()))
-    .attr("x2", timeScale(viewportEnd.toJSDate()))
+    .attr("x1", timeScale(endTime.toJSDate()))
+    .attr("x2", timeScale(endTime.toJSDate()))
     .attr("y1", 0)
     .attr("y2", dataHeight)
     .attr("stroke", "#ffcc00")
@@ -151,10 +139,10 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("stroke-dasharray", "4,2");
 
   const tickValues = [
-    viewportEnd.toJSDate(),
-    viewportEnd.minus({ minutes: 5 }).toJSDate(),
-    viewportEnd.minus({ minutes: 10 }).toJSDate(),
-    viewportEnd.minus({ minutes: 15 }).toJSDate(),
+    endTime.toJSDate(),
+    endTime.minus({ minutes: 5 }).toJSDate(),
+    endTime.minus({ minutes: 10 }).toJSDate(),
+    endTime.minus({ minutes: 15 }).toJSDate(),
   ];
 
   const timeAxis = plot
@@ -167,10 +155,10 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         .tickFormat((d) => {
           const date = d as Date;
           const diffMinutes = Math.round(
-            (date.getTime() - viewportEnd.toJSDate().getTime()) / 60000,
+            (date.getTime() - endTime.toJSDate().getTime()) / 60000,
           );
           return diffMinutes === 0
-            ? `${viewportEnd.hour}:${viewportEnd.minute.toString().padStart(2, "0")}`
+            ? `${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`
             : `${diffMinutes}m`;
         }),
     );
