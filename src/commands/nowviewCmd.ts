@@ -4,8 +4,6 @@ import { MainDatumArgs } from "../input/mainArgs";
 import { nowview } from "../dayview/nowview";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { connectDb } from "../auth/connectDb";
-import fs from "fs";
-import xmlFormatter from "xml-formatter";
 
 export const nowviewArgs = new ArgumentParser({
   add_help: false,
