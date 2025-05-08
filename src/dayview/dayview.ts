@@ -8,6 +8,8 @@ import { singleDay } from "./singleday";
 import { parseDateStr } from "../time/parseDateStr";
 import { warningIcon } from "./symbols/warningIcon";
 import xmlFormatter from "xml-formatter";
+import { xmlDeclaration } from "./xmlDeclaration";
+import sharp from "sharp";
 
 export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const db = connectDb(args);
@@ -205,7 +207,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
 
   if (allErrors.size() > 0) {
     const erroredFields = new Set<string>();
-    allErrors.each(function () {
+    allErrors.each(function() {
       const field = d3.select(this).attr("field");
       erroredFields.add(field);
     });
@@ -245,15 +247,17 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     return prettySvg;
   }
   if (outputFile.endsWith(".svg")) {
-    const xmlDeclaration =
-      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
     fs.writeFileSync(outputFile, xmlDeclaration + prettySvg);
     return prettySvg;
+  } else if (outputFile.endsWith(".png")) {
+    await sharp(Buffer.from(xmlDeclaration + prettySvg))
+      .png()
+      .toFile(outputFile);
   } else if (outputFile.endsWith(".html")) {
     const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
     fs.writeFileSync(outputFile, prettyHtml);
     return prettySvg;
   } else {
-    throw new Error("output file must have a .html or .svg extension");
+    throw new Error("output file must have an .svg, .png, or .html");
   }
 }
