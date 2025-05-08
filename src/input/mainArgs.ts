@@ -23,6 +23,7 @@ import { restoreCmd } from "../commands/restoreCmd";
 import { migrateCmd } from "../commands/migrateCmd";
 import { checkCmd } from "../commands/checkCmd";
 import { dayviewCmd } from "../commands/dayviewCmd";
+import { nowviewCmd } from "../commands/nowviewCmd";
 import { syncCmd } from "../commands/syncCmd";
 import { retimeCmd } from "../commands/retimeCmd";
 
@@ -159,6 +160,9 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await dayviewCmd(args, namespace);
       break;
 
+    case "nowview":
+      await nowviewCmd(args, namespace);
+      break;
     // case "test": {
     //   const parser = new ArgumentParser({});
     //   parser.add_argument("--test", {

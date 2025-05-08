@@ -72,7 +72,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     }
   }
 
-  const document = domdoc();
+  const document = domdoc("dayview");
 
   const svg = d3
     .select(document.body)
@@ -245,7 +245,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     return prettySvg;
   }
   if (outputFile.endsWith(".svg")) {
-    // Add XML declaration, SVG namespace, and ensure all required namespaces are included
     const xmlDeclaration =
       '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
     fs.writeFileSync(outputFile, xmlDeclaration + prettySvg);

@@ -111,3 +111,6 @@ build/
 !*.secret
 .vscode/
 .pouch
+
+# Mac
+.DS_Store
