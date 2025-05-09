@@ -7,6 +7,8 @@ import { allFieldsSvg } from "../dayview/allFieldsSvg";
 import xmlFormatter from "xml-formatter";
 import { now } from "../time/timeUtils";
 import { DateTime } from "luxon";
+import { xmlDeclaration } from "./xmlDeclaration";
+import sharp from "sharp";
 
 const DEFAULT_WIDTH = 400;
 const DEFAULT_HEIGHT = 300;
@@ -189,15 +191,18 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     return prettySvg;
   }
   if (outputFile.endsWith(".svg")) {
-    const xmlDeclaration =
-      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
     fs.writeFileSync(outputFile, xmlDeclaration + prettySvg);
+    return prettySvg;
+  } else if (outputFile.endsWith(".png")) {
+    await sharp(Buffer.from(xmlDeclaration + prettySvg))
+      .png()
+      .toFile(outputFile);
     return prettySvg;
   } else if (outputFile.endsWith(".html")) {
     const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
     fs.writeFileSync(outputFile, prettyHtml);
     return prettySvg;
   } else {
-    throw new Error("output file must have a .html or .svg extension");
+    throw new Error("output file must have an .svg, .png, or .html");
   }
 }

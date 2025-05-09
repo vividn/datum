@@ -8,6 +8,7 @@ import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 import { domdoc } from "./domdoc";
 import { simplifyState } from "../state/simplifyState";
 import { getStateColor } from "../field/fieldColor";
+import { warningIcon } from "./symbols/warningIcon";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -287,12 +288,13 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   for (const error of fieldErrors.errors) {
     console.warn(error.message);
     svg
-      .append("use")
-      .attr("xlink:href", "#warning-icon")
+      .append("svg")
       .attr("x", timeScale(new Date(error.occurTime)) - warning_r)
       .attr("y", height / 2 - warning_r)
       .attr("width", warning_r * 2)
       .attr("height", warning_r * 2)
+      .attr("viewBox", "0 0 24 24")
+      .html(warningIcon)
       .attr("class", `${field} error`)
       .attr("field", field);
   }
