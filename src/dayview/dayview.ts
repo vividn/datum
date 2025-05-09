@@ -85,10 +85,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("height", height);
 
   const defs = svg.append("defs");
-  defs
-    .append("symbol")
-    .attr("id", "warning-icon")
-    .html(() => warningIcon);
   defs.append("style").text(`svg { overflow: visible; }`);
 
   const _background = svg
@@ -207,18 +203,19 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
 
   if (allErrors.size() > 0) {
     const erroredFields = new Set<string>();
-    allErrors.each(function() {
+    allErrors.each(function () {
       const field = d3.select(this).attr("field");
       erroredFields.add(field);
     });
     console.log("All errored fields:", Array.from(erroredFields));
     const _errorIcon = svg
-      .append("use")
-      .attr("href", "#warning-icon")
+      .append("svg")
       .attr("x", 0)
       .attr("y", height - 20)
       .attr("width", 20)
-      .attr("height", 20);
+      .attr("height", 20)
+      .attr("viewBox", "0 0 24 24")
+      .html(warningIcon);
 
     const errorText = Array.from(erroredFields).join(", ");
     const _errorBackground = svg
@@ -260,4 +257,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   } else {
     throw new Error("output file must have an .svg, .png, or .html");
   }
+
+  return prettySvg;
 }
