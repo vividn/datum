@@ -8,6 +8,8 @@ import { singleDay } from "./singleday";
 import { parseDateStr } from "../time/parseDateStr";
 import { warningIcon } from "./symbols/warningIcon";
 import xmlFormatter from "xml-formatter";
+import { xmlDeclaration } from "./xmlDeclaration";
+import sharp from "sharp";
 
 export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const db = connectDb(args);
@@ -83,10 +85,6 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("height", height);
 
   const defs = svg.append("defs");
-  defs
-    .append("symbol")
-    .attr("id", "warning-icon")
-    .html(() => warningIcon);
   defs.append("style").text(`svg { overflow: visible; }`);
 
   const _background = svg
@@ -211,12 +209,13 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     });
     console.log("All errored fields:", Array.from(erroredFields));
     const _errorIcon = svg
-      .append("use")
-      .attr("href", "#warning-icon")
+      .append("svg")
       .attr("x", 0)
       .attr("y", height - 20)
       .attr("width", 20)
-      .attr("height", 20);
+      .attr("height", 20)
+      .attr("viewBox", "0 0 24 24")
+      .html(warningIcon);
 
     const errorText = Array.from(erroredFields).join(", ");
     const _errorBackground = svg
@@ -245,15 +244,19 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     return prettySvg;
   }
   if (outputFile.endsWith(".svg")) {
-    const xmlDeclaration =
-      '<?xml version="1.0" encoding="UTF-8" standalone="no"?>\n';
     fs.writeFileSync(outputFile, xmlDeclaration + prettySvg);
     return prettySvg;
+  } else if (outputFile.endsWith(".png")) {
+    await sharp(Buffer.from(xmlDeclaration + prettySvg))
+      .png()
+      .toFile(outputFile);
   } else if (outputFile.endsWith(".html")) {
     const prettyHtml = xmlFormatter(document.documentElement.outerHTML);
     fs.writeFileSync(outputFile, prettyHtml);
     return prettySvg;
   } else {
-    throw new Error("output file must have a .html or .svg extension");
+    throw new Error("output file must have an .svg, .png, or .html");
   }
+
+  return prettySvg;
 }
