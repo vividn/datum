@@ -1,7 +1,6 @@
+import { HIGH_STRING, nextFloat } from "./keyEpsilon";
 import { QueryOptions } from "./utilityTypes";
 import { nextFloat } from "./nextFloat";
-
-export const HIGH_STRING = "\uffff\uffff\uffff\uffff" as const;
 
 export function startsWith(
   value: string | number | any[] | any,
