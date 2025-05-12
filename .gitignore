@@ -114,3 +114,5 @@ build/
 
 # Mac
 .DS_Store
+
+**/.claude/settings.local.json

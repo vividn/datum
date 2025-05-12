@@ -14,6 +14,7 @@ import { parseDurationStr } from "../time/parseDurationStr";
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;
 const DEFAULT_NOW_WIDTH_MINUTES = 5;
+const DEFAULT_MARGIN = 2;
 
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
@@ -56,11 +57,11 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   const width = args.width ?? defaultWidth;
   const height = args.height ?? DEFAULT_HEIGHT;
-  const margin = { top: 2, right: 15, bottom: 10, left: 15 };
+  const margin = args.margin ?? DEFAULT_MARGIN;
   const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
 
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
+  const plotWidth = width - margin * 2;
+  const plotHeight = height - margin * 2;
   const dataHeight = plotHeight - timeAxisHeight;
 
   const endTime = now() as DateTime<true>;
@@ -91,8 +92,8 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const plot = svg
     .append("svg")
     .attr("class", "plot")
-    .attr("x", margin.left)
-    .attr("y", margin.top)
+    .attr("x", margin)
+    .attr("y", margin)
     .attr("width", plotWidth)
     .attr("height", plotHeight);
 
@@ -135,14 +136,37 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   if (timelineWidthRatio === 0) {
     // Add timestamp
+    // For standalone mode, we'll just consider whether the total width is small
+    const isSmallWidth = plotWidth < 50;
+    const textX = nowWidth / 2;
+
+    // For small widths, add a background to improve readability
+    if (isSmallWidth) {
+      // Add background for text
+      plot
+        .append("rect")
+        .attr("x", textX - 22) // Provide padding around text
+        .attr("y", dataHeight + 1) // Just below data area
+        .attr("width", 44) // Fixed width to accommodate time text
+        .attr("height", timeAxisHeight - 1)
+        .attr("fill", "black")
+        .attr("stroke", "#ffcc00")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "2,1");
+    }
+
     plot
       .append("text")
       .attr("class", "current-time-text")
-      .attr("x", nowWidth / 2)
-      .attr("y", dataHeight + 16)
+      .attr("x", textX)
+      .attr("y", dataHeight + timeAxisHeight * 0.65) // Position lower to better fill the timeAxisHeight
       .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
       .attr("fill", "white")
-      .attr("font-size", "16px")
+      .attr(
+        "font-size",
+        `${Math.min(timeAxisHeight * 1.2, timeAxisHeight + 2)}px`,
+      ) // Increase font size
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
   }
@@ -182,19 +206,19 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("x1", timeScale(endTime.toJSDate()))
       .attr("x2", timeScale(endTime.toJSDate()))
       .attr("y1", 0)
-      .attr("y2", dataHeight + 22) // Extend below timestamp text
+      .attr("y2", dataHeight + timeAxisHeight) // Extend to bottom of time axis
       .attr("stroke", "#ffcc00")
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
 
-    // Create horizontal underline beneath timestamp and now panel
+    // Create horizontal line at the top of time axis
     plot
       .append("line")
       .attr("class", "current-time-line-horizontal")
       .attr("x1", timeScale(endTime.toJSDate()))
       .attr("x2", nowX + nowWidth) // Full width of now panel
-      .attr("y1", dataHeight + 22) // Position fully below the timestamp text
-      .attr("y2", dataHeight + 22)
+      .attr("y1", dataHeight) // Place at bottom of data area (top of time axis)
+      .attr("y2", dataHeight)
       .attr("stroke", "#ffcc00")
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
@@ -238,19 +262,61 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       );
 
     // Style time axis
-    timeAxis.selectAll("text").attr("fill", "white");
-    timeAxis.selectAll("line").attr("stroke", "white");
     timeAxis.selectAll("path").attr("stroke", "white");
+    timeAxis.selectAll("line").attr("stroke", "white");
+    if (timeAxisHeight <= 6) {
+      timeAxis.selectAll("text").remove();
+    } else {
+      timeAxis
+        .selectAll("text")
+        .attr("stroke", "white")
+        .attr("fill", "white")
+        .style("font-size", `${timeAxisHeight - 6}px`)
+        .each(function (d, i, _nodes) {
+          // Adjust the position of the leftmost tick label to prevent truncation
+          if (i === 0) {
+            const textElem = d3.select(this);
+            const currentX = parseFloat(textElem.attr("x") || "0");
+            // If the label is very close to the left edge, shift it right
+            if (Math.abs(currentX) < 5) {
+              textElem.attr("text-anchor", "start").attr("x", 3);
+            }
+          }
+        });
+    }
 
-    // Add a dedicated current time label centered under the now panel
+    // Add a dedicated current time label
+    // When nowWidth is small, center the timestamp on the vertical now line
+    // When nowWidth is large enough, center it within the now panel
+    const isNowWidthSmall = nowWidth < 40; // Define threshold for small width
+    const textX = isNowWidthSmall
+      ? timeScale(endTime.toJSDate())
+      : nowX + nowWidth / 2;
+
+    // For small widths, add a background to improve readability
+    if (isNowWidthSmall) {
+      // Add background for text
+      plot
+        .append("rect")
+        .attr("x", textX - 22) // Provide padding around text
+        .attr("y", dataHeight + 1) // Just below the horizontal line
+        .attr("width", 44) // Fixed width to accommodate time text
+        .attr("height", timeAxisHeight - 1)
+        .attr("fill", "black");
+    }
+
     plot
       .append("text")
       .attr("class", "current-time-text")
-      .attr("x", nowX + nowWidth / 2)
-      .attr("y", dataHeight + 16)
+      .attr("x", textX)
+      .attr("y", dataHeight + timeAxisHeight * 0.65) // Position lower to better fill the timeAxisHeight
       .attr("text-anchor", "middle")
+      .attr("dominant-baseline", "middle")
       .attr("fill", "white")
-      .attr("font-size", "16px")
+      .attr(
+        "font-size",
+        `${Math.min(timeAxisHeight * 1.2, timeAxisHeight + 2)}px`,
+      ) // Increase font size
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
 
