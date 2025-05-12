@@ -149,16 +149,29 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   // Add timestamp when no history is shown
   if (timelineWidthRatio === 0) {
+    // Add timestamp
     plot
       .append("text")
       .attr("class", "current-time-text")
       .attr("x", nowWidth / 2)
-      .attr("y", dataHeight + 15)
+      .attr("y", dataHeight + 16)
       .attr("text-anchor", "middle")
       .attr("fill", "white")
       .attr("font-size", "16px")
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
+
+    // Add horizontal underline beneath timestamp and now panel
+    plot
+      .append("line")
+      .attr("class", "current-time-line-horizontal")
+      .attr("x1", 0)
+      .attr("x2", nowWidth) // Full width of now panel
+      .attr("y1", dataHeight + 22) // Position fully below the timestamp text
+      .attr("y2", dataHeight + 22)
+      .attr("stroke", "#ffcc00")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "4,2");
   }
 
   // Create history panel if requested
@@ -190,13 +203,26 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .domain([startTime.toJSDate(), endTime.toJSDate()])
       .range([0, dataWidth]);
 
+    // Create vertical line from top to time axis
     plot
       .append("line")
-      .attr("class", "current-time-line")
+      .attr("class", "current-time-line-vertical")
       .attr("x1", timeScale(endTime.toJSDate()))
       .attr("x2", timeScale(endTime.toJSDate()))
       .attr("y1", 0)
-      .attr("y2", dataHeight)
+      .attr("y2", dataHeight + 22) // Extend below timestamp text
+      .attr("stroke", "#ffcc00")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "4,2");
+
+    // Create horizontal underline beneath timestamp and now panel
+    plot
+      .append("line")
+      .attr("class", "current-time-line-horizontal")
+      .attr("x1", timeScale(endTime.toJSDate()))
+      .attr("x2", nowX + nowWidth) // Full width of now panel
+      .attr("y1", dataHeight + 22) // Position fully below the timestamp text
+      .attr("y2", dataHeight + 22)
       .attr("stroke", "#ffcc00")
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
@@ -266,7 +292,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .append("text")
       .attr("class", "current-time-text")
       .attr("x", nowX + nowWidth / 2)
-      .attr("y", dataHeight + 15)
+      .attr("y", dataHeight + 16)
       .attr("text-anchor", "middle")
       .attr("fill", "white")
       .attr("font-size", "16px")
