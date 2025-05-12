@@ -13,16 +13,14 @@ import { parseDurationStr } from "../time/parseDurationStr";
 
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;
-const DEFAULT_NOW_WIDTH_MINUTES = 5; // Default width of current state in minutes
+const DEFAULT_NOW_WIDTH_MINUTES = 5;
 
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
 
-  // Parse history option if provided
   let historyMinutes = 0;
   if (args.history) {
     try {
-      // Treat as a simple duration (e.g., "30m", "1h")
       const historyDuration = parseDurationStr({ durationStr: args.history });
       historyMinutes = Math.abs(historyDuration.as("minutes"));
     } catch {
@@ -31,12 +29,9 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       );
     }
   }
-
-  // Parse now-width option if provided
   let nowWidthMinutes = DEFAULT_NOW_WIDTH_MINUTES;
   if (args.nowWidth) {
     try {
-      // Treat as a simple duration (e.g., "5m", "10m")
       const nowWidthDuration = parseDurationStr({ durationStr: args.nowWidth });
       nowWidthMinutes = Math.abs(nowWidthDuration.as("minutes"));
     } catch {
@@ -46,8 +41,8 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Scale default width based on history size (100px for current state only, up to 400px for 15m+)
-  let defaultWidth = 100; // Base width for current state only
+  // Scale default width based on history size
+  let defaultWidth = 100;
   if (historyMinutes > 0) {
     // Scale from 200px at 5min to 400px at 15min
     if (historyMinutes <= 5) {
@@ -59,10 +54,9 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Setup dimensions
   const width = args.width ?? defaultWidth;
   const height = args.height ?? DEFAULT_HEIGHT;
-  const margin = { top: 30, right: 2, bottom: 15, left: 2 };
+  const margin = { top: 2, right: 10, bottom: 10, left: 15 };
   const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
 
   const plotWidth = width - margin.left - margin.right;
@@ -71,7 +65,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   const endTime = now() as DateTime<true>;
 
-  // Calculate start time based on history
   const startTime =
     historyMinutes > 0 ? endTime.minus({ minutes: historyMinutes }) : endTime;
   const startUtc = startTime.toUTC().toISO();
@@ -86,18 +79,15 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("width", width)
     .attr("height", height);
 
-  // Add defs and styles like in dayview
   const defs = svg.append("defs");
   defs.append("style").text(`svg { overflow: visible; }`);
 
-  // Add background
-  svg
+  const _background = svg
     .append("rect")
     .attr("width", "100%")
     .attr("height", "100%")
     .attr("fill", "black");
 
-  // Create main plot area similar to dayview
   const plot = svg
     .append("svg")
     .attr("class", "plot")
@@ -106,24 +96,59 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("width", plotWidth)
     .attr("height", plotHeight);
 
-  // Calculate width ratios based on history and now-width
   let timelineWidthRatio = 0;
-  let statePanelWidthRatio = 1;
+  let nowPanelWidthRatio = 1;
 
   if (historyMinutes > 0) {
-    // Calculate ratio of current state width based on duration
     const totalMinutes = historyMinutes + nowWidthMinutes;
-    statePanelWidthRatio = nowWidthMinutes / totalMinutes;
-    timelineWidthRatio = 1 - statePanelWidthRatio;
+    nowPanelWidthRatio = nowWidthMinutes / totalMinutes;
+    timelineWidthRatio = 1 - nowPanelWidthRatio;
   }
 
-  // Only create history panel if history is requested
   let dataWidth = 0;
+  const nowWidth = plotWidth * nowPanelWidthRatio;
 
   if (timelineWidthRatio > 0) {
-    // Add data area for history
     dataWidth = plotWidth * timelineWidthRatio;
+  }
+  const nowX = dataWidth;
 
+  const nowArea = plot
+    .append("svg")
+    .attr("class", "nowArea")
+    .attr("width", nowWidth)
+    .attr("height", dataHeight)
+    .attr("x", nowX);
+
+  const sliverBeforeEndUtc = endTime.minus({ milliseconds: 1 }).toUTC().toISO();
+  const nowFieldsSvg = await allFieldsSvg({
+    db,
+    startUtc: sliverBeforeEndUtc,
+    endUtc: endUtc,
+    width: nowWidth,
+    height: dataHeight,
+  });
+
+  if (nowFieldsSvg) {
+    nowArea.append(() => nowFieldsSvg);
+  }
+
+  if (timelineWidthRatio === 0) {
+    // Add timestamp
+    plot
+      .append("text")
+      .attr("class", "current-time-text")
+      .attr("x", nowWidth / 2)
+      .attr("y", dataHeight + 16)
+      .attr("text-anchor", "middle")
+      .attr("fill", "white")
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
+  }
+
+  // Create history panel if requested
+  if (timelineWidthRatio > 0) {
     const dataArea = plot
       .append("svg")
       .attr("class", "dataArea")
@@ -131,7 +156,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("height", dataHeight)
       .attr("x", 0);
 
-    // Get data using allFieldsSvg for timeline
     const timelineFieldsSvg = await allFieldsSvg({
       db,
       startUtc,
@@ -145,66 +169,38 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Create current state panel
-  const stateWidth = plotWidth * statePanelWidthRatio;
-  const stateX = dataWidth || 0;
-
-  const stateArea = plot
-    .append("svg")
-    .attr("class", "stateArea")
-    .attr("width", stateWidth)
-    .attr("height", dataHeight)
-    .attr("x", stateX);
-
-  // Get current state data using allFieldsSvg with a tiny time window
-  const sliverBeforeEndUtc = endTime.minus({ milliseconds: 1 }).toUTC().toISO(); // Small window to get current state
-
-  const stateFieldsSvg = await allFieldsSvg({
-    db,
-    startUtc: sliverBeforeEndUtc,
-    endUtc: endUtc,
-    width: stateWidth,
-    height: dataHeight,
-  });
-
-  if (stateFieldsSvg) {
-    stateArea.append(() => stateFieldsSvg);
-  }
-
-  // Add border around state panel
-  stateArea
-    .append("rect")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("width", stateWidth)
-    .attr("height", dataHeight)
-    .attr("fill", "none")
-    .attr("stroke", "#ffcc00")
-    .attr("stroke-width", 2)
-    .attr("stroke-opacity", 0.7);
-
-  // Only add timeline elements if history is requested
   if (timelineWidthRatio > 0) {
-    // Create time scale with current time at right edge of timeline
     const timeScale = d3
       .scaleTime()
       .domain([startTime.toJSDate(), endTime.toJSDate()])
       .range([0, dataWidth]);
 
-    // Add a vertical line indicating the current time
+    // Create vertical line from top to time axis
     plot
       .append("line")
-      .attr("class", "current-time-line")
+      .attr("class", "current-time-line-vertical")
       .attr("x1", timeScale(endTime.toJSDate()))
       .attr("x2", timeScale(endTime.toJSDate()))
       .attr("y1", 0)
-      .attr("y2", dataHeight)
+      .attr("y2", dataHeight + 22) // Extend below timestamp text
+      .attr("stroke", "#ffcc00")
+      .attr("stroke-width", 2)
+      .attr("stroke-dasharray", "4,2");
+
+    // Create horizontal underline beneath timestamp and now panel
+    plot
+      .append("line")
+      .attr("class", "current-time-line-horizontal")
+      .attr("x1", timeScale(endTime.toJSDate()))
+      .attr("x2", nowX + nowWidth) // Full width of now panel
+      .attr("y1", dataHeight + 22) // Position fully below the timestamp text
+      .attr("y2", dataHeight + 22)
       .attr("stroke", "#ffcc00")
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
 
     // Calculate appropriate tick values based on history duration
-    const tickValues: Date[] = [endTime.toJSDate()];
+    const tickValues: Date[] = [];
 
     // Add tick marks at appropriate intervals
     if (historyMinutes <= 15) {
@@ -224,12 +220,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         tickValues.push(endTime.minus({ minutes: i }).toJSDate());
       }
     }
-
-    // Add the start time if it's not already included
-    if (historyMinutes % 5 !== 0) {
-      tickValues.push(startTime.toJSDate());
-    }
-
     // Sort tick values in ascending order
     tickValues.sort((a, b) => a.getTime() - b.getTime());
 
@@ -243,15 +233,26 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
           const diffMinutes = Math.round(
             (date.getTime() - endTime.toJSDate().getTime()) / 60000,
           );
-          return diffMinutes === 0
-            ? `${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`
-            : `${diffMinutes}m`;
+          return `${diffMinutes}m`;
         }),
       );
 
+    // Style time axis
     timeAxis.selectAll("text").attr("fill", "white");
     timeAxis.selectAll("line").attr("stroke", "white");
     timeAxis.selectAll("path").attr("stroke", "white");
+
+    // Add a dedicated current time label centered under the now panel
+    plot
+      .append("text")
+      .attr("class", "current-time-text")
+      .attr("x", nowX + nowWidth / 2)
+      .attr("y", dataHeight + 16)
+      .attr("text-anchor", "middle")
+      .attr("fill", "white")
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
 
     // Add vertical grid lines at the tick positions
     plot
