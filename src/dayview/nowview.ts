@@ -141,9 +141,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     });
 
     if (timelineFieldsSvg) {
-      // The next line works in the code as is, but TypeScript has trouble with it
-      // This is a safe cast as we know d3 works with actual DOM nodes
-      dataArea.node()?.appendChild(timelineFieldsSvg);
+      dataArea.append(() => timelineFieldsSvg)
     }
   }
 
@@ -170,9 +168,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   });
 
   if (stateFieldsSvg) {
-    // The next line works in the code as is, but TypeScript has trouble with it
-    // This is a safe cast as we know d3 works with actual DOM nodes
-    stateArea.node()?.appendChild(stateFieldsSvg);
+    stateArea.append(() => stateFieldsSvg);
   }
 
   // Add border around state panel
