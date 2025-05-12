@@ -201,7 +201,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("stroke-dasharray", "4,2");
 
     // Calculate appropriate tick values based on history duration
-    const tickValues: Date[] = [endTime.toJSDate()];
+    const tickValues: Date[] = [];
 
     // Add tick marks at appropriate intervals
     if (historyMinutes <= 15) {
@@ -221,12 +221,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         tickValues.push(endTime.minus({ minutes: i }).toJSDate());
       }
     }
-
-    // Add the start time if it's not already included
-    if (historyMinutes % 5 !== 0) {
-      tickValues.push(startTime.toJSDate());
-    }
-
     // Sort tick values in ascending order
     tickValues.sort((a, b) => a.getTime() - b.getTime());
 
@@ -240,9 +234,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
           const diffMinutes = Math.round(
             (date.getTime() - endTime.toJSDate().getTime()) / 60000,
           );
-          return diffMinutes === 0
-            ? `${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`
-            : `${diffMinutes}m`;
+          return `${diffMinutes}m`;
         }),
       );
 
@@ -250,15 +242,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     timeAxis.selectAll("text").attr("fill", "white");
     timeAxis.selectAll("line").attr("stroke", "white");
     timeAxis.selectAll("path").attr("stroke", "white");
-
-    // Remove the timestamp at the current time tick position
-    timeAxis
-      .selectAll("text")
-      .filter((d) => {
-        const date = d as Date;
-        return date.getTime() === endTime.toJSDate().getTime();
-      })
-      .remove();
 
     // Add a dedicated current time label centered under the now panel
     plot
