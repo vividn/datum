@@ -18,11 +18,9 @@ const DEFAULT_NOW_WIDTH_MINUTES = 5;
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
 
-  // Parse history option if provided
   let historyMinutes = 0;
   if (args.history) {
     try {
-      // Treat as a simple duration (e.g., "30m", "1h")
       const historyDuration = parseDurationStr({ durationStr: args.history });
       historyMinutes = Math.abs(historyDuration.as("minutes"));
     } catch {
@@ -31,12 +29,9 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       );
     }
   }
-
-  // Parse now-width option if provided
   let nowWidthMinutes = DEFAULT_NOW_WIDTH_MINUTES;
   if (args.nowWidth) {
     try {
-      // Treat as a simple duration (e.g., "5m", "10m")
       const nowWidthDuration = parseDurationStr({ durationStr: args.nowWidth });
       nowWidthMinutes = Math.abs(nowWidthDuration.as("minutes"));
     } catch {
@@ -59,7 +54,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Setup dimensions
   const width = args.width ?? defaultWidth;
   const height = args.height ?? DEFAULT_HEIGHT;
   const margin = { top: 30, right: 2, bottom: 15, left: 2 };
@@ -71,7 +65,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   const endTime = now() as DateTime<true>;
 
-  // Calculate start time based on history
   const startTime =
     historyMinutes > 0 ? endTime.minus({ minutes: historyMinutes }) : endTime;
   const startUtc = startTime.toUTC().toISO();
@@ -86,7 +79,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("width", width)
     .attr("height", height);
 
-  // Add defs and styles like in dayview
   const defs = svg.append("defs");
   defs.append("style").text(`svg { overflow: visible; }`);
 
@@ -97,7 +89,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("height", "100%")
     .attr("fill", "black");
 
-  // Create main plot area similar to dayview
   const plot = svg
     .append("svg")
     .attr("class", "plot")
@@ -106,7 +97,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     .attr("width", plotWidth)
     .attr("height", plotHeight);
 
-  // Calculate width ratios based on history and now-width
   let timelineWidthRatio = 0;
   let nowPanelWidthRatio = 1;
 
@@ -116,17 +106,14 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     timelineWidthRatio = 1 - nowPanelWidthRatio;
   }
 
-  // Create panels
   let dataWidth = 0;
   const nowWidth = plotWidth * nowPanelWidthRatio;
 
-  // Calculate positions
   if (timelineWidthRatio > 0) {
     dataWidth = plotWidth * timelineWidthRatio;
   }
   const nowX = dataWidth;
 
-  // Create now panel first for proper z-indexing
   const nowArea = plot
     .append("svg")
     .attr("class", "nowArea")
@@ -147,7 +134,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     nowArea.append(() => nowFieldsSvg);
   }
 
-  // Add timestamp when no history is shown
   if (timelineWidthRatio === 0) {
     // Add timestamp
     plot
@@ -184,7 +170,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Only add timeline elements if history is requested
   if (timelineWidthRatio > 0) {
     const timeScale = d3
       .scaleTime()
