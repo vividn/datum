@@ -11,25 +11,12 @@ import { xmlDeclaration } from "./xmlDeclaration";
 import sharp from "sharp";
 import { parseDurationStr } from "../time/parseDurationStr";
 
-const DEFAULT_WIDTH = 400;
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;
 const DEFAULT_NOW_WIDTH_MINUTES = 5; // Default width of current state in minutes
 
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
-
-  // Setup dimensions
-  const width = args.width ?? DEFAULT_WIDTH;
-  const height = args.height ?? DEFAULT_HEIGHT;
-  const margin = { top: 30, right: 2, bottom: 15, left: 2 };
-  const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
-
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
-  const dataHeight = plotHeight - timeAxisHeight;
-
-  const endTime = now() as DateTime<true>;
 
   // Parse history option if provided
   let historyMinutes = 0;
@@ -58,6 +45,31 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       );
     }
   }
+
+  // Scale default width based on history size (100px for current state only, up to 400px for 15m+)
+  let defaultWidth = 100; // Base width for current state only
+  if (historyMinutes > 0) {
+    // Scale from 200px at 5min to 400px at 15min
+    if (historyMinutes <= 5) {
+      defaultWidth = 200;
+    } else if (historyMinutes <= 10) {
+      defaultWidth = 300;
+    } else {
+      defaultWidth = 400;
+    }
+  }
+
+  // Setup dimensions
+  const width = args.width ?? defaultWidth;
+  const height = args.height ?? DEFAULT_HEIGHT;
+  const margin = { top: 30, right: 2, bottom: 15, left: 2 };
+  const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
+
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const dataHeight = plotHeight - timeAxisHeight;
+
+  const endTime = now() as DateTime<true>;
 
   // Calculate start time based on history
   const startTime =
