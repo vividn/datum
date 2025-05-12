@@ -14,6 +14,7 @@ import { parseDurationStr } from "../time/parseDurationStr";
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;
 const DEFAULT_NOW_WIDTH_MINUTES = 5;
+const DEFAULT_MARGIN = 2;
 
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
@@ -56,11 +57,11 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   const width = args.width ?? defaultWidth;
   const height = args.height ?? DEFAULT_HEIGHT;
-  const margin = { top: 2, right: 15, bottom: 10, left: 15 };
+  const margin = args.margin ?? DEFAULT_MARGIN;
   const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
 
-  const plotWidth = width - margin.left - margin.right;
-  const plotHeight = height - margin.top - margin.bottom;
+  const plotWidth = width - margin * 2;
+  const plotHeight = height - margin * 2;
   const dataHeight = plotHeight - timeAxisHeight;
 
   const endTime = now() as DateTime<true>;
@@ -91,8 +92,8 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const plot = svg
     .append("svg")
     .attr("class", "plot")
-    .attr("x", margin.left)
-    .attr("y", margin.top)
+    .attr("x", margin)
+    .attr("y", margin)
     .attr("width", plotWidth)
     .attr("height", plotHeight);
 
@@ -139,11 +140,14 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .append("text")
       .attr("class", "current-time-text")
       .attr("x", nowWidth / 2)
-      .attr("y", dataHeight + (timeAxisHeight * 0.5)) // Position at half of timeAxisHeight
+      .attr("y", dataHeight + timeAxisHeight * 0.5) // Position at half of timeAxisHeight
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("fill", "white")
-      .attr("font-size", `${Math.min(timeAxisHeight * 0.85, timeAxisHeight - 2)}px`) // Maximize size while keeping above line
+      .attr(
+        "font-size",
+        `${Math.min(timeAxisHeight * 0.85, timeAxisHeight - 2)}px`,
+      ) // Maximize size while keeping above line
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
   }
@@ -239,20 +243,42 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       );
 
     // Style time axis
-    timeAxis.selectAll("text").attr("fill", "white");
-    timeAxis.selectAll("line").attr("stroke", "white");
     timeAxis.selectAll("path").attr("stroke", "white");
+    timeAxis.selectAll("line").attr("stroke", "white");
+    if (timeAxisHeight <= 6) {
+      timeAxis.selectAll("text").remove();
+    } else {
+      timeAxis
+        .selectAll("text")
+        .attr("stroke", "white")
+        .attr("fill", "white")
+        .style("font-size", `${timeAxisHeight - 6}px`)
+        .each(function (d, i, _nodes) {
+          // Adjust the position of the leftmost tick label to prevent truncation
+          if (i === 0) {
+            const textElem = d3.select(this);
+            const currentX = parseFloat(textElem.attr("x") || "0");
+            // If the label is very close to the left edge, shift it right
+            if (Math.abs(currentX) < 5) {
+              textElem.attr("text-anchor", "start").attr("x", 3);
+            }
+          }
+        });
+    }
 
     // Add a dedicated current time label centered under the now panel
     plot
       .append("text")
       .attr("class", "current-time-text")
       .attr("x", nowX + nowWidth / 2)
-      .attr("y", dataHeight + (timeAxisHeight * 0.5)) // Position at half of timeAxisHeight
+      .attr("y", dataHeight + timeAxisHeight * 0.5) // Position at half of timeAxisHeight
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("fill", "white")
-      .attr("font-size", `${Math.min(timeAxisHeight * 0.85, timeAxisHeight - 2)}px`) // Maximize size while keeping above line
+      .attr(
+        "font-size",
+        `${Math.min(timeAxisHeight * 0.85, timeAxisHeight - 2)}px`,
+      ) // Maximize size while keeping above line
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
 

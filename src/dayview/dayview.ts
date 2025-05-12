@@ -11,6 +11,8 @@ import xmlFormatter from "xml-formatter";
 import { xmlDeclaration } from "./xmlDeclaration";
 import sharp from "sharp";
 
+const DEFAULT_MARGIN = 2;
+
 export async function dayview(args: DayviewCmdArgs): Promise<string> {
   const db = connectDb(args);
   const endDate: DateTime<true> = args.endDate
@@ -33,7 +35,7 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   }
 
   const width = args.width ?? 2000;
-  const margin = 2;
+  const margin = args.margin ?? DEFAULT_MARGIN;
   const timeAxisHeight = args.timeAxisHeight ?? 15;
 
   const plotWidth = width - 2 * margin;

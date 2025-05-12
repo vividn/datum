@@ -50,6 +50,13 @@ nowviewArgs.add_argument("--now-width", {
   dest: "nowWidth",
 });
 
+nowviewArgs.add_argument("--margin", {
+  help: "margin around the svg",
+  type: "int",
+  default: 2,
+  dest: "margin",
+});
+
 export const nowviewCmdArgs = new ArgumentParser({
   description: "View the current state with optional history",
   prog: "datum nowview",
@@ -65,6 +72,7 @@ export type NowviewCmdArgs = MainDatumArgs & {
   watch?: boolean;
   history?: string;
   nowWidth?: string;
+  margin?: number;
 };
 
 export async function nowviewCmd(
