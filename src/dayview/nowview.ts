@@ -13,7 +13,7 @@ import { parseDurationStr } from "../time/parseDurationStr";
 
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;
-const DEFAULT_NOW_WIDTH_MINUTES = 5; // Default width of current state in minutes
+const DEFAULT_NOW_WIDTH_MINUTES = 5;
 
 export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const db = connectDb(args);
@@ -46,8 +46,8 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Scale default width based on history size (100px for current state only, up to 400px for 15m+)
-  let defaultWidth = 100; // Base width for current state only
+  // Scale default width based on history size
+  let defaultWidth = 100;
   if (historyMinutes > 0) {
     // Scale from 200px at 5min to 400px at 15min
     if (historyMinutes <= 5) {
@@ -108,22 +108,47 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   // Calculate width ratios based on history and now-width
   let timelineWidthRatio = 0;
-  let statePanelWidthRatio = 1;
+  let nowPanelWidthRatio = 1;
 
   if (historyMinutes > 0) {
-    // Calculate ratio of current state width based on duration
     const totalMinutes = historyMinutes + nowWidthMinutes;
-    statePanelWidthRatio = nowWidthMinutes / totalMinutes;
-    timelineWidthRatio = 1 - statePanelWidthRatio;
+    nowPanelWidthRatio = nowWidthMinutes / totalMinutes;
+    timelineWidthRatio = 1 - nowPanelWidthRatio;
   }
 
-  // Only create history panel if history is requested
+  // Create panels
   let dataWidth = 0;
+  const nowWidth = plotWidth * nowPanelWidthRatio;
 
+  // Calculate positions
   if (timelineWidthRatio > 0) {
-    // Add data area for history
     dataWidth = plotWidth * timelineWidthRatio;
+  }
+  const nowX = dataWidth;
 
+  // Create now panel first for proper z-indexing
+  const nowArea = plot
+    .append("svg")
+    .attr("class", "nowArea")
+    .attr("width", nowWidth)
+    .attr("height", dataHeight)
+    .attr("x", nowX);
+
+  const sliverBeforeEndUtc = endTime.minus({ milliseconds: 1 }).toUTC().toISO();
+  const nowFieldsSvg = await allFieldsSvg({
+    db,
+    startUtc: sliverBeforeEndUtc,
+    endUtc: endUtc,
+    width: nowWidth,
+    height: dataHeight,
+  });
+
+  if (nowFieldsSvg) {
+    nowArea.append(() => nowFieldsSvg);
+  }
+
+  // Create history panel if requested
+  if (timelineWidthRatio > 0) {
     const dataArea = plot
       .append("svg")
       .attr("class", "dataArea")
@@ -131,7 +156,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("height", dataHeight)
       .attr("x", 0);
 
-    // Get data using allFieldsSvg for timeline
     const timelineFieldsSvg = await allFieldsSvg({
       db,
       startUtc,
@@ -145,53 +169,13 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     }
   }
 
-  // Create current state panel
-  const stateWidth = plotWidth * statePanelWidthRatio;
-  const stateX = dataWidth || 0;
-
-  const stateArea = plot
-    .append("svg")
-    .attr("class", "stateArea")
-    .attr("width", stateWidth)
-    .attr("height", dataHeight)
-    .attr("x", stateX);
-
-  // Get current state data using allFieldsSvg with a tiny time window
-  const sliverBeforeEndUtc = endTime.minus({ milliseconds: 1 }).toUTC().toISO(); // Small window to get current state
-
-  const stateFieldsSvg = await allFieldsSvg({
-    db,
-    startUtc: sliverBeforeEndUtc,
-    endUtc: endUtc,
-    width: stateWidth,
-    height: dataHeight,
-  });
-
-  if (stateFieldsSvg) {
-    stateArea.append(() => stateFieldsSvg);
-  }
-
-  // Add border around state panel
-  stateArea
-    .append("rect")
-    .attr("x", 0)
-    .attr("y", 0)
-    .attr("width", stateWidth)
-    .attr("height", dataHeight)
-    .attr("fill", "none")
-    .attr("stroke", "#ffcc00")
-    .attr("stroke-width", 2)
-    .attr("stroke-opacity", 0.7);
-
   // Only add timeline elements if history is requested
   if (timelineWidthRatio > 0) {
-    // Create time scale with current time at right edge of timeline
     const timeScale = d3
       .scaleTime()
       .domain([startTime.toJSDate(), endTime.toJSDate()])
       .range([0, dataWidth]);
 
-    // Add a vertical line indicating the current time
     plot
       .append("line")
       .attr("class", "current-time-line")
