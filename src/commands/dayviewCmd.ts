@@ -62,6 +62,13 @@ dayviewArgs.add_argument("--watch", "-w", {
   dest: "watch",
 });
 
+dayviewArgs.add_argument("--margin", {
+  help: "margin around the svg",
+  type: "int",
+  default: 2,
+  dest: "margin",
+});
+
 export const dayviewCmdArgs = new ArgumentParser({
   description: "View the day",
   prog: "datum dayview",
@@ -79,6 +86,7 @@ export type DayviewCmdArgs = MainDatumArgs & {
   dayHeight?: number;
   outputFile?: string;
   watch?: boolean;
+  margin?: number;
 };
 
 export async function dayviewCmd(
