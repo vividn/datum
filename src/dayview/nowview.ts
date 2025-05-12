@@ -136,10 +136,29 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   if (timelineWidthRatio === 0) {
     // Add timestamp
+    // For standalone mode, we'll just consider whether the total width is small
+    const isSmallWidth = plotWidth < 50;
+    const textX = nowWidth / 2;
+
+    // For small widths, add a background to improve readability
+    if (isSmallWidth) {
+      // Add background for text
+      plot
+        .append("rect")
+        .attr("x", textX - 22) // Provide padding around text
+        .attr("y", dataHeight + 1) // Just below data area
+        .attr("width", 44) // Fixed width to accommodate time text
+        .attr("height", timeAxisHeight - 1)
+        .attr("fill", "black")
+        .attr("stroke", "#ffcc00")
+        .attr("stroke-width", 1)
+        .attr("stroke-dasharray", "2,1");
+    }
+
     plot
       .append("text")
       .attr("class", "current-time-text")
-      .attr("x", nowWidth / 2)
+      .attr("x", textX)
       .attr("y", dataHeight + timeAxisHeight * 0.65) // Position lower to better fill the timeAxisHeight
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
@@ -266,11 +285,30 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         });
     }
 
-    // Add a dedicated current time label centered under the now panel
+    // Add a dedicated current time label
+    // When nowWidth is small, center the timestamp on the vertical now line
+    // When nowWidth is large enough, center it within the now panel
+    const isNowWidthSmall = nowWidth < 40; // Define threshold for small width
+    const textX = isNowWidthSmall
+      ? timeScale(endTime.toJSDate())
+      : nowX + nowWidth / 2;
+
+    // For small widths, add a background to improve readability
+    if (isNowWidthSmall) {
+      // Add background for text
+      plot
+        .append("rect")
+        .attr("x", textX - 22) // Provide padding around text
+        .attr("y", dataHeight + 1) // Just below the horizontal line
+        .attr("width", 44) // Fixed width to accommodate time text
+        .attr("height", timeAxisHeight - 1)
+        .attr("fill", "black")
+    }
+
     plot
       .append("text")
       .attr("class", "current-time-text")
-      .attr("x", nowX + nowWidth / 2)
+      .attr("x", textX)
       .attr("y", dataHeight + timeAxisHeight * 0.65) // Position lower to better fill the timeAxisHeight
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
