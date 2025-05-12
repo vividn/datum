@@ -147,6 +147,20 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     nowArea.append(() => nowFieldsSvg);
   }
 
+  // Add timestamp when no history is shown
+  if (timelineWidthRatio === 0) {
+    plot
+      .append("text")
+      .attr("class", "current-time-text")
+      .attr("x", nowWidth / 2)
+      .attr("y", dataHeight + 15)
+      .attr("text-anchor", "middle")
+      .attr("fill", "white")
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
+  }
+
   // Create history panel if requested
   if (timelineWidthRatio > 0) {
     const dataArea = plot
@@ -233,9 +247,31 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         }),
       );
 
+    // Style time axis
     timeAxis.selectAll("text").attr("fill", "white");
     timeAxis.selectAll("line").attr("stroke", "white");
     timeAxis.selectAll("path").attr("stroke", "white");
+
+    // Remove the timestamp at the current time tick position
+    timeAxis
+      .selectAll("text")
+      .filter((d) => {
+        const date = d as Date;
+        return date.getTime() === endTime.toJSDate().getTime();
+      })
+      .remove();
+
+    // Add a dedicated current time label centered under the now panel
+    plot
+      .append("text")
+      .attr("class", "current-time-text")
+      .attr("x", nowX + nowWidth / 2)
+      .attr("y", dataHeight + 15)
+      .attr("text-anchor", "middle")
+      .attr("fill", "white")
+      .attr("font-size", "16px")
+      .attr("font-weight", "bold")
+      .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
 
     // Add vertical grid lines at the tick positions
     plot
