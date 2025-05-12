@@ -56,7 +56,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   const width = args.width ?? defaultWidth;
   const height = args.height ?? DEFAULT_HEIGHT;
-  const margin = { top: 2, right: 10, bottom: 10, left: 15 };
+  const margin = { top: 2, right: 15, bottom: 10, left: 15 };
   const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
 
   const plotWidth = width - margin.left - margin.right;
