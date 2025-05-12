@@ -160,18 +160,6 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("font-size", "16px")
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
-
-    // Add horizontal underline beneath timestamp and now panel
-    plot
-      .append("line")
-      .attr("class", "current-time-line-horizontal")
-      .attr("x1", 0)
-      .attr("x2", nowWidth) // Full width of now panel
-      .attr("y1", dataHeight + 22) // Position fully below the timestamp text
-      .attr("y2", dataHeight + 22)
-      .attr("stroke", "#ffcc00")
-      .attr("stroke-width", 2)
-      .attr("stroke-dasharray", "4,2");
   }
 
   // Create history panel if requested
