@@ -141,7 +141,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     });
 
     if (timelineFieldsSvg) {
-      dataArea.append(() => timelineFieldsSvg)
+      dataArea.append(() => timelineFieldsSvg);
     }
   }
 
