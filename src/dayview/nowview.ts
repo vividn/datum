@@ -56,7 +56,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
 
   const width = args.width ?? defaultWidth;
   const height = args.height ?? DEFAULT_HEIGHT;
-  const margin = { top: 30, right: 2, bottom: 15, left: 2 };
+  const margin = { top: 2, right: 10, bottom: 10, left: 15 };
   const timeAxisHeight = args.timeAxisHeight ?? DEFAULT_TIME_AXIS_HEIGHT;
 
   const plotWidth = width - margin.left - margin.right;
@@ -82,8 +82,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
   const defs = svg.append("defs");
   defs.append("style").text(`svg { overflow: visible; }`);
 
-  // Add background
-  svg
+  const _background = svg
     .append("rect")
     .attr("width", "100%")
     .attr("height", "100%")
