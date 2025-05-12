@@ -140,14 +140,14 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .append("text")
       .attr("class", "current-time-text")
       .attr("x", nowWidth / 2)
-      .attr("y", dataHeight + timeAxisHeight * 0.5) // Position at half of timeAxisHeight
+      .attr("y", dataHeight + timeAxisHeight * 0.65) // Position lower to better fill the timeAxisHeight
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("fill", "white")
       .attr(
         "font-size",
-        `${Math.min(timeAxisHeight * 0.85, timeAxisHeight - 2)}px`,
-      ) // Maximize size while keeping above line
+        `${Math.min(timeAxisHeight * 1.2, timeAxisHeight + 2)}px`,
+      ) // Increase font size
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
   }
@@ -187,19 +187,19 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("x1", timeScale(endTime.toJSDate()))
       .attr("x2", timeScale(endTime.toJSDate()))
       .attr("y1", 0)
-      .attr("y2", dataHeight + timeAxisHeight) // Align with bottom of timeAxis
+      .attr("y2", dataHeight + timeAxisHeight) // Extend to bottom of time axis
       .attr("stroke", "#ffcc00")
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
 
-    // Create horizontal underline beneath timestamp and now panel
+    // Create horizontal line at the top of time axis
     plot
       .append("line")
       .attr("class", "current-time-line-horizontal")
       .attr("x1", timeScale(endTime.toJSDate()))
       .attr("x2", nowX + nowWidth) // Full width of now panel
-      .attr("y1", dataHeight + timeAxisHeight) // Align with bottom of timeAxis
-      .attr("y2", dataHeight + timeAxisHeight)
+      .attr("y1", dataHeight) // Place at bottom of data area (top of time axis)
+      .attr("y2", dataHeight)
       .attr("stroke", "#ffcc00")
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
@@ -271,14 +271,14 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .append("text")
       .attr("class", "current-time-text")
       .attr("x", nowX + nowWidth / 2)
-      .attr("y", dataHeight + timeAxisHeight * 0.5) // Position at half of timeAxisHeight
+      .attr("y", dataHeight + timeAxisHeight * 0.65) // Position lower to better fill the timeAxisHeight
       .attr("text-anchor", "middle")
       .attr("dominant-baseline", "middle")
       .attr("fill", "white")
       .attr(
         "font-size",
-        `${Math.min(timeAxisHeight * 0.85, timeAxisHeight - 2)}px`,
-      ) // Maximize size while keeping above line
+        `${Math.min(timeAxisHeight * 1.2, timeAxisHeight + 2)}px`,
+      ) // Increase font size
       .attr("font-weight", "bold")
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
 
