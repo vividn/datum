@@ -302,7 +302,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         .attr("y", dataHeight + 1) // Just below the horizontal line
         .attr("width", 44) // Fixed width to accommodate time text
         .attr("height", timeAxisHeight - 1)
-        .attr("fill", "black")
+        .attr("fill", "black");
     }
 
     plot
