@@ -38,8 +38,20 @@ nowviewArgs.add_argument("--watch", "-w", {
   dest: "watch",
 });
 
+nowviewArgs.add_argument("--history", {
+  help: "show history for the specified duration (e.g. 15m, 1h)",
+  type: "str",
+  dest: "history",
+});
+
+nowviewArgs.add_argument("--now-width", {
+  help: "width of current status in time units (default: 5m)",
+  type: "str",
+  dest: "nowWidth",
+});
+
 export const nowviewCmdArgs = new ArgumentParser({
-  description: "View the current state and last 15 minutes",
+  description: "View the current state with optional history",
   prog: "datum nowview",
   usage: `%(prog)s`,
   parents: [nowviewArgs, dbArgs],
@@ -51,6 +63,8 @@ export type NowviewCmdArgs = MainDatumArgs & {
   outputFile?: string;
   timeAxisHeight?: number;
   watch?: boolean;
+  history?: string;
+  nowWidth?: string;
 };
 
 export async function nowviewCmd(
