@@ -1,4 +1,4 @@
-import { datum, mainArgs } from "../mainArgs";
+import { datum } from "../mainArgs";
 import { topLevelHelpParser } from "../topLevelHelp";
 import { getCmd } from "../../commands/getCmd";
 import { endCmd } from "../../commands/endCmd";
