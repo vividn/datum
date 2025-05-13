@@ -2,6 +2,7 @@ import { DateTime } from "luxon";
 import * as d3 from "d3";
 import { allFieldsSvg } from "./allFieldsSvg";
 import { domdoc } from "./domdoc";
+import { warningIcon } from "./symbols/warningIcon";
 
 export type SingleDayArgs = {
   db: PouchDB.Database;
@@ -38,7 +39,12 @@ export async function singleDay(args: SingleDayArgs) {
     svg.append(() => dayData);
   } catch (error) {
     console.error(`Error loading data for ${date}:`, error);
-    svg.append("use").attr("href", "#warning-icon").attr("height", height);
+    svg
+      .append("svg")
+      .attr("height", height)
+      .attr("width", height)
+      .attr("viewBox", "0 0 24 24")
+      .html(warningIcon);
   }
 
   return svg.node();

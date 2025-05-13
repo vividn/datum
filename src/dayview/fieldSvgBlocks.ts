@@ -8,6 +8,7 @@ import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
 import { domdoc } from "./domdoc";
 import { simplifyState } from "../state/simplifyState";
 import { getStateColor } from "../field/fieldColor";
+import { warningIcon } from "./symbols/warningIcon";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -92,10 +93,16 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     .range([0, width]);
 
   // When there are multiple states, create stripes
-  const stripeWidthMinutes = 5;
-  const stripeWidth =
-    timeScale(new Date(startUtc).valueOf() + stripeWidthMinutes * 60 * 1000) -
-    timeScale(new Date(startUtc).valueOf());
+  // const stripeWidthMinutesonFullDay = 5;
+  // const windowWidth = new Date(endUtc).valueOf() - new Date(startUtc).valueOf();
+  // const fullDayMs = 24 * 60 * 60 * 1000;
+  // const stripeWidthMinutes =
+  //   (windowWidth / fullDayMs) * stripeWidthMinutesonFullDay;
+  // const stripeWidthMinutes = 5;
+  // const stripeWidth =
+  //   timeScale(new Date(startUtc).valueOf() + stripeWidthMinutes * 60 * 1000) -
+  //   timeScale(new Date(startUtc).valueOf());
+  const stripeWidth = 8;
 
   // Add SVG definitions for patterns
   const defs = svg.append("defs");
@@ -281,12 +288,13 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   for (const error of fieldErrors.errors) {
     console.warn(error.message);
     svg
-      .append("use")
-      .attr("xlink:href", "#warning-icon")
+      .append("svg")
       .attr("x", timeScale(new Date(error.occurTime)) - warning_r)
       .attr("y", height / 2 - warning_r)
       .attr("width", warning_r * 2)
       .attr("height", warning_r * 2)
+      .attr("viewBox", "0 0 24 24")
+      .html(warningIcon)
       .attr("class", `${field} error`)
       .attr("field", field);
   }
