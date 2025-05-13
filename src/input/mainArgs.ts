@@ -26,6 +26,7 @@ import { dayviewCmd } from "../commands/dayviewCmd";
 import { nowviewCmd } from "../commands/nowviewCmd";
 import { syncCmd } from "../commands/syncCmd";
 import { retimeCmd } from "../commands/retimeCmd";
+import { topLevelHelpParser } from "./topLevelHelp";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
 
@@ -35,8 +36,10 @@ const commandParser = new ArgumentParser({
   add_help: false,
   parents: [dbArgs],
 });
+
 commandParser.add_argument("command", {
   help: "the command to run",
+  nargs: "?",
 });
 
 export async function datum(cliInput: string | string[]): Promise<void> {
@@ -44,6 +47,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     typeof cliInput === "string"
       ? (shellParse(cliInput) as string[])
       : cliInput;
+
   const [namespace, args] = commandParser.parse_known_args(cliArgs);
   // When calling from the command line, SHOW should be set to default
   namespace.show = Show.Default;
@@ -63,6 +67,7 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       break;
 
     case "end":
+    case "stop":
       await endCmd(args, namespace);
       break;
 
@@ -182,8 +187,15 @@ export async function datum(cliInput: string | string[]): Promise<void> {
       await retimeCmd(args, namespace);
       break;
 
-    default:
+    case "help":
+    case undefined:
+      topLevelHelpParser.print_help();
+      break;
+
+    default: {
+      topLevelHelpParser.print_help();
       throw Error(`command "${command}" not recognized`);
+    }
   }
 }
 
