@@ -33,7 +33,6 @@ export const syncCmdArgs = new ArgumentParser({
   parents: [syncArgs],
 });
 
-console.debug('hello')
 
 export type SyncCmdArgs = MainDatumArgs & {
   remote: string;
