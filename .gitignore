@@ -111,3 +111,5 @@ build/
 !*.secret
 .vscode/
 .pouch
+
+**/.claude/settings.local.json
