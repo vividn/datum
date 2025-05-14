@@ -5,7 +5,7 @@ import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
-  timingView
+  timingView,
 } from "../../views/datumViews";
 import {
   AmbiguousQuickIdError,
@@ -290,9 +290,13 @@ describe("quickId underscore notation", () => {
       data: { field: "sleep", value: "8h" },
       meta: {
         humanId: "sleep1",
-        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString() },
-        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString() }
-      }
+        createTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
+        },
+        occurTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
+        },
+      },
     });
 
     await db.put({
@@ -300,9 +304,13 @@ describe("quickId underscore notation", () => {
       data: { field: "sleep", value: "7h" },
       meta: {
         humanId: "sleep2",
-        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString() },
-        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString() }
-      }
+        createTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString(),
+        },
+        occurTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString(),
+        },
+      },
     });
 
     await db.put({
@@ -310,9 +318,13 @@ describe("quickId underscore notation", () => {
       data: { field: "alcohol", type: "beer" },
       meta: {
         humanId: "alcohol1",
-        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString() },
-        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString() }
-      }
+        createTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString(),
+        },
+        occurTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString(),
+        },
+      },
     });
 
     await db.put({
@@ -320,9 +332,13 @@ describe("quickId underscore notation", () => {
       data: { field: "alcohol", type: "wine" },
       meta: {
         humanId: "alcohol2",
-        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString() },
-        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString() }
-      }
+        createTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString(),
+        },
+        occurTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString(),
+        },
+      },
     });
 
     await db.put({
@@ -330,9 +346,13 @@ describe("quickId underscore notation", () => {
       data: { field: "alcohol", type: "whiskey" },
       meta: {
         humanId: "alcohol3",
-        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString() },
-        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString() }
-      }
+        createTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString(),
+        },
+        occurTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString(),
+        },
+      },
     });
 
     await db.put({
@@ -340,9 +360,13 @@ describe("quickId underscore notation", () => {
       data: { field: "note", text: "First note" },
       meta: {
         humanId: "note1",
-        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString() },
-        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString() }
-      }
+        createTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString(),
+        },
+        occurTime: {
+          utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString(),
+        },
+      },
     });
   });
 
@@ -384,14 +408,12 @@ describe("quickId underscore notation", () => {
   });
 
   test("it throws an error for non-existent positions", async () => {
-    await expect(() => quickId("_10", {})).rejects.toThrow(
-      NoQuickIdMatchError
-    );
+    await expect(() => quickId("_10", {})).rejects.toThrow(NoQuickIdMatchError);
   });
 
   test("it throws an error for non-existent fields", async () => {
     await expect(() => quickId("_nonexistent", {})).rejects.toThrow(
-      NoQuickIdMatchError
+      NoQuickIdMatchError,
     );
   });
 

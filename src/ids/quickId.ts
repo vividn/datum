@@ -15,7 +15,6 @@ import { timingView } from "../views/datumViews/timingView";
 import { reverseViewParams } from "../utils/reverseViewParams";
 import { HIGH_STRING } from "../utils/startsWith";
 
-
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
     const idPairs = ids.map((id, index) => `${quickIds[index]}\t${id}`);
@@ -31,7 +30,9 @@ export class AmbiguousQuickIdError extends MyError {
 
 export class NoQuickIdMatchError extends MyError {
   constructor(quickId: unknown) {
-    super(`${quickId} does not match any documents. Try using '_' for the most recent document.`);
+    super(
+      `${quickId} does not match any documents. Try using '_' for the most recent document.`,
+    );
     Object.setPrototypeOf(this, NoQuickIdMatchError.prototype);
   }
 }
@@ -50,7 +51,6 @@ export const _LAST = "_LAST";
 export const _RECENT = "_";
 export const _RECENT_REGEX = /^(_+)(?:(\d+):)?([a-zA-Z0-9]*)$/;
 
-
 async function specialQuickId(
   quickString: string,
   db: PouchDB.Database<EitherPayload>,
@@ -68,24 +68,24 @@ async function specialQuickId(
     }
     return lastDocsRef.ids;
   }
-      const match = quickString.match(_RECENT_REGEX);
-      if (match) {
-        const [, underscores, numberStr, fieldName] = match;
-        let position = underscores.length;
-  
-        if (numberStr) {
-          position = parseInt(numberStr, 10);
-          return getRecentDocumentByPosition(db, position, fieldName || null);
-        }
-        
-        if (underscores.length === 1 && /^\d+$/.test(fieldName)) {
-          position = parseInt(fieldName, 10);
-          return getRecentDocumentByPosition(db, position, null);
-        }
-  
-        return getRecentDocumentByPosition(db, position, fieldName || null);
-      }
-  
+  const match = quickString.match(_RECENT_REGEX);
+  if (match) {
+    const [, underscores, numberStr, fieldName] = match;
+    let position = underscores.length;
+
+    if (numberStr) {
+      position = parseInt(numberStr, 10);
+      return getRecentDocumentByPosition(db, position, fieldName || null);
+    }
+
+    if (underscores.length === 1 && /^\d+$/.test(fieldName)) {
+      position = parseInt(fieldName, 10);
+      return getRecentDocumentByPosition(db, position, null);
+    }
+
+    return getRecentDocumentByPosition(db, position, fieldName || null);
+  }
+
   return [];
 }
 
@@ -293,7 +293,9 @@ async function getRecentDocumentByPosition(
 
   const rows = viewResults.rows;
   if (rows.length < position) {
-    throw new NoQuickIdMatchError(`Not enough documents to get position ${position}`);
+    throw new NoQuickIdMatchError(
+      `Not enough documents to get position ${position}`,
+    );
   }
 
   const doc = rows[position - 1].doc;
@@ -303,4 +305,3 @@ async function getRecentDocumentByPosition(
 
   return [doc._id];
 }
-
