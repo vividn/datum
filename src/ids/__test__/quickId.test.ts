@@ -5,6 +5,7 @@ import {
   humanIdView,
   idToHumanView,
   subHumanIdView,
+  timingView
 } from "../../views/datumViews";
 import {
   AmbiguousQuickIdError,
@@ -268,5 +269,134 @@ describe("quickId", () => {
     expect(await quickId("id1,ghi,and more", {})).toEqual(["id1,ghi,and more"]);
     expect(await quickId("id1,ghi", {})).toEqual(["id1,ghi,and more"]);
     expect(await quickId("id1,jkl", {})).toEqual(["id1", "id2"]);
+  });
+});
+
+describe("quickId underscore notation", () => {
+  const dbName = "test_underscore_shorthand";
+  const db = testDbLifecycle(dbName);
+
+  beforeEach(async () => {
+    await insertDatumView({ db, datumView: idToHumanView });
+    await insertDatumView({ db, datumView: subHumanIdView });
+    await insertDatumView({ db, datumView: humanIdView });
+    await insertDatumView({ db, datumView: stateChangeView });
+    await insertDatumView({ db, datumView: timingView });
+
+    const now = new Date();
+
+    await db.put({
+      _id: "sleep:1",
+      data: { field: "sleep", value: "8h" },
+      meta: {
+        humanId: "sleep1",
+        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString() },
+        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString() }
+      }
+    });
+
+    await db.put({
+      _id: "sleep:2",
+      data: { field: "sleep", value: "7h" },
+      meta: {
+        humanId: "sleep2",
+        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString() },
+        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString() }
+      }
+    });
+
+    await db.put({
+      _id: "alcohol:1",
+      data: { field: "alcohol", type: "beer" },
+      meta: {
+        humanId: "alcohol1",
+        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString() },
+        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString() }
+      }
+    });
+
+    await db.put({
+      _id: "alcohol:2",
+      data: { field: "alcohol", type: "wine" },
+      meta: {
+        humanId: "alcohol2",
+        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString() },
+        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString() }
+      }
+    });
+
+    await db.put({
+      _id: "alcohol:3",
+      data: { field: "alcohol", type: "whiskey" },
+      meta: {
+        humanId: "alcohol3",
+        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString() },
+        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString() }
+      }
+    });
+
+    await db.put({
+      _id: "note:1",
+      data: { field: "note", text: "First note" },
+      meta: {
+        humanId: "note1",
+        createTime: { utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString() },
+        occurTime: { utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString() }
+      }
+    });
+  });
+
+  test("it returns the most recent document when using '_'", async () => {
+    const quick = await quickId("_", {});
+    expect(quick).toEqual(["note:1"]);
+  });
+
+  test("it returns the second most recent document when using '__' or '_2'", async () => {
+    const quickDoubleUnderscore = await quickId("__", {});
+    const quickNumbered = await quickId("_2", {});
+
+    expect(quickDoubleUnderscore).toEqual(["alcohol:3"]);
+    expect(quickNumbered).toEqual(["alcohol:3"]);
+  });
+
+  test("it returns the third most recent document when using '___' or '_3'", async () => {
+    const quickTripleUnderscore = await quickId("___", {});
+    const quickNumbered = await quickId("_3", {});
+
+    expect(quickTripleUnderscore).toEqual(["sleep:2"]);
+    expect(quickNumbered).toEqual(["sleep:2"]);
+  });
+
+  test("it returns field-specific recent documents when using '_fieldname'", async () => {
+    const quickAlcohol = await quickId("_alcohol", {});
+    expect(quickAlcohol).toEqual(["alcohol:3"]);
+
+    const quickSleep = await quickId("_sleep", {});
+    expect(quickSleep).toEqual(["sleep:2"]);
+  });
+
+  test("it returns field-specific nth recent document when using '__fieldname' or '_2:fieldname'", async () => {
+    const quickAlcoholDouble = await quickId("__alcohol", {});
+    const quickAlcoholNumbered = await quickId("_2:alcohol", {});
+
+    expect(quickAlcoholDouble).toEqual(["alcohol:2"]);
+    expect(quickAlcoholNumbered).toEqual(["alcohol:2"]);
+  });
+
+  test("it throws an error for non-existent positions", async () => {
+    await expect(() => quickId("_10", {})).rejects.toThrow(
+      NoQuickIdMatchError
+    );
+  });
+
+  test("it throws an error for non-existent fields", async () => {
+    await expect(() => quickId("_nonexistent", {})).rejects.toThrow(
+      NoQuickIdMatchError
+    );
+  });
+
+  test("it handles very specific position requests correctly", async () => {
+    const quickAlcoholThird = await quickId("_3:alcohol", {});
+    expect(quickAlcoholThird).toEqual(["alcohol:1"]);
   });
 });
