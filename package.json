@@ -16,7 +16,7 @@
     "inboxprocess": "./build/projects/task/src/inboxprocess.js"
   },
   "engines": {
-    "node": ">18.0.0"
+    "node": ">22.0.0"
   },
   "scripts": {
     "dev": "NODE_ENV=development ts-node ./src/index.ts --config ./datumrc_test.yml",
