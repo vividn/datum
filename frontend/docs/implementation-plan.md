@@ -15,8 +15,9 @@
 >    - Potential optimizations or improvements for the future
 >
 > 3. Review and refine future steps based on what you learn from earlier implementations.
-> 4. Each commit should be focused, self-contained, and include appropriate tests.
-> 5. Keep this plan updated as implementation progresses.
+> 4. Use test driven development where appropriate, writing tests/interface first before writing the implementation.
+> 5. Each commit should be focused, self-contained, and include appropriate tests.
+> 6. Keep this plan updated as implementation progresses.
 
 ## Overview
 This plan outlines the approach for implementing a SolidJS-based frontend for the Datum CLI application. The frontend will provide a browser-based interface while maintaining the local-first principles of the application.
