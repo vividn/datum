@@ -238,17 +238,77 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 #### Commit 9: Browser-Compatible Database Connection
 **STATUS: NOT STARTED**
 
-**Purpose:** Ensure database connection works in browser environment
+**Purpose:** Ensure database connection works in browser environment with CouchDB sync capability
 
 **Tasks:**
 - [ ] Update `connectDbBrowser.ts` to ensure browser compatibility
-- [ ] Add credential storage and sync configuration support
-- [ ] Add reconnection logic for browser environment
+- [ ] Implement credential storage using _local docs with CouchDB auth tokens
+- [ ] Add basic sync configuration support
 - [ ] Add tests for browser database connection
 
 **Files to modify:**
 - `/src/auth/connectDbBrowser.ts`
-- Create new file: `/src/auth/credentialStorage.ts`
+- Create new file: `/src/auth/syncManager.ts`
+- Create new file: `/src/auth/__tests__/syncManager.test.ts`
+
+**Detailed Implementation Plan:**
+
+1. **Token-based Authentication (`/src/auth/syncManager.ts`)**:
+   - Create functions to handle CouchDB authentication and token management:
+     ```typescript
+     // Authenticate with CouchDB and get auth token/cookie
+     async function authenticate(url: string, username: string, password: string): Promise<string>
+
+     // Store auth token in a _local doc
+     async function storeAuthToken(db: PouchDB.Database, url: string, authToken: string): Promise<void>
+
+     // Retrieve stored auth token
+     async function getAuthToken(db: PouchDB.Database, url: string): Promise<string | null>
+
+     // Clear stored auth token
+     async function clearAuthToken(db: PouchDB.Database, url: string): Promise<void>
+     ```
+   - Use _local docs to store auth tokens, making them available across browser and CLI
+
+2. **Sync Configuration Support**:
+   - Keep sync configuration minimal and leverage PouchDB's built-in capabilities:
+     ```typescript
+     interface SyncConfig {
+       url: string;
+       continuous?: boolean;
+       syncDirection?: 'push' | 'pull' | 'both';
+     }
+
+     // Store sync configuration in a _local doc
+     async function storeSyncConfig(db: PouchDB.Database, config: SyncConfig): Promise<void>
+
+     // Get stored sync configuration
+     async function getSyncConfig(db: PouchDB.Database): Promise<SyncConfig | null>
+     ```
+   - Store these settings in _local docs for consistency between browser and CLI
+
+3. **Database Connection Enhancement (`/src/auth/connectDbBrowser.ts`)**:
+   - Add functionality to use stored auth tokens for reconnection
+   - Implement helper functions for sync:
+     ```typescript
+     // Set up sync with stored auth token
+     async function setupSync(localDb: PouchDB.Database): Promise<PouchDB.Replication.Sync | null>
+
+     // Start sync with explicit credentials (will store auth token if successful)
+     async function startSync(
+       localDb: PouchDB.Database,
+       url: string,
+       username: string,
+       password: string,
+       options?: SyncOptions
+     ): Promise<PouchDB.Replication.Sync>
+     ```
+   - Add functions to check sync status and handle sync events
+
+4. **Testing Approach**:
+   - Test credential storage and retrieval
+   - Test the database connection with and without stored credentials
+   - Verify sync configuration works correctly with PouchDB
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
