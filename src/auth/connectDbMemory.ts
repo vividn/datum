@@ -9,7 +9,7 @@ export function connectDbMemory(
   args: MainDatumArgs,
 ): PouchDB.Database<EitherPayload> {
   const { db: dbName = "datum" } = args;
-  return new PouchDB(dbName, {
+  return new PouchDb(dbName, {
     adapter: "memory",
   });
 }

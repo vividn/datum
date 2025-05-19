@@ -4,8 +4,12 @@ import { loadConfig } from "./loadConfig";
 
 export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
   // TODO: have settings for use in the browser and load them here
-  if (window !== undefined) {
-    return;
+  try {
+    if (window !== undefined) {
+      return;
+    }
+  } catch {
+    // pass
   }
 
   if (args.env !== undefined) {
