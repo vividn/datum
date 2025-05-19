@@ -11,10 +11,10 @@ export function connectDb(
   mergeConfigAndEnvIntoArgs(args);
 
   try {
-  if (window !== undefined) {
-    return connectDbBrowser(args);
-  }
-  } catch (e) {
+    if (window !== undefined) {
+      return connectDbBrowser(args);
+    }
+  } catch {
     // pass
   }
 
