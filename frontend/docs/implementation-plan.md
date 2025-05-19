@@ -268,7 +268,7 @@ This section provides a detailed commit-by-commit breakdown for implementing the
      // Clear stored auth token
      async function clearAuthToken(db: PouchDB.Database, url: string): Promise<void>
      ```
-   - Use _local docs to store auth tokens, making them available across browser and CLI
+   - Implementation should work both in browser and CLI. Use _local docs to store host, username, and auth tokens
 
 2. **Sync Configuration Support**:
    - Keep sync configuration minimal and leverage PouchDB's built-in capabilities:
