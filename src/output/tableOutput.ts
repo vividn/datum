@@ -6,25 +6,42 @@ import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./output";
 import stringWidth from "string-width";
+import { OutputFunction } from "./outputUtils";
 
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
   timeMetric?: (typeof TIME_METRICS)[number] | "none";
 };
 
+// Default output function
+const defaultOutput: OutputFunction = (message: string) => {
+  console.log(message);
+};
+
+export interface TableOutputResult {
+  output: string | undefined;
+  rows?: string[];
+  formattedTable?: string;
+}
+
 export function tableOutput(
   docs: EitherDocument[],
   args: TableOutputArgs,
-): string | undefined {
+  output: OutputFunction = defaultOutput,
+): TableOutputResult {
   const format = args.formatString;
   const show = args.show;
   const metric = args.timeMetric ?? "hybrid";
   const columns = args.columns || [];
+
   if (show === Show.None) {
-    return undefined;
+    return { output: undefined };
   }
+
   if (docs.length === 0 && show !== Show.Format) {
-    return "[No data]";
+    const noDataMessage = "[No data]";
+    output(noDataMessage);
+    return { output: noDataMessage };
   }
 
   if (format) {
@@ -32,7 +49,9 @@ export function tableOutput(
       const { data, meta } = pullOutData(doc);
       return interpolateFields({ data, meta, format, useHumanTimes: true });
     });
-    return formattedRows.join("\n");
+    const formattedOutput = formattedRows.join("\n");
+    output(formattedOutput);
+    return { output: formattedOutput, rows: formattedRows };
   }
 
   const formattedRows: Record<string, string | undefined>[] = docs.map(
@@ -86,7 +105,21 @@ export function tableOutput(
 
   const allRows = [headerRow, ...formattedRows];
 
-  return Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
-    return table.print();
-  });
+  const formattedTable = Table.print(
+    allRows,
+    { time: { printer: Table.padLeft } },
+    (table) => {
+      return table.print();
+    },
+  );
+
+  if (formattedTable) {
+    output(formattedTable);
+  }
+
+  return {
+    output: formattedTable,
+    formattedTable,
+    rows: formattedRows.map((row) => JSON.stringify(row)),
+  };
 }

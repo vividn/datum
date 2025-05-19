@@ -51,8 +51,8 @@ describe("tableOutput", () => {
   });
 
   it("Returns a table for an array of documents", () => {
-    const table = tableOutput(docs, { show: Show.Standard });
-    expect(table).toMatchInlineSnapshot(`
+    const result = tableOutput(docs, { show: Show.Standard });
+    expect(result.output).toMatchInlineSnapshot(`
       "       time  field       state    dur  hid  
        17:45:00+0  field1      ●             elfuv
        17:46:00+0  emotion     ∅happy   10m  en61v
@@ -66,11 +66,11 @@ describe("tableOutput", () => {
   });
 
   it("Can return a table with a different time metric", () => {
-    const table = tableOutput(docs, {
+    const result = tableOutput(docs, {
       show: Show.Standard,
       timeMetric: "create",
     });
-    expect(table).toMatchInlineSnapshot(`
+    expect(result.output).toMatchInlineSnapshot(`
       "       time  field       state    dur  hid  
       c17:45:00+0  field1      ●             elfuv
       c17:46:00+0  emotion     ∅happy   10m  en61v
@@ -88,36 +88,36 @@ describe("tableOutput", () => {
     const doc1 = await switchCmd("a b");
     const doc2 = await switchCmd("cd de");
     const doc3 = await switchCmd("fg fg");
-    const table = tableOutput([doc1, doc2, doc3], { show: Show.Standard });
+    const result = tableOutput([doc1, doc2, doc3], { show: Show.Standard });
 
-    expect(table?.split("\n")[0]).toMatchInlineSnapshot(
+    expect(result.output?.split("\n")[0]).toMatchInlineSnapshot(
       `"      time  f   s       hid  "`,
     );
     const doc4 = await switchCmd("hijklmnop qrstuvwx");
-    const table2 = tableOutput([doc1, doc2, doc3, doc4], {
+    const result2 = tableOutput([doc1, doc2, doc3, doc4], {
       show: Show.Standard,
     });
-    expect(table2?.split("\n")[0]).toMatchInlineSnapshot(
+    expect(result2.output?.split("\n")[0]).toMatchInlineSnapshot(
       `"      time  field      state         hid  "`,
     );
   });
 
   it("Returns undefined if show is None", () => {
-    const table = tableOutput(docs, { show: Show.None });
-    expect(table).toBeUndefined();
+    const result = tableOutput(docs, { show: Show.None });
+    expect(result.output).toBeUndefined();
   });
 
   it("Returns [No data] if docs is an empty array", () => {
-    const table = tableOutput([], { show: Show.Standard });
-    expect(table).toMatchInlineSnapshot(`"[No data]"`);
+    const result = tableOutput([], { show: Show.Standard });
+    expect(result.output).toMatchInlineSnapshot(`"[No data]"`);
   });
 
   it("Can return with extra columns", () => {
-    const table = tableOutput(docs, {
+    const result = tableOutput(docs, {
       show: Show.Standard,
       columns: ["foo"],
     });
-    expect(table).toMatchInlineSnapshot(`
+    expect(result.output).toMatchInlineSnapshot(`
       "       time  field       state    dur  hid    foo   
        17:45:00+0  field1      ●             elfuv  "bar" 
        17:46:00+0  emotion     ∅happy   10m  en61v  "baz" 
@@ -131,11 +131,11 @@ describe("tableOutput", () => {
   });
 
   it("Can return using a format string", () => {
-    const table = tableOutput(docs, {
+    const result = tableOutput(docs, {
       show: Show.Format,
       formatString: "%field%,%foo%,%dur%",
     });
-    expect(table).toMatchInlineSnapshot(`
+    expect(result.output).toMatchInlineSnapshot(`
       "field1,bar,
       emotion,baz,PT10M
       field2,foo,
@@ -147,10 +147,10 @@ describe("tableOutput", () => {
   });
 
   it("Retruns an empty string if docs is an empty array with show.format", () => {
-    const table = tableOutput([], {
+    const result = tableOutput([], {
       show: Show.Format,
       formatString: "%field%",
     });
-    expect(table).toBe("");
+    expect(result.output).toBe("");
   });
 });
