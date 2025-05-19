@@ -25,6 +25,7 @@
   },
   "scripts": {
     "frontend": "cd frontend && next dev",
+    "dev": "NODE_ENV=development ts-node ./src/index.ts --config ./datumrc_test.yml",
     "test": "jest",
     "testwatch": "jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json --skipLibCheck",
@@ -120,6 +121,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "relaxed-json": "^1.0.3",
+    "sharp": "^0.34.1",
     "shell-quote": "^1.8.1",
     "string-width": "^4.2.3",
     "string.ify": "^1.0.64",

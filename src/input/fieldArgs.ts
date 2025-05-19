@@ -13,7 +13,7 @@ const fieldGroup = fieldArgs.add_argument_group({
   description: "Options for selecting a field",
 });
 fieldGroup.add_argument("field", {
-  help: "what is being tracked",
+  help: "what is being tracked; can use %%keyName%% syntax to compose from other data",
   nargs: "?",
 });
 fieldGroup.add_argument("--fieldless", "-F", {

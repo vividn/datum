@@ -181,3 +181,10 @@ export class LastDocsTooOldError extends MyError {
     Object.setPrototypeOf(this, LastDocsTooOldError.prototype);
   }
 }
+
+export class FieldError extends MyError {
+  constructor(m: unknown) {
+    super(m);
+    Object.setPrototypeOf(this, FieldError.prototype);
+  }
+}

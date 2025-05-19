@@ -1,6 +1,6 @@
 import { addIdAndMetadata } from "../addIdAndMetadata";
 import { setNow } from "../../__test__/test-utils";
-import { IdError } from "../../errors";
+import { IdError, FieldError } from "../../errors";
 import { toDatumTime } from "../../time/datumTime";
 import { DatumPayload } from "../../documentControl/DatumDocument";
 
@@ -111,7 +111,7 @@ describe("addIdAndMetadata", () => {
         },
       },
       meta: {
-        idStructure: "%field%:%occurTime%",
+        idStructure: "%occurTime%",
         createTime: nowDatumTime,
         humanId: expect.any(String),
         modifyTime: nowDatumTime,
@@ -123,22 +123,22 @@ describe("addIdAndMetadata", () => {
     const payload = addIdAndMetadata(
       {
         foo: "bar",
-        field: "field",
+        field: "%foo",
         occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
       {
-        partition: "%foo",
         idParts: ["%?humanId"],
       },
     ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
-        field: "field",
+        field: "bar",
         foo: "bar",
         occurTime: { utc: "2023-09-05T11:20:00.000Z", o: 0, tz: "UTC" },
       },
       meta: {
-        idStructure: "%foo%:%?humanId%",
+        idStructure: "%?humanId%",
+        fieldStructure: "%foo",
       },
     });
     const hid = payload.meta.humanId;
@@ -149,25 +149,25 @@ describe("addIdAndMetadata", () => {
     const payload = addIdAndMetadata(
       {
         foo: "bar",
-        field: "field",
+        field: "%foo%",
         occurTime: { utc: "2023-09-05T11:20:00.000Z" },
       },
       {
-        partition: "%foo",
         idParts: ["%occurTime", "%?humanId"],
         idDelimiter: "!!!",
       },
     ) as DatumPayload;
     expect(payload).toMatchObject({
       data: {
-        field: "field",
+        field: "bar",
         foo: "bar",
         occurTime: {
           utc: "2023-09-05T11:20:00.000Z",
         },
       },
       meta: {
-        idStructure: "%foo%:%occurTime%!!!%?humanId%",
+        idStructure: "%occurTime%!!!%?humanId%",
+        fieldStructure: "%foo%",
       },
     });
     const hid = payload.meta.humanId;
@@ -179,5 +179,40 @@ describe("addIdAndMetadata", () => {
     expect(() => addIdAndMetadata({ foo: "bar" }, { idParts: [""] })).toThrow(
       IdError,
     );
+  });
+
+  it("throws an error if field contains a colon", () => {
+    // Testing direct field error
+    expect(() => addIdAndMetadata({ field: "invalid:field" }, {})).toThrow(
+      FieldError,
+    );
+
+    // Note: The error for composite fields with colons would be caught in compileField
+    // but the structure of addIdAndMetadata has changed
+  });
+
+  it("handles composite field syntax correctly", () => {
+    // Create a payload with field property directly in the data object
+    const payload = addIdAndMetadata(
+      {
+        prefix: "test",
+        state: "active",
+        field: "%prefix%_%state%",
+        occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+      },
+      {},
+    ) as DatumPayload;
+
+    // Check field is interpolated and fieldStructure is stored
+    expect(payload.data).toMatchObject({
+      prefix: "test",
+      state: "active",
+      occurTime: { utc: "2023-09-05T11:20:00.000Z" },
+    });
+
+    expect(payload.data.field).toBe("test_active");
+    expect(payload.meta).toHaveProperty("fieldStructure", "%prefix%_%state%");
+    expect(payload._id).toEqual("test_active:2023-09-05T11:20:00.000Z");
+    expect(payload.meta.idStructure).toEqual("%occurTime%");
   });
 });

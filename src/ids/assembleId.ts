@@ -1,7 +1,6 @@
 import {
   DatumData,
   DatumMetadata,
-  DatumPayload,
   EitherPayload,
   isDatumPayload,
 } from "../documentControl/DatumDocument";
@@ -23,7 +22,7 @@ export const assembleId = function ({
     data = payload.data as DatumData;
     meta = payload.meta;
   } else {
-    data = payload as DatumPayload;
+    data = payload as DatumData;
   }
 
   if (meta === undefined && typeof data["_id"] === "string") {
@@ -34,14 +33,25 @@ export const assembleId = function ({
     throw new IdError("idStructure in meta and argument do not match");
   }
 
-  const structure = idStructure ?? meta?.idStructure;
+  idStructure ??= meta?.idStructure;
 
-  if (structure === undefined) {
+  if (idStructure === undefined) {
     if (payload._id !== undefined) {
       return payload._id;
     }
     throw new IdError("Cannot determine the id");
   }
 
-  return interpolateFields({ data, meta, format: structure });
+  // For backwards compatibility, check if the id structure already starts with field: (to avoid double field prefixing)
+  idStructure = idStructure.replace(/^%field%:/, "");
+
+  // Generate the main part of the ID
+  const mainId = interpolateFields({ data, meta, format: idStructure });
+
+  // Add field partition if available
+  if (data.field) {
+    return `${data.field}:${mainId}`;
+  }
+
+  return mainId;
 };
