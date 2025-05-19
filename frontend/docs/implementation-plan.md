@@ -1,5 +1,23 @@
 # SolidJS Frontend Implementation Plan
 
+> **Instructions for AI implementers:**
+>
+> 1. Use the commit status markers to track progress through the implementation:
+>    - `STATUS: NOT STARTED` - Work has not begun yet
+>    - `STATUS: IN PROGRESS` - Work is currently underway
+>    - `STATUS: COMPLETED` - Work is finished
+>    - `STATUS: BLOCKED` - Work is blocked by another task
+>
+> 2. For each commit, add detailed implementation notes in the commit section, documenting:
+>    - Key decisions made during implementation
+>    - Any deviations from the original plan and why
+>    - Challenges encountered and their solutions
+>    - Potential optimizations or improvements for the future
+>
+> 3. Review and refine future steps based on what you learn from earlier implementations.
+> 4. Each commit should be focused, self-contained, and include appropriate tests.
+> 5. Keep this plan updated as implementation progresses.
+
 ## Overview
 This plan outlines the approach for implementing a SolidJS-based frontend for the Datum CLI application. The frontend will provide a browser-based interface while maintaining the local-first principles of the application.
 
@@ -69,135 +87,187 @@ To integrate with the existing CLI codebase, we'll:
 
 Before implementing the frontend, several changes are needed in the core codebase to make it browser-compatible and suitable for integration. The following changes should be implemented as a series of focused commits.
 
-### Implementation Guide for Core Changes
+## Implementation Checklist
 
-This section provides a detailed commit-by-commit breakdown for implementing the necessary core changes. Each commit should focus on a small, self-contained change to make review and possible rollbacks easier.
+This section provides a detailed commit-by-commit breakdown for implementing the necessary changes. Each commit has a status marker to track progress, and should include detailed implementation notes after completion.
+
+### Core Code Changes
 
 #### Commit 1: Create Output Interface
+**STATUS: NOT STARTED**
 
 **Purpose:** Create a foundation for browser-compatible output handling
 
-**Changes:**
-1. Create a new interface in `/src/output/outputInterface.ts` that defines methods for different output types
-2. Implement a console output provider that matches the current behavior
-3. Add infrastructure for a browser output provider
+**Tasks:**
+- [ ] Create a new interface in `/src/output/outputInterface.ts` that defines methods for different output types
+- [ ] Implement a console output provider that matches the current behavior
+- [ ] Add infrastructure for a browser output provider
+- [ ] Add tests for the new interface
 
 **Files to modify:**
 - Create new file: `/src/output/outputInterface.ts`
 - Create new file: `/src/output/consoleOutput.ts`
 - Create new file: `/src/output/browserOutput.ts` (skeleton)
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 2: Refactor Output Main Functions
+**STATUS: NOT STARTED**
 
 **Purpose:** Modify core output functions to use the interface
 
-**Changes:**
-1. Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts
-2. Make these functions return formatted strings and accept an output provider
-3. Ensure backward compatibility with console output
+**Tasks:**
+- [ ] Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts
+- [ ] Make functions return formatted strings and accept an output provider
+- [ ] Ensure backward compatibility with console output
+- [ ] Update tests for refactored functions
 
 **Files to modify:**
 - `/src/output/output.ts`
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 3: Refactor Secondary Output Functions
+**STATUS: NOT STARTED**
 
 **Purpose:** Complete the output system refactoring
 
-**Changes:**
-1. Refactor remaining output functions (`showCreate()`, `showExists()`, etc.)
-2. Update all functions to use the new output interface
-3. Add unit tests for the new output system
+**Tasks:**
+- [ ] Refactor remaining output functions (`showCreate()`, `showExists()`, etc.)
+- [ ] Update all functions to use the new output interface
+- [ ] Add unit tests for the new output system
+- [ ] Ensure all output-related tests pass
 
 **Files to modify:**
 - `/src/output/output.ts`
 - Create/update test files as needed
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 4: Update DayView Command
+**STATUS: NOT STARTED**
 
 **Purpose:** Make dayview command browser-compatible
 
-**Changes:**
-1. Modify `dayviewCmd.ts` to use the output interface
-2. Ensure proper SVG string return
-3. Remove direct console.log calls
+**Tasks:**
+- [ ] Modify `dayviewCmd.ts` to use the output interface
+- [ ] Ensure proper SVG string return
+- [ ] Remove direct console.log calls
+- [ ] Add/update tests for browser compatibility
 
 **Files to modify:**
 - `/src/commands/dayviewCmd.ts`
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 5: Update NowView Command
+**STATUS: NOT STARTED**
 
 **Purpose:** Make nowview command browser-compatible
 
-**Changes:**
-1. Modify `nowviewCmd.ts` to use the output interface
-2. Ensure proper SVG string return
-3. Remove direct console.log calls
+**Tasks:**
+- [ ] Modify `nowviewCmd.ts` to use the output interface
+- [ ] Ensure proper SVG string return
+- [ ] Remove direct console.log calls
+- [ ] Add/update tests for browser compatibility
 
 **Files to modify:**
 - `/src/commands/nowviewCmd.ts`
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 6: Update Tail Command
+**STATUS: NOT STARTED**
 
 **Purpose:** Make tail command browser-compatible
 
-**Changes:**
-1. Modify `tailCmd.ts` to use the output interface
-2. Return formatted output strings instead of using console.log
-3. Support both browser and console modes
+**Tasks:**
+- [ ] Modify `tailCmd.ts` to use the output interface
+- [ ] Return formatted output strings instead of console.log
+- [ ] Support both browser and console modes
+- [ ] Add/update tests for both modes
 
 **Files to modify:**
 - `/src/commands/tailCmd.ts`
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 7: Improve Error Handling
+**STATUS: NOT STARTED**
 
 **Purpose:** Replace process.exit() with structured errors
 
-**Changes:**
-1. Create structured error classes in a new file
-2. Replace process.exit() calls with proper error throwing
-3. Ensure errors can be displayed appropriately in browser context
+**Tasks:**
+- [ ] Create structured error classes in `/src/errors/browserCompatibleErrors.ts`
+- [ ] Replace process.exit() calls with proper error throwing
+- [ ] Ensure errors can be displayed in browser context
+- [ ] Add tests for error handling
 
 **Files to modify:**
 - Create new file: `/src/errors/browserCompatibleErrors.ts`
 - `/src/index.ts`
 - `/src/input/mainArgs.ts`
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 8: Update Main Command Interface
+**STATUS: NOT STARTED**
 
 **Purpose:** Make datum() function browser-compatible
 
-**Changes:**
-1. Modify `datum()` function to return structured output
-2. Add support for different output types (console/browser)
-3. Create a browser-specific version of the function if needed
+**Tasks:**
+- [ ] Modify `datum()` function to return structured output
+- [ ] Add support for different output types (console/browser)
+- [ ] Create browser-specific version if needed
+- [ ] Add tests for the updated interface
 
 **Files to modify:**
 - `/src/input/mainArgs.ts`
 
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
 #### Commit 9: Browser-Compatible Database Connection
+**STATUS: NOT STARTED**
 
 **Purpose:** Ensure database connection works in browser environment
 
-**Changes:**
-1. Update `connectDbBrowser.ts` to ensure all dependencies are browser-compatible
-2. Add credential storage and sync configuration support
-3. Add reconnection logic for browser environment
+**Tasks:**
+- [ ] Update `connectDbBrowser.ts` to ensure browser compatibility
+- [ ] Add credential storage and sync configuration support
+- [ ] Add reconnection logic for browser environment
+- [ ] Add tests for browser database connection
 
 **Files to modify:**
 - `/src/auth/connectDbBrowser.ts`
 - Create new file: `/src/auth/credentialStorage.ts`
 
-#### Commit 10: Integration Tests for Browser Compatibility
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 10: Integration Tests
+**STATUS: NOT STARTED**
 
 **Purpose:** Verify the changes work correctly in a browser-like environment
 
-**Changes:**
-1. Add integration tests for the browser-compatible interfaces
-2. Test output formatting, error handling, and command execution
-3. Mock browser environment for testing
+**Tasks:**
+- [ ] Add integration tests for browser-compatible interfaces
+- [ ] Test output formatting, error handling, and command execution
+- [ ] Mock browser environment for testing
+- [ ] Ensure all integration tests pass
 
 **Files to modify:**
 - Create new test files as needed
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
 
 ### Detailed Changes Description
 
@@ -247,121 +317,349 @@ This section provides a detailed commit-by-commit breakdown for implementing the
   - Implement secure credential storage
   - Add sync configuration handling
 
-## Frontend Implementation Strategy
+## Frontend Implementation
 
-After the core code changes are completed, the frontend implementation should also follow a systematic, commit-by-commit approach:
+After the core code changes are completed, proceed with implementing the frontend itself. Each commit should include implementation notes and a status marker to track progress.
 
-### Commit Strategy for Frontend Implementation
+#### Commit 11: Initialize Frontend Project
+**STATUS: NOT STARTED**
 
-Each phase of the frontend implementation should be broken down into focused commits. Aim for commits that:
-1. Implement a single, well-defined feature or component
-2. Can be tested independently
-3. Don't break existing functionality
-4. Include appropriate tests
+**Purpose:** Set up the basic SolidJS project structure
 
-### Phase 1: Setup and Basic Structure (Commits 1-4)
+**Tasks:**
+- [ ] Set up the SolidJS project structure with Vite
+- [ ] Add required dependencies to the frontend package.json
+- [ ] Configure TypeScript settings for compatibility with the main project
+- [ ] Create basic build scripts
 
-#### Commit 1: Initialize Frontend Project
-- Set up the SolidJS project structure with Vite
-- Add required dependencies to the frontend package.json
-- Configure TypeScript settings for compatibility with the main project
-- Create basic build scripts
+**Files to create/modify:**
+- `/frontend/package.json`
+- `/frontend/vite.config.ts`
+- `/frontend/tsconfig.json`
+- `/frontend/src/index.tsx`
+- `/frontend/src/App.tsx`
 
-#### Commit 2: Configure Build System
-- Set up build system for bundling the datum core code
-- Configure GitHub Pages deployment workflow
-- Add basic project documentation
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
 
-#### Commit 3: Create Application Shell
-- Implement the base application layout
-- Create container components for the main panels
-- Set up the basic CSS structure
-- Implement theme variables and basic styling
+#### Commit 12: Configure Build System
+**STATUS: NOT STARTED**
 
-#### Commit 4: Set up Core Integrations
-- Set up initial imports from the core code
-- Configure module aliases
-- Add basic tests for integration with core code
+**Purpose:** Set up the build system for development and deployment
 
-### Phase 2: Core Functionality (Commits 5-8)
+**Tasks:**
+- [ ] Set up build system for bundling the datum core code
+- [ ] Configure GitHub Pages deployment workflow
+- [ ] Add basic project documentation
+- [ ] Test build process
 
-#### Commit 5: Database Connection
-- Implement PouchDB connection using the existing connectDbBrowser functionality
-- Set up database context provider for application-wide access
-- Add connection status indicators
-- Implement basic error handling for database operations
+**Files to create/modify:**
+- `/frontend/.github/workflows/deploy.yml`
+- `/frontend/vite.config.ts` (updates)
+- `/frontend/README.md`
 
-#### Commit 6: Terminal Interface - Input
-- Create the terminal input component with command history support
-- Implement keyboard navigation (up/down arrows for history)
-- Add input focus management
-- Style the terminal input to match the wireframe
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
 
-#### Commit 7: Terminal Interface - Output
-- Implement terminal output display component
-- Add support for different output types (text, structured, SVG)
-- Implement inline error handling in the terminal output
-- Style the terminal output to match the wireframe
+#### Commit 13: Create Application Shell
+**STATUS: NOT STARTED**
 
-#### Commit 8: Command Processing
-- Implement command processing by directly calling `datum()` from mainArgs.ts
-- Create command context provider
-- Add command execution feedback
-- Implement error handling for command execution
+**Purpose:** Implement the basic application layout
 
-### Phase 3: View Components (Commits 9-12)
+**Tasks:**
+- [ ] Implement the base application layout
+- [ ] Create container components for the main panels
+- [ ] Set up the basic CSS structure
+- [ ] Implement theme variables and basic styling
 
-#### Commit 9: SVG Renderer Component
-- Create reusable SVG renderer component
-- Add support for rendering SVG strings
-- Implement proper SVG sizing and responsiveness
-- Add error handling for SVG rendering issues
+**Files to create/modify:**
+- `/frontend/src/components/Layout/AppLayout.tsx`
+- `/frontend/src/components/Layout/Panel.tsx`
+- `/frontend/src/styles/global.css`
+- `/frontend/src/styles/layout.css`
+- `/frontend/src/styles/themes.css`
 
-#### Commit 10: DayView Panel
-- Implement the 4-day dayview panel component
-- Integrate with dayviewCmd to get SVG output
-- Add refresh/reload functionality
-- Style to match the wireframe design
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
 
-#### Commit 11: NowView Panel
-- Implement the nowview panel component
-- Integrate with nowviewCmd to get SVG output
-- Add auto-refresh functionality
-- Style to match the wireframe design
+#### Commit 14: Set up Core Integrations
+**STATUS: NOT STARTED**
 
-#### Commit 12: TailView Component
-- Implement the tail view component
-- Integrate with tailCmd for content
-- Add auto-update functionality
-- Style to match the wireframe design
-- Ensure proper scrolling and overflow behavior
+**Purpose:** Set up the integration with the core code
 
-### Phase 4: Integration and Refinement (Commits 13-16)
+**Tasks:**
+- [ ] Set up initial imports from the core code
+- [ ] Configure module aliases
+- [ ] Add basic tests for integration with core code
+- [ ] Create import/export module for core code
 
-#### Commit 13: Layout Integration
-- Integrate all panels into the final layout
-- Ensure proper sizing and spacing between panels
-- Implement responsive behavior for different screen sizes
-- Add loading states for all components
+**Files to create/modify:**
+- `/frontend/src/core/index.ts`
+- `/frontend/vite.config.ts` (updates for aliases)
+- `/frontend/src/__tests__/core-integration.test.ts`
 
-#### Commit 14: CouchDB Sync Configuration
-- Create the CouchDB sync configuration popup component
-- Implement credential form with validation
-- Add secure credential storage using the browser's storage APIs
-- Add connection testing functionality
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
 
-#### Commit 15: Automatic Reconnection
-- Implement automatic reconnection to avoid re-entering credentials
-- Add sync status indicators
-- Implement graceful handling of connection failures
-- Add offline mode detection and notification
+#### Commit 15: Database Connection
+**STATUS: NOT STARTED**
 
-#### Commit 16: Final Refinements
-- Optimize for performance
-- Add comprehensive error handling
-- Implement loading states for all operations
-- Add final styling touches
-- Complete documentation
+**Purpose:** Implement the database connection functionality
+
+**Tasks:**
+- [ ] Implement PouchDB connection using the existing connectDbBrowser functionality
+- [ ] Set up database context provider for application-wide access
+- [ ] Add connection status indicators
+- [ ] Implement basic error handling for database operations
+
+**Files to create/modify:**
+- `/frontend/src/hooks/useDb.ts`
+- `/frontend/src/context/DbContext.tsx`
+- `/frontend/src/components/StatusIndicator.tsx`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 16: Terminal Interface - Input
+**STATUS: NOT STARTED**
+
+**Purpose:** Create the terminal input component
+
+**Tasks:**
+- [ ] Create the terminal input component with command history support
+- [ ] Implement keyboard navigation (up/down arrows for history)
+- [ ] Add input focus management
+- [ ] Style the terminal input to match the wireframe
+
+**Files to create/modify:**
+- `/frontend/src/components/Terminal/Terminal.tsx`
+- `/frontend/src/components/Terminal/TerminalInput.tsx`
+- `/frontend/src/hooks/useCommandHistory.ts`
+- `/frontend/src/styles/terminal.css`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 17: Terminal Interface - Output
+**STATUS: NOT STARTED**
+
+**Purpose:** Implement the terminal output display
+
+**Tasks:**
+- [ ] Implement terminal output display component
+- [ ] Add support for different output types (text, structured, SVG)
+- [ ] Implement inline error handling in the terminal output
+- [ ] Style the terminal output to match the wireframe
+
+**Files to create/modify:**
+- `/frontend/src/components/Terminal/TerminalOutput.tsx`
+- `/frontend/src/utils/outputFormatters.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 18: Command Processing
+**STATUS: NOT STARTED**
+
+**Purpose:** Implement command execution and processing
+
+**Tasks:**
+- [ ] Implement command processing by directly calling `datum()` from mainArgs.ts
+- [ ] Create command context provider
+- [ ] Add command execution feedback
+- [ ] Implement error handling for command execution
+
+**Files to create/modify:**
+- `/frontend/src/utils/commandRunner.ts`
+- `/frontend/src/context/CommandContext.tsx`
+- `/frontend/src/hooks/useTerminal.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 19: SVG Renderer Component
+**STATUS: NOT STARTED**
+
+**Purpose:** Create a reusable SVG renderer
+
+**Tasks:**
+- [ ] Create reusable SVG renderer component
+- [ ] Add support for rendering SVG strings
+- [ ] Implement proper SVG sizing and responsiveness
+- [ ] Add error handling for SVG rendering issues
+
+**Files to create/modify:**
+- `/frontend/src/components/SVGRenderer.tsx`
+- `/frontend/src/utils/svgUtils.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 20: DayView Panel
+**STATUS: NOT STARTED**
+
+**Purpose:** Implement the 4-day dayview panel
+
+**Tasks:**
+- [ ] Implement the 4-day dayview panel component
+- [ ] Integrate with dayviewCmd to get SVG output
+- [ ] Add refresh/reload functionality
+- [ ] Style to match the wireframe design
+
+**Files to create/modify:**
+- `/frontend/src/components/DayView/DayView.tsx`
+- `/frontend/src/hooks/useDayView.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 21: NowView Panel
+**STATUS: NOT STARTED**
+
+**Purpose:** Implement the nowview panel
+
+**Tasks:**
+- [ ] Implement the nowview panel component
+- [ ] Integrate with nowviewCmd to get SVG output
+- [ ] Add auto-refresh functionality
+- [ ] Style to match the wireframe design
+
+**Files to create/modify:**
+- `/frontend/src/components/NowView/NowView.tsx`
+- `/frontend/src/hooks/useNowView.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 22: TailView Component
+**STATUS: NOT STARTED**
+
+**Purpose:** Implement the tail view component
+
+**Tasks:**
+- [ ] Implement the tail view component
+- [ ] Integrate with tailCmd for content
+- [ ] Add auto-update functionality
+- [ ] Style to match the wireframe design
+- [ ] Ensure proper scrolling and overflow behavior
+
+**Files to create/modify:**
+- `/frontend/src/components/TailView/TailView.tsx`
+- `/frontend/src/hooks/useTailView.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 23: Layout Integration
+**STATUS: NOT STARTED**
+
+**Purpose:** Integrate all panels into the final layout
+
+**Tasks:**
+- [ ] Integrate all panels into the final layout
+- [ ] Ensure proper sizing and spacing between panels
+- [ ] Implement responsive behavior for different screen sizes
+- [ ] Add loading states for all components
+
+**Files to create/modify:**
+- `/frontend/src/App.tsx` (updates)
+- `/frontend/src/components/Layout/AppLayout.tsx` (updates)
+- `/frontend/src/components/LoadingState.tsx`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 24: CouchDB Sync Configuration
+**STATUS: NOT STARTED**
+
+**Purpose:** Create the CouchDB sync configuration popup
+
+**Tasks:**
+- [ ] Create the CouchDB sync configuration popup component
+- [ ] Implement credential form with validation
+- [ ] Add secure credential storage using the browser's storage APIs
+- [ ] Add connection testing functionality
+
+**Files to create/modify:**
+- `/frontend/src/components/SyncPopup/SyncPopup.tsx`
+- `/frontend/src/components/SyncPopup/CredentialForm.tsx`
+- `/frontend/src/utils/credentialStorage.ts`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 25: Automatic Reconnection
+**STATUS: NOT STARTED**
+
+**Purpose:** Implement automatic database reconnection
+
+**Tasks:**
+- [ ] Implement automatic reconnection to avoid re-entering credentials
+- [ ] Add sync status indicators
+- [ ] Implement graceful handling of connection failures
+- [ ] Add offline mode detection and notification
+
+**Files to create/modify:**
+- `/frontend/src/hooks/useDb.ts` (updates)
+- `/frontend/src/components/ConnectionStatus.tsx`
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 26: Final Refinements
+**STATUS: NOT STARTED**
+
+**Purpose:** Final polish and refinements
+
+**Tasks:**
+- [ ] Optimize for performance
+- [ ] Add comprehensive error handling
+- [ ] Implement loading states for all operations
+- [ ] Add final styling touches
+- [ ] Complete documentation
+
+**Files to create/modify:**
+- Various files throughout the codebase
+- `/frontend/README.md` (updates)
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 27: Build System Finalization
+**STATUS: NOT STARTED**
+
+**Purpose:** Finalize the build system for production
+
+**Tasks:**
+- [ ] Optimize bundle sizes
+- [ ] Configure production builds
+- [ ] Ensure proper code splitting
+- [ ] Set up comprehensive build scripts
+
+**Files to create/modify:**
+- `/frontend/vite.config.ts` (updates)
+- `/frontend/package.json` (updates)
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
+
+#### Commit 28: GitHub Pages Deployment
+**STATUS: NOT STARTED**
+
+**Purpose:** Set up and verify GitHub Pages deployment
+
+**Tasks:**
+- [ ] Configure GitHub Pages deployment workflow
+- [ ] Test deployment
+- [ ] Add deployment documentation
+- [ ] Verify the application works correctly when deployed
+
+**Files to create/modify:**
+- `/frontend/.github/workflows/deploy.yml` (updates)
+- `/frontend/README.md` (updates)
+
+**Implementation Notes:**
+<!-- Add detailed implementation notes here after completion -->
 
 ## Technical Considerations
 
