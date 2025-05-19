@@ -19,12 +19,7 @@ import {
   stateChalk,
 } from "../field/fieldColor";
 import { getContrastTextColor } from "../utils/colorUtils";
-import { OutputFunction } from "./outputUtils";
-
-// Default output function that uses console.log
-const defaultOutput: OutputFunction = (message: string) => {
-  console.log(message);
-};
+import { OutputInterface, consoleOutput } from "./outputUtils";
 
 export enum ACTIONS {
   Create = "CREATE",
@@ -275,19 +270,21 @@ export function actionId(
 
 export function showHeaderLine(
   formatted: ExtractedAndFormatted,
-  output: OutputFunction = defaultOutput,
+  outputArg?: OutputInterface,
 ): string {
+  const output = outputArg || consoleOutput;
   const headerLine = [formatted.action, formatted.hid, formatted.id]
     .filter(Boolean)
     .join(" ");
-  output(headerLine);
+  output.log(headerLine);
   return headerLine;
 }
 
 export function showMainInfoLine(
   formatted: ExtractedAndFormatted,
-  output: OutputFunction = defaultOutput,
+  outputArg?: OutputInterface,
 ): string | null {
+  const output = outputArg || consoleOutput;
   const infoLine = [
     formatted.time.occur,
     formatted.field,
@@ -298,7 +295,7 @@ export function showMainInfoLine(
     .join(" ");
 
   if (infoLine !== "") {
-    output(infoLine);
+    output.log(infoLine);
     return infoLine;
   }
   return null;
@@ -307,11 +304,12 @@ export function showMainInfoLine(
 export function showCustomFormat(
   payload: EitherPayload,
   formatString: string,
-  output: OutputFunction = defaultOutput,
+  outputArg?: OutputInterface,
 ): string {
+  const output = outputArg || consoleOutput;
   const { data, meta } = pullOutData(payload);
   const outputString = interpolateFields({ data, meta, format: formatString });
-  output(outputString);
+  output.log(outputString);
   return outputString;
 }
 
@@ -323,16 +321,16 @@ export function showRename(
   beforeId: string,
   afterId: string,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): RenameResult {
+): string | undefined {
+  const output = outputArgs.output || consoleOutput;
   const { show } = sanitizeOutputArgs(outputArgs);
   if (show === Show.None || show === Show.Format) {
-    return {};
+    return undefined;
   }
   const renameMessage =
     actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId);
-  output(renameMessage);
-  return { message: renameMessage };
+  output.log(renameMessage);
+  return renameMessage;
 }
 
 export interface OutputResult {
@@ -347,14 +345,13 @@ export function showSingle(
   action: ACTIONS,
   doc: EitherDocument,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
+): string | undefined {
+  const output = outputArgs.output || consoleOutput;
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
   const extracted = extractFormatted(doc, action);
-  const result: OutputResult = {};
 
   if (show === Show.None) {
-    return result;
+    return undefined;
   }
 
   if (show === Show.Format) {
@@ -363,90 +360,85 @@ export function showSingle(
         "MissingArgument: formatted show requested without a format string",
       );
     }
-    result.formatLine = showCustomFormat(doc, formatString, output);
-    return result;
+    return showCustomFormat(doc, formatString, output);
   }
 
   if (show === Show.Minimal) {
     if (action !== ACTIONS.NoDiff) {
-      result.headerLine = showHeaderLine(extracted, output);
+      return showHeaderLine(extracted, output);
     }
-    return result;
+    return undefined;
   }
 
-  result.headerLine = showHeaderLine(extracted, output);
-  result.infoLine = showMainInfoLine(extracted, output);
+  // Standard output has header line and main info
+  const headerLine = showHeaderLine(extracted, output);
+  showMainInfoLine(extracted, output);
 
+  // With optional format string
   if (formatString) {
-    result.formatLine = showCustomFormat(doc, formatString, output);
+    showCustomFormat(doc, formatString, output);
   }
 
+  // For Show.All, show full document
   if (show === Show.All) {
     const docString = formattedDoc(doc);
-    output(docString);
-    result.docLine = docString;
+    output.log(docString);
   }
 
+  // For Show.Standard or Show.Default without format, show non-redundant data
   if (
     show === Show.Standard ||
     (show === Show.Default && formatString === undefined)
   ) {
     const formattedData = formattedNonRedundantData(doc);
     if (formattedData !== undefined) {
-      output(formattedData);
-      result.dataLine = formattedData;
+      output.log(formattedData);
     }
   }
 
-  return result;
+  // Return the display string (in this case, the header line)
+  return headerLine; // Return the already generated header line
 }
 export function showCreate(
   doc: EitherDocument,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
-  return showSingle(ACTIONS.Create, doc, outputArgs, output);
+): string | undefined {
+  return showSingle(ACTIONS.Create, doc, outputArgs);
 }
 
 export function showExists(
   doc: EitherDocument,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
-  return showSingle(ACTIONS.Exists, doc, outputArgs, output);
+): string | undefined {
+  return showSingle(ACTIONS.Exists, doc, outputArgs);
 }
 
 export function showNoDiff(
   doc: EitherDocument,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
-  return showSingle(ACTIONS.NoDiff, doc, outputArgs, output);
+): string | undefined {
+  return showSingle(ACTIONS.NoDiff, doc, outputArgs);
 }
 
 export function showFailed(
   payload: EitherPayload,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
+): string | undefined {
   return showSingle(
     ACTIONS.Failed,
     { _id: "", _rev: "", ...payload } as EitherDocument,
     outputArgs,
-    output,
   );
 }
 
 export function showDelete(
   payload: EitherPayload,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
+): string | undefined {
   return showSingle(
     ACTIONS.Delete,
     { _id: "", _rev: "", ...payload } as EitherDocument,
     outputArgs,
-    output,
   );
 }
 
@@ -454,18 +446,16 @@ export function showUpdate(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
-  return showSingle(ACTIONS.Update, afterDoc, outputArgs, output);
+): string | undefined {
+  return showSingle(ACTIONS.Update, afterDoc, outputArgs);
 }
 
 export function showOWrite(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
   outputArgs: OutputArgs,
-  output: OutputFunction = defaultOutput,
-): OutputResult {
-  return showSingle(ACTIONS.OWrite, afterDoc, outputArgs, output);
+): string | undefined {
+  return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
 }
 
 export function sanitizeOutputArgs(outputArgs: OutputArgs): {

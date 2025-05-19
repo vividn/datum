@@ -285,6 +285,18 @@ describe("headCmd", () => {
       ::run::
       ::stretch::",
         ],
+        [
+          "::sleep::
+      ::sleep::
+      ::project::
+      ::text::
+      ::project::
+      ::text::
+      ::environment::
+      ::stretch::
+      ::run::
+      ::stretch::",
+        ],
       ]
     `);
   });

@@ -4,18 +4,23 @@ import {
   showHeaderLine,
   showMainInfoLine,
   showCustomFormat,
+  ACTIONS,
 } from "../output";
 import { Show } from "../../input/outputArgs";
-import { OutputFunction } from "../outputUtils";
+import { OutputInterface } from "../outputUtils";
 
 describe("output functions", () => {
   let outputSpy: jest.Mock;
-  let output: OutputFunction;
+  let output: OutputInterface;
 
   beforeEach(() => {
     outputSpy = jest.fn();
-    output = outputSpy;
-    jest.spyOn(console, "log").mockImplementation(() => {});
+    output = {
+      log: outputSpy,
+      info: outputSpy,
+      warn: outputSpy,
+      error: outputSpy,
+    };
   });
 
   afterEach(() => {
@@ -23,7 +28,7 @@ describe("output functions", () => {
   });
 
   describe("showSingle", () => {
-    it("returns OutputResult with formatted strings and calls output functions", () => {
+    it("returns a string and calls output.log", () => {
       const mockDoc = {
         _id: "test-id",
         _rev: "test-rev",
@@ -39,32 +44,28 @@ describe("output functions", () => {
         },
       };
 
-      const outputArgs = { show: Show.Standard };
-
-      const result = showSingle(
-        "CREATE" as any,
-        mockDoc as any,
-        outputArgs,
+      const outputArgs = {
+        show: Show.Standard,
         output,
-      );
+      };
+
+      const result = showSingle(ACTIONS.Create, mockDoc as any, outputArgs);
 
       expect(result).toBeDefined();
-      expect(result).toHaveProperty("headerLine");
+      expect(typeof result).toBe("string");
       expect(outputSpy).toHaveBeenCalled();
     });
 
-    it("returns empty result for Show.None", () => {
+    it("returns undefined for Show.None", () => {
       const mockDoc = { _id: "test-id", _rev: "test-rev" };
-      const outputArgs = { show: Show.None };
-
-      const result = showSingle(
-        "CREATE" as any,
-        mockDoc as any,
-        outputArgs,
+      const outputArgs = {
+        show: Show.None,
         output,
-      );
+      };
 
-      expect(result).toEqual({});
+      const result = showSingle(ACTIONS.Create, mockDoc as any, outputArgs);
+
+      expect(result).toBeUndefined();
       expect(outputSpy).not.toHaveBeenCalled();
     });
   });
@@ -72,9 +73,12 @@ describe("output functions", () => {
   describe("showCreate", () => {
     it("calls showSingle with CREATE action", () => {
       const mockDoc = { _id: "test-id", _rev: "test-rev" };
-      const outputArgs = { show: Show.Standard };
+      const outputArgs = {
+        show: Show.Standard,
+        output,
+      };
 
-      const result = showCreate(mockDoc as any, outputArgs, output);
+      const result = showCreate(mockDoc as any, outputArgs);
 
       expect(result).toBeDefined();
       expect(outputSpy).toHaveBeenCalled();

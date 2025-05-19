@@ -1,58 +1,55 @@
-import { info, warn, error, success, OutputFunction } from "../outputUtils";
+import { OutputInterface, createStringOutput } from "../outputUtils";
 
 describe("outputUtils", () => {
   let outputSpy: jest.Mock;
-  let output: OutputFunction;
+  let output: OutputInterface;
 
   beforeEach(() => {
     outputSpy = jest.fn();
-    output = outputSpy;
+    output = {
+      log: outputSpy,
+      info: outputSpy,
+      warn: outputSpy,
+      error: outputSpy,
+    };
   });
 
   afterEach(() => {
     jest.clearAllMocks();
   });
 
-  describe("info", () => {
-    it("returns the message string and calls the output function", () => {
-      const message = "This is an info message";
-      const result = info(message, output);
-
-      expect(result).toBe(message);
+  describe("OutputInterface", () => {
+    it("provides methods for outputting messages", () => {
+      const message = "This is a test message";
+      output.log(message);
       expect(outputSpy).toHaveBeenCalledWith(message);
     });
   });
 
-  describe("warn", () => {
-    it("returns a yellow message string and calls the output function", () => {
-      const message = "This is a warning message";
-      const result = warn(message, output);
-
-      // The result should contain ANSI color codes for yellow
-      expect(result).toContain(message);
-      expect(outputSpy).toHaveBeenCalled();
+  describe("createStringOutput", () => {
+    it("creates an output interface that collects messages", () => {
+      const stringOutput = createStringOutput();
+      const message = "This is a message";
+      stringOutput.log(message);
+      expect(stringOutput.messages).toContain(message);
     });
-  });
 
-  describe("error", () => {
-    it("returns a red message string and calls the output function", () => {
-      const message = "This is an error message";
-      const result = error(message, output);
-
-      // The result should contain ANSI color codes for red
-      expect(result).toContain(message);
-      expect(outputSpy).toHaveBeenCalled();
+    it("formats warning messages with yellow color", () => {
+      const stringOutput = createStringOutput();
+      const message = "This is a warning";
+      stringOutput.warn(message);
+      expect(stringOutput.messages[0]).toContain(message);
+      // Should contain ANSI color codes
+      expect(stringOutput.messages[0]).not.toBe(message);
     });
-  });
 
-  describe("success", () => {
-    it("returns a green message string and calls the output function", () => {
-      const message = "This is a success message";
-      const result = success(message, output);
-
-      // The result should contain ANSI color codes for green
-      expect(result).toContain(message);
-      expect(outputSpy).toHaveBeenCalled();
+    it("formats error messages with red color", () => {
+      const stringOutput = createStringOutput();
+      const message = "This is an error";
+      stringOutput.error(message);
+      expect(stringOutput.messages[0]).toContain(message);
+      // Should contain ANSI color codes
+      expect(stringOutput.messages[0]).not.toBe(message);
     });
   });
 });

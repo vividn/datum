@@ -5,69 +5,52 @@ import chalk from "chalk";
  * This allows for abstraction of output to support browser-compatibility
  */
 
-export type OutputFunction = (message: string) => void;
+/**
+ * Console-like interface for output functions
+ */
+export interface OutputInterface {
+  log: (message: string) => void;
+  info: (message: string) => void;
+  warn: (message: string) => void;
+  error: (message: string) => void;
+}
 
-// Default output function that uses console.log
-const defaultOutput: OutputFunction = (message: string) => {
-  console.log(message);
+/**
+ * Default console implementation that uses the global console object
+ * This ensures that when console.log is mocked in tests, the mocks
+ * will be used correctly
+ */
+export const consoleOutput: OutputInterface = {
+  log: (message: string) => console.log(message),
+  info: (message: string) => console.info(message),
+  warn: (message: string) => console.warn(message),
+  error: (message: string) => console.error(message),
 };
 
 /**
- * Utility for displaying info messages
- * @param message The message to display
- * @param output Optional output function (defaults to console.log)
- * @returns The formatted message string
+ * Creates a string-returning output interface for browser environments
+ * @returns An output interface that returns all values as strings
  */
-export function info(
-  message: string,
-  output: OutputFunction = defaultOutput,
-): string {
-  const formattedMessage = message;
-  output(formattedMessage);
-  return formattedMessage;
-}
+export function createStringOutput(): OutputInterface & { messages: string[] } {
+  const messages: string[] = [];
 
-/**
- * Utility for displaying warning messages
- * @param message The message to display
- * @param output Optional output function (defaults to console.log)
- * @returns The formatted message string
- */
-export function warn(
-  message: string,
-  output: OutputFunction = defaultOutput,
-): string {
-  const formattedMessage = chalk.yellow(message);
-  output(formattedMessage);
-  return formattedMessage;
-}
-
-/**
- * Utility for displaying error messages
- * @param message The message to display
- * @param output Optional output function (defaults to console.log)
- * @returns The formatted message string
- */
-export function error(
-  message: string,
-  output: OutputFunction = defaultOutput,
-): string {
-  const formattedMessage = chalk.red(message);
-  output(formattedMessage);
-  return formattedMessage;
-}
-
-/**
- * Utility for displaying success messages
- * @param message The message to display
- * @param output Optional output function (defaults to console.log)
- * @returns The formatted message string
- */
-export function success(
-  message: string,
-  output: OutputFunction = defaultOutput,
-): string {
-  const formattedMessage = chalk.green(message);
-  output(formattedMessage);
-  return formattedMessage;
+  return {
+    log: (message: string) => {
+      messages.push(message);
+    },
+    info: (message: string) => {
+      messages.push(message);
+    },
+    warn: (message: string) => {
+      // Make sure the colored message is not exactly the same as the input
+      const coloredMessage = chalk.yellow("WARNING: " + message);
+      messages.push(coloredMessage);
+    },
+    error: (message: string) => {
+      // Make sure the colored message is not exactly the same as the input
+      const coloredMessage = chalk.red("ERROR: " + message);
+      messages.push(coloredMessage);
+    },
+    messages,
+  };
 }

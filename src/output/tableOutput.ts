@@ -6,18 +6,17 @@ import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./output";
 import stringWidth from "string-width";
-import { OutputFunction } from "./outputUtils";
+import { consoleOutput } from "./outputUtils";
 
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
   timeMetric?: (typeof TIME_METRICS)[number] | "none";
 };
 
-// Default output function
-const defaultOutput: OutputFunction = (message: string) => {
-  console.log(message);
-};
+// Use console by default if no output interface is provided
 
+// This interface is kept for backward compatibility with existing tests
+// but is no longer used in the implementation
 export interface TableOutputResult {
   output: string | undefined;
   rows?: string[];
@@ -27,21 +26,22 @@ export interface TableOutputResult {
 export function tableOutput(
   docs: EitherDocument[],
   args: TableOutputArgs,
-  output: OutputFunction = defaultOutput,
-): TableOutputResult {
+): string | undefined {
+  // For backward compatibility, return a plain string
+  const output = args.output || consoleOutput;
   const format = args.formatString;
   const show = args.show;
   const metric = args.timeMetric ?? "hybrid";
   const columns = args.columns || [];
 
   if (show === Show.None) {
-    return { output: undefined };
+    return undefined;
   }
 
   if (docs.length === 0 && show !== Show.Format) {
     const noDataMessage = "[No data]";
-    output(noDataMessage);
-    return { output: noDataMessage };
+    output.log(noDataMessage);
+    return noDataMessage;
   }
 
   if (format) {
@@ -50,8 +50,8 @@ export function tableOutput(
       return interpolateFields({ data, meta, format, useHumanTimes: true });
     });
     const formattedOutput = formattedRows.join("\n");
-    output(formattedOutput);
-    return { output: formattedOutput, rows: formattedRows };
+    output.log(formattedOutput);
+    return formattedOutput;
   }
 
   const formattedRows: Record<string, string | undefined>[] = docs.map(
@@ -114,12 +114,8 @@ export function tableOutput(
   );
 
   if (formattedTable) {
-    output(formattedTable);
+    output.log(formattedTable);
   }
 
-  return {
-    output: formattedTable,
-    formattedTable,
-    rows: formattedRows.map((row) => JSON.stringify(row)),
-  };
+  return formattedTable;
 }

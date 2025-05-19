@@ -110,21 +110,21 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 - `/src/output/output.ts`
 
 **Implementation Notes:**
-Created a new `outputUtils.ts` module that provides basic output functions (info, warn, error, success) that accept an optional output function parameter. This allows for flexibility in how output is handled in different environments.
+Created a new `outputUtils.ts` module that provides a console-like interface (`OutputInterface`) to abstract output handling across different environments. This approach ensures compatibility with both Node.js and browser environments.
 
 The core refactoring approach:
-1. Created an `OutputFunction` type to abstract the output mechanism
-2. Implemented a default output function that uses console.log
-3. Modified all output functions to return their formatted strings while also calling the output function
-4. Added a structured `OutputResult` interface to return all formatted strings
-5. Made output functions accept an optional output function parameter
+1. Created an `OutputInterface` with methods that mirror the console object (log, info, warn, error)
+2. Implemented a default `consoleOutput` object that delegates to the global console
+3. Added a `createStringOutput` factory function that creates an output interface that captures output in an array
+4. Modified all output functions to return their formatted strings while also using the provided output interface
+5. Made all output functions accept an optional OutputInterface parameter to allow for custom output handling
 6. Created comprehensive tests to verify the new functionality
 
 Key decisions:
-- Used an interface-based approach to maintain backward compatibility
-- Made all functions return structured data that can be used by the frontend
-- Used default parameters to ensure backward compatibility with existing code
-- Added chalk formatting to maintain the existing terminal aesthetics while ensuring the raw content is accessible
+- Used an interface-based approach to maintain backward compatibility with existing code
+- Ensured output functions always return their formatted strings for use in browser contexts
+- Modified the default implementation to reference console methods dynamically, ensuring test mocks work correctly
+- Added chalk formatting to maintain the existing terminal aesthetics while ensuring the raw content is accessible for the browser
 
 #### Commit 2: Refactor Secondary Output Functions
 **STATUS: COMPLETED**
@@ -144,22 +144,23 @@ Key decisions:
 Built on the foundation established in Commit 1 to complete the refactoring of all output functions in output.ts.
 
 Key implementation details:
-1. Exported all helper functions that were previously private to ensure testability and reusability
-2. Updated all secondary functions (`showRename`, `showCreate`, `showExists`, etc.) to use the new paradigm
-3. Added appropriate return types for all functions
-4. Created a `RenameResult` interface to standardize return values
-5. Ensured all internal functions use the new `OutputFunction` pattern
+1. Extended the `OutputInterface` approach to all secondary functions in output.ts
+2. Updated all helper and public functions to accept an optional OutputInterface parameter
+3. Ensured all functions return their formatted strings while also using the provided output interface
+4. Modified the implementation of key functions like `showSingle()`, which drives many other functions
+5. Added appropriate return types to all functions for better type safety
 
 Challenges encountered:
-- Found that some functions were not properly exposed for testing
-- Needed to carefully maintain backward compatibility
-- Tests required significant updates to reflect the new function signatures
+- Ensuring proper handling of console mocks in tests - solved by implementing function delegation in consoleOutput
+- Maintaining backward compatibility while refactoring the output system
+- Managing the return types consistently across all output functions
+- Ensuring tests capture both the returned values and the console output behavior
 
 The approach taken ensures that:
-- All output functions can now work in a browser context
-- Existing code using these functions continues to work as before
-- Output can be redirected to any desired output mechanism
-- All functions return structured data that can be used by consuming code
+- All output functions work correctly in both Node.js and browser environments
+- Existing code using these functions continues to work without modifications
+- Tests using console mocks continue to work correctly
+- Functions return properly formatted strings for direct use in browser contexts
 
 #### Commit 3: Update Table Output Functions
 **STATUS: COMPLETED**
@@ -178,32 +179,33 @@ The approach taken ensures that:
 - Create/update test files as needed
 
 **Implementation Notes:**
-Extended the browser-compatible output approach to the table output functions, which are critical for displaying structured data in the CLI and future browser interface.
+Extended the OutputInterface approach to the table output functions, which are critical for displaying structured data in the CLI and future browser interface.
 
 Key implementation details:
-1. Created structured return types (`TableOutputResult` and `MapReduceOutputResult`) to contain all formatted output
-2. Modified both key functions to accept an optional output function parameter
-3. Preserved the original behavior while allowing for output redirection
-4. Added functionality to return both the formatted table and the raw data rows
-5. Carefully updated the existing test files to work with the new function signatures
+1. Modified tableOutput.ts to directly return formatted string results while still respecting the output interface for console logging
+2. Kept the original TableOutputResult interface for backward compatibility, but updated the implementation to return strings directly
+3. Updated the tableOutput function to accept an optional OutputInterface parameter
+4. Made similar updates to mapReduceOutput.ts to ensure consistency across the output system
+5. Updated tests to work with the new function signatures while preserving existing snapshot tests
 
-The refactoring approach for tables was more complex because:
-- Tables represent structured data that may need different rendering in a browser context
-- The existing functions had specific behavior around empty results and different output formats
-- Tests were heavily dependent on snapshot testing of the output strings
+The refactoring approach for tables required special consideration because:
+- The table output functions handle complex data structures and formatting
+- The functions had different behavior based on the Show enum value
+- Tests relied heavily on snapshot comparisons of formatted output strings
 
 Key decisions:
 - For `tableOutput.ts`:
-  - Added a structured `TableOutputResult` interface with properties for different output formats
-  - Added conditional logic to only call output functions when appropriate (respecting Show.None)
-  - Preserved the existing formatting logic for backward compatibility
+  - Simplified the function to directly return the formatted string instead of using a complex result object
+  - Maintained backward compatibility by keeping interface definitions
+  - Ensured the function continues to respect the Show.None option for silent operation
+  - Used the OutputInterface for console output while always returning formatted strings
 
 - For `mapReduceOutput.ts`:
-  - Created a `MapReduceOutputResult` interface to return both formatted tables and raw data
-  - Maintained the existing formatting functionality while adding the output parameter
-  - Ensured the rows property contains the raw data for frontend presentation
+  - Applied the same pattern of direct string returns with OutputInterface for console output
+  - Ensured proper string formatting for all output modes
+  - Preserved existing behavior while enabling browser compatibility
 
-This update completes the refactoring of all main output functions, providing a solid foundation for browser-compatible output handling throughout the application.
+This update completes the refactoring of all main output functions, providing a clean and consistent approach to output handling across both Node.js and browser environments. The refactored functions maintain full compatibility with existing code while enabling new browser-based use cases.
 
 #### Commit 4: Update Dayview Command
 **STATUS: NOT STARTED**
@@ -331,14 +333,16 @@ This update completes the refactoring of all main output functions, providing a 
 #### 1. Output Handling Refactoring
 
 - `/src/output/outputUtils.ts`:
-  - Create simple utility functions for output (info, warn, error)
-  - Support both console output and return values for browser context
-  - Keep implementation minimal and focused on string handling
+  - Create an `OutputInterface` with methods that mirror the console object (log, info, warn, error)
+  - Implement a default `consoleOutput` object that delegates to the global console methods
+  - Create a `createStringOutput` factory for browser environments that captures output in an array
+  - Keep implementation focused on abstracting output functionality
 
 - `/src/output/output.ts`:
-  - Refactor functions to return strings/structured data instead of using console.log
-  - Modify `showSingle()`, `showCreate()`, `showHeaderLine()`, `showMainInfoLine()` to return formatted strings
-  - Move console.log calls to the end of functions, using outputUtils
+  - Refactor functions to accept an optional OutputInterface parameter
+  - Modify all output functions to return their formatted strings
+  - Update `showSingle()`, `showCreate()`, `showHeaderLine()`, `showMainInfoLine()` and other functions
+  - Use the OutputInterface for console output while preserving return values
 
 - `/src/commands/dayviewCmd.ts` and `/src/commands/nowviewCmd.ts`:
   - Ensure SVG output is properly returned as a string (already partially implemented)
@@ -747,9 +751,10 @@ After the core code changes are completed, proceed with implementing the fronten
 - Handle offline/online states appropriately
 
 ### Command Integration
-- Call datum() function directly and handle returned string outputs
-- Process structured output in frontend components
-- Create appropriate renderers for different output types (text, SVG, etc.)
+- Call datum() function directly with custom OutputInterface implementations
+- Create browser-specific OutputInterface that captures output for display
+- Implement appropriate renderers for different output types (text, table, SVG, etc.)
+- Use returned string values from output functions for immediate display
 
 ## UI Wireframe
 

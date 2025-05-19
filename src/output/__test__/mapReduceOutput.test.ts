@@ -1,13 +1,18 @@
 import { mapReduceOutput } from "../mapReduceOutput";
-import { OutputFunction } from "../outputUtils";
+import { OutputInterface } from "../outputUtils";
 
 describe("mapReduceOutput", () => {
   let outputSpy: jest.Mock;
-  let output: OutputFunction;
+  let output: OutputInterface;
 
   beforeEach(() => {
     outputSpy = jest.fn();
-    output = outputSpy;
+    output = {
+      log: outputSpy,
+      info: outputSpy,
+      warn: outputSpy,
+      error: outputSpy,
+    };
     jest.spyOn(console, "log").mockImplementation(() => {});
   });
 
@@ -15,7 +20,7 @@ describe("mapReduceOutput", () => {
     jest.clearAllMocks();
   });
 
-  it("formats map/reduce results as a table and calls output function", () => {
+  it("formats map/reduce results as a table and calls output.log", () => {
     const mockViewResponse = {
       rows: [
         {
@@ -61,8 +66,8 @@ describe("mapReduceOutput", () => {
       output,
     );
 
-    expect(result).toHaveProperty("output");
-    expect(result).toHaveProperty("rows");
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("string");
     expect(outputSpy).toHaveBeenCalled();
   });
 
@@ -90,8 +95,8 @@ describe("mapReduceOutput", () => {
       output,
     );
 
-    expect(result).toHaveProperty("output");
-    expect(result.rows.length).toBe(2);
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("string");
     expect(outputSpy).toHaveBeenCalled();
   });
 
@@ -117,8 +122,8 @@ describe("mapReduceOutput", () => {
       output,
     );
 
-    expect(result).toHaveProperty("output");
-    expect(result.rows.length).toBe(2);
+    expect(result).toBeDefined();
+    expect(typeof result).toBe("string");
     expect(outputSpy).toHaveBeenCalled();
   });
 });
