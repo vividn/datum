@@ -1,4 +1,4 @@
-import PouchDb from "pouchdb-core";
+import PouchDb from "pouchdb";
 import memoryAdapter from "pouchdb-adapter-memory";
 import { EitherPayload } from "../documentControl/DatumDocument";
 import { MainDatumArgs } from "../input/mainArgs";
