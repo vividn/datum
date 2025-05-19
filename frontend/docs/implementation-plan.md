@@ -94,33 +94,32 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 
 ### Core Code Changes
 
-#### Commit 1: Create Output Interface
+#### Commit 1: Refactor Main Output Functions
 **STATUS: NOT STARTED**
 
 **Purpose:** Create a foundation for browser-compatible output handling
 
 **Tasks:**
-- [ ] Create a new interface in `/src/output/outputInterface.ts` that defines methods for different output types
-- [ ] Implement a console output provider that matches the current behavior
-- [ ] Add infrastructure for a browser output provider
-- [ ] Add tests for the new interface
+- [ ] Create simple output utility in `/src/output/outputUtils.ts` with basic methods (info, warn, error)
+- [ ] Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts to return strings
+- [ ] Move console.log calls to a single place at the end of functions
+- [ ] Add tests for the refactored functions
 
 **Files to modify:**
-- Create new file: `/src/output/outputInterface.ts`
-- Create new file: `/src/output/consoleOutput.ts`
-- Create new file: `/src/output/browserOutput.ts` (skeleton)
+- Create new file: `/src/output/outputUtils.ts`
+- `/src/output/output.ts`
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
 
-#### Commit 2: Refactor Output Main Functions
+#### Commit 2: Refactor Secondary Output Functions
 **STATUS: NOT STARTED**
 
-**Purpose:** Modify core output functions to use the interface
+**Purpose:** Complete the output system refactoring for string returns
 
 **Tasks:**
-- [ ] Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts
-- [ ] Make functions return formatted strings and accept an output provider
+- [ ] Refactor remaining output functions (`showCreate()`, `showExists()`, etc.) to return strings
+- [ ] Replace direct console.log calls with the outputUtils functions
 - [ ] Ensure backward compatibility with console output
 - [ ] Update tests for refactored functions
 
@@ -130,19 +129,20 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
 
-#### Commit 3: Refactor Secondary Output Functions
+#### Commit 3: Update Table Output Functions
 **STATUS: NOT STARTED**
 
-**Purpose:** Complete the output system refactoring
+**Purpose:** Make table output functions return strings instead of logging directly
 
 **Tasks:**
-- [ ] Refactor remaining output functions (`showCreate()`, `showExists()`, etc.)
-- [ ] Update all functions to use the new output interface
-- [ ] Add unit tests for the new output system
+- [ ] Refactor table output functions to return formatted strings
+- [ ] Update related functions to collect outputs before displaying
+- [ ] Add unit tests for the updated output system
 - [ ] Ensure all output-related tests pass
 
 **Files to modify:**
-- `/src/output/output.ts`
+- `/src/output/tableOutput.ts`
+- `/src/output/mapReduceOutput.ts`
 - Create/update test files as needed
 
 **Implementation Notes:**
@@ -154,8 +154,8 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 **Purpose:** Make dayview command browser-compatible
 
 **Tasks:**
-- [ ] Modify `dayviewCmd.ts` to use the output interface
-- [ ] Ensure proper SVG string return
+- [ ] Modify `dayviewCmd.ts` to return SVG strings instead of direct console output
+- [ ] Ensure proper handling of SVG outputs
 - [ ] Remove direct console.log calls
 - [ ] Add/update tests for browser compatibility
 
@@ -224,13 +224,14 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 **Purpose:** Make datum() function browser-compatible
 
 **Tasks:**
-- [ ] Modify `datum()` function to return structured output
-- [ ] Add support for different output types (console/browser)
-- [ ] Create browser-specific version if needed
-- [ ] Add tests for the updated interface
+- [ ] Modify `datum()` function to return structured output with all command results
+- [ ] Ensure it collects string outputs from refactored functions
+- [ ] Add output handling parameter with defaulting to console
+- [ ] Add tests for the updated return values
 
 **Files to modify:**
 - `/src/input/mainArgs.ts`
+- `/src/index.ts`
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
@@ -272,22 +273,23 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 
 #### 1. Output Handling Refactoring
 
-- `/src/output/outputInterface.ts`:
-  - Define interfaces for different output types (text, structured, SVG)
-  - Create methods for different output scenarios (info, error, warning)
-  - Support both console and browser outputs
+- `/src/output/outputUtils.ts`:
+  - Create simple utility functions for output (info, warn, error)
+  - Support both console output and return values for browser context
+  - Keep implementation minimal and focused on string handling
 
 - `/src/output/output.ts`:
   - Refactor functions to return strings/structured data instead of using console.log
   - Modify `showSingle()`, `showCreate()`, `showHeaderLine()`, `showMainInfoLine()` to return formatted strings
-  - Add output provider parameter to functions
+  - Move console.log calls to the end of functions, using outputUtils
 
 - `/src/commands/dayviewCmd.ts` and `/src/commands/nowviewCmd.ts`:
   - Ensure SVG output is properly returned as a string (already partially implemented)
-  - Remove direct console.log calls and use the output interface
+  - Remove direct console.log calls and use the outputUtils functions
 
 - `/src/commands/tailCmd.ts`:
-  - Refactor to return formatted output through the output interface
+  - Refactor to return formatted output strings
+  - Use outputUtils for console display
 
 #### 2. Error Handling Improvements
 
@@ -442,13 +444,14 @@ After the core code changes are completed, proceed with implementing the fronten
 
 **Tasks:**
 - [ ] Implement terminal output display component
-- [ ] Add support for different output types (text, structured, SVG)
-- [ ] Implement inline error handling in the terminal output
+- [ ] Create renderers for different output types (text, structured, SVG)
+- [ ] Handle command results returned from datum() function
 - [ ] Style the terminal output to match the wireframe
 
 **Files to create/modify:**
 - `/frontend/src/components/Terminal/TerminalOutput.tsx`
 - `/frontend/src/utils/outputFormatters.ts`
+- `/frontend/src/utils/outputRenderers.ts`
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
@@ -459,15 +462,16 @@ After the core code changes are completed, proceed with implementing the fronten
 **Purpose:** Implement command execution and processing
 
 **Tasks:**
-- [ ] Implement command processing by directly calling `datum()` from mainArgs.ts
-- [ ] Create command context provider
-- [ ] Add command execution feedback
-- [ ] Implement error handling for command execution
+- [ ] Implement command processing by directly calling `datum()` function
+- [ ] Create command context provider to store and process results
+- [ ] Handle structured output from refactored datum() function
+- [ ] Implement error handling and display for command execution
 
 **Files to create/modify:**
 - `/frontend/src/utils/commandRunner.ts`
 - `/frontend/src/context/CommandContext.tsx`
 - `/frontend/src/hooks/useTerminal.ts`
+- `/frontend/src/utils/outputHandlers.ts`
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
@@ -686,9 +690,9 @@ After the core code changes are completed, proceed with implementing the fronten
 - Handle offline/online states appropriately
 
 ### Command Integration
-- Map CLI commands to browser-compatible functions
-- Ensure proper error handling for browser context
-- Create virtual console output for command results
+- Call datum() function directly and handle returned string outputs
+- Process structured output in frontend components
+- Create appropriate renderers for different output types (text, SVG, etc.)
 
 ## UI Wireframe
 
