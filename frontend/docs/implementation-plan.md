@@ -44,8 +44,8 @@ This plan outlines the approach for implementing a SolidJS-based frontend for th
 │   │   ├── Dayview/             # 4-day dayview panel
 │   │   │   ├── Dayview.tsx      # Dayview container
 │   │   │   └── SVGRenderer.tsx  # Component to render SVG output
-│   │   ├── NowView/             # Nowview panel
-│   │   │   ├── NowView.tsx      # NowView container
+│   │   ├── Nowview/             # Nowview panel
+│   │   │   ├── Nowview.tsx      # Nowview container
 │   │   │   └── SVGRenderer.tsx  # Component to render SVG output
 │   │   ├── TailView/            # Tail view panel
 │   │   │   └── TailView.tsx     # TailView container
@@ -56,7 +56,7 @@ This plan outlines the approach for implementing a SolidJS-based frontend for th
 │   │   ├── useTerminal.ts       # Terminal state and command processing
 │   │   ├── useCommandHistory.ts # Command history management
 │   │   ├── useDayview.ts        # Dayview state and rendering
-│   │   ├── useNowView.ts        # NowView state and rendering
+│   │   ├── useNowview.ts        # Nowview state and rendering
 │   │   ├── useTailView.ts       # TailView state and rendering
 │   │   └── useDb.ts             # Database connection and management
 │   ├── utils/                   # Utility functions
@@ -95,50 +95,83 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 ### Core Code Changes
 
 #### Commit 1: Refactor Main Output Functions
-**STATUS: NOT STARTED**
+**STATUS: COMPLETED**
 
 **Purpose:** Create a foundation for browser-compatible output handling
 
 **Tasks:**
-- [ ] Create simple output utility in `/src/output/outputUtils.ts` with basic methods (info, warn, error)
-- [ ] Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts to return strings
-- [ ] Move console.log calls to a single place at the end of functions
-- [ ] Add tests for the refactored functions
+- [x] Create simple output utility in `/src/output/outputUtils.ts` with basic methods (info, warn, error)
+- [x] Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts to return strings
+- [x] Move console.log calls to a single place at the end of functions
+- [x] Add tests for the refactored functions
 
 **Files to modify:**
 - Create new file: `/src/output/outputUtils.ts`
 - `/src/output/output.ts`
 
 **Implementation Notes:**
-<!-- Add detailed implementation notes here after completion -->
+Created a new `outputUtils.ts` module that provides a console-like interface (`OutputInterface`) to abstract output handling across different environments. This approach ensures compatibility with both Node.js and browser environments.
+
+The core refactoring approach:
+1. Created an `OutputInterface` with methods that mirror the console object (log, info, warn, error)
+2. Implemented a default `consoleOutput` object that delegates to the global console
+3. Added a `createStringOutput` factory function that creates an output interface that captures output in an array
+4. Modified all output functions to return their formatted strings while also using the provided output interface
+5. Made all output functions accept an optional OutputInterface parameter to allow for custom output handling
+6. Created comprehensive tests to verify the new functionality
+
+Key decisions:
+- Used an interface-based approach to maintain backward compatibility with existing code
+- Ensured output functions always return their formatted strings for use in browser contexts
+- Modified the default implementation to reference console methods dynamically, ensuring test mocks work correctly
+- Added chalk formatting to maintain the existing terminal aesthetics while ensuring the raw content is accessible for the browser
 
 #### Commit 2: Refactor Secondary Output Functions
-**STATUS: NOT STARTED**
+**STATUS: COMPLETED**
 
 **Purpose:** Complete the output system refactoring for string returns
 
 **Tasks:**
-- [ ] Refactor remaining output functions (`showCreate()`, `showExists()`, etc.) to return strings
-- [ ] Replace direct console.log calls with the outputUtils functions
-- [ ] Ensure backward compatibility with console output
-- [ ] Update tests for refactored functions
+- [x] Refactor remaining output functions (`showCreate()`, `showExists()`, etc.) to return strings
+- [x] Replace direct console.log calls with the outputUtils functions
+- [x] Ensure backward compatibility with console output
+- [x] Update tests for refactored functions
 
 **Files to modify:**
 - `/src/output/output.ts`
 
 **Implementation Notes:**
-<!-- Add detailed implementation notes here after completion -->
+Built on the foundation established in Commit 1 to complete the refactoring of all output functions in output.ts.
+
+Key implementation details:
+1. Extended the `OutputInterface` approach to all secondary functions in output.ts
+2. Updated all helper and public functions to accept an optional OutputInterface parameter
+3. Ensured all functions return their formatted strings while also using the provided output interface
+4. Modified the implementation of key functions like `showSingle()`, which drives many other functions
+5. Added appropriate return types to all functions for better type safety
+
+Challenges encountered:
+- Ensuring proper handling of console mocks in tests - solved by implementing function delegation in consoleOutput
+- Maintaining backward compatibility while refactoring the output system
+- Managing the return types consistently across all output functions
+- Ensuring tests capture both the returned values and the console output behavior
+
+The approach taken ensures that:
+- All output functions work correctly in both Node.js and browser environments
+- Existing code using these functions continues to work without modifications
+- Tests using console mocks continue to work correctly
+- Functions return properly formatted strings for direct use in browser contexts
 
 #### Commit 3: Update Table Output Functions
-**STATUS: NOT STARTED**
+**STATUS: COMPLETED**
 
 **Purpose:** Make table output functions return strings instead of logging directly
 
 **Tasks:**
-- [ ] Refactor table output functions to return formatted strings
-- [ ] Update related functions to collect outputs before displaying
-- [ ] Add unit tests for the updated output system
-- [ ] Ensure all output-related tests pass
+- [x] Refactor table output functions to return formatted strings
+- [x] Update related functions to collect outputs before displaying
+- [x] Add unit tests for the updated output system
+- [x] Ensure all output-related tests pass
 
 **Files to modify:**
 - `/src/output/tableOutput.ts`
@@ -146,7 +179,33 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 - Create/update test files as needed
 
 **Implementation Notes:**
-<!-- Add detailed implementation notes here after completion -->
+Extended the OutputInterface approach to the table output functions, which are critical for displaying structured data in the CLI and future browser interface.
+
+Key implementation details:
+1. Modified tableOutput.ts to directly return formatted string results while still respecting the output interface for console logging
+2. Kept the original TableOutputResult interface for backward compatibility, but updated the implementation to return strings directly
+3. Updated the tableOutput function to accept an optional OutputInterface parameter
+4. Made similar updates to mapReduceOutput.ts to ensure consistency across the output system
+5. Updated tests to work with the new function signatures while preserving existing snapshot tests
+
+The refactoring approach for tables required special consideration because:
+- The table output functions handle complex data structures and formatting
+- The functions had different behavior based on the Show enum value
+- Tests relied heavily on snapshot comparisons of formatted output strings
+
+Key decisions:
+- For `tableOutput.ts`:
+  - Simplified the function to directly return the formatted string instead of using a complex result object
+  - Maintained backward compatibility by keeping interface definitions
+  - Ensured the function continues to respect the Show.None option for silent operation
+  - Used the OutputInterface for console output while always returning formatted strings
+
+- For `mapReduceOutput.ts`:
+  - Applied the same pattern of direct string returns with OutputInterface for console output
+  - Ensured proper string formatting for all output modes
+  - Preserved existing behavior while enabling browser compatibility
+
+This update completes the refactoring of all main output functions, providing a clean and consistent approach to output handling across both Node.js and browser environments. The refactored functions maintain full compatibility with existing code while enabling new browser-based use cases.
 
 #### Commit 4: Update Dayview Command
 **STATUS: NOT STARTED**
@@ -165,7 +224,7 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
 
-#### Commit 5: Update NowView Command
+#### Commit 5: Update Nowview Command
 **STATUS: NOT STARTED**
 
 **Purpose:** Make nowview command browser-compatible
@@ -274,14 +333,16 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 #### 1. Output Handling Refactoring
 
 - `/src/output/outputUtils.ts`:
-  - Create simple utility functions for output (info, warn, error)
-  - Support both console output and return values for browser context
-  - Keep implementation minimal and focused on string handling
+  - Create an `OutputInterface` with methods that mirror the console object (log, info, warn, error)
+  - Implement a default `consoleOutput` object that delegates to the global console methods
+  - Create a `createStringOutput` factory for browser environments that captures output in an array
+  - Keep implementation focused on abstracting output functionality
 
 - `/src/output/output.ts`:
-  - Refactor functions to return strings/structured data instead of using console.log
-  - Modify `showSingle()`, `showCreate()`, `showHeaderLine()`, `showMainInfoLine()` to return formatted strings
-  - Move console.log calls to the end of functions, using outputUtils
+  - Refactor functions to accept an optional OutputInterface parameter
+  - Modify all output functions to return their formatted strings
+  - Update `showSingle()`, `showCreate()`, `showHeaderLine()`, `showMainInfoLine()` and other functions
+  - Use the OutputInterface for console output while preserving return values
 
 - `/src/commands/dayviewCmd.ts` and `/src/commands/nowviewCmd.ts`:
   - Ensure SVG output is properly returned as a string (already partially implemented)
@@ -512,7 +573,7 @@ After the core code changes are completed, proceed with implementing the fronten
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
 
-#### Commit 21: NowView Panel
+#### Commit 21: Nowview Panel
 **STATUS: NOT STARTED**
 
 **Purpose:** Implement the nowview panel
@@ -524,8 +585,8 @@ After the core code changes are completed, proceed with implementing the fronten
 - [ ] Style to match the wireframe design
 
 **Files to create/modify:**
-- `/frontend/src/components/NowView/NowView.tsx`
-- `/frontend/src/hooks/useNowView.ts`
+- `/frontend/src/components/Nowview/Nowview.tsx`
+- `/frontend/src/hooks/useNowview.ts`
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
@@ -690,9 +751,10 @@ After the core code changes are completed, proceed with implementing the fronten
 - Handle offline/online states appropriately
 
 ### Command Integration
-- Call datum() function directly and handle returned string outputs
-- Process structured output in frontend components
-- Create appropriate renderers for different output types (text, SVG, etc.)
+- Call datum() function directly with custom OutputInterface implementations
+- Create browser-specific OutputInterface that captures output for display
+- Implement appropriate renderers for different output types (text, table, SVG, etc.)
+- Use returned string values from output functions for immediate display
 
 ## UI Wireframe
 

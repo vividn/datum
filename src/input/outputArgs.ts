@@ -1,9 +1,11 @@
 import { ArgumentParser } from "argparse";
+import { OutputInterface } from "../output/outputUtils";
 
 export type OutputArgs = {
   showAll?: boolean;
   show?: Show;
   formatString?: string;
+  output?: OutputInterface;
 };
 
 export enum Show {
