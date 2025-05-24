@@ -24,13 +24,11 @@ export function connectDbFile(
       ? `${host}${dbName}`
       : `${host}/${dbName}`;
 
-  if (host.startsWith("/")) {
     const fs = eval("require('fs')");
     // create parent directories
     if (!fs.existsSync(fullDatabaseName)) {
       fs.mkdirSync(fullDatabaseName, { recursive: true });
     }
-  }
 
   const couchAuth = {
     username: args.user,

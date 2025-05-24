@@ -161,6 +161,9 @@ importers:
       pouchdb:
         specifier: ^9.0.0
         version: 9.0.0
+      pouchdb-adapter-http:
+        specifier: ^9.0.0
+        version: 9.0.0
       pouchdb-adapter-idb:
         specifier: ^9.0.0
         version: 9.0.0
@@ -3354,6 +3357,9 @@ packages:
 
   postinstall-postinstall@2.1.0:
     resolution: {integrity: sha512-7hQX6ZlZXIoRiWNrbMQaLzUUfH+sSx39u8EJ9HYuDc1kLo9IXKWjM5RSquZN1ad5GnH8CGFM78fsAAQi3OKEEQ==}
+
+  pouchdb-adapter-http@9.0.0:
+    resolution: {integrity: sha512-2eL008XeRZkdyp3hMHHOhdIPqK9H6Mn4SLlQvit4zCbqnOFfAswzPjUmHULGMbDUCrQBTu6y82FnV6NHXv9kgw==}
 
   pouchdb-adapter-idb@9.0.0:
     resolution: {integrity: sha512-2oLlgwMyOQwdKuzrEmOv8T7jFVgX7JgT4Cr81zX3eiiRClp7xXGgjv41ZRdVCAbM530sIN8BudafaQRVFKRVmA==}
@@ -7928,6 +7934,15 @@ snapshots:
   possible-typed-array-names@1.1.0: {}
 
   postinstall-postinstall@2.1.0: {}
+
+  pouchdb-adapter-http@9.0.0:
+    dependencies:
+      pouchdb-binary-utils: 9.0.0
+      pouchdb-errors: 9.0.0
+      pouchdb-fetch: 9.0.0
+      pouchdb-utils: 9.0.0
+    transitivePeerDependencies:
+      - encoding
 
   pouchdb-adapter-idb@9.0.0:
     dependencies:
