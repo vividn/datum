@@ -91,7 +91,6 @@ export function mockedLogLifecycle(): {
 } {
   const originalLog = console.log;
   const originalWarn = console.warn;
-  const originalInfo = console.info;
   const mockedLog = jest.fn() as Mock;
   const mockedWarn = jest.fn() as Mock;
   const mockedInfo = jest.fn() as Mock;
@@ -105,7 +104,6 @@ export function mockedLogLifecycle(): {
   afterEach(async () => {
     console.log = originalLog;
     console.warn = originalWarn;
-    console.info = originalInfo;
     mockedLog.mockReset();
     mockedWarn.mockReset();
     mockedInfo.mockReset();

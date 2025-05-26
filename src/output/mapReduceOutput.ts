@@ -6,22 +6,13 @@ import {
 import { pullOutData } from "../utils/pullOutData";
 import { JsonObject } from "../utils/utilityTypes";
 import { MapRow } from "../views/DatumView";
-import { OutputInterface, consoleOutput } from "./outputUtils";
-
-export interface MapReduceOutputResult {
-  output: string;
-  formattedTable: string;
-  rows: Record<string, unknown>[];
-}
 
 export function mapReduceOutput(
   viewResponse: PouchDB.Query.Response<EitherPayload> | MapRow<any>[],
   showId?: boolean,
   hid?: boolean,
   columns?: string[],
-  outputArg?: OutputInterface,
 ): string {
-  const output = outputArg || consoleOutput;
   const rows = Array.isArray(viewResponse)
     ? viewResponse
     : ((viewResponse as PouchDB.Query.Response<EitherPayload>)
@@ -57,8 +48,5 @@ export function mapReduceOutput(
     return keyValue;
   });
 
-  const formattedTable = Table.print(dataRows);
-  output.log(formattedTable);
-
-  return formattedTable;
+  return Table.print(dataRows);
 }

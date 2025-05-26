@@ -293,12 +293,10 @@ describe("tailCmd", () => {
 
     await occurCmd("", { show: Show.None });
     await tailCmd("--format-string ::%field%::");
-    // Find the log call with the formatted output
-    const log = mockedLog.mock.calls.find(
-      (call) => typeof call[0] === "string" && call[0].includes("::project::"),
-    );
-    expect(log?.[0]).toMatchInlineSnapshot(`
-      "::run::
+    expect(mockedLog.mock.calls).toMatchInlineSnapshot(`
+      [
+        [
+          "::run::
       ::stretch::
       ::environment::
       ::stretch::
@@ -307,15 +305,16 @@ describe("tailCmd", () => {
       ::caffeine::
       ::project::
       ::project::
-      ::project::"
+      ::project::",
+        ],
+      ]
     `);
   });
 
   it("does not display anything when show is None", async () => {
     await generateSampleMorning(today);
     await tailCmd("", { show: Show.None });
-    // Rather than checking if console.log was called at all, check that it was never called with a string for output
-    expect(mockedLog).not.toHaveBeenCalledWith(expect.any(String));
+    expect(mockedLog).not.toHaveBeenCalled();
   });
 
   // Skipping this test as it's not reliable in the CI environment
@@ -344,18 +343,10 @@ describe("tailCmd", () => {
     await tailCmd("--column amount,distance --column comment", {
       show: Show.Standard,
     });
-    // We just need to check if console.log was called with a string parameter containing all our columns
-    expect(mockedLog).toHaveBeenCalledWith(
-      expect.stringContaining("amount  distance  comment"),
-    );
-    // Updating the test to match the new behavior
-    const log = mockedLog.mock.calls.find(
-      (call) =>
-        typeof call[0] === "string" &&
-        call[0].includes("amount  distance  comment"),
-    );
-    expect(log?.[0]).toMatchInlineSnapshot(`
-      "      time  field        state           dur  hid    amount  distance  comment 
+    expect(mockedLog).toHaveBeenCalledTimes(1);
+    expect(mockedLog.mock.calls[0]).toMatchInlineSnapshot(`
+      [
+        "      time  field        state           dur  hid    amount  distance  comment 
       10:07:00[90m+0[39m  [48;2;165;49;8m[38;2;255;255;255mrun[39m[49m          [48;2;165;49;8m[38;2;255;255;255m [39m[49mend                 869r3          5.4               
       10:07:00[90m+0[39m  [48;2;126;132;148m[38;2;0;0;0mstretch[39m[49m       [48;2;126;132;148m[38;2;0;0;0mstart[39m[49m[48;2;126;132;148m[38;2;0;0;0m [39m[49m              gs6pb                            
       10:15:00[90m+0[39m  [48;2;233;0;228m[38;2;255;255;255menvironment[39m[49m  [48;2;195;1;99m[38;2;255;255;255m [39m[49m[48;2;16;106;108m[38;2;255;255;255mhome[39m[49m[48;2;16;106;108m[38;2;255;255;255m [39m[49m               92g32                            
@@ -366,7 +357,8 @@ describe("tailCmd", () => {
       11:00:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m       [48;2;175;103;202m[38;2;0;0;0memails[39m[49m[48;2;44;177;173m[38;2;0;0;0m,tasks[39m[49m[48;2;175;103;202m[38;2;44;177;173m▞[39m[49m       yafyz                            
       11:30:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m      [48;2;175;103;202m[38;2;44;177;173m▞[39m[49m[48;2;212;135;136m[38;2;0;0;0mmeeting[39m[49m[48;2;175;103;202m[38;2;44;177;173m [39m[49m       10m  989x0                            
       11:45:00[90m+0[39m  [48;2;70;248;111m[38;2;0;0;0mproject[39m[49m      [48;2;175;103;202m[38;2;44;177;173m▞[39m[49mend                 q9nko                            
-      "
+      ",
+      ]
     `);
   });
 });
