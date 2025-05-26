@@ -30,9 +30,7 @@ export class AmbiguousQuickIdError extends MyError {
 
 export class NoQuickIdMatchError extends MyError {
   constructor(quickId: unknown) {
-    super(
-      `${quickId} does not match any documents. Try using '_' for the most recent document.`,
-    );
+  super(`${quickId} does not match the humanId or id of any documents`);
     Object.setPrototypeOf(this, NoQuickIdMatchError.prototype);
   }
 }
@@ -75,15 +73,15 @@ async function specialQuickId(
 
     if (numberStr) {
       position = parseInt(numberStr, 10);
-      return getRecentDocumentByPosition(db, position, fieldName || null);
+      return getRecentDocument(db, position, fieldName ?? undefined);
     }
 
     if (underscores.length === 1 && /^\d+$/.test(fieldName)) {
       position = parseInt(fieldName, 10);
-      return getRecentDocumentByPosition(db, position, null);
+      return getRecentDocument(db, position, undefined);
     }
 
-    return getRecentDocumentByPosition(db, position, fieldName || null);
+    return getRecentDocument(db, position, fieldName ?? undefined);
   }
 
   return [];
@@ -270,15 +268,15 @@ export async function quickId(
   return (await Promise.all(idPromises)).flat();
 }
 
-async function getRecentDocumentByPosition(
+async function getRecentDocument(
   db: PouchDB.Database<EitherPayload>,
-  position: number,
-  field: string | null,
+  indexFromEnd: number,
+  field?: string,
 ): Promise<string[]> {
   const viewParams: QueryOptions = {
     include_docs: true,
     inclusive_end: true,
-    limit: position,
+    limit: indexFromEnd,
     startkey: ["hybrid", field, ""],
     endkey: ["hybrid", field, HIGH_STRING],
   };
@@ -292,15 +290,15 @@ async function getRecentDocumentByPosition(
   });
 
   const rows = viewResults.rows;
-  if (rows.length < position) {
+  if (rows.length < indexFromEnd) {
     throw new NoQuickIdMatchError(
-      `Not enough documents to get position ${position}`,
+      `Not enough documents to get position ${indexFromEnd}`,
     );
   }
 
-  const doc = rows[position - 1].doc;
+  const doc = rows[indexFromEnd - 1].doc;
   if (!doc) {
-    throw new NoQuickIdMatchError(`Document at position ${position} not found`);
+    throw new NoQuickIdMatchError(`Document at position ${indexFromEnd} not found`);
   }
 
   return [doc._id];
