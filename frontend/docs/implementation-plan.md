@@ -44,8 +44,8 @@ This plan outlines the approach for implementing a SolidJS-based frontend for th
 │   │   ├── Dayview/             # 4-day dayview panel
 │   │   │   ├── Dayview.tsx      # Dayview container
 │   │   │   └── SVGRenderer.tsx  # Component to render SVG output
-│   │   ├── NowView/             # Nowview panel
-│   │   │   ├── NowView.tsx      # NowView container
+│   │   ├── Nowview/             # Nowview panel
+│   │   │   ├── Nowview.tsx      # Nowview container
 │   │   │   └── SVGRenderer.tsx  # Component to render SVG output
 │   │   ├── TailView/            # Tail view panel
 │   │   │   └── TailView.tsx     # TailView container
@@ -56,7 +56,7 @@ This plan outlines the approach for implementing a SolidJS-based frontend for th
 │   │   ├── useTerminal.ts       # Terminal state and command processing
 │   │   ├── useCommandHistory.ts # Command history management
 │   │   ├── useDayview.ts        # Dayview state and rendering
-│   │   ├── useNowView.ts        # NowView state and rendering
+│   │   ├── useNowview.ts        # Nowview state and rendering
 │   │   ├── useTailView.ts       # TailView state and rendering
 │   │   └── useDb.ts             # Database connection and management
 │   ├── utils/                   # Utility functions
@@ -165,7 +165,7 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
 
-#### Commit 5: Update NowView Command
+#### Commit 5: Update Nowview Command
 **STATUS: NOT STARTED**
 
 **Purpose:** Make nowview command browser-compatible
@@ -512,7 +512,7 @@ After the core code changes are completed, proceed with implementing the fronten
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
 
-#### Commit 21: NowView Panel
+#### Commit 21: Nowview Panel
 **STATUS: NOT STARTED**
 
 **Purpose:** Implement the nowview panel
@@ -524,8 +524,8 @@ After the core code changes are completed, proceed with implementing the fronten
 - [ ] Style to match the wireframe design
 
 **Files to create/modify:**
-- `/frontend/src/components/NowView/NowView.tsx`
-- `/frontend/src/hooks/useNowView.ts`
+- `/frontend/src/components/Nowview/Nowview.tsx`
+- `/frontend/src/hooks/useNowview.ts`
 
 **Implementation Notes:**
 <!-- Add detailed implementation notes here after completion -->
