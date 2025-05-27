@@ -4,6 +4,7 @@ import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs";
 import { connectDbBrowser } from "./connectDbBrowser";
 import { connectDbMemory } from "./connectDbMemory";
 import { connectDbFile } from "./connectDbFile";
+import { connectDbHttp } from "./connectDbHttp";
 
 export function connectDb(
   args: MainDatumArgs,
@@ -25,6 +26,9 @@ export function connectDb(
       : undefined;
   if (adapter === "memory") {
     return connectDbMemory(args);
+  }
+  if (host?.startsWith("http://") || host?.startsWith("https://")) {
+    return connectDbHttp(args);
   }
   return connectDbFile(args);
 }
