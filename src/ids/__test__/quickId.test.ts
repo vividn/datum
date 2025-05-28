@@ -421,4 +421,40 @@ describe("quickId underscore notation", () => {
     const quickSecond = await quickId("_2", {});
     expect(quickSecond).toEqual(["task:1"]);
   });
+
+  test("it prefers occurTime over createTime when fetching data by quickId _ notation", async () => {
+    await db.put({
+      _id: "meeting:1",
+      data: { field: "meeting", topic: "Planning", occurTime: toDatumTime("18:00")},
+      meta: {
+        humanId: "meeting1",
+        createTime: toDatumTime("19:00"),
+      },
+    });
+    
+    await db.put({
+      _id: "meeting:2",
+      data: { field: "meeting", topic: "Planning" },
+      meta: {
+        humanId: "meeting2",
+        createTime: toDatumTime("17:30"),
+        // no occurTime
+      },
+    });
+
+    await db.put({
+      _id: "meeting:3",
+      data: { field: "meeting", topic: "Planning", occurTime: toDatumTime("17:00")}, 
+      meta: {
+        humanId: "meeting3",
+        createTime: toDatumTime("20:00"),
+      },
+    });
+    
+    const quickMeeting = await quickId("_meeting", {});
+    expect(quickMeeting).toEqual(["meeting:1"]);
+
+    const quickPosition = await quickId("_3:meeting", {});
+    expect(quickPosition).toEqual(["meeting:3"]);
+  });
 });
