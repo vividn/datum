@@ -277,7 +277,6 @@ describe("quickId underscore notation", () => {
   const dbName = "test_underscore_shorthand";
   const db = testDbLifecycle(dbName);
 
-  // Restore original now function after all tests
   afterAll(() => {
     restoreNow();
   });
@@ -289,7 +288,6 @@ describe("quickId underscore notation", () => {
     await insertDatumView({ db, datumView: stateChangeView });
     await insertDatumView({ db, datumView: timingView });
     
-    // Set a fixed date/time for testing
     setNow("2025-05-28, 17:00");
 
     await db.put({
@@ -403,5 +401,24 @@ describe("quickId underscore notation", () => {
   test("it handles very specific position requests correctly", async () => {
     const quickAlcoholThird = await quickId("_3:alcohol", {});
     expect(quickAlcoholThird).toEqual(["alcohol:1"]);
+  });
+
+  test("it fetches a document with only createTime (no occurTime)", async () => {
+    await db.put({
+      _id: "task:1",
+      data: { field: "task", name: "createTime only" },
+      meta: {
+        humanId: "task1",
+        createTime: toDatumTime("16:45"),
+        // No occurTime provided
+      },
+    });
+    
+    // Should be the second most recent (after note:1 occurring at 16:50)
+    const quickTask = await quickId("_task", {});
+    expect(quickTask).toEqual(["task:1"]);
+    
+    const quickSecond = await quickId("_2", {});
+    expect(quickSecond).toEqual(["task:1"]);
   });
 });
