@@ -30,7 +30,7 @@ export class AmbiguousQuickIdError extends MyError {
 
 export class NoQuickIdMatchError extends MyError {
   constructor(quickId: unknown) {
-  super(`${quickId} does not match the humanId or id of any documents`);
+    super(`${quickId} does not match the humanId or id of any documents`);
     Object.setPrototypeOf(this, NoQuickIdMatchError.prototype);
   }
 }
@@ -47,7 +47,8 @@ export const _LAST_WITH_PROTECTION = "_LAST_WITH_PROTECTION";
 export const _LAST = "_LAST";
 
 export const _RECENT = "_";
-export const _RECENT_REGEX = /^(?<underscores>_+)(?<numberStr>\d+)?:?(?<fieldName>[a-zA-Z0-9]+)?$/;
+export const _RECENT_REGEX =
+  /^(?<underscores>_+)(?<numberStr>\d+)?:?(?<fieldName>[a-zA-Z0-9]+)?$/;
 
 async function specialQuickId(
   quickString: string,
@@ -68,7 +69,7 @@ async function specialQuickId(
   }
   const match = quickString.match(_RECENT_REGEX);
   if (match?.groups) {
-    const {underscores, numberStr, fieldName} = match.groups;
+    const { underscores, numberStr, fieldName } = match.groups;
     let position = underscores.length;
 
     if (numberStr) {
@@ -298,7 +299,9 @@ async function getRecentDocument(
 
   const doc = rows[indexFromEnd - 1].doc;
   if (!doc) {
-    throw new NoQuickIdMatchError(`Document at position ${indexFromEnd} not found`);
+    throw new NoQuickIdMatchError(
+      `Document at position ${indexFromEnd} not found`,
+    );
   }
 
   return [doc._id];

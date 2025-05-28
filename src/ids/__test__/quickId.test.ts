@@ -1,4 +1,9 @@
-import { fail, testDbLifecycle, setNow, restoreNow } from "../../__test__/test-utils";
+import {
+  fail,
+  testDbLifecycle,
+  setNow,
+  restoreNow,
+} from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
   stateChangeView,
@@ -287,7 +292,7 @@ describe("quickId underscore notation", () => {
     await insertDatumView({ db, datumView: humanIdView });
     await insertDatumView({ db, datumView: stateChangeView });
     await insertDatumView({ db, datumView: timingView });
-    
+
     setNow("2025-05-28, 17:00");
 
     await db.put({
@@ -328,7 +333,11 @@ describe("quickId underscore notation", () => {
 
     await db.put({
       _id: "alcohol:3",
-      data: { field: "alcohol", type: "whiskey", occurTime: toDatumTime("16:40") },
+      data: {
+        field: "alcohol",
+        type: "whiskey",
+        occurTime: toDatumTime("16:40"),
+      },
       meta: {
         humanId: "alcohol3",
         createTime: toDatumTime("16:40"),
@@ -337,7 +346,11 @@ describe("quickId underscore notation", () => {
 
     await db.put({
       _id: "note:1",
-      data: { field: "note", text: "First note", occurTime: toDatumTime("16:50") },
+      data: {
+        field: "note",
+        text: "First note",
+        occurTime: toDatumTime("16:50"),
+      },
       meta: {
         humanId: "note1",
         createTime: toDatumTime("16:50"),
@@ -407,11 +420,11 @@ describe("quickId underscore notation", () => {
         // No occurTime provided
       },
     });
-    
+
     // Should be the second most recent (after note:1 occurring at 16:50)
     const quickTask = await quickId("_task", {});
     expect(quickTask).toEqual(["task:1"]);
-    
+
     const quickSecond = await quickId("_2", {});
     expect(quickSecond).toEqual(["task:1"]);
   });
@@ -419,13 +432,17 @@ describe("quickId underscore notation", () => {
   test("it prefers occurTime over createTime when fetching data by quickId _ notation", async () => {
     await db.put({
       _id: "meeting:1",
-      data: { field: "meeting", topic: "Planning", occurTime: toDatumTime("18:00")},
+      data: {
+        field: "meeting",
+        topic: "Planning",
+        occurTime: toDatumTime("18:00"),
+      },
       meta: {
         humanId: "meeting1",
         createTime: toDatumTime("19:00"),
       },
     });
-    
+
     await db.put({
       _id: "meeting:2",
       data: { field: "meeting", topic: "Planning" },
@@ -438,13 +455,17 @@ describe("quickId underscore notation", () => {
 
     await db.put({
       _id: "meeting:3",
-      data: { field: "meeting", topic: "Planning", occurTime: toDatumTime("17:00")}, 
+      data: {
+        field: "meeting",
+        topic: "Planning",
+        occurTime: toDatumTime("17:00"),
+      },
       meta: {
         humanId: "meeting3",
         createTime: toDatumTime("20:00"),
       },
     });
-    
+
     const quickMeeting = await quickId("_meeting", {});
     expect(quickMeeting).toEqual(["meeting:1"]);
 
