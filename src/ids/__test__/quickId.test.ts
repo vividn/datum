@@ -1,4 +1,4 @@
-import { fail, testDbLifecycle } from "../../__test__/test-utils";
+import { fail, testDbLifecycle, setNow, restoreNow } from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
   stateChangeView,
@@ -15,6 +15,7 @@ import {
 import { occurCmd } from "../../commands/occurCmd";
 import { getCmd } from "../../commands/getCmd";
 import { getLastDocs } from "../../documentControl/lastDocs";
+import { toDatumTime } from "../../time/datumTime";
 
 jest.retryTimes(3);
 
@@ -276,26 +277,28 @@ describe("quickId underscore notation", () => {
   const dbName = "test_underscore_shorthand";
   const db = testDbLifecycle(dbName);
 
+  // Restore original now function after all tests
+  afterAll(() => {
+    restoreNow();
+  });
+
   beforeEach(async () => {
     await insertDatumView({ db, datumView: idToHumanView });
     await insertDatumView({ db, datumView: subHumanIdView });
     await insertDatumView({ db, datumView: humanIdView });
     await insertDatumView({ db, datumView: stateChangeView });
     await insertDatumView({ db, datumView: timingView });
-
-    const now = new Date();
+    
+    // Set a fixed date/time for testing
+    setNow("2025-05-28, 17:00");
 
     await db.put({
       _id: "sleep:1",
       data: { field: "sleep", value: "8h" },
       meta: {
         humanId: "sleep1",
-        createTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
-        },
-        occurTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 60).toISOString(),
-        },
+        createTime: toDatumTime("16:00"),
+        occurTime: toDatumTime("16:00"),
       },
     });
 
@@ -304,12 +307,8 @@ describe("quickId underscore notation", () => {
       data: { field: "sleep", value: "7h" },
       meta: {
         humanId: "sleep2",
-        createTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString(),
-        },
-        occurTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 30).toISOString(),
-        },
+        createTime: toDatumTime("16:30"),
+        occurTime: toDatumTime("16:30"),
       },
     });
 
@@ -318,12 +317,8 @@ describe("quickId underscore notation", () => {
       data: { field: "alcohol", type: "beer" },
       meta: {
         humanId: "alcohol1",
-        createTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString(),
-        },
-        occurTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 50).toISOString(),
-        },
+        createTime: toDatumTime("16:10"),
+        occurTime: toDatumTime("16:10"),
       },
     });
 
@@ -332,12 +327,8 @@ describe("quickId underscore notation", () => {
       data: { field: "alcohol", type: "wine" },
       meta: {
         humanId: "alcohol2",
-        createTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString(),
-        },
-        occurTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 40).toISOString(),
-        },
+        createTime: toDatumTime("16:20"),
+        occurTime: toDatumTime("16:20"),
       },
     });
 
@@ -346,12 +337,8 @@ describe("quickId underscore notation", () => {
       data: { field: "alcohol", type: "whiskey" },
       meta: {
         humanId: "alcohol3",
-        createTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString(),
-        },
-        occurTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 20).toISOString(),
-        },
+        createTime: toDatumTime("16:40"),
+        occurTime: toDatumTime("16:40"),
       },
     });
 
@@ -360,12 +347,8 @@ describe("quickId underscore notation", () => {
       data: { field: "note", text: "First note" },
       meta: {
         humanId: "note1",
-        createTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString(),
-        },
-        occurTime: {
-          utc: new Date(now.getTime() - 1000 * 60 * 10).toISOString(),
-        },
+        createTime: toDatumTime("16:50"),
+        occurTime: toDatumTime("16:50"),
       },
     });
   });
