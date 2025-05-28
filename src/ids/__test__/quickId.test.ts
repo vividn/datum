@@ -292,61 +292,55 @@ describe("quickId underscore notation", () => {
 
     await db.put({
       _id: "sleep:1",
-      data: { field: "sleep", value: "8h" },
+      data: { field: "sleep", value: "8h", occurTime: toDatumTime("16:00") },
       meta: {
         humanId: "sleep1",
         createTime: toDatumTime("16:00"),
-        occurTime: toDatumTime("16:00"),
       },
     });
 
     await db.put({
       _id: "sleep:2",
-      data: { field: "sleep", value: "7h" },
+      data: { field: "sleep", value: "7h", occurTime: toDatumTime("16:30") },
       meta: {
         humanId: "sleep2",
         createTime: toDatumTime("16:30"),
-        occurTime: toDatumTime("16:30"),
       },
     });
 
     await db.put({
       _id: "alcohol:1",
-      data: { field: "alcohol", type: "beer" },
+      data: { field: "alcohol", type: "beer", occurTime: toDatumTime("16:10") },
       meta: {
         humanId: "alcohol1",
         createTime: toDatumTime("16:10"),
-        occurTime: toDatumTime("16:10"),
       },
     });
 
     await db.put({
       _id: "alcohol:2",
-      data: { field: "alcohol", type: "wine" },
+      data: { field: "alcohol", type: "wine", occurTime: toDatumTime("16:20") },
       meta: {
         humanId: "alcohol2",
         createTime: toDatumTime("16:20"),
-        occurTime: toDatumTime("16:20"),
       },
     });
 
     await db.put({
       _id: "alcohol:3",
-      data: { field: "alcohol", type: "whiskey" },
+      data: { field: "alcohol", type: "whiskey", occurTime: toDatumTime("16:40") },
       meta: {
         humanId: "alcohol3",
         createTime: toDatumTime("16:40"),
-        occurTime: toDatumTime("16:40"),
       },
     });
 
     await db.put({
       _id: "note:1",
-      data: { field: "note", text: "First note" },
+      data: { field: "note", text: "First note", occurTime: toDatumTime("16:50") },
       meta: {
         humanId: "note1",
         createTime: toDatumTime("16:50"),
-        occurTime: toDatumTime("16:50"),
       },
     });
   });
