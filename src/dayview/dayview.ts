@@ -10,6 +10,7 @@ import { warningIcon } from "./symbols/warningIcon";
 import xmlFormatter from "xml-formatter";
 import { xmlDeclaration } from "./xmlDeclaration";
 import sharp from "sharp";
+import { now } from "../time/timeUtils";
 
 const DEFAULT_MARGIN = 2;
 
@@ -199,6 +200,40 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
     .attr("y2", plotHeight - timeAxisHeight)
     .attr("stroke", "white")
     .attr("stroke-opacity", (d) => (d.getUTCHours() % 3 === 0 ? 0.4 : 0.1));
+
+  // Add vertical "now" line if today is being displayed
+  const currentTime = now();
+  const todayDateString = currentTime.toISODate();
+
+  days.forEach((date, i) => {
+    if (date === todayDateString) {
+      // Calculate the position within the day for the current time
+      const dayStart = new Date(`${date}T00:00:00`);
+      const dayEnd = new Date(`${date}T23:59:59.999`);
+      const currentTimeJs = currentTime.toJSDate();
+
+      // Create time scale for this specific day
+      const dayTimeScale = d3
+        .scaleTime()
+        .domain([dayStart, dayEnd])
+        .range([0, dataWidth]);
+
+      const nowX = dayTimeScale(currentTimeJs);
+      const dayY = i * (dayHeight + interdayMargin);
+
+      // Add the vertical "now" line
+      plot
+        .append("line")
+        .attr("class", "current-time-line")
+        .attr("x1", labelWidth + nowX)
+        .attr("x2", labelWidth + nowX)
+        .attr("y1", dayY)
+        .attr("y2", plotHeight)
+        .attr("stroke", "#ffcc00")
+        .attr("stroke-width", 2)
+        .attr("stroke-dasharray", "4,2");
+    }
+  });
 
   // Add warning icon at the bottom if there are any errors
   const allErrors = dataArea.selectAll(".error");
