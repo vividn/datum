@@ -223,36 +223,57 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .attr("stroke-width", 2)
       .attr("stroke-dasharray", "4,2");
 
-    // Calculate appropriate tick values based on history duration
-    const tickValues: Date[] = [];
+    // Configure tick intervals based on history duration
+    const getTickConfig = (historyMinutes: number) => {
+      if (historyMinutes <= 15) {
+        return { majorInterval: 5, minorInterval: null };
+      } else if (historyMinutes <= 60) {
+        return { majorInterval: 15, minorInterval: 5 };
+      } else if (historyMinutes <= 180) {
+        return { majorInterval: 30, minorInterval: 10 };
+      } else {
+        return { majorInterval: 60, minorInterval: 15 };
+      }
+    };
 
-    // Add tick marks at appropriate intervals
-    if (historyMinutes <= 15) {
-      // For short durations, use 5-minute intervals
-      for (let i = 5; i <= historyMinutes; i += 5) {
-        tickValues.push(endTime.minus({ minutes: i }).toJSDate());
-      }
-    } else if (historyMinutes <= 60) {
-      // For medium durations, use 15-minute intervals
-      for (let i = 15; i <= historyMinutes; i += 15) {
-        tickValues.push(endTime.minus({ minutes: i }).toJSDate());
-      }
-    } else {
-      // For longer durations, use 30-minute or 1-hour intervals
-      const interval = historyMinutes <= 180 ? 30 : 60;
-      for (let i = interval; i <= historyMinutes; i += interval) {
-        tickValues.push(endTime.minus({ minutes: i }).toJSDate());
+    const tickConfig = getTickConfig(historyMinutes);
+    const majorTickValues: Date[] = [];
+    const minorTickValues: Date[] = [];
+
+    // Generate tick values
+    for (
+      let i = tickConfig.majorInterval;
+      i <= historyMinutes;
+      i += tickConfig.majorInterval
+    ) {
+      majorTickValues.push(endTime.minus({ minutes: i }).toJSDate());
+    }
+
+    if (tickConfig.minorInterval) {
+      for (
+        let i = tickConfig.minorInterval;
+        i <= historyMinutes;
+        i += tickConfig.minorInterval
+      ) {
+        if (i % tickConfig.majorInterval !== 0) {
+          // Skip major tick positions
+          minorTickValues.push(endTime.minus({ minutes: i }).toJSDate());
+        }
       }
     }
+
     // Sort tick values in ascending order
+    const tickValues = majorTickValues.concat(minorTickValues);
     tickValues.sort((a, b) => a.getTime() - b.getTime());
+    majorTickValues.sort((a, b) => a.getTime() - b.getTime());
+    minorTickValues.sort((a, b) => a.getTime() - b.getTime());
 
     const axis = d3.axisBottom(timeScale as any);
     const timeAxis = plot
       .append("g")
       .attr("transform", `translate(0, ${dataHeight})`)
       .call(
-        axis.tickValues(tickValues as any).tickFormat((d) => {
+        axis.tickValues(majorTickValues as any).tickFormat((d) => {
           const date = d as Date;
           const diffMinutes = Math.round(
             (date.getTime() - endTime.toJSDate().getTime()) / 60000,
@@ -321,19 +342,35 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
       .text(`${endTime.hour}:${endTime.minute.toString().padStart(2, "0")}`);
 
     // Add vertical grid lines at the tick positions
+    // Major ticks
     plot
       .append("g")
-      .selectAll(".gridline")
-      .data(tickValues)
+      .selectAll(".gridline-major")
+      .data(majorTickValues)
       .enter()
       .append("line")
-      .attr("class", "gridline")
+      .attr("class", "gridline-major")
       .attr("x1", (d) => timeScale(d))
       .attr("x2", (d) => timeScale(d))
       .attr("y1", 0)
       .attr("y2", dataHeight)
       .attr("stroke", "white")
       .attr("stroke-opacity", 0.4);
+
+    // Minor ticks
+    plot
+      .append("g")
+      .selectAll(".gridline-minor")
+      .data(minorTickValues)
+      .enter()
+      .append("line")
+      .attr("class", "gridline-minor")
+      .attr("x1", (d) => timeScale(d))
+      .attr("x2", (d) => timeScale(d))
+      .attr("y1", 0)
+      .attr("y2", dataHeight)
+      .attr("stroke", "white")
+      .attr("stroke-opacity", 0.1);
   }
 
   const outputFile = args.outputFile;
