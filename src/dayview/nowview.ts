@@ -229,7 +229,7 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
         return { majorInterval: 5, minorInterval: null };
       } else if (historyMinutes <= 60) {
         return { majorInterval: 15, minorInterval: 5 };
-        } else if (historyMinutes <= 180) {
+      } else if (historyMinutes <= 180) {
         return { majorInterval: 30, minorInterval: 10 };
       } else {
         return { majorInterval: 60, minorInterval: 15 };
@@ -241,13 +241,22 @@ export async function nowview(args: NowviewCmdArgs): Promise<string> {
     const minorTickValues: Date[] = [];
 
     // Generate tick values
-    for (let i = tickConfig.majorInterval; i <= historyMinutes; i += tickConfig.majorInterval) {
+    for (
+      let i = tickConfig.majorInterval;
+      i <= historyMinutes;
+      i += tickConfig.majorInterval
+    ) {
       majorTickValues.push(endTime.minus({ minutes: i }).toJSDate());
     }
 
     if (tickConfig.minorInterval) {
-      for (let i = tickConfig.minorInterval; i <= historyMinutes; i += tickConfig.minorInterval) {
-        if (i % tickConfig.majorInterval !== 0) { // Skip major tick positions
+      for (
+        let i = tickConfig.minorInterval;
+        i <= historyMinutes;
+        i += tickConfig.minorInterval
+      ) {
+        if (i % tickConfig.majorInterval !== 0) {
+          // Skip major tick positions
           minorTickValues.push(endTime.minus({ minutes: i }).toJSDate());
         }
       }
