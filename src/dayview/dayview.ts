@@ -222,13 +222,16 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
       const dayY = i * (dayHeight + interdayMargin);
 
       // Add the vertical "now" line
+      const isLastDay = i === days.length - 1;
+      const lineEndY = isLastDay ? plotHeight : dayY + dayHeight;
+
       plot
         .append("line")
         .attr("class", "current-time-line")
         .attr("x1", labelWidth + nowX)
         .attr("x2", labelWidth + nowX)
         .attr("y1", dayY)
-        .attr("y2", plotHeight)
+        .attr("y2", lineEndY)
         .attr("stroke", "#ffcc00")
         .attr("stroke-width", 2)
         .attr("stroke-dasharray", "4,2");
