@@ -208,8 +208,8 @@ export async function dayview(args: DayviewCmdArgs): Promise<string> {
   days.forEach((date, i) => {
     if (date === todayDateString) {
       // Calculate the position within the day for the current time
-      const dayStart = new Date(`${date}T00:00:00`);
-      const dayEnd = new Date(`${date}T23:59:59.999`);
+      const dayStart = currentTime.startOf("day").toJSDate();
+      const dayEnd = currentTime.endOf("day").toJSDate();
       const currentTimeJs = currentTime.toJSDate();
 
       // Create time scale for this specific day
