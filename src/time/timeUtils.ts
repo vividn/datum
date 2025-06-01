@@ -11,6 +11,8 @@ export function isIsoDateOrTime(str: string): str is isoDateOrTime {
 }
 
 export const now = (zone?: Zone | string): DateTime => DateTime.local({ zone });
+export const today = (zone?: Zone | string): isoDate | null =>
+  now(zone).toISODate();
 export const defaultZone = DateTimeSettings.defaultZone as Zone;
 
 export function isoDateFromDateTime(dt: DateTime): isoDate {
