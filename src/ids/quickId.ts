@@ -35,6 +35,15 @@ export class NoQuickIdMatchError extends MyError {
   }
 }
 
+export class NoRecentQuickIdError extends MyError {
+  constructor(position: number, field?: string) {
+    super(
+      `${field ? `field: ${field} has` : "there is"} no document at _${position}`,
+    );
+    Object.setPrototypeOf(this, NoRecentQuickIdError.prototype);
+  }
+}
+
 export const ON_AMBIGUOUS_QUICK_ID = [
   "fail",
   "all",
@@ -291,17 +300,9 @@ async function getRecentDocument(
   });
 
   const rows = viewResults.rows;
-  if (rows.length < indexFromEnd) {
-    throw new NoQuickIdMatchError(
-      `Not enough documents to get position ${indexFromEnd}`,
-    );
-  }
-
-  const doc = rows[indexFromEnd - 1].doc;
+  const doc = rows[indexFromEnd - 1]?.doc;
   if (!doc) {
-    throw new NoQuickIdMatchError(
-      `Document at position ${indexFromEnd} not found`,
-    );
+    throw new NoRecentQuickIdError(indexFromEnd, field);
   }
 
   return [doc._id];

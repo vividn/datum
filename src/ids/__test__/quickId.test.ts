@@ -15,6 +15,7 @@ import {
 import {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
+  NoRecentQuickIdError,
   quickId,
 } from "../quickId";
 import { occurCmd } from "../../commands/occurCmd";
@@ -396,12 +397,14 @@ describe("quickId underscore notation", () => {
   });
 
   test("it throws an error for non-existent positions", async () => {
-    await expect(() => quickId("_10", {})).rejects.toThrow(NoQuickIdMatchError);
+    await expect(() => quickId("_10", {})).rejects.toThrow(
+      NoRecentQuickIdError,
+    );
   });
 
   test("it throws an error for non-existent fields", async () => {
     await expect(() => quickId("_nonexistent", {})).rejects.toThrow(
-      NoQuickIdMatchError,
+      NoRecentQuickIdError,
     );
   });
 
