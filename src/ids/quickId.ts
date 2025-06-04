@@ -5,12 +5,15 @@ import { humanIdView, idToHumanView } from "../views/datumViews";
 import { startsWith } from "../utils/startsWith";
 import { splitCommaString } from "../utils/splitCommaString";
 import { minHumanId } from "./minHumanId";
-import { JsonType } from "../utils/utilityTypes";
+import { JsonType, QueryOptions } from "../utils/utilityTypes";
 import { getLastDocs } from "../documentControl/lastDocs";
 import { DateTime } from "luxon";
 import { MainDatumArgs } from "../input/mainArgs";
 import { QuickIdArgs } from "../input/quickIdArg";
 import { connectDb } from "../auth/connectDb";
+import { timingView } from "../views/datumViews/timingView";
+import { reverseViewParams } from "../utils/reverseViewParams";
+import { HIGH_STRING } from "../utils/startsWith";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {
@@ -32,6 +35,15 @@ export class NoQuickIdMatchError extends MyError {
   }
 }
 
+export class NoRecentQuickIdError extends MyError {
+  constructor(position: number, field?: string) {
+    super(
+      `${field ? `field: ${field} has` : "there is"} no document at _${position}`,
+    );
+    Object.setPrototypeOf(this, NoRecentQuickIdError.prototype);
+  }
+}
+
 export const ON_AMBIGUOUS_QUICK_ID = [
   "fail",
   "all",
@@ -42,6 +54,10 @@ export const ON_AMBIGUOUS_QUICK_ID = [
 
 export const _LAST_WITH_PROTECTION = "_LAST_WITH_PROTECTION";
 export const _LAST = "_LAST";
+
+export const _RECENT = "_";
+export const _RECENT_REGEX =
+  /^(?<underscores>_+)(?<numberStr>\d+)?:?(?<fieldName>[a-zA-Z0-9]+)?$/;
 
 async function specialQuickId(
   quickString: string,
@@ -60,6 +76,24 @@ async function specialQuickId(
     }
     return lastDocsRef.ids;
   }
+  const match = quickString.match(_RECENT_REGEX);
+  if (match?.groups) {
+    const { underscores, numberStr, fieldName } = match.groups;
+    let position = underscores.length;
+
+    if (numberStr) {
+      position = parseInt(numberStr, 10);
+      return getRecentDocument(db, position, fieldName ?? undefined);
+    }
+
+    if (underscores.length === 1 && /^\d+$/.test(fieldName)) {
+      position = parseInt(fieldName, 10);
+      return getRecentDocument(db, position, undefined);
+    }
+
+    return getRecentDocument(db, position, fieldName ?? undefined);
+  }
+
   return [];
 }
 
@@ -242,4 +276,34 @@ export async function quickId(
   );
 
   return (await Promise.all(idPromises)).flat();
+}
+
+async function getRecentDocument(
+  db: PouchDB.Database<EitherPayload>,
+  indexFromEnd: number,
+  field?: string,
+): Promise<string[]> {
+  const viewParams: QueryOptions = {
+    include_docs: true,
+    inclusive_end: true,
+    limit: indexFromEnd,
+    startkey: ["hybrid", field, ""],
+    endkey: ["hybrid", field, HIGH_STRING],
+  };
+
+  const reversedParams = reverseViewParams(viewParams);
+
+  const viewResults = await viewMap({
+    db,
+    datumView: timingView,
+    params: reversedParams,
+  });
+
+  const rows = viewResults.rows;
+  const doc = rows[indexFromEnd - 1]?.doc;
+  if (!doc) {
+    throw new NoRecentQuickIdError(indexFromEnd, field);
+  }
+
+  return [doc._id];
 }
