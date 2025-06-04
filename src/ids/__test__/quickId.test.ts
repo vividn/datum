@@ -1,19 +1,27 @@
-import { fail, testDbLifecycle } from "../../__test__/test-utils";
+import {
+  fail,
+  testDbLifecycle,
+  setNow,
+  restoreNow,
+} from "../../__test__/test-utils";
 import { insertDatumView } from "../../views/insertDatumView";
 import {
   stateChangeView,
   humanIdView,
   idToHumanView,
   subHumanIdView,
+  timingView,
 } from "../../views/datumViews";
 import {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
+  NoRecentQuickIdError,
   quickId,
 } from "../quickId";
 import { occurCmd } from "../../commands/occurCmd";
 import { getCmd } from "../../commands/getCmd";
 import { getLastDocs } from "../../documentControl/lastDocs";
+import { toDatumTime } from "../../time/datumTime";
 
 jest.retryTimes(3);
 
@@ -268,5 +276,203 @@ describe("quickId", () => {
     expect(await quickId("id1,ghi,and more", {})).toEqual(["id1,ghi,and more"]);
     expect(await quickId("id1,ghi", {})).toEqual(["id1,ghi,and more"]);
     expect(await quickId("id1,jkl", {})).toEqual(["id1", "id2"]);
+  });
+});
+
+describe("quickId underscore notation", () => {
+  const dbName = "test_underscore_shorthand";
+  const db = testDbLifecycle(dbName);
+
+  afterAll(() => {
+    restoreNow();
+  });
+
+  beforeEach(async () => {
+    await insertDatumView({ db, datumView: idToHumanView });
+    await insertDatumView({ db, datumView: subHumanIdView });
+    await insertDatumView({ db, datumView: humanIdView });
+    await insertDatumView({ db, datumView: stateChangeView });
+    await insertDatumView({ db, datumView: timingView });
+
+    setNow("2025-05-28, 17:00");
+
+    await db.put({
+      _id: "sleep:1",
+      data: { field: "sleep", value: "8h", occurTime: toDatumTime("16:00") },
+      meta: {
+        humanId: "sleep1",
+        createTime: toDatumTime("16:00"),
+      },
+    });
+
+    await db.put({
+      _id: "sleep:2",
+      data: { field: "sleep", value: "7h", occurTime: toDatumTime("16:30") },
+      meta: {
+        humanId: "sleep2",
+        createTime: toDatumTime("16:30"),
+      },
+    });
+
+    await db.put({
+      _id: "alcohol:1",
+      data: { field: "alcohol", type: "beer", occurTime: toDatumTime("16:10") },
+      meta: {
+        humanId: "alcohol1",
+        createTime: toDatumTime("16:10"),
+      },
+    });
+
+    await db.put({
+      _id: "alcohol:2",
+      data: { field: "alcohol", type: "wine", occurTime: toDatumTime("16:20") },
+      meta: {
+        humanId: "alcohol2",
+        createTime: toDatumTime("16:20"),
+      },
+    });
+
+    await db.put({
+      _id: "alcohol:3",
+      data: {
+        field: "alcohol",
+        type: "whiskey",
+        occurTime: toDatumTime("16:40"),
+      },
+      meta: {
+        humanId: "alcohol3",
+        createTime: toDatumTime("16:40"),
+      },
+    });
+
+    await db.put({
+      _id: "note:1",
+      data: {
+        field: "note",
+        text: "First note",
+        occurTime: toDatumTime("16:50"),
+      },
+      meta: {
+        humanId: "note1",
+        createTime: toDatumTime("16:50"),
+      },
+    });
+  });
+
+  test("it returns the most recent document when using '_'", async () => {
+    const quick = await quickId("_", {});
+    expect(quick).toEqual(["note:1"]);
+  });
+
+  test("it returns the second most recent document when using '__' or '_2'", async () => {
+    const quickDoubleUnderscore = await quickId("__", {});
+    const quickNumbered = await quickId("_2", {});
+
+    expect(quickDoubleUnderscore).toEqual(["alcohol:3"]);
+    expect(quickNumbered).toEqual(["alcohol:3"]);
+  });
+
+  test("it returns the third most recent document when using '___' or '_3'", async () => {
+    const quickTripleUnderscore = await quickId("___", {});
+    const quickNumbered = await quickId("_3", {});
+
+    expect(quickTripleUnderscore).toEqual(["sleep:2"]);
+    expect(quickNumbered).toEqual(["sleep:2"]);
+  });
+
+  test("it returns field-specific recent documents when using '_fieldname'", async () => {
+    const quickAlcohol = await quickId("_alcohol", {});
+    expect(quickAlcohol).toEqual(["alcohol:3"]);
+
+    const quickSleep = await quickId("_sleep", {});
+    expect(quickSleep).toEqual(["sleep:2"]);
+  });
+
+  test("it returns field-specific nth recent document when using '__fieldname' or '_2:fieldname'", async () => {
+    const quickAlcoholDouble = await quickId("__alcohol", {});
+    const quickAlcoholNumbered = await quickId("_2:alcohol", {});
+
+    expect(quickAlcoholDouble).toEqual(["alcohol:2"]);
+    expect(quickAlcoholNumbered).toEqual(["alcohol:2"]);
+  });
+
+  test("it throws an error for non-existent positions", async () => {
+    await expect(() => quickId("_10", {})).rejects.toThrow(
+      NoRecentQuickIdError,
+    );
+  });
+
+  test("it throws an error for non-existent fields", async () => {
+    await expect(() => quickId("_nonexistent", {})).rejects.toThrow(
+      NoRecentQuickIdError,
+    );
+  });
+
+  test("it handles very specific position requests correctly", async () => {
+    const quickAlcoholThird = await quickId("_3:alcohol", {});
+    expect(quickAlcoholThird).toEqual(["alcohol:1"]);
+  });
+
+  test("it fetches a document with only createTime (no occurTime)", async () => {
+    await db.put({
+      _id: "task:1",
+      data: { field: "task", name: "createTime only" },
+      meta: {
+        humanId: "task1",
+        createTime: toDatumTime("16:45"),
+        // No occurTime provided
+      },
+    });
+
+    // Should be the second most recent (after note:1 occurring at 16:50)
+    const quickTask = await quickId("_task", {});
+    expect(quickTask).toEqual(["task:1"]);
+
+    const quickSecond = await quickId("_2", {});
+    expect(quickSecond).toEqual(["task:1"]);
+  });
+
+  test("it prefers occurTime over createTime when fetching data by quickId _ notation", async () => {
+    await db.put({
+      _id: "meeting:1",
+      data: {
+        field: "meeting",
+        topic: "Planning",
+        occurTime: toDatumTime("18:00"),
+      },
+      meta: {
+        humanId: "meeting1",
+        createTime: toDatumTime("19:00"),
+      },
+    });
+
+    await db.put({
+      _id: "meeting:2",
+      data: { field: "meeting", topic: "Planning" },
+      meta: {
+        humanId: "meeting2",
+        createTime: toDatumTime("17:30"),
+        // no occurTime
+      },
+    });
+
+    await db.put({
+      _id: "meeting:3",
+      data: {
+        field: "meeting",
+        topic: "Planning",
+        occurTime: toDatumTime("17:00"),
+      },
+      meta: {
+        humanId: "meeting3",
+        createTime: toDatumTime("20:00"),
+      },
+    });
+
+    const quickMeeting = await quickId("_meeting", {});
+    expect(quickMeeting).toEqual(["meeting:1"]);
+
+    const quickPosition = await quickId("_3:meeting", {});
+    expect(quickPosition).toEqual(["meeting:3"]);
   });
 });
