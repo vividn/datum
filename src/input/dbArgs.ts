@@ -31,6 +31,7 @@ dbGroup.add_argument("--adapter", {
 });
 dbGroup.add_argument("--username", {
   help: "couchdb username to use",
+  dest: "user",
 });
 dbGroup.add_argument("--password", {
   help: "couchdb password to use",
