@@ -31,7 +31,12 @@ export class WatchingDayview {
   private labelWidth: number;
   private isInitialized = false;
   private cachedDays: string[] = [];
-  private errorDisplayElement: d3.Selection<SVGGElement, unknown, HTMLElement, any> | null = null;
+  private errorDisplayElement: d3.Selection<
+    SVGGElement,
+    unknown,
+    HTMLElement,
+    any
+  > | null = null;
 
   constructor(args: DayviewCmdArgs) {
     this.args = args;
@@ -117,7 +122,7 @@ export class WatchingDayview {
     const newDays = Array.from({ length: nDays }, (_, i) => {
       return endDate.minus({ days: nDays - 1 - i }).toISODate();
     });
-    
+
     if (JSON.stringify(this.cachedDays) !== JSON.stringify(newDays)) {
       this.days = newDays;
       this.cachedDays = [...newDays];

@@ -103,7 +103,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
   // const stripeWidth =
   //   timeScale(new Date(startUtc).valueOf() + stripeWidthMinutes * 60 * 1000) -
   //   timeScale(new Date(startUtc).valueOf());
-  const stripeWidth = 8;
+  // const stripeWidth = 8; // Used by pattern cache
 
   // Add SVG definitions for patterns
   const defs = svg.append("defs");

@@ -14,11 +14,17 @@ export type AllFieldsSvgType = {
   height: number;
 };
 
-const fieldSortCache = new Map<string, Array<{field: string, y1: number, fieldHeight: number, zIndex: number}>>();
+const fieldSortCache = new Map<
+  string,
+  Array<{ field: string; y1: number; fieldHeight: number; zIndex: number }>
+>();
 
-function getCachedFieldSort(fields: string[], height: number): Array<{field: string, y1: number, fieldHeight: number, zIndex: number}> {
-  const cacheKey = `${fields.slice().sort().join(',')}_${height}`;
-  
+function getCachedFieldSort(
+  fields: string[],
+  height: number,
+): Array<{ field: string; y1: number; fieldHeight: number; zIndex: number }> {
+  const cacheKey = `${fields.slice().sort().join(",")}_${height}`;
+
   if (fieldSortCache.has(cacheKey)) {
     return fieldSortCache.get(cacheKey)!;
   }
@@ -47,14 +53,14 @@ function getCachedFieldSort(fields: string[], height: number): Array<{field: str
     .sort((a, b) => a.zIndex - b.zIndex);
 
   fieldSortCache.set(cacheKey, sortedWithSpans);
-  
+
   if (fieldSortCache.size > 5) {
     const firstKey = fieldSortCache.keys().next().value;
     if (firstKey) {
       fieldSortCache.delete(firstKey);
     }
   }
-  
+
   return sortedWithSpans;
 }
 
@@ -62,12 +68,12 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
   const { db, startUtc, endUtc, width, height } = args;
   const document = domdoc();
   const svg = d3.select(document.body).append("svg").attr("class", `timechunk`);
-  
+
   globalPatternCache.initializeDefsSvg(svg);
 
   const allFields = await occurredFields(db);
   const sortedWithSpans = getCachedFieldSort(allFields, height);
-  
+
   // const batchedData = await getCachedFieldData(db, allFields, startUtc!, endUtc!);
 
   const fieldSvgs = await Promise.all(

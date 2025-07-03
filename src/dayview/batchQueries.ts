@@ -28,7 +28,7 @@ export async function batchFieldQueries(
   endUtc: string,
 ): Promise<BatchedFieldData> {
   const result = new Map<string, BatchQueryResult>();
-  
+
   if (fields.length === 0) {
     return result;
   }
@@ -54,7 +54,7 @@ export async function batchFieldQueries(
           limit: 1,
         });
         return { field, initialState: rows.rows[0]?.value[1] ?? null };
-      })
+      }),
     ),
   ]);
 
@@ -98,8 +98,12 @@ export async function batchFieldQueries(
 
 export const queryCache = new Map<string, BatchedFieldData>();
 
-export function getCacheKey(fields: string[], startUtc: string, endUtc: string): string {
-  return `${fields.slice().sort().join(',')}_${startUtc}_${endUtc}`;
+export function getCacheKey(
+  fields: string[],
+  startUtc: string,
+  endUtc: string,
+): string {
+  return `${fields.slice().sort().join(",")}_${startUtc}_${endUtc}`;
 }
 
 export async function getCachedFieldData(
@@ -109,20 +113,20 @@ export async function getCachedFieldData(
   endUtc: string,
 ): Promise<BatchedFieldData> {
   const cacheKey = getCacheKey(fields, startUtc, endUtc);
-  
+
   if (queryCache.has(cacheKey)) {
     return queryCache.get(cacheKey)!;
   }
 
   const result = await batchFieldQueries(db, fields, startUtc, endUtc);
   queryCache.set(cacheKey, result);
-  
+
   if (queryCache.size > 10) {
     const firstKey = queryCache.keys().next().value;
     if (firstKey) {
       queryCache.delete(firstKey);
     }
   }
-  
+
   return result;
 }
