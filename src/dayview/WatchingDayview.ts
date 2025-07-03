@@ -13,6 +13,7 @@ import {
   isOccurredData,
   isDatumPayload,
 } from "../documentControl/DatumDocument";
+import { globalPatternCache } from "./patternCache";
 
 export class WatchingDayview {
   private db: PouchDB.Database;
@@ -29,6 +30,8 @@ export class WatchingDayview {
   private height: number;
   private labelWidth: number;
   private isInitialized = false;
+  private cachedDays: string[] = [];
+  private errorDisplayElement: d3.Selection<SVGGElement, unknown, HTMLElement, any> | null = null;
 
   constructor(args: DayviewCmdArgs) {
     this.args = args;
@@ -36,6 +39,7 @@ export class WatchingDayview {
     this.document = domdoc("dayview");
     this.svg = d3.select(this.document.body).append("svg") as any;
     this.dataArea = null as any;
+    globalPatternCache.setDefs(this.svg.append("defs"));
     this.days = [];
     this.dayHeight = 0;
     this.interdayMargin = 0;
@@ -110,9 +114,16 @@ export class WatchingDayview {
       }
     }
 
-    this.days = Array.from({ length: nDays }, (_, i) => {
+    const newDays = Array.from({ length: nDays }, (_, i) => {
       return endDate.minus({ days: nDays - 1 - i }).toISODate();
     });
+    
+    if (JSON.stringify(this.cachedDays) !== JSON.stringify(newDays)) {
+      this.days = newDays;
+      this.cachedDays = [...newDays];
+    } else {
+      this.days = this.cachedDays;
+    }
 
     const dayLabelFmt = "ccc\nLLL dd\nyyyy";
     const nLabels = dayLabelFmt.split("\n").length;

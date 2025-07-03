@@ -9,6 +9,7 @@ import { domdoc } from "./domdoc";
 import { simplifyState } from "../state/simplifyState";
 import { getStateColor } from "../field/fieldColor";
 import { warningIcon } from "./symbols/warningIcon";
+import { globalPatternCache } from "./patternCache";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;
@@ -106,6 +107,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
 
   // Add SVG definitions for patterns
   const defs = svg.append("defs");
+  globalPatternCache.setDefs(defs as any);
 
   dataPairs.forEach(([curr, next]) => {
     const state = simplifyState(curr.state);
@@ -151,30 +153,8 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       fillPattern = getStateColor({ state, field });
       className = `${field} ${state} block`;
     } else {
-      // Create a unique pattern ID for this specific state combination
-      const patternId = `stripe-pattern-${state.join("-")}-${x}`;
-
-      // Create a pattern with diagonal stripes for each state
-      const pattern = defs
-        .append("pattern")
-        .attr("id", patternId)
-        .attr("patternUnits", "userSpaceOnUse")
-        .attr("width", stripeWidth * state.length)
-        .attr("height", height)
-        .attr("patternTransform", "rotate(45)");
-
-      // Add colored stripes to the pattern
-      state.forEach((subState, index) => {
-        const color = getStateColor({ state: subState, field });
-        pattern
-          .append("rect")
-          .attr("x", index * stripeWidth)
-          .attr("y", -height)
-          .attr("width", stripeWidth)
-          .attr("height", height * 3)
-          .attr("fill", color);
-      });
-
+      // Use cached pattern for multi-state
+      const patternId = globalPatternCache.getOrCreatePattern(state, field);
       className = `${field} multi-state block`;
       fillPattern = `url(#${patternId})`;
     }
