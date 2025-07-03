@@ -105,7 +105,10 @@ export async function dayviewCmd(
       await dayviewWatcher.initialize();
       dayviewWatcher.getOutput();
     } catch (error) {
-      console.error("Error during initial render:", error instanceof Error ? error.message : String(error));
+      console.error(
+        "Error during initial render:",
+        error instanceof Error ? error.message : String(error),
+      );
       console.log("Continuing to watch for changes...");
     }
 
@@ -129,7 +132,10 @@ export async function dayviewCmd(
           changedDays.clear();
         }
       } catch (error) {
-        console.error("Error during redraw:", error instanceof Error ? error.message : String(error));
+        console.error(
+          "Error during redraw:",
+          error instanceof Error ? error.message : String(error),
+        );
       }
     };
 
