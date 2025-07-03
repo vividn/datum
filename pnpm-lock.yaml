@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   argparse@2.0.1:
-    hash: a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7
+    hash: rls5vvyk3lfyboi6d6brkgcqxi
     path: patches/argparse@2.0.1.patch
 
 importers:
@@ -97,7 +97,7 @@ importers:
         version: 0.2.6
       argparse:
         specifier: ^2.0.1
-        version: 2.0.1(patch_hash=a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7)
+        version: 2.0.1(patch_hash=rls5vvyk3lfyboi6d6brkgcqxi)
       chalk:
         specifier: ^4.1.2
         version: 4.1.2
@@ -5713,7 +5713,7 @@ snapshots:
     dependencies:
       sprintf-js: 1.0.3
 
-  argparse@2.0.1(patch_hash=a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7): {}
+  argparse@2.0.1(patch_hash=rls5vvyk3lfyboi6d6brkgcqxi): {}
 
   array-buffer-byte-length@1.0.2:
     dependencies:
@@ -7549,7 +7549,7 @@ snapshots:
 
   js-yaml@4.1.0:
     dependencies:
-      argparse: 2.0.1(patch_hash=a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7)
+      argparse: 2.0.1(patch_hash=rls5vvyk3lfyboi6d6brkgcqxi)
 
   jsesc@3.0.2: {}
 
