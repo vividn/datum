@@ -370,8 +370,8 @@ exports[`nowview consistently generates a sample svg of past 15 minutes 1`] = `
                     </defs>
                     <rect data-hover-text="Field: environment
 State: home
-Time: 15:02 - 15:02
-Duration: 0m" data-end-time="2025-07-03T15:02:35.858Z" data-time="2025-07-03T15:02:35.857Z" data-state="home" data-field="environment" height="9.719999999999999" width="796" y="0" x="0" fill="#106a6c" class="environment home block"/>
+Time: 09:44 - 09:44
+Duration: 0m" data-end-time="2025-07-04T09:44:19.365Z" data-time="2025-07-04T09:44:19.364Z" data-state="home" data-field="environment" height="9.719999999999999" width="796" y="0" x="0" fill="#106a6c" class="environment home block"/>
                     <script type="text/javascript">
                         (function() {
       // Create popover element
@@ -404,7 +404,7 @@ Duration: 0m" data-end-time="2025-07-03T15:02:35.858Z" data-time="2025-07-03T15:
             </svg>
         </svg>
         <text font-weight="bold" font-size="17px" fill="white" dominant-baseline="middle" text-anchor="middle" y="90.75" x="398" class="current-time-text">
-            15:02
+            9:44
         </text>
     </svg>
 </svg>"
