@@ -36,7 +36,7 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
 
       const y1 = pY * height;
       const zIndex = spec.zIndex ?? pY;
-      const fieldHeight = pHeight * height;
+      const fieldHeight = Math.ceil(pHeight * height);
       return { field, y1, fieldHeight, zIndex };
     })
     .sort((a, b) => a.zIndex - b.zIndex);
