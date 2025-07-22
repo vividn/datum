@@ -4,7 +4,7 @@ import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
-import { extractFormatted } from "./output";
+import { extractFormatted } from "./format";
 import stringWidth from "string-width";
 
 type TableOutputArgs = OutputArgs & {
