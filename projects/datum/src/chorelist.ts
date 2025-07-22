@@ -238,7 +238,6 @@ chorelistArgs.add_argument("--update", {
 
 async function chorelistCmd(argsOrCli: ChorelistArgs | string | string[]) {
   const args = parseIfNeeded(chorelistArgs, argsOrCli);
-  args.db ??= "vnhome";
   if (args.watch) {
     await chorelistwatch(args);
   } else {
