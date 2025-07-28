@@ -4,7 +4,6 @@ import { MainDatumArgs } from "../input/mainArgs";
 import { dayview } from "../dayview/dayview";
 import { parseIfNeeded } from "../utils/parseIfNeeded";
 import { connectDb } from "../auth/connectDb";
-import { WatchingDayview } from "../dayview/WatchingDayview";
 
 export const dayviewArgs = new ArgumentParser({
   add_help: false,
@@ -98,76 +97,25 @@ export async function dayviewCmd(
   const db = connectDb(args);
 
   if (args.watch) {
-    console.log("watching (WatchingDayview)");
-
-    const dayviewWatcher = new WatchingDayview(args);
-    try {
-      await dayviewWatcher.initialize();
-      dayviewWatcher.getOutput();
-    } catch (error) {
-      console.error(
-        "Error during initial render:",
-        error instanceof Error ? error.message : String(error),
-      );
-      console.log("Continuing to watch for changes...");
-    }
-
-    const changedDays = new Set<string>();
-    let timeoutId: NodeJS.Timeout | null = null;
-
-    const processChanges = async () => {
-      try {
-        if (changedDays.size === 0) {
-          console.log("periodic redraw (no changes detected)");
-          await dayviewWatcher.initialize();
-          dayviewWatcher.getOutput();
-        } else {
-          console.log(
-            `redrawing ${changedDays.size} changed day(s): ${Array.from(changedDays).join(", ")}`,
-          );
-          for (const day of changedDays) {
-            await dayviewWatcher.updateDay(day);
-          }
-          dayviewWatcher.getOutput();
-          changedDays.clear();
-        }
-      } catch (error) {
-        console.error(
-          "Error during redraw:",
-          error instanceof Error ? error.message : String(error),
-        );
-      }
-    };
-
-    const changes = db.changes({
+    console.log("watching");
+    const output = await dayview(args);
+    console.log(output);
+    const emitter = db.changes({
       since: "now",
       live: true,
       include_docs: true,
     });
-
-    changes.on("change", (change) => {
-      console.log("Change detected:", change.id);
-      console.log("Change doc:", JSON.stringify(change.doc, null, 2));
-      const affectedDay = dayviewWatcher.determineDayFromChange(change);
-      if (affectedDay) {
-        console.log("Affected day:", affectedDay);
-        changedDays.add(affectedDay);
-
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        timeoutId = setTimeout(() => {
-          processChanges();
-          timeoutId = null;
-        }, 1000);
-      } else {
-        console.log("No affected day found for change");
-      }
+    emitter.on("change", async (_change) => {
+      const output = await dayview(args);
+      console.log("redrawing...");
+      console.log(output);
     });
-
-    setInterval(processChanges, 1000 * 60 * 5);
-
-    await new Promise(() => {});
+    await Promise.race([
+      new Promise((resolve) => {
+        setTimeout(resolve, 1000 * 60 * 5);
+        emitter.once("change", resolve);
+      }),
+    ]);
   }
 
   return await dayview(args);
