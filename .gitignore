@@ -113,3 +113,17 @@ build/
 .pouch
 .DS_Store
 **/.claude/settings.local.json
+
+# Database files and backups
+*.njfaber.com:*/
+backup-*.json
+c.njfaber.com:*/
+
+# Test artifacts and temporary files
+*.html
+*.svg
+benchmark_*.js
+compare_*.js
+test_*.sh
+dayview_test.svg
+TESTING_GUIDE.md
