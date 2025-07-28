@@ -46,7 +46,7 @@ function getCachedFieldSort(
 
       const y1 = pY * height;
       const zIndex = spec.zIndex ?? pY;
-      const fieldHeight = Math.ceil(pHeight * height);
+      const fieldHeight = pHeight * height;
       return { field, y1, fieldHeight, zIndex };
     })
     .sort((a, b) => a.zIndex - b.zIndex);

@@ -221,6 +221,10 @@
     }
                         </style>
                     </defs>
+                    <rect data-hover-text="Field: run
+State: true
+Time: 09:58 - 09:59
+Duration: 0m" data-end-time="2024-11-20T09:59:00.000Z" data-time="2024-11-20T09:58:59.999Z" data-state="true" data-field="run" height="9.719999999999999" width="796" y="0" x="0" fill="#a53108" class="run true block"/>
                     <script type="text/javascript">
                         (function() {
       // Create popover element
@@ -366,9 +370,9 @@
                         </style>
                     </defs>
                     <rect data-hover-text="Field: environment
-State: home
-Time: 15:18 - 15:18
-Duration: 0m" data-end-time="2025-07-28T15:18:25.436Z" data-time="2025-07-28T15:18:25.435Z" data-state="home" data-field="environment" height="9.719999999999999" width="796" y="0" x="0" fill="#106a6c" class="environment home block"/>
+State: outside
+Time: 09:58 - 09:59
+Duration: 0m" data-end-time="2024-11-20T09:59:00.000Z" data-time="2024-11-20T09:58:59.999Z" data-state="outside" data-field="environment" height="9.719999999999999" width="796" y="0" x="0" fill="#c30163" class="environment outside block"/>
                     <script type="text/javascript">
                         (function() {
       // Create popover element
@@ -401,7 +405,7 @@ Duration: 0m" data-end-time="2025-07-28T15:18:25.436Z" data-time="2025-07-28T15:
             </svg>
         </svg>
         <text font-weight="bold" font-size="17px" fill="white" dominant-baseline="middle" text-anchor="middle" y="90.75" x="398" class="current-time-text">
-            15:18
+            9:59
         </text>
     </svg>
 </svg>
