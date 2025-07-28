@@ -144,7 +144,7 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
     const hoverText = `Field: ${field}\nState: ${stateText}\nTime: ${formatTime(startTime)} - ${formatTime(endTime)}\nDuration: ${durationText}`;
 
     // Calculate dimensions
-    const blockWidth = Math.ceil(timeScale(next.time) - timeScale(curr.time));
+    const blockWidth = timeScale(next.time) - timeScale(curr.time);
     const x = timeScale(curr.time);
 
     let fillPattern: string;
@@ -162,7 +162,6 @@ export async function fieldSvgBlocks(args: FieldSvgBlocksType) {
       .append("rect")
       .attr("class", className)
       .attr("fill", fillPattern)
-      .attr("stroke-width", 0)
       .attr("x", x)
       .attr("y", 0)
       .attr("width", blockWidth)
