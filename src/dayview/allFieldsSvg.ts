@@ -4,7 +4,6 @@ import { fieldSvgBlocks } from "./fieldSvgBlocks";
 import { domdoc } from "./domdoc";
 import { getFieldSpec } from "../field/mySpecs";
 import md5 from "md5";
-// import { getCachedFieldData } from "./batchQueries";
 import { globalPatternCache } from "./patternCache";
 export type AllFieldsSvgType = {
   db: PouchDB.Database;
@@ -73,8 +72,6 @@ export async function allFieldsSvg(args: AllFieldsSvgType) {
 
   const allFields = await occurredFields(db);
   const sortedWithSpans = getCachedFieldSort(allFields, height);
-
-  // const batchedData = await getCachedFieldData(db, allFields, startUtc!, endUtc!);
 
   const fieldSvgs = await Promise.all(
     sortedWithSpans.map(async (fieldSpan) => {
