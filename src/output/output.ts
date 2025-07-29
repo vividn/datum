@@ -1,11 +1,13 @@
-import { EitherDocument, EitherPayload } from "../documentControl/DatumDocument";
+import {
+  EitherDocument,
+  EitherPayload,
+} from "../documentControl/DatumDocument";
 import chalk from "chalk";
 import { OutputArgs, Show } from "../input/outputArgs";
 import { interpolateFields } from "../utils/interpolateFields";
 import { pullOutData } from "../utils/pullOutData";
 import {
   ACTIONS,
-  ACTION_CHALK,
   actionId,
   extractFormatted,
   ExtractedAndFormatted,
@@ -13,9 +15,10 @@ import {
   formattedNonRedundantData,
 } from "./format";
 
-
 function headerLine(formatted: ExtractedAndFormatted): string {
-  return [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" ");
+  return [formatted.action, formatted.hid, formatted.id]
+    .filter(Boolean)
+    .join(" ");
 }
 
 function mainInfoLine(formatted: ExtractedAndFormatted): string | undefined {
@@ -47,7 +50,8 @@ export function showRename(
   if (show === Show.None || show === Show.Format) {
     return undefined;
   }
-  const output = actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId);
+  const output =
+    actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId);
   console.log(output);
   return output;
 }
@@ -76,7 +80,7 @@ export function showSingle(
   }
 
   const outputs: string[] = [];
-  
+
   if (show === Show.Minimal) {
     if (action !== ACTIONS.NoDiff) {
       const header = headerLine(extracted);
@@ -116,17 +120,26 @@ export function showSingle(
       outputs.push(formattedData);
     }
   }
-  
+
   return outputs.length > 0 ? outputs.join("\n") : undefined;
 }
-export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): string | undefined {
+export function showCreate(
+  doc: EitherDocument,
+  outputArgs: OutputArgs,
+): string | undefined {
   return showSingle(ACTIONS.Create, doc, outputArgs);
 }
 
-export function showExists(doc: EitherDocument, outputArgs: OutputArgs): string | undefined {
+export function showExists(
+  doc: EitherDocument,
+  outputArgs: OutputArgs,
+): string | undefined {
   return showSingle(ACTIONS.Exists, doc, outputArgs);
 }
-export function showNoDiff(doc: EitherDocument, outputArgs: OutputArgs): string | undefined {
+export function showNoDiff(
+  doc: EitherDocument,
+  outputArgs: OutputArgs,
+): string | undefined {
   return showSingle(ACTIONS.NoDiff, doc, outputArgs);
 }
 export function showFailed(
