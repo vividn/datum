@@ -46,13 +46,13 @@ export function showRename(
   afterId: string,
   outputArgs: OutputArgs,
 ): string | undefined {
-  const { show } = sanitizeOutputArgs(outputArgs);
+  const { show, outputLineFn } = sanitizeOutputArgs(outputArgs);
   if (show === Show.None || show === Show.Format) {
     return undefined;
   }
   const output =
     actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId);
-  console.log(output);
+  outputLineFn(output);
   return output;
 }
 
@@ -61,7 +61,7 @@ export function showSingle(
   doc: EitherDocument,
   outputArgs: OutputArgs,
 ): string | undefined {
-  const { show, formatString } = sanitizeOutputArgs(outputArgs);
+  const { show, formatString, outputLineFn } = sanitizeOutputArgs(outputArgs);
   const extracted = extractFormatted(doc, action);
 
   if (show === Show.None) {
@@ -75,7 +75,7 @@ export function showSingle(
       );
     }
     const output = customFormat(doc, formatString);
-    console.log(output);
+    outputLineFn(output);
     return output;
   }
 
@@ -84,29 +84,29 @@ export function showSingle(
   if (show === Show.Minimal) {
     if (action !== ACTIONS.NoDiff) {
       const header = headerLine(extracted);
-      console.log(header);
+      outputLineFn(header);
       outputs.push(header);
     }
     return outputs.length > 0 ? outputs.join("\n") : undefined;
   }
   const header = headerLine(extracted);
-  console.log(header);
+  outputLineFn(header);
   outputs.push(header);
   const mainInfo = mainInfoLine(extracted);
   if (mainInfo) {
-    console.log(mainInfo);
+    outputLineFn(mainInfo);
     outputs.push(mainInfo);
   }
 
   if (formatString) {
     const formatted = customFormat(doc, formatString);
-    console.log(formatted);
+    outputLineFn(formatted);
     outputs.push(formatted);
   }
 
   if (show === Show.All) {
     const formatted = formattedDoc(doc);
-    console.log(formatted);
+    outputLineFn(formatted);
     outputs.push(formatted);
   }
 
@@ -116,7 +116,7 @@ export function showSingle(
   ) {
     const formattedData = formattedNonRedundantData(doc);
     if (formattedData !== undefined) {
-      console.log(formattedData);
+      outputLineFn(formattedData);
       outputs.push(formattedData);
     }
   }
@@ -180,6 +180,7 @@ export function showOWrite(
 
 function sanitizeOutputArgs(outputArgs: OutputArgs): {
   show: Show;
+  outputLineFn: (line: string) => void;
   formatString?: string;
 } {
   const show =
@@ -187,5 +188,6 @@ function sanitizeOutputArgs(outputArgs: OutputArgs): {
       ? Show.None
       : ((outputArgs.showAll ? Show.All : outputArgs.show) ??
         (outputArgs.formatString ? Show.Format : Show.None));
-  return { show, formatString: outputArgs.formatString };
+  const outputLineFn = outputArgs.outputLineFn ?? console.log;
+  return { show, formatString: outputArgs.formatString, outputLineFn };
 }

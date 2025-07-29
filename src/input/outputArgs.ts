@@ -4,6 +4,7 @@ export type OutputArgs = {
   showAll?: boolean;
   show?: Show;
   formatString?: string;
+  outputLineFn?: (line: string) => void;
 };
 
 export enum Show {
