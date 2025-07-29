@@ -1,7 +1,4 @@
-import {
-  DatumData,
-  EitherPayload,
-} from "../documentControl/DatumDocument";
+import { DatumData, EitherPayload } from "../documentControl/DatumDocument";
 import chalk, { Chalk } from "chalk";
 import stringify from "string.ify";
 import { interpolateFields } from "../utils/interpolateFields";
@@ -65,7 +62,10 @@ export function formatAllTimes(doc: EitherPayload): AllTimes {
   return times;
 }
 
-export function formatField(field?: string, doc?: EitherPayload): string | undefined {
+export function formatField(
+  field?: string,
+  doc?: EitherPayload,
+): string | undefined {
   if (field === undefined) {
     return undefined;
   }
@@ -180,7 +180,9 @@ export function formatState(data: DatumData): string | undefined {
   return beforeText + currentText + afterText;
 }
 
-export function formatDuration(dur?: string | undefined | null): string | undefined {
+export function formatDuration(
+  dur?: string | undefined | null,
+): string | undefined {
   const duration = Duration.fromISO(dur || "");
   if (!duration.isValid) {
     return undefined;
@@ -188,7 +190,9 @@ export function formatDuration(dur?: string | undefined | null): string | undefi
   return duration.toFormat("m'm'");
 }
 
-export function formattedNonRedundantData(doc: EitherPayload): string | undefined {
+export function formattedNonRedundantData(
+  doc: EitherPayload,
+): string | undefined {
   const { data } = pullOutData(doc);
   const {
     _id,
@@ -251,7 +255,11 @@ export function extractFormatted(
   };
 }
 
-export function actionId(action: ACTIONS, id: string, humanId?: string): string {
+export function actionId(
+  action: ACTIONS,
+  id: string,
+  humanId?: string,
+): string {
   const color = ACTION_CHALK[action];
   const actionText = color.inverse(` ${action} `);
   const quickId = humanId ? ` (${humanId.slice(0, 5)})` : "";
