@@ -13,8 +13,10 @@ import { toDatumTime } from "../time/datumTime";
 import { DateTime } from "luxon";
 import { MainDatumArgs } from "../input/mainArgs";
 import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs";
+import dotenv from "dotenv";
 import { fieldArgs } from "../input/fieldArgs";
 import { outputArgs } from "../input/outputArgs";
+import { connectDb } from "../auth/connectDb";
 
 export const aiCmd = async (
   args: string[],
@@ -64,9 +66,14 @@ export const aiCmd = async (
 
   const cmdArgs = parser.parse_args(args, namespace);
   
+  // Load .env file
+  dotenv.config();
+  
   mergeConfigAndEnvIntoArgs(cmdArgs);
   const cArgs = cmdArgs;
-  const { db, n } = cArgs;
+  
+  const db = connectDb(cArgs);
+  const { n } = cArgs;
   
   const apiKey = process.env.OPENAI_API_KEY || cArgs.api_key;
   if (!apiKey) {
@@ -145,8 +152,9 @@ export const aiCmd = async (
     return;
   }
 
-  const inputText = cArgs.input?.join(" ") || "";
-  if (!inputText) {
+  // Get input text from either input array or field (since fieldArgs captures it)
+  const inputText = cArgs.input?.join(" ") || cArgs.field || "";
+  if (!inputText && cArgs.mode === "parse") {
     throw new Error("Please provide input text or use --mode for insights/predictions");
   }
 
@@ -205,7 +213,7 @@ export const aiCmd = async (
       field: selected.field,
       occurTime: selected.time || toDatumTime(DateTime.now()),
     };
-    const payload = addIdAndMetadata({ data: payloadData });
+    const payload = addIdAndMetadata(payloadData, { noMetadata: false });
     const doc = await addDoc({
       db,
       payload,
@@ -221,7 +229,7 @@ export const aiCmd = async (
       field: best.field,
       occurTime: best.time || toDatumTime(DateTime.now()),
     };
-    const payload = addIdAndMetadata({ data: payloadData });
+    const payload = addIdAndMetadata(payloadData, { noMetadata: false });
     const doc = await addDoc({
       db,
       payload,
