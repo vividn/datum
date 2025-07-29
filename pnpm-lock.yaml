@@ -10,7 +10,7 @@ overrides:
 
 patchedDependencies:
   argparse@2.0.1:
-    hash: a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7
+    hash: rls5vvyk3lfyboi6d6brkgcqxi
     path: patches/argparse@2.0.1.patch
 
 importers:
@@ -97,7 +97,7 @@ importers:
         version: 0.2.6
       argparse:
         specifier: ^2.0.1
-        version: 2.0.1(patch_hash=a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7)
+        version: 2.0.1(patch_hash=rls5vvyk3lfyboi6d6brkgcqxi)
       chalk:
         specifier: ^4.1.2
         version: 4.1.2
@@ -146,6 +146,9 @@ importers:
       md5:
         specifier: ^2.3.0
         version: 2.3.0
+      openai:
+        specifier: ^5.10.2
+        version: 5.10.2(zod@3.24.4)
       parse-duration:
         specifier: 1.1.0
         version: 1.1.0
@@ -3263,6 +3266,18 @@ packages:
     resolution: {integrity: sha512-kbpaSSGJTWdAY5KPVeMOKXSrPtr8C8C7wodJbcsd51jRnmD+GZu8Y0VoU6Dm5Z4vWr0Ig/1NKuWRKf7j5aaYSg==}
     engines: {node: '>=6'}
 
+  openai@5.10.2:
+    resolution: {integrity: sha512-n+vi74LzHtvlKcDPn9aApgELGiu5CwhaLG40zxLTlFQdoSJCLACORIPC2uVQ3JEYAbqapM+XyRKFy2Thej7bIw==}
+    hasBin: true
+    peerDependencies:
+      ws: ^8.18.0
+      zod: ^3.23.8
+    peerDependenciesMeta:
+      ws:
+        optional: true
+      zod:
+        optional: true
+
   optionator@0.9.4:
     resolution: {integrity: sha512-6IpQ7mKUxRcZNLIObR0hz7lxsapSSIYNZJwXPGeF0mTVqGKFIXj1DQcMoT22S3ROcLyY/rz0PWaWZ9ayWmad9g==}
     engines: {node: '>= 0.8.0'}
@@ -5713,7 +5728,7 @@ snapshots:
     dependencies:
       sprintf-js: 1.0.3
 
-  argparse@2.0.1(patch_hash=a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7): {}
+  argparse@2.0.1(patch_hash=rls5vvyk3lfyboi6d6brkgcqxi): {}
 
   array-buffer-byte-length@1.0.2:
     dependencies:
@@ -7549,7 +7564,7 @@ snapshots:
 
   js-yaml@4.1.0:
     dependencies:
-      argparse: 2.0.1(patch_hash=a5d749d3711623e238e215e1d991b97a7aa4b430a944060d580ed81b3a3fdbf7)
+      argparse: 2.0.1(patch_hash=rls5vvyk3lfyboi6d6brkgcqxi)
 
   jsesc@3.0.2: {}
 
@@ -7854,6 +7869,10 @@ snapshots:
   onetime@5.1.2:
     dependencies:
       mimic-fn: 2.1.0
+
+  openai@5.10.2(zod@3.24.4):
+    optionalDependencies:
+      zod: 3.24.4
 
   optionator@0.9.4:
     dependencies:

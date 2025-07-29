@@ -26,6 +26,7 @@ import { dayviewCmd } from "../commands/dayviewCmd";
 import { nowviewCmd } from "../commands/nowviewCmd";
 import { syncCmd } from "../commands/syncCmd";
 import { retimeCmd } from "../commands/retimeCmd";
+import { aiCmd } from "../commands/aiCmd";
 import { topLevelHelpParser } from "./topLevelHelp";
 
 export type MainDatumArgs = DbArgs & OutputArgs;
@@ -185,6 +186,10 @@ export async function datum(cliInput: string | string[]): Promise<void> {
     case "retime":
     case "rt":
       await retimeCmd(args, namespace);
+      break;
+
+    case "ai":
+      await aiCmd(args, namespace);
       break;
 
     case "help":
