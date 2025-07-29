@@ -5,9 +5,7 @@ import { timingView } from "../views/datumViews/timingView";
 import { addDoc } from "../documentControl/addDoc";
 import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { AIService } from "../ai/aiService";
-import { parseNaturalLanguage, suggestInterpretations } from "../ai/nlpParser";
 import { occurredFields } from "../field/occurredFields";
-import { showSingle } from "../output/output";
 import prompts from "prompts";
 import { toDatumTime } from "../time/datumTime";
 import { DateTime } from "luxon";
@@ -164,7 +162,23 @@ export const aiCmd = async (
     params: { limit: 10, include_docs: true, descending: true },
   });
   const context = contextResults.rows.map(row => row.doc as DatumDocument).filter(Boolean);
-  const interpretations = await suggestInterpretations(inputText, aiService, context);
+  
+  // Get primary interpretation and alternatives if confidence is low
+  const primary = await aiService.parseNaturalLanguage(inputText, context);
+  const interpretations = [primary];
+  
+  if (primary.confidence < 0.9) {
+    const altPrompt = `Suggest 2-3 alternative interpretations for: "${inputText}"`;
+    try {
+      const altEntry = await aiService.parseNaturalLanguage(altPrompt, context);
+      if (altEntry.value && typeof altEntry.value === "object" && "alternatives" in altEntry.value) {
+        const alts = (altEntry.value as any).alternatives;
+        interpretations.push(...alts);
+      }
+    } catch (error) {
+      console.error("Failed to get alternative interpretations:", error);
+    }
+  }
   
   if (cArgs.interactive) {
     console.log("\n🤖 AI understood your input as:");
