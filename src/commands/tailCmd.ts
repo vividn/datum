@@ -143,13 +143,10 @@ export async function tailCmd(
           : filteredRows.slice(-limit);
     const docs: EitherDocument[] = limitedRows.map((row) => row.doc!);
 
-    const output = tableOutput(docs, { ...args, timeMetric: metric, columns });
-    if (output !== undefined) {
-      if (args.watch) {
-        console.clear();
-      }
-      console.log(output);
+    if (args.watch) {
+      console.clear();
     }
+    tableOutput(docs, { ...args, timeMetric: metric, columns });
     return docs;
   }
 

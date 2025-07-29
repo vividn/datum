@@ -6,6 +6,7 @@ import { pullOutData } from "../utils/pullOutData";
 import { TIME_METRICS } from "../views/datumViews/timingView";
 import { extractFormatted } from "./format";
 import stringWidth from "string-width";
+import { sanitizeOutputArgs } from "./output";
 
 type TableOutputArgs = OutputArgs & {
   columns?: string[];
@@ -16,8 +17,7 @@ export function tableOutput(
   docs: EitherDocument[],
   args: TableOutputArgs,
 ): string | undefined {
-  const format = args.formatString;
-  const show = args.show;
+  const { formatString, show, outputLineFn } = sanitizeOutputArgs(args);
   const metric = args.timeMetric ?? "hybrid";
   const columns = args.columns || [];
   if (show === Show.None) {
@@ -27,10 +27,15 @@ export function tableOutput(
     return "[No data]";
   }
 
-  if (format) {
+  if (formatString) {
     const formattedRows = docs.map((doc) => {
       const { data, meta } = pullOutData(doc);
-      return interpolateFields({ data, meta, format, useHumanTimes: true });
+      return interpolateFields({
+        data,
+        meta,
+        format: formatString,
+        useHumanTimes: true,
+      });
     });
     return formattedRows.join("\n");
   }
@@ -86,7 +91,9 @@ export function tableOutput(
 
   const allRows = [headerRow, ...formattedRows];
 
-  return Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
+  const finalTable = Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
     return table.print();
   });
+  outputLineFn(finalTable);
+  return finalTable;
 }

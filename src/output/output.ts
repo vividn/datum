@@ -178,7 +178,7 @@ export function showOWrite(
   return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
 }
 
-function sanitizeOutputArgs(outputArgs: OutputArgs): {
+export function sanitizeOutputArgs(outputArgs: OutputArgs): {
   show: Show;
   outputLineFn: (line: string) => void;
   formatString?: string;
