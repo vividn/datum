@@ -1,23 +1,25 @@
 import { ArgumentParser } from "argparse";
 import { DatumDocument } from "../documentControl/DatumDocument";
-import { lastDocs } from "../documentControl/lastDocs";
+import { viewMap } from "../views/viewMap";
+import { timingView } from "../views/datumViews/timingView";
 import { addDoc } from "../documentControl/addDoc";
+import { addIdAndMetadata } from "../meta/addIdAndMetadata";
 import { AIService } from "../ai/aiService";
 import { parseNaturalLanguage, suggestInterpretations } from "../ai/nlpParser";
 import { occurredFields } from "../field/occurredFields";
-import { output } from "../output/output";
+import { showSingle } from "../output/output";
 import prompts from "prompts";
-import { datumTime } from "../time/datumTime";
+import { toDatumTime } from "../time/datumTime";
+import { DateTime } from "luxon";
 import { MainDatumArgs } from "../input/mainArgs";
-import { mergeConfigIntoArgs } from "../config/mergeConfigIntoArgs";
+import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs";
 import { fieldArgs } from "../input/fieldArgs";
-import { flexiblePositional } from "../input/flexiblePositional";
 import { outputArgs } from "../input/outputArgs";
 
 export const aiCmd = async (
   args: string[],
   namespace: MainDatumArgs,
-): Promise<DatumDocument | DatumDocument[] | void> => {
+): Promise<void> => {
   const parser = new ArgumentParser({
     prog: "datum ai",
     description: "Use AI to parse natural language input or analyze data",
@@ -60,15 +62,10 @@ export const aiCmd = async (
     default: 50,
   });
 
-  const cmdArgs = flexiblePositional(
-    args,
-    parser,
-    namespace,
-    ["mode", "model", "api-key", "interactive", "question", "n"],
-    "input",
-  );
-
-  const cArgs = await mergeConfigIntoArgs(cmdArgs);
+  const cmdArgs = parser.parse_args(args, namespace);
+  
+  mergeConfigAndEnvIntoArgs(cmdArgs);
+  const cArgs = cmdArgs;
   const { db, n } = cArgs;
   
   const apiKey = process.env.OPENAI_API_KEY || cArgs.api_key;
@@ -85,7 +82,12 @@ export const aiCmd = async (
   });
 
   if (cArgs.mode === "insights") {
-    const documents = await lastDocs({ db, n: n || 100 });
+    const viewResults = await viewMap({
+      db,
+      datumView: timingView,
+      params: { limit: n || 100, include_docs: true, descending: true },
+    });
+    const documents = viewResults.rows.map(row => row.doc as DatumDocument).filter(Boolean);
     const insights = await aiService.generateInsights(documents, db);
     
     if (insights.length === 0) {
@@ -107,7 +109,12 @@ export const aiCmd = async (
 
   if (cArgs.mode === "predict") {
     const fields = cArgs.field ? cArgs.field.split(",") : await occurredFields(db);
-    const documents = await lastDocs({ db, n: n || 100 });
+    const viewResults = await viewMap({
+      db,
+      datumView: timingView,
+      params: { limit: n || 100, include_docs: true, descending: true },
+    });
+    const documents = viewResults.rows.map(row => row.doc as DatumDocument).filter(Boolean);
     const predictions = await aiService.generatePredictions(documents, fields);
 
     if (predictions.length === 0) {
@@ -118,7 +125,7 @@ export const aiCmd = async (
     console.log("\n🔮 AI Predictions:\n");
     predictions.forEach((pred) => {
       console.log(`${pred.field}: ${JSON.stringify(pred.predictedValue)}`);
-      console.log(`   Date: ${pred.date.human}`);
+      console.log(`   Date: ${pred.date.utc}`);
       console.log(`   Confidence: ${(pred.confidence * 100).toFixed(0)}%`);
       console.log(`   Based on: ${pred.basedOn.dataPoints} data points (${pred.basedOn.method})`);
       console.log();
@@ -127,7 +134,12 @@ export const aiCmd = async (
   }
 
   if (cArgs.mode === "explain" && cArgs.question) {
-    const documents = await lastDocs({ db, n: n || 50 });
+    const viewResults = await viewMap({
+      db,
+      datumView: timingView,
+      params: { limit: n || 50, include_docs: true, descending: true },
+    });
+    const documents = viewResults.rows.map(row => row.doc as DatumDocument).filter(Boolean);
     const explanation = await aiService.explainData(documents, cArgs.question);
     console.log("\n💡 " + explanation);
     return;
@@ -138,7 +150,12 @@ export const aiCmd = async (
     throw new Error("Please provide input text or use --mode for insights/predictions");
   }
 
-  const context = await lastDocs({ db, n: 10 });
+  const contextResults = await viewMap({
+    db,
+    datumView: timingView,
+    params: { limit: 10, include_docs: true, descending: true },
+  });
+  const context = contextResults.rows.map(row => row.doc as DatumDocument).filter(Boolean);
   const interpretations = await suggestInterpretations(inputText, aiService, context);
   
   if (cArgs.interactive) {
@@ -146,7 +163,7 @@ export const aiCmd = async (
     interpretations.slice(0, 3).forEach((interp, i) => {
       console.log(`\n${i + 1}. Field: ${interp.field}`);
       console.log(`   Value: ${JSON.stringify(interp.value)}`);
-      console.log(`   Time: ${interp.time?.human || "now"}`);
+      console.log(`   Time: ${interp.time?.utc || "now"}`);
       if (interp.duration) console.log(`   Duration: ${interp.duration} minutes`);
       console.log(`   Confidence: ${(interp.confidence * 100).toFixed(0)}%`);
     });
@@ -183,34 +200,37 @@ export const aiCmd = async (
     }
 
     const selected = interpretations[response.choice];
+    const payloadData = {
+      ...(typeof selected.value === "object" ? selected.value : { value: selected.value }),
+      field: selected.field,
+      occurTime: selected.time || toDatumTime(DateTime.now()),
+    };
+    const payload = addIdAndMetadata({ data: payloadData });
     const doc = await addDoc({
       db,
-      data: selected.value,
-      field: selected.field,
-      occurTime: selected.time || datumTime(),
-      duration: selected.duration,
-      meta: { aiParsed: true, confidence: selected.confidence },
+      payload,
+      outputArgs: cArgs,
     });
 
     console.log(`\n✅ Added: ${selected.field} = ${JSON.stringify(selected.value)}`);
-    return doc;
+    return;
   } else {
     const best = interpretations[0];
+    const payloadData = {
+      ...(typeof best.value === "object" ? best.value : { value: best.value }),
+      field: best.field,
+      occurTime: best.time || toDatumTime(DateTime.now()),
+    };
+    const payload = addIdAndMetadata({ data: payloadData });
     const doc = await addDoc({
       db,
-      data: best.value,
-      field: best.field,
-      occurTime: best.time || datumTime(),
-      duration: best.duration,
-      meta: { aiParsed: true, confidence: best.confidence },
+      payload,
+      outputArgs: cArgs,
     });
 
-    await output({ 
-      args: { ...cArgs, view: "ai", format: cArgs.format || "json" }, 
-      data: doc,
-    });
+    console.log(`✅ Added: ${best.field} = ${JSON.stringify(best.value)}`);
     
-    return doc;
+    return;
   }
 };
 

@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { AIServiceConfig, ParsedEntry, AIInsight, Prediction } from "./types";
 import { DatumDocument } from "../documentControl/DatumDocument";
-import { datumTime, DatumTime } from "../time/datumTime";
+import { toDatumTime, DatumTime } from "../time/datumTime";
 import { DateTime } from "luxon";
 
 export class AIService {
@@ -40,7 +40,7 @@ Context: Current time is ${new Date().toISOString()}`;
     const userPrompt = context?.length
       ? `Recent entries for context:\n${context
           .slice(-5)
-          .map((d) => `${d.meta?.field}: ${JSON.stringify(d.data)}`)
+          .map((d) => `${d.data?.field || "unknown"}: ${JSON.stringify(d.data)}`)
           .join("\n")}\n\nParse: "${input}"`
       : `Parse: "${input}"`;
 
@@ -60,7 +60,7 @@ Context: Current time is ${new Date().toISOString()}`;
       return {
         field: parsed.field || "note",
         value: parsed.value,
-        time: parsed.time ? datumTime(parsed.time) : datumTime(),
+        time: parsed.time ? toDatumTime(parsed.time) : toDatumTime(DateTime.now()),
         duration: parsed.duration,
         confidence: parsed.confidence || 0.8,
         raw: input,
@@ -70,7 +70,7 @@ Context: Current time is ${new Date().toISOString()}`;
       return {
         field: "note",
         value: input,
-        time: datumTime(),
+        time: toDatumTime(DateTime.now()),
         confidence: 0.3,
         raw: input,
       };
@@ -87,7 +87,7 @@ Context: Current time is ${new Date().toISOString()}`;
 
     const cutoffTime = DateTime.now().minus({ days: this.config.insightLookbackDays });
     const recentDocs = documents.filter((doc) => {
-      const docTime = doc.meta?.occurTime || doc.meta?.createTime;
+      const docTime = doc.data?.occurTime || doc.meta?.createTime;
       return docTime && DateTime.fromISO(docTime.utc) > cutoffTime;
     });
 
@@ -108,7 +108,7 @@ Focus on actionable, meaningful insights. Limit to 5 most important insights.`;
         field,
         count: docs.length,
         samples: docs.slice(-5).map((d) => ({
-          time: d.meta?.occurTime?.utc,
+          time: d.data?.occurTime?.utc || d.meta?.createTime?.utc,
           value: d.data,
         })),
       }))
@@ -173,7 +173,7 @@ Predict for the next ${this.config.predictionHorizonDays} days.`;
       const historicalData = fieldDocs
         .slice(-30)
         .map((d) => ({
-          date: d.meta?.occurTime?.utc || d.meta?.createTime?.utc,
+          date: d.data?.occurTime?.utc || d.meta?.createTime?.utc,
           value: d.data,
         }))
         .filter((d) => d.date);
@@ -201,7 +201,7 @@ Predict for the next ${this.config.predictionHorizonDays} days.`;
           field,
           predictedValue: p.value,
           confidence: p.confidence || 0.6,
-          date: datumTime(p.date),
+          date: toDatumTime(p.date),
           basedOn: {
             dataPoints: historicalData.length,
             method: p.method || "ml",
@@ -223,7 +223,7 @@ Predict for the next ${this.config.predictionHorizonDays} days.`;
     const groups: Record<string, DatumDocument[]> = {};
     
     for (const doc of documents) {
-      const field = doc.meta?.field || "unknown";
+      const field = doc.data?.field || "unknown";
       if (!groups[field]) {
         groups[field] = [];
       }
@@ -246,8 +246,8 @@ Answer questions about the user's data patterns, trends, and insights.
 Be concise and specific. Reference actual data points when relevant.`;
 
     const dataSnapshot = documents.slice(-50).map((d) => ({
-      field: d.meta?.field,
-      time: d.meta?.occurTime?.utc,
+      field: d.data?.field,
+      time: d.data?.occurTime?.utc || d.meta?.createTime?.utc,
       value: d.data,
     }));
 
