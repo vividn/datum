@@ -7,35 +7,35 @@ The AI service provides natural language processing capabilities for the Datum l
 ### Natural Language Parsing
 Convert natural language input into structured data entries:
 ```bash
-dtn ai "drank coffee this morning"
-dtn ai "went to gym for 45 minutes" 
-dtn ai "feeling stressed about work"
+datum ai "drank coffee this morning"
+datum ai "went to gym for 45 minutes" 
+datum ai "feeling stressed about work"
 ```
 
 ### Data Insights
 Generate AI-powered insights from your tracking data:
 ```bash
-dtn ai --mode insights
+datum ai --mode insights
 ```
 
 ### Predictions
 Predict future values based on historical patterns:
 ```bash
-dtn ai --mode predict
-dtn ai --mode predict --field weight,mood
+datum ai --mode predict
+datum ai --mode predict --field weight,mood
 ```
 
 ### Data Explanation
 Ask questions about your data:
 ```bash
-dtn ai --mode explain -q "When do I usually exercise?"
-dtn ai --mode explain -q "What affects my mood?"
+datum ai --mode explain -q "When do I usually exercise?"
+datum ai --mode explain -q "What affects my mood?"
 ```
 
 ### Interactive Mode
 Confirm AI interpretations before saving:
 ```bash
-dtn ai "ate pizza" -i
+datum ai "ate pizza" -i
 ```
 
 ## Setup
@@ -54,7 +54,7 @@ OPENAI_API_KEY=your-api-key-here
 ### Model Selection
 Default model is `gpt-4o-mini`, but you can specify others:
 ```bash
-dtn ai "input text" --model gpt-4
+datum ai "input text" --model gpt-4
 ```
 
 ## Command Options
@@ -124,32 +124,32 @@ pnpm test src/ai/__test__/aiService.test.ts
 ### Basic Usage
 ```bash
 # Simple food tracking
-dtn ai "had oatmeal for breakfast"
+datum ai "had oatmeal for breakfast"
 # ✅ Added: food = "oatmeal"
 
 # Exercise with duration
-dtn ai "ran 5 miles this morning"
+datum ai "ran 5 miles this morning"
 # ✅ Added: exercise = "ran 5 miles"
 
 # Mood tracking
-dtn ai "feeling excited about the weekend"
+datum ai "feeling excited about the weekend"
 # ✅ Added: mood = "excited about the weekend"
 ```
 
 ### Advanced Features
 ```bash
 # Interactive mode
-dtn ai "went somewhere" -i
+datum ai "went somewhere" -i
 # Shows multiple interpretations to choose from
 
 # Generate insights
-dtn ai --mode insights
+datum ai --mode insights
 # 🤖 AI Insights:
 # 1. PATTERN: You exercise most frequently in the morning
 # 2. CORRELATION: Better mood correlates with more sleep
 
 # Ask questions
-dtn ai --mode explain -q "What makes me happy?"
+datum ai --mode explain -q "What makes me happy?"
 # 💡 Based on your data, you tend to be happier after exercise...
 ```
 
