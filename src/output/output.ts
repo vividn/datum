@@ -14,13 +14,11 @@ import {
 } from "./format";
 
 
-function showHeaderLine(formatted: ExtractedAndFormatted): void {
-  console.log(
-    [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" "),
-  );
+function headerLine(formatted: ExtractedAndFormatted): string {
+  return [formatted.action, formatted.hid, formatted.id].filter(Boolean).join(" ");
 }
 
-function showMainInfoLine(formatted: ExtractedAndFormatted): void {
+function mainInfoLine(formatted: ExtractedAndFormatted): string | undefined {
   const infoLine = [
     formatted.time.occur,
     formatted.field,
@@ -29,44 +27,41 @@ function showMainInfoLine(formatted: ExtractedAndFormatted): void {
   ]
     .filter(Boolean)
     .join(" ");
-  if (infoLine !== "") {
-    console.log(infoLine);
-  }
+  return infoLine !== "" ? infoLine : undefined;
 }
 
-export function showCustomFormat(
+export function customFormat(
   payload: EitherPayload,
   formatString: string,
-): void {
+): string {
   const { data, meta } = pullOutData(payload);
-  const outputString = interpolateFields({ data, meta, format: formatString });
-  console.log(outputString);
+  return interpolateFields({ data, meta, format: formatString });
 }
 
 export function showRename(
   beforeId: string,
   afterId: string,
   outputArgs: OutputArgs,
-): void {
+): string | undefined {
   const { show } = sanitizeOutputArgs(outputArgs);
   if (show === Show.None || show === Show.Format) {
-    return;
+    return undefined;
   }
-  console.log(
-    actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId),
-  );
+  const output = actionId(ACTIONS.Rename, beforeId) + " ⟶ " + chalk.green(afterId);
+  console.log(output);
+  return output;
 }
 
 export function showSingle(
   action: ACTIONS,
   doc: EitherDocument,
   outputArgs: OutputArgs,
-): void {
+): string | undefined {
   const { show, formatString } = sanitizeOutputArgs(outputArgs);
   const extracted = extractFormatted(doc, action);
 
   if (show === Show.None) {
-    return;
+    return undefined;
   }
 
   if (show === Show.Format) {
@@ -75,25 +70,40 @@ export function showSingle(
         "MissingArgument: formatted show requested without a format string",
       );
     }
-    showCustomFormat(doc, formatString);
-    return;
+    const output = customFormat(doc, formatString);
+    console.log(output);
+    return output;
   }
 
+  const outputs: string[] = [];
+  
   if (show === Show.Minimal) {
     if (action !== ACTIONS.NoDiff) {
-      showHeaderLine(extracted);
+      const header = headerLine(extracted);
+      console.log(header);
+      outputs.push(header);
     }
-    return;
+    return outputs.length > 0 ? outputs.join("\n") : undefined;
   }
-  showHeaderLine(extracted);
-  showMainInfoLine(extracted);
+  const header = headerLine(extracted);
+  console.log(header);
+  outputs.push(header);
+  const mainInfo = mainInfoLine(extracted);
+  if (mainInfo) {
+    console.log(mainInfo);
+    outputs.push(mainInfo);
+  }
 
   if (formatString) {
-    showCustomFormat(doc, formatString);
+    const formatted = customFormat(doc, formatString);
+    console.log(formatted);
+    outputs.push(formatted);
   }
 
   if (show === Show.All) {
-    console.log(formattedDoc(doc));
+    const formatted = formattedDoc(doc);
+    console.log(formatted);
+    outputs.push(formatted);
   }
 
   if (
@@ -103,23 +113,26 @@ export function showSingle(
     const formattedData = formattedNonRedundantData(doc);
     if (formattedData !== undefined) {
       console.log(formattedData);
+      outputs.push(formattedData);
     }
   }
+  
+  return outputs.length > 0 ? outputs.join("\n") : undefined;
 }
-export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): void {
+export function showCreate(doc: EitherDocument, outputArgs: OutputArgs): string | undefined {
   return showSingle(ACTIONS.Create, doc, outputArgs);
 }
 
-export function showExists(doc: EitherDocument, outputArgs: OutputArgs): void {
+export function showExists(doc: EitherDocument, outputArgs: OutputArgs): string | undefined {
   return showSingle(ACTIONS.Exists, doc, outputArgs);
 }
-export function showNoDiff(doc: EitherDocument, outputArgs: OutputArgs): void {
+export function showNoDiff(doc: EitherDocument, outputArgs: OutputArgs): string | undefined {
   return showSingle(ACTIONS.NoDiff, doc, outputArgs);
 }
 export function showFailed(
   payload: EitherPayload,
   outputArgs: OutputArgs,
-): void {
+): string | undefined {
   return showSingle(
     ACTIONS.Failed,
     { _id: "", _rev: "", ...payload } as EitherDocument,
@@ -129,7 +142,7 @@ export function showFailed(
 export function showDelete(
   payload: EitherPayload,
   outputArgs: OutputArgs,
-): void {
+): string | undefined {
   return showSingle(
     ACTIONS.Delete,
     { _id: "", _rev: "", ...payload } as EitherDocument,
@@ -141,14 +154,14 @@ export function showUpdate(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
   outputArgs: OutputArgs,
-): void {
+): string | undefined {
   return showSingle(ACTIONS.Update, afterDoc, outputArgs);
 }
 export function showOWrite(
   _beforeDoc: EitherDocument,
   afterDoc: EitherDocument,
   outputArgs: OutputArgs,
-): void {
+): string | undefined {
   return showSingle(ACTIONS.OWrite, afterDoc, outputArgs);
 }
 
