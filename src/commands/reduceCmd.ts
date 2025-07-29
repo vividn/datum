@@ -41,8 +41,7 @@ export async function reduceCmd(
       offset: mapResult.offset,
     };
     if (args.show !== Show.None) {
-      const output = mapReduceOutput(mockReduceResult);
-      console.log(output);
+      mapReduceOutput(mockReduceResult, args);
     }
     return mockReduceResult;
   }

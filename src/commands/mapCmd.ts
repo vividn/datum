@@ -128,8 +128,7 @@ export async function mapCmd(
         viewParams,
       );
   if (args.show !== Show.None) {
-    const output = mapReduceOutput(viewResult, args);
-    console.log(output);
+    mapReduceOutput(viewResult, args);
   }
   return viewResult;
 }

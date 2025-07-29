@@ -91,9 +91,13 @@ export function tableOutput(
 
   const allRows = [headerRow, ...formattedRows];
 
-  const finalTable = Table.print(allRows, { time: { printer: Table.padLeft } }, (table) => {
-    return table.print();
-  });
+  const finalTable = Table.print(
+    allRows,
+    { time: { printer: Table.padLeft } },
+    (table) => {
+      return table.print();
+    },
+  );
   outputLineFn(finalTable);
   return finalTable;
 }
