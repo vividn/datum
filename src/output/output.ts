@@ -82,12 +82,12 @@ export function showSingle(
   const outputs: string[] = [];
 
   if (show === Show.Minimal) {
-    if (action !== ACTIONS.NoDiff) {
-      const header = headerLine(extracted);
-      outputLineFn(header);
-      outputs.push(header);
+    if (action === ACTIONS.NoDiff) {
+      return undefined; // No output for NoDiff in minimal mode
     }
-    return outputs.length > 0 ? outputs.join("\n") : undefined;
+    const header = headerLine(extracted);
+    outputLineFn(header);
+    return header;
   }
   const header = headerLine(extracted);
   outputLineFn(header);

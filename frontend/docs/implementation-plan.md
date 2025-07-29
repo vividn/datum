@@ -100,10 +100,8 @@ This section provides a detailed commit-by-commit breakdown for implementing the
 **Purpose:** Create a foundation for browser-compatible output handling
 
 **Tasks:**
-- [ ] Create simple output utility in `/src/output/outputUtils.ts` with basic methods (info, warn, error)
 - [ ] Refactor `showSingle()`, `showHeaderLine()`, and `showMainInfoLine()` in output.ts to return strings
-- [ ] Move console.log calls to a single place at the end of functions
-- [ ] Add tests for the refactored functions
+- [ ] Add custom output function passing that can override console.log
 
 **Files to modify:**
 - Create new file: `/src/output/outputUtils.ts`
