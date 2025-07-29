@@ -54,6 +54,7 @@
     "ts-node": "^10.9.2"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.57.0",
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.4",
     "@babel/preset-typescript": "^7.24.7",

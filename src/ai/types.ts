@@ -40,7 +40,7 @@ export interface AIServiceConfig {
   insightLookbackDays: number;
   predictionHorizonDays: number;
   minConfidenceThreshold: number;
-  provider: "openai" | "local";
+  provider: "openai" | "claude" | "local";
   apiKey?: string;
   localModelPath?: string;
   model?: string;

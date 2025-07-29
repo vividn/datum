@@ -37,13 +37,19 @@ export const aiCmd = async (
     default: "parse",
   });
 
+  parser.add_argument("--provider", {
+    help: "AI provider to use",
+    choices: ["claude", "openai"],
+    default: "claude",
+  });
+
   parser.add_argument("--api-key", {
-    help: "OpenAI API key (or set OPENAI_API_KEY env var)",
+    help: "AI API key (ANTHROPIC_API_KEY for Claude, OPENAI_API_KEY for OpenAI)",
   });
 
   parser.add_argument("--model", {
-    help: "OpenAI model to use",
-    default: "gpt-4o-mini",
+    help: "AI model to use",
+    default: "claude-3-haiku-20240307",
   });
 
   parser.add_argument("-i", "--interactive", {
@@ -73,14 +79,19 @@ export const aiCmd = async (
   const db = connectDb(cArgs);
   const { n } = cArgs;
   
-  const apiKey = process.env.OPENAI_API_KEY || cArgs.api_key;
+  const provider = cArgs.provider || "claude";
+  const apiKey = cArgs.api_key || 
+    (provider === "claude" ? process.env.ANTHROPIC_API_KEY : process.env.OPENAI_API_KEY);
+  
   if (!apiKey) {
-    throw new Error("OpenAI API key required. Set OPENAI_API_KEY environment variable or pass --api-key");
+    const envVar = provider === "claude" ? "ANTHROPIC_API_KEY" : "OPENAI_API_KEY";
+    throw new Error(`${provider} API key required. Set ${envVar} environment variable or pass --api-key`);
   }
 
   const aiService = new AIService({
     apiKey,
-    model: cArgs.model || "gpt-4o-mini",
+    provider,
+    model: cArgs.model || (provider === "claude" ? "claude-3-haiku-20240307" : "gpt-4o-mini"),
     enableNLP: cArgs.mode !== "insights" && cArgs.mode !== "predict",
     enableInsights: cArgs.mode === "insights" || cArgs.mode === "all",
     enablePredictions: cArgs.mode === "predict" || cArgs.mode === "all",
@@ -270,13 +281,18 @@ export const aiCmdBuilder = (yargs: any) => {
       default: "parse",
     })
     .option("api-key", {
-      describe: "OpenAI API key (or set OPENAI_API_KEY env var)",
+      describe: "AI API key (ANTHROPIC_API_KEY for Claude, OPENAI_API_KEY for OpenAI)",
       type: "string",
     })
     .option("model", {
-      describe: "OpenAI model to use",
+      describe: "AI model to use",
       type: "string",
-      default: "gpt-4o-mini",
+      default: "claude-3-haiku-20240307",
+    })
+    .option("provider", {
+      describe: "AI provider to use",
+      choices: ["claude", "openai"],
+      default: "claude",
     })
     .option("interactive", {
       describe: "Interactively confirm AI interpretation",
@@ -298,5 +314,6 @@ export const aiCmdBuilder = (yargs: any) => {
     .example("$0 ai --mode insights", "Generate insights from recent data")
     .example("$0 ai --mode predict --field weight,mood", "Predict future values")
     .example("$0 ai --mode explain -q 'When do I usually exercise?'", "Ask questions about data")
-    .example("$0 ai ate pizza -i", "Interactive mode to confirm interpretation");
+    .example("$0 ai ate pizza -i", "Interactive mode to confirm interpretation")
+    .example("$0 ai --provider openai 'had coffee'", "Use OpenAI instead of Claude");
 };

@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { AIServiceConfig, ParsedEntry, AIInsight, Prediction } from "./types";
 import { DatumDocument } from "../documentControl/DatumDocument";
 import { toDatumTime, DatumTime } from "../time/datumTime";
@@ -7,6 +8,7 @@ import { DateTime } from "luxon";
 export class AIService {
   private config: AIServiceConfig;
   private openai?: OpenAI;
+  private anthropic?: Anthropic;
 
   constructor(config: Partial<AIServiceConfig> = {}) {
     this.config = {
@@ -16,19 +18,21 @@ export class AIService {
       insightLookbackDays: 30,
       predictionHorizonDays: 7,
       minConfidenceThreshold: 0.6,
-      provider: "openai",
-      model: "gpt-4o-mini",
+      provider: "claude",
+      model: "claude-3-haiku-20240307",
       ...config,
     };
 
     if (this.config.provider === "openai" && this.config.apiKey) {
       this.openai = new OpenAI({ apiKey: this.config.apiKey });
+    } else if (this.config.provider === "claude" && this.config.apiKey) {
+      this.anthropic = new Anthropic({ apiKey: this.config.apiKey });
     }
   }
 
   async parseNaturalLanguage(input: string, context?: DatumDocument[]): Promise<ParsedEntry> {
-    if (!this.config.enableNLP || !this.openai) {
-      throw new Error("NLP parsing not enabled or OpenAI not configured");
+    if (!this.config.enableNLP || (!this.openai && !this.anthropic)) {
+      throw new Error("NLP parsing not enabled or AI provider not configured");
     }
 
     const systemPrompt = `You are a data entry parser for a life tracking application called Datum.
@@ -45,17 +49,40 @@ Context: Current time is ${new Date().toISOString()}`;
       : `Parse: "${input}"`;
 
     try {
-      const response = await this.openai.chat.completions.create({
-        model: this.config.model || "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.3,
-      });
+      let responseContent: string;
 
-      const parsed = JSON.parse(response.choices[0].message.content || "{}");
+      if (this.config.provider === "openai" && this.openai) {
+        const response = await this.openai.chat.completions.create({
+          model: this.config.model || "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.3,
+        });
+        responseContent = response.choices[0].message.content || "{}";
+      } else if (this.config.provider === "claude" && this.anthropic) {
+        const response = await this.anthropic.messages.create({
+          model: this.config.model || "claude-3-haiku-20240307",
+          max_tokens: 1000,
+          messages: [
+            { 
+              role: "user", 
+              content: `${systemPrompt}\n\n${userPrompt}\n\nPlease respond with valid JSON only.` 
+            }
+          ],
+          temperature: 0.3,
+        });
+        responseContent = response.content[0].type === "text" ? response.content[0].text : "{}";
+      } else {
+        throw new Error("No AI provider configured");
+      }
+
+      // Extract JSON from response (Claude might include extra text)
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : responseContent;
+      const parsed = JSON.parse(jsonStr);
       
       return {
         field: parsed.field || "note",
@@ -81,7 +108,7 @@ Context: Current time is ${new Date().toISOString()}`;
     documents: DatumDocument[],
     db: PouchDB.Database,
   ): Promise<AIInsight[]> {
-    if (!this.config.enableInsights || !this.openai) {
+    if (!this.config.enableInsights || (!this.openai && !this.anthropic)) {
       return [];
     }
 
@@ -115,24 +142,51 @@ Focus on actionable, meaningful insights. Limit to 5 most important insights.`;
       .filter((g) => g.count > 3);
 
     try {
-      const response = await this.openai.chat.completions.create({
-        model: this.config.model || "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Analyze this data from the last ${this.config.insightLookbackDays} days:\n${JSON.stringify(
-              dataSnapshot,
-              null,
-              2,
-            )}`,
-          },
-        ],
-        response_format: { type: "json_object" },
-        temperature: 0.5,
-      });
+      let responseContent: string;
 
-      const aiInsights = JSON.parse(response.choices[0].message.content || "{}");
+      if (this.config.provider === "openai" && this.openai) {
+        const response = await this.openai.chat.completions.create({
+          model: this.config.model || "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: `Analyze this data from the last ${this.config.insightLookbackDays} days:\n${JSON.stringify(
+                dataSnapshot,
+                null,
+                2,
+              )}`,
+            },
+          ],
+          response_format: { type: "json_object" },
+          temperature: 0.5,
+        });
+        responseContent = response.choices[0].message.content || "{}";
+      } else if (this.config.provider === "claude" && this.anthropic) {
+        const response = await this.anthropic.messages.create({
+          model: this.config.model || "claude-3-haiku-20240307",
+          max_tokens: 2000,
+          messages: [
+            { 
+              role: "user", 
+              content: `${systemPrompt}\n\nAnalyze this data from the last ${this.config.insightLookbackDays} days:\n${JSON.stringify(
+                dataSnapshot,
+                null,
+                2,
+              )}\n\nPlease respond with valid JSON only.` 
+            }
+          ],
+          temperature: 0.5,
+        });
+        responseContent = response.content[0].type === "text" ? response.content[0].text : "{}";
+      } else {
+        throw new Error("No AI provider configured");
+      }
+
+      // Extract JSON from response
+      const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+      const jsonStr = jsonMatch ? jsonMatch[0] : responseContent;
+      const aiInsights = JSON.parse(jsonStr);
       const parsedInsights = (aiInsights.insights || []).map((insight: any) => ({
         type: insight.type || "pattern",
         field: insight.field,
@@ -153,7 +207,7 @@ Focus on actionable, meaningful insights. Limit to 5 most important insights.`;
     documents: DatumDocument[],
     fields: string[],
   ): Promise<Prediction[]> {
-    if (!this.config.enablePredictions || !this.openai) {
+    if (!this.config.enablePredictions || (!this.openai && !this.anthropic)) {
       return [];
     }
 
@@ -179,24 +233,51 @@ Predict for the next ${this.config.predictionHorizonDays} days.`;
         .filter((d) => d.date);
 
       try {
-        const response = await this.openai.chat.completions.create({
-          model: this.config.model || "gpt-4o-mini",
-          messages: [
-            { role: "system", content: systemPrompt },
-            {
-              role: "user",
-              content: `Predict future values for field "${field}" based on:\n${JSON.stringify(
-                historicalData,
-                null,
-                2,
-              )}`,
-            },
-          ],
-          response_format: { type: "json_object" },
-          temperature: 0.4,
-        });
+        let responseContent: string;
 
-        const result = JSON.parse(response.choices[0].message.content || "{}");
+        if (this.config.provider === "openai" && this.openai) {
+          const response = await this.openai.chat.completions.create({
+            model: this.config.model || "gpt-4o-mini",
+            messages: [
+              { role: "system", content: systemPrompt },
+              {
+                role: "user",
+                content: `Predict future values for field "${field}" based on:\n${JSON.stringify(
+                  historicalData,
+                  null,
+                  2,
+                )}`,
+              },
+            ],
+            response_format: { type: "json_object" },
+            temperature: 0.4,
+          });
+          responseContent = response.choices[0].message.content || "{}";
+        } else if (this.config.provider === "claude" && this.anthropic) {
+          const response = await this.anthropic.messages.create({
+            model: this.config.model || "claude-3-haiku-20240307",
+            max_tokens: 1500,
+            messages: [
+              { 
+                role: "user", 
+                content: `${systemPrompt}\n\nPredict future values for field "${field}" based on:\n${JSON.stringify(
+                  historicalData,
+                  null,
+                  2,
+                )}\n\nPlease respond with valid JSON only.` 
+              }
+            ],
+            temperature: 0.4,
+          });
+          responseContent = response.content[0].type === "text" ? response.content[0].text : "{}";
+        } else {
+          throw new Error("No AI provider configured");
+        }
+
+        // Extract JSON from response
+        const jsonMatch = responseContent.match(/\{[\s\S]*\}/);
+        const jsonStr = jsonMatch ? jsonMatch[0] : responseContent;
+        const result = JSON.parse(jsonStr);
         const fieldPredictions = (result.predictions || []).map((p: any) => ({
           field,
           predictedValue: p.value,
@@ -237,8 +318,8 @@ Predict for the next ${this.config.predictionHorizonDays} days.`;
     documents: DatumDocument[],
     question: string,
   ): Promise<string> {
-    if (!this.openai) {
-      throw new Error("OpenAI not configured");
+    if (!this.openai && !this.anthropic) {
+      throw new Error("AI provider not configured");
     }
 
     const systemPrompt = `You are a helpful assistant analyzing life tracking data.
@@ -252,19 +333,35 @@ Be concise and specific. Reference actual data points when relevant.`;
     }));
 
     try {
-      const response = await this.openai.chat.completions.create({
-        model: this.config.model || "gpt-4o-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          {
-            role: "user",
-            content: `Data: ${JSON.stringify(dataSnapshot, null, 2)}\n\nQuestion: ${question}`,
-          },
-        ],
-        temperature: 0.5,
-      });
-
-      return response.choices[0].message.content || "Unable to analyze data.";
+      if (this.config.provider === "openai" && this.openai) {
+        const response = await this.openai.chat.completions.create({
+          model: this.config.model || "gpt-4o-mini",
+          messages: [
+            { role: "system", content: systemPrompt },
+            {
+              role: "user",
+              content: `Data: ${JSON.stringify(dataSnapshot, null, 2)}\n\nQuestion: ${question}`,
+            },
+          ],
+          temperature: 0.5,
+        });
+        return response.choices[0].message.content || "Unable to analyze data.";
+      } else if (this.config.provider === "claude" && this.anthropic) {
+        const response = await this.anthropic.messages.create({
+          model: this.config.model || "claude-3-haiku-20240307",
+          max_tokens: 1000,
+          messages: [
+            { 
+              role: "user", 
+              content: `${systemPrompt}\n\nData: ${JSON.stringify(dataSnapshot, null, 2)}\n\nQuestion: ${question}` 
+            }
+          ],
+          temperature: 0.5,
+        });
+        return response.content[0].type === "text" ? response.content[0].text : "Unable to analyze data.";
+      } else {
+        throw new Error("No AI provider configured");
+      }
     } catch (error) {
       console.error("Failed to explain data:", error);
       return "Failed to analyze data due to an error.";
