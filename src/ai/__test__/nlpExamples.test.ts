@@ -126,7 +126,11 @@ describe("Natural Language Parsing - 100 Examples", () => {
       },
     };
     
-    aiService = new AIService({ apiKey: "test-key" });
+    aiService = new AIService({ 
+      apiKey: "test-key", 
+      provider: "openai",
+      model: "gpt-4o-mini" 
+    });
     (aiService as any).openai = mockOpenAI;
   });
 
