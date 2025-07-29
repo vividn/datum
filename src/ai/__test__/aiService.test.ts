@@ -18,12 +18,12 @@ describe("AIService", () => {
   });
 
   describe("parseNaturalLanguage", () => {
-    it("should parse natural language input without API when no OpenAI configured", async () => {
-      const serviceWithoutAPI = new AIService({ provider: "openai" });
+    it("should parse natural language input without API when no AI provider configured", async () => {
+      const serviceWithoutAPI = new AIService({ provider: "claude" });
       
       await expect(
         serviceWithoutAPI.parseNaturalLanguage("went to gym"),
-      ).rejects.toThrow("NLP parsing not enabled or OpenAI not configured");
+      ).rejects.toThrow("NLP parsing not enabled or AI provider not configured");
     });
 
     it("should return fallback when API fails", async () => {
@@ -99,12 +99,12 @@ describe("AIService", () => {
   });
 
   describe("explainData", () => {
-    it("should throw when OpenAI not configured", async () => {
-      const serviceNoAPI = new AIService({ provider: "openai" });
+    it("should throw when AI provider not configured", async () => {
+      const serviceNoAPI = new AIService({ provider: "claude" });
       
       await expect(
         serviceNoAPI.explainData([], "test question"),
-      ).rejects.toThrow("OpenAI not configured");
+      ).rejects.toThrow("AI provider not configured");
     });
 
     it("should handle API errors gracefully", async () => {
