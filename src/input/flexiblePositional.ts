@@ -9,6 +9,7 @@ export function flexiblePositional<T extends DataArgs, K extends keyof T>(
   argName: K,
   keyName: string,
   skipKey?: boolean,
+  afterOtherArgs?: boolean,
 ): void {
   keyName ??= String(argName);
   if (args[argName] === undefined) {
@@ -17,7 +18,11 @@ export function flexiblePositional<T extends DataArgs, K extends keyof T>(
 
   if (!skipKey) {
     args.keys ??= [];
-    args.keys.unshift(keyName);
+    if (afterOtherArgs) {
+      args.keys.push(keyName);
+    } else {
+      args.keys.unshift(keyName);
+    }
   }
 
   args.data ??= [];

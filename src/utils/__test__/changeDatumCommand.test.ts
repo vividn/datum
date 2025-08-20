@@ -465,7 +465,7 @@ describe("changing from one command to another", () => {
 
     it("can become an occur command", async () => {
       expect(
-        await startCmd("field 30 -k opt1= key=val optVal occur"),
+        await startCmd("field -k opt1= key=val optVal 30 occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -473,7 +473,7 @@ describe("changing from one command to another", () => {
 
     it("can become an end command", async () => {
       expect(
-        await startCmd("field -k opt1= 30 key=val optVal end"),
+        await startCmd("field -k opt1= key=val optVal 30 end"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -481,7 +481,7 @@ describe("changing from one command to another", () => {
 
     it("can become a switch command", async () => {
       expect(
-        await startCmd("field -k opt1= 5m30s key=val optVal switch stateName"),
+        await startCmd("field -k opt1= key=val optVal 5m30s switch stateName"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -497,7 +497,7 @@ describe("changing from one command to another", () => {
 
     it("can become an occur command", async () => {
       expect(
-        await endCmd("field -k opt1= 30 key=val optVal occur"),
+        await endCmd("field -k opt1= key=val optVal 30 occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -505,7 +505,7 @@ describe("changing from one command to another", () => {
 
     it("can become start command", async () => {
       expect(
-        await endCmd("field -k opt1= 30 key=val optVal start"),
+        await endCmd("field -k opt1= key=val optVal 30 start"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -513,7 +513,7 @@ describe("changing from one command to another", () => {
 
     it("can become a switch command", async () => {
       expect(
-        await endCmd("field -k opt1= 5m30s key=val optVal switch stateName"),
+        await endCmd("field -k opt1= key=val optVal 5m30s switch stateName"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -529,7 +529,7 @@ describe("changing from one command to another", () => {
 
     it("can become an occur command", async () => {
       expect(
-        await switchCmd("field -k opt1= someState 30 key=val optVal occur"),
+        await switchCmd("field -k opt1= someState key=val optVal 30 occur"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -537,7 +537,7 @@ describe("changing from one command to another", () => {
 
     it("can become an end command", async () => {
       expect(
-        await switchCmd("field -k opt1= someState 30 key=val optVal end"),
+        await switchCmd("field -k opt1= someState key=val optVal 30 end"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });
@@ -545,7 +545,7 @@ describe("changing from one command to another", () => {
 
     it("can become a start command", async () => {
       expect(
-        await switchCmd("field -k opt1= someState 5m30s key=val optVal start"),
+        await switchCmd("field -k opt1= someState key=val optVal 5m30s start"),
       ).toMatchSnapshot({
         _rev: expect.any(String),
       });

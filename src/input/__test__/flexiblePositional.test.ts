@@ -55,4 +55,17 @@ describe("flexiblePositional", () => {
     expect(args2).not.toHaveProperty("data");
     expect(args2).not.toHaveProperty("keys");
   });
+
+  it("can also add the key after other args", () => {
+    const args: DataArgs & { field: string } = {
+      data: ["arg1", "arg2"],
+      field: "fieldArg",
+      keys: ["key1", "key2"],
+    };
+    flexiblePositional(args, "field", "field", false, true);
+    expect(args).toEqual({
+      data: ["fieldArg", "arg1", "arg2"],
+      keys: ["key1", "key2", "field"],
+    });
+  });
 });

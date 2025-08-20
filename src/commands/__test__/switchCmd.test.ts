@@ -152,8 +152,8 @@ describe("switchCmd", () => {
   it("can skip the duration if the duration is given as . or ''", async () => {
     // TODO: rewrite this test as a string based call;
     restoreNow();
-    const doc = await switchCmd("project household -k optional= . 50");
-    const doc2 = await switchCmd("project household -k optional= '' 50");
+    const doc = await switchCmd("project household -k optional= 50 .");
+    const doc2 = await switchCmd("project household -k optional= 50 ''");
     expect(doc.data).toMatchObject({ field: "project", optional: 50 });
     expect(doc.data).not.toHaveProperty("dur");
     expect(doc2.data).toMatchObject({ field: "project", optional: 50 });
@@ -178,7 +178,7 @@ describe("switchCmd", () => {
 
   it("handles both required and optional keys for complex state correctly", async () => {
     const doc = await switchCmd(
-      "book -k .title -k .author -k .genre= . 5 'the wind in the willows' 'kenneth grahame' fiction",
+      "book -k .title -k .author -k .genre= . 'the wind in the willows' 'kenneth grahame' fiction 5",
     );
 
     expect(doc.data).toMatchObject({
@@ -194,7 +194,7 @@ describe("switchCmd", () => {
 
   it("handles dot syntax required and optional keys correctly", async () => {
     const doc = await switchCmd(
-      "consume -k .medium -k .title= -k .author= .medium=text book_fiction . title author",
+      "consume -k .medium -k .title= -k .author= .medium=text book_fiction title author",
     );
     expect(doc.data).toMatchObject({
       field: "consume",

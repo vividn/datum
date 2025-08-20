@@ -59,6 +59,7 @@ export async function switchCmd(
     "duration",
     "dur=",
     args.moment || args.omitTimestamp,
+    true,
   );
   flexiblePositional(args, "state", "state=true");
   args.cmdData ??= {};
