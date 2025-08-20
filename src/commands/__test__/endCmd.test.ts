@@ -82,22 +82,22 @@ describe("endCmd", () => {
 
   it("can skip the duration if the duration is given as . or ''", async () => {
     restoreNow();
-    const doc = await endCmd("field -k optional= . 50");
-    const doc2 = await endCmd("field -k optional= '' 50");
-    expect(doc.data).toMatchObject({ field: "field", optional: 50 });
+    const doc = await endCmd("field -k optional= 50 . abc=123");
+    const doc2 = await endCmd("field -k optional= 50 '' abc=123");
+    expect(doc.data).toMatchObject({ field: "field", optional: 50, abc: 123 });
     expect(doc.data).not.toHaveProperty("dur");
-    expect(doc2.data).toMatchObject({ field: "field", optional: 50 });
+    expect(doc2.data).toMatchObject({ field: "field", optional: 50, abc: 123 });
     expect(doc2.data).not.toHaveProperty("dur");
   });
 
   it("throws an error if the duration supplied is invalid", async () => {
-    await expect(endCmd("field -k optional= 30asd")).rejects.toThrow(
+    await expect(endCmd("field -k optional= . 30asd")).rejects.toThrow(
       BadDurationError,
     );
   });
 
   it("still assigns a state of false even with required keys and duration comes before keys", async () => {
-    const doc = await endCmd("field 30 reqVal1 -k req1");
+    const doc = await endCmd("field reqVal1 30 -k req1");
     expect(doc.data).toMatchObject({
       field: "field",
       dur: "PT30M",
