@@ -98,18 +98,24 @@ export async function dayviewCmd(
 
   if (args.watch) {
     console.log("watching");
-    const emitter = db.changes({ since: "now", live: true });
-    while (true) {
-      console.log("redrawing");
-      await Promise.all([
-        dayview(args),
-        // redraw every 5 minutes or when data changes
-        new Promise((resolve) => {
-          setTimeout(resolve, 1000 * 60 * 5);
-          emitter.once("change", resolve);
-        }),
-      ]);
-    }
+    const output = await dayview(args);
+    console.log(output);
+    const emitter = db.changes({
+      since: "now",
+      live: true,
+      include_docs: true,
+    });
+    emitter.on("change", async (_change) => {
+      const output = await dayview(args);
+      console.log("redrawing...");
+      console.log(output);
+    });
+    await Promise.race([
+      new Promise((resolve) => {
+        setTimeout(resolve, 1000 * 60 * 5);
+        emitter.once("change", resolve);
+      }),
+    ]);
   }
 
   return await dayview(args);

@@ -113,3 +113,8 @@ build/
 .pouch
 .DS_Store
 **/.claude/settings.local.json
+
+# Test artifacts and temporary files
+*.html
+*.svg
+test_*.sh
