@@ -1,6 +1,6 @@
-import { MainDatumArgs } from "../input/mainArgs";
+import { MainDatumArgs } from "../input/mainArgs.js";
 import dotenv from "dotenv";
-import { loadConfig } from "./loadConfig";
+import { loadConfig } from "./loadConfig.js";
 
 export function mergeConfigAndEnvIntoArgs(args: MainDatumArgs): void {
   // TODO: have settings for use in the browser and load them here

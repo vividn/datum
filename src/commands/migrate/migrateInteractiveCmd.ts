@@ -1,9 +1,9 @@
-import { MigrateCmdArgs } from "../migrateCmd";
-import { connectDb } from "../../auth/connectDb";
-import { MapFunction } from "../../views/DatumView";
+import { MigrateCmdArgs } from "../migrateCmd.js";
+import { connectDb } from "../../auth/connectDb.js";
+import { MapFunction } from "../../views/DatumView.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../../utils/parseIfNeeded";
-import { interactiveMigration } from "../../migrations/interactiveMigration";
+import { parseIfNeeded } from "../../utils/parseIfNeeded.js";
+import { interactiveMigration } from "../../migrations/interactiveMigration.js";
 
 export const migrateInteractiveArgs = new ArgumentParser({
   add_help: false,

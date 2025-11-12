@@ -1,7 +1,7 @@
-import { DatumView, ReduceFunction } from "../DatumView";
-import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
-import { _emit } from "../emit";
-import { JsonObject } from "../../utils/utilityTypes";
+import { DatumView, ReduceFunction } from "../DatumView.js";
+import { DatumData, EitherDocument } from "../../documentControl/DatumDocument.js";
+import { _emit } from "../emit.js";
+import { JsonObject } from "../../utils/utilityTypes.js";
 
 type DocType = EitherDocument;
 type MapKey = string[][];

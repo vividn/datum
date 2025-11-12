@@ -1,9 +1,9 @@
-import { DatumPayload } from "../../documentControl/DatumDocument";
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { minHumanId, MinHumanIdError } from "../../ids/minHumanId";
-import { insertDatumView } from "../insertDatumView";
-import { subHumanIdView } from "../datumViews";
-import { DatumViewMissingError } from "../../errors";
+import { DatumPayload } from "../../documentControl/DatumDocument.js";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { minHumanId, MinHumanIdError } from "../../ids/minHumanId.js";
+import { insertDatumView } from "../insertDatumView.js";
+import { subHumanIdView } from "../datumViews/index.js";
+import { DatumViewMissingError } from "../../errors.js";
 
 jest.retryTimes(3);
 describe("minHumanId", () => {

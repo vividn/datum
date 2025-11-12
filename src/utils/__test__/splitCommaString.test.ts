@@ -1,4 +1,4 @@
-import { splitCommaString } from "../splitCommaString";
+import { splitCommaString } from "../splitCommaString.js";
 
 describe("splitCommaString", () => {
   it("should split a string based on non escaped commas", () => {

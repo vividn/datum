@@ -1,10 +1,10 @@
 import fs from "fs";
-import { initConfig } from "../initConfig";
+import { initConfig } from "../initConfig.js";
 import {
   defaultConfigDir,
   defaultConfigPath,
   defaultConfigYml,
-} from "../defaultConfigYml";
+} from "../defaultConfigYml.js";
 
 describe("initConfig", () => {
   it("writes a default config at the default location, creating parent folders as needed", () => {

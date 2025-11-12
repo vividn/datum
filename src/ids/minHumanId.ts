@@ -1,5 +1,5 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { DatumViewMissingError, isCouchDbError, MyError } from "../errors";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { DatumViewMissingError, isCouchDbError, MyError } from "../errors.js";
 
 function startingSlices(str: string): string[] {
   let i = str.length;

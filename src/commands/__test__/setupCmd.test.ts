@@ -1,7 +1,12 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import * as setupDatumViews from "../../views/setupDatumViews";
-import { setupCmd } from "../setupCmd";
-import * as connectDb from "../../auth/connectDb";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import * as setupDatumViews from "../../views/setupDatumViews.js";
+import { setupCmd } from "../setupCmd.js";
+import * as connectDb from "../../auth/connectDb.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 describe("setupCmd", () => {
   const dbName = "setup_cmd_test";

@@ -5,17 +5,17 @@ import {
   DatumPayload,
   EitherIdPayload,
   EitherPayload,
-} from "../documentControl/DatumDocument";
-import { AddCmdArgs } from "../commands/addCmd";
-import { defaultIdComponents } from "../ids/defaultIdComponents";
-import { buildIdStructure } from "../ids/buildIdStructure";
-import { defaults } from "../input/defaults";
-import { newHumanId } from "./newHumanId";
-import { assembleId } from "../ids/assembleId";
-import { IdError } from "../errors";
-import { toDatumTime } from "../time/datumTime";
-import { now } from "../time/timeUtils";
-import { compileField } from "../field/compileField";
+} from "../documentControl/DatumDocument.js";
+import { AddCmdArgs } from "../commands/addCmd.js";
+import { defaultIdComponents } from "../ids/defaultIdComponents.js";
+import { buildIdStructure } from "../ids/buildIdStructure.js";
+import { defaults } from "../input/defaults.js";
+import { newHumanId } from "./newHumanId.js";
+import { assembleId } from "../ids/assembleId.js";
+import { IdError } from "../errors.js";
+import { toDatumTime } from "../time/datumTime.js";
+import { now } from "../time/timeUtils.js";
+import { compileField } from "../field/compileField.js";
 
 export function addIdAndMetadata<T>(
   data: DatumData<T>,

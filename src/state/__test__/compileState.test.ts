@@ -1,9 +1,9 @@
-import { compileState } from "../compileState";
-import * as normalizeStateModule from "../normalizeState";
-import * as activeStateModule from "../getActiveState";
+import { compileState } from "../compileState.js";
+import * as normalizeStateModule from "../normalizeState.js";
+import * as activeStateModule from "../getActiveState.js";
 import SpyInstance = jest.SpyInstance;
-import { MockDb } from "../../__test__/test-utils";
-import { toDatumTime } from "../../time/datumTime";
+import { MockDb } from "../../__test__/test-utils.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 const occurTime = toDatumTime("2023-12-15T09:45:00.000Z");
 const db = MockDb;

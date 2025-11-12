@@ -1,13 +1,13 @@
-import { setNow } from "../../__test__/test-utils";
-import { BadDateError, BadDurationError, BadTimeError } from "../../errors";
+import { setNow } from "../../__test__/test-utils.js";
+import { BadDateError, BadDurationError, BadTimeError } from "../../errors.js";
 import SpyInstance = jest.SpyInstance;
-import * as parseTimeStr from "../../time/parseTimeStr";
-import * as parseDateStr from "../../time/parseDateStr";
-import * as parseDurationStr from "../../time/parseDurationStr";
-import { alterDatumData } from "../alterDatumData";
-import { DatumData } from "../../documentControl/DatumDocument";
-import * as inferTypeModule from "../inferType";
-import { toDatumTime } from "../../time/datumTime";
+import * as parseTimeStr from "../../time/parseTimeStr.js";
+import * as parseDateStr from "../../time/parseDateStr.js";
+import * as parseDurationStr from "../../time/parseDurationStr.js";
+import { alterDatumData } from "../alterDatumData.js";
+import { DatumData } from "../../documentControl/DatumDocument.js";
+import * as inferTypeModule from "../inferType.js";
+import { toDatumTime } from "../../time/datumTime.js";
 import { DateTime } from "luxon";
 
 describe("alterDatumData", () => {

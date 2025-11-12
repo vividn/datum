@@ -1,25 +1,25 @@
-import { CouchDbError } from "../errors";
+import { CouchDbError } from "../errors.js";
 import {
   DatumData,
   DatumMetadata,
   EitherDocument,
   EitherPayload,
   ExtractDataType,
-} from "../documentControl/DatumDocument";
+} from "../documentControl/DatumDocument.js";
 import Mock = jest.Mock;
 import { DateTime, Settings } from "luxon";
-import { parseTimeStr } from "../time/parseTimeStr";
-import { now } from "../time/timeUtils";
-import { connectDb } from "../auth/connectDb";
-import * as connectDbModule from "../auth/connectDb";
-import { defaultIdComponents } from "../ids/defaultIdComponents";
-import { buildIdStructure } from "../ids/buildIdStructure";
-import { defaults } from "../input/defaults";
-import { assembleId } from "../ids/assembleId";
-import * as newHumanIdModule from "../meta/newHumanId";
+import { parseTimeStr } from "../time/parseTimeStr.js";
+import { now } from "../time/timeUtils.js";
+import { connectDb } from "../auth/connectDb.js";
+import * as connectDbModule from "../auth/connectDb.js";
+import { defaultIdComponents } from "../ids/defaultIdComponents.js";
+import { buildIdStructure } from "../ids/buildIdStructure.js";
+import { defaults } from "../input/defaults.js";
+import { assembleId } from "../ids/assembleId.js";
+import * as newHumanIdModule from "../meta/newHumanId.js";
 import { mock } from "jest-mock-extended";
 import chalk from "chalk";
-import * as mySpecsModule from "../field/mySpecs";
+import * as mySpecsModule from "../field/mySpecs.js";
 
 export const pass = (): void => {};
 export const fail = (): never => {

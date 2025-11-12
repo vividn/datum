@@ -5,29 +5,29 @@ import {
   EitherPayload,
   isDatumDocument,
   isDatumPayload,
-} from "./DatumDocument";
-import { combineData, UpdateStrategyNames } from "./combineData";
-import { jClone } from "../utils/jClone";
-import { IdError, MyError } from "../errors";
+} from "./DatumDocument.js";
+import { combineData, UpdateStrategyNames } from "./combineData.js";
+import { jClone } from "../utils/jClone.js";
+import { IdError, MyError } from "../errors.js";
 import {
   showExists,
   showFailed,
   showNoDiff,
   showRename,
   showUpdate,
-} from "../output/output";
+} from "../output/output.js";
 import isEqual from "lodash.isequal";
-import { BaseDocControlArgs, DocExistsError } from "./base";
-import { assembleId } from "../ids/assembleId";
-import { toDatumTime } from "../time/datumTime";
-import { now } from "../time/timeUtils";
+import { BaseDocControlArgs, DocExistsError } from "./base.js";
+import { assembleId } from "../ids/assembleId.js";
+import { toDatumTime } from "../time/datumTime.js";
+import { now } from "../time/timeUtils.js";
 import {
   isViewDocument,
   isViewPayload,
   ViewPayloadViews,
-} from "../views/DatumView";
-import { GenericObject } from "../utils/utilityTypes";
-import { compileField } from "../field/compileField";
+} from "../views/DatumView.js";
+import { GenericObject } from "../utils/utilityTypes.js";
+import { compileField } from "../field/compileField.js";
 
 export class UpdateDocError extends MyError {
   constructor(m: unknown) {

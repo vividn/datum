@@ -1,7 +1,7 @@
-import { makeDoc } from "../../../__test__/test-utils";
-import { toDatumTime } from "../../../time/datumTime";
-import * as emit from "../../emit";
-import { typeStructureView } from "../typeStructure";
+import { makeDoc } from "../../../__test__/test-utils.js";
+import { toDatumTime } from "../../../time/datumTime.js";
+import * as emit from "../../emit.js";
+import { typeStructureView } from "../typeStructure.js";
 
 describe("typeStructureView", () => {
   let emitMock: jest.SpyInstance;

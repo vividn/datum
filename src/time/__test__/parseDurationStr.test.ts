@@ -1,6 +1,6 @@
-import { parseDurationStr } from "../parseDurationStr";
+import { parseDurationStr } from "../parseDurationStr.js";
 import { Duration } from "luxon";
-import { BadDurationError } from "../../errors";
+import { BadDurationError } from "../../errors.js";
 
 test.each([
   ["3", { minutes: 3 }],

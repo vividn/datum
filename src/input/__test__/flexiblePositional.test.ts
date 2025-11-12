@@ -1,5 +1,5 @@
-import { DataArgs } from "../dataArgs";
-import { flexiblePositional } from "../flexiblePositional";
+import { DataArgs } from "../dataArgs.js";
+import { flexiblePositional } from "../flexiblePositional.js";
 
 describe("flexiblePositional", () => {
   it("can transform special args into data type args with a corresponding key", () => {

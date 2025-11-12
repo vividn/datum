@@ -1,9 +1,9 @@
 import {
   DatumDocument,
   EitherDocument,
-} from "../../documentControl/DatumDocument";
-import { DatumView } from "../DatumView";
-import { _emit } from "../emit";
+} from "../../documentControl/DatumDocument.js";
+import { DatumView } from "../DatumView.js";
+import { _emit } from "../emit.js";
 
 type DocType = EitherDocument;
 type MapKey = string | null;

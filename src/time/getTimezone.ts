@@ -1,6 +1,6 @@
 import { FixedOffsetZone, IANAZone, Zone } from "luxon";
-import { BadTimezoneError } from "../errors";
-import { defaultZone } from "./timeUtils";
+import { BadTimezoneError } from "../errors.js";
+import { defaultZone } from "./timeUtils.js";
 
 export function getTimezone(timezone?: string | number): Zone | undefined {
   let zone: Zone;

@@ -2,14 +2,14 @@ import { parse as shellParse } from "shell-quote";
 import readline from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { ArgumentParser } from "argparse";
-import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
-import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { mapCmd, MapCmdArgs } from "../../../src/commands/mapCmd";
-import { inboxView, TaskDoc } from "../views/inbox";
-import { outputArgs, OutputArgs, Show } from "../../../src/input/outputArgs";
-import { getCmd } from "../../../src/commands/getCmd";
-import { updateCmd } from "../../../src/commands/updateCmd";
-import { deleteCmd } from "../../../src/commands/deleteCmd";
+import { dbArgs, DbArgs } from "../../../src/input/dbArgs.js";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded.js";
+import { mapCmd, MapCmdArgs } from "../../../src/commands/mapCmd.js";
+import { inboxView, TaskDoc } from "../views/inbox.js";
+import { outputArgs, OutputArgs, Show } from "../../../src/input/outputArgs.js";
+import { getCmd } from "../../../src/commands/getCmd.js";
+import { updateCmd } from "../../../src/commands/updateCmd.js";
+import { deleteCmd } from "../../../src/commands/deleteCmd.js";
 
 type InboxProcessArgs = DbArgs & OutputArgs;
 
@@ -85,7 +85,7 @@ export async function inboxProcess(
   }
   rl.close();
 }
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   inboxProcess(process.argv.slice(2)).catch((err) => {
     throw err;
   });

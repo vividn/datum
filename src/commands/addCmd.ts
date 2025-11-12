@@ -1,22 +1,22 @@
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { connectDb } from "../auth/connectDb";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { connectDb } from "../auth/connectDb.js";
 import {
   addDoc,
   conflictChoices,
   ConflictStrategyNames,
-} from "../documentControl/addDoc";
-import { dataArgs, DataArgs, handleDataArgs } from "../input/dataArgs";
-import { MainDatumArgs } from "../input/mainArgs";
-import { addIdAndMetadata } from "../meta/addIdAndMetadata";
-import { primitiveUndo } from "../undo/primitiveUndo";
-import { FieldArgs, fieldArgs } from "../input/fieldArgs";
-import { flexiblePositional } from "../input/flexiblePositional";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
-import { compileState } from "../state/compileState";
+} from "../documentControl/addDoc.js";
+import { dataArgs, DataArgs, handleDataArgs } from "../input/dataArgs.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { addIdAndMetadata } from "../meta/addIdAndMetadata.js";
+import { primitiveUndo } from "../undo/primitiveUndo.js";
+import { FieldArgs, fieldArgs } from "../input/fieldArgs.js";
+import { flexiblePositional } from "../input/flexiblePositional.js";
+import { updateLastDocsRef } from "../documentControl/lastDocs.js";
+import { compileState } from "../state/compileState.js";
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const newDocArgs = new ArgumentParser({
   add_help: false,

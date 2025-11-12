@@ -1,7 +1,7 @@
 import {
   DatumMigration,
   migrationEmit,
-} from "../../../src/migrations/migrations";
+} from "../../../src/migrations/migrations.js";
 
 const emit = migrationEmit;
 export const subdataMigration: DatumMigration = {

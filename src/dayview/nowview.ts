@@ -1,15 +1,15 @@
 import fs from "fs";
 import * as d3 from "d3";
-import { connectDb } from "../auth/connectDb";
-import { NowviewCmdArgs } from "../commands/nowviewCmd";
-import { domdoc } from "./domdoc";
-import { allFieldsSvg } from "../dayview/allFieldsSvg";
+import { connectDb } from "../auth/connectDb.js";
+import { NowviewCmdArgs } from "../commands/nowviewCmd.js";
+import { domdoc } from "./domdoc.js";
+import { allFieldsSvg } from "../dayview/allFieldsSvg.js";
 import xmlFormatter from "xml-formatter";
-import { now } from "../time/timeUtils";
+import { now } from "../time/timeUtils.js";
 import { DateTime } from "luxon";
-import { xmlDeclaration } from "./xmlDeclaration";
+import { xmlDeclaration } from "./xmlDeclaration.js";
 import sharp from "sharp";
-import { parseDurationStr } from "../time/parseDurationStr";
+import { parseDurationStr } from "../time/parseDurationStr.js";
 
 const DEFAULT_HEIGHT = 300;
 const DEFAULT_TIME_AXIS_HEIGHT = 15;

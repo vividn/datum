@@ -1,16 +1,16 @@
 import fs from "fs";
 import * as d3 from "d3";
-import { DayviewCmdArgs } from "../commands/dayviewCmd";
-import { connectDb } from "../auth/connectDb";
+import { DayviewCmdArgs } from "../commands/dayviewCmd.js";
+import { connectDb } from "../auth/connectDb.js";
 import { DateTime } from "luxon";
-import { domdoc } from "./domdoc";
-import { singleDay } from "./singleday";
-import { parseDateStr } from "../time/parseDateStr";
-import { warningIcon } from "./symbols/warningIcon";
+import { domdoc } from "./domdoc.js";
+import { singleDay } from "./singleday.js";
+import { parseDateStr } from "../time/parseDateStr.js";
+import { warningIcon } from "./symbols/warningIcon.js";
 import xmlFormatter from "xml-formatter";
-import { xmlDeclaration } from "./xmlDeclaration";
+import { xmlDeclaration } from "./xmlDeclaration.js";
 import sharp from "sharp";
-import { now } from "../time/timeUtils";
+import { now } from "../time/timeUtils.js";
 
 const DEFAULT_MARGIN = 2;
 

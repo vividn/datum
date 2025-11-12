@@ -3,12 +3,12 @@ import {
   fail,
   mockedLogLifecycle,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { BaseDataError, IdError } from "../../errors";
-import { DatumDocument } from "../../documentControl/DatumDocument";
-import { addCmd } from "../addCmd";
-import * as addDoc from "../../documentControl/addDoc";
-import { DocExistsError } from "../../documentControl/base";
+} from "../../__test__/test-utils.js";
+import { BaseDataError, IdError } from "../../errors.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
+import { addCmd } from "../addCmd.js";
+import * as addDoc from "../../documentControl/addDoc.js";
+import { DocExistsError } from "../../documentControl/base.js";
 import SpyInstance = jest.SpyInstance;
 
 describe("addCmd", () => {

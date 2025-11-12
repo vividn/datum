@@ -1,9 +1,9 @@
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { MainDatumArgs } from "../input/mainArgs";
-import { dayview } from "../dayview/dayview";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { connectDb } from "../auth/connectDb";
+import { dbArgs } from "../input/dbArgs.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { dayview } from "../dayview/dayview.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { connectDb } from "../auth/connectDb.js";
 
 export const dayviewArgs = new ArgumentParser({
   add_help: false,

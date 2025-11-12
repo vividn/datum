@@ -1,8 +1,8 @@
-import { DatumData, DatumMetadata } from "../documentControl/DatumDocument";
-import { splitRawAndFields } from "../ids/splitRawAndFields";
-import { humanTime } from "../time/humanTime";
-import { isDatumTime } from "../time/datumTime";
-import { JsonObject, JsonType } from "./utilityTypes";
+import { DatumData, DatumMetadata } from "../documentControl/DatumDocument.js";
+import { splitRawAndFields } from "../ids/splitRawAndFields.js";
+import { humanTime } from "../time/humanTime.js";
+import { isDatumTime } from "../time/datumTime.js";
+import { JsonObject, JsonType } from "./utilityTypes.js";
 import isPlainObject from "lodash.isplainobject";
 
 export function interpolateFields({

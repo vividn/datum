@@ -1,5 +1,5 @@
-import { startsWith } from "../startsWith";
-import { testDbLifecycle } from "../../__test__/test-utils";
+import { startsWith } from "../startsWith.js";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
 
 describe("startsWith", () => {
   it.each([

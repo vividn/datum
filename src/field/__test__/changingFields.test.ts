@@ -1,8 +1,8 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { addCmd } from "../../commands/addCmd";
-import { setupCmd } from "../../commands/setupCmd";
-import { updateCmd } from "../../commands/updateCmd";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { addCmd } from "../../commands/addCmd.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { updateCmd } from "../../commands/updateCmd.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
 
 describe("simple and complex fields", () => {
   const dbName = "field_structure_test";

@@ -1,10 +1,10 @@
 import Table from "easy-table";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { OutputArgs, Show } from "../input/outputArgs";
-import { interpolateFields } from "../utils/interpolateFields";
-import { pullOutData } from "../utils/pullOutData";
-import { TIME_METRICS } from "../views/datumViews/timingView";
-import { extractFormatted } from "./output";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { OutputArgs, Show } from "../input/outputArgs.js";
+import { interpolateFields } from "../utils/interpolateFields.js";
+import { pullOutData } from "../utils/pullOutData.js";
+import { TIME_METRICS } from "../views/datumViews/timingView.js";
+import { extractFormatted } from "./output.js";
 import stringWidth from "string-width";
 
 type TableOutputArgs = OutputArgs & {

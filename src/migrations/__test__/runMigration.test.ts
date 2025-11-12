@@ -1,7 +1,7 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { DatumDocument } from "../../documentControl/DatumDocument";
-import { insertDatumView } from "../../views/insertDatumView";
-import { DatumMigration, migrationEmit } from "../migrations";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
+import { insertDatumView } from "../../views/insertDatumView.js";
+import { DatumMigration, migrationEmit } from "../migrations.js";
 
 const emit = migrationEmit;
 

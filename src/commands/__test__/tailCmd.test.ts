@@ -6,20 +6,20 @@ import {
   mockSpecs,
   setNow,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { endCmd } from "../endCmd";
-import { startCmd } from "../startCmd";
-import { switchCmd } from "../switchCmd";
-import { occurCmd } from "../occurCmd";
-import { tailCmd } from "../tailCmd";
-import { Show } from "../../input/outputArgs";
-import { setupCmd } from "../setupCmd";
-import { addCmd } from "../addCmd";
-import { updateCmd } from "../updateCmd";
+} from "../../__test__/test-utils.js";
+import { endCmd } from "../endCmd.js";
+import { startCmd } from "../startCmd.js";
+import { switchCmd } from "../switchCmd.js";
+import { occurCmd } from "../occurCmd.js";
+import { tailCmd } from "../tailCmd.js";
+import { Show } from "../../input/outputArgs.js";
+import { setupCmd } from "../setupCmd.js";
+import { addCmd } from "../addCmd.js";
+import { updateCmd } from "../updateCmd.js";
 import { DateTime, Settings } from "luxon";
-import { generateSampleMorning } from "../../__test__/generateSampleMorning";
-import { datumTimeToLuxon } from "../../time/datumTime";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import { generateSampleMorning } from "../../__test__/generateSampleMorning.js";
+import { datumTimeToLuxon } from "../../time/datumTime.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
 
 const yesterday = "2023-10-15";
 const today = "2023-10-16";

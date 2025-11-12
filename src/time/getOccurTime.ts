@@ -2,9 +2,9 @@ import {
   DatumData,
   EitherDocument,
   isDatumDocument,
-} from "../documentControl/DatumDocument";
+} from "../documentControl/DatumDocument.js";
 import { DateTime } from "luxon";
-import { datumTimeToLuxon } from "./datumTime";
+import { datumTimeToLuxon } from "./datumTime.js";
 
 export function getOccurTime(
   doc: EitherDocument | DatumData,

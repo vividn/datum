@@ -3,8 +3,8 @@ import { promises as fs } from "fs";
 import RJSON from "relaxed-json";
 
 import child_process from "child_process";
-import { MyError } from "../errors";
-import { JsonObject } from "./utilityTypes";
+import { MyError } from "../errors.js";
+import { JsonObject } from "./utilityTypes.js";
 
 export class EditorError extends MyError {
   constructor(m: unknown) {

@@ -1,1 +1,1 @@
-export { choreView } from "./chores";
+export { choreView } from "./chores.js";

@@ -1,15 +1,15 @@
 #!/usr/bin/env node
 
-import { balanceView, equalityView } from "../views";
-import { mapCmd } from "../../../src/commands/mapCmd";
-import { reduceCmd } from "../../../src/commands/reduceCmd";
-import { Show } from "../../../src/input/outputArgs";
-import { transactionWatcher, transactionView } from "./transactionView";
+import { balanceView, equalityView } from "../views/index.js";
+import { mapCmd } from "../../../src/commands/mapCmd.js";
+import { reduceCmd } from "../../../src/commands/reduceCmd.js";
+import { Show } from "../../../src/input/outputArgs.js";
+import { transactionWatcher, transactionView } from "./transactionView.js";
 import { DateTime } from "luxon";
-import { HIGH_STRING } from "../../../src/utils/startsWith";
+import { HIGH_STRING } from "../../../src/utils/startsWith.js";
 import { ArgumentParser } from "argparse";
-import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
-import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
+import { DbArgs, dbArgs } from "../../../src/input/dbArgs.js";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded.js";
 
 export const zeroDate = "0000-00-00";
 
@@ -117,7 +117,7 @@ async function eqcheck(
   }
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   eqcheck(process.argv.slice(2)).catch((err) => {
     throw err;
   });

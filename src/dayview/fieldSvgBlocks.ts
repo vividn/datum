@@ -1,14 +1,14 @@
 import * as d3 from "d3";
-import { checkState, StateChangeRow } from "../state/checkState";
-import { DatumState } from "../state/normalizeState";
-import { isoDatetime } from "../time/timeUtils";
-import { HIGH_STRING } from "../utils/startsWith";
-import { stateChangeView } from "../views/datumViews";
-import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView";
-import { domdoc } from "./domdoc";
-import { simplifyState } from "../state/simplifyState";
-import { getStateColor } from "../field/fieldColor";
-import { warningIcon } from "./symbols/warningIcon";
+import { checkState, StateChangeRow } from "../state/checkState.js";
+import { DatumState } from "../state/normalizeState.js";
+import { isoDatetime } from "../time/timeUtils.js";
+import { HIGH_STRING } from "../utils/startsWith.js";
+import { stateChangeView } from "../views/datumViews/index.js";
+import { PointDataRow, pointDataView } from "../views/datumViews/pointDataView.js";
+import { domdoc } from "./domdoc.js";
+import { simplifyState } from "../state/simplifyState.js";
+import { getStateColor } from "../field/fieldColor.js";
+import { warningIcon } from "./symbols/warningIcon.js";
 
 export type FieldSvgBlocksType = {
   db: PouchDB.Database;

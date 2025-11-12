@@ -1,14 +1,14 @@
-import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument";
-import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc";
-import { addDoc } from "../addDoc";
-import * as combineData from "../combineData";
-import { jClone } from "../../utils/jClone";
-import { DocExistsError } from "../base";
-import { DatumView, ViewDocument } from "../../views/DatumView";
-import { insertDatumView } from "../../views/insertDatumView";
-import { datumViewToViewPayload } from "../../views/datumViewToViewPayload";
-import { toDatumTime } from "../../time/datumTime";
+import { DatumDocument, DatumMetadata, DatumPayload } from "../DatumDocument.js";
+import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { updateDoc, NoDocToUpdateError, UpdateDocError } from "../updateDoc.js";
+import { addDoc } from "../addDoc.js";
+import * as combineData from "../combineData.js";
+import { jClone } from "../../utils/jClone.js";
+import { DocExistsError } from "../base.js";
+import { DatumView, ViewDocument } from "../../views/DatumView.js";
+import { insertDatumView } from "../../views/insertDatumView.js";
+import { datumViewToViewPayload } from "../../views/datumViewToViewPayload.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 const testDatumPayload: DatumPayload = {
   data: {

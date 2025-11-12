@@ -3,13 +3,13 @@ import {
   DatumMetadata,
   EitherDocument,
   EitherPayload,
-} from "../documentControl/DatumDocument";
-import { assembleId } from "../ids/assembleId";
-import { isCouchDbError } from "../errors";
+} from "../documentControl/DatumDocument.js";
+import { assembleId } from "../ids/assembleId.js";
+import { isCouchDbError } from "../errors.js";
 import { DateTime, Duration } from "luxon";
-import { showDelete } from "../output/output";
-import { OutputArgs } from "../input/outputArgs";
-import { pullOutData } from "../utils/pullOutData";
+import { showDelete } from "../output/output.js";
+import { OutputArgs } from "../input/outputArgs.js";
+import { pullOutData } from "../utils/pullOutData.js";
 
 export async function primitiveUndo({
   db,

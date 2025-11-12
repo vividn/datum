@@ -2,18 +2,18 @@ import {
   DatumData,
   DatumMetadata,
   EitherPayload,
-} from "../../documentControl/DatumDocument";
+} from "../../documentControl/DatumDocument.js";
 
-import { buildIdStructure, buildIdStructureType } from "../buildIdStructure";
-import { assembleId } from "../assembleId";
-import { defaultIdComponents } from "../defaultIdComponents";
+import { buildIdStructure, buildIdStructureType } from "../buildIdStructure.js";
+import { assembleId } from "../assembleId.js";
+import { defaultIdComponents } from "../defaultIdComponents.js";
 import {
   exampleData,
   exampleDataOccur,
   exampleMeta,
   exampleOccurTime,
-} from "./exampleData";
-import { exampleDataOccurField } from "./exampleData";
+} from "./exampleData.js";
+import { exampleDataOccurField } from "./exampleData.js";
 
 function expectStructureAndId(
   props: Partial<buildIdStructureType>,

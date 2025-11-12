@@ -1,8 +1,8 @@
-import { DatumData, EitherDocument } from "../../documentControl/DatumDocument";
-import { DatumView } from "../DatumView";
-import { _emit } from "../emit";
-import { isoDateOrTime } from "../../time/timeUtils";
-import { DatumState } from "../../state/normalizeState";
+import { DatumData, EitherDocument } from "../../documentControl/DatumDocument.js";
+import { DatumView } from "../DatumView.js";
+import { _emit } from "../emit.js";
+import { isoDateOrTime } from "../../time/timeUtils.js";
+import { DatumState } from "../../state/normalizeState.js";
 
 type DocType = EitherDocument;
 type MapKey = [string, DatumState, isoDateOrTime];

@@ -1,10 +1,10 @@
-import { DataArgs, handleDataArgs } from "../dataArgs";
-import { ExtraDataError, MissingRequiredKeyError } from "../../errors";
-import * as inferType from "../../utils/inferType";
+import { DataArgs, handleDataArgs } from "../dataArgs.js";
+import { ExtraDataError, MissingRequiredKeyError } from "../../errors.js";
+import * as inferType from "../../utils/inferType.js";
 import spyOn = jest.spyOn;
-import * as changeDatumCommandModule from "../../utils/changeDatumCommand";
-import { jClone } from "../../utils/jClone";
-import { GenericObject } from "../../utils/utilityTypes";
+import * as changeDatumCommandModule from "../../utils/changeDatumCommand.js";
+import { jClone } from "../../utils/jClone.js";
+import { GenericObject } from "../../utils/utilityTypes.js";
 
 const expectParseDataToReturn = (
   inputProps: DataArgs,

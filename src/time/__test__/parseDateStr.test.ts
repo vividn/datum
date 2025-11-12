@@ -1,6 +1,6 @@
-import { parseDateStr, ParseDateStrType } from "../parseDateStr";
+import { parseDateStr, ParseDateStrType } from "../parseDateStr.js";
 import { DateTime, Settings } from "luxon";
-import { setNow } from "../../__test__/test-utils";
+import { setNow } from "../../__test__/test-utils.js";
 
 function expectDate(
   props: ParseDateStrType,

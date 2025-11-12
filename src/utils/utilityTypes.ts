@@ -1,4 +1,4 @@
-import { EitherDocument } from "../documentControl/DatumDocument";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
 
 export type WithRequired<T, K extends keyof T> = T & { [P in K]-?: T[P] };
 

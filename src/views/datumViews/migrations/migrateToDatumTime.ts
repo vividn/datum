@@ -1,9 +1,9 @@
 import {
   DatumDocument,
   DatumMetadata,
-} from "../../../documentControl/DatumDocument";
-import { DatumMigration, migrationEmit } from "../../../migrations/migrations";
-import { DatumTime } from "../../../time/datumTime";
+} from "../../../documentControl/DatumDocument.js";
+import { DatumMigration, migrationEmit } from "../../../migrations/migrations.js";
+import { DatumTime } from "../../../time/datumTime.js";
 
 const emit = migrationEmit;
 

@@ -1,21 +1,21 @@
 #!/usr/bin/env node
 
-import { reduceCmd } from "../../../src/commands/reduceCmd";
-import { choreView } from "../views";
-import { OutputArgs, outputArgs, Show } from "../../../src/input/outputArgs";
+import { reduceCmd } from "../../../src/commands/reduceCmd.js";
+import { choreView } from "../views/index.js";
+import { OutputArgs, outputArgs, Show } from "../../../src/input/outputArgs.js";
 import { DateTime } from "luxon";
 import chalk from "chalk";
-import { ReduceRow } from "../../../src/views/DatumView";
+import { ReduceRow } from "../../../src/views/DatumView.js";
 import Table from "easy-table";
-import { connectDb } from "../../../src/auth/connectDb";
+import { connectDb } from "../../../src/auth/connectDb.js";
 import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import { once } from "node:events";
-import { insertDatumView } from "../../../src/views/insertDatumView";
-import { isoDate, isoDatetime } from "../../../src/time/timeUtils";
-import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
+import { insertDatumView } from "../../../src/views/insertDatumView.js";
+import { isoDate, isoDatetime } from "../../../src/time/timeUtils.js";
+import { dbArgs, DbArgs } from "../../../src/input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded.js";
 
 let oneTimeSetup = false;
 const possibleSorts = ["field", "iti", "due", "last"] as const;
@@ -246,7 +246,7 @@ async function chorelistCmd(argsOrCli: ChorelistArgs | string | string[]) {
   }
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   chorelistCmd(process.argv.slice(2)).catch((err) => {
     throw err;
   });

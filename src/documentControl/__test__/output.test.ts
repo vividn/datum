@@ -1,17 +1,17 @@
-import { updateDoc } from "../updateDoc";
-import * as updateDocModule from "../updateDoc";
+import { updateDoc } from "../updateDoc.js";
+import * as updateDocModule from "../updateDoc.js";
 import {
   fail,
   mockedLogLifecycle,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { addDoc } from "../addDoc";
-import { DocExistsError } from "../base";
-import { overwriteDoc } from "../overwriteDoc";
-import * as addDocModule from "../addDoc";
-import { addCmd } from "../../commands/addCmd";
-import { deleteDoc } from "../deleteDoc";
-import { Show } from "../../input/outputArgs";
+} from "../../__test__/test-utils.js";
+import { addDoc } from "../addDoc.js";
+import { DocExistsError } from "../base.js";
+import { overwriteDoc } from "../overwriteDoc.js";
+import * as addDocModule from "../addDoc.js";
+import { addCmd } from "../../commands/addCmd.js";
+import { deleteDoc } from "../deleteDoc.js";
+import { Show } from "../../input/outputArgs.js";
 
 describe("output", () => {
   const dbName = "doc_control_output_test";

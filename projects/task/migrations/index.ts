@@ -1,1 +1,1 @@
-export { subdataMigration } from "./subdataMigration";
+export { subdataMigration } from "./subdataMigration.js";

@@ -1,11 +1,11 @@
-import { BaseDocControlArgs } from "../documentControl/base";
-import { updateStrategies } from "../documentControl/combineData";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { deleteDoc } from "../documentControl/deleteDoc";
-import { overwriteDoc } from "../documentControl/overwriteDoc";
-import { updateDoc } from "../documentControl/updateDoc";
-import { MigrationError } from "../errors";
-import { MigrationMapRow } from "./migrations";
+import { BaseDocControlArgs } from "../documentControl/base.js";
+import { updateStrategies } from "../documentControl/combineData.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { deleteDoc } from "../documentControl/deleteDoc.js";
+import { overwriteDoc } from "../documentControl/overwriteDoc.js";
+import { updateDoc } from "../documentControl/updateDoc.js";
+import { MigrationError } from "../errors.js";
+import { MigrationMapRow } from "./migrations.js";
 
 type MigrateOneType = {
   row: MigrationMapRow;

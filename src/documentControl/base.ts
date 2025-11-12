@@ -1,5 +1,5 @@
-import { EitherDocument, EitherPayload } from "./DatumDocument";
-import { OutputArgs } from "../input/outputArgs";
+import { EitherDocument, EitherPayload } from "./DatumDocument.js";
+import { OutputArgs } from "../input/outputArgs.js";
 
 export class DocExistsError extends Error {
   data: { existingDocument: EitherDocument; failedPayload: EitherPayload };

@@ -1,12 +1,12 @@
 import { mock } from "jest-mock-extended";
-import { idToHumanView } from "../../views/datumViews";
-import { getHumanIds } from "../getHumanIds";
+import { idToHumanView } from "../../views/datumViews/index.js";
+import { getHumanIds } from "../getHumanIds.js";
 import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
-} from "../../__test__/test-utils";
-import { DatumViewMissingError } from "../../errors";
+} from "../../__test__/test-utils.js";
+import { DatumViewMissingError } from "../../errors.js";
 
 const dbMock = mock<PouchDB.Database<any>>();
 

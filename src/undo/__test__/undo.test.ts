@@ -2,12 +2,12 @@ import {
   mockedLogLifecycle,
   setNow,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { addCmd } from "../../commands/addCmd";
+} from "../../__test__/test-utils.js";
+import { addCmd } from "../../commands/addCmd.js";
 import { DateTime, Duration, Settings } from "luxon";
-import { occurCmd } from "../../commands/occurCmd";
-import { Show } from "../../input/outputArgs";
-import { setupCmd } from "../../commands/setupCmd";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { Show } from "../../input/outputArgs.js";
+import { setupCmd } from "../../commands/setupCmd.js";
 
 // TODO: Make undo system more robust and more tested
 

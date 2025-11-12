@@ -1,11 +1,11 @@
-import { datum } from "../mainArgs";
-import { topLevelHelpParser } from "../topLevelHelp";
-import { getCmd } from "../../commands/getCmd";
-import { endCmd } from "../../commands/endCmd";
-import { updateCmd } from "../../commands/updateCmd";
-import { startCmd } from "../../commands/startCmd";
-import { setupCmd } from "../../commands/setupCmd";
-import { migrateCmd } from "../../commands/migrateCmd";
+import { datum } from "../mainArgs.js";
+import { topLevelHelpParser } from "../topLevelHelp.js";
+import { getCmd } from "../../commands/getCmd.js";
+import { endCmd } from "../../commands/endCmd.js";
+import { updateCmd } from "../../commands/updateCmd.js";
+import { startCmd } from "../../commands/startCmd.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { migrateCmd } from "../../commands/migrateCmd.js";
 
 // Mock the necessary modules
 jest.mock("../topLevelHelp", () => ({

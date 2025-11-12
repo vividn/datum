@@ -1,10 +1,10 @@
-import * as minHumanId from "../minHumanId";
-import * as getHumanIds from "../getHumanIds";
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { insertDatumView } from "../../views/insertDatumView";
-import { idToHumanView, subHumanIdView } from "../../views/datumViews";
+import * as minHumanId from "../minHumanId.js";
+import * as getHumanIds from "../getHumanIds.js";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { insertDatumView } from "../../views/insertDatumView.js";
+import { idToHumanView, subHumanIdView } from "../../views/datumViews/index.js";
 import { mock } from "jest-mock-extended";
-import { shortenForHumans } from "../shortenForHumans";
+import { shortenForHumans } from "../shortenForHumans.js";
 
 describe("shortenForHumans", () => {
   const mockDb = mock<PouchDB.Database<any>>();

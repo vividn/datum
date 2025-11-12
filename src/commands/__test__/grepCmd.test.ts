@@ -2,9 +2,9 @@ import {
   coloredChalk,
   mockedLogLifecycle,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { grepCmd } from "../grepCmd";
-import { Show } from "../../input/outputArgs";
+} from "../../__test__/test-utils.js";
+import { grepCmd } from "../grepCmd.js";
+import { Show } from "../../input/outputArgs.js";
 
 describe("grepCmd", () => {
   coloredChalk();

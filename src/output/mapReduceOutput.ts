@@ -2,10 +2,10 @@ import Table from "easy-table";
 import {
   EitherDocument,
   EitherPayload,
-} from "../documentControl/DatumDocument";
-import { pullOutData } from "../utils/pullOutData";
-import { JsonObject } from "../utils/utilityTypes";
-import { MapRow } from "../views/DatumView";
+} from "../documentControl/DatumDocument.js";
+import { pullOutData } from "../utils/pullOutData.js";
+import { JsonObject } from "../utils/utilityTypes.js";
+import { MapRow } from "../views/DatumView.js";
 
 export function mapReduceOutput(
   viewResponse: PouchDB.Query.Response<EitherPayload> | MapRow<any>[],

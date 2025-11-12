@@ -1,9 +1,9 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import * as insertDatumViewModule from "../insertDatumView";
-import { setupDatumViews } from "../setupDatumViews";
-import { _emit } from "../emit";
-import * as getAllDatumViews from "../getAllDatumViews";
-import { DatumView } from "../DatumView";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import * as insertDatumViewModule from "../insertDatumView.js";
+import { setupDatumViews } from "../setupDatumViews.js";
+import { _emit } from "../emit.js";
+import * as getAllDatumViews from "../getAllDatumViews.js";
+import { DatumView } from "../DatumView.js";
 
 describe("setupDatumViews", () => {
   const dbName = "setup_datum_views_test";

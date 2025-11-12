@@ -3,9 +3,9 @@ import {
   DatumMetadata,
   EitherPayload,
   isDatumPayload,
-} from "../documentControl/DatumDocument";
-import { FieldError } from "../errors";
-import { interpolateFields } from "../utils/interpolateFields";
+} from "../documentControl/DatumDocument.js";
+import { FieldError } from "../errors.js";
+import { interpolateFields } from "../utils/interpolateFields.js";
 
 export function compileField(
   payload: EitherPayload,

@@ -1,12 +1,12 @@
-import { MainDatumArgs } from "../input/mainArgs";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { connectDb } from "../auth/connectDb";
-import { showExists } from "../output/output";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
-import { outputArgs } from "../input/outputArgs";
-import { dbArgs } from "../input/dbArgs";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { connectDb } from "../auth/connectDb.js";
+import { showExists } from "../output/output.js";
+import { updateLastDocsRef } from "../documentControl/lastDocs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { dbArgs } from "../input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const grepArgs = new ArgumentParser({
   add_help: false,

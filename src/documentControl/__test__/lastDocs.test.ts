@@ -1,18 +1,18 @@
-import { addCmd } from "../../commands/addCmd";
-import { getLastDocs } from "../lastDocs";
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { deleteCmd } from "../../commands/deleteCmd";
-import * as editInTerminal from "../../utils/editInTerminal";
-import { editCmd } from "../../commands/editCmd";
-import { setupCmd } from "../../commands/setupCmd";
-import { getCmd } from "../../commands/getCmd";
-import { endCmd } from "../../commands/endCmd";
-import { grepCmd } from "../../commands/grepCmd";
-import { occurCmd } from "../../commands/occurCmd";
-import { startCmd } from "../../commands/startCmd";
-import { switchCmd } from "../../commands/switchCmd";
-import { updateCmd } from "../../commands/updateCmd";
-import { JsonObject } from "../../utils/utilityTypes";
+import { addCmd } from "../../commands/addCmd.js";
+import { getLastDocs } from "../lastDocs.js";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { deleteCmd } from "../../commands/deleteCmd.js";
+import * as editInTerminal from "../../utils/editInTerminal.js";
+import { editCmd } from "../../commands/editCmd.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { getCmd } from "../../commands/getCmd.js";
+import { endCmd } from "../../commands/endCmd.js";
+import { grepCmd } from "../../commands/grepCmd.js";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { startCmd } from "../../commands/startCmd.js";
+import { switchCmd } from "../../commands/switchCmd.js";
+import { updateCmd } from "../../commands/updateCmd.js";
+import { JsonObject } from "../../utils/utilityTypes.js";
 
 describe("lastDocs", () => {
   const dbName = "last_docs_test";

@@ -1,2 +1,2 @@
-export { keyValueView } from "./keyValue";
-export { reduceOrderingView } from "./reduceOrdering";
+export { keyValueView } from "./keyValue.js";
+export { reduceOrderingView } from "./reduceOrdering.js";

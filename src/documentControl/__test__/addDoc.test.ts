@@ -3,17 +3,17 @@ import {
   DataOnlyPayload,
   DatumDocument,
   DatumPayload,
-} from "../DatumDocument";
-import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { addDoc } from "../addDoc";
-import { IdError } from "../../errors";
-import { jClone } from "../../utils/jClone";
-import * as updateDoc from "../updateDoc";
-import * as overwriteDoc from "../overwriteDoc";
-import * as deleteDoc from "../deleteDoc";
-import { DocExistsError } from "../base";
-import { _emit as emit } from "../../views/emit";
-import { Show } from "../../input/outputArgs";
+} from "../DatumDocument.js";
+import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { addDoc } from "../addDoc.js";
+import { IdError } from "../../errors.js";
+import { jClone } from "../../utils/jClone.js";
+import * as updateDoc from "../updateDoc.js";
+import * as overwriteDoc from "../overwriteDoc.js";
+import * as deleteDoc from "../deleteDoc.js";
+import { DocExistsError } from "../base.js";
+import { _emit as emit } from "../../views/emit.js";
+import { Show } from "../../input/outputArgs.js";
 
 const testDatumPayload: DatumPayload = {
   data: {

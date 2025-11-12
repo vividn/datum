@@ -1,12 +1,12 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
 import { DateTime } from "luxon";
-import { setupCmd } from "../setupCmd";
-import { startCmd } from "../startCmd";
-import { switchCmd } from "../switchCmd";
-import { getActiveState } from "../../state/getActiveState";
-import { parseTimeStr } from "../../time/parseTimeStr";
-import { BadDurationError, ExtraDataError } from "../../errors";
-import { toDatumTime } from "../../time/datumTime";
+import { setupCmd } from "../setupCmd.js";
+import { startCmd } from "../startCmd.js";
+import { switchCmd } from "../switchCmd.js";
+import { getActiveState } from "../../state/getActiveState.js";
+import { parseTimeStr } from "../../time/parseTimeStr.js";
+import { BadDurationError, ExtraDataError } from "../../errors.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 describe("startCmd", () => {
   const dbName = "start_cmd_test";

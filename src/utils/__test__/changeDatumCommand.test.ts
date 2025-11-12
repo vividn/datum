@@ -1,19 +1,19 @@
-import { DatumData } from "../../documentControl/DatumDocument";
-import { changeDatumCommand } from "../changeDatumCommand";
+import { DatumData } from "../../documentControl/DatumDocument.js";
+import { changeDatumCommand } from "../changeDatumCommand.js";
 import {
   deterministicHumanIds,
   restoreNow,
   setNow,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { DataArgs } from "../../input/dataArgs";
-import { setupCmd } from "../../commands/setupCmd";
-import { addCmd } from "../../commands/addCmd";
-import { occurCmd } from "../../commands/occurCmd";
-import { endCmd } from "../../commands/endCmd";
-import { startCmd } from "../../commands/startCmd";
-import { switchCmd } from "../../commands/switchCmd";
-import { toDatumTime } from "../../time/datumTime";
+} from "../../__test__/test-utils.js";
+import { DataArgs } from "../../input/dataArgs.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { addCmd } from "../../commands/addCmd.js";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { endCmd } from "../../commands/endCmd.js";
+import { startCmd } from "../../commands/startCmd.js";
+import { switchCmd } from "../../commands/switchCmd.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 const nowStr = "2023-12-20T17:00:00.000Z";
 const occurTime = toDatumTime(nowStr);

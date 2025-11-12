@@ -1,8 +1,8 @@
 import { DateTime } from "luxon";
 import * as d3 from "d3";
-import { allFieldsSvg } from "./allFieldsSvg";
-import { domdoc } from "./domdoc";
-import { warningIcon } from "./symbols/warningIcon";
+import { allFieldsSvg } from "./allFieldsSvg.js";
+import { domdoc } from "./domdoc.js";
+import { warningIcon } from "./symbols/warningIcon.js";
 
 export type SingleDayArgs = {
   db: PouchDB.Database;

@@ -1,4 +1,4 @@
-import { timingView } from "../views/datumViews";
+import { timingView } from "../views/datumViews/index.js";
 
 export async function occurredFields(db: PouchDB.Database): Promise<string[]> {
   const fields = await db.query(timingView.name, {

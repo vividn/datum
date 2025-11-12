@@ -1,12 +1,17 @@
+import { fileURLToPath } from "url";
+import { dirname } from "path";
 import {
   mockedLogLifecycle,
   mockSpecs,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { generateSampleMorning } from "../../__test__/generateSampleMorning";
-import { setupCmd } from "../setupCmd";
-import { dayviewCmd } from "../dayviewCmd";
+} from "../../__test__/test-utils.js";
+import { generateSampleMorning } from "../../__test__/generateSampleMorning.js";
+import { setupCmd } from "../setupCmd.js";
+import { dayviewCmd } from "../dayviewCmd.js";
 import fs from "fs";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 describe("dayview", () => {
   const dbName = "dayview_test";

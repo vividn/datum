@@ -1,7 +1,7 @@
-import * as emit from "../../../../src/views/emit";
-import { makeDoc } from "../../../../src/__test__/test-utils";
-import { ChoreDoc, choreView } from "../chores";
-import { toDatumTime } from "../../../../src/time/datumTime";
+import * as emit from "../../../../src/views/emit.js";
+import { makeDoc } from "../../../../src/__test__/test-utils.js";
+import { ChoreDoc, choreView } from "../chores.js";
+import { toDatumTime } from "../../../../src/time/datumTime.js";
 
 describe("choreView map", () => {
   const field = "foo";

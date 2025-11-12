@@ -1,6 +1,6 @@
-import { normalizeState } from "../normalizeState";
-import { mockedLogLifecycle } from "../../__test__/test-utils";
-import { BadStateError } from "../../errors";
+import { normalizeState } from "../normalizeState.js";
+import { mockedLogLifecycle } from "../../__test__/test-utils.js";
+import { BadStateError } from "../../errors.js";
 
 describe("unfoldState", () => {
   const { mockedWarn } = mockedLogLifecycle();

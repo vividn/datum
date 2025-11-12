@@ -4,12 +4,12 @@ import readline from "node:readline";
 import { stdin, stdout } from "node:process";
 import { once } from "node:events";
 import sample from "lodash.sample";
-import { connectDb } from "../../../src/auth/connectDb";
-import { startsWith } from "../../../src/utils/startsWith";
+import { connectDb } from "../../../src/auth/connectDb.js";
+import { startsWith } from "../../../src/utils/startsWith.js";
 import picocolors from "picocolors";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
-import { MainDatumArgs } from "../../../src/input/mainArgs";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded.js";
+import { MainDatumArgs } from "../../../src/input/mainArgs.js";
 
 export const wordCommand = new ArgumentParser({
   description: "flash card system for word review",
@@ -151,8 +151,7 @@ async function word(argsOrCli: WordArgs | string | string[]): Promise<void> {
   return;
 }
 
-if (require.main === module) {
-  // Load command line arguments
+if (import.meta.url === `file://${process.argv[1]}`) {
   word(process.argv.slice(2));
 }
 

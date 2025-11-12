@@ -1,10 +1,10 @@
-import { connectDb } from "../auth/connectDb";
+import { connectDb } from "../auth/connectDb.js";
 import { readFileSync } from "fs";
-import { dbArgs } from "../input/dbArgs";
+import { dbArgs } from "../input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { BackupCmdArgs } from "./backupCmd";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { MainDatumArgs } from "../input/mainArgs";
+import { BackupCmdArgs } from "./backupCmd.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
 
 export const restoreArgs = new ArgumentParser({
   add_help: false,

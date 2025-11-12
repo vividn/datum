@@ -1,4 +1,4 @@
-import { toDatumTime } from "../datumTime";
+import { toDatumTime } from "../datumTime.js";
 describe("datumTimeToLuxon", () => {
   it.todo("converts a DatumTime with just utc to a utc DateTime");
   it.todo(

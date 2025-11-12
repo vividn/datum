@@ -1,15 +1,15 @@
-import { connectDb } from "../auth/connectDb";
-import { inferType } from "../utils/inferType";
-import { startsWith } from "../utils/startsWith";
-import { MainDatumArgs } from "../input/mainArgs";
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { outputArgs, Show } from "../input/outputArgs";
-import { reverseViewParams } from "../utils/reverseViewParams";
+import { connectDb } from "../auth/connectDb.js";
+import { inferType } from "../utils/inferType.js";
+import { startsWith } from "../utils/startsWith.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { outputArgs, Show } from "../input/outputArgs.js";
+import { reverseViewParams } from "../utils/reverseViewParams.js";
 import { ArgumentParser, SUPPRESS } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { mapReduceOutput } from "../output/mapReduceOutput";
-import { QueryOptions } from "../utils/utilityTypes";
+import { dbArgs } from "../input/dbArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { mapReduceOutput } from "../output/mapReduceOutput.js";
+import { QueryOptions } from "../utils/utilityTypes.js";
 
 export const mapArgs = new ArgumentParser({
   add_help: false,

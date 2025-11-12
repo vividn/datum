@@ -1,6 +1,6 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { getHumanIds } from "./getHumanIds";
-import { minHumanId } from "./minHumanId";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { getHumanIds } from "./getHumanIds.js";
+import { minHumanId } from "./minHumanId.js";
 
 // TODO: make optional n parameter that skips the minHumanId check and just truncates for speed
 // it will be interesting to compare how quickly that goes

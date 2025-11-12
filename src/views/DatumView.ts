@@ -2,9 +2,9 @@ import {
   DatumMetadata,
   EitherDocument,
   EitherPayload,
-} from "../documentControl/DatumDocument";
-import { MyError } from "../errors";
-import { JsonType } from "../utils/utilityTypes";
+} from "../documentControl/DatumDocument.js";
+import { MyError } from "../errors.js";
+import { JsonType } from "../utils/utilityTypes.js";
 
 export function asViewDb(
   db: PouchDB.Database<any>,

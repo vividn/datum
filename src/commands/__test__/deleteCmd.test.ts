@@ -1,8 +1,8 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import * as deleteDoc from "../../documentControl/deleteDoc";
-import { deleteCmd } from "../deleteCmd";
-import * as quickId from "../../ids/quickId";
-import { setupCmd } from "../setupCmd";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import * as deleteDoc from "../../documentControl/deleteDoc.js";
+import { deleteCmd } from "../deleteCmd.js";
+import * as quickId from "../../ids/quickId.js";
+import { setupCmd } from "../setupCmd.js";
 
 describe("deleteCmd", () => {
   const dbName = "delete_cmd_test";

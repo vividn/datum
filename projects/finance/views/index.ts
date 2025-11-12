@@ -1,4 +1,4 @@
-export { balanceView } from "./balance";
-export { categorizedBalanceView } from "./categorizedBalance";
-export { withOrderedReduceView } from "./withOrderedReduce";
-export { equalityView } from "./equality";
+export { balanceView } from "./balance.js";
+export { categorizedBalanceView } from "./categorizedBalance.js";
+export { withOrderedReduceView } from "./withOrderedReduce.js";
+export { equalityView } from "./equality.js";

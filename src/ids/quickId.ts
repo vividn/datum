@@ -1,19 +1,19 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { isCouchDbError, LastDocsTooOldError, MyError } from "../errors";
-import { viewMap } from "../views/viewMap";
-import { humanIdView, idToHumanView } from "../views/datumViews";
-import { startsWith } from "../utils/startsWith";
-import { splitCommaString } from "../utils/splitCommaString";
-import { minHumanId } from "./minHumanId";
-import { JsonType, QueryOptions } from "../utils/utilityTypes";
-import { getLastDocs } from "../documentControl/lastDocs";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { isCouchDbError, LastDocsTooOldError, MyError } from "../errors.js";
+import { viewMap } from "../views/viewMap.js";
+import { humanIdView, idToHumanView } from "../views/datumViews/index.js";
+import { startsWith } from "../utils/startsWith.js";
+import { splitCommaString } from "../utils/splitCommaString.js";
+import { minHumanId } from "./minHumanId.js";
+import { JsonType, QueryOptions } from "../utils/utilityTypes.js";
+import { getLastDocs } from "../documentControl/lastDocs.js";
 import { DateTime } from "luxon";
-import { MainDatumArgs } from "../input/mainArgs";
-import { QuickIdArgs } from "../input/quickIdArg";
-import { connectDb } from "../auth/connectDb";
-import { timingView } from "../views/datumViews/timingView";
-import { reverseViewParams } from "../utils/reverseViewParams";
-import { HIGH_STRING } from "../utils/startsWith";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { QuickIdArgs } from "../input/quickIdArg.js";
+import { connectDb } from "../auth/connectDb.js";
+import { timingView } from "../views/datumViews/timingView.js";
+import { reverseViewParams } from "../utils/reverseViewParams.js";
+import { HIGH_STRING } from "../utils/startsWith.js";
 
 export class AmbiguousQuickIdError extends MyError {
   constructor(quickString: string, quickIds: string[], ids: string[]) {

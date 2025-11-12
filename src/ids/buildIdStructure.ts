@@ -1,4 +1,4 @@
-import { defaults } from "../input/defaults";
+import { defaults } from "../input/defaults.js";
 
 export type buildIdStructureType = {
   idParts: string | string[];

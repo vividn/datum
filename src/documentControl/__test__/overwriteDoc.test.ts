@@ -1,15 +1,15 @@
-import { DatumPayload } from "../DatumDocument";
+import { DatumPayload } from "../DatumDocument.js";
 import { DateTime } from "luxon";
-import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils";
+import { fail, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
 import {
   overwriteDoc,
   NoDocToOverwriteError,
   OverwriteDocError,
-} from "../overwriteDoc";
-import { jClone } from "../../utils/jClone";
-import { addDoc } from "../addDoc";
-import { DocExistsError } from "../base";
-import { toDatumTime } from "../../time/datumTime";
+} from "../overwriteDoc.js";
+import { jClone } from "../../utils/jClone.js";
+import { addDoc } from "../addDoc.js";
+import { DocExistsError } from "../base.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 const testDatumPayload: DatumPayload = {
   data: {

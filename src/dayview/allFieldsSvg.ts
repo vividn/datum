@@ -1,8 +1,8 @@
 import * as d3 from "d3";
-import { occurredFields } from "../field/occurredFields";
-import { fieldSvgBlocks } from "./fieldSvgBlocks";
-import { domdoc } from "./domdoc";
-import { getFieldSpec } from "../field/mySpecs";
+import { occurredFields } from "../field/occurredFields.js";
+import { fieldSvgBlocks } from "./fieldSvgBlocks.js";
+import { domdoc } from "./domdoc.js";
+import { getFieldSpec } from "../field/mySpecs.js";
 import md5 from "md5";
 export type AllFieldsSvgType = {
   db: PouchDB.Database;

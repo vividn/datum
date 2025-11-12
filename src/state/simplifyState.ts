@@ -1,5 +1,5 @@
 import flattenDeep from "lodash.flattendeep";
-import { DatumState } from "./normalizeState";
+import { DatumState } from "./normalizeState.js";
 
 export type SimpleSingleState = string | boolean;
 export type SimpleDatumState = null | SimpleSingleState | SimpleSingleState[];

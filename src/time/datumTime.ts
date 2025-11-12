@@ -1,16 +1,16 @@
 import isPlainObject from "lodash.isplainobject";
 import { DateTime } from "luxon";
-import { BadTimeError } from "../errors";
-import { JsonObject, JsonType } from "../utils/utilityTypes";
-import { getTimezone } from "./getTimezone";
-import { parseTimeStr } from "./parseTimeStr";
+import { BadTimeError } from "../errors.js";
+import { JsonObject, JsonType } from "../utils/utilityTypes.js";
+import { getTimezone } from "./getTimezone.js";
+import { parseTimeStr } from "./parseTimeStr.js";
 import {
   isIsoDateOrTime,
   isoDateFromDateTime,
   isoDateOrTime,
   isoDatetimeFromDateTime,
   utcOffset,
-} from "./timeUtils";
+} from "./timeUtils.js";
 
 type IANATimeZone = string;
 export type DatumTime = {

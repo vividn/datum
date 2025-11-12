@@ -1,5 +1,5 @@
 import RJSON from "relaxed-json";
-import { JsonType } from "./utilityTypes";
+import { JsonType } from "./utilityTypes.js";
 
 export function inferType(value: string): undefined | JsonType {
   if (value === "") {

@@ -1,24 +1,24 @@
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { viewMap } from "../views/viewMap";
-import { connectDb } from "../auth/connectDb";
-import { FieldArgs, fieldArgs } from "../input/fieldArgs";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { viewMap } from "../views/viewMap.js";
+import { connectDb } from "../auth/connectDb.js";
+import { FieldArgs, fieldArgs } from "../input/fieldArgs.js";
 import {
   TIME_METRICS,
   timingView,
   TimingViewType,
-} from "../views/datumViews/timingView";
-import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs";
-import { reverseViewParams } from "../utils/reverseViewParams";
-import { outputArgs } from "../input/outputArgs";
+} from "../views/datumViews/timingView.js";
+import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs.js";
+import { reverseViewParams } from "../utils/reverseViewParams.js";
+import { outputArgs } from "../input/outputArgs.js";
 import { DateTime } from "luxon";
 import { ArgumentParser, SUPPRESS } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { MainDatumArgs } from "../input/mainArgs";
-import { tableOutput } from "../output/tableOutput";
+import { dbArgs } from "../input/dbArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { tableOutput } from "../output/tableOutput.js";
 import { once } from "events";
-import { QueryOptions } from "../utils/utilityTypes";
-import { HIGH_STRING } from "../utils/startsWith";
+import { QueryOptions } from "../utils/utilityTypes.js";
+import { HIGH_STRING } from "../utils/startsWith.js";
 
 export const tailArgs = new ArgumentParser({
   add_help: false,
