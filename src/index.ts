@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { DocExistsError } from "./documentControl/base";
-import { datum } from "./input/mainArgs";
+import { DocExistsError } from "./documentControl/base.js";
+import { datum } from "./input/mainArgs.js";
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   if (["", undefined].includes(process.env["NODE_ENV"])) {
     process.env.NODE_ENV = "production";
   }

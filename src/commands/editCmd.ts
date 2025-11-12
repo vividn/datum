@@ -1,16 +1,16 @@
-import { quickIdArgs, QuickIdArgs } from "../input/quickIdArg";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { connectDb } from "../auth/connectDb";
-import { quickId, _LAST } from "../ids/quickId";
-import { editJSONInTerminal } from "../utils/editInTerminal";
-import { overwriteDoc } from "../documentControl/overwriteDoc";
-import { MainDatumArgs } from "../input/mainArgs";
-import { MyError } from "../errors";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { quickIdArgs, QuickIdArgs } from "../input/quickIdArg.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { connectDb } from "../auth/connectDb.js";
+import { quickId, _LAST } from "../ids/quickId.js";
+import { editJSONInTerminal } from "../utils/editInTerminal.js";
+import { overwriteDoc } from "../documentControl/overwriteDoc.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { MyError } from "../errors.js";
+import { updateLastDocsRef } from "../documentControl/lastDocs.js";
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const editArgs = new ArgumentParser({
   add_help: false,

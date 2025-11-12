@@ -1,6 +1,6 @@
-import { DatumView } from "../DatumView";
-import { DatumDocument } from "../../documentControl/DatumDocument";
-import { _emit } from "../emit";
+import { DatumView } from "../DatumView.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
+import { _emit } from "../emit.js";
 
 type DocType = DatumDocument;
 type MapKey = string;

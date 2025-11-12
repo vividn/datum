@@ -1,8 +1,8 @@
-import { UpdateStrategyNames } from "../documentControl/combineData";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { JsonObject, JsonType } from "../utils/utilityTypes";
-import { DatumView, MapRow } from "../views/DatumView";
-import { _emit } from "../views/emit";
+import { UpdateStrategyNames } from "../documentControl/combineData.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { JsonObject, JsonType } from "../utils/utilityTypes.js";
+import { DatumView, MapRow } from "../views/DatumView.js";
+import { _emit } from "../views/emit.js";
 
 type MigrationName = `migrate_${string}`;
 export function migrationName(shortName: string): MigrationName {

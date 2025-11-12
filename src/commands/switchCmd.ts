@@ -1,18 +1,18 @@
-import { occurCmd, OccurCmdArgs } from "./occurCmd";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { flexiblePositional } from "../input/flexiblePositional";
-import { durationArgs, DurationArgs } from "../input/durationArgs";
+import { occurCmd, OccurCmdArgs } from "./occurCmd.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { flexiblePositional } from "../input/flexiblePositional.js";
+import { durationArgs, DurationArgs } from "../input/durationArgs.js";
 
-import { DatumState, normalizeState } from "../state/normalizeState";
+import { DatumState, normalizeState } from "../state/normalizeState.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { dataArgs } from "../input/dataArgs";
-import { timeArgs } from "../input/timeArgs";
-import { fieldArgs } from "../input/fieldArgs";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
-import { newDocArgs } from "./addCmd";
-import { inferType } from "../utils/inferType";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { dataArgs } from "../input/dataArgs.js";
+import { timeArgs } from "../input/timeArgs.js";
+import { fieldArgs } from "../input/fieldArgs.js";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { newDocArgs } from "./addCmd.js";
+import { inferType } from "../utils/inferType.js";
 
 export const stateArgs = new ArgumentParser({
   add_help: false,

@@ -1,7 +1,7 @@
 import { DateTime, Duration } from "luxon";
-import { now } from "./timeUtils";
+import { now } from "./timeUtils.js";
 import * as chrono from "chrono-node";
-import { BadDateError } from "../errors";
+import { BadDateError } from "../errors.js";
 
 export type ParseDateStrType = {
   dateStr: string;

@@ -5,6 +5,7 @@
   "repository": "git@github.com:vividn/datum.git",
   "author": "Nate Faber <nathaniel@njfaber.com>",
   "license": "UNLICENSED",
+  "type": "module",
   "main": "build/src/index.js",
   "bin": {
     "datum": "./build/src/index.js",
@@ -19,9 +20,9 @@
     "node": ">22.0.0"
   },
   "scripts": {
-    "dev": "NODE_ENV=development ts-node ./src/index.ts --config ./datumrc_test.yml",
-    "test": "jest",
-    "testwatch": "jest --watchAll",
+    "dev": "NODE_ENV=development tsx ./src/index.ts --config ./datumrc_test.yml",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest",
+    "testwatch": "NODE_OPTIONS='--experimental-vm-modules' jest --watchAll",
     "type": "tsc -p tsconfig.withTests.json --skipLibCheck",
     "typewatch": "tsc -p tsconfig.withTests.json -w --skipLibCheck",
     "build": "rm -rf ./build; tsc -p . --skipLibCheck",
@@ -32,6 +33,7 @@
     "fmt": "eslint src --fix --max-warnings 0"
   },
   "devDependencies": {
+    "@babel/plugin-transform-function-name": "^7.27.1",
     "@eslint/compat": "^1.2.8",
     "@eslint/eslintrc": "^3.3.1",
     "@eslint/js": "^9.23.0",
@@ -51,7 +53,8 @@
     "prettier": "^3.5.3",
     "prettier-2": "npm:prettier@^2.8.8",
     "ts-jest": "^29.2.5",
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "tsx": "^4.20.6"
   },
   "dependencies": {
     "@babel/core": "^7.25.2",

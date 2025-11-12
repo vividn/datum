@@ -1,7 +1,8 @@
+import fs from "fs";
 import PouchDb from "pouchdb";
 import levelAdapter from "pouchdb-adapter-leveldb";
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { MainDatumArgs } from "../input/mainArgs";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
 
 PouchDb.plugin(levelAdapter);
 
@@ -24,8 +25,6 @@ export function connectDbFile(
       ? `${host}${dbName}`
       : `${host}/${dbName}`;
 
-  const fs = eval("require('fs')");
-  // create parent directories
   if (!fs.existsSync(fullDatabaseName)) {
     fs.mkdirSync(fullDatabaseName, { recursive: true });
   }

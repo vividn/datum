@@ -1,5 +1,5 @@
-import { interpolateFields } from "../../utils/interpolateFields";
-import { DatumData, DatumMetadata } from "../../documentControl/DatumDocument";
+import { interpolateFields } from "../../utils/interpolateFields.js";
+import { DatumData, DatumMetadata } from "../../documentControl/DatumDocument.js";
 
 describe("interpolateFields", () => {
   it("interpolates %fields% and %?metaFields% of datum doc", async () => {

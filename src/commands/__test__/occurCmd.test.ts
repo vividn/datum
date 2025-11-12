@@ -5,11 +5,11 @@ import {
   restoreNow,
   setNow,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { DatumDocument } from "../../documentControl/DatumDocument";
-import { occurCmd } from "../occurCmd";
-import { setupCmd } from "../setupCmd";
-import { getActiveState } from "../../state/getActiveState";
+} from "../../__test__/test-utils.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
+import { occurCmd } from "../occurCmd.js";
+import { setupCmd } from "../setupCmd.js";
+import { getActiveState } from "../../state/getActiveState.js";
 
 describe("occurCmd", () => {
   const dbName = "occur_cmd_test";

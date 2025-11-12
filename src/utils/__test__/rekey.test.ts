@@ -1,4 +1,4 @@
-import { rekey, RekeyError } from "../rekey";
+import { rekey, RekeyError } from "../rekey.js";
 
 describe("rekey", () => {
   it("renames keys in aData based off of the key value pairs in bData", () => {

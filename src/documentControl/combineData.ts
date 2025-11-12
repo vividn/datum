@@ -1,8 +1,8 @@
-import { jClone } from "../utils/jClone";
+import { jClone } from "../utils/jClone.js";
 import isPlainObject from "lodash.isplainobject";
-import { MergeError } from "../errors";
-import { rekey } from "../utils/rekey";
-import { GenericObject, GenericType, JsonObject } from "../utils/utilityTypes";
+import { MergeError } from "../errors.js";
+import { rekey } from "../utils/rekey.js";
+import { GenericObject, GenericType, JsonObject } from "../utils/utilityTypes.js";
 
 export type UpdateStrategyNames =
   | "useOld"

@@ -1,17 +1,17 @@
-import { setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { setupCmd } from "../setupCmd";
-import * as updateDoc from "../../documentControl/updateDoc";
+import { setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { setupCmd } from "../setupCmd.js";
+import * as updateDoc from "../../documentControl/updateDoc.js";
 import {
   DatumDocument,
   EitherDocument,
-} from "../../documentControl/DatumDocument";
-import { updateCmd } from "../updateCmd";
-import * as quickId from "../../ids/quickId";
+} from "../../documentControl/DatumDocument.js";
+import { updateCmd } from "../updateCmd.js";
+import * as quickId from "../../ids/quickId.js";
 import { mock } from "jest-mock-extended";
-import { Show } from "../../input/outputArgs";
-import { addCmd } from "../addCmd";
-import { getCmd } from "../getCmd";
-import { LastDocsTooOldError } from "../../errors";
+import { Show } from "../../input/outputArgs.js";
+import { addCmd } from "../addCmd.js";
+import { getCmd } from "../getCmd.js";
+import { LastDocsTooOldError } from "../../errors.js";
 
 describe("updateCmd", () => {
   const dbName = "update_cmd_test";

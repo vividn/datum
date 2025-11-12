@@ -1,7 +1,7 @@
-import { DatumView, StringifiedDatumView, ViewDocument } from "./DatumView";
-import { datumViewToViewPayload } from "./datumViewToViewPayload";
-import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc";
-import { BaseDocControlArgs } from "../documentControl/base";
+import { DatumView, StringifiedDatumView, ViewDocument } from "./DatumView.js";
+import { datumViewToViewPayload } from "./datumViewToViewPayload.js";
+import { addDoc, ConflictStrategyNames } from "../documentControl/addDoc.js";
+import { BaseDocControlArgs } from "../documentControl/base.js";
 
 type InsertDatumViewArgs = {
   datumView: DatumView<any, any, any, any> | StringifiedDatumView;

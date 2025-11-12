@@ -1,8 +1,8 @@
-import { isIsoDateOrTime, isoDuration } from "../time/timeUtils";
-import { JsonObject, WithRequired } from "../utils/utilityTypes";
+import { isIsoDateOrTime, isoDuration } from "../time/timeUtils.js";
+import { JsonObject, WithRequired } from "../utils/utilityTypes.js";
 
-import { DatumState } from "../state/normalizeState";
-import { DatumTime } from "../time/datumTime";
+import { DatumState } from "../state/normalizeState.js";
+import { DatumTime } from "../time/datumTime.js";
 
 export type DatumData<T = unknown> = JsonObject & {
   state?: DatumState;

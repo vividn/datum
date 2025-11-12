@@ -1,11 +1,11 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { switchCmd } from "../switchCmd";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { switchCmd } from "../switchCmd.js";
 import { DateTime } from "luxon";
-import { setupCmd } from "../setupCmd";
-import { getActiveState } from "../../state/getActiveState";
-import { parseTimeStr } from "../../time/parseTimeStr";
-import { toDatumTime } from "../../time/datumTime";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import { setupCmd } from "../setupCmd.js";
+import { getActiveState } from "../../state/getActiveState.js";
+import { parseTimeStr } from "../../time/parseTimeStr.js";
+import { toDatumTime } from "../../time/datumTime.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
 
 describe("switchCmd", () => {
   const dbName = "switch_cmd_test";

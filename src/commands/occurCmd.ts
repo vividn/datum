@@ -1,12 +1,12 @@
-import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs";
-import { addCmd, AddCmdArgs, newDocArgs } from "./addCmd";
-import { EitherDocument } from "../documentControl/DatumDocument";
+import { handleTimeArgs, timeArgs, TimeArgs } from "../input/timeArgs.js";
+import { addCmd, AddCmdArgs, newDocArgs } from "./addCmd.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
-import { dataArgs } from "../input/dataArgs";
-import { fieldArgs } from "../input/fieldArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { dataArgs } from "../input/dataArgs.js";
+import { fieldArgs } from "../input/fieldArgs.js";
 
 export const occurArgs = new ArgumentParser({
   add_help: false,

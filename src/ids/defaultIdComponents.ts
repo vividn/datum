@@ -2,7 +2,7 @@ import {
   DatumData,
   DatumMetadata,
   isOccurredData,
-} from "../documentControl/DatumDocument";
+} from "../documentControl/DatumDocument.js";
 
 export function defaultIdComponents({
   data,

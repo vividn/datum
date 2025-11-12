@@ -1,8 +1,8 @@
-import { addIdAndMetadata } from "../addIdAndMetadata";
-import { setNow } from "../../__test__/test-utils";
-import { IdError, FieldError } from "../../errors";
-import { toDatumTime } from "../../time/datumTime";
-import { DatumPayload } from "../../documentControl/DatumDocument";
+import { addIdAndMetadata } from "../addIdAndMetadata.js";
+import { setNow } from "../../__test__/test-utils.js";
+import { IdError, FieldError } from "../../errors.js";
+import { toDatumTime } from "../../time/datumTime.js";
+import { DatumPayload } from "../../documentControl/DatumDocument.js";
 
 const nowUtc = "2023-09-05T11:35:00.000Z";
 const nowDatumTime = toDatumTime(nowUtc);

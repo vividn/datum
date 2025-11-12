@@ -1,9 +1,9 @@
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { startArgs, StartCmdArgs } from "./startCmd";
-import { switchCmd } from "./switchCmd";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { startArgs, StartCmdArgs } from "./startCmd.js";
+import { switchCmd } from "./switchCmd.js";
 import set from "lodash.set";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const endArgs = new ArgumentParser({
   add_help: false,

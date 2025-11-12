@@ -1,10 +1,10 @@
-import { MainDatumArgs } from "../input/mainArgs";
-import { connectDb } from "../auth/connectDb";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { connectDb } from "../auth/connectDb.js";
 import * as fs from "fs";
 import { DateTime } from "luxon";
-import { dbArgs } from "../input/dbArgs";
+import { dbArgs } from "../input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const backupArgs = new ArgumentParser({
   add_help: false,

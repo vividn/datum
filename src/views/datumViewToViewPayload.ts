@@ -1,12 +1,17 @@
-import { MyError } from "../errors";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+import { MyError } from "../errors.js";
 import {
   DatumView,
   StringifiedDatumView,
   ViewPayload,
   ViewPayloadViews,
   ConflictingReduceError,
-} from "./DatumView";
+} from "./DatumView.js";
 import { transformSync, TransformOptions } from "@babel/core";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const couchdbBabelTransformOptions: TransformOptions = {
   filename: "view.ts",
@@ -19,6 +24,7 @@ const couchdbBabelTransformOptions: TransformOptions = {
           esmodules: false, // Disable ES modules to target older JavaScript
           browsers: ["firefox 52"], // Couchdb doesn't support many modern JS features. Even though it claims to be SpiderMonkey 78, it doesn't support the ...rest op for exampe.
         },
+        bugfixes: true,
       },
     ],
   ],
@@ -27,6 +33,7 @@ const couchdbBabelTransformOptions: TransformOptions = {
   sourceMaps: false,
   babelrc: false,
   cwd: __dirname,
+  configFile: false,
 };
 
 export class BabelTransformError extends MyError {
@@ -48,7 +55,11 @@ function toCouchDbJs(fnStr: string): string {
     );
   }
   // babel returns the function with a trailing semicolon, which is not allowed in couchdb views, so remove it
-  const code = transformed.code.slice(0, -1);
+  let code = transformed.code.slice(0, -1);
+
+  // Remove __name helper calls that Babel may inject for debugging
+  code = code.replace(/__name\([^,]+,\s*"[^"]+"\);?/g, '');
+
   return code;
 }
 

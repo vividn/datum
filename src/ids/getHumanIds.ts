@@ -1,6 +1,6 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { idToHumanView } from "../views/datumViews";
-import { DatumViewMissingError, isCouchDbError } from "../errors";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { idToHumanView } from "../views/datumViews/index.js";
+import { DatumViewMissingError, isCouchDbError } from "../errors.js";
 
 export async function getHumanIds(
   db: PouchDB.Database<EitherPayload>,

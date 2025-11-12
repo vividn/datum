@@ -4,14 +4,14 @@ import {
   BadTimeError,
   BadTimezoneError,
   BaseDataError,
-} from "../../errors";
+} from "../../errors.js";
 import {
   handleTimeArgs,
   occurredBaseArgs,
   ReferencedTimeArgs,
   TimeFromArgs,
-} from "../timeArgs";
-import { restoreNow, setNow } from "../../__test__/test-utils";
+} from "../timeArgs.js";
+import { restoreNow, setNow } from "../../__test__/test-utils.js";
 
 const expectTiming = (
   props: ReferencedTimeArgs,

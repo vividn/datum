@@ -3,13 +3,13 @@ import {
   ConflictingReduceError,
   DatumView,
   StringifiedDatumView,
-} from "../DatumView";
-import { _emit } from "../emit";
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { insertDatumView } from "../insertDatumView";
-import * as addDoc from "../../documentControl/addDoc";
-import * as updateDoc from "../../documentControl/updateDoc";
-import { datumViewToViewPayload } from "../datumViewToViewPayload";
+} from "../DatumView.js";
+import { _emit } from "../emit.js";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { insertDatumView } from "../insertDatumView.js";
+import * as addDoc from "../../documentControl/addDoc.js";
+import * as updateDoc from "../../documentControl/updateDoc.js";
+import { datumViewToViewPayload } from "../datumViewToViewPayload.js";
 
 function emit(key: unknown, value: unknown) {
   _emit(key, value);

@@ -1,17 +1,17 @@
-import { IdError, MyError } from "../errors";
-import { jClone } from "../utils/jClone";
+import { IdError, MyError } from "../errors.js";
+import { jClone } from "../utils/jClone.js";
 import isEqual from "lodash.isequal";
 import unset from "lodash.unset";
-import { BaseDocControlArgs, DocExistsError } from "./base";
+import { BaseDocControlArgs, DocExistsError } from "./base.js";
 import {
   showExists,
   showFailed,
   showNoDiff,
   showOWrite,
   showRename,
-} from "../output/output";
-import { assembleId } from "../ids/assembleId";
-import { EitherDocument, EitherPayload } from "./DatumDocument";
+} from "../output/output.js";
+import { assembleId } from "../ids/assembleId.js";
+import { EitherDocument, EitherPayload } from "./DatumDocument.js";
 
 function isEquivalent(payload: EitherPayload, existingDoc: EitherDocument) {
   const payloadClone = jClone(payload);

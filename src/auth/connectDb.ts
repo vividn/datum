@@ -1,10 +1,10 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { MainDatumArgs } from "../input/mainArgs";
-import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs";
-import { connectDbBrowser } from "./connectDbBrowser";
-import { connectDbMemory } from "./connectDbMemory";
-import { connectDbFile } from "./connectDbFile";
-import { connectDbHttp } from "./connectDbHttp";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { mergeConfigAndEnvIntoArgs } from "../config/mergeConfigIntoArgs.js";
+import { connectDbBrowser } from "./connectDbBrowser.js";
+import { connectDbMemory } from "./connectDbMemory.js";
+import { connectDbFile } from "./connectDbFile.js";
+import { connectDbHttp } from "./connectDbHttp.js";
 
 export function connectDb(
   args: MainDatumArgs,

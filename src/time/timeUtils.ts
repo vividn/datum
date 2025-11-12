@@ -1,5 +1,5 @@
 import { DateTime, Duration, Zone, Settings as DateTimeSettings } from "luxon";
-import { BadDurationError } from "../errors";
+import { BadDurationError } from "../errors.js";
 
 export type isoDatetime = string;
 export type isoDate = string;

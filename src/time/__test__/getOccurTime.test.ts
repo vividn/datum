@@ -1,9 +1,9 @@
 import {
   DataOnlyDocument,
   DatumDocument,
-} from "../../documentControl/DatumDocument";
+} from "../../documentControl/DatumDocument.js";
 import { DateTime, Settings } from "luxon";
-import { getOccurTime } from "../getOccurTime";
+import { getOccurTime } from "../getOccurTime.js";
 
 describe("getOccurTime", () => {
   it("gets the occurTime of a datum doc with the right offset", () => {

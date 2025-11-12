@@ -1,14 +1,14 @@
-import { connectDb } from "../auth/connectDb";
-import { datumV1View } from "../views/datumViews";
-import { EitherPayload } from "../documentControl/DatumDocument";
+import { connectDb } from "../auth/connectDb.js";
+import { datumV1View } from "../views/datumViews/index.js";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
 import * as fs from "fs";
 import path from "path";
-import { V1MapRow, V1ReduceRowGroup1 } from "../views/datumViews/datumV1";
+import { V1MapRow, V1ReduceRowGroup1 } from "../views/datumViews/datumV1.js";
 import flatten from "lodash.flatten";
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { MainDatumArgs } from "../input/mainArgs";
+import { dbArgs } from "../input/dbArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
 
 export const v1Args = new ArgumentParser({
   add_help: false,

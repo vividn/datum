@@ -1,6 +1,6 @@
-import { insertDatumView } from "./insertDatumView";
-import { BaseDocControlArgs } from "../documentControl/base";
-import { getAllDatumViews, getDbDatumViews } from "./getAllDatumViews";
+import { insertDatumView } from "./insertDatumView.js";
+import { BaseDocControlArgs } from "../documentControl/base.js";
+import { getAllDatumViews, getDbDatumViews } from "./getAllDatumViews.js";
 
 export type SetupDatumViewsType = {
   projectDir?: string;

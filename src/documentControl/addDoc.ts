@@ -4,25 +4,25 @@ import {
   EitherPayload,
   isDatumDocument,
   isDatumPayload,
-} from "./DatumDocument";
+} from "./DatumDocument.js";
 import { DateTime } from "luxon";
-import { IdError, isCouchDbError } from "../errors";
-import { jClone } from "../utils/jClone";
-import { UpdateStrategyNames } from "./combineData";
-import { updateDoc } from "./updateDoc";
-import { showCreate, showExists, showFailed } from "../output/output";
-import { BaseDocControlArgs, DocExistsError } from "./base";
+import { IdError, isCouchDbError } from "../errors.js";
+import { jClone } from "../utils/jClone.js";
+import { UpdateStrategyNames } from "./combineData.js";
+import { updateDoc } from "./updateDoc.js";
+import { showCreate, showExists, showFailed } from "../output/output.js";
+import { BaseDocControlArgs, DocExistsError } from "./base.js";
 import isEqual from "lodash.isequal";
-import { overwriteDoc } from "./overwriteDoc";
-import { deleteDoc } from "./deleteDoc";
+import { overwriteDoc } from "./overwriteDoc.js";
+import { deleteDoc } from "./deleteDoc.js";
 import {
   DataOrDesignDocument,
   isViewDocument,
   isViewPayload,
   ViewPayload,
-} from "../views/DatumView";
-import { assembleId } from "../ids/assembleId";
-import { toDatumTime } from "../time/datumTime";
+} from "../views/DatumView.js";
+import { assembleId } from "../ids/assembleId.js";
+import { toDatumTime } from "../time/datumTime.js";
 
 function payloadMatchesDbData(
   payload: EitherPayload,

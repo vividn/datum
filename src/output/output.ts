@@ -2,23 +2,23 @@ import {
   DatumData,
   EitherDocument,
   EitherPayload,
-} from "../documentControl/DatumDocument";
+} from "../documentControl/DatumDocument.js";
 import chalk, { Chalk } from "chalk";
 import stringify from "string.ify";
-import { OutputArgs, Show } from "../input/outputArgs";
-import { interpolateFields } from "../utils/interpolateFields";
-import { pullOutData } from "../utils/pullOutData";
+import { OutputArgs, Show } from "../input/outputArgs.js";
+import { interpolateFields } from "../utils/interpolateFields.js";
+import { pullOutData } from "../utils/pullOutData.js";
 import { Duration } from "luxon";
-import { isStateObject, StateObject } from "../state/normalizeState";
+import { isStateObject, StateObject } from "../state/normalizeState.js";
 import isEqual from "lodash.isequal";
-import { humanTime } from "../time/humanTime";
+import { humanTime } from "../time/humanTime.js";
 import {
   fieldChalk,
   getFieldColor,
   getStateColor,
   stateChalk,
-} from "../field/fieldColor";
-import { getContrastTextColor } from "../utils/colorUtils";
+} from "../field/fieldColor.js";
+import { getContrastTextColor } from "../utils/colorUtils.js";
 
 enum ACTIONS {
   Create = "CREATE",

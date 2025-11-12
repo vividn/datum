@@ -1,15 +1,15 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
 import {
   asViewDb,
   MapFunction,
   StringifiedDatumView,
-} from "../views/DatumView";
-import { isCouchDbError } from "../errors";
-import { editInTerminal } from "../utils/editInTerminal";
-import { updateStrategies } from "../documentControl/combineData";
-import { getMigrationId, migrationName } from "./migrations";
-import { OutputArgs } from "../input/outputArgs";
-import { insertDatumView } from "../views/insertDatumView";
+} from "../views/DatumView.js";
+import { isCouchDbError } from "../errors.js";
+import { editInTerminal } from "../utils/editInTerminal.js";
+import { updateStrategies } from "../documentControl/combineData.js";
+import { getMigrationId, migrationName } from "./migrations.js";
+import { OutputArgs } from "../input/outputArgs.js";
+import { insertDatumView } from "../views/insertDatumView.js";
 
 const templateMigration = `(doc) => {
   data = doc.data

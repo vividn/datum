@@ -1,13 +1,13 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { endCmd } from "../endCmd";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { endCmd } from "../endCmd.js";
 import { DateTime } from "luxon";
-import { setupCmd } from "../setupCmd";
-import { switchCmd } from "../switchCmd";
-import { startCmd } from "../startCmd";
-import { getActiveState } from "../../state/getActiveState";
-import { parseTimeStr } from "../../time/parseTimeStr";
-import { BadDurationError } from "../../errors";
-import { toDatumTime } from "../../time/datumTime";
+import { setupCmd } from "../setupCmd.js";
+import { switchCmd } from "../switchCmd.js";
+import { startCmd } from "../startCmd.js";
+import { getActiveState } from "../../state/getActiveState.js";
+import { parseTimeStr } from "../../time/parseTimeStr.js";
+import { BadDurationError } from "../../errors.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 describe("endCmd", () => {
   const dbName = "end_cmd_test";

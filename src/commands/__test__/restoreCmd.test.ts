@@ -1,14 +1,14 @@
-import { restoreCmd } from "../restoreCmd";
-import { testDbLifecycle } from "../../__test__/test-utils";
+import { restoreCmd } from "../restoreCmd.js";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
 import path from "path";
 import * as os from "os";
 import * as fs from "fs";
-import { setupCmd } from "../setupCmd";
-import { backupCmd } from "../backupCmd";
-import * as connectDbModule from "../../auth/connectDb";
-import { connectDb } from "../../auth/connectDb";
-import { addCmd } from "../addCmd";
-import { generateSampleMorning } from "../../__test__/generateSampleMorning";
+import { setupCmd } from "../setupCmd.js";
+import { backupCmd } from "../backupCmd.js";
+import * as connectDbModule from "../../auth/connectDb.js";
+import { connectDb } from "../../auth/connectDb.js";
+import { addCmd } from "../addCmd.js";
+import { generateSampleMorning } from "../../__test__/generateSampleMorning.js";
 
 describe("restoreCmd", () => {
   const dbName1 = "restore_cmd_test_1";

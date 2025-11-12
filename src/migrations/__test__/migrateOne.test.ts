@@ -1,10 +1,10 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { setupCmd } from "../../commands/setupCmd";
-import { addCmd } from "../../commands/addCmd";
-import { migrateOne } from "../migrateOne";
-import { MigrationOps } from "../migrations";
-import { DatumDocument } from "../../documentControl/DatumDocument";
-import { MigrationError } from "../../errors";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { addCmd } from "../../commands/addCmd.js";
+import { migrateOne } from "../migrateOne.js";
+import { MigrationOps } from "../migrations.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
+import { MigrationError } from "../../errors.js";
 
 describe("migrateOne", () => {
   const db = testDbLifecycle("migrate_one_test");

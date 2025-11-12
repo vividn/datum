@@ -1,15 +1,15 @@
 import { ArgumentParser } from "argparse";
-import { connectDb } from "../auth/connectDb";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { updateDoc } from "../documentControl/updateDoc";
-import { QuickIdArgs, quickIdArgs } from "../input/quickIdArg";
-import { timeArgs, TimeArgs, handleTimeArgs } from "../input/timeArgs";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
-import { MainDatumArgs } from "../input/mainArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { connectDb } from "../auth/connectDb.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { updateDoc } from "../documentControl/updateDoc.js";
+import { QuickIdArgs, quickIdArgs } from "../input/quickIdArg.js";
+import { timeArgs, TimeArgs, handleTimeArgs } from "../input/timeArgs.js";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId.js";
+import { updateLastDocsRef } from "../documentControl/lastDocs.js";
 
 export const retimeCmdArgs = new ArgumentParser({
   description: "Change the occurrence time of an existing document.",

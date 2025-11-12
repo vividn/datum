@@ -1,24 +1,24 @@
 #!/usr/bin/env node
 
-import { connectDb } from "../../../src/auth/connectDb";
+import { connectDb } from "../../../src/auth/connectDb.js";
 import readline from "node:readline";
 import { stdin } from "node:process";
 import { once } from "node:events";
-import { isoDate, isoDateOrTime } from "../../../src/time/timeUtils";
-import { reduceCmd } from "../../../src/commands/reduceCmd";
-import { balanceView, equalityView } from "../views";
-import { Show } from "../../../src/input/outputArgs";
-import { mapCmd } from "../../../src/commands/mapCmd";
-import { EqDoc, TxDoc, XcDoc } from "../views/balance";
+import { isoDate, isoDateOrTime } from "../../../src/time/timeUtils.js";
+import { reduceCmd } from "../../../src/commands/reduceCmd.js";
+import { balanceView, equalityView } from "../views/index.js";
+import { Show } from "../../../src/input/outputArgs.js";
+import { mapCmd } from "../../../src/commands/mapCmd.js";
+import { EqDoc, TxDoc, XcDoc } from "../views/balance.js";
 import chalk from "chalk";
 import printf from "printf";
-import { zeroDate } from "./eqcheck";
-import { HIGH_STRING } from "../../../src/utils/startsWith";
+import { zeroDate } from "./eqcheck.js";
+import { HIGH_STRING } from "../../../src/utils/startsWith.js";
 import { DateTime } from "luxon";
-import { parseDateStr } from "../../../src/time/parseDateStr";
-import { dbArgs, DbArgs } from "../../../src/input/dbArgs";
+import { parseDateStr } from "../../../src/time/parseDateStr.js";
+import { dbArgs, DbArgs } from "../../../src/input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded.js";
 
 type TransactionViewInput = {
   args: DbArgs;
@@ -340,7 +340,7 @@ async function transactionViewCmd(argsOrCli: TxViewArgs | string | string[]) {
   });
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   transactionViewCmd(process.argv.slice(2)).catch((err) => {
     throw err;
   });

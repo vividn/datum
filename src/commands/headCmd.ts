@@ -1,9 +1,9 @@
-import { tailArgs, tailCmd, TailCmdArgs } from "./tailCmd";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { outputArgs } from "../input/outputArgs";
-import { dbArgs } from "../input/dbArgs";
+import { tailArgs, tailCmd, TailCmdArgs } from "./tailCmd.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { dbArgs } from "../input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const headCmdArgs = new ArgumentParser({
   description: "show the first occurred/modified/created entries in the db",

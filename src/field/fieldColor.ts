@@ -1,9 +1,9 @@
 import chalk, { Chalk } from "chalk";
-import { DatumState } from "../state/normalizeState";
-import { getContrastTextColor } from "../utils/colorUtils";
-import { md5Color } from "../utils/md5Color";
-import { getFieldSpec } from "./mySpecs";
-import { simplifyState } from "../state/simplifyState";
+import { DatumState } from "../state/normalizeState.js";
+import { getContrastTextColor } from "../utils/colorUtils.js";
+import { md5Color } from "../utils/md5Color.js";
+import { getFieldSpec } from "./mySpecs.js";
+import { simplifyState } from "../state/simplifyState.js";
 
 export function getFieldColor(field?: string): string {
   if (field === undefined) {

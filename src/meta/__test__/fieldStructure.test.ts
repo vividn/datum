@@ -1,5 +1,5 @@
-import { addIdAndMetadata } from "../addIdAndMetadata";
-import { DatumData, DatumIdPayload } from "../../documentControl/DatumDocument";
+import { addIdAndMetadata } from "../addIdAndMetadata.js";
+import { DatumData, DatumIdPayload } from "../../documentControl/DatumDocument.js";
 
 describe("Field structure handling in addIdAndMetadata", () => {
   test("Simple field - no field structure in metadata", () => {

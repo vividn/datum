@@ -1,4 +1,4 @@
-import { createOrAppend } from "../createOrAppend";
+import { createOrAppend } from "../createOrAppend.js";
 
 describe("createOrAppend", () => {
   it("appends if existing is array", () => {

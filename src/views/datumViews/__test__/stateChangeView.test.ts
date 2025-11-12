@@ -1,8 +1,8 @@
-import * as emit from "../../emit";
-import { makeDoc } from "../../../__test__/test-utils";
-import { stateChangeView } from "../stateChangeView";
+import * as emit from "../../emit.js";
+import { makeDoc } from "../../../__test__/test-utils.js";
+import { stateChangeView } from "../stateChangeView.js";
 import { DateTime } from "luxon";
-import { DatumTime } from "../../../time/datumTime";
+import { DatumTime } from "../../../time/datumTime.js";
 
 const occurTime: DatumTime = {
   utc: "2023-08-22T15:00:00.000Z",

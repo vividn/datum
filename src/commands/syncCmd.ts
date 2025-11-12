@@ -1,10 +1,10 @@
 import PouchDb from "pouchdb";
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
-import { MainDatumArgs } from "../input/mainArgs";
-import { connectDb } from "../auth/connectDb";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { connectDb } from "../auth/connectDb.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const syncArgs = new ArgumentParser({
   add_help: false,

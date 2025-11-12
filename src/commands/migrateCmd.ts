@@ -1,11 +1,11 @@
-import { migrateEditCmdArgs } from "./migrate/migrateEditCmd";
-import { MainDatumArgs } from "../input/mainArgs";
+import { migrateEditCmdArgs } from "./migrate/migrateEditCmd.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { migrateInteractiveCmdArgs } from "./migrate/migrateInteractiveCmd";
-import { migrateRunCmdArgs } from "./migrate/migrateRunCmd";
-import { dbArgs } from "../input/dbArgs";
-import { outputArgs } from "../input/outputArgs";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { migrateInteractiveCmdArgs } from "./migrate/migrateInteractiveCmd.js";
+import { migrateRunCmdArgs } from "./migrate/migrateRunCmd.js";
+import { dbArgs } from "../input/dbArgs.js";
+import { outputArgs } from "../input/outputArgs.js";
 
 export const migrateArgs = new ArgumentParser({
   add_help: false,

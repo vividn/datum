@@ -1,8 +1,8 @@
-import { endCmd } from "../commands/endCmd";
-import { occurCmd } from "../commands/occurCmd";
-import { startCmd } from "../commands/startCmd";
-import { switchCmd } from "../commands/switchCmd";
-import { popNow, pushNow, setNow } from "./test-utils";
+import { endCmd } from "../commands/endCmd.js";
+import { occurCmd } from "../commands/occurCmd.js";
+import { startCmd } from "../commands/startCmd.js";
+import { switchCmd } from "../commands/switchCmd.js";
+import { popNow, pushNow, setNow } from "./test-utils.js";
 
 export async function generateSampleMorning(date: string): Promise<void> {
   pushNow(`8:30 ${date}`);

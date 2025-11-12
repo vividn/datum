@@ -1,13 +1,13 @@
-import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc";
-import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId";
-import { connectDb } from "../auth/connectDb";
-import { QuickIdArgs, quickIdArgs } from "../input/quickIdArg";
-import { MainDatumArgs } from "../input/mainArgs";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
+import { deleteDoc, DeletedDocument } from "../documentControl/deleteDoc.js";
+import { quickId, _LAST_WITH_PROTECTION } from "../ids/quickId.js";
+import { connectDb } from "../auth/connectDb.js";
+import { QuickIdArgs, quickIdArgs } from "../input/quickIdArg.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { updateLastDocsRef } from "../documentControl/lastDocs.js";
 import { ArgumentParser } from "argparse";
-import { outputArgs } from "../input/outputArgs";
-import { dbArgs } from "../input/dbArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { outputArgs } from "../input/outputArgs.js";
+import { dbArgs } from "../input/dbArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const deleteArgs = new ArgumentParser({
   add_help: false,

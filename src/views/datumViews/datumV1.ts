@@ -1,8 +1,8 @@
-import { _emit } from "../emit";
-import { DatumView } from "../DatumView";
-import { DatumDocument } from "../../documentControl/DatumDocument";
-import { ViewRow } from "../../utils/utilityTypes";
-import { isoDateOrTime } from "../../time/timeUtils";
+import { _emit } from "../emit.js";
+import { DatumView } from "../DatumView.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
+import { ViewRow } from "../../utils/utilityTypes.js";
+import { isoDateOrTime } from "../../time/timeUtils.js";
 
 type DocType = DatumDocument;
 type MapKey = [string, isoDateOrTime];

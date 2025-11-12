@@ -1,21 +1,21 @@
-import * as connectDbModule from "../../auth/connectDb";
-import { connectDb } from "../../auth/connectDb";
-import { addCmd } from "../../commands/addCmd";
-import { endCmd } from "../../commands/endCmd";
-import { occurCmd } from "../../commands/occurCmd";
-import { setupCmd } from "../../commands/setupCmd";
-import { startCmd } from "../../commands/startCmd";
-import { switchCmd } from "../../commands/switchCmd";
-import { EitherDocument } from "../../documentControl/DatumDocument";
-import { Show } from "../../input/outputArgs";
+import * as connectDbModule from "../../auth/connectDb.js";
+import { connectDb } from "../../auth/connectDb.js";
+import { addCmd } from "../../commands/addCmd.js";
+import { endCmd } from "../../commands/endCmd.js";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { startCmd } from "../../commands/startCmd.js";
+import { switchCmd } from "../../commands/switchCmd.js";
+import { EitherDocument } from "../../documentControl/DatumDocument.js";
+import { Show } from "../../input/outputArgs.js";
 import {
   deterministicHumanIds,
   pass,
   resetTestDb,
   restoreNow,
   setNow,
-} from "../../__test__/test-utils";
-import { tableOutput } from "../tableOutput";
+} from "../../__test__/test-utils.js";
+import { tableOutput } from "../tableOutput.js";
 
 describe("tableOutput", () => {
   deterministicHumanIds();

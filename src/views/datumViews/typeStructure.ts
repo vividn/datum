@@ -1,7 +1,7 @@
-import { EitherDocument } from "../../documentControl/DatumDocument";
-import { JsonObject, JsonType } from "../../utils/utilityTypes";
-import { DatumView } from "../DatumView";
-import { _emit } from "../emit";
+import { EitherDocument } from "../../documentControl/DatumDocument.js";
+import { JsonObject, JsonType } from "../../utils/utilityTypes.js";
+import { DatumView } from "../DatumView.js";
+import { _emit } from "../emit.js";
 
 type DocType = EitherDocument;
 type MapKey = string[];

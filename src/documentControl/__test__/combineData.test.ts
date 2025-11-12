@@ -1,12 +1,12 @@
-import { jClone } from "../../utils/jClone";
+import { jClone } from "../../utils/jClone.js";
 import {
   combineData,
   conflictingKeyStrategies,
   mergeValues,
-} from "../combineData";
-import { MergeError } from "../../errors";
-import { fail } from "../../__test__/test-utils";
-import { GenericObject } from "../../utils/utilityTypes";
+} from "../combineData.js";
+import { MergeError } from "../../errors.js";
+import { fail } from "../../__test__/test-utils.js";
+import { GenericObject } from "../../utils/utilityTypes.js";
 
 describe("combineData", () => {
   const aData = {

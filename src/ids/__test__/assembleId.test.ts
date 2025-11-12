@@ -1,5 +1,5 @@
-import { assembleId } from "../assembleId";
-import { IdError } from "../../errors";
+import { assembleId } from "../assembleId.js";
+import { IdError } from "../../errors.js";
 
 describe("assembleId", () => {
   it("uses the _id in the payload if no idStructure is provided or found in metadata", () => {

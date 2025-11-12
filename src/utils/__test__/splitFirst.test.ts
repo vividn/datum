@@ -1,4 +1,4 @@
-import { splitFirst } from "../splitFirst";
+import { splitFirst } from "../splitFirst.js";
 
 describe("splitFirst", () => {
   const splitFirstEquals = (str: string) => splitFirst("=", str);

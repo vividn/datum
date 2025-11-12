@@ -1,8 +1,8 @@
-import { fail, testDbLifecycle } from "../../__test__/test-utils";
-import { editMigration } from "../editMigration";
-import { asViewDb } from "../../views/DatumView";
-import * as editInTerminal from "../../utils/editInTerminal";
-import { getMigrationId, migrationName } from "../migrations";
+import { fail, testDbLifecycle } from "../../__test__/test-utils.js";
+import { editMigration } from "../editMigration.js";
+import { asViewDb } from "../../views/DatumView.js";
+import * as editInTerminal from "../../utils/editInTerminal.js";
+import { getMigrationId, migrationName } from "../migrations.js";
 
 const migA2B = `(doc) => {
   if (doc.a) {

@@ -1,10 +1,10 @@
-import { mapArgs, mapCmd, MapCmdArgs } from "./mapCmd";
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { outputArgs, Show } from "../input/outputArgs";
+import { mapArgs, mapCmd, MapCmdArgs } from "./mapCmd.js";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { outputArgs, Show } from "../input/outputArgs.js";
 import { ArgumentParser } from "argparse";
-import { dbArgs } from "../input/dbArgs";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
-import { mapReduceOutput } from "../output/mapReduceOutput";
+import { dbArgs } from "../input/dbArgs.js";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
+import { mapReduceOutput } from "../output/mapReduceOutput.js";
 
 export const reduceArgs = new ArgumentParser({
   add_help: false,

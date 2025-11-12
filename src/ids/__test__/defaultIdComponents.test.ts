@@ -1,5 +1,5 @@
-import { defaultIdComponents } from "../defaultIdComponents";
-import { exampleDataOccur, exampleOccurTime } from "./exampleData";
+import { defaultIdComponents } from "../defaultIdComponents.js";
+import { exampleDataOccur, exampleOccurTime } from "./exampleData.js";
 
 describe("defaultIdComponents", () => {
   it("can use occurTime", () => {

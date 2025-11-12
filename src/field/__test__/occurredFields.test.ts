@@ -1,10 +1,10 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { addCmd } from "../../commands/addCmd";
-import { occurCmd } from "../../commands/occurCmd";
-import { setupCmd } from "../../commands/setupCmd";
-import { startCmd } from "../../commands/startCmd";
-import { switchCmd } from "../../commands/switchCmd";
-import { occurredFields } from "../occurredFields";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { addCmd } from "../../commands/addCmd.js";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { startCmd } from "../../commands/startCmd.js";
+import { switchCmd } from "../../commands/switchCmd.js";
+import { occurredFields } from "../occurredFields.js";
 
 describe("occurredFields", () => {
   const db = testDbLifecycle("occurred_fields_test");

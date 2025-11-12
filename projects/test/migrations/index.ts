@@ -1,1 +1,1 @@
-export { migrateExample } from "./migrateExample";
+export { migrateExample } from "./migrateExample.js";

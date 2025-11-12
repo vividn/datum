@@ -1,11 +1,11 @@
-import { DatumData } from "../documentControl/DatumDocument";
+import { DatumData } from "../documentControl/DatumDocument.js";
 import set from "lodash.set";
-import { DataArgs } from "../input/dataArgs";
-import { normalizeState } from "../state/normalizeState";
+import { DataArgs } from "../input/dataArgs.js";
+import { normalizeState } from "../state/normalizeState.js";
 import get from "lodash.get";
 import unset from "lodash.unset";
 import { DateTime } from "luxon";
-import { toDatumTime } from "../time/datumTime";
+import { toDatumTime } from "../time/datumTime.js";
 
 // TODO: Use alterDatumData to change everything here rather than set/unset
 export const commandChanges = ["occur", "start", "end", "switch"] as const;

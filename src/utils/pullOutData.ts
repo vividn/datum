@@ -3,7 +3,7 @@ import {
   DatumMetadata,
   EitherPayload,
   isDatumPayload,
-} from "../documentControl/DatumDocument";
+} from "../documentControl/DatumDocument.js";
 
 export function pullOutData(doc: EitherPayload): {
   data: DatumData;

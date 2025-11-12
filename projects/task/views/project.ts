@@ -1,8 +1,8 @@
-import { DatumTime } from "../../../src/time/datumTime";
-import { isoDatetime } from "../../../src/time/timeUtils";
-import { DatumView } from "../../../src/views/DatumView";
-import { _emit } from "../../../src/views/emit";
-import { TaskDoc } from "./inbox";
+import { DatumTime } from "../../../src/time/datumTime.js";
+import { isoDatetime } from "../../../src/time/timeUtils.js";
+import { DatumView } from "../../../src/views/DatumView.js";
+import { _emit } from "../../../src/views/emit.js";
+import { TaskDoc } from "./inbox.js";
 
 type DocType = TaskDoc;
 

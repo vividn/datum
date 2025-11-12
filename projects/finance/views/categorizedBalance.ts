@@ -1,8 +1,8 @@
-import { DatumView } from "../../../src/views/DatumView";
-import { FinanceDoc } from "./balance";
-import { isoDateOrTime } from "../../../src/time/timeUtils";
-import { _emit } from "../../../src/views/emit";
-import { DatumTime } from "../../../src/time/datumTime";
+import { DatumView } from "../../../src/views/DatumView.js";
+import { FinanceDoc } from "./balance.js";
+import { isoDateOrTime } from "../../../src/time/timeUtils.js";
+import { _emit } from "../../../src/views/emit.js";
+import { DatumTime } from "../../../src/time/datumTime.js";
 
 type DocType = FinanceDoc;
 type MapKey = [string, string, string, isoDateOrTime | null];

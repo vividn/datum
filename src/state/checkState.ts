@@ -1,17 +1,17 @@
-import { isoDatetime } from "../time/timeUtils";
-import { MapRow } from "../views/DatumView";
-import { stateChangeView } from "../views/datumViews/stateChangeView";
-import { overlappingBlockView } from "../views/datumViews";
-import { MyError } from "../errors";
-import { pullOutData } from "../utils/pullOutData";
-import { updateDoc } from "../documentControl/updateDoc";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { OutputArgs } from "../input/outputArgs";
+import { isoDatetime } from "../time/timeUtils.js";
+import { MapRow } from "../views/DatumView.js";
+import { stateChangeView } from "../views/datumViews/stateChangeView.js";
+import { overlappingBlockView } from "../views/datumViews/index.js";
+import { MyError } from "../errors.js";
+import { pullOutData } from "../utils/pullOutData.js";
+import { updateDoc } from "../documentControl/updateDoc.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { OutputArgs } from "../input/outputArgs.js";
 import isEqual from "lodash.isequal";
-import { MigrationMapRow } from "../migrations/migrations";
-import { durationBlockView } from "../views/datumViews/durationBlocks";
-import { extractTimeFromId } from "../utils/extractTimeFromId";
-import { HIGH_STRING } from "../utils/startsWith";
+import { MigrationMapRow } from "../migrations/migrations.js";
+import { durationBlockView } from "../views/datumViews/durationBlocks.js";
+import { extractTimeFromId } from "../utils/extractTimeFromId.js";
+import { HIGH_STRING } from "../utils/startsWith.js";
 
 type StateChangeErrorType = {
   message?: string;

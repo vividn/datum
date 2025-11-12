@@ -3,25 +3,25 @@ import {
   testDbLifecycle,
   setNow,
   restoreNow,
-} from "../../__test__/test-utils";
-import { insertDatumView } from "../../views/insertDatumView";
+} from "../../__test__/test-utils.js";
+import { insertDatumView } from "../../views/insertDatumView.js";
 import {
   stateChangeView,
   humanIdView,
   idToHumanView,
   subHumanIdView,
   timingView,
-} from "../../views/datumViews";
+} from "../../views/datumViews/index.js";
 import {
   AmbiguousQuickIdError,
   NoQuickIdMatchError,
   NoRecentQuickIdError,
   quickId,
-} from "../quickId";
-import { occurCmd } from "../../commands/occurCmd";
-import { getCmd } from "../../commands/getCmd";
-import { getLastDocs } from "../../documentControl/lastDocs";
-import { toDatumTime } from "../../time/datumTime";
+} from "../quickId.js";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { getCmd } from "../../commands/getCmd.js";
+import { getLastDocs } from "../../documentControl/lastDocs.js";
+import { toDatumTime } from "../../time/datumTime.js";
 
 jest.retryTimes(3);
 

@@ -1,8 +1,8 @@
-import { DatumView } from "../../../src/views/DatumView";
-import { DatumDocument } from "../../../src/documentControl/DatumDocument";
-import { _emit } from "../../../src/views/emit";
-import { isoDateOrTime } from "../../../src/time/timeUtils";
-import { DatumTime } from "../../../src/time/datumTime";
+import { DatumView } from "../../../src/views/DatumView.js";
+import { DatumDocument } from "../../../src/documentControl/DatumDocument.js";
+import { _emit } from "../../../src/views/emit.js";
+import { isoDateOrTime } from "../../../src/time/timeUtils.js";
+import { DatumTime } from "../../../src/time/datumTime.js";
 
 export type TaskDoc = DatumDocument<{
   task: string;

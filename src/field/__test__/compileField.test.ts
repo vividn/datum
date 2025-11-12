@@ -1,10 +1,10 @@
-import { compileField } from "../compileField";
-import { FieldError } from "../../errors";
+import { compileField } from "../compileField.js";
+import { FieldError } from "../../errors.js";
 import {
   DatumData,
   DatumMetadata,
   DatumPayload,
-} from "../../documentControl/DatumDocument";
+} from "../../documentControl/DatumDocument.js";
 
 describe("compileField function", () => {
   test("uses existing fieldStructure in metadata if available", () => {

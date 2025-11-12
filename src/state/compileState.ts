@@ -1,7 +1,7 @@
-import { DatumData } from "../documentControl/DatumDocument";
-import { jClone } from "../utils/jClone";
-import { normalizeState } from "./normalizeState";
-import { getActiveState } from "./getActiveState";
+import { DatumData } from "../documentControl/DatumDocument.js";
+import { jClone } from "../utils/jClone.js";
+import { normalizeState } from "./normalizeState.js";
+import { getActiveState } from "./getActiveState.js";
 
 export async function compileState(
   db: PouchDB.Database,

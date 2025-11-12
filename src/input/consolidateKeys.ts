@@ -1,4 +1,4 @@
-import { splitFirst } from "../utils/splitFirst";
+import { splitFirst } from "../utils/splitFirst.js";
 
 export function consolidateKeys(keys: string[]): string[] {
   return keys.reduce((acc, key) => {

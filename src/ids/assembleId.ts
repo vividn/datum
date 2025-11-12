@@ -3,9 +3,9 @@ import {
   DatumMetadata,
   EitherPayload,
   isDatumPayload,
-} from "../documentControl/DatumDocument";
-import { IdError } from "../errors";
-import { interpolateFields } from "../utils/interpolateFields";
+} from "../documentControl/DatumDocument.js";
+import { IdError } from "../errors.js";
+import { interpolateFields } from "../utils/interpolateFields.js";
 
 type assembleIdType = {
   payload: EitherPayload;

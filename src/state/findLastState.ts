@@ -1,8 +1,8 @@
 import { DateTime } from "luxon";
-import { DatumTime } from "../time/datumTime";
-import { inferType } from "../utils/inferType";
-import { getActiveState } from "./getActiveState";
-import { DatumState } from "./normalizeState";
+import { DatumTime } from "../time/datumTime.js";
+import { inferType } from "../utils/inferType.js";
+import { getActiveState } from "./getActiveState.js";
+import { DatumState } from "./normalizeState.js";
 
 export async function getLastState({
   db,

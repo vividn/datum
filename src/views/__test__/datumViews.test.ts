@@ -1,11 +1,11 @@
-import * as emit from "../emit";
+import * as emit from "../emit.js";
 import {
   DataOnlyDocument,
   DatumDocument,
   EitherDocument,
-} from "../../documentControl/DatumDocument";
-import { humanIdView, idToHumanView, subHumanIdView } from "../datumViews";
-import { dataStructuresView, structuresView } from "../datumViews";
+} from "../../documentControl/DatumDocument.js";
+import { humanIdView, idToHumanView, subHumanIdView } from "../datumViews/index.js";
+import { dataStructuresView, structuresView } from "../datumViews/index.js";
 
 describe("humanIdView", () => {
   let emitMock: jest.SpyInstance;

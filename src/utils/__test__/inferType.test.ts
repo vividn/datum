@@ -1,4 +1,4 @@
-import { inferType } from "../inferType";
+import { inferType } from "../inferType.js";
 
 describe("inferType", () => {
   it("converts strings that are number to numbers", () => {

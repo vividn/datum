@@ -1,12 +1,12 @@
-import { DatumView } from "../DatumView";
-import { _emit } from "../emit";
+import { DatumView } from "../DatumView.js";
+import { _emit } from "../emit.js";
 import {
   DatumData,
   DatumMetadata,
   EitherDocument,
-} from "../../documentControl/DatumDocument";
-import { isoDate, isoDatetime } from "../../time/timeUtils";
-import { DatumTime } from "../../time/datumTime";
+} from "../../documentControl/DatumDocument.js";
+import { isoDate, isoDatetime } from "../../time/timeUtils.js";
+import { DatumTime } from "../../time/datumTime.js";
 
 export const TIME_METRICS = ["hybrid", "occur", "create", "modify"] as const;
 type TimeMetric = (typeof TIME_METRICS)[number];

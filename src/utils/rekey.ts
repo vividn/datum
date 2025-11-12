@@ -1,6 +1,6 @@
 import isPlainObject from "lodash.isplainobject";
-import { MyError } from "../errors";
-import { GenericObject, JsonObject } from "./utilityTypes";
+import { MyError } from "../errors.js";
+import { GenericObject, JsonObject } from "./utilityTypes.js";
 
 export class RekeyError extends MyError {
   constructor(m: unknown) {

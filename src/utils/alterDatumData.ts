@@ -1,18 +1,18 @@
-import { JsonType } from "./utilityTypes";
+import { JsonType } from "./utilityTypes.js";
 import get from "lodash.get";
-import { createOrAppend } from "./createOrAppend";
+import { createOrAppend } from "./createOrAppend.js";
 import set from "lodash.set";
-import { DatumData } from "../documentControl/DatumDocument";
-import { inferType } from "./inferType";
-import { parseTimeStr } from "../time/parseTimeStr";
+import { DatumData } from "../documentControl/DatumDocument.js";
+import { inferType } from "./inferType.js";
+import { parseTimeStr } from "../time/parseTimeStr.js";
 import {
   isoDateFromDateTime,
   isoDurationFromDuration,
-} from "../time/timeUtils";
-import { parseDateStr } from "../time/parseDateStr";
-import { parseDurationStr } from "../time/parseDurationStr";
-import { MissingRequiredKeyError } from "../errors";
-import { toDatumTime } from "../time/datumTime";
+} from "../time/timeUtils.js";
+import { parseDateStr } from "../time/parseDateStr.js";
+import { parseDurationStr } from "../time/parseDurationStr.js";
+import { MissingRequiredKeyError } from "../errors.js";
+import { toDatumTime } from "../time/datumTime.js";
 
 // TODO: Always keep state keys normalized
 // TODO: write function to easily add new fields to a normalized state without data loss

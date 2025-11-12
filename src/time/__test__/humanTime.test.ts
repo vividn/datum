@@ -1,8 +1,8 @@
 import { DateTime, Settings } from "luxon";
-import { humanTime } from "../humanTime";
-import { setNow } from "../../__test__/test-utils";
+import { humanTime } from "../humanTime.js";
+import { setNow } from "../../__test__/test-utils.js";
 import chalk from "chalk";
-import { toDatumTime } from "../datumTime";
+import { toDatumTime } from "../datumTime.js";
 
 describe("humanTime", () => {
   beforeEach(async () => {

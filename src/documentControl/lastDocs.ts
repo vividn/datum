@@ -1,6 +1,6 @@
 import { DateTime } from "luxon";
-import { MyError } from "../errors";
-import { isoDatetime } from "../time/timeUtils";
+import { MyError } from "../errors.js";
+import { isoDatetime } from "../time/timeUtils.js";
 
 export const LAST_DOCS_ID = "_local/datum_last" as const;
 

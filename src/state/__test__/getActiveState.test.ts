@@ -1,12 +1,12 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { setupCmd } from "../../commands/setupCmd";
-import { getActiveState } from "../getActiveState";
-import { switchCmd } from "../../commands/switchCmd";
-import { startCmd } from "../../commands/startCmd";
-import { endCmd } from "../../commands/endCmd";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { getActiveState } from "../getActiveState.js";
+import { switchCmd } from "../../commands/switchCmd.js";
+import { startCmd } from "../../commands/startCmd.js";
+import { endCmd } from "../../commands/endCmd.js";
 import { DateTime } from "luxon";
-import { occurCmd } from "../../commands/occurCmd";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import { occurCmd } from "../../commands/occurCmd.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
 
 describe("getActiveState", () => {
   const dbName = "get_active_state_test";

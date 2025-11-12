@@ -1,5 +1,5 @@
-import { BadStateError } from "../errors";
-import { JsonObject, JsonType } from "../utils/utilityTypes";
+import { BadStateError } from "../errors.js";
+import { JsonObject, JsonType } from "../utils/utilityTypes.js";
 import isPlainObject from "lodash.isplainobject";
 import flattenDeep from "lodash.flattendeep";
 

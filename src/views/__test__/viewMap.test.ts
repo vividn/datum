@@ -1,15 +1,15 @@
 import { mock } from "jest-mock-extended";
-import { EitherDocument } from "../../documentControl/DatumDocument";
-import { DatumView, StringifiedDatumView } from "../DatumView";
+import { EitherDocument } from "../../documentControl/DatumDocument.js";
+import { DatumView, StringifiedDatumView } from "../DatumView.js";
 import {
   mockDocDeletedError,
   mockDocMissingError,
   mockMissingNamedViewError,
   testDbLifecycle,
-} from "../../__test__/test-utils";
-import { DatumViewMissingError } from "../../errors";
-import { viewMap } from "../viewMap";
-import { insertDatumView } from "../insertDatumView";
+} from "../../__test__/test-utils.js";
+import { DatumViewMissingError } from "../../errors.js";
+import { viewMap } from "../viewMap.js";
+import { insertDatumView } from "../insertDatumView.js";
 
 describe("viewMap", () => {
   const mockDb = mock<PouchDB.Database<EitherDocument>>();

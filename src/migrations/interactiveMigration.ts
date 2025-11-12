@@ -1,11 +1,11 @@
 import readline from "node:readline/promises";
-import { MigrationMapRow, migrationName } from "./migrations";
-import { getCmd } from "../commands/getCmd";
+import { MigrationMapRow, migrationName } from "./migrations.js";
+import { getCmd } from "../commands/getCmd.js";
 import stringify from "string.ify";
 import chalk from "chalk";
-import { jClone } from "../utils/jClone";
-import { OutputArgs, Show } from "../input/outputArgs";
-import { migrateOne } from "./migrateOne";
+import { jClone } from "../utils/jClone.js";
+import { OutputArgs, Show } from "../input/outputArgs.js";
+import { migrateOne } from "./migrateOne.js";
 import { once } from "node:events";
 
 export async function interactiveMigration({

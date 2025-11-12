@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 
-import { balanceView } from "../views";
+import { balanceView } from "../views/index.js";
 
-import { HIGH_STRING } from "../../../src/utils/startsWith";
-import { Show } from "../../../src/input/outputArgs";
-import { reduceCmd } from "../../../src/commands/reduceCmd";
+import { HIGH_STRING } from "../../../src/utils/startsWith.js";
+import { Show } from "../../../src/input/outputArgs.js";
+import { reduceCmd } from "../../../src/commands/reduceCmd.js";
 import printf from "printf";
-import { DbArgs, dbArgs } from "../../../src/input/dbArgs";
+import { DbArgs, dbArgs } from "../../../src/input/dbArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../../../src/utils/parseIfNeeded";
+import { parseIfNeeded } from "../../../src/utils/parseIfNeeded.js";
 
 type FBalArgs = DbArgs & {
   account?: string;
@@ -86,7 +86,7 @@ export async function fbal(
   });
 }
 
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
   fbal(process.argv.slice(2)).catch((err) => {
     throw err;
   });

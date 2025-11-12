@@ -1,4 +1,4 @@
-import { DatumData, DatumMetadata } from "../../documentControl/DatumDocument";
+import { DatumData, DatumMetadata } from "../../documentControl/DatumDocument.js";
 
 export const exampleData: DatumData = {
   foo: "abc",

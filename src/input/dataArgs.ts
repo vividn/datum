@@ -1,20 +1,20 @@
-import { DatumData } from "../documentControl/DatumDocument";
-import { inferType } from "../utils/inferType";
-import { BaseDataError, ExtraDataError } from "../errors";
-import { splitFirst } from "../utils/splitFirst";
+import { DatumData } from "../documentControl/DatumDocument.js";
+import { inferType } from "../utils/inferType.js";
+import { BaseDataError, ExtraDataError } from "../errors.js";
+import { splitFirst } from "../utils/splitFirst.js";
 import isPlainObject from "lodash.isplainobject";
-import { alterDatumData } from "../utils/alterDatumData";
-import { datumPath } from "../utils/datumPath";
+import { alterDatumData } from "../utils/alterDatumData.js";
+import { datumPath } from "../utils/datumPath.js";
 import get from "lodash.get";
 import {
   changeDatumCommand,
   CommandChange,
   commandChanges,
-} from "../utils/changeDatumCommand";
-import { jClone } from "../utils/jClone";
+} from "../utils/changeDatumCommand.js";
+import { jClone } from "../utils/jClone.js";
 import { Action, ArgumentParser } from "argparse";
-import { consolidateKeys } from "./consolidateKeys";
-import { AddCmdArgs } from "../commands/addCmd";
+import { consolidateKeys } from "./consolidateKeys.js";
+import { AddCmdArgs } from "../commands/addCmd.js";
 
 export type DataArgs = {
   data?: (string | number)[];

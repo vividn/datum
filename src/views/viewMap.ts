@@ -1,7 +1,7 @@
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { DatumView, StringifiedDatumView } from "./DatumView";
-import { DatumViewMissingError, isCouchDbError } from "../errors";
-import { QueryOptions } from "../utils/utilityTypes";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { DatumView, StringifiedDatumView } from "./DatumView.js";
+import { DatumViewMissingError, isCouchDbError } from "../errors.js";
+import { QueryOptions } from "../utils/utilityTypes.js";
 
 type ViewMapType = {
   db: PouchDB.Database<EitherPayload>;

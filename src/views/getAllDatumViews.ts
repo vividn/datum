@@ -1,5 +1,5 @@
-import { DatumView } from "./DatumView";
-import * as datumViews from "./datumViews";
+import { DatumView } from "./DatumView.js";
+import * as datumViews from "./datumViews/index.js";
 
 const typedDatumViews = datumViews as { [name: string]: DatumView };
 

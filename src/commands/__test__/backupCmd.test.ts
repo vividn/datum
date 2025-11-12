@@ -1,10 +1,10 @@
-import { backupCmd } from "../backupCmd";
-import { at, testDbLifecycle } from "../../__test__/test-utils";
+import { backupCmd } from "../backupCmd.js";
+import { at, testDbLifecycle } from "../../__test__/test-utils.js";
 import * as fs from "fs";
 import path from "path";
 import * as os from "os";
-import { addCmd } from "../addCmd";
-import { EitherDocument } from "../../documentControl/DatumDocument";
+import { addCmd } from "../addCmd.js";
+import { EitherDocument } from "../../documentControl/DatumDocument.js";
 
 describe("backupCmd", () => {
   const dbName = "backup_cmd_test";

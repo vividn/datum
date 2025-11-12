@@ -1,5 +1,5 @@
 import { ArgumentParser } from "argparse";
-import { ON_AMBIGUOUS_QUICK_ID } from "../ids/quickId";
+import { ON_AMBIGUOUS_QUICK_ID } from "../ids/quickId.js";
 
 export type QuickIdArgs = {
   quickId?: string | string[];

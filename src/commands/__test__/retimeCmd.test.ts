@@ -1,20 +1,20 @@
-import { setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { setupCmd } from "../setupCmd";
-import * as updateDoc from "../../documentControl/updateDoc";
+import { setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { setupCmd } from "../setupCmd.js";
+import * as updateDoc from "../../documentControl/updateDoc.js";
 import {
   DatumDocument,
   EitherDocument,
-} from "../../documentControl/DatumDocument";
-import { retimeCmd } from "../retimeCmd";
-import * as quickId from "../../ids/quickId";
+} from "../../documentControl/DatumDocument.js";
+import { retimeCmd } from "../retimeCmd.js";
+import * as quickId from "../../ids/quickId.js";
 import { mock } from "jest-mock-extended";
-import { Show } from "../../input/outputArgs";
-import { addCmd } from "../addCmd";
-import { LastDocsTooOldError } from "../../errors";
-import { handleTimeArgs } from "../../input/timeArgs";
-import { toDatumTime } from "../../time/datumTime";
-import { now } from "../../time/timeUtils";
-import { occurCmd } from "../occurCmd";
+import { Show } from "../../input/outputArgs.js";
+import { addCmd } from "../addCmd.js";
+import { LastDocsTooOldError } from "../../errors.js";
+import { handleTimeArgs } from "../../input/timeArgs.js";
+import { toDatumTime } from "../../time/datumTime.js";
+import { now } from "../../time/timeUtils.js";
+import { occurCmd } from "../occurCmd.js";
 
 describe("retimeCmd", () => {
   const dbName = "retime_cmd_test";

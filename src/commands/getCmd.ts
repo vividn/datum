@@ -1,14 +1,14 @@
-import { quickIdArgs, QuickIdArgs } from "../input/quickIdArg";
-import { EitherDocument } from "../documentControl/DatumDocument";
-import { quickId, _LAST } from "../ids/quickId";
-import { connectDb } from "../auth/connectDb";
-import { showExists } from "../output/output";
-import { MainDatumArgs } from "../input/mainArgs";
-import { updateLastDocsRef } from "../documentControl/lastDocs";
-import { dbArgs } from "../input/dbArgs";
-import { OutputArgs, outputArgs } from "../input/outputArgs";
+import { quickIdArgs, QuickIdArgs } from "../input/quickIdArg.js";
+import { EitherDocument } from "../documentControl/DatumDocument.js";
+import { quickId, _LAST } from "../ids/quickId.js";
+import { connectDb } from "../auth/connectDb.js";
+import { showExists } from "../output/output.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
+import { updateLastDocsRef } from "../documentControl/lastDocs.js";
+import { dbArgs } from "../input/dbArgs.js";
+import { OutputArgs, outputArgs } from "../input/outputArgs.js";
 import { ArgumentParser } from "argparse";
-import { parseIfNeeded } from "../utils/parseIfNeeded";
+import { parseIfNeeded } from "../utils/parseIfNeeded.js";
 
 export const command = ["get <quickId>", "see <quickId>"];
 export const desc = "display a document";

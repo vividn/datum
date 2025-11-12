@@ -1,6 +1,8 @@
 {
   "ts-node": {
-    "transpileOnly": true
+    "transpileOnly": true,
+    "esm": true,
+    "experimentalResolver": true
   },
   "compilerOptions": {
     "allowSyntheticDefaultImports": true,
@@ -8,7 +10,7 @@
       "ES2020",
       "ESNext"
     ],
-    "module": "CommonJS",
+    "module": "ES2020",
     "moduleResolution": "node",
     "target": "ES2020",
     "declaration": true,

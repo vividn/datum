@@ -1,7 +1,7 @@
 import { Duration } from "luxon";
 import parse from "parse-duration";
-import { BadDurationError } from "../errors";
-import { isoDurationFromDuration } from "./timeUtils";
+import { BadDurationError } from "../errors.js";
+import { isoDurationFromDuration } from "./timeUtils.js";
 
 type ParseDurationStrType = {
   durationStr: string;

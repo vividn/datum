@@ -1,4 +1,4 @@
-import { simplifyState } from "../simplifyState";
+import { simplifyState } from "../simplifyState.js";
 describe("simplifyState", () => {
   it("returns a simplified state", () => {
     expect(simplifyState(null)).toBeNull();

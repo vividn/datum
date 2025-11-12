@@ -1,14 +1,14 @@
-import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils";
-import { setupCmd } from "../../commands/setupCmd";
-import { switchCmd } from "../../commands/switchCmd";
-import { DatumDocument } from "../../documentControl/DatumDocument";
+import { restoreNow, setNow, testDbLifecycle } from "../../__test__/test-utils.js";
+import { setupCmd } from "../../commands/setupCmd.js";
+import { switchCmd } from "../../commands/switchCmd.js";
+import { DatumDocument } from "../../documentControl/DatumDocument.js";
 import {
   checkState,
   LastStateError,
   OverlappingBlockError,
   RepeatedStateError,
   StateErrorSummary,
-} from "../checkState";
+} from "../checkState.js";
 
 const noErrors: StateErrorSummary = { ok: true, errors: [] };
 describe("checkState", () => {

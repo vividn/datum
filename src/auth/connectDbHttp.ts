@@ -1,7 +1,7 @@
 import PouchDb from "pouchdb";
 import httpAdapter from "pouchdb-adapter-http";
-import { EitherPayload } from "../documentControl/DatumDocument";
-import { MainDatumArgs } from "../input/mainArgs";
+import { EitherPayload } from "../documentControl/DatumDocument.js";
+import { MainDatumArgs } from "../input/mainArgs.js";
 
 PouchDb.plugin(httpAdapter);
 

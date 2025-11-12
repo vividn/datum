@@ -1,8 +1,13 @@
-import { loadConfig } from "../loadConfig";
-import * as initConfigModule from "../initConfig";
+import { fileURLToPath } from "url";
+import { dirname } from "path";
+import { loadConfig } from "../loadConfig.js";
+import * as initConfigModule from "../initConfig.js";
 import fs from "fs";
-import { mockedLogLifecycle } from "../../__test__/test-utils";
-import { defaultConfigPath } from "../defaultConfigYml";
+import { mockedLogLifecycle } from "../../__test__/test-utils.js";
+import { defaultConfigPath } from "../defaultConfigYml.js";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 const configFile = `${__dirname}/__fixtures__/test_datumrc.yml`;
 

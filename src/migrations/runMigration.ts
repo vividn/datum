@@ -1,6 +1,6 @@
-import { OutputArgs } from "../input/outputArgs";
-import { migrateOne } from "./migrateOne";
-import { MigrationMapRow, migrationName } from "./migrations";
+import { OutputArgs } from "../input/outputArgs.js";
+import { migrateOne } from "./migrateOne.js";
+import { MigrationMapRow, migrationName } from "./migrations.js";
 
 export async function runMigration({
   name,

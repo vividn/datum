@@ -1,7 +1,7 @@
-import { testDbLifecycle } from "../../__test__/test-utils";
-import { setupCmd } from "../setupCmd";
-import { getCmd } from "../getCmd";
-import { Show } from "../../input/outputArgs";
+import { testDbLifecycle } from "../../__test__/test-utils.js";
+import { setupCmd } from "../setupCmd.js";
+import { getCmd } from "../getCmd.js";
+import { Show } from "../../input/outputArgs.js";
 
 describe("getCmd", () => {
   const dbName = "get_cmd_test";

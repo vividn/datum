@@ -1,13 +1,13 @@
 import { DateTime } from "luxon";
-import { getTimezone } from "../time/getTimezone";
-import { parseTimeStr } from "../time/parseTimeStr";
-import { parseDateStr } from "../time/parseDateStr";
-import { DataArgs, parseBaseData } from "./dataArgs";
-import { DatumData } from "../documentControl/DatumDocument";
-import { getOccurTime } from "../time/getOccurTime";
+import { getTimezone } from "../time/getTimezone.js";
+import { parseTimeStr } from "../time/parseTimeStr.js";
+import { parseDateStr } from "../time/parseDateStr.js";
+import { DataArgs, parseBaseData } from "./dataArgs.js";
+import { DatumData } from "../documentControl/DatumDocument.js";
+import { getOccurTime } from "../time/getOccurTime.js";
 import { ArgumentParser, BooleanOptionalAction } from "argparse";
-import { DatumTime, toDatumTime } from "../time/datumTime";
-import { now } from "../time/timeUtils";
+import { DatumTime, toDatumTime } from "../time/datumTime.js";
+import { now } from "../time/timeUtils.js";
 
 export type TimeArgs = {
   date?: string;
