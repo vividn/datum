@@ -1,7 +1,7 @@
 //! CLI argument definitions.
 //!
 //! Both `datum <verb> <field>` and `datum <field> <verb>` are supported —
-//! verb/field order detection happens in `LogArgs::normalize()`.
+//! the field/verb swap happens in the pre-pass before clap sees the arguments.
 //!
 //! Stacked short flags (-yy, -qqq) are handled by a pre-pass before clap
 //! sees the arguments (see `Cli::parse_with_alias_resolution`).
@@ -19,8 +19,9 @@ pub struct Cli {
 impl Cli {
     /// Pre-process argv:
     ///   1. Expand aliases (look up first arg in the DB alias table)
-    ///   2. Expand stacked flags like -yy → -y -y, -qqq → -q -q -q
-    ///   3. Parse with clap
+    ///   2. Swap field/verb if field comes before verb
+    ///   3. Expand stacked flags like -yy → -y -y, -qqq → -q -q -q
+    ///   4. Parse with clap
     pub fn parse_with_alias_resolution() -> anyhow::Result<Self> {
         let raw: Vec<String> = std::env::args().collect();
         let expanded = expand_argv(raw)?;
@@ -28,8 +29,22 @@ impl Cli {
     }
 }
 
-/// Expand stacked short flags and resolve aliases in argv.
+/// Known subcommands — keep in sync with Command enum.
+const KNOWN_SUBCOMMANDS: &[&str] = &[
+    "occur", "start", "stop", "end", "switch", "note", "add",
+    "tail", "now", "spec", "alias", "migrate", "get", "delete", "help",
+];
+
+/// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
 pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
+    // Step 1: Alias resolution — try to expand argv[1] as an alias from the DB.
+    let argv = try_expand_alias(argv);
+
+    // Step 2: Field/verb swap — if argv[1] is a field (not a subcommand) and
+    //         argv[2] is a known verb, swap them so clap sees <verb> <field>.
+    let argv = maybe_swap_field_verb(argv);
+
+    // Step 3: Stacked flag expansion (-yy → -y -y, -qqq → -q -q -q)
     let mut out: Vec<String> = Vec::with_capacity(argv.len() + 4);
     for arg in argv {
         if let Some(expanded) = expand_stacked(&arg) {
@@ -39,6 +54,44 @@ pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
         }
     }
     Ok(out)
+}
+
+/// Try to resolve argv[1] as an alias from the database.
+/// On any failure (DB missing, alias not found, parse error) returns argv unchanged.
+fn try_expand_alias(argv: Vec<String>) -> Vec<String> {
+    if argv.len() < 2 {
+        return argv;
+    }
+    // Only attempt lookup if argv[1] is not already a known subcommand
+    if KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
+        return argv;
+    }
+
+    let expanded = (|| -> Option<Vec<String>> {
+        let db_path = crate::config::db_path().ok()?;
+        if !std::path::Path::new(&db_path).exists() {
+            return None;
+        }
+        let db = datum_core::db::Db::open(&db_path).ok()?;
+        let alias = db.lookup_alias(&argv[1]).ok()??;
+        let mut result = vec![argv[0].clone()];
+        result.extend(alias.expand(&argv[2..]));
+        Some(result)
+    })();
+
+    expanded.unwrap_or(argv)
+}
+
+/// Swap argv[1] and argv[2] when argv[1] is a field name and argv[2] is a verb.
+/// E.g. `datum mood switch happy` → `datum switch mood happy`.
+fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
+    if argv.len() >= 3
+        && !KNOWN_SUBCOMMANDS.contains(&argv[1].as_str())
+        && KNOWN_SUBCOMMANDS.contains(&argv[2].as_str())
+    {
+        argv.swap(1, 2);
+    }
+    argv
 }
 
 /// Expand "-yy" → ["-y", "-y"], "-qqqq" → ["-q", "-q", "-q", "-q"], etc.
@@ -78,6 +131,11 @@ pub enum Command {
     Tail(TailArgs),
     /// Show current state of tracked fields (nowview).
     Now,
+
+    /// Print a single entry by id or slug.
+    Get(GetArgs),
+    /// Delete an entry by id or slug.
+    Delete(DeleteArgs),
 
     /// Manage field specs (schemas).
     #[command(subcommand)]
@@ -145,6 +203,21 @@ pub struct TailArgs {
     pub count: usize,
 }
 
+#[derive(Args, Debug)]
+pub struct GetArgs {
+    /// Entry id or slug
+    pub id_or_slug: String,
+}
+
+#[derive(Args, Debug)]
+pub struct DeleteArgs {
+    /// Entry id or slug
+    pub id_or_slug: String,
+    /// Skip confirmation prompt
+    #[arg(long)]
+    pub force: bool,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum SpecCommand {
     /// Show a field spec
@@ -202,5 +275,26 @@ mod tests {
     fn test_no_expand_non_stacked() {
         assert!(expand_stacked("-d").is_none());
         assert!(expand_stacked("--date").is_none());
+    }
+
+    #[test]
+    fn test_maybe_swap_field_verb() {
+        let argv = vec!["datum".to_string(), "mood".to_string(), "switch".to_string(), "happy".to_string()];
+        let result = maybe_swap_field_verb(argv);
+        assert_eq!(result, vec!["datum", "switch", "mood", "happy"]);
+    }
+
+    #[test]
+    fn test_no_swap_when_verb_first() {
+        let argv = vec!["datum".to_string(), "switch".to_string(), "mood".to_string(), "happy".to_string()];
+        let result = maybe_swap_field_verb(argv.clone());
+        assert_eq!(result, argv);
+    }
+
+    #[test]
+    fn test_no_swap_when_no_verb_at_pos2() {
+        let argv = vec!["datum".to_string(), "coffee".to_string(), "2".to_string()];
+        let result = maybe_swap_field_verb(argv.clone());
+        assert_eq!(result, argv);
     }
 }

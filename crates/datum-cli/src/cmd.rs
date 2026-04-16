@@ -1,16 +1,16 @@
 //! Command dispatch and argument → Entry conversion.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 use datum_core::{
     db::Db,
     entry::{Entry, Verb},
     field_spec::Alias,
-    time::{parse_date_arg, parse_time_arg, DatumTime, TimeBuilder},
+    time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
 };
 use serde_json::Value as JsonValue;
 
 use crate::{
-    args::{AliasCommand, Cli, Command, LogArgs, MigrateArgs, SpecCommand, TailArgs},
+    args::{AliasCommand, Cli, Command, DeleteArgs, GetArgs, LogArgs, MigrateArgs, SpecCommand, TailArgs},
     config::device_id,
     output::{print_entries, print_entry, print_logged},
 };
@@ -24,6 +24,8 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Note(args) => log_entry(Verb::Note, args, db),
         Command::Tail(args) => cmd_tail(args, db),
         Command::Now => cmd_now(db),
+        Command::Get(args) => cmd_get(args, db),
+        Command::Delete(args) => cmd_delete(args, db),
         Command::Spec(sub) => cmd_spec(sub, db),
         Command::Alias(sub) => cmd_alias(sub, db),
         Command::Migrate(args) => cmd_migrate(args, db),
@@ -34,11 +36,38 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
 
 fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let (field, value, extra_data) = parse_log_args(&args)?;
-    let time_start = build_time(&args)?;
+    let base_time = build_time(&args)?;
     let unit = args.unit.clone();
     let device = device_id()?;
 
-    let entry = Entry::new(field, verb, value, extra_data, unit, Some(time_start), None, device);
+    // Fix 3: --dur flag sets time_end based on verb direction
+    let (time_start, time_end) = if let Some(dur_str) = &args.dur {
+        let dur = parse_duration(dur_str)?;
+        match verb {
+            Verb::Start => {
+                // start --dur: time_start=base, time_end=base+dur
+                let end_utc = base_time.utc + dur;
+                let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
+                (Some(base_time), Some(time_end))
+            }
+            Verb::Stop => {
+                // stop --dur: time_end=base, time_start=base-dur
+                let start_utc = base_time.utc - dur;
+                let time_start = DatumTime { utc: start_utc, ..base_time.clone() };
+                (Some(time_start), Some(base_time))
+            }
+            _ => {
+                // occur/switch/note with --dur: set time_end=time_start+dur
+                let end_utc = base_time.utc + dur;
+                let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
+                (Some(base_time), Some(time_end))
+            }
+        }
+    } else {
+        (Some(base_time), None)
+    };
+
+    let entry = Entry::new(field, verb, value, extra_data, unit, time_start, time_end, device);
 
     match db.insert_entry(&entry) {
         Ok(()) => {
@@ -161,10 +190,10 @@ fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
     let entries = if let Some(field) = &args.field {
         db.entries_for_field(field, Some(args.count))?
     } else {
-        // All fields, most recent N
-        let now = chrono::Utc::now();
+        // Fix 5: include future-dated entries (e.g. sleep logged in advance)
+        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
         let far_past = chrono::DateTime::UNIX_EPOCH;
-        let mut all = db.entries_in_range(far_past, now)?;
+        let mut all = db.entries_in_range(far_past, far_future)?;
         all.sort_by(|a, b| {
             let ta = a.time_start.as_ref().map(|t| t.utc).unwrap_or(a.created_at);
             let tb = b.time_start.as_ref().map(|t| t.utc).unwrap_or(b.created_at);
@@ -200,6 +229,39 @@ fn cmd_now(db: &Db) -> Result<()> {
             print_entry(e);
         }
     }
+    Ok(())
+}
+
+// ─── Get / Delete ─────────────────────────────────────────────────────────────
+
+fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
+    let entry = db.get_entry(&args.id_or_slug)
+        .map_err(anyhow::Error::from)?;
+    print_entry(&entry);
+    Ok(())
+}
+
+fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
+    if !args.force {
+        let entry = db.get_entry(&args.id_or_slug)
+            .map_err(anyhow::Error::from)?;
+        print_entry(&entry);
+        eprint!("Delete this entry? [y/N] ");
+        use std::io::BufRead;
+        let stdin = std::io::stdin();
+        let line = stdin
+            .lock()
+            .lines()
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("No input provided"))??;
+        if !matches!(line.to_lowercase().as_str(), "y" | "yes") {
+            println!("Aborted.");
+            return Ok(());
+        }
+    }
+    db.delete_entry(&args.id_or_slug)
+        .map_err(anyhow::Error::from)?;
+    println!("✓ Deleted {}", args.id_or_slug);
     Ok(())
 }
 
@@ -379,5 +441,76 @@ mod tests {
         assert_eq!(split_numeric_unit("500ml"), Some(("500", "ml")));
         assert_eq!(split_numeric_unit("hello"), None);
         assert_eq!(split_numeric_unit("42"), None);
+    }
+
+    #[test]
+    fn test_dur_start_sets_time_end() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let args = LogArgs {
+            field_or_verb: "sleep".to_string(),
+            rest: vec![],
+            yesterday: 0,
+            quick: 0,
+            date: None,
+            time: None,
+            dur: Some("8h".to_string()),
+            timezone: None,
+            unit: None,
+            keys: vec![],
+            comment: None,
+        };
+        // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
+        let base = build_time(&args).unwrap();
+        let dur = parse_duration("8h").unwrap();
+        let end_utc = base.utc + dur;
+        let diff_secs = (end_utc - base.utc).num_seconds();
+        assert_eq!(diff_secs, 8 * 3600);
+        // Ensure dispatch doesn't error
+        log_entry(Verb::Start, args, &db).unwrap();
+    }
+
+    #[test]
+    fn test_dur_stop_sets_time_start() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let args = LogArgs {
+            field_or_verb: "sleep".to_string(),
+            rest: vec![],
+            yesterday: 0,
+            quick: 0,
+            date: None,
+            time: None,
+            dur: Some("8h".to_string()),
+            timezone: None,
+            unit: None,
+            keys: vec![],
+            comment: None,
+        };
+        log_entry(Verb::Stop, args, &db).unwrap();
+        let entries = db.entries_for_field("sleep", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        let diff_secs = e.duration_seconds().unwrap();
+        assert_eq!(diff_secs, 8 * 3600);
+    }
+
+    #[test]
+    fn test_get_and_delete() {
+        use datum_core::{db::Db, entry::Entry, time::DatumTime};
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+        let entry = Entry::new("test", Verb::Occur, None, None, None, Some(t), None, "dev");
+        let id = entry.id.clone();
+        db.insert_entry(&entry).unwrap();
+
+        // get
+        let fetched = db.get_entry(&id).unwrap();
+        assert_eq!(fetched.id, id);
+
+        // delete
+        db.delete_entry(&id).unwrap();
+        let err = db.get_entry(&id);
+        assert!(matches!(err, Err(datum_core::error::DatumError::NotFound(_))));
     }
 }

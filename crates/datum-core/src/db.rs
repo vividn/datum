@@ -151,6 +151,34 @@ impl Db {
     // Field specs and aliases
     // -------------------------------------------------------------------------
 
+    /// Look up a single alias by name. Returns None if not found.
+    pub fn lookup_alias(&self, name: &str) -> Result<Option<Alias>> {
+        let result: Option<String> = self.conn
+            .query_row(
+                "SELECT alias_json FROM aliases WHERE name = ?1",
+                params![name],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match result {
+            Some(json) => Ok(Some(serde_json::from_str(&json)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Delete an entry by id or slug. Returns Err(NotFound) if no rows affected.
+    pub fn delete_entry(&self, id_or_slug: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "DELETE FROM entries WHERE id = ?1 OR slug = ?1",
+            params![id_or_slug],
+        )?;
+        if affected == 0 {
+            Err(DatumError::NotFound(id_or_slug.to_string()))
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
         let json = serde_json::to_string(spec)?;
         self.conn.execute(
