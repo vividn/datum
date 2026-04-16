@@ -106,8 +106,26 @@ cargo test -p datum-cli
 
 All 22 Phase 1 tests must pass. Add tests for new behaviors.
 
+## Build status (as of 2026-04-16)
+
+| Phase | Status | Notes |
+|---|---|---|
+| datum-core + datum CLI | ✓ merged to main | 22+ tests, <5ms startup |
+| CLI fixes (alias, field/verb, --dur, env) | ✓ merged to main | |
+| datum-web PWA | ✓ merged to main | No sync yet (pending Phase 2) |
+| datum-sync relay server | 🔄 in progress | da-636, quartz polecat |
+| datum-android (Flutter) | not started | |
+| Migration tool (datum legacy) | stub in CLI | `datum migrate --from backup.json` |
+| datum-wear (Wear OS) | not started | |
+
 ## Building
 
 ```bash
 cargo build --release -p datum-cli   # produces target/release/datum
+```
+
+## Web app dev
+
+```bash
+cd web && npm install && npm run dev   # localhost:5173
 ```
