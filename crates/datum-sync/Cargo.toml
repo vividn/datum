@@ -1,6 +1,37 @@
 [package]
 name = "datum-sync"
-version = "0.1.0"
-edition = "2024"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "datum-sync"
+path = "src/main.rs"
 
 [dependencies]
+# Workspace
+tokio = { workspace = true }
+axum = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+rusqlite = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+
+# HTTP middleware
+tower-http = { version = "0.5", features = ["cors", "trace"] }
+
+# Auth
+webauthn-rs = { version = "0.5", features = ["preview-features"] }
+jsonwebtoken = "9"
+uuid = { version = "1", features = ["v4", "v5"] }
+
+# URL parsing (for WebAuthn origin)
+url = "2"
+
+# Encoding
+base64 = "0.22"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

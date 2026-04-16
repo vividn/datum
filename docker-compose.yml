@@ -1,0 +1,17 @@
+services:
+  datum-sync:
+    build:
+      context: .
+      dockerfile: crates/datum-sync/Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - DATUM_SYNC_DB=/data/sync.db
+      - DATUM_SYNC_ORIGIN=http://localhost:3000
+      - DATUM_SYNC_RP_NAME=datum sync
+      - DATUM_SYNC_JWT_SECRET=change-me-in-production
+    volumes:
+      - datum-data:/data
+
+volumes:
+  datum-data:
