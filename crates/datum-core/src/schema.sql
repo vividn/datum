@@ -62,3 +62,18 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_seq    TEXT NOT NULL,           -- ULID of last synced entry from this device
     updated_at  TEXT NOT NULL
 );
+
+-- Tracked fields: which fields appear in `datum now`
+CREATE TABLE IF NOT EXISTS tracked_fields (
+    field   TEXT NOT NULL PRIMARY KEY,
+    ignored INTEGER NOT NULL DEFAULT 0,
+    color   TEXT    -- NULL = derive from hash of field name
+);
+
+-- Per-state color overrides for tracked fields
+CREATE TABLE IF NOT EXISTS field_state_colors (
+    field   TEXT NOT NULL,
+    state   TEXT NOT NULL,
+    color   TEXT NOT NULL,
+    PRIMARY KEY (field, state)
+);

@@ -10,9 +10,12 @@ use datum_core::{
 use serde_json::Value as JsonValue;
 
 use crate::{
-    args::{AliasCommand, Cli, Command, DeleteArgs, GetArgs, LogArgs, MigrateArgs, SpecCommand, TailArgs},
+    args::{
+        AliasCommand, Cli, Command, DeleteArgs, GetArgs, IgnoreArgs, LogArgs, MigrateArgs,
+        NowArgs, SpecCommand, TailArgs, TrackArgs,
+    },
     config::device_id,
-    output::{print_entries, print_entry, print_logged},
+    output::{print_entries, print_entry, print_logged, print_now_view},
 };
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
@@ -23,11 +26,13 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Switch(args) => log_entry(Verb::Switch, args, db),
         Command::Note(args) => log_entry(Verb::Note, args, db),
         Command::Tail(args) => cmd_tail(args, db),
-        Command::Now => cmd_now(db),
+        Command::Now(args) => cmd_now(args, db),
         Command::Get(args) => cmd_get(args, db),
         Command::Delete(args) => cmd_delete(args, db),
         Command::Spec(sub) => cmd_spec(sub, db),
         Command::Alias(sub) => cmd_alias(sub, db),
+        Command::Track(args) => cmd_track(args, db),
+        Command::Ignore(args) => cmd_ignore(args, db),
         Command::Migrate(args) => cmd_migrate(args, db),
     }
 }
@@ -67,10 +72,13 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         (Some(base_time), None)
     };
 
-    let entry = Entry::new(field, verb, value, extra_data, unit, time_start, time_end, device);
+    let entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
 
     match db.insert_entry(&entry) {
         Ok(()) => {
+            if matches!(verb, Verb::Occur | Verb::Start) {
+                db.ensure_tracked(&entry.field)?;
+            }
             print_logged(&entry);
             Ok(())
         }
@@ -206,29 +214,44 @@ fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_now(db: &Db) -> Result<()> {
-    // Show the most recent entry per field where verb is switch or start (open block).
-    // Simple approach: last entry per field.
-    let now = chrono::Utc::now();
-    let far_past = chrono::DateTime::UNIX_EPOCH;
-    let all = db.entries_in_range(far_past, now)?;
-
-    let mut latest: std::collections::HashMap<String, &Entry> = std::collections::HashMap::new();
-    // all is sorted ascending — iterate to keep the latest
-    for entry in &all {
-        latest.insert(entry.field.clone(), entry);
+fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
+    let tracked = db.get_tracked_fields()?;
+    if tracked.is_empty() {
+        println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
+        return Ok(());
     }
 
-    let mut fields: Vec<_> = latest.values().collect();
-    fields.sort_by_key(|e| &e.field);
+    let state_colors = db.get_all_state_colors()?;
 
-    if fields.is_empty() {
-        println!("No entries yet.");
-    } else {
-        for e in fields {
-            print_entry(e);
+    let mut latest_per_field = std::collections::HashMap::new();
+    for tf in &tracked {
+        if tf.ignored && !args.show_all {
+            continue;
+        }
+        if let Some(entry) = db.latest_entry_for_now(&tf.field)? {
+            latest_per_field.insert(tf.field.clone(), entry);
         }
     }
+
+    print_now_view(&tracked, &latest_per_field, &state_colors, args.show_all);
+    Ok(())
+}
+
+fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
+    db.set_tracked(&args.field, false, args.color.as_deref())?;
+    for sc in &args.state_colors {
+        match sc.split_once('=') {
+            Some((state, color)) => db.set_state_color(&args.field, state, color)?,
+            None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
+        }
+    }
+    println!("✓ Tracking '{}'", args.field);
+    Ok(())
+}
+
+fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
+    db.set_tracked(&args.field, true, None)?;
+    println!("✓ Ignoring '{}'", args.field);
     Ok(())
 }
 
@@ -512,5 +535,106 @@ mod tests {
         db.delete_entry(&id).unwrap();
         let err = db.get_entry(&id);
         assert!(matches!(err, Err(datum_core::error::DatumError::NotFound(_))));
+    }
+
+    #[test]
+    fn test_auto_track_on_occur() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let args = LogArgs {
+            field_or_verb: "coffee".to_string(),
+            rest: vec!["2".to_string()],
+            yesterday: 0, quick: 0, date: None, time: None, dur: None,
+            timezone: None, unit: Some("cups".to_string()), keys: vec![], comment: None,
+        };
+        log_entry(Verb::Occur, args, &db).unwrap();
+        let tracked = db.get_tracked_fields().unwrap();
+        assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
+    }
+
+    #[test]
+    fn test_auto_track_on_start() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let args = LogArgs {
+            field_or_verb: "work".to_string(),
+            rest: vec![],
+            yesterday: 0, quick: 0, date: None, time: None, dur: None,
+            timezone: None, unit: None, keys: vec![], comment: None,
+        };
+        log_entry(Verb::Start, args, &db).unwrap();
+        let tracked = db.get_tracked_fields().unwrap();
+        assert!(tracked.iter().any(|f| f.field == "work" && !f.ignored));
+    }
+
+    #[test]
+    fn test_no_auto_track_on_note() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let args = LogArgs {
+            field_or_verb: "journal".to_string(),
+            rest: vec!["some text".to_string()],
+            yesterday: 0, quick: 0, date: None, time: None, dur: None,
+            timezone: None, unit: None, keys: vec![], comment: None,
+        };
+        log_entry(Verb::Note, args, &db).unwrap();
+        let tracked = db.get_tracked_fields().unwrap();
+        assert!(!tracked.iter().any(|f| f.field == "journal"));
+    }
+
+    #[test]
+    fn test_cmd_track_and_ignore() {
+        use crate::args::{IgnoreArgs, TrackArgs};
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        let track_args = TrackArgs {
+            field: "mood".to_string(),
+            color: Some("ff6600".to_string()),
+            state_colors: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
+        };
+        cmd_track(track_args, &db).unwrap();
+
+        let tracked = db.get_tracked_fields().unwrap();
+        let mood = tracked.iter().find(|f| f.field == "mood").unwrap();
+        assert!(!mood.ignored);
+        assert_eq!(mood.color.as_deref(), Some("ff6600"));
+
+        let state_colors = db.get_all_state_colors().unwrap();
+        assert_eq!(
+            state_colors.get(&("mood".to_string(), "happy".to_string())).map(|s| s.as_str()),
+            Some("00ff00")
+        );
+
+        // Now ignore mood
+        cmd_ignore(IgnoreArgs { field: "mood".to_string() }, &db).unwrap();
+        let tracked2 = db.get_tracked_fields().unwrap();
+        let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
+        assert!(mood2.ignored);
+        // Color should be preserved (set_tracked with None color)
+        assert_eq!(mood2.color.as_deref(), Some("ff6600"));
+    }
+
+    #[test]
+    fn test_cmd_now_no_crash() {
+        use crate::args::NowArgs;
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // Empty db
+        cmd_now(NowArgs { show_all: false }, &db).unwrap();
+
+        // With some tracked fields and entries
+        let args = LogArgs {
+            field_or_verb: "mood".to_string(),
+            rest: vec!["happy".to_string()],
+            yesterday: 0, quick: 0, date: None, time: None, dur: None,
+            timezone: None, unit: None, keys: vec![], comment: None,
+        };
+        log_entry(Verb::Switch, args, &db).unwrap();
+        db.set_tracked("mood", false, None).unwrap();
+
+        cmd_now(NowArgs { show_all: false }, &db).unwrap();
+        cmd_now(NowArgs { show_all: true }, &db).unwrap();
     }
 }

@@ -12,6 +12,13 @@ use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
 use crate::time::DatumTime;
 use chrono::{DateTime, Utc};
 
+/// A row from the `tracked_fields` table.
+pub struct TrackedField {
+    pub field: String,
+    pub ignored: bool,
+    pub color: Option<String>,
+}
+
 pub struct Db {
     conn: Connection,
 }
@@ -197,6 +204,98 @@ impl Db {
         Ok(())
     }
 
+    // -------------------------------------------------------------------------
+    // Tracking (tracked_fields + field_state_colors)
+    // -------------------------------------------------------------------------
+
+    /// Insert or update a field's tracking state and optional color.
+    /// When `color` is None, the stored color (if any) is preserved.
+    pub fn set_tracked(&self, field: &str, ignored: bool, color: Option<&str>) -> Result<()> {
+        if let Some(c) = color {
+            self.conn.execute(
+                "INSERT INTO tracked_fields (field, ignored, color) VALUES (?1, ?2, ?3)
+                 ON CONFLICT(field) DO UPDATE SET ignored = excluded.ignored, color = excluded.color",
+                params![field, ignored as i32, c],
+            )?;
+        } else {
+            self.conn.execute(
+                "INSERT INTO tracked_fields (field, ignored) VALUES (?1, ?2)
+                 ON CONFLICT(field) DO UPDATE SET ignored = excluded.ignored",
+                params![field, ignored as i32],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Ensure a field is in tracked_fields with ignored=0. Does nothing if already present.
+    pub fn ensure_tracked(&self, field: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR IGNORE INTO tracked_fields (field, ignored) VALUES (?1, 0)",
+            params![field],
+        )?;
+        Ok(())
+    }
+
+    /// Return all tracked fields, ordered alphabetically.
+    pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT field, ignored, color FROM tracked_fields ORDER BY field",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TrackedField {
+                field: row.get(0)?,
+                ignored: row.get::<_, i32>(1)? != 0,
+                color: row.get(2)?,
+            })
+        })?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// Store or replace a per-state color override.
+    pub fn set_state_color(&self, field: &str, state: &str, color: &str) -> Result<()> {
+        self.conn.execute(
+            "INSERT OR REPLACE INTO field_state_colors (field, state, color) VALUES (?1, ?2, ?3)",
+            params![field, state, color],
+        )?;
+        Ok(())
+    }
+
+    /// Return all state color overrides as a (field, state) → color map.
+    pub fn get_all_state_colors(
+        &self,
+    ) -> Result<std::collections::HashMap<(String, String), String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT field, state, color FROM field_state_colors",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?;
+        let mut map = std::collections::HashMap::new();
+        for r in rows {
+            let (field, state, color) = r.map_err(DatumError::Db)?;
+            map.insert((field, state), color);
+        }
+        Ok(map)
+    }
+
+    /// Latest non-Note entry for a field, for use in the now view.
+    pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
+        self.conn
+            .query_row(
+                "SELECT * FROM entries WHERE field = ?1 AND verb != 'note'
+                 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC
+                 LIMIT 1",
+                params![field],
+                row_to_entry,
+            )
+            .optional()
+            .map_err(DatumError::Db)
+    }
+
     pub fn load_registry(&self) -> Result<SpecRegistry> {
         let mut registry = SpecRegistry::new();
 
@@ -344,5 +443,80 @@ mod tests {
         }
         let entries = db.entries_for_field("mood", None).unwrap();
         assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn test_set_tracked_and_get() {
+        let db = Db::open_in_memory().unwrap();
+        db.set_tracked("coffee", false, None).unwrap();
+        db.set_tracked("mood", false, Some("ff6600")).unwrap();
+        db.set_tracked("youtube", true, None).unwrap();
+
+        let fields = db.get_tracked_fields().unwrap();
+        assert_eq!(fields.len(), 3);
+
+        let coffee = fields.iter().find(|f| f.field == "coffee").unwrap();
+        assert!(!coffee.ignored);
+        assert!(coffee.color.is_none());
+
+        let mood = fields.iter().find(|f| f.field == "mood").unwrap();
+        assert!(!mood.ignored);
+        assert_eq!(mood.color.as_deref(), Some("ff6600"));
+
+        let yt = fields.iter().find(|f| f.field == "youtube").unwrap();
+        assert!(yt.ignored);
+    }
+
+    #[test]
+    fn test_ensure_tracked_inserts_and_idempotent() {
+        let db = Db::open_in_memory().unwrap();
+        // First call inserts with ignored=0
+        db.ensure_tracked("coffee").unwrap();
+        let fields = db.get_tracked_fields().unwrap();
+        assert_eq!(fields.len(), 1);
+        assert!(!fields[0].ignored);
+
+        // Second call is a no-op (INSERT OR IGNORE)
+        db.ensure_tracked("coffee").unwrap();
+        let fields2 = db.get_tracked_fields().unwrap();
+        assert_eq!(fields2.len(), 1);
+    }
+
+    #[test]
+    fn test_ensure_tracked_does_not_override_ignored() {
+        let db = Db::open_in_memory().unwrap();
+        db.set_tracked("youtube", true, None).unwrap();
+        // ensure_tracked should do nothing because youtube already exists
+        db.ensure_tracked("youtube").unwrap();
+        let fields = db.get_tracked_fields().unwrap();
+        assert!(fields[0].ignored, "ignored flag must be preserved");
+    }
+
+    #[test]
+    fn test_state_colors() {
+        let db = Db::open_in_memory().unwrap();
+        db.set_state_color("mood", "happy", "00ff00").unwrap();
+        db.set_state_color("mood", "sad", "ff0000").unwrap();
+
+        let map = db.get_all_state_colors().unwrap();
+        assert_eq!(map.get(&("mood".to_string(), "happy".to_string())).map(|s| s.as_str()), Some("00ff00"));
+        assert_eq!(map.get(&("mood".to_string(), "sad".to_string())).map(|s| s.as_str()), Some("ff0000"));
+    }
+
+    #[test]
+    fn test_latest_entry_for_now_skips_note() {
+        let db = Db::open_in_memory().unwrap();
+        let t1 = DatumTime::now();
+        let switch_entry = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t1), None, "d1");
+        db.insert_entry(&switch_entry).unwrap();
+        // Insert a Note after the switch
+        let t2 = DatumTime::now();
+        let note_entry = Entry::new("mood", Verb::Note, Some(serde_json::json!("journal entry")), None, None, Some(t2), None, "d1");
+        db.insert_entry(&note_entry).unwrap();
+
+        let latest = db.latest_entry_for_now("mood").unwrap();
+        assert!(latest.is_some());
+        // Should return the switch entry, not the note
+        assert_eq!(latest.unwrap().verb, Verb::Switch);
     }
 }

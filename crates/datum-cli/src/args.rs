@@ -33,6 +33,7 @@ impl Cli {
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "now", "spec", "alias", "migrate", "get", "delete", "help",
+    "track", "ignore",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -130,7 +131,7 @@ pub enum Command {
     /// Show recent entries (defaults to last 10).
     Tail(TailArgs),
     /// Show current state of tracked fields (nowview).
-    Now,
+    Now(NowArgs),
 
     /// Print a single entry by id or slug.
     Get(GetArgs),
@@ -143,6 +144,11 @@ pub enum Command {
     /// Manage aliases.
     #[command(subcommand)]
     Alias(AliasCommand),
+
+    /// Track a field in the now view.
+    Track(TrackArgs),
+    /// Ignore a field in the now view.
+    Ignore(IgnoreArgs),
 
     /// Migrate data from a datum legacy backup JSON file.
     Migrate(MigrateArgs),
@@ -238,6 +244,31 @@ pub enum AliasCommand {
     List,
     /// Remove an alias
     Remove { name: String },
+}
+
+#[derive(Args, Debug)]
+pub struct NowArgs {
+    /// Show all fields including ignored (appended in dim text after a separator)
+    #[arg(short = 'A')]
+    pub show_all: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct TrackArgs {
+    /// Field name to track
+    pub field: String,
+    /// Color override: hex ("ff6600" or "#ff6600") or ANSI-256 number ("196")
+    #[arg(long)]
+    pub color: Option<String>,
+    /// Per-state color override in STATE=COLOR format (repeatable)
+    #[arg(long = "state", value_name = "STATE=COLOR")]
+    pub state_colors: Vec<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct IgnoreArgs {
+    /// Field name to ignore in the now view
+    pub field: String,
 }
 
 #[derive(Args, Debug)]
