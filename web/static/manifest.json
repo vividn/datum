@@ -1,0 +1,16 @@
+{
+  "name": "datum",
+  "short_name": "datum",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a1a",
+  "theme_color": "#1a1a2e",
+  "description": "Personal data tracker - fully offline, SQLite in the browser",
+  "icons": [
+    {
+      "src": "/favicon.png",
+      "sizes": "any",
+      "type": "image/png"
+    }
+  ]
+}
