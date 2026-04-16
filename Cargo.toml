@@ -1,0 +1,44 @@
+[workspace]
+members = [
+    "crates/datum-core",
+    "crates/datum-cli",
+    "crates/datum-sync",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["vividn"]
+license = "MIT"
+
+[workspace.dependencies]
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Database
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = { version = "0.10", features = ["serde"] }
+
+# IDs
+ulid = { version = "1", features = ["serde"] }
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Error handling
+thiserror = "2"
+anyhow = "1"
+
+# Async (for sync server)
+tokio = { version = "1", features = ["full"] }
+axum = "0.7"
+
+# Crypto
+aes-gcm = "0.10"
+sha2 = "0.10"
+rand = "0.8"
