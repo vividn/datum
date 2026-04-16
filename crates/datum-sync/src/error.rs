@@ -4,32 +4,31 @@ use axum::{
     Json,
 };
 use serde_json::json;
-use thiserror::Error;
 
-#[derive(Error, Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum AppError {
-    #[error("Database error: {0}")]
-    Database(#[from] rusqlite::Error),
+    #[error("database error: {0}")]
+    Db(#[from] rusqlite::Error),
 
-    #[error("Authentication error: {0}")]
-    Auth(String),
+    #[error("json error: {0}")]
+    Json(#[from] serde_json::Error),
 
-    #[error("JWT error")]
+    #[error("jwt error: {0}")]
     Jwt(#[from] jsonwebtoken::errors::Error),
 
-    #[error("WebAuthn error: {0}")]
+    #[error("webauthn error: {0}")]
     WebAuthn(String),
 
-    #[error("Not found: {0}")]
-    NotFound(String),
-
-    #[error("Bad request: {0}")]
-    BadRequest(String),
-
-    #[error("Unauthorized")]
+    #[error("unauthorized")]
     Unauthorized,
 
-    #[error("Internal error: {0}")]
+    #[error("not found")]
+    NotFound,
+
+    #[error("bad request: {0}")]
+    BadRequest(String),
+
+    #[error("internal error: {0}")]
     Internal(String),
 }
 
@@ -42,19 +41,12 @@ impl From<anyhow::Error> for AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, message) = match &self {
-            AppError::Database(_) => {
-                (StatusCode::INTERNAL_SERVER_ERROR, "Database error".to_string())
-            }
-            AppError::Auth(msg) => (StatusCode::UNAUTHORIZED, msg.clone()),
-            AppError::Jwt(_) => (StatusCode::UNAUTHORIZED, "Invalid token".to_string()),
-            AppError::WebAuthn(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            AppError::NotFound(msg) => (StatusCode::NOT_FOUND, msg.clone()),
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, self.to_string()),
+            AppError::NotFound => (StatusCode::NOT_FOUND, self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, msg.clone()),
-            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "Unauthorized".to_string()),
-            AppError::Internal(msg) => (StatusCode::INTERNAL_SERVER_ERROR, msg.clone()),
+            _ => (StatusCode::INTERNAL_SERVER_ERROR, self.to_string()),
         };
+
         (status, Json(json!({ "error": message }))).into_response()
     }
 }
-
-pub type AppResult<T> = Result<T, AppError>;

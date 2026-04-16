@@ -2,3 +2,8 @@
 /.beads
 /.claude
 /.runtime
+
+# Gas Town (added by gt)
+.logs/
+__pycache__/
+state.json

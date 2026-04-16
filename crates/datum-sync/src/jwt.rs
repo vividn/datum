@@ -1,23 +1,18 @@
-use jsonwebtoken::{decode, encode, Algorithm, DecodingKey, EncodingKey, Header, Validation};
-use serde::{Deserialize, Serialize};
+use crate::{error::AppError, models::Claims};
+use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
+use std::time::{SystemTime, UNIX_EPOCH};
+use uuid::Uuid;
 
-use crate::error::{AppError, AppResult};
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Claims {
-    pub sub: String,
-    pub exp: usize,
-    pub iat: usize,
-}
-
-pub fn issue_jwt(user_id: &str, secret: &str) -> AppResult<String> {
-    let now = chrono::Utc::now().timestamp() as usize;
-    let exp = now + 30 * 24 * 60 * 60; // 30 days
+pub fn create_token(user_id: &Uuid, secret: &str) -> Result<String, AppError> {
+    let exp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize
+        + 86400 * 30; // 30 days
 
     let claims = Claims {
-        sub: user_id.to_owned(),
+        sub: user_id.to_string(),
         exp,
-        iat: now,
     };
 
     encode(
@@ -28,14 +23,12 @@ pub fn issue_jwt(user_id: &str, secret: &str) -> AppResult<String> {
     .map_err(AppError::Jwt)
 }
 
-pub fn verify_jwt(
-    token: &str,
-    secret: &str,
-) -> Result<String, jsonwebtoken::errors::Error> {
-    let data = decode::<Claims>(
+pub fn verify_token(token: &str, secret: &str) -> Result<Claims, AppError> {
+    decode::<Claims>(
         token,
         &DecodingKey::from_secret(secret.as_bytes()),
-        &Validation::new(Algorithm::HS256),
-    )?;
-    Ok(data.claims.sub)
+        &Validation::default(),
+    )
+    .map(|td| td.claims)
+    .map_err(AppError::Jwt)
 }
