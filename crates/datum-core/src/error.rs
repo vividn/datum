@@ -20,6 +20,9 @@ pub enum DatumError {
     #[error("Entry not found: {0}")]
     NotFound(String),
 
+    #[error("Entry is tombstoned: {0}")]
+    Tombstoned(String),
+
     #[error("Missing required field: {0}")]
     MissingRequired(String),
 

@@ -35,6 +35,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
+    "update", "merge", "rekey",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -167,6 +168,13 @@ pub enum Command {
     /// Delete an entry by id or slug.
     #[command(visible_alias = "del")]
     Delete(DeleteArgs),
+
+    /// Mutate an existing entry's extra_data in place (replaces specified keys).
+    Update(UpdateArgs),
+    /// Deep-merge new values into an existing entry's extra_data.
+    Merge(UpdateArgs),
+    /// Copy an entry to a new id (re-interpolated from the template) — old row stays.
+    Rekey(UpdateArgs),
 
     /// Manage field specs (schemas).
     #[command(subcommand)]
@@ -336,6 +344,39 @@ pub struct GetArgs {
     /// Pretty-print the entry as indented JSON (two-space indent).
     #[arg(long)]
     pub pretty: bool,
+}
+
+/// Arguments shared by `update`, `merge`, and `rekey`.
+#[derive(Args, Debug)]
+pub struct UpdateArgs {
+    /// Id or slug of the existing entry to mutate.
+    pub id_or_slug: String,
+
+    /// Positional payload: bare tokens replace the primary value; key=value
+    /// pairs modify extra_data.
+    pub rest: Vec<String>,
+
+    /// Override the subcommand's default strategy
+    /// (update / merge / rekey).
+    #[arg(long, value_enum)]
+    pub strategy: Option<ConflictStrategyArg>,
+
+    /// New id/slug template (rekey) or override for the spec's id_template.
+    /// e.g. `"%field%:%state%"`.
+    #[arg(long = "id", value_name = "TEMPLATE")]
+    pub id: Option<String>,
+
+    /// Delimiter used to collapse empty segments in the interpolated id.
+    #[arg(long = "id-delimiter", value_name = "STR", default_value = ":")]
+    pub id_delimiter: String,
+
+    /// Additional key=value pairs merged into extra_data.
+    #[arg(short = 'k', long = "key", value_name = "KEY=VALUE")]
+    pub keys: Vec<String>,
+
+    /// Optional comment appended to extra_data.
+    #[arg(short = 'c', long)]
+    pub comment: Option<String>,
 }
 
 #[derive(Args, Debug)]

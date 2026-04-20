@@ -359,6 +359,27 @@ impl Db {
         Ok(())
     }
 
+    /// Persist a mutation to an existing entry, matched by `entry.id`.
+    /// Errors [`DatumError::NotFound`] if the id is unknown and
+    /// [`DatumError::Tombstoned`] if the row is soft-deleted. Refreshes
+    /// `modified_at` and rewrites all mutable fields (including `slug`,
+    /// `content_hash`, `extra_data`) from the incoming payload.
+    pub fn save_existing_entry(&self, entry: &Entry) -> Result<()> {
+        let state: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT deleted_at FROM entries WHERE id = ?1",
+                params![entry.id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match state {
+            None => Err(DatumError::NotFound(entry.id.clone())),
+            Some(Some(_)) => Err(DatumError::Tombstoned(entry.id.clone())),
+            Some(None) => self.raw_overwrite_mutables(&entry.id, entry, None),
+        }
+    }
+
     /// Fetch a live entry by id or slug. Tombstoned rows are hidden — use
     /// [`Db::list_including_deleted`] or [`Db::get_entry_including_deleted`]
     /// if you need to see them.
