@@ -16,7 +16,7 @@ use crate::entry::{Entry, Verb};
 use crate::error::{DatumError, Result};
 use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
 use crate::time::DatumTime;
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Duration, Utc};
 
 /// Projection of a FieldSpec for the `now` view. Built from FieldSpec on read.
 pub struct TrackedField {
@@ -479,6 +479,34 @@ impl Db {
         let mut stmt = self.conn.prepare("SELECT * FROM entries ORDER BY id ASC")?;
         let rows = stmt.query_map([], row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// Tombstoned rows whose `deleted_at` is within `within` of now, most
+    /// recently deleted first. B7 (undo) uses this to locate recent deletes
+    /// inside the safety window.
+    pub fn list_recent_tombstones(&self, within: Duration) -> Result<Vec<Entry>> {
+        let cutoff = (Utc::now() - within).to_rfc3339();
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM entries
+             WHERE deleted_at IS NOT NULL AND deleted_at >= ?1
+             ORDER BY deleted_at DESC, id DESC",
+        )?;
+        let rows = stmt.query_map(params![cutoff], row_to_entry)?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// Most recently tombstoned row, regardless of age. B7 `undo --force`
+    /// uses this to reach back past the default safety window.
+    pub fn most_recent_tombstone(&self) -> Result<Option<Entry>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM entries
+             WHERE deleted_at IS NOT NULL
+             ORDER BY deleted_at DESC, id DESC
+             LIMIT 1",
+        )?;
+        stmt.query_row([], row_to_entry)
+            .optional()
+            .map_err(DatumError::Db)
     }
 
     /// Clear a tombstone by id or slug — the inverse of [`Db::soft_delete_entry`].

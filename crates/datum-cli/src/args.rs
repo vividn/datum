@@ -33,7 +33,7 @@ impl Cli {
 /// Known subcommands — keep in sync with Command enum.
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
-    "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "help",
+    "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey",
 ];
@@ -168,6 +168,8 @@ pub enum Command {
     /// Delete an entry by id or slug.
     #[command(visible_alias = "del")]
     Delete(DeleteArgs),
+    /// Restore the most recently soft-deleted entry (or one specified by slug).
+    Undo(UndoArgs),
 
     /// Mutate an existing entry's extra_data in place (replaces specified keys).
     Update(UpdateArgs),
@@ -386,6 +388,21 @@ pub struct DeleteArgs {
     /// Skip confirmation prompt
     #[arg(long)]
     pub force: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct UndoArgs {
+    /// Id or slug of a specific tombstoned entry to restore. When omitted,
+    /// restores the most recently deleted entry within the safety window.
+    pub id_or_slug: Option<String>,
+    /// Bypass the safety window — restore the most recent tombstone
+    /// regardless of age.
+    #[arg(long)]
+    pub force: bool,
+    /// Safety window for the default (no-slug) path; anything older requires
+    /// `--force`. Accepts "15m", "1h", "1:30", ISO "PT30M", etc.
+    #[arg(long, default_value = "15m")]
+    pub window: String,
 }
 
 #[derive(Subcommand, Debug)]

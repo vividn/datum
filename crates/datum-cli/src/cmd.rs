@@ -15,7 +15,7 @@ use crate::{
     args::{
         AliasCommand, CheckArgs, Cli, Command, DeleteArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs,
         LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
-        UpdateArgs,
+        UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
@@ -38,6 +38,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Update(args) => cmd_update(args, ConflictStrategy::Update, db),
         Command::Merge(args) => cmd_update(args, ConflictStrategy::Merge, db),
         Command::Rekey(args) => cmd_update(args, ConflictStrategy::Rekey, db),
+        Command::Undo(args) => cmd_undo(args, db),
         Command::Spec(sub) => cmd_spec(sub, db),
         Command::Alias(sub) => cmd_alias(sub, db),
         Command::Track(args) => cmd_track(args, db),
@@ -508,7 +509,7 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
             return Ok(());
         }
     }
-    db.delete_entry(&args.id_or_slug)
+    db.soft_delete_entry(&args.id_or_slug)
         .map_err(anyhow::Error::from)?;
     println!("✓ Deleted {}", args.id_or_slug);
     Ok(())
@@ -740,6 +741,47 @@ fn parse_update_payload(args: &UpdateArgs) -> Result<(Option<JsonValue>, Option<
         Some(JsonValue::Object(extra))
     };
     Ok((value, extra_data))
+}
+
+fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
+    // Slug-targeted undo: restore that specific row, no window check.
+    if let Some(id_or_slug) = args.id_or_slug.as_deref() {
+        db.undelete(id_or_slug).map_err(anyhow::Error::from)?;
+        println!("✓ Restored {id_or_slug}");
+        return Ok(());
+    }
+
+    let window = parse_duration(&args.window)
+        .with_context(|| format!("Invalid --window value '{}'", args.window))?;
+
+    let target = if args.force {
+        db.most_recent_tombstone()?
+    } else {
+        db.list_recent_tombstones(window)?.into_iter().next()
+    };
+
+    match target {
+        Some(entry) => {
+            db.undelete(&entry.id).map_err(anyhow::Error::from)?;
+            println!("✓ Restored {}", entry.slug);
+            Ok(())
+        }
+        None => {
+            // Nothing within the window. If --force was off and there's still an
+            // older tombstone, nudge the user toward --force; otherwise the store
+            // has no tombstones at all.
+            if !args.force {
+                if let Some(older) = db.most_recent_tombstone()? {
+                    anyhow::bail!(
+                        "No deletes within {}; most recent is '{}' (use --force to restore it)",
+                        args.window,
+                        older.slug
+                    );
+                }
+            }
+            anyhow::bail!("Nothing to undo — no soft-deleted entries found")
+        }
+    }
 }
 
 // ─── Spec management ─────────────────────────────────────────────────────────
@@ -1993,5 +2035,115 @@ mod tests {
         // Payload changes are visible on the new row only.
         let original = rows.iter().find(|r| r.id == e.id).unwrap();
         assert_eq!(original.extra_data.as_ref().unwrap()["pos"], serde_json::json!("verb"));
+    }
+
+    // ─── B7: undo via soft-delete tombstone ─────────────────────────────────
+
+    fn undo_args(slug: Option<&str>, force: bool, window: &str) -> UndoArgs {
+        UndoArgs {
+            id_or_slug: slug.map(str::to_string),
+            force,
+            window: window.to_string(),
+        }
+    }
+
+    #[test]
+    fn undo_restores_most_recent_delete_within_window() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // Three entries; delete the middle one. `undo` with default window
+        // must pick that one (the most recent tombstone) and bring it back.
+        db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
+        let doomed = make_entry_at("mood", 200, "d1");
+        let doomed_id = doomed.id.clone();
+        db.insert_entry(&doomed).unwrap();
+        db.insert_entry(&make_entry_at("mood", 300, "d1")).unwrap();
+
+        db.soft_delete_entry(&doomed_id).unwrap();
+        assert_eq!(db.entries_for_field("mood", None).unwrap().len(), 2);
+
+        cmd_undo(undo_args(None, false, "15m"), &db).unwrap();
+
+        let live = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(live.len(), 3);
+        assert!(live.iter().any(|e| e.id == doomed_id));
+    }
+
+    #[test]
+    fn undo_outside_window_errors_without_force() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_entry_at("mood", 100, "d1");
+        let id = e.id.clone();
+        db.insert_entry(&e).unwrap();
+        db.soft_delete_entry(&id).unwrap();
+
+        // Zero-length window: the tombstone we just created is already "too old"
+        // (its deleted_at < now - 0). Undo without --force must bail out.
+        let err = cmd_undo(undo_args(None, false, "0s"), &db).unwrap_err();
+        assert!(
+            err.to_string().contains("use --force"),
+            "error should suggest --force, got: {err}"
+        );
+
+        // Row is still tombstoned.
+        assert!(db.entries_for_field("mood", None).unwrap().is_empty());
+
+        // With --force, the same call restores it regardless of window.
+        cmd_undo(undo_args(None, true, "0s"), &db).unwrap();
+        let live = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].id, id);
+    }
+
+    #[test]
+    fn undo_specific_slug_targets_that_row() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // Two deletes; the most recent is B, but we want to restore A specifically.
+        let a = make_entry_at("mood", 100, "d1");
+        let a_id = a.id.clone();
+        let a_slug = a.slug.clone();
+        let b = make_entry_at("mood", 200, "d1");
+        let b_id = b.id.clone();
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+
+        db.soft_delete_entry(&a_id).unwrap();
+        db.soft_delete_entry(&b_id).unwrap();
+
+        cmd_undo(undo_args(Some(&a_slug), false, "15m"), &db).unwrap();
+
+        // A is back, B is still tombstoned.
+        let live: Vec<_> = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].id, a_id);
+        assert!(db.get_entry_including_deleted(&b_id).unwrap().deleted_at.is_some());
+    }
+
+    #[test]
+    fn delete_then_undo_is_noop() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_entry_at("mood", 100, "d1");
+        let id = e.id.clone();
+        let original_hash = e.content_hash.clone();
+        db.insert_entry(&e).unwrap();
+
+        cmd_delete(
+            DeleteArgs { id_or_slug: id.clone(), force: true },
+            &db,
+        )
+        .unwrap();
+        cmd_undo(undo_args(None, false, "15m"), &db).unwrap();
+
+        // Row is back, identical to the original insertion (including content_hash).
+        let restored = db.get_entry(&id).unwrap();
+        assert_eq!(restored.id, id);
+        assert_eq!(restored.content_hash, original_hash);
+        assert!(restored.deleted_at.is_none());
+        assert_eq!(db.count_entries().unwrap(), 1);
     }
 }
