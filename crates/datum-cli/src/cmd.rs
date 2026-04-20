@@ -13,10 +13,10 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{
-        AliasCommand, BackupArgs, CheckArgs, Cli, Command, DayviewArgs, DeleteArgs, EditArgs,
-        GetArgs, GrepArgs, HeadArgs, IgnoreArgs, InfoArgs, LogArgs, MapArgs, MigrateCommand,
-        MigrateImportArgs, NowArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
-        TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+        AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
+        DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs, InfoArgs,
+        LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs, RetimeArgs,
+        SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::{self, device_id},
@@ -59,6 +59,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Dayview(args) => cmd_dayview(args, db),
         Command::Info(args) => cmd_info(args, cli.db.as_deref(), db),
         Command::Setup(args) => cmd_setup(args, db),
+        Command::Config(sub) => cmd_config(sub, cli.db.as_deref()),
     }
 }
 
@@ -440,6 +441,75 @@ fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
     }
     println!("  entries: {entries} (unchanged)");
     println!("  OK");
+    Ok(())
+}
+
+// ─── Config ──────────────────────────────────────────────────────────────────
+
+fn cmd_config(sub: ConfigCommand, cli_db: Option<&str>) -> Result<()> {
+    match sub {
+        ConfigCommand::Show(args) => cmd_config_show(args, cli_db),
+    }
+}
+
+fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
+    let cfg = config::Config::load(cli_db)?;
+
+    if args.json {
+        let rows = cfg
+            .rows()
+            .into_iter()
+            .map(|(k, v, s)| {
+                (
+                    k.to_string(),
+                    serde_json::json!({
+                        "value": v,
+                        "source": s.as_str(),
+                    }),
+                )
+            })
+            .collect::<serde_json::Map<_, _>>();
+        let out = serde_json::json!({
+            "config": rows,
+            "yaml_path": cfg.yaml_path.to_string_lossy(),
+            "yaml_loaded": cfg.yaml_loaded,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    let rows = cfg.rows();
+    let key_w = rows.iter().map(|(k, _, _)| k.len()).max().unwrap_or(0).max(3);
+    let val_w = rows
+        .iter()
+        .map(|(_, v, _)| v.len())
+        .max()
+        .unwrap_or(0)
+        .max(5);
+    println!(
+        "{:<key_w$}  {:<val_w$}  {}",
+        "KEY",
+        "VALUE",
+        "SOURCE",
+        key_w = key_w,
+        val_w = val_w,
+    );
+    for (k, v, s) in rows {
+        println!(
+            "{:<key_w$}  {:<val_w$}  {}",
+            k,
+            v,
+            s.as_str(),
+            key_w = key_w,
+            val_w = val_w,
+        );
+    }
+    println!();
+    println!(
+        "yaml: {} ({})",
+        cfg.yaml_path.display(),
+        if cfg.yaml_loaded { "loaded" } else { "not found" }
+    );
     Ok(())
 }
 

@@ -3,6 +3,11 @@
 //! The DB registry lives at `$XDG_CONFIG_HOME/datum/dbs.toml` and maps names
 //! to absolute paths. Names that aren't registered resolve to
 //! `<XDG_DATA_HOME>/datum/<name>.db` and are auto-added on first use.
+//!
+//! User preferences live in `$XDG_CONFIG_HOME/datum/datumrc.yml` (overridable
+//! via `DATUM_CONFIG`). Loaded through `Config::load`, which layers
+//! CLI flag > env var (DATUM_*) > yaml > built-in default with per-key
+//! source tracking for `datum config show`.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
@@ -260,6 +265,220 @@ pub fn display_path(p: &Path) -> String {
         }
     }
     p.display().to_string()
+}
+
+// ─── Layered user config (datumrc.yml) ─────────────────────────────────────
+
+/// Where a config value came from. Shown by `datum config show`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Source {
+    Flag,
+    Env,
+    Yaml,
+    Default,
+}
+
+impl Source {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Source::Flag => "flag",
+            Source::Env => "env",
+            Source::Yaml => "yaml",
+            Source::Default => "default",
+        }
+    }
+}
+
+/// A value plus the layer it came from.
+#[derive(Debug, Clone, Serialize)]
+pub struct SourcedValue<T: Clone + Serialize> {
+    pub value: T,
+    pub source: Source,
+}
+
+impl<T: Clone + Serialize> SourcedValue<T> {
+    fn new(value: T, source: Source) -> Self {
+        Self { value, source }
+    }
+}
+
+/// Shape of `datumrc.yml`. All fields optional; missing keys fall through
+/// to the env layer or built-in defaults.
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct RawConfig {
+    #[serde(default)]
+    pub db_path: Option<String>,
+    #[serde(default)]
+    pub device_id: Option<String>,
+    #[serde(default)]
+    pub timezone: Option<String>,
+    #[serde(default)]
+    pub default_field: Option<String>,
+    #[serde(default)]
+    pub editor: Option<String>,
+}
+
+/// Effective resolved config with per-key source provenance.
+#[derive(Debug, Clone)]
+pub struct Config {
+    pub db_path: SourcedValue<String>,
+    pub device_id: SourcedValue<String>,
+    pub timezone: SourcedValue<String>,
+    pub default_field: SourcedValue<Option<String>>,
+    pub editor: SourcedValue<String>,
+    /// Path of the yaml file that was loaded (or the path we looked at if
+    /// missing). Useful for `config show` diagnostics.
+    pub yaml_path: PathBuf,
+    /// Whether the yaml file existed and was parsed.
+    pub yaml_loaded: bool,
+}
+
+/// Location of the user's `datumrc.yml`:
+/// - `DATUM_CONFIG` env var wins (absolute or relative path).
+/// - Otherwise `config_dir()/datumrc.yml`.
+pub fn yaml_config_path() -> Result<PathBuf> {
+    if let Ok(p) = std::env::var("DATUM_CONFIG") {
+        if !p.is_empty() {
+            return Ok(PathBuf::from(p));
+        }
+    }
+    Ok(config_dir()?.join("datumrc.yml"))
+}
+
+/// Load and parse the yaml config. Missing file → `Ok(None)`. Parse errors
+/// surface so users see what's wrong with their file.
+pub fn load_yaml_config(path: &Path) -> Result<Option<RawConfig>> {
+    if !path.exists() {
+        return Ok(None);
+    }
+    let contents = std::fs::read_to_string(path)
+        .with_context(|| format!("Reading config from {path:?}"))?;
+    if contents.trim().is_empty() {
+        return Ok(Some(RawConfig::default()));
+    }
+    let cfg: RawConfig = serde_yaml::from_str(&contents)
+        .with_context(|| format!("Parsing config at {path:?}"))?;
+    Ok(Some(cfg))
+}
+
+fn read_env(var: &str) -> Option<String> {
+    match std::env::var(var) {
+        Ok(v) if !v.is_empty() => Some(v),
+        _ => None,
+    }
+}
+
+fn editor_default() -> String {
+    read_env("VISUAL")
+        .or_else(|| read_env("EDITOR"))
+        .unwrap_or_else(|| "vi".to_string())
+}
+
+fn timezone_default() -> String {
+    // Fall through to the IANA local zone if it resolves; otherwise UTC.
+    // chrono doesn't expose a portable IANA name, so we accept "UTC" as a
+    // conservative default — users who care set `timezone:` in yaml or
+    // `DATUM_TIMEZONE` in env.
+    "UTC".to_string()
+}
+
+impl Config {
+    /// Load the effective config by layering CLI flag > env > yaml > default.
+    ///
+    /// `cli_db` is the value of `--db` from clap (if any). Other CLI flags
+    /// aren't wired up for these keys yet — when they are, extend this
+    /// function similarly.
+    pub fn load(cli_db: Option<&str>) -> Result<Self> {
+        let yaml_path = yaml_config_path()?;
+        let parsed = load_yaml_config(&yaml_path)?;
+        let yaml_loaded = parsed.is_some();
+        let yaml = parsed.unwrap_or_default();
+
+        let db_path = if let Some(v) = cli_db {
+            SourcedValue::new(v.to_string(), Source::Flag)
+        } else if let Some(v) = read_env("DATUM_DB") {
+            SourcedValue::new(v, Source::Env)
+        } else if let Some(v) = yaml.db_path.clone() {
+            SourcedValue::new(v, Source::Yaml)
+        } else {
+            let default_path = data_dir()?.join("datum.db");
+            SourcedValue::new(
+                default_path.to_string_lossy().into_owned(),
+                Source::Default,
+            )
+        };
+
+        let device_id = if let Some(v) = read_env("DATUM_DEVICE_ID") {
+            SourcedValue::new(v, Source::Env)
+        } else if let Some(v) = yaml.device_id.clone() {
+            SourcedValue::new(v, Source::Yaml)
+        } else {
+            SourcedValue::new(device_id()?, Source::Default)
+        };
+
+        let timezone = if let Some(v) = read_env("DATUM_TIMEZONE") {
+            SourcedValue::new(v, Source::Env)
+        } else if let Some(v) = yaml.timezone.clone() {
+            SourcedValue::new(v, Source::Yaml)
+        } else {
+            SourcedValue::new(timezone_default(), Source::Default)
+        };
+
+        let default_field = if let Some(v) = read_env("DATUM_DEFAULT_FIELD") {
+            SourcedValue::new(Some(v), Source::Env)
+        } else if let Some(v) = yaml.default_field.clone() {
+            SourcedValue::new(Some(v), Source::Yaml)
+        } else {
+            SourcedValue::new(None, Source::Default)
+        };
+
+        let editor = if let Some(v) = read_env("DATUM_EDITOR") {
+            SourcedValue::new(v, Source::Env)
+        } else if let Some(v) = yaml.editor.clone() {
+            SourcedValue::new(v, Source::Yaml)
+        } else {
+            SourcedValue::new(editor_default(), Source::Default)
+        };
+
+        Ok(Config {
+            db_path,
+            device_id,
+            timezone,
+            default_field,
+            editor,
+            yaml_path,
+            yaml_loaded,
+        })
+    }
+
+    /// Ordered (key, value-as-string, source) tuples for `config show`.
+    pub fn rows(&self) -> Vec<(&'static str, String, Source)> {
+        let default_field_str = self
+            .default_field
+            .value
+            .clone()
+            .unwrap_or_else(|| "(unset)".to_string());
+        vec![
+            ("db_path", self.db_path.value.clone(), self.db_path.source),
+            (
+                "device_id",
+                self.device_id.value.clone(),
+                self.device_id.source,
+            ),
+            (
+                "timezone",
+                self.timezone.value.clone(),
+                self.timezone.source,
+            ),
+            (
+                "default_field",
+                default_field_str,
+                self.default_field.source,
+            ),
+            ("editor", self.editor.value.clone(), self.editor.source),
+        ]
+    }
 }
 
 #[cfg(test)]

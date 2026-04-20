@@ -53,3 +53,6 @@ tar = "0.4"
 
 # Config format (registry in dbs.toml)
 toml = "0.8"
+
+# User config (datumrc.yml)
+serde_yaml = "0.9"

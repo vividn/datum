@@ -28,6 +28,7 @@ tempfile = "3"
 flate2 = { workspace = true }
 tar = { workspace = true }
 toml = { workspace = true }
+serde_yaml = { workspace = true }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }

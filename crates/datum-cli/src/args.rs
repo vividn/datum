@@ -81,7 +81,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
-    "info", "setup",
+    "info", "setup", "config",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -272,6 +272,24 @@ pub enum Command {
 
     /// Initialize or migrate the database schema.
     Setup(SetupArgs),
+
+    /// Show or manage user configuration (datumrc.yml).
+    #[command(subcommand)]
+    Config(ConfigCommand),
+}
+
+#[derive(Subcommand, Debug)]
+pub enum ConfigCommand {
+    /// Print the effective config with the source of each key
+    /// (flag / env / yaml / default).
+    Show(ConfigShowArgs),
+}
+
+#[derive(Args, Debug, Default)]
+pub struct ConfigShowArgs {
+    /// Emit JSON instead of the human-readable table.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug)]
