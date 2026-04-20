@@ -42,6 +42,11 @@ impl Db {
 
     fn migrate(&self) -> Result<()> {
         self.conn.execute_batch(include_str!("schema.sql"))?;
+        // Idempotently add deleted_at to pre-existing DBs. A duplicate-column
+        // error is expected once the column is present and is ignored here.
+        let _ = self
+            .conn
+            .execute("ALTER TABLE entries ADD COLUMN deleted_at TEXT", []);
         Ok(())
     }
 
@@ -296,6 +301,57 @@ impl Db {
             .map_err(DatumError::Db)
     }
 
+    /// Soft-delete an entry by id or slug (A4 tombstone).
+    ///
+    /// Sets `deleted_at` to now; read paths that care about soft-delete (such
+    /// as `get_active_state`) will ignore tombstoned rows. Errors if no row
+    /// matches. If the row is already tombstoned, the tombstone is refreshed.
+    pub fn soft_delete_entry(&self, id_or_slug: &str) -> Result<()> {
+        let now = Utc::now().to_rfc3339();
+        let affected = self.conn.execute(
+            "UPDATE entries SET deleted_at = ?1 WHERE id = ?2 OR slug = ?2",
+            params![now, id_or_slug],
+        )?;
+        if affected == 0 {
+            Err(DatumError::NotFound(id_or_slug.to_string()))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Return the active state of `field` at time `at`, or `Value::Null` if
+    /// the field has no state-affecting entries at or before `at`.
+    ///
+    /// Reconstructs the state-change timeline from non-tombstoned entries of
+    /// verb switch/start/stop/occur for `field` (see `state::compile_state` for
+    /// the event rules) and returns the most recent event's value.
+    ///
+    /// SQL fetches just the candidate rows (field match, verb ∈ {switch, start,
+    /// stop, occur}, and time_start or time_end ≤ at); compilation runs in Rust.
+    pub fn get_active_state(
+        &self,
+        field: &str,
+        at: DateTime<Utc>,
+    ) -> Result<JsonValue> {
+        let at_str = at.to_rfc3339();
+        let mut stmt = self.conn.prepare(
+            r#"SELECT * FROM entries
+               WHERE field = ?1
+                 AND deleted_at IS NULL
+                 AND verb IN ('switch', 'start', 'stop', 'occur')
+                 AND (
+                      (time_start_utc IS NOT NULL AND time_start_utc <= ?2)
+                   OR (time_end_utc   IS NOT NULL AND time_end_utc   <= ?2)
+                 )
+               ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC"#,
+        )?;
+        let rows = stmt.query_map(params![field, at_str], row_to_entry)?;
+        let entries: Vec<Entry> = rows
+            .map(|r| r.map_err(DatumError::Db))
+            .collect::<Result<Vec<_>>>()?;
+        Ok(crate::state::compile_state(&entries, at))
+    }
+
     pub fn load_registry(&self) -> Result<SpecRegistry> {
         let mut registry = SpecRegistry::new();
 
@@ -501,6 +557,242 @@ mod tests {
         let map = db.get_all_state_colors().unwrap();
         assert_eq!(map.get(&("mood".to_string(), "happy".to_string())).map(|s| s.as_str()), Some("00ff00"));
         assert_eq!(map.get(&("mood".to_string(), "sad".to_string())).map(|s| s.as_str()), Some("ff0000"));
+    }
+
+    // ------------------------------------------------------------------
+    // get_active_state — A5 acceptance tests
+    // ------------------------------------------------------------------
+
+    fn utc_at(h: u32, m: u32) -> DatumTime {
+        let utc = chrono::DateTime::parse_from_rfc3339(
+            &format!("2024-01-01T{h:02}:{m:02}:00Z"),
+        )
+        .unwrap()
+        .with_timezone(&Utc);
+        DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        }
+    }
+
+    fn as_utc(h: u32, m: u32) -> chrono::DateTime<Utc> {
+        utc_at(h, m).utc
+    }
+
+    #[test]
+    fn active_state_returns_none_before_any_entry() {
+        let db = Db::open_in_memory().unwrap();
+        let got = db.get_active_state("mood", as_utc(12, 0)).unwrap();
+        assert_eq!(got, JsonValue::Null);
+    }
+
+    #[test]
+    fn active_state_returns_last_switch_before_time() {
+        let db = Db::open_in_memory().unwrap();
+        let e1 = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d",
+        );
+        let e2 = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("focused")),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d",
+        );
+        let e3 = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("tired")),
+            None,
+            None,
+            Some(utc_at(15, 0)),
+            None,
+            "d",
+        );
+        db.insert_entry(&e1).unwrap();
+        db.insert_entry(&e2).unwrap();
+        db.insert_entry(&e3).unwrap();
+
+        // At 12:00 → "focused"; at 09:30 → "happy"; at 16:00 → "tired"; at 08:59 → null
+        assert_eq!(
+            db.get_active_state("mood", as_utc(12, 0)).unwrap(),
+            serde_json::json!("focused")
+        );
+        assert_eq!(
+            db.get_active_state("mood", as_utc(9, 30)).unwrap(),
+            serde_json::json!("happy")
+        );
+        assert_eq!(
+            db.get_active_state("mood", as_utc(16, 0)).unwrap(),
+            serde_json::json!("tired")
+        );
+        assert_eq!(
+            db.get_active_state("mood", as_utc(8, 59)).unwrap(),
+            JsonValue::Null
+        );
+    }
+
+    #[test]
+    fn active_state_returns_none_after_stop() {
+        let db = Db::open_in_memory().unwrap();
+        let start = Entry::new(
+            "run",
+            Verb::Start,
+            None,
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d",
+        );
+        let stop = Entry::new(
+            "run",
+            Verb::Stop,
+            None,
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d",
+        );
+        db.insert_entry(&start).unwrap();
+        db.insert_entry(&stop).unwrap();
+
+        // During the run → true
+        assert_eq!(
+            db.get_active_state("run", as_utc(9, 30)).unwrap(),
+            serde_json::json!(true),
+        );
+        // After stop → false (not null — "stopped" is a distinct state)
+        assert_eq!(
+            db.get_active_state("run", as_utc(10, 30)).unwrap(),
+            serde_json::json!(false),
+        );
+    }
+
+    #[test]
+    fn active_state_handles_concurrent_blocks() {
+        // Two overlapping start entries: the LATER start wins while both are
+        // active; when one stops, the other's state still governs.
+        let db = Db::open_in_memory().unwrap();
+        // First start: switch to "a" at 09:00, ends 12:00
+        let a = Entry::new(
+            "task",
+            Verb::Switch,
+            Some(serde_json::json!("a")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            Some(utc_at(12, 0)),
+            "d",
+        );
+        // Second start: switch to "b" at 10:00, ends 11:00
+        let b = Entry::new(
+            "task",
+            Verb::Switch,
+            Some(serde_json::json!("b")),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            Some(utc_at(11, 0)),
+            "d",
+        );
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+
+        // 09:30: only "a" active → "a"
+        assert_eq!(
+            db.get_active_state("task", as_utc(9, 30)).unwrap(),
+            serde_json::json!("a"),
+        );
+        // 10:30: "b" started most recently → "b"
+        assert_eq!(
+            db.get_active_state("task", as_utc(10, 30)).unwrap(),
+            serde_json::json!("b"),
+        );
+        // 11:30: "b" ended (→ false), "a" still running but its start is older → false wins as latest event
+        assert_eq!(
+            db.get_active_state("task", as_utc(11, 30)).unwrap(),
+            serde_json::json!(false),
+        );
+        // 12:30: both ended → still false
+        assert_eq!(
+            db.get_active_state("task", as_utc(12, 30)).unwrap(),
+            serde_json::json!(false),
+        );
+    }
+
+    #[test]
+    fn active_state_skips_tombstoned_rows() {
+        let db = Db::open_in_memory().unwrap();
+        let older = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("calm")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d",
+        );
+        let newer = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("angry")),
+            None,
+            None,
+            Some(utc_at(12, 0)),
+            None,
+            "d",
+        );
+        let newer_id = newer.id.clone();
+        db.insert_entry(&older).unwrap();
+        db.insert_entry(&newer).unwrap();
+
+        // Before tombstone: active at 13:00 is "angry"
+        assert_eq!(
+            db.get_active_state("mood", as_utc(13, 0)).unwrap(),
+            serde_json::json!("angry"),
+        );
+
+        db.soft_delete_entry(&newer_id).unwrap();
+
+        // After tombstone: newer entry excluded → falls back to "calm"
+        assert_eq!(
+            db.get_active_state("mood", as_utc(13, 0)).unwrap(),
+            serde_json::json!("calm"),
+        );
+    }
+
+    #[test]
+    fn active_state_ignores_other_fields() {
+        let db = Db::open_in_memory().unwrap();
+        let other = Entry::new(
+            "different",
+            Verb::Switch,
+            Some(serde_json::json!("x")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d",
+        );
+        db.insert_entry(&other).unwrap();
+        assert_eq!(
+            db.get_active_state("mood", as_utc(12, 0)).unwrap(),
+            JsonValue::Null,
+        );
     }
 
     #[test]

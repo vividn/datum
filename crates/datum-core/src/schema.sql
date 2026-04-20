@@ -33,7 +33,10 @@ CREATE TABLE IF NOT EXISTS entries (
     -- Bookkeeping
     created_at      TEXT NOT NULL,
     modified_at     TEXT NOT NULL,
-    device_id       TEXT NOT NULL
+    device_id       TEXT NOT NULL,
+
+    -- Soft-delete tombstone (A4). NULL = not deleted.
+    deleted_at      TEXT
 );
 
 -- Efficient queries: by field + time
