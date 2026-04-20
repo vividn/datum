@@ -140,10 +140,20 @@ impl Db {
     }
 
     fn migrate(&self) -> Result<()> {
+        // Early migrations: add columns referenced by CREATE INDEX statements
+        // inside schema.sql. These MUST run before the batch below, otherwise
+        // the index creation errors on pre-existing tables that still carry
+        // the old column set. Missing-table errors on a fresh DB are ignored.
+        let _ = self.conn.execute(
+            "ALTER TABLE aliases ADD COLUMN derived_from_field TEXT",
+            [],
+        );
+
         self.conn.execute_batch(include_str!("schema.sql"))?;
-        // Idempotently add columns that were introduced after the initial
-        // schema. Duplicate-column errors are expected once the column is
-        // present and are ignored here.
+
+        // Late migrations: columns not referenced by schema.sql indexes.
+        // Duplicate-column errors are expected once the column is present and
+        // are ignored here.
         let _ = self
             .conn
             .execute("ALTER TABLE entries ADD COLUMN deleted_at TEXT", []);
@@ -1930,5 +1940,87 @@ mod tests {
         assert_eq!(db.list_including_deleted().unwrap().len(), 2);
         // But only the new one is live.
         assert_eq!(db.entries_for_field("mood", None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn migrates_pre_a0_aliases_table_adds_derived_from_field() {
+        // Regression (da-ndd.6): DBs created before a0 (da-n4bi) have an
+        // `aliases` table with only (name, alias_json). `Db::open` must add
+        // the `derived_from_field` column and index without erroring, so that
+        // downstream queries like `lookup_alias` keep working.
+        let path = std::env::temp_dir()
+            .join(format!("datum-migrate-{}.db", ulid::Ulid::new()));
+        let path_str = path.to_str().unwrap().to_string();
+
+        {
+            // Hand-craft the pre-a0 schema on a raw connection.
+            let raw = Connection::open(&path_str).unwrap();
+            raw.execute_batch(
+                "CREATE TABLE aliases (\
+                    name       TEXT NOT NULL PRIMARY KEY, \
+                    alias_json TEXT NOT NULL);",
+            )
+            .unwrap();
+            raw.execute(
+                "INSERT INTO aliases (name, alias_json) VALUES (?1, ?2)",
+                params![
+                    "legacy",
+                    r#"{"name":"legacy","expands_to":"note legacy","description":null}"#,
+                ],
+            )
+            .unwrap();
+        }
+
+        let db = Db::open(&path_str)
+            .expect("Db::open must migrate a pre-a0 aliases table");
+
+        // The pre-existing row is still queryable (this hits the SELECT that
+        // surfaced the original user-facing error).
+        let legacy = db
+            .lookup_alias("legacy")
+            .expect("lookup_alias must not error on migrated DB")
+            .expect("pre-existing alias row must survive migration");
+        assert_eq!(legacy.name, "legacy");
+        assert_eq!(legacy.expands_to, "note legacy");
+
+        // New derived aliases can now be written (column is live).
+        let derived = crate::field_spec::Alias {
+            name: "happy".to_string(),
+            expands_to: "switch mood happy".to_string(),
+            description: None,
+        };
+        let derived_json = serde_json::to_string(&derived).unwrap();
+        db.conn
+            .execute(
+                "INSERT INTO aliases (name, alias_json, derived_from_field) \
+                 VALUES (?1, ?2, ?3)",
+                params!["happy", derived_json, "mood"],
+            )
+            .expect("insert into migrated aliases table must succeed");
+
+        // And the supporting index exists (sqlite_master lookup).
+        let has_index: bool = db
+            .conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master \
+                 WHERE type = 'index' AND name = 'idx_aliases_derived_from_field'",
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .optional()
+            .unwrap()
+            .is_some();
+        assert!(
+            has_index,
+            "idx_aliases_derived_from_field must be created during migration"
+        );
+
+        // Reopening the migrated DB is a no-op (idempotent).
+        drop(db);
+        let db2 = Db::open(&path_str).expect("reopen of migrated DB must succeed");
+        assert!(db2.lookup_alias("legacy").unwrap().is_some());
+        assert!(db2.lookup_alias("happy").unwrap().is_some());
+
+        std::fs::remove_file(&path_str).ok();
     }
 }
