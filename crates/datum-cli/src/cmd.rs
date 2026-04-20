@@ -13,12 +13,13 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         AliasCommand, CheckArgs, Cli, Command, DeleteArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs,
-        LogArgs, MigrateArgs, NowArgs, SpecCommand, TailArgs, TrackArgs,
+        LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, TailArgs, TrackArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
     output::{print_entries, print_entry, print_logged, print_now_view},
 };
+use datum_core::views::{parse_key_arg, Registry, ViewParams};
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     match cli.command {
@@ -39,6 +40,59 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Migrate(args) => cmd_migrate(args, db),
         Command::Grep(args) => cmd_grep(args, db),
         Command::Check(args) => cmd_check(args, db),
+        Command::Map(args) => cmd_map(args, db),
+        Command::Reduce(args) => cmd_reduce(args, db),
+    }
+}
+
+// ─── Map / Reduce ────────────────────────────────────────────────────────────
+
+fn build_registry() -> Registry {
+    Registry::new()
+}
+
+fn cmd_map(args: MapArgs, db: &Db) -> Result<()> {
+    let registry = build_registry();
+    let params = map_args_to_params(&args, false);
+    let rows = registry
+        .query(&args.view_name, db, &params)
+        .with_context(|| format!("view query failed: {}", args.view_name))?;
+    print_view_rows(&rows);
+    Ok(())
+}
+
+fn cmd_reduce(args: MapArgs, db: &Db) -> Result<()> {
+    let registry = build_registry();
+    let params = map_args_to_params(&args, true);
+    let rows = registry
+        .query(&args.view_name, db, &params)
+        .with_context(|| format!("view query failed: {}", args.view_name))?;
+    print_view_rows(&rows);
+    Ok(())
+}
+
+fn map_args_to_params(args: &MapArgs, force_reduce: bool) -> ViewParams {
+    let reduce = force_reduce || args.reduce || args.group || args.group_level.is_some();
+    let group = args.group || args.group_level.is_some();
+    ViewParams {
+        key: args.key.as_deref().map(parse_key_arg),
+        startkey: args.startkey.as_deref().map(parse_key_arg),
+        endkey: args.endkey.as_deref().map(parse_key_arg),
+        group,
+        group_level: args.group_level,
+        limit: args.limit,
+        reduce,
+    }
+}
+
+fn print_view_rows(rows: &[datum_core::views::ViewRow]) {
+    for row in rows {
+        let obj = serde_json::json!({
+            "key": row.key,
+            "value": row.value,
+            "id": row.id,
+        });
+        println!("{obj}");
     }
 }
 

@@ -33,7 +33,7 @@ impl Cli {
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "help",
-    "track", "ignore", "grep", "check",
+    "track", "ignore", "grep", "check", "map", "reduce", "red",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -160,6 +160,12 @@ pub enum Command {
 
     /// Run database consistency checks.
     Check(CheckArgs),
+
+    /// Query a named view (map phase) and print rows as JSON.
+    Map(MapArgs),
+    /// Query a named view with reduce=true.
+    #[command(visible_alias = "red")]
+    Reduce(MapArgs),
 }
 
 /// Arguments shared by all logging commands (occur, start, stop, switch, note).
@@ -296,6 +302,41 @@ pub struct GrepArgs {
     /// Restrict the search to a single field
     #[arg(short = 'f', long)]
     pub field: Option<String>,
+}
+
+/// Arguments for `datum map` and `datum reduce`.
+#[derive(Args, Debug)]
+pub struct MapArgs {
+    /// View name (e.g. `timingView`)
+    pub view_name: String,
+
+    /// Exact key match (JSON; bare strings ok, e.g. `2026-04-15`)
+    #[arg(long)]
+    pub key: Option<String>,
+
+    /// Range start key (JSON; inclusive)
+    #[arg(long)]
+    pub startkey: Option<String>,
+
+    /// Range end key (JSON; inclusive)
+    #[arg(long)]
+    pub endkey: Option<String>,
+
+    /// Group reduced rows by full key
+    #[arg(long)]
+    pub group: bool,
+
+    /// Group reduced rows by the first N elements of array keys
+    #[arg(short = 'g', long = "group-level", value_name = "N")]
+    pub group_level: Option<usize>,
+
+    /// Cap the number of rows returned
+    #[arg(long)]
+    pub limit: Option<usize>,
+
+    /// Run the view's reduce path (not all views reduce)
+    #[arg(long)]
+    pub reduce: bool,
 }
 
 #[derive(Args, Debug)]
