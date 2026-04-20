@@ -50,3 +50,6 @@ regex = "1"
 # Archive formats (used by backup/restore)
 flate2 = "1"
 tar = "0.4"
+
+# Config format (registry in dbs.toml)
+toml = "0.8"

@@ -86,3 +86,10 @@ CREATE TABLE IF NOT EXISTS sync_state (
     last_seq    TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
+
+-- Schema version and other key/value metadata. `schema_version` is the
+-- single source of truth consulted by `datum setup` and Db::open().
+CREATE TABLE IF NOT EXISTS _meta (
+    key    TEXT PRIMARY KEY,
+    value  TEXT NOT NULL
+);

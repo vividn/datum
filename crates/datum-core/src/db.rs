@@ -211,7 +211,60 @@ impl Db {
         }
 
         self.conn.execute_batch(include_str!("schema.sql"))?;
+        // Stamp / advance the schema version. Forward-compat migrations
+        // apply silently; incompatible versions return an error here.
+        crate::migrations::migrate_to_current(&self.conn)?;
         Ok(())
+    }
+
+    /// Borrow the underlying connection. Low-level — callers should prefer
+    /// the typed API; this is intended for `datum setup`, `datum info`,
+    /// and other schema-level tooling.
+    pub fn conn(&self) -> &rusqlite::Connection {
+        &self.conn
+    }
+
+    /// Current stored schema version, read fresh from `_meta`.
+    pub fn schema_version(&self) -> Result<u32> {
+        match crate::migrations::read_schema_version(&self.conn)? {
+            Some(v) => Ok(v),
+            None => Ok(crate::migrations::CURRENT_SCHEMA_VERSION),
+        }
+    }
+
+    /// Drop every datum table and rebuild the schema from scratch. Used by
+    /// `datum setup --force-recreate`. Caller is responsible for warning
+    /// about data loss before invoking this.
+    pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
+        let tables = [
+            "entries",
+            "field_specs",
+            "aliases",
+            "sync_state",
+            "_meta",
+        ];
+        let mut dropped = Vec::new();
+        for t in tables {
+            let exists: bool = self
+                .conn
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    params![t],
+                    |row| row.get::<_, i64>(0).map(|n| n > 0),
+                )
+                .unwrap_or(false);
+            if exists {
+                self.conn
+                    .execute(&format!("DROP TABLE IF EXISTS {t}"), [])?;
+                dropped.push(t.to_string());
+            }
+        }
+        self.conn.execute_batch(include_str!("schema.sql"))?;
+        crate::migrations::set_schema_version(
+            &self.conn,
+            crate::migrations::CURRENT_SCHEMA_VERSION,
+        )?;
+        Ok(dropped)
     }
 
     // -------------------------------------------------------------------------

@@ -52,6 +52,11 @@ impl OutputFlags {
 #[derive(Parser, Debug)]
 #[command(name = "datum", version, about)]
 pub struct Cli {
+    /// Target database: name (resolves via registry) or path
+    /// (contains `/`, starts with `.`, or ends in `.db`). Overrides `DATUM_DB`.
+    #[arg(long = "db", global = true, value_name = "NAME_OR_PATH")]
+    pub db: Option<String>,
+
     #[command(subcommand)]
     pub command: Command,
 }
@@ -76,6 +81,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
+    "info", "setup",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -259,6 +265,28 @@ pub enum Command {
 
     /// Render a dayview SVG (or dump the layout struct as JSON).
     Dayview(DayviewArgs),
+
+    /// Show health/metadata for one or all databases.
+    Info(InfoArgs),
+
+    /// Initialize or migrate the database schema.
+    Setup(SetupArgs),
+}
+
+#[derive(Args, Debug)]
+pub struct InfoArgs {
+    /// Name or path of a specific DB. Omit to use the active DB.
+    pub target: Option<String>,
+    /// Show info for every registered DB + any `*.db` in the default dir.
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct SetupArgs {
+    /// Drop and recreate the schema. Destroys existing data.
+    #[arg(long = "force-recreate")]
+    pub force_recreate: bool,
 }
 
 /// Arguments shared by all logging commands (occur, start, stop, switch, note).

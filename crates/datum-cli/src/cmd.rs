@@ -14,12 +14,12 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         AliasCommand, BackupArgs, CheckArgs, Cli, Command, DayviewArgs, DeleteArgs, EditArgs,
-        GetArgs, GrepArgs, HeadArgs, IgnoreArgs, LogArgs, MapArgs, MigrateArgs, NowArgs,
-        RestoreArgs, RetimeArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
-        UpdateArgs,
+        GetArgs, GrepArgs, HeadArgs, IgnoreArgs, InfoArgs, LogArgs, MapArgs, MigrateArgs, NowArgs,
+        RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
+        UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
-    config::device_id,
+    config::{self, device_id},
     output::{
         print_entry, print_entry_pretty, print_now_view, print_table, show_create, show_delete,
         show_exists, show_rename, show_update, OutputArgs, TableArgs, TimeMetricCol,
@@ -57,6 +57,8 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Map(args) => cmd_map(args, db),
         Command::Reduce(args) => cmd_reduce(args, db),
         Command::Dayview(args) => cmd_dayview(args, db),
+        Command::Info(args) => cmd_info(args, cli.db.as_deref(), db),
+        Command::Setup(args) => cmd_setup(args, db),
     }
 }
 
@@ -220,6 +222,224 @@ fn cmd_check(args: CheckArgs, db: &Db) -> Result<()> {
     if report.has_errors() {
         std::process::exit(1);
     }
+    Ok(())
+}
+
+// ─── info / setup ────────────────────────────────────────────────────────────
+
+fn cmd_info(args: InfoArgs, cli_db: Option<&str>, active_db: &Db) -> Result<()> {
+    if args.all {
+        print_info_all()?;
+        return Ok(());
+    }
+    match args.target.as_deref() {
+        Some(target) => {
+            let resolved = config::resolve_db(Some(target))?;
+            print_info_for_path(resolved.name.as_deref(), &resolved.path)?;
+        }
+        None => {
+            let resolved = config::resolve_db(cli_db)?;
+            print_info_block(resolved.name.as_deref(), &resolved.path, Some(active_db))?;
+        }
+    }
+    Ok(())
+}
+
+fn print_info_all() -> Result<()> {
+    let registry = config::load_registry().unwrap_or_default();
+    let discovered = config::discovered_dbs().unwrap_or_default();
+    use std::collections::BTreeMap;
+    let mut seen: BTreeMap<String, std::path::PathBuf> = BTreeMap::new();
+    for (name, entry) in &registry.db {
+        seen.insert(name.clone(), std::path::PathBuf::from(&entry.path));
+    }
+    for (name, path) in &discovered {
+        seen.entry(name.clone()).or_insert_with(|| path.clone());
+    }
+    if seen.is_empty() {
+        println!("no databases registered or found in default directory");
+        return Ok(());
+    }
+    let mut first = true;
+    for (name, path) in &seen {
+        if !first {
+            println!();
+        }
+        first = false;
+        print_info_for_path(Some(name), path)?;
+    }
+    Ok(())
+}
+
+fn print_info_for_path(name: Option<&str>, path: &std::path::Path) -> Result<()> {
+    if !path.exists() {
+        println!(
+            "{}  {}",
+            name.unwrap_or(""),
+            config::display_path(path)
+        );
+        println!("  schema:   ✗ (missing)");
+        return Ok(());
+    }
+    let path_str = path.to_string_lossy();
+    let db = match datum_core::db::Db::open(&path_str) {
+        Ok(db) => db,
+        Err(e) => {
+            println!(
+                "{}  {}",
+                name.unwrap_or(""),
+                config::display_path(path)
+            );
+            println!("  schema:   ✗ ({e})");
+            return Ok(());
+        }
+    };
+    print_info_block(name, path, Some(&db))
+}
+
+fn print_info_block(
+    name: Option<&str>,
+    path: &std::path::Path,
+    db: Option<&Db>,
+) -> Result<()> {
+    println!(
+        "{}  {}",
+        name.unwrap_or(""),
+        config::display_path(path)
+    );
+    let Some(db) = db else {
+        println!("  schema:   ? (not opened)");
+        return Ok(());
+    };
+
+    let stored = datum_core::migrations::read_schema_version(db.conn())?;
+    let current = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+    let (schema_glyph, schema_note) = match stored {
+        Some(v) if v == current => ("✓", "current".to_string()),
+        Some(v) if v < current => ("⚠", format!("older than current v{current}")),
+        Some(_) => ("✗", format!("newer than binary (v{current})")),
+        None => ("⚠", "unversioned (run `datum setup`)".to_string()),
+    };
+    let version_str = stored.map(|v| format!("v{v}")).unwrap_or_else(|| "?".into());
+    println!(
+        "  schema:   {version_str} {schema_glyph} ({schema_note})"
+    );
+
+    let live = db.count_entries().unwrap_or(0);
+    let deleted = count_tombstones(db).unwrap_or(0);
+    println!("  entries:  {live} ({deleted} deleted)");
+
+    let tracked = db.get_tracked_fields().unwrap_or_default();
+    let (t_count, i_count) = tracked.iter().fold((0usize, 0usize), |(t, i), f| {
+        if f.ignored {
+            (t, i + 1)
+        } else {
+            (t + 1, i)
+        }
+    });
+    println!("  fields:   {t_count} tracked, {i_count} ignored");
+
+    match last_modified(db) {
+        Some(ts) => println!("  last write: {ts}"),
+        None => println!("  last write: (none)"),
+    }
+
+    println!("  sync:     not configured");
+
+    match std::fs::metadata(path) {
+        Ok(m) => println!("  size:     {}", format_size(m.len())),
+        Err(_) => println!("  size:     ?"),
+    }
+    Ok(())
+}
+
+fn count_tombstones(db: &Db) -> anyhow::Result<usize> {
+    let n: i64 = db.conn().query_row(
+        "SELECT COUNT(*) FROM entries WHERE deleted_at IS NOT NULL",
+        [],
+        |row| row.get(0),
+    )?;
+    Ok(n as usize)
+}
+
+fn last_modified(db: &Db) -> Option<String> {
+    let s: Option<String> = db
+        .conn()
+        .query_row(
+            "SELECT MAX(modified_at) FROM entries WHERE deleted_at IS NULL",
+            [],
+            |row| row.get(0),
+        )
+        .ok()
+        .flatten();
+    let iso = s?;
+    // Render as local wall-clock, e.g. "2026-04-20 15:03".
+    match chrono::DateTime::parse_from_rfc3339(&iso) {
+        Ok(dt) => {
+            let local = dt.with_timezone(&chrono::Local);
+            Some(local.format("%Y-%m-%d %H:%M").to_string())
+        }
+        Err(_) => Some(iso),
+    }
+}
+
+fn format_size(bytes: u64) -> String {
+    const KB: u64 = 1024;
+    const MB: u64 = KB * 1024;
+    const GB: u64 = MB * 1024;
+    if bytes >= GB {
+        format!("{:.1} GB", bytes as f64 / GB as f64)
+    } else if bytes >= MB {
+        format!("{:.1} MB", bytes as f64 / MB as f64)
+    } else if bytes >= KB {
+        format!("{:.1} KB", bytes as f64 / KB as f64)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
+    if args.force_recreate {
+        let dropped = db.force_recreate_schema()?;
+        println!("setup: force-recreate");
+        println!("  dropped: {}", dropped.join(", "));
+        println!(
+            "  schema: v{}",
+            datum_core::migrations::CURRENT_SCHEMA_VERSION
+        );
+        println!("  OK");
+        return Ok(());
+    }
+
+    let target = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+    let current = datum_core::migrations::read_schema_version(db.conn())?
+        .unwrap_or(target);
+    if current > target {
+        anyhow::bail!(
+            "setup: database schema v{current} is newer than this binary (v{target}). \
+             Upgrade datum to a version that supports v{current}."
+        );
+    }
+    let applied = datum_core::migrations::apply_migrations(
+        db.conn(),
+        datum_core::migrations::MIGRATIONS,
+        current,
+        target,
+    )?;
+    let entries = db.count_entries().unwrap_or(0);
+    println!(
+        "setup: schema v{current}{}",
+        if applied.is_empty() {
+            " (up to date)".to_string()
+        } else {
+            format!(" → v{target}")
+        }
+    );
+    if !applied.is_empty() {
+        println!("  applied: {}", applied.join(", "));
+    }
+    println!("  entries: {entries} (unchanged)");
+    println!("  OK");
     Ok(())
 }
 

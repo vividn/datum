@@ -1,27 +1,181 @@
-//! Configuration: locate the database file and device ID.
+//! Configuration: locate the database file, device ID, and DB registry.
+//!
+//! The DB registry lives at `$XDG_CONFIG_HOME/datum/dbs.toml` and maps names
+//! to absolute paths. Names that aren't registered resolve to
+//! `<XDG_DATA_HOME>/datum/<name>.db` and are auto-added on first use.
 
 use anyhow::{Context, Result};
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
-/// Return the path to the datum SQLite database, creating directories if needed.
+/// A DB reference resolved from CLI arg / env / default. `created_new`
+/// indicates that the path didn't exist before this resolution (caller may
+/// warn on stderr and persist a registry entry).
+#[derive(Debug, Clone)]
+pub struct ResolvedDb {
+    /// Display name (registry key) when the user passed a bare name. `None`
+    /// for explicit paths.
+    pub name: Option<String>,
+    /// Absolute path to the SQLite file.
+    pub path: PathBuf,
+    /// True when the underlying file did not exist at resolution time.
+    pub created_new: bool,
+}
+
+/// Registry entry per DB.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct DbEntry {
+    pub path: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Registry {
+    #[serde(default, rename = "db")]
+    pub db: BTreeMap<String, DbEntry>,
+}
+
+/// Return the path to the datum SQLite database using the legacy single-DB
+/// resolution order. Preserved for call sites that haven't migrated yet.
 ///
 /// Resolution order:
-///   1. DATUM_DB env var (explicit file path)
-///   2. $DATUM_HOME/datum.db (custom home directory)
-///   3. Default: $XDG_DATA_HOME/datum/datum.db (via dirs-next)
+///   1. DATUM_DB env var (path or name)
+///   2. Default: $XDG_DATA_HOME/datum/datum.db
 pub fn db_path() -> Result<String> {
-    // 1. Explicit DB path
-    if let Ok(p) = std::env::var("DATUM_DB") {
-        if let Some(parent) = std::path::Path::new(&p).parent() {
+    let resolved = resolve_db(None)?;
+    Ok(resolved.path.to_string_lossy().into_owned())
+}
+
+/// Resolve a `--db <value>` arg (or fall back to `DATUM_DB` env / default).
+///
+/// Rules for `value` (applied also to `DATUM_DB`):
+/// - Contains `/`, starts with `.`, or ends with `.db` → treat as **path**
+///   (absolute or relative, created on demand).
+/// - Otherwise → treat as **name** → registry lookup; falls back to
+///   `<data_dir>/datum/<name>.db` if unknown. Unknown names are auto-added
+///   to the registry after the caller confirms the path was created.
+pub fn resolve_db(cli_db: Option<&str>) -> Result<ResolvedDb> {
+    let (value, source): (Option<String>, &str) = match cli_db {
+        Some(v) => (Some(v.to_string()), "flag"),
+        None => match std::env::var("DATUM_DB") {
+            Ok(v) if !v.is_empty() => (Some(v), "env"),
+            _ => (None, "default"),
+        },
+    };
+
+    let Some(value) = value else {
+        // Default: <data_dir>/datum/datum.db
+        let path = data_dir()?.join("datum.db");
+        let created_new = !path.exists();
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Creating directory {parent:?}"))?;
+        }
+        return Ok(ResolvedDb {
+            name: None,
+            path,
+            created_new,
+        });
+    };
+
+    let _ = source;
+
+    if looks_like_path(&value) {
+        let path = PathBuf::from(&value);
+        let created_new = !path.exists();
+        if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent)
-                    .with_context(|| format!("Creating directory for DATUM_DB: {parent:?}"))?;
+                std::fs::create_dir_all(parent).with_context(|| {
+                    format!("Creating directory for DB path: {parent:?}")
+                })?;
             }
         }
-        return Ok(p);
+        return Ok(ResolvedDb {
+            name: None,
+            path,
+            created_new,
+        });
     }
-    let path = data_dir()?.join("datum.db");
-    Ok(path.to_string_lossy().into_owned())
+
+    // Treat as name: registry first, then default dir.
+    let registry = load_registry().unwrap_or_default();
+    let path = if let Some(entry) = registry.db.get(&value) {
+        PathBuf::from(&entry.path)
+    } else {
+        data_dir()?.join(format!("{value}.db"))
+    };
+    let created_new = !path.exists();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Creating directory {parent:?}"))?;
+    }
+    Ok(ResolvedDb {
+        name: Some(value),
+        path,
+        created_new,
+    })
+}
+
+/// Return true if `s` should be treated as a path (not a name).
+/// Rule: contains `/`, starts with `.`, or ends with `.db`.
+pub fn looks_like_path(s: &str) -> bool {
+    s.contains('/') || s.starts_with('.') || s.ends_with(".db")
+}
+
+/// Load the DB registry from `~/.config/datum/dbs.toml` (or via
+/// `DATUM_CONFIG_HOME` override). Missing file → empty registry. Parse
+/// errors surface as `Err` so callers can show the user what's wrong.
+pub fn load_registry() -> Result<Registry> {
+    let path = registry_path()?;
+    if !path.exists() {
+        return Ok(Registry::default());
+    }
+    let contents = std::fs::read_to_string(&path)
+        .with_context(|| format!("Reading DB registry at {path:?}"))?;
+    let registry: Registry = toml::from_str(&contents)
+        .with_context(|| format!("Parsing DB registry at {path:?}"))?;
+    Ok(registry)
+}
+
+/// Persist the given registry to disk.
+pub fn save_registry(registry: &Registry) -> Result<()> {
+    let path = registry_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Creating config directory {parent:?}"))?;
+    }
+    let body = toml::to_string_pretty(registry)
+        .context("Serializing DB registry")?;
+    std::fs::write(&path, body)
+        .with_context(|| format!("Writing DB registry to {path:?}"))?;
+    Ok(())
+}
+
+/// Register a name → path mapping if absent. Explicit paths (no name) are
+/// skipped. Safe to call on every CLI invocation; no-op when unchanged.
+pub fn ensure_registered(resolved: &ResolvedDb) -> Result<()> {
+    let Some(name) = resolved.name.as_deref() else {
+        return Ok(());
+    };
+    let mut registry = load_registry().unwrap_or_default();
+    let abs = resolved
+        .path
+        .canonicalize()
+        .unwrap_or_else(|_| resolved.path.clone());
+    let path_str = abs.to_string_lossy().into_owned();
+    let current = registry.db.get(name).map(|e| e.path.clone());
+    if current.as_deref() == Some(path_str.as_str()) {
+        return Ok(());
+    }
+    registry
+        .db
+        .insert(name.to_string(), DbEntry { path: path_str });
+    save_registry(&registry)
+}
+
+/// Location of the DB registry file.
+pub fn registry_path() -> Result<PathBuf> {
+    Ok(config_dir()?.join("dbs.toml"))
 }
 
 /// Return (or create) the device ID stored in the data directory.
@@ -32,15 +186,13 @@ pub fn device_id() -> Result<String> {
             .with_context(|| format!("Reading device_id from {path:?}"))?;
         return Ok(id.trim().to_string());
     }
-    // Generate a new device ID on first run.
     let id = ulid::Ulid::new().to_string();
     std::fs::write(&path, &id)
         .with_context(|| format!("Writing device_id to {path:?}"))?;
     Ok(id)
 }
 
-fn data_dir() -> Result<PathBuf> {
-    // DATUM_HOME overrides the default data directory
+pub fn data_dir() -> Result<PathBuf> {
     if let Ok(home) = std::env::var("DATUM_HOME") {
         let dir = PathBuf::from(home);
         std::fs::create_dir_all(&dir)
@@ -54,4 +206,74 @@ fn data_dir() -> Result<PathBuf> {
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("Creating data directory {dir:?}"))?;
     Ok(dir)
+}
+
+pub fn config_dir() -> Result<PathBuf> {
+    if let Ok(home) = std::env::var("DATUM_CONFIG_HOME") {
+        let dir = PathBuf::from(home);
+        std::fs::create_dir_all(&dir)
+            .with_context(|| format!("Creating DATUM_CONFIG_HOME directory {dir:?}"))?;
+        return Ok(dir);
+    }
+    let base = dirs_next::config_dir()
+        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
+        .context("Cannot determine config directory")?;
+    let dir = base.join("datum");
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Creating config directory {dir:?}"))?;
+    Ok(dir)
+}
+
+/// Scan the default data directory for `*.db` files. Used by `info --all`.
+pub fn discovered_dbs() -> Result<Vec<(String, PathBuf)>> {
+    let dir = data_dir()?;
+    let mut out = Vec::new();
+    let entries = match std::fs::read_dir(&dir) {
+        Ok(it) => it,
+        Err(_) => return Ok(out),
+    };
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if p.extension().and_then(|s| s.to_str()) != Some("db") {
+            continue;
+        }
+        let stem = p
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("")
+            .to_string();
+        if stem.is_empty() {
+            continue;
+        }
+        out.push((stem, p));
+    }
+    out.sort_by(|a, b| a.0.cmp(&b.0));
+    Ok(out)
+}
+
+/// Convert an absolute path to a `~`-prefixed display string when it lives
+/// under `$HOME`.
+pub fn display_path(p: &Path) -> String {
+    if let Ok(home) = std::env::var("HOME") {
+        if let Ok(rel) = p.strip_prefix(&home) {
+            return format!("~/{}", rel.display());
+        }
+    }
+    p.display().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn looks_like_path_detects_slashes_dots_and_extension() {
+        assert!(looks_like_path("/tmp/foo.db"));
+        assert!(looks_like_path("./local.db"));
+        assert!(looks_like_path("../up.db"));
+        assert!(looks_like_path("relative/path"));
+        assert!(looks_like_path("name.db"));
+        assert!(!looks_like_path("fitness"));
+        assert!(!looks_like_path("my-db"));
+    }
 }
