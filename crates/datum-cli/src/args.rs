@@ -32,7 +32,7 @@ impl Cli {
 /// Known subcommands — keep in sync with Command enum.
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
-    "tail", "now", "spec", "alias", "migrate", "get", "delete", "help",
+    "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "help",
     "track", "ignore",
 ];
 
@@ -130,6 +130,8 @@ pub enum Command {
 
     /// Show recent entries (defaults to last 10).
     Tail(TailArgs),
+    /// Show oldest entries (defaults to first 10).
+    Head(HeadArgs),
     /// Show current state of tracked fields (nowview).
     Now(NowArgs),
 
@@ -206,6 +208,15 @@ pub struct TailArgs {
     pub field: Option<String>,
     /// Number of entries to show
     #[arg(short = 'n', default_value = "10")]
+    pub count: usize,
+}
+
+#[derive(Args, Debug)]
+pub struct HeadArgs {
+    /// Field to filter by (optional, shows all fields if omitted)
+    pub field: Option<String>,
+    /// Number of entries to show
+    #[arg(short = 'n', long = "limit", default_value = "10")]
     pub count: usize,
 }
 

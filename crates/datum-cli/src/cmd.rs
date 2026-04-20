@@ -11,7 +11,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{
-        AliasCommand, Cli, Command, DeleteArgs, GetArgs, IgnoreArgs, LogArgs, MigrateArgs,
+        AliasCommand, Cli, Command, DeleteArgs, GetArgs, HeadArgs, IgnoreArgs, LogArgs, MigrateArgs,
         NowArgs, SpecCommand, TailArgs, TrackArgs,
     },
     config::device_id,
@@ -26,6 +26,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Switch(args) => log_entry(Verb::Switch, args, db),
         Command::Note(args) => log_entry(Verb::Note, args, db),
         Command::Tail(args) => cmd_tail(args, db),
+        Command::Head(args) => cmd_head(args, db),
         Command::Now(args) => cmd_now(args, db),
         Command::Get(args) => cmd_get(args, db),
         Command::Delete(args) => cmd_delete(args, db),
@@ -206,6 +207,26 @@ fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
             let ta = a.time_start.as_ref().map(|t| t.utc).unwrap_or(a.created_at);
             let tb = b.time_start.as_ref().map(|t| t.utc).unwrap_or(b.created_at);
             tb.cmp(&ta)
+        });
+        all.truncate(args.count);
+        all
+    };
+    print_entries(&entries);
+    Ok(())
+}
+
+fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
+    let entries = if let Some(field) = &args.field {
+        db.entries_for_field_asc(field, Some(args.count))?
+    } else {
+        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
+        let far_past = chrono::DateTime::UNIX_EPOCH;
+        let mut all = db.entries_in_range(far_past, far_future)?;
+        // entries_in_range already returns ASC, but be explicit for clarity.
+        all.sort_by(|a, b| {
+            let ta = a.time_start.as_ref().map(|t| t.utc).unwrap_or(a.created_at);
+            let tb = b.time_start.as_ref().map(|t| t.utc).unwrap_or(b.created_at);
+            ta.cmp(&tb)
         });
         all.truncate(args.count);
         all
@@ -636,5 +657,120 @@ mod tests {
 
         cmd_now(NowArgs { show_all: false }, &db).unwrap();
         cmd_now(NowArgs { show_all: true }, &db).unwrap();
+    }
+
+    // ─── head command tests ─────────────────────────────────────────────────
+
+    fn make_entry_at(field: &str, secs_offset: i64, device: &str) -> datum_core::entry::Entry {
+        use datum_core::{entry::Entry, time::DatumTime};
+        // Fixed base time + offset keeps ids/slugs distinct and orderable.
+        let base: chrono::DateTime<chrono::Utc> =
+            "2024-01-01T00:00:00Z".parse().unwrap();
+        let utc = base + chrono::Duration::seconds(secs_offset);
+        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
+        Entry::new(
+            field,
+            Verb::Occur,
+            Some(serde_json::json!(secs_offset)),
+            None,
+            None,
+            Some(t),
+            None,
+            device,
+        )
+    }
+
+    #[test]
+    fn head_returns_oldest_first() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        // Insert out-of-order: newest first, then oldest, then middle.
+        db.insert_entry(&make_entry_at("mood", 300, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
+
+        cmd_head(HeadArgs { field: None, count: 10 }, &db).unwrap();
+
+        // Verify via db that ordering is ASC by time_start.
+        let far_past = chrono::DateTime::UNIX_EPOCH;
+        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
+        let entries = db.entries_in_range(far_past, far_future).unwrap();
+        let values: Vec<i64> = entries
+            .iter()
+            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .collect();
+        assert_eq!(values, vec![100, 200, 300]);
+    }
+
+    #[test]
+    fn head_respects_limit() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        for i in 0..20 {
+            db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
+        }
+
+        // No panic on execution + the db method returns exactly `count` entries ASC.
+        cmd_head(HeadArgs { field: Some("mood".to_string()), count: 5 }, &db).unwrap();
+
+        let got = db.entries_for_field_asc("mood", Some(5)).unwrap();
+        assert_eq!(got.len(), 5);
+        let values: Vec<i64> = got
+            .iter()
+            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .collect();
+        assert_eq!(values, vec![0, 60, 120, 180, 240]);
+    }
+
+    #[test]
+    fn head_filters_by_field() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        db.insert_entry(&make_entry_at("coffee", 100, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("coffee", 300, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("mood", 400, "d1")).unwrap();
+
+        cmd_head(HeadArgs { field: Some("coffee".to_string()), count: 10 }, &db).unwrap();
+
+        let got = db.entries_for_field_asc("coffee", None).unwrap();
+        assert_eq!(got.len(), 2);
+        assert!(got.iter().all(|e| e.field == "coffee"));
+        let values: Vec<i64> = got
+            .iter()
+            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .collect();
+        assert_eq!(values, vec![100, 300]);
+    }
+
+    #[test]
+    fn head_default_limit_is_10() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        for i in 0..15 {
+            db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
+        }
+        // Default count matches clap's default_value = "10".
+        let default_count: usize = 10;
+        let got = db.entries_for_field_asc("mood", Some(default_count)).unwrap();
+        assert_eq!(got.len(), 10);
+        // First entry should be the oldest (offset=0).
+        assert_eq!(
+            got[0].value.as_ref().unwrap().as_i64().unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn head_returns_all_when_fewer_than_limit() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
+
+        cmd_head(HeadArgs { field: None, count: 10 }, &db).unwrap();
+
+        let got = db.entries_for_field_asc("mood", Some(10)).unwrap();
+        assert_eq!(got.len(), 2);
     }
 }

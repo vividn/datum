@@ -140,6 +140,17 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
+    /// Query entries for a field, ordered by time_start ascending (oldest first).
+    pub fn entries_for_field_asc(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
+        let sql = format!(
+            "SELECT * FROM entries WHERE field = ?1 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC{}",
+            limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![field], row_to_entry)?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
     /// Get all entries within a UTC time range (inclusive).
     pub fn entries_in_range(
         &self,
@@ -499,6 +510,40 @@ mod tests {
         }
         let entries = db.entries_for_field("mood", None).unwrap();
         assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn test_entries_for_field_asc() {
+        let db = Db::open_in_memory().unwrap();
+        let base: chrono::DateTime<chrono::Utc> =
+            "2024-01-01T00:00:00Z".parse().unwrap();
+        for secs in &[300i64, 100, 200] {
+            let utc = base + chrono::Duration::seconds(*secs);
+            let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
+            let e = Entry::new(
+                "mood",
+                Verb::Occur,
+                Some(serde_json::json!(*secs)),
+                None,
+                None,
+                Some(t),
+                None,
+                "d1",
+            );
+            db.insert_entry(&e).unwrap();
+        }
+        let entries = db.entries_for_field_asc("mood", None).unwrap();
+        assert_eq!(entries.len(), 3);
+        let values: Vec<i64> = entries
+            .iter()
+            .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
+            .collect();
+        assert_eq!(values, vec![100, 200, 300]);
+
+        let limited = db.entries_for_field_asc("mood", Some(2)).unwrap();
+        assert_eq!(limited.len(), 2);
+        assert_eq!(limited[0].value.as_ref().unwrap().as_i64().unwrap(), 100);
+        assert_eq!(limited[1].value.as_ref().unwrap().as_i64().unwrap(), 200);
     }
 
     #[test]
