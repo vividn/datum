@@ -97,6 +97,10 @@ pub struct Entry {
     /// round-trip compatibility with migrated datum data.
     #[serde(default)]
     pub field_structure: Option<String>,
+
+    /// Soft-delete tombstone (A4). `None` = live row.
+    #[serde(default)]
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl Entry {
@@ -145,6 +149,7 @@ impl Entry {
             device_id,
             id_structure: None,
             field_structure: None,
+            deleted_at: None,
         }
     }
 

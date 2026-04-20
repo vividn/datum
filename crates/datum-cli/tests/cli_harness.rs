@@ -72,3 +72,49 @@ fn get_pretty_emits_indented_json() {
     assert_eq!(parsed["field"], serde_json::json!("mood"));
     assert_eq!(parsed["value"], serde_json::json!("happy"));
 }
+
+#[test]
+fn log_with_update_flag_routes_to_update_strategy() {
+    // Seed a row, then re-log with `--update`: the existing row must mutate
+    // in place (modified_at bumped, new device_id visible), not produce a
+    // second row and not be silently ignored. This is the A4 acceptance test
+    // for the CLI → db strategy plumbing.
+    let db = fresh_db();
+
+    // Fix the time so both logs produce the same content_hash.
+    run_cli(
+        &[
+            "switch", "mood", "happy",
+            "-t", "09:00",
+            "-k", "source=morning",
+        ],
+        &db,
+    )
+    .expect("initial switch dispatch");
+    assert_count!(db, "mood", 1);
+    let before = db.entries_for_field("mood", None).unwrap()[0].clone();
+
+    // Small delay so modified_at can strictly advance.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+
+    // Same field/time/value/extra → same content_hash. `--update` must mutate.
+    run_cli(
+        &[
+            "switch", "mood", "happy",
+            "-t", "09:00",
+            "-k", "source=morning",
+            "--update",
+        ],
+        &db,
+    )
+    .expect("update-strategy dispatch");
+
+    // Still only one row after the collision — Update, not Rekey.
+    assert_count!(db, "mood", 1);
+    let after = db.entries_for_field("mood", None).unwrap()[0].clone();
+    assert_eq!(after.id, before.id, "row must be mutated in place");
+    assert!(
+        after.modified_at > before.modified_at,
+        "Update strategy must bump modified_at"
+    );
+}

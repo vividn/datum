@@ -8,7 +8,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS entries (
     id              TEXT NOT NULL PRIMARY KEY,   -- ULID
     slug            TEXT NOT NULL,               -- field:timestamp (human ref)
-    content_hash    TEXT NOT NULL UNIQUE,        -- SHA-256 for dedup
+    content_hash    TEXT NOT NULL,               -- SHA-256 for dedup (not UNIQUE: Rekey strategy permits duplicates)
 
     -- What
     field           TEXT NOT NULL,
@@ -51,6 +51,10 @@ CREATE INDEX IF NOT EXISTS idx_entries_field
 -- Range queries across all fields
 CREATE INDEX IF NOT EXISTS idx_entries_time
     ON entries (COALESCE(time_start_utc, time_end_utc, created_at));
+
+-- Dedup lookup (replaces the dropped UNIQUE auto-index on content_hash).
+CREATE INDEX IF NOT EXISTS idx_entries_content_hash
+    ON entries (content_hash);
 
 -- Field specs: single source of truth for a field's schema, tracking state,
 -- colors, allowed states, id template, and derived aliases. Stored as a JSON

@@ -34,6 +34,42 @@ pub struct TimeOrderIssue {
     pub time_end_utc: String,
 }
 
+/// Strategy for handling content_hash collisions on insert.
+///
+/// Rows are mutable: `Update` / `Merge` / `Rekey` all bump `modified_at`.
+/// CRDT/sync reconciliation is deferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConflictStrategy {
+    /// Silently skip the new row and return [`InsertOutcome::Ignored`] with
+    /// the existing id. Current default.
+    #[default]
+    Ignore,
+    /// Overwrite the existing row's mutable fields with the incoming entry's
+    /// values (bumps `modified_at`).
+    Update,
+    /// Deep-merge incoming `extra_data` into the existing row's `extra_data`
+    /// and otherwise behave like [`ConflictStrategy::Update`].
+    Merge,
+    /// Insert the incoming row anyway with its new ULID, leaving the existing
+    /// row untouched. Both rows end up with the same `content_hash`.
+    Rekey,
+}
+
+/// Outcome reported by [`Db::insert_entry_with_strategy`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InsertOutcome {
+    /// New row inserted (no collision).
+    Inserted { id: String },
+    /// Collision resolved by mutating the existing row in place.
+    Updated { id: String },
+    /// Collision resolved by merging `extra_data` into the existing row.
+    Merged { id: String },
+    /// Collision resolved by inserting a new row under a new id.
+    Rekeyed { old_id: String, new_id: String },
+    /// Collision left the existing row untouched.
+    Ignored { id: String },
+}
+
 pub struct Db {
     conn: Connection,
 }
@@ -69,6 +105,76 @@ impl Db {
         let _ = self
             .conn
             .execute("ALTER TABLE entries ADD COLUMN field_structure TEXT", []);
+        self.drop_legacy_unique_content_hash()?;
+        Ok(())
+    }
+
+    /// Older databases created `content_hash TEXT NOT NULL UNIQUE`, which
+    /// blocks the Rekey strategy from inserting rows that share a hash.
+    /// SQLite can't drop a column-level UNIQUE in place, so rebuild the table
+    /// if the stored schema still carries it.
+    fn drop_legacy_unique_content_hash(&self) -> Result<()> {
+        let table_sql: String = self
+            .conn
+            .query_row(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name='entries'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap_or_default();
+        if !table_sql.to_uppercase().contains("UNIQUE") {
+            return Ok(());
+        }
+        self.conn.execute_batch(
+            r#"
+            PRAGMA foreign_keys = OFF;
+            BEGIN;
+            CREATE TABLE entries_rebuild_tmp (
+                id              TEXT NOT NULL PRIMARY KEY,
+                slug            TEXT NOT NULL,
+                content_hash    TEXT NOT NULL,
+                field           TEXT NOT NULL,
+                verb            TEXT NOT NULL,
+                value           TEXT,
+                extra_data      TEXT,
+                unit            TEXT,
+                time_start_utc  TEXT,
+                time_start_offset INTEGER,
+                time_start_tz   TEXT,
+                time_end_utc    TEXT,
+                time_end_offset INTEGER,
+                time_end_tz     TEXT,
+                lat             REAL,
+                lon             REAL,
+                location        TEXT,
+                created_at      TEXT NOT NULL,
+                modified_at     TEXT NOT NULL,
+                device_id       TEXT NOT NULL,
+                deleted_at      TEXT,
+                id_structure    TEXT,
+                field_structure TEXT
+            );
+            INSERT INTO entries_rebuild_tmp
+                SELECT id, slug, content_hash, field, verb,
+                       value, extra_data, unit,
+                       time_start_utc, time_start_offset, time_start_tz,
+                       time_end_utc, time_end_offset, time_end_tz,
+                       lat, lon, location,
+                       created_at, modified_at, device_id,
+                       deleted_at, id_structure, field_structure
+                FROM entries;
+            DROP TABLE entries;
+            ALTER TABLE entries_rebuild_tmp RENAME TO entries;
+            CREATE INDEX IF NOT EXISTS idx_entries_field
+                ON entries (field, COALESCE(time_start_utc, time_end_utc, created_at));
+            CREATE INDEX IF NOT EXISTS idx_entries_time
+                ON entries (COALESCE(time_start_utc, time_end_utc, created_at));
+            CREATE INDEX IF NOT EXISTS idx_entries_content_hash
+                ON entries (content_hash);
+            COMMIT;
+            PRAGMA foreign_keys = ON;
+            "#,
+        )?;
         Ok(())
     }
 
@@ -76,23 +182,72 @@ impl Db {
     // Entry operations
     // -------------------------------------------------------------------------
 
-    /// Insert an entry. Returns Err(Duplicate) if content_hash already exists.
+    /// Insert an entry using the default [`ConflictStrategy::Ignore`].
+    /// Returns `Err(Duplicate)` if the content_hash collides with a live row —
+    /// preserved for call sites that pre-date the strategy API.
     pub fn insert_entry(&self, entry: &Entry) -> Result<()> {
-        let existing: Option<String> = self.conn
+        match self.insert_entry_with_strategy(entry, ConflictStrategy::Ignore)? {
+            InsertOutcome::Inserted { .. } => Ok(()),
+            InsertOutcome::Ignored { .. } => Err(DatumError::Duplicate(format!(
+                "Entry with identical content already exists (hash: {})",
+                &entry.content_hash[..entry.content_hash.len().min(12)]
+            ))),
+            // Ignore strategy never produces the other outcomes.
+            other => unreachable!("Ignore strategy produced {other:?}"),
+        }
+    }
+
+    /// Insert an entry and dispatch on [`ConflictStrategy`] when the incoming
+    /// `content_hash` already matches a live row. Tombstoned rows are ignored
+    /// for collision detection — re-inserting a deleted-then-identical payload
+    /// behaves like a fresh insert.
+    pub fn insert_entry_with_strategy(
+        &self,
+        entry: &Entry,
+        strategy: ConflictStrategy,
+    ) -> Result<InsertOutcome> {
+        let existing: Option<(String, Option<String>)> = self
+            .conn
             .query_row(
-                "SELECT id FROM entries WHERE content_hash = ?1",
+                "SELECT id, extra_data FROM entries
+                 WHERE content_hash = ?1 AND deleted_at IS NULL
+                 LIMIT 1",
                 params![entry.content_hash],
-                |row| row.get(0),
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
             )
             .optional()?;
 
-        if existing.is_some() {
-            return Err(DatumError::Duplicate(format!(
-                "Entry with identical content already exists (hash: {})",
-                &entry.content_hash[..12]
-            )));
+        match (existing, strategy) {
+            (None, _) => {
+                self.raw_insert(entry)?;
+                Ok(InsertOutcome::Inserted { id: entry.id.clone() })
+            }
+            (Some((id, _)), ConflictStrategy::Ignore) => {
+                Ok(InsertOutcome::Ignored { id })
+            }
+            (Some((id, _)), ConflictStrategy::Update) => {
+                self.raw_overwrite_mutables(&id, entry, None)?;
+                Ok(InsertOutcome::Updated { id })
+            }
+            (Some((id, existing_extra_json)), ConflictStrategy::Merge) => {
+                let existing_extra: Option<JsonValue> = existing_extra_json
+                    .as_deref()
+                    .and_then(|s| serde_json::from_str(s).ok());
+                let merged = merge_extra_data(existing_extra.as_ref(), entry.extra_data.as_ref());
+                self.raw_overwrite_mutables(&id, entry, Some(merged))?;
+                Ok(InsertOutcome::Merged { id })
+            }
+            (Some((old_id, _)), ConflictStrategy::Rekey) => {
+                // Rekey: insert the incoming row with its own (new) id. Both
+                // rows share a content_hash — the UNIQUE constraint was dropped
+                // in migration for exactly this reason.
+                self.raw_insert(entry)?;
+                Ok(InsertOutcome::Rekeyed { old_id, new_id: entry.id.clone() })
+            }
         }
+    }
 
+    fn raw_insert(&self, entry: &Entry) -> Result<()> {
         self.conn.execute(
             r#"INSERT INTO entries (
                 id, slug, content_hash, field, verb,
@@ -101,7 +256,7 @@ impl Db {
                 time_end_utc, time_end_offset, time_end_tz,
                 lat, lon, location,
                 created_at, modified_at, device_id,
-                id_structure, field_structure
+                deleted_at, id_structure, field_structure
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5,
                 ?6, ?7, ?8,
@@ -109,7 +264,7 @@ impl Db {
                 ?12, ?13, ?14,
                 ?15, ?16, ?17,
                 ?18, ?19, ?20,
-                ?21, ?22
+                ?21, ?22, ?23
             )"#,
             params![
                 entry.id,
@@ -132,15 +287,101 @@ impl Db {
                 entry.created_at.to_rfc3339(),
                 entry.modified_at.to_rfc3339(),
                 entry.device_id,
-                entry.id_structure,
-                entry.field_structure,
+                entry.deleted_at.map(|t| t.to_rfc3339()),
+                entry.id_structure.as_deref(),
+                entry.field_structure.as_deref(),
             ],
         )?;
         Ok(())
     }
 
-    /// Fetch an entry by id or slug.
+    /// Overwrite an existing row identified by `id` with the mutable fields
+    /// from `entry`. When `override_extra` is `Some`, it replaces the stored
+    /// `extra_data`; otherwise the incoming `entry.extra_data` wins.
+    /// Refreshes `modified_at` (and recomputes `content_hash` + `slug` from
+    /// the incoming payload).
+    fn raw_overwrite_mutables(
+        &self,
+        id: &str,
+        entry: &Entry,
+        override_extra: Option<Option<JsonValue>>,
+    ) -> Result<()> {
+        let extra_value: Option<&JsonValue> = match override_extra.as_ref() {
+            Some(o) => o.as_ref(),
+            None => entry.extra_data.as_ref(),
+        };
+        let extra_json = extra_value.map(|v| v.to_string());
+        let now = Utc::now().to_rfc3339();
+
+        self.conn.execute(
+            r#"UPDATE entries SET
+                slug = ?2,
+                content_hash = ?3,
+                field = ?4,
+                verb = ?5,
+                value = ?6,
+                extra_data = ?7,
+                unit = ?8,
+                time_start_utc = ?9,
+                time_start_offset = ?10,
+                time_start_tz = ?11,
+                time_end_utc = ?12,
+                time_end_offset = ?13,
+                time_end_tz = ?14,
+                lat = ?15,
+                lon = ?16,
+                location = ?17,
+                modified_at = ?18,
+                device_id = ?19
+               WHERE id = ?1"#,
+            params![
+                id,
+                entry.slug,
+                entry.content_hash,
+                entry.field,
+                entry.verb.to_string(),
+                entry.value.as_ref().map(|v| v.to_string()),
+                extra_json,
+                entry.unit,
+                entry.time_start.as_ref().map(|t| t.utc.to_rfc3339()),
+                entry.time_start.as_ref().map(|t| t.offset_minutes),
+                entry.time_start.as_ref().map(|t| t.timezone.as_str()),
+                entry.time_end.as_ref().map(|t| t.utc.to_rfc3339()),
+                entry.time_end.as_ref().map(|t| t.offset_minutes),
+                entry.time_end.as_ref().map(|t| t.timezone.as_str()),
+                entry.lat,
+                entry.lon,
+                entry.location.as_deref(),
+                now,
+                entry.device_id,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch a live entry by id or slug. Tombstoned rows are hidden — use
+    /// [`Db::list_including_deleted`] or [`Db::get_entry_including_deleted`]
+    /// if you need to see them.
     pub fn get_entry(&self, id_or_slug: &str) -> Result<Entry> {
+        self.conn
+            .query_row(
+                "SELECT * FROM entries
+                 WHERE (id = ?1 OR slug = ?1) AND deleted_at IS NULL
+                 LIMIT 1",
+                params![id_or_slug],
+                row_to_entry,
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => {
+                    DatumError::NotFound(id_or_slug.to_string())
+                }
+                other => DatumError::Db(other),
+            })
+    }
+
+    /// Fetch an entry by id or slug regardless of tombstone state.
+    /// Supports B7 (undo) workflows that need to reference deleted rows.
+    pub fn get_entry_including_deleted(&self, id_or_slug: &str) -> Result<Entry> {
         self.conn
             .query_row(
                 "SELECT * FROM entries WHERE id = ?1 OR slug = ?1 LIMIT 1",
@@ -155,10 +396,12 @@ impl Db {
             })
     }
 
-    /// Query entries for a field, ordered by time_start descending.
+    /// Query live entries for a field, ordered by time_start descending.
     pub fn entries_for_field(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
-            "SELECT * FROM entries WHERE field = ?1 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC{}",
+            "SELECT * FROM entries
+             WHERE field = ?1 AND deleted_at IS NULL
+             ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC{}",
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -166,10 +409,12 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Query entries for a field, ordered by time_start ascending (oldest first).
+    /// Query live entries for a field, ordered by time_start ascending (oldest first).
     pub fn entries_for_field_asc(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
-            "SELECT * FROM entries WHERE field = ?1 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC{}",
+            "SELECT * FROM entries
+             WHERE field = ?1 AND deleted_at IS NULL
+             ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC{}",
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -177,7 +422,7 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Get all entries within a UTC time range (inclusive).
+    /// Get all live entries within a UTC time range (inclusive).
     pub fn entries_in_range(
         &self,
         start: DateTime<Utc>,
@@ -187,6 +432,7 @@ impl Db {
             r#"SELECT * FROM entries
                WHERE COALESCE(time_start_utc, time_end_utc, created_at) >= ?1
                  AND COALESCE(time_start_utc, time_end_utc, created_at) <= ?2
+                 AND deleted_at IS NULL
                ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC"#,
         )?;
         let rows = stmt.query_map(
@@ -196,7 +442,42 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Delete an entry by id or slug. Returns Err(NotFound) if no rows affected.
+    /// Count of live (non-tombstoned) entries in the store.
+    pub fn count_entries(&self) -> Result<usize> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+            [],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
+    /// Every entry in the store, **including tombstoned rows**. B7 (undo)
+    /// uses this to locate deleted entries by id/slug before restoring them.
+    pub fn list_including_deleted(&self) -> Result<Vec<Entry>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM entries ORDER BY id ASC")?;
+        let rows = stmt.query_map([], row_to_entry)?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// Clear a tombstone by id or slug — the inverse of [`Db::soft_delete_entry`].
+    /// Errors with `NotFound` if no matching tombstone exists.
+    pub fn undelete(&self, id_or_slug: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE entries SET deleted_at = NULL
+             WHERE (id = ?1 OR slug = ?1) AND deleted_at IS NOT NULL",
+            params![id_or_slug],
+        )?;
+        if affected == 0 {
+            Err(DatumError::NotFound(id_or_slug.to_string()))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Hard-delete an entry by id or slug. Returns Err(NotFound) if no rows
+    /// affected. Bypasses the soft-delete tombstone — used by tests and
+    /// admin paths that need the row physically gone.
     pub fn delete_entry(&self, id_or_slug: &str) -> Result<()> {
         let affected = self.conn.execute(
             "DELETE FROM entries WHERE id = ?1 OR slug = ?1",
@@ -555,11 +836,12 @@ impl Db {
         Ok(map)
     }
 
-    /// Latest non-Note entry for a field, for use in the now view.
+    /// Latest non-Note, non-tombstoned entry for a field, for use in the now view.
     pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
         self.conn
             .query_row(
-                "SELECT * FROM entries WHERE field = ?1 AND verb != 'note'
+                "SELECT * FROM entries
+                 WHERE field = ?1 AND verb != 'note' AND deleted_at IS NULL
                  ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC
                  LIMIT 1",
                 params![field],
@@ -607,6 +889,9 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .map_err(|e: chrono::ParseError| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
         })?;
+    let deleted_at: Option<DateTime<Utc>> = row
+        .get::<_, Option<String>>("deleted_at")?
+        .and_then(|s| s.parse().ok());
 
     // id_structure / field_structure are added by ALTER TABLE migration; older
     // rows may not have them. Tolerate the absence by mapping the specific
@@ -639,9 +924,47 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         created_at,
         modified_at,
         device_id: row.get("device_id")?,
+        deleted_at,
         id_structure,
         field_structure,
     })
+}
+
+/// Deep-merge `incoming` into `existing` for use by [`ConflictStrategy::Merge`].
+///
+/// - If either side is `None`, the other is returned.
+/// - Object + object: keys are unioned; nested objects recurse; scalar
+///   conflicts → incoming wins (LWW).
+/// - Any non-object pair: incoming replaces existing.
+fn merge_extra_data(
+    existing: Option<&JsonValue>,
+    incoming: Option<&JsonValue>,
+) -> Option<JsonValue> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(e), None) => Some(e.clone()),
+        (None, Some(n)) => Some(n.clone()),
+        (Some(e), Some(n)) => Some(merge_json(e.clone(), n.clone())),
+    }
+}
+
+fn merge_json(existing: JsonValue, incoming: JsonValue) -> JsonValue {
+    match (existing, incoming) {
+        (JsonValue::Object(mut e_map), JsonValue::Object(n_map)) => {
+            for (k, v) in n_map {
+                match e_map.remove(&k) {
+                    Some(existing_v) => {
+                        e_map.insert(k, merge_json(existing_v, v));
+                    }
+                    None => {
+                        e_map.insert(k, v);
+                    }
+                }
+            }
+            JsonValue::Object(e_map)
+        }
+        (_, incoming) => incoming,
+    }
 }
 
 fn build_datum_time(
@@ -1181,5 +1504,270 @@ mod tests {
 
         let alias = db.lookup_alias("happy").unwrap().unwrap();
         assert_eq!(alias.expands_to, "switch mood happy");
+    }
+
+    // ────────────────────────────────────────────────────────────────────────
+    // A4: Conflict strategies and soft-delete
+    // ────────────────────────────────────────────────────────────────────────
+
+    /// Build two entries whose content_hash collides (same field / time / value),
+    /// with different ids so we can tell them apart.
+    fn colliding_pair() -> (Entry, Entry) {
+        let t = utc_at(9, 0);
+        let first = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"source": "morning"})),
+            None,
+            Some(t.clone()),
+            None,
+            "device-a",
+        );
+        let second = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"source": "morning"})),
+            None,
+            Some(t),
+            None,
+            "device-b",
+        );
+        assert_eq!(
+            first.content_hash, second.content_hash,
+            "fixture sanity: colliding entries must share a content_hash"
+        );
+        assert_ne!(first.id, second.id, "fixture sanity: ids must differ");
+        (first, second)
+    }
+
+    #[test]
+    fn insert_conflict_update_mutates_in_place() {
+        let db = Db::open_in_memory().unwrap();
+        let (first, second) = colliding_pair();
+        let first_id = first.id.clone();
+        db.insert_entry(&first).unwrap();
+
+        let before_modified = db.get_entry(&first_id).unwrap().modified_at;
+        // Sleep a tick so modified_at can advance even on fast clocks.
+        std::thread::sleep(std::time::Duration::from_millis(5));
+
+        let outcome = db
+            .insert_entry_with_strategy(&second, ConflictStrategy::Update)
+            .unwrap();
+        assert_eq!(outcome, InsertOutcome::Updated { id: first_id.clone() });
+
+        // Still exactly one row; it mutated in place (original id preserved).
+        let all = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, first_id);
+        // The incoming `device_id` wins on Update.
+        assert_eq!(all[0].device_id, "device-b");
+        // modified_at advanced.
+        assert!(
+            all[0].modified_at > before_modified,
+            "Update must bump modified_at"
+        );
+    }
+
+    #[test]
+    fn insert_conflict_merge_unions_extra_data() {
+        let db = Db::open_in_memory().unwrap();
+        // Existing row carries one tag; incoming brings another. Merge must keep
+        // both and, on scalar conflicts, let the incoming value win.
+        let t = utc_at(10, 0);
+        let existing = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"source": "morning", "shared": "old"})),
+            None,
+            Some(t.clone()),
+            None,
+            "device-a",
+        );
+        let existing_id = existing.id.clone();
+        db.insert_entry(&existing).unwrap();
+
+        // Craft an incoming entry with the same content_hash but different extra.
+        // To share the hash we must keep field/time/value/extra_str identical;
+        // so re-insert with the same extra but using a fresh object after merge.
+        // Here we explicitly exercise the merge path by constructing an entry
+        // whose content_hash matches the existing and then calling merge.
+        let incoming = Entry {
+            // Mirror the existing row's fields so content_hash matches.
+            ..existing.clone()
+        };
+        // Give it a distinct id (Entry::clone copied the existing id).
+        let mut incoming = incoming;
+        incoming.id = ulid::Ulid::new().to_string();
+        // Replace extra_data *after* construction so merge has distinct payloads
+        // to combine while content_hash stays equal.
+        incoming.extra_data = Some(serde_json::json!({"shared": "new", "weather": "sunny"}));
+
+        let outcome = db
+            .insert_entry_with_strategy(&incoming, ConflictStrategy::Merge)
+            .unwrap();
+        assert_eq!(outcome, InsertOutcome::Merged { id: existing_id.clone() });
+
+        // Still one row. extra_data = union, scalar conflict → incoming wins.
+        let all = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(all.len(), 1);
+        let merged_extra = all[0].extra_data.as_ref().unwrap();
+        assert_eq!(merged_extra["source"], serde_json::json!("morning"));
+        assert_eq!(merged_extra["shared"], serde_json::json!("new"));
+        assert_eq!(merged_extra["weather"], serde_json::json!("sunny"));
+    }
+
+    #[test]
+    fn insert_conflict_rekey_creates_new_id_keeps_old() {
+        let db = Db::open_in_memory().unwrap();
+        let (first, second) = colliding_pair();
+        let first_id = first.id.clone();
+        let second_id = second.id.clone();
+        db.insert_entry(&first).unwrap();
+
+        let outcome = db
+            .insert_entry_with_strategy(&second, ConflictStrategy::Rekey)
+            .unwrap();
+        assert_eq!(
+            outcome,
+            InsertOutcome::Rekeyed { old_id: first_id.clone(), new_id: second_id.clone() }
+        );
+
+        // Both rows coexist, same content_hash, distinct ids.
+        let all = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(all.len(), 2);
+        let ids: std::collections::HashSet<_> = all.iter().map(|e| e.id.clone()).collect();
+        assert!(ids.contains(&first_id));
+        assert!(ids.contains(&second_id));
+        assert_eq!(all[0].content_hash, all[1].content_hash);
+    }
+
+    #[test]
+    fn insert_conflict_ignore_returns_existing() {
+        let db = Db::open_in_memory().unwrap();
+        let (first, second) = colliding_pair();
+        let first_id = first.id.clone();
+        db.insert_entry(&first).unwrap();
+
+        let outcome = db
+            .insert_entry_with_strategy(&second, ConflictStrategy::Ignore)
+            .unwrap();
+        assert_eq!(outcome, InsertOutcome::Ignored { id: first_id.clone() });
+
+        // Original row untouched; second row not inserted.
+        let all = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].id, first_id);
+        assert_eq!(all[0].device_id, "device-a");
+    }
+
+    #[test]
+    fn soft_deleted_rows_excluded_from_list() {
+        let db = Db::open_in_memory().unwrap();
+        let live = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d",
+        );
+        let doomed = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("sad")),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d",
+        );
+        let doomed_id = doomed.id.clone();
+        db.insert_entry(&live).unwrap();
+        db.insert_entry(&doomed).unwrap();
+
+        db.soft_delete_entry(&doomed_id).unwrap();
+
+        // All the live-read paths hide the tombstoned row.
+        let by_field = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(by_field.len(), 1);
+        assert_ne!(by_field[0].id, doomed_id);
+
+        let by_field_asc = db.entries_for_field_asc("mood", None).unwrap();
+        assert_eq!(by_field_asc.len(), 1);
+        assert_ne!(by_field_asc[0].id, doomed_id);
+
+        let in_range = db
+            .entries_in_range(as_utc(0, 0), as_utc(23, 59))
+            .unwrap();
+        assert_eq!(in_range.len(), 1);
+        assert_ne!(in_range[0].id, doomed_id);
+
+        let got = db.get_entry(&doomed_id);
+        assert!(matches!(got, Err(DatumError::NotFound(_))));
+        assert_eq!(db.count_entries().unwrap(), 1);
+
+        // ...but the "including deleted" view keeps the row.
+        let including = db.list_including_deleted().unwrap();
+        assert_eq!(including.len(), 2);
+        assert!(including.iter().any(|e| e.id == doomed_id));
+        let tombstoned = db.get_entry_including_deleted(&doomed_id).unwrap();
+        assert!(tombstoned.deleted_at.is_some());
+    }
+
+    #[test]
+    fn undelete_restores_row() {
+        let db = Db::open_in_memory().unwrap();
+        let e = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d",
+        );
+        let id = e.id.clone();
+        db.insert_entry(&e).unwrap();
+        db.soft_delete_entry(&id).unwrap();
+        assert!(matches!(db.get_entry(&id), Err(DatumError::NotFound(_))));
+
+        db.undelete(&id).unwrap();
+        // Row is visible again, tombstone cleared.
+        let back = db.get_entry(&id).unwrap();
+        assert_eq!(back.id, id);
+        assert!(back.deleted_at.is_none());
+
+        // Undeleting something that isn't tombstoned (or doesn't exist) errors.
+        let err = db.undelete(&id);
+        assert!(matches!(err, Err(DatumError::NotFound(_))));
+        let err = db.undelete("nonexistent");
+        assert!(matches!(err, Err(DatumError::NotFound(_))));
+    }
+
+    #[test]
+    fn tombstoned_row_does_not_block_new_insert() {
+        // Soft-deleting a row should free its content_hash slot: re-inserting
+        // identical content is treated as a fresh insert, not a conflict.
+        let db = Db::open_in_memory().unwrap();
+        let (first, second) = colliding_pair();
+        let first_id = first.id.clone();
+        db.insert_entry(&first).unwrap();
+        db.soft_delete_entry(&first_id).unwrap();
+
+        let outcome = db
+            .insert_entry_with_strategy(&second, ConflictStrategy::Ignore)
+            .unwrap();
+        assert!(matches!(outcome, InsertOutcome::Inserted { .. }));
+        // Original tombstone + new row = 2 total rows in the store.
+        assert_eq!(db.list_including_deleted().unwrap().len(), 2);
+        // But only the new one is live.
+        assert_eq!(db.entries_for_field("mood", None).unwrap().len(), 1);
     }
 }

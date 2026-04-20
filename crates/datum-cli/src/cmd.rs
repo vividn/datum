@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use datum_core::{
-    db::Db,
+    db::{Db, InsertOutcome},
     entry::{Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
@@ -208,20 +208,29 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         entry.id_structure = Some(tmpl);
     }
 
-    match db.insert_entry(&entry) {
-        Ok(()) => {
+    let strategy = args.conflict_strategy();
+    let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
+    match &outcome {
+        InsertOutcome::Inserted { .. } => {
             if matches!(verb, Verb::Occur | Verb::Start) {
                 db.ensure_tracked(&entry.field)?;
             }
             print_logged(&entry);
-            Ok(())
         }
-        Err(datum_core::error::DatumError::Duplicate(msg)) => {
-            eprintln!("⚠ Duplicate entry skipped: {msg}");
-            Ok(())
+        InsertOutcome::Updated { id } => {
+            println!("✓ Updated 1 ({id})");
         }
-        Err(e) => Err(e.into()),
+        InsertOutcome::Merged { id } => {
+            println!("✓ Merged 1 ({id})");
+        }
+        InsertOutcome::Rekeyed { new_id, .. } => {
+            println!("✓ Rekeyed to {new_id}");
+        }
+        InsertOutcome::Ignored { id } => {
+            eprintln!("⚠ Ignored 1 — duplicate of {id}");
+        }
     }
+    Ok(())
 }
 
 /// Parse LogArgs into (field, primary_value, extra_data).
@@ -753,6 +762,9 @@ mod tests {
             id_delimiter: ":".to_string(),
             last_state: false,
             moment: false,
+            conflict: None,
+            update: false,
+            merge: false,
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
         let base = build_time(&args).unwrap();
@@ -784,6 +796,9 @@ mod tests {
             id_delimiter: ":".to_string(),
             last_state: false,
             moment: false,
+            conflict: None,
+            update: false,
+            merge: false,
         };
         log_entry(Verb::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
@@ -823,6 +838,7 @@ mod tests {
             timezone: None, unit: Some("cups".to_string()), keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
+            conflict: None, update: false, merge: false,
         };
         log_entry(Verb::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -840,6 +856,7 @@ mod tests {
             timezone: None, unit: None, keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
+            conflict: None, update: false, merge: false,
         };
         log_entry(Verb::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -857,6 +874,7 @@ mod tests {
             timezone: None, unit: None, keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
+            conflict: None, update: false, merge: false,
         };
         log_entry(Verb::Note, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -968,6 +986,7 @@ mod tests {
             timezone: None, unit: None, keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
+            conflict: None, update: false, merge: false,
         };
         log_entry(Verb::Switch, args, &db).unwrap();
         db.set_tracked("mood", false, None).unwrap();

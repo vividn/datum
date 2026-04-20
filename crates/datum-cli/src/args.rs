@@ -6,7 +6,8 @@
 //! Stacked short flags (-yy, -qqq) are handled by a pre-pass before clap
 //! sees the arguments (see `Cli::parse_with_alias_resolution`).
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use datum_core::db::ConflictStrategy;
 
 /// datum — personal data tracker
 #[derive(Parser, Debug)]
@@ -260,6 +261,54 @@ pub struct LogArgs {
     /// Also bypasses the --last-state dedup check.
     #[arg(short = 'm', long)]
     pub moment: bool,
+
+    /// How to resolve content_hash collisions with existing entries.
+    /// Defaults to `ignore` (silently skip). Mutually exclusive with
+    /// `--update` and `--merge`, which are shorthands for the corresponding
+    /// strategy.
+    #[arg(long, value_enum, conflicts_with_all = ["update", "merge"])]
+    pub conflict: Option<ConflictStrategyArg>,
+
+    /// Shorthand for `--conflict update`: overwrite the existing row.
+    #[arg(long, conflicts_with = "merge")]
+    pub update: bool,
+
+    /// Shorthand for `--conflict merge`: deep-merge extra_data into the existing row.
+    #[arg(long)]
+    pub merge: bool,
+}
+
+/// CLI-visible variant of [`ConflictStrategy`].
+#[derive(Clone, Copy, Debug, ValueEnum)]
+#[clap(rename_all = "lowercase")]
+pub enum ConflictStrategyArg {
+    Update,
+    Merge,
+    Rekey,
+    Ignore,
+}
+
+impl From<ConflictStrategyArg> for ConflictStrategy {
+    fn from(v: ConflictStrategyArg) -> Self {
+        match v {
+            ConflictStrategyArg::Update => ConflictStrategy::Update,
+            ConflictStrategyArg::Merge => ConflictStrategy::Merge,
+            ConflictStrategyArg::Rekey => ConflictStrategy::Rekey,
+            ConflictStrategyArg::Ignore => ConflictStrategy::Ignore,
+        }
+    }
+}
+
+impl LogArgs {
+    pub fn conflict_strategy(&self) -> ConflictStrategy {
+        if self.update {
+            ConflictStrategy::Update
+        } else if self.merge {
+            ConflictStrategy::Merge
+        } else {
+            self.conflict.map(Into::into).unwrap_or_default()
+        }
+    }
 }
 
 #[derive(Args, Debug)]
