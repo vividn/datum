@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use datum_core::{
     db::Db,
     entry::{Entry, Verb},
-    field_spec::{Alias, FieldSpec},
+    field_spec::{self, Alias, FieldSpec, InterpolationContext},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
 };
 use regex::Regex;
@@ -155,7 +155,19 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         (Some(base_time), None)
     };
 
-    let entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
+    let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
+
+    // Resolve id template: explicit --id beats spec.id_template.
+    let spec_template = db
+        .load_spec(&entry.field)?
+        .and_then(|s| s.id_template);
+    let template = args.id.clone().or(spec_template);
+    if let Some(tmpl) = template {
+        let uid = entry.short_uid();
+        let ctx = InterpolationContext::from_entry(&entry, &uid);
+        entry.slug = field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter);
+        entry.id_structure = Some(tmpl);
+    }
 
     match db.insert_entry(&entry) {
         Ok(()) => {
@@ -698,6 +710,8 @@ mod tests {
             unit: None,
             keys: vec![],
             comment: None,
+            id: None,
+            id_delimiter: ":".to_string(),
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
         let base = build_time(&args).unwrap();
@@ -725,6 +739,8 @@ mod tests {
             unit: None,
             keys: vec![],
             comment: None,
+            id: None,
+            id_delimiter: ":".to_string(),
         };
         log_entry(Verb::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
@@ -762,6 +778,7 @@ mod tests {
             rest: vec!["2".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: Some("cups".to_string()), keys: vec![], comment: None,
+            id: None, id_delimiter: ":".to_string(),
         };
         log_entry(Verb::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -777,6 +794,7 @@ mod tests {
             rest: vec![],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], comment: None,
+            id: None, id_delimiter: ":".to_string(),
         };
         log_entry(Verb::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -792,6 +810,7 @@ mod tests {
             rest: vec!["some text".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], comment: None,
+            id: None, id_delimiter: ":".to_string(),
         };
         log_entry(Verb::Note, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -901,12 +920,141 @@ mod tests {
             rest: vec!["happy".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], comment: None,
+            id: None, id_delimiter: ":".to_string(),
         };
         log_entry(Verb::Switch, args, &db).unwrap();
         db.set_tracked("mood", false, None).unwrap();
 
         cmd_now(NowArgs { show_all: false }, &db).unwrap();
         cmd_now(NowArgs { show_all: true }, &db).unwrap();
+    }
+
+    // ─── id-template tests (A1 acceptance) ──────────────────────────────────
+
+    fn log_args(field: &str, rest: Vec<String>, id: Option<String>) -> LogArgs {
+        LogArgs {
+            field_or_verb: field.to_string(),
+            rest,
+            yesterday: 0,
+            quick: 0,
+            date: None,
+            time: None,
+            dur: None,
+            timezone: None,
+            unit: None,
+            keys: vec![],
+            comment: None,
+            id,
+            id_delimiter: ":".to_string(),
+        }
+    }
+
+    #[test]
+    fn spec_id_template_is_default() {
+        use datum_core::db::Db;
+        use datum_core::field_spec::FieldSpec;
+        let db = Db::open_in_memory().unwrap();
+
+        // Spec defines id_template; caller does NOT pass --id.
+        let mut spec = FieldSpec::new("coffee", Verb::Occur);
+        spec.id_template = Some("%field%:%uid%".to_string());
+        db.save_field_spec(&spec).unwrap();
+
+        log_entry(Verb::Occur, log_args("coffee", vec![], None), &db).unwrap();
+
+        let entries = db.entries_for_field("coffee", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(
+            e.id_structure.as_deref(),
+            Some("%field%:%uid%"),
+            "spec template must be persisted as id_structure"
+        );
+        // slug = field ":" short_uid → must start with "coffee:" and end with 5-char uid
+        let expected_uid = e.short_uid();
+        assert_eq!(e.slug, format!("coffee:{expected_uid}"));
+    }
+
+    #[test]
+    fn explicit_id_flag_overrides_spec_default() {
+        use datum_core::db::Db;
+        use datum_core::field_spec::FieldSpec;
+        let db = Db::open_in_memory().unwrap();
+
+        // Spec has one template; --id passes a different one → --id wins.
+        let mut spec = FieldSpec::new("coffee", Verb::Occur);
+        spec.id_template = Some("%field%:%uid%".to_string());
+        db.save_field_spec(&spec).unwrap();
+
+        log_entry(
+            Verb::Occur,
+            log_args("coffee", vec![], Some("%field%-override-%uid%".to_string())),
+            &db,
+        )
+        .unwrap();
+
+        let entries = db.entries_for_field("coffee", None).unwrap();
+        let e = &entries[0];
+        assert_eq!(e.id_structure.as_deref(), Some("%field%-override-%uid%"));
+        let uid = e.short_uid();
+        assert_eq!(e.slug, format!("coffee-override-{uid}"));
+    }
+
+    #[test]
+    fn id_template_round_trip_through_db() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        log_entry(
+            Verb::Occur,
+            log_args("coffee", vec![], Some("%field%:%uid%".to_string())),
+            &db,
+        )
+        .unwrap();
+
+        // Re-open registry path and fetch by slug — must still have id_structure.
+        let entries = db.entries_for_field("coffee", None).unwrap();
+        let e = &entries[0];
+        let fetched = db.get_entry(&e.slug).unwrap();
+        assert_eq!(fetched.id_structure.as_deref(), Some("%field%:%uid%"));
+        assert_eq!(fetched.slug, e.slug);
+    }
+
+    #[test]
+    fn no_template_keeps_default_slug() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        log_entry(Verb::Occur, log_args("coffee", vec![], None), &db).unwrap();
+
+        let entries = db.entries_for_field("coffee", None).unwrap();
+        let e = &entries[0];
+        // No spec, no --id → id_structure remains None; slug follows field:time rule
+        assert!(e.id_structure.is_none());
+        assert!(e.slug.starts_with("coffee:"));
+    }
+
+    #[test]
+    fn missing_key_collapses_delimiter_via_cli() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // occur verb has no state → %state% empty → "::" collapses to ":"
+        log_entry(
+            Verb::Occur,
+            log_args(
+                "coffee",
+                vec![],
+                Some("%field%:%state%:%uid%".to_string()),
+            ),
+            &db,
+        )
+        .unwrap();
+
+        let entries = db.entries_for_field("coffee", None).unwrap();
+        let e = &entries[0];
+        let uid = e.short_uid();
+        assert_eq!(e.slug, format!("coffee:{uid}"));
     }
 
     // ─── head command tests ─────────────────────────────────────────────────

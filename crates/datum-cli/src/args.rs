@@ -239,6 +239,16 @@ pub struct LogArgs {
     /// Comment
     #[arg(short = 'c', long)]
     pub comment: Option<String>,
+
+    /// Template for the entry's slug (e.g. `"%field%:%uid%"`). Overrides the
+    /// spec's `id_template` if set.
+    #[arg(long = "id", value_name = "TEMPLATE")]
+    pub id: Option<String>,
+
+    /// Delimiter used to collapse consecutive empty segments produced by a
+    /// template with missing keys. Defaults to `:`.
+    #[arg(long = "id-delimiter", value_name = "STR", default_value = ":")]
+    pub id_delimiter: String,
 }
 
 #[derive(Args, Debug)]

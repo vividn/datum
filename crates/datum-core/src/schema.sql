@@ -36,7 +36,12 @@ CREATE TABLE IF NOT EXISTS entries (
     device_id       TEXT NOT NULL,
 
     -- Soft-delete tombstone (A4). NULL = not deleted.
-    deleted_at      TEXT
+    deleted_at      TEXT,
+
+    -- Template metadata (datum meta.idStructure / meta.fieldStructure).
+    -- NULL = slug was built by the default `field:time` rule.
+    id_structure    TEXT,
+    field_structure TEXT
 );
 
 -- Efficient queries: by field + time

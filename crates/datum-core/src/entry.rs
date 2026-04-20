@@ -87,6 +87,16 @@ pub struct Entry {
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
     pub device_id: String,
+
+    // --- Template metadata (mirrors datum's meta.idStructure / meta.fieldStructure) ---
+    /// Template used to produce `slug`, e.g. `"%field%:%uid%"`.
+    #[serde(default)]
+    pub id_structure: Option<String>,
+    /// Template used to produce `field`, e.g. `"%srcLang%"`. Daydumb sets
+    /// `field` directly on most paths; this preserves the template for
+    /// round-trip compatibility with migrated datum data.
+    #[serde(default)]
+    pub field_structure: Option<String>,
 }
 
 impl Entry {
@@ -133,6 +143,20 @@ impl Entry {
             created_at: now,
             modified_at: now,
             device_id,
+            id_structure: None,
+            field_structure: None,
+        }
+    }
+
+    /// Short uid derived from the entry's ULID — last 5 base32 chars.
+    /// Used by the `%uid%` template placeholder.
+    pub fn short_uid(&self) -> String {
+        let id = &self.id;
+        let n = id.chars().count();
+        if n <= 5 {
+            id.to_lowercase()
+        } else {
+            id.chars().skip(n - 5).collect::<String>().to_lowercase()
         }
     }
 

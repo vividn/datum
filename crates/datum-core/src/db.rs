@@ -57,11 +57,18 @@ impl Db {
 
     fn migrate(&self) -> Result<()> {
         self.conn.execute_batch(include_str!("schema.sql"))?;
-        // Idempotently add deleted_at to pre-existing DBs. A duplicate-column
-        // error is expected once the column is present and is ignored here.
+        // Idempotently add columns that were introduced after the initial
+        // schema. Duplicate-column errors are expected once the column is
+        // present and are ignored here.
         let _ = self
             .conn
             .execute("ALTER TABLE entries ADD COLUMN deleted_at TEXT", []);
+        let _ = self
+            .conn
+            .execute("ALTER TABLE entries ADD COLUMN id_structure TEXT", []);
+        let _ = self
+            .conn
+            .execute("ALTER TABLE entries ADD COLUMN field_structure TEXT", []);
         Ok(())
     }
 
@@ -93,14 +100,16 @@ impl Db {
                 time_start_utc, time_start_offset, time_start_tz,
                 time_end_utc, time_end_offset, time_end_tz,
                 lat, lon, location,
-                created_at, modified_at, device_id
+                created_at, modified_at, device_id,
+                id_structure, field_structure
             ) VALUES (
                 ?1, ?2, ?3, ?4, ?5,
                 ?6, ?7, ?8,
                 ?9, ?10, ?11,
                 ?12, ?13, ?14,
                 ?15, ?16, ?17,
-                ?18, ?19, ?20
+                ?18, ?19, ?20,
+                ?21, ?22
             )"#,
             params![
                 entry.id,
@@ -123,6 +132,8 @@ impl Db {
                 entry.created_at.to_rfc3339(),
                 entry.modified_at.to_rfc3339(),
                 entry.device_id,
+                entry.id_structure,
+                entry.field_structure,
             ],
         )?;
         Ok(())
@@ -565,6 +576,20 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
         })?;
 
+    // id_structure / field_structure are added by ALTER TABLE migration; older
+    // rows may not have them. Tolerate the absence by mapping the specific
+    // "column not found" error to None.
+    let id_structure: Option<String> = match row.get::<_, Option<String>>("id_structure") {
+        Ok(v) => v,
+        Err(rusqlite::Error::InvalidColumnName(_)) => None,
+        Err(e) => return Err(e),
+    };
+    let field_structure: Option<String> = match row.get::<_, Option<String>>("field_structure") {
+        Ok(v) => v,
+        Err(rusqlite::Error::InvalidColumnName(_)) => None,
+        Err(e) => return Err(e),
+    };
+
     Ok(Entry {
         id: row.get("id")?,
         slug: row.get("slug")?,
@@ -582,6 +607,8 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         created_at,
         modified_at,
         device_id: row.get("device_id")?,
+        id_structure,
+        field_structure,
     })
 }
 
