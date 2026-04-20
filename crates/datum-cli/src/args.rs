@@ -249,6 +249,17 @@ pub struct LogArgs {
     /// template with missing keys. Defaults to `:`.
     #[arg(long = "id-delimiter", value_name = "STR", default_value = ":")]
     pub id_delimiter: String,
+
+    /// Stop: close the most recent open block (records its prior state).
+    /// Switch: transition from the currently-active state (errors if unchanged,
+    /// unless also --moment).
+    #[arg(long = "last-state")]
+    pub last_state: bool,
+
+    /// Switch: record a point-in-time state change (time_end == time_start).
+    /// Also bypasses the --last-state dedup check.
+    #[arg(short = 'm', long)]
+    pub moment: bool,
 }
 
 #[derive(Args, Debug)]

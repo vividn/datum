@@ -374,6 +374,38 @@ impl Db {
         Ok(crate::state::compile_state(&entries, at))
     }
 
+    /// Find the most recent "open block" for `field` at time `at`: the latest
+    /// start or switch entry whose state-effect is still active (not closed by
+    /// a subsequent stop/occur or overridden by a later switch).
+    ///
+    /// Returns `None` if the field's active state at `at` is `null` or `false`
+    /// (i.e. there is nothing to close).
+    pub fn find_open_block(
+        &self,
+        field: &str,
+        at: DateTime<Utc>,
+    ) -> Result<Option<Entry>> {
+        let active = self.get_active_state(field, at)?;
+        if matches!(active, JsonValue::Null | JsonValue::Bool(false)) {
+            return Ok(None);
+        }
+        let at_str = at.to_rfc3339();
+        let mut stmt = self.conn.prepare(
+            r#"SELECT * FROM entries
+               WHERE field = ?1
+                 AND deleted_at IS NULL
+                 AND verb IN ('start', 'switch')
+                 AND time_start_utc IS NOT NULL
+                 AND time_start_utc <= ?2
+               ORDER BY time_start_utc DESC, created_at DESC
+               LIMIT 1"#,
+        )?;
+        let row = stmt
+            .query_row(params![field, at_str], row_to_entry)
+            .optional()?;
+        Ok(row)
+    }
+
     // -------------------------------------------------------------------------
     // Consistency checks
     // -------------------------------------------------------------------------

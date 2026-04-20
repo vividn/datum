@@ -123,13 +123,52 @@ fn cmd_check(args: CheckArgs, db: &Db) -> Result<()> {
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
-    let (field, value, extra_data) = parse_log_args(&args)?;
+    let (field, value, mut extra_data) = parse_log_args(&args)?;
     let base_time = build_time(&args)?;
     let unit = args.unit.clone();
     let device = device_id()?;
 
+    // --last-state on Stop: close the most recent open block, recording its
+    // prior state as `last_state` metadata. Errors if there's nothing to close.
+    if args.last_state && matches!(verb, Verb::Stop) {
+        match db.find_open_block(&field, base_time.utc)? {
+            None => anyhow::bail!(
+                "No open block for '{field}' to close with --last-state"
+            ),
+            Some(block) => {
+                let last_state = block.value.clone().unwrap_or(JsonValue::Bool(true));
+                let mut obj = match extra_data.take() {
+                    Some(JsonValue::Object(m)) => m,
+                    _ => serde_json::Map::new(),
+                };
+                obj.insert("last_state".to_string(), last_state);
+                extra_data = Some(JsonValue::Object(obj));
+            }
+        }
+    }
+
+    // --last-state on Switch: dedupe when the requested state matches the
+    // currently-active state. `--moment` bypasses the check.
+    if args.last_state && matches!(verb, Verb::Switch) && !args.moment {
+        let current = db.get_active_state(&field, base_time.utc)?;
+        let current_norm = datum_core::state::normalize_state(&current);
+        let new_norm = value
+            .as_ref()
+            .map(datum_core::state::normalize_state)
+            .unwrap_or(JsonValue::Bool(true));
+        if current_norm == new_norm {
+            anyhow::bail!(
+                "'{field}' is already in state {} — nothing to switch to",
+                serde_json::to_string(&current_norm).unwrap_or_else(|_| "?".to_string())
+            );
+        }
+    }
+
     // Fix 3: --dur flag sets time_end based on verb direction
-    let (time_start, time_end) = if let Some(dur_str) = &args.dur {
+    let (time_start, time_end) = if args.moment && matches!(verb, Verb::Switch) {
+        // --moment on switch: point-in-time change (time_start == time_end)
+        (Some(base_time.clone()), Some(base_time))
+    } else if let Some(dur_str) = &args.dur {
         let dur = parse_duration(dur_str)?;
         match verb {
             Verb::Start => {
@@ -712,6 +751,8 @@ mod tests {
             comment: None,
             id: None,
             id_delimiter: ":".to_string(),
+            last_state: false,
+            moment: false,
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
         let base = build_time(&args).unwrap();
@@ -741,6 +782,8 @@ mod tests {
             comment: None,
             id: None,
             id_delimiter: ":".to_string(),
+            last_state: false,
+            moment: false,
         };
         log_entry(Verb::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
@@ -779,6 +822,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: Some("cups".to_string()), keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
+            last_state: false, moment: false,
         };
         log_entry(Verb::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -795,6 +839,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
+            last_state: false, moment: false,
         };
         log_entry(Verb::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -811,6 +856,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
+            last_state: false, moment: false,
         };
         log_entry(Verb::Note, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -921,6 +967,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
+            last_state: false, moment: false,
         };
         log_entry(Verb::Switch, args, &db).unwrap();
         db.set_tracked("mood", false, None).unwrap();
@@ -946,6 +993,8 @@ mod tests {
             comment: None,
             id,
             id_delimiter: ":".to_string(),
+            last_state: false,
+            moment: false,
         }
     }
 
