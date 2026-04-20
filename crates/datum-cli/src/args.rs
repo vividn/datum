@@ -35,7 +35,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
-    "update", "merge", "rekey",
+    "update", "merge", "rekey", "edit",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -170,6 +170,9 @@ pub enum Command {
     Delete(DeleteArgs),
     /// Restore the most recently soft-deleted entry (or one specified by slug).
     Undo(UndoArgs),
+
+    /// Open an entry in `$EDITOR` as pretty JSON and save the edited result.
+    Edit(EditArgs),
 
     /// Mutate an existing entry's extra_data in place (replaces specified keys).
     Update(UpdateArgs),
@@ -414,6 +417,12 @@ pub struct UpdateArgs {
     /// Optional comment appended to extra_data.
     #[arg(short = 'c', long)]
     pub comment: Option<String>,
+}
+
+#[derive(Args, Debug)]
+pub struct EditArgs {
+    /// Entry id or slug
+    pub id_or_slug: String,
 }
 
 #[derive(Args, Debug)]

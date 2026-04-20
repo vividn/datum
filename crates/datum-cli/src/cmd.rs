@@ -14,9 +14,9 @@ use ulid::Ulid;
 
 use crate::{
     args::{
-        AliasCommand, CheckArgs, Cli, Command, DeleteArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs,
-        LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
-        UndoArgs, UpdateArgs,
+        AliasCommand, CheckArgs, Cli, Command, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs,
+        IgnoreArgs, LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, SpecSetArgs, TailArgs,
+        TrackArgs, UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
@@ -39,6 +39,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Now(args) => cmd_now(args, db),
         Command::Get(args) => cmd_get(args, db),
         Command::Delete(args) => cmd_delete(args, db),
+        Command::Edit(args) => cmd_edit(args, db),
         Command::Update(args) => cmd_update(args, ConflictStrategy::Update, db),
         Command::Merge(args) => cmd_update(args, ConflictStrategy::Merge, db),
         Command::Rekey(args) => cmd_update(args, ConflictStrategy::Rekey, db),
@@ -604,6 +605,77 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     db.soft_delete_entry(&args.id_or_slug)
         .map_err(anyhow::Error::from)?;
     println!("✓ Deleted {}", args.id_or_slug);
+    Ok(())
+}
+
+// ─── Edit ────────────────────────────────────────────────────────────────────
+
+/// Open an entry in `$EDITOR` as pretty JSON; on save, re-parse and persist.
+///
+/// Testing hook: `DATUM_EDITOR` takes precedence over `EDITOR`. Both are
+/// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
+/// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
+fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
+    let existing = db.get_entry_including_deleted(&args.id_or_slug)?;
+    if existing.deleted_at.is_some() {
+        anyhow::bail!(
+            "Cannot edit tombstoned entry {} — restore it first with `datum undo`",
+            args.id_or_slug,
+        );
+    }
+
+    let original_json = serde_json::to_string_pretty(&existing)
+        .context("failed to serialize entry for editing")?;
+
+    let tmp = tempfile::Builder::new()
+        .prefix("datum-edit-")
+        .suffix(".json")
+        .tempfile()
+        .context("failed to create tempfile for editor")?;
+    std::fs::write(tmp.path(), &original_json)
+        .context("failed to write entry to tempfile")?;
+
+    let editor = std::env::var("DATUM_EDITOR")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
+
+    let status = std::process::Command::new("sh")
+        .arg("-c")
+        .arg(format!("{editor} \"$1\""))
+        .arg("--")
+        .arg(tmp.path())
+        .status()
+        .with_context(|| format!("failed to invoke editor: {editor}"))?;
+    if !status.success() {
+        anyhow::bail!("editor exited with non-zero status: {status}");
+    }
+
+    let edited = std::fs::read_to_string(tmp.path())
+        .context("failed to read tempfile after editing")?;
+
+    if edited == original_json {
+        println!("No changes — entry {} unmodified", existing.id);
+        return Ok(());
+    }
+
+    let mut updated: Entry = serde_json::from_str(&edited)
+        .map_err(|e| anyhow::anyhow!("edited content is not valid entry JSON: {e}"))?;
+
+    if updated.id != existing.id {
+        anyhow::bail!(
+            "edit cannot change id ({} → {}); use `datum rekey` instead",
+            existing.id, updated.id,
+        );
+    }
+
+    updated.modified_at = chrono::Utc::now();
+    updated.content_hash = updated.expected_content_hash();
+
+    db.save_existing_entry(&updated)?;
+
+    let fresh = db.get_entry(&updated.id)?;
+    println!("✓ Edited 1 ({})", fresh.id);
+    print_logged(&fresh);
     Ok(())
 }
 
@@ -2237,5 +2309,143 @@ mod tests {
         assert_eq!(restored.content_hash, original_hash);
         assert!(restored.deleted_at.is_none());
         assert_eq!(db.count_entries().unwrap(), 1);
+    }
+
+    // ─── edit command tests ─────────────────────────────────────────────────
+    //
+    // cmd_edit spawns a subprocess under `sh -c` driven by the DATUM_EDITOR
+    // env var. Env vars are process-global, so these tests serialize against
+    // a shared mutex to avoid stepping on each other.
+
+    use std::sync::Mutex;
+    static EDIT_ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    /// Run a closure with DATUM_EDITOR set to `cmd`, holding the env lock.
+    fn with_datum_editor<F: FnOnce()>(cmd: &str, f: F) {
+        let _guard = EDIT_ENV_LOCK.lock().unwrap();
+        let prev = std::env::var("DATUM_EDITOR").ok();
+        std::env::set_var("DATUM_EDITOR", cmd);
+        f();
+        match prev {
+            Some(v) => std::env::set_var("DATUM_EDITOR", v),
+            None => std::env::remove_var("DATUM_EDITOR"),
+        }
+    }
+
+    #[test]
+    fn edit_modifies_entry_via_scripted_editor() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"note": "sunny"})),
+        );
+
+        // Build the edited JSON: same id/slug/etc., but a mutated value and
+        // extra_data. We serialize the existing entry, mutate two fields,
+        // then hand the file back via `cp`.
+        let mut doc: serde_json::Value =
+            serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
+        doc["value"] = serde_json::json!("focused");
+        doc["extra_data"] = serde_json::json!({"note": "clearer"});
+
+        let prep = tempfile::Builder::new()
+            .prefix("datum-edit-prep-")
+            .suffix(".json")
+            .tempfile()
+            .unwrap();
+        std::fs::write(prep.path(), serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+
+        let editor_cmd = format!("cp {}", prep.path().display());
+        with_datum_editor(&editor_cmd, || {
+            cmd_edit(EditArgs { id_or_slug: e.slug.clone() }, &db).unwrap();
+        });
+
+        let after = db.get_entry(&e.id).unwrap();
+        assert_eq!(after.value, Some(serde_json::json!("focused")));
+        assert_eq!(
+            after.extra_data,
+            Some(serde_json::json!({"note": "clearer"}))
+        );
+        // content_hash refreshed to match the new state.
+        assert_eq!(after.content_hash, after.expected_content_hash());
+        assert_ne!(after.content_hash, e.content_hash);
+        assert!(after.modified_at >= e.modified_at);
+    }
+
+    #[test]
+    fn edit_no_change_is_noop() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "coffee",
+            Verb::Occur,
+            Some(serde_json::json!(1)),
+            None,
+        );
+        let before = db.get_entry(&e.id).unwrap();
+
+        // `true` ignores its args → tempfile is left untouched.
+        with_datum_editor("true", || {
+            cmd_edit(EditArgs { id_or_slug: e.slug.clone() }, &db).unwrap();
+        });
+
+        let after = db.get_entry(&e.id).unwrap();
+        assert_eq!(after.content_hash, before.content_hash);
+        assert_eq!(after.modified_at, before.modified_at);
+        assert_eq!(after.value, before.value);
+    }
+
+    #[test]
+    fn edit_rejects_invalid_json() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+        );
+        let before = db.get_entry(&e.id).unwrap();
+
+        let prep = tempfile::Builder::new()
+            .prefix("datum-edit-prep-")
+            .suffix(".txt")
+            .tempfile()
+            .unwrap();
+        std::fs::write(prep.path(), b"{ not valid json").unwrap();
+
+        let editor_cmd = format!("cp {}", prep.path().display());
+        let result = with_datum_editor_result(&editor_cmd, || {
+            cmd_edit(EditArgs { id_or_slug: e.slug.clone() }, &db)
+        });
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("not valid entry JSON"),
+            "unexpected error: {err}"
+        );
+
+        // Row untouched.
+        let after = db.get_entry(&e.id).unwrap();
+        assert_eq!(after.content_hash, before.content_hash);
+        assert_eq!(after.modified_at, before.modified_at);
+    }
+
+    /// Like `with_datum_editor` but returns the closure's result.
+    fn with_datum_editor_result<T, F: FnOnce() -> T>(cmd: &str, f: F) -> T {
+        let _guard = EDIT_ENV_LOCK.lock().unwrap();
+        let prev = std::env::var("DATUM_EDITOR").ok();
+        std::env::set_var("DATUM_EDITOR", cmd);
+        let out = f();
+        match prev {
+            Some(v) => std::env::set_var("DATUM_EDITOR", v),
+            None => std::env::remove_var("DATUM_EDITOR"),
+        }
+        out
     }
 }
