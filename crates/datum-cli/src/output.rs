@@ -845,6 +845,21 @@ pub fn print_now_view(
     state_colors: &HashMap<(String, String), String>,
     show_ignored: bool,
 ) {
+    print!(
+        "{}",
+        render_now_view(tracked, latest_per_field, state_colors, show_ignored)
+    );
+}
+
+/// Render the `datum now` view as a string. Thin sibling of [`print_now_view`]
+/// used by integration tests that need to inspect output.
+pub fn render_now_view(
+    tracked: &[TrackedField],
+    latest_per_field: &HashMap<String, Entry>,
+    state_colors: &HashMap<(String, String), String>,
+    show_ignored: bool,
+) -> String {
+    use std::fmt::Write;
     let now = chrono::Utc::now();
 
     let mut active: Vec<NowRow> = Vec::new();
@@ -941,34 +956,42 @@ pub fn print_now_view(
     let sep_len = 1 + 1 + field_w + 2 + state_w.max(1) + 2 + 10;
     let sep: String = "─".repeat(sep_len);
 
-    let print_row = |row: &NowRow| {
+    let mut out = String::new();
+    let write_row = |out: &mut String, row: &NowRow| {
         let fc = &row.field_ansi;
         let sc = &row.state_ansi;
         if row.is_dim {
-            print!("{DIM}{fc}  {field}{RESET}", field = row.field);
+            write!(out, "{DIM}{fc}  {field}{RESET}", field = row.field).unwrap();
         } else {
-            print!(
+            write!(
+                out,
                 "{fc}{bullet}{RESET} {fc}{field:<field_w$}{RESET}  {sc}{state:<state_w$}{RESET}  {time}",
                 bullet = row.bullet,
                 field = row.field,
                 state = row.state_str,
                 time = row.time_str,
-            );
+            )
+            .unwrap();
         }
-        println!();
+        out.push('\n');
     };
 
-    for row in &active { print_row(row); }
-    if !active.is_empty() && !stopped.is_empty() { println!("{sep}"); }
-    for row in &stopped { print_row(row); }
+    for row in &active { write_row(&mut out, row); }
+    if !active.is_empty() && !stopped.is_empty() {
+        writeln!(out, "{sep}").unwrap();
+    }
+    for row in &stopped { write_row(&mut out, row); }
     if show_ignored && !ignored_rows.is_empty() {
-        if !active.is_empty() || !stopped.is_empty() { println!("{sep}"); }
-        for row in &ignored_rows { print_row(row); }
+        if !active.is_empty() || !stopped.is_empty() {
+            writeln!(out, "{sep}").unwrap();
+        }
+        for row in &ignored_rows { write_row(&mut out, row); }
     }
 
     if active.is_empty() && stopped.is_empty() && !(show_ignored && !ignored_rows.is_empty()) {
-        println!("No tracked (non-ignored) fields. Use `datum track <field>`.");
+        writeln!(out, "No tracked (non-ignored) fields. Use `datum track <field>`.").unwrap();
     }
+    out
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
