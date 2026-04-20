@@ -45,11 +45,11 @@ fn occur_emits_two_line_create_with_hid_and_extra() {
     let lines: Vec<&str> = stdout.lines().collect();
     assert!(lines.len() >= 3, "expected 3+ lines, got: {stdout:?}");
 
-    // Header: action + hid + id
+    // Header: action + hid + slug (datum's user-facing `field:time` id).
     assert!(lines[0].contains("CREATE"), "line 0: {:?}", lines[0]);
     assert!(
-        lines[0].contains("01"), // ULIDs start with a time component
-        "expected id in header: {:?}",
+        lines[0].contains("coffee:"),
+        "expected slug (field:time) in header: {:?}",
         lines[0]
     );
 
@@ -142,22 +142,24 @@ fn format_string_renders_custom_template() {
 }
 
 #[test]
-fn hid_matches_last_5_chars_of_id_lowercased() {
+fn header_has_action_hid_and_slug_not_ulid() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee"]);
-    // Header layout (colors off, whitespace-collapsed): CREATE <hid> <id>
+    // Header layout (colors off, whitespace-collapsed): CREATE <hid> <slug>
+    // The slug is datum-compatible `field:YYYY-MM-DDTHH:MMZ`, NOT the raw ULID.
     let first = stdout.lines().next().unwrap();
     let toks: Vec<&str> = first.split_whitespace().collect();
     assert_eq!(toks.len(), 3, "expected 3 header tokens, got {toks:?}");
     assert_eq!(toks[0], "CREATE");
+
     let hid = toks[1];
-    let id = toks[2];
     assert_eq!(hid.len(), 5, "hid length: {hid:?}");
-    assert_eq!(
-        hid,
-        &id.to_lowercase()[id.len() - 5..],
-        "hid should be last 5 chars of id lowercased"
-    );
+    assert_eq!(hid, hid.to_lowercase(), "hid should be lowercase: {hid:?}");
+
+    let slug = toks[2];
+    assert!(slug.starts_with("coffee:"), "expected slug starting with field: {slug:?}");
+    // Internal ULID (26-char Crockford base32 starting "01") must NOT appear as the id.
+    assert!(!(slug.len() == 26 && slug.starts_with("01")), "slug looks like a ULID: {slug:?}");
     let _ = std::fs::remove_file(&db);
 }

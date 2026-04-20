@@ -154,7 +154,9 @@ fn paint(code: &str, body: &str) -> String {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Extracted {
     pub(crate) action: Option<String>,
-    pub(crate) id: Option<String>,
+    /// User-facing entry reference (datum-compatible `field:time` slug).
+    /// The internal ULID stays in JSON output and as the hid source.
+    pub(crate) slug: Option<String>,
     pub(crate) hid: Option<String>,
     pub(crate) time_occur: Option<String>,
     pub(crate) time_create: Option<String>,
@@ -169,7 +171,7 @@ pub(crate) struct Extracted {
 pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&SpecRegistry>) -> Extracted {
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     let action_text = action.map(|a| paint_action(a));
-    let id_text = Some(paint(GRAY_FG, &entry.id));
+    let slug_text = Some(paint(GRAY_FG, &entry.slug));
     let hid_text = Some(paint(action.map(Action::ansi_color).unwrap_or(""), &short_hid(&entry.id)));
 
     let occur = entry.time_start.as_ref().map(|t| format_human_time(t.utc, false));
@@ -179,7 +181,7 @@ pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&S
 
     Extracted {
         action: action_text,
-        id: id_text,
+        slug: slug_text,
         hid: hid_text,
         time_occur: occur,
         time_create: create,
@@ -338,8 +340,8 @@ pub fn show_action(entry: &Entry, action: Action, registry: Option<&SpecRegistry
     }
 
     let ex = extract(entry, Some(action), registry);
-    // Header line: action + hid + id
-    let header = [ex.action.as_deref(), ex.hid.as_deref(), ex.id.as_deref()]
+    // Header line: action + hid + slug (datum's user-facing id)
+    let header = [ex.action.as_deref(), ex.hid.as_deref(), ex.slug.as_deref()]
         .into_iter()
         .flatten()
         .collect::<Vec<_>>()
@@ -1113,7 +1115,7 @@ mod tests {
         let ex = extract(&entry, Some(Action::Create), None);
         assert!(ex.action.as_deref().unwrap().contains("CREATE"));
         assert!(ex.hid.is_some());
-        assert!(ex.id.is_some());
+        assert!(ex.slug.is_some());
         assert!(ex.time_occur.is_some());
         assert!(ex.field.is_some());
     }

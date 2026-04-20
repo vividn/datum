@@ -337,7 +337,11 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
             show_update(&fresh, registry.as_ref(), &output);
         }
         InsertOutcome::Rekeyed { new_id, old_id } => {
-            show_rename(old_id, new_id, &output);
+            let old_slug = db
+                .get_entry(old_id)
+                .map(|e| e.slug)
+                .unwrap_or_else(|_| old_id.clone());
+            show_rename(&old_slug, &entry.slug, &output);
             if let Ok(fresh) = db.get_entry(new_id) {
                 show_create(&fresh, registry.as_ref(), &output);
             }
@@ -953,8 +957,8 @@ fn apply_rekey(
     let outcome = db.insert_entry_with_strategy(&new_entry, ConflictStrategy::Rekey)?;
     let registry = load_registry(db).ok();
     match outcome {
-        InsertOutcome::Inserted { id } | InsertOutcome::Rekeyed { new_id: id, .. } => {
-            show_rename(&existing.id, &id, &args.output());
+        InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
+            show_rename(&existing.slug, &new_entry.slug, &args.output());
             show_create(&new_entry, registry.as_ref(), &args.output());
             Ok(())
         }
