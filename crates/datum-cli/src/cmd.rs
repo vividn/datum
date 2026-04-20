@@ -599,8 +599,26 @@ fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
 
 // ─── Get / Delete ─────────────────────────────────────────────────────────────
 
+/// Resolve `input` to an entry via C3 prefix matching, preserving the
+/// "Tombstoned" signal so update/edit can produce their tailored error.
+///
+/// `resolve_prefix` filters out soft-deleted rows, so a prefix of a tombstone
+/// comes back as `NotFound`. When that happens we retry once with an exact
+/// id/slug lookup that includes tombstones — if the user typed the full id of
+/// a soft-deleted row, they get the tombstoned row back and the caller can
+/// produce the right error.
+fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
+    match db.resolve_prefix(input) {
+        Ok(e) => Ok(e),
+        Err(datum_core::error::DatumError::NotFound(_)) => {
+            Ok(db.get_entry_including_deleted(input)?)
+        }
+        Err(e) => Err(e.into()),
+    }
+}
+
 fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
-    let entry = db.get_entry(&args.id_or_slug)
+    let entry = db.resolve_prefix(&args.id_or_slug)
         .map_err(anyhow::Error::from)?;
     if args.pretty {
         print_entry_pretty(&entry)?;
@@ -613,7 +631,9 @@ fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
 
 fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
-    let entry = db.get_entry(&args.id_or_slug).map_err(anyhow::Error::from)?;
+    let entry = db
+        .resolve_prefix(&args.id_or_slug)
+        .map_err(anyhow::Error::from)?;
     if !args.force {
         print_entry(&entry, registry.as_ref());
         eprint!("Delete this entry? [y/N] ");
@@ -629,7 +649,7 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
             return Ok(());
         }
     }
-    db.soft_delete_entry(&args.id_or_slug)
+    db.soft_delete_entry(&entry.id)
         .map_err(anyhow::Error::from)?;
     show_delete(&entry, registry.as_ref(), &args.output());
     Ok(())
@@ -643,7 +663,7 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
 /// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
 /// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
 fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
-    let existing = db.get_entry_including_deleted(&args.id_or_slug)?;
+    let existing = resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
     if existing.deleted_at.is_some() {
         anyhow::bail!(
             "Cannot edit tombstoned entry {} — restore it first with `datum undo`",
@@ -711,8 +731,9 @@ fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
 fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> Result<()> {
     let strategy = args.strategy.map(Into::into).unwrap_or(default_strategy);
 
-    // Fetch including tombstones so we can distinguish NotFound vs. Tombstoned.
-    let existing = db.get_entry_including_deleted(&args.id_or_slug)?;
+    // C3: accept unique prefixes, but preserve the "Cannot X tombstoned entry"
+    // error when a user types a full id/slug of a soft-deleted row.
+    let existing = resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
     if existing.deleted_at.is_some() {
         anyhow::bail!(
             "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
@@ -2376,6 +2397,47 @@ mod tests {
         rk.id = Some("%field%:%uid%".to_string());
         let err = cmd_update(rk, ConflictStrategy::Rekey, &db).unwrap_err();
         assert!(err.to_string().to_lowercase().contains("tombstoned"));
+    }
+
+    #[test]
+    fn update_resolves_unique_prefix() {
+        // C3 integration smoke: a unique prefix routes through update just
+        // like the full id. Use the first 5 chars of the id — prefix matching
+        // is anchored at the start by `LIKE '...%'`, and the ULID timestamp
+        // leader makes the head of a single-row table unique.
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
+        let prefix: String = e.id.chars().take(5).collect();
+        cmd_update(
+            update_args(&prefix, vec!["note=fixed"]),
+            ConflictStrategy::Update,
+            &db,
+        )
+        .unwrap();
+        let fresh = db.get_entry(&e.id).unwrap();
+        assert_eq!(
+            fresh.extra_data.unwrap()["note"],
+            serde_json::json!("fixed"),
+        );
+    }
+
+    #[test]
+    fn update_ambiguous_prefix_errors() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        // Two entries on the same field and same minute → identical slug
+        // timestamp, so the "gym:" prefix matches both.
+        seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
+        seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(2)), None);
+        let err = cmd_update(
+            update_args("gym:", vec!["note=x"]),
+            ConflictStrategy::Update,
+            &db,
+        )
+        .unwrap_err();
+        let msg = err.to_string().to_lowercase();
+        assert!(msg.contains("ambiguous"), "expected ambiguous, got: {err}");
     }
 
     #[test]

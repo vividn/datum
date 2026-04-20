@@ -13,7 +13,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
 
 use crate::entry::{Entry, Verb};
-use crate::error::{DatumError, Result};
+use crate::error::{DatumError, PrefixCandidate, Result};
 use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
 use crate::time::DatumTime;
 use chrono::{DateTime, Duration, Utc};
@@ -128,6 +128,26 @@ pub enum InsertOutcome {
     Rekeyed { old_id: String, new_id: String },
     /// Collision left the existing row untouched.
     Ignored { id: String },
+}
+
+/// Max number of candidates returned in [`DatumError::AmbiguousPrefix`].
+/// A wide-enough error list to disambiguate in practice, but bounded so a
+/// pathological prefix (e.g. empty) can't dump the whole table.
+const AMBIGUOUS_PREFIX_CANDIDATE_CAP: usize = 16;
+
+/// Build a SQL LIKE pattern that matches anything starting with `prefix`
+/// literally — `%`, `_`, and `\` in the user-supplied prefix are escaped so
+/// they are treated as plain characters. Pair with `ESCAPE '\\'` in the query.
+fn like_prefix_pattern(prefix: &str) -> String {
+    let mut out = String::with_capacity(prefix.len() + 1);
+    for ch in prefix.chars() {
+        if ch == '\\' || ch == '%' || ch == '_' {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out.push('%');
+    out
 }
 
 pub struct Db {
@@ -468,6 +488,49 @@ impl Db {
                 }
                 other => DatumError::Db(other),
             })
+    }
+
+    /// Resolve a prefix string against live entries' `id` or `slug` columns.
+    ///
+    /// A full id/slug is a prefix of itself, so exact lookups continue to
+    /// work. SQL's `LIKE '<prefix>%'` is used with an explicit ESCAPE clause;
+    /// `%`, `_`, and `\` in the prefix are escaped so they match literally.
+    /// Tombstoned rows are excluded.
+    ///
+    /// # Errors
+    /// - [`DatumError::NotFound`] if no live entry starts with `prefix`.
+    /// - [`DatumError::AmbiguousPrefix`] with a candidate list (up to 16
+    ///   `(id, slug)` pairs) when more than one live entry matches.
+    pub fn resolve_prefix(&self, prefix: &str) -> Result<Entry> {
+        let pattern = like_prefix_pattern(prefix);
+        let mut stmt = self.conn.prepare(
+            "SELECT * FROM entries
+             WHERE (id LIKE ?1 ESCAPE '\\' OR slug LIKE ?1 ESCAPE '\\')
+               AND deleted_at IS NULL
+             ORDER BY id",
+        )?;
+        let mut entries: Vec<Entry> = stmt
+            .query_map(params![pattern], row_to_entry)?
+            .collect::<std::result::Result<_, _>>()?;
+
+        match entries.len() {
+            0 => Err(DatumError::NotFound(prefix.to_string())),
+            1 => Ok(entries.pop().unwrap()),
+            _ => {
+                let candidates = entries
+                    .iter()
+                    .take(AMBIGUOUS_PREFIX_CANDIDATE_CAP)
+                    .map(|e| PrefixCandidate {
+                        id: e.id.clone(),
+                        slug: e.slug.clone(),
+                    })
+                    .collect();
+                Err(DatumError::AmbiguousPrefix {
+                    prefix: prefix.to_string(),
+                    candidates,
+                })
+            }
+        }
     }
 
     /// Fetch an entry by id or slug regardless of tombstone state.
@@ -2129,5 +2192,185 @@ mod tests {
         assert!(db2.lookup_alias("happy").unwrap().is_some());
 
         std::fs::remove_file(&path_str).ok();
+    }
+
+    // ─── C3: resolve_prefix (on-the-fly human-id shortening) ───────────────
+
+    /// Insert an entry with a handcrafted `id`/`slug` — needed so the tests
+    /// can reason about exact prefix matches rather than ULID-random strings.
+    fn insert_fixture(db: &Db, id: &str, slug: &str, field: &str) -> Entry {
+        use chrono::Utc;
+        let now = Utc::now();
+        let e = Entry {
+            id: id.to_string(),
+            slug: slug.to_string(),
+            content_hash: format!("hash-{id}"),
+            field: field.to_string(),
+            verb: Verb::Note,
+            value: None,
+            extra_data: None,
+            unit: None,
+            time_start: None,
+            time_end: None,
+            lat: None,
+            lon: None,
+            location: None,
+            created_at: now,
+            modified_at: now,
+            device_id: "test".to_string(),
+            id_structure: None,
+            field_structure: None,
+            deleted_at: None,
+        };
+        db.insert_entry(&e).unwrap();
+        e
+    }
+
+    #[test]
+    fn resolve_unique_prefix() {
+        let db = Db::open_in_memory().unwrap();
+        let e = insert_fixture(
+            &db,
+            "01HZZZZZZZZZZZZZZZZZZABCDE",
+            "coffee:a1b2c",
+            "coffee",
+        );
+        // Another entry that doesn't share the prefix being tested.
+        insert_fixture(&db, "01HQRSTUVWXYZ1234567QRSTU", "tea:qrstu", "tea");
+
+        // Slug prefix → unique hit.
+        let got = db.resolve_prefix("coffee:a1").unwrap();
+        assert_eq!(got.id, e.id);
+
+        // Id prefix → unique hit.
+        let got = db.resolve_prefix("01HZZZZZZZZZZZZZZZZZZAB").unwrap();
+        assert_eq!(got.id, e.id);
+
+        // Tombstoned rows are excluded — creating a ghost with the same prefix
+        // would otherwise make this ambiguous.
+        let ghost = insert_fixture(
+            &db,
+            "01HZZZZZZZZZZZZZZZZZZABGST",
+            "coffee:abgst",
+            "coffee",
+        );
+        db.soft_delete_entry(&ghost.id).unwrap();
+        let got = db.resolve_prefix("coffee:a1").unwrap();
+        assert_eq!(got.id, e.id);
+    }
+
+    #[test]
+    fn resolve_ambiguous_prefix_errors_with_candidates() {
+        let db = Db::open_in_memory().unwrap();
+        let e1 = insert_fixture(
+            &db,
+            "01HZZZZZZZZZZZZZZZZZZABCDE",
+            "coffee:abcde",
+            "coffee",
+        );
+        let e2 = insert_fixture(
+            &db,
+            "01HZZZZZZZZZZZZZZZZZZABXYZ",
+            "coffee:abxyz",
+            "coffee",
+        );
+
+        let err = db.resolve_prefix("coffee:ab").unwrap_err();
+        match err {
+            DatumError::AmbiguousPrefix { prefix, candidates } => {
+                assert_eq!(prefix, "coffee:ab");
+                let got_ids: std::collections::HashSet<_> =
+                    candidates.iter().map(|c| c.id.clone()).collect();
+                assert_eq!(
+                    got_ids,
+                    std::collections::HashSet::from([e1.id.clone(), e2.id.clone()]),
+                );
+                let got_slugs: std::collections::HashSet<_> =
+                    candidates.iter().map(|c| c.slug.clone()).collect();
+                assert_eq!(
+                    got_slugs,
+                    std::collections::HashSet::from([
+                        e1.slug.clone(),
+                        e2.slug.clone(),
+                    ]),
+                );
+            }
+            other => panic!("expected AmbiguousPrefix, got {other:?}"),
+        }
+
+        // The Display of the error must surface each candidate (id + slug)
+        // so the CLI output is self-disambiguating.
+        let err = db.resolve_prefix("coffee:ab").unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("ambiguous"), "expected 'ambiguous' in: {msg}");
+        assert!(msg.contains(&e1.id), "candidate id missing: {msg}");
+        assert!(msg.contains(&e2.id), "candidate id missing: {msg}");
+        assert!(msg.contains(&e1.slug), "candidate slug missing: {msg}");
+        assert!(msg.contains(&e2.slug), "candidate slug missing: {msg}");
+    }
+
+    #[test]
+    fn resolve_full_id() {
+        let db = Db::open_in_memory().unwrap();
+        let e = insert_fixture(
+            &db,
+            "01HZZZZZZZZZZZZZZZZZZABCDE",
+            "coffee:abcde",
+            "coffee",
+        );
+        // Another entry that shares the slug's field prefix but not the full id.
+        insert_fixture(
+            &db,
+            "01HQRSTUVWXYZ1234567QRSTU",
+            "coffee:qrstu",
+            "coffee",
+        );
+
+        // A full id is a prefix of itself → must still resolve uniquely.
+        let got = db.resolve_prefix(&e.id).unwrap();
+        assert_eq!(got.id, e.id);
+
+        // A full slug resolves too.
+        let got = db.resolve_prefix(&e.slug).unwrap();
+        assert_eq!(got.id, e.id);
+    }
+
+    #[test]
+    fn resolve_unknown_errors() {
+        let db = Db::open_in_memory().unwrap();
+        insert_fixture(&db, "01HZZZZZZZZZZZZZZZZZZABCDE", "coffee:abcde", "coffee");
+
+        let err = db.resolve_prefix("nope").unwrap_err();
+        assert!(
+            matches!(err, DatumError::NotFound(ref s) if s == "nope"),
+            "expected NotFound, got {err:?}",
+        );
+        // The message should read as "no such entry" for humans.
+        let msg = err.to_string().to_lowercase();
+        assert!(msg.contains("not found"), "expected 'not found' in: {msg}");
+    }
+
+    #[test]
+    fn resolve_prefix_escapes_like_wildcards() {
+        // `_` and `%` are SQL LIKE wildcards; the prefix helper must escape them
+        // so a user-typed underscore matches literally and doesn't sweep in
+        // unrelated entries.
+        let db = Db::open_in_memory().unwrap();
+        let literal = insert_fixture(
+            &db,
+            "01HZZZZZZZZZZZZZZZZZZABCDE",
+            "my_field:abcde",
+            "my_field",
+        );
+        // `myXfield:...` — would be matched by an un-escaped `_` wildcard.
+        insert_fixture(
+            &db,
+            "01HQRSTUVWXYZ1234567QRSTU",
+            "myXfield:qrstu",
+            "myXfield",
+        );
+
+        let got = db.resolve_prefix("my_field:").unwrap();
+        assert_eq!(got.id, literal.id);
     }
 }
