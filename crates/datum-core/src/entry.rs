@@ -1,10 +1,10 @@
 //! Core entry type — the fundamental unit of data in datum.
 
 use chrono::{DateTime, Utc};
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
-use ulid::Ulid;
 
 use crate::time::DatumTime;
 
@@ -50,16 +50,40 @@ impl std::str::FromStr for Verb {
     }
 }
 
+/// Length of the stored `hid` column (base36 characters).
+pub const HID_LEN: usize = 12;
+
+/// Length of the short hid displayed in action output and used by `%uid%`.
+pub const SHORT_HID_LEN: usize = 5;
+
+/// Generate a new random 12-char base36 hid. The [0-9a-z] alphabet gives
+/// ~36^12 ≈ 4.7 quintillion distinct values, so collisions under normal use
+/// are astronomically unlikely; the DB still enforces uniqueness on the
+/// column so an accidental collision simply forces a regeneration.
+pub fn new_hid() -> String {
+    let mut rng = rand::thread_rng();
+    (0..HID_LEN)
+        .map(|_| {
+            let n = rng.gen_range(0..36u8);
+            if n < 10 {
+                (b'0' + n) as char
+            } else {
+                (b'a' + (n - 10)) as char
+            }
+        })
+        .collect()
+}
+
 /// An entry is the core data unit. All user-logged data becomes an Entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
-    /// Internal primary key — ULID (sortable, globally unique, CRDT-safe).
-    pub id: String,
-
-    /// Human-readable reference: "field:2024-03-16T09:15Z" (datum-compatible).
+    /// Primary key — datum-compatible "field:timestamp" human reference.
     pub slug: String,
 
-    /// SHA-256 of (field + time_start_utc + time_end_utc + extra_data) for dedup.
+    /// Random 12-char base36 id — prefix-addressable quick reference, unique.
+    pub hid: String,
+
+    /// SHA-256 of (field + time_start_utc + time_end_utc + value + extra_data) for dedup.
     pub content_hash: String,
 
     // --- What ---
@@ -98,13 +122,13 @@ pub struct Entry {
     #[serde(default)]
     pub field_structure: Option<String>,
 
-    /// Soft-delete tombstone (A4). `None` = live row.
+    /// Soft-delete tombstone. `None` = live row.
     #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
 }
 
 impl Entry {
-    /// Build a new entry with auto-generated id, slug, and content_hash.
+    /// Build a new entry with auto-generated hid, slug, and content_hash.
     pub fn new(
         field: impl Into<String>,
         verb: Verb,
@@ -119,7 +143,7 @@ impl Entry {
         let device_id = device_id.into();
         let now = Utc::now();
 
-        let id = Ulid::new().to_string();
+        let hid = new_hid();
 
         let time_start_str = time_start.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
         let time_end_str = time_end.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
@@ -131,8 +155,8 @@ impl Entry {
         let slug = build_slug(&field, time_start.as_ref().or(time_end.as_ref()));
 
         Entry {
-            id,
             slug,
+            hid,
             content_hash,
             field,
             verb,
@@ -153,16 +177,12 @@ impl Entry {
         }
     }
 
-    /// Short uid derived from the entry's ULID — last 5 base32 chars.
-    /// Used by the `%uid%` template placeholder.
+    /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.
+    ///
+    /// Used by the `%uid%` template placeholder and for compact display in
+    /// action output. The full hid remains prefix-addressable via `datum get`.
     pub fn short_uid(&self) -> String {
-        let id = &self.id;
-        let n = id.chars().count();
-        if n <= 5 {
-            id.to_lowercase()
-        } else {
-            id.chars().skip(n - 5).collect::<String>().to_lowercase()
-        }
+        self.hid.chars().take(SHORT_HID_LEN).collect()
     }
 
     /// Duration in seconds (derived from time_start and time_end).
@@ -202,9 +222,12 @@ fn compute_hash(field: &str, start: &str, end: &str, value: &str, extra: &str) -
     format!("{:x}", h.finalize())
 }
 
+/// Default slug: `<field>:<timestamp>` — millisecond precision keeps
+/// same-field same-second inserts on distinct slugs. Entries without a time
+/// fall back to `<field>:unset`.
 fn build_slug(field: &str, time: Option<&DatumTime>) -> String {
     match time {
-        Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%MZ")),
+        Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
         None => format!("{}:unset", field),
     }
 }
@@ -229,7 +252,8 @@ mod tests {
         );
         assert_eq!(e.field, "coffee");
         assert_eq!(e.verb, Verb::Occur);
-        assert!(!e.id.is_empty());
+        assert_eq!(e.hid.len(), HID_LEN);
+        assert!(e.hid.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         assert!(e.slug.starts_with("coffee:"));
     }
 
@@ -237,7 +261,6 @@ mod tests {
     fn test_verb_roundtrip() {
         for v in ["occur", "start", "stop", "switch", "note"] {
             let parsed: Verb = v.parse().unwrap();
-            // "stop" and "end" both parse, display as "stop"
             let displayed = format!("{parsed}");
             assert!(!displayed.is_empty());
         }
@@ -250,5 +273,23 @@ mod tests {
         let e2 = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t.clone()), None, "d2");
         // Same content from different devices → same hash → dedup catches it
         assert_eq!(e1.content_hash, e2.content_hash);
+    }
+
+    #[test]
+    fn short_uid_is_first_five_of_hid() {
+        let t = DatumTime::now();
+        let e = Entry::new("coffee", Verb::Occur, None, None, None, Some(t), None, "d");
+        let uid = e.short_uid();
+        assert_eq!(uid.len(), SHORT_HID_LEN);
+        assert!(e.hid.starts_with(&uid));
+    }
+
+    #[test]
+    fn new_hid_is_base36_and_correct_length() {
+        for _ in 0..100 {
+            let h = new_hid();
+            assert_eq!(h.len(), HID_LEN);
+            assert!(h.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
+        }
     }
 }

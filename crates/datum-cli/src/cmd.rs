@@ -4,13 +4,12 @@ use anyhow::{Context, Result};
 use chrono::{Local, TimeZone, Utc};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, ListParams, RetimeFilter, TimeMetric},
-    entry::{Entry, Verb},
+    entry::{new_hid, Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
 };
 use regex::Regex;
 use serde_json::Value as JsonValue;
-use ulid::Ulid;
 
 use crate::{
     args::{
@@ -201,10 +200,11 @@ fn map_args_to_params(args: &MapArgs, force_reduce: bool) -> ViewParams {
 
 fn print_view_rows(rows: &[datum_core::views::ViewRow]) {
     for row in rows {
+        // The view row's `id` carries the source entry's slug (its PK).
         let obj = serde_json::json!({
             "key": row.key,
             "value": row.value,
-            "id": row.id,
+            "slug": row.id,
         });
         println!("{obj}");
     }
@@ -322,35 +322,35 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
     let output = args.output();
     match &outcome {
-        InsertOutcome::Inserted { .. } => {
+        InsertOutcome::Inserted { slug } => {
             if matches!(verb, Verb::Occur | Verb::Start) {
                 db.ensure_tracked(&entry.field)?;
             }
-            show_create(&entry, registry.as_ref(), &output);
+            // The stored slug may differ from entry.slug if a collision
+            // forced a suffixed retry — fetch the canonical row so the
+            // display reflects what actually hit the DB.
+            let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
+            show_create(&fresh, registry.as_ref(), &output);
         }
-        InsertOutcome::Updated { id } => {
-            let fresh = db.get_entry(id).unwrap_or_else(|_| entry.clone());
+        InsertOutcome::Updated { slug } => {
+            let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
             show_update(&fresh, registry.as_ref(), &output);
         }
-        InsertOutcome::Merged { id } => {
-            let fresh = db.get_entry(id).unwrap_or_else(|_| entry.clone());
+        InsertOutcome::Merged { slug } => {
+            let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
             show_update(&fresh, registry.as_ref(), &output);
         }
-        InsertOutcome::Rekeyed { new_id, old_id } => {
-            let old_slug = db
-                .get_entry(old_id)
-                .map(|e| e.slug)
-                .unwrap_or_else(|_| old_id.clone());
-            show_rename(&old_slug, &entry.slug, &output);
-            if let Ok(fresh) = db.get_entry(new_id) {
+        InsertOutcome::Rekeyed { new_slug, old_slug } => {
+            show_rename(old_slug, new_slug, &output);
+            if let Ok(fresh) = db.get_entry(new_slug) {
                 show_create(&fresh, registry.as_ref(), &output);
             }
         }
-        InsertOutcome::Ignored { id } => {
-            if let Ok(existing) = db.get_entry(id) {
+        InsertOutcome::Ignored { slug } => {
+            if let Ok(existing) = db.get_entry(slug) {
                 show_exists(&existing, registry.as_ref(), &output);
             } else if !output.silent() {
-                eprintln!("⚠ Ignored 1 — duplicate of {id}");
+                eprintln!("⚠ Ignored 1 — duplicate of {slug}");
             }
         }
     }
@@ -749,7 +749,7 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
             return Ok(());
         }
     }
-    db.soft_delete_entry(&entry.id)
+    db.soft_delete_entry(&entry.slug)
         .map_err(anyhow::Error::from)?;
     show_delete(&entry, registry.as_ref(), &args.output());
     Ok(())
@@ -801,17 +801,17 @@ fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
         .context("failed to read tempfile after editing")?;
 
     if edited == original_json {
-        println!("No changes — entry {} unmodified", existing.id);
+        println!("No changes — entry {} unmodified", existing.slug);
         return Ok(());
     }
 
     let mut updated: Entry = serde_json::from_str(&edited)
         .map_err(|e| anyhow::anyhow!("edited content is not valid entry JSON: {e}"))?;
 
-    if updated.id != existing.id {
+    if updated.slug != existing.slug {
         anyhow::bail!(
-            "edit cannot change id ({} → {}); use `datum rekey` instead",
-            existing.id, updated.id,
+            "edit cannot change slug ({} → {}); use `datum rekey` instead",
+            existing.slug, updated.slug,
         );
     }
 
@@ -820,7 +820,7 @@ fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
 
     db.save_existing_entry(&updated)?;
 
-    let fresh = db.get_entry(&updated.id)?;
+    let fresh = db.get_entry(&updated.slug)?;
     let registry = load_registry(db).ok();
     show_update(&fresh, registry.as_ref(), &args.output());
     Ok(())
@@ -905,7 +905,7 @@ fn apply_mutation(
 
     // Fetch the persisted row so the printed confirmation reflects the
     // db-stamped `modified_at`.
-    let fresh = db.get_entry(&updated.id)?;
+    let fresh = db.get_entry(&updated.slug)?;
     let registry = load_registry(db).ok();
     let _ = mode; // shallow vs deep is cosmetic to the user; output is unified UPDATE.
     show_update(&fresh, registry.as_ref(), output);
@@ -927,8 +927,8 @@ fn apply_rekey(
         new_entry.value = Some(v);
     }
 
-    // Fresh id + timestamps. Slug will be re-interpolated below.
-    new_entry.id = Ulid::new().to_string();
+    // Fresh hid + timestamps. Slug will be re-interpolated below.
+    new_entry.hid = new_hid();
     let now = chrono::Utc::now();
     new_entry.created_at = now;
     new_entry.modified_at = now;
@@ -1085,7 +1085,7 @@ fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
         .context("Invalid --before value")?;
 
     let filter = RetimeFilter {
-        slug_or_id: args.slug.as_deref(),
+        slug_or_hid: args.slug.as_deref(),
         field: args.field.as_deref(),
         after_utc,
         before_utc,
@@ -1139,8 +1139,8 @@ fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
 
     match target {
         Some(entry) => {
-            db.undelete(&entry.id).map_err(anyhow::Error::from)?;
-            let restored = db.get_entry(&entry.id).unwrap_or(entry);
+            db.undelete(&entry.slug).map_err(anyhow::Error::from)?;
+            let restored = db.get_entry(&entry.slug).unwrap_or(entry);
             show_create(&restored, registry.as_ref(), &args.output());
             Ok(())
         }
@@ -1422,7 +1422,7 @@ fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
     // header without buffering the whole dataset in memory.
     let temp_path = std::env::temp_dir().join(format!(
         "datum-backup-{}.jsonl",
-        ulid::Ulid::new()
+        new_hid()
     ));
     let guard = TempFileGuard(temp_path.clone());
 
@@ -1653,16 +1653,16 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let t = DatumTime::now();
         let entry = Entry::new("test", Verb::Occur, None, None, None, Some(t), None, "dev");
-        let id = entry.id.clone();
+        let slug = entry.slug.clone();
         db.insert_entry(&entry).unwrap();
 
         // get
-        let fetched = db.get_entry(&id).unwrap();
-        assert_eq!(fetched.id, id);
+        let fetched = db.get_entry(&slug).unwrap();
+        assert_eq!(fetched.slug, slug);
 
         // delete
-        db.delete_entry(&id).unwrap();
-        let err = db.get_entry(&id);
+        db.delete_entry(&slug).unwrap();
+        let err = db.get_entry(&slug);
         assert!(matches!(err, Err(datum_core::error::DatumError::NotFound(_))));
     }
 
@@ -2290,7 +2290,7 @@ mod tests {
         )
         .unwrap();
 
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         let ex = after.extra_data.as_ref().unwrap();
         // weight replaced
         assert_eq!(ex["weight"]["v"], serde_json::json!(80.0));
@@ -2326,7 +2326,7 @@ mod tests {
         )
         .unwrap();
 
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         let ex = after.extra_data.as_ref().unwrap();
         assert_eq!(ex["tag"], serde_json::json!("red"));
         // Deep-merge does NOT disturb existing keys anywhere in the tree.
@@ -2361,7 +2361,7 @@ mod tests {
         // We'll exercise nested merging by passing a nested object through
         // parse_value_token's fallback (string): instead rely on the unit
         // test of `deep_merge` for that path.
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         let ex = after.extra_data.as_ref().unwrap();
         // Original scalar keys intact
         assert_eq!(ex["nested"]["a"], serde_json::json!(1));
@@ -2401,7 +2401,7 @@ mod tests {
         )
         .unwrap();
 
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         let ex = after.extra_data.as_ref().unwrap();
         assert!(ex.get("foo").is_none(), "foo= should drop the key");
         assert_eq!(ex["baz"], serde_json::json!("qux"));
@@ -2441,10 +2441,10 @@ mod tests {
             .iter()
             .find(|r| r.slug == "mood:happy")
             .expect("rekeyed slug should match template");
-        assert_ne!(new_row.id, e.id, "new row gets its own ULID");
+        assert_ne!(new_row.slug, e.slug, "new row gets its own ULID");
         // Old row still reachable by its original slug.
         let old = db.get_entry(&e.slug).unwrap();
-        assert_eq!(old.id, e.id);
+        assert_eq!(old.slug, e.slug);
     }
 
     #[test]
@@ -2469,12 +2469,12 @@ mod tests {
             Some(serde_json::json!(1)),
             Some(serde_json::json!({"reps": 10})),
         );
-        db.soft_delete_entry(&e.id).unwrap();
+        db.soft_delete_entry(&e.slug).unwrap();
 
         // Use id (slug lookup would also find the tombstoned row via
         // get_entry_including_deleted).
         let err = cmd_update(
-            update_args(&e.id, vec!["reps=20"]),
+            update_args(&e.slug, vec!["reps=20"]),
             ConflictStrategy::Update,
             &db,
         )
@@ -2486,14 +2486,14 @@ mod tests {
 
         // Merge and rekey must also reject tombstoned rows.
         let err = cmd_update(
-            update_args(&e.id, vec!["tag=red"]),
+            update_args(&e.slug, vec!["tag=red"]),
             ConflictStrategy::Merge,
             &db,
         )
         .unwrap_err();
         assert!(err.to_string().to_lowercase().contains("tombstoned"));
 
-        let mut rk = update_args(&e.id, vec![]);
+        let mut rk = update_args(&e.slug, vec![]);
         rk.id = Some("%field%:%uid%".to_string());
         let err = cmd_update(rk, ConflictStrategy::Rekey, &db).unwrap_err();
         assert!(err.to_string().to_lowercase().contains("tombstoned"));
@@ -2508,14 +2508,14 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
-        let prefix: String = e.id.chars().take(5).collect();
+        let prefix: String = e.slug.chars().take(5).collect();
         cmd_update(
             update_args(&prefix, vec!["note=fixed"]),
             ConflictStrategy::Update,
             &db,
         )
         .unwrap();
-        let fresh = db.get_entry(&e.id).unwrap();
+        let fresh = db.get_entry(&e.slug).unwrap();
         assert_eq!(
             fresh.extra_data.unwrap()["note"],
             serde_json::json!("fixed"),
@@ -2572,7 +2572,7 @@ mod tests {
         args.keys = vec!["tag.priority=1".to_string()];
         cmd_update(args, ConflictStrategy::Update, &db).unwrap();
 
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         let ex = after.extra_data.as_ref().unwrap();
         assert_eq!(ex["tag"]["color"], serde_json::json!("red"));
         assert_eq!(ex["tag"]["size"], serde_json::json!("m"));
@@ -2598,7 +2598,7 @@ mod tests {
             &db,
         )
         .unwrap();
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.value, Some(serde_json::json!("sad")));
     }
 
@@ -2650,7 +2650,7 @@ mod tests {
             .expect("rekeyed row should exist");
         assert_eq!(rekeyed.extra_data.as_ref().unwrap()["pos"], serde_json::json!("noun"));
         // Payload changes are visible on the new row only.
-        let original = rows.iter().find(|r| r.id == e.id).unwrap();
+        let original = rows.iter().find(|r| r.slug == e.slug).unwrap();
         assert_eq!(original.extra_data.as_ref().unwrap()["pos"], serde_json::json!("verb"));
     }
 
@@ -2674,7 +2674,7 @@ mod tests {
         // must pick that one (the most recent tombstone) and bring it back.
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         let doomed = make_entry_at("mood", 200, "d1");
-        let doomed_id = doomed.id.clone();
+        let doomed_id = doomed.slug.clone();
         db.insert_entry(&doomed).unwrap();
         db.insert_entry(&make_entry_at("mood", 300, "d1")).unwrap();
 
@@ -2685,7 +2685,7 @@ mod tests {
 
         let live = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 3);
-        assert!(live.iter().any(|e| e.id == doomed_id));
+        assert!(live.iter().any(|e| e.slug == doomed_id));
     }
 
     #[test]
@@ -2693,7 +2693,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("mood", 100, "d1");
-        let id = e.id.clone();
+        let id = e.slug.clone();
         db.insert_entry(&e).unwrap();
         db.soft_delete_entry(&id).unwrap();
 
@@ -2712,7 +2712,7 @@ mod tests {
         cmd_undo(undo_args(None, true, "0s"), &db).unwrap();
         let live = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 1);
-        assert_eq!(live[0].id, id);
+        assert_eq!(live[0].slug, id);
     }
 
     #[test]
@@ -2722,10 +2722,10 @@ mod tests {
 
         // Two deletes; the most recent is B, but we want to restore A specifically.
         let a = make_entry_at("mood", 100, "d1");
-        let a_id = a.id.clone();
+        let a_id = a.slug.clone();
         let a_slug = a.slug.clone();
         let b = make_entry_at("mood", 200, "d1");
-        let b_id = b.id.clone();
+        let b_id = b.slug.clone();
         db.insert_entry(&a).unwrap();
         db.insert_entry(&b).unwrap();
 
@@ -2737,7 +2737,7 @@ mod tests {
         // A is back, B is still tombstoned.
         let live: Vec<_> = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 1);
-        assert_eq!(live[0].id, a_id);
+        assert_eq!(live[0].slug, a_id);
         assert!(db.get_entry_including_deleted(&b_id).unwrap().deleted_at.is_some());
     }
 
@@ -2788,7 +2788,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = make_block("sleep", 0, 3600, "d1");
-        let id = e.id.clone();
+        let id = e.slug.clone();
         let t0_start = e.time_start.as_ref().unwrap().utc;
         let t0_end = e.time_end.as_ref().unwrap().utc;
         let hash_before = e.content_hash.clone();
@@ -2835,9 +2835,9 @@ mod tests {
         };
         cmd_retime(args, &db).unwrap();
 
-        let early_after = db.get_entry(&early.id).unwrap();
-        let late_after = db.get_entry(&late.id).unwrap();
-        let other_after = db.get_entry(&other.id).unwrap();
+        let early_after = db.get_entry(&early.slug).unwrap();
+        let late_after = db.get_entry(&late.slug).unwrap();
+        let other_after = db.get_entry(&other.slug).unwrap();
         assert_eq!(early_after.time_start.as_ref().unwrap().utc, early_start,
             "pre-cutoff row must not shift");
         assert_eq!(
@@ -2854,7 +2854,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("focus", 10_000, "d1");
-        let id = e.id.clone();
+        let id = e.slug.clone();
         let t0 = e.time_start.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
@@ -2882,7 +2882,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("mood", 100, "d1");
-        let id = e.id.clone();
+        let id = e.slug.clone();
         let original_hash = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
 
@@ -2895,7 +2895,7 @@ mod tests {
 
         // Row is back, identical to the original insertion (including content_hash).
         let restored = db.get_entry(&id).unwrap();
-        assert_eq!(restored.id, id);
+        assert_eq!(restored.slug, id);
         assert_eq!(restored.content_hash, original_hash);
         assert!(restored.deleted_at.is_none());
         assert_eq!(db.count_entries().unwrap(), 1);
@@ -2954,7 +2954,7 @@ mod tests {
             cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db).unwrap();
         });
 
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.value, Some(serde_json::json!("focused")));
         assert_eq!(
             after.extra_data,
@@ -2977,14 +2977,14 @@ mod tests {
             Some(serde_json::json!(1)),
             None,
         );
-        let before = db.get_entry(&e.id).unwrap();
+        let before = db.get_entry(&e.slug).unwrap();
 
         // `true` ignores its args → tempfile is left untouched.
         with_datum_editor("true", || {
             cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db).unwrap();
         });
 
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.content_hash, before.content_hash);
         assert_eq!(after.modified_at, before.modified_at);
         assert_eq!(after.value, before.value);
@@ -3001,7 +3001,7 @@ mod tests {
             Some(serde_json::json!("happy")),
             None,
         );
-        let before = db.get_entry(&e.id).unwrap();
+        let before = db.get_entry(&e.slug).unwrap();
 
         let prep = tempfile::Builder::new()
             .prefix("datum-edit-prep-")
@@ -3021,7 +3021,7 @@ mod tests {
         );
 
         // Row untouched.
-        let after = db.get_entry(&e.id).unwrap();
+        let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.content_hash, before.content_hash);
         assert_eq!(after.modified_at, before.modified_at);
     }
@@ -3064,14 +3064,14 @@ mod tests {
     }
 
     fn unique_tmp_path(ext: &str) -> std::path::PathBuf {
-        std::env::temp_dir().join(format!("datum-test-{}{}", ulid::Ulid::new(), ext))
+        std::env::temp_dir().join(format!("datum-test-{}{}", new_hid(), ext))
     }
 
     fn all_entries_sorted(db: &datum_core::db::Db) -> Vec<datum_core::entry::Entry> {
         let far_past = chrono::DateTime::UNIX_EPOCH;
         let far_future = chrono::Utc::now() + chrono::Duration::days(365);
         let mut entries = db.entries_in_range(far_past, far_future).unwrap();
-        entries.sort_by(|a, b| a.id.cmp(&b.id));
+        entries.sort_by(|a, b| a.slug.cmp(&b.slug));
         entries
     }
 
@@ -3081,8 +3081,8 @@ mod tests {
     ) {
         assert_eq!(expected.len(), actual.len(), "entry count mismatch");
         for (e, a) in expected.iter().zip(actual) {
-            assert_eq!(e.id, a.id);
             assert_eq!(e.slug, a.slug);
+            assert_eq!(e.hid, a.hid);
             assert_eq!(e.content_hash, a.content_hash);
             assert_eq!(e.field, a.field);
             assert_eq!(e.verb, a.verb);
@@ -3217,7 +3217,7 @@ mod tests {
 
         let before: Vec<_> = all_entries_sorted(&dst)
             .into_iter()
-            .map(|e| (e.id.clone(), e.modified_at))
+            .map(|e| (e.slug.clone(), e.modified_at))
             .collect();
 
         // Second restore with the same backup: content_hash dedup kicks in,
@@ -3231,7 +3231,7 @@ mod tests {
 
         let after: Vec<_> = all_entries_sorted(&dst)
             .into_iter()
-            .map(|e| (e.id.clone(), e.modified_at))
+            .map(|e| (e.slug.clone(), e.modified_at))
             .collect();
         assert_eq!(before, after, "idempotent restore must not bump modified_at");
 
@@ -3278,7 +3278,7 @@ mod tests {
             "device-OTHER",
         );
         dst.insert_entry(&dup).unwrap();
-        let old_modified = dst.get_entry(&dup.id).unwrap().modified_at;
+        let old_modified = dst.get_entry(&dup.slug).unwrap().modified_at;
 
         // --force → ConflictStrategy::Update overwrites device_id from "d1" in backup.
         cmd_restore(
@@ -3287,7 +3287,7 @@ mod tests {
         )
         .unwrap();
 
-        let overwritten = dst.get_entry(&dup.id).unwrap();
+        let overwritten = dst.get_entry(&dup.slug).unwrap();
         assert_eq!(overwritten.device_id, "d1", "force must overwrite device_id");
         assert!(
             overwritten.modified_at >= old_modified,

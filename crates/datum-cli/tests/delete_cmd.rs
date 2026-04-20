@@ -46,13 +46,13 @@ fn delete_by_exact_id_tombstones_entry() {
     let db = fresh_db();
     let entry = entry_builder("coffee").value(json!(1)).insert(&db);
 
-    run_cli(&["delete", &entry.id, "--force"], &db).expect("delete --force");
+    run_cli(&["delete", &entry.slug, "--force"], &db).expect("delete --force");
 
     // Live read paths hide the tombstoned row.
     assert_count!(db, "coffee", 0);
     assert!(
         matches!(
-            db.get_entry(&entry.id),
+            db.get_entry(&entry.slug),
             Err(datum_core::error::DatumError::NotFound(_)),
         ),
         "live get_entry must return NotFound after tombstone",
@@ -60,13 +60,13 @@ fn delete_by_exact_id_tombstones_entry() {
 
     // But the row still exists with `deleted_at` set — soft-delete, not hard.
     let ghost = db
-        .get_entry_including_deleted(&entry.id)
+        .get_entry_including_deleted(&entry.slug)
         .expect("tombstoned row still reachable via including_deleted");
     assert!(
         ghost.deleted_at.is_some(),
         "deleted_at must be populated on the tombstone",
     );
-    assert_eq!(ghost.id, entry.id);
+    assert_eq!(ghost.slug, entry.slug);
 }
 
 /// TS #2: "deletes a document based on first few letters of _id"
@@ -113,19 +113,19 @@ fn delete_targets_one_row_among_many() {
     let doomed = entry_builder("coffee").value(json!(1)).insert(&db);
     let keeper = entry_builder("coffee").value(json!(2)).insert(&db);
 
-    run_cli(&["delete", &doomed.id, "--force"], &db).expect("delete doomed");
+    run_cli(&["delete", &doomed.slug, "--force"], &db).expect("delete doomed");
 
     // Only the targeted row is tombstoned; the sibling survives intact.
     assert_count!(db, "coffee", 1);
     let surviving = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_eq!(surviving.id, keeper.id, "non-targeted row must survive");
+    assert_eq!(surviving.slug, keeper.slug, "non-targeted row must survive");
     assert!(
-        db.get_entry(&keeper.id).is_ok(),
+        db.get_entry(&keeper.slug).is_ok(),
         "keeper remains directly fetchable",
     );
     assert!(
         matches!(
-            db.get_entry(&doomed.id),
+            db.get_entry(&doomed.slug),
             Err(datum_core::error::DatumError::NotFound(_)),
         ),
         "doomed row hidden from live reads",
@@ -153,12 +153,12 @@ fn del_alias_dispatches_to_delete_handler() {
         .value(json!("via-del"))
         .insert(&db);
 
-    run_cli(&["delete", &via_delete.id, "--force"], &db).expect("canonical delete");
-    run_cli(&["del", &via_del.id, "--force"], &db).expect("del alias");
+    run_cli(&["delete", &via_delete.slug, "--force"], &db).expect("canonical delete");
+    run_cli(&["del", &via_del.slug, "--force"], &db).expect("del alias");
 
     // Both rows are tombstoned — same handler, same effect.
     assert_count!(db, "mood", 0);
-    for id in [&via_delete.id, &via_del.id] {
+    for id in [&via_delete.slug, &via_del.slug] {
         let ghost = db.get_entry_including_deleted(id).unwrap();
         assert!(
             ghost.deleted_at.is_some(),
@@ -219,7 +219,7 @@ fn compound_ids_require_one_invocation_each() {
     let e3 = entry_builder("coffee").value(json!(3)).insert(&db);
 
     // Datum-style compound input is treated as a literal id → NotFound.
-    let compound = format!("{},{},{},", e1.id, e2.id, e3.id);
+    let compound = format!("{},{},{},", e1.slug, e2.slug, e3.slug);
     let err = run_cli(&["delete", &compound, "--force"], &db)
         .expect_err("compound form must not resolve in daydumb");
     let msg = format!("{err:#}");
@@ -233,13 +233,13 @@ fn compound_ids_require_one_invocation_each() {
     // N independent invocations reach the end state datum's compound form
     // was meant to achieve.
     for e in [&e1, &e2, &e3] {
-        run_cli(&["delete", &e.id, "--force"], &db)
-            .unwrap_or_else(|err| panic!("delete {}: {err:#}", e.id));
+        run_cli(&["delete", &e.slug, "--force"], &db)
+            .unwrap_or_else(|err| panic!("delete {}: {err:#}", e.slug));
     }
     assert_count!(db, "coffee", 0);
     for e in [&e1, &e2, &e3] {
         assert!(
-            db.get_entry_including_deleted(&e.id)
+            db.get_entry_including_deleted(&e.slug)
                 .unwrap()
                 .deleted_at
                 .is_some(),

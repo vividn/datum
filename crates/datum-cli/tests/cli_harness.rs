@@ -40,10 +40,10 @@ fn del_alias_invokes_delete() {
         .insert(&db);
 
     // `datum del <id> --force` routes through the same dispatcher as `delete`.
-    run_cli(&["del", &entry.id, "--force"], &db).expect("del alias dispatch");
+    run_cli(&["del", &entry.slug, "--force"], &db).expect("del alias dispatch");
 
     // Entry is gone.
-    let res = db.get_entry(&entry.id);
+    let res = db.get_entry(&entry.slug);
     assert!(
         matches!(res, Err(datum_core::error::DatumError::NotFound(_))),
         "expected NotFound after del, got {res:?}"
@@ -59,7 +59,7 @@ fn get_pretty_emits_indented_json() {
         .insert(&db);
 
     // Dispatching `get --pretty` must not error — exercises the full arg path.
-    run_cli(&["get", &entry.id, "--pretty"], &db).expect("get --pretty dispatch");
+    run_cli(&["get", &entry.slug, "--pretty"], &db).expect("get --pretty dispatch");
 
     // And the pretty form is the standard two-space-indent JSON for the entry.
     let pretty = serde_json::to_string_pretty(&entry).expect("serialize entry");
@@ -112,7 +112,7 @@ fn log_with_update_flag_routes_to_update_strategy() {
     // Still only one row after the collision — Update, not Rekey.
     assert_count!(db, "mood", 1);
     let after = db.entries_for_field("mood", None).unwrap()[0].clone();
-    assert_eq!(after.id, before.id, "row must be mutated in place");
+    assert_eq!(after.slug, before.slug, "row must be mutated in place");
     assert!(
         after.modified_at > before.modified_at,
         "Update strategy must bump modified_at"

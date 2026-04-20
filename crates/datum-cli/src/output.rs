@@ -155,7 +155,6 @@ fn paint(code: &str, body: &str) -> String {
 pub(crate) struct Extracted {
     pub(crate) action: Option<String>,
     /// User-facing entry reference (datum-compatible `field:time` slug).
-    /// The internal ULID stays in JSON output and as the hid source.
     pub(crate) slug: Option<String>,
     pub(crate) hid: Option<String>,
     pub(crate) time_occur: Option<String>,
@@ -172,7 +171,7 @@ pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&S
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     let action_text = action.map(|a| paint_action(a));
     let slug_text = Some(paint(GRAY_FG, &entry.slug));
-    let hid_text = Some(paint(action.map(Action::ansi_color).unwrap_or(""), &short_hid(&entry.id)));
+    let hid_text = Some(paint(action.map(Action::ansi_color).unwrap_or(""), &short_hid(&entry.hid)));
 
     let occur = entry.time_start.as_ref().map(|t| format_human_time(t.utc, false));
     let create = Some(format_human_time(entry.created_at, true));
@@ -193,17 +192,11 @@ pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&S
     }
 }
 
-// Datum shortens the meta.humanId (base36 random) to 5 chars. We don't persist
-// a separate humanId — derive one deterministically from the ULID so repeated
-// lookups are stable. Using the last 5 chars of the lowercased ULID lines up
-// with the existing `Entry::short_uid()`.
-fn short_hid(id: &str) -> String {
-    let n = id.chars().count();
-    if n <= 5 {
-        id.to_lowercase()
-    } else {
-        id.chars().skip(n - 5).collect::<String>().to_lowercase()
-    }
+// The `hid` column is a stored 12-char base36 random. The displayed short
+// form is the first 5 chars (already lowercase); shorter-than-5 inputs
+// (possible only for hand-crafted fixtures) are returned as-is.
+fn short_hid(hid: &str) -> String {
+    hid.chars().take(5).collect()
 }
 
 fn paint_action(action: Action) -> String {
@@ -739,9 +732,11 @@ pub fn interpolate(fmt: &str, entry: &Entry) -> String {
 fn resolve_template_key(key: &str, entry: &Entry) -> String {
     match key {
         "field" => entry.field.clone(),
-        "id" => entry.id.clone(),
-        "hid" => short_hid(&entry.id),
-        "slug" => entry.slug.clone(),
+        // `%id%` was the old ULID template key; kept as an alias for slug
+        // (the new primary identifier) so any stored format strings still work.
+        "id" | "slug" => entry.slug.clone(),
+        "hid" => short_hid(&entry.hid),
+        "full_hid" => entry.hid.clone(),
         "value" | "state" => entry
             .value
             .as_ref()
@@ -758,6 +753,11 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
             .map(render_extra_value)
             .unwrap_or_default(),
     }
+}
+
+/// Convenience: apply [`short_hid`] to an `hid` string for external callers.
+pub fn short_hid_of(hid: &str) -> String {
+    short_hid(hid)
 }
 
 // ─── Color helpers (kept public for check/now-view compat) ───────────────────
@@ -1160,9 +1160,10 @@ mod tests {
     }
 
     #[test]
-    fn short_hid_returns_last_five_lowercased() {
-        assert_eq!(short_hid("01KPNHS91T1F0E0GT8AH0MSYSP"), "msysp");
-        assert_eq!(short_hid("ABC"), "abc");
+    fn short_hid_returns_first_five_of_hid() {
+        assert_eq!(short_hid("abcdefghijkl"), "abcde");
+        // Inputs shorter than 5 chars (fixtures/tests) return as-is.
+        assert_eq!(short_hid("abc"), "abc");
     }
 
     fn sample_entry(field: &str, verb: Verb, value: Option<JsonValue>) -> Entry {

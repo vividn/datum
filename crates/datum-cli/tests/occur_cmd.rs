@@ -56,7 +56,7 @@ fn occur_creates_entry_with_time_start() {
 
     // The entry is retrievable by slug (round-trip through the DB).
     let fetched = db.get_entry(&entry.slug).unwrap();
-    assert_eq!(fetched.id, entry.id);
+    assert_eq!(fetched.slug, entry.slug);
 }
 
 /// TS #2: "stores the occurTime in the data"

@@ -72,7 +72,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
             ),
             count: time_bad.len(),
             example: Some(IssueExample {
-                id: Some(first.id.clone()),
+                id: Some(first.slug.clone()),
                 field: Some(first.field.clone()),
                 detail: Some(format!(
                     "start={}  end={}",
@@ -89,7 +89,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
         let expected = e.expected_content_hash();
         if expected != e.content_hash {
             mismatches.push((
-                e.id.clone(),
+                e.slug.clone(),
                 e.field.clone(),
                 e.content_hash.clone(),
                 expected,
@@ -97,7 +97,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
         }
     }
     if !mismatches.is_empty() {
-        let (id, field, stored, expected) = mismatches[0].clone();
+        let (slug, field, stored, expected) = mismatches[0].clone();
         issues.push(Issue {
             severity: Severity::Error,
             category: "content_hash_mismatch",
@@ -108,7 +108,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
             ),
             count: mismatches.len(),
             example: Some(IssueExample {
-                id: Some(id),
+                id: Some(slug),
                 field: Some(field),
                 detail: Some(format!(
                     "stored={}…  expected={}…",
@@ -163,7 +163,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 if !spec.subfields.contains_key(key) {
                     orphan_count += 1;
                     if orphan_detail.is_none() {
-                        orphan_detail = Some((e.id.clone(), e.field.clone(), key.clone()));
+                        orphan_detail = Some((e.slug.clone(), e.field.clone(), key.clone()));
                     }
                 }
             }
@@ -235,7 +235,7 @@ pub fn render_human(report: &Report) -> String {
         ));
         if let Some(ex) = &issue.example {
             if let Some(id) = &ex.id {
-                out.push_str(&format!("    example id: {id}\n"));
+                out.push_str(&format!("    example: {id}\n"));
             }
             if let Some(field) = &ex.field {
                 out.push_str(&format!("    example field: {field}\n"));

@@ -37,7 +37,7 @@ impl View for DurationSumView {
             rows.push(ViewRow {
                 key: json!([entry.field.clone(), local_date_str(ts)]),
                 value: json!(dur_ms),
-                id: Some(entry.id.clone()),
+                id: Some(entry.slug.clone()),
             });
         }
         Ok(rows)

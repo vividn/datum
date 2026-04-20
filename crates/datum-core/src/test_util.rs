@@ -128,10 +128,26 @@ impl EntryBuilder {
         )
     }
 
-    /// Build and insert into `db`, returning the owned entry.
+    /// Build and insert into `db`, returning the owned entry with the slug
+    /// reflecting what actually landed in the DB (may include a retry
+    /// suffix if the default slug collided on PK).
     pub fn insert(self, db: &Db) -> Entry {
-        let e = self.build();
-        db.insert_entry(&e).expect("EntryBuilder::insert failed");
+        use crate::db::{ConflictStrategy, InsertOutcome};
+        let mut e = self.build();
+        let outcome = db
+            .insert_entry_with_strategy(&e, ConflictStrategy::Ignore)
+            .expect("EntryBuilder::insert failed");
+        match outcome {
+            InsertOutcome::Inserted { slug } => {
+                e.slug = slug;
+            }
+            InsertOutcome::Ignored { slug } => {
+                // Identical content already exists — mirror the stored slug
+                // so callers comparing by slug land on the extant row.
+                e.slug = slug;
+            }
+            other => panic!("EntryBuilder::insert: unexpected outcome {other:?}"),
+        }
         e
     }
 }
@@ -333,7 +349,7 @@ mod tests {
             .unit("cups")
             .insert(&db);
 
-        let fetched = db.get_entry(&built.id).unwrap();
+        let fetched = db.get_entry(&built.slug).unwrap();
         assert_entry_matches!(fetched,
             field: "coffee",
             verb: "occur",

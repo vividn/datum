@@ -344,8 +344,8 @@ fn t06_defaults_to_hybrid() {
     let mut explicit = tail_args();
     explicit.metric = "hybrid".to_string();
     let got_explicit = tail_entries(&explicit, &db).unwrap();
-    let ids_a: Vec<_> = got.iter().map(|e| e.id.clone()).collect();
-    let ids_b: Vec<_> = got_explicit.iter().map(|e| e.id.clone()).collect();
+    let ids_a: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+    let ids_b: Vec<_> = got_explicit.iter().map(|e| e.slug.clone()).collect();
     assert_eq!(ids_a, ids_b);
 }
 
@@ -404,10 +404,10 @@ fn t08_metric_modify() {
     let got = tail_entries(&args, &db).unwrap();
     assert_eq!(got.len(), 4);
     // Ordered by modified_at (insertion order here).
-    assert_eq!(got[0].id, a.id);
-    assert_eq!(got[1].id, note.id);
-    assert_eq!(got[2].id, c.id);
-    assert_eq!(got[3].id, d.id);
+    assert_eq!(got[0].slug, a.slug);
+    assert_eq!(got[1].slug, note.slug);
+    assert_eq!(got[2].slug, c.slug);
+    assert_eq!(got[3].slug, d.slug);
 }
 
 #[test]
@@ -424,9 +424,9 @@ fn t09_metric_create() {
     args.metric = "create".to_string();
     let got = tail_entries(&args, &db).unwrap();
     assert_eq!(got.len(), 3);
-    assert_eq!(got[0].id, a.id);
-    assert_eq!(got[1].id, b.id);
-    assert_eq!(got[2].id, c.id);
+    assert_eq!(got[0].slug, a.slug);
+    assert_eq!(got[1].slug, b.slug);
+    assert_eq!(got[2].slug, c.slug);
 }
 
 #[test]
@@ -462,9 +462,9 @@ fn t11_default_includes_future_entries() {
     let past = insert(&db, "sleep", Verb::Occur, -60);
     let future = insert(&db, "sleep", Verb::Occur, 24 * 60 * 365); // ~1y ahead
     let got = tail_entries(&tail_args(), &db).unwrap();
-    let ids: Vec<_> = got.iter().map(|e| e.id.clone()).collect();
-    assert!(ids.contains(&past.id));
-    assert!(ids.contains(&future.id), "default tail should include future");
+    let ids: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+    assert!(ids.contains(&past.slug));
+    assert!(ids.contains(&future.slug), "default tail should include future");
 }
 
 #[test]
@@ -500,8 +500,8 @@ fn t12_t_now_excludes_future() {
             ..Default::default()
         })
         .unwrap();
-    let ids: Vec<_> = got.iter().map(|e| e.id.clone()).collect();
-    assert!(!ids.contains(&future_entry.id), "`-t now` must exclude future");
+    let ids: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
+    assert!(!ids.contains(&future_entry.slug), "`-t now` must exclude future");
 }
 
 #[test]
@@ -550,7 +550,7 @@ fn t14_timezone_aware_day_window() {
     let got = db.list_entries(&params).unwrap();
     // ±1 day pad keeps the entry reachable regardless of the runner's local tz.
     assert_eq!(got.len(), 1);
-    assert_eq!(got[0].id, e.id);
+    assert_eq!(got[0].slug, e.slug);
 }
 
 #[test]
@@ -569,7 +569,7 @@ fn t15_future_date_entries_appear_on_that_date() {
     let mut args = tail_args();
     args.date = Some("2024-03-17".to_string());
     let got = tail_entries(&args, &db).unwrap();
-    assert!(got.iter().any(|e| e.id == tomorrow_entry.id));
+    assert!(got.iter().any(|e| e.slug == tomorrow_entry.slug));
 }
 
 #[test]
@@ -591,8 +591,8 @@ fn t16_date_plus_n_takes_last_n_on_day() {
     let limited = tail_entries(&args_n, &db).unwrap();
     assert_eq!(limited.len(), 5);
     // Last 5 from the full list, preserving oldest-first order.
-    let expected_tail: Vec<_> = all.iter().rev().take(5).rev().map(|e| e.id.clone()).collect();
-    let got_ids: Vec<_> = limited.iter().map(|e| e.id.clone()).collect();
+    let expected_tail: Vec<_> = all.iter().rev().take(5).rev().map(|e| e.slug.clone()).collect();
+    let got_ids: Vec<_> = limited.iter().map(|e| e.slug.clone()).collect();
     assert_eq!(got_ids, expected_tail);
 }
 

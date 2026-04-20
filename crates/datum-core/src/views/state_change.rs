@@ -91,7 +91,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                     time: ts.utc,
                     created_at: entry.created_at,
                     new_state: state,
-                    entry_id: entry.id.clone(),
+                    entry_id: entry.slug.clone(),
                 });
                 if let Some(te) = &entry.time_end {
                     if te.utc > ts.utc {
@@ -99,7 +99,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                             time: te.utc,
                             created_at: entry.created_at,
                             new_state: JsonValue::Bool(false),
-                            entry_id: entry.id.clone(),
+                            entry_id: entry.slug.clone(),
                         });
                     }
                 }
@@ -111,7 +111,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                     time: ts.utc,
                     created_at: entry.created_at,
                     new_state: JsonValue::Bool(true),
-                    entry_id: entry.id.clone(),
+                    entry_id: entry.slug.clone(),
                 });
                 if let Some(te) = &entry.time_end {
                     if te.utc > ts.utc {
@@ -119,7 +119,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                             time: te.utc,
                             created_at: entry.created_at,
                             new_state: JsonValue::Bool(false),
-                            entry_id: entry.id.clone(),
+                            entry_id: entry.slug.clone(),
                         });
                     }
                 }
@@ -132,7 +132,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                     time: t.utc,
                     created_at: entry.created_at,
                     new_state: JsonValue::Bool(false),
-                    entry_id: entry.id.clone(),
+                    entry_id: entry.slug.clone(),
                 });
             }
         }
@@ -142,7 +142,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                     time: ts.utc,
                     created_at: entry.created_at,
                     new_state: JsonValue::Bool(false),
-                    entry_id: entry.id.clone(),
+                    entry_id: entry.slug.clone(),
                 });
             }
         }
@@ -236,7 +236,7 @@ mod tests {
             .value(json!("ephemeral"))
             .time_start_utc(t0)
             .insert(&db);
-        db.soft_delete_entry(&ghost.id).unwrap();
+        db.soft_delete_entry(&ghost.slug).unwrap();
 
         entry_builder("word").verb(Verb::Note).no_time().insert(&db);
 

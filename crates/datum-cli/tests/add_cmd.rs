@@ -296,7 +296,7 @@ fn identical_content_triggers_exists_outcome() {
         .insert_entry_with_strategy(&first, ConflictStrategy::Ignore)
         .unwrap();
     match outcome {
-        InsertOutcome::Ignored { id } => assert_eq!(id, first.id, "points at original"),
+        InsertOutcome::Ignored { slug } => assert_eq!(slug, first.slug, "points at original"),
         other => panic!("expected Ignored, got {other:?}"),
     }
     // Row count unchanged.
@@ -308,9 +308,10 @@ fn identical_content_triggers_exists_outcome() {
 /// Daydumb divergence: content_hash-based dedup means "same id, different
 /// data" produces distinct content_hashes and both rows insert without
 /// conflict. Datum's DocExistsError has no daydumb analog on the default
-/// (Ignore) strategy. The portable invariant locked in: two notes with the
-/// same `--id` but different `extra_data` both land, producing distinct
-/// rows that share a slug.
+/// (Ignore) strategy. After the slug-as-PK refactor the two rows can no
+/// longer share a slug — the second insert's slug PK collision is resolved
+/// by appending a random suffix, so the rows carry distinct slugs that
+/// share the same template-derived prefix.
 #[test]
 fn same_id_different_data_both_insert() {
     let db = fresh_db();
@@ -320,13 +321,20 @@ fn same_id_different_data_both_insert() {
         .expect("second note with same --id, different data");
     let entries = db.entries_for_field("field", None).unwrap();
     assert_eq!(entries.len(), 2, "distinct content_hashes ⇒ 2 rows");
-    for e in &entries {
-        assert_eq!(e.slug, "doug", "slug shared via template");
-    }
+    let slugs: Vec<&str> = entries.iter().map(|e| e.slug.as_str()).collect();
+    assert!(slugs.iter().any(|s| *s == "doug"), "one row keeps the base slug: {slugs:?}");
+    assert!(
+        slugs.iter().any(|s| s.starts_with("doug_")),
+        "second row gets a suffixed variant: {slugs:?}",
+    );
     assert_ne!(
         entries[0].content_hash, entries[1].content_hash,
         "differing extra_data ⇒ differing content_hash",
     );
+    // The template itself is still recorded verbatim on both rows.
+    for e in &entries {
+        assert_eq!(e.id_structure.as_deref(), Some("doug"));
+    }
 }
 
 // ─── TS #15: "inserts id structure into the metadata" ────────────────────────
@@ -484,7 +492,7 @@ fn merge_flag_routes_to_merge_strategy() {
     .expect("merge dispatch");
     assert_count!(db, "field", 1);
     let after = db.entries_for_field("field", None).unwrap()[0].clone();
-    assert_eq!(after.id, before.id, "merged in place, not rekeyed");
+    assert_eq!(after.slug, before.slug, "merged in place, not rekeyed");
     assert!(
         after.modified_at > before.modified_at,
         "Merge strategy bumps modified_at",
@@ -523,7 +531,7 @@ fn conflict_update_flag_routes_to_update_strategy() {
     .expect("--conflict update dispatch");
     assert_count!(db, "field", 1);
     let after = db.entries_for_field("field", None).unwrap()[0].clone();
-    assert_eq!(after.id, before.id);
+    assert_eq!(after.slug, before.slug);
     assert!(after.modified_at > before.modified_at);
 }
 

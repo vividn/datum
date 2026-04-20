@@ -1,18 +1,20 @@
-//! `datum_sub_human_id` — every non-empty prefix of each entry's short uid.
+//! `datum_sub_human_id` — every non-empty prefix of each entry's short hid.
 //!
-//! Ported from datum's `subHumanIdView`. C3 (human-id shortening) uses this
-//! to find the shortest unique prefix of an entry's id: for prefix lengths
-//! 1..N, query `?key=<prefix>`; the first length with a single hit is the
+//! Ported from datum's `subHumanIdView`. Used to find the shortest unique
+//! prefix of an entry's human id: for prefix lengths 1..N, query
+//! `?key=<prefix>`; the first length with a single hit is the
 //! shortest-unique form.
 //!
-//! datum keys off `meta.humanId` (a nanoid stamped at write time). daydumb
-//! derives the "human id" from the entry's ULID tail via
-//! [`Entry::short_uid`] — no new column needed.
+//! daydumb's `hid` column is a stored 12-char base36 random — that value IS
+//! the human id (no derivation from a separate key). The short form shown
+//! in action output is [`Entry::short_uid`] (first 5 chars), so this view
+//! emits prefixes up to that length, which covers all realistic ambiguity.
 
 use serde_json::{json, Value as JsonValue};
 
 use super::{View, ViewRow};
 use crate::db::Db;
+use crate::entry::SHORT_HID_LEN;
 use crate::error::Result;
 
 pub struct SubHumanIdView;
@@ -29,15 +31,16 @@ impl View for SubHumanIdView {
             if entry.deleted_at.is_some() {
                 continue;
             }
-            let hid = entry.short_uid();
-            // Emit every non-empty prefix. Length 0 is omitted: an empty
-            // key would match every entry and isn't useful to C3.
-            for len in 1..=hid.chars().count() {
-                let prefix: String = hid.chars().take(len).collect();
+            let hid_short = entry.short_uid();
+            // Emit every non-empty prefix up to the short-hid length. C3
+            // only cares about the shortest-unique form for display; full
+            // hid prefix lookups go through `Db::resolve_prefix` instead.
+            for len in 1..=hid_short.chars().count().min(SHORT_HID_LEN) {
+                let prefix: String = hid_short.chars().take(len).collect();
                 rows.push(ViewRow {
                     key: JsonValue::String(prefix),
-                    value: JsonValue::String(hid.clone()),
-                    id: Some(entry.id.clone()),
+                    value: JsonValue::String(hid_short.clone()),
+                    id: Some(entry.slug.clone()),
                 });
             }
         }
@@ -48,8 +51,8 @@ impl View for SubHumanIdView {
         true
     }
 
-    /// `_count` — number of distinct ids sharing this prefix. A value of 1
-    /// under `group=true` means this prefix is already unique.
+    /// `_count` — number of distinct entries sharing this prefix. A value of
+    /// 1 under `group=true` means this prefix is already unique.
     fn reduce(&self, _key: &JsonValue, values: &[JsonValue]) -> Result<JsonValue> {
         Ok(json!(values.len()))
     }
@@ -62,16 +65,13 @@ mod tests {
     use crate::test_util::fresh_db;
     use crate::views::{builtins, ViewParams};
 
-    /// Build an entry with a handcrafted id so we can assert exact prefixes.
-    /// We bypass `Entry::new`'s ULID generation by constructing the struct
-    /// directly and inserting it, then relying on `short_uid()`'s last-5-char
-    /// rule to produce a known tail.
-    fn insert_with_id(db: &crate::db::Db, field: &str, id: &str) -> Entry {
+    /// Insert an entry with a handcrafted hid so short_uid is deterministic.
+    fn insert_with_hid(db: &crate::db::Db, field: &str, slug: &str, hid: &str) -> Entry {
         let now = chrono::Utc::now();
         let e = Entry {
-            id: id.to_string(),
-            slug: format!("{field}:fixture"),
-            content_hash: format!("hash-{id}"),
+            slug: slug.to_string(),
+            hid: hid.to_string(),
+            content_hash: format!("hash-{hid}"),
             field: field.to_string(),
             verb: Verb::Note,
             value: None,
@@ -97,39 +97,36 @@ mod tests {
     fn sub_human_id_view_returns_shortest_unique_prefix() {
         let db = fresh_db();
 
-        // Last 5 chars → "abcde", "abxyz", "qrstu". Prefixes of first two
-        // share "a" and "ab"; diverge at length 3.
-        let e1 = insert_with_id(&db, "word", "01HZZZZZZZZZZZZZZZZZZABCDE");
-        let e2 = insert_with_id(&db, "word", "01HZZZZZZZZZZZZZZZZZZABXYZ");
-        let e3 = insert_with_id(&db, "word", "01HZZZZZZZZZZZZZZZZZZQRSTU");
+        // short_uid() takes the first 5 chars of hid: "abcde", "abxyz", "qrstu".
+        // Prefixes of the first two share "a" and "ab"; diverge at length 3.
+        let e1 = insert_with_hid(&db, "word", "word:1", "abcde0000001");
+        let e2 = insert_with_hid(&db, "word", "word:2", "abxyz0000002");
+        let e3 = insert_with_hid(&db, "word", "word:3", "qrstu0000003");
 
-        let hid1 = e1.short_uid(); // "abcde"
-        let hid2 = e2.short_uid(); // "abxyz"
-        let hid3 = e3.short_uid(); // "qrstu"
-        assert_eq!(hid1, "abcde");
-        assert_eq!(hid2, "abxyz");
-        assert_eq!(hid3, "qrstu");
+        assert_eq!(e1.short_uid(), "abcde");
+        assert_eq!(e2.short_uid(), "abxyz");
+        assert_eq!(e3.short_uid(), "qrstu");
 
         // Tombstoned entries must not contribute prefixes.
-        let ghost = insert_with_id(&db, "word", "01HZZZZZZZZZZZZZZZZZZABCDX");
-        db.soft_delete_entry(&ghost.id).unwrap();
+        let ghost = insert_with_hid(&db, "word", "word:4", "abcdx0000004");
+        db.soft_delete_entry(&ghost.slug).unwrap();
 
         let reg = builtins();
 
         // Shortest unique prefix of e1 ("abcde") is "abc": length 1 and 2
         // collide with e2; length 3 disambiguates.
         let shortest_unique = (1..=5)
-            .map(|n| hid1.chars().take(n).collect::<String>())
+            .map(|n| e1.short_uid().chars().take(n).collect::<String>())
             .find(|prefix| {
                 let params = ViewParams {
                     key: Some(JsonValue::String(prefix.clone())),
                     ..Default::default()
                 };
                 let hits = reg.query("datum_sub_human_id", &db, &params).unwrap();
-                // Dedupe by id since each entry contributes one row per prefix length.
-                let unique_ids: std::collections::HashSet<_> =
+                // Dedupe by slug since each entry contributes one row per prefix length.
+                let unique_slugs: std::collections::HashSet<_> =
                     hits.iter().map(|r| r.id.clone()).collect();
-                unique_ids.len() == 1
+                unique_slugs.len() == 1
             })
             .expect("should find a unique prefix");
         assert_eq!(shortest_unique, "abc");
@@ -140,8 +137,8 @@ mod tests {
             ..Default::default()
         };
         let hits = reg.query("datum_sub_human_id", &db, &params).unwrap();
-        let ids: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
-        assert_eq!(ids, std::collections::HashSet::from([Some(e3.id.clone())]));
+        let slugs: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(slugs, std::collections::HashSet::from([Some(e3.slug.clone())]));
 
         // "ab" is ambiguous: returns both e1 and e2 (one row per, at this length).
         let params = ViewParams {
@@ -149,14 +146,14 @@ mod tests {
             ..Default::default()
         };
         let hits = reg.query("datum_sub_human_id", &db, &params).unwrap();
-        let ids: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
+        let slugs: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
         assert_eq!(
-            ids,
-            std::collections::HashSet::from([Some(e1.id.clone()), Some(e2.id.clone())])
+            slugs,
+            std::collections::HashSet::from([Some(e1.slug.clone()), Some(e2.slug.clone())])
         );
 
-        // Grouped reduce: count of distinct-ish rows per prefix. "ab" → 2 rows
-        // (one per contributing entry); "abc" → 1 row (e1 only).
+        // Grouped reduce: count of distinct rows per prefix. "ab" → 2 rows;
+        // "abc" → 1 row (e1 only); "q" → 1 row (e3).
         let params = ViewParams {
             reduce: true,
             group: true,

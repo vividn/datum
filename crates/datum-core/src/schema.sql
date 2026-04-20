@@ -6,8 +6,8 @@ PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS entries (
-    id              TEXT NOT NULL PRIMARY KEY,   -- ULID
-    slug            TEXT NOT NULL,               -- field:timestamp (human ref)
+    slug            TEXT NOT NULL PRIMARY KEY,   -- datum-style "field:time" (user-facing id)
+    hid             TEXT NOT NULL,               -- random 12-char base36 [0-9a-z] (prefix-addressable)
     content_hash    TEXT NOT NULL,               -- SHA-256 for dedup (not UNIQUE: Rekey strategy permits duplicates)
 
     -- What
@@ -35,7 +35,7 @@ CREATE TABLE IF NOT EXISTS entries (
     modified_at     TEXT NOT NULL,
     device_id       TEXT NOT NULL,
 
-    -- Soft-delete tombstone (A4). NULL = not deleted.
+    -- Soft-delete tombstone. NULL = not deleted.
     deleted_at      TEXT,
 
     -- Template metadata (datum meta.idStructure / meta.fieldStructure).
@@ -43,6 +43,10 @@ CREATE TABLE IF NOT EXISTS entries (
     id_structure    TEXT,
     field_structure TEXT
 );
+
+-- Unique hid — collisions on 12-char base36 (~4.7 quintillion space) are vanishingly
+-- rare, but the index enforces it and makes prefix lookups on hid fast.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_hid ON entries (hid);
 
 -- Efficient queries: by field + time
 CREATE INDEX IF NOT EXISTS idx_entries_field
@@ -52,7 +56,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_field
 CREATE INDEX IF NOT EXISTS idx_entries_time
     ON entries (COALESCE(time_start_utc, time_end_utc, created_at));
 
--- Dedup lookup (replaces the dropped UNIQUE auto-index on content_hash).
+-- Dedup lookup.
 CREATE INDEX IF NOT EXISTS idx_entries_content_hash
     ON entries (content_hash);
 
@@ -76,9 +80,9 @@ CREATE TABLE IF NOT EXISTS aliases (
 CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
     ON aliases (derived_from_field);
 
--- Sync state: per-device vector clock for changeset-based sync
+-- Sync state: per-device watermark for changeset-based sync
 CREATE TABLE IF NOT EXISTS sync_state (
     device_id   TEXT NOT NULL PRIMARY KEY,
-    last_seq    TEXT NOT NULL,           -- ULID of last synced entry from this device
+    last_seq    TEXT NOT NULL,
     updated_at  TEXT NOT NULL
 );
