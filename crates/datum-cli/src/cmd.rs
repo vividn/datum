@@ -3,7 +3,7 @@
 use anyhow::{Context, Result};
 use chrono::{Local, TimeZone, Utc};
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome, ListParams, TimeMetric},
+    db::{ConflictStrategy, Db, InsertOutcome, ListParams, RetimeFilter, TimeMetric},
     entry::{Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
@@ -15,8 +15,8 @@ use ulid::Ulid;
 use crate::{
     args::{
         AliasCommand, CheckArgs, Cli, Command, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs,
-        IgnoreArgs, LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, SpecSetArgs, TailArgs,
-        TrackArgs, UndoArgs, UpdateArgs,
+        IgnoreArgs, LogArgs, MapArgs, MigrateArgs, NowArgs, RetimeArgs, SpecCommand, SpecSetArgs,
+        TailArgs, TrackArgs, UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
@@ -43,6 +43,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Update(args) => cmd_update(args, ConflictStrategy::Update, db),
         Command::Merge(args) => cmd_update(args, ConflictStrategy::Merge, db),
         Command::Rekey(args) => cmd_update(args, ConflictStrategy::Rekey, db),
+        Command::Retime(args) => cmd_retime(args, db),
         Command::Undo(args) => cmd_undo(args, db),
         Command::Spec(sub) => cmd_spec(sub, db),
         Command::Alias(sub) => cmd_alias(sub, db),
@@ -905,6 +906,65 @@ fn parse_update_payload(args: &UpdateArgs) -> Result<(Option<JsonValue>, Option<
         Some(JsonValue::Object(extra))
     };
     Ok((value, extra_data))
+}
+
+// ─── Retime ──────────────────────────────────────────────────────────────────
+
+fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
+    let offset = parse_duration(&args.offset)
+        .with_context(|| format!("Invalid --offset value '{}'", args.offset))?;
+
+    if args.slug.is_none() && args.field.is_none() && args.after.is_none() && args.before.is_none()
+    {
+        anyhow::bail!(
+            "retime requires at least one selector: <slug>, --field, --after, or --before"
+        );
+    }
+
+    let after_utc = args
+        .after
+        .as_deref()
+        .map(parse_time_bound)
+        .transpose()
+        .context("Invalid --after value")?;
+    let before_utc = args
+        .before
+        .as_deref()
+        .map(parse_time_bound)
+        .transpose()
+        .context("Invalid --before value")?;
+
+    let filter = RetimeFilter {
+        slug_or_id: args.slug.as_deref(),
+        field: args.field.as_deref(),
+        after_utc,
+        before_utc,
+    };
+
+    let n = db.update_times(&filter, offset)?;
+    let secs = offset.num_seconds();
+    let sign = if secs >= 0 { "+" } else { "-" };
+    println!("✓ Retimed {n} ({sign}{}s)", secs.abs());
+    Ok(())
+}
+
+/// Parse a `--after` / `--before` argument to a UTC timestamp.
+/// Accepts `YYYY-MM-DD` (midnight local) or RFC3339 timestamps.
+fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&chrono::Utc));
+    }
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        let naive = d
+            .and_hms_opt(0, 0, 0)
+            .ok_or_else(|| anyhow::anyhow!("bad date: {s}"))?;
+        let local = naive
+            .and_local_timezone(Local)
+            .single()
+            .ok_or_else(|| anyhow::anyhow!("ambiguous local time for {s}"))?;
+        return Ok(local.with_timezone(&Utc));
+    }
+    anyhow::bail!("expected YYYY-MM-DD or RFC3339, got '{s}'")
 }
 
 fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
@@ -2285,6 +2345,142 @@ mod tests {
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].id, a_id);
         assert!(db.get_entry_including_deleted(&b_id).unwrap().deleted_at.is_some());
+    }
+
+    // ─── B3: retime ─────────────────────────────────────────────────────────
+
+    fn retime_args(slug: Option<&str>, offset: &str) -> RetimeArgs {
+        RetimeArgs {
+            slug: slug.map(str::to_string),
+            offset: offset.to_string(),
+            field: None,
+            after: None,
+            before: None,
+        }
+    }
+
+    fn make_block(
+        field: &str,
+        start_secs: i64,
+        end_secs: i64,
+        device: &str,
+    ) -> datum_core::entry::Entry {
+        use datum_core::{entry::Entry, time::DatumTime};
+        let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
+        let start = DatumTime {
+            utc: base + chrono::Duration::seconds(start_secs),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let end = DatumTime {
+            utc: base + chrono::Duration::seconds(end_secs),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        Entry::new(
+            field,
+            Verb::Start,
+            None,
+            None,
+            None,
+            Some(start),
+            Some(end),
+            device,
+        )
+    }
+
+    #[test]
+    fn retime_single_slug_offsets_start_and_end() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_block("sleep", 0, 3600, "d1");
+        let id = e.id.clone();
+        let t0_start = e.time_start.as_ref().unwrap().utc;
+        let t0_end = e.time_end.as_ref().unwrap().utc;
+        let hash_before = e.content_hash.clone();
+        db.insert_entry(&e).unwrap();
+
+        cmd_retime(retime_args(Some(&id), "-5m"), &db).unwrap();
+
+        let after = db.get_entry(&id).unwrap();
+        let shift = chrono::Duration::minutes(-5);
+        assert_eq!(after.time_start.as_ref().unwrap().utc, t0_start + shift);
+        assert_eq!(after.time_end.as_ref().unwrap().utc, t0_end + shift);
+        // content_hash follows the new timestamps; modified_at moves too.
+        assert_ne!(after.content_hash, hash_before);
+        assert_eq!(after.content_hash, after.expected_content_hash());
+        assert!(after.modified_at >= e.modified_at);
+    }
+
+    #[test]
+    fn retime_field_wide_offset_filtered_by_after() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // Two coffee rows straddling an --after cutoff, plus an unrelated
+        // field. Only the coffee row past the cutoff should shift. Fixture
+        // times sit days either side of the cutoff so local-midnight
+        // interpretation doesn't muddle the test across timezones.
+        let cutoff: chrono::DateTime<chrono::Utc> = "2026-04-01T00:00:00Z".parse().unwrap();
+        let early = make_entry_at_utc("coffee", cutoff - chrono::Duration::days(2), "d1");
+        let early_start = early.time_start.as_ref().unwrap().utc;
+        let late = make_entry_at_utc("coffee", cutoff + chrono::Duration::days(2), "d1");
+        let late_start = late.time_start.as_ref().unwrap().utc;
+        let other = make_entry_at_utc("water", cutoff + chrono::Duration::days(3), "d1");
+        let other_start = other.time_start.as_ref().unwrap().utc;
+        db.insert_entry(&early).unwrap();
+        db.insert_entry(&late).unwrap();
+        db.insert_entry(&other).unwrap();
+
+        let args = RetimeArgs {
+            slug: None,
+            offset: "+1h".to_string(),
+            field: Some("coffee".to_string()),
+            after: Some("2026-04-01".to_string()),
+            before: None,
+        };
+        cmd_retime(args, &db).unwrap();
+
+        let early_after = db.get_entry(&early.id).unwrap();
+        let late_after = db.get_entry(&late.id).unwrap();
+        let other_after = db.get_entry(&other.id).unwrap();
+        assert_eq!(early_after.time_start.as_ref().unwrap().utc, early_start,
+            "pre-cutoff row must not shift");
+        assert_eq!(
+            late_after.time_start.as_ref().unwrap().utc,
+            late_start + chrono::Duration::hours(1),
+            "post-cutoff row shifts +1h"
+        );
+        assert_eq!(other_after.time_start.as_ref().unwrap().utc, other_start,
+            "other field must not shift");
+    }
+
+    #[test]
+    fn retime_negative_offset() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let e = make_entry_at("focus", 10_000, "d1");
+        let id = e.id.clone();
+        let t0 = e.time_start.as_ref().unwrap().utc;
+        db.insert_entry(&e).unwrap();
+
+        cmd_retime(retime_args(Some(&id), "-30m"), &db).unwrap();
+
+        let after = db.get_entry(&id).unwrap();
+        assert_eq!(
+            after.time_start.as_ref().unwrap().utc,
+            t0 - chrono::Duration::minutes(30)
+        );
+    }
+
+    fn make_entry_at_utc(
+        field: &str,
+        utc: chrono::DateTime<chrono::Utc>,
+        device: &str,
+    ) -> datum_core::entry::Entry {
+        use datum_core::{entry::Entry, time::DatumTime};
+        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
+        Entry::new(field, Verb::Occur, None, None, None, Some(t), None, device)
     }
 
     #[test]

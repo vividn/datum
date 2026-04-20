@@ -73,6 +73,18 @@ pub struct ListParams {
     pub reverse: bool,
 }
 
+/// Selection filter for [`Db::update_times`]. Every non-None field narrows
+/// the match. `slug_or_id` matches either column. `after_utc` / `before_utc`
+/// bound `time_start_utc` (inclusive); rows with null `time_start_utc` are
+/// excluded whenever a time bound is set.
+#[derive(Debug, Clone, Default)]
+pub struct RetimeFilter<'a> {
+    pub slug_or_id: Option<&'a str>,
+    pub field: Option<&'a str>,
+    pub after_utc: Option<DateTime<Utc>>,
+    pub before_utc: Option<DateTime<Utc>>,
+}
+
 /// Row reported by [`Db::find_time_end_before_start`].
 #[derive(Debug, Clone)]
 pub struct TimeOrderIssue {
@@ -773,6 +785,77 @@ impl Db {
         )?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Shift `time_start` / `time_end` on every live entry matching `filter`
+    /// by `offset`. Recomputes `content_hash` and bumps `modified_at` on each
+    /// affected row. Slug is left unchanged.
+    ///
+    /// Returns the number of rows updated.
+    pub fn update_times(&self, filter: &RetimeFilter, offset: Duration) -> Result<usize> {
+        let mut sql = String::from(
+            "SELECT * FROM entries WHERE deleted_at IS NULL",
+        );
+        let mut bindings: Vec<String> = Vec::new();
+
+        if let Some(needle) = filter.slug_or_id {
+            sql.push_str(" AND (id = ? OR slug = ?)");
+            bindings.push(needle.to_string());
+            bindings.push(needle.to_string());
+        }
+        if let Some(field) = filter.field {
+            sql.push_str(" AND field = ?");
+            bindings.push(field.to_string());
+        }
+        if let Some(after) = filter.after_utc {
+            sql.push_str(" AND time_start_utc IS NOT NULL AND time_start_utc >= ?");
+            bindings.push(after.to_rfc3339());
+        }
+        if let Some(before) = filter.before_utc {
+            sql.push_str(" AND time_start_utc IS NOT NULL AND time_start_utc <= ?");
+            bindings.push(before.to_rfc3339());
+        }
+
+        let tx = self.conn.unchecked_transaction()?;
+        let entries: Vec<Entry> = {
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt.query_map(
+                rusqlite::params_from_iter(bindings.iter()),
+                row_to_entry,
+            )?;
+            rows.map(|r| r.map_err(DatumError::Db))
+                .collect::<Result<_>>()?
+        };
+
+        let now = Utc::now().to_rfc3339();
+        let mut count = 0usize;
+        for mut e in entries {
+            if let Some(t) = e.time_start.as_mut() {
+                t.utc += offset;
+            }
+            if let Some(t) = e.time_end.as_mut() {
+                t.utc += offset;
+            }
+            let new_hash = e.expected_content_hash();
+            tx.execute(
+                r#"UPDATE entries SET
+                    time_start_utc = ?2,
+                    time_end_utc   = ?3,
+                    content_hash   = ?4,
+                    modified_at    = ?5
+                   WHERE id = ?1"#,
+                params![
+                    e.id,
+                    e.time_start.as_ref().map(|t| t.utc.to_rfc3339()),
+                    e.time_end.as_ref().map(|t| t.utc.to_rfc3339()),
+                    new_hash,
+                    now,
+                ],
+            )?;
+            count += 1;
+        }
+        tx.commit()?;
+        Ok(count)
     }
 
     /// Soft-delete an entry by id or slug (A4 tombstone).

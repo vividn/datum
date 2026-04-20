@@ -35,7 +35,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
-    "update", "merge", "rekey", "edit",
+    "update", "merge", "rekey", "edit", "retime", "rt",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -180,6 +180,10 @@ pub enum Command {
     Merge(UpdateArgs),
     /// Copy an entry to a new id (re-interpolated from the template) — old row stays.
     Rekey(UpdateArgs),
+
+    /// Shift `time_start` / `time_end` on one or many entries by a duration.
+    #[command(visible_alias = "rt")]
+    Retime(RetimeArgs),
 
     /// Manage field specs (schemas).
     #[command(subcommand)]
@@ -417,6 +421,32 @@ pub struct UpdateArgs {
     /// Optional comment appended to extra_data.
     #[arg(short = 'c', long)]
     pub comment: Option<String>,
+}
+
+/// Arguments for `retime` / `rt` — batch time shift.
+#[derive(Args, Debug)]
+pub struct RetimeArgs {
+    /// Target a single entry by id or slug. Mutually compatible with
+    /// `--field`: when both are set, only a row matching both is shifted.
+    pub slug: Option<String>,
+
+    /// Duration offset (accepts `-5m`, `+1h`, `30m`, `1:30`, `PT30M`, ...).
+    /// Positive shifts forward in time, negative shifts backward.
+    #[arg(long, required = true, allow_hyphen_values = true)]
+    pub offset: String,
+
+    /// Restrict to entries with this field name.
+    #[arg(short = 'f', long = "field")]
+    pub field: Option<String>,
+
+    /// Inclusive lower bound on `time_start`. Accepts `YYYY-MM-DD` (midnight
+    /// local) or full RFC3339 timestamps.
+    #[arg(long = "after")]
+    pub after: Option<String>,
+
+    /// Inclusive upper bound on `time_start`. Same format as `--after`.
+    #[arg(long = "before")]
+    pub before: Option<String>,
 }
 
 #[derive(Args, Debug)]
