@@ -18,3 +18,4 @@ chrono = { workspace = true }
 dirs-next = "2"
 ulid = { workspace = true }
 sha2 = { workspace = true }
+regex = { workspace = true }

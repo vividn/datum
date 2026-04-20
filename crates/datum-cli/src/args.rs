@@ -33,7 +33,7 @@ impl Cli {
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "help",
-    "track", "ignore",
+    "track", "ignore", "grep",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -154,6 +154,9 @@ pub enum Command {
 
     /// Migrate data from a datum legacy backup JSON file.
     Migrate(MigrateArgs),
+
+    /// Regex search over entry JSON content (multi-pattern AND).
+    Grep(GrepArgs),
 }
 
 /// Arguments shared by all logging commands (occur, start, stop, switch, note).
@@ -280,6 +283,16 @@ pub struct TrackArgs {
 pub struct IgnoreArgs {
     /// Field name to ignore in the now view
     pub field: String,
+}
+
+#[derive(Args, Debug)]
+pub struct GrepArgs {
+    /// One or more regex patterns (all must match — AND)
+    #[arg(required = true)]
+    pub patterns: Vec<String>,
+    /// Restrict the search to a single field
+    #[arg(short = 'f', long)]
+    pub field: Option<String>,
 }
 
 #[derive(Args, Debug)]
