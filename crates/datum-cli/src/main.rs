@@ -1,4 +1,5 @@
 mod args;
+mod check;
 mod cmd;
 mod config;
 mod output;

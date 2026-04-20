@@ -145,6 +145,18 @@ impl Entry {
             _ => None,
         }
     }
+
+    /// Recompute the content_hash from the entry's current fields.
+    ///
+    /// Used by consistency checks to detect rows whose stored `content_hash`
+    /// diverges from what the current field values would produce.
+    pub fn expected_content_hash(&self) -> String {
+        let time_start_str = self.time_start.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let time_end_str = self.time_end.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let extra_str = self.extra_data.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        let value_str = self.value.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        compute_hash(&self.field, &time_start_str, &time_end_str, &value_str, &extra_str)
+    }
 }
 
 fn compute_hash(field: &str, start: &str, end: &str, value: &str, extra: &str) -> String {

@@ -19,6 +19,15 @@ pub struct TrackedField {
     pub color: Option<String>,
 }
 
+/// Row reported by [`Db::find_time_end_before_start`].
+#[derive(Debug, Clone)]
+pub struct TimeOrderIssue {
+    pub id: String,
+    pub field: String,
+    pub time_start_utc: String,
+    pub time_end_utc: String,
+}
+
 pub struct Db {
     conn: Connection,
 }
@@ -361,6 +370,56 @@ impl Db {
             .map(|r| r.map_err(DatumError::Db))
             .collect::<Result<Vec<_>>>()?;
         Ok(crate::state::compile_state(&entries, at))
+    }
+
+    // -------------------------------------------------------------------------
+    // Consistency checks
+    // -------------------------------------------------------------------------
+
+    /// Rows where both time bounds exist and `time_end` precedes `time_start`.
+    pub fn find_time_end_before_start(&self) -> Result<Vec<TimeOrderIssue>> {
+        let mut stmt = self.conn.prepare(
+            r#"SELECT id, field, time_start_utc, time_end_utc FROM entries
+               WHERE time_start_utc IS NOT NULL
+                 AND time_end_utc IS NOT NULL
+                 AND time_end_utc < time_start_utc
+                 AND deleted_at IS NULL
+               ORDER BY id ASC"#,
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(TimeOrderIssue {
+                id: row.get(0)?,
+                field: row.get(1)?,
+                time_start_utc: row.get(2)?,
+                time_end_utc: row.get(3)?,
+            })
+        })?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// Distinct field names across all non-deleted entries.
+    pub fn distinct_fields(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT field FROM entries WHERE deleted_at IS NULL ORDER BY field",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// All entries (including tombstoned), for bulk checks.
+    pub fn all_entries(&self) -> Result<Vec<Entry>> {
+        let mut stmt = self.conn.prepare("SELECT * FROM entries ORDER BY id ASC")?;
+        let rows = stmt.query_map([], row_to_entry)?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// IDs of rows with `deleted_at` set (tombstones).
+    pub fn tombstone_ids(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT id FROM entries WHERE deleted_at IS NOT NULL ORDER BY id ASC",
+        )?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
     pub fn load_registry(&self) -> Result<SpecRegistry> {

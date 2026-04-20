@@ -33,7 +33,7 @@ impl Cli {
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "help",
-    "track", "ignore", "grep",
+    "track", "ignore", "grep", "check",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -157,6 +157,9 @@ pub enum Command {
 
     /// Regex search over entry JSON content (multi-pattern AND).
     Grep(GrepArgs),
+
+    /// Run database consistency checks.
+    Check(CheckArgs),
 }
 
 /// Arguments shared by all logging commands (occur, start, stop, switch, note).
@@ -302,6 +305,13 @@ pub struct MigrateArgs {
     /// Dry run — show what would be imported without writing
     #[arg(long)]
     pub dry_run: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct CheckArgs {
+    /// Emit a machine-readable JSON report instead of the human summary.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[cfg(test)]

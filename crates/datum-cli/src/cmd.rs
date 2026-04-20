@@ -12,9 +12,10 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{
-        AliasCommand, Cli, Command, DeleteArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs, LogArgs,
-        MigrateArgs, NowArgs, SpecCommand, TailArgs, TrackArgs,
+        AliasCommand, CheckArgs, Cli, Command, DeleteArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs,
+        LogArgs, MigrateArgs, NowArgs, SpecCommand, TailArgs, TrackArgs,
     },
+    check::{collect_issues, render_human, render_json},
     config::device_id,
     output::{print_entries, print_entry, print_logged, print_now_view},
 };
@@ -37,7 +38,21 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Ignore(args) => cmd_ignore(args, db),
         Command::Migrate(args) => cmd_migrate(args, db),
         Command::Grep(args) => cmd_grep(args, db),
+        Command::Check(args) => cmd_check(args, db),
     }
+}
+
+fn cmd_check(args: CheckArgs, db: &Db) -> Result<()> {
+    let report = collect_issues(db)?;
+    if args.json {
+        println!("{}", render_json(&report)?);
+    } else {
+        print!("{}", render_human(&report));
+    }
+    if report.has_errors() {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
