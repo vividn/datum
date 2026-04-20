@@ -9,7 +9,7 @@
 //!   -t 9:15am           = natural time today
 //!   ISO 8601 full timestamps
 
-use chrono::{DateTime, Duration, Local, NaiveTime, TimeZone, Utc};
+use chrono::{DateTime, Duration, Local, NaiveTime, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
@@ -102,6 +102,11 @@ pub fn parse_date_arg(s: &str) -> Result<DateArg> {
 ///   "1513" / "15:13"    absolute HH:MM today
 ///   "9:15am" / "21:30"  absolute time today
 pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
+    // Literal "now" → current moment (minutes_offset = 0). Matches datum.
+    if s.eq_ignore_ascii_case("now") {
+        return Ok(TimeArg { minutes_offset: Some(0), absolute: None });
+    }
+
     // Relative minute offset: "+5" or "-8"
     if let Ok(n) = s.parse::<i64>() {
         if s.starts_with('+') || s.starts_with('-') {

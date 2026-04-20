@@ -25,6 +25,54 @@ pub struct TrackedField {
     pub color: Option<String>,
 }
 
+/// Which timestamp to sort/filter entries by in [`Db::list_entries`].
+///
+/// `Hybrid` falls back to `modified_at` for entries without a `time_start`
+/// (e.g. notes). `Occur` excludes rows lacking `time_start` entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimeMetric {
+    #[default]
+    Hybrid,
+    Occur,
+    Create,
+    Modify,
+}
+
+impl std::str::FromStr for TimeMetric {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "hybrid" => Ok(TimeMetric::Hybrid),
+            "occur" => Ok(TimeMetric::Occur),
+            "create" => Ok(TimeMetric::Create),
+            "modify" => Ok(TimeMetric::Modify),
+            other => Err(format!("unknown time metric: {other}")),
+        }
+    }
+}
+
+/// Parameters for [`Db::list_entries`]: the unified entry query used by
+/// `tail` / `head`. Results are always returned oldest-first (unless
+/// `reverse` is set), so callers can treat the output as a time-ordered slice.
+#[derive(Debug, Clone, Default)]
+pub struct ListParams {
+    /// Restrict to entries with `field == <name>` when Some.
+    pub field: Option<String>,
+    /// Which timestamp governs ordering and the bound checks.
+    pub metric: TimeMetric,
+    /// Inclusive lower bound on the metric timestamp.
+    pub start_utc: Option<DateTime<Utc>>,
+    /// Inclusive upper bound on the metric timestamp.
+    pub end_utc: Option<DateTime<Utc>>,
+    /// `None` = unlimited. For tail/head, bounds the returned count.
+    pub limit: Option<usize>,
+    /// If true, take the *first* `limit` entries in the window (head semantics).
+    /// If false (default), take the *last* `limit` entries (tail semantics).
+    pub head: bool,
+    /// Invert the final output ordering (newest-first).
+    pub reverse: bool,
+}
+
 /// Row reported by [`Db::find_time_end_before_start`].
 #[derive(Debug, Clone)]
 pub struct TimeOrderIssue {
@@ -441,6 +489,70 @@ impl Db {
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![field], row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// Unified entry query for `tail` / `head`.
+    ///
+    /// Applies optional field filter, a time window bounded by the selected
+    /// [`TimeMetric`], a limit (last-N for tail, first-N for head), and an
+    /// optional final reverse. The returned vec is oldest-first by default
+    /// (so tail's output reads top-to-bottom in chronological order).
+    pub fn list_entries(&self, params: &ListParams) -> Result<Vec<Entry>> {
+        let metric_expr: &str = match params.metric {
+            TimeMetric::Hybrid => "COALESCE(time_start_utc, modified_at)",
+            TimeMetric::Occur => "time_start_utc",
+            TimeMetric::Create => "created_at",
+            TimeMetric::Modify => "modified_at",
+        };
+
+        let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
+        let mut bindings: Vec<String> = Vec::new();
+
+        if params.metric == TimeMetric::Occur {
+            sql.push_str(" AND time_start_utc IS NOT NULL");
+        }
+        if let Some(field) = &params.field {
+            sql.push_str(" AND field = ?");
+            bindings.push(field.clone());
+        }
+        if let Some(start) = &params.start_utc {
+            sql.push_str(&format!(" AND {metric_expr} >= ?"));
+            bindings.push(start.to_rfc3339());
+        }
+        if let Some(end) = &params.end_utc {
+            sql.push_str(&format!(" AND {metric_expr} <= ?"));
+            bindings.push(end.to_rfc3339());
+        }
+
+        // For tail we want the LAST N by metric, so sort DESC + LIMIT then
+        // reverse; for head we want FIRST N, so sort ASC + LIMIT. Secondary
+        // sort by `id` keeps tied metric timestamps in a deterministic order —
+        // ULIDs are time-sortable, so after the final reverse this collapses
+        // to insertion order for same-timestamp rows.
+        let order_dir = if params.head { "ASC" } else { "DESC" };
+        sql.push_str(&format!(
+            " ORDER BY {metric_expr} {order_dir}, id {order_dir}"
+        ));
+        if let Some(n) = params.limit {
+            sql.push_str(&format!(" LIMIT {n}"));
+        }
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            row_to_entry,
+        )?;
+        let mut results: Vec<Entry> =
+            rows.map(|r| r.map_err(DatumError::Db)).collect::<Result<_>>()?;
+
+        // Normalize to oldest-first; then honour the caller's reverse.
+        if !params.head {
+            results.reverse();
+        }
+        if params.reverse {
+            results.reverse();
+        }
+        Ok(results)
     }
 
     /// Get all live entries within a UTC time range (inclusive).

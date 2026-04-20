@@ -103,6 +103,37 @@ pub fn print_entries(entries: &[Entry], field_colors: &HashMap<String, String>) 
     }
 }
 
+/// Print entries with additional extra_data columns appended (e.g. `amount=5 comment="..."`).
+/// Empty `columns` behaves the same as `print_entries`.
+pub fn print_entries_with_columns(entries: &[Entry], columns: &[String]) {
+    let empty_colors = HashMap::new();
+    if columns.is_empty() {
+        print_entries(entries, &empty_colors);
+        return;
+    }
+    for e in entries {
+        print_entry(e, &empty_colors);
+        let suffix = columns
+            .iter()
+            .map(|col| format!("{col}={}", extract_column(e, col)))
+            .collect::<Vec<_>>()
+            .join(" ");
+        println!("  {suffix}");
+    }
+}
+
+fn extract_column(entry: &Entry, col: &str) -> String {
+    entry
+        .extra_data
+        .as_ref()
+        .and_then(|v| v.get(col))
+        .map(|v| match v {
+            serde_json::Value::String(s) => s.clone(),
+            other => other.to_string(),
+        })
+        .unwrap_or_default()
+}
+
 /// Print confirmation after a successful log.
 pub fn print_logged(entry: &Entry) {
     let time_str = entry

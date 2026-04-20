@@ -325,9 +325,44 @@ impl LogArgs {
 pub struct TailArgs {
     /// Field to filter by (optional, shows all fields if omitted)
     pub field: Option<String>,
-    /// Number of entries to show
-    #[arg(short = 'n', default_value = "10")]
-    pub count: usize,
+    /// Number of entries to show (default 10; omit for unlimited when -d/-y is set)
+    #[arg(short = 'n')]
+    pub count: Option<usize>,
+
+    /// Time metric for ordering: hybrid | occur | create | modify
+    #[arg(short = 'm', long = "metric", default_value = "hybrid")]
+    pub metric: String,
+
+    /// Invert the output ordering (newest-first for tail)
+    #[arg(short = 'r', long = "reverse")]
+    pub reverse: bool,
+
+    /// Extra extra_data columns to show (repeatable, comma-splittable).
+    #[arg(long = "column", value_name = "NAME")]
+    pub columns: Vec<String>,
+
+    /// Date override: offset ("-1" / "+1") or ISO ("2024-03-16"). With no -t,
+    /// the window covers the entire day (no default limit).
+    #[arg(short = 'd', long)]
+    pub date: Option<String>,
+
+    /// Upper-bound time: "+5" / "-8" (relative min), "15:13", "9:15am", or "now".
+    #[arg(short = 't', long)]
+    pub time: Option<String>,
+
+    /// Go back N days (stackable: -y = yesterday, -yy = 2 days ago)
+    #[arg(short = 'y', action = clap::ArgAction::Count)]
+    pub yesterday: u8,
+
+    /// Go back N×5 minutes (stackable: -q = 5min ago, -qq = 10min ago)
+    #[arg(short = 'q', action = clap::ArgAction::Count)]
+    pub quick: u8,
+
+    /// Internal: take the first N instead of the last N (used by `head`).
+    #[arg(long, hide = true)]
+    pub head: bool,
+    // TODO(p-tail-watch): --watch/-w live-update mode. Requires a file watcher
+    // + redraw loop; deferred out of Phase-1 scope per da-u8ch.
 }
 
 #[derive(Args, Debug)]

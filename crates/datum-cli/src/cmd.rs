@@ -1,8 +1,9 @@
 //! Command dispatch and argument → Entry conversion.
 
 use anyhow::{Context, Result};
+use chrono::{Local, TimeZone, Utc};
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome},
+    db::{ConflictStrategy, Db, InsertOutcome, ListParams, TimeMetric},
     entry::{Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
@@ -19,7 +20,10 @@ use crate::{
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
-    output::{print_entries, print_entry, print_entry_pretty, print_logged, print_now_view},
+    output::{
+        print_entries, print_entries_with_columns, print_entry, print_entry_pretty, print_logged,
+        print_now_view,
+    },
 };
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
 
@@ -344,24 +348,112 @@ fn build_time(args: &LogArgs) -> Result<DatumTime> {
 // ─── Tail / Now ──────────────────────────────────────────────────────────────
 
 fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
-    let entries = if let Some(field) = &args.field {
-        db.entries_for_field(field, Some(args.count))?
+    let columns = split_columns(&args.columns);
+    let entries = tail_entries(&args, db)?;
+    if columns.is_empty() {
+        let colors = load_field_colors(db)?;
+        print_entries(&entries, &colors);
     } else {
-        // Fix 5: include future-dated entries (e.g. sleep logged in advance)
-        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
-        let far_past = chrono::DateTime::UNIX_EPOCH;
-        let mut all = db.entries_in_range(far_past, far_future)?;
-        all.sort_by(|a, b| {
-            let ta = a.time_start.as_ref().map(|t| t.utc).unwrap_or(a.created_at);
-            let tb = b.time_start.as_ref().map(|t| t.utc).unwrap_or(b.created_at);
-            tb.cmp(&ta)
-        });
-        all.truncate(args.count);
-        all
-    };
-    let colors = load_field_colors(db)?;
-    print_entries(&entries, &colors);
+        print_entries_with_columns(&entries, &columns);
+    }
     Ok(())
+}
+
+/// Run the tail query as `cmd_tail` does, but return the entries instead of
+/// printing. Used by integration tests and by `head` when it routes through
+/// the shared tail path.
+pub fn tail_entries(args: &TailArgs, db: &Db) -> Result<Vec<Entry>> {
+    let params = tail_params(args)?;
+    Ok(db.list_entries(&params)?)
+}
+
+/// Split `--column` args (comma-splittable, repeatable) into a flat list.
+pub fn split_columns(raw: &[String]) -> Vec<String> {
+    raw.iter()
+        .flat_map(|s| s.split(','))
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// Translate [`TailArgs`] into [`ListParams`] for [`Db::list_entries`].
+///
+/// Window semantics (matching datum):
+/// * No time args → unbounded (future entries included).
+/// * `-d`/`-y` with no `-t`/`-q` → full local-day window centred on the
+///   computed date, with a ±1-day pad to absorb timezone offsets; no default
+///   limit (unless `-n` is set).
+/// * `-t` (alone or with `-d`/`-y`) → upper-bound only (classic tail).
+pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
+    let metric: TimeMetric = args
+        .metric
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!(e))?;
+
+    let has_date = args.date.is_some() || args.yesterday > 0;
+    let has_time = args.time.is_some() || args.quick > 0;
+    let is_date_only = has_date && !has_time;
+
+    let (start_utc, end_utc) = if !has_date && !has_time {
+        (None, None)
+    } else {
+        let window = build_window(args)?;
+        if is_date_only {
+            // Pad by ±1 day so timezone skew doesn't drop border rows; caller
+            // can further refine if needed, but for tail the pad is harmless
+            // since `-n` still bounds the result.
+            (Some(window.day_start_utc), Some(window.day_end_utc))
+        } else {
+            (None, Some(window.point_utc))
+        }
+    };
+
+    // Default limit: 10 for "tail", unlimited when date-only (matches datum).
+    let limit = args.count.or(if is_date_only { None } else { Some(10) });
+
+    Ok(ListParams {
+        field: args.field.clone(),
+        metric,
+        start_utc,
+        end_utc,
+        limit,
+        head: args.head,
+        reverse: args.reverse,
+    })
+}
+
+struct TailWindow {
+    point_utc: chrono::DateTime<Utc>,
+    day_start_utc: chrono::DateTime<Utc>,
+    day_end_utc: chrono::DateTime<Utc>,
+}
+
+fn build_window(args: &TailArgs) -> Result<TailWindow> {
+    let mut builder = TimeBuilder::now()
+        .with_yesterday_count(args.yesterday as i64)
+        .with_quick_count(args.quick as i64);
+    if let Some(d) = &args.date {
+        builder = builder.with_date_arg(parse_date_arg(d)?);
+    }
+    if let Some(t) = &args.time {
+        builder = builder.with_time_arg(parse_time_arg(t)?);
+    }
+    let point = builder.build();
+    let local = point.utc.with_timezone(&Local);
+    let day = local.date_naive();
+    let day_start = Local
+        .from_local_datetime(&(day - chrono::Duration::days(1)).and_hms_opt(0, 0, 0).unwrap())
+        .single()
+        .unwrap();
+    let day_end = Local
+        .from_local_datetime(&(day + chrono::Duration::days(1)).and_hms_opt(23, 59, 59).unwrap())
+        .single()
+        .unwrap();
+    Ok(TailWindow {
+        point_utc: point.utc,
+        day_start_utc: day_start.with_timezone(&Utc),
+        day_end_utc: day_end.with_timezone(&Utc),
+    })
 }
 
 fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
