@@ -7,12 +7,50 @@ use datum_core::{
 };
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::io::IsTerminal;
 
 const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 
-/// Print a single entry in a concise one-line format.
-pub fn print_entry(entry: &Entry) {
+/// ANSI colors are suppressed when stdout is not a TTY. Can be forced on for
+/// tests or by clients that pipe into a pager they want colors for.
+fn stdout_is_tty() -> bool {
+    std::io::stdout().is_terminal()
+}
+
+/// Entry-tabular color resolution. Returns (prefix, reset) pair: when colors
+/// are disabled (non-TTY) or no stored color is available, returns ("", "")
+/// so the caller's format! stays color-free.
+pub(crate) fn resolve_field_color(
+    field: &str,
+    field_colors: &HashMap<String, String>,
+    color_enabled: bool,
+) -> (String, &'static str) {
+    if !color_enabled {
+        return (String::new(), "");
+    }
+    match field_colors.get(field) {
+        Some(c) => (ansi_from_stored(c, field), RESET),
+        None => (String::new(), ""),
+    }
+}
+
+fn field_color_codes(
+    field: &str,
+    field_colors: &HashMap<String, String>,
+) -> (String, &'static str) {
+    resolve_field_color(field, field_colors, stdout_is_tty())
+}
+
+/// Print a single entry as pretty-indented JSON (two-space indent).
+pub fn print_entry_pretty(entry: &Entry) -> serde_json::Result<()> {
+    println!("{}", serde_json::to_string_pretty(entry)?);
+    Ok(())
+}
+
+/// Print a single entry in a concise one-line format. Applies the spec color
+/// to the field name when one is configured and stdout is a TTY.
+pub fn print_entry(entry: &Entry, field_colors: &HashMap<String, String>) {
     let time_str = entry
         .time_start
         .as_ref()
@@ -48,8 +86,10 @@ pub fn print_entry(entry: &Entry) {
         .map(|e| format!("  {e}"))
         .unwrap_or_default();
 
+    let (fc, fc_reset) = field_color_codes(&entry.field, field_colors);
+
     println!(
-        "{time_str}  [{verb}] {field}{value_part}{unit_display}{dur_str}{extra_str}",
+        "{time_str}  [{verb}] {fc}{field}{fc_reset}{value_part}{unit_display}{dur_str}{extra_str}",
         verb = entry.verb,
         field = entry.field,
         value_part = if value_str.is_empty() { String::new() } else { format!(" = {value_str}") },
@@ -57,9 +97,9 @@ pub fn print_entry(entry: &Entry) {
 }
 
 /// Print multiple entries.
-pub fn print_entries(entries: &[Entry]) {
+pub fn print_entries(entries: &[Entry], field_colors: &HashMap<String, String>) {
     for e in entries {
-        print_entry(e);
+        print_entry(e, field_colors);
     }
 }
 
@@ -331,5 +371,42 @@ fn format_ago(secs: i64) -> String {
         let h = secs / 3600;
         let m = (secs % 3600) / 60;
         if m == 0 { format!("{h}h ago") } else { format!("{h}h{m}m ago") }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spec_color_applied_in_output_when_tty() {
+        let mut colors = HashMap::new();
+        colors.insert("mood".to_string(), "ff6600".to_string());
+
+        // TTY on: the stored spec color is wrapped around the field name.
+        let (prefix, reset) = resolve_field_color("mood", &colors, true);
+        assert!(prefix.starts_with("\x1b[38;2;"), "expected truecolor escape, got {prefix:?}");
+        assert_eq!(reset, "\x1b[0m");
+
+        // TTY off: colors are suppressed regardless of spec.
+        let (prefix, reset) = resolve_field_color("mood", &colors, false);
+        assert!(prefix.is_empty());
+        assert!(reset.is_empty());
+
+        // TTY on but no spec color → no codes.
+        let (prefix, reset) = resolve_field_color("other", &colors, true);
+        assert!(prefix.is_empty());
+        assert!(reset.is_empty());
+    }
+
+    #[test]
+    fn ansi_from_stored_hex_and_ansi256() {
+        // 6-digit hex produces a 24-bit truecolor sequence.
+        let seq = ansi_from_stored("ff6600", "mood");
+        assert_eq!(seq, "\x1b[38;2;255;102;0m");
+
+        // ANSI-256 numeric produces a 256-color sequence.
+        let seq = ansi_from_stored("196", "mood");
+        assert_eq!(seq, "\x1b[38;5;196m");
     }
 }

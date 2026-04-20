@@ -17,7 +17,7 @@ use crate::{
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
-    output::{print_entries, print_entry, print_logged, print_now_view},
+    output::{print_entries, print_entry, print_entry_pretty, print_logged, print_now_view},
 };
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
 
@@ -43,6 +43,17 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Map(args) => cmd_map(args, db),
         Command::Reduce(args) => cmd_reduce(args, db),
     }
+}
+
+/// Build a `field → stored_color` map from all defined specs. Entries without
+/// a color are omitted so callers can cheaply check "is there a spec color?".
+fn load_field_colors(db: &Db) -> Result<std::collections::HashMap<String, String>> {
+    let reg = db.load_registry()?;
+    Ok(reg
+        .fields
+        .into_iter()
+        .filter_map(|(name, spec)| spec.color.map(|c| (name, c)))
+        .collect())
 }
 
 // ─── Map / Reduce ────────────────────────────────────────────────────────────
@@ -282,7 +293,8 @@ fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
         all.truncate(args.count);
         all
     };
-    print_entries(&entries);
+    let colors = load_field_colors(db)?;
+    print_entries(&entries, &colors);
     Ok(())
 }
 
@@ -302,7 +314,8 @@ fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
         all.truncate(args.count);
         all
     };
-    print_entries(&entries);
+    let colors = load_field_colors(db)?;
+    print_entries(&entries, &colors);
     Ok(())
 }
 
@@ -332,7 +345,8 @@ fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
         })
         .collect();
 
-    print_entries(&matches);
+    let colors = load_field_colors(db)?;
+    print_entries(&matches, &colors);
     Ok(())
 }
 
@@ -401,7 +415,12 @@ fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
 fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
     let entry = db.get_entry(&args.id_or_slug)
         .map_err(anyhow::Error::from)?;
-    print_entry(&entry);
+    if args.pretty {
+        print_entry_pretty(&entry)?;
+    } else {
+        let colors = load_field_colors(db)?;
+        print_entry(&entry, &colors);
+    }
     Ok(())
 }
 
@@ -409,7 +428,8 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     if !args.force {
         let entry = db.get_entry(&args.id_or_slug)
             .map_err(anyhow::Error::from)?;
-        print_entry(&entry);
+        let colors = load_field_colors(db)?;
+        print_entry(&entry, &colors);
         eprint!("Delete this entry? [y/N] ");
         use std::io::BufRead;
         let stdin = std::io::stdin();

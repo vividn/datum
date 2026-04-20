@@ -32,7 +32,7 @@ impl Cli {
 /// Known subcommands — keep in sync with Command enum.
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
-    "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "help",
+    "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
 ];
 
@@ -164,6 +164,7 @@ pub enum Command {
     /// Print a single entry by id or slug.
     Get(GetArgs),
     /// Delete an entry by id or slug.
+    #[command(visible_alias = "del")]
     Delete(DeleteArgs),
 
     /// Manage field specs (schemas).
@@ -262,6 +263,9 @@ pub struct HeadArgs {
 pub struct GetArgs {
     /// Entry id or slug
     pub id_or_slug: String,
+    /// Pretty-print the entry as indented JSON (two-space indent).
+    #[arg(long)]
+    pub pretty: bool,
 }
 
 #[derive(Args, Debug)]
