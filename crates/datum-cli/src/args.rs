@@ -75,6 +75,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
+    "backup", "restore",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -238,6 +239,11 @@ pub enum Command {
 
     /// Migrate data from a datum legacy backup JSON file.
     Migrate(MigrateArgs),
+
+    /// Dump every live entry to JSONL (or a tar.gz archive if the path ends in `.tar.gz`).
+    Backup(BackupArgs),
+    /// Re-import entries from a JSONL or tar.gz backup; duplicates deduped via content_hash.
+    Restore(RestoreArgs),
 
     /// Regex search over entry JSON content (multi-pattern AND).
     Grep(GrepArgs),
@@ -722,6 +728,25 @@ pub struct MigrateArgs {
     /// Dry run — show what would be imported without writing
     #[arg(long)]
     pub dry_run: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct BackupArgs {
+    /// Output file path. Ends in `.tar.gz` or `.tgz` for a compressed archive; otherwise plain JSONL.
+    pub path: String,
+    /// Overwrite the output file if it already exists.
+    #[arg(long)]
+    pub overwrite: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct RestoreArgs {
+    /// Input file path (.jsonl, .tar.gz, or .tgz).
+    pub path: String,
+    /// Overwrite conflicting rows (content_hash match) using `--conflict update`.
+    /// Default is to skip duplicates.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Args, Debug)]

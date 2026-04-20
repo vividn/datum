@@ -45,3 +45,7 @@ rand = "0.8"
 
 # Text
 regex = "1"
+
+# Archive formats (used by backup/restore)
+flate2 = "1"
+tar = "0.4"

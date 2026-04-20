@@ -24,6 +24,8 @@ ulid = { workspace = true }
 sha2 = { workspace = true }
 regex = { workspace = true }
 tempfile = "3"
+flate2 = { workspace = true }
+tar = { workspace = true }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }

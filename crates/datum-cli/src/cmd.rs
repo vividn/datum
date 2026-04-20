@@ -14,9 +14,9 @@ use ulid::Ulid;
 
 use crate::{
     args::{
-        AliasCommand, CheckArgs, Cli, Command, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs,
-        IgnoreArgs, LogArgs, MapArgs, MigrateArgs, NowArgs, RetimeArgs, SpecCommand, SpecSetArgs,
-        TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+        AliasCommand, BackupArgs, CheckArgs, Cli, Command, DeleteArgs, EditArgs, GetArgs, GrepArgs,
+        HeadArgs, IgnoreArgs, LogArgs, MapArgs, MigrateArgs, NowArgs, RestoreArgs, RetimeArgs,
+        SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
@@ -50,6 +50,8 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Track(args) => cmd_track(args, db),
         Command::Ignore(args) => cmd_ignore(args, db),
         Command::Migrate(args) => cmd_migrate(args, db),
+        Command::Backup(args) => cmd_backup(args, db),
+        Command::Restore(args) => cmd_restore(args, db),
         Command::Grep(args) => cmd_grep(args, db),
         Command::Check(args) => cmd_check(args, db),
         Command::Map(args) => cmd_map(args, db),
@@ -1234,6 +1236,188 @@ fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
     let tz = v["tz"].as_str().unwrap_or("UTC").to_string();
     let offset_minutes = v["o"].as_f64().map(|o| (o * 60.0) as i32).unwrap_or(0);
     Some(DatumTime { utc, offset_minutes, timezone: tz })
+}
+
+// ─── Backup / Restore ────────────────────────────────────────────────────────
+
+const BACKUP_SCHEMA_VERSION: u32 = 1;
+
+fn is_targz_path(path: &str) -> bool {
+    let lower = path.to_lowercase();
+    lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
+}
+
+fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
+    let out_path = std::path::Path::new(&args.path);
+    if out_path.exists() && !args.overwrite {
+        anyhow::bail!(
+            "File exists: {} (pass --overwrite to replace)",
+            out_path.display()
+        );
+    }
+
+    if is_targz_path(&args.path) {
+        backup_targz(out_path, db)
+    } else {
+        backup_jsonl(out_path, db)
+    }
+}
+
+fn backup_jsonl(path: &std::path::Path, db: &Db) -> Result<()> {
+    use std::io::Write;
+    let file = std::fs::File::create(path)
+        .with_context(|| format!("Creating backup file: {}", path.display()))?;
+    let mut writer = std::io::BufWriter::new(file);
+    let mut count = 0usize;
+    db.visit_all_entries::<anyhow::Error, _>(|entry| {
+        let line = serde_json::to_string(&entry)?;
+        writeln!(writer, "{line}")?;
+        count += 1;
+        Ok(())
+    })?;
+    writer.flush()?;
+    println!("✓ Backup: {} entries → {}", count, path.display());
+    Ok(())
+}
+
+/// RAII guard that removes a temp file when dropped (even on panic/error paths).
+struct TempFileGuard(std::path::PathBuf);
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_file(&self.0);
+    }
+}
+
+fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
+    use std::io::Write;
+
+    // Stage entries.jsonl to a temp file so we know its size for the tar
+    // header without buffering the whole dataset in memory.
+    let temp_path = std::env::temp_dir().join(format!(
+        "datum-backup-{}.jsonl",
+        ulid::Ulid::new()
+    ));
+    let guard = TempFileGuard(temp_path.clone());
+
+    let mut count = 0usize;
+    {
+        let temp_file = std::fs::File::create(&guard.0)
+            .with_context(|| format!("Creating staging file: {}", guard.0.display()))?;
+        let mut writer = std::io::BufWriter::new(temp_file);
+        db.visit_all_entries::<anyhow::Error, _>(|entry| {
+            let line = serde_json::to_string(&entry)?;
+            writeln!(writer, "{line}")?;
+            count += 1;
+            Ok(())
+        })?;
+        writer.flush()?;
+    }
+
+    let manifest = serde_json::json!({
+        "schema_version": BACKUP_SCHEMA_VERSION,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "entry_count": count,
+    });
+    let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
+
+    let out_file = std::fs::File::create(path)
+        .with_context(|| format!("Creating output file: {}", path.display()))?;
+    let gz = flate2::write::GzEncoder::new(
+        std::io::BufWriter::new(out_file),
+        flate2::Compression::default(),
+    );
+    let mut builder = tar::Builder::new(gz);
+
+    // manifest.json — listed first so a consumer can peek schema_version
+    // without scanning the entries.
+    let now_secs = chrono::Utc::now().timestamp().max(0) as u64;
+    let mut mheader = tar::Header::new_gnu();
+    mheader.set_size(manifest_bytes.len() as u64);
+    mheader.set_mode(0o644);
+    mheader.set_mtime(now_secs);
+    builder
+        .append_data(&mut mheader, "manifest.json", manifest_bytes.as_slice())
+        .context("Writing manifest.json to tar")?;
+
+    let mut temp_read = std::fs::File::open(&guard.0)
+        .with_context(|| format!("Reopening staging file: {}", guard.0.display()))?;
+    let metadata = temp_read.metadata()?;
+    let mut eheader = tar::Header::new_gnu();
+    eheader.set_size(metadata.len());
+    eheader.set_mode(0o644);
+    eheader.set_mtime(now_secs);
+    builder
+        .append_data(&mut eheader, "entries.jsonl", &mut temp_read)
+        .context("Writing entries.jsonl to tar")?;
+
+    let gz = builder.into_inner().context("Finalizing tar")?;
+    gz.finish().context("Finalizing gzip")?;
+
+    println!("✓ Backup: {} entries → {}", count, path.display());
+    Ok(())
+}
+
+fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+    let strategy = if args.force {
+        ConflictStrategy::Update
+    } else {
+        ConflictStrategy::Ignore
+    };
+
+    if is_targz_path(&args.path) {
+        restore_targz(&args.path, db, strategy)
+    } else {
+        restore_jsonl(&args.path, db, strategy)
+    }
+}
+
+fn restore_jsonl(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<()> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("Opening backup: {path}"))?;
+    let reader = std::io::BufReader::new(file);
+    restore_from_reader(reader, db, strategy)
+}
+
+fn restore_targz(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<()> {
+    let file = std::fs::File::open(path)
+        .with_context(|| format!("Opening backup: {path}"))?;
+    let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(file));
+    let mut archive = tar::Archive::new(gz);
+    for entry_res in archive.entries().context("Reading tar archive")? {
+        let entry = entry_res.context("Reading tar entry")?;
+        let in_path = entry.path().context("Reading tar entry path")?.into_owned();
+        if in_path.file_name().and_then(|s| s.to_str()) == Some("entries.jsonl") {
+            let reader = std::io::BufReader::new(entry);
+            return restore_from_reader(reader, db, strategy);
+        }
+    }
+    anyhow::bail!("entries.jsonl not found in archive");
+}
+
+fn restore_from_reader<R: std::io::BufRead>(
+    reader: R,
+    db: &Db,
+    strategy: ConflictStrategy,
+) -> Result<()> {
+    let mut inserted = 0usize;
+    let mut skipped = 0usize;
+    let mut updated = 0usize;
+    for line in reader.lines() {
+        let line = line.context("Reading backup line")?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let entry: Entry = serde_json::from_str(&line)
+            .with_context(|| format!("Parsing entry: {line}"))?;
+        let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
+        match outcome {
+            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => inserted += 1,
+            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => updated += 1,
+            InsertOutcome::Ignored { .. } => skipped += 1,
+        }
+    }
+    println!("✓ Restore: {inserted} inserted, {updated} updated, {skipped} skipped");
+    Ok(())
 }
 
 #[cfg(test)]
@@ -2678,5 +2862,297 @@ mod tests {
             None => std::env::remove_var("DATUM_EDITOR"),
         }
         out
+    }
+
+    // ─── backup / restore tests (da-3d5o acceptance) ────────────────────────
+
+    fn seed_entries(db: &datum_core::db::Db) {
+        // Mix of fields, verbs, and extra_data shapes to exercise round-trip.
+        db.insert_entry(&make_grep_entry(
+            "mood",
+            100,
+            serde_json::json!("happy"),
+            None,
+        )).unwrap();
+        db.insert_entry(&make_grep_entry(
+            "coffee",
+            200,
+            serde_json::json!(2),
+            Some(serde_json::json!({"unit": "cups"})),
+        )).unwrap();
+        db.insert_entry(&make_grep_entry(
+            "notes",
+            300,
+            serde_json::json!("hello world"),
+            Some(serde_json::json!({"tag": "foo", "nested": {"k": 1}})),
+        )).unwrap();
+    }
+
+    fn unique_tmp_path(ext: &str) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("datum-test-{}{}", ulid::Ulid::new(), ext))
+    }
+
+    fn all_entries_sorted(db: &datum_core::db::Db) -> Vec<datum_core::entry::Entry> {
+        let far_past = chrono::DateTime::UNIX_EPOCH;
+        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
+        let mut entries = db.entries_in_range(far_past, far_future).unwrap();
+        entries.sort_by(|a, b| a.id.cmp(&b.id));
+        entries
+    }
+
+    fn assert_entries_equivalent(
+        expected: &[datum_core::entry::Entry],
+        actual: &[datum_core::entry::Entry],
+    ) {
+        assert_eq!(expected.len(), actual.len(), "entry count mismatch");
+        for (e, a) in expected.iter().zip(actual) {
+            assert_eq!(e.id, a.id);
+            assert_eq!(e.slug, a.slug);
+            assert_eq!(e.content_hash, a.content_hash);
+            assert_eq!(e.field, a.field);
+            assert_eq!(e.verb, a.verb);
+            assert_eq!(e.value, a.value);
+            assert_eq!(e.extra_data, a.extra_data);
+        }
+    }
+
+    #[test]
+    fn backup_restore_round_trip_jsonl() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        // File is line-per-entry JSONL (not a JSON array).
+        let contents = std::fs::read_to_string(&path).unwrap();
+        let line_count = contents
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .count();
+        assert_eq!(line_count, original.len());
+
+        // Each line must parse as a full Entry.
+        for line in contents.lines().filter(|l| !l.trim().is_empty()) {
+            let _entry: datum_core::entry::Entry =
+                serde_json::from_str(line).expect("each line is a parseable Entry");
+        }
+
+        // Restore into a fresh db and verify equivalence.
+        let dst = Db::open_in_memory().unwrap();
+        cmd_restore(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+        let restored = all_entries_sorted(&dst);
+        assert_entries_equivalent(&original, &restored);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn backup_restore_round_trip_targz() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let path = unique_tmp_path(".tar.gz");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+        assert!(path.exists(), "tar.gz backup file should exist");
+
+        // Verify the archive contains manifest.json + entries.jsonl, and the
+        // manifest carries schema_version + timestamp.
+        let f = std::fs::File::open(&path).unwrap();
+        let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(f));
+        let mut archive = tar::Archive::new(gz);
+        let mut seen_manifest = false;
+        let mut seen_entries = false;
+        let mut manifest_body = String::new();
+        for entry_res in archive.entries().unwrap() {
+            use std::io::Read;
+            let mut entry = entry_res.unwrap();
+            let name = entry.path().unwrap().into_owned();
+            match name.file_name().and_then(|s| s.to_str()) {
+                Some("manifest.json") => {
+                    seen_manifest = true;
+                    entry.read_to_string(&mut manifest_body).unwrap();
+                }
+                Some("entries.jsonl") => {
+                    seen_entries = true;
+                }
+                _ => {}
+            }
+        }
+        assert!(seen_manifest, "manifest.json present in archive");
+        assert!(seen_entries, "entries.jsonl present in archive");
+        let manifest: serde_json::Value =
+            serde_json::from_str(&manifest_body).expect("manifest is valid JSON");
+        assert_eq!(manifest["schema_version"], serde_json::json!(1));
+        assert!(
+            manifest["timestamp"].as_str().is_some(),
+            "manifest has a timestamp"
+        );
+
+        let dst = Db::open_in_memory().unwrap();
+        cmd_restore(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+        let restored = all_entries_sorted(&dst);
+        assert_entries_equivalent(&original, &restored);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_is_idempotent_via_content_hash() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        // First restore: every row inserted.
+        let dst = Db::open_in_memory().unwrap();
+        cmd_restore(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+        assert_eq!(dst.count_entries().unwrap(), original.len());
+
+        let before: Vec<_> = all_entries_sorted(&dst)
+            .into_iter()
+            .map(|e| (e.id.clone(), e.modified_at))
+            .collect();
+
+        // Second restore with the same backup: content_hash dedup kicks in,
+        // nothing changes.
+        cmd_restore(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+        assert_eq!(dst.count_entries().unwrap(), original.len());
+
+        let after: Vec<_> = all_entries_sorted(&dst)
+            .into_iter()
+            .map(|e| (e.id.clone(), e.modified_at))
+            .collect();
+        assert_eq!(before, after, "idempotent restore must not bump modified_at");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_force_overwrites_conflicting_rows() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        src.insert_entry(&make_grep_entry(
+            "mood",
+            100,
+            serde_json::json!("happy"),
+            None,
+        )).unwrap();
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        // Pre-populate dst with the SAME logical row from a different device.
+        // Same content_hash, different device_id.
+        let dst = Db::open_in_memory().unwrap();
+        use datum_core::{entry::Entry, time::DatumTime};
+        let base: chrono::DateTime<chrono::Utc> =
+            "2024-01-01T00:00:00Z".parse().unwrap();
+        let t = DatumTime {
+            utc: base + chrono::Duration::seconds(100),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let dup = Entry::new(
+            "mood",
+            Verb::Occur,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(t),
+            None,
+            "device-OTHER",
+        );
+        dst.insert_entry(&dup).unwrap();
+        let old_modified = dst.get_entry(&dup.id).unwrap().modified_at;
+
+        // --force → ConflictStrategy::Update overwrites device_id from "d1" in backup.
+        cmd_restore(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: true },
+            &dst,
+        )
+        .unwrap();
+
+        let overwritten = dst.get_entry(&dup.id).unwrap();
+        assert_eq!(overwritten.device_id, "d1", "force must overwrite device_id");
+        assert!(
+            overwritten.modified_at >= old_modified,
+            "force must bump modified_at"
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn backup_refuses_to_overwrite_without_flag() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        seed_entries(&db);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &db,
+        )
+        .unwrap();
+
+        // Second call without --overwrite must error.
+        let err = cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &db,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("exists"),
+            "expected 'exists' in error, got: {err}"
+        );
+
+        // With --overwrite, it succeeds.
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: true },
+            &db,
+        )
+        .unwrap();
+
+        std::fs::remove_file(&path).ok();
     }
 }

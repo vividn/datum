@@ -597,6 +597,30 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
+    /// Stream every live entry through `f`, without buffering the whole set
+    /// in memory. Rows are yielded in ULID order (stable across backups).
+    ///
+    /// The callback's error type is generic so callers can propagate I/O and
+    /// serialization failures alongside database errors without wrapping.
+    pub fn visit_all_entries<E, F>(&self, mut f: F) -> std::result::Result<(), E>
+    where
+        F: FnMut(Entry) -> std::result::Result<(), E>,
+        E: From<DatumError>,
+    {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM entries WHERE deleted_at IS NULL ORDER BY id ASC")
+            .map_err(|e| E::from(DatumError::Db(e)))?;
+        let rows = stmt
+            .query_map([], row_to_entry)
+            .map_err(|e| E::from(DatumError::Db(e)))?;
+        for row in rows {
+            let entry = row.map_err(|e| E::from(DatumError::Db(e)))?;
+            f(entry)?;
+        }
+        Ok(())
+    }
+
     /// Count of live (non-tombstoned) entries in the store.
     pub fn count_entries(&self) -> Result<usize> {
         let n: i64 = self.conn.query_row(
