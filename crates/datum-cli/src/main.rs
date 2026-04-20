@@ -1,12 +1,5 @@
-mod args;
-mod check;
-mod cmd;
-mod config;
-mod output;
-
 use anyhow::Result;
-use args::Cli;
-use clap::Parser;
+use datum_cli::{args::Cli, cmd, config};
 
 fn main() -> Result<()> {
     let cli = Cli::parse_with_alias_resolution()?;

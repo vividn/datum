@@ -3,6 +3,10 @@ name = "datum-cli"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "datum_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "datum"
 path = "src/main.rs"
@@ -19,3 +23,6 @@ dirs-next = "2"
 ulid = { workspace = true }
 sha2 = { workspace = true }
 regex = { workspace = true }
+
+[dev-dependencies]
+datum-core = { path = "../datum-core", features = ["test-util"] }

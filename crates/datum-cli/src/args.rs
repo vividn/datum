@@ -46,6 +46,22 @@ pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
     let argv = maybe_swap_field_verb(argv);
 
     // Step 3: Stacked flag expansion (-yy → -y -y, -qqq → -q -q -q)
+    Ok(expand_stacked_flags(argv))
+}
+
+/// Like [`expand_argv`] but uses the provided `db` for alias lookup instead of
+/// opening one from `config::db_path()`. Lets in-process test harnesses drive
+/// the full arg-parse path against an in-memory Db.
+pub fn expand_argv_with_db(
+    argv: Vec<String>,
+    db: &datum_core::db::Db,
+) -> anyhow::Result<Vec<String>> {
+    let argv = try_expand_alias_with_db(argv, db);
+    let argv = maybe_swap_field_verb(argv);
+    Ok(expand_stacked_flags(argv))
+}
+
+fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(argv.len() + 4);
     for arg in argv {
         if let Some(expanded) = expand_stacked(&arg) {
@@ -54,33 +70,43 @@ pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
             out.push(arg);
         }
     }
-    Ok(out)
+    out
 }
 
 /// Try to resolve argv[1] as an alias from the database.
 /// On any failure (DB missing, alias not found, parse error) returns argv unchanged.
 fn try_expand_alias(argv: Vec<String>) -> Vec<String> {
-    if argv.len() < 2 {
-        return argv;
-    }
-    // Only attempt lookup if argv[1] is not already a known subcommand
-    if KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
+    if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
         return argv;
     }
 
-    let expanded = (|| -> Option<Vec<String>> {
+    let maybe_db = (|| -> Option<datum_core::db::Db> {
         let db_path = crate::config::db_path().ok()?;
         if !std::path::Path::new(&db_path).exists() {
             return None;
         }
-        let db = datum_core::db::Db::open(&db_path).ok()?;
-        let alias = db.lookup_alias(&argv[1]).ok()??;
-        let mut result = vec![argv[0].clone()];
-        result.extend(alias.expand(&argv[2..]));
-        Some(result)
+        datum_core::db::Db::open(&db_path).ok()
     })();
 
-    expanded.unwrap_or(argv)
+    match maybe_db {
+        Some(db) => try_expand_alias_with_db(argv, &db),
+        None => argv,
+    }
+}
+
+/// Alias-expansion variant that uses the given `db` for lookup.
+fn try_expand_alias_with_db(argv: Vec<String>, db: &datum_core::db::Db) -> Vec<String> {
+    if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
+        return argv;
+    }
+    match db.lookup_alias(&argv[1]) {
+        Ok(Some(alias)) => {
+            let mut result = vec![argv[0].clone()];
+            result.extend(alias.expand(&argv[2..]));
+            result
+        }
+        _ => argv,
+    }
 }
 
 /// Swap argv[1] and argv[2] when argv[1] is a field name and argv[2] is a verb.

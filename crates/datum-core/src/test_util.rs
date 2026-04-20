@@ -1,0 +1,373 @@
+//! Shared test fixtures for command-parity tests.
+//!
+//! Gated behind `#[cfg(any(test, feature = "test-util"))]` so consumers (e.g.
+//! integration tests in `datum-cli`) opt in via `features = ["test-util"]`.
+//!
+//! Provides:
+//! - [`fresh_db`] — a brand-new in-memory Db with schema applied.
+//! - [`entry_builder`] / [`spec_builder`] / [`alias_builder`] — fluent builders
+//!   with sensible defaults so tests only specify fields they care about.
+//! - [`assert_entry_matches!`] / [`assert_count!`] — concise assertion macros.
+
+use chrono::{DateTime, Utc};
+use serde_json::Value as JsonValue;
+
+use crate::db::Db;
+use crate::entry::{Entry, Verb};
+use crate::field_spec::{Alias, FieldSpec, SubfieldSpec};
+use crate::time::DatumTime;
+
+/// Return a brand-new in-memory SQLite [`Db`] with schema applied.
+///
+/// Each call produces an isolated database — there is no global shared state,
+/// so tests cannot cross-talk. Panics only on a catastrophic SQLite failure.
+pub fn fresh_db() -> Db {
+    Db::open_in_memory().expect("failed to open in-memory test Db")
+}
+
+// ─── EntryBuilder ────────────────────────────────────────────────────────────
+
+/// Fluent builder for [`Entry`] test fixtures.
+///
+/// Defaults: verb=`Occur`, time_start=`DatumTime::now()`, device="test-device".
+#[derive(Clone)]
+pub struct EntryBuilder {
+    field: String,
+    verb: Verb,
+    value: Option<JsonValue>,
+    extra_data: Option<JsonValue>,
+    unit: Option<String>,
+    time_start: Option<DatumTime>,
+    time_end: Option<DatumTime>,
+    device_id: String,
+}
+
+impl EntryBuilder {
+    pub fn new(field: impl Into<String>) -> Self {
+        Self {
+            field: field.into(),
+            verb: Verb::Occur,
+            value: None,
+            extra_data: None,
+            unit: None,
+            time_start: Some(DatumTime::now()),
+            time_end: None,
+            device_id: "test-device".to_string(),
+        }
+    }
+
+    pub fn verb(mut self, verb: Verb) -> Self {
+        self.verb = verb;
+        self
+    }
+
+    pub fn value(mut self, value: JsonValue) -> Self {
+        self.value = Some(value);
+        self
+    }
+
+    pub fn extra_data(mut self, extra: JsonValue) -> Self {
+        self.extra_data = Some(extra);
+        self
+    }
+
+    pub fn unit(mut self, unit: impl Into<String>) -> Self {
+        self.unit = Some(unit.into());
+        self
+    }
+
+    pub fn time_start(mut self, t: DatumTime) -> Self {
+        self.time_start = Some(t);
+        self
+    }
+
+    pub fn time_end(mut self, t: DatumTime) -> Self {
+        self.time_end = Some(t);
+        self
+    }
+
+    pub fn time_start_utc(mut self, utc: DateTime<Utc>) -> Self {
+        self.time_start = Some(DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        });
+        self
+    }
+
+    pub fn time_end_utc(mut self, utc: DateTime<Utc>) -> Self {
+        self.time_end = Some(DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        });
+        self
+    }
+
+    /// Clear the default `time_start` (produces a slug of `field:unset`).
+    pub fn no_time(mut self) -> Self {
+        self.time_start = None;
+        self
+    }
+
+    pub fn device_id(mut self, d: impl Into<String>) -> Self {
+        self.device_id = d.into();
+        self
+    }
+
+    pub fn build(self) -> Entry {
+        Entry::new(
+            self.field,
+            self.verb,
+            self.value,
+            self.extra_data,
+            self.unit,
+            self.time_start,
+            self.time_end,
+            self.device_id,
+        )
+    }
+
+    /// Build and insert into `db`, returning the owned entry.
+    pub fn insert(self, db: &Db) -> Entry {
+        let e = self.build();
+        db.insert_entry(&e).expect("EntryBuilder::insert failed");
+        e
+    }
+}
+
+/// Shorthand for [`EntryBuilder::new`].
+pub fn entry_builder(field: impl Into<String>) -> EntryBuilder {
+    EntryBuilder::new(field)
+}
+
+// ─── SpecBuilder ─────────────────────────────────────────────────────────────
+
+/// Fluent builder for [`FieldSpec`] test fixtures.
+pub struct SpecBuilder {
+    spec: FieldSpec,
+}
+
+impl SpecBuilder {
+    pub fn new(field: impl Into<String>) -> Self {
+        Self {
+            spec: FieldSpec {
+                field: field.into(),
+                default_verb: Verb::Occur,
+                subfields: Default::default(),
+                description: None,
+                unit: None,
+            },
+        }
+    }
+
+    pub fn default_verb(mut self, v: Verb) -> Self {
+        self.spec.default_verb = v;
+        self
+    }
+
+    pub fn description(mut self, d: impl Into<String>) -> Self {
+        self.spec.description = Some(d.into());
+        self
+    }
+
+    pub fn unit(mut self, u: impl Into<String>) -> Self {
+        self.spec.unit = Some(u.into());
+        self
+    }
+
+    pub fn subfield(mut self, name: impl Into<String>, spec: SubfieldSpec) -> Self {
+        self.spec.subfields.insert(name.into(), spec);
+        self
+    }
+
+    pub fn build(self) -> FieldSpec {
+        self.spec
+    }
+
+    /// Build and persist to `db`.
+    pub fn save(self, db: &Db) -> FieldSpec {
+        let spec = self.build();
+        db.save_field_spec(&spec).expect("SpecBuilder::save failed");
+        spec
+    }
+}
+
+pub fn spec_builder(field: impl Into<String>) -> SpecBuilder {
+    SpecBuilder::new(field)
+}
+
+// ─── AliasBuilder ────────────────────────────────────────────────────────────
+
+/// Fluent builder for [`Alias`] test fixtures.
+pub struct AliasBuilder {
+    alias: Alias,
+}
+
+impl AliasBuilder {
+    pub fn new(name: impl Into<String>, expansion: impl Into<String>) -> Self {
+        Self {
+            alias: Alias {
+                name: name.into(),
+                expands_to: expansion.into(),
+                description: None,
+            },
+        }
+    }
+
+    pub fn description(mut self, d: impl Into<String>) -> Self {
+        self.alias.description = Some(d.into());
+        self
+    }
+
+    pub fn build(self) -> Alias {
+        self.alias
+    }
+
+    pub fn save(self, db: &Db) -> Alias {
+        let a = self.build();
+        db.save_alias(&a).expect("AliasBuilder::save failed");
+        a
+    }
+}
+
+pub fn alias_builder(name: impl Into<String>, expansion: impl Into<String>) -> AliasBuilder {
+    AliasBuilder::new(name, expansion)
+}
+
+// ─── Assertion macros ────────────────────────────────────────────────────────
+
+/// Assert that entry fields match given key-value pairs.
+///
+/// Supported fields: `field`, `verb`, `value`, `unit`, `device_id`.
+///
+/// ```ignore
+/// assert_entry_matches!(entry, field: "mood", value: "happy");
+/// ```
+#[macro_export]
+macro_rules! assert_entry_matches {
+    ($entry:expr, $($field:ident : $val:expr),* $(,)?) => {{
+        let __e: &$crate::entry::Entry = &$entry;
+        $(
+            $crate::test_util::_assert_entry_field(
+                __e,
+                stringify!($field),
+                &::serde_json::json!($val),
+            );
+        )*
+    }};
+}
+
+/// Assert the number of entries for a given field in a [`Db`].
+///
+/// ```ignore
+/// assert_count!(db, "mood", 3);
+/// ```
+#[macro_export]
+macro_rules! assert_count {
+    ($db:expr, $field:expr, $n:expr) => {{
+        let __entries = $db
+            .entries_for_field($field, None)
+            .expect("entries_for_field failed");
+        assert_eq!(
+            __entries.len(),
+            $n,
+            "expected {} entries for field {:?}, got {}",
+            $n,
+            $field,
+            __entries.len()
+        );
+    }};
+}
+
+#[doc(hidden)]
+pub fn _assert_entry_field(entry: &Entry, field_name: &str, expected: &JsonValue) {
+    let actual = match field_name {
+        "field" => serde_json::json!(entry.field),
+        "verb" => serde_json::json!(entry.verb.to_string()),
+        "value" => entry.value.clone().unwrap_or(JsonValue::Null),
+        "unit" => match &entry.unit {
+            Some(u) => serde_json::json!(u),
+            None => JsonValue::Null,
+        },
+        "device_id" => serde_json::json!(entry.device_id),
+        other => panic!("assert_entry_matches!: unknown field `{other}`"),
+    };
+    assert_eq!(
+        &actual, expected,
+        "entry.{field_name} mismatch: expected {expected}, got {actual}"
+    );
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fresh_db_is_isolated_between_tests() {
+        let db_a = fresh_db();
+        let db_b = fresh_db();
+
+        entry_builder("coffee")
+            .value(serde_json::json!(2))
+            .insert(&db_a);
+
+        // db_b must not see db_a's entry — each fresh_db() is independent.
+        let in_a = db_a.entries_for_field("coffee", None).unwrap();
+        let in_b = db_b.entries_for_field("coffee", None).unwrap();
+        assert_eq!(in_a.len(), 1);
+        assert_eq!(in_b.len(), 0);
+
+        // And inserts into db_b should not appear in db_a.
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(serde_json::json!("happy"))
+            .insert(&db_b);
+
+        assert_eq!(db_a.entries_for_field("mood", None).unwrap().len(), 0);
+        assert_eq!(db_b.entries_for_field("mood", None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn entry_builder_round_trip() {
+        let db = fresh_db();
+        let built = entry_builder("coffee")
+            .verb(Verb::Occur)
+            .value(serde_json::json!(2))
+            .unit("cups")
+            .insert(&db);
+
+        let fetched = db.get_entry(&built.id).unwrap();
+        assert_entry_matches!(fetched,
+            field: "coffee",
+            verb: "occur",
+            value: 2,
+            unit: "cups",
+            device_id: "test-device",
+        );
+        assert_count!(db, "coffee", 1);
+    }
+
+    #[test]
+    fn spec_and_alias_builders_save_and_round_trip() {
+        let db = fresh_db();
+        spec_builder("word")
+            .default_verb(Verb::Note)
+            .description("vocab")
+            .save(&db);
+        alias_builder("vbp", "note word srcLang=pt pos=verb").save(&db);
+
+        let registry = db.load_registry().unwrap();
+        assert!(registry.field_spec("word").is_some());
+        assert_eq!(
+            registry.field_spec("word").unwrap().description.as_deref(),
+            Some("vocab"),
+        );
+        assert_eq!(
+            registry.aliases.get("vbp").unwrap().expands_to,
+            "note word srcLang=pt pos=verb"
+        );
+    }
+}

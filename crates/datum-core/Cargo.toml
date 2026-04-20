@@ -3,6 +3,12 @@ name = "datum-core"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = []
+# Enables shared test fixtures (entry/spec/alias builders, fresh_db(),
+# assertion macros) for use by integration tests in sibling crates.
+test-util = []
+
 [dependencies]
 serde = { workspace = true }
 serde_json = { workspace = true }
