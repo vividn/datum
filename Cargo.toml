@@ -2,6 +2,7 @@
 members = [
     "crates/datum-core",
     "crates/datum-cli",
+    "crates/datum-layout",
     "crates/datum-sync",
 ]
 resolver = "2"

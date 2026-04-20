@@ -1,0 +1,13 @@
+[package]
+name = "datum-layout"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+# Future: enable wasm-bindgen exports for the PWA.
+wasm = []
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }

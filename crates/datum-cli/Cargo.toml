@@ -13,6 +13,7 @@ path = "src/main.rs"
 
 [dependencies]
 datum-core = { path = "../datum-core" }
+datum-layout = { path = "../datum-layout" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 clap = { workspace = true }

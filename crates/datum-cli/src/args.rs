@@ -75,7 +75,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
-    "backup", "restore",
+    "backup", "restore", "dayview",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -256,6 +256,9 @@ pub enum Command {
     /// Query a named view with reduce=true.
     #[command(visible_alias = "red")]
     Reduce(MapArgs),
+
+    /// Render a dayview SVG (or dump the layout struct as JSON).
+    Dayview(DayviewArgs),
 }
 
 /// Arguments shared by all logging commands (occur, start, stop, switch, note).
@@ -761,6 +764,30 @@ pub struct CheckArgs {
     /// Emit a machine-readable JSON report instead of the human summary.
     #[arg(long)]
     pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct DayviewArgs {
+    /// Day to render, `YYYY-MM-DD`. Defaults to today (local).
+    #[arg(long)]
+    pub date: Option<String>,
+
+    /// Output file. If omitted, the SVG (or JSON) is printed to stdout.
+    #[arg(long, value_name = "PATH")]
+    pub output: Option<String>,
+
+    /// Dump the computed layout struct as JSON instead of rendering SVG.
+    /// Used by the PWA until the WASM binding is hooked up.
+    #[arg(long)]
+    pub json: bool,
+
+    /// Output SVG width in pixels.
+    #[arg(long, default_value_t = 2000.0)]
+    pub width: f64,
+
+    /// Output SVG height in pixels.
+    #[arg(long, default_value_t = 200.0)]
+    pub height: f64,
 }
 
 #[cfg(test)]

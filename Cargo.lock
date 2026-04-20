@@ -402,6 +402,7 @@ dependencies = [
  "chrono",
  "clap",
  "datum-core",
+ "datum-layout",
  "dirs-next",
  "flate2",
  "regex",
@@ -429,6 +430,14 @@ dependencies = [
  "sha2",
  "thiserror 2.0.18",
  "ulid",
+]
+
+[[package]]
+name = "datum-layout"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
