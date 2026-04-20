@@ -107,6 +107,7 @@ fn tail_args() -> TailArgs {
         yesterday: 0,
         quick: 0,
         head: false,
+        output_flags: Default::default(),
     }
 }
 

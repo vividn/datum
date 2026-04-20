@@ -9,6 +9,45 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use datum_core::db::ConflictStrategy;
 
+use crate::output::{OutputArgs, Show};
+
+/// Clap-facing wrapper for the shared output flags.
+#[derive(Args, Debug, Clone, Default)]
+pub struct OutputFlags {
+    /// How much of each result to display: default | none | minimal | standard | format | all.
+    #[arg(long = "show", global = true, value_name = "MODE", default_value = "default")]
+    pub show: String,
+
+    /// Shorthand for `--show all`.
+    #[arg(short = 'A', long = "show-all", global = true)]
+    pub show_all: bool,
+
+    /// Custom `%field%`-templated output string. Implies `--show format` unless another `--show` is set.
+    #[arg(short = 'o', long = "format-string", global = true, value_name = "TEMPLATE")]
+    pub format_string: Option<String>,
+}
+
+impl OutputFlags {
+    pub fn resolve(&self) -> OutputArgs {
+        let show = if self.show_all {
+            Show::All
+        } else {
+            self.show
+                .parse::<Show>()
+                .unwrap_or_default()
+        };
+        let show = if self.format_string.is_some() && self.show == "default" && !self.show_all {
+            Show::Format
+        } else {
+            show
+        };
+        OutputArgs {
+            show,
+            format_string: self.format_string.clone(),
+        }
+    }
+}
+
 /// datum — personal data tracker
 #[derive(Parser, Debug)]
 #[command(name = "datum", version, about)]
@@ -293,7 +332,11 @@ pub struct LogArgs {
     /// Shorthand for `--conflict merge`: deep-merge extra_data into the existing row.
     #[arg(long)]
     pub merge: bool,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
 }
+
 
 /// CLI-visible variant of [`ConflictStrategy`].
 #[derive(Clone, Copy, Debug, ValueEnum)]
@@ -326,6 +369,8 @@ impl LogArgs {
             self.conflict.map(Into::into).unwrap_or_default()
         }
     }
+
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 #[derive(Args, Debug)]
@@ -370,6 +415,13 @@ pub struct TailArgs {
     pub head: bool,
     // TODO(p-tail-watch): --watch/-w live-update mode. Requires a file watcher
     // + redraw loop; deferred out of Phase-1 scope per da-u8ch.
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl TailArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 #[derive(Args, Debug)]
@@ -379,6 +431,13 @@ pub struct HeadArgs {
     /// Number of entries to show
     #[arg(short = 'n', long = "limit", default_value = "10")]
     pub count: usize,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl HeadArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 #[derive(Args, Debug)]
@@ -421,6 +480,13 @@ pub struct UpdateArgs {
     /// Optional comment appended to extra_data.
     #[arg(short = 'c', long)]
     pub comment: Option<String>,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl UpdateArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 /// Arguments for `retime` / `rt` — batch time shift.
@@ -453,6 +519,13 @@ pub struct RetimeArgs {
 pub struct EditArgs {
     /// Entry id or slug
     pub id_or_slug: String,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl EditArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 #[derive(Args, Debug)]
@@ -462,6 +535,13 @@ pub struct DeleteArgs {
     /// Skip confirmation prompt
     #[arg(long)]
     pub force: bool,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl DeleteArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 #[derive(Args, Debug)]
@@ -477,6 +557,13 @@ pub struct UndoArgs {
     /// `--force`. Accepts "15m", "1h", "1:30", ISO "PT30M", etc.
     #[arg(long, default_value = "15m")]
     pub window: String,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl UndoArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 #[derive(Subcommand, Debug)]
@@ -584,6 +671,13 @@ pub struct GrepArgs {
     /// Restrict the search to a single field
     #[arg(short = 'f', long)]
     pub field: Option<String>,
+
+    #[command(flatten)]
+    pub output_flags: OutputFlags,
+}
+
+impl GrepArgs {
+    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
 /// Arguments for `datum map` and `datum reduce`.

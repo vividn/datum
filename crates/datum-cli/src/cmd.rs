@@ -21,8 +21,8 @@ use crate::{
     check::{collect_issues, render_human, render_json},
     config::device_id,
     output::{
-        print_entries, print_entries_with_columns, print_entry, print_entry_pretty, print_logged,
-        print_now_view,
+        print_entry, print_entry_pretty, print_now_view, print_table, show_create, show_delete,
+        show_exists, show_rename, show_update, OutputArgs, TableArgs, TimeMetricCol,
     },
 };
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
@@ -57,15 +57,8 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     }
 }
 
-/// Build a `field → stored_color` map from all defined specs. Entries without
-/// a color are omitted so callers can cheaply check "is there a spec color?".
-fn load_field_colors(db: &Db) -> Result<std::collections::HashMap<String, String>> {
-    let reg = db.load_registry()?;
-    Ok(reg
-        .fields
-        .into_iter()
-        .filter_map(|(name, spec)| spec.color.map(|c| (name, c)))
-        .collect())
+fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
+    Ok(db.load_registry()?)
 }
 
 // ─── Map / Reduce ────────────────────────────────────────────────────────────
@@ -222,24 +215,35 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
 
     let strategy = args.conflict_strategy();
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
+    let registry = load_registry(db).ok();
+    let output = args.output();
     match &outcome {
         InsertOutcome::Inserted { .. } => {
             if matches!(verb, Verb::Occur | Verb::Start) {
                 db.ensure_tracked(&entry.field)?;
             }
-            print_logged(&entry);
+            show_create(&entry, registry.as_ref(), &output);
         }
         InsertOutcome::Updated { id } => {
-            println!("✓ Updated 1 ({id})");
+            let fresh = db.get_entry(id).unwrap_or_else(|_| entry.clone());
+            show_update(&fresh, registry.as_ref(), &output);
         }
         InsertOutcome::Merged { id } => {
-            println!("✓ Merged 1 ({id})");
+            let fresh = db.get_entry(id).unwrap_or_else(|_| entry.clone());
+            show_update(&fresh, registry.as_ref(), &output);
         }
-        InsertOutcome::Rekeyed { new_id, .. } => {
-            println!("✓ Rekeyed to {new_id}");
+        InsertOutcome::Rekeyed { new_id, old_id } => {
+            show_rename(old_id, new_id, &output);
+            if let Ok(fresh) = db.get_entry(new_id) {
+                show_create(&fresh, registry.as_ref(), &output);
+            }
         }
         InsertOutcome::Ignored { id } => {
-            eprintln!("⚠ Ignored 1 — duplicate of {id}");
+            if let Ok(existing) = db.get_entry(id) {
+                show_exists(&existing, registry.as_ref(), &output);
+            } else if !output.silent() {
+                eprintln!("⚠ Ignored 1 — duplicate of {id}");
+            }
         }
     }
     Ok(())
@@ -351,13 +355,18 @@ fn build_time(args: &LogArgs) -> Result<DatumTime> {
 
 fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
     let columns = split_columns(&args.columns);
+    let metric: TimeMetricCol = args
+        .metric
+        .parse()
+        .map_err(|e: String| anyhow::anyhow!(e))?;
     let entries = tail_entries(&args, db)?;
-    if columns.is_empty() {
-        let colors = load_field_colors(db)?;
-        print_entries(&entries, &colors);
-    } else {
-        print_entries_with_columns(&entries, &columns);
-    }
+    let registry = load_registry(db).ok();
+    let tbl = TableArgs {
+        output: args.output(),
+        metric,
+        columns,
+    };
+    print_table(&entries, registry.as_ref(), &tbl);
     Ok(())
 }
 
@@ -474,8 +483,13 @@ fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
         all.truncate(args.count);
         all
     };
-    let colors = load_field_colors(db)?;
-    print_entries(&entries, &colors);
+    let registry = load_registry(db).ok();
+    let tbl = TableArgs {
+        output: args.output(),
+        metric: TimeMetricCol::Hybrid,
+        columns: vec![],
+    };
+    print_table(&entries, registry.as_ref(), &tbl);
     Ok(())
 }
 
@@ -505,8 +519,13 @@ fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
         })
         .collect();
 
-    let colors = load_field_colors(db)?;
-    print_entries(&matches, &colors);
+    let registry = load_registry(db).ok();
+    let tbl = TableArgs {
+        output: args.output(),
+        metric: TimeMetricCol::Hybrid,
+        columns: vec![],
+    };
+    print_table(&matches, registry.as_ref(), &tbl);
     Ok(())
 }
 
@@ -578,18 +597,17 @@ fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
     if args.pretty {
         print_entry_pretty(&entry)?;
     } else {
-        let colors = load_field_colors(db)?;
-        print_entry(&entry, &colors);
+        let registry = load_registry(db).ok();
+        print_entry(&entry, registry.as_ref());
     }
     Ok(())
 }
 
 fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
+    let registry = load_registry(db).ok();
+    let entry = db.get_entry(&args.id_or_slug).map_err(anyhow::Error::from)?;
     if !args.force {
-        let entry = db.get_entry(&args.id_or_slug)
-            .map_err(anyhow::Error::from)?;
-        let colors = load_field_colors(db)?;
-        print_entry(&entry, &colors);
+        print_entry(&entry, registry.as_ref());
         eprint!("Delete this entry? [y/N] ");
         use std::io::BufRead;
         let stdin = std::io::stdin();
@@ -605,7 +623,7 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     }
     db.soft_delete_entry(&args.id_or_slug)
         .map_err(anyhow::Error::from)?;
-    println!("✓ Deleted {}", args.id_or_slug);
+    show_delete(&entry, registry.as_ref(), &args.output());
     Ok(())
 }
 
@@ -675,8 +693,8 @@ fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
     db.save_existing_entry(&updated)?;
 
     let fresh = db.get_entry(&updated.id)?;
-    println!("✓ Edited 1 ({})", fresh.id);
-    print_logged(&fresh);
+    let registry = load_registry(db).ok();
+    show_update(&fresh, registry.as_ref(), &args.output());
     Ok(())
 }
 
@@ -696,6 +714,7 @@ fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> 
     }
 
     let (payload_value, payload_extra) = parse_update_payload(&args)?;
+    let output = args.output();
 
     match strategy {
         ConflictStrategy::Update => apply_mutation(
@@ -704,6 +723,7 @@ fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> 
             payload_extra,
             ExtraMergeMode::Shallow,
             db,
+            &output,
         ),
         ConflictStrategy::Merge => apply_mutation(
             existing,
@@ -711,6 +731,7 @@ fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> 
             payload_extra,
             ExtraMergeMode::Deep,
             db,
+            &output,
         ),
         ConflictStrategy::Rekey => apply_rekey(existing, payload_value, payload_extra, &args, db),
         ConflictStrategy::Ignore => {
@@ -742,6 +763,7 @@ fn apply_mutation(
     payload_extra: Option<JsonValue>,
     mode: ExtraMergeMode,
     db: &Db,
+    output: &OutputArgs,
 ) -> Result<()> {
     let mut updated = existing;
     updated.extra_data = combine_extra(updated.extra_data, payload_extra, mode);
@@ -755,11 +777,9 @@ fn apply_mutation(
     // Fetch the persisted row so the printed confirmation reflects the
     // db-stamped `modified_at`.
     let fresh = db.get_entry(&updated.id)?;
-    match mode {
-        ExtraMergeMode::Shallow => println!("✓ Updated 1 ({})", fresh.id),
-        ExtraMergeMode::Deep => println!("✓ Merged 1 ({})", fresh.id),
-    }
-    print_logged(&fresh);
+    let registry = load_registry(db).ok();
+    let _ = mode; // shallow vs deep is cosmetic to the user; output is unified UPDATE.
+    show_update(&fresh, registry.as_ref(), output);
     Ok(())
 }
 
@@ -806,10 +826,11 @@ fn apply_rekey(
     // Use the Rekey strategy so duplicate content_hashes (rekey with no
     // payload change) don't collide with the existing row.
     let outcome = db.insert_entry_with_strategy(&new_entry, ConflictStrategy::Rekey)?;
+    let registry = load_registry(db).ok();
     match outcome {
         InsertOutcome::Inserted { id } | InsertOutcome::Rekeyed { new_id: id, .. } => {
-            println!("✓ Rekeyed {} → {}", existing.id, id);
-            print_logged(&new_entry);
+            show_rename(&existing.id, &id, &args.output());
+            show_create(&new_entry, registry.as_ref(), &args.output());
             Ok(())
         }
         other => anyhow::bail!("rekey produced unexpected outcome: {other:?}"),
@@ -968,10 +989,13 @@ fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
 }
 
 fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
+    let registry = load_registry(db).ok();
     // Slug-targeted undo: restore that specific row, no window check.
     if let Some(id_or_slug) = args.id_or_slug.as_deref() {
         db.undelete(id_or_slug).map_err(anyhow::Error::from)?;
-        println!("✓ Restored {id_or_slug}");
+        if let Ok(entry) = db.get_entry(id_or_slug) {
+            show_create(&entry, registry.as_ref(), &args.output());
+        }
         return Ok(());
     }
 
@@ -987,7 +1011,8 @@ fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
     match target {
         Some(entry) => {
             db.undelete(&entry.id).map_err(anyhow::Error::from)?;
-            println!("✓ Restored {}", entry.slug);
+            let restored = db.get_entry(&entry.id).unwrap_or(entry);
+            show_create(&restored, registry.as_ref(), &args.output());
             Ok(())
         }
         None => {
@@ -1264,6 +1289,7 @@ mod tests {
             conflict: None,
             update: false,
             merge: false,
+            output_flags: Default::default(),
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
         let base = build_time(&args).unwrap();
@@ -1298,6 +1324,7 @@ mod tests {
             conflict: None,
             update: false,
             merge: false,
+            output_flags: Default::default(),
         };
         log_entry(Verb::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
@@ -1338,6 +1365,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            output_flags: Default::default(),
         };
         log_entry(Verb::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -1356,6 +1384,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            output_flags: Default::default(),
         };
         log_entry(Verb::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -1374,6 +1403,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            output_flags: Default::default(),
         };
         log_entry(Verb::Note, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
@@ -1486,6 +1516,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            output_flags: Default::default(),
         };
         log_entry(Verb::Switch, args, &db).unwrap();
         db.set_tracked("mood", false, None).unwrap();
@@ -1516,6 +1547,7 @@ mod tests {
             conflict: None,
             update: false,
             merge: false,
+            output_flags: Default::default(),
         }
     }
 
@@ -1657,7 +1689,7 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_head(HeadArgs { field: None, count: 10 }, &db).unwrap();
+        cmd_head(HeadArgs { field: None, count: 10, output_flags: Default::default() }, &db).unwrap();
 
         // Verify via db that ordering is ASC by time_start.
         let far_past = chrono::DateTime::UNIX_EPOCH;
@@ -1679,7 +1711,7 @@ mod tests {
         }
 
         // No panic on execution + the db method returns exactly `count` entries ASC.
-        cmd_head(HeadArgs { field: Some("mood".to_string()), count: 5 }, &db).unwrap();
+        cmd_head(HeadArgs { field: Some("mood".to_string()), count: 5, output_flags: Default::default() }, &db).unwrap();
 
         let got = db.entries_for_field_asc("mood", Some(5)).unwrap();
         assert_eq!(got.len(), 5);
@@ -1699,7 +1731,7 @@ mod tests {
         db.insert_entry(&make_entry_at("coffee", 300, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 400, "d1")).unwrap();
 
-        cmd_head(HeadArgs { field: Some("coffee".to_string()), count: 10 }, &db).unwrap();
+        cmd_head(HeadArgs { field: Some("coffee".to_string()), count: 10, output_flags: Default::default() }, &db).unwrap();
 
         let got = db.entries_for_field_asc("coffee", None).unwrap();
         assert_eq!(got.len(), 2);
@@ -1786,7 +1818,7 @@ mod tests {
 
         // Exercise the command dispatch path for completeness
         cmd_grep(
-            GrepArgs { patterns: vec!["happy".to_string()], field: None },
+            GrepArgs { patterns: vec!["happy".to_string()], field: None, output_flags: Default::default() },
             &db,
         )
         .unwrap();
@@ -1865,6 +1897,7 @@ mod tests {
             GrepArgs {
                 patterns: vec!["rust".to_string()],
                 field: Some("mood".to_string()),
+                output_flags: Default::default(),
             },
             &db,
         )
@@ -1878,7 +1911,7 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_head(HeadArgs { field: None, count: 10 }, &db).unwrap();
+        cmd_head(HeadArgs { field: None, count: 10, output_flags: Default::default() }, &db).unwrap();
 
         let got = db.entries_for_field_asc("mood", Some(10)).unwrap();
         assert_eq!(got.len(), 2);
@@ -1895,6 +1928,7 @@ mod tests {
             id_delimiter: ":".to_string(),
             keys: vec![],
             comment: None,
+            output_flags: Default::default(),
         }
     }
 
@@ -2268,6 +2302,7 @@ mod tests {
             id_or_slug: slug.map(str::to_string),
             force,
             window: window.to_string(),
+            output_flags: Default::default(),
         }
     }
 
@@ -2493,7 +2528,7 @@ mod tests {
         db.insert_entry(&e).unwrap();
 
         cmd_delete(
-            DeleteArgs { id_or_slug: id.clone(), force: true },
+            DeleteArgs { id_or_slug: id.clone(), force: true, output_flags: Default::default() },
             &db,
         )
         .unwrap();
@@ -2557,7 +2592,7 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         with_datum_editor(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.clone() }, &db).unwrap();
+            cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db).unwrap();
         });
 
         let after = db.get_entry(&e.id).unwrap();
@@ -2587,7 +2622,7 @@ mod tests {
 
         // `true` ignores its args → tempfile is left untouched.
         with_datum_editor("true", || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.clone() }, &db).unwrap();
+            cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db).unwrap();
         });
 
         let after = db.get_entry(&e.id).unwrap();
@@ -2618,7 +2653,7 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         let result = with_datum_editor_result(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.clone() }, &db)
+            cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db)
         });
         let err = result.unwrap_err();
         assert!(
