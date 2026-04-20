@@ -89,7 +89,9 @@ pub fn infer_legacy_version(_conn: &Connection) -> Result<u32> {
 }
 
 /// Run forward migrations from `current` up to `target`, using the given
-/// registry. Returns a list of summary strings for each migration applied.
+/// registry. All pending steps run inside a single transaction so a partial
+/// failure rolls back to `current` instead of leaving a half-migrated DB.
+/// Returns a list of summary strings for each migration applied.
 pub fn apply_migrations(
     conn: &Connection,
     migrations: &[Migration],
@@ -105,6 +107,7 @@ pub fn apply_migrations(
              (expected ≤ {target}); upgrade datum"
         )));
     }
+    let tx = conn.unchecked_transaction()?;
     let mut applied = Vec::new();
     let mut version = current;
     while version < target {
@@ -116,12 +119,43 @@ pub fn apply_migrations(
                     "no migration path from schema v{version} to v{target}"
                 ))
             })?;
-        (next.apply)(conn)?;
+        (next.apply)(&tx)?;
         version = next.to;
-        set_schema_version(conn, version)?;
+        set_schema_version(&tx, version)?;
         applied.push(format!("v{}→v{}: {}", next.from, next.to, next.summary));
     }
+    tx.commit()?;
     Ok(applied)
+}
+
+/// Status row reported by [`migration_status`].
+#[derive(Debug, Clone)]
+pub struct MigrationStatusRow {
+    pub from: u32,
+    pub to: u32,
+    pub summary: &'static str,
+    pub applied: bool,
+}
+
+/// Snapshot of migration state for reporting. Returns the current stored
+/// schema version, the binary's target version, and a row per registered
+/// migration tagged as applied/pending.
+pub fn migration_status(
+    conn: &Connection,
+    migrations: &[Migration],
+) -> Result<(u32, u32, Vec<MigrationStatusRow>)> {
+    let current = read_schema_version(conn)?.unwrap_or(CURRENT_SCHEMA_VERSION);
+    let target = CURRENT_SCHEMA_VERSION;
+    let rows = migrations
+        .iter()
+        .map(|m| MigrationStatusRow {
+            from: m.from,
+            to: m.to,
+            summary: m.summary,
+            applied: m.to <= current,
+        })
+        .collect();
+    Ok((current, target, rows))
 }
 
 /// Migrate an open connection to [`CURRENT_SCHEMA_VERSION`] using the
@@ -212,6 +246,87 @@ mod tests {
             matches!(err, DatumError::IncompatibleSchema(_)),
             "expected IncompatibleSchema for missing migration path, got {err:?}"
         );
+    }
+
+    #[test]
+    fn migrate_advances_schema_version() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        set_schema_version(&conn, 1).unwrap();
+
+        fn m1_to_2(c: &Connection) -> Result<()> {
+            c.execute_batch("CREATE TABLE IF NOT EXISTS t2 (x INTEGER);")?;
+            Ok(())
+        }
+        fn m2_to_3(c: &Connection) -> Result<()> {
+            c.execute_batch("CREATE TABLE IF NOT EXISTS t3 (x INTEGER);")?;
+            Ok(())
+        }
+        let migrations = &[
+            Migration { from: 1, to: 2, summary: "add t2", apply: m1_to_2 },
+            Migration { from: 2, to: 3, summary: "add t3", apply: m2_to_3 },
+        ];
+
+        apply_migrations(&conn, migrations, 1, 3).unwrap();
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(3));
+    }
+
+    #[test]
+    fn migrate_runs_pending_only() {
+        // DB already at v2; only v2→v3 and v3→v4 should run. The v1→v2 step
+        // must NOT be re-executed.
+        fn m1_to_2(c: &Connection) -> Result<()> {
+            c.execute_batch("CREATE TABLE IF NOT EXISTS ran_1_2 (x INTEGER);")?;
+            Ok(())
+        }
+        fn m2_to_3(c: &Connection) -> Result<()> {
+            c.execute_batch("CREATE TABLE IF NOT EXISTS ran_2_3 (x INTEGER);")?;
+            Ok(())
+        }
+        fn m3_to_4(c: &Connection) -> Result<()> {
+            c.execute_batch("CREATE TABLE IF NOT EXISTS ran_3_4 (x INTEGER);")?;
+            Ok(())
+        }
+        let migrations = &[
+            Migration { from: 1, to: 2, summary: "m12", apply: m1_to_2 },
+            Migration { from: 2, to: 3, summary: "m23", apply: m2_to_3 },
+            Migration { from: 3, to: 4, summary: "m34", apply: m3_to_4 },
+        ];
+
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        set_schema_version(&conn, 2).unwrap();
+
+        let applied = apply_migrations(&conn, migrations, 2, 4).unwrap();
+        assert_eq!(applied.len(), 2, "only two steps should run");
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(4));
+
+        fn table_exists(c: &Connection, name: &str) -> bool {
+            c.query_row(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                rusqlite::params![name],
+                |row| row.get::<_, i64>(0).map(|n| n > 0),
+            )
+            .unwrap_or(false)
+        }
+        assert!(!table_exists(&conn, "ran_1_2"), "v1→v2 must NOT have re-run");
+        assert!(table_exists(&conn, "ran_2_3"), "v2→v3 should have run");
+        assert!(table_exists(&conn, "ran_3_4"), "v3→v4 should have run");
+    }
+
+    #[test]
+    fn migrate_is_idempotent_on_already_current_db() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        set_schema_version(&conn, CURRENT_SCHEMA_VERSION).unwrap();
+
+        let first = migrate_to_current(&conn).unwrap();
+        assert!(first.is_empty(), "no migrations should run on a current DB");
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(CURRENT_SCHEMA_VERSION));
+
+        let second = migrate_to_current(&conn).unwrap();
+        assert!(second.is_empty(), "second run remains a no-op");
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(CURRENT_SCHEMA_VERSION));
     }
 
     #[test]

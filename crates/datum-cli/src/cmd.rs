@@ -14,9 +14,9 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         AliasCommand, BackupArgs, CheckArgs, Cli, Command, DayviewArgs, DeleteArgs, EditArgs,
-        GetArgs, GrepArgs, HeadArgs, IgnoreArgs, InfoArgs, LogArgs, MapArgs, MigrateArgs, NowArgs,
-        RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
-        UndoArgs, UpdateArgs,
+        GetArgs, GrepArgs, HeadArgs, IgnoreArgs, InfoArgs, LogArgs, MapArgs, MigrateCommand,
+        MigrateImportArgs, NowArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
+        TailArgs, TrackArgs, UndoArgs, UpdateArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::{self, device_id},
@@ -49,7 +49,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Alias(sub) => cmd_alias(sub, db),
         Command::Track(args) => cmd_track(args, db),
         Command::Ignore(args) => cmd_ignore(args, db),
-        Command::Migrate(args) => cmd_migrate(args, db),
+        Command::Migrate(sub) => cmd_migrate(sub, db),
         Command::Backup(args) => cmd_backup(args, db),
         Command::Restore(args) => cmd_restore(args, db),
         Command::Grep(args) => cmd_grep(args, db),
@@ -1505,9 +1505,63 @@ fn cmd_alias(sub: AliasCommand, db: &Db) -> Result<()> {
 
 // ─── Migration ───────────────────────────────────────────────────────────────
 
-fn cmd_migrate(args: MigrateArgs, db: &Db) -> Result<()> {
-    let content = std::fs::read_to_string(&args.backup_file)
-        .with_context(|| format!("Reading backup file: {}", args.backup_file))?;
+fn cmd_migrate(cmd: MigrateCommand, db: &Db) -> Result<()> {
+    match cmd {
+        MigrateCommand::Run => cmd_migrate_run(db),
+        MigrateCommand::Status => cmd_migrate_status(db),
+        MigrateCommand::Edit => cmd_migrate_edit(),
+        MigrateCommand::Import(args) => cmd_migrate_import(args, db),
+    }
+}
+
+fn cmd_migrate_run(db: &Db) -> Result<()> {
+    // Db::open already auto-advanced on session start. Re-check and report.
+    let applied = datum_core::migrations::migrate_to_current(db.conn())?;
+    let current = db.schema_version()?;
+    if applied.is_empty() {
+        println!("Schema already at v{current}. No pending migrations.");
+    } else {
+        println!("Advanced schema to v{current}:");
+        for line in applied {
+            println!("  ✓ {line}");
+        }
+    }
+    Ok(())
+}
+
+fn cmd_migrate_status(db: &Db) -> Result<()> {
+    let (current, target, rows) = datum_core::migrations::migration_status(
+        db.conn(),
+        datum_core::migrations::MIGRATIONS,
+    )?;
+    println!("Current schema version: v{current}");
+    println!("Binary target version:  v{target}");
+    println!();
+    println!("Registered migrations:");
+    if rows.is_empty() {
+        println!("  (none — schema v{target} is the initial shape)");
+    } else {
+        for r in rows {
+            let state = if r.applied { "applied" } else { "pending" };
+            println!("  v{}→v{}  [{state}]  {}", r.from, r.to, r.summary);
+        }
+    }
+    Ok(())
+}
+
+fn cmd_migrate_edit() -> Result<()> {
+    anyhow::bail!(
+        "`datum migrate edit` (per-entry data migration) is not yet implemented; \
+         tracked in bead da-glnr"
+    )
+}
+
+fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()> {
+    let backup_path = args.resolved_path()?.to_string();
+    let dry_run = args.dry_run;
+
+    let content = std::fs::read_to_string(&backup_path)
+        .with_context(|| format!("Reading backup file: {}", backup_path))?;
     let backup: serde_json::Value = serde_json::from_str(&content)
         .with_context(|| "Parsing backup JSON")?;
 
@@ -1560,7 +1614,7 @@ fn cmd_migrate(args: MigrateArgs, db: &Db) -> Result<()> {
         );
         entry.created_at = created_at;
 
-        if args.dry_run {
+        if dry_run {
             println!("[dry-run] would import: {}", entry.slug);
             imported += 1;
             continue;

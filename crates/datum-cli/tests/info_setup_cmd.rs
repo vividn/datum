@@ -68,6 +68,44 @@ fn info_runs_against_active_db() {
 }
 
 #[test]
+fn migrate_status_lists_registered_migrations() {
+    // End-to-end: `datum migrate status` dispatches cleanly against a fresh DB,
+    // and the core helper it calls reports one status row per registered
+    // migration. With MIGRATIONS empty (initial shape is v1), that's zero rows;
+    // the shape check still proves the plumbing is wired.
+    let db = fresh_db();
+
+    run_cli(&["migrate", "status"], &db).expect("migrate status dispatch");
+
+    let (current, target, rows) = datum_core::migrations::migration_status(
+        db.conn(),
+        datum_core::migrations::MIGRATIONS,
+    )
+    .unwrap();
+    assert_eq!(current, CURRENT_SCHEMA_VERSION);
+    assert_eq!(target, CURRENT_SCHEMA_VERSION);
+    assert_eq!(rows.len(), MIGRATIONS.len());
+    for (row, expected) in rows.iter().zip(MIGRATIONS.iter()) {
+        assert_eq!(row.from, expected.from);
+        assert_eq!(row.to, expected.to);
+        assert_eq!(row.summary, expected.summary);
+        assert_eq!(row.applied, expected.to <= current);
+    }
+}
+
+#[test]
+fn migrate_run_is_idempotent_on_current_db() {
+    // `datum migrate run` against an already-current DB reports no pending
+    // migrations and leaves schema_version unchanged.
+    let db = fresh_db();
+    let before = read_schema_version(db.conn()).unwrap();
+    run_cli(&["migrate", "run"], &db).expect("migrate run dispatch");
+    let after = read_schema_version(db.conn()).unwrap();
+    assert_eq!(before, after);
+    assert_eq!(after, Some(CURRENT_SCHEMA_VERSION));
+}
+
+#[test]
 fn apply_migrations_walks_registered_steps() {
     // End-to-end check that the real MIGRATIONS slice is coherent. We call
     // apply_migrations with (current, target) = (CURRENT, CURRENT) and

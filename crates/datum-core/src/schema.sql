@@ -93,3 +93,7 @@ CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
+
+-- Seed schema_version at the initial shape. Migrations bump this through
+-- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '1');

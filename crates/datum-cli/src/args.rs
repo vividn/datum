@@ -243,8 +243,9 @@ pub enum Command {
     /// Ignore a field in the now view.
     Ignore(IgnoreArgs),
 
-    /// Migrate data from a datum legacy backup JSON file.
-    Migrate(MigrateArgs),
+    /// Migration framework: schema migrations + legacy datum import.
+    #[command(subcommand)]
+    Migrate(MigrateCommand),
 
     /// Dump every live entry to JSONL (or a tar.gz archive if the path ends in `.tar.gz`).
     Backup(BackupArgs),
@@ -759,13 +760,41 @@ pub struct MapArgs {
     pub reduce: bool,
 }
 
+#[derive(Subcommand, Debug)]
+pub enum MigrateCommand {
+    /// Run any pending schema migrations to advance the DB to the current version.
+    Run,
+    /// Show each registered schema migration and whether it has been applied.
+    Status,
+    /// (stub) Apply a user-defined data migration (datum's `migrate edit`).
+    Edit,
+    /// Import entries from a legacy datum backup JSON file.
+    Import(MigrateImportArgs),
+}
+
 #[derive(Args, Debug)]
-pub struct MigrateArgs {
+pub struct MigrateImportArgs {
     /// Path to datum backup JSON file
-    pub backup_file: String,
+    #[arg(long = "from", value_name = "BACKUP_FILE", alias = "backup")]
+    pub backup_file: Option<String>,
+    /// Positional fallback: path to datum backup JSON file
+    #[arg(value_name = "BACKUP_FILE")]
+    pub backup_file_positional: Option<String>,
     /// Dry run — show what would be imported without writing
     #[arg(long)]
     pub dry_run: bool,
+}
+
+impl MigrateImportArgs {
+    /// Resolve the backup file from either `--from` or the positional arg.
+    pub fn resolved_path(&self) -> anyhow::Result<&str> {
+        self.backup_file
+            .as_deref()
+            .or(self.backup_file_positional.as_deref())
+            .ok_or_else(|| {
+                anyhow::anyhow!("migrate import requires a backup file (pass as positional or --from)")
+            })
+    }
 }
 
 #[derive(Args, Debug)]
