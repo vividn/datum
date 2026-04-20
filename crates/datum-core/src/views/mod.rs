@@ -15,6 +15,29 @@ use serde_json::Value as JsonValue;
 use crate::db::Db;
 use crate::error::{DatumError, Result};
 
+pub mod duration_sum;
+pub mod state_change;
+pub mod sub_human_id;
+pub mod timing;
+
+pub use duration_sum::DurationSumView;
+pub use state_change::StateChangeView;
+pub use sub_human_id::SubHumanIdView;
+pub use timing::TimingView;
+
+/// Registry pre-populated with every view shipped by datum-core.
+///
+/// Wire this into call sites (CLI, web, etc.) so `datum map <name>` sees every
+/// built-in view without each call site having to enumerate them.
+pub fn builtins() -> Registry {
+    let mut reg = Registry::new();
+    reg.insert(TimingView.name(), Box::new(TimingView));
+    reg.insert(StateChangeView.name(), Box::new(StateChangeView));
+    reg.insert(DurationSumView.name(), Box::new(DurationSumView));
+    reg.insert(SubHumanIdView.name(), Box::new(SubHumanIdView));
+    reg
+}
+
 /// A row emitted by a view's map or reduce phase.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ViewRow {

@@ -71,7 +71,7 @@ fn load_field_colors(db: &Db) -> Result<std::collections::HashMap<String, String
 // ─── Map / Reduce ────────────────────────────────────────────────────────────
 
 fn build_registry() -> Registry {
-    Registry::new()
+    datum_core::views::builtins()
 }
 
 fn cmd_map(args: MapArgs, db: &Db) -> Result<()> {
