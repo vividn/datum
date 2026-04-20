@@ -8,9 +8,10 @@
 //!
 //! Divergences from datum (locked in per-test, not silently papered over):
 //!   * datum's `meta.humanId` is the human-facing handle for a doc; daydumb's
-//!     analog is the `slug` (`field:time`) stored alongside the ULID `id`.
-//!     Cases #1 and #2 cover the two prefix surfaces (slug, id) that C3's
-//!     `resolve_prefix` binds together.
+//!     analog is the `slug` (`field:time`, the primary key) with a 12-char
+//!     base36 `hid` for prefix-addressable quick reference. Cases #1 and #2
+//!     cover the two prefix surfaces (slug, hid) that `resolve_prefix`
+//!     binds together.
 //!   * datum's standard `Show` emits an "EXISTS" tag from `getCmd`; daydumb's
 //!     `cmd_get` instead renders the resolved entry as a one-row preview
 //!     table (`print_entry` → `print_table`). Case #3 asserts the portable
@@ -63,31 +64,30 @@ fn get_resolves_slug_prefix() {
     // entry — proves `cmd_get` is on the C3 `resolve_prefix` path rather
     // than an exact-match shortcut.
     let resolved = db.resolve_prefix("coffee:a44").expect("resolve prefix");
-    assert_eq!(resolved.id, seeded.id);
     assert_eq!(resolved.slug, seeded.slug);
+    assert_eq!(resolved.hid, seeded.hid);
 }
 
 /// TS #2: "gets a document based on the first few letters of _id"
 ///
 /// Datum resolved `_id` prefix `"the_qu"` → `"the_quick_brown_fox"`.
-/// daydumb's `id` is a ULID, so the portable form is "prefix on the ULID".
-/// The A1 `--id` template only controls the slug, not the ULID, so we
-/// insert a fixture entry, read its generated ULID, and slice a prefix off
-/// the front.
+/// daydumb's analog is the `hid` column (random 12-char base36). The A1
+/// `--id` template only controls the slug, not the hid, so we insert a
+/// fixture, read its generated hid, and slice a prefix off the front.
 #[test]
-fn get_resolves_id_prefix() {
+fn get_resolves_hid_prefix() {
     let db = fresh_db();
     let entry = entry_builder("project")
         .verb(Verb::Note)
         .value(json!("the_quick_brown_fox"))
         .insert(&db);
-    let prefix = &entry.id[..6];
+    let prefix = &entry.hid[..6];
 
-    run_cli(&["get", prefix], &db).expect("get by id prefix");
+    run_cli(&["get", prefix], &db).expect("get by hid prefix");
 
     // Direct verification — cmd_get took this same path internally.
-    let resolved = db.resolve_prefix(prefix).expect("resolve id prefix");
-    assert_eq!(resolved.id, entry.id);
+    let resolved = db.resolve_prefix(prefix).expect("resolve hid prefix");
+    assert_eq!(resolved.hid, entry.hid);
 }
 
 /// TS #3: "outputs an EXISTS message when show is standard"
@@ -145,7 +145,7 @@ fn compound_ids_require_one_invocation_each() {
     let e2 = entry_builder("beta").value(json!("def")).insert(&db);
 
     // Compound form is a literal → no prefix matches → NotFound.
-    let compound = format!("{},{},", e1.id, e2.id);
+    let compound = format!("{},{},", e1.slug, e2.slug);
     let err = run_cli(&["get", &compound], &db)
         .expect_err("compound form must not resolve in daydumb");
     let msg = format!("{err:#}");
@@ -155,10 +155,8 @@ fn compound_ids_require_one_invocation_each() {
     );
 
     // Per-id invocations reach the end state datum's compound form was
-    // meant to achieve: both rows are individually resolvable via
-    // prefix. The two rows were inserted in the same millisecond and
-    // therefore share a long ULID prefix — we use the slug instead
-    // (distinct field names make the slug prefixes unambiguous).
+    // meant to achieve: both rows are individually resolvable via their
+    // slug (distinct field names make the slug prefixes unambiguous).
     for e in [&e1, &e2] {
         run_cli(&["get", &e.slug], &db)
             .unwrap_or_else(|err| panic!("get {}: {err:#}", e.slug));
@@ -231,7 +229,7 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
     // `get --pretty` through the full CLI path (alias pre-pass, clap,
     // dispatch, cmd_get → print_entry_pretty). Non-error → the arg is
     // recognized and the entry serializes.
-    run_cli(&["get", &entry.id, "--pretty"], &db).expect("get --pretty");
+    run_cli(&["get", &entry.slug, "--pretty"], &db).expect("get --pretty");
 
     // Round-trip the same serializer cmd_get uses and assert structure.
     // Two-space indent is the datum-compat contract (see A2).
@@ -244,8 +242,8 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
     assert_eq!(parsed["field"], json!("mood"));
     assert_eq!(parsed["verb"], json!("switch"));
     assert_eq!(parsed["value"], json!("focused"));
-    assert_eq!(parsed["id"], json!(entry.id));
     assert_eq!(parsed["slug"], json!(entry.slug));
+    assert_eq!(parsed["hid"], json!(entry.hid));
 }
 
 // ─── Binary harness (scoped to stdout-capture cases) ──────────────────────────
