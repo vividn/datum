@@ -1,0 +1,279 @@
+//! Parity tests for `datum delete` (P7 / da-0gjw).
+//!
+//! Ports the 6 cases from `deleteCmd.test.ts` in the original datum project,
+//! adapted to daydumb's design. Each Rust test maps 1-to-1 to a TS case;
+//! headers identify the source item.
+//!
+//! Divergences from datum (locked in per-test, not silently papered over):
+//!   * datum resolved targets via quickId prefix matching (`"a44q"` → humanId
+//!     `a44quickId`); daydumb's `delete` takes an **exact** id or slug. Cases
+//!     #1 and #2 port the "resolve by prefix" semantics as exact id/slug
+//!     lookups — the observable analogs.
+//!   * datum spied on internal `quickId` / `deleteDoc` calls (case #4).
+//!     daydumb has no equivalent wrapper; the portable invariant is that the
+//!     `del` alias (A2) dispatches to the same handler as `delete`, so case
+//!     #4 doubles as the acceptance criterion `del_alias_dispatches_to_delete`.
+//!   * datum's compound quickId (`"abc,def,ghi,"` → 3 deletes) is not
+//!     supported: daydumb's `delete` takes one id per invocation. Case #6
+//!     asserts the compound form is treated as a literal non-match (NotFound)
+//!     and that N independent invocations reach the same end state.
+//!
+//! Daydumb-specific invariants asserted alongside the ports (required by
+//! the bead scope):
+//!   * soft-delete sets `deleted_at`, the row is excluded from list queries
+//!     but still reachable via `get_entry_including_deleted` (A4 tombstone).
+//!   * `--force` is always passed in tests — the non-force path reads from
+//!     stdin and would block indefinitely under cargo test.
+
+mod common;
+
+use common::run_cli;
+use datum_core::test_util::{entry_builder, fresh_db};
+use datum_core::{assert_count, entry::Verb};
+use serde_json::json;
+use std::path::PathBuf;
+use std::process::Command;
+
+/// TS #1: "deletes a document based on first few letters of humanId"
+///
+/// Datum: seeded `_id=hello, meta.humanId=a44quickId`, then `deleteCmd("a44q")`
+/// resolved via quickId prefix → deleted `hello`. Daydumb has no quickId prefix
+/// matching in the delete path (`get_entry` is exact on `id OR slug`), so the
+/// portable analog is an exact-id lookup. The core invariants being locked in
+/// (tombstone, list-exclusion, ghost reachable) transfer directly.
+#[test]
+fn delete_by_exact_id_tombstones_entry() {
+    let db = fresh_db();
+    let entry = entry_builder("coffee").value(json!(1)).insert(&db);
+
+    run_cli(&["delete", &entry.id, "--force"], &db).expect("delete --force");
+
+    // Live read paths hide the tombstoned row.
+    assert_count!(db, "coffee", 0);
+    assert!(
+        matches!(
+            db.get_entry(&entry.id),
+            Err(datum_core::error::DatumError::NotFound(_)),
+        ),
+        "live get_entry must return NotFound after tombstone",
+    );
+
+    // But the row still exists with `deleted_at` set — soft-delete, not hard.
+    let ghost = db
+        .get_entry_including_deleted(&entry.id)
+        .expect("tombstoned row still reachable via including_deleted");
+    assert!(
+        ghost.deleted_at.is_some(),
+        "deleted_at must be populated on the tombstone",
+    );
+    assert_eq!(ghost.id, entry.id);
+}
+
+/// TS #2: "deletes a document based on first few letters of _id"
+///
+/// Datum: id prefix `the_qu` resolved to `the_quick_brown_fox`. Daydumb's
+/// exact-match alternative is the slug (`field:<templated>` / `field:<time>`)
+/// — the second observable handle for an entry alongside its ULID. The case
+/// exercises the slug path end-to-end and asserts tombstone semantics.
+#[test]
+fn delete_by_slug_tombstones_entry() {
+    let db = fresh_db();
+
+    // `--id %field%:fixed` pins a deterministic slug so we can reference it
+    // without depending on wall-clock time. This exercises the template
+    // interpolation path from A1, which the slug-lookup case relies on.
+    run_cli(&["occur", "event", "--id", "%field%:fixed"], &db).expect("seed event");
+    let seeded = &db.entries_for_field("event", None).unwrap()[0];
+    let slug = seeded.slug.clone();
+    assert_eq!(slug, "event:fixed", "slug interpolation must resolve");
+
+    run_cli(&["delete", &slug, "--force"], &db).expect("delete by slug");
+
+    assert_count!(db, "event", 0);
+    assert!(
+        matches!(
+            db.get_entry(&slug),
+            Err(datum_core::error::DatumError::NotFound(_)),
+        ),
+        "live get_entry by slug must return NotFound",
+    );
+    let ghost = db.get_entry_including_deleted(&slug).unwrap();
+    assert!(ghost.deleted_at.is_some(), "tombstone must be set");
+}
+
+/// TS #3: "only deletes the one document"
+///
+/// Seed two rows, delete one by id, verify the other survives. Distinct
+/// `value`s avoid content_hash collision (daydumb dedups on content_hash
+/// under the default Ignore strategy, which would otherwise turn the second
+/// insert into `Err(Duplicate)` if the rows were fixture-identical).
+#[test]
+fn delete_targets_one_row_among_many() {
+    let db = fresh_db();
+    let doomed = entry_builder("coffee").value(json!(1)).insert(&db);
+    let keeper = entry_builder("coffee").value(json!(2)).insert(&db);
+
+    run_cli(&["delete", &doomed.id, "--force"], &db).expect("delete doomed");
+
+    // Only the targeted row is tombstoned; the sibling survives intact.
+    assert_count!(db, "coffee", 1);
+    let surviving = &db.entries_for_field("coffee", None).unwrap()[0];
+    assert_eq!(surviving.id, keeper.id, "non-targeted row must survive");
+    assert!(
+        db.get_entry(&keeper.id).is_ok(),
+        "keeper remains directly fetchable",
+    );
+    assert!(
+        matches!(
+            db.get_entry(&doomed.id),
+            Err(datum_core::error::DatumError::NotFound(_)),
+        ),
+        "doomed row hidden from live reads",
+    );
+}
+
+/// TS #4: "calls quickId and deleteDoc" → adapted to
+/// `del_alias_dispatches_to_delete` (bead acceptance criterion).
+///
+/// Datum asserted the internal wiring (`quickId` + `deleteDoc` called per
+/// invocation). Daydumb has no direct analog — the portable invariant is
+/// that `del` (the visible alias declared in `args.rs`) and `delete` route
+/// to the same handler and produce the same end state. Asserts two rows
+/// tombstoned, one via each spelling, with identical observable outcomes.
+#[test]
+fn del_alias_dispatches_to_delete_handler() {
+    let db = fresh_db();
+    // Distinct values so content_hash differs (see case #3 rationale).
+    let via_delete = entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(json!("via-delete"))
+        .insert(&db);
+    let via_del = entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(json!("via-del"))
+        .insert(&db);
+
+    run_cli(&["delete", &via_delete.id, "--force"], &db).expect("canonical delete");
+    run_cli(&["del", &via_del.id, "--force"], &db).expect("del alias");
+
+    // Both rows are tombstoned — same handler, same effect.
+    assert_count!(db, "mood", 0);
+    for id in [&via_delete.id, &via_del.id] {
+        let ghost = db.get_entry_including_deleted(id).unwrap();
+        assert!(
+            ghost.deleted_at.is_some(),
+            "both `delete` and `del` must produce tombstones (missing on {id})",
+        );
+    }
+}
+
+/// TS #5: "outputs a DELETED message when show is standard"
+///
+/// Datum asserted `console.log` contained "DELETE". Daydumb routes the same
+/// action tag through `show_delete` → `show_action` (`Action::Delete.name()`
+/// = "DELETE"). The in-process harness doesn't capture stdout, so this case
+/// follows `output_parity.rs` and shells out to the compiled binary with
+/// `DATUM_COLOR=0` for portable assertions.
+///
+/// Also locks in `--show none` silencing — proof the "DELETE" string above
+/// comes from the output pipeline, not a stray `println!`.
+#[test]
+fn delete_emits_delete_tag_on_standard_show() {
+    let db = tmp_db_path();
+    let _ = std::fs::remove_file(&db);
+
+    // Pinned slug so the subsequent delete can reference it deterministically.
+    run_binary(&db, &["occur", "coffee", "--id", "%field%:pin"]);
+    let (stdout, _) = run_binary(&db, &["delete", "coffee:pin", "--force"]);
+    assert!(
+        stdout.contains("DELETE"),
+        "expected DELETE action tag on standard show, got: {stdout:?}",
+    );
+
+    // Second seed + delete with `--show none`: no tag, no noise.
+    run_binary(&db, &["occur", "coffee", "--id", "%field%:pin2"]);
+    let (silent, _) = run_binary(
+        &db,
+        &["delete", "coffee:pin2", "--force", "--show", "none"],
+    );
+    assert_eq!(
+        silent, "",
+        "--show none must silence the DELETE tag, got: {silent:?}",
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// TS #6: "can delete multiple documents using a compound quickid"
+///
+/// Datum accepted `"abc,def,ghi,"` and split on commas to issue N deletes.
+/// Daydumb does not: `delete` takes one id_or_slug. The ported case pins
+/// down the divergence — the compound form is a literal id lookup, so it
+/// errors with NotFound and leaves all rows intact — and then verifies the
+/// portable end state via N independent invocations.
+#[test]
+fn compound_ids_require_one_invocation_each() {
+    let db = fresh_db();
+    let e1 = entry_builder("coffee").value(json!(1)).insert(&db);
+    let e2 = entry_builder("coffee").value(json!(2)).insert(&db);
+    let e3 = entry_builder("coffee").value(json!(3)).insert(&db);
+
+    // Datum-style compound input is treated as a literal id → NotFound.
+    let compound = format!("{},{},{},", e1.id, e2.id, e3.id);
+    let err = run_cli(&["delete", &compound, "--force"], &db)
+        .expect_err("compound form must not resolve in daydumb");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("not found") || msg.contains("NotFound"),
+        "expected NotFound on compound input, got: {msg}",
+    );
+    // The failed compound call must not have tombstoned any of the three.
+    assert_count!(db, "coffee", 3);
+
+    // N independent invocations reach the end state datum's compound form
+    // was meant to achieve.
+    for e in [&e1, &e2, &e3] {
+        run_cli(&["delete", &e.id, "--force"], &db)
+            .unwrap_or_else(|err| panic!("delete {}: {err:#}", e.id));
+    }
+    assert_count!(db, "coffee", 0);
+    for e in [&e1, &e2, &e3] {
+        assert!(
+            db.get_entry_including_deleted(&e.id)
+                .unwrap()
+                .deleted_at
+                .is_some(),
+            "each row must carry a tombstone after per-id deletion",
+        );
+    }
+}
+
+// ─── Binary harness (scoped to stdout-capture cases) ──────────────────────────
+
+fn tmp_db_path() -> PathBuf {
+    let mut p = std::env::temp_dir();
+    let pid = std::process::id();
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    p.push(format!("datum-delete-parity-{pid}-{nonce}.db"));
+    p
+}
+
+fn run_binary(db: &PathBuf, args: &[&str]) -> (String, String) {
+    let bin = env!("CARGO_BIN_EXE_datum");
+    let out = Command::new(bin)
+        .env("DATUM_DB", db)
+        .env("DATUM_COLOR", "0")
+        .args(args)
+        .output()
+        .expect("run datum");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "datum {args:?} failed: stderr={stderr}",
+    );
+    (stdout, stderr)
+}
