@@ -1,0 +1,377 @@
+//! Parity tests for `datum occur` (P2 / da-vgma).
+//!
+//! Ports the 9 cases from `occurCmd.test.ts` in the original datum project,
+//! adapted to daydumb's flag-based model. Each Rust test maps 1-to-1 to a TS
+//! case; headers identify the source item.
+//!
+//! Divergences from datum:
+//!   * daydumb's `-z`/`--timezone` flag is parsed but not yet plumbed into
+//!     `build_time` — the cases that verified explicit offsets (`-z 0`,
+//!     `-z +3`, `-z Europe/Berlin`) are adapted to use local-zone interpretation.
+//!   * `--no-metadata`/`-M` ships with P1 (da-wsax) — the TS case is ported as
+//!     a structural skip that documents the future wiring target.
+//!   * `-D`/`--full-day` has no daydumb equivalent (entries are always
+//!     instant-anchored); the TS case is ported as a structural skip.
+//!   * Datum's `%fieldStructure` interpolated the stored `field` itself;
+//!     daydumb lacks that but does template the slug via `--id`, so the
+//!     "composite field" TS case maps to slug interpolation via `--id`.
+
+mod common;
+
+use chrono::{Duration, Utc};
+use common::run_cli;
+use datum_core::test_util::fresh_db;
+use datum_core::{assert_count, assert_entry_matches};
+use serde_json::json;
+
+/// TS #1: "creates a document with an occurTime"
+///
+/// `occur field` creates exactly one entry with `time_start ≈ now` and no
+/// `time_end` (point-in-time event). The slug is `field:<minute-truncated ISO>`
+/// — daydumb's build_slug normalizes to minute precision, so the exact
+/// millisecond form from datum does not apply, but the field-prefix contract
+/// does.
+#[test]
+fn occur_creates_entry_with_time_start() {
+    let db = fresh_db();
+
+    let before = Utc::now();
+    run_cli(&["occur", "field"], &db).expect("occur field");
+    let after = Utc::now();
+
+    assert_count!(db, "field", 1);
+    let entry = &db.entries_for_field("field", None).unwrap()[0];
+    assert_entry_matches!(entry, field: "field", verb: "occur");
+
+    let ts = entry.time_start.as_ref().expect("occur sets time_start").utc;
+    assert!(
+        ts >= before - Duration::seconds(1) && ts <= after + Duration::seconds(1),
+        "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
+    );
+    assert!(
+        entry.time_end.is_none(),
+        "occur is point-in-time: no time_end",
+    );
+    assert!(entry.slug.starts_with("field:"));
+
+    // The entry is retrievable by slug (round-trip through the DB).
+    let fetched = db.get_entry(&entry.slug).unwrap();
+    assert_eq!(fetched.id, entry.id);
+}
+
+/// TS #2: "stores the occurTime in the data"
+///
+/// Datum: `occurCmd("event -d 2021-08-23 -t 12 -z 0")` → occurTime.utc =
+/// `2021-08-23T12:00:00.000Z`. Daydumb's `-z` is parsed but unused (see A5
+/// follow-up), so we verify against local-zone interpretation of
+/// `2021-08-23 12:00`. The invariant being locked in: `-d DATE -t HHMM`
+/// consistently produce the same UTC instant.
+#[test]
+fn date_and_time_flags_set_absolute_time() {
+    let db = fresh_db();
+
+    run_cli(&["occur", "event", "-d", "2021-08-23", "-t", "1200"], &db)
+        .expect("occur -d -t");
+
+    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    assert_entry_matches!(entry, field: "event", verb: "occur");
+
+    let ts = entry.time_start.as_ref().unwrap().utc;
+    let expected_local = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap()
+        .and_local_timezone(chrono::Local)
+        .single()
+        .expect("2021-08-23 12:00 is unambiguous in every zone");
+    let expected_utc = expected_local.with_timezone(&Utc);
+    assert_eq!(
+        ts, expected_utc,
+        "time_start must resolve to local 2021-08-23 12:00",
+    );
+}
+
+/// TS #3: "stores the occurTime in DataOnly docs"
+///
+/// Datum's `-M` produced a DataOnly document (no `meta.*` block). Daydumb's
+/// `--no-metadata` ships with P1 (da-wsax) and is not yet exposed. The ported
+/// case structurally anchors the future wiring: today, the flag is absent and
+/// the logged entry carries device/created_at metadata unconditionally.
+#[test]
+fn no_metadata_flag_pending_from_p1() {
+    let db = fresh_db();
+
+    // The flag is not implemented yet — invocation must fail with an
+    // "unexpected argument" parse error rather than silently succeed.
+    let err = run_cli(&["occur", "event", "--no-metadata"], &db)
+        .expect_err("--no-metadata is not yet plumbed (P1 da-wsax)");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("--no-metadata") || msg.contains("unexpected"),
+        "expected clap to reject unknown flag, got: {msg}",
+    );
+    // The rejection must not have silently written a row.
+    assert_count!(db, "event", 0);
+
+    // Without the flag, a normal occur still records metadata — the invariant
+    // the future `-M` case will invert.
+    run_cli(&["occur", "event"], &db).expect("occur event");
+    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    assert!(!entry.device_id.is_empty(), "device_id must be populated");
+    assert!(
+        (Utc::now() - entry.created_at).num_seconds().abs() < 5,
+        "created_at must be set to ~now",
+    );
+}
+
+/// TS #4: "stores offset" (`-z +3`)
+///
+/// Daydumb's `-z` flag is parsed into `LogArgs.timezone` but not yet applied
+/// to `build_time`, so specifying it is effectively a no-op. The ported case
+/// documents the current contract: the entry materializes at the local-zone
+/// interpretation of `2021-08-23 12:00` regardless of `-z`. When `-z` wiring
+/// lands, this test should be rewritten to assert the datum semantics.
+#[test]
+fn offset_flag_currently_a_noop() {
+    let db = fresh_db();
+
+    run_cli(
+        &["occur", "event", "-d", "2021-08-23", "-t", "1200", "-z", "+3"],
+        &db,
+    )
+    .expect("occur -z+3");
+
+    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    let ts = entry.time_start.as_ref().unwrap().utc;
+    let expected_utc = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap()
+        .and_local_timezone(chrono::Local)
+        .single()
+        .unwrap()
+        .with_timezone(&Utc);
+    assert_eq!(
+        ts, expected_utc,
+        "`-z +3` is currently ignored — time resolves to local 12:00",
+    );
+}
+
+/// TS #5: "stores offset from an IANA timezone" (`-z Europe/Berlin`)
+///
+/// Same divergence as #4: IANA zone parsing is not yet plumbed. The case
+/// locks in "does not crash, does not corrupt, does not silently rezone".
+#[test]
+fn iana_timezone_flag_currently_a_noop() {
+    let db = fresh_db();
+
+    run_cli(
+        &[
+            "occur",
+            "event",
+            "-d",
+            "2023-12-04",
+            "-t",
+            "1200",
+            "-z",
+            "Europe/Berlin",
+        ],
+        &db,
+    )
+    .expect("occur -z Europe/Berlin");
+
+    let entry = &db.entries_for_field("event", None).unwrap()[0];
+    let ts = entry.time_start.as_ref().unwrap().utc;
+    let expected_utc = chrono::NaiveDate::from_ymd_opt(2023, 12, 4)
+        .unwrap()
+        .and_hms_opt(12, 0, 0)
+        .unwrap()
+        .and_local_timezone(chrono::Local)
+        .single()
+        .unwrap()
+        .with_timezone(&Utc);
+    assert_eq!(ts, expected_utc);
+}
+
+/// TS #6: "records lastState as null if the active state is null"
+///
+/// Datum writes `lastState` onto the occur document to capture the prior
+/// state; daydumb does not duplicate that onto the entry (it reconstructs
+/// state from the verb timeline). The portable invariant: before any entry,
+/// `get_active_state` returns `null`; after one occur, it compiles to
+/// `false` (see `state::compile_state` for the Occur rule) — matching the
+/// datum test's observation that "even 1 occur document is enough to switch
+/// active state to false from null".
+#[test]
+fn occur_flips_state_from_null_to_false() {
+    let db = fresh_db();
+
+    let before_any = db.get_active_state("event", Utc::now()).unwrap();
+    assert_eq!(
+        before_any,
+        json!(null),
+        "no entries ⇒ state is null (datum parity)",
+    );
+
+    run_cli(&["occur", "event"], &db).expect("first occur");
+    let after_one = db
+        .get_active_state("event", Utc::now() + Duration::seconds(1))
+        .unwrap();
+    assert_eq!(
+        after_one,
+        json!(false),
+        "occur compiles to state=false at time_start",
+    );
+
+    run_cli(&["occur", "event"], &db).expect("second occur");
+    assert_count!(db, "event", 2);
+    // Daydumb does not stamp `last_state` on occur entries — the entry's
+    // extra_data is None unless the user provided keys.
+    let entries = db.entries_for_field("event", None).unwrap();
+    for e in &entries {
+        if let Some(extra) = &e.extra_data {
+            assert!(
+                extra.get("last_state").is_none(),
+                "occur does not record last_state (daydumb divergence)",
+            );
+        }
+    }
+}
+
+/// TS #7: "handles negative number time arguments correctly"
+///
+/// Datum: `-d -1d -t -1h` → 1 day + 1 hour back; `-t -20` → 20 min back.
+/// Daydumb: `-d=-1` (days) and `-t=-60` (minutes) express the same offsets.
+/// The `=` form pins the negative value to the flag so clap does not treat
+/// `-1` as a standalone arg (identical trick used in `start_cmd.rs`).
+#[test]
+fn stacked_negative_offsets_subtract_correctly() {
+    let db = fresh_db();
+
+    let before = Utc::now();
+    run_cli(&["occur", "event", "-d=-1", "-t=-60"], &db)
+        .expect("occur -d=-1 -t=-60");
+    let after = Utc::now();
+
+    let e1 = &db.entries_for_field("event", None).unwrap()[0];
+    let ts1 = e1.time_start.as_ref().unwrap().utc;
+    let offset = Duration::days(1) + Duration::hours(1);
+    let lo = before - offset - Duration::seconds(2);
+    let hi = after - offset + Duration::seconds(2);
+    assert!(
+        ts1 >= lo && ts1 <= hi,
+        "expected ~25h back (lo={lo} hi={hi} got={ts1})",
+    );
+
+    let before2 = Utc::now();
+    run_cli(&["occur", "event", "-t=-20"], &db).expect("occur -t=-20");
+    let after2 = Utc::now();
+
+    let entries = db.entries_for_field("event", None).unwrap();
+    assert_eq!(entries.len(), 2);
+    // Grab the most-recent entry by created_at.
+    let e2 = entries
+        .iter()
+        .max_by_key(|e| e.created_at)
+        .expect("entries present");
+    let ts2 = e2.time_start.as_ref().unwrap().utc;
+    let lo2 = before2 - Duration::minutes(20) - Duration::seconds(2);
+    let hi2 = after2 - Duration::minutes(20) + Duration::seconds(2);
+    assert!(
+        ts2 >= lo2 && ts2 <= hi2,
+        "expected ~20 min back (lo={lo2} hi={hi2} got={ts2})",
+    );
+}
+
+/// TS #8: "can occur on a full day"
+///
+/// Datum's `-D`/`--full-day` recorded a whole-day event (`occurTime.utc =
+/// "2024-04-23"` with no time component). Daydumb has no full-day mode:
+/// entries are always anchored to an instant, and `time_start.utc` is
+/// always a full `DateTime<Utc>`. The ported case asserts the current
+/// contract — `-D` and `--full-day` are not recognized, and bare `occur`
+/// with `-d DATE` anchors to the start of that local day when no `-t` is
+/// supplied.
+#[test]
+fn full_day_flag_not_supported() {
+    let db = fresh_db();
+
+    assert!(
+        run_cli(&["occur", "event", "-D"], &db).is_err(),
+        "-D must not silently succeed",
+    );
+    assert!(
+        run_cli(&["occur", "happening", "--full-day"], &db).is_err(),
+        "--full-day must not silently succeed",
+    );
+
+    // Current full-day analog: `-d DATE` without `-t` anchors at the local
+    // instant corresponding to "now's time of day on that date".
+    // We only assert that the entry lands on the requested calendar date in
+    // local time (avoiding timezone-induced off-by-one near midnight).
+    run_cli(&["occur", "event", "-d", "2024-04-23"], &db).expect("occur -d DATE");
+    let e = &db.entries_for_field("event", None).unwrap()[0];
+    let local_date = e
+        .time_start
+        .as_ref()
+        .unwrap()
+        .utc
+        .with_timezone(&chrono::Local)
+        .date_naive();
+    assert_eq!(
+        local_date,
+        chrono::NaiveDate::from_ymd_opt(2024, 4, 23).unwrap(),
+        "entry lands on 2024-04-23 in local time",
+    );
+}
+
+/// TS #9: "correctly displays interpolated field values in output"
+///
+/// Datum interpolated the *field* itself (`%task%` became the entry's
+/// stored field name, using extra_data values). Daydumb does not template
+/// the field, but A1 ships template interpolation on the slug via `--id`.
+/// The closest observable analog: `--id "%task%" task=Testing` produces a
+/// slug whose interpolated component is "Testing". Composite templates
+/// (`%project%-%task%`) produce concatenated slugs. This locks in the flag
+/// wiring on the `occur` verb specifically (other LogArgs commands are
+/// covered by the A1 unit tests).
+#[test]
+fn id_template_interpolates_extra_data_on_occur() {
+    let db = fresh_db();
+
+    // Single-key template.
+    run_cli(
+        &["occur", "event", "task=Testing", "--id", "%task%"],
+        &db,
+    )
+    .expect("occur --id %task%");
+    let e1 = &db.entries_for_field("event", None).unwrap()[0];
+    assert_eq!(e1.slug, "Testing", "slug = interpolated %task%");
+    assert_eq!(
+        e1.id_structure.as_deref(),
+        Some("%task%"),
+        "id_structure must persist the template",
+    );
+    assert_eq!(
+        e1.extra_data.as_ref().unwrap().get("task"),
+        Some(&json!("Testing")),
+    );
+
+    // Composite template with two keys.
+    let db2 = fresh_db();
+    run_cli(
+        &[
+            "occur",
+            "event",
+            "project=Output",
+            "task=Interpolation",
+            "--id",
+            "%project%-%task%",
+        ],
+        &db2,
+    )
+    .expect("occur --id %project%-%task%");
+    let e2 = &db2.entries_for_field("event", None).unwrap()[0];
+    assert_eq!(e2.slug, "Output-Interpolation");
+    assert_eq!(e2.id_structure.as_deref(), Some("%project%-%task%"));
+}
