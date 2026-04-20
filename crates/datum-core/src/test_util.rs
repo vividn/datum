@@ -151,13 +151,7 @@ pub struct SpecBuilder {
 impl SpecBuilder {
     pub fn new(field: impl Into<String>) -> Self {
         Self {
-            spec: FieldSpec {
-                field: field.into(),
-                default_verb: Verb::Occur,
-                subfields: Default::default(),
-                description: None,
-                unit: None,
-            },
+            spec: FieldSpec::new(field, Verb::Occur),
         }
     }
 

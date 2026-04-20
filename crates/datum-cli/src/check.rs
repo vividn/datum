@@ -419,13 +419,8 @@ mod tests {
                 unit: None,
             },
         );
-        let spec = FieldSpec {
-            field: "mood".to_string(),
-            default_verb: Verb::Switch,
-            subfields,
-            description: None,
-            unit: None,
-        };
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.subfields = subfields;
         db.save_field_spec(&spec).unwrap();
 
         // Entry carries an *undeclared* extra_data key "weather".

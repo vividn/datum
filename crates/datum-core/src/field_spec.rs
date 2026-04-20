@@ -1,8 +1,14 @@
 //! Field specs and the alias system.
 //!
-//! A FieldSpec defines the schema for a tracked field — what verb it uses by
-//! default, what extra keys it requires or accepts, and what units to expect.
+//! A FieldSpec is the source of truth for a tracked field. It defines:
+//! default verb, subfields, id template, color, allowed states with per-state
+//! color overrides, derived aliases (auto-created from allowed states), and
+//! tracking state (tracked / ignored flags in the `now` view).
+//!
 //! Aliases are pre-filled argument sets that resolve to a full datum command.
+//! "Derived" aliases are auto-generated from a field's allowed_states; they
+//! live in the aliases table but are owned by (and cascade-deleted with) the
+//! owning FieldSpec.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -34,6 +40,16 @@ pub enum SubfieldType {
     Any,
 }
 
+/// An alias auto-generated from a FieldSpec state. Lives inside FieldSpec
+/// and is mirrored into the aliases table on save.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DerivedAlias {
+    /// State name that produced this alias (also used as the alias name).
+    pub state: String,
+    /// The argv expansion (without leading "datum"), e.g. "switch mood happy".
+    pub expands_to: String,
+}
+
 /// Full specification for a tracked field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldSpec {
@@ -41,11 +57,72 @@ pub struct FieldSpec {
     /// Default verb when none is specified.
     pub default_verb: Verb,
     /// Named subfields with their constraints.
+    #[serde(default)]
     pub subfields: HashMap<String, SubfieldSpec>,
     /// Human description of this field.
+    #[serde(default)]
     pub description: Option<String>,
     /// Default unit for the primary value.
+    #[serde(default)]
     pub unit: Option<String>,
+
+    /// Template for entry ids/slugs, e.g. "%field%:%state%".
+    #[serde(default)]
+    pub id_template: Option<String>,
+    /// Overall field color (hex or ANSI-256), used in the `now` view.
+    #[serde(default)]
+    pub color: Option<String>,
+    /// Allowed state values (for Switch-verb fields). None = unconstrained.
+    #[serde(default)]
+    pub allowed_states: Option<Vec<String>>,
+    /// Per-state color overrides.
+    #[serde(default)]
+    pub state_colors: HashMap<String, String>,
+    /// Auto-derived aliases (one per allowed state). Rebuilt on save.
+    #[serde(default)]
+    pub derived_aliases: Vec<DerivedAlias>,
+
+    /// True when this field should appear in `datum now`.
+    #[serde(default)]
+    pub tracked: bool,
+    /// True when this field is explicitly hidden from `datum now`.
+    #[serde(default)]
+    pub ignored: bool,
+}
+
+impl FieldSpec {
+    /// New bare spec with sensible defaults for the given field name and verb.
+    pub fn new(field: impl Into<String>, default_verb: Verb) -> Self {
+        Self {
+            field: field.into(),
+            default_verb,
+            subfields: HashMap::new(),
+            description: None,
+            unit: None,
+            id_template: None,
+            color: None,
+            allowed_states: None,
+            state_colors: HashMap::new(),
+            derived_aliases: Vec::new(),
+            tracked: false,
+            ignored: false,
+        }
+    }
+
+    /// Regenerate derived_aliases from allowed_states. One alias per state,
+    /// expanding to `switch <field> <state>`. Idempotent.
+    pub fn regenerate_derived_aliases(&mut self) {
+        self.derived_aliases = match &self.allowed_states {
+            None => Vec::new(),
+            Some(states) => states
+                .iter()
+                .map(|s| DerivedAlias {
+                    state: s.clone(),
+                    expands_to: format!("switch {} {}", self.field, s),
+                })
+                .collect(),
+        };
+    }
 }
 
 /// An alias expands to a full datum command prefix.
@@ -153,6 +230,13 @@ mod tests {
             subfields,
             description: Some("Vocabulary word in a foreign language".to_string()),
             unit: None,
+            id_template: None,
+            color: None,
+            allowed_states: None,
+            state_colors: HashMap::new(),
+            derived_aliases: Vec::new(),
+            tracked: false,
+            ignored: false,
         }
     }
 
@@ -186,5 +270,40 @@ mod tests {
         assert!(required.contains(&"srcLang".to_string()));
         assert!(required.contains(&"translations".to_string()));
         assert!(!required.contains(&"pos".to_string()));
+    }
+
+    #[test]
+    fn regenerate_derived_aliases_builds_one_per_state() {
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
+        spec.regenerate_derived_aliases();
+        assert_eq!(spec.derived_aliases.len(), 2);
+        let happy = spec.derived_aliases.iter().find(|a| a.state == "happy").unwrap();
+        assert_eq!(happy.expands_to, "switch mood happy");
+    }
+
+    #[test]
+    fn regenerate_derived_aliases_empty_when_no_states() {
+        let mut spec = FieldSpec::new("coffee", Verb::Occur);
+        spec.regenerate_derived_aliases();
+        assert!(spec.derived_aliases.is_empty());
+    }
+
+    #[test]
+    fn legacy_spec_json_deserializes_with_defaults() {
+        // Old field_specs JSON (phase-1 shape) must still deserialize.
+        let legacy = r#"{
+            "field": "mood",
+            "default_verb": "switch",
+            "subfields": {},
+            "description": null,
+            "unit": null
+        }"#;
+        let spec: FieldSpec = serde_json::from_str(legacy).unwrap();
+        assert_eq!(spec.field, "mood");
+        assert!(!spec.tracked);
+        assert!(!spec.ignored);
+        assert!(spec.allowed_states.is_none());
+        assert!(spec.derived_aliases.is_empty());
     }
 }

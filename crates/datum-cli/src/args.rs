@@ -277,10 +277,60 @@ pub struct DeleteArgs {
 pub enum SpecCommand {
     /// Show a field spec
     Show { field: String },
-    /// Define or update a field spec from JSON
-    Set { field: String, json: String },
+    /// Define or update a field spec. Use --json for a full replacement,
+    /// or individual flags to merge into the existing spec.
+    Set(SpecSetArgs),
     /// List all field specs
     List,
+    /// Remove a field spec (cascades to its derived aliases)
+    Remove { field: String },
+}
+
+#[derive(Args, Debug)]
+pub struct SpecSetArgs {
+    /// Field name
+    pub field: String,
+
+    /// Full spec as JSON (replaces any existing spec completely)
+    #[arg(long)]
+    pub json: Option<String>,
+
+    /// Default verb: occur | start | stop | switch | note
+    #[arg(long = "default-verb")]
+    pub default_verb: Option<String>,
+
+    /// Allowed state (repeatable). Each state also becomes a derived alias
+    /// expanding to `switch <field> <state>`.
+    #[arg(long = "state", value_name = "STATE")]
+    pub states: Vec<String>,
+
+    /// Overall field color: hex ("ff6600" or "#ff6600") or ANSI-256 ("196")
+    #[arg(long)]
+    pub color: Option<String>,
+
+    /// Per-state color override in STATE=COLOR form (repeatable)
+    #[arg(long = "state-color", value_name = "STATE=COLOR")]
+    pub state_colors: Vec<String>,
+
+    /// Id/slug template, e.g. "%field%:%state%"
+    #[arg(long = "id-template")]
+    pub id_template: Option<String>,
+
+    /// Free-form description
+    #[arg(long)]
+    pub description: Option<String>,
+
+    /// Default unit for the primary value
+    #[arg(long)]
+    pub unit: Option<String>,
+
+    /// Mark the field as tracked (shown in `datum now`)
+    #[arg(long)]
+    pub track: bool,
+
+    /// Mark the field as ignored in `datum now`
+    #[arg(long)]
+    pub ignore: bool,
 }
 
 #[derive(Subcommand, Debug)]

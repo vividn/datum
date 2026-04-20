@@ -47,36 +47,29 @@ CREATE INDEX IF NOT EXISTS idx_entries_field
 CREATE INDEX IF NOT EXISTS idx_entries_time
     ON entries (COALESCE(time_start_utc, time_end_utc, created_at));
 
--- Field specs (schemas for known fields)
+-- Field specs: single source of truth for a field's schema, tracking state,
+-- colors, allowed states, id template, and derived aliases. Stored as a JSON
+-- blob so the shape can evolve without migrations.
 CREATE TABLE IF NOT EXISTS field_specs (
     field       TEXT NOT NULL PRIMARY KEY,
     spec_json   TEXT NOT NULL
 );
 
--- Aliases
+-- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
+-- when the alias was auto-generated from a FieldSpec state; such rows
+-- cascade-delete when the owning spec is deleted or its states change.
 CREATE TABLE IF NOT EXISTS aliases (
-    name        TEXT NOT NULL PRIMARY KEY,
-    alias_json  TEXT NOT NULL
+    name                TEXT NOT NULL PRIMARY KEY,
+    alias_json          TEXT NOT NULL,
+    derived_from_field  TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
+    ON aliases (derived_from_field);
 
 -- Sync state: per-device vector clock for changeset-based sync
 CREATE TABLE IF NOT EXISTS sync_state (
     device_id   TEXT NOT NULL PRIMARY KEY,
     last_seq    TEXT NOT NULL,           -- ULID of last synced entry from this device
     updated_at  TEXT NOT NULL
-);
-
--- Tracked fields: which fields appear in `datum now`
-CREATE TABLE IF NOT EXISTS tracked_fields (
-    field   TEXT NOT NULL PRIMARY KEY,
-    ignored INTEGER NOT NULL DEFAULT 0,
-    color   TEXT    -- NULL = derive from hash of field name
-);
-
--- Per-state color overrides for tracked fields
-CREATE TABLE IF NOT EXISTS field_state_colors (
-    field   TEXT NOT NULL,
-    state   TEXT NOT NULL,
-    color   TEXT NOT NULL,
-    PRIMARY KEY (field, state)
 );

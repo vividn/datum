@@ -2,6 +2,12 @@
 //!
 //! All entry data, field specs, and aliases live in a single SQLite file.
 //! The schema is designed to be CRDT-friendly (append-mostly, ULID-ordered).
+//!
+//! FieldSpec is the source of truth for a field's tracking state, color,
+//! allowed states, and derived aliases. The `tracked_fields` and
+//! `field_state_colors` tables have been absorbed into the FieldSpec JSON;
+//! helper methods here project that shape back out for callers that still
+//! work in terms of "tracked fields" and "state colors".
 
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
@@ -12,7 +18,7 @@ use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
 use crate::time::DatumTime;
 use chrono::{DateTime, Utc};
 
-/// A row from the `tracked_fields` table.
+/// Projection of a FieldSpec for the `now` view. Built from FieldSpec on read.
 pub struct TrackedField {
     pub field: String,
     pub ignored: bool,
@@ -179,8 +185,21 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
+    /// Delete an entry by id or slug. Returns Err(NotFound) if no rows affected.
+    pub fn delete_entry(&self, id_or_slug: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "DELETE FROM entries WHERE id = ?1 OR slug = ?1",
+            params![id_or_slug],
+        )?;
+        if affected == 0 {
+            Err(DatumError::NotFound(id_or_slug.to_string()))
+        } else {
+            Ok(())
+        }
+    }
+
     // -------------------------------------------------------------------------
-    // Field specs and aliases
+    // Aliases
     // -------------------------------------------------------------------------
 
     /// Look up a single alias by name. Returns None if not found.
@@ -198,127 +217,99 @@ impl Db {
         }
     }
 
-    /// Delete an entry by id or slug. Returns Err(NotFound) if no rows affected.
-    pub fn delete_entry(&self, id_or_slug: &str) -> Result<()> {
-        let affected = self.conn.execute(
-            "DELETE FROM entries WHERE id = ?1 OR slug = ?1",
-            params![id_or_slug],
-        )?;
-        if affected == 0 {
-            Err(DatumError::NotFound(id_or_slug.to_string()))
-        } else {
-            Ok(())
-        }
-    }
-
-    pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
-        let json = serde_json::to_string(spec)?;
+    /// Delete a user-created alias. Fails silently if it doesn't exist.
+    /// Does NOT delete derived aliases (those are managed by their owning spec).
+    pub fn delete_alias(&self, name: &str) -> Result<()> {
         self.conn.execute(
-            "INSERT OR REPLACE INTO field_specs (field, spec_json) VALUES (?1, ?2)",
-            params![spec.field, json],
+            "DELETE FROM aliases WHERE name = ?1 AND derived_from_field IS NULL",
+            params![name],
         )?;
         Ok(())
     }
 
+    /// Save a user-created alias (derived_from_field = NULL).
     pub fn save_alias(&self, alias: &Alias) -> Result<()> {
         let json = serde_json::to_string(alias)?;
         self.conn.execute(
-            "INSERT OR REPLACE INTO aliases (name, alias_json) VALUES (?1, ?2)",
+            "INSERT INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, NULL)
+             ON CONFLICT(name) DO UPDATE SET alias_json = excluded.alias_json,
+                                             derived_from_field = NULL",
             params![alias.name, json],
         )?;
         Ok(())
     }
 
     // -------------------------------------------------------------------------
-    // Tracking (tracked_fields + field_state_colors)
+    // Field specs (source of truth)
     // -------------------------------------------------------------------------
 
-    /// Insert or update a field's tracking state and optional color.
-    /// When `color` is None, the stored color (if any) is preserved.
-    pub fn set_tracked(&self, field: &str, ignored: bool, color: Option<&str>) -> Result<()> {
-        if let Some(c) = color {
-            self.conn.execute(
-                "INSERT INTO tracked_fields (field, ignored, color) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(field) DO UPDATE SET ignored = excluded.ignored, color = excluded.color",
-                params![field, ignored as i32, c],
-            )?;
-        } else {
-            self.conn.execute(
-                "INSERT INTO tracked_fields (field, ignored) VALUES (?1, ?2)
-                 ON CONFLICT(field) DO UPDATE SET ignored = excluded.ignored",
-                params![field, ignored as i32],
+    /// Load a field spec by name. None if not defined.
+    pub fn load_spec(&self, field: &str) -> Result<Option<FieldSpec>> {
+        let json: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT spec_json FROM field_specs WHERE field = ?1",
+                params![field],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match json {
+            Some(j) => Ok(Some(serde_json::from_str(&j)?)),
+            None => Ok(None),
+        }
+    }
+
+    /// Save a field spec and sync its derived aliases into the aliases table.
+    /// Any previously-derived aliases for this field are removed first (so
+    /// states that were dropped lose their alias).
+    pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
+        let json = serde_json::to_string(spec)?;
+        let tx = self.conn.unchecked_transaction()?;
+
+        tx.execute(
+            "INSERT OR REPLACE INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            params![spec.field, json],
+        )?;
+
+        // Replace the set of derived aliases for this field.
+        tx.execute(
+            "DELETE FROM aliases WHERE derived_from_field = ?1",
+            params![spec.field],
+        )?;
+
+        for d in &spec.derived_aliases {
+            let alias = Alias {
+                name: d.state.clone(),
+                expands_to: d.expands_to.clone(),
+                description: Some(format!("Derived from {} spec", spec.field)),
+            };
+            let alias_json = serde_json::to_string(&alias)?;
+            // `INSERT OR REPLACE` so a derived alias overrides any stale
+            // user alias with the same name. Collisions between derived
+            // aliases from different fields are last-write-wins.
+            tx.execute(
+                "INSERT OR REPLACE INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)",
+                params![alias.name, alias_json, spec.field],
             )?;
         }
+
+        tx.commit()?;
         Ok(())
     }
 
-    /// Ensure a field is in tracked_fields with ignored=0. Does nothing if already present.
-    pub fn ensure_tracked(&self, field: &str) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR IGNORE INTO tracked_fields (field, ignored) VALUES (?1, 0)",
+    /// Delete a field spec. Cascades to its derived aliases.
+    pub fn delete_field_spec(&self, field: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute(
+            "DELETE FROM aliases WHERE derived_from_field = ?1",
             params![field],
         )?;
+        tx.execute(
+            "DELETE FROM field_specs WHERE field = ?1",
+            params![field],
+        )?;
+        tx.commit()?;
         Ok(())
-    }
-
-    /// Return all tracked fields, ordered alphabetically.
-    pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT field, ignored, color FROM tracked_fields ORDER BY field",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(TrackedField {
-                field: row.get(0)?,
-                ignored: row.get::<_, i32>(1)? != 0,
-                color: row.get(2)?,
-            })
-        })?;
-        rows.map(|r| r.map_err(DatumError::Db)).collect()
-    }
-
-    /// Store or replace a per-state color override.
-    pub fn set_state_color(&self, field: &str, state: &str, color: &str) -> Result<()> {
-        self.conn.execute(
-            "INSERT OR REPLACE INTO field_state_colors (field, state, color) VALUES (?1, ?2, ?3)",
-            params![field, state, color],
-        )?;
-        Ok(())
-    }
-
-    /// Return all state color overrides as a (field, state) → color map.
-    pub fn get_all_state_colors(
-        &self,
-    ) -> Result<std::collections::HashMap<(String, String), String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT field, state, color FROM field_state_colors",
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-            ))
-        })?;
-        let mut map = std::collections::HashMap::new();
-        for r in rows {
-            let (field, state, color) = r.map_err(DatumError::Db)?;
-            map.insert((field, state), color);
-        }
-        Ok(map)
-    }
-
-    /// Latest non-Note entry for a field, for use in the now view.
-    pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
-        self.conn
-            .query_row(
-                "SELECT * FROM entries WHERE field = ?1 AND verb != 'note'
-                 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC
-                 LIMIT 1",
-                params![field],
-                row_to_entry,
-            )
-            .optional()
-            .map_err(DatumError::Db)
     }
 
     /// Soft-delete an entry by id or slug (A4 tombstone).
@@ -441,6 +432,99 @@ impl Db {
 
         Ok(registry)
     }
+
+    // -------------------------------------------------------------------------
+    // Tracking / colors — thin projection over FieldSpec
+    // -------------------------------------------------------------------------
+
+    fn load_or_new_spec(&self, field: &str) -> Result<FieldSpec> {
+        match self.load_spec(field)? {
+            Some(s) => Ok(s),
+            None => Ok(FieldSpec::new(field, Verb::Occur)),
+        }
+    }
+
+    /// Set a field's tracking state (and optionally its color).
+    /// Creates the spec if it doesn't exist yet.
+    pub fn set_tracked(&self, field: &str, ignored: bool, color: Option<&str>) -> Result<()> {
+        let mut spec = self.load_or_new_spec(field)?;
+        spec.tracked = true;
+        spec.ignored = ignored;
+        if let Some(c) = color {
+            spec.color = Some(c.to_string());
+        }
+        self.save_field_spec(&spec)
+    }
+
+    /// Ensure a field has a tracked spec. Does nothing if a spec already exists.
+    pub fn ensure_tracked(&self, field: &str) -> Result<()> {
+        if self.load_spec(field)?.is_some() {
+            return Ok(());
+        }
+        let mut spec = FieldSpec::new(field, Verb::Occur);
+        spec.tracked = true;
+        self.save_field_spec(&spec)
+    }
+
+    /// Return all specs flagged `tracked`, projected to TrackedField.
+    /// Ordered alphabetically by field name.
+    pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT spec_json FROM field_specs ORDER BY field")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            let spec: FieldSpec = serde_json::from_str(&r.map_err(DatumError::Db)?)?;
+            if !spec.tracked {
+                continue;
+            }
+            out.push(TrackedField {
+                field: spec.field,
+                ignored: spec.ignored,
+                color: spec.color,
+            });
+        }
+        Ok(out)
+    }
+
+    /// Set a per-state color on a field. Loads/creates the spec first.
+    pub fn set_state_color(&self, field: &str, state: &str, color: &str) -> Result<()> {
+        let mut spec = self.load_or_new_spec(field)?;
+        spec.state_colors
+            .insert(state.to_string(), color.to_string());
+        self.save_field_spec(&spec)
+    }
+
+    /// Return all state color overrides as a (field, state) → color map.
+    pub fn get_all_state_colors(
+        &self,
+    ) -> Result<std::collections::HashMap<(String, String), String>> {
+        let mut stmt = self.conn.prepare("SELECT spec_json FROM field_specs")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut map = std::collections::HashMap::new();
+        for r in rows {
+            let spec: FieldSpec = serde_json::from_str(&r.map_err(DatumError::Db)?)?;
+            for (state, color) in spec.state_colors {
+                map.insert((spec.field.clone(), state), color);
+            }
+        }
+        Ok(map)
+    }
+
+    /// Latest non-Note entry for a field, for use in the now view.
+    pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
+        self.conn
+            .query_row(
+                "SELECT * FROM entries WHERE field = ?1 AND verb != 'note'
+                 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC
+                 LIMIT 1",
+                params![field],
+                row_to_entry,
+            )
+            .optional()
+            .map_err(DatumError::Db)
+    }
 }
 
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
@@ -519,6 +603,7 @@ fn build_datum_time(
 mod tests {
     use super::*;
     use crate::entry::Entry;
+    use crate::field_spec::DerivedAlias;
     use crate::time::DatumTime;
 
     #[test]
@@ -630,13 +715,11 @@ mod tests {
     #[test]
     fn test_ensure_tracked_inserts_and_idempotent() {
         let db = Db::open_in_memory().unwrap();
-        // First call inserts with ignored=0
         db.ensure_tracked("coffee").unwrap();
         let fields = db.get_tracked_fields().unwrap();
         assert_eq!(fields.len(), 1);
         assert!(!fields[0].ignored);
 
-        // Second call is a no-op (INSERT OR IGNORE)
         db.ensure_tracked("coffee").unwrap();
         let fields2 = db.get_tracked_fields().unwrap();
         assert_eq!(fields2.len(), 1);
@@ -646,7 +729,6 @@ mod tests {
     fn test_ensure_tracked_does_not_override_ignored() {
         let db = Db::open_in_memory().unwrap();
         db.set_tracked("youtube", true, None).unwrap();
-        // ensure_tracked should do nothing because youtube already exists
         db.ensure_tracked("youtube").unwrap();
         let fields = db.get_tracked_fields().unwrap();
         assert!(fields[0].ignored, "ignored flag must be preserved");
@@ -905,14 +987,140 @@ mod tests {
         let t1 = DatumTime::now();
         let switch_entry = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t1), None, "d1");
         db.insert_entry(&switch_entry).unwrap();
-        // Insert a Note after the switch
         let t2 = DatumTime::now();
         let note_entry = Entry::new("mood", Verb::Note, Some(serde_json::json!("journal entry")), None, None, Some(t2), None, "d1");
         db.insert_entry(&note_entry).unwrap();
 
         let latest = db.latest_entry_for_now("mood").unwrap();
         assert!(latest.is_some());
-        // Should return the switch entry, not the note
         assert_eq!(latest.unwrap().verb, Verb::Switch);
+    }
+
+    // ─── New FieldSpec-source-of-truth tests (A0 acceptance) ──────────────────
+
+    #[test]
+    fn field_spec_stores_id_template() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.id_template = Some("%field%:%state%".to_string());
+        db.save_field_spec(&spec).unwrap();
+
+        let loaded = db.load_spec("mood").unwrap().expect("spec present");
+        assert_eq!(loaded.id_template.as_deref(), Some("%field%:%state%"));
+    }
+
+    #[test]
+    fn field_spec_stores_color_and_states() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.color = Some("ff6600".into());
+        spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
+        spec.state_colors.insert("happy".into(), "00ff00".into());
+        db.save_field_spec(&spec).unwrap();
+
+        let loaded = db.load_spec("mood").unwrap().unwrap();
+        assert_eq!(loaded.color.as_deref(), Some("ff6600"));
+        let states = loaded.allowed_states.as_ref().unwrap();
+        assert!(states.contains(&"happy".to_string()));
+        assert!(states.contains(&"sad".to_string()));
+        assert_eq!(loaded.state_colors.get("happy").map(|s| s.as_str()), Some("00ff00"));
+    }
+
+    #[test]
+    fn adding_state_creates_derived_alias() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.allowed_states = Some(vec!["happy".into()]);
+        spec.regenerate_derived_aliases();
+        db.save_field_spec(&spec).unwrap();
+
+        let alias = db.lookup_alias("happy").unwrap().expect("derived alias present");
+        assert_eq!(alias.expands_to, "switch mood happy");
+
+        // Registry also sees it as an alias.
+        let reg = db.load_registry().unwrap();
+        assert!(reg.aliases.contains_key("happy"));
+    }
+
+    #[test]
+    fn removing_state_drops_derived_alias() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
+        spec.regenerate_derived_aliases();
+        db.save_field_spec(&spec).unwrap();
+        assert!(db.lookup_alias("sad").unwrap().is_some());
+
+        // Drop "sad" from allowed_states and re-save.
+        let mut updated = db.load_spec("mood").unwrap().unwrap();
+        updated.allowed_states = Some(vec!["happy".into()]);
+        updated.regenerate_derived_aliases();
+        db.save_field_spec(&updated).unwrap();
+
+        assert!(db.lookup_alias("sad").unwrap().is_none(), "sad alias must be dropped");
+        assert!(db.lookup_alias("happy").unwrap().is_some(), "happy alias must remain");
+    }
+
+    #[test]
+    fn deleting_spec_cascades_to_derived_aliases() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.allowed_states = Some(vec!["happy".into()]);
+        spec.regenerate_derived_aliases();
+        db.save_field_spec(&spec).unwrap();
+
+        db.delete_field_spec("mood").unwrap();
+        assert!(db.lookup_alias("happy").unwrap().is_none());
+        assert!(db.load_spec("mood").unwrap().is_none());
+    }
+
+    #[test]
+    fn track_ignore_round_trip_via_spec() {
+        let db = Db::open_in_memory().unwrap();
+
+        // Track via the projection helper.
+        db.set_tracked("mood", false, Some("ff6600")).unwrap();
+        let spec = db.load_spec("mood").unwrap().unwrap();
+        assert!(spec.tracked);
+        assert!(!spec.ignored);
+        assert_eq!(spec.color.as_deref(), Some("ff6600"));
+
+        // Ignore flips the ignored bit but preserves everything else.
+        db.set_tracked("mood", true, None).unwrap();
+        let spec2 = db.load_spec("mood").unwrap().unwrap();
+        assert!(spec2.tracked);
+        assert!(spec2.ignored);
+        assert_eq!(spec2.color.as_deref(), Some("ff6600"));
+
+        // Re-track clears the ignored bit.
+        db.set_tracked("mood", false, None).unwrap();
+        let spec3 = db.load_spec("mood").unwrap().unwrap();
+        assert!(!spec3.ignored);
+        assert_eq!(spec3.color.as_deref(), Some("ff6600"));
+    }
+
+    #[test]
+    fn user_alias_replaced_by_derived_alias() {
+        // User saves alias "happy" → "note journal happy"
+        // Then a field spec with allowed_state "happy" is created.
+        // The derived alias takes over (last-write-wins).
+        let db = Db::open_in_memory().unwrap();
+        db.save_alias(&Alias {
+            name: "happy".into(),
+            expands_to: "note journal happy".into(),
+            description: None,
+        })
+        .unwrap();
+
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.allowed_states = Some(vec!["happy".into()]);
+        spec.derived_aliases = vec![DerivedAlias {
+            state: "happy".into(),
+            expands_to: "switch mood happy".into(),
+        }];
+        db.save_field_spec(&spec).unwrap();
+
+        let alias = db.lookup_alias("happy").unwrap().unwrap();
+        assert_eq!(alias.expands_to, "switch mood happy");
     }
 }

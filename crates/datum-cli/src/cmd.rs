@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use datum_core::{
     db::Db,
     entry::{Entry, Verb},
-    field_spec::Alias,
+    field_spec::{Alias, FieldSpec},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
 };
 use regex::Regex;
@@ -13,7 +13,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         AliasCommand, CheckArgs, Cli, Command, DeleteArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs,
-        LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, TailArgs, TrackArgs,
+        LogArgs, MapArgs, MigrateArgs, NowArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::device_id,
@@ -360,19 +360,38 @@ fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
 }
 
 fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
-    db.set_tracked(&args.field, false, args.color.as_deref())?;
+    // Load-or-create spec, flip tracked=true (ignored=false), merge color
+    // and per-state colors. Track is a thin wrapper over the spec.
+    let mut spec = match db.load_spec(&args.field)? {
+        Some(s) => s,
+        None => FieldSpec::new(&args.field, Verb::Occur),
+    };
+    spec.tracked = true;
+    spec.ignored = false;
+    if let Some(c) = &args.color {
+        spec.color = Some(c.clone());
+    }
     for sc in &args.state_colors {
         match sc.split_once('=') {
-            Some((state, color)) => db.set_state_color(&args.field, state, color)?,
+            Some((state, color)) => {
+                spec.state_colors.insert(state.to_string(), color.to_string());
+            }
             None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
         }
     }
+    db.save_field_spec(&spec)?;
     println!("✓ Tracking '{}'", args.field);
     Ok(())
 }
 
 fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
-    db.set_tracked(&args.field, true, None)?;
+    let mut spec = match db.load_spec(&args.field)? {
+        Some(s) => s,
+        None => FieldSpec::new(&args.field, Verb::Occur),
+    };
+    spec.tracked = true;
+    spec.ignored = true;
+    db.save_field_spec(&spec)?;
     println!("✓ Ignoring '{}'", args.field);
     Ok(())
 }
@@ -414,20 +433,11 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
 
 fn cmd_spec(sub: SpecCommand, db: &Db) -> Result<()> {
     match sub {
-        SpecCommand::Show { field } => {
-            let reg = db.load_registry()?;
-            match reg.field_spec(&field) {
-                Some(spec) => println!("{}", serde_json::to_string_pretty(spec)?),
-                None => println!("No spec defined for field '{field}'"),
-            }
-        }
-        SpecCommand::Set { field, json } => {
-            let mut spec: datum_core::field_spec::FieldSpec = serde_json::from_str(&json)
-                .with_context(|| "Invalid field spec JSON")?;
-            spec.field = field;
-            db.save_field_spec(&spec)?;
-            println!("✓ Spec saved for '{}'", spec.field);
-        }
+        SpecCommand::Show { field } => match db.load_spec(&field)? {
+            Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
+            None => println!("No spec defined for field '{field}'"),
+        },
+        SpecCommand::Set(args) => cmd_spec_set(args, db)?,
         SpecCommand::List => {
             let reg = db.load_registry()?;
             if reg.fields.is_empty() {
@@ -438,7 +448,71 @@ fn cmd_spec(sub: SpecCommand, db: &Db) -> Result<()> {
                 }
             }
         }
+        SpecCommand::Remove { field } => {
+            db.delete_field_spec(&field)?;
+            println!("✓ Spec removed for '{field}' (derived aliases dropped)");
+        }
     }
+    Ok(())
+}
+
+fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
+    // --json replaces the entire spec; individual flags merge into existing.
+    let mut spec = if let Some(json) = &args.json {
+        let mut s: FieldSpec = serde_json::from_str(json)
+            .with_context(|| "Invalid field spec JSON")?;
+        s.field = args.field.clone();
+        s
+    } else {
+        db.load_spec(&args.field)?
+            .unwrap_or_else(|| FieldSpec::new(&args.field, Verb::Occur))
+    };
+
+    if let Some(dv) = &args.default_verb {
+        spec.default_verb = dv
+            .parse::<Verb>()
+            .map_err(|e| anyhow::anyhow!("Invalid --default-verb: {e}"))?;
+    }
+    if !args.states.is_empty() {
+        spec.allowed_states = Some(args.states.clone());
+    }
+    if let Some(c) = &args.color {
+        spec.color = Some(c.clone());
+    }
+    if let Some(t) = &args.id_template {
+        spec.id_template = Some(t.clone());
+    }
+    if let Some(d) = &args.description {
+        spec.description = Some(d.clone());
+    }
+    if let Some(u) = &args.unit {
+        spec.unit = Some(u.clone());
+    }
+    for sc in &args.state_colors {
+        match sc.split_once('=') {
+            Some((state, color)) => {
+                spec.state_colors.insert(state.to_string(), color.to_string());
+            }
+            None => anyhow::bail!(
+                "Invalid --state-color format: expected STATE=COLOR, got '{sc}'"
+            ),
+        }
+    }
+    if args.track {
+        spec.tracked = true;
+        spec.ignored = false;
+    }
+    if args.ignore {
+        spec.tracked = true;
+        spec.ignored = true;
+    }
+
+    // Always regenerate derived aliases from the current allowed_states so
+    // states that were dropped lose their alias.
+    spec.regenerate_derived_aliases();
+
+    db.save_field_spec(&spec)?;
+    println!("✓ Spec saved for '{}'", spec.field);
     Ok(())
 }
 
@@ -469,8 +543,8 @@ fn cmd_alias(sub: AliasCommand, db: &Db) -> Result<()> {
             }
         }
         AliasCommand::Remove { name } => {
-            // TODO: implement delete in db
-            eprintln!("alias remove not yet implemented for '{name}'");
+            db.delete_alias(&name)?;
+            println!("✓ Alias '{name}' removed (if it was user-created)");
         }
     }
     Ok(())
@@ -735,6 +809,61 @@ mod tests {
         assert!(mood2.ignored);
         // Color should be preserved (set_tracked with None color)
         assert_eq!(mood2.color.as_deref(), Some("ff6600"));
+    }
+
+    #[test]
+    fn cmd_spec_set_flag_flow_creates_derived_aliases() {
+        use crate::args::SpecSetArgs;
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // spec set mood --default-verb switch --state happy --state sad \
+        //               --color green --id-template "%field%:%state%"
+        let args = SpecSetArgs {
+            field: "mood".to_string(),
+            json: None,
+            default_verb: Some("switch".to_string()),
+            states: vec!["happy".to_string(), "sad".to_string()],
+            color: Some("green".to_string()),
+            state_colors: vec!["happy=00ff00".to_string()],
+            id_template: Some("%field%:%state%".to_string()),
+            description: None,
+            unit: None,
+            track: true,
+            ignore: false,
+        };
+        cmd_spec_set(args, &db).unwrap();
+
+        let spec = db.load_spec("mood").unwrap().unwrap();
+        assert_eq!(spec.id_template.as_deref(), Some("%field%:%state%"));
+        assert_eq!(spec.color.as_deref(), Some("green"));
+        let states = spec.allowed_states.as_ref().unwrap();
+        assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
+        assert!(spec.tracked && !spec.ignored);
+
+        // Derived aliases landed in the aliases table (hot-path lookup).
+        let happy = db.lookup_alias("happy").unwrap().unwrap();
+        assert_eq!(happy.expands_to, "switch mood happy");
+        let sad = db.lookup_alias("sad").unwrap().unwrap();
+        assert_eq!(sad.expands_to, "switch mood sad");
+
+        // Dropping "sad" from the states list drops its alias.
+        let args2 = SpecSetArgs {
+            field: "mood".to_string(),
+            json: None,
+            default_verb: None,
+            states: vec!["happy".to_string()],
+            color: None,
+            state_colors: vec![],
+            id_template: None,
+            description: None,
+            unit: None,
+            track: false,
+            ignore: false,
+        };
+        cmd_spec_set(args2, &db).unwrap();
+        assert!(db.lookup_alias("sad").unwrap().is_none());
+        assert!(db.lookup_alias("happy").unwrap().is_some());
     }
 
     #[test]
