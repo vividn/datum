@@ -94,32 +94,40 @@ fn date_and_time_flags_set_absolute_time() {
 /// TS #3: "stores the occurTime in DataOnly docs"
 ///
 /// Datum's `-M` produced a DataOnly document (no `meta.*` block). Daydumb's
-/// `--no-metadata` ships with P1 (da-wsax) and is not yet exposed. The ported
-/// case structurally anchors the future wiring: today, the flag is absent and
-/// the logged entry carries device/created_at metadata unconditionally.
+/// Entry always carries `created_at`/`modified_at`/`device_id` columns
+/// (NOT NULL in the schema), so the equivalent behavior is to zero the
+/// bookkeeping fields instead of omitting them: `created_at` and
+/// `modified_at` collapse to the UNIX epoch and `device_id` goes empty.
+/// The row's domain data (field/time_start/…) is still populated normally.
 #[test]
-fn no_metadata_flag_pending_from_p1() {
+fn no_metadata_zeros_bookkeeping_fields() {
     let db = fresh_db();
 
-    // The flag is not implemented yet — invocation must fail with an
-    // "unexpected argument" parse error rather than silently succeed.
-    let err = run_cli(&["occur", "event", "--no-metadata"], &db)
-        .expect_err("--no-metadata is not yet plumbed (P1 da-wsax)");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("--no-metadata") || msg.contains("unexpected"),
-        "expected clap to reject unknown flag, got: {msg}",
-    );
-    // The rejection must not have silently written a row.
-    assert_count!(db, "event", 0);
-
-    // Without the flag, a normal occur still records metadata — the invariant
-    // the future `-M` case will invert.
-    run_cli(&["occur", "event"], &db).expect("occur event");
+    // With `--no-metadata`: timestamps and device cleared.
+    run_cli(&["occur", "event", "--no-metadata"], &db).expect("occur --no-metadata");
     let entry = &db.entries_for_field("event", None).unwrap()[0];
-    assert!(!entry.device_id.is_empty(), "device_id must be populated");
+    assert_eq!(entry.device_id, "", "device_id must be cleared");
+    assert_eq!(
+        entry.created_at,
+        chrono::DateTime::UNIX_EPOCH,
+        "created_at must be epoch-zero",
+    );
+    assert_eq!(
+        entry.modified_at,
+        chrono::DateTime::UNIX_EPOCH,
+        "modified_at must be epoch-zero",
+    );
+    // Domain data still lands — no-metadata only touches bookkeeping.
+    assert!(entry.time_start.is_some(), "time_start is unaffected");
+    assert_eq!(entry.field, "event");
+
+    // Without the flag, a normal occur records metadata as usual — the
+    // inverse invariant.
+    run_cli(&["occur", "other"], &db).expect("occur other");
+    let other = &db.entries_for_field("other", None).unwrap()[0];
+    assert!(!other.device_id.is_empty(), "device_id must be populated");
     assert!(
-        (Utc::now() - entry.created_at).num_seconds().abs() < 5,
+        (Utc::now() - other.created_at).num_seconds().abs() < 5,
         "created_at must be set to ~now",
     );
 }

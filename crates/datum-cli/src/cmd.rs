@@ -203,6 +203,12 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
 
     let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
 
+    if args.no_metadata {
+        entry.created_at = chrono::DateTime::UNIX_EPOCH;
+        entry.modified_at = chrono::DateTime::UNIX_EPOCH;
+        entry.device_id.clear();
+    }
+
     // Resolve id template: explicit --id beats spec.id_template.
     let spec_template = db
         .load_spec(&entry.field)?
@@ -1473,6 +1479,7 @@ mod tests {
             conflict: None,
             update: false,
             merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
@@ -1508,6 +1515,7 @@ mod tests {
             conflict: None,
             update: false,
             merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Stop, args, &db).unwrap();
@@ -1549,6 +1557,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Occur, args, &db).unwrap();
@@ -1568,6 +1577,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Start, args, &db).unwrap();
@@ -1587,6 +1597,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Note, args, &db).unwrap();
@@ -1700,6 +1711,7 @@ mod tests {
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Switch, args, &db).unwrap();
@@ -1731,6 +1743,7 @@ mod tests {
             conflict: None,
             update: false,
             merge: false,
+            no_metadata: false,
             output_flags: Default::default(),
         }
     }

@@ -339,6 +339,13 @@ pub struct LogArgs {
     #[arg(long)]
     pub merge: bool,
 
+    /// Suppress bookkeeping fields — set `created_at`/`modified_at` to the UNIX
+    /// epoch and clear `device_id`. Useful for deterministic fixtures and sync
+    /// replay where the stamps come from elsewhere. Short form is `-M` (datum's
+    /// `-FM` combo maps here via the `--no-metadata` portion).
+    #[arg(short = 'M', long = "no-metadata")]
+    pub no_metadata: bool,
+
     #[command(flatten)]
     pub output_flags: OutputFlags,
 }
