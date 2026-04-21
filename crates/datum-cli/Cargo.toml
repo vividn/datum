@@ -32,3 +32,4 @@ serde_yaml = { workspace = true }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }
+rusqlite = { workspace = true }

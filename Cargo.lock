@@ -406,6 +406,7 @@ dependencies = [
  "dirs-next",
  "flate2",
  "regex",
+ "rusqlite",
  "serde",
  "serde_json",
  "serde_yaml",
