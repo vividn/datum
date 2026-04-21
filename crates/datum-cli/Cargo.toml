@@ -7,6 +7,11 @@ edition.workspace = true
 name = "datum_cli"
 path = "src/lib.rs"
 
+[features]
+default = []
+# Shared test fixtures (TestPrompter, etc.) for use by integration tests.
+test-util = []
+
 [[bin]]
 name = "datum"
 path = "src/main.rs"
@@ -29,7 +34,15 @@ flate2 = { workspace = true }
 tar = { workspace = true }
 toml = { workspace = true }
 serde_yaml = { workspace = true }
+reqwest = { workspace = true }
+rpassword = { workspace = true }
+base64 = { workspace = true }
+url = { workspace = true }
+rand = { workspace = true }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }
+datum-cli = { path = ".", features = ["test-util"] }
 rusqlite = { workspace = true }
+tokio = { workspace = true }
+axum = { workspace = true }

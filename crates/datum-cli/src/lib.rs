@@ -6,3 +6,4 @@ pub mod check;
 pub mod cmd;
 pub mod config;
 pub mod output;
+pub mod sync;

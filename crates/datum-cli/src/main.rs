@@ -7,8 +7,8 @@ use datum_cli::{
 fn main() -> Result<()> {
     let cli = Cli::parse_with_alias_resolution()?;
 
-    // `config` doesn't touch any DB — skip resolution entirely.
-    if matches!(&cli.command, Command::Config(_)) {
+    // `config` and `sync` don't touch any DB — skip resolution entirely.
+    if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);
     }

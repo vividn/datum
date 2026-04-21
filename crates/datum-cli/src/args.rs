@@ -81,7 +81,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
-    "info", "setup", "config",
+    "info", "setup", "config", "sync",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -276,6 +276,79 @@ pub enum Command {
     /// Show or manage user configuration (datumrc.yml).
     #[command(subcommand)]
     Config(ConfigCommand),
+
+    /// Sync — login, server config, and master-key management.
+    #[command(subcommand)]
+    Sync(SyncCommand),
+}
+
+// ─── Sync subcommands ────────────────────────────────────────────────────────
+
+#[derive(Subcommand, Debug)]
+pub enum SyncCommand {
+    /// OAuth device-code login. Stores a bearer token per server.
+    Login(SyncLoginArgs),
+    /// Manage per-DB and global sync server config.
+    #[command(subcommand)]
+    Config(SyncConfigCommand),
+    /// Manage the end-to-end encryption master key.
+    #[command(subcommand)]
+    Key(SyncKeyCommand),
+}
+
+#[derive(Args, Debug, Default)]
+pub struct SyncLoginArgs {
+    /// Override the configured sync server for this invocation.
+    #[arg(long, value_name = "URL")]
+    pub server: Option<String>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SyncConfigCommand {
+    /// Set the sync server. Per-DB by default; `--global` writes the
+    /// fallback under `sync.default_server`.
+    SetServer {
+        /// Relay URL (e.g. `https://sync.example.com`).
+        url: String,
+        /// Write the global default instead of the per-DB override.
+        #[arg(long)]
+        global: bool,
+    },
+    /// Disable sync for the active DB (or globally if no named DB is active).
+    Disable,
+    /// Print the effective sync config.
+    Show,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SyncKeyCommand {
+    /// Generate a fresh 256-bit master key, wrap it with a passphrase, upload
+    /// the wrapped blob to the relay, and persist the plaintext key locally.
+    Init {
+        /// Override the configured sync server.
+        #[arg(long, value_name = "URL")]
+        server: Option<String>,
+        /// Replace an existing local key file if one exists.
+        #[arg(long)]
+        force: bool,
+    },
+    /// Download the wrapped key from the relay, prompt for the passphrase,
+    /// and persist the unwrapped master key locally.
+    Unlock {
+        #[arg(long, value_name = "URL")]
+        server: Option<String>,
+    },
+    /// Re-wrap the existing local master key with a new passphrase and
+    /// re-upload it to the relay.
+    RotatePassphrase {
+        #[arg(long, value_name = "URL")]
+        server: Option<String>,
+    },
+    /// Print the SHA-256 fingerprint of the local master key.
+    ShowFingerprint {
+        #[arg(long, value_name = "URL")]
+        server: Option<String>,
+    },
 }
 
 #[derive(Subcommand, Debug)]

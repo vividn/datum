@@ -317,6 +317,28 @@ pub struct RawConfig {
     pub default_field: Option<String>,
     #[serde(default)]
     pub editor: Option<String>,
+    #[serde(default)]
+    pub sync: Option<SyncSection>,
+    #[serde(default)]
+    pub databases: BTreeMap<String, DbSection>,
+}
+
+/// Global sync defaults. A per-DB entry under `databases:` may override the
+/// `default_server` with its own `sync_server`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct SyncSection {
+    #[serde(default)]
+    pub default_server: Option<String>,
+}
+
+/// Per-DB config overrides: can pin a `sync_server` (URL or the literal
+/// `"none"` to disable sync for this DB) and toggle `auto_sync`.
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct DbSection {
+    #[serde(default)]
+    pub sync_server: Option<String>,
+    #[serde(default)]
+    pub auto_sync: Option<bool>,
 }
 
 /// Effective resolved config with per-key source provenance.
@@ -344,6 +366,80 @@ pub fn yaml_config_path() -> Result<PathBuf> {
         }
     }
     Ok(config_dir()?.join("datumrc.yml"))
+}
+
+/// Load the yaml config as a mutable `RawConfig`. Missing/empty file returns
+/// `RawConfig::default()`.
+pub fn load_raw_config_or_default() -> Result<RawConfig> {
+    let path = yaml_config_path()?;
+    Ok(load_yaml_config(&path)?.unwrap_or_default())
+}
+
+/// Persist the raw user config to `datumrc.yml`. Creates the parent
+/// directory if needed. Overwrites atomically via `fs::write`.
+pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
+    let path = yaml_config_path()?;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("Creating config directory {parent:?}"))?;
+    }
+    let body = serde_yaml::to_string(cfg).context("Serializing datumrc.yml")?;
+    std::fs::write(&path, body)
+        .with_context(|| format!("Writing config to {path:?}"))?;
+    Ok(())
+}
+
+/// Where the master key for `server_host` lives on disk.
+/// `$XDG_DATA_HOME/datum/keys/<server-host>.key`, file mode 0600.
+pub fn master_key_path(server_host: &str) -> Result<PathBuf> {
+    let dir = data_dir()?.join("keys");
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Creating key directory {dir:?}"))?;
+    Ok(dir.join(format!("{server_host}.key")))
+}
+
+/// Where an auth token for `server_host` lives on disk.
+/// `$XDG_CONFIG_HOME/datum/auth/<server-host>.json`.
+pub fn auth_token_path(server_host: &str) -> Result<PathBuf> {
+    let dir = config_dir()?.join("auth");
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Creating auth directory {dir:?}"))?;
+    Ok(dir.join(format!("{server_host}.json")))
+}
+
+/// Extract a stable "host" component for an HTTPS URL — used to key per-server
+/// token/key files. Falls back to the URL itself on parse failure.
+pub fn server_host_from_url(url: &str) -> String {
+    match url::Url::parse(url) {
+        Ok(u) => match (u.host_str(), u.port()) {
+            (Some(h), Some(p)) => format!("{h}_{p}"),
+            (Some(h), None) => h.to_string(),
+            _ => url.to_string(),
+        },
+        Err(_) => url.to_string(),
+    }
+}
+
+/// Resolve the effective sync server for a given DB name.
+///
+/// Precedence: per-DB `sync_server` > global `sync.default_server`. The
+/// literal string `"none"` (case-insensitive) means "sync disabled for this
+/// DB" and returns `Ok(None)`.
+pub fn resolve_sync_server(cfg: &RawConfig, db_name: Option<&str>) -> Option<String> {
+    if let Some(name) = db_name {
+        if let Some(db_section) = cfg.databases.get(name) {
+            if let Some(v) = &db_section.sync_server {
+                if v.eq_ignore_ascii_case("none") {
+                    return None;
+                }
+                return Some(v.clone());
+            }
+        }
+    }
+    cfg.sync
+        .as_ref()
+        .and_then(|s| s.default_server.clone())
+        .filter(|v| !v.eq_ignore_ascii_case("none"))
 }
 
 /// Load and parse the yaml config. Missing file → `Ok(None)`. Parse errors

@@ -60,6 +60,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => cmd_info(args, cli.db.as_deref(), db),
         Command::Setup(args) => cmd_setup(args, db),
         Command::Config(sub) => cmd_config(sub, cli.db.as_deref()),
+        Command::Sync(sub) => crate::sync::dispatch(sub),
     }
 }
 
