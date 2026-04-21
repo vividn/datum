@@ -54,9 +54,9 @@ fn switch_creates_entry_with_state() {
     assert_count!(db, "field", 1);
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", value: "newState");
-    let ts = entry.time_start.as_ref().expect("switch anchors time_start").utc;
+    let ts = entry.start_time.as_ref().expect("switch anchors time_start").utc;
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "bare switch (no --dur, no --moment) does not derive time_end",
     );
     assert_eq!(
@@ -88,7 +88,7 @@ fn switch_prior_state_queryable_via_compilation() {
         .iter()
         .find(|e| e.value.as_ref() == Some(&json!("inside")))
         .expect("inside entry present");
-    let inside_ts = inside.time_start.as_ref().unwrap().utc;
+    let inside_ts = inside.start_time.as_ref().unwrap().utc;
     let just_before_inside = inside_ts - chrono::Duration::seconds(1);
 
     assert_eq!(
@@ -125,7 +125,7 @@ fn switch_last_state_is_boolean_flag_not_value() {
         .find(|e| e.value.as_ref() == Some(&json!("household")))
         .expect("household entry present");
     // daydumb does not capture a prior-state value on the switch entry.
-    if let Some(extra) = household.extra_data.as_ref() {
+    if let Some(extra) = household.data.as_ref() {
         assert!(
             extra.get("last_state").is_none() && extra.get("lastState").is_none(),
             "daydumb switch --last-state does not denormalize prior state into extra_data",
@@ -153,7 +153,7 @@ fn switch_always_anchors_time_no_omit_timestamp_flag() {
         .find(|e| e.value.as_ref() == Some(&json!(false)))
         .expect("false entry present");
     assert!(
-        falsy.time_start.is_some(),
+        falsy.start_time.is_some(),
         "daydumb always anchors time_start (no --omit-timestamp flag)",
     );
     assert_entry_matches!(falsy, field: "vacuum", verb: "switch", value: false);
@@ -181,7 +181,7 @@ fn switch_with_last_state_still_anchors_time() {
         .find(|e| e.value.as_ref() == Some(&json!("backend")))
         .expect("backend entry present");
     assert!(
-        backend.time_start.is_some(),
+        backend.start_time.is_some(),
         "switch always anchors time_start; --last-state does not strip it",
     );
 }
@@ -205,8 +205,8 @@ fn switch_state_null_normalizes_to_null_at_query_time() {
     assert_entry_matches!(vacuum, verb: "switch", value: "null");
     assert_entry_matches!(luft, verb: "switch", value: "null");
 
-    let vacuum_ts = vacuum.time_start.as_ref().unwrap().utc;
-    let luft_ts = luft.time_start.as_ref().unwrap().utc;
+    let vacuum_ts = vacuum.start_time.as_ref().unwrap().utc;
+    let luft_ts = luft.start_time.as_ref().unwrap().utc;
     assert_eq!(db.get_active_state("vacuum", vacuum_ts).unwrap(), json!(null));
     assert_eq!(db.get_active_state("luft", luft_ts).unwrap(), json!(null));
 }
@@ -228,7 +228,7 @@ fn switch_without_state_leaves_value_unset() {
         entry.value, None,
         "daydumb does not infer state=true when value is omitted",
     );
-    let ts = entry.time_start.as_ref().unwrap().utc;
+    let ts = entry.start_time.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("eat", ts).unwrap(),
         json!(null),
@@ -252,8 +252,8 @@ fn switch_dur_creates_forward_block_ending_false() {
     assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
     assert_eq!(entry.duration_seconds(), Some(10 * 60));
 
-    let ts = entry.time_start.as_ref().unwrap().utc;
-    let te = entry.time_end.as_ref().unwrap().utc;
+    let ts = entry.start_time.as_ref().unwrap().utc;
+    let te = entry.end_time.as_ref().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), 10 * 60);
 
     // Midway through the block, state is "household".
@@ -281,8 +281,8 @@ fn switch_negative_dur_creates_backward_hole() {
     assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
     assert_eq!(entry.duration_seconds(), Some(-10 * 60));
 
-    let ts = entry.time_start.as_ref().unwrap().utc;
-    let te = entry.time_end.as_ref().unwrap().utc;
+    let ts = entry.start_time.as_ref().unwrap().utc;
+    let te = entry.end_time.as_ref().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), -10 * 60);
 
     // 5 minutes before `now` sits inside the hole → false.
@@ -310,13 +310,13 @@ fn switch_moment_produces_point_in_time_entry() {
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
-    let ts = entry.time_start.as_ref().expect("time_start set");
-    let te = entry.time_end.as_ref().expect("time_end set on --moment");
+    let ts = entry.start_time.as_ref().expect("time_start set");
+    let te = entry.end_time.as_ref().expect("time_end set on --moment");
     assert_eq!(
         ts.utc, te.utc,
         "--moment: time_start == time_end (point-in-time)",
     );
-    let extra = entry.extra_data.as_ref().expect("skillPoints in extra_data");
+    let extra = entry.data.as_ref().expect("skillPoints in extra_data");
     assert_eq!(extra["skillPoints"], json!(3));
 }
 
@@ -339,10 +339,10 @@ fn switch_extras_do_not_imply_duration() {
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "no --dur ⇒ no time_end (moment-like default)",
     );
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
 }
 
@@ -365,10 +365,10 @@ fn switch_extras_never_produce_implicit_duration() {
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "no --dur ⇒ no time_end; `-k KEY=VALUE` never becomes a duration",
     );
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["optional"], json!(50));
 }
 
@@ -390,7 +390,7 @@ fn switch_dot_prefixed_keys_pass_through_to_extra_data() {
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(
         extra[".subtask"],
         json!("mop"),
@@ -416,7 +416,7 @@ fn switch_does_not_auto_record_last_state_in_extra_data() {
         .iter()
         .find(|e| e.value.as_ref() == Some(&json!("anotherState")))
         .expect("second entry present");
-    if let Some(extra) = second.extra_data.as_ref() {
+    if let Some(extra) = second.data.as_ref() {
         let obj = extra.as_object().expect("extra_data is an object");
         assert!(
             !obj.contains_key("last_state") && !obj.contains_key("lastState"),
@@ -462,7 +462,7 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
     );
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
 
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["author"], json!("kenneth grahame"));
     assert_eq!(extra["genre"], json!("fiction"));
     // Crucially: the value is the flat state string, not a synthesized
@@ -502,7 +502,7 @@ fn switch_dot_syntax_keys_remain_literal_extra_data_keys() {
         verb: "switch",
         value: "book_fiction",
     );
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra[".medium"], json!("text"));
     assert_eq!(extra[".title"], json!("title"));
     assert_eq!(extra[".author"], json!("author"));
@@ -542,7 +542,7 @@ fn derived_alias_from_spec_routes_to_switch_with_extra_keys() {
     let e = &entries[0];
     assert_eq!(e.verb, Verb::Switch);
     assert_eq!(e.value.as_ref(), Some(&json!("happy")));
-    let extra = e.extra_data.as_ref().unwrap();
+    let extra = e.data.as_ref().unwrap();
     assert_eq!(
         extra["intensity"],
         json!(7),

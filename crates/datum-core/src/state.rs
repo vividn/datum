@@ -168,41 +168,56 @@ fn collect_events(
 ) {
     match entry.verb {
         Verb::Switch => {
-            if let Some(ts) = &entry.time_start {
+            if let Some(ts) = &entry.start_time {
                 let state = entry
                     .value
                     .as_ref()
                     .map(normalize_state)
                     .unwrap_or(Value::Null);
-                out.push((ts.utc, entry.created_at, state));
-                if let Some(te) = &entry.time_end {
-                    out.push((te.utc, entry.created_at, Value::Bool(false)));
+                out.push((ts.utc, entry.create_time, state));
+                if let Some(te) = &entry.end_time {
+                    out.push((te.utc, entry.create_time, Value::Bool(false)));
                 }
             }
         }
         Verb::Start => {
-            if let Some(ts) = &entry.time_start {
-                out.push((ts.utc, entry.created_at, Value::Bool(true)));
-                if let Some(te) = &entry.time_end {
-                    out.push((te.utc, entry.created_at, Value::Bool(false)));
+            if let Some(ts) = &entry.start_time {
+                out.push((ts.utc, entry.create_time, Value::Bool(true)));
+                if let Some(te) = &entry.end_time {
+                    out.push((te.utc, entry.create_time, Value::Bool(false)));
                 }
             }
         }
         Verb::Stop => {
             let at = entry
-                .time_end
+                .end_time
                 .as_ref()
-                .or(entry.time_start.as_ref());
+                .or(entry.start_time.as_ref());
             if let Some(t) = at {
-                out.push((t.utc, entry.created_at, Value::Bool(false)));
+                out.push((t.utc, entry.create_time, Value::Bool(false)));
             }
         }
         Verb::Occur => {
-            if let Some(ts) = &entry.time_start {
-                out.push((ts.utc, entry.created_at, Value::Bool(false)));
+            if let Some(ts) = &entry.start_time {
+                out.push((ts.utc, entry.create_time, Value::Bool(false)));
             }
         }
-        Verb::Note => {}
+        Verb::Block => {
+            // A closed block: emit an "on" event at start_time (value when
+            // present, true otherwise) and a terminal "off" at end_time.
+            if let Some(ts) = &entry.start_time {
+                let state = entry
+                    .value
+                    .as_ref()
+                    .map(normalize_state)
+                    .unwrap_or(Value::Bool(true));
+                out.push((ts.utc, entry.create_time, state));
+                if let Some(te) = &entry.end_time {
+                    out.push((te.utc, entry.create_time, Value::Bool(false)));
+                }
+            }
+        }
+        Verb::Note | Verb::Add => {}
     }
 }
 

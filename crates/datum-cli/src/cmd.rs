@@ -591,8 +591,8 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
 
     if args.no_metadata {
-        entry.created_at = chrono::DateTime::UNIX_EPOCH;
-        entry.modified_at = chrono::DateTime::UNIX_EPOCH;
+        entry.create_time = chrono::DateTime::UNIX_EPOCH;
+        entry.modify_time = chrono::DateTime::UNIX_EPOCH;
         entry.device_id.clear();
     }
 
@@ -875,8 +875,8 @@ fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
         let mut all = db.entries_in_range(far_past, far_future)?;
         // entries_in_range already returns ASC, but be explicit for clarity.
         all.sort_by(|a, b| {
-            let ta = a.time_start.as_ref().map(|t| t.utc).unwrap_or(a.created_at);
-            let tb = b.time_start.as_ref().map(|t| t.utc).unwrap_or(b.created_at);
+            let ta = a.start_time.as_ref().map(|t| t.utc).unwrap_or(a.create_time);
+            let tb = b.start_time.as_ref().map(|t| t.utc).unwrap_or(b.create_time);
             ta.cmp(&tb)
         });
         all.truncate(args.count);
@@ -1106,7 +1106,7 @@ fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
         );
     }
 
-    updated.modified_at = chrono::Utc::now();
+    updated.modify_time = chrono::Utc::now();
     updated.content_hash = updated.expected_content_hash();
 
     db.save_existing_entry(&updated)?;
@@ -1186,7 +1186,7 @@ fn apply_mutation(
     output: &OutputArgs,
 ) -> Result<()> {
     let mut updated = existing;
-    updated.extra_data = combine_extra(updated.extra_data, payload_extra, mode);
+    updated.data = combine_extra(updated.data, payload_extra, mode);
     if let Some(v) = payload_value {
         updated.value = Some(v);
     }
@@ -1212,8 +1212,8 @@ fn apply_rekey(
 ) -> Result<()> {
     let mut new_entry = existing.clone();
     // Payloads are applied with shallow semantics on rekey — same as update.
-    new_entry.extra_data =
-        combine_extra(new_entry.extra_data, payload_extra, ExtraMergeMode::Shallow);
+    new_entry.data =
+        combine_extra(new_entry.data, payload_extra, ExtraMergeMode::Shallow);
     if let Some(v) = payload_value {
         new_entry.value = Some(v);
     }
@@ -1221,8 +1221,8 @@ fn apply_rekey(
     // Fresh hid + timestamps. Slug will be re-interpolated below.
     new_entry.hid = new_hid();
     let now = chrono::Utc::now();
-    new_entry.created_at = now;
-    new_entry.modified_at = now;
+    new_entry.create_time = now;
+    new_entry.modify_time = now;
     new_entry.deleted_at = None;
 
     // Resolve template: explicit --id beats the spec's id_template. Rekey
@@ -1683,7 +1683,7 @@ fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()> {
         let mut entry = Entry::new(
             field, verb, value, extra_data, None, time_start, None, device.clone(),
         );
-        entry.created_at = created_at;
+        entry.create_time = created_at;
 
         if dry_run {
             println!("[dry-run] would import: {}", entry.slug);
@@ -2515,7 +2515,7 @@ mod tests {
 
         let got = run_grep(&db, &["foo", "bar"], None);
         assert_eq!(got.len(), 1);
-        let ex = got[0].extra_data.as_ref().unwrap();
+        let ex = got[0].data.as_ref().unwrap();
         assert_eq!(ex["tag"], serde_json::json!("foo"));
         assert_eq!(ex["project"], serde_json::json!("bar"));
 
@@ -2636,7 +2636,7 @@ mod tests {
         .unwrap();
 
         let after = db.get_entry(&e.slug).unwrap();
-        let ex = after.extra_data.as_ref().unwrap();
+        let ex = after.data.as_ref().unwrap();
         // weight replaced
         assert_eq!(ex["weight"]["v"], serde_json::json!(80.0));
         assert_eq!(ex["weight"]["u"], serde_json::json!("kg"));
@@ -2644,7 +2644,7 @@ mod tests {
         assert_eq!(ex["pose"], serde_json::json!("standing"));
         assert_eq!(ex["reps"], serde_json::json!(10));
         // modified_at bumped; content_hash refreshed
-        assert!(after.modified_at >= e.modified_at);
+        assert!(after.modify_time >= e.modify_time);
         assert_ne!(after.content_hash, e.content_hash);
         assert_eq!(after.content_hash, after.expected_content_hash());
     }
@@ -2672,7 +2672,7 @@ mod tests {
         .unwrap();
 
         let after = db.get_entry(&e.slug).unwrap();
-        let ex = after.extra_data.as_ref().unwrap();
+        let ex = after.data.as_ref().unwrap();
         assert_eq!(ex["tag"], serde_json::json!("red"));
         // Deep-merge does NOT disturb existing keys anywhere in the tree.
         assert_eq!(ex["nested"]["a"], serde_json::json!(1));
@@ -2707,7 +2707,7 @@ mod tests {
         // parse_value_token's fallback (string): instead rely on the unit
         // test of `deep_merge` for that path.
         let after = db.get_entry(&e.slug).unwrap();
-        let ex = after.extra_data.as_ref().unwrap();
+        let ex = after.data.as_ref().unwrap();
         // Original scalar keys intact
         assert_eq!(ex["nested"]["a"], serde_json::json!(1));
         assert_eq!(ex["nested"]["c"], serde_json::json!(3));
@@ -2747,7 +2747,7 @@ mod tests {
         .unwrap();
 
         let after = db.get_entry(&e.slug).unwrap();
-        let ex = after.extra_data.as_ref().unwrap();
+        let ex = after.data.as_ref().unwrap();
         assert!(ex.get("foo").is_none(), "foo= should drop the key");
         assert_eq!(ex["baz"], serde_json::json!("qux"));
     }
@@ -2862,7 +2862,7 @@ mod tests {
         .unwrap();
         let fresh = db.get_entry(&e.slug).unwrap();
         assert_eq!(
-            fresh.extra_data.unwrap()["note"],
+            fresh.data.unwrap()["note"],
             serde_json::json!("fixed"),
         );
     }
@@ -2918,7 +2918,7 @@ mod tests {
         cmd_update(args, ConflictStrategy::Update, &db).unwrap();
 
         let after = db.get_entry(&e.slug).unwrap();
-        let ex = after.extra_data.as_ref().unwrap();
+        let ex = after.data.as_ref().unwrap();
         assert_eq!(ex["tag"]["color"], serde_json::json!("red"));
         assert_eq!(ex["tag"]["size"], serde_json::json!("m"));
         // Our split-on-first-'=' parser treats "tag.priority" as a literal key.
@@ -2993,10 +2993,10 @@ mod tests {
             .iter()
             .find(|r| r.slug.starts_with("word:noun:"))
             .expect("rekeyed row should exist");
-        assert_eq!(rekeyed.extra_data.as_ref().unwrap()["pos"], serde_json::json!("noun"));
+        assert_eq!(rekeyed.data.as_ref().unwrap()["pos"], serde_json::json!("noun"));
         // Payload changes are visible on the new row only.
         let original = rows.iter().find(|r| r.slug == e.slug).unwrap();
-        assert_eq!(original.extra_data.as_ref().unwrap()["pos"], serde_json::json!("verb"));
+        assert_eq!(original.data.as_ref().unwrap()["pos"], serde_json::json!("verb"));
     }
 
     // ─── B7: undo via soft-delete tombstone ─────────────────────────────────
@@ -3134,8 +3134,8 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_block("sleep", 0, 3600, "d1");
         let id = e.slug.clone();
-        let t0_start = e.time_start.as_ref().unwrap().utc;
-        let t0_end = e.time_end.as_ref().unwrap().utc;
+        let t0_start = e.start_time.as_ref().unwrap().utc;
+        let t0_end = e.end_time.as_ref().unwrap().utc;
         let hash_before = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
 
@@ -3143,12 +3143,12 @@ mod tests {
 
         let after = db.get_entry(&id).unwrap();
         let shift = chrono::Duration::minutes(-5);
-        assert_eq!(after.time_start.as_ref().unwrap().utc, t0_start + shift);
-        assert_eq!(after.time_end.as_ref().unwrap().utc, t0_end + shift);
+        assert_eq!(after.start_time.as_ref().unwrap().utc, t0_start + shift);
+        assert_eq!(after.end_time.as_ref().unwrap().utc, t0_end + shift);
         // content_hash follows the new timestamps; modified_at moves too.
         assert_ne!(after.content_hash, hash_before);
         assert_eq!(after.content_hash, after.expected_content_hash());
-        assert!(after.modified_at >= e.modified_at);
+        assert!(after.modify_time >= e.modify_time);
     }
 
     #[test]
@@ -3162,11 +3162,11 @@ mod tests {
         // interpretation doesn't muddle the test across timezones.
         let cutoff: chrono::DateTime<chrono::Utc> = "2026-04-01T00:00:00Z".parse().unwrap();
         let early = make_entry_at_utc("coffee", cutoff - chrono::Duration::days(2), "d1");
-        let early_start = early.time_start.as_ref().unwrap().utc;
+        let early_start = early.start_time.as_ref().unwrap().utc;
         let late = make_entry_at_utc("coffee", cutoff + chrono::Duration::days(2), "d1");
-        let late_start = late.time_start.as_ref().unwrap().utc;
+        let late_start = late.start_time.as_ref().unwrap().utc;
         let other = make_entry_at_utc("water", cutoff + chrono::Duration::days(3), "d1");
-        let other_start = other.time_start.as_ref().unwrap().utc;
+        let other_start = other.start_time.as_ref().unwrap().utc;
         db.insert_entry(&early).unwrap();
         db.insert_entry(&late).unwrap();
         db.insert_entry(&other).unwrap();
@@ -3183,14 +3183,14 @@ mod tests {
         let early_after = db.get_entry(&early.slug).unwrap();
         let late_after = db.get_entry(&late.slug).unwrap();
         let other_after = db.get_entry(&other.slug).unwrap();
-        assert_eq!(early_after.time_start.as_ref().unwrap().utc, early_start,
+        assert_eq!(early_after.start_time.as_ref().unwrap().utc, early_start,
             "pre-cutoff row must not shift");
         assert_eq!(
-            late_after.time_start.as_ref().unwrap().utc,
+            late_after.start_time.as_ref().unwrap().utc,
             late_start + chrono::Duration::hours(1),
             "post-cutoff row shifts +1h"
         );
-        assert_eq!(other_after.time_start.as_ref().unwrap().utc, other_start,
+        assert_eq!(other_after.start_time.as_ref().unwrap().utc, other_start,
             "other field must not shift");
     }
 
@@ -3200,14 +3200,14 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = make_entry_at("focus", 10_000, "d1");
         let id = e.slug.clone();
-        let t0 = e.time_start.as_ref().unwrap().utc;
+        let t0 = e.start_time.as_ref().unwrap().utc;
         db.insert_entry(&e).unwrap();
 
         cmd_retime(retime_args(Some(&id), "-30m"), &db).unwrap();
 
         let after = db.get_entry(&id).unwrap();
         assert_eq!(
-            after.time_start.as_ref().unwrap().utc,
+            after.start_time.as_ref().unwrap().utc,
             t0 - chrono::Duration::minutes(30)
         );
     }
@@ -3280,12 +3280,12 @@ mod tests {
         );
 
         // Build the edited JSON: same id/slug/etc., but a mutated value and
-        // extra_data. We serialize the existing entry, mutate two fields,
+        // data. We serialize the existing entry, mutate two fields,
         // then hand the file back via `cp`.
         let mut doc: serde_json::Value =
             serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
         doc["value"] = serde_json::json!("focused");
-        doc["extra_data"] = serde_json::json!({"note": "clearer"});
+        doc["data"] = serde_json::json!({"note": "clearer"});
 
         let prep = tempfile::Builder::new()
             .prefix("datum-edit-prep-")
@@ -3302,13 +3302,13 @@ mod tests {
         let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.value, Some(serde_json::json!("focused")));
         assert_eq!(
-            after.extra_data,
+            after.data,
             Some(serde_json::json!({"note": "clearer"}))
         );
         // content_hash refreshed to match the new state.
         assert_eq!(after.content_hash, after.expected_content_hash());
         assert_ne!(after.content_hash, e.content_hash);
-        assert!(after.modified_at >= e.modified_at);
+        assert!(after.modify_time >= e.modify_time);
     }
 
     #[test]
@@ -3331,7 +3331,7 @@ mod tests {
 
         let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.content_hash, before.content_hash);
-        assert_eq!(after.modified_at, before.modified_at);
+        assert_eq!(after.modify_time, before.modify_time);
         assert_eq!(after.value, before.value);
     }
 
@@ -3368,7 +3368,7 @@ mod tests {
         // Row untouched.
         let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.content_hash, before.content_hash);
-        assert_eq!(after.modified_at, before.modified_at);
+        assert_eq!(after.modify_time, before.modify_time);
     }
 
     /// Like `with_datum_editor` but returns the closure's result.
@@ -3432,7 +3432,7 @@ mod tests {
             assert_eq!(e.field, a.field);
             assert_eq!(e.verb, a.verb);
             assert_eq!(e.value, a.value);
-            assert_eq!(e.extra_data, a.extra_data);
+            assert_eq!(e.data, a.data);
         }
     }
 
@@ -3562,7 +3562,7 @@ mod tests {
 
         let before: Vec<_> = all_entries_sorted(&dst)
             .into_iter()
-            .map(|e| (e.slug.clone(), e.modified_at))
+            .map(|e| (e.slug.clone(), e.modify_time))
             .collect();
 
         // Second restore with the same backup: content_hash dedup kicks in,
@@ -3576,7 +3576,7 @@ mod tests {
 
         let after: Vec<_> = all_entries_sorted(&dst)
             .into_iter()
-            .map(|e| (e.slug.clone(), e.modified_at))
+            .map(|e| (e.slug.clone(), e.modify_time))
             .collect();
         assert_eq!(before, after, "idempotent restore must not bump modified_at");
 
@@ -3623,7 +3623,7 @@ mod tests {
             "device-OTHER",
         );
         dst.insert_entry(&dup).unwrap();
-        let old_modified = dst.get_entry(&dup.slug).unwrap().modified_at;
+        let old_modified = dst.get_entry(&dup.slug).unwrap().modify_time;
 
         // --force → ConflictStrategy::Update overwrites device_id from "d1" in backup.
         cmd_restore(
@@ -3635,7 +3635,7 @@ mod tests {
         let overwritten = dst.get_entry(&dup.slug).unwrap();
         assert_eq!(overwritten.device_id, "d1", "force must overwrite device_id");
         assert!(
-            overwritten.modified_at >= old_modified,
+            overwritten.modify_time >= old_modified,
             "force must bump modified_at"
         );
 

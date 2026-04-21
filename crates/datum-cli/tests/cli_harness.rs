@@ -114,7 +114,7 @@ fn log_with_update_flag_routes_to_update_strategy() {
     let after = db.entries_for_field("mood", None).unwrap()[0].clone();
     assert_eq!(after.slug, before.slug, "row must be mutated in place");
     assert!(
-        after.modified_at > before.modified_at,
+        after.modify_time > before.modify_time,
         "Update strategy must bump modified_at"
     );
 }

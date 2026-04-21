@@ -173,10 +173,10 @@ pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&S
     let slug_text = Some(paint(GRAY_FG, &entry.slug));
     let hid_text = Some(paint(action.map(Action::ansi_color).unwrap_or(""), &short_hid(&entry.hid)));
 
-    let occur = entry.time_start.as_ref().map(|t| format_human_time(t.utc, false));
-    let create = Some(format_human_time(entry.created_at, true));
-    let modify = Some(format_human_time(entry.modified_at, true));
-    let hybrid = occur.clone().or_else(|| Some(format_gray_prefix("c", format_human_time(entry.created_at, false))));
+    let occur = entry.start_time.as_ref().map(|t| format_human_time(t.utc, false));
+    let create = Some(format_human_time(entry.create_time, true));
+    let modify = Some(format_human_time(entry.modify_time, true));
+    let hybrid = occur.clone().or_else(|| Some(format_gray_prefix("c", format_human_time(entry.create_time, false))));
 
     Extracted {
         action: action_text,
@@ -252,7 +252,7 @@ fn format_state(entry: &Entry, spec: Option<&FieldSpec>) -> Option<String> {
             Some(paint(&code, DOT))
         }
         (Verb::Stop, None) => Some("end".to_string()),
-        (Verb::Note, _) if entry.time_start.is_none() => {
+        (Verb::Note, _) if entry.start_time.is_none() => {
             let code = field_color_code(&entry.field, field_stored);
             Some(paint(&code, NON_OCCUR))
         }
@@ -663,7 +663,7 @@ pub fn print_logged(entry: &Entry) {
 /// Format extra_data, flattened with 1 space of leading padding per line.
 /// Returns None if there's nothing to show.
 fn format_extra_data(entry: &Entry) -> Option<String> {
-    let extra = entry.extra_data.as_ref()?;
+    let extra = entry.data.as_ref()?;
     let map = extra.as_object()?;
     if map.is_empty() {
         return None;
@@ -691,7 +691,7 @@ fn render_extra_value(v: &JsonValue) -> String {
 
 fn extract_column(entry: &Entry, col: &str) -> String {
     entry
-        .extra_data
+        .data
         .as_ref()
         .and_then(|v| v.get(col))
         .map(render_extra_value)
@@ -747,7 +747,7 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
             .unwrap_or_default(),
         "verb" => entry.verb.to_string(),
         other => entry
-            .extra_data
+            .data
             .as_ref()
             .and_then(|v| v.get(other))
             .map(render_extra_value)
@@ -920,7 +920,7 @@ pub fn render_now_view(
 
                 let sansi = state_ansi(&tf.field, &state_str, &tf.color, state_colors);
 
-                let entry_time = entry.time_start.as_ref().or(entry.time_end.as_ref());
+                let entry_time = entry.start_time.as_ref().or(entry.end_time.as_ref());
                 let time_str = match entry_time {
                     None => String::new(),
                     Some(t) => {
@@ -1096,7 +1096,7 @@ mod tests {
     #[test]
     fn interpolate_resolves_extra_data_keys() {
         let mut entry = sample_entry("coffee", Verb::Occur, None);
-        entry.extra_data = Some(serde_json::json!({"amount": 200}));
+        entry.data = Some(serde_json::json!({"amount": 200}));
         let out = interpolate("%amount%ml", &entry);
         assert_eq!(out, "200ml");
     }

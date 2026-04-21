@@ -26,7 +26,7 @@ impl View for DurationSumView {
             if entry.deleted_at.is_some() {
                 continue;
             }
-            let (Some(ts), Some(te)) = (&entry.time_start, &entry.time_end) else {
+            let (Some(ts), Some(te)) = (&entry.start_time, &entry.end_time) else {
                 continue;
             };
             let dur_ms = (te.utc - ts.utc).num_milliseconds();

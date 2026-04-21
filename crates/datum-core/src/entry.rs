@@ -8,7 +8,9 @@ use sha2::{Digest, Sha256};
 
 use crate::time::DatumTime;
 
-/// The verb describes what kind of event an entry represents.
+/// The verb describes what kind of event an entry represents. Read-back
+/// values come from the `verb` generated column in SQLite; on write, verb
+/// is derived from `entry_shape` + `value` + `intent`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Verb {
@@ -22,6 +24,10 @@ pub enum Verb {
     Switch,
     /// Non-time-bound data chunk (e.g. word learned, person met)
     Note,
+    /// Completed block with a value (e.g. "slept 8h with mood=tired")
+    Block,
+    /// Catch-all for arbitrary data attached to a field
+    Add,
 }
 
 impl std::fmt::Display for Verb {
@@ -32,6 +38,8 @@ impl std::fmt::Display for Verb {
             Verb::Stop => write!(f, "stop"),
             Verb::Switch => write!(f, "switch"),
             Verb::Note => write!(f, "note"),
+            Verb::Block => write!(f, "block"),
+            Verb::Add => write!(f, "add"),
         }
     }
 }
@@ -44,9 +52,99 @@ impl std::str::FromStr for Verb {
             "start" => Ok(Verb::Start),
             "stop" | "end" => Ok(Verb::Stop),
             "switch" => Ok(Verb::Switch),
-            "note" | "add" => Ok(Verb::Note),
+            "note" => Ok(Verb::Note),
+            "block" => Ok(Verb::Block),
+            "add" => Ok(Verb::Add),
             _ => Err(format!("Unknown verb: '{s}'")),
         }
+    }
+}
+
+/// Shape of an entry's time footprint. Stored explicitly so the generated
+/// `verb` column (and read-time queries) can classify entries without
+/// re-parsing timestamps or value types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EntryShape {
+    /// Instantaneous event at `start_time`.
+    Point,
+    /// Closed interval: `start_time` and `end_time` both set.
+    Block,
+    /// Open-ended: `start_time` is set, `end_time` is absent (still running).
+    Ongoing,
+}
+
+impl std::fmt::Display for EntryShape {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            EntryShape::Point => write!(f, "point"),
+            EntryShape::Block => write!(f, "block"),
+            EntryShape::Ongoing => write!(f, "ongoing"),
+        }
+    }
+}
+
+impl std::str::FromStr for EntryShape {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "point" => Ok(EntryShape::Point),
+            "block" => Ok(EntryShape::Block),
+            "ongoing" => Ok(EntryShape::Ongoing),
+            _ => Err(format!("Unknown entry_shape: '{s}'")),
+        }
+    }
+}
+
+/// Granularity at which a timestamp is meaningful. `Exact` is the default —
+/// the stored timestamp is precise. Other variants tag the timestamp as
+/// known only to a broader unit, so consumers (day views, rollups) can
+/// widen windows without re-guessing precision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrecisionUnit {
+    Exact,
+    Second,
+    Minute,
+    Hour,
+    Date,
+    Month,
+    Year,
+}
+
+impl std::fmt::Display for PrecisionUnit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PrecisionUnit::Exact => write!(f, "exact"),
+            PrecisionUnit::Second => write!(f, "second"),
+            PrecisionUnit::Minute => write!(f, "minute"),
+            PrecisionUnit::Hour => write!(f, "hour"),
+            PrecisionUnit::Date => write!(f, "date"),
+            PrecisionUnit::Month => write!(f, "month"),
+            PrecisionUnit::Year => write!(f, "year"),
+        }
+    }
+}
+
+impl std::str::FromStr for PrecisionUnit {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "exact" => Ok(PrecisionUnit::Exact),
+            "second" => Ok(PrecisionUnit::Second),
+            "minute" => Ok(PrecisionUnit::Minute),
+            "hour" => Ok(PrecisionUnit::Hour),
+            "date" => Ok(PrecisionUnit::Date),
+            "month" => Ok(PrecisionUnit::Month),
+            "year" => Ok(PrecisionUnit::Year),
+            _ => Err(format!("Unknown precision_unit: '{s}'")),
+        }
+    }
+}
+
+impl Default for PrecisionUnit {
+    fn default() -> Self {
+        PrecisionUnit::Exact
     }
 }
 
@@ -77,30 +175,52 @@ pub fn new_hid() -> String {
 /// An entry is the core data unit. All user-logged data becomes an Entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
-    /// Primary key — datum-compatible "field:timestamp" human reference.
-    pub slug: String,
-
-    /// Random 12-char base36 id — prefix-addressable quick reference, unique.
+    /// Random 12-char base36 id — prefix-addressable, unique. PRIMARY KEY.
     pub hid: String,
 
-    /// SHA-256 of (field + time_start_utc + time_end_utc + value + extra_data) for dedup.
+    /// datum-compatible human reference (`field:timestamp` or similar).
+    /// UNIQUE-indexed, derived at write time from field + id-keys.
+    pub slug: String,
+
+    /// SHA-256 of the identity-defining fields for dedup.
     pub content_hash: String,
 
     // --- What ---
     pub field: String,
+    /// Shape of the entry's time footprint — stored, not derived.
+    pub entry_shape: EntryShape,
+    /// Optional verb-intent override. When set (e.g. "stop", "note"), the
+    /// generated `verb` column returns this value verbatim. When None, verb
+    /// is derived from `entry_shape` + `value`.
+    #[serde(default)]
+    pub intent: Option<String>,
+    /// Verb classification — populated from the generated SQL column on read.
+    /// On write this field is derived from entry_shape + value + intent.
     pub verb: Verb,
     /// Primary value (the state for switch, quantity for occur, etc.)
     pub value: Option<JsonValue>,
     /// Arbitrarily nested JSON. Individual leaf values may use {"v": x, "u": "unit"}.
-    pub extra_data: Option<JsonValue>,
+    pub data: Option<JsonValue>,
     /// Top-level unit for `value` (e.g. "cups", "kg").
     pub unit: Option<String>,
 
     // --- When ---
     /// Start of event (or the moment of occurrence for `occur`).
-    pub time_start: Option<DatumTime>,
-    /// End of event. Duration = time_end - time_start (always derived, never stored).
-    pub time_end: Option<DatumTime>,
+    pub start_time: Option<DatumTime>,
+    /// End of event. Duration = end_time - start_time (generated in DB).
+    pub end_time: Option<DatumTime>,
+    /// Absolute uncertainty in seconds on `start_time`.
+    #[serde(default)]
+    pub start_time_precision: u32,
+    /// Granularity unit for `start_time`.
+    #[serde(default)]
+    pub start_time_precision_unit: PrecisionUnit,
+    /// Absolute uncertainty in seconds on `end_time`.
+    #[serde(default)]
+    pub end_time_precision: u32,
+    /// Granularity unit for `end_time`.
+    #[serde(default)]
+    pub end_time_precision_unit: PrecisionUnit,
 
     // --- Where ---
     pub lat: Option<f64>,
@@ -108,35 +228,53 @@ pub struct Entry {
     pub location: Option<String>,
 
     // --- Bookkeeping ---
-    pub created_at: DateTime<Utc>,
-    pub modified_at: DateTime<Utc>,
+    pub create_time: DateTime<Utc>,
+    pub modify_time: DateTime<Utc>,
     pub device_id: String,
 
     // --- Template metadata (mirrors datum's meta.idStructure / meta.fieldStructure) ---
     /// Template used to produce `slug`, e.g. `"%field%:%uid%"`.
     #[serde(default)]
     pub id_structure: Option<String>,
-    /// Template used to produce `field`, e.g. `"%srcLang%"`. Daydumb sets
-    /// `field` directly on most paths; this preserves the template for
-    /// round-trip compatibility with migrated datum data.
+    /// Template used to produce `field`, e.g. `"%srcLang%"`.
     #[serde(default)]
     pub field_structure: Option<String>,
 
     /// Soft-delete tombstone. `None` = live row.
     #[serde(default)]
     pub deleted_at: Option<DateTime<Utc>>,
+
+    // --- Intent capture ---
+    /// Literal argv of the command that produced this entry.
+    #[serde(default)]
+    pub raw_input: String,
+    /// Chain of alias expansions applied before clap saw the argv.
+    #[serde(default)]
+    pub alias_chain: Option<JsonValue>,
+    /// Version of the parser that produced this entry.
+    #[serde(default = "default_parser_version")]
+    pub parser_version: u32,
+}
+
+fn default_parser_version() -> u32 {
+    1
 }
 
 impl Entry {
     /// Build a new entry with auto-generated hid, slug, and content_hash.
+    ///
+    /// `verb` is a convenience input: callers that haven't migrated to the
+    /// shape-first API still think in terms of Occur/Start/Stop/Switch/Note
+    /// and this constructor picks an `entry_shape` + `intent` that matches
+    /// the verb's intended semantics.
     pub fn new(
         field: impl Into<String>,
         verb: Verb,
         value: Option<JsonValue>,
-        extra_data: Option<JsonValue>,
+        data: Option<JsonValue>,
         unit: Option<String>,
-        time_start: Option<DatumTime>,
-        time_end: Option<DatumTime>,
+        start_time: Option<DatumTime>,
+        end_time: Option<DatumTime>,
         device_id: impl Into<String>,
     ) -> Self {
         let field = field.into();
@@ -145,49 +283,62 @@ impl Entry {
 
         let hid = new_hid();
 
-        let time_start_str = time_start.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let time_end_str = time_end.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let extra_str = extra_data.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        let (entry_shape, intent) = infer_shape_and_intent(
+            &verb,
+            value.as_ref(),
+            start_time.as_ref(),
+            end_time.as_ref(),
+        );
+
+        let start_str = start_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let end_str = end_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let data_str = data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let value_str = value.as_ref().map(|v| v.to_string()).unwrap_or_default();
 
-        let content_hash = compute_hash(&field, &time_start_str, &time_end_str, &value_str, &extra_str);
+        let content_hash = compute_hash(&field, &start_str, &end_str, &value_str, &data_str);
 
-        let slug = build_slug(&field, time_start.as_ref().or(time_end.as_ref()));
+        let slug = build_slug(&field, start_time.as_ref().or(end_time.as_ref()));
 
         Entry {
-            slug,
             hid,
+            slug,
             content_hash,
             field,
+            entry_shape,
+            intent,
             verb,
             value,
-            extra_data,
+            data,
             unit,
-            time_start,
-            time_end,
+            start_time,
+            end_time,
+            start_time_precision: 0,
+            start_time_precision_unit: PrecisionUnit::Exact,
+            end_time_precision: 0,
+            end_time_precision_unit: PrecisionUnit::Exact,
             lat: None,
             lon: None,
             location: None,
-            created_at: now,
-            modified_at: now,
+            create_time: now,
+            modify_time: now,
             device_id,
             id_structure: None,
             field_structure: None,
             deleted_at: None,
+            raw_input: String::new(),
+            alias_chain: None,
+            parser_version: 1,
         }
     }
 
     /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.
-    ///
-    /// Used by the `%uid%` template placeholder and for compact display in
-    /// action output. The full hid remains prefix-addressable via `datum get`.
     pub fn short_uid(&self) -> String {
         self.hid.chars().take(SHORT_HID_LEN).collect()
     }
 
-    /// Duration in seconds (derived from time_start and time_end).
+    /// Duration in seconds (derived from start_time and end_time).
     pub fn duration_seconds(&self) -> Option<i64> {
-        match (&self.time_start, &self.time_end) {
+        match (&self.start_time, &self.end_time) {
             (Some(start), Some(end)) => {
                 Some((end.utc - start.utc).num_seconds())
             }
@@ -196,16 +347,52 @@ impl Entry {
     }
 
     /// Recompute the content_hash from the entry's current fields.
-    ///
-    /// Used by consistency checks to detect rows whose stored `content_hash`
-    /// diverges from what the current field values would produce.
     pub fn expected_content_hash(&self) -> String {
-        let time_start_str = self.time_start.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let time_end_str = self.time_end.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let extra_str = self.extra_data.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        let start_str = self.start_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let end_str = self.end_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let data_str = self.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let value_str = self.value.as_ref().map(|v| v.to_string()).unwrap_or_default();
-        compute_hash(&self.field, &time_start_str, &time_end_str, &value_str, &extra_str)
+        compute_hash(&self.field, &start_str, &end_str, &value_str, &data_str)
     }
+}
+
+/// Pick an `(entry_shape, intent)` pair that reconstructs the caller's verb
+/// when fed through the SQL generated column. Verbs that don't survive the
+/// shape-based projection (Stop, Note, Add, and Occur-with-value) ride along
+/// in `intent`.
+fn infer_shape_and_intent(
+    verb: &Verb,
+    value: Option<&JsonValue>,
+    start_time: Option<&DatumTime>,
+    end_time: Option<&DatumTime>,
+) -> (EntryShape, Option<String>) {
+    let shape = match (verb, start_time, end_time) {
+        (Verb::Start, Some(_), None) => EntryShape::Ongoing,
+        (Verb::Start, Some(_), Some(_)) => EntryShape::Block,
+        (Verb::Block, _, _) => EntryShape::Block,
+        (_, Some(_), Some(_)) => EntryShape::Block,
+        _ => EntryShape::Point,
+    };
+    let intent = match verb {
+        // These verbs can't be recovered from shape + value alone.
+        Verb::Stop => Some("stop".to_string()),
+        Verb::Note => Some("note".to_string()),
+        Verb::Add => Some("add".to_string()),
+        // point + non-null value generates 'switch' in SQL; an explicit
+        // Occur with a quantity (e.g. "drank 2 cups") needs the intent
+        // override to survive round-trip.
+        Verb::Occur if value.is_some() => Some("occur".to_string()),
+        // Switch with no value would generate 'occur'; pin the intent.
+        Verb::Switch if value.is_none() => Some("switch".to_string()),
+        // Switch with both times → shape=block → generated 'block';
+        // preserve the caller's Switch identity.
+        Verb::Switch if start_time.is_some() && end_time.is_some() => Some("switch".to_string()),
+        // `datum start sleep 5` is a block; the spec's acceptance expects
+        // verb='block' there, so Start with both times rides shape=block
+        // without an intent override and becomes Verb::Block on read-back.
+        _ => None,
+    };
+    (shape, intent)
 }
 
 fn compute_hash(field: &str, start: &str, end: &str, value: &str, extra: &str) -> String {
@@ -252,6 +439,7 @@ mod tests {
         );
         assert_eq!(e.field, "coffee");
         assert_eq!(e.verb, Verb::Occur);
+        assert_eq!(e.entry_shape, EntryShape::Point);
         assert_eq!(e.hid.len(), HID_LEN);
         assert!(e.hid.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         assert!(e.slug.starts_with("coffee:"));
@@ -259,7 +447,7 @@ mod tests {
 
     #[test]
     fn test_verb_roundtrip() {
-        for v in ["occur", "start", "stop", "switch", "note"] {
+        for v in ["occur", "start", "stop", "switch", "note", "block", "add"] {
             let parsed: Verb = v.parse().unwrap();
             let displayed = format!("{parsed}");
             assert!(!displayed.is_empty());
@@ -271,7 +459,6 @@ mod tests {
         let t = DatumTime::now();
         let e1 = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t.clone()), None, "d1");
         let e2 = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t.clone()), None, "d2");
-        // Same content from different devices → same hash → dedup catches it
         assert_eq!(e1.content_hash, e2.content_hash);
     }
 
@@ -291,5 +478,27 @@ mod tests {
             assert_eq!(h.len(), HID_LEN);
             assert!(h.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         }
+    }
+
+    #[test]
+    fn shape_inference_matches_verb_and_times() {
+        let t = DatumTime::now();
+        // Start with no end → Ongoing
+        let e = Entry::new("nap", Verb::Start, None, None, None, Some(t.clone()), None, "d");
+        assert_eq!(e.entry_shape, EntryShape::Ongoing);
+        assert_eq!(e.intent, None);
+
+        // Start with end → Block
+        let e = Entry::new("nap", Verb::Start, None, None, None, Some(t.clone()), Some(t.clone()), "d");
+        assert_eq!(e.entry_shape, EntryShape::Block);
+
+        // Stop rides along via intent so state compilation can still pick it up.
+        let e = Entry::new("nap", Verb::Stop, None, None, None, Some(t.clone()), None, "d");
+        assert_eq!(e.entry_shape, EntryShape::Point);
+        assert_eq!(e.intent.as_deref(), Some("stop"));
+
+        // Notes survive via intent — no state effect.
+        let e = Entry::new("journal", Verb::Note, Some(serde_json::json!("hello")), None, None, Some(t), None, "d");
+        assert_eq!(e.intent.as_deref(), Some("note"));
     }
 }

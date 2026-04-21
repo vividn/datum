@@ -48,14 +48,14 @@ fn note_sets_field_and_collects_extra_kv() {
     let e1 = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(e1, field: "field", verb: "note");
     assert!(
-        e1.extra_data.is_none(),
+        e1.data.is_none(),
         "no kv pairs ⇒ extra_data stays None",
     );
 
     run_cli(&["note", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
     let e2 = &db.entries_for_field("field2", None).unwrap()[0];
     assert_entry_matches!(e2, field: "field2");
-    let extra = e2.extra_data.as_ref().expect("foo=bar lands in extra_data");
+    let extra = e2.data.as_ref().expect("foo=bar lands in extra_data");
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
 }
 
@@ -96,7 +96,7 @@ fn required_keys_positional_absorption_skipped_no_analog() {
     run_cli(&["note", "field", "-k", "abc=value"], &db)
         .expect("note field -k abc=value");
     let e = &db.entries_for_field("field", None).unwrap()[0];
-    let extra = e.extra_data.as_ref().expect("-k lands in extra_data");
+    let extra = e.data.as_ref().expect("-k lands in extra_data");
     assert_eq!(extra.get("abc"), Some(&json!("value")));
 }
 
@@ -131,7 +131,7 @@ fn fieldless_field_kv_skipped_no_analog() {
         .expect("note fromField field=fromData");
     let e = &db.entries_for_field("fromField", None).unwrap()[0];
     assert_eq!(e.field, "fromField", "positional field wins");
-    let extra = e.extra_data.as_ref().unwrap();
+    let extra = e.data.as_ref().unwrap();
     assert_eq!(
         extra.get("field"),
         Some(&json!("fromData")),
@@ -190,7 +190,7 @@ fn blank_fieldless_with_metadata_skipped_no_analog() {
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert!(!e.device_id.is_empty(), "device_id populated by default");
     assert_ne!(
-        e.created_at,
+        e.create_time,
         chrono::DateTime::UNIX_EPOCH,
         "created_at populated by default",
     );
@@ -224,7 +224,7 @@ fn internal_insert_spy_skipped_structural_only() {
     // Observable proxy for "the insert happened with these args":
     assert_eq!(e.slug, "abc", "template interpolated against extra_data");
     assert_eq!(
-        e.extra_data.as_ref().unwrap().get("foo"),
+        e.data.as_ref().unwrap().get("foo"),
         Some(&json!("abc")),
     );
     assert_eq!(e.id_structure.as_deref(), Some("%foo%"));
@@ -244,7 +244,7 @@ fn no_metadata_suppresses_timestamps() {
     let has = db.get_entry("hasMetadata").unwrap();
     assert!(!has.device_id.is_empty(), "default path keeps device_id");
     assert_ne!(
-        has.created_at,
+        has.create_time,
         chrono::DateTime::UNIX_EPOCH,
         "default path sets created_at to now()",
     );
@@ -254,12 +254,12 @@ fn no_metadata_suppresses_timestamps() {
     let none = db.get_entry("noMetadata").unwrap();
     assert_eq!(none.device_id, "", "-M clears device_id");
     assert_eq!(
-        none.created_at,
+        none.create_time,
         chrono::DateTime::UNIX_EPOCH,
         "-M zeros created_at",
     );
     assert_eq!(
-        none.modified_at,
+        none.modify_time,
         chrono::DateTime::UNIX_EPOCH,
         "-M zeros modified_at",
     );
@@ -272,7 +272,7 @@ fn no_metadata_suppresses_timestamps() {
     .expect("note --no-metadata");
     let long = db.get_entry("noMetaLong").unwrap();
     assert_eq!(long.device_id, "");
-    assert_eq!(long.created_at, chrono::DateTime::UNIX_EPOCH);
+    assert_eq!(long.create_time, chrono::DateTime::UNIX_EPOCH);
 }
 
 // ─── TS #13: "tells the user if the document already exists identical data" ──
@@ -494,7 +494,7 @@ fn merge_flag_routes_to_merge_strategy() {
     let after = db.entries_for_field("field", None).unwrap()[0].clone();
     assert_eq!(after.slug, before.slug, "merged in place, not rekeyed");
     assert!(
-        after.modified_at > before.modified_at,
+        after.modify_time > before.modify_time,
         "Merge strategy bumps modified_at",
     );
 }
@@ -532,7 +532,7 @@ fn conflict_update_flag_routes_to_update_strategy() {
     assert_count!(db, "field", 1);
     let after = db.entries_for_field("field", None).unwrap()[0].clone();
     assert_eq!(after.slug, before.slug);
-    assert!(after.modified_at > before.modified_at);
+    assert!(after.modify_time > before.modify_time);
 }
 
 // ─── TS #24: "correctly displays interpolated field values in output" ────────
@@ -590,7 +590,7 @@ fn comment_flag_populates_extra_data_comment() {
     )
     .expect("note -c 'comment remainder'");
     let e = &db.entries_for_field("field", None).unwrap()[0];
-    let extra = e.extra_data.as_ref().unwrap();
+    let extra = e.data.as_ref().unwrap();
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
     assert_eq!(
         extra.get("comment"),
@@ -623,7 +623,7 @@ fn add_alias_invokes_note_handler() {
     assert_eq!(n.verb, a.verb, "add alias must resolve to Verb::Note");
     assert_eq!(n.verb.to_string(), "note");
     assert_eq!(n.value, a.value);
-    assert_eq!(n.extra_data, a.extra_data);
+    assert_eq!(n.data, a.data);
     // content_hash derives only from field/time/value/extra — must match
     // across the two dispatches.
     assert_eq!(

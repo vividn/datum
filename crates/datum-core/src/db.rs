@@ -13,7 +13,7 @@ use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
 
-use crate::entry::{new_hid, Entry, Verb};
+use crate::entry::{new_hid, Entry, EntryShape, PrecisionUnit, Verb};
 use crate::error::{DatumError, PrefixCandidate, Result};
 use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
 use crate::time::DatumTime;
@@ -28,8 +28,8 @@ pub struct TrackedField {
 
 /// Which timestamp to sort/filter entries by in [`Db::list_entries`].
 ///
-/// `Hybrid` falls back to `modified_at` for entries without a `time_start`
-/// (e.g. notes). `Occur` excludes rows lacking `time_start` entirely.
+/// `Hybrid` falls back to `modify_time` for entries without a `start_time`
+/// (e.g. notes). `Occur` excludes rows lacking `start_time` entirely.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TimeMetric {
     #[default]
@@ -76,7 +76,7 @@ pub struct ListParams {
 
 /// Selection filter for [`Db::update_times`]. Every non-None field narrows
 /// the match. `slug_or_hid` matches either column. `after_utc` / `before_utc`
-/// bound `time_start_utc` (inclusive); rows with null `time_start_utc` are
+/// bound `start_time` (inclusive); rows with null `start_time` are
 /// excluded whenever a time bound is set.
 #[derive(Debug, Clone, Default)]
 pub struct RetimeFilter<'a> {
@@ -91,13 +91,13 @@ pub struct RetimeFilter<'a> {
 pub struct TimeOrderIssue {
     pub slug: String,
     pub field: String,
-    pub time_start_utc: String,
-    pub time_end_utc: String,
+    pub start_time: String,
+    pub end_time: String,
 }
 
 /// Strategy for handling content_hash collisions on insert.
 ///
-/// Rows are mutable: `Update` / `Merge` / `Rekey` all bump `modified_at`.
+/// Rows are mutable: `Update` / `Merge` / `Rekey` all bump `modify_time`.
 /// CRDT/sync reconciliation is deferred.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ConflictStrategy {
@@ -106,9 +106,9 @@ pub enum ConflictStrategy {
     #[default]
     Ignore,
     /// Overwrite the existing row's mutable fields with the incoming entry's
-    /// values (bumps `modified_at`).
+    /// values (bumps `modify_time`).
     Update,
-    /// Deep-merge incoming `extra_data` into the existing row's `extra_data`
+    /// Deep-merge incoming `data` into the existing row's `data`
     /// and otherwise behave like [`ConflictStrategy::Update`].
     Merge,
     /// Insert the incoming row anyway with its new ULID, leaving the existing
@@ -214,6 +214,11 @@ impl Db {
         // Stamp / advance the schema version. Forward-compat migrations
         // apply silently; incompatible versions return an error here.
         crate::migrations::migrate_to_current(&self.conn)?;
+        // Migrations may drop tables destructively (e.g. v2→v3 replaces the
+        // entries table). Re-run schema.sql so any dropped tables come back
+        // in their latest shape. IF NOT EXISTS keeps this idempotent on
+        // fresh databases.
+        self.conn.execute_batch(include_str!("schema.sql"))?;
         Ok(())
     }
 
@@ -298,7 +303,7 @@ impl Db {
         let existing: Option<(String, Option<String>)> = self
             .conn
             .query_row(
-                "SELECT slug, extra_data FROM entries
+                "SELECT slug, data FROM entries
                  WHERE content_hash = ?1 AND deleted_at IS NULL
                  LIMIT 1",
                 params![entry.content_hash],
@@ -318,11 +323,11 @@ impl Db {
                 self.raw_overwrite_mutables(&slug, entry, None)?;
                 Ok(InsertOutcome::Updated { slug })
             }
-            (Some((slug, existing_extra_json)), ConflictStrategy::Merge) => {
-                let existing_extra: Option<JsonValue> = existing_extra_json
+            (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
+                let existing_data: Option<JsonValue> = existing_data_json
                     .as_deref()
                     .and_then(|s| serde_json::from_str(s).ok());
-                let merged = merge_extra_data(existing_extra.as_ref(), entry.extra_data.as_ref());
+                let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
                 self.raw_overwrite_mutables(&slug, entry, Some(merged))?;
                 Ok(InsertOutcome::Merged { slug })
             }
@@ -367,108 +372,138 @@ impl Db {
     fn try_insert(&self, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
         self.conn.execute(
             r#"INSERT INTO entries (
-                slug, hid, content_hash, field, verb,
-                value, extra_data, unit,
-                time_start_utc, time_start_offset, time_start_tz,
-                time_end_utc, time_end_offset, time_end_tz,
+                hid, slug, content_hash, field, entry_shape, intent,
+                value, data, unit,
+                start_time, start_time_offset, start_time_tz,
+                start_time_precision, start_time_precision_unit,
+                end_time, end_time_offset, end_time_tz,
+                end_time_precision, end_time_precision_unit,
                 lat, lon, location,
-                created_at, modified_at, device_id,
-                deleted_at, id_structure, field_structure
+                create_time, modify_time, device_id,
+                deleted_at, id_structure, field_structure,
+                raw_input, alias_chain, parser_version
             ) VALUES (
-                ?1, ?2, ?3, ?4, ?5,
-                ?6, ?7, ?8,
-                ?9, ?10, ?11,
-                ?12, ?13, ?14,
+                ?1, ?2, ?3, ?4, ?5, ?6,
+                ?7, ?8, ?9,
+                ?10, ?11, ?12,
+                ?13, ?14,
                 ?15, ?16, ?17,
-                ?18, ?19, ?20,
-                ?21, ?22, ?23
+                ?18, ?19,
+                ?20, ?21, ?22,
+                ?23, ?24, ?25,
+                ?26, ?27, ?28,
+                ?29, ?30, ?31
             )"#,
             params![
-                slug,
                 hid,
+                slug,
                 entry.content_hash,
                 entry.field,
-                entry.verb.to_string(),
+                entry.entry_shape.to_string(),
+                entry.intent,
                 entry.value.as_ref().map(|v| v.to_string()),
-                entry.extra_data.as_ref().map(|v| v.to_string()),
+                entry.data.as_ref().map(|v| v.to_string()),
                 entry.unit,
-                entry.time_start.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.time_start.as_ref().map(|t| t.offset_minutes),
-                entry.time_start.as_ref().map(|t| t.timezone.as_str()),
-                entry.time_end.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.time_end.as_ref().map(|t| t.offset_minutes),
-                entry.time_end.as_ref().map(|t| t.timezone.as_str()),
+                entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                entry.start_time.as_ref().map(|t| t.offset_minutes),
+                entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+                entry.start_time_precision,
+                entry.start_time_precision_unit.to_string(),
+                entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                entry.end_time.as_ref().map(|t| t.offset_minutes),
+                entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+                entry.end_time_precision,
+                entry.end_time_precision_unit.to_string(),
                 entry.lat,
                 entry.lon,
                 entry.location.as_deref(),
-                entry.created_at.to_rfc3339(),
-                entry.modified_at.to_rfc3339(),
+                entry.create_time.to_rfc3339(),
+                entry.modify_time.to_rfc3339(),
                 entry.device_id,
                 entry.deleted_at.map(|t| t.to_rfc3339()),
                 entry.id_structure.as_deref(),
                 entry.field_structure.as_deref(),
+                entry.raw_input,
+                entry.alias_chain.as_ref().map(|v| v.to_string()),
+                entry.parser_version,
             ],
         )?;
         Ok(())
     }
 
     /// Overwrite an existing row identified by `slug` with the mutable fields
-    /// from `entry`. When `override_extra` is `Some`, it replaces the stored
-    /// `extra_data`; otherwise the incoming `entry.extra_data` wins.
-    /// Refreshes `modified_at` (and recomputes `content_hash` from the
+    /// from `entry`. When `override_data` is `Some`, it replaces the stored
+    /// `data`; otherwise the incoming `entry.data` wins.
+    /// Refreshes `modify_time` (and recomputes `content_hash` from the
     /// incoming payload). The slug is immutable — this never renames the row.
     fn raw_overwrite_mutables(
         &self,
         slug: &str,
         entry: &Entry,
-        override_extra: Option<Option<JsonValue>>,
+        override_data: Option<Option<JsonValue>>,
     ) -> Result<()> {
-        let extra_value: Option<&JsonValue> = match override_extra.as_ref() {
+        let data_value: Option<&JsonValue> = match override_data.as_ref() {
             Some(o) => o.as_ref(),
-            None => entry.extra_data.as_ref(),
+            None => entry.data.as_ref(),
         };
-        let extra_json = extra_value.map(|v| v.to_string());
+        let data_json = data_value.map(|v| v.to_string());
         let now = Utc::now().to_rfc3339();
 
         self.conn.execute(
             r#"UPDATE entries SET
                 content_hash = ?2,
                 field = ?3,
-                verb = ?4,
-                value = ?5,
-                extra_data = ?6,
-                unit = ?7,
-                time_start_utc = ?8,
-                time_start_offset = ?9,
-                time_start_tz = ?10,
-                time_end_utc = ?11,
-                time_end_offset = ?12,
-                time_end_tz = ?13,
-                lat = ?14,
-                lon = ?15,
-                location = ?16,
-                modified_at = ?17,
-                device_id = ?18
+                entry_shape = ?4,
+                intent = ?5,
+                value = ?6,
+                data = ?7,
+                unit = ?8,
+                start_time = ?9,
+                start_time_offset = ?10,
+                start_time_tz = ?11,
+                start_time_precision = ?12,
+                start_time_precision_unit = ?13,
+                end_time = ?14,
+                end_time_offset = ?15,
+                end_time_tz = ?16,
+                end_time_precision = ?17,
+                end_time_precision_unit = ?18,
+                lat = ?19,
+                lon = ?20,
+                location = ?21,
+                modify_time = ?22,
+                device_id = ?23,
+                raw_input = ?24,
+                alias_chain = ?25,
+                parser_version = ?26
                WHERE slug = ?1"#,
             params![
                 slug,
                 entry.content_hash,
                 entry.field,
-                entry.verb.to_string(),
+                entry.entry_shape.to_string(),
+                entry.intent,
                 entry.value.as_ref().map(|v| v.to_string()),
-                extra_json,
+                data_json,
                 entry.unit,
-                entry.time_start.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.time_start.as_ref().map(|t| t.offset_minutes),
-                entry.time_start.as_ref().map(|t| t.timezone.as_str()),
-                entry.time_end.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.time_end.as_ref().map(|t| t.offset_minutes),
-                entry.time_end.as_ref().map(|t| t.timezone.as_str()),
+                entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                entry.start_time.as_ref().map(|t| t.offset_minutes),
+                entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+                entry.start_time_precision,
+                entry.start_time_precision_unit.to_string(),
+                entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                entry.end_time.as_ref().map(|t| t.offset_minutes),
+                entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+                entry.end_time_precision,
+                entry.end_time_precision_unit.to_string(),
                 entry.lat,
                 entry.lon,
                 entry.location.as_deref(),
                 now,
                 entry.device_id,
+                entry.raw_input,
+                entry.alias_chain.as_ref().map(|v| v.to_string()),
+                entry.parser_version,
             ],
         )?;
         Ok(())
@@ -477,8 +512,8 @@ impl Db {
     /// Persist a mutation to an existing entry, matched by `entry.slug`.
     /// Errors [`DatumError::NotFound`] if the slug is unknown and
     /// [`DatumError::Tombstoned`] if the row is soft-deleted. Refreshes
-    /// `modified_at` and rewrites all mutable fields (including
-    /// `content_hash`, `extra_data`) from the incoming payload.
+    /// `modify_time` and rewrites all mutable fields (including
+    /// `content_hash`, `data`) from the incoming payload.
     pub fn save_existing_entry(&self, entry: &Entry) -> Result<()> {
         let state: Option<Option<String>> = self
             .conn
@@ -593,12 +628,12 @@ impl Db {
             })
     }
 
-    /// Query live entries for a field, ordered by time_start descending.
+    /// Query live entries for a field, ordered by start_time descending.
     pub fn entries_for_field(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND deleted_at IS NULL
-             ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC{}",
+             ORDER BY COALESCE(start_time, end_time, create_time) DESC{}",
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -606,12 +641,12 @@ impl Db {
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
-    /// Query live entries for a field, ordered by time_start ascending (oldest first).
+    /// Query live entries for a field, ordered by start_time ascending (oldest first).
     pub fn entries_for_field_asc(&self, field: &str, limit: Option<usize>) -> Result<Vec<Entry>> {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND deleted_at IS NULL
-             ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC{}",
+             ORDER BY COALESCE(start_time, end_time, create_time) ASC{}",
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -627,17 +662,17 @@ impl Db {
     /// (so tail's output reads top-to-bottom in chronological order).
     pub fn list_entries(&self, params: &ListParams) -> Result<Vec<Entry>> {
         let metric_expr: &str = match params.metric {
-            TimeMetric::Hybrid => "COALESCE(time_start_utc, modified_at)",
-            TimeMetric::Occur => "time_start_utc",
-            TimeMetric::Create => "created_at",
-            TimeMetric::Modify => "modified_at",
+            TimeMetric::Hybrid => "COALESCE(start_time, modify_time)",
+            TimeMetric::Occur => "start_time",
+            TimeMetric::Create => "create_time",
+            TimeMetric::Modify => "modify_time",
         };
 
         let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
         let mut bindings: Vec<String> = Vec::new();
 
         if params.metric == TimeMetric::Occur {
-            sql.push_str(" AND time_start_utc IS NOT NULL");
+            sql.push_str(" AND start_time IS NOT NULL");
         }
         if let Some(field) = &params.field {
             sql.push_str(" AND field = ?");
@@ -690,10 +725,10 @@ impl Db {
     ) -> Result<Vec<Entry>> {
         let mut stmt = self.conn.prepare(
             r#"SELECT * FROM entries
-               WHERE COALESCE(time_start_utc, time_end_utc, created_at) >= ?1
-                 AND COALESCE(time_start_utc, time_end_utc, created_at) <= ?2
+               WHERE COALESCE(start_time, end_time, create_time) >= ?1
+                 AND COALESCE(start_time, end_time, create_time) <= ?2
                  AND deleted_at IS NULL
-               ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC"#,
+               ORDER BY COALESCE(start_time, end_time, create_time) ASC"#,
         )?;
         let rows = stmt.query_map(
             params![start.to_rfc3339(), end.to_rfc3339()],
@@ -916,8 +951,8 @@ impl Db {
         Ok(())
     }
 
-    /// Shift `time_start` / `time_end` on every live entry matching `filter`
-    /// by `offset`. Recomputes `content_hash` and bumps `modified_at` on each
+    /// Shift `start_time` / `end_time` on every live entry matching `filter`
+    /// by `offset`. Recomputes `content_hash` and bumps `modify_time` on each
     /// affected row. Slug is left unchanged.
     ///
     /// Returns the number of rows updated.
@@ -937,11 +972,11 @@ impl Db {
             bindings.push(field.to_string());
         }
         if let Some(after) = filter.after_utc {
-            sql.push_str(" AND time_start_utc IS NOT NULL AND time_start_utc >= ?");
+            sql.push_str(" AND start_time IS NOT NULL AND start_time >= ?");
             bindings.push(after.to_rfc3339());
         }
         if let Some(before) = filter.before_utc {
-            sql.push_str(" AND time_start_utc IS NOT NULL AND time_start_utc <= ?");
+            sql.push_str(" AND start_time IS NOT NULL AND start_time <= ?");
             bindings.push(before.to_rfc3339());
         }
 
@@ -959,24 +994,24 @@ impl Db {
         let now = Utc::now().to_rfc3339();
         let mut count = 0usize;
         for mut e in entries {
-            if let Some(t) = e.time_start.as_mut() {
+            if let Some(t) = e.start_time.as_mut() {
                 t.utc += offset;
             }
-            if let Some(t) = e.time_end.as_mut() {
+            if let Some(t) = e.end_time.as_mut() {
                 t.utc += offset;
             }
             let new_hash = e.expected_content_hash();
             tx.execute(
                 r#"UPDATE entries SET
-                    time_start_utc = ?2,
-                    time_end_utc   = ?3,
-                    content_hash   = ?4,
-                    modified_at    = ?5
+                    start_time  = ?2,
+                    end_time    = ?3,
+                    content_hash = ?4,
+                    modify_time = ?5
                    WHERE slug = ?1"#,
                 params![
                     e.slug,
-                    e.time_start.as_ref().map(|t| t.utc.to_rfc3339()),
-                    e.time_end.as_ref().map(|t| t.utc.to_rfc3339()),
+                    e.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                    e.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
                     new_hash,
                     now,
                 ],
@@ -1024,12 +1059,12 @@ impl Db {
             r#"SELECT * FROM entries
                WHERE field = ?1
                  AND deleted_at IS NULL
-                 AND verb IN ('switch', 'start', 'stop', 'occur')
+                 AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
                  AND (
-                      (time_start_utc IS NOT NULL AND time_start_utc <= ?2)
-                   OR (time_end_utc   IS NOT NULL AND time_end_utc   <= ?2)
+                      (start_time IS NOT NULL AND start_time <= ?2)
+                   OR (end_time   IS NOT NULL AND end_time   <= ?2)
                  )
-               ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) ASC"#,
+               ORDER BY COALESCE(start_time, end_time, create_time) ASC"#,
         )?;
         let rows = stmt.query_map(params![field, at_str], row_to_entry)?;
         let entries: Vec<Entry> = rows
@@ -1059,9 +1094,9 @@ impl Db {
                WHERE field = ?1
                  AND deleted_at IS NULL
                  AND verb IN ('start', 'switch')
-                 AND time_start_utc IS NOT NULL
-                 AND time_start_utc <= ?2
-               ORDER BY time_start_utc DESC, created_at DESC
+                 AND start_time IS NOT NULL
+                 AND start_time <= ?2
+               ORDER BY start_time DESC, create_time DESC
                LIMIT 1"#,
         )?;
         let row = stmt
@@ -1074,13 +1109,13 @@ impl Db {
     // Consistency checks
     // -------------------------------------------------------------------------
 
-    /// Rows where both time bounds exist and `time_end` precedes `time_start`.
+    /// Rows where both time bounds exist and `end_time` precedes `start_time`.
     pub fn find_time_end_before_start(&self) -> Result<Vec<TimeOrderIssue>> {
         let mut stmt = self.conn.prepare(
-            r#"SELECT slug, field, time_start_utc, time_end_utc FROM entries
-               WHERE time_start_utc IS NOT NULL
-                 AND time_end_utc IS NOT NULL
-                 AND time_end_utc < time_start_utc
+            r#"SELECT slug, field, start_time, end_time FROM entries
+               WHERE start_time IS NOT NULL
+                 AND end_time IS NOT NULL
+                 AND end_time < start_time
                  AND deleted_at IS NULL
                ORDER BY slug ASC"#,
         )?;
@@ -1088,8 +1123,8 @@ impl Db {
             Ok(TimeOrderIssue {
                 slug: row.get(0)?,
                 field: row.get(1)?,
-                time_start_utc: row.get(2)?,
-                time_end_utc: row.get(3)?,
+                start_time: row.get(2)?,
+                end_time: row.get(3)?,
             })
         })?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
@@ -1225,7 +1260,7 @@ impl Db {
             .query_row(
                 "SELECT * FROM entries
                  WHERE field = ?1 AND verb != 'note' AND deleted_at IS NULL
-                 ORDER BY COALESCE(time_start_utc, time_end_utc, created_at) DESC
+                 ORDER BY COALESCE(start_time, end_time, create_time) DESC
                  LIMIT 1",
                 params![field],
                 row_to_entry,
@@ -1248,33 +1283,49 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
     })?;
 
+    let shape_str: String = row.get("entry_shape")?;
+    let entry_shape: EntryShape = shape_str.parse().map_err(|e: String| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+    })?;
+
     let value: Option<JsonValue> = row
         .get::<_, Option<String>>("value")?
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    let extra_data: Option<JsonValue> = row
-        .get::<_, Option<String>>("extra_data")?
+    let data: Option<JsonValue> = row
+        .get::<_, Option<String>>("data")?
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    let time_start = build_datum_time(
-        row.get("time_start_utc")?,
-        row.get("time_start_offset")?,
-        row.get("time_start_tz")?,
+    let start_time = build_datum_time(
+        row.get("start_time")?,
+        row.get("start_time_offset")?,
+        row.get("start_time_tz")?,
     );
-    let time_end = build_datum_time(
-        row.get("time_end_utc")?,
-        row.get("time_end_offset")?,
-        row.get("time_end_tz")?,
+    let end_time = build_datum_time(
+        row.get("end_time")?,
+        row.get("end_time_offset")?,
+        row.get("end_time_tz")?,
     );
 
-    let created_at: DateTime<Utc> = row
-        .get::<_, String>("created_at")?
+    let start_time_precision: u32 = row.get::<_, i64>("start_time_precision")? as u32;
+    let start_precision_unit_str: String = row.get("start_time_precision_unit")?;
+    let start_time_precision_unit: PrecisionUnit = start_precision_unit_str.parse().map_err(|e: String| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+    })?;
+    let end_time_precision: u32 = row.get::<_, i64>("end_time_precision")? as u32;
+    let end_precision_unit_str: String = row.get("end_time_precision_unit")?;
+    let end_time_precision_unit: PrecisionUnit = end_precision_unit_str.parse().map_err(|e: String| {
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+    })?;
+
+    let create_time: DateTime<Utc> = row
+        .get::<_, String>("create_time")?
         .parse()
         .map_err(|e: chrono::ParseError| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
         })?;
-    let modified_at: DateTime<Utc> = row
-        .get::<_, String>("modified_at")?
+    let modify_time: DateTime<Utc> = row
+        .get::<_, String>("modify_time")?
         .parse()
         .map_err(|e: chrono::ParseError| {
             rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
@@ -1283,26 +1334,40 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .get::<_, Option<String>>("deleted_at")?
         .and_then(|s| s.parse().ok());
 
+    let alias_chain: Option<JsonValue> = row
+        .get::<_, Option<String>>("alias_chain")?
+        .and_then(|s| serde_json::from_str(&s).ok());
+    let parser_version: u32 = row.get::<_, i64>("parser_version")? as u32;
+
     Ok(Entry {
-        slug: row.get("slug")?,
         hid: row.get("hid")?,
+        slug: row.get("slug")?,
         content_hash: row.get("content_hash")?,
         field: row.get("field")?,
+        entry_shape,
+        intent: row.get("intent")?,
         verb,
         value,
-        extra_data,
+        data,
         unit: row.get("unit")?,
-        time_start,
-        time_end,
+        start_time,
+        end_time,
+        start_time_precision,
+        start_time_precision_unit,
+        end_time_precision,
+        end_time_precision_unit,
         lat: row.get("lat")?,
         lon: row.get("lon")?,
         location: row.get("location")?,
-        created_at,
-        modified_at,
+        create_time,
+        modify_time,
         device_id: row.get("device_id")?,
         deleted_at,
         id_structure: row.get("id_structure")?,
         field_structure: row.get("field_structure")?,
+        raw_input: row.get("raw_input")?,
+        alias_chain,
+        parser_version,
     })
 }
 
@@ -1955,8 +2020,8 @@ mod tests {
         let first_slug = first.slug.clone();
         db.insert_entry(&first).unwrap();
 
-        let before_modified = db.get_entry(&first_slug).unwrap().modified_at;
-        // Sleep a tick so modified_at can advance even on fast clocks.
+        let before_modified = db.get_entry(&first_slug).unwrap().modify_time;
+        // Sleep a tick so modify_time can advance even on fast clocks.
         std::thread::sleep(std::time::Duration::from_millis(5));
 
         let outcome = db
@@ -1970,10 +2035,10 @@ mod tests {
         assert_eq!(all[0].slug, first_slug);
         // The incoming `device_id` wins on Update.
         assert_eq!(all[0].device_id, "device-b");
-        // modified_at advanced.
+        // modify_time advanced.
         assert!(
-            all[0].modified_at > before_modified,
-            "Update must bump modified_at"
+            all[0].modify_time > before_modified,
+            "Update must bump modify_time"
         );
     }
 
@@ -2002,17 +2067,17 @@ mod tests {
         // to combine while content_hash stays equal.
         let mut incoming = existing.clone();
         incoming.hid = new_hid();
-        incoming.extra_data = Some(serde_json::json!({"shared": "new", "weather": "sunny"}));
+        incoming.data = Some(serde_json::json!({"shared": "new", "weather": "sunny"}));
 
         let outcome = db
             .insert_entry_with_strategy(&incoming, ConflictStrategy::Merge)
             .unwrap();
         assert_eq!(outcome, InsertOutcome::Merged { slug: existing_slug.clone() });
 
-        // Still one row. extra_data = union, scalar conflict → incoming wins.
+        // Still one row. data = union, scalar conflict → incoming wins.
         let all = db.entries_for_field("mood", None).unwrap();
         assert_eq!(all.len(), 1);
-        let merged_extra = all[0].extra_data.as_ref().unwrap();
+        let merged_extra = all[0].data.as_ref().unwrap();
         assert_eq!(merged_extra["source"], serde_json::json!("morning"));
         assert_eq!(merged_extra["shared"], serde_json::json!("new"));
         assert_eq!(merged_extra["weather"], serde_json::json!("sunny"));
@@ -2267,25 +2332,34 @@ mod tests {
         use chrono::Utc;
         let now = Utc::now();
         let e = Entry {
-            slug: slug.to_string(),
             hid: hid.to_string(),
+            slug: slug.to_string(),
             content_hash: format!("hash-{slug}"),
             field: field.to_string(),
+            entry_shape: EntryShape::Point,
+            intent: Some("note".to_string()),
             verb: Verb::Note,
             value: None,
-            extra_data: None,
+            data: None,
             unit: None,
-            time_start: None,
-            time_end: None,
+            start_time: None,
+            end_time: None,
+            start_time_precision: 0,
+            start_time_precision_unit: PrecisionUnit::Exact,
+            end_time_precision: 0,
+            end_time_precision_unit: PrecisionUnit::Exact,
             lat: None,
             lon: None,
             location: None,
-            created_at: now,
-            modified_at: now,
+            create_time: now,
+            modify_time: now,
             device_id: "test".to_string(),
             id_structure: None,
             field_structure: None,
             deleted_at: None,
+            raw_input: String::new(),
+            alias_chain: None,
+            parser_version: 1,
         };
         db.insert_entry(&e).unwrap();
         e

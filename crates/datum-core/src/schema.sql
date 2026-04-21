@@ -1,29 +1,38 @@
--- datum SQLite schema
--- All times stored as ISO 8601 UTC strings for portability.
--- CRDT-friendliness: entries are append-mostly; updates use modified_at for LWW.
+-- datum SQLite schema (v3 — data model v2)
+--
+-- Timestamps are stored as ISO 8601 UTC strings. CRDT-friendliness: entries
+-- are append-mostly; updates use modify_time for LWW. hid is the primary key
+-- (random base36, prefix-addressable); slug is a human-facing unique key
+-- derived at write time from field + id-keys (or timestamp fallback).
 
 PRAGMA journal_mode = WAL;
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS entries (
-    slug            TEXT NOT NULL PRIMARY KEY,   -- datum-style "field:time" (user-facing id)
-    hid             TEXT NOT NULL,               -- random 12-char base36 [0-9a-z] (prefix-addressable)
-    content_hash    TEXT NOT NULL,               -- SHA-256 for dedup (not UNIQUE: Rekey strategy permits duplicates)
+    -- Identity
+    hid             TEXT NOT NULL PRIMARY KEY,   -- random 12-char base36, prefix-addressable
+    slug            TEXT NOT NULL,               -- datum-style human reference, UNIQUE indexed below
+    content_hash    TEXT NOT NULL,               -- SHA-256 for dedup (not UNIQUE: Rekey permits dupes)
 
     -- What
     field           TEXT NOT NULL,
-    verb            TEXT NOT NULL,               -- occur|start|stop|switch|note
-    value           TEXT,                        -- JSON
-    extra_data      TEXT,                        -- JSON (nested, may have {v,u} unit annotations)
+    entry_shape     TEXT NOT NULL,               -- 'point' | 'block' | 'ongoing'
+    intent          TEXT,                        -- NULL | 'stop' | 'note' | ... (user-intent override for generated verb)
+    value           TEXT,                        -- JSON (primary value)
+    data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)
     unit            TEXT,                        -- top-level unit for value
 
     -- When
-    time_start_utc  TEXT,                        -- ISO 8601
-    time_start_offset INTEGER,                   -- UTC offset in minutes
-    time_start_tz   TEXT,                        -- IANA timezone name
-    time_end_utc    TEXT,
-    time_end_offset INTEGER,
-    time_end_tz     TEXT,
+    start_time      TEXT,                        -- ISO 8601 UTC
+    start_time_offset INTEGER,                   -- UTC offset in minutes
+    start_time_tz   TEXT,                        -- IANA timezone name
+    start_time_precision INTEGER NOT NULL DEFAULT 0,     -- absolute uncertainty in seconds
+    start_time_precision_unit TEXT NOT NULL DEFAULT 'exact', -- exact|second|minute|hour|date|month|year
+    end_time        TEXT,
+    end_time_offset INTEGER,
+    end_time_tz     TEXT,
+    end_time_precision INTEGER NOT NULL DEFAULT 0,
+    end_time_precision_unit TEXT NOT NULL DEFAULT 'exact',
 
     -- Where
     lat             REAL,
@@ -31,34 +40,66 @@ CREATE TABLE IF NOT EXISTS entries (
     location        TEXT,
 
     -- Bookkeeping
-    created_at      TEXT NOT NULL,
-    modified_at     TEXT NOT NULL,
+    create_time     TEXT NOT NULL,
+    modify_time     TEXT NOT NULL,
     device_id       TEXT NOT NULL,
 
     -- Soft-delete tombstone. NULL = not deleted.
     deleted_at      TEXT,
 
-    -- Template metadata (datum meta.idStructure / meta.fieldStructure).
-    -- NULL = slug was built by the default `field:time` rule.
+    -- Template metadata (mirrors datum meta.idStructure / meta.fieldStructure).
     id_structure    TEXT,
-    field_structure TEXT
+    field_structure TEXT,
+
+    -- Intent capture: record the literal user input so alias/parser changes
+    -- can be re-derived without losing source truth.
+    raw_input       TEXT NOT NULL DEFAULT '',
+    alias_chain     TEXT,                        -- JSON array of alias expansions, nullable
+    parser_version  INTEGER NOT NULL DEFAULT 1,
+
+    -- Generated columns — read-only projections.
+    --
+    -- `verb`: intent overrides shape-derived classification, so `stop`/`note`
+    -- survive as first-class verbs for state compilation and the CLI's verb
+    -- filters. When intent is NULL, shape + value determine the verb.
+    verb TEXT GENERATED ALWAYS AS (
+        CASE
+            WHEN intent IS NOT NULL THEN intent
+            WHEN entry_shape = 'ongoing' THEN 'start'
+            WHEN entry_shape = 'block' THEN 'block'
+            WHEN entry_shape = 'point' AND value IS NULL THEN 'occur'
+            WHEN entry_shape = 'point' AND json_valid(value)
+                 AND json_type(value) IN ('true','false') THEN 'switch'
+            WHEN entry_shape = 'point' AND value IS NOT NULL THEN 'switch'
+            ELSE 'add'
+        END
+    ) VIRTUAL,
+
+    -- `dur_seconds`: derived duration in integer seconds. NULL when either
+    -- bound is absent, so callers can coalesce without a separate check.
+    dur_seconds INTEGER GENERATED ALWAYS AS (
+        CASE WHEN start_time IS NOT NULL AND end_time IS NOT NULL
+            THEN CAST((julianday(end_time) - julianday(start_time)) * 86400 AS INTEGER)
+            ELSE NULL
+        END
+    ) VIRTUAL
 );
 
--- Unique hid — collisions on 12-char base36 (~4.7 quintillion space) are vanishingly
--- rare, but the index enforces it and makes prefix lookups on hid fast.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_hid ON entries (hid);
+-- Unique slug — the human-facing id. Prevents accidental slug collisions on
+-- write and makes slug→hid lookups single-hop.
+CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
 
--- Efficient queries: by field + time
-CREATE INDEX IF NOT EXISTS idx_entries_field
-    ON entries (field, COALESCE(time_start_utc, time_end_utc, created_at));
+-- Field-scoped tail queries: most reads are "last N entries for field F" so
+-- a composite (field, start_time DESC) index lets them avoid a sort.
+CREATE INDEX IF NOT EXISTS entries_field_start
+    ON entries (field, start_time DESC);
 
--- Range queries across all fields
-CREATE INDEX IF NOT EXISTS idx_entries_time
-    ON entries (COALESCE(time_start_utc, time_end_utc, created_at));
-
--- Dedup lookup.
-CREATE INDEX IF NOT EXISTS idx_entries_content_hash
+-- Dedup lookup on the hashed content fingerprint.
+CREATE INDEX IF NOT EXISTS entries_content_hash
     ON entries (content_hash);
+
+-- Filter by derived verb (e.g. "only switch events in this window").
+CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);
 
 -- Field specs: single source of truth for a field's schema, tracking state,
 -- colors, allowed states, id template, and derived aliases. Stored as a JSON
@@ -80,13 +121,7 @@ CREATE TABLE IF NOT EXISTS aliases (
 CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
     ON aliases (derived_from_field);
 
--- Sync state: per-DB bookkeeping for push/pull against a relay. `db_id`
--- identifies the local DB's sync identity (usually the device's sync
--- identity, "local" by default). `push_seq` tracks the highest local
--- modified_at epoch-ms packed into a pushed changeset; `pull_seq` tracks
--- the highest server-assigned global seq consumed from a pull. Timestamps
--- are stored as epoch-ms INTEGER so the relay and clients can round-trip
--- them without format negotiation.
+-- Sync state: per-DB bookkeeping for push/pull against a relay.
 CREATE TABLE IF NOT EXISTS sync_state (
     db_id         TEXT NOT NULL,
     push_seq      INTEGER NOT NULL DEFAULT 0,
@@ -96,8 +131,7 @@ CREATE TABLE IF NOT EXISTS sync_state (
     PRIMARY KEY (db_id)
 );
 
--- Schema version and other key/value metadata. `schema_version` is the
--- single source of truth consulted by `datum setup` and Db::open().
+-- Schema version and other key/value metadata.
 CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
@@ -105,4 +139,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '2');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '3');

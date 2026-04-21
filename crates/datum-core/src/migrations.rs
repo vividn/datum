@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 2;
+pub const CURRENT_SCHEMA_VERSION: u32 = 3;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -34,12 +34,20 @@ pub struct Migration {
 
 /// Ordered forward migrations. Append-only — never reorder, rename, or
 /// delete entries here.
-pub const MIGRATIONS: &[Migration] = &[Migration {
-    from: 1,
-    to: 2,
-    summary: "sync_state: replace (device_id,last_seq,updated_at) with (db_id,push_seq,pull_seq,last_push_at,last_pull_at)",
-    apply: m1_to_2_sync_state,
-}];
+pub const MIGRATIONS: &[Migration] = &[
+    Migration {
+        from: 1,
+        to: 2,
+        summary: "sync_state: replace (device_id,last_seq,updated_at) with (db_id,push_seq,pull_seq,last_push_at,last_pull_at)",
+        apply: m1_to_2_sync_state,
+    },
+    Migration {
+        from: 2,
+        to: 3,
+        summary: "data model v2: entries table replaced — entry_shape, intent, precision fields, timestamp rename, hid-PK, generated verb/dur_seconds, raw_input/alias_chain/parser_version",
+        apply: m2_to_3_entries_v2,
+    },
+];
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
     // The v1 sync_state shape was a placeholder that was never wired up to
@@ -54,6 +62,20 @@ fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
              last_pull_at  INTEGER,
              PRIMARY KEY (db_id)
          );",
+    )?;
+    Ok(())
+}
+
+fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
+    // No production data yet — the v2 → v3 jump is a structural rewrite of
+    // the entries table. Drop and let schema.sql recreate with the new
+    // shape (hid PK, entry_shape, precision, intent, generated verb, etc.).
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_entries_hid;
+         DROP INDEX IF EXISTS idx_entries_field;
+         DROP INDEX IF EXISTS idx_entries_time;
+         DROP INDEX IF EXISTS idx_entries_content_hash;
+         DROP TABLE IF EXISTS entries;",
     )?;
     Ok(())
 }

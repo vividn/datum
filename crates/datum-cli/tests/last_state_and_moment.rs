@@ -24,7 +24,7 @@ fn stop_last_state_closes_most_recent_open_block() {
         .iter()
         .find(|e| e.verb == Verb::Stop)
         .expect("stop entry exists");
-    let extra = stop.extra_data.as_ref().expect("extra_data present");
+    let extra = stop.data.as_ref().expect("extra_data present");
     assert_eq!(
         extra.get("last_state"),
         Some(&serde_json::json!(true)),
@@ -83,8 +83,8 @@ fn switch_moment_records_point_in_time() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
 
-    let ts = e.time_start.as_ref().expect("time_start set");
-    let te = e.time_end.as_ref().expect("time_end set on --moment");
+    let ts = e.start_time.as_ref().expect("time_start set");
+    let te = e.end_time.as_ref().expect("time_end set on --moment");
     assert_eq!(ts.utc, te.utc, "--moment: time_start == time_end");
 
     // Short-flag form (-m) also works.
@@ -92,8 +92,8 @@ fn switch_moment_records_point_in_time() {
     run_cli(&["switch", "mood", "happy", "-m"], &db2).expect("short -m");
     let e2 = &db2.entries_for_field("mood", None).unwrap()[0];
     assert_eq!(
-        e2.time_start.as_ref().unwrap().utc,
-        e2.time_end.as_ref().unwrap().utc,
+        e2.start_time.as_ref().unwrap().utc,
+        e2.end_time.as_ref().unwrap().utc,
     );
 }
 

@@ -224,7 +224,7 @@ impl<'a> InterpolationContext<'a> {
             field: &entry.field,
             verb: &entry.verb,
             value: entry.value.as_ref(),
-            extra_data: entry.extra_data.as_ref(),
+            extra_data: entry.data.as_ref(),
             uid: uid_buf,
         }
     }

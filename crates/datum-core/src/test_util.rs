@@ -29,16 +29,16 @@ pub fn fresh_db() -> Db {
 
 /// Fluent builder for [`Entry`] test fixtures.
 ///
-/// Defaults: verb=`Occur`, time_start=`DatumTime::now()`, device="test-device".
+/// Defaults: verb=`Occur`, start_time=`DatumTime::now()`, device="test-device".
 #[derive(Clone)]
 pub struct EntryBuilder {
     field: String,
     verb: Verb,
     value: Option<JsonValue>,
-    extra_data: Option<JsonValue>,
+    data: Option<JsonValue>,
     unit: Option<String>,
-    time_start: Option<DatumTime>,
-    time_end: Option<DatumTime>,
+    start_time: Option<DatumTime>,
+    end_time: Option<DatumTime>,
     device_id: String,
 }
 
@@ -48,10 +48,10 @@ impl EntryBuilder {
             field: field.into(),
             verb: Verb::Occur,
             value: None,
-            extra_data: None,
+            data: None,
             unit: None,
-            time_start: Some(DatumTime::now()),
-            time_end: None,
+            start_time: Some(DatumTime::now()),
+            end_time: None,
             device_id: "test-device".to_string(),
         }
     }
@@ -67,7 +67,7 @@ impl EntryBuilder {
     }
 
     pub fn extra_data(mut self, extra: JsonValue) -> Self {
-        self.extra_data = Some(extra);
+        self.data = Some(extra);
         self
     }
 
@@ -77,17 +77,17 @@ impl EntryBuilder {
     }
 
     pub fn time_start(mut self, t: DatumTime) -> Self {
-        self.time_start = Some(t);
+        self.start_time = Some(t);
         self
     }
 
     pub fn time_end(mut self, t: DatumTime) -> Self {
-        self.time_end = Some(t);
+        self.end_time = Some(t);
         self
     }
 
     pub fn time_start_utc(mut self, utc: DateTime<Utc>) -> Self {
-        self.time_start = Some(DatumTime {
+        self.start_time = Some(DatumTime {
             utc,
             offset_minutes: 0,
             timezone: "UTC".to_string(),
@@ -96,7 +96,7 @@ impl EntryBuilder {
     }
 
     pub fn time_end_utc(mut self, utc: DateTime<Utc>) -> Self {
-        self.time_end = Some(DatumTime {
+        self.end_time = Some(DatumTime {
             utc,
             offset_minutes: 0,
             timezone: "UTC".to_string(),
@@ -104,9 +104,9 @@ impl EntryBuilder {
         self
     }
 
-    /// Clear the default `time_start` (produces a slug of `field:unset`).
+    /// Clear the default `start_time` (produces a slug of `field:unset`).
     pub fn no_time(mut self) -> Self {
-        self.time_start = None;
+        self.start_time = None;
         self
     }
 
@@ -120,10 +120,10 @@ impl EntryBuilder {
             self.field,
             self.verb,
             self.value,
-            self.extra_data,
+            self.data,
             self.unit,
-            self.time_start,
-            self.time_end,
+            self.start_time,
+            self.end_time,
             self.device_id,
         )
     }

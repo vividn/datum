@@ -372,7 +372,7 @@ fn t07_metric_occur_only() {
     args.metric = "occur".to_string();
     let got = tail_entries(&args, &db).unwrap();
     assert_eq!(got.len(), 3);
-    assert!(got.iter().all(|e| e.time_start.is_some()));
+    assert!(got.iter().all(|e| e.start_time.is_some()));
 }
 
 #[test]
@@ -449,10 +449,10 @@ fn t10_moment_in_time_upper_bound_and_absent_future() {
         .unwrap();
     assert!(!got.is_empty());
     let last = got.last().unwrap();
-    assert!(last.time_start.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30));
+    assert!(last.start_time.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30));
     assert!(got
         .iter()
-        .all(|e| e.time_start.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30)));
+        .all(|e| e.start_time.as_ref().unwrap().utc <= anchor() + Duration::minutes(9 * 60 + 30)));
 }
 
 #[test]

@@ -37,9 +37,9 @@ fn stop_records_false_state_at_time_start() {
     assert_count!(db, "dance", 1);
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "stop");
-    let ts = entry.time_start.as_ref().expect("stop anchors time_start");
+    let ts = entry.start_time.as_ref().expect("stop anchors time_start");
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "bare stop (no --dur) must not derive time_end",
     );
 
@@ -72,7 +72,7 @@ fn stop_last_state_captures_prior_switch_state() {
         .iter()
         .find(|e| matches!(e.verb, Verb::Stop))
         .expect("stop entry present");
-    let extra = stop.extra_data.as_ref().expect("extra_data with last_state");
+    let extra = stop.data.as_ref().expect("extra_data with last_state");
     assert_eq!(
         extra["last_state"],
         json!("cello"),
@@ -80,7 +80,7 @@ fn stop_last_state_captures_prior_switch_state() {
     );
 
     // After the stop, the active state is false.
-    let ts = stop.time_start.as_ref().unwrap().utc;
+    let ts = stop.start_time.as_ref().unwrap().utc;
     let after = db
         .get_active_state("activity", ts + chrono::Duration::seconds(1))
         .unwrap();
@@ -112,8 +112,8 @@ fn stop_dur_produces_closed_backward_block() {
         .find(|e| matches!(e.verb, Verb::Stop))
         .expect("stop entry present");
 
-    let ts = stop.time_start.as_ref().expect("stop --dur anchors time_start").utc;
-    let te = stop.time_end.as_ref().expect("stop --dur derives time_end").utc;
+    let ts = stop.start_time.as_ref().expect("stop --dur anchors time_start").utc;
+    let te = stop.end_time.as_ref().expect("stop --dur derives time_end").utc;
     assert_eq!(
         (te - ts).num_seconds(),
         5 * 60,
@@ -146,12 +146,12 @@ fn stop_without_dur_is_moment_like() {
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "stop");
-    assert!(entry.time_start.is_some());
+    assert!(entry.start_time.is_some());
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "no --dur ⇒ no time_end (moment semantics)",
     );
-    let extra = entry.extra_data.as_ref().expect("extra_data with skillPoints");
+    let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
 }
 
@@ -173,11 +173,11 @@ fn stop_extras_do_not_imply_duration() {
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "stop");
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
     assert_eq!(extra["tempo"], json!("fast"));
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "keys alone never derive a duration on stop",
     );
 }
@@ -200,10 +200,10 @@ fn stop_positional_values_never_become_duration() {
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "stop", value: 50);
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["abc"], json!(123));
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "positional values on stop never derive a time_end",
     );
 }
@@ -246,7 +246,7 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "stop", value: "reqVal1");
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
-    let extra = entry.extra_data.as_ref().unwrap();
+    let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["req1"], json!("extra"));
 }
 
@@ -271,8 +271,8 @@ fn stop_end_alias_equivalence() {
     assert!(matches!(s.verb, Verb::Stop));
     assert!(matches!(e.verb, Verb::Stop));
     // Neither form should derive a time_end (no --dur given).
-    assert!(s.time_end.is_none());
-    assert!(e.time_end.is_none());
+    assert!(s.end_time.is_none());
+    assert!(e.end_time.is_none());
 }
 
 /// `stop --last-state` must close the most recent open block. If the
@@ -292,7 +292,7 @@ fn stop_last_state_closes_open_start_block() {
         .find(|e| matches!(e.verb, Verb::Stop))
         .expect("stop entry present");
 
-    let extra = stop.extra_data.as_ref().expect("extra_data present");
+    let extra = stop.data.as_ref().expect("extra_data present");
     assert_eq!(
         extra["last_state"],
         json!(true),

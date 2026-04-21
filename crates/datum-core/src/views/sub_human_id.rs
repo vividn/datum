@@ -67,27 +67,37 @@ mod tests {
 
     /// Insert an entry with a handcrafted hid so short_uid is deterministic.
     fn insert_with_hid(db: &crate::db::Db, field: &str, slug: &str, hid: &str) -> Entry {
+        use crate::entry::{EntryShape, PrecisionUnit};
         let now = chrono::Utc::now();
         let e = Entry {
-            slug: slug.to_string(),
             hid: hid.to_string(),
+            slug: slug.to_string(),
             content_hash: format!("hash-{hid}"),
             field: field.to_string(),
+            entry_shape: EntryShape::Point,
+            intent: Some("note".to_string()),
             verb: Verb::Note,
             value: None,
-            extra_data: None,
+            data: None,
             unit: None,
-            time_start: None,
-            time_end: None,
+            start_time: None,
+            end_time: None,
+            start_time_precision: 0,
+            start_time_precision_unit: PrecisionUnit::Exact,
+            end_time_precision: 0,
+            end_time_precision_unit: PrecisionUnit::Exact,
             lat: None,
             lon: None,
             location: None,
-            created_at: now,
-            modified_at: now,
+            create_time: now,
+            modify_time: now,
             device_id: "test".to_string(),
             id_structure: None,
             field_structure: None,
             deleted_at: None,
+            raw_input: String::new(),
+            alias_chain: None,
+            parser_version: 1,
         };
         db.insert_entry(&e).unwrap();
         e

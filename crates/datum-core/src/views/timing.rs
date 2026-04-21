@@ -27,12 +27,12 @@ impl View for TimingView {
             if entry.deleted_at.is_some() {
                 continue;
             }
-            let Some(ts) = &entry.time_start else {
+            let Some(ts) = &entry.start_time else {
                 continue;
             };
             let local_date = local_date_str(ts);
             let start_iso = ts.utc.to_rfc3339();
-            let (end_iso, duration_ms) = match &entry.time_end {
+            let (end_iso, duration_ms) = match &entry.end_time {
                 Some(te) => {
                     let dur = (te.utc - ts.utc).num_milliseconds();
                     (json!(te.utc.to_rfc3339()), json!(dur))

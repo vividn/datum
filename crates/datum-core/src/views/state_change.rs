@@ -81,7 +81,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
     let mut out = Vec::new();
     match entry.verb {
         Verb::Switch => {
-            if let Some(ts) = &entry.time_start {
+            if let Some(ts) = &entry.start_time {
                 let state = entry
                     .value
                     .clone()
@@ -89,15 +89,15 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                     .unwrap_or(JsonValue::Null);
                 out.push(PendingEvent {
                     time: ts.utc,
-                    created_at: entry.created_at,
+                    created_at: entry.create_time,
                     new_state: state,
                     entry_id: entry.slug.clone(),
                 });
-                if let Some(te) = &entry.time_end {
+                if let Some(te) = &entry.end_time {
                     if te.utc > ts.utc {
                         out.push(PendingEvent {
                             time: te.utc,
-                            created_at: entry.created_at,
+                            created_at: entry.create_time,
                             new_state: JsonValue::Bool(false),
                             entry_id: entry.slug.clone(),
                         });
@@ -106,18 +106,18 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
             }
         }
         Verb::Start => {
-            if let Some(ts) = &entry.time_start {
+            if let Some(ts) = &entry.start_time {
                 out.push(PendingEvent {
                     time: ts.utc,
-                    created_at: entry.created_at,
+                    created_at: entry.create_time,
                     new_state: JsonValue::Bool(true),
                     entry_id: entry.slug.clone(),
                 });
-                if let Some(te) = &entry.time_end {
+                if let Some(te) = &entry.end_time {
                     if te.utc > ts.utc {
                         out.push(PendingEvent {
                             time: te.utc,
-                            created_at: entry.created_at,
+                            created_at: entry.create_time,
                             new_state: JsonValue::Bool(false),
                             entry_id: entry.slug.clone(),
                         });
@@ -126,27 +126,52 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
             }
         }
         Verb::Stop => {
-            let at = entry.time_end.as_ref().or(entry.time_start.as_ref());
+            let at = entry.end_time.as_ref().or(entry.start_time.as_ref());
             if let Some(t) = at {
                 out.push(PendingEvent {
                     time: t.utc,
-                    created_at: entry.created_at,
+                    created_at: entry.create_time,
                     new_state: JsonValue::Bool(false),
                     entry_id: entry.slug.clone(),
                 });
             }
         }
         Verb::Occur => {
-            if let Some(ts) = &entry.time_start {
+            if let Some(ts) = &entry.start_time {
                 out.push(PendingEvent {
                     time: ts.utc,
-                    created_at: entry.created_at,
+                    created_at: entry.create_time,
                     new_state: JsonValue::Bool(false),
                     entry_id: entry.slug.clone(),
                 });
             }
         }
-        Verb::Note => {}
+        Verb::Block => {
+            if let Some(ts) = &entry.start_time {
+                let state = entry
+                    .value
+                    .clone()
+                    .map(|v| crate::state::normalize_state(&v))
+                    .unwrap_or(JsonValue::Bool(true));
+                out.push(PendingEvent {
+                    time: ts.utc,
+                    created_at: entry.create_time,
+                    new_state: state,
+                    entry_id: entry.slug.clone(),
+                });
+                if let Some(te) = &entry.end_time {
+                    if te.utc > ts.utc {
+                        out.push(PendingEvent {
+                            time: te.utc,
+                            created_at: entry.create_time,
+                            new_state: JsonValue::Bool(false),
+                            entry_id: entry.slug.clone(),
+                        });
+                    }
+                }
+            }
+        }
+        Verb::Note | Verb::Add => {}
     }
     out
 }

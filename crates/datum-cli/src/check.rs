@@ -76,7 +76,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 field: Some(first.field.clone()),
                 detail: Some(format!(
                     "start={}  end={}",
-                    first.time_start_utc, first.time_end_utc
+                    first.start_time, first.end_time
                 )),
             }),
         });
@@ -155,7 +155,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
         let Some(spec) = registry.field_spec(&e.field) else {
             continue;
         };
-        let Some(extra) = e.extra_data.as_ref() else {
+        let Some(extra) = e.data.as_ref() else {
             continue;
         };
         if let JsonValue::Object(map) = extra {

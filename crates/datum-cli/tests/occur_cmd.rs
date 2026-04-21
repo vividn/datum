@@ -43,13 +43,13 @@ fn occur_creates_entry_with_time_start() {
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "occur");
 
-    let ts = entry.time_start.as_ref().expect("occur sets time_start").utc;
+    let ts = entry.start_time.as_ref().expect("occur sets time_start").utc;
     assert!(
         ts >= before - Duration::seconds(1) && ts <= after + Duration::seconds(1),
         "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
     );
     assert!(
-        entry.time_end.is_none(),
+        entry.end_time.is_none(),
         "occur is point-in-time: no time_end",
     );
     assert!(entry.slug.starts_with("field:"));
@@ -76,7 +76,7 @@ fn date_and_time_flags_set_absolute_time() {
     let entry = &db.entries_for_field("event", None).unwrap()[0];
     assert_entry_matches!(entry, field: "event", verb: "occur");
 
-    let ts = entry.time_start.as_ref().unwrap().utc;
+    let ts = entry.start_time.as_ref().unwrap().utc;
     let expected_local = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
         .unwrap()
         .and_hms_opt(12, 0, 0)
@@ -108,17 +108,17 @@ fn no_metadata_zeros_bookkeeping_fields() {
     let entry = &db.entries_for_field("event", None).unwrap()[0];
     assert_eq!(entry.device_id, "", "device_id must be cleared");
     assert_eq!(
-        entry.created_at,
+        entry.create_time,
         chrono::DateTime::UNIX_EPOCH,
         "created_at must be epoch-zero",
     );
     assert_eq!(
-        entry.modified_at,
+        entry.modify_time,
         chrono::DateTime::UNIX_EPOCH,
         "modified_at must be epoch-zero",
     );
     // Domain data still lands — no-metadata only touches bookkeeping.
-    assert!(entry.time_start.is_some(), "time_start is unaffected");
+    assert!(entry.start_time.is_some(), "time_start is unaffected");
     assert_eq!(entry.field, "event");
 
     // Without the flag, a normal occur records metadata as usual — the
@@ -127,7 +127,7 @@ fn no_metadata_zeros_bookkeeping_fields() {
     let other = &db.entries_for_field("other", None).unwrap()[0];
     assert!(!other.device_id.is_empty(), "device_id must be populated");
     assert!(
-        (Utc::now() - other.created_at).num_seconds().abs() < 5,
+        (Utc::now() - other.create_time).num_seconds().abs() < 5,
         "created_at must be set to ~now",
     );
 }
@@ -150,7 +150,7 @@ fn offset_flag_currently_a_noop() {
     .expect("occur -z+3");
 
     let entry = &db.entries_for_field("event", None).unwrap()[0];
-    let ts = entry.time_start.as_ref().unwrap().utc;
+    let ts = entry.start_time.as_ref().unwrap().utc;
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
         .unwrap()
         .and_hms_opt(12, 0, 0)
@@ -189,7 +189,7 @@ fn iana_timezone_flag_currently_a_noop() {
     .expect("occur -z Europe/Berlin");
 
     let entry = &db.entries_for_field("event", None).unwrap()[0];
-    let ts = entry.time_start.as_ref().unwrap().utc;
+    let ts = entry.start_time.as_ref().unwrap().utc;
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2023, 12, 4)
         .unwrap()
         .and_hms_opt(12, 0, 0)
@@ -237,7 +237,7 @@ fn occur_flips_state_from_null_to_false() {
     // extra_data is None unless the user provided keys.
     let entries = db.entries_for_field("event", None).unwrap();
     for e in &entries {
-        if let Some(extra) = &e.extra_data {
+        if let Some(extra) = &e.data {
             assert!(
                 extra.get("last_state").is_none(),
                 "occur does not record last_state (daydumb divergence)",
@@ -262,7 +262,7 @@ fn stacked_negative_offsets_subtract_correctly() {
     let after = Utc::now();
 
     let e1 = &db.entries_for_field("event", None).unwrap()[0];
-    let ts1 = e1.time_start.as_ref().unwrap().utc;
+    let ts1 = e1.start_time.as_ref().unwrap().utc;
     let offset = Duration::days(1) + Duration::hours(1);
     let lo = before - offset - Duration::seconds(2);
     let hi = after - offset + Duration::seconds(2);
@@ -280,9 +280,9 @@ fn stacked_negative_offsets_subtract_correctly() {
     // Grab the most-recent entry by created_at.
     let e2 = entries
         .iter()
-        .max_by_key(|e| e.created_at)
+        .max_by_key(|e| e.create_time)
         .expect("entries present");
-    let ts2 = e2.time_start.as_ref().unwrap().utc;
+    let ts2 = e2.start_time.as_ref().unwrap().utc;
     let lo2 = before2 - Duration::minutes(20) - Duration::seconds(2);
     let hi2 = after2 - Duration::minutes(20) + Duration::seconds(2);
     assert!(
@@ -320,7 +320,7 @@ fn full_day_flag_not_supported() {
     run_cli(&["occur", "event", "-d", "2024-04-23"], &db).expect("occur -d DATE");
     let e = &db.entries_for_field("event", None).unwrap()[0];
     let local_date = e
-        .time_start
+        .start_time
         .as_ref()
         .unwrap()
         .utc
@@ -361,7 +361,7 @@ fn id_template_interpolates_extra_data_on_occur() {
         "id_structure must persist the template",
     );
     assert_eq!(
-        e1.extra_data.as_ref().unwrap().get("task"),
+        e1.data.as_ref().unwrap().get("task"),
         Some(&json!("Testing")),
     );
 
