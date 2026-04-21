@@ -6,6 +6,7 @@ pub mod error;
 pub mod state;
 pub mod views;
 pub mod migrations;
+pub mod sync;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;

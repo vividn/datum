@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+pub const CURRENT_SCHEMA_VERSION: u32 = 2;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -33,10 +33,30 @@ pub struct Migration {
 }
 
 /// Ordered forward migrations. Append-only — never reorder, rename, or
-/// delete entries here. The current shipped schema is v1, so this table
-/// is empty; future schema changes bump [`CURRENT_SCHEMA_VERSION`] and
-/// add their lift here.
-pub const MIGRATIONS: &[Migration] = &[];
+/// delete entries here.
+pub const MIGRATIONS: &[Migration] = &[Migration {
+    from: 1,
+    to: 2,
+    summary: "sync_state: replace (device_id,last_seq,updated_at) with (db_id,push_seq,pull_seq,last_push_at,last_pull_at)",
+    apply: m1_to_2_sync_state,
+}];
+
+fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
+    // The v1 sync_state shape was a placeholder that was never wired up to
+    // any write path, so dropping it is safe. Recreate with the C4a shape.
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS sync_state;
+         CREATE TABLE sync_state (
+             db_id         TEXT NOT NULL,
+             push_seq      INTEGER NOT NULL DEFAULT 0,
+             pull_seq      INTEGER NOT NULL DEFAULT 0,
+             last_push_at  INTEGER,
+             last_pull_at  INTEGER,
+             PRIMARY KEY (db_id)
+         );",
+    )?;
+    Ok(())
+}
 
 /// Create the `_meta` key/value table if it does not exist.
 pub fn ensure_meta_table(conn: &Connection) -> Result<()> {

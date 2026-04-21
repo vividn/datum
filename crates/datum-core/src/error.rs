@@ -43,6 +43,9 @@ pub enum DatumError {
     #[error("Incompatible database schema: {0}")]
     IncompatibleSchema(String),
 
+    #[error("Cryptographic error: {0}")]
+    Crypto(String),
+
     #[error("{0}")]
     Other(String),
 }

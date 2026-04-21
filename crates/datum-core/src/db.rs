@@ -1235,6 +1235,13 @@ impl Db {
     }
 }
 
+/// Row → `Entry` adapter exposed for other `datum-core` modules that build
+/// their own queries (e.g. `sync`). Kept `pub(crate)` so it does not bleed
+/// into the public library surface.
+pub(crate) fn row_to_entry_public(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
+    row_to_entry(row)
+}
+
 fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     let verb_str: String = row.get("verb")?;
     let verb: Verb = verb_str.parse().map_err(|e: String| {

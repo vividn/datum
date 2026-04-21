@@ -20,4 +20,5 @@ thiserror = { workspace = true }
 anyhow = { workspace = true }
 sha2 = { workspace = true }
 rand = { workspace = true }
+aes-gcm = { workspace = true }
 iana-time-zone = "0.1"

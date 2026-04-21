@@ -80,11 +80,20 @@ CREATE TABLE IF NOT EXISTS aliases (
 CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
     ON aliases (derived_from_field);
 
--- Sync state: per-device watermark for changeset-based sync
+-- Sync state: per-DB bookkeeping for push/pull against a relay. `db_id`
+-- identifies the local DB's sync identity (usually the device's sync
+-- identity, "local" by default). `push_seq` tracks the highest local
+-- modified_at epoch-ms packed into a pushed changeset; `pull_seq` tracks
+-- the highest server-assigned global seq consumed from a pull. Timestamps
+-- are stored as epoch-ms INTEGER so the relay and clients can round-trip
+-- them without format negotiation.
 CREATE TABLE IF NOT EXISTS sync_state (
-    device_id   TEXT NOT NULL PRIMARY KEY,
-    last_seq    TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
+    db_id         TEXT NOT NULL,
+    push_seq      INTEGER NOT NULL DEFAULT 0,
+    pull_seq      INTEGER NOT NULL DEFAULT 0,
+    last_push_at  INTEGER,
+    last_pull_at  INTEGER,
+    PRIMARY KEY (db_id)
 );
 
 -- Schema version and other key/value metadata. `schema_version` is the
@@ -96,4 +105,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '2');
