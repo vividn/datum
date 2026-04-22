@@ -256,8 +256,17 @@ pub struct Entry {
     pub parser_version: u32,
 }
 
+/// Current parser version. Bump when parser behaviour changes so stored
+/// entries can be replayed through the new parser if we ever discover a
+/// parse bug and want to re-derive the canonical fields.
+///
+/// v1: initial shape-first parser (D1 / schema v3).
+/// v2: D2 — uncertainty syntax (±N), `-q*` precision scaling, `-K`/`-k`
+///     id-key chaining, retime precision re-derivation.
+pub const CURRENT_PARSER_VERSION: u32 = 2;
+
 fn default_parser_version() -> u32 {
-    1
+    CURRENT_PARSER_VERSION
 }
 
 impl Entry {
@@ -327,7 +336,7 @@ impl Entry {
             deleted_at: None,
             raw_input: String::new(),
             alias_chain: None,
-            parser_version: 1,
+            parser_version: CURRENT_PARSER_VERSION,
         }
     }
 

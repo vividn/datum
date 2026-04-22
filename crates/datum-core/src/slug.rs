@@ -1,35 +1,36 @@
 //! Slug derivation — write-time construction of the human-facing `slug`
 //! column from a field name + optional id-keys (or timestamp fallback).
 //!
-//! Historically slugs were built inside the DB layer's entry insertion.
-//! Moving this to a dedicated module paves the way for D2's `-K` flag,
-//! which lets callers pass explicit id-keys to override the default
-//! `field:timestamp` shape without touching the DB.
-
-use serde_json::Value as JsonValue;
+//! Slugs anchor every entry with a human reference (`field:<ident>`) that
+//! stays stable across devices. The default falls back to a timestamp when
+//! the caller has no id-keys; the `-K` flag lets callers chain explicit
+//! values joined by `__`.
 
 use crate::time::DatumTime;
 
 /// Build the slug for an entry.
 ///
-/// - When `id_keys` is non-empty, each key-value pair is appended as
-///   `:<k>=<v>`; the leading `field:` prefix still anchors the slug.
-/// - When `id_keys` is empty, falls back to `<field>:<timestamp>` at
-///   millisecond precision (matching the pre-move default). Same-field,
-///   same-millisecond inserts collide by design — the DB retries with a
-///   suffix so the human-visible slug stays intact.
+/// - When `id_values` is non-empty, values are joined by `__` and appended
+///   to `<field>:`. Empty values are dropped, so an absent
+///   optional-no-default slot doesn't leave an empty `__` segment.
+/// - When every `id_values` entry is empty (or the slice is empty) and
+///   `fallback_time` is set, returns `<field>:<timestamp>` at millisecond
+///   precision (same-field, same-millisecond inserts collide by design —
+///   the DB retries with a suffix so the human-visible slug stays intact).
 /// - When neither id-keys nor a fallback time is provided, returns
 ///   `<field>:unset` — the historical placeholder for tagless entries.
-pub fn derive(field: &str, id_keys: &[(String, JsonValue)], fallback_time: Option<&DatumTime>) -> String {
-    if !id_keys.is_empty() {
-        let mut out = String::with_capacity(field.len() + 16);
+pub fn derive(field: &str, id_values: &[String], fallback_time: Option<&DatumTime>) -> String {
+    let joined: Vec<&str> = id_values
+        .iter()
+        .map(String::as_str)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if !joined.is_empty() {
+        let mut out = String::with_capacity(field.len() + joined.iter().map(|s| s.len() + 2).sum::<usize>());
         out.push_str(field);
-        for (k, v) in id_keys {
-            out.push(':');
-            out.push_str(k);
-            out.push('=');
-            out.push_str(&render_value(v));
-        }
+        out.push(':');
+        out.push_str(&joined.join("__"));
         return out;
     }
 
@@ -39,19 +40,11 @@ pub fn derive(field: &str, id_keys: &[(String, JsonValue)], fallback_time: Optio
     }
 }
 
-fn render_value(v: &JsonValue) -> String {
-    match v {
-        JsonValue::String(s) => s.clone(),
-        other => other.to_string(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::time::DatumTime;
     use chrono::{TimeZone, Utc};
-    use serde_json::json;
 
     fn fixed_time() -> DatumTime {
         let utc = Utc.with_ymd_and_hms(2024, 3, 16, 9, 15, 0).unwrap();
@@ -71,19 +64,31 @@ mod tests {
     }
 
     #[test]
-    fn id_keys_append_as_pairs() {
-        let keys = vec![
-            ("id".to_string(), json!("correr")),
-            ("srcLang".to_string(), json!("pt")),
-        ];
-        let got = derive("word", &keys, None);
-        assert_eq!(got, "word:id=correr:srcLang=pt");
+    fn id_values_join_with_double_underscore() {
+        let values = vec!["jake".to_string(), "berlin".to_string()];
+        let got = derive("person", &values, None);
+        assert_eq!(got, "person:jake__berlin");
     }
 
     #[test]
-    fn id_keys_override_timestamp_fallback() {
-        let keys = vec![("id".to_string(), json!("morning"))];
-        let got = derive("journal", &keys, Some(&fixed_time()));
-        assert_eq!(got, "journal:id=morning");
+    fn empty_id_values_are_dropped() {
+        // First value populated, second omitted (e.g. optional-no-default absent)
+        let values = vec!["Goldmund".to_string(), String::new()];
+        let got = derive("book", &values, None);
+        assert_eq!(got, "book:Goldmund");
+    }
+
+    #[test]
+    fn all_empty_id_values_falls_back_to_time() {
+        let values = vec![String::new(), String::new()];
+        let got = derive("coffee", &values, Some(&fixed_time()));
+        assert_eq!(got, "coffee:2024-03-16T09:15:00.000Z");
+    }
+
+    #[test]
+    fn id_values_override_timestamp_fallback() {
+        let values = vec!["morning".to_string()];
+        let got = derive("journal", &values, Some(&fixed_time()));
+        assert_eq!(got, "journal:morning");
     }
 }

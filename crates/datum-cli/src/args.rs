@@ -418,9 +418,19 @@ pub struct LogArgs {
     #[arg(short = 'u', long)]
     pub unit: Option<String>,
 
-    /// Additional key=value pairs for extra_data
-    #[arg(short = 'k', long = "key", value_name = "KEY=VALUE")]
+    /// Data-only id-key slot (repeatable). Accepts `KEY`, `KEY=DEFAULT`, or
+    /// `KEY=` (optional, omit when no positional provided). Bare positionals
+    /// fill `-K` slots first, then `-k` slots, in declaration order. Legacy
+    /// `-k KEY=VALUE` with no matching positional still behaves as an
+    /// immediate assignment via the default.
+    #[arg(short = 'k', long = "key", value_name = "KEY_SPEC")]
     pub keys: Vec<String>,
+
+    /// Slug-contributing id-key slot (repeatable). Same spec syntax as `-k`.
+    /// Populated slots are joined by `__` to form the slug
+    /// `<field>:<v1>__<v2>[__…]` — overrides the default `<field>:<timestamp>`.
+    #[arg(short = 'K', long = "slug-key", value_name = "KEY_SPEC")]
+    pub slug_keys: Vec<String>,
 
     /// Comment
     #[arg(short = 'c', long)]
@@ -634,8 +644,17 @@ pub struct RetimeArgs {
 
     /// Duration offset (accepts `-5m`, `+1h`, `30m`, `1:30`, `PT30M`, ...).
     /// Positive shifts forward in time, negative shifts backward.
-    #[arg(long, required = true, allow_hyphen_values = true)]
-    pub offset: String,
+    /// Mutually exclusive with `--time`.
+    #[arg(long, allow_hyphen_values = true, conflicts_with = "time")]
+    pub offset: Option<String>,
+
+    /// Replace `start_time` (and `end_time`, shifted by the original
+    /// duration) with a freshly parsed time. Accepts the same syntax as
+    /// `datum occur -t`, including `±N[unit]` uncertainty; the entry's
+    /// precision fields are overwritten from the new parse.
+    /// Mutually exclusive with `--offset`.
+    #[arg(short = 't', long = "time", allow_hyphen_values = true, conflicts_with = "offset")]
+    pub time: Option<String>,
 
     /// Restrict to entries with this field name.
     #[arg(short = 'f', long = "field")]

@@ -517,8 +517,14 @@ fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
 fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
-    let (field, value, mut extra_data) = parse_log_args(&args)?;
-    let base_time = build_time(&args)?;
+    let parsed = parse_log_args(&args)?;
+    let ParsedLogArgs {
+        field,
+        value,
+        mut extra_data,
+        slug_values,
+    } = parsed;
+    let (base_time, base_precision) = build_time_with_precision(&args)?;
     let unit = args.unit.clone();
     let device = device_id()?;
 
@@ -590,22 +596,44 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
 
     let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
 
+    // Persist the effective precision derived from the -q stack and any
+    // explicit `±N` uncertainty. The end_time precision mirrors start's
+    // since both times flow from the same parse.
+    entry.start_time_precision = base_precision.seconds;
+    entry.start_time_precision_unit = base_precision.unit;
+    if entry.end_time.is_some() {
+        entry.end_time_precision = base_precision.seconds;
+        entry.end_time_precision_unit = base_precision.unit;
+    }
+
     if args.no_metadata {
         entry.create_time = chrono::DateTime::UNIX_EPOCH;
         entry.modify_time = chrono::DateTime::UNIX_EPOCH;
         entry.device_id.clear();
     }
 
-    // Resolve id template: explicit --id beats spec.id_template.
-    let spec_template = db
-        .load_spec(&entry.field)?
-        .and_then(|s| s.id_template);
-    let template = args.id.clone().or(spec_template);
-    if let Some(tmpl) = template {
-        let uid = entry.short_uid();
-        let ctx = InterpolationContext::from_entry(&entry, &uid);
-        entry.slug = field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter);
-        entry.id_structure = Some(tmpl);
+    // Slug precedence:
+    //   1. `-K` slug-keys (explicit per-invocation id chain)
+    //   2. `--id` template
+    //   3. spec's `id_template`
+    //   4. default `<field>:<timestamp>` from Entry::new
+    if !slug_values.is_empty() {
+        entry.slug = datum_core::slug::derive(
+            &entry.field,
+            &slug_values,
+            entry.start_time.as_ref().or(entry.end_time.as_ref()),
+        );
+    } else {
+        let spec_template = db
+            .load_spec(&entry.field)?
+            .and_then(|s| s.id_template);
+        let template = args.id.clone().or(spec_template);
+        if let Some(tmpl) = template {
+            let uid = entry.short_uid();
+            let ctx = InterpolationContext::from_entry(&entry, &uid);
+            entry.slug = field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter);
+            entry.id_structure = Some(tmpl);
+        }
     }
 
     let strategy = args.conflict_strategy();
@@ -648,24 +676,152 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// Parse LogArgs into (field, primary_value, extra_data).
+/// Parsed LogArgs — distinguishes the slug-contributing id-key values from
+/// the rest of the extra_data payload so callers can build the slug from
+/// `-K` slots without re-walking the argv.
+struct ParsedLogArgs {
+    field: String,
+    value: Option<JsonValue>,
+    extra_data: Option<JsonValue>,
+    /// Values captured from `-K` slots, in declaration order. Empty when
+    /// no slug-contributing slot was filled.
+    slug_values: Vec<String>,
+}
+
+/// Which identity bucket a `-K` / `-k` slot contributes to.
+enum IdKeyKind { Slug, Data }
+
+/// Parsed form of a single `-K` / `-k` arg.
+enum IdKeySpec {
+    /// Slot that participates in positional fill. Always emitted for `-K`;
+    /// emitted for `-k` only in the `KEY` (required) or `KEY=` (omit-if-absent) forms.
+    Slot {
+        kind: IdKeyKind,
+        name: String,
+        default: Option<String>,
+        omit_if_absent: bool,
+    },
+    /// Legacy `-k KEY=VALUE`: immediate data assignment, no positional consumed.
+    /// Preserves the shape of Phase-1 recipes like `-k comment=hello`.
+    Immediate { name: String, value: String },
+}
+
+fn parse_id_key_spec(kind: IdKeyKind, spec: &str) -> Result<IdKeySpec> {
+    let (name, rhs): (&str, Option<&str>) = match spec.split_once('=') {
+        None => (spec, None),
+        Some((k, v)) => (k, Some(v)),
+    };
+    if name.is_empty() {
+        anyhow::bail!("empty id-key name in spec '{spec}'");
+    }
+
+    match (kind, rhs) {
+        // `-X KEY` (no `=`): required slot — consumes a positional or errors.
+        (kind, None) => Ok(IdKeySpec::Slot {
+            kind,
+            name: name.to_string(),
+            default: None,
+            omit_if_absent: false,
+        }),
+        // `-X KEY=` (empty RHS): optional slot, omitted if no positional.
+        (kind, Some("")) => Ok(IdKeySpec::Slot {
+            kind,
+            name: name.to_string(),
+            default: None,
+            omit_if_absent: true,
+        }),
+        // `-K KEY=VALUE`: optional slot with default. `-K` is new and always
+        // participates in positional fill.
+        (IdKeyKind::Slug, Some(v)) => Ok(IdKeySpec::Slot {
+            kind: IdKeyKind::Slug,
+            name: name.to_string(),
+            default: Some(v.to_string()),
+            omit_if_absent: false,
+        }),
+        // `-k KEY=VALUE` (legacy): immediate assignment — pre-D2 recipes
+        // expect `-k abc=123` to set `data.abc=123` without stealing a
+        // positional from the primary value.
+        (IdKeyKind::Data, Some(v)) => Ok(IdKeySpec::Immediate {
+            name: name.to_string(),
+            value: v.to_string(),
+        }),
+    }
+}
+
+/// Parse LogArgs into a structured bundle — field, primary value, extra_data,
+/// and the list of `-K` slug-key values for slug derivation.
 ///
-/// The first positional may be the field (when verb is the subcommand) or a
-/// field-like token. Remaining positionals become the primary value or key=value pairs.
-fn parse_log_args(args: &LogArgs) -> Result<(String, Option<JsonValue>, Option<JsonValue>)> {
+/// Positional fill order: `-K` slots first, then `-k` slots, each in the
+/// order they appeared on the command line. `KEY=VALUE` positionals skip
+/// slot filling entirely and land directly in extra_data (matches the
+/// legacy behaviour so existing recipes still work).
+fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
     let field = args.field_or_verb.clone();
 
-    // Collect positional rest: could be "value key=val key=val ..."
-    let mut value: Option<JsonValue> = None;
-    let mut extra = serde_json::Map::new();
+    // Parse -K specs (all become slots) and -k specs (slots or legacy
+    // immediate assignments). -K is consumed first for positional fill.
+    let mut slots: Vec<(IdKeyKind, String, Option<String>, bool)> = Vec::new();
+    let mut immediate_extras: Vec<(String, String)> = Vec::new();
+    for spec_str in args.slug_keys.iter() {
+        match parse_id_key_spec(IdKeyKind::Slug, spec_str)? {
+            IdKeySpec::Slot { kind, name, default, omit_if_absent } => {
+                slots.push((kind, name, default, omit_if_absent));
+            }
+            IdKeySpec::Immediate { .. } => unreachable!("-K never yields Immediate"),
+        }
+    }
+    for spec_str in args.keys.iter() {
+        match parse_id_key_spec(IdKeyKind::Data, spec_str)? {
+            IdKeySpec::Slot { kind, name, default, omit_if_absent } => {
+                slots.push((kind, name, default, omit_if_absent));
+            }
+            IdKeySpec::Immediate { name, value } => {
+                immediate_extras.push((name, value));
+            }
+        }
+    }
 
+    // Split rest into bare positionals (for slot filling + primary value)
+    // and `KEY=VALUE` tokens (direct extra_data injection).
+    let mut positionals: Vec<&str> = Vec::with_capacity(args.rest.len());
+    let mut kvpair_tokens: Vec<(&str, &str)> = Vec::new();
     for token in &args.rest {
-        if let Some((k, v)) = token.split_once('=') {
-            extra.insert(k.to_string(), parse_value_token(v));
-        } else if value.is_none() {
+        match token.split_once('=') {
+            Some((k, v)) => kvpair_tokens.push((k, v)),
+            None => positionals.push(token),
+        }
+    }
+
+    // Fill slots.
+    let mut pos_iter = positionals.into_iter();
+    let mut slug_values: Vec<String> = Vec::new();
+    let mut slot_extras: Vec<(String, String)> = Vec::new();
+    for (kind, name, default, omit_if_absent) in &slots {
+        let slot_value: Option<String> = match (pos_iter.next(), default.as_ref(), *omit_if_absent) {
+            (Some(p), _, _) => Some(p.to_string()),
+            (None, Some(d), _) => Some(d.clone()),
+            (None, None, true) => None, // optional_no_default absent → omit
+            (None, None, false) => {
+                anyhow::bail!(
+                    "missing positional value for required id-key '{name}'"
+                );
+            }
+        };
+        if matches!(kind, IdKeyKind::Slug) {
+            slug_values.push(slot_value.clone().unwrap_or_default());
+        }
+        if let Some(v) = slot_value {
+            slot_extras.push((name.clone(), v));
+        }
+    }
+
+    // Remaining positionals fold into the primary value (first one) or
+    // extend it as an array (matches legacy behaviour).
+    let mut value: Option<JsonValue> = None;
+    for token in pos_iter {
+        if value.is_none() {
             value = Some(parse_value_token(token));
         } else {
-            // Extra positional after value — append to an array if value is already set
             match value.as_mut().unwrap() {
                 JsonValue::Array(arr) => arr.push(parse_value_token(token)),
                 existing => {
@@ -676,13 +832,19 @@ fn parse_log_args(args: &LogArgs) -> Result<(String, Option<JsonValue>, Option<J
         }
     }
 
-    // Add -k KEY=VALUE pairs to extra
-    for kv in &args.keys {
-        if let Some((k, v)) = kv.split_once('=') {
-            extra.insert(k.to_string(), parse_value_token(v));
-        }
+    // Build extra_data. Order: slot fills, then legacy `-k KEY=VALUE`
+    // immediates, then `KEY=VALUE` positionals, then --comment. Later
+    // entries overwrite earlier ones so explicit user input beats defaults.
+    let mut extra = serde_json::Map::new();
+    for (k, v) in slot_extras {
+        extra.insert(k, parse_value_token(&v));
     }
-
+    for (k, v) in immediate_extras {
+        extra.insert(k, parse_value_token(&v));
+    }
+    for (k, v) in kvpair_tokens {
+        extra.insert(k.to_string(), parse_value_token(v));
+    }
     if let Some(comment) = &args.comment {
         extra.insert("comment".to_string(), JsonValue::String(comment.clone()));
     }
@@ -693,7 +855,7 @@ fn parse_log_args(args: &LogArgs) -> Result<(String, Option<JsonValue>, Option<J
         Some(JsonValue::Object(extra))
     };
 
-    Ok((field, value, extra_data))
+    Ok(ParsedLogArgs { field, value, extra_data, slug_values })
 }
 
 /// Parse a single value token. Tries number, bool, then falls back to string.
@@ -733,10 +895,13 @@ fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
     }
 }
 
-fn build_time(args: &LogArgs) -> Result<DatumTime> {
+/// Build the log entry's base time together with its effective precision
+/// (implicit from `-q*` stacks or explicit from a `±N` uncertainty suffix).
+fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
     let mut builder = TimeBuilder::now()
         .with_yesterday_count(args.yesterday as i64)
-        .with_quick_count(args.quick as i64);
+        .with_quick_count(args.quick as i64)
+        .with_quick_precision(args.quick as u32);
 
     if let Some(d) = &args.date {
         let da = parse_date_arg(d)?;
@@ -747,7 +912,7 @@ fn build_time(args: &LogArgs) -> Result<DatumTime> {
         builder = builder.with_time_arg(ta);
     }
 
-    Ok(builder.build())
+    Ok(builder.build_with_precision())
 }
 
 // ─── Tail / Now ──────────────────────────────────────────────────────────────
@@ -1352,9 +1517,6 @@ fn parse_update_payload(args: &UpdateArgs) -> Result<(Option<JsonValue>, Option<
 // ─── Retime ──────────────────────────────────────────────────────────────────
 
 fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
-    let offset = parse_duration(&args.offset)
-        .with_context(|| format!("Invalid --offset value '{}'", args.offset))?;
-
     if args.slug.is_none() && args.field.is_none() && args.after.is_none() && args.before.is_none()
     {
         anyhow::bail!(
@@ -1381,6 +1543,37 @@ fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
         after_utc,
         before_utc,
     };
+
+    // --time: re-parse a fresh absolute time and overwrite both the start
+    // timestamp and its precision fields for each match. end_time (if any)
+    // shifts by the same delta so the duration is preserved.
+    if let Some(time_str) = args.time.as_deref() {
+        let ta = parse_time_arg(time_str)
+            .with_context(|| format!("Invalid --time value '{time_str}'"))?;
+        let builder = TimeBuilder::now().with_time_arg(ta);
+        let (new_time, precision) = builder.build_with_precision();
+        let n = db.set_start_time_with_precision(
+            &filter,
+            &new_time,
+            precision.seconds,
+            &precision.unit.to_string(),
+        )?;
+        println!(
+            "✓ Retimed {n} → {} (±{}{})",
+            new_time.utc.to_rfc3339(),
+            precision.seconds,
+            if precision.seconds == 0 { "" } else { "s" },
+        );
+        return Ok(());
+    }
+
+    // --offset: classic duration-shift path.
+    let offset_str = args
+        .offset
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("retime requires either --offset or --time"))?;
+    let offset = parse_duration(offset_str)
+        .with_context(|| format!("Invalid --offset value '{offset_str}'"))?;
 
     let n = db.update_times(&filter, offset)?;
     let secs = offset.num_seconds();
@@ -1937,6 +2130,7 @@ mod tests {
             timezone: None,
             unit: None,
             keys: vec![],
+            slug_keys: vec![],
             comment: None,
             id: None,
             id_delimiter: ":".to_string(),
@@ -1949,7 +2143,7 @@ mod tests {
             output_flags: Default::default(),
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
-        let base = build_time(&args).unwrap();
+        let (base, _precision) = build_time_with_precision(&args).unwrap();
         let dur = parse_duration("8h").unwrap();
         let end_utc = base.utc + dur;
         let diff_secs = (end_utc - base.utc).num_seconds();
@@ -1973,6 +2167,7 @@ mod tests {
             timezone: None,
             unit: None,
             keys: vec![],
+            slug_keys: vec![],
             comment: None,
             id: None,
             id_delimiter: ":".to_string(),
@@ -2019,7 +2214,7 @@ mod tests {
             field_or_verb: "coffee".to_string(),
             rest: vec!["2".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: Some("cups".to_string()), keys: vec![], comment: None,
+            timezone: None, unit: Some("cups".to_string()), keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
@@ -2039,7 +2234,7 @@ mod tests {
             field_or_verb: "work".to_string(),
             rest: vec![],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], comment: None,
+            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
@@ -2059,7 +2254,7 @@ mod tests {
             field_or_verb: "journal".to_string(),
             rest: vec!["some text".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], comment: None,
+            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
@@ -2173,7 +2368,7 @@ mod tests {
             field_or_verb: "mood".to_string(),
             rest: vec!["happy".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], comment: None,
+            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
@@ -2201,6 +2396,7 @@ mod tests {
             timezone: None,
             unit: None,
             keys: vec![],
+            slug_keys: vec![],
             comment: None,
             id,
             id_delimiter: ":".to_string(),
@@ -3091,7 +3287,8 @@ mod tests {
     fn retime_args(slug: Option<&str>, offset: &str) -> RetimeArgs {
         RetimeArgs {
             slug: slug.map(str::to_string),
-            offset: offset.to_string(),
+            offset: Some(offset.to_string()),
+            time: None,
             field: None,
             after: None,
             before: None,
@@ -3173,7 +3370,8 @@ mod tests {
 
         let args = RetimeArgs {
             slug: None,
-            offset: "+1h".to_string(),
+            offset: Some("+1h".to_string()),
+            time: None,
             field: Some("coffee".to_string()),
             after: Some("2026-04-01".to_string()),
             before: None,

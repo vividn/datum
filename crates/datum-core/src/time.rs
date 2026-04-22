@@ -13,7 +13,24 @@ use chrono::{DateTime, Duration, Local, NaiveTime, Utc};
 use chrono_tz::Tz;
 use serde::{Deserialize, Serialize};
 
+use crate::entry::PrecisionUnit;
 use crate::error::{DatumError, Result};
+
+/// Uncertainty attached to a time reference — `±N[unit]` on the input.
+///
+/// `seconds` is the absolute radius of the interval. `unit` names the
+/// granularity for display/rollup (e.g. a `±5m` input stores 300s + minute).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Uncertainty {
+    pub seconds: u32,
+    pub unit: PrecisionUnit,
+}
+
+impl Uncertainty {
+    pub fn exact() -> Self {
+        Uncertainty { seconds: 0, unit: PrecisionUnit::Exact }
+    }
+}
 
 /// A timestamp with full timezone metadata, as stored in the database.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -62,12 +79,14 @@ impl DatumTime {
 pub struct DateArg {
     pub days_offset: i64,
     pub absolute: Option<chrono::NaiveDate>,
+    pub uncertainty: Option<Uncertainty>,
 }
 
 /// Parsed result of a time argument (-t flag).
 pub struct TimeArg {
     pub minutes_offset: Option<i64>,
     pub absolute: Option<NaiveTime>,
+    pub uncertainty: Option<Uncertainty>,
 }
 
 /// Count stackable short flags like -yyy (3) or -qqqq (4).
@@ -80,17 +99,78 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
     }
 }
 
+/// Split an input string into its primary-time portion and an optional
+/// trailing uncertainty suffix (`±N[unit]` or `+-N[unit]`).
+///
+/// The uncertainty marker may only appear once and must sit at the end of
+/// the string. Returns `(primary, Some(uncertainty_body))` when found, or
+/// `(primary, None)` otherwise.
+pub fn split_uncertainty(s: &str) -> (&str, Option<&str>) {
+    if let Some(idx) = s.rfind('±') {
+        return (&s[..idx], Some(&s[idx + '±'.len_utf8()..]));
+    }
+    // ASCII form `+-` — only split when it's preceded by a non-sign char so
+    // that a leading-sign relative offset like `-t +5` isn't misparsed.
+    if let Some(idx) = s.rfind("+-") {
+        if idx > 0 {
+            return (&s[..idx], Some(&s[idx + 2..]));
+        }
+    }
+    (s, None)
+}
+
+/// Parse the body of an uncertainty suffix (the portion after `±` or `+-`).
+///
+/// Accepts the same unit suffixes as `parse_duration`; bare numbers default
+/// to minutes. The returned `PrecisionUnit` mirrors the input unit so a
+/// `±5m` round-trips as `minute` rather than being collapsed to `second`.
+pub fn parse_uncertainty(body: &str) -> Result<Uncertainty> {
+    if body.is_empty() {
+        return Err(DatumError::InvalidTime(
+            "empty uncertainty body (expected N or N<unit>)".to_string(),
+        ));
+    }
+    // ISO 8601 duration form
+    if body.starts_with('P') {
+        let d = parse_iso_duration(body)?;
+        let secs = d.num_seconds().unsigned_abs() as u32;
+        return Ok(Uncertainty { seconds: secs, unit: PrecisionUnit::Second });
+    }
+
+    let (num_str, unit_str) = split_unit(body);
+    let n: f64 = num_str
+        .parse()
+        .map_err(|_| DatumError::InvalidTime(format!("Cannot parse uncertainty: '{body}'")))?;
+    let (secs, unit) = match unit_str {
+        "s" | "sec" | "second" | "seconds" => (n as u32, PrecisionUnit::Second),
+        "m" | "min" | "minute" | "minutes" => ((n * 60.0) as u32, PrecisionUnit::Minute),
+        "h" | "hr" | "hour" | "hours" => ((n * 3600.0) as u32, PrecisionUnit::Hour),
+        "d" | "day" | "days" => ((n * 86400.0) as u32, PrecisionUnit::Date),
+        "" => ((n * 60.0) as u32, PrecisionUnit::Minute), // default: minutes
+        other => {
+            return Err(DatumError::InvalidTime(format!(
+                "Unknown uncertainty unit: '{other}'"
+            )))
+        }
+    };
+    Ok(Uncertainty { seconds: secs, unit })
+}
+
 /// Parse a -d / --date argument.
 /// Supports: "+1", "-1", "0", or ISO date "2024-03-16"
+/// plus optional `±N[unit]` uncertainty suffix.
 pub fn parse_date_arg(s: &str) -> Result<DateArg> {
+    let (primary, uncert_body) = split_uncertainty(s);
+    let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
+
     // Relative integer offset
-    if let Ok(n) = s.parse::<i64>() {
-        return Ok(DateArg { days_offset: n, absolute: None });
+    if let Ok(n) = primary.parse::<i64>() {
+        return Ok(DateArg { days_offset: n, absolute: None, uncertainty });
     }
 
     // Absolute ISO date
-    if let Ok(d) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Ok(DateArg { days_offset: 0, absolute: Some(d) });
+    if let Ok(d) = chrono::NaiveDate::parse_from_str(primary, "%Y-%m-%d") {
+        return Ok(DateArg { days_offset: 0, absolute: Some(d), uncertainty });
     }
 
     Err(DatumError::InvalidTime(format!("Cannot parse date: '{s}'")))
@@ -98,38 +178,46 @@ pub fn parse_date_arg(s: &str) -> Result<DateArg> {
 
 /// Parse a -t / --time argument.
 /// Supports:
-///   "+5" / "-8"         relative minutes
+///   "+5" / "-8"         relative minutes (+ = future, - = past)
 ///   "1513" / "15:13"    absolute HH:MM today
 ///   "9:15am" / "21:30"  absolute time today
+/// plus an optional trailing uncertainty `±N[unit]` / `+-N[unit]`.
 pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
+    let (primary, uncert_body) = split_uncertainty(s);
+    let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
+
     // Literal "now" → current moment (minutes_offset = 0). Matches datum.
-    if s.eq_ignore_ascii_case("now") {
-        return Ok(TimeArg { minutes_offset: Some(0), absolute: None });
+    if primary.eq_ignore_ascii_case("now") {
+        return Ok(TimeArg { minutes_offset: Some(0), absolute: None, uncertainty });
     }
 
-    // Relative minute offset: "+5" or "-8"
-    if let Ok(n) = s.parse::<i64>() {
-        if s.starts_with('+') || s.starts_with('-') {
-            return Ok(TimeArg { minutes_offset: Some(n), absolute: None });
+    // Relative minute offset: "+5" (future) or "-8" (past).
+    if let Ok(n) = primary.parse::<i64>() {
+        if primary.starts_with('+') || primary.starts_with('-') {
+            return Ok(TimeArg { minutes_offset: Some(n), absolute: None, uncertainty });
         }
         // Plain number with no sign: treat as HHMM if 3-4 digits, else relative
-        if s.len() == 4 {
-            let h = s[..2].parse::<u32>().ok();
-            let m = s[2..].parse::<u32>().ok();
+        if primary.len() == 4 {
+            let h = primary[..2].parse::<u32>().ok();
+            let m = primary[2..].parse::<u32>().ok();
             if let (Some(h), Some(m)) = (h, m) {
                 if let Some(t) = NaiveTime::from_hms_opt(h, m, 0) {
-                    return Ok(TimeArg { minutes_offset: None, absolute: Some(t) });
+                    return Ok(TimeArg {
+                        minutes_offset: None,
+                        absolute: Some(t),
+                        uncertainty,
+                    });
                 }
             }
         }
         // 1-2 digit plain number: relative minutes
-        return Ok(TimeArg { minutes_offset: Some(n), absolute: None });
+        return Ok(TimeArg { minutes_offset: Some(n), absolute: None, uncertainty });
     }
 
     // Absolute time formats
     for fmt in &["%H:%M:%S", "%H:%M", "%I:%M%P", "%I:%M %p", "%I%P", "%I %p"] {
-        if let Ok(t) = NaiveTime::parse_from_str(s, fmt) {
-            return Ok(TimeArg { minutes_offset: None, absolute: Some(t) });
+        if let Ok(t) = NaiveTime::parse_from_str(primary, fmt) {
+            return Ok(TimeArg { minutes_offset: None, absolute: Some(t), uncertainty });
         }
     }
 
@@ -191,6 +279,19 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
     Ok(Duration::seconds(secs))
 }
 
+/// Precision produced by `n` stacked `-q` flags. The offset scaling is
+/// linear (5 min per flag), but precision is capped at 150s (±2.5m) for the
+/// first four and steps up to 300s (±5m) once the user stacks 5+ `-q`s —
+/// at that point the stacked offset is coarse enough that 5-min-resolution
+/// is more honest than claiming 2.5-min precision.
+pub fn quick_precision_for_count(n: u32) -> Uncertainty {
+    if n == 0 {
+        return Uncertainty::exact();
+    }
+    let seconds = if n >= 5 { 300 } else { 150 };
+    Uncertainty { seconds, unit: PrecisionUnit::Minute }
+}
+
 fn split_unit(s: &str) -> (&str, &str) {
     let idx = s
         .char_indices()
@@ -235,6 +336,11 @@ pub struct TimeBuilder {
     pub minutes_back: i64,
     pub date_override: Option<chrono::NaiveDate>,
     pub time_override: Option<NaiveTime>,
+    /// Implicit precision produced by `-q*` stacks (None when no `-q` given).
+    /// Overridden by any explicit `±N` attached to a `-d`/`-t` arg.
+    pub quick_precision: Option<Uncertainty>,
+    /// Explicit `±N` supplied via `-d` or `-t`. Beats `quick_precision`.
+    pub explicit_precision: Option<Uncertainty>,
 }
 
 impl TimeBuilder {
@@ -244,6 +350,8 @@ impl TimeBuilder {
             minutes_back: 0,
             date_override: None,
             time_override: None,
+            quick_precision: None,
+            explicit_precision: None,
         }
     }
 
@@ -253,7 +361,20 @@ impl TimeBuilder {
     }
 
     pub fn with_quick_count(mut self, n: i64) -> Self {
+        // `-q` scales the time offset (5 min per flag). Precision is set
+        // separately by `with_quick_precision` so callers that only want the
+        // offset can opt out.
         self.minutes_back += n * 5;
+        self
+    }
+
+    /// Apply the `-q*` precision scaling rule (see `quick_precision_for_count`).
+    /// A zero count leaves precision unchanged.
+    pub fn with_quick_precision(mut self, n: u32) -> Self {
+        if n == 0 {
+            return self;
+        }
+        self.quick_precision = Some(quick_precision_for_count(n));
         self
     }
 
@@ -262,6 +383,9 @@ impl TimeBuilder {
             self.date_override = Some(abs);
         } else {
             self.days_back += -arg.days_offset; // -1 means yesterday → days_back += 1
+        }
+        if let Some(u) = arg.uncertainty {
+            self.explicit_precision = Some(u);
         }
         self
     }
@@ -272,7 +396,26 @@ impl TimeBuilder {
         } else if let Some(offset) = arg.minutes_offset {
             self.minutes_back += -offset; // -8 means 8 min ago → minutes_back += 8
         }
+        if let Some(u) = arg.uncertainty {
+            self.explicit_precision = Some(u);
+        }
         self
+    }
+
+    /// Effective precision — explicit `±` beats implicit `-q` precision.
+    /// Returns `Uncertainty::exact()` when neither is set.
+    pub fn precision(&self) -> Uncertainty {
+        self.explicit_precision
+            .clone()
+            .or_else(|| self.quick_precision.clone())
+            .unwrap_or_else(Uncertainty::exact)
+    }
+
+    /// Build the DatumTime together with the effective precision. Most
+    /// callers route through this so precision fields land on the entry.
+    pub fn build_with_precision(self) -> (DatumTime, Uncertainty) {
+        let precision = self.precision();
+        (self.build(), precision)
     }
 
     pub fn build(self) -> DatumTime {
@@ -348,5 +491,113 @@ mod tests {
     fn test_parse_iso_duration() {
         assert_eq!(parse_duration("PT5M").unwrap(), Duration::minutes(5));
         assert_eq!(parse_duration("PT1H30M").unwrap(), Duration::minutes(90));
+    }
+
+    #[test]
+    fn parse_uncertainty_plus_minus_unicode() {
+        let t = parse_time_arg("1513±5").unwrap();
+        assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap()));
+        let u = t.uncertainty.expect("uncertainty");
+        // Bare number defaults to minutes.
+        assert_eq!(u.seconds, 5 * 60);
+        assert_eq!(u.unit, PrecisionUnit::Minute);
+    }
+
+    #[test]
+    fn parse_uncertainty_plus_hyphen_ascii() {
+        let t = parse_time_arg("1513+-5").unwrap();
+        assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap()));
+        let u = t.uncertainty.expect("uncertainty");
+        assert_eq!(u.seconds, 5 * 60);
+        assert_eq!(u.unit, PrecisionUnit::Minute);
+    }
+
+    #[test]
+    fn parse_uncertainty_with_units() {
+        // seconds
+        let u = parse_uncertainty("30s").unwrap();
+        assert_eq!(u.seconds, 30);
+        assert_eq!(u.unit, PrecisionUnit::Second);
+        // minutes (explicit)
+        let u = parse_uncertainty("5m").unwrap();
+        assert_eq!(u.seconds, 300);
+        assert_eq!(u.unit, PrecisionUnit::Minute);
+        // hours
+        let u = parse_uncertainty("2h").unwrap();
+        assert_eq!(u.seconds, 7200);
+        assert_eq!(u.unit, PrecisionUnit::Hour);
+        // days
+        let u = parse_uncertainty("1d").unwrap();
+        assert_eq!(u.seconds, 86400);
+        assert_eq!(u.unit, PrecisionUnit::Date);
+    }
+
+    #[test]
+    fn parse_combined_time_and_uncertainty() {
+        // relative offset + unicode ± with minute unit
+        let t = parse_time_arg("+5±2m").unwrap();
+        assert_eq!(t.minutes_offset, Some(5));
+        let u = t.uncertainty.unwrap();
+        assert_eq!(u.seconds, 120);
+        assert_eq!(u.unit, PrecisionUnit::Minute);
+
+        // relative negative offset + ascii +- with second unit
+        let t = parse_time_arg("-30+-10s").unwrap();
+        assert_eq!(t.minutes_offset, Some(-30));
+        let u = t.uncertainty.unwrap();
+        assert_eq!(u.seconds, 10);
+        assert_eq!(u.unit, PrecisionUnit::Second);
+
+        // date + day uncertainty via the date parser
+        let d = parse_date_arg("2024-03-16±1d").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2024, 3, 16).unwrap())
+        );
+        let u = d.uncertainty.unwrap();
+        assert_eq!(u.seconds, 86400);
+        assert_eq!(u.unit, PrecisionUnit::Date);
+    }
+
+    #[test]
+    fn q_flags_do_not_increase_precision_below_five_qs() {
+        for n in 1..=4u32 {
+            let u = quick_precision_for_count(n);
+            assert_eq!(u.seconds, 150, "n={n}: expected 150s precision");
+            assert_eq!(u.unit, PrecisionUnit::Minute);
+        }
+    }
+
+    #[test]
+    fn five_plus_q_flags_escalate_precision() {
+        for n in 5..=10u32 {
+            let u = quick_precision_for_count(n);
+            assert_eq!(u.seconds, 300, "n={n}: expected 300s precision");
+            assert_eq!(u.unit, PrecisionUnit::Minute);
+        }
+    }
+
+    #[test]
+    fn explicit_uncertainty_overrides_q_precision() {
+        let t = parse_time_arg("+5±30s").unwrap();
+        let builder = TimeBuilder::now()
+            .with_quick_count(3)
+            .with_quick_precision(3)
+            .with_time_arg(t);
+        let u = builder.precision();
+        // Explicit ±30s wins over the -qqq default of 150s/minute.
+        assert_eq!(u.seconds, 30);
+        assert_eq!(u.unit, PrecisionUnit::Second);
+    }
+
+    #[test]
+    fn relative_time_sign_future_vs_past() {
+        // `+N` = N minutes in the future
+        let t = parse_time_arg("+5").unwrap();
+        assert_eq!(t.minutes_offset, Some(5));
+
+        // `-N` = N minutes in the past
+        let t = parse_time_arg("-8").unwrap();
+        assert_eq!(t.minutes_offset, Some(-8));
     }
 }
