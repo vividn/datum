@@ -588,6 +588,15 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         mut extra_data,
         slug_values,
     } = parsed;
+    // S12 (da-u4k.12): for `switch`, a comma-separated value string is split
+    // into a JSON array of concurrent states (e.g. `switch f a,b` →
+    // `["a","b"]`). Single states stay scalar. Applied post-parse so the
+    // slot/value handling in `parse_log_args` stays verb-agnostic.
+    let value = if matches!(verb, Verb::Switch) {
+        expand_array_states(value)?
+    } else {
+        value
+    };
     let unit = args.unit.clone();
     let device = device_id()?;
 
@@ -684,7 +693,8 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     // consistently with state compilation downstream.
     if let Some(raw) = args.last_state.as_deref() {
         if !raw.is_empty() {
-            entry.user_asserted_last_state = Some(parse_value_token(raw));
+            // S12: `-L=a,b` asserts the prior state was a concurrent array.
+            entry.user_asserted_last_state = Some(parse_switch_state_token(raw)?);
         }
     }
 
@@ -1003,6 +1013,61 @@ fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
     };
 
     Ok(ParsedLogArgs { field, value, extra_data, slug_values })
+}
+
+/// S12: parse a switch value token, splitting on `,` into an array of
+/// concurrent states. A single state (no comma) stays scalar. Rejects
+/// leading/trailing commas and empty segments so users don't silently
+/// lose a state they meant to type.
+fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
+    if !s.contains(',') {
+        return Ok(parse_value_token(s));
+    }
+    if s.starts_with(',') || s.ends_with(',') {
+        anyhow::bail!(
+            "invalid state list '{s}': leading or trailing comma — use `state1,state2` (no trailing comma)"
+        );
+    }
+    if s.contains(",,") {
+        anyhow::bail!(
+            "invalid state list '{s}': empty segment between commas"
+        );
+    }
+    let parts: Vec<JsonValue> = s.split(',').map(parse_value_token).collect();
+    Ok(JsonValue::Array(parts))
+}
+
+/// S12: for `Verb::Switch`, expand any comma-containing string in the
+/// primary value into an array of states. Handles three inputs:
+///   * scalar string → array if comma-separated, otherwise unchanged
+///   * array (from legacy multi-positional switch) → flatten any
+///     comma-containing string elements into their components
+///   * all other value shapes → passthrough
+fn expand_array_states(value: Option<JsonValue>) -> Result<Option<JsonValue>> {
+    let Some(v) = value else { return Ok(None); };
+    match v {
+        JsonValue::String(s) if s.contains(',') => Ok(Some(parse_switch_state_token(&s)?)),
+        JsonValue::Array(items) => {
+            let mut out: Vec<JsonValue> = Vec::with_capacity(items.len());
+            for item in items {
+                match item {
+                    JsonValue::String(s) if s.contains(',') => {
+                        match parse_switch_state_token(&s)? {
+                            JsonValue::Array(inner) => out.extend(inner),
+                            other => out.push(other),
+                        }
+                    }
+                    other => out.push(other),
+                }
+            }
+            Ok(Some(match out.len() {
+                0 => JsonValue::Array(out),
+                1 => out.into_iter().next().unwrap(),
+                _ => JsonValue::Array(out),
+            }))
+        }
+        other => Ok(Some(other)),
+    }
 }
 
 /// Parse a single value token. Tries number, bool, then falls back to string.

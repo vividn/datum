@@ -301,7 +301,10 @@ fn detect_same_state_repeat(conn: &Connection, trigger: &Entry) -> Result<Option
         .as_ref()
         .map(crate::state::normalize_state)
         .unwrap_or(serde_json::Value::Null);
-    if new_norm != prior_state {
+    // S12: concurrent-state overlap counts as a repeat. Treating each side as
+    // a set of elements means `["a","b"]` → `["b","a"]` is a full repeat,
+    // and `["a","b"]` → `"a"` is a partial repeat (a is already active).
+    if !states_share_element(&new_norm, &prior_state) {
         return Ok(None);
     }
     // Best-effort: surface the most recent state-defining counterpart so the
@@ -324,6 +327,38 @@ fn detect_same_state_repeat(conn: &Connection, trigger: &Entry) -> Result<Option
     .map_err(DatumError::Db)
 }
 
+/// S12: true when two (normalized) states share at least one element. Scalar
+/// values are treated as one-element sets; arrays are treated as sets of
+/// their elements. Elements compare by canonical JSON serialization so that
+/// e.g. `"foo"` and `{"id":"foo"}` (after normalize) still match correctly.
+fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    let sa = state_as_set(a);
+    let sb = state_as_set(b);
+    sa.intersection(&sb).next().is_some()
+}
+
+/// S12: set-aware equality — arrays compare order-insensitive (same
+/// multiset of elements), everything else compares via `PartialEq`.
+fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a, b) {
+        (serde_json::Value::Array(xa), serde_json::Value::Array(xb)) if xa.len() == xb.len() => {
+            let mut sa: Vec<String> = xa.iter().map(|x| x.to_string()).collect();
+            let mut sb: Vec<String> = xb.iter().map(|x| x.to_string()).collect();
+            sa.sort();
+            sb.sort();
+            sa == sb
+        }
+        _ => a == b,
+    }
+}
+
+fn state_as_set(v: &serde_json::Value) -> std::collections::HashSet<String> {
+    match v {
+        serde_json::Value::Array(arr) => arr.iter().map(|x| x.to_string()).collect(),
+        other => std::iter::once(other.to_string()).collect(),
+    }
+}
+
 /// S6: compare the user's explicit `-L` assertion against the computed
 /// last-state. `Ok(None)` when there's no assertion or the assertion
 /// matches; `Ok(Some(None))` when the assertion is explicitly `null` with
@@ -343,7 +378,9 @@ fn detect_last_state_mismatch(
     let asserted = crate::state::normalize_state(asserted_raw);
     let actual = crate::state::last_state_at(conn, &trigger.field, probe, Some(&trigger.hid))?
         .unwrap_or(serde_json::Value::Null);
-    if asserted == actual {
+    // S12: array assertions compare order-insensitive — `-L=a,b` matches
+    // an actual `["b","a"]` prior.
+    if states_equal_set_aware(&asserted, &actual) {
         return Ok(None);
     }
     // Mismatch — find a counterpart for display (may be None).

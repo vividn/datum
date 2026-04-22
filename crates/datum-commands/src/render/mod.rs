@@ -417,6 +417,9 @@ enum StatePiece {
     Block { text: String, color: Rgb },
     /// Plain text, no ANSI at all (for `end` / false state).
     Plain(String),
+    /// S12: concurrent states rendered as adjacent blocks separated by a
+    /// comma colored like the second element. Composed of 2+ pieces.
+    Multi { pieces: Vec<StatePiece>, separators: Vec<Rgb> },
 }
 
 impl StatePiece {
@@ -425,13 +428,24 @@ impl StatePiece {
             StatePiece::Glyph { text, color } => paint(&color.fg(), text),
             StatePiece::Block { text, color } => paint_bg(*color, &format!(" {text} ")),
             StatePiece::Plain(s) => s.clone(),
+            StatePiece::Multi { pieces, separators } => {
+                let mut out = String::new();
+                for (i, p) in pieces.iter().enumerate() {
+                    if i > 0 {
+                        let sep_color = separators.get(i - 1).copied().unwrap_or(Rgb::WHITE);
+                        out.push_str(&paint(&sep_color.fg(), ","));
+                    }
+                    out.push_str(&p.render());
+                }
+                out
+            }
         }
     }
 
     /// Whether this piece contributes a coloured block that pairs naturally
     /// with a transition arrow. Plain `end` and bare glyphs don't.
     fn is_block(&self) -> bool {
-        matches!(self, StatePiece::Block { .. })
+        matches!(self, StatePiece::Block { .. } | StatePiece::Multi { .. })
     }
 }
 
@@ -455,6 +469,36 @@ fn piece_for_value(value: Option<&JsonValue>, field: &str, spec: Option<&FieldSp
             text: s.clone(),
             color: state_rgb(field, s, spec),
         }),
+        // S12: multi-element arrays render as adjacent coloured blocks with
+        // per-element palette, comma separators coloured like the following
+        // element. Single-element arrays unfold (normalize_state already
+        // flattens these in the state timeline; this mirrors that at display).
+        JsonValue::Array(items) if items.len() >= 2 => {
+            let pieces: Vec<StatePiece> = items
+                .iter()
+                .filter_map(|v| piece_for_value(Some(v), field, spec))
+                .collect();
+            if pieces.is_empty() {
+                return None;
+            }
+            let separators: Vec<Rgb> = pieces
+                .iter()
+                .skip(1)
+                .map(|p| match p {
+                    StatePiece::Block { color, .. } => *color,
+                    StatePiece::Glyph { color, .. } => *color,
+                    _ => field_rgb(field, spec),
+                })
+                .collect();
+            if pieces.len() == 1 {
+                pieces.into_iter().next()
+            } else {
+                Some(StatePiece::Multi { pieces, separators })
+            }
+        }
+        JsonValue::Array(items) if items.len() == 1 => {
+            piece_for_value(Some(&items[0]), field, spec)
+        }
         other => {
             let t = other.to_string();
             let c = state_rgb(field, &t, spec);
@@ -528,6 +572,10 @@ fn format_state(
 fn piece_colors_differ(a: &StatePiece, b: &StatePiece) -> bool {
     match (a, b) {
         (StatePiece::Block { color: ca, .. }, StatePiece::Block { color: cb, .. }) => ca != cb,
+        // Multi-state blocks always carry at least one color that differs
+        // from any single block — emit the transition arrow so the user
+        // sees the scalar ↔ array shift.
+        (StatePiece::Multi { .. }, _) | (_, StatePiece::Multi { .. }) => true,
         _ => false,
     }
 }
@@ -1093,10 +1141,12 @@ fn ansi_from_stored(stored: &str, fallback_name: &str) -> String {
 struct NowRow {
     bullet: &'static str,
     field: String,
-    state_str: String,
+    /// Pre-rendered state column — may include inline ANSI escapes, so
+    /// alignment math must go through [`visible_width`] rather than `len()`.
+    state_rendered: String,
+    state_vw: usize,
     time_str: String,
     field_ansi: String,
-    state_ansi: String,
     is_dim: bool,
 }
 
@@ -1124,6 +1174,56 @@ fn state_ansi(
     }
     let n = hash_to_ansi256(state);
     format!("\x1b[38;5;{n}m")
+}
+
+/// S12: render the state column for `datum now`. Scalar values get the
+/// original single-color treatment; arrays become a checkerboard-flavored
+/// sequence of per-element blocks so concurrent states are immediately
+/// distinguishable. Returns `(rendered, visible_width)` so the caller can
+/// align columns with [`visible_width`].
+fn render_now_state(
+    value: Option<&JsonValue>,
+    field: &str,
+    field_stored_color: &Option<String>,
+    state_colors: &HashMap<(String, String), String>,
+) -> (String, usize) {
+    let Some(v) = value else { return (String::new(), 0); };
+    match v {
+        JsonValue::Array(items) if items.len() > 1 => {
+            let parts: Vec<String> = items
+                .iter()
+                .map(|item| render_now_state_scalar(item, field, field_stored_color, state_colors))
+                .collect();
+            let rendered = parts.join(",");
+            let vw: usize = items.iter().map(|it| scalar_text(it).len()).sum::<usize>()
+                + items.len().saturating_sub(1); // commas
+            (rendered, vw)
+        }
+        other => {
+            let text = scalar_text(other);
+            let rendered = render_now_state_scalar(other, field, field_stored_color, state_colors);
+            let vw = text.len();
+            (rendered, vw)
+        }
+    }
+}
+
+fn scalar_text(v: &JsonValue) -> String {
+    match v {
+        JsonValue::String(s) => s.clone(),
+        other => other.to_string(),
+    }
+}
+
+fn render_now_state_scalar(
+    v: &JsonValue,
+    field: &str,
+    field_stored_color: &Option<String>,
+    state_colors: &HashMap<(String, String), String>,
+) -> String {
+    let text = scalar_text(v);
+    let ansi = state_ansi(field, &text, field_stored_color, state_colors);
+    format!("{ansi}{text}{RESET}")
 }
 
 /// Print the redesigned `datum now` view.
@@ -1178,10 +1278,10 @@ pub fn render_now_view(
                 ignored_rows.push(NowRow {
                     bullet: " ",
                     field: tf.field.clone(),
-                    state_str: String::new(),
+                    state_rendered: String::new(),
+                    state_vw: 0,
                     time_str: String::new(),
                     field_ansi: fansi,
-                    state_ansi: String::new(),
                     is_dim: true,
                 });
             }
@@ -1193,10 +1293,10 @@ pub fn render_now_view(
                 stopped.push(NowRow {
                     bullet: " ",
                     field: tf.field.clone(),
-                    state_str: String::new(),
+                    state_rendered: String::new(),
+                    state_vw: 0,
                     time_str: "(no entries)".to_string(),
                     field_ansi: fansi,
-                    state_ansi: String::new(),
                     is_dim: false,
                 });
             }
@@ -1211,16 +1311,12 @@ pub fn render_now_view(
                     _ => false,
                 };
 
-                let state_str = entry
-                    .value
-                    .as_ref()
-                    .map(|v| match v {
-                        JsonValue::String(s) => s.clone(),
-                        other => other.to_string(),
-                    })
-                    .unwrap_or_default();
-
-                let sansi = state_ansi(&tf.field, &state_str, &tf.color, state_colors);
+                let (state_rendered, state_vw) = render_now_state(
+                    entry.value.as_ref(),
+                    &tf.field,
+                    &tf.color,
+                    state_colors,
+                );
 
                 let entry_time = entry.start_time.as_ref().or(entry.end_time.as_ref());
                 let time_str = match entry_time {
@@ -1237,10 +1333,10 @@ pub fn render_now_view(
                 let row = NowRow {
                     bullet: if is_active { "●" } else { " " },
                     field: tf.field.clone(),
-                    state_str,
+                    state_rendered,
+                    state_vw,
                     time_str,
                     field_ansi: fansi,
-                    state_ansi: sansi,
                     is_dim: false,
                 };
 
@@ -1255,7 +1351,7 @@ pub fn render_now_view(
 
     let all_visible = active.iter().chain(stopped.iter());
     let field_w = all_visible.clone().map(|r| r.field.len()).max().unwrap_or(0).max(1);
-    let state_w = all_visible.map(|r| r.state_str.len()).max().unwrap_or(0);
+    let state_w = all_visible.map(|r| r.state_vw).max().unwrap_or(0);
 
     let sep_len = 1 + 1 + field_w + 2 + state_w.max(1) + 2 + 10;
     let sep: String = "─".repeat(sep_len);
@@ -1273,16 +1369,17 @@ pub fn render_now_view(
             }
         }
         let fc = &row.field_ansi;
-        let sc = &row.state_ansi;
         if row.is_dim {
             write!(out, "{DIM}{fc}  {field}{RESET}", field = row.field).unwrap();
         } else {
+            let pad = state_w.saturating_sub(row.state_vw);
+            let padding: String = " ".repeat(pad);
             write!(
                 out,
-                "{fc}{bullet}{RESET} {fc}{field:<field_w$}{RESET}  {sc}{state:<state_w$}{RESET}  {time}",
+                "{fc}{bullet}{RESET} {fc}{field:<field_w$}{RESET}  {state}{padding}  {time}",
                 bullet = row.bullet,
                 field = row.field,
-                state = row.state_str,
+                state = row.state_rendered,
                 time = row.time_str,
             )
             .unwrap();

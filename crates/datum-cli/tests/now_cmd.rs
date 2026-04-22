@@ -93,6 +93,37 @@ fn render_switch_entry_appears_as_active_row_with_bullet_and_state() {
     assert!(plain.contains("happy"), "state must appear:\n{plain}");
 }
 
+/// S12 (da-u4k.12): an array value renders each state, comma-joined, in the
+/// state column. Visible width excludes ANSI, so the separator length still
+/// matches the content width after multi-color painting.
+#[test]
+fn render_array_state_shows_comma_joined_members() {
+    let tf = [tracked("project")];
+    let mut latest = HashMap::new();
+    latest.insert(
+        "project".to_string(),
+        entry_builder("project")
+            .verb(Verb::Switch)
+            .value(json!(["datum", "household"]))
+            .time_start(DatumTime::now())
+            .build(),
+    );
+
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let plain = strip_ansi(&out);
+    assert!(plain.contains("datum"), "first state must appear:\n{plain}");
+    assert!(plain.contains("household"), "second state must appear:\n{plain}");
+    assert!(
+        plain.contains("datum,household"),
+        "array renders as comma-joined states:\n{plain}"
+    );
+    // The ugly JSON literal must NOT leak through.
+    assert!(
+        !plain.contains("[\""),
+        "array must not render as raw JSON:\n{plain}"
+    );
+}
+
 #[test]
 fn render_ignored_field_hidden_by_default() {
     // `ignored=true` specs must NOT appear when `show_ignored=false`, and the
