@@ -898,6 +898,18 @@ fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
         }
     }
 
+    // `id=<name>` convention: a positional `id=` kvpair is promoted to the
+    // slug identity (slug becomes `<field>:<name>`) so entries can act as
+    // documents without needing an explicit `-K id` declaration. Explicit
+    // `-K` slug-keys already populate slug_values and win, in which case
+    // `id=` stays in extra_data as ordinary payload.
+    if slug_values.is_empty() {
+        if let Some(pos) = kvpair_tokens.iter().position(|(k, _)| *k == "id") {
+            let (_, v) = kvpair_tokens.remove(pos);
+            slug_values.push(v.to_string());
+        }
+    }
+
     // Build extra_data. Order: slot fills, then legacy `-k KEY=VALUE`
     // immediates, then `KEY=VALUE` positionals, then --comment. Later
     // entries overwrite earlier ones so explicit user input beats defaults.

@@ -602,6 +602,134 @@ fn comment_flag_populates_extra_data_comment() {
 
 // ─── P1 acceptance-criteria tests (beyond the 25-case port) ──────────────────
 
+// ─── da-ndd.18: `id=` positional convention → field:id slugs ─────────────────
+
+/// A positional `id=<name>` kvpair is promoted to the slug identity
+/// (`field:name`) without needing an explicit `-K id` declaration. The
+/// other kvpairs remain in extra_data. This makes entries act as documents
+/// that later entries can reference via the colon pattern.
+#[test]
+fn id_positional_promotes_to_slug() {
+    let db = fresh_db();
+    run_cli(
+        &["add", "book", "title=goldmund und narziß", "author=herman hesse", "lang=de", "id=goldmund"],
+        &db,
+    )
+    .expect("datum add book …  id=goldmund");
+    let e = db.get_entry("book:goldmund").expect("slug book:goldmund exists");
+    assert_eq!(e.slug, "book:goldmund");
+    let extra = e.data.as_ref().unwrap();
+    assert_eq!(extra.get("title"), Some(&json!("goldmund und narziß")));
+    assert_eq!(extra.get("author"), Some(&json!("herman hesse")));
+    assert_eq!(extra.get("lang"), Some(&json!("de")));
+    assert!(
+        extra.get("id").is_none(),
+        "id= is stripped from extra_data once promoted to the slug",
+    );
+}
+
+/// `id=` with no other payload still promotes — minimal document form.
+#[test]
+fn id_positional_alone_produces_field_colon_id_slug() {
+    let db = fresh_db();
+    run_cli(&["add", "person", "id=vividn"], &db).expect("add person id=vividn");
+    let e = db.get_entry("person:vividn").expect("slug person:vividn exists");
+    assert_eq!(e.slug, "person:vividn");
+    // Only `id` was supplied; it's consumed by the slug, so extra_data stays None.
+    assert!(
+        e.data.is_none(),
+        "sole id= is consumed by the slug; no extra_data left behind",
+    );
+}
+
+/// Without `id=` (or `-K`), slugs fall back to the default `field:<timestamp>`
+/// shape. Regression guard: the new promotion path must not hijack entries
+/// that have no `id=` at all.
+#[test]
+fn no_id_falls_back_to_timestamp_slug() {
+    let db = fresh_db();
+    run_cli(&["add", "book", "title=anon"], &db).expect("add book title=anon");
+    let e = &db.entries_for_field("book", None).unwrap()[0];
+    assert!(
+        e.slug.starts_with("book:"),
+        "slug preserves the field:<id> shape: {}",
+        e.slug,
+    );
+    assert!(
+        !e.slug.ends_with(":anon") && e.slug.len() > "book:".len() + 4,
+        "slug is timestamp-derived, not id-derived: {}",
+        e.slug,
+    );
+    let extra = e.data.as_ref().unwrap();
+    assert_eq!(extra.get("title"), Some(&json!("anon")));
+}
+
+/// Explicit `-K` slug-keys take precedence over the `id=` convention. When
+/// both are present, `-K` fills slug_values first and `id=` stays in
+/// extra_data as ordinary payload — the user explicitly declared a
+/// different slug contract.
+#[test]
+fn explicit_dash_k_wins_over_id_positional() {
+    let db = fresh_db();
+    run_cli(
+        &["add", "book", "-K", "custom", "primary-slug", "id=secondary"],
+        &db,
+    )
+    .expect("add book -K custom primary-slug id=secondary");
+    let e = db.get_entry("book:primary-slug").expect("slug book:primary-slug exists");
+    assert_eq!(e.slug, "book:primary-slug");
+    let extra = e.data.as_ref().unwrap();
+    assert_eq!(
+        extra.get("id"),
+        Some(&json!("secondary")),
+        "id= stays in extra_data when -K already populated slug_values",
+    );
+    assert_eq!(
+        extra.get("custom"),
+        Some(&json!("primary-slug")),
+        "-K slot also stored its value in extra_data (existing contract)",
+    );
+}
+
+/// Values that look like `<field>:<id>` — e.g. `book:goldmund` — are stored
+/// as plain strings on write. No slug lookup happens at write time; refs
+/// are resolved on read so that documents added later still propagate
+/// their data to earlier-written references (per the "live refs" design).
+#[test]
+fn colon_pattern_value_stored_as_plain_string() {
+    let db = fresh_db();
+    // Create the document.
+    run_cli(&["add", "book", "title=Goldmund", "id=goldmund"], &db)
+        .expect("add book id=goldmund");
+    // Create a switch that references it.
+    run_cli(&["switch", "consume", "book:goldmund"], &db)
+        .expect("switch consume book:goldmund");
+    let switch_entry = &db.entries_for_field("consume", None).unwrap()[0];
+    assert_eq!(
+        switch_entry.value,
+        Some(json!("book:goldmund")),
+        "reference value is stored verbatim — no write-time resolution",
+    );
+    // The helper parses the string shape; callers (future display code) are
+    // responsible for DB lookups.
+    let (field, id) = datum_core::doc_ref::parse_ref("book:goldmund")
+        .expect("colon-pattern string is a candidate ref");
+    assert_eq!(field, "book");
+    assert_eq!(id, "goldmund");
+}
+
+/// Unresolved references do not block writes — writing a switch that
+/// references a not-yet-existing document still succeeds. Matches the
+/// "accept + mark unresolved" policy (open question Q1 resolved to option b).
+#[test]
+fn unresolved_doc_reference_does_not_block_write() {
+    let db = fresh_db();
+    run_cli(&["switch", "consume", "book:does-not-exist-yet"], &db)
+        .expect("forward reference writes successfully");
+    let e = &db.entries_for_field("consume", None).unwrap()[0];
+    assert_eq!(e.value, Some(json!("book:does-not-exist-yet")));
+}
+
 /// After D3, `note` is no longer a first-class subcommand — it's a seeded
 /// alias that routes to `add`. `datum note field …` and `datum add field …`
 /// must produce identical entries, both with `Verb::Add`.
