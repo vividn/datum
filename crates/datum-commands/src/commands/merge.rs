@@ -7,10 +7,10 @@ use anyhow::Result;
 use datum_core::db::Db;
 
 use crate::args::UpdateArgs;
-use crate::commands::update_core::{update_from_args, UpdateStrategy};
+use crate::commands::update_core::{update_batch_from_args, UpdateStrategy};
 
 pub fn merge(args: UpdateArgs, db: &Db) -> Result<()> {
-    update_from_args(args, UpdateStrategy::Merge, db).map(|_| ())
+    update_batch_from_args(args, UpdateStrategy::Merge, db)
 }
 
 pub fn merge_from_argv(_argv: &[String], _db: &Db) -> Result<()> {

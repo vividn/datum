@@ -7,4 +7,4 @@
 
 pub mod resolve;
 
-pub use resolve::{resolve_quickid, resolve_quickid_single};
+pub use resolve::{contains_wildcard, resolve_quickid, resolve_quickid_single};

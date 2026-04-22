@@ -13,10 +13,10 @@
 //!     daydumb has no equivalent wrapper; the portable invariant is that the
 //!     `del` alias (A2) dispatches to the same handler as `delete`, so case
 //!     #4 doubles as the acceptance criterion `del_alias_dispatches_to_delete`.
-//!   * datum's compound quickId (`"abc,def,ghi,"` → 3 deletes) is not
-//!     supported: daydumb's `delete` takes one id per invocation. Case #6
-//!     asserts the compound form is treated as a literal non-match (NotFound)
-//!     and that N independent invocations reach the same end state.
+//!   * datum's compound quickId (`"abc,def,ghi,"` → 3 deletes) is now
+//!     supported (S3): case #6 asserts the compound form tombstones all
+//!     three targeted rows in a single invocation, with the trailing empty
+//!     segment silently dropped.
 //!
 //! Daydumb-specific invariants asserted alongside the ports (required by
 //! the bead scope):
@@ -204,38 +204,23 @@ fn delete_emits_delete_tag_on_standard_show() {
     let _ = std::fs::remove_file(&db);
 }
 
-/// TS #6: "can delete multiple documents using a compound quickid"
+/// TS #6: "can delete multiple documents using a compound quickid" (S3).
 ///
 /// Datum accepted `"abc,def,ghi,"` and split on commas to issue N deletes.
-/// Daydumb does not: `delete` takes one id_or_slug. The ported case pins
-/// down the divergence — the compound form is a literal id lookup, so it
-/// errors with NotFound and leaves all rows intact — and then verifies the
-/// portable end state via N independent invocations.
+/// Under S3 daydumb matches that surface: a comma-separated list of
+/// ids/slugs/wildcards tombstones every resolved entry in one invocation.
+/// Trailing empty segments (from the trailing comma) are silently dropped.
 #[test]
-fn compound_ids_require_one_invocation_each() {
+fn compound_ids_batch_delete_in_one_invocation() {
     let db = fresh_db();
     let e1 = entry_builder("coffee").value(json!(1)).insert(&db);
     let e2 = entry_builder("coffee").value(json!(2)).insert(&db);
     let e3 = entry_builder("coffee").value(json!(3)).insert(&db);
 
-    // Datum-style compound input is treated as a literal id → NotFound.
     let compound = format!("{},{},{},", e1.slug, e2.slug, e3.slug);
-    let err = run_cli(&["delete", &compound, "--force"], &db)
-        .expect_err("compound form must not resolve in daydumb");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("not found") || msg.contains("NotFound"),
-        "expected NotFound on compound input, got: {msg}",
-    );
-    // The failed compound call must not have tombstoned any of the three.
-    assert_count!(db, "coffee", 3);
+    run_cli(&["delete", &compound, "--force"], &db)
+        .unwrap_or_else(|err| panic!("compound delete must succeed: {err:#}"));
 
-    // N independent invocations reach the end state datum's compound form
-    // was meant to achieve.
-    for e in [&e1, &e2, &e3] {
-        run_cli(&["delete", &e.slug, "--force"], &db)
-            .unwrap_or_else(|err| panic!("delete {}: {err:#}", e.slug));
-    }
     assert_count!(db, "coffee", 0);
     for e in [&e1, &e2, &e3] {
         assert!(
@@ -243,8 +228,164 @@ fn compound_ids_require_one_invocation_each() {
                 .unwrap()
                 .deleted_at
                 .is_some(),
-            "each row must carry a tombstone after per-id deletion",
+            "each row must carry a tombstone after compound delete",
         );
+    }
+}
+
+// ─── S3: batch mutation cases ────────────────────────────────────────────────
+
+/// Wildcard tokens expand to every live match in the batch path.
+#[test]
+fn compound_delete_expands_wildcards() {
+    let db = fresh_db();
+    let a = entry_builder("mood").value(json!("a")).insert(&db);
+    let b = entry_builder("mood").value(json!("b")).insert(&db);
+    let c = entry_builder("mood").value(json!("c")).insert(&db);
+    let untouched = entry_builder("coffee").value(json!(1)).insert(&db);
+
+    // `mood:*` hits all three mood rows, `coffee:*` not listed → preserved.
+    run_cli(&["delete", "mood:*", "--force"], &db)
+        .unwrap_or_else(|err| panic!("wildcard delete must succeed: {err:#}"));
+
+    assert_count!(db, "mood", 0);
+    assert_count!(db, "coffee", 1);
+    for e in [&a, &b, &c] {
+        assert!(
+            db.get_entry_including_deleted(&e.slug)
+                .unwrap()
+                .deleted_at
+                .is_some(),
+            "mood row {} must be tombstoned after wildcard delete",
+            e.slug,
+        );
+    }
+    assert!(db.get_entry(&untouched.slug).is_ok(), "non-matching row survives");
+}
+
+/// A comma-separated list mixing an exact slug, a hid prefix, and a wildcard
+/// all resolve through the same pipeline.
+#[test]
+fn compound_delete_mixes_hid_slug_and_wildcard() {
+    let db = fresh_db();
+    let by_slug = entry_builder("mood").value(json!("s")).insert(&db);
+    let by_hid = entry_builder("mood").value(json!("h")).insert(&db);
+    let in_wild = entry_builder("book").value(json!("the-hobbit")).insert(&db);
+    let in_wild2 = entry_builder("book").value(json!("the-iliad")).insert(&db);
+    let outside = entry_builder("coffee").value(json!(1)).insert(&db);
+
+    let mixed = format!("{},{},book:*", by_slug.slug, by_hid.hid);
+    run_cli(&["delete", &mixed, "--force"], &db)
+        .unwrap_or_else(|err| panic!("mixed delete must succeed: {err:#}"));
+
+    // Four deleted, one untouched.
+    for e in [&by_slug, &by_hid, &in_wild, &in_wild2] {
+        assert!(
+            db.get_entry_including_deleted(&e.slug)
+                .unwrap()
+                .deleted_at
+                .is_some(),
+            "row {} must be tombstoned",
+            e.slug,
+        );
+    }
+    assert!(
+        db.get_entry(&outside.slug).is_ok(),
+        "coffee row untouched by the mixed batch",
+    );
+}
+
+/// Duplicates across tokens (same slug reached twice) collapse to a single
+/// delete — the second attempt should not double-fault the batch.
+#[test]
+fn compound_delete_collapses_duplicates() {
+    let db = fresh_db();
+    let e = entry_builder("mood").value(json!(1)).insert(&db);
+
+    // Reference the same row twice: once by slug, once by hid prefix.
+    let hid5: String = e.hid.chars().take(5).collect();
+    let dup = format!("{},{}", e.slug, hid5);
+
+    run_cli(&["delete", &dup, "--force"], &db)
+        .unwrap_or_else(|err| panic!("duplicate-collapsed delete must succeed: {err:#}"));
+
+    assert!(
+        db.get_entry_including_deleted(&e.slug)
+            .unwrap()
+            .deleted_at
+            .is_some(),
+        "row must be tombstoned after duplicated batch",
+    );
+}
+
+/// Default (non-strict) continues on per-token failure: the valid token
+/// still tombstones its entry, and the overall invocation exits non-zero.
+#[test]
+fn compound_delete_continues_past_bad_token_by_default() {
+    let db = fresh_db();
+    let keep = entry_builder("coffee").value(json!(1)).insert(&db);
+    let doomed = entry_builder("coffee").value(json!(2)).insert(&db);
+
+    let compound = format!("{},definitely-not-a-real-id", doomed.slug);
+    let err = run_cli(&["delete", &compound, "--force"], &db)
+        .expect_err("batch with a bad token must report a non-zero error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("definitely-not-a-real-id"),
+        "error must mention the unresolved token, got: {msg}",
+    );
+
+    // The good token still tombstoned its entry.
+    assert!(
+        db.get_entry_including_deleted(&doomed.slug)
+            .unwrap()
+            .deleted_at
+            .is_some(),
+        "valid id in the batch must still be tombstoned",
+    );
+    // The unrelated row was untouched.
+    assert!(db.get_entry(&keep.slug).is_ok(), "sibling row untouched");
+}
+
+/// `--strict` aborts the batch on the first resolution error before touching
+/// anything — no partial mutation.
+#[test]
+fn strict_compound_delete_aborts_without_mutating() {
+    let db = fresh_db();
+    let a = entry_builder("coffee").value(json!(1)).insert(&db);
+    let b = entry_builder("coffee").value(json!(2)).insert(&db);
+
+    let compound = format!("not-a-real-id,{},{}", a.slug, b.slug);
+    let err = run_cli(&["delete", &compound, "--force", "--strict"], &db)
+        .expect_err("strict must surface the resolution error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("not-a-real-id"),
+        "strict error must name the bad token, got: {msg}",
+    );
+
+    // Neither row was tombstoned — strict aborted before the mutation loop.
+    assert_count!(db, "coffee", 2);
+}
+
+/// `--dry-run` reports what would be deleted without mutating the DB.
+#[test]
+fn compound_delete_dry_run_does_not_mutate() {
+    let db = fresh_db();
+    let a = entry_builder("mood").value(json!(1)).insert(&db);
+    let b = entry_builder("mood").value(json!(2)).insert(&db);
+
+    run_cli(
+        &["delete", "mood:*", "--force", "--dry-run"],
+        &db,
+    )
+    .unwrap_or_else(|err| panic!("dry-run must succeed: {err:#}"));
+
+    // Both rows still live.
+    assert_count!(db, "mood", 2);
+    for e in [&a, &b] {
+        let row = db.get_entry(&e.slug).unwrap();
+        assert!(row.deleted_at.is_none(), "dry-run must not tombstone");
     }
 }
 

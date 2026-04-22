@@ -161,7 +161,7 @@ fn last_live_entry_for_field(db: &Db, field: &str) -> Result<Option<Entry>> {
 }
 
 /// Does the pattern contain a wildcard (`*` or `?`)?
-fn contains_wildcard(pattern: &str) -> bool {
+pub fn contains_wildcard(pattern: &str) -> bool {
     pattern.contains('*') || pattern.contains('?')
 }
 

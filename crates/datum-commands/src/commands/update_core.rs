@@ -148,6 +148,139 @@ pub fn update_from_args(
     Ok(outcome)
 }
 
+/// Batch variant of [`update_from_args`]: splits the id argument on commas,
+/// resolves each token through the S2 quickId resolver (so wildcards expand
+/// and hid prefixes work), and applies the same payload to every resolved
+/// row.
+///
+/// Default semantics: non-strict — per-row failures are reported but don't
+/// abort the batch; the overall invocation exits non-zero if anything
+/// failed. With `--strict`, the first resolution or tombstone error aborts
+/// before any write (tombstone pre-scan keeps a later tombstone from
+/// partially mutating earlier live siblings).
+///
+/// `--dry-run` prints what would be mutated and returns without writing.
+pub fn update_batch_from_args(
+    args: UpdateArgs,
+    default_strategy: UpdateStrategy,
+    db: &Db,
+) -> Result<()> {
+    let strategy = args
+        .strategy
+        .map(strategy_from_arg)
+        .transpose()?
+        .unwrap_or(default_strategy);
+
+    let (entries, token_errors) = crate::cmd::resolve_batch(
+        db,
+        &args.id_or_slug,
+        crate::cmd::BatchMode::LiveOrTombstone,
+    );
+
+    if entries.is_empty() {
+        if let Some((_, err)) = token_errors.into_iter().next() {
+            return Err(err);
+        }
+        anyhow::bail!("no entries specified");
+    }
+
+    if args.strict {
+        if let Some((_, err)) = token_errors.first() {
+            return Err(anyhow::anyhow!("{err}"));
+        }
+        // Pre-scan tombstones so strict never partially mutates a batch:
+        // the tombstone refusal is knowable before any write. Runtime
+        // errors (rekey collisions, etc.) still abort mid-loop — those
+        // aren't pre-detectable.
+        if let Some(tomb) = entries.iter().find(|e| e.deleted_at.is_some()) {
+            anyhow::bail!(
+                "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
+                strategy.verb(),
+                tomb.slug,
+            );
+        }
+    }
+
+    let (payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
+    let output = args.output();
+
+    if args.dry_run {
+        let registry = db.load_registry().ok();
+        for entry in &entries {
+            if entry.deleted_at.is_some() {
+                eprintln!(
+                    "[dry-run] skip tombstoned: {} (restore first with `datum undelete`)",
+                    entry.slug,
+                );
+                continue;
+            }
+            crate::render::print_entry(entry, registry.as_ref());
+        }
+        for (tok, err) in &token_errors {
+            eprintln!("[dry-run] resolve '{tok}': {err}");
+        }
+        let live = entries.iter().filter(|e| e.deleted_at.is_none()).count();
+        eprintln!(
+            "[dry-run] would {} {} {}",
+            strategy.verb(),
+            live,
+            if live == 1 { "entry" } else { "entries" },
+        );
+        return Ok(());
+    }
+
+    let mut first_err: Option<anyhow::Error> = None;
+    for existing in entries {
+        if existing.deleted_at.is_some() {
+            let msg = format!(
+                "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
+                strategy.verb(),
+                existing.slug,
+            );
+            if args.strict {
+                return Err(anyhow::anyhow!(msg));
+            }
+            eprintln!("{msg}");
+            first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
+            continue;
+        }
+
+        let result = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &existing.slug,
+                payload_value: payload_value.clone(),
+                payload_extra: payload_extra.clone(),
+                strategy,
+                rekey_template: args.id.clone(),
+                rekey_delimiter: &args.id_delimiter,
+            },
+            db,
+        );
+
+        match result {
+            Ok(outcome) => render_outcome(&outcome, &output, db),
+            Err(e) => {
+                if args.strict {
+                    return Err(e);
+                }
+                eprintln!("{e}");
+                first_err.get_or_insert(e);
+            }
+        }
+    }
+
+    for (tok, err) in token_errors {
+        let msg = format!("{tok}: {err}");
+        eprintln!("{msg}");
+        first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
+    }
+
+    match first_err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
+}
+
 /// Print the post-mutation confirmation line matching the old behavior:
 /// update/merge → `UPDATE`; rekey → `RENAME` + `CREATE`.
 pub fn render_outcome(outcome: &UpdateOutcome, output: &OutputArgs, db: &Db) {
@@ -328,6 +461,8 @@ mod tests {
             id_delimiter: ":".to_string(),
             keys: vec![],
             comment: None,
+            dry_run: false,
+            strict: false,
             output_flags: Default::default(),
         }
     }

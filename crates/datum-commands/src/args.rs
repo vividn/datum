@@ -852,7 +852,8 @@ pub struct GetArgs {
 /// Arguments shared by `update`, `merge`, and `rekey`.
 #[derive(Args, Debug)]
 pub struct UpdateArgs {
-    /// Id or slug of the existing entry to mutate.
+    /// Id or slug of the existing entry to mutate. Accepts a comma-separated
+    /// list of ids/slugs/wildcards to mutate many entries in one invocation.
     pub id_or_slug: String,
 
     /// Positional payload: bare tokens replace the primary value; key=value
@@ -880,6 +881,15 @@ pub struct UpdateArgs {
     /// Optional comment appended to extra_data.
     #[arg(short = 'c', long)]
     pub comment: Option<String>,
+
+    /// Show which entries would be mutated without writing anything.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+
+    /// In batch mode, abort on the first error instead of continuing and
+    /// reporting per-entry results.
+    #[arg(long)]
+    pub strict: bool,
 
     #[command(flatten)]
     pub output_flags: OutputFlags,
@@ -939,11 +949,21 @@ impl EditArgs {
 
 #[derive(Args, Debug)]
 pub struct DeleteArgs {
-    /// Entry id or slug
+    /// Entry id or slug. Accepts a comma-separated list of ids/slugs/wildcards
+    /// to delete many entries in one invocation.
     pub id_or_slug: String,
     /// Skip confirmation prompt
     #[arg(long)]
     pub force: bool,
+
+    /// Show which entries would be deleted without writing anything.
+    #[arg(long = "dry-run")]
+    pub dry_run: bool,
+
+    /// In batch mode, abort on the first error instead of continuing and
+    /// reporting per-entry results.
+    #[arg(long)]
+    pub strict: bool,
 
     #[command(flatten)]
     pub output_flags: OutputFlags,

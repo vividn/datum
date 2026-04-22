@@ -6,7 +6,7 @@ use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, ListParams, RetimeFilter, TimeMetric},
     entry::{new_hid, Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
-    ids::resolve_quickid_single,
+    ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
 };
 use regex::Regex;
@@ -1652,13 +1652,119 @@ pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Batch-resolution surface for S3: how "only a tombstone matches" should
+/// be reported.
+#[derive(Clone, Copy)]
+pub(crate) enum BatchMode {
+    /// Live only. A literal token hitting a soft-deleted row surfaces as
+    /// `NotFound` — delete won't re-delete a tombstone.
+    Live,
+    /// Live preferred; a literal token matching only a tombstone surfaces
+    /// the tombstoned entry so update/merge/rekey can emit their tailored
+    /// "Cannot X tombstoned entry" error. Wildcards still only match live.
+    LiveOrTombstone,
+}
+
+/// Split a comma-separated id argument, resolve each token, and return a
+/// deduplicated entry list plus the tokens that failed to resolve. Wildcards
+/// (`*` / `?`) expand to every live match; literals go through the quickId
+/// resolver (underscore shorthands, exact slug/hid, hid prefix). Empty
+/// tokens (`","` / trailing comma) are silently dropped so datum-style
+/// `"abc,def,ghi,"` works without special casing. Duplicates (two tokens
+/// reaching the same slug) collapse in first-seen order.
+pub(crate) fn resolve_batch(
+    db: &Db,
+    input: &str,
+    mode: BatchMode,
+) -> (Vec<Entry>, Vec<(String, anyhow::Error)>) {
+    let mut entries: Vec<Entry> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
+    for raw in input.split(',') {
+        let token = raw.trim();
+        if token.is_empty() {
+            continue;
+        }
+        match resolve_quickid(db, token) {
+            Ok(matches) if matches.is_empty() => {
+                // Literal (non-wildcard) tokens may refer to a tombstone —
+                // surface it in LiveOrTombstone mode so update/rekey can
+                // emit their tailored error. Wildcards stay strictly live.
+                if matches!(mode, BatchMode::LiveOrTombstone) && !contains_wildcard(token) {
+                    if let Ok(tomb) = db.get_entry_including_deleted(token) {
+                        if seen.insert(tomb.slug.clone()) {
+                            entries.push(tomb);
+                        }
+                        continue;
+                    }
+                }
+                errors.push((
+                    token.to_string(),
+                    anyhow::Error::from(datum_core::error::DatumError::NotFound(
+                        token.to_string(),
+                    )),
+                ));
+            }
+            Ok(matches) => {
+                for entry in matches {
+                    if seen.insert(entry.slug.clone()) {
+                        entries.push(entry);
+                    }
+                }
+            }
+            Err(e) => errors.push((token.to_string(), anyhow::Error::from(e))),
+        }
+    }
+    (entries, errors)
+}
+
 pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
-    let entry = resolve_quickid_single(db, &args.id_or_slug)
-        .map_err(anyhow::Error::from)?;
+    let output = args.output();
+    let (entries, token_errors) = resolve_batch(db, &args.id_or_slug, BatchMode::Live);
+
+    // Nothing resolved — propagate the first token error verbatim so single-token
+    // NotFound / AmbiguousPrefix surfaces unchanged in the common case.
+    if entries.is_empty() {
+        if let Some((_, err)) = token_errors.into_iter().next() {
+            return Err(err);
+        }
+        anyhow::bail!("no entries specified");
+    }
+
+    // Strict: abort up-front on any resolution error so we don't half-apply
+    // against a partial resolution.
+    if args.strict {
+        if let Some((_, err)) = token_errors.first() {
+            return Err(anyhow::anyhow!("{err}"));
+        }
+    }
+
+    if args.dry_run {
+        for entry in &entries {
+            print_entry(entry, registry.as_ref());
+        }
+        for (tok, err) in &token_errors {
+            eprintln!("[dry-run] resolve '{tok}': {err}");
+        }
+        eprintln!(
+            "[dry-run] would delete {} {}",
+            entries.len(),
+            if entries.len() == 1 { "entry" } else { "entries" },
+        );
+        return Ok(());
+    }
+
     if !args.force {
-        print_entry(&entry, registry.as_ref());
-        eprint!("Delete this entry? [y/N] ");
+        for entry in &entries {
+            print_entry(entry, registry.as_ref());
+        }
+        let prompt = if entries.len() == 1 {
+            "Delete this entry?".to_string()
+        } else {
+            format!("Delete these {} entries?", entries.len())
+        };
+        eprint!("{prompt} [y/N] ");
         use std::io::BufRead;
         let stdin = std::io::stdin();
         let line = stdin
@@ -1671,10 +1777,32 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
             return Ok(());
         }
     }
-    db.soft_delete_entry(&entry.slug)
-        .map_err(anyhow::Error::from)?;
-    show_delete(&entry, registry.as_ref(), &args.output());
-    Ok(())
+
+    let mut first_err: Option<anyhow::Error> = None;
+    for entry in &entries {
+        match db.soft_delete_entry(&entry.slug) {
+            Ok(()) => show_delete(entry, registry.as_ref(), &output),
+            Err(e) => {
+                let msg = format!("{}: {}", entry.slug, e);
+                if args.strict {
+                    return Err(anyhow::anyhow!(msg));
+                }
+                eprintln!("{msg}");
+                first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
+            }
+        }
+    }
+
+    for (tok, err) in token_errors {
+        let msg = format!("{tok}: {err}");
+        eprintln!("{msg}");
+        first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
+    }
+
+    match first_err {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 // ─── Edit ────────────────────────────────────────────────────────────────────
@@ -3722,6 +3850,8 @@ mod tests {
             id_delimiter: ":".to_string(),
             keys: vec![],
             comment: None,
+            dry_run: false,
+            strict: false,
             output_flags: Default::default(),
         }
     }
@@ -4357,7 +4487,13 @@ mod tests {
         db.insert_entry(&e).unwrap();
 
         cmd_delete(
-            DeleteArgs { id_or_slug: id.clone(), force: true, output_flags: Default::default() },
+            DeleteArgs {
+                id_or_slug: id.clone(),
+                force: true,
+                dry_run: false,
+                strict: false,
+                output_flags: Default::default(),
+            },
             &db,
         )
         .unwrap();
