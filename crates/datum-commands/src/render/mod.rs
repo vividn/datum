@@ -28,6 +28,13 @@ const GRAY_FG: &str = "\x1b[90m";
 const DOT: &str = "●";
 const NON_OCCUR: &str = "¢";
 const NULL_SET: &str = "∅";
+/// Prefix marker for the first write to a previously-unseen field.
+/// Deliberately a printable glyph (not an ANSI escape) so it survives
+/// `strip_ansi` and is visible in pipes — the user sees they just
+/// introduced a new field.
+const FIRST_TIME_MARKER: &str = "✨ ";
+/// Mid-run separator between the prior and new state blocks.
+const TRANSITION_ARROW: &str = "▶";
 
 // ─── Public API: Show / OutputArgs / Action ──────────────────────────────────
 
@@ -79,6 +86,25 @@ impl OutputArgs {
     }
 }
 
+/// Extra, caller-supplied context for rendering a single write.
+///
+/// The default renderer works purely from [`Entry`] + [`SpecRegistry`], which
+/// is enough for table views and backfill tools. For interactive writes the
+/// command layer can enrich the output with information that isn't on the
+/// entry itself:
+///
+/// * `last_state` — the field's prior active state, so the state block can
+///   render a `[prior ▶ next]` transition indicator matching original
+///   datum's `formatState` three-fragment motif.
+/// * `is_first_occurrence` — true when daydumb has never seen this field
+///   before; the renderer prepends [`FIRST_TIME_MARKER`] to make new-field
+///   writes visually distinctive.
+#[derive(Clone, Debug, Default)]
+pub struct RenderContext {
+    pub last_state: Option<JsonValue>,
+    pub is_first_occurrence: bool,
+}
+
 /// Semantic outcome of a write. Maps to datum's `ACTIONS` vocabulary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
@@ -121,11 +147,18 @@ impl Action {
 
 // ─── TTY / color gating ──────────────────────────────────────────────────────
 
-/// ANSI colors are suppressed when stdout is not a TTY. Testable knob:
-/// honoured globally via [`force_color_override`] which the test harness sets.
+/// ANSI colors are suppressed when stdout is not a TTY, when the standard
+/// `NO_COLOR` env var is set (<https://no-color.org/>), or when the
+/// test-only `DATUM_COLOR=0`/`never` override is in force.
+///
+/// Precedence: `DATUM_COLOR` (explicit override, highest) → `NO_COLOR`
+/// (standard opt-out) → TTY detection.
 fn color_enabled() -> bool {
     if let Some(f) = force_color() {
         return f;
+    }
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
     }
     std::io::stdout().is_terminal()
 }
@@ -145,6 +178,119 @@ fn paint(code: &str, body: &str) -> String {
     } else {
         format!("{code}{body}{RESET}")
     }
+}
+
+// ─── Truecolor palette ────────────────────────────────────────────────────────
+//
+// Original datum renders field and state colors primarily as **backgrounds**
+// (`chalk.bgHex(...)`) with a contrast-aware foreground. Porting that look
+// requires RGB triples, not the ANSI-256 fallback we used previously. The
+// helpers below resolve spec colors (hex) or derive a stable fallback from
+// `sha256(name)`, then emit truecolor 48/38;2;R;G;B escape pairs.
+
+/// RGB color triple.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Rgb {
+    r: u8,
+    g: u8,
+    b: u8,
+}
+
+impl Rgb {
+    const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
+    const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
+
+    fn fg(self) -> String {
+        format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
+    }
+    fn bg(self) -> String {
+        format!("\x1b[48;2;{};{};{}m", self.r, self.g, self.b)
+    }
+}
+
+/// YIQ perceived brightness, matching datum's `getColorBrightness`.
+fn brightness(rgb: Rgb) -> u32 {
+    (rgb.r as u32 * 299 + rgb.g as u32 * 587 + rgb.b as u32 * 114) / 1000
+}
+
+/// Pick black or white to contrast against `bg`, matching datum's
+/// `getContrastTextColor` default path.
+fn contrast_fg(bg: Rgb) -> Rgb {
+    if brightness(bg) > 128 { Rgb::BLACK } else { Rgb::WHITE }
+}
+
+fn parse_hex(s: &str) -> Option<Rgb> {
+    let s = s.trim_start_matches('#');
+    if s.len() != 6 {
+        return None;
+    }
+    Some(Rgb {
+        r: u8::from_str_radix(&s[0..2], 16).ok()?,
+        g: u8::from_str_radix(&s[2..4], 16).ok()?,
+        b: u8::from_str_radix(&s[4..6], 16).ok()?,
+    })
+}
+
+/// ANSI-256 cube index → approximate RGB. Used only when a spec's `color`
+/// was stored as a legacy ANSI-256 number instead of a hex string.
+fn ansi256_rgb(n: u8) -> Rgb {
+    // Named colors 0..15 aren't well-defined in terminal standards; fall back
+    // to a mid-grey to keep contrast checks sensible.
+    if n < 16 {
+        return Rgb { r: 128, g: 128, b: 128 };
+    }
+    if n >= 232 {
+        let v = 8 + (n - 232) * 10;
+        return Rgb { r: v, g: v, b: v };
+    }
+    let idx = n - 16;
+    let r = idx / 36;
+    let g = (idx % 36) / 6;
+    let b = idx % 6;
+    let q = |c: u8| -> u8 { if c == 0 { 0 } else { 55 + 40 * c } };
+    Rgb { r: q(r), g: q(g), b: q(b) }
+}
+
+/// Derive a stable RGB color from `sha256(name)`. Mirrors datum's
+/// `md5Color` intent with a more widely-available hash. Low-luminosity
+/// results get nudged brighter so the color remains visible on dark terms.
+fn hash_to_rgb(name: &str) -> Rgb {
+    let hash = Sha256::digest(name.as_bytes());
+    let mut rgb = Rgb { r: hash[0], g: hash[1], b: hash[2] };
+    if brightness(rgb) < 40 {
+        // One channel gets boosted high; which one is stable per name.
+        match hash[3] % 3 {
+            0 => rgb.r = rgb.r.max(180),
+            1 => rgb.g = rgb.g.max(180),
+            _ => rgb.b = rgb.b.max(180),
+        }
+    }
+    rgb
+}
+
+/// Resolve a stored color string (hex / ANSI-256 number) or fall back to a
+/// hash derived from `fallback_name`. Returns an RGB triple suitable for
+/// both foreground and background escape emission.
+fn resolve_rgb(stored: Option<&str>, fallback_name: &str) -> Rgb {
+    if let Some(s) = stored {
+        if let Some(rgb) = parse_hex(s) {
+            return rgb;
+        }
+        if let Ok(n) = s.trim_start_matches('#').parse::<u8>() {
+            return ansi256_rgb(n);
+        }
+    }
+    hash_to_rgb(fallback_name)
+}
+
+/// Paint `body` with `bg` color + contrast-derived fg. The "background is
+/// primary" style datum uses for field/state blocks.
+fn paint_bg(bg: Rgb, body: &str) -> String {
+    if !color_enabled() {
+        return body.to_string();
+    }
+    let fg = contrast_fg(bg);
+    format!("{}{}{}{}", bg.bg(), fg.fg(), body, RESET)
 }
 
 // ─── Extraction (datum's `extractFormatted`) ─────────────────────────────────
@@ -167,17 +313,38 @@ pub(crate) struct Extracted {
 }
 
 /// Extract per-entry rendered fragments. Colors, if enabled, are applied here.
-pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&SpecRegistry>) -> Extracted {
+pub(crate) fn extract(
+    entry: &Entry,
+    action: Option<Action>,
+    registry: Option<&SpecRegistry>,
+) -> Extracted {
+    extract_with_context(entry, action, registry, None)
+}
+
+/// Context-aware variant. `ctx` supplies caller-side information (prior
+/// state, first-time-tracked marker) that the entry alone can't carry.
+pub(crate) fn extract_with_context(
+    entry: &Entry,
+    action: Option<Action>,
+    registry: Option<&SpecRegistry>,
+    ctx: Option<&RenderContext>,
+) -> Extracted {
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
-    let action_text = action.map(|a| paint_action(a));
+    let action_text = action.map(paint_action);
     let slug_text = Some(paint(GRAY_FG, &entry.slug));
-    let hid_text = Some(paint(action.map(Action::ansi_color).unwrap_or(""), &short_hid(&entry.hid)));
+    let hid_text = Some(paint(
+        action.map(Action::ansi_color).unwrap_or(""),
+        &short_hid(&entry.hid),
+    ));
 
     let occur = entry.start_time.as_ref().map(|t| format_human_time(t.utc, false));
     let create = Some(format_human_time(entry.create_time, true));
     let modify = Some(format_human_time(entry.modify_time, true));
-    let hybrid = occur.clone().or_else(|| Some(format_gray_prefix("c", format_human_time(entry.create_time, false))));
+    let hybrid = occur
+        .clone()
+        .or_else(|| Some(format_gray_prefix("c", format_human_time(entry.create_time, false))));
 
+    let first = ctx.map(|c| c.is_first_occurrence).unwrap_or(false);
     Extracted {
         action: action_text,
         slug: slug_text,
@@ -186,8 +353,8 @@ pub(crate) fn extract(entry: &Entry, action: Option<Action>, registry: Option<&S
         time_create: create,
         time_modify: modify,
         time_hybrid: hybrid,
-        field: Some(format_field(&entry.field, spec)),
-        state: format_state(entry, spec),
+        field: Some(format_field(&entry.field, spec, first)),
+        state: format_state(entry, spec, ctx),
         dur: entry.duration_seconds().map(format_duration),
     }
 }
@@ -210,83 +377,159 @@ fn paint_action(action: Action) -> String {
 
 // ─── Field / state colors ────────────────────────────────────────────────────
 
-fn format_field(field: &str, spec: Option<&FieldSpec>) -> String {
-    let stored = spec.and_then(|s| s.color.as_deref());
-    let code = field_color_code(field, stored);
-    paint(&code, field)
-}
-
-/// Resolve field color: stored spec color → hash-derived fallback.
-fn field_color_code(field: &str, stored: Option<&str>) -> String {
-    if let Some(c) = stored {
-        ansi_from_stored(c, field)
+fn format_field(field: &str, spec: Option<&FieldSpec>, first_time: bool) -> String {
+    let rgb = field_rgb(field, spec);
+    let painted = paint_bg(rgb, field);
+    if first_time {
+        format!("{FIRST_TIME_MARKER}{painted}")
     } else {
-        let n = hash_to_ansi256(field);
-        format!("\x1b[38;5;{n}m")
+        painted
     }
 }
 
-fn format_state(entry: &Entry, spec: Option<&FieldSpec>) -> Option<String> {
-    // Rendered text for the current value, if any.
-    let state_str: Option<String> = match &entry.value {
-        None => None,
-        Some(JsonValue::Null) => Some(NULL_SET.to_string()),
-        Some(JsonValue::Bool(true)) => Some("start".to_string()),
-        Some(JsonValue::Bool(false)) => Some("end".to_string()),
-        Some(JsonValue::String(s)) => Some(s.clone()),
-        Some(other) => Some(other.to_string()),
-    };
+/// Resolve field color as RGB: stored spec color → hash-derived fallback.
+fn field_rgb(field: &str, spec: Option<&FieldSpec>) -> Rgb {
+    resolve_rgb(spec.and_then(|s| s.color.as_deref()), field)
+}
 
-    // Decorators:
-    //  - Occur/start with no state → bullet "●"
-    //  - Stop with no state → "end"
-    //  - Note with no occur time → "¢"
-    let field_stored = spec.and_then(|s| s.color.as_deref());
-    let state_colors_map = spec
-        .map(|s| s.state_colors.clone())
-        .unwrap_or_default();
-
-    let bullet = match (&entry.verb, &state_str) {
-        (Verb::Occur, None) | (Verb::Start, None) => {
-            let code = field_color_code(&entry.field, field_stored);
-            Some(paint(&code, DOT))
+/// Resolve state color as RGB: per-state override → field color → hash.
+fn state_rgb(field: &str, state: &str, spec: Option<&FieldSpec>) -> Rgb {
+    if let Some(s) = spec {
+        if let Some(c) = s.state_colors.get(state) {
+            return resolve_rgb(Some(c.as_str()), state);
         }
-        (Verb::Stop, None) => Some("end".to_string()),
-        (Verb::Add, _) if entry.start_time.is_none() => {
-            let code = field_color_code(&entry.field, field_stored);
-            Some(paint(&code, NON_OCCUR))
+        if let Some(c) = s.color.as_deref() {
+            return resolve_rgb(Some(c), field);
+        }
+    }
+    hash_to_rgb(state)
+}
+
+/// A discrete "state piece" the renderer can emit — either a point glyph,
+/// a plain word (no color), or a padded bg-color block matching datum's
+/// `stateChalk`.
+enum StatePiece {
+    /// Foreground-only glyph in the given color. Used for `●` (point occur)
+    /// and `¢` (non-occur note) — matches datum's `chalk.hex(stateColor)(DOT)`.
+    Glyph { text: String, color: Rgb },
+    /// Padded background block: ` text ` on `color`, with contrast fg.
+    /// The visual workhorse — fields, start, strings, null, etc.
+    Block { text: String, color: Rgb },
+    /// Plain text, no ANSI at all (for `end` / false state).
+    Plain(String),
+}
+
+impl StatePiece {
+    fn render(&self) -> String {
+        match self {
+            StatePiece::Glyph { text, color } => paint(&color.fg(), text),
+            StatePiece::Block { text, color } => paint_bg(*color, &format!(" {text} ")),
+            StatePiece::Plain(s) => s.clone(),
+        }
+    }
+
+    /// Whether this piece contributes a coloured block that pairs naturally
+    /// with a transition arrow. Plain `end` and bare glyphs don't.
+    fn is_block(&self) -> bool {
+        matches!(self, StatePiece::Block { .. })
+    }
+}
+
+/// Map `value` → a [`StatePiece`] according to datum's `formatState` rules.
+/// Returns None when the value is absent (caller falls back to a verb-level
+/// bullet).
+fn piece_for_value(value: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> Option<StatePiece> {
+    match value? {
+        JsonValue::Null => Some(StatePiece::Block {
+            text: NULL_SET.to_string(),
+            color: Rgb { r: 136, g: 136, b: 136 }, // #888, datum's null grey
+        }),
+        // `start` uses the field's colour; it's the "field is active" signal.
+        JsonValue::Bool(true) => Some(StatePiece::Block {
+            text: "start".to_string(),
+            color: field_rgb(field, spec),
+        }),
+        // `end` renders plain — matches `stateChalk({state: false}) === chalk`.
+        JsonValue::Bool(false) => Some(StatePiece::Plain("end".to_string())),
+        JsonValue::String(s) => Some(StatePiece::Block {
+            text: s.clone(),
+            color: state_rgb(field, s, spec),
+        }),
+        other => {
+            let t = other.to_string();
+            let c = state_rgb(field, &t, spec);
+            Some(StatePiece::Block { text: t, color: c })
+        }
+    }
+}
+
+/// Verb-level glyph when the entry has no explicit value (e.g. bare `occur`
+/// or `start`). Returns None for verbs without a default glyph.
+fn piece_for_verb(entry: &Entry, spec: Option<&FieldSpec>) -> Option<StatePiece> {
+    let fg = field_rgb(&entry.field, spec);
+    match &entry.verb {
+        // Point occur / start with no value → foreground-only bullet.
+        Verb::Occur | Verb::Start => Some(StatePiece::Glyph { text: DOT.to_string(), color: fg }),
+        Verb::Stop => Some(StatePiece::Plain("end".to_string())),
+        // `add` with no start_time is a free-floating note.
+        Verb::Add if entry.start_time.is_none() => {
+            Some(StatePiece::Glyph { text: NON_OCCUR.to_string(), color: fg })
         }
         _ => None,
-    };
-
-    match (bullet, state_str) {
-        (Some(b), None) => Some(b),
-        (None, Some(s)) => {
-            let code = state_color_code(&entry.field, &s, field_stored, &state_colors_map);
-            Some(paint(&code, &s))
-        }
-        (Some(b), Some(s)) => {
-            let code = state_color_code(&entry.field, &s, field_stored, &state_colors_map);
-            Some(format!("{b} {}", paint(&code, &s)))
-        }
-        (None, None) => None,
     }
 }
 
-fn state_color_code(
-    field: &str,
-    state: &str,
-    field_stored: Option<&str>,
-    state_colors: &HashMap<String, String>,
-) -> String {
-    if let Some(c) = state_colors.get(state) {
-        return ansi_from_stored(c, state);
+/// Render the state column. When a prior state is available via
+/// [`RenderContext`] or `entry.data.last_state` AND both prior and next
+/// are real coloured blocks, emit datum's transition motif:
+/// `<prior> ▶ <next>`. Otherwise render the single current piece.
+fn format_state(
+    entry: &Entry,
+    spec: Option<&FieldSpec>,
+    ctx: Option<&RenderContext>,
+) -> Option<String> {
+    let current = match piece_for_value(entry.value.as_ref(), &entry.field, spec) {
+        Some(p) => p,
+        None => return piece_for_verb(entry, spec).map(|p| p.render()),
+    };
+
+    // Prior state: explicit ctx override wins; otherwise peek at
+    // `extra_data.last_state` (written by `stop --last-state`).
+    let prior_value = ctx
+        .and_then(|c| c.last_state.as_ref())
+        .or_else(|| {
+            entry
+                .data
+                .as_ref()
+                .and_then(|d| d.get("last_state"))
+        });
+
+    let transition = prior_value
+        .and_then(|pv| piece_for_value(Some(pv), &entry.field, spec))
+        .filter(|prior| {
+            // Only emit a transition when both sides are real blocks AND the
+            // colors differ. Two identical coloured blocks or a plain prior
+            // would be visual noise.
+            prior.is_block()
+                && current.is_block()
+                && piece_colors_differ(prior, &current)
+        });
+
+    Some(match transition {
+        Some(prior) => format!(
+            "{}{TRANSITION_ARROW}{}",
+            prior.render(),
+            current.render()
+        ),
+        None => current.render(),
+    })
+}
+
+fn piece_colors_differ(a: &StatePiece, b: &StatePiece) -> bool {
+    match (a, b) {
+        (StatePiece::Block { color: ca, .. }, StatePiece::Block { color: cb, .. }) => ca != cb,
+        _ => false,
     }
-    if let Some(c) = field_stored {
-        return ansi_from_stored(c, field);
-    }
-    let n = hash_to_ansi256(state);
-    format!("\x1b[38;5;{n}m")
 }
 
 // ─── Time rendering ──────────────────────────────────────────────────────────
@@ -321,7 +564,25 @@ fn format_gray_prefix(prefix: &str, body: String) -> String {
 // ─── Action output: headers + info lines ─────────────────────────────────────
 
 /// Print the `CREATE`-style two-line header for a single entry.
-pub fn show_action(entry: &Entry, action: Action, registry: Option<&SpecRegistry>, args: &OutputArgs) {
+pub fn show_action(
+    entry: &Entry,
+    action: Action,
+    registry: Option<&SpecRegistry>,
+    args: &OutputArgs,
+) {
+    show_action_with_context(entry, action, registry, None, args)
+}
+
+/// Context-aware variant. Passing a [`RenderContext`] enables the transition
+/// indicator and first-time-tracked marker; `None` yields identical output to
+/// [`show_action`].
+pub fn show_action_with_context(
+    entry: &Entry,
+    action: Action,
+    registry: Option<&SpecRegistry>,
+    ctx: Option<&RenderContext>,
+    args: &OutputArgs,
+) {
     if args.silent() {
         return;
     }
@@ -332,7 +593,7 @@ pub fn show_action(entry: &Entry, action: Action, registry: Option<&SpecRegistry
         return;
     }
 
-    let ex = extract(entry, Some(action), registry);
+    let ex = extract_with_context(entry, Some(action), registry, ctx);
     // Header line: action + hid + slug (datum's user-facing id)
     let header = [ex.action.as_deref(), ex.hid.as_deref(), ex.slug.as_deref()]
         .into_iter()
@@ -395,6 +656,25 @@ pub fn show_nodiff(entry: &Entry, registry: Option<&SpecRegistry>, args: &Output
 }
 pub fn show_failed(entry: &Entry, registry: Option<&SpecRegistry>, args: &OutputArgs) {
     show_action(entry, Action::Failed, registry, args);
+}
+
+/// Context-aware write renderer. Convenience entry point for command-layer
+/// callers that have prior-state and/or first-time-tracked info to hand.
+pub fn show_create_with_context(
+    entry: &Entry,
+    registry: Option<&SpecRegistry>,
+    ctx: &RenderContext,
+    args: &OutputArgs,
+) {
+    show_action_with_context(entry, Action::Create, registry, Some(ctx), args);
+}
+pub fn show_update_with_context(
+    entry: &Entry,
+    registry: Option<&SpecRegistry>,
+    ctx: &RenderContext,
+    args: &OutputArgs,
+) {
+    show_action_with_context(entry, Action::Update, registry, Some(ctx), args);
 }
 
 /// Datum's RENAME output: before id ⟶ after id.
@@ -1154,18 +1434,21 @@ mod tests {
 
     #[test]
     fn state_glyph_for_point_occur() {
-        // An `occur` with no value → bullet glyph in state col.
+        // An `occur` with no value → foreground-only bullet glyph.
         let entry = sample_entry("coffee", Verb::Occur, None);
-        let state = format_state(&entry, None).unwrap();
+        let state = format_state(&entry, None, None).unwrap();
         assert_eq!(strip_ansi(&state), DOT);
     }
 
     #[test]
     fn state_glyph_for_switch_true_false() {
+        // `true` renders as a padded "start" block ( start ); `false` is
+        // plain "end" (no bg). strip_ansi preserves the padding so we
+        // trim the result for portable assertions.
         let entry_on = sample_entry("mood", Verb::Switch, Some(JsonValue::Bool(true)));
         let entry_off = sample_entry("mood", Verb::Switch, Some(JsonValue::Bool(false)));
-        assert_eq!(strip_ansi(&format_state(&entry_on, None).unwrap()), "start");
-        assert_eq!(strip_ansi(&format_state(&entry_off, None).unwrap()), "end");
+        assert_eq!(strip_ansi(&format_state(&entry_on, None, None).unwrap()).trim(), "start");
+        assert_eq!(strip_ansi(&format_state(&entry_off, None, None).unwrap()), "end");
     }
 
     #[test]
@@ -1201,5 +1484,169 @@ mod tests {
     fn sample_entry(field: &str, verb: Verb, value: Option<JsonValue>) -> Entry {
         let t = DatumTime::now();
         Entry::new(field, verb, value, None, None, Some(t), None, "d1")
+    }
+
+    // ─── S4 visual parity tests ──────────────────────────────────────────────
+
+    /// With colors forced on, a string state emits a truecolor BG escape
+    /// sequence (`48;2;…`). This is the core of the "background-primary"
+    /// port; previously only `38;5;…` foreground escapes were emitted.
+    #[test]
+    fn string_state_uses_truecolor_background() {
+        // Scope the env var to just this test.
+        let _guard = ColorGuard::force_on();
+        let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
+        let out = format_state(&entry, None, None).unwrap();
+        assert!(
+            out.contains("\x1b[48;2;"),
+            "expected truecolor BG escape, got: {out:?}"
+        );
+    }
+
+    /// Transition motif: prior-state block + arrow + current-state block,
+    /// both wrapping the state word with single-space padding per datum.
+    #[test]
+    fn transition_indicator_drawn_when_prior_state_differs() {
+        let _guard = ColorGuard::force_on();
+        let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
+        let ctx = RenderContext {
+            last_state: Some(JsonValue::from("tired")),
+            is_first_occurrence: false,
+        };
+        let out = format_state(&entry, None, Some(&ctx)).unwrap();
+        let stripped = strip_ansi(&out);
+        assert!(
+            stripped.contains(TRANSITION_ARROW),
+            "expected transition arrow in {stripped:?}"
+        );
+        assert!(stripped.contains("tired"), "prior state missing: {stripped:?}");
+        assert!(stripped.contains("happy"), "current state missing: {stripped:?}");
+        // Prior appears before current in the composed string.
+        assert!(
+            stripped.find("tired").unwrap() < stripped.find("happy").unwrap(),
+            "prior must render first: {stripped:?}"
+        );
+    }
+
+    /// No arrow when the prior state matches the current one — the user
+    /// would just see a doubled block.
+    #[test]
+    fn transition_suppressed_when_prior_equals_current() {
+        let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
+        let ctx = RenderContext {
+            last_state: Some(JsonValue::from("happy")),
+            is_first_occurrence: false,
+        };
+        let out = format_state(&entry, None, Some(&ctx)).unwrap();
+        assert!(!strip_ansi(&out).contains(TRANSITION_ARROW));
+    }
+
+    /// `extra_data.last_state` (written by `stop --last-state`) feeds the
+    /// transition when no explicit ctx override is present.
+    #[test]
+    fn transition_reads_last_state_from_extra_data() {
+        let mut entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
+        entry.data = Some(serde_json::json!({ "last_state": "tired" }));
+        let out = format_state(&entry, None, None).unwrap();
+        assert!(strip_ansi(&out).contains(TRANSITION_ARROW));
+    }
+
+    /// First-time marker prepends `✨ ` to the rendered field name. The
+    /// sparkle is a printable glyph (not an ANSI escape) so pipes and
+    /// `strip_ansi` preserve it.
+    #[test]
+    fn first_time_marker_prepends_field() {
+        let out_plain = format_field("newthing", None, false);
+        let out_marked = format_field("newthing", None, true);
+        assert!(
+            !strip_ansi(&out_plain).starts_with(FIRST_TIME_MARKER),
+            "plain first-time=false must NOT have sparkle: {out_plain:?}"
+        );
+        assert!(
+            strip_ansi(&out_marked).starts_with(FIRST_TIME_MARKER),
+            "first-time=true must start with sparkle: {out_marked:?}"
+        );
+    }
+
+    /// With the de-facto `NO_COLOR` env var set, the color gate should
+    /// return false regardless of terminal state. This is the pipe-friendly
+    /// behaviour the bead asks for.
+    #[test]
+    fn no_color_env_suppresses_all_ansi() {
+        // Use the NO_COLOR path explicitly by clearing DATUM_COLOR and
+        // setting NO_COLOR. The guard restores both on drop.
+        let _datum = ScopedEnv::set("DATUM_COLOR", None);
+        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        assert!(!color_enabled());
+        let rgb = Rgb { r: 255, g: 0, b: 0 };
+        assert_eq!(paint_bg(rgb, "hi"), "hi");
+        assert_eq!(paint(&rgb.fg(), "hi"), "hi");
+    }
+
+    /// `DATUM_COLOR` overrides `NO_COLOR` — useful for the internal test
+    /// matrix that wants to force colour on regardless of env.
+    #[test]
+    fn datum_color_overrides_no_color() {
+        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
+        assert!(color_enabled());
+    }
+
+    /// Contrast-fg picks black for bright backgrounds and white for dark —
+    /// matches datum's `getColorBrightness` / YIQ threshold.
+    #[test]
+    fn contrast_fg_flips_on_brightness_boundary() {
+        assert_eq!(contrast_fg(Rgb { r: 255, g: 255, b: 255 }), Rgb::BLACK);
+        assert_eq!(contrast_fg(Rgb { r: 0, g: 0, b: 0 }), Rgb::WHITE);
+    }
+
+    /// Hex parser accepts both `#rrggbb` and `rrggbb`, rejects bad lengths.
+    #[test]
+    fn parse_hex_accepts_hash_prefix_and_rejects_garbage() {
+        assert_eq!(parse_hex("#ff6600"), Some(Rgb { r: 0xff, g: 0x66, b: 0x00 }));
+        assert_eq!(parse_hex("ff6600"), Some(Rgb { r: 0xff, g: 0x66, b: 0x00 }));
+        assert_eq!(parse_hex("xxx"), None);
+        assert_eq!(parse_hex("f60"), None);
+    }
+
+    // ─── Test helpers ────────────────────────────────────────────────────────
+
+    /// RAII guard that flips `DATUM_COLOR=1` for the test scope and restores
+    /// the prior value on drop. Required because `cargo test` threads share
+    /// a process, so one test changing env could bleed into another.
+    struct ColorGuard {
+        _datum: ScopedEnv,
+        _no: ScopedEnv,
+    }
+    impl ColorGuard {
+        fn force_on() -> Self {
+            Self {
+                _datum: ScopedEnv::set("DATUM_COLOR", Some("1")),
+                _no: ScopedEnv::set("NO_COLOR", None),
+            }
+        }
+    }
+
+    struct ScopedEnv {
+        key: &'static str,
+        prior: Option<std::ffi::OsString>,
+    }
+    impl ScopedEnv {
+        fn set(key: &'static str, value: Option<&str>) -> Self {
+            let prior = std::env::var_os(key);
+            match value {
+                Some(v) => std::env::set_var(key, v),
+                None => std::env::remove_var(key),
+            }
+            Self { key, prior }
+        }
+    }
+    impl Drop for ScopedEnv {
+        fn drop(&mut self) {
+            match self.prior.take() {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
     }
 }

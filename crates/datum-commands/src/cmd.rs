@@ -23,8 +23,9 @@ use crate::{
     },
     config::{self, device_id},
     render::{
-        print_entry, print_entry_pretty, print_now_view, print_table, show_create, show_delete,
-        show_exists, show_rename, show_update, TableArgs, TimeMetricCol,
+        print_entry, print_entry_pretty, print_now_view, print_table, show_create,
+        show_create_with_context, show_delete, show_exists, show_rename, show_update,
+        show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
 };
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
@@ -668,10 +669,21 @@ pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         }
     }
 
+    // Capture render hints *before* the insert:
+    //   1. first-time: spec doesn't exist yet (so `ensure_tracked` will create
+    //      one for Occur/Start). Used to prefix `✨ ` on new-field writes.
+    //   2. prior_state: for state-changing verbs, fetch the active state at
+    //      `time_start` minus one microsecond. That's the "before" half of
+    //      the transition indicator. A no-op prior (Null/False) means there
+    //      was nothing active; the renderer skips the indicator in that case.
+    let is_first_occurrence = db.load_spec(&entry.field)?.is_none();
+    let prior_state = capture_prior_state(db, &entry, &verb);
+
     let strategy = args.conflict_strategy();
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
     let registry = load_registry(db).ok();
     let output = args.output();
+    let ctx = RenderContext { last_state: prior_state, is_first_occurrence };
     match &outcome {
         InsertOutcome::Inserted { slug } => {
             if matches!(verb, Verb::Occur | Verb::Start) {
@@ -681,20 +693,20 @@ pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
             // forced a suffixed retry — fetch the canonical row so the
             // display reflects what actually hit the DB.
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
-            show_create(&fresh, registry.as_ref(), &output);
+            show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
         }
         InsertOutcome::Updated { slug } => {
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
-            show_update(&fresh, registry.as_ref(), &output);
+            show_update_with_context(&fresh, registry.as_ref(), &ctx, &output);
         }
         InsertOutcome::Merged { slug } => {
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
-            show_update(&fresh, registry.as_ref(), &output);
+            show_update_with_context(&fresh, registry.as_ref(), &ctx, &output);
         }
         InsertOutcome::Rekeyed { new_slug, old_slug } => {
             show_rename(old_slug, new_slug, &output);
             if let Ok(fresh) = db.get_entry(new_slug) {
-                show_create(&fresh, registry.as_ref(), &output);
+                show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
             }
         }
         InsertOutcome::Ignored { slug } => {
@@ -706,6 +718,28 @@ pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         }
     }
     Ok(())
+}
+
+/// Look up the field's active state immediately before `entry`'s start time,
+/// so the renderer can draw a `[prior ▶ next]` transition indicator.
+///
+/// Returns `None` when:
+///   * the entry has no `start_time` (non-temporal note),
+///   * the verb doesn't represent a state change (Occur / Add / Block / Note),
+///   * the DB query fails or the active state is Null/False (no prior).
+fn capture_prior_state(db: &Db, entry: &Entry, verb: &Verb) -> Option<JsonValue> {
+    if !matches!(verb, Verb::Switch | Verb::Start | Verb::Stop) {
+        return None;
+    }
+    let at = entry.start_time.as_ref()?.utc;
+    // Probe one microsecond before the entry's start to avoid picking up the
+    // just-inserted row (the insert hasn't run yet, but this matches
+    // datum's "state as of just before this event" semantics).
+    let probe = at - chrono::Duration::microseconds(1);
+    match db.get_active_state(&entry.field, probe) {
+        Ok(JsonValue::Null) | Ok(JsonValue::Bool(false)) | Err(_) => None,
+        Ok(v) => Some(v),
+    }
 }
 
 /// Parsed LogArgs — distinguishes the slug-contributing id-key values from
