@@ -695,6 +695,19 @@ impl Db {
         Ok(n as usize)
     }
 
+    /// Whether any live (non-tombstoned) row has this content_hash. Read-only
+    /// dedup check used by `restore --dry-run` to project the outcome of an
+    /// insert without opening a write transaction.
+    pub fn has_entry_with_content_hash(&self, content_hash: &str) -> Result<bool> {
+        let n: i64 = self.conn.query_row(
+            "SELECT COUNT(*) FROM entries
+             WHERE content_hash = ?1 AND deleted_at IS NULL",
+            params![content_hash],
+            |row| row.get(0),
+        )?;
+        Ok(n > 0)
+    }
+
     /// Every entry in the store, **including tombstoned rows**. Undo uses this
     /// to locate deleted entries by slug/hid before restoring them.
     pub fn list_including_deleted(&self) -> Result<Vec<Entry>> {

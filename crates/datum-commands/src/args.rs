@@ -1218,6 +1218,14 @@ pub struct RestoreArgs {
     /// Default is to skip duplicates.
     #[arg(long)]
     pub force: bool,
+    /// Parse the backup and report what would be inserted/skipped/updated
+    /// without writing to the DB. Exit code is 0 if the restore would succeed.
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Emit a machine-readable JSON report instead of the human summary.
+    /// Useful with `--dry-run`.
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Args, Debug)]

@@ -2649,6 +2649,11 @@ fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
 /// `warnings` field carries human-readable notes about header state
 /// (legacy/missing, entry-count drift, etc.) — printed by `cmd_restore`
 /// after the outcome summary.
+///
+/// Field names describe the *committed* outcome. In dry-run mode
+/// (`dry_run == true`) they carry the **projected** outcome — i.e.
+/// "would be inserted / updated / skipped" — computed from read-only
+/// content_hash lookups without touching the DB.
 #[derive(Debug, Default)]
 pub(crate) struct RestoreReport {
     pub inserted: usize,
@@ -2660,6 +2665,12 @@ pub(crate) struct RestoreReport {
     pub header_source_db: Option<String>,
     pub header_entry_count: Option<usize>,
     pub warnings: Vec<String>,
+    /// True if the counts are projections from a dry-run, not committed writes.
+    pub dry_run: bool,
+    /// When the backup's schema version is below the binary's, every entry is
+    /// run through `migrate_entry_json` before insert. Reported as `(from, to)`
+    /// so dry-run output can surface the migration step that would run.
+    pub migration: Option<(u32, u32)>,
 }
 
 impl RestoreReport {
@@ -2669,14 +2680,56 @@ impl RestoreReport {
 }
 
 pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+    let dry_run = args.dry_run;
+    let json = args.json;
+    let force = args.force;
     let report = cmd_restore_with_report(args, db)?;
+
+    if json {
+        let out = serde_json::json!({
+            "dry_run": report.dry_run,
+            "scanned": report.total_processed(),
+            "would_insert": if report.dry_run { Some(report.inserted) } else { None },
+            "would_skip_dedupe": if report.dry_run { Some(report.skipped) } else { None },
+            "would_update": if report.dry_run { Some(report.updated) } else { None },
+            "inserted": if report.dry_run { None } else { Some(report.inserted) },
+            "updated": if report.dry_run { None } else { Some(report.updated) },
+            "skipped": if report.dry_run { None } else { Some(report.skipped) },
+            "header": {
+                "schema_version": report.header_schema_version,
+                "source_db": report.header_source_db,
+                "entry_count": report.header_entry_count,
+            },
+            "migration": report.migration.map(|(from, to)| serde_json::json!({"from": from, "to": to})),
+            "force": force,
+            "warnings": report.warnings,
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
     for w in &report.warnings {
         eprintln!("⚠ {w}");
     }
-    println!(
-        "✓ Restore: {} inserted, {} updated, {} skipped",
-        report.inserted, report.updated, report.skipped
-    );
+    if dry_run {
+        println!("Dry run: {} entries scanned (no DB changes)", report.total_processed());
+        println!("  Would insert: {}", report.inserted);
+        println!(
+            "  Would skip (content_hash dedupe): {}",
+            report.skipped
+        );
+        if force {
+            println!("  Would update (--force): {}", report.updated);
+        }
+        if let Some((from, to)) = report.migration {
+            println!("  Schema migration: v{from} → v{to} (applied to every entry)");
+        }
+    } else {
+        println!(
+            "✓ Restore: {} inserted, {} updated, {} skipped",
+            report.inserted, report.updated, report.skipped
+        );
+    }
     Ok(())
 }
 
@@ -2688,20 +2741,30 @@ pub(crate) fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<Rest
     };
 
     if is_targz_path(&args.path) {
-        restore_targz(&args.path, db, strategy)
+        restore_targz(&args.path, db, strategy, args.dry_run)
     } else {
-        restore_jsonl(&args.path, db, strategy)
+        restore_jsonl(&args.path, db, strategy, args.dry_run)
     }
 }
 
-fn restore_jsonl(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<RestoreReport> {
+fn restore_jsonl(
+    path: &str,
+    db: &Db,
+    strategy: ConflictStrategy,
+    dry_run: bool,
+) -> Result<RestoreReport> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Opening backup: {path}"))?;
     let reader = std::io::BufReader::new(file);
-    restore_from_reader(reader, db, strategy)
+    restore_from_reader(reader, db, strategy, dry_run)
 }
 
-fn restore_targz(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<RestoreReport> {
+fn restore_targz(
+    path: &str,
+    db: &Db,
+    strategy: ConflictStrategy,
+    dry_run: bool,
+) -> Result<RestoreReport> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Opening backup: {path}"))?;
     let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(file));
@@ -2711,7 +2774,7 @@ fn restore_targz(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<Rest
         let in_path = entry.path().context("Reading tar entry path")?.into_owned();
         if in_path.file_name().and_then(|s| s.to_str()) == Some("entries.jsonl") {
             let reader = std::io::BufReader::new(entry);
-            return restore_from_reader(reader, db, strategy);
+            return restore_from_reader(reader, db, strategy, dry_run);
         }
     }
     anyhow::bail!("entries.jsonl not found in archive");
@@ -2779,8 +2842,12 @@ fn restore_from_reader<R: std::io::BufRead>(
     mut reader: R,
     db: &Db,
     strategy: ConflictStrategy,
+    dry_run: bool,
 ) -> Result<RestoreReport> {
-    let mut report = RestoreReport::default();
+    let mut report = RestoreReport {
+        dry_run,
+        ..Default::default()
+    };
 
     let (header, legacy_first) = read_header_line(&mut reader)?;
 
@@ -2818,6 +2885,10 @@ fn restore_from_reader<R: std::io::BufRead>(
         }
     };
 
+    if backup_version < current {
+        report.migration = Some((backup_version, current));
+    }
+
     // Decode either the legacy first line or fresh lines from the reader.
     // Using `chain` keeps the streaming model intact — nothing is buffered
     // beyond a single line.
@@ -2837,6 +2908,22 @@ fn restore_from_reader<R: std::io::BufRead>(
         }
         let entry: Entry = serde_json::from_value(raw)
             .with_context(|| format!("Deserializing entry: {line}"))?;
+
+        if dry_run {
+            // Read-only: predict the outcome from a content_hash lookup
+            // without opening a write transaction.
+            let exists = db.has_entry_with_content_hash(&entry.content_hash)?;
+            match (exists, strategy) {
+                (false, _) => report.inserted += 1,
+                (true, ConflictStrategy::Ignore) => report.skipped += 1,
+                (true, ConflictStrategy::Update)
+                | (true, ConflictStrategy::Merge) => report.updated += 1,
+                // Rekey would insert a second row sharing content_hash.
+                (true, ConflictStrategy::Rekey) => report.inserted += 1,
+            }
+            continue;
+        }
+
         let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
         match outcome {
             InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
@@ -4461,7 +4548,7 @@ mod tests {
         // Restore into a fresh db and verify equivalence.
         let dst = Db::open_in_memory().unwrap();
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4536,7 +4623,7 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4563,7 +4650,7 @@ mod tests {
         // First restore: every row inserted.
         let dst = Db::open_in_memory().unwrap();
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4577,7 +4664,7 @@ mod tests {
         // Second restore with the same backup: content_hash dedup kicks in,
         // nothing changes.
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4636,7 +4723,7 @@ mod tests {
 
         // --force → ConflictStrategy::Update overwrites device_id from "d1" in backup.
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: true },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: true, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4722,7 +4809,7 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4766,7 +4853,7 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4803,7 +4890,7 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let err = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap_err();
@@ -4831,7 +4918,7 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4872,7 +4959,7 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
             &dst,
         )
         .unwrap();
@@ -4887,6 +4974,274 @@ mod tests {
         );
         // Mismatch is non-fatal — the rows we had still landed.
         assert_eq!(report.inserted, original.len());
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    // ─── S8: restore --dry-run ────────────────────────────────────────────
+
+    #[test]
+    fn restore_dry_run_reports_all_as_would_insert_into_empty_db() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        let dst = Db::open_in_memory().unwrap();
+        let before = dst.count_entries().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: true,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+
+        assert!(report.dry_run, "report must flag dry_run");
+        assert_eq!(report.inserted, original.len(), "every entry would insert");
+        assert_eq!(report.skipped, 0);
+        assert_eq!(report.updated, 0);
+
+        // HARD GATE: DB must not have been touched.
+        assert_eq!(
+            dst.count_entries().unwrap(),
+            before,
+            "dry-run must not write to DB"
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_dry_run_reports_dedupe_when_rows_already_present() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        // Populate dst with the same rows so every content_hash collides.
+        let dst = Db::open_in_memory().unwrap();
+        cmd_restore(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+        let pre_count = dst.count_entries().unwrap();
+        let pre_modified: Vec<_> = all_entries_sorted(&dst)
+            .into_iter()
+            .map(|e| (e.slug.clone(), e.modify_time))
+            .collect();
+
+        // Dry-run over the same backup should predict every row as a skip.
+        let report = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: true,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+
+        assert!(report.dry_run);
+        assert_eq!(report.skipped, pre_count, "every row collides by content_hash");
+        assert_eq!(report.inserted, 0);
+        assert_eq!(report.updated, 0);
+
+        // Dry-run must not touch the DB even in the --force path.
+        let post_modified: Vec<_> = all_entries_sorted(&dst)
+            .into_iter()
+            .map(|e| (e.slug.clone(), e.modify_time))
+            .collect();
+        assert_eq!(pre_modified, post_modified);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_dry_run_reports_would_update_with_force() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        let dst = Db::open_in_memory().unwrap();
+        cmd_restore(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+        let pre_count = dst.count_entries().unwrap();
+
+        let report = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: true, // conflict strategy = Update
+                dry_run: true,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+
+        assert!(report.dry_run);
+        assert_eq!(report.updated, pre_count, "--force flips dedupes into updates");
+        assert_eq!(report.skipped, 0);
+        assert_eq!(report.inserted, 0);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_dry_run_works_on_targz() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let path = unique_tmp_path(".tar.gz");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        let dst = Db::open_in_memory().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: true,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+
+        assert!(report.dry_run);
+        assert_eq!(report.inserted, original.len());
+        assert_eq!(dst.count_entries().unwrap(), 0, "dry-run leaves DB untouched");
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_dry_run_surfaces_migration_step() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        // Forge an older-schema header.
+        let current = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+        let older = current.saturating_sub(1).max(1);
+        if older == current {
+            // Can't exercise migration path on a one-version binary; skip.
+            return;
+        }
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": older,
+            "backup_time": "2026-04-22T00:00:00Z",
+            "source_db": "forged",
+            "entry_count": original.len(),
+        });
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, Some(&header), &original);
+
+        let dst = Db::open_in_memory().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: true,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap();
+
+        assert!(report.dry_run);
+        assert_eq!(report.migration, Some((older, current)));
+        assert_eq!(dst.count_entries().unwrap(), 0);
+        assert!(
+            report.warnings.iter().any(|w| w.contains("migrating to v")),
+            "migration warning should also appear in dry-run: {:?}",
+            report.warnings
+        );
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_dry_run_fails_on_future_schema() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let newer = datum_core::migrations::CURRENT_SCHEMA_VERSION + 3;
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": newer,
+            "backup_time": "2026-04-22T00:00:00Z",
+            "source_db": "forged",
+            "entry_count": original.len(),
+        });
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, Some(&header), &original);
+
+        let dst = Db::open_in_memory().unwrap();
+        // "Would fail" case — dry-run propagates the schema-gate error so
+        // the CLI exits nonzero before the user commits to a restore.
+        let err = cmd_restore_with_report(
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: true,
+                json: false,
+            },
+            &dst,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains(&format!("schema v{newer}")),
+            "dry-run must surface the refusal: {err}"
+        );
+        assert_eq!(dst.count_entries().unwrap(), 0);
 
         std::fs::remove_file(&path).ok();
     }
