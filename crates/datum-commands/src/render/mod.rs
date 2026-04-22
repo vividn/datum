@@ -178,7 +178,8 @@ fn paint(code: &str, body: &str) -> String {
 // (`chalk.bgHex(...)`) with a contrast-aware foreground. Porting that look
 // requires RGB triples, not the ANSI-256 fallback we used previously. The
 // helpers below resolve spec colors (hex) or derive a stable fallback from
-// `sha256(name)`, then emit truecolor 48/38;2;R;G;B escape pairs.
+// `md5(name)` per the visual-parity spec, then emit truecolor
+// 48/38;2;R;G;B escape pairs.
 
 /// RGB color triple.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1077,52 +1078,6 @@ pub fn short_hid_of(hid: &str) -> String {
     short_hid(hid)
 }
 
-// ─── Color helpers (kept public for check/now-view compat) ───────────────────
-
-/// Map a name to an ANSI-256 color index using its MD5 hash.
-/// Always returns a visible color on dark terminals (at least one channel ≥ 3).
-///
-/// Retained for the `now`-view and check paths that haven't migrated to
-/// truecolor yet. The hash swap (SHA-256 → MD5) keeps the palette stable for
-/// both existing users of those views and the new parity renderer.
-pub fn hash_to_ansi256(name: &str) -> u8 {
-    let hash = Md5::digest(name.as_bytes());
-    let r = hash[0] % 6;
-    let g = hash[1] % 6;
-    let b = hash[2] % 6;
-    let (r, g, b) = if r.max(g).max(b) < 3 {
-        match hash[3] % 3 {
-            0 => (5, g, b),
-            1 => (r, 5, b),
-            _ => (r, g, 5),
-        }
-    } else {
-        (r, g, b)
-    };
-    16 + 36 * r + 6 * g + b
-}
-
-/// Convert a stored color string to an ANSI foreground escape.
-/// Accepts: ANSI-256 number ("196"), hex ("ff6600" or "#ff6600").
-/// Falls back to hash-derived ANSI-256 for `fallback_name` on parse failure.
-fn ansi_from_stored(stored: &str, fallback_name: &str) -> String {
-    let s = stored.trim_start_matches('#');
-    if let Ok(n) = s.parse::<u8>() {
-        return format!("\x1b[38;5;{n}m");
-    }
-    if s.len() == 6 {
-        if let (Ok(r), Ok(g), Ok(b)) = (
-            u8::from_str_radix(&s[0..2], 16),
-            u8::from_str_radix(&s[2..4], 16),
-            u8::from_str_radix(&s[4..6], 16),
-        ) {
-            return format!("\x1b[38;2;{r};{g};{b}m");
-        }
-    }
-    let n = hash_to_ansi256(fallback_name);
-    format!("\x1b[38;5;{n}m")
-}
-
 // ─── Now view (preserved) ────────────────────────────────────────────────────
 
 struct NowRow {
@@ -1138,13 +1093,7 @@ struct NowRow {
 }
 
 fn field_ansi(tf: &TrackedField) -> String {
-    match &tf.color {
-        Some(c) => ansi_from_stored(c, &tf.field),
-        None => {
-            let n = hash_to_ansi256(&tf.field);
-            format!("\x1b[38;5;{n}m")
-        }
-    }
+    colors::resolve_rgb(tf.color.as_deref(), &tf.field).fg()
 }
 
 fn state_ansi(
@@ -1154,13 +1103,12 @@ fn state_ansi(
     state_colors: &HashMap<(String, String), String>,
 ) -> String {
     if let Some(c) = state_colors.get(&(field.to_string(), state.to_string())) {
-        return ansi_from_stored(c, state);
+        return colors::resolve_rgb(Some(c.as_str()), state).fg();
     }
     if let Some(c) = field_stored_color {
-        return ansi_from_stored(c, field);
+        return colors::resolve_rgb(Some(c.as_str()), field).fg();
     }
-    let n = hash_to_ansi256(state);
-    format!("\x1b[38;5;{n}m")
+    colors::md5_rgb(state).fg()
 }
 
 /// S12: render the state column for `datum now`. Scalar values get the
@@ -1460,12 +1408,6 @@ mod tests {
         // Multibyte glyphs still count as 1 char each.
         assert_eq!(visible_width("●"), 1);
         assert_eq!(visible_width("\x1b[32m●\x1b[0m"), 1);
-    }
-
-    #[test]
-    fn hash_to_ansi256_deterministic() {
-        assert_eq!(hash_to_ansi256("coffee"), hash_to_ansi256("coffee"));
-        assert_ne!(hash_to_ansi256("coffee"), hash_to_ansi256("tea"));
     }
 
     #[test]
