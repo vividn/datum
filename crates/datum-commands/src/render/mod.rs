@@ -4,6 +4,17 @@
 //! emits a two-line record showing the action (CREATE/UPDATE/DELETE/...), a
 //! short humanId, the full id, and an info line with time/field/state/dur.
 //! List commands emit an aligned table with `time | field | state | hid` columns.
+//!
+//! The visual-parity renderer (per `docs/visual-parity-analysis.md`) lives
+//! in the [`action`] submodule; color derivation in [`colors`]; character
+//! constants in [`characters`]. This root module owns the table / now-view
+//! / extract plumbing and glues the write-action path to `action::`.
+
+pub mod action;
+pub mod characters;
+pub mod colors;
+
+pub use self::action::{format_info_line, render_entry_line, RenderContext};
 
 use chrono::Local;
 use datum_core::{
@@ -11,7 +22,7 @@ use datum_core::{
     entry::{Entry, Verb},
     field_spec::{FieldSpec, SpecRegistry},
 };
-use sha2::{Digest, Sha256};
+use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::io::IsTerminal;
@@ -84,25 +95,6 @@ impl OutputArgs {
     pub fn silent(&self) -> bool {
         self.show == Show::None
     }
-}
-
-/// Extra, caller-supplied context for rendering a single write.
-///
-/// The default renderer works purely from [`Entry`] + [`SpecRegistry`], which
-/// is enough for table views and backfill tools. For interactive writes the
-/// command layer can enrich the output with information that isn't on the
-/// entry itself:
-///
-/// * `last_state` — the field's prior active state, so the state block can
-///   render a `[prior ▶ next]` transition indicator matching original
-///   datum's `formatState` three-fragment motif.
-/// * `is_first_occurrence` — true when daydumb has never seen this field
-///   before; the renderer prepends [`FIRST_TIME_MARKER`] to make new-field
-///   writes visually distinctive.
-#[derive(Clone, Debug, Default)]
-pub struct RenderContext {
-    pub last_state: Option<JsonValue>,
-    pub is_first_occurrence: bool,
 }
 
 /// Semantic outcome of a write. Maps to datum's `ACTIONS` vocabulary.
@@ -251,21 +243,12 @@ fn ansi256_rgb(n: u8) -> Rgb {
     Rgb { r: q(r), g: q(g), b: q(b) }
 }
 
-/// Derive a stable RGB color from `sha256(name)`. Mirrors datum's
-/// `md5Color` intent with a more widely-available hash. Low-luminosity
-/// results get nudged brighter so the color remains visible on dark terms.
+/// Derive a stable RGB color from `md5(name)`. Per the visual-parity spec §1:
+/// the first three bytes of the MD5 digest are used as-is (no brightness
+/// re-rolling — YIQ contrast on the fg handles readability).
 fn hash_to_rgb(name: &str) -> Rgb {
-    let hash = Sha256::digest(name.as_bytes());
-    let mut rgb = Rgb { r: hash[0], g: hash[1], b: hash[2] };
-    if brightness(rgb) < 40 {
-        // One channel gets boosted high; which one is stable per name.
-        match hash[3] % 3 {
-            0 => rgb.r = rgb.r.max(180),
-            1 => rgb.g = rgb.g.max(180),
-            _ => rgb.b = rgb.b.max(180),
-        }
-    }
-    rgb
+    let hash = Md5::digest(name.as_bytes());
+    Rgb { r: hash[0], g: hash[1], b: hash[2] }
 }
 
 /// Resolve a stored color string (hex / ANSI-256 number) or fall back to a
@@ -1096,10 +1079,14 @@ pub fn short_hid_of(hid: &str) -> String {
 
 // ─── Color helpers (kept public for check/now-view compat) ───────────────────
 
-/// Map a name to an ANSI-256 color index using its SHA-256 hash.
+/// Map a name to an ANSI-256 color index using its MD5 hash.
 /// Always returns a visible color on dark terminals (at least one channel ≥ 3).
+///
+/// Retained for the `now`-view and check paths that haven't migrated to
+/// truecolor yet. The hash swap (SHA-256 → MD5) keeps the palette stable for
+/// both existing users of those views and the new parity renderer.
 pub fn hash_to_ansi256(name: &str) -> u8 {
-    let hash = Sha256::digest(name.as_bytes());
+    let hash = Md5::digest(name.as_bytes());
     let r = hash[0] % 6;
     let g = hash[1] % 6;
     let b = hash[2] % 6;

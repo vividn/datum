@@ -43,6 +43,7 @@ axum = "0.7"
 # Crypto
 aes-gcm = "0.10"
 sha2 = "0.10"
+md-5 = "0.10"
 rand = "0.8"
 argon2 = "0.5"
 rpassword = "7"

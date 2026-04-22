@@ -1,181 +1,226 @@
-# Visual Parity Analysis — Output Rendering vs. Original datum
+# Visual Parity Design
 
 Source of truth: `/tmp/datum-survey/src/output/output.ts` and
 `/tmp/datum-survey/src/field/fieldColor.ts` (original datum, TypeScript).
 
-This note captures the visual decisions the original datum makes when rendering
-a write action (CREATE/UPDATE/…/SWITCH/START/STOP) so daydumb's
-`datum-commands/src/render/` can match the intent. Readers of later audits
-should treat this as descriptive, not prescriptive — when daydumb diverges, a
-short rationale is included.
+This document is the committed specification for daydumb's write-action
+renderer. It supersedes the earlier "Visual Parity Analysis" note. Changes
+to the renderer must keep this doc and the fixture tests
+(`crates/datum-commands/tests/render_fixtures.rs`) consistent.
 
-## Two-line record
+## 1. Color derivation
 
-Every write produces exactly two lines (plus optional extra_data block):
+- **Algorithm:** MD5 hash of the string (field name OR state name). First 3 bytes → RGB:
+  - `r = hash[0]`, `g = hash[1]`, `b = hash[2]`
+- **No re-rolling.** Every MD5 output is a valid background color.
+- **Readable text via YIQ contrast** (port `getContrastTextColor` from `/tmp/datum-survey/src/utils/colorUtils.ts`):
+  ```
+  brightness = (R*299 + G*587 + B*114) / 1000
+  text_color = brightness > 128 ? "#000000" : "#ffffff"
+  ```
+- **Spec override:** `spec set <field> --color <hex>` and `spec set <field> --state <name>=<hex>` take precedence over MD5. Check spec first; fall back to hash.
+- **Emit via ANSI truecolor** (`\x1b[48;2;R;G;Bm` for bg, `\x1b[38;2;R;G;Bm` for fg).
 
-```
- CREATE  hHID  docId
-occurTime field stateBlock dur
-```
-
-Line 1 (`showHeaderLine`): inverse-coloured action tag + 5-char humanId + full
-id, all in the action's colour.
-
-Line 2 (`showMainInfoLine`): occurTime + field + state + dur, joined by single
-spaces, omitting empty columns.
-
-daydumb matches this layout already (renders `slug` in place of CouchDB `_id`;
-`hid` is the daydumb 12-char base36 preserved in the same role).
-
-## Action colours
-
-`ACTION_CHALK` in `output.ts`:
-
-| Action  | Colour    |
-| ------- | --------- |
-| CREATE  | green     |
-| DELETE  | red       |
-| EXISTS  | yellow    |
-| UPDATE  | cyan      |
-| OWRITE  | blue      |
-| RENAME  | cyan      |
-| NODIFF  | `#ffa500` (orange) |
-| FAILED  | red       |
-
-Tag is rendered with `chalk.inverse(" ACTION ")` — i.e. an inverse-video pill.
-daydumb already matches this table and uses the same inverse pill treatment.
-
-## Field and state colours — **background-first**
-
-This is the biggest drift point. Original datum uses the field's colour as a
-**background** via `chalk.bgHex`, pairing it with a computed contrast-preserving
-foreground (`getContrastTextColor`). Current daydumb uses the colour as a
-foreground only, producing a dim, pipe-friendly look that loses datum's dense,
-timeline-like feel.
-
-```ts
-// fieldColor.ts
-export function fieldChalk({ field }: { field?: string }) {
-  const color = getFieldColor(field);
-  const fg = getContrastTextColor(color);
-  return chalk.bgHex(color).hex(fg);
-}
-```
-
-State text is likewise rendered with `bgHex(stateColor)` + contrasting fg,
-except when state is `false`/`undefined` (end/empty): then the text is rendered
-without any background (default terminal colours).
-
-Colour sources (in precedence order):
-1. `FieldSpec.color` or `FieldSpec.states[state].color` — hex string.
-2. `md5Color(name)` fallback — `#` + first 6 hex chars of the MD5 of the name.
-
-daydumb uses a `hash_to_ansi256(sha256(name))` fallback that keeps one channel
-≥3. That's fine for unstyled fields but for **spec-defined** colours we should
-emit truecolor background escapes (`\x1b[48;2;R;G;Bm`) and a contrasting
-foreground — not just a dim 256-colour foreground.
-
-## State block: before / current / after
-
-`formatState` in `output.ts:93` is the core visual motif. It composes three
-text fragments using two chalk instances:
+## 2. Line layout
 
 ```
-beforeText     currentText     afterText
-(lastState     (state colour)   (state or
- colour bg)                      field colour bg)
+<time>  <field-badge>  <state-transition-group>  [duration]
+                       └─ <left-char><state-badge><right-char>
 ```
 
-Fragments:
+- Time, field, state-transition, and duration are all separated by whitespace.
+- **Duration comes AFTER the right-char**, not inside the state group.
+- The state-transition group is self-contained; the field badge stands alone.
 
-| Case                                     | beforeText                      | currentText           | afterText                    |
-| ---------------------------------------- | ------------------------------- | --------------------- | ---------------------------- |
-| non-occur note (`occurTime === undef`)    | `¢` in field colour             | state or empty        | empty                        |
-| point (`dur===null` or no dur+no state)   | `●` on `stateColor` bg          | state or empty        | empty                        |
-| no-state-change with positive dur         | `!` bold + warning fg on prior bg | (current)             | trailing space on current bg |
-| state-change with negative dur            | `!` bold + warning fg on prior bg | (current)             | trailing space on current bg |
-| prior state was `null`                    | `∅` on grey-grey                 | (current)             | (normal)                     |
-| prior state was an array                  | `▞` on prior-state bg           | (current)             | (normal)                     |
-| normal prior state                        | single space on prior-state bg   | state text on state bg | trailing space on state bg   |
-| false state (end)                         | prior-state space               | `end` (no bg)         | empty                        |
+## 3. Timestamp
 
-The visual effect is **a coloured stripe for the prior state, then the new
-state's coloured stripe, with a one-character gap that is itself coloured by
-the respective state**. This looks like a mini timeline tick in the CLI.
+- Format: `HH:MM:SS+TZ` (e.g. `17:10:00+2`)
+- **Underlined** if `start_time` is in the FUTURE relative to now-at-render. Helps prevent entry errors.
+- **TZ offset** (`+0200` → compressed to `+2`; always drop leading zeros) rendered **dim** (ANSI 2) to de-emphasize.
 
-daydumb's current renderer does not emit `beforeText` or `afterText` at all —
-it just colours the state word. To match datum's density we need to emit the
-same three-fragment structure whenever `lastState` is known.
+## 4. Field badge
 
-### `lastState` availability in daydumb
+- Box: `<space><field_name><space>` with background = field color (MD5 or spec)
+- Foreground = YIQ-contrast-computed black or white
+- Stands alone; no prior-state indicator attached
 
-Original datum denormalises `lastState` onto every switch doc, so the renderer
-can always read `data.lastState`. daydumb deliberately does **not** denormalise
-(see `crates/datum-cli/tests/switch_cmd.rs` comments). Options:
+## 5. State rendering helpers (port from fieldColor.ts)
 
-1. **Pull from `extra_data.last_state` when present** — `stop --last-state`
-   already writes this; use it.
-2. **Accept an optional `prior_state` via a `RenderContext`** — callers that
-   have a `Db` handy can pre-query `db.get_active_state(field, time)` cheaply
-   and pass it in. Switch/start commands do this anyway for dedupe; the value
-   is already in hand.
-3. **Omit `beforeText` when prior state is unknown.** No-op fallback keeps
-   freeform-logging output readable.
+**getStateColor(state, field):**
+- `undefined` → field color
+- `true` → field color
+- `false` → `#000000`
+- `"IGNORED"` → `#888888` (replaces datum's `null` branch — we dropped null)
+- Array → first element's color (recursive)
+- Named state → spec override OR md5 hash
 
-Chosen approach for this pass: (1) + (3). (2) is a follow-up — the
-command-layer plumbing is the bulk of that change and can land separately
-without regressing the visual.
+**stateChalk(state, field) — determines badge styling:**
+- `undefined` → fg=field-color, no bg
+- `true` → bg=field-color, fg=contrast (same as field badge)
+- `false` → no styling at all (plain text)
+- `"IGNORED"` → bg=`#888888`, fg=`#666666` (grey on grey)
+- Array → bg=first element's color, fg=second element's color (this IS the checkerboard pair)
+- Named state → bg=state color, fg=YIQ-contrast
 
-## First-time-tracked marker
+## 6. State transition group — left-char / state-badge / right-char
 
-Original datum does **not** emit a first-time marker in its line-oriented
-output. The "first time I saw this field" signal lives in the SVG/PNG timeline
-renderer (which draws a brighter tick mark), not in CLI text.
+The left-char, state-badge, and right-char form ONE visual group after the field badge.
 
-The bead requests a new first-time marker for daydumb CLI. Minimal visual
-motif, chosen to be easy to strip in `--no-color`:
+**Left-char rules** (state active BEFORE this entry):
+- Prior `true` → filled with `true`-color (= field color)
+- Prior named state → that state's color
+- Prior `false` AND this entry is `end` → **yellow `!`** (repeat/overlap detection — feeds S6 conflict queue)
+- No prior entry exists (first tracked event for this field) → **grey `∅`**
+- Prior state is array → FIRST element's color
+- Prior state is `"IGNORED"` → grey (`#888888`)
 
-- **`✨ `** prefix on the field column when this is the first entry daydumb
-  has ever seen for this field (checked via `db.load_spec(field).is_none()`
-  *before* `ensure_tracked`).
+**State badge body:**
+- Solid background = scalar state (use stateChalk above)
+- **Checkerboard `▞`** with bg=state[0], fg=state[1] = array state (>2 states: truncate to first two for color)
+- Dot/sliver character for point events (occur, add) — see §7
 
-Spec-less fields always get the marker. Once a spec exists (either via
-explicit `datum track` or implicit `ensure_tracked`), subsequent writes render
-plainly. `strip_ansi` preserves the sparkle (it's a printable glyph, not an
-ANSI escape) which is intentional: even in pipes the user sees that this is a
-new field they just introduced.
+**Right-char rules** (state active AFTER this entry):
+- Switch with NO duration → new state's color (state continues)
+- Switch WITH duration (block) → **prior state's color** (prior resumes after block)
+- `start` → `true`-color
+- `end` → `false`-color (dim/neutral)
+- occur (point) → prior state's color (doesn't change state)
+- End-of-block where already ended → **yellow `!`**
 
-## Duration rendering
+## 7. Per-verb rendering
 
-`formatDuration` in `output.ts:183` uses Luxon `duration.toFormat("m'm'")` —
-always minutes, no hours or composite units. daydumb's `format_duration`
-composes seconds / minutes / `HhMm`, which is *more* informative. Keep as-is.
+### `add <field> [keys]` (timeless)
 
-## `--no-color` / pipe friendliness
+- Field badge
+- `¢` replaces the state-transition group (mirrors `c` suffix in the generated slug id)
+- No state context chars, no `∅` (add is metadata, doesn't affect state)
 
-Original datum relies entirely on chalk's auto-detection (TTY + env), with no
-explicit `--no-color` flag. daydumb already gates colour on TTY detection and
-a private `DATUM_COLOR` env var used by the test harness.
+### `occur <field>` (point)
 
-Action for this pass: also honour the de-facto standard **`NO_COLOR`** env
-var (see <https://no-color.org/>) so ordinary pipes / `| cat` / `| less -R`
-behave correctly without needing to set `DATUM_COLOR=0`. `strip_ansi()` is
-already exposed for snapshot tests.
+- Field badge
+- Single colored dot/square char as the state-badge:
+  - Tracked field → field color (or state color if `-m` moment)
+  - Ignored/untracked → grey bg, no field color
+- `∅` left-char if first-ever tracked entry for this field
 
-## Summary of changes for S4
+### `switch <field> <state>` (no duration)
 
-1. **Background-primary palette** — `field_color_code` / `state_color_code`
-   return background escapes with a contrast-aware foreground companion, not
-   a single foreground escape.
-2. **Three-fragment state block** — when a prior state is known, render
-   `beforeText + currentText + afterText` matching datum's `formatState`
-   table above.
-3. **First-time-tracked marker** — `✨ ` prefix on the field column for
-   writes where `load_spec(field)` returned `None` before `ensure_tracked`.
-4. **`NO_COLOR` env** — add to the colour gate alongside TTY/`DATUM_COLOR`.
-5. **Tests** — add snapshot-style assertions for the background, transition,
-   and marker cases, plus a `NO_COLOR=1` stripping test.
+- Field badge
+- Left-char: prior state (or `∅` if first)
+- State badge solid
+- Right-char: new state color (continues)
 
-Non-goals for S4 (leave for follow-up): denormalising `lastState` onto every
-switch entry; piping prior-state into every command callsite; refactoring
-the `Extracted` struct layout.
+### `switch <field> <state> <dur>` (block interruption)
+
+- Field badge
+- Left-char: prior state (or `∅` if first)
+- State badge solid
+- Right-char: **prior state's color** (resumes after block)
+- Duration `Nm` trailing after right-char
+
+### `switch <field> <s1>,<s2>[,...]` (array)
+
+- Field badge
+- Left-char: prior state (FIRST element if prior was array)
+- Two adjacent state badges with a comma between; comma colored like `state2`
+- Both badges use checkerboard `▞` with bg=state1, fg=state2
+- Right-char: follows block/continue rules based on duration
+
+### `start <field>` (opens block)
+
+- Field badge
+- Left-char: prior state (usually `false` → dim/neutral; yellow `!` if already active)
+- State badge: solid `start`-green (or equivalent `true`-colored)
+- Right-char: `true`-color
+
+### `end <field>` / `stop <field>`
+
+- Field badge
+- Left-char: prior state color (yellow `!` if already ended)
+- State badge: `end`-green with left-half prior-state colored (half-fill indicates "was active on left side")
+- Right-char: `false`-color
+
+### `start <field> <dur>` (retroactive closed block)
+
+- Field badge
+- Left-char: prior-before-block
+- State badge: solid
+- Right-char: prior-resumes color
+- Duration trailing
+
+## 8. Special states
+
+- **`"IGNORED"`** — set by `datum ignore <field>`. Grey bg override (`#888888`), dimmed text.
+- **`true` / `false`** — universal; `true` uses field color, `false` has no styling.
+- **Array** — concurrent states; see §5 and §7.
+
+## 9. Track / ignore command behavior
+
+- `datum ignore <field>` — writes entry with `value = "IGNORED"`
+- `datum track <field>` — writes entry with `value = false` (tracked but stopped)
+- `datum now` filters: show if most-recent state != `"IGNORED"`
+- `datum now -A` shows all, including ignored
+
+## 10. UTF-8 character references
+
+| Char | Codepoint | Purpose |
+|---|---|---|
+| `∅` | U+2205 | First-tracked / null-state marker |
+| `¢` | U+00A2 | add/create marker |
+| `!` (yellow) | U+0021 + ANSI yellow fg | Repeat/overlap warning |
+| `▞` | U+259E | Checkerboard (upper-right + lower-left half) |
+
+## 11. Test fixtures (20 cases)
+
+Integration tests in `datum-commands/tests/render_fixtures.rs`. Assert exact rendered output (ANSI-stripped for readability + separate golden files for with-color).
+
+| # | Input | Expected render (ANSI-stripped) |
+|---|---|---|
+| 1 | `datum add new_occur` | `16:58:47+2 [new_occur] ¢` |
+| 2 | `datum occur new_occur` (first) | `16:58:56+2 [new_occur] ∅[·]` |
+| 3 | `datum occur new_occur` (again) | `16:58:59+2 [new_occur] [·]` |
+| 4 | `datum start new_start` (first) | `16:59:40+2 [new_start] ∅[start]→` |
+| 5 | `datum end new_start` | `16:59:46+2 [new_start] ←[end]` |
+| 6 | `datum start new_start` (after end) | `16:59:52+2 [new_start] [start]→` |
+| 7 | `datum switch new_switch state1` (first) | `17:00:21+2 [new_switch] ∅[state1]→` |
+| 8 | `datum switch new_switch state2` | `17:00:30+2 [new_switch] ←[state2]→` (left=state1) |
+| 9 | `datum switch new_switch state3` | `17:00:38+2 [new_switch] ←[state3]→` (left=state2) |
+| 10 | `datum switch new_switch repeat` | `17:00:52+2 [new_switch] ←[repeat]→` |
+| 11 | `datum switch new_switch repeat` (SAME) | `17:00:55+2 [new_switch] ![repeat]→` (yellow `!` left — repeat) |
+| 12 | `datum end new_switch` | `17:01:13+2 [new_switch] ←[end]` |
+| 13 | `datum start repeat_start` (already active) | `... [repeat_start] ![start]→` |
+| 14 | `datum switch dur_blocks state1` (first) | `17:02:26+2 [dur_blocks] ∅[state1]→` |
+| 15 | `datum switch dur_blocks state2 4 -t 1710` | `17:10:00+2 [dur_blocks] ←[state2]→ 4m` (right=prior=state1; time underlined = future) |
+| 16 | `datum switch field multi1,multi2` | `17:12:13+2 [field] ←[multi1],[multi2]→` (comma state2-colored; checkerboard `▞` in both badge bgs) |
+| 17 | `datum switch field momentary_single 1 -t +3` | `17:15:44+2 [field] ▞[momentary_single]▞ 1m` (prior & next both checkerboard; time underlined) |
+| 18 | `datum ignore foo; datum now` | `[foo]` with grey `#888888` bg |
+| 19 | `datum track foo; datum now` | `[foo]` with field color, state=false |
+| 20 | `datum add thing key=value` | `[thing] ¢` — no state group, no `∅` |
+
+## 12. Implementation files
+
+- `crates/datum-commands/src/render/action.rs` — action-output renderer (per-verb dispatch)
+- `crates/datum-commands/src/render/colors.rs` — MD5 + YIQ contrast (replace SHA-256)
+- `crates/datum-commands/src/render/characters.rs` — unicode char constants
+- `crates/datum-commands/tests/render_fixtures.rs` — the 20 fixture tests
+- `docs/visual-parity-analysis.md` — this document, committed
+
+## 13. Dependencies
+
+- **S6 (da-u4k.6)** — needs `last_state_at(field, time)` helper and generalized repeat detector
+- **da-u4k.12 (array states)** — checkerboard/array rendering and comma parsing
+
+## 14. User review gate
+
+**Must not auto-close.** Final PR must include a side-by-side screenshot (or ANSI paste) of the 20 fixtures vs the reference image at `/tmp/datum_coloring_examples.png`. User must thumbs-up before close.
+
+## Acceptance
+
+- `docs/visual-parity-analysis.md` exists, matches this spec
+- All 20 test fixtures pass (ANSI-stripped asserts + with-color golden files)
+- MD5 + YIQ replaces any SHA-256 color code
+- `¢` / `∅` / `!` / `▞` characters render correctly
+- Timestamp underline only on future times
+- TZ offset dim + compressed
+- `ignore` / `track` commands write correct state values
+- **User explicit approval** on review before merge
