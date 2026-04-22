@@ -2,6 +2,7 @@ pub mod entry;
 pub mod field_spec;
 pub mod db;
 pub mod error;
+pub mod ids;
 pub mod slug;
 pub mod state;
 pub mod views;

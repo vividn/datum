@@ -6,6 +6,7 @@ use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome, ListParams, RetimeFilter, TimeMetric},
     entry::{new_hid, Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
+    ids::resolve_quickid_single,
     time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
 };
 use regex::Regex;
@@ -1466,16 +1467,18 @@ pub(crate) fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
 
 // ─── Get / Delete ─────────────────────────────────────────────────────────────
 
-/// Resolve `input` to an entry via C3 prefix matching, preserving the
+/// Resolve `input` to an entry via quickId matching, preserving the
 /// "Tombstoned" signal so update/edit can produce their tailored error.
 ///
-/// `resolve_prefix` filters out soft-deleted rows, so a prefix of a tombstone
-/// comes back as `NotFound`. When that happens we retry with an exact
-/// id/slug lookup that includes tombstones, then one more attempt that
-/// scans tombstones by hid/slug prefix — so the undo / history / why
+/// The live-entry path goes through [`resolve_quickid_single`], which adds
+/// `_` / `<field>:_` shorthands and slug wildcards on top of the existing
+/// C3 prefix behaviour. It excludes soft-deleted rows, so a prefix of a
+/// tombstone comes back as `NotFound`. When that happens we retry with an
+/// exact id/slug lookup that includes tombstones, then one more attempt
+/// that scans tombstones by hid/slug prefix — so the undo / history / why
 /// commands still work on a soft-deleted row's short hid (e.g. `5arfa`).
 fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
-    match db.resolve_prefix(input) {
+    match resolve_quickid_single(db, input) {
         Ok(e) => Ok(e),
         Err(datum_core::error::DatumError::NotFound(_)) => {
             // Exact match first, then fall through to a tombstone-prefix scan.
@@ -1517,7 +1520,7 @@ fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
 }
 
 pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
-    let entry = db.resolve_prefix(&args.id_or_slug)
+    let entry = resolve_quickid_single(db, &args.id_or_slug)
         .map_err(anyhow::Error::from)?;
     if args.pretty {
         print_entry_pretty(&entry)?;
@@ -1530,8 +1533,7 @@ pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
 
 pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
-    let entry = db
-        .resolve_prefix(&args.id_or_slug)
+    let entry = resolve_quickid_single(db, &args.id_or_slug)
         .map_err(anyhow::Error::from)?;
     if !args.force {
         print_entry(&entry, registry.as_ref());
@@ -1867,6 +1869,17 @@ pub(crate) fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
         );
     }
 
+    // Accept the full quickId surface (`_`, `<field>:_`, hid/slug prefix,
+    // slug wildcard) where retime previously required an exact slug/hid.
+    // The underlying filter still matches on exact slug/hid, so we resolve
+    // the user-supplied pattern to a concrete slug first.
+    let resolved_slug: Option<String> = args
+        .slug
+        .as_deref()
+        .map(|raw| resolve_quickid_single(db, raw).map(|e| e.slug))
+        .transpose()
+        .map_err(anyhow::Error::from)?;
+
     let after_utc = args
         .after
         .as_deref()
@@ -1881,7 +1894,7 @@ pub(crate) fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
         .context("Invalid --before value")?;
 
     let filter = RetimeFilter {
-        slug_or_hid: args.slug.as_deref(),
+        slug_or_hid: resolved_slug.as_deref(),
         field: args.field.as_deref(),
         after_utc,
         before_utc,
