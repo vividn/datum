@@ -28,6 +28,17 @@ use crate::{
 };
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
 
+/// Parse an argv vector through the full pre-pass → clap → dispatch path
+/// against `db`. Used by integration tests to exercise the CLI without
+/// importing clap themselves (so `datum-cli/Cargo.toml` can drop it from
+/// its dev-dependencies).
+pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
+    use clap::Parser;
+    let expanded = crate::args::expand_argv_with_db(argv, db)?;
+    let cli = Cli::try_parse_from(expanded)?;
+    dispatch(cli, db)
+}
+
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     use crate::commands;
     match cli.command {

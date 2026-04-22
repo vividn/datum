@@ -489,7 +489,6 @@ dependencies = [
  "anyhow",
  "axum",
  "chrono",
- "clap",
  "datum-cli",
  "datum-commands",
  "datum-core",

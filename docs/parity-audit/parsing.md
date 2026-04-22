@@ -27,8 +27,9 @@ The R2 bead lands incrementally:
 | Step | Scope | Status |
 |---|---|---|
 | 1/N | New `datum-parse/` crate; move `time.rs` → split `time/` submodules; `PrecisionUnit` moved from `datum-core::entry`; WASM build verified; **this audit** | **done** |
-| 2/N | Port `input/` parsers (flexiblePositional / consolidateKeys / dataArgs); define `CommandIntent`; bespoke `--help` | pending |
-| 3/N | Replace clap in `datum-cli` / `datum-commands`; remove `clap` workspace dep; alias expansion into `datum-parse` | pending |
+| 2/N | `datum-parse` input/ + alias/ module scaffold; port `consolidate_keys` + `flexible_positional` with full TS-parity tests; stubs for the rest pointing back at this audit | **done** |
+| 2b/N | Port `data_args`, `time_args`, `duration_args`, `field_args`, `output_args`, `quick_id_arg` from TS + tests | pending |
+| 3/N | Replace clap in `datum-commands::args`; remove `clap` workspace dep; `CommandIntent` + bespoke `--help` in `datum-parse`; alias expansion migrates into `datum-parse::alias` | pending (clap dev-dep already dropped from `datum-cli`) |
 
 Everything below is what the final R2 target must cover. Where daydumb has
 *not yet* ported a behavior, it is marked **PENDING** with the step that
@@ -491,10 +492,15 @@ Deliberately *not* carried forward from datum:
 
 | Criterion | Status |
 |---|---|
-| `cargo build --workspace` succeeds | ✓ (as of step 1/N) |
-| `cargo test --workspace` passes (no regressions) | ✓ (as of step 1/N — 300+ tests green) |
+| `cargo build --workspace` succeeds | ✓ |
+| `cargo test --workspace` passes (no regressions) | ✓ (431 tests green) |
 | `cargo build --target wasm32-unknown-unknown -p datum-parse` succeeds | ✓ (uses `--no-default-features`) |
-| `datum-cli/Cargo.toml` no longer lists `clap` | **pending step 3/N** |
-| `datum-parse/` covers all `input/` and `time/` ported behaviors with tests | time ✓; input **pending step 2/N** |
-| `--help` output is readable and covers every command | **pending step 3/N** |
+| `datum-cli/Cargo.toml` no longer lists `clap` | ✓ (moved behind `datum_commands::cmd::dispatch_argv`) |
+| `datum-parse/` covers all ported `input/` and `time/` behaviors with tests | ✓ for what's ported (time, consolidate_keys, flexible_positional); remaining input/ submodules are stubs awaiting step 2b/N |
+| `--help` output is readable and covers every command | ✓ (clap in `datum-commands` still renders it; bespoke rendering lands with step 3/N) |
 | `docs/parity-audit/parsing.md` exists and follows spec | ✓ |
+
+**Net clap footprint after R2 today:** removed from `datum-cli` entirely
+(main and dev deps); still present in `datum-commands` as the parser
+behind the public `args::Cli` struct and `cmd::dispatch_argv` helper.
+Step 3/N collapses that last dependency.
