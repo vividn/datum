@@ -16,7 +16,7 @@ use crate::{
     args::{
         AliasCommand, BackupArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs, HistoryArgs, IgnoreArgs,
+        DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IgnoreArgs,
         InfoArgs, LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs,
         RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
         UpdateArgs, WhyArgs,
@@ -1338,7 +1338,7 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         start_utc,
         end_utc,
         limit,
-        head: args.head,
+        head: args.oldest_first,
         reverse: args.reverse,
     })
 }
@@ -1375,33 +1375,6 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
         day_start_utc: day_start.with_timezone(&Utc),
         day_end_utc: day_end.with_timezone(&Utc),
     })
-}
-
-pub(crate) fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
-    let entries = if let Some(field) = &args.field {
-        db.entries_for_field_asc(field, Some(args.count))?
-    } else {
-        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
-        let far_past = chrono::DateTime::UNIX_EPOCH;
-        let mut all = db.entries_in_range(far_past, far_future)?;
-        // entries_in_range already returns ASC, but be explicit for clarity.
-        all.sort_by(|a, b| {
-            let ta = a.start_time.as_ref().map(|t| t.utc).unwrap_or(a.create_time);
-            let tb = b.start_time.as_ref().map(|t| t.utc).unwrap_or(b.create_time);
-            ta.cmp(&tb)
-        });
-        all.truncate(args.count);
-        all
-    };
-    let registry = load_registry(db).ok();
-    let tbl = TableArgs {
-        output: args.output(),
-        metric: TimeMetricCol::Hybrid,
-        columns: vec![],
-        suppress_header: false,
-    };
-    print_table(&entries, registry.as_ref(), &tbl);
-    Ok(())
 }
 
 pub(crate) fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
@@ -3602,6 +3575,25 @@ mod tests {
         )
     }
 
+    /// Build a `TailArgs` in head-mode (oldest-first) with the given field and count.
+    /// Used by head regression tests to exercise the shared tail codepath.
+    fn head_args(field: Option<&str>, count: Option<usize>) -> TailArgs {
+        TailArgs {
+            field: field.map(String::from),
+            count,
+            metric: "hybrid".to_string(),
+            reverse: false,
+            columns: vec![],
+            date: None,
+            time: None,
+            yesterday: 0,
+            quick: 0,
+            oldest_first: true,
+            watch: None,
+            output_flags: Default::default(),
+        }
+    }
+
     #[test]
     fn head_returns_oldest_first() {
         use datum_core::db::Db;
@@ -3611,12 +3603,10 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_head(HeadArgs { field: None, count: 10, output_flags: Default::default() }, &db).unwrap();
+        cmd_tail(head_args(None, Some(10)), &db).unwrap();
 
-        // Verify via db that ordering is ASC by time_start.
-        let far_past = chrono::DateTime::UNIX_EPOCH;
-        let far_future = chrono::Utc::now() + chrono::Duration::days(365);
-        let entries = db.entries_in_range(far_past, far_future).unwrap();
+        // Verify via tail_entries that ordering is ASC by time_start (head mode).
+        let entries = tail_entries(&head_args(None, Some(10)), &db).unwrap();
         let values: Vec<i64> = entries
             .iter()
             .map(|e| e.value.as_ref().unwrap().as_i64().unwrap())
@@ -3632,10 +3622,9 @@ mod tests {
             db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
         }
 
-        // No panic on execution + the db method returns exactly `count` entries ASC.
-        cmd_head(HeadArgs { field: Some("mood".to_string()), count: 5, output_flags: Default::default() }, &db).unwrap();
+        cmd_tail(head_args(Some("mood"), Some(5)), &db).unwrap();
 
-        let got = db.entries_for_field_asc("mood", Some(5)).unwrap();
+        let got = tail_entries(&head_args(Some("mood"), Some(5)), &db).unwrap();
         assert_eq!(got.len(), 5);
         let values: Vec<i64> = got
             .iter()
@@ -3653,9 +3642,9 @@ mod tests {
         db.insert_entry(&make_entry_at("coffee", 300, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 400, "d1")).unwrap();
 
-        cmd_head(HeadArgs { field: Some("coffee".to_string()), count: 10, output_flags: Default::default() }, &db).unwrap();
+        cmd_tail(head_args(Some("coffee"), Some(10)), &db).unwrap();
 
-        let got = db.entries_for_field_asc("coffee", None).unwrap();
+        let got = tail_entries(&head_args(Some("coffee"), Some(10)), &db).unwrap();
         assert_eq!(got.len(), 2);
         assert!(got.iter().all(|e| e.field == "coffee"));
         let values: Vec<i64> = got
@@ -3672,15 +3661,12 @@ mod tests {
         for i in 0..15 {
             db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
         }
-        // Default count matches clap's default_value = "10".
-        let default_count: usize = 10;
-        let got = db.entries_for_field_asc("mood", Some(default_count)).unwrap();
+        // tail_params defaults count to 10 when no date window is set — same
+        // default the old head command hardcoded via clap's `default_value`.
+        let got = tail_entries(&head_args(Some("mood"), None), &db).unwrap();
         assert_eq!(got.len(), 10);
         // First entry should be the oldest (offset=0).
-        assert_eq!(
-            got[0].value.as_ref().unwrap().as_i64().unwrap(),
-            0
-        );
+        assert_eq!(got[0].value.as_ref().unwrap().as_i64().unwrap(), 0);
     }
 
     // ─── grep command tests ─────────────────────────────────────────────────
@@ -3833,9 +3819,9 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_head(HeadArgs { field: None, count: 10, output_flags: Default::default() }, &db).unwrap();
+        cmd_tail(head_args(None, Some(10)), &db).unwrap();
 
-        let got = db.entries_for_field_asc("mood", Some(10)).unwrap();
+        let got = tail_entries(&head_args(None, Some(10)), &db).unwrap();
         assert_eq!(got.len(), 2);
     }
 

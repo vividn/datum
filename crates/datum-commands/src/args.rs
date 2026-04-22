@@ -344,7 +344,10 @@ pub enum Command {
     /// Show recent entries (defaults to last 10).
     Tail(TailArgs),
     /// Show oldest entries (defaults to first 10).
-    Head(HeadArgs),
+    ///
+    /// Equivalent to `tail --oldest-first`: reuses the tail query and
+    /// rendering path but takes the first N entries instead of the last N.
+    Head(TailArgs),
     /// Show current state of tracked fields (nowview).
     Now(NowArgs),
 
@@ -800,9 +803,10 @@ pub struct TailArgs {
     #[arg(short = 'q', action = clap::ArgAction::Count)]
     pub quick: u8,
 
-    /// Internal: take the first N instead of the last N (used by `head`).
-    #[arg(long, hide = true)]
-    pub head: bool,
+    /// Take the first N (oldest) instead of the last N (newest).
+    /// Powers `datum head`, which routes through tail with this flag set.
+    #[arg(long = "oldest-first")]
+    pub oldest_first: bool,
 
     /// After the initial tail, stream newly-inserted entries live. Optional
     /// interval in seconds (default 1). `-w` alone polls once per second;
@@ -821,22 +825,6 @@ pub struct TailArgs {
 }
 
 impl TailArgs {
-    pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
-}
-
-#[derive(Args, Debug)]
-pub struct HeadArgs {
-    /// Field to filter by (optional, shows all fields if omitted)
-    pub field: Option<String>,
-    /// Number of entries to show
-    #[arg(short = 'n', long = "limit", default_value = "10")]
-    pub count: usize,
-
-    #[command(flatten)]
-    pub output_flags: OutputFlags,
-}
-
-impl HeadArgs {
     pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
