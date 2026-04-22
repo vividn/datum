@@ -24,7 +24,7 @@ use crate::{
     config::{self, device_id},
     render::{
         print_entry, print_entry_pretty, print_now_view, print_table, show_create, show_delete,
-        show_exists, show_rename, show_update, OutputArgs, TableArgs, TimeMetricCol,
+        show_exists, show_rename, show_update, TableArgs, TimeMetricCol,
     },
 };
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
@@ -1477,7 +1477,7 @@ pub(crate) fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
 /// exact id/slug lookup that includes tombstones, then one more attempt
 /// that scans tombstones by hid/slug prefix — so the undo / history / why
 /// commands still work on a soft-deleted row's short hid (e.g. `5arfa`).
-fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
+pub(crate) fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
     match resolve_quickid_single(db, input) {
         Ok(e) => Ok(e),
         Err(datum_core::error::DatumError::NotFound(_)) => {
@@ -1628,200 +1628,13 @@ pub(crate) fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
 }
 
 // ─── Update / Merge / Rekey ──────────────────────────────────────────────────
+// Underlying logic lives in `commands::update_core::update_with_strategy`.
+// See that module for the unified strategy function the wrappers (and S3
+// batch mutations) call into.
 
-pub(crate) fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> Result<()> {
-    let strategy = args.strategy.map(Into::into).unwrap_or(default_strategy);
-
-    // C3: accept unique prefixes, but preserve the "Cannot X tombstoned entry"
-    // error when a user types a full id/slug of a soft-deleted row.
-    let existing = resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
-    if existing.deleted_at.is_some() {
-        anyhow::bail!(
-            "Cannot {} tombstoned entry {} — restore it first with `datum undelete`",
-            strategy_verb(strategy),
-            args.id_or_slug,
-        );
-    }
-
-    let (payload_value, payload_extra) = parse_update_payload(&args)?;
-    let output = args.output();
-
-    match strategy {
-        ConflictStrategy::Update => apply_mutation(
-            existing,
-            payload_value,
-            payload_extra,
-            ExtraMergeMode::Shallow,
-            db,
-            &output,
-        ),
-        ConflictStrategy::Merge => apply_mutation(
-            existing,
-            payload_value,
-            payload_extra,
-            ExtraMergeMode::Deep,
-            db,
-            &output,
-        ),
-        ConflictStrategy::Rekey => apply_rekey(existing, payload_value, payload_extra, &args, db),
-        ConflictStrategy::Ignore => {
-            anyhow::bail!("`ignore` is not a meaningful strategy for update/merge/rekey")
-        }
-    }
-}
-
-#[derive(Clone, Copy)]
-enum ExtraMergeMode {
-    /// Top-level keys from payload replace existing; other keys preserved.
-    Shallow,
-    /// Recursive object merge; scalar conflicts → payload wins.
-    Deep,
-}
-
-fn strategy_verb(s: ConflictStrategy) -> &'static str {
-    match s {
-        ConflictStrategy::Update => "update",
-        ConflictStrategy::Merge => "merge",
-        ConflictStrategy::Rekey => "rekey",
-        ConflictStrategy::Ignore => "ignore",
-    }
-}
-
-fn apply_mutation(
-    existing: Entry,
-    payload_value: Option<JsonValue>,
-    payload_extra: Option<JsonValue>,
-    mode: ExtraMergeMode,
-    db: &Db,
-    output: &OutputArgs,
-) -> Result<()> {
-    let mut updated = existing;
-    updated.data = combine_extra(updated.data, payload_extra, mode);
-    if let Some(v) = payload_value {
-        updated.value = Some(v);
-    }
-    updated.content_hash = updated.expected_content_hash();
-
-    db.save_existing_entry(&updated)?;
-
-    // Fetch the persisted row so the printed confirmation reflects the
-    // db-stamped `modified_at`.
-    let fresh = db.get_entry(&updated.slug)?;
-    let registry = load_registry(db).ok();
-    let _ = mode; // shallow vs deep is cosmetic to the user; output is unified UPDATE.
-    show_update(&fresh, registry.as_ref(), output);
-    Ok(())
-}
-
-fn apply_rekey(
-    existing: Entry,
-    payload_value: Option<JsonValue>,
-    payload_extra: Option<JsonValue>,
+pub(crate) fn parse_update_payload(
     args: &UpdateArgs,
-    db: &Db,
-) -> Result<()> {
-    let mut new_entry = existing.clone();
-    // Payloads are applied with shallow semantics on rekey — same as update.
-    new_entry.data =
-        combine_extra(new_entry.data, payload_extra, ExtraMergeMode::Shallow);
-    if let Some(v) = payload_value {
-        new_entry.value = Some(v);
-    }
-
-    // Fresh hid + timestamps. Slug will be re-interpolated below.
-    new_entry.hid = new_hid();
-    let now = chrono::Utc::now();
-    new_entry.create_time = now;
-    new_entry.modify_time = now;
-    new_entry.deleted_at = None;
-
-    // Resolve template: explicit --id beats the spec's id_template. Rekey
-    // without any template is meaningless — the new slug would match the
-    // old one.
-    let spec_template = db.load_spec(&new_entry.field)?.and_then(|s| s.id_template);
-    let template = args.id.clone().or(spec_template);
-    let template = template.ok_or_else(|| {
-        anyhow::anyhow!(
-            "rekey requires a template: pass --id or define id_template on the spec"
-        )
-    })?;
-
-    let uid = new_entry.short_uid();
-    let ctx = InterpolationContext::from_entry(&new_entry, &uid);
-    new_entry.slug = field_spec::interpolate(&template, &ctx, &args.id_delimiter);
-    new_entry.id_structure = Some(template);
-
-    new_entry.content_hash = new_entry.expected_content_hash();
-
-    // Use the Rekey strategy so duplicate content_hashes (rekey with no
-    // payload change) don't collide with the existing row.
-    let outcome = db.insert_entry_with_strategy(&new_entry, ConflictStrategy::Rekey)?;
-    let registry = load_registry(db).ok();
-    match outcome {
-        InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
-            show_rename(&existing.slug, &new_entry.slug, &args.output());
-            show_create(&new_entry, registry.as_ref(), &args.output());
-            Ok(())
-        }
-        other => anyhow::bail!("rekey produced unexpected outcome: {other:?}"),
-    }
-}
-
-fn combine_extra(
-    existing: Option<JsonValue>,
-    payload: Option<JsonValue>,
-    mode: ExtraMergeMode,
-) -> Option<JsonValue> {
-    match (existing, payload, mode) {
-        (None, payload, _) => payload,
-        (existing, None, _) => existing,
-        (Some(JsonValue::Object(mut e_map)), Some(JsonValue::Object(p_map)), ExtraMergeMode::Shallow) => {
-            for (k, v) in p_map {
-                // `key=` with an empty value is treated as "drop this key".
-                if is_empty_string(&v) {
-                    e_map.remove(&k);
-                } else {
-                    e_map.insert(k, v);
-                }
-            }
-            if e_map.is_empty() {
-                None
-            } else {
-                Some(JsonValue::Object(e_map))
-            }
-        }
-        (Some(existing), Some(payload), ExtraMergeMode::Deep) => {
-            Some(deep_merge(existing, payload))
-        }
-        // Non-object payload on an existing: payload wins wholesale.
-        (_, Some(payload), _) => Some(payload),
-    }
-}
-
-fn is_empty_string(v: &JsonValue) -> bool {
-    matches!(v, JsonValue::String(s) if s.is_empty())
-}
-
-fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
-    match (existing, incoming) {
-        (JsonValue::Object(mut e_map), JsonValue::Object(i_map)) => {
-            for (k, v) in i_map {
-                match e_map.remove(&k) {
-                    Some(prev) => {
-                        e_map.insert(k, deep_merge(prev, v));
-                    }
-                    None => {
-                        e_map.insert(k, v);
-                    }
-                }
-            }
-            JsonValue::Object(e_map)
-        }
-        (_, incoming) => incoming,
-    }
-}
-
-fn parse_update_payload(args: &UpdateArgs) -> Result<(Option<JsonValue>, Option<JsonValue>)> {
+) -> Result<(Option<JsonValue>, Option<JsonValue>)> {
     let mut value: Option<JsonValue> = None;
     let mut extra = serde_json::Map::new();
 
@@ -2777,6 +2590,7 @@ fn restore_from_reader<R: std::io::BufRead>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::commands::update_core::{update_from_args, UpdateStrategy};
 
     #[test]
     fn test_parse_value_token_number() {
@@ -3519,9 +3333,9 @@ mod tests {
         // Let a moment pass so modified_at is observably greater than created_at.
         std::thread::sleep(std::time::Duration::from_millis(5));
 
-        cmd_update(
+        update_from_args(
             update_args(&e.slug, vec!["weight=80kg"]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap();
@@ -3555,9 +3369,9 @@ mod tests {
             })),
         );
 
-        cmd_update(
+        update_from_args(
             update_args(&e.slug, vec!["tag=red"]),
-            ConflictStrategy::Merge,
+            UpdateStrategy::Merge,
             &db,
         )
         .unwrap();
@@ -3590,13 +3404,13 @@ mod tests {
         // becomes literal "nested.b" — that's fine for this test: we're
         // verifying the deep-merge code path runs without clobbering existing
         // keys. For true nested merge we'd need nested JSON — test below.
-        cmd_update(args, ConflictStrategy::Merge, &db).unwrap();
+        update_from_args(args, UpdateStrategy::Merge, &db).unwrap();
 
         // Now overlay nested JSON via a second merge with -k syntax replaced
         // by direct extra_data manipulation through another merge call.
         // We'll exercise nested merging by passing a nested object through
         // parse_value_token's fallback (string): instead rely on the unit
-        // test of `deep_merge` for that path.
+        // test of `deep_merge` in update_core for that path.
         let after = db.get_entry(&e.slug).unwrap();
         let ex = after.data.as_ref().unwrap();
         // Original scalar keys intact
@@ -3606,17 +3420,8 @@ mod tests {
         assert_eq!(ex["nested.b"], serde_json::json!(2));
     }
 
-    #[test]
-    fn deep_merge_recurses_into_objects() {
-        let existing = serde_json::json!({"a": {"b": 1, "c": 2}, "x": "keep"});
-        let incoming = serde_json::json!({"a": {"b": 10, "d": 4}, "y": "new"});
-        let merged = deep_merge(existing, incoming);
-        assert_eq!(merged["a"]["b"], serde_json::json!(10));
-        assert_eq!(merged["a"]["c"], serde_json::json!(2));
-        assert_eq!(merged["a"]["d"], serde_json::json!(4));
-        assert_eq!(merged["x"], serde_json::json!("keep"));
-        assert_eq!(merged["y"], serde_json::json!("new"));
-    }
+    // `deep_merge_recurses_into_objects` lives in update_core.rs where the
+    // helper now resides; this crate-level test would be redundant.
 
     #[test]
     fn update_empty_value_drops_key() {
@@ -3630,9 +3435,9 @@ mod tests {
             Some(serde_json::json!({"foo": "bar", "baz": "qux"})),
         );
 
-        cmd_update(
+        update_from_args(
             update_args(&e.slug, vec!["foo="]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap();
@@ -3666,7 +3471,7 @@ mod tests {
         let mut args = update_args(&e.slug, vec![]);
         args.id = Some("%field%:%state%".to_string());
 
-        cmd_update(args, ConflictStrategy::Rekey, &db).unwrap();
+        update_from_args(args, UpdateStrategy::Rekey, &db).unwrap();
 
         // Both the old and new rows exist.
         let live = db.entries_for_field("mood", None).unwrap();
@@ -3689,7 +3494,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "mood", Verb::Switch, Some(serde_json::json!("x")), None);
 
-        let err = cmd_update(update_args(&e.slug, vec![]), ConflictStrategy::Rekey, &db)
+        let err = update_from_args(update_args(&e.slug, vec![]), UpdateStrategy::Rekey, &db)
             .unwrap_err();
         assert!(err.to_string().contains("template"), "{err}");
     }
@@ -3709,9 +3514,9 @@ mod tests {
 
         // Use id (slug lookup would also find the tombstoned row via
         // get_entry_including_deleted).
-        let err = cmd_update(
+        let err = update_from_args(
             update_args(&e.slug, vec!["reps=20"]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap_err();
@@ -3721,9 +3526,9 @@ mod tests {
         );
 
         // Merge and rekey must also reject tombstoned rows.
-        let err = cmd_update(
+        let err = update_from_args(
             update_args(&e.slug, vec!["tag=red"]),
-            ConflictStrategy::Merge,
+            UpdateStrategy::Merge,
             &db,
         )
         .unwrap_err();
@@ -3731,7 +3536,7 @@ mod tests {
 
         let mut rk = update_args(&e.slug, vec![]);
         rk.id = Some("%field%:%uid%".to_string());
-        let err = cmd_update(rk, ConflictStrategy::Rekey, &db).unwrap_err();
+        let err = update_from_args(rk, UpdateStrategy::Rekey, &db).unwrap_err();
         assert!(err.to_string().to_lowercase().contains("tombstoned"));
     }
 
@@ -3745,9 +3550,9 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
         let prefix: String = e.slug.chars().take(5).collect();
-        cmd_update(
+        update_from_args(
             update_args(&prefix, vec!["note=fixed"]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap();
@@ -3766,9 +3571,9 @@ mod tests {
         // timestamp, so the "gym:" prefix matches both.
         seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
         seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(2)), None);
-        let err = cmd_update(
+        let err = update_from_args(
             update_args("gym:", vec!["note=x"]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap_err();
@@ -3780,9 +3585,9 @@ mod tests {
     fn update_nonexistent_errors() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = cmd_update(
+        let err = update_from_args(
             update_args("no-such-id", vec!["foo=bar"]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap_err();
@@ -3806,7 +3611,7 @@ mod tests {
         let mut args = update_args(&e.slug, vec![]);
         args.strategy = Some(crate::args::ConflictStrategyArg::Merge);
         args.keys = vec!["tag.priority=1".to_string()];
-        cmd_update(args, ConflictStrategy::Update, &db).unwrap();
+        update_from_args(args, UpdateStrategy::Replace, &db).unwrap();
 
         let after = db.get_entry(&e.slug).unwrap();
         let ex = after.data.as_ref().unwrap();
@@ -3828,9 +3633,9 @@ mod tests {
             None,
         );
 
-        cmd_update(
+        update_from_args(
             update_args(&e.slug, vec!["sad"]),
-            ConflictStrategy::Update,
+            UpdateStrategy::Replace,
             &db,
         )
         .unwrap();
@@ -3855,7 +3660,7 @@ mod tests {
             Some(serde_json::json!({"state": "calm"})),
         );
 
-        cmd_update(update_args(&e.slug, vec![]), ConflictStrategy::Rekey, &db).unwrap();
+        update_from_args(update_args(&e.slug, vec![]), UpdateStrategy::Rekey, &db).unwrap();
 
         let live = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 2);
@@ -3876,7 +3681,7 @@ mod tests {
 
         let mut args = update_args(&e.slug, vec!["pos=noun"]);
         args.id = Some("%field%:%pos%:%uid%".to_string());
-        cmd_update(args, ConflictStrategy::Rekey, &db).unwrap();
+        update_from_args(args, UpdateStrategy::Rekey, &db).unwrap();
 
         let rows = db.entries_for_field("word", None).unwrap();
         assert_eq!(rows.len(), 2);

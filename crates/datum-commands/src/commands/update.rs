@@ -1,15 +1,16 @@
-//! `datum update <id_or_slug>` — overwrite an entry's payload.
+//! `datum update <id_or_slug>` — shallow-replace an entry's payload.
 //!
-//! Shares a handler with `merge` and `rekey` — the only difference is the
-//! default conflict strategy.
+//! Thin wrapper over [`crate::commands::update_core::update_with_strategy`]
+//! with `UpdateStrategy::Replace`.
 
 use anyhow::Result;
-use datum_core::db::{ConflictStrategy, Db};
+use datum_core::db::Db;
 
 use crate::args::UpdateArgs;
+use crate::commands::update_core::{update_from_args, UpdateStrategy};
 
 pub fn update(args: UpdateArgs, db: &Db) -> Result<()> {
-    crate::cmd::cmd_update(args, ConflictStrategy::Update, db)
+    update_from_args(args, UpdateStrategy::Replace, db).map(|_| ())
 }
 
 pub fn update_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
