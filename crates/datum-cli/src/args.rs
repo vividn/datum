@@ -160,14 +160,19 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
 /// synonymous — `<field> end` and `<field> stop` both rewrite to `end <field>`.
 const TERMINAL_VERBS: &[&str] = &["end", "stop"];
 
-/// Expand argv: capture intent context, resolve aliases, apply terminal-verb
-/// override, swap field/verb order, and expand stacked flags.
+/// Expand argv: capture intent context, apply terminal-verb override, resolve
+/// aliases, swap field/verb order, and expand stacked flags.
+///
+/// Terminal-verb override runs BEFORE alias expansion so that `datum sleep end`
+/// rewrites to `datum end sleep` cleanly even when `sleep` has a bare-field
+/// alias (which would otherwise expand `sleep` → `start sleep` first and leave
+/// `end` dangling).
 pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
     let raw_input = argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
     let mut ctx = IntentContext { raw_input, alias_chain: Vec::new() };
 
-    let argv = try_expand_alias(argv, &mut ctx);
     let argv = apply_terminal_verb_override(argv);
+    let argv = try_expand_alias(argv, &mut ctx);
     let argv = maybe_swap_field_verb(argv);
     let argv = expand_stacked_flags(argv);
 
@@ -185,8 +190,8 @@ pub fn expand_argv_with_db(
     let raw_input = argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
     let mut ctx = IntentContext { raw_input, alias_chain: Vec::new() };
 
-    let argv = try_expand_alias_with_db(argv, db, &mut ctx);
     let argv = apply_terminal_verb_override(argv);
+    let argv = try_expand_alias_with_db(argv, db, &mut ctx);
     let argv = maybe_swap_field_verb(argv);
     let argv = expand_stacked_flags(argv);
 
