@@ -68,6 +68,12 @@ impl From<datum_parse::ParseError> for DatumError {
         match e {
             datum_parse::ParseError::InvalidTime(s) => DatumError::InvalidTime(s),
             datum_parse::ParseError::InvalidArg(s) => DatumError::Other(s),
+            datum_parse::ParseError::MissingRequiredKey(path) => {
+                DatumError::Other(format!("Missing required key: {path}"))
+            }
+            datum_parse::ParseError::ExtraData(rem) => {
+                DatumError::Other(format!("Extra data with no matching key: {rem:?}"))
+            }
         }
     }
 }

@@ -28,7 +28,7 @@ The R2 bead lands incrementally:
 |---|---|---|
 | 1/N | New `datum-parse/` crate; move `time.rs` → split `time/` submodules; `PrecisionUnit` moved from `datum-core::entry`; WASM build verified; **this audit** | **done** |
 | 2/N | `datum-parse` input/ + alias/ module scaffold; port `consolidate_keys` + `flexible_positional` with full TS-parity tests; stubs for the rest pointing back at this audit | **done** |
-| 2b/N | Port `data_args`, `time_args`, `duration_args`, `field_args`, `output_args`, `quick_id_arg` from TS + tests | pending |
+| 2b/N | Port `data_args`, `time_args`, `duration_args`, `field_args`, `output_args`, `quick_id_arg` from TS + tests | **done** |
 | 3/N | Replace clap in `datum-commands::args`; remove `clap` workspace dep; `CommandIntent` + bespoke `--help` in `datum-parse`; alias expansion migrates into `datum-parse::alias` | pending (clap dev-dep already dropped from `datum-cli`) |
 
 Everything below is what the final R2 target must cover. Where daydumb has
@@ -41,11 +41,11 @@ should deliver it.
 
 | Area | datum has | daydumb has | both | added in daydumb |
 |---|---|---|---|---|
-| `flexiblePositional` | ✓ | **PENDING step 2/N** | — | — |
-| `consolidateKeys` (`-k`) | ✓ | **PENDING step 2/N** (clap collects but doesn't consolidate) | partial | — |
-| `-K` id-key variant | ✓ | **PENDING step 2/N** (ad-hoc in log handler) | partial | — |
-| `key=value` interleaved with positional | ✓ | **PENDING step 2/N** (partial in log path) | partial | — |
-| `--lenient` / `--strict` / `-R` / `-S` / `-C` remainder modes | ✓ | **PENDING step 2/N** | — | — |
+| `flexiblePositional` | ✓ | ✓ (step 2/N) | ✓ | — |
+| `consolidateKeys` (`-k`) | ✓ | ✓ (step 2/N) | ✓ | — |
+| `-K` id-key variant | ✓ | ✓ (step 2b/N, `DataArgs::push_id_key`) | ✓ | — |
+| `key=value` interleaved with positional | ✓ | ✓ (step 2b/N, `handle_data_args`) | ✓ | — |
+| `--lenient` / `--strict` / `-R` / `-S` / `-C` remainder modes | ✓ | ✓ (step 2b/N) | ✓ | — |
 | `-b/--base-data` (JSON object) | ✓ | ✗ | — | — |
 | `-d` / `-t` / `-y*` / `-q*` / `-z` / `-D` / `-T` | ✓ | ✓ (clap-backed) | ✓ | `-yy`/`-qqq` shorthand via pre-pass; `±N[unit]` uncertainty suffix (D2) |
 | `--dur` (duration) | `duration` positional | `--dur` flag | ✓ | explicit flag vs positional |

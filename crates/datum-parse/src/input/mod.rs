@@ -7,12 +7,12 @@
 //! |-------------------------|-----------------------------------|--------|
 //! | `consolidateKeys.ts`    | [`consolidate_keys`]              | ported |
 //! | `flexiblePositional.ts` | [`flexible_positional`]           | ported |
-//! | `dataArgs.ts`           | [`data_args`]                     | stub (step 2b/N) |
-//! | `timeArgs.ts`           | [`time_args`]                     | stub (step 2b/N) |
-//! | `durationArgs.ts`       | [`duration_args`]                 | stub (step 2b/N) |
-//! | `fieldArgs.ts`          | [`field_args`]                    | stub (step 2b/N) |
-//! | `outputArgs.ts`         | [`output_args`]                   | stub (step 2b/N) |
-//! | `quickIdArg.ts`         | [`quick_id_arg`]                  | stub (step 2b/N) |
+//! | `dataArgs.ts`           | [`data_args`]                     | ported |
+//! | `timeArgs.ts`           | [`time_args`]                     | ported |
+//! | `durationArgs.ts`       | [`duration_args`]                 | ported |
+//! | `fieldArgs.ts`          | [`field_args`]                    | ported |
+//! | `outputArgs.ts`         | [`output_args`]                   | ported |
+//! | `quickIdArg.ts`         | [`quick_id_arg`]                  | ported |
 //! | `mainArgs.ts`           | [`main_args`]                     | stub (step 3/N)  |
 //! | `defaults.ts`           | [`defaults`]                      | stub (intentionally empty upstream) |
 //!
@@ -30,4 +30,10 @@ pub mod quick_id_arg;
 pub mod time_args;
 
 pub use consolidate_keys::consolidate_keys;
+pub use data_args::{handle_data_args, infer_type, DataArgs, DatumData};
+pub use duration_args::{DurationArgs, DurationIntent};
+pub use field_args::FieldArgs;
 pub use flexible_positional::{flexible_positional, FlexibleTarget};
+pub use output_args::{OutputArgs, OutputResolved, Show};
+pub use quick_id_arg::{OnAmbiguous, QuickIdArg};
+pub use time_args::{TimeArgs, TimeFromArgs};
