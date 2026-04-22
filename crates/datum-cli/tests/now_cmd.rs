@@ -55,7 +55,7 @@ fn switch_entry(field: &str, state: &str) -> Entry {
 fn render_empty_tracked_shows_sentinel() {
     // No tracked fields at all (e.g. brand-new db) → the view prints its
     // terminal sentinel rather than silently producing nothing.
-    let out = render_now_view(&[], &HashMap::new(), &HashMap::new(), false);
+    let out = render_now_view(&[], &HashMap::new(), &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked (non-ignored) fields"),
@@ -69,7 +69,7 @@ fn render_tracked_field_with_no_entries_shows_no_entries_marker() {
     // still appear so the user sees the field exists — with a "(no entries)"
     // marker in the time column — rather than being silently hidden.
     let tf = [tracked("mood")];
-    let out = render_now_view(&tf, &HashMap::new(), &HashMap::new(), false);
+    let out = render_now_view(&tf, &HashMap::new(), &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
     assert!(
@@ -86,7 +86,7 @@ fn render_switch_entry_appears_as_active_row_with_bullet_and_state() {
     let mut latest = HashMap::new();
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), false);
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
     assert!(plain.contains("●"), "active row must have ● bullet:\n{plain}");
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
@@ -98,7 +98,7 @@ fn render_ignored_field_hidden_by_default() {
     // `ignored=true` specs must NOT appear when `show_ignored=false`, and the
     // "no (non-ignored)" sentinel should fire because nothing else is tracked.
     let tf = [ignored("youtube")];
-    let out = render_now_view(&tf, &HashMap::new(), &HashMap::new(), false);
+    let out = render_now_view(&tf, &HashMap::new(), &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
     assert!(
         !plain.contains("youtube"),
@@ -118,7 +118,7 @@ fn render_ignored_field_shown_dim_after_separator_with_show_all() {
     let mut latest = HashMap::new();
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), true);
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
     assert!(plain.contains("youtube"), "show_all must include ignored:\n{plain}");
@@ -156,7 +156,7 @@ fn render_separator_divides_active_from_stopped() {
             .build(),
     );
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), false);
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
 
     let mood_at = plain.find("mood").expect("active mood row missing");
@@ -207,7 +207,7 @@ fn render_honors_spec_color_on_tracked_field() {
     let mut latest = HashMap::new();
     latest.insert("mood".to_string(), switch_entry("mood", "happy"));
 
-    let out = render_now_view(&tf, &latest, &HashMap::new(), false);
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
 
     // True-color escape for #ff6600: `\x1b[38;2;255;102;0m`.
     assert!(

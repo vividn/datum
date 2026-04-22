@@ -163,6 +163,36 @@ CREATE INDEX IF NOT EXISTS entry_history_entry
 CREATE INDEX IF NOT EXISTS entry_history_change_kind
     ON entry_history(change_kind);
 
+-- Overlap / double-open / orphan-end bookkeeping. Rows are created by the
+-- local validator (D5) on insert and by sync-pull reconciliation (C4e);
+-- the `detected_by` column distinguishes them. Rows start with
+-- `resolution=NULL` and are filled in by `datum conflicts resolve` or the
+-- auto-resolver once they're old enough.
+--
+-- `id` is a random 12-char base36 token (full precision); `hid` is the
+-- short prefix used at the CLI. `entry_slug` is the slug of the newer
+-- triggering entry. `local_entry` holds that triggering entry as JSON;
+-- `remote_entry` holds the conflicting counterpart — the older local entry
+-- for `local_validator` rows, the incoming remote entry for `sync_pull`
+-- rows. May be NULL for orphan_end detection (no counterpart).
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id              TEXT NOT NULL PRIMARY KEY,
+    hid             TEXT NOT NULL,
+    entry_slug      TEXT NOT NULL,
+    local_entry     TEXT NOT NULL,
+    remote_entry    TEXT,
+    detected_at     TEXT NOT NULL,
+    resolution      TEXT,
+    resolved_at     TEXT,
+    detected_by     TEXT NOT NULL,
+    conflict_kind   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS sync_conflicts_hid ON sync_conflicts(hid);
+CREATE INDEX IF NOT EXISTS sync_conflicts_slug ON sync_conflicts(entry_slug);
+CREATE INDEX IF NOT EXISTS sync_conflicts_pending
+    ON sync_conflicts(detected_at) WHERE resolution IS NULL;
+
 -- Schema version and other key/value metadata.
 CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
@@ -171,4 +201,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '4');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '5');

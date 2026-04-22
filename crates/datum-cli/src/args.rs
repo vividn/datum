@@ -414,6 +414,51 @@ pub enum Command {
     /// Sync — login, server config, and master-key management.
     #[command(subcommand)]
     Sync(SyncCommand),
+
+    /// Inspect and resolve overlap / double-open / orphan-end conflicts.
+    #[command(subcommand)]
+    Conflicts(ConflictsCommand),
+}
+
+// ─── Conflicts subcommands (D5) ──────────────────────────────────────────────
+
+#[derive(Subcommand, Debug)]
+pub enum ConflictsCommand {
+    /// List pending (or resolved) conflicts.
+    List(ConflictsListArgs),
+    /// Resolve a single conflict by its short hid (or full id).
+    Resolve(ConflictsResolveArgs),
+    /// Run the auto-resolver over pending conflicts older than --min-age.
+    AutoResolve(ConflictsAutoResolveArgs),
+}
+
+#[derive(Args, Debug, Default)]
+pub struct ConflictsListArgs {
+    /// Restrict to one kind: double_open | orphan_end | overlap.
+    #[arg(long)]
+    pub kind: Option<String>,
+    /// Include resolved rows too.
+    #[arg(long)]
+    pub all: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct ConflictsResolveArgs {
+    /// Short hid or full id of the conflict to resolve.
+    pub hid: String,
+    /// Keep both entries — record the user's explicit decision.
+    #[arg(long, group = "decision")]
+    pub keep: Option<String>,
+    /// Close the older ongoing entry at the newer one's start_time.
+    #[arg(long, group = "decision")]
+    pub close_older: bool,
+}
+
+#[derive(Args, Debug, Default)]
+pub struct ConflictsAutoResolveArgs {
+    /// Minimum age (in seconds) before a pending conflict becomes eligible.
+    #[arg(long, default_value_t = datum_core::conflicts::AUTO_RESOLVE_MIN_AGE_SECS)]
+    pub min_age: i64,
 }
 
 // ─── Sync subcommands ────────────────────────────────────────────────────────

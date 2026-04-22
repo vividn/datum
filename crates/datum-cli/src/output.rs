@@ -841,24 +841,40 @@ fn state_ansi(
 }
 
 /// Print the redesigned `datum now` view.
+///
+/// `overlap_counts` maps field → number of live ongoing entries. Fields
+/// with a count ≥ 2 get an overlap-warning line prepended by
+/// [`render_now_view`]; fields missing from the map are treated as 0.
 pub fn print_now_view(
     tracked: &[TrackedField],
     latest_per_field: &HashMap<String, Entry>,
     state_colors: &HashMap<(String, String), String>,
+    overlap_counts: &HashMap<String, u32>,
     show_ignored: bool,
 ) {
     print!(
         "{}",
-        render_now_view(tracked, latest_per_field, state_colors, show_ignored)
+        render_now_view(
+            tracked,
+            latest_per_field,
+            state_colors,
+            overlap_counts,
+            show_ignored,
+        )
     );
 }
 
 /// Render the `datum now` view as a string. Thin sibling of [`print_now_view`]
 /// used by integration tests that need to inspect output.
+///
+/// `overlap_counts` maps field → number of live ongoing entries. A count
+/// ≥ 2 prepends an `⚠ N overlapping opens — datum conflicts list` line
+/// above the field's row.
 pub fn render_now_view(
     tracked: &[TrackedField],
     latest_per_field: &HashMap<String, Entry>,
     state_colors: &HashMap<(String, String), String>,
+    overlap_counts: &HashMap<String, u32>,
     show_ignored: bool,
 ) -> String {
     use std::fmt::Write;
@@ -960,6 +976,16 @@ pub fn render_now_view(
 
     let mut out = String::new();
     let write_row = |out: &mut String, row: &NowRow| {
+        if let Some(&n) = overlap_counts.get(&row.field) {
+            if n >= 2 {
+                writeln!(
+                    out,
+                    "⚠ {n} overlapping opens on '{field}' — datum conflicts list",
+                    field = row.field,
+                )
+                .unwrap();
+            }
+        }
         let fc = &row.field_ansi;
         let sc = &row.state_ansi;
         if row.is_dim {

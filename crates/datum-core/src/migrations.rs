@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 4;
+pub const CURRENT_SCHEMA_VERSION: u32 = 5;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -53,6 +53,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entry_history: append-only modification trail (entry_hid, version, snapshot, change_kind)",
         apply: m3_to_4_entry_history,
     },
+    Migration {
+        from: 4,
+        to: 5,
+        summary: "sync_conflicts: non-blocking overlap / double-open / orphan-end queue (local_validator + sync_pull)",
+        apply: m4_to_5_sync_conflicts,
+    },
 ];
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
@@ -82,6 +88,31 @@ fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_entries_time;
          DROP INDEX IF EXISTS idx_entries_content_hash;
          DROP TABLE IF EXISTS entries;",
+    )?;
+    Ok(())
+}
+
+fn m4_to_5_sync_conflicts(conn: &Connection) -> Result<()> {
+    // Purely additive: schema.sql re-run by Db::migrate after migrations
+    // will bring the table up on fresh DBs. For existing v4 DBs we create
+    // it explicitly here so the table exists as soon as the version bumps.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS sync_conflicts (
+            id              TEXT NOT NULL PRIMARY KEY,
+            hid             TEXT NOT NULL,
+            entry_slug      TEXT NOT NULL,
+            local_entry     TEXT NOT NULL,
+            remote_entry    TEXT,
+            detected_at     TEXT NOT NULL,
+            resolution      TEXT,
+            resolved_at     TEXT,
+            detected_by     TEXT NOT NULL,
+            conflict_kind   TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS sync_conflicts_hid ON sync_conflicts(hid);
+        CREATE INDEX IF NOT EXISTS sync_conflicts_slug ON sync_conflicts(entry_slug);
+        CREATE INDEX IF NOT EXISTS sync_conflicts_pending
+            ON sync_conflicts(detected_at) WHERE resolution IS NULL;",
     )?;
     Ok(())
 }

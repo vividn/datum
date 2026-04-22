@@ -276,6 +276,7 @@ impl Db {
             "field_specs",
             "aliases",
             "sync_state",
+            "sync_conflicts",
             "_meta",
         ];
         let mut dropped = Vec::new();
@@ -350,6 +351,13 @@ impl Db {
                 let stored_slug = raw_insert(&tx, entry)?;
                 let inserted = fetch_entry_any(&tx, &stored_slug)?;
                 history::record(&tx, &inserted, ChangeKind::Create)?;
+                // D5: post-write conflict detection. Runs inside the same
+                // transaction so the conflict row is atomic with the insert.
+                crate::conflicts::detect_for_entry(
+                    &tx,
+                    &inserted,
+                    crate::conflicts::DetectedBy::LocalValidator,
+                )?;
                 InsertOutcome::Inserted { slug: stored_slug }
             }
             (Some((slug, _)), ConflictStrategy::Ignore) => {
@@ -379,6 +387,11 @@ impl Db {
                 let new_slug = raw_insert(&tx, entry)?;
                 let inserted = fetch_entry_any(&tx, &new_slug)?;
                 history::record(&tx, &inserted, ChangeKind::Create)?;
+                crate::conflicts::detect_for_entry(
+                    &tx,
+                    &inserted,
+                    crate::conflicts::DetectedBy::LocalValidator,
+                )?;
                 InsertOutcome::Rekeyed { old_slug, new_slug }
             }
         };
@@ -1371,6 +1384,80 @@ impl Db {
         let restored = fetch_entry_any(&tx, &target_state.slug)?;
         tx.commit()?;
         Ok(restored)
+    }
+
+    /// List rows from `sync_conflicts`.
+    pub fn list_conflicts(
+        &self,
+        filter: &crate::conflicts::ListFilter,
+    ) -> Result<Vec<crate::conflicts::Conflict>> {
+        crate::conflicts::list(&self.conn, filter)
+    }
+
+    /// Fetch one conflict row by its short hid or full id.
+    pub fn get_conflict(
+        &self,
+        token: &str,
+    ) -> Result<Option<crate::conflicts::Conflict>> {
+        crate::conflicts::get_by_hid_or_id(&self.conn, token)
+    }
+
+    /// Resolve a conflict: mark the row and, for `close_older`, end the
+    /// older ongoing entry at the newer's start_time.
+    pub fn resolve_conflict(
+        &self,
+        token: &str,
+        resolution: crate::conflicts::Resolution,
+    ) -> Result<crate::conflicts::Conflict> {
+        let conflict = self
+            .get_conflict(token)?
+            .ok_or_else(|| DatumError::NotFound(format!("conflict {token}")))?;
+        if conflict.resolution.is_some() {
+            return Err(DatumError::Other(format!(
+                "conflict {} already resolved ({})",
+                conflict.hid,
+                conflict.resolution.clone().unwrap_or_default()
+            )));
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        if matches!(
+            resolution,
+            crate::conflicts::Resolution::CloseOlder
+                | crate::conflicts::Resolution::AutoCloseOlder
+        ) {
+            if let Some(older) = conflict.remote_entry.as_ref() {
+                crate::conflicts::close_older_at(
+                    &tx,
+                    older,
+                    conflict.local_entry.start_time.as_ref(),
+                )?;
+            }
+        }
+        crate::conflicts::mark_resolved(&tx, &conflict.id, resolution, Utc::now())?;
+        tx.commit()?;
+        // Re-fetch for the updated resolution columns.
+        Ok(self
+            .get_conflict(&conflict.id)?
+            .expect("just-resolved conflict vanished"))
+    }
+
+    /// Run the auto-resolver. `min_age_secs` is the delay before a pending
+    /// conflict becomes eligible.
+    pub fn auto_resolve_conflicts(
+        &self,
+        now: DateTime<Utc>,
+        min_age_secs: i64,
+    ) -> Result<Vec<crate::conflicts::Conflict>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let applied = crate::conflicts::auto_resolve_pending(&tx, now, min_age_secs)?;
+        tx.commit()?;
+        Ok(applied)
+    }
+
+    /// Count of live ongoing entries on `field`. The `now` view uses this
+    /// to prepend an overlap warning when the count is >1.
+    pub fn open_count_for_field(&self, field: &str) -> Result<u32> {
+        crate::conflicts::open_entries_for_field(&self.conn, field)
     }
 
     /// Latest non-Add, non-tombstoned entry for a field, for use in the now

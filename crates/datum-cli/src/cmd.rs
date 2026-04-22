@@ -14,6 +14,7 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
+        ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
         DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs, HistoryArgs, IgnoreArgs,
         InfoArgs, LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs,
         RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
@@ -64,6 +65,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Setup(args) => cmd_setup(args, db),
         Command::Config(sub) => cmd_config(sub, cli.db.as_deref()),
         Command::Sync(sub) => crate::sync::dispatch(sub),
+        Command::Conflicts(sub) => cmd_conflicts(sub, db),
     }
 }
 
@@ -1321,6 +1323,7 @@ fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
     let state_colors = db.get_all_state_colors()?;
 
     let mut latest_per_field = std::collections::HashMap::new();
+    let mut overlap_counts = std::collections::HashMap::new();
     for tf in &tracked {
         if tf.ignored && !args.show_all {
             continue;
@@ -1328,9 +1331,19 @@ fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
         if let Some(entry) = db.latest_entry_for_now(&tf.field)? {
             latest_per_field.insert(tf.field.clone(), entry);
         }
+        let open = db.open_count_for_field(&tf.field)?;
+        if open >= 2 {
+            overlap_counts.insert(tf.field.clone(), open);
+        }
     }
 
-    print_now_view(&tracked, &latest_per_field, &state_colors, args.show_all);
+    print_now_view(
+        &tracked,
+        &latest_per_field,
+        &state_colors,
+        &overlap_counts,
+        args.show_all,
+    );
     Ok(())
 }
 
@@ -2223,6 +2236,95 @@ fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
                 conflict.name, owner
             ),
         }
+    }
+    Ok(())
+}
+
+// ─── Conflicts (D5) ──────────────────────────────────────────────────────────
+
+fn cmd_conflicts(sub: ConflictsCommand, db: &Db) -> Result<()> {
+    match sub {
+        ConflictsCommand::List(args) => cmd_conflicts_list(args, db),
+        ConflictsCommand::Resolve(args) => cmd_conflicts_resolve(args, db),
+        ConflictsCommand::AutoResolve(args) => cmd_conflicts_auto_resolve(args, db),
+    }
+}
+
+fn cmd_conflicts_list(args: ConflictsListArgs, db: &Db) -> Result<()> {
+    use datum_core::conflicts::{ConflictKind, ListFilter};
+    let kind = match args.kind.as_deref() {
+        None => None,
+        Some(s) => Some(
+            s.parse::<ConflictKind>()
+                .map_err(|e| anyhow::anyhow!(e))?,
+        ),
+    };
+    let filter = ListFilter {
+        kind,
+        pending: if args.all { None } else { Some(true) },
+    };
+    let rows = db.list_conflicts(&filter)?;
+    if rows.is_empty() {
+        println!("No conflicts.");
+        return Ok(());
+    }
+    for c in &rows {
+        let status = match &c.resolution {
+            None => "pending".to_string(),
+            Some(r) => format!("resolved:{r}"),
+        };
+        println!(
+            "{hid}  {kind:<12}  {slug}  [{status}]  detected={detected}",
+            hid = c.hid,
+            kind = c.conflict_kind.as_str(),
+            slug = c.entry_slug,
+            status = status,
+            detected = c.detected_at.to_rfc3339(),
+        );
+    }
+    Ok(())
+}
+
+fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
+    use datum_core::conflicts::Resolution;
+    let resolution = if args.close_older {
+        Resolution::CloseOlder
+    } else {
+        // `--keep both` records the user's explicit keep-both decision;
+        // any other string is a usage error (we only support "both" today).
+        match args.keep.as_deref() {
+            Some("both") => Resolution::KeepBoth,
+            Some(other) => anyhow::bail!(
+                "--keep only supports 'both' (got '{other}'); use --close-older for auto-close"
+            ),
+            None => anyhow::bail!(
+                "specify a resolution: --keep both OR --close-older"
+            ),
+        }
+    };
+    let resolved = db.resolve_conflict(&args.hid, resolution)?;
+    println!(
+        "✓ resolved {hid}  {kind}  {resolution}",
+        hid = resolved.hid,
+        kind = resolved.conflict_kind.as_str(),
+        resolution = resolved.resolution.as_deref().unwrap_or("?"),
+    );
+    Ok(())
+}
+
+fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result<()> {
+    let applied = db.auto_resolve_conflicts(Utc::now(), args.min_age)?;
+    if applied.is_empty() {
+        println!("No conflicts eligible for auto-resolution (min_age={}s).", args.min_age);
+        return Ok(());
+    }
+    for c in &applied {
+        println!(
+            "✓ auto-resolved {hid}  {kind}  ({slug})",
+            hid = c.hid,
+            kind = c.conflict_kind.as_str(),
+            slug = c.entry_slug,
+        );
     }
     Ok(())
 }
