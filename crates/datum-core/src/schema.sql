@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS entries (
     -- What
     field           TEXT NOT NULL,
     entry_shape     TEXT NOT NULL,               -- 'point' | 'block' | 'ongoing'
-    intent          TEXT,                        -- NULL | 'stop' | 'note' | ... (user-intent override for generated verb)
+    intent          TEXT,                        -- NULL | 'stop' | 'add' | 'occur' | 'switch' (user-intent override for generated verb)
     value           TEXT,                        -- JSON (primary value)
     data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)
     unit            TEXT,                        -- top-level unit for value
@@ -120,6 +120,16 @@ CREATE TABLE IF NOT EXISTS aliases (
 
 CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
     ON aliases (derived_from_field);
+
+-- Seed alias: `note` routes to `add`. After D3 `note` is no longer a
+-- first-class verb; this alias preserves muscle memory. User can override
+-- or remove via `datum alias set note ...` or `datum alias remove note`.
+INSERT OR IGNORE INTO aliases (name, alias_json, derived_from_field)
+VALUES (
+    'note',
+    '{"name":"note","expands_to":"add","description":"compat: note → add (seeded)"}',
+    NULL
+);
 
 -- Sync state: per-DB bookkeeping for push/pull against a relay.
 CREATE TABLE IF NOT EXISTS sync_state (

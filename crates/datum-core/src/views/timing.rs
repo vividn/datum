@@ -99,7 +99,7 @@ mod tests {
 
         // Note with no time_start: skipped.
         entry_builder("word")
-            .verb(Verb::Note)
+            .verb(Verb::Add)
             .no_time()
             .insert(&db);
 

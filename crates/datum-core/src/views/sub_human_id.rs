@@ -76,7 +76,7 @@ mod tests {
             field: field.to_string(),
             entry_shape: EntryShape::Point,
             intent: Some("note".to_string()),
-            verb: Verb::Note,
+            verb: Verb::Add,
             value: None,
             data: None,
             unit: None,

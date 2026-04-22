@@ -357,7 +357,7 @@ mod tests {
         });
         FieldSpec {
             field: "word".to_string(),
-            default_verb: Verb::Note,
+            default_verb: Verb::Add,
             subfields,
             description: Some("Vocabulary word in a foreign language".to_string()),
             unit: None,
@@ -504,7 +504,7 @@ mod tests {
         let extra = serde_json::json!({"srcLang": "pt", "pos": "verb"});
         let ctx = InterpolationContext {
             field: "word",
-            verb: &Verb::Note,
+            verb: &Verb::Add,
             value: None,
             extra_data: Some(&extra),
             uid: "xx",

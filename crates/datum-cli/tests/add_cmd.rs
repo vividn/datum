@@ -23,6 +23,7 @@
 mod common;
 
 use common::run_cli;
+use datum_core::entry::Verb;
 use datum_core::test_util::fresh_db;
 use datum_core::{assert_count, assert_entry_matches};
 use serde_json::json;
@@ -33,7 +34,7 @@ use serde_json::json;
 #[test]
 fn note_creates_exactly_one_entry() {
     let db = fresh_db();
-    run_cli(&["note", "foo"], &db).expect("note foo");
+    run_cli(&["add", "foo"], &db).expect("note foo");
     assert_count!(db, "foo", 1);
 }
 
@@ -44,15 +45,15 @@ fn note_creates_exactly_one_entry() {
 #[test]
 fn note_sets_field_and_collects_extra_kv() {
     let db = fresh_db();
-    run_cli(&["note", "field"], &db).expect("note field");
+    run_cli(&["add", "field"], &db).expect("note field");
     let e1 = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(e1, field: "field", verb: "note");
+    assert_entry_matches!(e1, field: "field", verb: "add");
     assert!(
         e1.data.is_none(),
         "no kv pairs ⇒ extra_data stays None",
     );
 
-    run_cli(&["note", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
+    run_cli(&["add", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
     let e2 = &db.entries_for_field("field2", None).unwrap()[0];
     assert_entry_matches!(e2, field: "field2");
     let extra = e2.data.as_ref().expect("foo=bar lands in extra_data");
@@ -71,7 +72,7 @@ fn field_promotion_from_positional_skipped_no_analog() {
     // Confirm the daydumb contract: the first positional is always treated
     // as the field, not promoted by scanning for the first bare token.
     let db = fresh_db();
-    run_cli(&["note", "foo=bar", "dataField"], &db)
+    run_cli(&["add", "foo=bar", "dataField"], &db)
         .expect("note foo=bar dataField");
     // `foo=bar` is argv[1] for clap, so it becomes field_or_verb="foo=bar"
     // — and the `=` means it lands in extra_data parsing as a kv pair... no,
@@ -93,7 +94,7 @@ fn required_keys_positional_absorption_skipped_no_analog() {
     // In daydumb, `-k abc` (no `=`) is still consumed by clap as the -k
     // value but `parse_log_args` only splits on `=`; it is silently dropped.
     // The positional `value` becomes the primary value.
-    run_cli(&["note", "field", "-k", "abc=value"], &db)
+    run_cli(&["add", "field", "-k", "abc=value"], &db)
         .expect("note field -k abc=value");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     let extra = e.data.as_ref().expect("-k lands in extra_data");
@@ -109,7 +110,7 @@ fn fieldless_mode_skipped_no_analog() {
     let db = fresh_db();
     // The closest observable analog: omitting the field entirely must fail
     // at the clap layer (field_or_verb is required positional).
-    let err = run_cli(&["note"], &db).expect_err("bare `note` has no field");
+    let err = run_cli(&["add"], &db).expect_err("bare `note` has no field");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("required") || msg.contains("missing"),
@@ -127,7 +128,7 @@ fn fieldless_field_kv_skipped_no_analog() {
     // value="fromData". The entry.field stays "fromField"; the kv pair
     // coexists on a different axis.
     let db = fresh_db();
-    run_cli(&["note", "fromField", "field=fromData"], &db)
+    run_cli(&["add", "fromField", "field=fromData"], &db)
         .expect("note fromField field=fromData");
     let e = &db.entries_for_field("fromField", None).unwrap()[0];
     assert_eq!(e.field, "fromField", "positional field wins");
@@ -145,7 +146,7 @@ fn fieldless_field_kv_skipped_no_analog() {
 #[test]
 fn bare_note_fails_parse() {
     let db = fresh_db();
-    let err = run_cli(&["note"], &db).expect_err("field required");
+    let err = run_cli(&["add"], &db).expect_err("field required");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("required") || msg.contains("missing"),
@@ -167,7 +168,7 @@ fn bare_note_fails_parse() {
 #[test]
 fn empty_id_template_produces_empty_slug() {
     let db = fresh_db();
-    run_cli(&["note", "field", "--id", ""], &db).expect("note --id ''");
+    run_cli(&["add", "field", "--id", ""], &db).expect("note --id ''");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(e.slug, "", "empty template ⇒ empty slug (current contract)");
     assert_eq!(
@@ -186,7 +187,7 @@ fn blank_fieldless_with_metadata_skipped_no_analog() {
     // the upstream survey. Inverse invariant: a normal `note field` always
     // carries populated bookkeeping fields by default.
     let db = fresh_db();
-    run_cli(&["note", "field"], &db).expect("note field");
+    run_cli(&["add", "field"], &db).expect("note field");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert!(!e.device_id.is_empty(), "device_id populated by default");
     assert_ne!(
@@ -204,7 +205,7 @@ fn completely_blank_with_id_skipped_no_analog() {
     // Closest analog: `--id test` on a field produces a slug matching the
     // template. Locks in the `--id` wiring.
     let db = fresh_db();
-    run_cli(&["note", "field", "--id", "test"], &db).expect("note field --id test");
+    run_cli(&["add", "field", "--id", "test"], &db).expect("note field --id test");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(e.slug, "test", "explicit --id wins over default field:time");
 }
@@ -218,7 +219,7 @@ fn completely_blank_with_id_skipped_no_analog() {
 #[test]
 fn internal_insert_spy_skipped_structural_only() {
     let db = fresh_db();
-    run_cli(&["note", "field", "foo=abc", "--id", "%foo%"], &db)
+    run_cli(&["add", "field", "foo=abc", "--id", "%foo%"], &db)
         .expect("note field foo=abc --id %foo%");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     // Observable proxy for "the insert happened with these args":
@@ -239,7 +240,7 @@ fn internal_insert_spy_skipped_structural_only() {
 fn no_metadata_suppresses_timestamps() {
     let db = fresh_db();
 
-    run_cli(&["note", "hasMetadata", "--id", "hasMetadata"], &db)
+    run_cli(&["add", "hasMetadata", "--id", "hasMetadata"], &db)
         .expect("note hasMetadata --id hasMetadata");
     let has = db.get_entry("hasMetadata").unwrap();
     assert!(!has.device_id.is_empty(), "default path keeps device_id");
@@ -249,7 +250,7 @@ fn no_metadata_suppresses_timestamps() {
         "default path sets created_at to now()",
     );
 
-    run_cli(&["note", "noMetadata", "--id", "noMetadata", "-M"], &db)
+    run_cli(&["add", "noMetadata", "--id", "noMetadata", "-M"], &db)
         .expect("note noMetadata -M");
     let none = db.get_entry("noMetadata").unwrap();
     assert_eq!(none.device_id, "", "-M clears device_id");
@@ -266,7 +267,7 @@ fn no_metadata_suppresses_timestamps() {
 
     // `--no-metadata` long form behaves identically.
     run_cli(
-        &["note", "noMetaLong", "--id", "noMetaLong", "--no-metadata"],
+        &["add", "noMetaLong", "--id", "noMetaLong", "--no-metadata"],
         &db,
     )
     .expect("note --no-metadata");
@@ -286,7 +287,7 @@ fn identical_content_triggers_exists_outcome() {
     let db = fresh_db();
     // Use the strategy API directly to observe the outcome — the CLI path
     // already produces the same InsertOutcome variants.
-    run_cli(&["note", "bob", "foo=bar", "-t", "09:00"], &db).expect("first note");
+    run_cli(&["add", "bob", "foo=bar", "-t", "09:00"], &db).expect("first note");
     assert_count!(db, "bob", 1);
     let first = db.entries_for_field("bob", None).unwrap()[0].clone();
 
@@ -315,9 +316,9 @@ fn identical_content_triggers_exists_outcome() {
 #[test]
 fn same_id_different_data_both_insert() {
     let db = fresh_db();
-    run_cli(&["note", "field", "--id", "doug", "foo=bar"], &db)
+    run_cli(&["add", "field", "--id", "doug", "foo=bar"], &db)
         .expect("first note");
-    run_cli(&["note", "field", "--id", "doug", "different=data"], &db)
+    run_cli(&["add", "field", "--id", "doug", "different=data"], &db)
         .expect("second note with same --id, different data");
     let entries = db.entries_for_field("field", None).unwrap();
     assert_eq!(entries.len(), 2, "distinct content_hashes ⇒ 2 rows");
@@ -347,7 +348,7 @@ fn id_template_recorded_in_id_structure() {
     let db = fresh_db();
     run_cli(
         &[
-            "note",
+            "add",
             "field",
             "--id",
             "rawString__%foo%!!",
@@ -355,7 +356,7 @@ fn id_template_recorded_in_id_structure() {
         ],
         &db,
     )
-    .expect("note --id rawString__%foo%!!");
+    .expect("add --id rawString__%foo%!!");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(
         e.id_structure.as_deref(),
@@ -374,7 +375,7 @@ fn id_template_recorded_in_id_structure() {
 fn base_data_flag_skipped_no_analog() {
     // Structural placeholder. No-op test asserting the flag is rejected.
     let db = fresh_db();
-    let err = run_cli(&["note", "field", "-b", "{a:1}"], &db)
+    let err = run_cli(&["add", "field", "-b", "{a:1}"], &db)
         .expect_err("-b is not a daydumb flag");
     let msg = format!("{err:#}");
     assert!(
@@ -407,7 +408,7 @@ fn malformed_base_data_skipped_no_analog() {}
 fn payload_id_precedence_skipped_no_analog() {
     // Lock-in: `--id` is the single source for daydumb slug templating.
     let db = fresh_db();
-    run_cli(&["note", "field", "--id", "explicit-slug"], &db)
+    run_cli(&["add", "field", "--id", "explicit-slug"], &db)
         .expect("note --id explicit-slug");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(e.slug, "explicit-slug");
@@ -422,7 +423,7 @@ fn payload_id_precedence_skipped_no_analog() {
 #[test]
 fn id_structure_always_set_when_id_given() {
     let db = fresh_db();
-    run_cli(&["note", "field", "--id", "rawString"], &db)
+    run_cli(&["add", "field", "--id", "rawString"], &db)
         .expect("note --id rawString");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(e.slug, "rawString");
@@ -433,7 +434,7 @@ fn id_structure_always_set_when_id_given() {
     );
 
     // Without `--id` at all, id_structure stays None (built-in slug rule).
-    run_cli(&["note", "other"], &db).expect("note other");
+    run_cli(&["add", "other"], &db).expect("note other");
     let other = &db.entries_for_field("other", None).unwrap()[0];
     assert!(
         other.id_structure.is_none(),
@@ -449,12 +450,12 @@ fn id_structure_always_set_when_id_given() {
 #[test]
 fn show_all_flag_wired_through() {
     let db = fresh_db();
-    run_cli(&["note", "field", "--id", "that-id", "--show", "all"], &db)
+    run_cli(&["add", "field", "--id", "that-id", "--show", "all"], &db)
         .expect("--show all");
     let e = db.get_entry("that-id").unwrap();
     assert_eq!(e.field, "field");
 
-    run_cli(&["note", "field", "--id", "short-show-all", "-A"], &db)
+    run_cli(&["add", "field", "--id", "short-show-all", "-A"], &db)
         .expect("-A (show-all shorthand)");
     let e2 = db.get_entry("short-show-all").unwrap();
     assert_eq!(e2.field, "field");
@@ -472,7 +473,7 @@ fn show_all_flag_wired_through() {
 fn merge_flag_routes_to_merge_strategy() {
     let db = fresh_db();
     run_cli(
-        &["note", "field", "-t", "09:00", "-k", "foo=abc"],
+        &["add", "field", "-t", "09:00", "-k", "foo=abc"],
         &db,
     )
     .expect("seed note");
@@ -485,7 +486,7 @@ fn merge_flag_routes_to_merge_strategy() {
     // strategy, which bumps modified_at but leaves the row count at 1.
     run_cli(
         &[
-            "note", "field", "-t", "09:00", "-k", "foo=abc", "--merge",
+            "add", "field", "-t", "09:00", "-k", "foo=abc", "--merge",
         ],
         &db,
     )
@@ -508,7 +509,7 @@ fn merge_flag_routes_to_merge_strategy() {
 #[test]
 fn conflict_update_flag_routes_to_update_strategy() {
     let db = fresh_db();
-    run_cli(&["note", "field", "-t", "09:00", "-k", "foo=abc"], &db)
+    run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db)
         .expect("seed note");
     assert_count!(db, "field", 1);
     let before = db.entries_for_field("field", None).unwrap()[0].clone();
@@ -585,7 +586,7 @@ fn slug_template_interpolates_composite_keys() {
 fn comment_flag_populates_extra_data_comment() {
     let db = fresh_db();
     run_cli(
-        &["note", "field", "foo=bar", "-c", "comment remainder"],
+        &["add", "field", "foo=bar", "-c", "comment remainder"],
         &db,
     )
     .expect("note -c 'comment remainder'");
@@ -601,27 +602,26 @@ fn comment_flag_populates_extra_data_comment() {
 
 // ─── P1 acceptance-criteria tests (beyond the 25-case port) ──────────────────
 
-/// `datum add` is a clap alias of `datum note`. Identical argv (modulo the
-/// verb token) must produce identical entries: same field, verb, value,
-/// extra_data shape. Slugs differ only by the minute-truncated time
-/// component when the invocations straddle a minute boundary, so compare
-/// on deterministic fields only.
+/// After D3, `note` is no longer a first-class subcommand — it's a seeded
+/// alias that routes to `add`. `datum note field …` and `datum add field …`
+/// must produce identical entries, both with `Verb::Add`.
 #[test]
-fn add_alias_invokes_note_handler() {
+fn note_verb_removed_but_alias_works() {
     let db_note = fresh_db();
     let db_add = fresh_db();
 
     run_cli(&["note", "field", "foo=bar", "-t", "09:00"], &db_note)
-        .expect("note dispatch");
+        .expect("note → add via seeded alias");
     run_cli(&["add", "field", "foo=bar", "-t", "09:00"], &db_add)
-        .expect("add dispatch (alias for note)");
+        .expect("add dispatch");
 
     let n = &db_note.entries_for_field("field", None).unwrap()[0];
     let a = &db_add.entries_for_field("field", None).unwrap()[0];
 
     assert_eq!(n.field, a.field);
-    assert_eq!(n.verb, a.verb, "add alias must resolve to Verb::Note");
-    assert_eq!(n.verb.to_string(), "note");
+    assert_eq!(n.verb, Verb::Add, "note alias resolves to Verb::Add");
+    assert_eq!(a.verb, Verb::Add);
+    assert_eq!(n.verb.to_string(), "add");
     assert_eq!(n.value, a.value);
     assert_eq!(n.data, a.data);
     // content_hash derives only from field/time/value/extra — must match

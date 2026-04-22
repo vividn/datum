@@ -75,14 +75,18 @@ impl Cli {
 }
 
 /// Known subcommands — keep in sync with Command enum.
+///
+/// `note` is intentionally NOT a known subcommand: it's a seeded alias that
+/// rewrites to `add` in the alias pre-pass. Treating it as unknown here makes
+/// the alias lookup fire.
 const KNOWN_SUBCOMMANDS: &[&str] = &[
-    "occur", "start", "stop", "end", "switch", "note", "add",
+    "occur", "start", "stop", "end", "switch", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "history", "why",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
-    "info", "setup", "config", "sync",
+    "info", "setup", "config", "sync", "why",
 ];
 
 /// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
@@ -194,14 +198,15 @@ pub enum Command {
     Occur(LogArgs),
     /// Begin a duration-tracked activity.
     Start(LogArgs),
-    /// End a duration-tracked activity.
+    /// End a duration-tracked activity. `end` is accepted as a synonym.
     #[command(alias = "end")]
     Stop(LogArgs),
     /// Transition a field to a new state.
     Switch(LogArgs),
-    /// Record non-time-bound data.
-    #[command(alias = "add")]
-    Note(LogArgs),
+    /// Canonical add. Shape (point|block|ongoing) is inferred from the
+    /// `start_time=` / `end_time=` / `dur=` keys present on the invocation.
+    /// Legacy `note` invocations resolve here via a seeded alias.
+    Add(LogArgs),
 
     /// Show recent entries (defaults to last 10).
     Tail(TailArgs),

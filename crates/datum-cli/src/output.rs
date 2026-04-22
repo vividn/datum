@@ -252,7 +252,7 @@ fn format_state(entry: &Entry, spec: Option<&FieldSpec>) -> Option<String> {
             Some(paint(&code, DOT))
         }
         (Verb::Stop, None) => Some("end".to_string()),
-        (Verb::Note, _) if entry.start_time.is_none() => {
+        (Verb::Add, _) if entry.start_time.is_none() => {
             let code = field_color_code(&entry.field, field_stored);
             Some(paint(&code, NON_OCCUR))
         }

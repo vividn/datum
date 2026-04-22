@@ -34,7 +34,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Start(args) => log_entry(Verb::Start, args, db),
         Command::Stop(args) => log_entry(Verb::Stop, args, db),
         Command::Switch(args) => log_entry(Verb::Switch, args, db),
-        Command::Note(args) => log_entry(Verb::Note, args, db),
+        Command::Add(args) => log_entry(Verb::Add, args, db),
         Command::Tail(args) => cmd_tail(args, db),
         Command::Head(args) => cmd_head(args, db),
         Command::Now(args) => cmd_now(args, db),
@@ -2104,7 +2104,7 @@ fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()> {
         // Map datum verbs from state type
         let verb = if data["state"].is_boolean() { Verb::Switch }
             else if data["occurTime"].is_object() { Verb::Occur }
-            else { Verb::Note };
+            else { Verb::Add };
 
         let value = if data["state"].is_null() {
             None
@@ -2517,7 +2517,7 @@ mod tests {
             no_metadata: false,
             output_flags: Default::default(),
         };
-        log_entry(Verb::Note, args, &db).unwrap();
+        log_entry(Verb::Add, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(!tracked.iter().any(|f| f.field == "journal"));
     }
@@ -3108,7 +3108,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Note,
+            Verb::Add,
             None,
             Some(serde_json::json!({
                 "nested": {"a": 1, "b": 2},
@@ -3139,7 +3139,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Note,
+            Verb::Add,
             None,
             Some(serde_json::json!({"nested": {"a": 1, "c": 3}})),
         );
@@ -3357,7 +3357,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Note,
+            Verb::Add,
             None,
             Some(serde_json::json!({"tag": {"color": "red", "size": "m"}})),
         );
@@ -3430,7 +3430,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "word",
-            Verb::Note,
+            Verb::Add,
             Some(serde_json::json!("correr")),
             Some(serde_json::json!({"lang": "pt", "pos": "verb"})),
         );

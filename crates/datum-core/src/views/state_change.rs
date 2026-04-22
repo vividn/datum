@@ -171,7 +171,7 @@ fn events_for_entry(entry: &Entry) -> Vec<PendingEvent> {
                 }
             }
         }
-        Verb::Note | Verb::Add => {}
+        Verb::Add => {}
     }
     out
 }
@@ -216,7 +216,7 @@ mod tests {
 
         // A note — never emits.
         entry_builder("word")
-            .verb(Verb::Note)
+            .verb(Verb::Add)
             .no_time()
             .insert(&db);
 
@@ -263,7 +263,7 @@ mod tests {
             .insert(&db);
         db.soft_delete_entry(&ghost.slug).unwrap();
 
-        entry_builder("word").verb(Verb::Note).no_time().insert(&db);
+        entry_builder("word").verb(Verb::Add).no_time().insert(&db);
 
         let rows = StateChangeView.map(&db).unwrap();
         assert!(rows.is_empty());

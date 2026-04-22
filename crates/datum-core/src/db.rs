@@ -1290,12 +1290,14 @@ impl Db {
         Ok(restored)
     }
 
-    /// Latest non-Note, non-tombstoned entry for a field, for use in the now view.
+    /// Latest non-Add, non-tombstoned entry for a field, for use in the now
+    /// view. `add` is skipped because it represents free-form data with no
+    /// state effect; the now view shows the most recent state-bearing entry.
     pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
         self.conn
             .query_row(
                 "SELECT * FROM entries
-                 WHERE field = ?1 AND verb != 'note' AND deleted_at IS NULL
+                 WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
                  ORDER BY COALESCE(start_time, end_time, create_time) DESC
                  LIMIT 1",
                 params![field],
@@ -2141,7 +2143,7 @@ mod tests {
         let switch_entry = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t1), None, "d1");
         db.insert_entry(&switch_entry).unwrap();
         let t2 = DatumTime::now();
-        let note_entry = Entry::new("mood", Verb::Note, Some(serde_json::json!("journal entry")), None, None, Some(t2), None, "d1");
+        let note_entry = Entry::new("mood", Verb::Add, Some(serde_json::json!("journal entry")), None, None, Some(t2), None, "d1");
         db.insert_entry(&note_entry).unwrap();
 
         let latest = db.latest_entry_for_now("mood").unwrap();
@@ -2640,7 +2642,7 @@ mod tests {
             field: field.to_string(),
             entry_shape: EntryShape::Point,
             intent: Some("note".to_string()),
-            verb: Verb::Note,
+            verb: Verb::Add,
             value: None,
             data: None,
             unit: None,

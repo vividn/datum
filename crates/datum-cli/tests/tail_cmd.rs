@@ -156,7 +156,7 @@ fn tail_metric_occur_vs_modify() {
         "d1",
     );
     // Entry with no time_start (a note) — only `modify` / `hybrid` include it.
-    let no_time = Entry::new("b", Verb::Note, Some(json!("x")), None, None, None, None, "d1");
+    let no_time = Entry::new("b", Verb::Add, Some(json!("x")), None, None, None, None, "d1");
     db.insert_entry(&with_time).unwrap();
     db.insert_entry(&no_time).unwrap();
 
@@ -325,7 +325,7 @@ fn t06_defaults_to_hybrid() {
     insert(&db, "alcohol", Verb::Occur, 19 * 60);
     let noteless = Entry::new(
         "person",
-        Verb::Note,
+        Verb::Add,
         Some(json!({"name": "john", "age": 35})),
         None,
         None,
@@ -356,7 +356,7 @@ fn t07_metric_occur_only() {
     insert(&db, "alcohol", Verb::Occur, 19 * 60);
     let note = Entry::new(
         "person",
-        Verb::Note,
+        Verb::Add,
         Some(json!({"name": "john"})),
         None,
         None,
@@ -385,7 +385,7 @@ fn t08_metric_modify() {
     std::thread::sleep(std::time::Duration::from_millis(5));
     let note = Entry::new(
         "person",
-        Verb::Note,
+        Verb::Add,
         Some(json!({"name": "john"})),
         None,
         None,

@@ -364,7 +364,7 @@ mod tests {
     fn spec_and_alias_builders_save_and_round_trip() {
         let db = fresh_db();
         spec_builder("word")
-            .default_verb(Verb::Note)
+            .default_verb(Verb::Add)
             .description("vocab")
             .save(&db);
         alias_builder("vbp", "note word srcLang=pt pos=verb").save(&db);

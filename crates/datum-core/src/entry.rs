@@ -11,6 +11,10 @@ use crate::time::DatumTime;
 /// The verb describes what kind of event an entry represents. Read-back
 /// values come from the `verb` generated column in SQLite; on write, verb
 /// is derived from `entry_shape` + `value` + `intent`.
+///
+/// `note` is no longer a first-class verb — legacy `note` invocations are
+/// routed to `add` via a seeded alias. `end` and `stop` are synonymous at
+/// the CLI layer (both map to `Verb::Stop` for intent storage).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Verb {
@@ -22,11 +26,10 @@ pub enum Verb {
     Stop,
     /// Transition to a new state (e.g. "project = daydumb")
     Switch,
-    /// Non-time-bound data chunk (e.g. word learned, person met)
-    Note,
     /// Completed block with a value (e.g. "slept 8h with mood=tired")
     Block,
-    /// Catch-all for arbitrary data attached to a field
+    /// Canonical add — shape (point | block | ongoing) is inferred from the
+    /// temporal keys present on the invocation.
     Add,
 }
 
@@ -37,7 +40,6 @@ impl std::fmt::Display for Verb {
             Verb::Start => write!(f, "start"),
             Verb::Stop => write!(f, "stop"),
             Verb::Switch => write!(f, "switch"),
-            Verb::Note => write!(f, "note"),
             Verb::Block => write!(f, "block"),
             Verb::Add => write!(f, "add"),
         }
@@ -52,9 +54,8 @@ impl std::str::FromStr for Verb {
             "start" => Ok(Verb::Start),
             "stop" | "end" => Ok(Verb::Stop),
             "switch" => Ok(Verb::Switch),
-            "note" => Ok(Verb::Note),
             "block" => Ok(Verb::Block),
-            "add" => Ok(Verb::Add),
+            "add" | "note" => Ok(Verb::Add),
             _ => Err(format!("Unknown verb: '{s}'")),
         }
     }
@@ -385,7 +386,6 @@ fn infer_shape_and_intent(
     let intent = match verb {
         // These verbs can't be recovered from shape + value alone.
         Verb::Stop => Some("stop".to_string()),
-        Verb::Note => Some("note".to_string()),
         Verb::Add => Some("add".to_string()),
         // point + non-null value generates 'switch' in SQL; an explicit
         // Occur with a quantity (e.g. "drank 2 cups") needs the intent
@@ -456,11 +456,16 @@ mod tests {
 
     #[test]
     fn test_verb_roundtrip() {
-        for v in ["occur", "start", "stop", "switch", "note", "block", "add"] {
+        for v in ["occur", "start", "stop", "switch", "block", "add"] {
             let parsed: Verb = v.parse().unwrap();
             let displayed = format!("{parsed}");
             assert!(!displayed.is_empty());
         }
+        // `note` parses to Verb::Add for backward compat; CLI shell reaches
+        // the same place via a seeded alias, this covers direct string parse.
+        assert_eq!("note".parse::<Verb>().unwrap(), Verb::Add);
+        // `end` is a synonym for `stop` at parse time.
+        assert_eq!("end".parse::<Verb>().unwrap(), Verb::Stop);
     }
 
     #[test]
@@ -506,8 +511,8 @@ mod tests {
         assert_eq!(e.entry_shape, EntryShape::Point);
         assert_eq!(e.intent.as_deref(), Some("stop"));
 
-        // Notes survive via intent — no state effect.
-        let e = Entry::new("journal", Verb::Note, Some(serde_json::json!("hello")), None, None, Some(t), None, "d");
-        assert_eq!(e.intent.as_deref(), Some("note"));
+        // Add carries an explicit intent so it survives shape-derivation round-trip.
+        let e = Entry::new("journal", Verb::Add, Some(serde_json::json!("hello")), None, None, Some(t), None, "d");
+        assert_eq!(e.intent.as_deref(), Some("add"));
     }
 }

@@ -217,7 +217,7 @@ fn collect_events(
                 }
             }
         }
-        Verb::Note | Verb::Add => {}
+        Verb::Add => {}
     }
 }
 
