@@ -19,15 +19,10 @@ pub mod config;
 pub mod key;
 pub mod login;
 
-/// Token persisted per server, matching what `login` writes.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct AuthToken {
-    pub token: String,
-    pub refreshed_at: String,
-    pub server: String,
-    #[serde(default)]
-    pub user: Option<String>,
-}
+/// Token persisted per server, matching what `login` writes. Re-exported
+/// from the client library so existing call sites keep working without
+/// reaching into `datum_sync_client::protocol`.
+pub use datum_sync_client::protocol::messages::AuthToken;
 
 /// Entry point — dispatch `datum sync <subcommand>`.
 pub fn dispatch(cmd: SyncCommand) -> Result<()> {

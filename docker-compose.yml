@@ -1,8 +1,8 @@
 services:
-  datum-sync:
+  datum-sync-server:
     build:
       context: .
-      dockerfile: crates/datum-sync/Dockerfile
+      dockerfile: crates/datum-sync-server/Dockerfile
     ports:
       - "3000:3000"
     environment:

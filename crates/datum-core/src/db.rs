@@ -1478,10 +1478,10 @@ impl Db {
     }
 }
 
-/// Row → `Entry` adapter exposed for other `datum-core` modules that build
-/// their own queries (e.g. `sync`). Kept `pub(crate)` so it does not bleed
-/// into the public library surface.
-pub(crate) fn row_to_entry_public(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
+/// Row → `Entry` adapter for callers that build their own queries over the
+/// `entries` table. Used by `datum-sync-client::ops` for pack/apply, which
+/// reads and writes full entry rows outside the normal `Db` API surface.
+pub fn row_to_entry_public(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     row_to_entry(row)
 }
 

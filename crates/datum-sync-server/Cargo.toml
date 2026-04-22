@@ -1,10 +1,10 @@
 [package]
-name = "datum-sync"
+name = "datum-sync-server"
 version.workspace = true
 edition.workspace = true
 
 [[bin]]
-name = "datum-sync"
+name = "datum-sync-server"
 path = "src/main.rs"
 
 [dependencies]

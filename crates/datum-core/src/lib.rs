@@ -6,7 +6,6 @@ pub mod slug;
 pub mod state;
 pub mod views;
 pub mod migrations;
-pub mod sync;
 pub mod history;
 pub mod conflicts;
 

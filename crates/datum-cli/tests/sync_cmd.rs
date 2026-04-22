@@ -398,9 +398,10 @@ fn end_to_end_login_and_key_init() {
 
     // 3. Wrapped key lives on the relay and unwraps back to `master`.
     let wrapped_json = relay.wrapped_key().expect("relay has wrapped key");
-    let wrapped: datum_core::sync::WrappedKey =
+    let wrapped: datum_sync_client::crypto::key_wrap::WrappedKey =
         serde_json::from_value(wrapped_json).expect("parse wrapped");
     let recovered =
-        datum_core::sync::unwrap_master_key("the-pass", &wrapped).expect("unwrap");
+        datum_sync_client::crypto::key_wrap::unwrap_master_key("the-pass", &wrapped)
+            .expect("unwrap");
     assert_eq!(recovered, master);
 }

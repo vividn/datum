@@ -1,5 +1,11 @@
-//! `datum sync key` — master-key management.
+//! `datum sync key` — CLI-side orchestration for the master-key lifecycle.
 //!
+//! Crypto lives in `datum-sync-client::crypto::key_wrap`; HTTP calls live
+//! in `datum-sync-client::http::keys`. This file owns the CLI concerns:
+//! which server to talk to, where the local key file lives, and how to
+//! prompt the user.
+//!
+//! Subcommands:
 //! - `init`: generate a fresh 32-byte master key, wrap it with a passphrase,
 //!   upload the wrapped blob to the relay, and persist the plaintext key
 //!   locally (mode 0600).
@@ -11,17 +17,19 @@
 //!   devices can eyeball-verify parity.
 
 use anyhow::{anyhow, Context, Result};
-use datum_core::sync::{
-    key_fingerprint, unwrap_master_key, wrap_master_key, WrappedKey,
+use datum_sync_client::crypto::key_wrap::{
+    key_fingerprint, unwrap_master_key, wrap_master_key,
 };
+use datum_sync_client::http::{fetch_wrapped, upload_wrapped};
 use rand::RngCore;
 use reqwest::blocking::Client;
 use std::time::Duration;
 
+use crate::commands::sync::Prompter;
 use crate::config::{
     auth_token_path, load_raw_config_or_default, master_key_path, server_host_from_url,
 };
-use crate::commands::sync::{AuthToken, Prompter};
+use datum_sync_client::protocol::messages::AuthToken;
 
 /// `datum sync key init`
 pub fn init(
@@ -186,48 +194,6 @@ pub fn load_token(server: &str) -> Result<Option<AuthToken>> {
     let token: AuthToken =
         serde_json::from_slice(&bytes).context("parse stored auth token")?;
     Ok(Some(token))
-}
-
-fn upload_wrapped(
-    client: &Client,
-    server: &str,
-    bearer: &str,
-    wrapped: &WrappedKey,
-) -> Result<()> {
-    let resp = client
-        .post(format!("{server}/v1/keys/wrapped"))
-        .bearer_auth(bearer)
-        .json(wrapped)
-        .send()
-        .context("POST /v1/keys/wrapped")?;
-    let status = resp.status();
-    if !status.is_success() {
-        let body = resp.text().unwrap_or_default();
-        anyhow::bail!("wrapped-key upload failed: {status} {body}");
-    }
-    Ok(())
-}
-
-fn fetch_wrapped(
-    client: &Client,
-    server: &str,
-    bearer: &str,
-) -> Result<Option<WrappedKey>> {
-    let resp = client
-        .get(format!("{server}/v1/keys/wrapped"))
-        .bearer_auth(bearer)
-        .send()
-        .context("GET /v1/keys/wrapped")?;
-    let status = resp.status();
-    if status.as_u16() == 404 {
-        return Ok(None);
-    }
-    if !status.is_success() {
-        let body = resp.text().unwrap_or_default();
-        anyhow::bail!("wrapped-key fetch failed: {status} {body}");
-    }
-    let w: WrappedKey = resp.json().context("parse wrapped-key response")?;
-    Ok(Some(w))
 }
 
 fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> Result<()> {

@@ -1,0 +1,20 @@
+[package]
+name = "datum-sync-agent"
+version.workspace = true
+edition.workspace = true
+
+# Stub crate reserved for C4d (`da-ndd.15`). The agent will be a background
+# daemon that wraps `datum-sync-client` to perform periodic push/pull and
+# conflict queue draining without needing the CLI to be open. Only the
+# library target exists today — the binary and its tokio runtime land with
+# C4d. Adding the crate now anchors the three-way split (`client` +
+# `server` + `agent`) that R4 locked in.
+
+[lib]
+name = "datum_sync_agent"
+path = "src/lib.rs"
+
+[dependencies]
+datum-sync-client = { path = "../datum-sync-client" }
+datum-core = { path = "../datum-core" }
+anyhow = { workspace = true }

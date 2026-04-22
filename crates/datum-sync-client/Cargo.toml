@@ -1,0 +1,58 @@
+[package]
+name = "datum-sync-client"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "datum_sync_client"
+path = "src/lib.rs"
+
+[features]
+# Default: desktop/server build — full sync client including HTTP and DB-bound
+# operations (changeset pack/apply, watermark storage).
+default = ["http", "db"]
+
+# `http`: pulls in `reqwest` blocking. NOT WASM-safe. Enables the device-code
+# OAuth flow and the `/v1/keys/wrapped` + `/v1/push` + `/v1/pull` HTTP clients.
+http = ["dep:reqwest"]
+
+# `db`: enables pack/apply over `datum_core::db::Db` plus the on-device
+# `sync_state` watermark table helpers. Pulls in `datum-core`. NOT required
+# for WASM builds that don't bundle the native sqlite layer.
+db = ["dep:datum-core", "dep:rusqlite"]
+
+# `wasm`: marker feature. Selecting it should be paired with
+# `--no-default-features` — the WASM-safe surface is `protocol/` +
+# `crypto/` + `config/` (pure Rust, no I/O).
+wasm = []
+
+[dependencies]
+# Pure — always on.
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+aes-gcm = { workspace = true }
+argon2 = { workspace = true }
+sha2 = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+url = { workspace = true }
+
+# `db` feature: on-device pack/apply + watermarks
+datum-core = { path = "../datum-core", optional = true }
+rusqlite = { workspace = true, optional = true }
+chrono = { workspace = true }
+
+# `http` feature: reqwest-based HTTP client
+reqwest = { workspace = true, optional = true }
+anyhow = { workspace = true }
+
+# WASM target: rand → getrandom needs the "js" feature so it can pull
+# entropy from the browser's `crypto.getRandomValues`. Only required on
+# wasm32 targets; native builds use the OS CSPRNG directly.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.2", features = ["js"] }
+
+[dev-dependencies]
+datum-core = { path = "../datum-core", features = ["test-util"] }
+rusqlite = { workspace = true }

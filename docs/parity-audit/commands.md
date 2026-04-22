@@ -382,16 +382,19 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Original datum:** custom protocol for CouchDB → CouchDB replication.
 - **Daydumb today:** `SyncCommand` with `login`, `config`, `key`
   subtrees. OAuth device-code flow + E2E-encrypted relay server
-  (`crates/datum-sync`) + AES-256-GCM master-key lifecycle
+  (`crates/datum-sync-server`) + AES-256-GCM master-key lifecycle
   (`init` / `unlock` / `rotate-passphrase` / `show-fingerprint`).
+  The client library lives in `crates/datum-sync-client`; a future
+  `datum-sync-agent` daemon will wrap it for background sync.
 - **Missing in daydumb:** nothing at the feature level — daydumb's
   sync is a superset.
 - **Divergences:** **completely different protocol.** No wire-level
   parity. The relay server is content-blind.
 - **Tests in datum not in daydumb:** sync integration tests exist on
   both sides but are protocol-specific.
-- **Ideas / cleanup:** the sync split (R4, da-t6t.4) will extract
-  `datum-sync` into client/server/agent crates.
+- **Ideas / cleanup:** R4 (da-t6t.4) split the monolithic `datum-sync`
+  crate into `datum-sync-client`, `datum-sync-server`, and a
+  `datum-sync-agent` stub — see `docs/parity-audit/sync.md`.
 
 ### spec (daydumb only)
 

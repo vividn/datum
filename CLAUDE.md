@@ -11,9 +11,12 @@ Core purpose: let users manually log data about their own lives and review it as
 
 ```
 crates/
-  datum-core/   # Rust library: data model, SQLite, time parsing, field specs
-  datum-cli/    # `datum` binary: clap CLI, commands, output formatting
-  datum-sync/   # Relay server: Rust + axum, E2E-encrypted sync backend
+  datum-core/         # Rust library: data model, SQLite, time parsing, field specs
+  datum-cli/          # `datum` binary: clap CLI, commands, output formatting
+  datum-commands/     # Command-layer crate: typed + string APIs, dispatched by datum-cli
+  datum-sync-client/  # Sync client library: wire protocol, crypto, HTTP (WASM-split)
+  datum-sync-server/  # Relay server: Rust + axum, E2E-encrypted sync backend
+  datum-sync-agent/   # Background sync daemon (planned)
 web/            # SvelteKit PWA: static, OPFS + SQLite WASM, offline-capable
 mobile/         # Flutter: Android + Wear OS
 migrations/     # datum legacy migration scripts
@@ -113,7 +116,9 @@ All 22 Phase 1 tests must pass. Add tests for new behaviors.
 | datum-core + datum CLI | ✓ merged to main | 22+ tests, <5ms startup |
 | CLI fixes (alias, field/verb, --dur, env) | ✓ merged to main | |
 | datum-web PWA | ✓ merged to main | No sync yet (pending Phase 2) |
-| datum-sync relay server | 🔄 in progress | da-636, quartz polecat |
+| datum-sync-server (relay) | 🔄 in progress | da-636, quartz polecat |
+| datum-sync-client (library) | 🔄 in progress | da-t6t.4 (R4 split) |
+| datum-sync-agent (daemon) | stub | da-ndd.15 / C4d, depends on sync-client |
 | datum-android (Flutter) | not started | |
 | Migration tool (datum legacy) | stub in CLI | `datum migrate --from backup.json` |
 | datum-wear (Wear OS) | not started | |

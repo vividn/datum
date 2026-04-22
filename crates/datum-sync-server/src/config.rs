@@ -14,7 +14,7 @@ impl Config {
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(3000),
             db_path: std::env::var("DATUM_SYNC_DB")
-                .unwrap_or_else(|_| "./datum-sync.db".into()),
+                .unwrap_or_else(|_| "./datum-sync-server.db".into()),
             origin: std::env::var("DATUM_SYNC_ORIGIN")
                 .unwrap_or_else(|_| "http://localhost:3000".into()),
             rp_name: std::env::var("DATUM_SYNC_RP_NAME")

@@ -92,7 +92,7 @@ async fn main() -> anyhow::Result<()> {
         .parse()?;
 
     let db_path = std::env::var("DATUM_SYNC_DB")
-        .unwrap_or_else(|_| "./datum-sync.db".to_string());
+        .unwrap_or_else(|_| "./datum-sync-server.db".to_string());
 
     let origin = std::env::var("DATUM_SYNC_ORIGIN")
         .unwrap_or_else(|_| format!("http://localhost:{}", port));
@@ -127,7 +127,7 @@ async fn main() -> anyhow::Result<()> {
     let app = build_app(state);
 
     let addr = format!("0.0.0.0:{}", port);
-    tracing::info!("datum-sync listening on {}", addr);
+    tracing::info!("datum-sync-server listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     axum::serve(listener, app).await?;

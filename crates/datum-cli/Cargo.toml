@@ -25,6 +25,7 @@ anyhow = { workspace = true }
 datum-core = { path = "../datum-core", features = ["test-util"] }
 datum-cli = { path = ".", features = ["test-util"] }
 datum-commands = { path = "../datum-commands", features = ["test-util"] }
+datum-sync-client = { path = "../datum-sync-client" }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }

@@ -1,7 +1,7 @@
 # daydumb sync — wire protocol
 
 > Status: **v1 draft, locked for C4a.** Binding contract between clients
-> (CLI, web PWA, mobile) and the `datum-sync` relay. Additions are OK in
+> (CLI, web PWA, mobile) and the `datum-sync-server` relay. Additions are OK in
 > later versions; semantics of existing fields are frozen.
 
 ## Goals and constraints
@@ -28,7 +28,7 @@ https://<relay>/v1/...
 ```
 
 Clients SHOULD prefer `/v1`. The existing relay (see
-`crates/datum-sync`) currently exposes its handlers under `/auth/*`
+`crates/datum-sync-server`) currently exposes its handlers under `/auth/*`
 and `/sync/*` without a version segment — C4c will introduce the `/v1`
 mount when the HTTP client is wired up. Readers of this document
 should treat the version prefix as the forward-compatible surface
@@ -87,7 +87,7 @@ The CLI shows `verification_uri` + `user_code` to the user and then polls:
 - 400 with `{"error": "slow_down"}` — double `interval` and keep polling.
 
 Web and mobile clients skip device code and authenticate directly with
-a WebAuthn passkey (see `crates/datum-sync/src/auth.rs`); that flow
+a WebAuthn passkey (see `crates/datum-sync-server/src/auth.rs`); that flow
 predates this document and is out of scope for v1.
 
 ### Wrapped key exchange
