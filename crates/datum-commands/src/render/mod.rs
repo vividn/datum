@@ -445,6 +445,9 @@ pub struct TableArgs {
     pub output: OutputArgs,
     pub metric: TimeMetricCol,
     pub columns: Vec<String>,
+    /// Skip the header row. Used by `tail --watch` so tick-appended batches
+    /// don't reprint headers.
+    pub suppress_header: bool,
 }
 
 /// Render entries as a table with `time | field | state | dur | hid` columns
@@ -563,16 +566,18 @@ pub fn print_table(entries: &[Entry], registry: Option<&SpecRegistry>, args: &Ta
         .collect();
 
     // Header row.
-    let mut header = String::new();
-    if show_time { push_cell(&mut header, time_header, time_w, true); }
-    if show_field { push_cell(&mut header, field_header, field_w, false); }
-    if show_state { push_cell(&mut header, state_header, state_w, false); }
-    if show_dur { push_cell(&mut header, dur_header, dur_w, false); }
-    if show_hid { push_cell(&mut header, hid_header, hid_w, false); }
-    for (i, col) in args.columns.iter().enumerate() {
-        push_cell(&mut header, col, extras_w[i], false);
+    if !args.suppress_header {
+        let mut header = String::new();
+        if show_time { push_cell(&mut header, time_header, time_w, true); }
+        if show_field { push_cell(&mut header, field_header, field_w, false); }
+        if show_state { push_cell(&mut header, state_header, state_w, false); }
+        if show_dur { push_cell(&mut header, dur_header, dur_w, false); }
+        if show_hid { push_cell(&mut header, hid_header, hid_w, false); }
+        for (i, col) in args.columns.iter().enumerate() {
+            push_cell(&mut header, col, extras_w[i], false);
+        }
+        println!("{}", header.trim_end());
     }
-    println!("{}", header.trim_end());
 
     // Data rows.
     for r in &rows {
@@ -648,6 +653,7 @@ pub fn print_entry(entry: &Entry, registry: Option<&SpecRegistry>) {
         output: OutputArgs::default(),
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
+        suppress_header: false,
     };
     print_table(std::slice::from_ref(entry), registry, &args);
 }

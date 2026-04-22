@@ -107,6 +107,7 @@ fn tail_args() -> TailArgs {
         yesterday: 0,
         quick: 0,
         head: false,
+        watch: None,
         output_flags: Default::default(),
     }
 }
@@ -613,11 +614,81 @@ fn t18_show_none_suppresses_output() {
 }
 
 #[test]
-#[ignore = "--watch deferred per da-u8ch scope; see TODO(p-tail-watch) in args.rs"]
 fn t19_watch_live_updates() {
-    // Datum's `--watch`/`-w` flag is out-of-scope for Phase 1 (needs a file
-    // watcher + redraw loop). Kept as a #[ignore]d skeleton so the 19-case
-    // ledger stays complete.
+    // Datum's `--watch`/`-w` test in upstream was skipped for flakiness — it
+    // depended on timing + a mocked `console.log`. We cover the same contract
+    // deterministically at the DB layer: after the initial tail, only rows
+    // inserted *after* the pivot (`create_time > since`) show up on the next
+    // poll — and the field filter is honoured.
+    let db = fresh_db();
+
+    // Initial contents — these become the "already printed" set.
+    let _r1 = insert(&db, "run", Verb::Stop, 10 * 60);
+    let _r2 = insert(&db, "stretch", Verb::Start, 10 * 60 + 15);
+    let initial = tail_entries(&tail_args(), &db).unwrap();
+    assert_eq!(initial.len(), 2);
+    let since = initial.iter().map(|e| e.create_time).max().unwrap();
+
+    // Nothing new yet → empty tick.
+    let tick0 = db.list_entries_created_after(None, since).unwrap();
+    assert!(tick0.is_empty(), "no new rows → empty poll");
+
+    // A new insert surfaces on the next tick; unrelated-field insert is
+    // filtered out when a field filter is passed.
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let pushup = insert(&db, "pushup", Verb::Occur, 10 * 60 + 18);
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    let caffeine = insert(&db, "caffeine", Verb::Occur, 11 * 60);
+
+    let tick_all = db.list_entries_created_after(None, since).unwrap();
+    let new_ids: Vec<_> = tick_all.iter().map(|e| e.slug.clone()).collect();
+    assert_eq!(
+        new_ids,
+        vec![pushup.slug.clone(), caffeine.slug.clone()],
+        "new rows appear in create_time order"
+    );
+
+    let tick_caffeine = db
+        .list_entries_created_after(Some("caffeine"), since)
+        .unwrap();
+    assert_eq!(tick_caffeine.len(), 1);
+    assert_eq!(tick_caffeine[0].slug, caffeine.slug);
+
+    // Advance the pivot past the latest row — next tick is empty again.
+    let next_since = tick_all.iter().map(|e| e.create_time).max().unwrap();
+    let tick_after = db.list_entries_created_after(None, next_since).unwrap();
+    assert!(tick_after.is_empty(), "pivot advance clears the queue");
+}
+
+#[test]
+fn tail_watch_flag_parses_with_and_without_interval() {
+    // `-w` alone and `-w <secs>` both populate `TailArgs::watch` via clap's
+    // `default_missing_value` — lock in the CLI surface contract.
+    use datum_cli::args::{Cli, Command};
+
+    let cli_bare = Cli::try_parse_argv(["datum", "tail", "-w"]).unwrap();
+    match cli_bare.command {
+        Command::Tail(a) => assert_eq!(a.watch, Some(1.0)),
+        _ => panic!("expected Tail"),
+    }
+
+    let cli_val = Cli::try_parse_argv(["datum", "tail", "-w", "5"]).unwrap();
+    match cli_val.command {
+        Command::Tail(a) => assert_eq!(a.watch, Some(5.0)),
+        _ => panic!("expected Tail"),
+    }
+
+    let cli_long = Cli::try_parse_argv(["datum", "tail", "--watch", "0.5"]).unwrap();
+    match cli_long.command {
+        Command::Tail(a) => assert_eq!(a.watch, Some(0.5)),
+        _ => panic!("expected Tail"),
+    }
+
+    let cli_off = Cli::try_parse_argv(["datum", "tail"]).unwrap();
+    match cli_off.command {
+        Command::Tail(a) => assert_eq!(a.watch, None),
+        _ => panic!("expected Tail"),
+    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

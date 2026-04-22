@@ -1148,9 +1148,46 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
         output: args.output(),
         metric,
         columns,
+        suppress_header: false,
     };
     print_table(&entries, registry.as_ref(), &tbl);
+
+    if let Some(secs) = args.watch {
+        let interval = watch_interval(secs);
+        let mut since = entries
+            .iter()
+            .map(|e| e.create_time)
+            .max()
+            .unwrap_or_else(chrono::Utc::now);
+        let field = args.field.as_deref();
+        let tick_tbl = TableArgs {
+            suppress_header: true,
+            ..tbl.clone()
+        };
+        loop {
+            std::thread::sleep(interval);
+            let new_rows = db.list_entries_created_after(field, since)?;
+            if let Some(latest) = new_rows.iter().map(|e| e.create_time).max() {
+                since = latest;
+            }
+            if !new_rows.is_empty() {
+                print_table(&new_rows, registry.as_ref(), &tick_tbl);
+            }
+        }
+    }
+
     Ok(())
+}
+
+/// Clamp a user-supplied `--watch` interval into a sane poll cadence.
+/// Non-finite, zero, or negative values collapse to 1 s; anything positive
+/// is honoured at millisecond granularity (so `--watch 0.25` → 250 ms).
+fn watch_interval(secs: f64) -> std::time::Duration {
+    if !secs.is_finite() || secs <= 0.0 {
+        return std::time::Duration::from_secs(1);
+    }
+    let millis = (secs * 1000.0).round() as u64;
+    std::time::Duration::from_millis(millis.max(1))
 }
 
 /// Run the tail query as `cmd_tail` does, but return the entries instead of
@@ -1271,6 +1308,7 @@ pub(crate) fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
         output: args.output(),
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
+        suppress_header: false,
     };
     print_table(&entries, registry.as_ref(), &tbl);
     Ok(())
@@ -1307,6 +1345,7 @@ pub(crate) fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
         output: args.output(),
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
+        suppress_header: false,
     };
     print_table(&matches, registry.as_ref(), &tbl);
     Ok(())

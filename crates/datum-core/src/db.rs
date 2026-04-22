@@ -615,6 +615,32 @@ impl Db {
         Ok(results)
     }
 
+    /// Live entries whose `create_time` is strictly greater than `since`,
+    /// optionally filtered by `field`. Ordered oldest-first so `tail --watch`
+    /// can append rows as they arrive.
+    pub fn list_entries_created_after(
+        &self,
+        field: Option<&str>,
+        since: DateTime<Utc>,
+    ) -> Result<Vec<Entry>> {
+        let mut sql = String::from(
+            "SELECT * FROM entries WHERE deleted_at IS NULL AND create_time > ?",
+        );
+        let mut bindings: Vec<String> = vec![since.to_rfc3339()];
+        if let Some(f) = field {
+            sql.push_str(" AND field = ?");
+            bindings.push(f.to_string());
+        }
+        sql.push_str(" ORDER BY create_time ASC, slug ASC");
+
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            row_to_entry,
+        )?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
     /// Get all live entries within a UTC time range (inclusive).
     pub fn entries_in_range(
         &self,

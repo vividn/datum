@@ -139,6 +139,17 @@ impl Cli {
         let expanded = expand_argv(raw)?;
         Ok(Cli::parse_from(expanded))
     }
+
+    /// Parse a raw argv vector through clap without alias resolution or the
+    /// pre-passes. Test-only helper that lets integration tests verify the
+    /// CLI surface without depending on `clap` directly.
+    pub fn try_parse_argv<I, T>(argv: I) -> clap::error::Result<Self>
+    where
+        I: IntoIterator<Item = T>,
+        T: Into<std::ffi::OsString> + Clone,
+    {
+        <Self as Parser>::try_parse_from(argv)
+    }
 }
 
 /// Known subcommands — keep in sync with Command enum.
@@ -772,8 +783,18 @@ pub struct TailArgs {
     /// Internal: take the first N instead of the last N (used by `head`).
     #[arg(long, hide = true)]
     pub head: bool,
-    // TODO(p-tail-watch): --watch/-w live-update mode. Requires a file watcher
-    // + redraw loop; deferred out of Phase-1 scope per da-u8ch.
+
+    /// After the initial tail, stream newly-inserted entries live. Optional
+    /// interval in seconds (default 1). `-w` alone polls once per second;
+    /// `-w 5` polls every 5 s. Ctrl-C to exit.
+    #[arg(
+        short = 'w',
+        long = "watch",
+        value_name = "INTERVAL",
+        num_args = 0..=1,
+        default_missing_value = "1",
+    )]
+    pub watch: Option<f64>,
 
     #[command(flatten)]
     pub output_flags: OutputFlags,
