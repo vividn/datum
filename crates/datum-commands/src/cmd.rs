@@ -13,14 +13,13 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{
-        AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
+        AliasCommand, BackupArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
         DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs, HistoryArgs, IgnoreArgs,
         InfoArgs, LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs,
         RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
         UpdateArgs, WhyArgs,
     },
-    commands::check::{collect_issues, render_human, render_json},
     config::{self, device_id},
     render::{
         print_entry, print_entry_pretty, print_now_view, print_table, show_create, show_delete,
@@ -30,42 +29,43 @@ use crate::{
 use datum_core::views::{parse_key_arg, Registry, ViewParams};
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
+    use crate::commands;
     match cli.command {
-        Command::Occur(args) => log_entry(Verb::Occur, args, db),
-        Command::Start(args) => log_entry(Verb::Start, args, db),
-        Command::Stop(args) => log_entry(Verb::Stop, args, db),
-        Command::Switch(args) => log_entry(Verb::Switch, args, db),
-        Command::Add(args) => log_entry(Verb::Add, args, db),
-        Command::Tail(args) => cmd_tail(args, db),
-        Command::Head(args) => cmd_head(args, db),
-        Command::Now(args) => cmd_now(args, db),
-        Command::Get(args) => cmd_get(args, db),
-        Command::Delete(args) => cmd_delete(args, db),
-        Command::Edit(args) => cmd_edit(args, db),
-        Command::Update(args) => cmd_update(args, ConflictStrategy::Update, db),
-        Command::Merge(args) => cmd_update(args, ConflictStrategy::Merge, db),
-        Command::Rekey(args) => cmd_update(args, ConflictStrategy::Rekey, db),
-        Command::Retime(args) => cmd_retime(args, db),
-        Command::Undo(args) => cmd_undo(args, db),
-        Command::History(args) => cmd_history(args, db),
-        Command::Why(args) => cmd_why(args, db),
-        Command::Spec(sub) => cmd_spec(sub, db),
-        Command::Alias(sub) => cmd_alias(sub, db),
-        Command::Track(args) => cmd_track(args, db),
-        Command::Ignore(args) => cmd_ignore(args, db),
-        Command::Migrate(sub) => cmd_migrate(sub, db),
-        Command::Backup(args) => cmd_backup(args, db),
-        Command::Restore(args) => cmd_restore(args, db),
-        Command::Grep(args) => cmd_grep(args, db),
-        Command::Check(args) => cmd_check(args, db),
-        Command::Map(args) => cmd_map(args, db),
-        Command::Reduce(args) => cmd_reduce(args, db),
-        Command::Dayview(args) => cmd_dayview(args, db),
-        Command::Info(args) => cmd_info(args, cli.db.as_deref(), db),
-        Command::Setup(args) => cmd_setup(args, db),
-        Command::Config(sub) => cmd_config(sub, cli.db.as_deref()),
-        Command::Sync(sub) => crate::commands::sync::dispatch(sub),
-        Command::Conflicts(sub) => cmd_conflicts(sub, db),
+        Command::Occur(args) => commands::occur::occur(args, db),
+        Command::Start(args) => commands::start::start(args, db),
+        Command::Stop(args) => commands::end::stop(args, db),
+        Command::Switch(args) => commands::switch::switch(args, db),
+        Command::Add(args) => commands::add::add(args, db),
+        Command::Tail(args) => commands::tail::tail(args, db),
+        Command::Head(args) => commands::head::head(args, db),
+        Command::Now(args) => commands::now::now(args, db),
+        Command::Get(args) => commands::get::get(args, db),
+        Command::Delete(args) => commands::del::del(args, db),
+        Command::Edit(args) => commands::edit::edit(args, db),
+        Command::Update(args) => commands::update::update(args, db),
+        Command::Merge(args) => commands::merge::merge(args, db),
+        Command::Rekey(args) => commands::rekey::rekey(args, db),
+        Command::Retime(args) => commands::retime::retime(args, db),
+        Command::Undo(args) => commands::undo::undo(args, db),
+        Command::History(args) => commands::history::history(args, db),
+        Command::Why(args) => commands::why::why(args, db),
+        Command::Spec(sub) => commands::spec::spec(sub, db),
+        Command::Alias(sub) => commands::alias::alias(sub, db),
+        Command::Track(args) => commands::track::track(args, db),
+        Command::Ignore(args) => commands::ignore::ignore(args, db),
+        Command::Migrate(sub) => commands::migrate::migrate(sub, db),
+        Command::Backup(args) => commands::backup::backup(args, db),
+        Command::Restore(args) => commands::restore::restore(args, db),
+        Command::Grep(args) => commands::grep::grep(args, db),
+        Command::Check(args) => commands::check::check(args, db),
+        Command::Map(args) => commands::map::map(args, db),
+        Command::Reduce(args) => commands::reduce::reduce(args, db),
+        Command::Dayview(args) => commands::dayview::dayview(args, db),
+        Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
+        Command::Setup(args) => commands::setup::setup(args, db),
+        Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
+        Command::Sync(sub) => commands::sync::dispatch(sub),
+        Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
     }
 }
 
@@ -79,7 +79,7 @@ fn build_registry() -> Registry {
     datum_core::views::builtins()
 }
 
-fn cmd_map(args: MapArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_map(args: MapArgs, db: &Db) -> Result<()> {
     let registry = build_registry();
     let params = map_args_to_params(&args, false);
     let rows = registry
@@ -89,7 +89,7 @@ fn cmd_map(args: MapArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_reduce(args: MapArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_reduce(args: MapArgs, db: &Db) -> Result<()> {
     let registry = build_registry();
     let params = map_args_to_params(&args, true);
     let rows = registry
@@ -101,7 +101,7 @@ fn cmd_reduce(args: MapArgs, db: &Db) -> Result<()> {
 
 // ─── Dayview ────────────────────────────────────────────────────────────────
 
-fn cmd_dayview(args: DayviewArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_dayview(args: DayviewArgs, db: &Db) -> Result<()> {
     use chrono::{Datelike, NaiveDate};
     use datum_layout::{layout_day, svg::render_svg, LayoutConfig, LayoutEntry};
     use serde_json::Value as JsonValue;
@@ -219,22 +219,10 @@ fn print_view_rows(rows: &[datum_core::views::ViewRow]) {
     }
 }
 
-fn cmd_check(args: CheckArgs, db: &Db) -> Result<()> {
-    let report = collect_issues(db)?;
-    if args.json {
-        println!("{}", render_json(&report)?);
-    } else {
-        print!("{}", render_human(&report));
-    }
-    if report.has_errors() {
-        std::process::exit(1);
-    }
-    Ok(())
-}
 
 // ─── info / setup ────────────────────────────────────────────────────────────
 
-fn cmd_info(args: InfoArgs, cli_db: Option<&str>, active_db: &Db) -> Result<()> {
+pub(crate) fn cmd_info(args: InfoArgs, cli_db: Option<&str>, active_db: &Db) -> Result<()> {
     if args.all {
         print_info_all()?;
         return Ok(());
@@ -405,7 +393,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
     if args.force_recreate {
         let dropped = db.force_recreate_schema()?;
         println!("setup: force-recreate");
@@ -452,13 +440,13 @@ fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
 
 // ─── Config ──────────────────────────────────────────────────────────────────
 
-fn cmd_config(sub: ConfigCommand, cli_db: Option<&str>) -> Result<()> {
+pub(crate) fn cmd_config(sub: ConfigCommand, cli_db: Option<&str>) -> Result<()> {
     match sub {
         ConfigCommand::Show(args) => cmd_config_show(args, cli_db),
     }
 }
 
-fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
+pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
     let cfg = config::Config::load(cli_db)?;
 
     if args.json {
@@ -521,7 +509,7 @@ fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
+pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let parsed = parse_log_args(&args)?;
     let ParsedLogArgs {
         field,
@@ -1137,7 +1125,7 @@ fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::t
 
 // ─── Tail / Now ──────────────────────────────────────────────────────────────
 
-fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
     let columns = split_columns(&args.columns);
     let metric: TimeMetricCol = args
         .metric
@@ -1251,7 +1239,7 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
     })
 }
 
-fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
     let entries = if let Some(field) = &args.field {
         db.entries_for_field_asc(field, Some(args.count))?
     } else {
@@ -1277,7 +1265,7 @@ fn cmd_head(args: HeadArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
     let regexes: Vec<Regex> = args
         .patterns
         .iter()
@@ -1313,7 +1301,7 @@ fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
     let tracked = db.get_tracked_fields()?;
     if tracked.is_empty() {
         println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
@@ -1347,7 +1335,7 @@ fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
     // Load-or-create spec, flip tracked=true (ignored=false), merge color
     // and per-state colors. Track is a thin wrapper over the spec.
     let mut spec = match db.load_spec(&args.field)? {
@@ -1372,7 +1360,7 @@ fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
     let mut spec = match db.load_spec(&args.field)? {
         Some(s) => s,
         None => FieldSpec::new(&args.field, Verb::Occur),
@@ -1436,7 +1424,7 @@ fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
     }
 }
 
-fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
     let entry = db.resolve_prefix(&args.id_or_slug)
         .map_err(anyhow::Error::from)?;
     if args.pretty {
@@ -1448,7 +1436,7 @@ fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
     let entry = db
         .resolve_prefix(&args.id_or_slug)
@@ -1481,7 +1469,7 @@ fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
 /// Testing hook: `DATUM_EDITOR` takes precedence over `EDITOR`. Both are
 /// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
 /// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
-fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
     let existing = resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
     if existing.deleted_at.is_some() {
         anyhow::bail!(
@@ -1547,7 +1535,7 @@ fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
 
 // ─── Update / Merge / Rekey ──────────────────────────────────────────────────
 
-fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> Result<()> {
+pub(crate) fn cmd_update(args: UpdateArgs, default_strategy: ConflictStrategy, db: &Db) -> Result<()> {
     let strategy = args.strategy.map(Into::into).unwrap_or(default_strategy);
 
     // C3: accept unique prefixes, but preserve the "Cannot X tombstoned entry"
@@ -1779,7 +1767,7 @@ fn parse_update_payload(args: &UpdateArgs) -> Result<(Option<JsonValue>, Option<
 
 // ─── Retime ──────────────────────────────────────────────────────────────────
 
-fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
     if args.slug.is_none() && args.field.is_none() && args.after.is_none() && args.before.is_none()
     {
         anyhow::bail!(
@@ -1864,7 +1852,7 @@ fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
     anyhow::bail!("expected YYYY-MM-DD or RFC3339, got '{s}'")
 }
 
-fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
 
     // Slug-targeted undo. Prefer the history-based revert (D4): back off to
@@ -1958,7 +1946,7 @@ fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
 
 // ─── History / Why ───────────────────────────────────────────────────────────
 
-fn cmd_history(args: HistoryArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_history(args: HistoryArgs, db: &Db) -> Result<()> {
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
         .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
     let hid = current.hid.clone();
@@ -2086,7 +2074,7 @@ fn render_scalar(v: &JsonValue) -> String {
     serde_json::to_string(v).unwrap_or_else(|_| v.to_string())
 }
 
-fn cmd_why(args: WhyArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_why(args: WhyArgs, db: &Db) -> Result<()> {
     let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
         .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
 
@@ -2132,7 +2120,7 @@ fn cmd_why(args: WhyArgs, db: &Db) -> Result<()> {
 
 // ─── Spec management ─────────────────────────────────────────────────────────
 
-fn cmd_spec(sub: SpecCommand, db: &Db) -> Result<()> {
+pub(crate) fn cmd_spec(sub: SpecCommand, db: &Db) -> Result<()> {
     match sub {
         SpecCommand::Show { field } => match db.load_spec(&field)? {
             Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
@@ -2157,7 +2145,7 @@ fn cmd_spec(sub: SpecCommand, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // --json replaces the entire spec; individual flags merge into existing.
     let mut spec = if let Some(json) = &args.json {
         let mut s: FieldSpec = serde_json::from_str(json)
@@ -2242,7 +2230,7 @@ fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
 
 // ─── Conflicts (D5) ──────────────────────────────────────────────────────────
 
-fn cmd_conflicts(sub: ConflictsCommand, db: &Db) -> Result<()> {
+pub(crate) fn cmd_conflicts(sub: ConflictsCommand, db: &Db) -> Result<()> {
     match sub {
         ConflictsCommand::List(args) => cmd_conflicts_list(args, db),
         ConflictsCommand::Resolve(args) => cmd_conflicts_resolve(args, db),
@@ -2250,7 +2238,7 @@ fn cmd_conflicts(sub: ConflictsCommand, db: &Db) -> Result<()> {
     }
 }
 
-fn cmd_conflicts_list(args: ConflictsListArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_conflicts_list(args: ConflictsListArgs, db: &Db) -> Result<()> {
     use datum_core::conflicts::{ConflictKind, ListFilter};
     let kind = match args.kind.as_deref() {
         None => None,
@@ -2285,7 +2273,7 @@ fn cmd_conflicts_list(args: ConflictsListArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
     use datum_core::conflicts::Resolution;
     let resolution = if args.close_older {
         Resolution::CloseOlder
@@ -2312,7 +2300,7 @@ fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result<()> {
     let applied = db.auto_resolve_conflicts(Utc::now(), args.min_age)?;
     if applied.is_empty() {
         println!("No conflicts eligible for auto-resolution (min_age={}s).", args.min_age);
@@ -2331,7 +2319,7 @@ fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result
 
 // ─── Alias management ────────────────────────────────────────────────────────
 
-fn cmd_alias(sub: AliasCommand, db: &Db) -> Result<()> {
+pub(crate) fn cmd_alias(sub: AliasCommand, db: &Db) -> Result<()> {
     match sub {
         AliasCommand::Show { name } => {
             let reg = db.load_registry()?;
@@ -2365,7 +2353,7 @@ fn cmd_alias(sub: AliasCommand, db: &Db) -> Result<()> {
 
 // ─── Migration ───────────────────────────────────────────────────────────────
 
-fn cmd_migrate(cmd: MigrateCommand, db: &Db) -> Result<()> {
+pub(crate) fn cmd_migrate(cmd: MigrateCommand, db: &Db) -> Result<()> {
     match cmd {
         MigrateCommand::Run => cmd_migrate_run(db),
         MigrateCommand::Status => cmd_migrate_status(db),
@@ -2374,7 +2362,7 @@ fn cmd_migrate(cmd: MigrateCommand, db: &Db) -> Result<()> {
     }
 }
 
-fn cmd_migrate_run(db: &Db) -> Result<()> {
+pub(crate) fn cmd_migrate_run(db: &Db) -> Result<()> {
     // Db::open already auto-advanced on session start. Re-check and report.
     let applied = datum_core::migrations::migrate_to_current(db.conn())?;
     let current = db.schema_version()?;
@@ -2389,7 +2377,7 @@ fn cmd_migrate_run(db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_migrate_status(db: &Db) -> Result<()> {
+pub(crate) fn cmd_migrate_status(db: &Db) -> Result<()> {
     let (current, target, rows) = datum_core::migrations::migration_status(
         db.conn(),
         datum_core::migrations::MIGRATIONS,
@@ -2409,14 +2397,14 @@ fn cmd_migrate_status(db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_migrate_edit() -> Result<()> {
+pub(crate) fn cmd_migrate_edit() -> Result<()> {
     anyhow::bail!(
         "`datum migrate edit` (per-entry data migration) is not yet implemented; \
          tracked in bead da-glnr"
     )
 }
 
-fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()> {
     let backup_path = args.resolved_path()?.to_string();
     let dry_run = args.dry_run;
 
@@ -2508,7 +2496,7 @@ fn is_targz_path(path: &str) -> bool {
     lower.ends_with(".tar.gz") || lower.ends_with(".tgz")
 }
 
-fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
     let out_path = std::path::Path::new(&args.path);
     if out_path.exists() && !args.overwrite {
         anyhow::bail!(
@@ -2618,7 +2606,7 @@ fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
     Ok(())
 }
 
-fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
     let strategy = if args.force {
         ConflictStrategy::Update
     } else {

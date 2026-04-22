@@ -1,4 +1,4 @@
-//! Database consistency checks.
+//! `datum check` — database consistency checks.
 //!
 //! Runs a battery of SQL- and Rust-level sanity queries and produces a
 //! grouped report. Errors set the process exit code to 1; warnings do not.
@@ -7,6 +7,31 @@ use anyhow::Result;
 use datum_core::db::Db;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
+
+use crate::args::CheckArgs;
+
+/// Typed API for `datum check`. Exits the process with status 1 when the
+/// report contains any [`Severity::Error`] items.
+pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
+    let report = collect_issues(db)?;
+    if args.json {
+        println!("{}", render_json(&report)?);
+    } else {
+        print!("{}", render_human(&report));
+    }
+    if report.has_errors() {
+        std::process::exit(1);
+    }
+    Ok(())
+}
+
+pub fn check_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
+    anyhow::bail!("check_from_argv: stub — R2 extracts bespoke parser")
+}
+
+pub fn check_from_string(_input: &str, _db: &Db) -> Result<()> {
+    anyhow::bail!("check_from_string: stub — R2 extracts bespoke parser")
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
