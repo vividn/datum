@@ -16,6 +16,7 @@ use serde_json::Value as JsonValue;
 use crate::entry::{new_hid, Entry, EntryShape, PrecisionUnit, Verb};
 use crate::error::{DatumError, PrefixCandidate, Result};
 use crate::field_spec::{Alias, FieldSpec, SpecRegistry};
+use crate::history::{self, ChangeKind};
 use crate::time::DatumTime;
 use chrono::{DateTime, Duration, Utc};
 
@@ -243,6 +244,7 @@ impl Db {
     pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
         let tables = [
             "entries",
+            "entry_history",
             "field_specs",
             "aliases",
             "sync_state",
@@ -295,13 +297,17 @@ impl Db {
     /// `content_hash` already matches a live row. Tombstoned rows are ignored
     /// for collision detection — re-inserting a deleted-then-identical payload
     /// behaves like a fresh insert.
+    ///
+    /// Both the entries mutation and the companion `entry_history` row land in
+    /// the same transaction: `Create` is recorded for new inserts and Rekey,
+    /// `UserEdit` for Update / Merge, and `Ignored` writes no history at all.
     pub fn insert_entry_with_strategy(
         &self,
         entry: &Entry,
         strategy: ConflictStrategy,
     ) -> Result<InsertOutcome> {
-        let existing: Option<(String, Option<String>)> = self
-            .conn
+        let tx = self.conn.unchecked_transaction()?;
+        let existing: Option<(String, Option<String>)> = tx
             .query_row(
                 "SELECT slug, data FROM entries
                  WHERE content_hash = ?1 AND deleted_at IS NULL
@@ -311,212 +317,57 @@ impl Db {
             )
             .optional()?;
 
-        match (existing, strategy) {
+        let outcome = match (existing, strategy) {
             (None, _) => {
-                let stored_slug = self.raw_insert(entry)?;
-                Ok(InsertOutcome::Inserted { slug: stored_slug })
+                let stored_slug = raw_insert(&tx, entry)?;
+                let inserted = fetch_entry_any(&tx, &stored_slug)?;
+                history::record(&tx, &inserted, ChangeKind::Create)?;
+                InsertOutcome::Inserted { slug: stored_slug }
             }
             (Some((slug, _)), ConflictStrategy::Ignore) => {
-                Ok(InsertOutcome::Ignored { slug })
+                InsertOutcome::Ignored { slug }
             }
             (Some((slug, _)), ConflictStrategy::Update) => {
-                self.raw_overwrite_mutables(&slug, entry, None)?;
-                Ok(InsertOutcome::Updated { slug })
+                let pre = fetch_entry_any(&tx, &slug)?;
+                history::record(&tx, &pre, ChangeKind::UserEdit)?;
+                raw_overwrite_mutables(&tx, &slug, entry, None)?;
+                InsertOutcome::Updated { slug }
             }
             (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
+                let pre = fetch_entry_any(&tx, &slug)?;
+                history::record(&tx, &pre, ChangeKind::UserEdit)?;
                 let existing_data: Option<JsonValue> = existing_data_json
                     .as_deref()
                     .and_then(|s| serde_json::from_str(s).ok());
                 let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
-                self.raw_overwrite_mutables(&slug, entry, Some(merged))?;
-                Ok(InsertOutcome::Merged { slug })
+                raw_overwrite_mutables(&tx, &slug, entry, Some(merged))?;
+                InsertOutcome::Merged { slug }
             }
             (Some((old_slug, _)), ConflictStrategy::Rekey) => {
                 // Rekey: insert the incoming row with its own slug. Both rows
                 // share a content_hash — the content_hash column is not UNIQUE.
-                let new_slug = self.raw_insert(entry)?;
-                Ok(InsertOutcome::Rekeyed { old_slug, new_slug })
+                // The new row gets its own `Create` history entry; the
+                // original row is untouched.
+                let new_slug = raw_insert(&tx, entry)?;
+                let inserted = fetch_entry_any(&tx, &new_slug)?;
+                history::record(&tx, &inserted, ChangeKind::Create)?;
+                InsertOutcome::Rekeyed { old_slug, new_slug }
             }
-        }
-    }
-
-    /// Insert an entry, retrying on slug/hid collisions with a suffixed slug
-    /// or a freshly-generated hid. Returns the slug actually stored.
-    fn raw_insert(&self, entry: &Entry) -> Result<String> {
-        const MAX_ATTEMPTS: u8 = 8;
-        let mut slug = entry.slug.clone();
-        let mut hid = entry.hid.clone();
-        let mut attempt = 0u8;
-
-        loop {
-            match self.try_insert(&slug, &hid, entry) {
-                Ok(()) => return Ok(slug),
-                Err(DatumError::Db(ref sql_err)) if is_pk_collision(sql_err) => {
-                    if attempt >= MAX_ATTEMPTS {
-                        return Err(DatumError::Other(format!(
-                            "slug/hid collision persisted after {MAX_ATTEMPTS} retries",
-                        )));
-                    }
-                    // The collision could be on slug PK or hid UNIQUE. We
-                    // can't cheaply tell which without a second query, so
-                    // rotate both to converge quickly.
-                    slug = suffixed_slug(&entry.slug);
-                    hid = new_hid();
-                    attempt += 1;
-                }
-                Err(e) => return Err(e),
-            }
-        }
-    }
-
-    fn try_insert(&self, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
-        self.conn.execute(
-            r#"INSERT INTO entries (
-                hid, slug, content_hash, field, entry_shape, intent,
-                value, data, unit,
-                start_time, start_time_offset, start_time_tz,
-                start_time_precision, start_time_precision_unit,
-                end_time, end_time_offset, end_time_tz,
-                end_time_precision, end_time_precision_unit,
-                lat, lon, location,
-                create_time, modify_time, device_id,
-                deleted_at, id_structure, field_structure,
-                raw_input, alias_chain, parser_version
-            ) VALUES (
-                ?1, ?2, ?3, ?4, ?5, ?6,
-                ?7, ?8, ?9,
-                ?10, ?11, ?12,
-                ?13, ?14,
-                ?15, ?16, ?17,
-                ?18, ?19,
-                ?20, ?21, ?22,
-                ?23, ?24, ?25,
-                ?26, ?27, ?28,
-                ?29, ?30, ?31
-            )"#,
-            params![
-                hid,
-                slug,
-                entry.content_hash,
-                entry.field,
-                entry.entry_shape.to_string(),
-                entry.intent,
-                entry.value.as_ref().map(|v| v.to_string()),
-                entry.data.as_ref().map(|v| v.to_string()),
-                entry.unit,
-                entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.start_time.as_ref().map(|t| t.offset_minutes),
-                entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-                entry.start_time_precision,
-                entry.start_time_precision_unit.to_string(),
-                entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.end_time.as_ref().map(|t| t.offset_minutes),
-                entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-                entry.end_time_precision,
-                entry.end_time_precision_unit.to_string(),
-                entry.lat,
-                entry.lon,
-                entry.location.as_deref(),
-                entry.create_time.to_rfc3339(),
-                entry.modify_time.to_rfc3339(),
-                entry.device_id,
-                entry.deleted_at.map(|t| t.to_rfc3339()),
-                entry.id_structure.as_deref(),
-                entry.field_structure.as_deref(),
-                entry.raw_input,
-                entry.alias_chain.as_ref().map(|v| v.to_string()),
-                entry.parser_version,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// Overwrite an existing row identified by `slug` with the mutable fields
-    /// from `entry`. When `override_data` is `Some`, it replaces the stored
-    /// `data`; otherwise the incoming `entry.data` wins.
-    /// Refreshes `modify_time` (and recomputes `content_hash` from the
-    /// incoming payload). The slug is immutable — this never renames the row.
-    fn raw_overwrite_mutables(
-        &self,
-        slug: &str,
-        entry: &Entry,
-        override_data: Option<Option<JsonValue>>,
-    ) -> Result<()> {
-        let data_value: Option<&JsonValue> = match override_data.as_ref() {
-            Some(o) => o.as_ref(),
-            None => entry.data.as_ref(),
         };
-        let data_json = data_value.map(|v| v.to_string());
-        let now = Utc::now().to_rfc3339();
 
-        self.conn.execute(
-            r#"UPDATE entries SET
-                content_hash = ?2,
-                field = ?3,
-                entry_shape = ?4,
-                intent = ?5,
-                value = ?6,
-                data = ?7,
-                unit = ?8,
-                start_time = ?9,
-                start_time_offset = ?10,
-                start_time_tz = ?11,
-                start_time_precision = ?12,
-                start_time_precision_unit = ?13,
-                end_time = ?14,
-                end_time_offset = ?15,
-                end_time_tz = ?16,
-                end_time_precision = ?17,
-                end_time_precision_unit = ?18,
-                lat = ?19,
-                lon = ?20,
-                location = ?21,
-                modify_time = ?22,
-                device_id = ?23,
-                raw_input = ?24,
-                alias_chain = ?25,
-                parser_version = ?26
-               WHERE slug = ?1"#,
-            params![
-                slug,
-                entry.content_hash,
-                entry.field,
-                entry.entry_shape.to_string(),
-                entry.intent,
-                entry.value.as_ref().map(|v| v.to_string()),
-                data_json,
-                entry.unit,
-                entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.start_time.as_ref().map(|t| t.offset_minutes),
-                entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-                entry.start_time_precision,
-                entry.start_time_precision_unit.to_string(),
-                entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-                entry.end_time.as_ref().map(|t| t.offset_minutes),
-                entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-                entry.end_time_precision,
-                entry.end_time_precision_unit.to_string(),
-                entry.lat,
-                entry.lon,
-                entry.location.as_deref(),
-                now,
-                entry.device_id,
-                entry.raw_input,
-                entry.alias_chain.as_ref().map(|v| v.to_string()),
-                entry.parser_version,
-            ],
-        )?;
-        Ok(())
+        tx.commit()?;
+        Ok(outcome)
     }
 
     /// Persist a mutation to an existing entry, matched by `entry.slug`.
     /// Errors [`DatumError::NotFound`] if the slug is unknown and
     /// [`DatumError::Tombstoned`] if the row is soft-deleted. Refreshes
     /// `modify_time` and rewrites all mutable fields (including
-    /// `content_hash`, `data`) from the incoming payload.
+    /// `content_hash`, `data`) from the incoming payload. Records a
+    /// `user_edit` history row for the pre-edit state in the same transaction.
     pub fn save_existing_entry(&self, entry: &Entry) -> Result<()> {
-        let state: Option<Option<String>> = self
-            .conn
+        let tx = self.conn.unchecked_transaction()?;
+        let state: Option<Option<String>> = tx
             .query_row(
                 "SELECT deleted_at FROM entries WHERE slug = ?1",
                 params![entry.slug],
@@ -524,10 +375,16 @@ impl Db {
             )
             .optional()?;
         match state {
-            None => Err(DatumError::NotFound(entry.slug.clone())),
-            Some(Some(_)) => Err(DatumError::Tombstoned(entry.slug.clone())),
-            Some(None) => self.raw_overwrite_mutables(&entry.slug, entry, None),
+            None => return Err(DatumError::NotFound(entry.slug.clone())),
+            Some(Some(_)) => return Err(DatumError::Tombstoned(entry.slug.clone())),
+            Some(None) => {
+                let pre = fetch_entry_any(&tx, &entry.slug)?;
+                history::record(&tx, &pre, ChangeKind::UserEdit)?;
+                raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
+            }
         }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Fetch a live entry by slug or hid. Tombstoned rows are hidden — use
@@ -808,18 +665,31 @@ impl Db {
     }
 
     /// Clear a tombstone by slug or hid — the inverse of [`Db::soft_delete_entry`].
-    /// Errors with `NotFound` if no matching tombstone exists.
+    /// Errors with `NotFound` if no matching tombstone exists. Records a
+    /// `user_edit` history row snapshotting the pre-undelete (tombstoned) state.
     pub fn undelete(&self, slug_or_hid: &str) -> Result<()> {
-        let affected = self.conn.execute(
-            "UPDATE entries SET deleted_at = NULL
-             WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NOT NULL",
-            params![slug_or_hid],
+        let tx = self.conn.unchecked_transaction()?;
+        let pre: Option<Entry> = tx
+            .query_row(
+                "SELECT * FROM entries
+                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NOT NULL
+                 LIMIT 1",
+                params![slug_or_hid],
+                row_to_entry,
+            )
+            .optional()?;
+        let pre = match pre {
+            Some(e) => e,
+            None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
+        };
+        history::record(&tx, &pre, ChangeKind::UserEdit)?;
+        tx.execute(
+            "UPDATE entries SET deleted_at = NULL, modify_time = ?2
+             WHERE slug = ?1",
+            params![pre.slug, Utc::now().to_rfc3339()],
         )?;
-        if affected == 0 {
-            Err(DatumError::NotFound(slug_or_hid.to_string()))
-        } else {
-            Ok(())
-        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Hard-delete an entry by slug or hid. Returns Err(NotFound) if no rows
@@ -1089,14 +959,18 @@ impl Db {
 
         let now = Utc::now().to_rfc3339();
         let mut count = 0usize;
-        for mut e in entries {
-            if let Some(t) = e.start_time.as_mut() {
+        for e in entries {
+            // Record the pre-retime snapshot before shifting — the history
+            // row must reflect the state that existed before this retime.
+            history::record(&tx, &e, ChangeKind::Retime)?;
+            let mut shifted = e;
+            if let Some(t) = shifted.start_time.as_mut() {
                 t.utc += offset;
             }
-            if let Some(t) = e.end_time.as_mut() {
+            if let Some(t) = shifted.end_time.as_mut() {
                 t.utc += offset;
             }
-            let new_hash = e.expected_content_hash();
+            let new_hash = shifted.expected_content_hash();
             tx.execute(
                 r#"UPDATE entries SET
                     start_time  = ?2,
@@ -1105,9 +979,9 @@ impl Db {
                     modify_time = ?5
                    WHERE slug = ?1"#,
                 params![
-                    e.slug,
-                    e.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-                    e.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                    shifted.slug,
+                    shifted.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+                    shifted.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
                     new_hash,
                     now,
                 ],
@@ -1123,17 +997,29 @@ impl Db {
     /// Sets `deleted_at` to now; read paths that care about soft-delete (such
     /// as `get_active_state`) will ignore tombstoned rows. Errors if no row
     /// matches. If the row is already tombstoned, the tombstone is refreshed.
+    /// Records a `user_edit` history row capturing the pre-delete state so
+    /// `datum undo` can restore it by reverting to the prior version.
     pub fn soft_delete_entry(&self, slug_or_hid: &str) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let pre: Option<Entry> = tx
+            .query_row(
+                "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
+                params![slug_or_hid],
+                row_to_entry,
+            )
+            .optional()?;
+        let pre = match pre {
+            Some(e) => e,
+            None => return Err(DatumError::NotFound(slug_or_hid.to_string())),
+        };
+        history::record(&tx, &pre, ChangeKind::UserEdit)?;
         let now = Utc::now().to_rfc3339();
-        let affected = self.conn.execute(
-            "UPDATE entries SET deleted_at = ?1 WHERE slug = ?2 OR hid = ?2",
-            params![now, slug_or_hid],
+        tx.execute(
+            "UPDATE entries SET deleted_at = ?1, modify_time = ?1 WHERE slug = ?2",
+            params![now, pre.slug],
         )?;
-        if affected == 0 {
-            Err(DatumError::NotFound(slug_or_hid.to_string()))
-        } else {
-            Ok(())
-        }
+        tx.commit()?;
+        Ok(())
     }
 
     /// Return the active state of `field` at time `at`, or `Value::Null` if
@@ -1350,6 +1236,60 @@ impl Db {
         Ok(map)
     }
 
+    /// Revert an entry to the state it held at a prior version, resolving
+    /// `hid_or_slug` through `entries.hid` / `entries.slug` (including
+    /// tombstoned rows). Records the undo as a new `Undo` history row whose
+    /// snapshot is the pre-revert state.
+    ///
+    /// Returns the restored [`Entry`]. Errors [`DatumError::NotFound`] if
+    /// the entry or the target version doesn't exist.
+    pub fn revert_entry_to(
+        &self,
+        hid_or_slug: &str,
+        target_version: u32,
+    ) -> Result<Entry> {
+        let tx = self.conn.unchecked_transaction()?;
+
+        // Resolve the current row (live or tombstoned) to pin down the hid.
+        let current: Entry = tx
+            .query_row(
+                "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
+                params![hid_or_slug],
+                row_to_entry,
+            )
+            .optional()?
+            .ok_or_else(|| DatumError::NotFound(hid_or_slug.to_string()))?;
+
+        // Resolve the target state. State at version 1 = v1.snapshot;
+        // state at version N>1 = v(N+1).snapshot if recorded, else the
+        // current live row when N is the latest version.
+        let target_state = history::state_at_version(
+            &tx,
+            &current.hid,
+            target_version,
+            Some(&current),
+        )?
+        .ok_or_else(|| {
+            DatumError::NotFound(format!(
+                "version {target_version} for entry {}",
+                current.hid
+            ))
+        })?;
+
+        // Record the pre-undo state as the new history row, tagged as Undo.
+        history::record(&tx, &current, ChangeKind::Undo)?;
+
+        // Apply the target state to the live entries row. This covers
+        // unchanged-slug updates as well as flipping `deleted_at` back and
+        // forth — the snapshot drives every mutable column, including the
+        // tombstone.
+        apply_entry_state(&tx, &target_state)?;
+
+        let restored = fetch_entry_any(&tx, &target_state.slug)?;
+        tx.commit()?;
+        Ok(restored)
+    }
+
     /// Latest non-Note, non-tombstoned entry for a field, for use in the now view.
     pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
         self.conn
@@ -1542,6 +1482,272 @@ fn build_datum_time(
         utc,
         offset_minutes: offset.unwrap_or(0),
         timezone: tz.unwrap_or_else(|| "UTC".to_string()),
+    })
+}
+
+// --- Free-function mutators ---------------------------------------------------
+//
+// These take an explicit `&Connection` so they can run inside caller-owned
+// transactions alongside `entry_history` writes. The public `Db` methods above
+// wrap them with `unchecked_transaction` to keep the entries mutation and the
+// history row atomic.
+
+/// Insert an entry, retrying on slug/hid collisions with a suffixed slug or
+/// freshly-generated hid. Returns the slug actually stored.
+pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<String> {
+    const MAX_ATTEMPTS: u8 = 8;
+    let mut slug = entry.slug.clone();
+    let mut hid = entry.hid.clone();
+    let mut attempt = 0u8;
+
+    loop {
+        match try_insert(conn, &slug, &hid, entry) {
+            Ok(()) => return Ok(slug),
+            Err(DatumError::Db(ref sql_err)) if is_pk_collision(sql_err) => {
+                if attempt >= MAX_ATTEMPTS {
+                    return Err(DatumError::Other(format!(
+                        "slug/hid collision persisted after {MAX_ATTEMPTS} retries",
+                    )));
+                }
+                // The collision could be on slug PK or hid UNIQUE. We can't
+                // cheaply tell which without a second query, so rotate both
+                // to converge quickly.
+                slug = suffixed_slug(&entry.slug);
+                hid = new_hid();
+                attempt += 1;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
+    conn.execute(
+        r#"INSERT INTO entries (
+            hid, slug, content_hash, field, entry_shape, intent,
+            value, data, unit,
+            start_time, start_time_offset, start_time_tz,
+            start_time_precision, start_time_precision_unit,
+            end_time, end_time_offset, end_time_tz,
+            end_time_precision, end_time_precision_unit,
+            lat, lon, location,
+            create_time, modify_time, device_id,
+            deleted_at, id_structure, field_structure,
+            raw_input, alias_chain, parser_version
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6,
+            ?7, ?8, ?9,
+            ?10, ?11, ?12,
+            ?13, ?14,
+            ?15, ?16, ?17,
+            ?18, ?19,
+            ?20, ?21, ?22,
+            ?23, ?24, ?25,
+            ?26, ?27, ?28,
+            ?29, ?30, ?31
+        )"#,
+        params![
+            hid,
+            slug,
+            entry.content_hash,
+            entry.field,
+            entry.entry_shape.to_string(),
+            entry.intent,
+            entry.value.as_ref().map(|v| v.to_string()),
+            entry.data.as_ref().map(|v| v.to_string()),
+            entry.unit,
+            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.start_time.as_ref().map(|t| t.offset_minutes),
+            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.start_time_precision,
+            entry.start_time_precision_unit.to_string(),
+            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.end_time.as_ref().map(|t| t.offset_minutes),
+            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.end_time_precision,
+            entry.end_time_precision_unit.to_string(),
+            entry.lat,
+            entry.lon,
+            entry.location.as_deref(),
+            entry.create_time.to_rfc3339(),
+            entry.modify_time.to_rfc3339(),
+            entry.device_id,
+            entry.deleted_at.map(|t| t.to_rfc3339()),
+            entry.id_structure.as_deref(),
+            entry.field_structure.as_deref(),
+            entry.raw_input,
+            entry.alias_chain.as_ref().map(|v| v.to_string()),
+            entry.parser_version,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Overwrite an existing row identified by `slug` with the mutable fields
+/// from `entry`. When `override_data` is `Some`, it replaces the stored
+/// `data`; otherwise the incoming `entry.data` wins. Refreshes `modify_time`
+/// to now. The slug is immutable — this never renames the row.
+fn raw_overwrite_mutables(
+    conn: &Connection,
+    slug: &str,
+    entry: &Entry,
+    override_data: Option<Option<JsonValue>>,
+) -> Result<()> {
+    let data_value: Option<&JsonValue> = match override_data.as_ref() {
+        Some(o) => o.as_ref(),
+        None => entry.data.as_ref(),
+    };
+    let data_json = data_value.map(|v| v.to_string());
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        r#"UPDATE entries SET
+            content_hash = ?2,
+            field = ?3,
+            entry_shape = ?4,
+            intent = ?5,
+            value = ?6,
+            data = ?7,
+            unit = ?8,
+            start_time = ?9,
+            start_time_offset = ?10,
+            start_time_tz = ?11,
+            start_time_precision = ?12,
+            start_time_precision_unit = ?13,
+            end_time = ?14,
+            end_time_offset = ?15,
+            end_time_tz = ?16,
+            end_time_precision = ?17,
+            end_time_precision_unit = ?18,
+            lat = ?19,
+            lon = ?20,
+            location = ?21,
+            modify_time = ?22,
+            device_id = ?23,
+            raw_input = ?24,
+            alias_chain = ?25,
+            parser_version = ?26
+           WHERE slug = ?1"#,
+        params![
+            slug,
+            entry.content_hash,
+            entry.field,
+            entry.entry_shape.to_string(),
+            entry.intent,
+            entry.value.as_ref().map(|v| v.to_string()),
+            data_json,
+            entry.unit,
+            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.start_time.as_ref().map(|t| t.offset_minutes),
+            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.start_time_precision,
+            entry.start_time_precision_unit.to_string(),
+            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.end_time.as_ref().map(|t| t.offset_minutes),
+            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.end_time_precision,
+            entry.end_time_precision_unit.to_string(),
+            entry.lat,
+            entry.lon,
+            entry.location.as_deref(),
+            now,
+            entry.device_id,
+            entry.raw_input,
+            entry.alias_chain.as_ref().map(|v| v.to_string()),
+            entry.parser_version,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Apply `entry` wholesale to the `entries` table (live or tombstoned) — the
+/// hid/slug are treated as the identifying target, every other column takes
+/// the snapshot's value. Used by `revert_entry_to` so a revert can flip the
+/// `deleted_at` column back to NULL (or set it) in lockstep with the rest of
+/// the row. `modify_time` is taken from the snapshot verbatim; the caller has
+/// already persisted a history row capturing the pre-revert state.
+fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
+    let affected = conn.execute(
+        r#"UPDATE entries SET
+            content_hash = ?2,
+            field = ?3,
+            entry_shape = ?4,
+            intent = ?5,
+            value = ?6,
+            data = ?7,
+            unit = ?8,
+            start_time = ?9,
+            start_time_offset = ?10,
+            start_time_tz = ?11,
+            start_time_precision = ?12,
+            start_time_precision_unit = ?13,
+            end_time = ?14,
+            end_time_offset = ?15,
+            end_time_tz = ?16,
+            end_time_precision = ?17,
+            end_time_precision_unit = ?18,
+            lat = ?19,
+            lon = ?20,
+            location = ?21,
+            modify_time = ?22,
+            device_id = ?23,
+            deleted_at = ?24,
+            id_structure = ?25,
+            field_structure = ?26,
+            raw_input = ?27,
+            alias_chain = ?28,
+            parser_version = ?29
+           WHERE hid = ?1"#,
+        params![
+            entry.hid,
+            entry.content_hash,
+            entry.field,
+            entry.entry_shape.to_string(),
+            entry.intent,
+            entry.value.as_ref().map(|v| v.to_string()),
+            entry.data.as_ref().map(|v| v.to_string()),
+            entry.unit,
+            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.start_time.as_ref().map(|t| t.offset_minutes),
+            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.start_time_precision,
+            entry.start_time_precision_unit.to_string(),
+            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.end_time.as_ref().map(|t| t.offset_minutes),
+            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.end_time_precision,
+            entry.end_time_precision_unit.to_string(),
+            entry.lat,
+            entry.lon,
+            entry.location.as_deref(),
+            entry.modify_time.to_rfc3339(),
+            entry.device_id,
+            entry.deleted_at.map(|t| t.to_rfc3339()),
+            entry.id_structure.as_deref(),
+            entry.field_structure.as_deref(),
+            entry.raw_input,
+            entry.alias_chain.as_ref().map(|v| v.to_string()),
+            entry.parser_version,
+        ],
+    )?;
+    if affected == 0 {
+        return Err(DatumError::NotFound(entry.hid.clone()));
+    }
+    Ok(())
+}
+
+/// Fetch an entry by slug or hid regardless of tombstone state. Kept internal
+/// — public callers go through [`Db::get_entry`] or
+/// [`Db::get_entry_including_deleted`].
+pub(crate) fn fetch_entry_any(conn: &Connection, slug_or_hid: &str) -> Result<Entry> {
+    conn.query_row(
+        "SELECT * FROM entries WHERE slug = ?1 OR hid = ?1 LIMIT 1",
+        params![slug_or_hid],
+        row_to_entry,
+    )
+    .map_err(|e| match e {
+        rusqlite::Error::QueryReturnedNoRows => DatumError::NotFound(slug_or_hid.to_string()),
+        other => DatumError::Db(other),
     })
 }
 
@@ -2649,5 +2855,177 @@ mod tests {
         );
 
         std::fs::remove_file(&path_str).ok();
+    }
+
+    // ─── D4: entry_history — acceptance tests ─────────────────────────────
+
+    /// Simple write of a fresh entry. The companion history row at version=1
+    /// must carry change_kind='create' with a snapshot matching the entry.
+    #[test]
+    fn insert_creates_version_1_history_row() {
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+        let entry = Entry::new(
+            "coffee",
+            Verb::Occur,
+            Some(serde_json::json!(2)),
+            None,
+            None,
+            Some(t),
+            None,
+            "d1",
+        );
+        let hid = entry.hid.clone();
+        db.insert_entry(&entry).unwrap();
+
+        let versions = crate::history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions.len(), 1);
+        assert_eq!(versions[0].version, 1);
+        assert_eq!(versions[0].change_kind, crate::history::ChangeKind::Create);
+        assert_eq!(versions[0].snapshot.hid, hid);
+        assert_eq!(versions[0].snapshot.field, "coffee");
+    }
+
+    /// Update via collision must stamp version=2 whose snapshot reflects the
+    /// pre-edit state (not the incoming payload).
+    #[test]
+    fn update_creates_new_version_with_pre_edit_snapshot() {
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+
+        let pre = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(t.clone()),
+            None,
+            "d1",
+        );
+        let hid = pre.hid.clone();
+        db.insert_entry(&pre).unwrap();
+
+        // Same content_hash → Update strategy overwrites in place. Give the
+        // incoming row a different device_id so we can see the pre-edit
+        // snapshot preserves the original.
+        let mut update = pre.clone();
+        update.device_id = "d2".to_string();
+        db.insert_entry_with_strategy(&update, ConflictStrategy::Update).unwrap();
+
+        let versions = crate::history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions.len(), 2, "create + user_edit");
+        assert_eq!(versions[0].change_kind, crate::history::ChangeKind::Create);
+        assert_eq!(versions[1].version, 2);
+        assert_eq!(versions[1].change_kind, crate::history::ChangeKind::UserEdit);
+        // Snapshot at v2 = pre-edit state → device_id == d1 (the original).
+        assert_eq!(versions[1].snapshot.device_id, "d1");
+    }
+
+    /// Retime must be recorded with change_kind='retime' and the snapshot
+    /// must capture the pre-shift timestamps.
+    #[test]
+    fn retime_recorded_as_change_kind_retime() {
+        let db = Db::open_in_memory().unwrap();
+        let t_at: DateTime<Utc> = "2024-01-01T10:00:00Z".parse().unwrap();
+        let t = DatumTime { utc: t_at, offset_minutes: 0, timezone: "UTC".to_string() };
+
+        let e = Entry::new("nap", Verb::Occur, None, None, None, Some(t), None, "d1");
+        let hid = e.hid.clone();
+        db.insert_entry(&e).unwrap();
+
+        let filter = RetimeFilter { slug_or_hid: Some(&hid), ..Default::default() };
+        db.update_times(&filter, Duration::minutes(30)).unwrap();
+
+        let versions = crate::history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions.len(), 2, "create + retime");
+        assert_eq!(versions[1].change_kind, crate::history::ChangeKind::Retime);
+        // Pre-retime snapshot has the ORIGINAL start_time (10:00Z).
+        let pre_start = versions[1].snapshot.start_time.as_ref().unwrap().utc;
+        assert_eq!(pre_start, t_at);
+    }
+
+    /// Revert to version N-1 via `revert_entry_to` restores the pre-edit
+    /// state and records a new 'undo' history row.
+    #[test]
+    fn undo_reverts_to_previous_version_and_records_change() {
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+
+        // v1: create mood=happy.
+        let v1_entry = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(t.clone()),
+            None,
+            "d1",
+        );
+        let hid = v1_entry.hid.clone();
+        db.insert_entry(&v1_entry).unwrap();
+
+        // v2: user_edit switches to mood=sad via Update strategy (same slug).
+        // Preserve the identifying fields so the content_hash still collides.
+        let mut v2_entry = v1_entry.clone();
+        v2_entry.value = Some(serde_json::json!("sad"));
+        v2_entry.content_hash = v1_entry.content_hash.clone();
+        db.insert_entry_with_strategy(&v2_entry, ConflictStrategy::Update).unwrap();
+
+        // Sanity: current state is v2 (mood=sad).
+        let before = db.get_entry(&v1_entry.slug).unwrap();
+        assert_eq!(before.value, Some(serde_json::json!("sad")));
+
+        // Revert to v1.
+        let restored = db.revert_entry_to(&hid, 1).unwrap();
+        assert_eq!(restored.value, Some(serde_json::json!("happy")));
+
+        // History now has three rows; the newest is the undo.
+        let versions = crate::history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions.len(), 3);
+        assert_eq!(versions[2].change_kind, crate::history::ChangeKind::Undo);
+        // Pre-undo snapshot captures the mood=sad state we just left.
+        assert_eq!(versions[2].snapshot.value, Some(serde_json::json!("sad")));
+    }
+
+    /// `--to-version N` points at an arbitrary version, not just N-1.
+    #[test]
+    fn undo_to_specific_version_works() {
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+
+        let v1_entry = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(t.clone()),
+            None,
+            "d1",
+        );
+        let hid = v1_entry.hid.clone();
+        let slug = v1_entry.slug.clone();
+        db.insert_entry(&v1_entry).unwrap();
+
+        // v2: sad
+        let mut v2 = v1_entry.clone();
+        v2.value = Some(serde_json::json!("sad"));
+        db.insert_entry_with_strategy(&v2, ConflictStrategy::Update).unwrap();
+
+        // v3: focused
+        let mut v3 = v1_entry.clone();
+        v3.value = Some(serde_json::json!("focused"));
+        db.insert_entry_with_strategy(&v3, ConflictStrategy::Update).unwrap();
+
+        // Revert directly to v1 by id_or_slug.
+        let restored = db.revert_entry_to(&slug, 1).unwrap();
+        assert_eq!(restored.value, Some(serde_json::json!("happy")));
+
+        // History length should be 4 now (create, edit, edit, undo).
+        let versions = crate::history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions.len(), 4);
+        assert_eq!(versions[3].change_kind, crate::history::ChangeKind::Undo);
     }
 }

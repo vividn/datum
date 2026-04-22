@@ -30,6 +30,7 @@ use serde::{Deserialize, Serialize};
 use crate::db::Db;
 use crate::entry::Entry;
 use crate::error::{DatumError, Result};
+use crate::history::{self, ChangeKind};
 
 /// Magic prefix identifying a v1 changeset payload. Bumping the trailing
 /// digit is the versioning mechanism for the on-device changeset format.
@@ -179,21 +180,27 @@ fn select_entries_since(db: &Db, since_ms: u64) -> Result<Vec<Entry>> {
 }
 
 fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
-    // Skip rows we already have as-new-or-newer.
-    let existing: Option<String> = tx
+    // Skip rows we already have as-new-or-newer. Also pull the current
+    // full-row so we can snapshot it into entry_history when an apply
+    // actually changes state — no-op LWW short-circuits do NOT write history.
+    let existing: Option<Entry> = tx
         .query_row(
-            "SELECT modify_time FROM entries WHERE slug = ?1",
+            "SELECT * FROM entries WHERE slug = ?1",
             params![entry.slug],
-            |row| row.get(0),
+            crate::db::row_to_entry_public,
         )
         .optional()?;
-    if let Some(existing_str) = existing {
-        let existing_at: DateTime<Utc> = existing_str
-            .parse()
-            .map_err(|e: chrono::ParseError| DatumError::Other(e.to_string()))?;
-        if existing_at >= entry.modify_time {
+    if let Some(pre) = existing.as_ref() {
+        if pre.modify_time >= entry.modify_time {
             return Ok(());
         }
+        // Non-no-op: record the pre-merge state as a sync_merge history row.
+        history::record(tx, pre, ChangeKind::SyncMerge)?;
+    } else {
+        // Fresh row arriving from a peer — the "pre" state is the incoming
+        // row itself (same as a create). Record it as sync_merge so the
+        // change_kind reflects how it got here, matching the protocol spec.
+        history::record(tx, entry, ChangeKind::SyncMerge)?;
     }
 
     tx.execute(
@@ -868,5 +875,85 @@ mod tests {
             )
             .unwrap();
         assert_eq!(hash, "deadbeef");
+    }
+
+    // ─── D4: entry_history × sync integration ────────────────────────────
+
+    /// A second apply_changeset of the exact same payload is a LWW no-op: the
+    /// stored row's modify_time is already >= incoming. No history row must
+    /// be written for that second pass.
+    #[test]
+    fn sync_merge_noop_does_not_create_history_row() {
+        let db = fresh_db();
+        let entry = make_entry("coffee", 0);
+        let hid = entry.hid.clone();
+
+        // First apply: creates the row and a sync_merge history entry.
+        let cs = {
+            let tmp = fresh_db();
+            tmp.insert_entry(&entry).unwrap();
+            pack_changeset(&tmp, 0).unwrap()
+        };
+        apply_changeset(&db, &cs).unwrap();
+
+        let before = history::list(db.conn(), &hid, false).unwrap();
+        let before_count = before.len();
+
+        // Second apply: identical payload, identical modify_time → skip.
+        apply_changeset(&db, &cs).unwrap();
+
+        let after = history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(
+            after.len(),
+            before_count,
+            "no-op sync_merge must not add a history row"
+        );
+    }
+
+    /// An apply_changeset that strictly advances the stored modify_time must
+    /// write a sync_merge history row whose snapshot is the pre-merge state.
+    #[test]
+    fn sync_merge_nontrivial_creates_history_row() {
+        let db = fresh_db();
+        let mut older = make_entry("coffee", 0);
+        let mut newer = make_entry("coffee", 0);
+        newer.modify_time = older.modify_time + Duration::seconds(60);
+        older.content_hash = "cafebabe".to_string();
+        newer.content_hash = "deadbeef".to_string();
+        let hid = older.hid.clone();
+
+        // Seed db with the older row (its own create history is recorded).
+        db.insert_entry(&older).unwrap();
+        let versions_before = history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions_before.len(), 1);
+
+        // Apply the newer payload via sync — state must advance AND a
+        // sync_merge row must be appended.
+        let newer_cs = {
+            let tmp = fresh_db();
+            tmp.insert_entry(&newer).unwrap();
+            pack_changeset(&tmp, 0).unwrap()
+        };
+        apply_changeset(&db, &newer_cs).unwrap();
+
+        let versions_after = history::list(db.conn(), &hid, false).unwrap();
+        assert_eq!(versions_after.len(), 2);
+        assert_eq!(
+            versions_after[1].change_kind,
+            history::ChangeKind::SyncMerge
+        );
+        // Pre-merge snapshot carries the old content_hash (cafebabe).
+        assert_eq!(versions_after[1].snapshot.content_hash, "cafebabe");
+
+        // Finally, confirm the entries table actually moved to the newer state.
+        let stored_hash: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE slug = ?1",
+                params![newer.slug],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored_hash, "deadbeef");
     }
 }

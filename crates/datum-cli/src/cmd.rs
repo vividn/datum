@@ -14,9 +14,10 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
-        DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs, IgnoreArgs, InfoArgs,
-        LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs, RetimeArgs,
-        SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+        DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HeadArgs, HistoryArgs, IgnoreArgs,
+        InfoArgs, LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs,
+        RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
+        UpdateArgs, WhyArgs,
     },
     check::{collect_issues, render_human, render_json},
     config::{self, device_id},
@@ -45,6 +46,8 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Rekey(args) => cmd_update(args, ConflictStrategy::Rekey, db),
         Command::Retime(args) => cmd_retime(args, db),
         Command::Undo(args) => cmd_undo(args, db),
+        Command::History(args) => cmd_history(args, db),
+        Command::Why(args) => cmd_why(args, db),
         Command::Spec(sub) => cmd_spec(sub, db),
         Command::Alias(sub) => cmd_alias(sub, db),
         Command::Track(args) => cmd_track(args, db),
@@ -1159,15 +1162,47 @@ fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
 /// "Tombstoned" signal so update/edit can produce their tailored error.
 ///
 /// `resolve_prefix` filters out soft-deleted rows, so a prefix of a tombstone
-/// comes back as `NotFound`. When that happens we retry once with an exact
-/// id/slug lookup that includes tombstones — if the user typed the full id of
-/// a soft-deleted row, they get the tombstoned row back and the caller can
-/// produce the right error.
+/// comes back as `NotFound`. When that happens we retry with an exact
+/// id/slug lookup that includes tombstones, then one more attempt that
+/// scans tombstones by hid/slug prefix — so the undo / history / why
+/// commands still work on a soft-deleted row's short hid (e.g. `5arfa`).
 fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry> {
     match db.resolve_prefix(input) {
         Ok(e) => Ok(e),
         Err(datum_core::error::DatumError::NotFound(_)) => {
-            Ok(db.get_entry_including_deleted(input)?)
+            // Exact match first, then fall through to a tombstone-prefix scan.
+            if let Ok(exact) = db.get_entry_including_deleted(input) {
+                return Ok(exact);
+            }
+            let conn = db.conn();
+            let pattern = {
+                let mut s = String::with_capacity(input.len() + 1);
+                for ch in input.chars() {
+                    if ch == '\\' || ch == '%' || ch == '_' {
+                        s.push('\\');
+                    }
+                    s.push(ch);
+                }
+                s.push('%');
+                s
+            };
+            let mut stmt = conn.prepare(
+                "SELECT slug FROM entries
+                 WHERE (slug LIKE ?1 ESCAPE '\\' OR hid LIKE ?1 ESCAPE '\\')
+                   AND deleted_at IS NOT NULL
+                 ORDER BY slug",
+            )?;
+            let matches: Vec<String> = stmt
+                .query_map([pattern.as_str()], |row| row.get::<_, String>(0))?
+                .collect::<std::result::Result<_, _>>()?;
+            match matches.len() {
+                0 => Err(datum_core::error::DatumError::NotFound(input.to_string()).into()),
+                1 => Ok(db.get_entry_including_deleted(&matches[0])?),
+                _ => Err(anyhow::anyhow!(
+                    "ambiguous tombstone prefix '{input}' matches {} entries",
+                    matches.len()
+                )),
+            }
         }
         Err(e) => Err(e.into()),
     }
@@ -1603,47 +1638,268 @@ fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
 
 fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
-    // Slug-targeted undo: restore that specific row, no window check.
+
+    // Slug-targeted undo. Prefer the history-based revert (D4): back off to
+    // the prior recorded version. Fall back to the legacy undelete path when
+    // no history exists for the entry (e.g. a pre-D4 tombstone imported from
+    // a backup) so the command remains useful for those rows.
     if let Some(id_or_slug) = args.id_or_slug.as_deref() {
-        db.undelete(id_or_slug).map_err(anyhow::Error::from)?;
-        if let Ok(entry) = db.get_entry(id_or_slug) {
-            show_create(&entry, registry.as_ref(), &args.output());
+        let current = resolve_prefix_or_tombstone(db, id_or_slug)?;
+        let latest = datum_core::history::latest_version(db.conn(), &current.hid)
+            .map_err(anyhow::Error::from)?;
+
+        match (args.to_version, latest) {
+            (Some(v), _) => {
+                let restored = db
+                    .revert_entry_to(&current.hid, v)
+                    .map_err(anyhow::Error::from)?;
+                show_create(&restored, registry.as_ref(), &args.output());
+                Ok(())
+            }
+            (None, Some(n)) if n >= 2 => {
+                let restored = db
+                    .revert_entry_to(&current.hid, n - 1)
+                    .map_err(anyhow::Error::from)?;
+                show_create(&restored, registry.as_ref(), &args.output());
+                Ok(())
+            }
+            _ => {
+                // No prior version to revert to — fall back to legacy undelete
+                // so tombstoned entries without history still come back. Use
+                // the resolved full slug/hid so prefixes keep working here too.
+                db.undelete(&current.slug).map_err(anyhow::Error::from)?;
+                if let Ok(entry) = db.get_entry(&current.slug) {
+                    show_create(&entry, registry.as_ref(), &args.output());
+                }
+                Ok(())
+            }
+        }
+    } else {
+        if args.to_version.is_some() {
+            anyhow::bail!("--to-version requires an <id_or_slug> to target");
+        }
+
+        let window = parse_duration(&args.window)
+            .with_context(|| format!("Invalid --window value '{}'", args.window))?;
+
+        let target = if args.force {
+            db.most_recent_tombstone()?
+        } else {
+            db.list_recent_tombstones(window)?.into_iter().next()
+        };
+
+        match target {
+            Some(entry) => {
+                // Prefer the history-based revert so the undo shows up in the
+                // entry's trail; fall back to undelete for legacy tombstones.
+                let latest = datum_core::history::latest_version(db.conn(), &entry.hid)
+                    .map_err(anyhow::Error::from)?;
+                match latest {
+                    Some(n) if n >= 2 => {
+                        let restored = db
+                            .revert_entry_to(&entry.hid, n - 1)
+                            .map_err(anyhow::Error::from)?;
+                        show_create(&restored, registry.as_ref(), &args.output());
+                    }
+                    _ => {
+                        db.undelete(&entry.slug).map_err(anyhow::Error::from)?;
+                        let restored = db.get_entry(&entry.slug).unwrap_or(entry);
+                        show_create(&restored, registry.as_ref(), &args.output());
+                    }
+                }
+                Ok(())
+            }
+            None => {
+                // Nothing within the window. If --force was off and there's
+                // still an older tombstone, nudge the user toward --force;
+                // otherwise the store has no tombstones at all.
+                if !args.force {
+                    if let Some(older) = db.most_recent_tombstone()? {
+                        anyhow::bail!(
+                            "No deletes within {}; most recent is '{}' (use --force to restore it)",
+                            args.window,
+                            older.slug
+                        );
+                    }
+                }
+                anyhow::bail!("Nothing to undo — no soft-deleted entries found")
+            }
+        }
+    }
+}
+
+// ─── History / Why ───────────────────────────────────────────────────────────
+
+fn cmd_history(args: HistoryArgs, db: &Db) -> Result<()> {
+    let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
+        .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
+    let hid = current.hid.clone();
+
+    // `--version N` wins over `--diff` when both are set. The snapshot is
+    // rendered as pretty JSON either way — `--json` is a no-op here but
+    // accepted for symmetry with the list/diff forms.
+    if let Some(v) = args.version {
+        let snap = resolve_version_snapshot(db, &current, v)?;
+        println!("{}", serde_json::to_string_pretty(&snap)?);
+        return Ok(());
+    }
+
+    if let Some(ab) = args.diff.as_ref() {
+        let (a, b) = (ab[0], ab[1]);
+        let snap_a = resolve_version_snapshot(db, &current, a)?;
+        let snap_b = resolve_version_snapshot(db, &current, b)?;
+        if args.json {
+            let payload = serde_json::json!({
+                "a": { "version": a, "snapshot": snap_a },
+                "b": { "version": b, "snapshot": snap_b },
+            });
+            println!("{}", serde_json::to_string_pretty(&payload)?);
+        } else {
+            print_history_diff(a, &snap_a, b, &snap_b);
         }
         return Ok(());
     }
 
-    let window = parse_duration(&args.window)
-        .with_context(|| format!("Invalid --window value '{}'", args.window))?;
+    // Default: list every version, newest first.
+    let versions = datum_core::history::list(db.conn(), &hid, true)
+        .map_err(anyhow::Error::from)?;
 
-    let target = if args.force {
-        db.most_recent_tombstone()?
-    } else {
-        db.list_recent_tombstones(window)?.into_iter().next()
-    };
+    if args.json {
+        let payload: Vec<_> = versions
+            .iter()
+            .map(|v| {
+                serde_json::json!({
+                    "version": v.version,
+                    "modify_time": v.modify_time.to_rfc3339(),
+                    "change_kind": v.change_kind.as_str(),
+                    "raw_input": v.raw_input,
+                    "alias_chain": v.alias_chain,
+                    "device_id": v.device_id,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+        return Ok(());
+    }
 
-    match target {
-        Some(entry) => {
-            db.undelete(&entry.slug).map_err(anyhow::Error::from)?;
-            let restored = db.get_entry(&entry.slug).unwrap_or(entry);
-            show_create(&restored, registry.as_ref(), &args.output());
-            Ok(())
-        }
-        None => {
-            // Nothing within the window. If --force was off and there's still an
-            // older tombstone, nudge the user toward --force; otherwise the store
-            // has no tombstones at all.
-            if !args.force {
-                if let Some(older) = db.most_recent_tombstone()? {
-                    anyhow::bail!(
-                        "No deletes within {}; most recent is '{}' (use --force to restore it)",
-                        args.window,
-                        older.slug
-                    );
+    println!("hid: {}", hid);
+    if versions.is_empty() {
+        println!("  (no history recorded)");
+        return Ok(());
+    }
+    for v in versions {
+        let raw = if v.raw_input.is_empty() {
+            String::new()
+        } else {
+            format!("'{}'", v.raw_input)
+        };
+        println!(
+            "  v{}  {}  {:<22} {}",
+            v.version,
+            v.modify_time.format("%Y-%m-%dT%H:%M"),
+            v.change_kind.as_str(),
+            raw
+        );
+    }
+    Ok(())
+}
+
+/// Resolve "state at version N" for display or diff. Uses
+/// [`datum_core::history::state_at_version`] so the call site doesn't need
+/// to re-encode the v1-is-special rule.
+fn resolve_version_snapshot(
+    db: &Db,
+    current: &Entry,
+    version: u32,
+) -> Result<Entry> {
+    datum_core::history::state_at_version(db.conn(), &current.hid, version, Some(current))
+        .map_err(anyhow::Error::from)?
+        .ok_or_else(|| anyhow::anyhow!("version {version} not found for entry {}", current.hid))
+}
+
+fn print_history_diff(a: u32, snap_a: &Entry, b: u32, snap_b: &Entry) {
+    let va = serde_json::to_value(snap_a).unwrap_or(serde_json::Value::Null);
+    let vb = serde_json::to_value(snap_b).unwrap_or(serde_json::Value::Null);
+    println!("--- v{a}\n+++ v{b}");
+    diff_json("", &va, &vb);
+}
+
+fn diff_json(path: &str, a: &JsonValue, b: &JsonValue) {
+    if a == b {
+        return;
+    }
+    match (a, b) {
+        (JsonValue::Object(ma), JsonValue::Object(mb)) => {
+            let mut keys: Vec<&String> = ma.keys().chain(mb.keys()).collect();
+            keys.sort();
+            keys.dedup();
+            for k in keys {
+                let child_path = if path.is_empty() {
+                    k.clone()
+                } else {
+                    format!("{path}.{k}")
+                };
+                match (ma.get(k), mb.get(k)) {
+                    (Some(va), Some(vb)) => diff_json(&child_path, va, vb),
+                    (Some(va), None) => println!("- {child_path}: {}", render_scalar(va)),
+                    (None, Some(vb)) => println!("+ {child_path}: {}", render_scalar(vb)),
+                    (None, None) => {}
                 }
             }
-            anyhow::bail!("Nothing to undo — no soft-deleted entries found")
+        }
+        _ => {
+            println!("- {}: {}", path, render_scalar(a));
+            println!("+ {}: {}", path, render_scalar(b));
         }
     }
+}
+
+fn render_scalar(v: &JsonValue) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| v.to_string())
+}
+
+fn cmd_why(args: WhyArgs, db: &Db) -> Result<()> {
+    let current = resolve_prefix_or_tombstone(db, &args.id_or_slug)
+        .with_context(|| format!("entry not found: {}", args.id_or_slug))?;
+
+    println!("hid: {}  slug: {}", current.hid, current.slug);
+    if !current.raw_input.is_empty() {
+        println!("  raw_input:   {}", current.raw_input);
+    }
+    if let Some(chain) = &current.alias_chain {
+        println!("  alias_chain: {}", chain);
+    }
+
+    if !args.full {
+        return Ok(());
+    }
+
+    let versions = datum_core::history::list(db.conn(), &current.hid, true)
+        .map_err(anyhow::Error::from)?;
+    println!();
+    println!("history (newest first):");
+    if versions.is_empty() {
+        println!("  (no history recorded)");
+        return Ok(());
+    }
+    for v in versions {
+        let raw = if v.raw_input.is_empty() {
+            "<no raw_input captured>".to_string()
+        } else {
+            v.raw_input.clone()
+        };
+        println!(
+            "  v{}  {}  {}  {}",
+            v.version,
+            v.modify_time.format("%Y-%m-%dT%H:%M"),
+            v.change_kind,
+            raw
+        );
+        if let Some(chain) = &v.alias_chain {
+            println!("       alias_chain: {chain}");
+        }
+    }
+    Ok(())
 }
 
 // ─── Spec management ─────────────────────────────────────────────────────────
@@ -3200,6 +3456,7 @@ mod tests {
     fn undo_args(slug: Option<&str>, force: bool, window: &str) -> UndoArgs {
         UndoArgs {
             id_or_slug: slug.map(str::to_string),
+            to_version: None,
             force,
             window: window.to_string(),
             output_flags: Default::default(),

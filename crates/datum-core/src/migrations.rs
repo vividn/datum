@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 3;
+pub const CURRENT_SCHEMA_VERSION: u32 = 4;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -46,6 +46,12 @@ pub const MIGRATIONS: &[Migration] = &[
         to: 3,
         summary: "data model v2: entries table replaced — entry_shape, intent, precision fields, timestamp rename, hid-PK, generated verb/dur_seconds, raw_input/alias_chain/parser_version",
         apply: m2_to_3_entries_v2,
+    },
+    Migration {
+        from: 3,
+        to: 4,
+        summary: "entry_history: append-only modification trail (entry_hid, version, snapshot, change_kind)",
+        apply: m3_to_4_entry_history,
     },
 ];
 
@@ -76,6 +82,31 @@ fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_entries_time;
          DROP INDEX IF EXISTS idx_entries_content_hash;
          DROP TABLE IF EXISTS entries;",
+    )?;
+    Ok(())
+}
+
+fn m3_to_4_entry_history(conn: &Connection) -> Result<()> {
+    // Purely additive: create the entry_history table and indexes. Any rows
+    // that existed pre-D4 will lack a version=1 "create" history row, so
+    // undo/history commands degrade gracefully for those (treated as
+    // having no recorded history).
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS entry_history (
+            entry_hid         TEXT NOT NULL,
+            version           INTEGER NOT NULL,
+            snapshot          TEXT NOT NULL,
+            modify_time       TEXT NOT NULL,
+            raw_input         TEXT NOT NULL,
+            alias_chain       TEXT,
+            device_id         TEXT NOT NULL,
+            change_kind       TEXT NOT NULL,
+            PRIMARY KEY (entry_hid, version)
+         );
+         CREATE INDEX IF NOT EXISTS entry_history_entry
+            ON entry_history(entry_hid, version DESC);
+         CREATE INDEX IF NOT EXISTS entry_history_change_kind
+            ON entry_history(change_kind);",
     )?;
     Ok(())
 }

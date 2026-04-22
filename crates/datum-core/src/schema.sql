@@ -131,6 +131,28 @@ CREATE TABLE IF NOT EXISTS sync_state (
     PRIMARY KEY (db_id)
 );
 
+-- Per-entry modification trail. Append-only. Every mutating operation on the
+-- entries table writes a row here in the same transaction. `snapshot` holds
+-- the full entry JSON: the newly-created state for version=1 (change_kind
+-- 'create'), otherwise the PRE-operation state so a revert can restore it.
+CREATE TABLE IF NOT EXISTS entry_history (
+    entry_hid         TEXT NOT NULL,
+    version           INTEGER NOT NULL,
+    snapshot          TEXT NOT NULL,
+    modify_time       TEXT NOT NULL,
+    raw_input         TEXT NOT NULL,
+    alias_chain       TEXT,
+    device_id         TEXT NOT NULL,
+    change_kind       TEXT NOT NULL,
+    PRIMARY KEY (entry_hid, version)
+);
+
+CREATE INDEX IF NOT EXISTS entry_history_entry
+    ON entry_history(entry_hid, version DESC);
+
+CREATE INDEX IF NOT EXISTS entry_history_change_kind
+    ON entry_history(change_kind);
+
 -- Schema version and other key/value metadata.
 CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
@@ -139,4 +161,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '3');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '4');

@@ -8,6 +8,7 @@ pub mod state;
 pub mod views;
 pub mod migrations;
 pub mod sync;
+pub mod history;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;

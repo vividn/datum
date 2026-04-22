@@ -78,6 +78,7 @@ impl Cli {
 const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "note", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
+    "history", "why",
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
@@ -216,6 +217,12 @@ pub enum Command {
     Delete(DeleteArgs),
     /// Restore the most recently soft-deleted entry (or one specified by slug).
     Undo(UndoArgs),
+
+    /// Show the full modification trail for an entry.
+    History(HistoryArgs),
+
+    /// Explain the intent behind an entry (raw input, alias chain, history).
+    Why(WhyArgs),
 
     /// Open an entry in `$EDITOR` as pretty JSON and save the edited result.
     Edit(EditArgs),
@@ -701,9 +708,15 @@ impl DeleteArgs {
 
 #[derive(Args, Debug)]
 pub struct UndoArgs {
-    /// Id or slug of a specific tombstoned entry to restore. When omitted,
-    /// restores the most recently deleted entry within the safety window.
+    /// Id or slug of a specific entry to undo. Reverts the entry to its
+    /// immediately-prior recorded version. When omitted, restores the most
+    /// recently deleted entry within the safety window.
     pub id_or_slug: Option<String>,
+    /// Revert to a specific version number (requires `id_or_slug`). When
+    /// omitted, undo targets version N-1 (the state just before the latest
+    /// recorded change).
+    #[arg(long = "to-version", value_name = "N")]
+    pub to_version: Option<u32>,
     /// Bypass the safety window — restore the most recent tombstone
     /// regardless of age.
     #[arg(long)]
@@ -719,6 +732,32 @@ pub struct UndoArgs {
 
 impl UndoArgs {
     pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
+}
+
+#[derive(Args, Debug)]
+pub struct HistoryArgs {
+    /// Entry id or slug. The full modification trail for that entry is shown.
+    pub id_or_slug: String,
+    /// Print the full entry snapshot at a specific version.
+    #[arg(long, value_name = "N")]
+    pub version: Option<u32>,
+    /// Diff two versions (version-A, version-B). Shows a plain-text JSON diff.
+    #[arg(long, num_args = 2, value_names = ["A", "B"])]
+    pub diff: Option<Vec<u32>>,
+    /// Emit the version list (or snapshot / diff payload) as JSON instead of
+    /// the human-readable table.
+    #[arg(long)]
+    pub json: bool,
+}
+
+#[derive(Args, Debug)]
+pub struct WhyArgs {
+    /// Entry id or slug.
+    pub id_or_slug: String,
+    /// Trace back through the full history: every raw_input and alias_chain
+    /// that shaped this entry, newest first.
+    #[arg(long)]
+    pub full: bool,
 }
 
 #[derive(Subcommand, Debug)]
