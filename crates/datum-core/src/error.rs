@@ -62,3 +62,12 @@ fn format_candidates(candidates: &[PrefixCandidate]) -> String {
 }
 
 pub type Result<T> = std::result::Result<T, DatumError>;
+
+impl From<datum_parse::ParseError> for DatumError {
+    fn from(e: datum_parse::ParseError) -> Self {
+        match e {
+            datum_parse::ParseError::InvalidTime(s) => DatumError::InvalidTime(s),
+            datum_parse::ParseError::InvalidArg(s) => DatumError::Other(s),
+        }
+    }
+}

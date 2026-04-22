@@ -1,5 +1,4 @@
 pub mod entry;
-pub mod time;
 pub mod field_spec;
 pub mod db;
 pub mod error;
@@ -13,3 +12,7 @@ pub mod conflicts;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
+
+/// Re-export the pure time module from `datum-parse` so existing callers
+/// (`datum_core::time::DatumTime`, etc.) keep compiling.
+pub use datum_parse::time;

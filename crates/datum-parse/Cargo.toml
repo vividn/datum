@@ -1,0 +1,19 @@
+[package]
+name = "datum-parse"
+version.workspace = true
+edition.workspace = true
+
+[features]
+default = ["native"]
+# Native-only helpers (DatumTime::now(), local timezone detection via
+# iana-time-zone). Disable for wasm32-unknown-unknown builds:
+# `cargo build --target wasm32-unknown-unknown -p datum-parse --no-default-features`
+native = ["dep:iana-time-zone"]
+
+[dependencies]
+chrono = { workspace = true }
+chrono-tz = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+iana-time-zone = { version = "0.1", optional = true }

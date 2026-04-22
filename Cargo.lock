@@ -540,6 +540,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "chrono-tz",
+ "datum-parse",
  "iana-time-zone",
  "rand 0.8.6",
  "rusqlite",
@@ -556,6 +557,18 @@ version = "0.1.0"
 dependencies = [
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "datum-parse"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "chrono-tz",
+ "iana-time-zone",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

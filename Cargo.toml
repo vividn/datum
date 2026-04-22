@@ -4,6 +4,7 @@ members = [
     "crates/datum-cli",
     "crates/datum-commands",
     "crates/datum-layout",
+    "crates/datum-parse",
     "crates/datum-sync",
 ]
 resolver = "2"

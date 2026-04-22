@@ -10,6 +10,7 @@ default = []
 test-util = []
 
 [dependencies]
+datum-parse = { path = "../datum-parse" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 rusqlite = { workspace = true }
