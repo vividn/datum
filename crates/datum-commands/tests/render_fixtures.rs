@@ -476,6 +476,157 @@ fn future_timestamp_is_underlined() {
     assert!(out.contains("\x1b[4m"), "expected underline escape: {out:?}");
 }
 
+/// Visual dump — renders all 20 fixtures with color on and prints them to
+/// stdout. Ignored by default so CI stays clean; run manually with:
+///
+/// ```text
+/// DATUM_COLOR=1 cargo test -p datum-commands --test render_fixtures \
+///     visual_dump_all_fixtures -- --ignored --nocapture
+/// ```
+///
+/// The output is what reviewers compare against the spec's reference image
+/// at `/tmp/datum_coloring_examples.png` per §14.
+#[test]
+#[ignore]
+fn visual_dump_all_fixtures() {
+    let _g = color_scope();
+    // List is (label, entry, ctx) to mirror §11.
+    let cases: Vec<(&str, Entry, RenderContext)> = vec![
+        (
+            "01 add new_occur",
+            entry("new_occur", Verb::Add, None, Some(fixed_time(16, 58, 47)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "02 occur new_occur (first)",
+            entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 56)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "03 occur new_occur (again)",
+            entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 59)), None),
+            RenderContext { last_state: None, is_first_occurrence: false },
+        ),
+        (
+            "04 start new_start (first)",
+            entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 40)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "05 end new_start",
+            entry("new_start", Verb::Stop, None, Some(fixed_time(16, 59, 46)), None),
+            RenderContext { last_state: Some(json!(true)), is_first_occurrence: false },
+        ),
+        (
+            "06 start new_start (after end)",
+            entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 52)), None),
+            RenderContext { last_state: Some(json!(false)), is_first_occurrence: false },
+        ),
+        (
+            "07 switch new_switch state1 (first)",
+            entry("new_switch", Verb::Switch, Some(json!("state1")), Some(fixed_time(17, 0, 21)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "08 switch new_switch state2",
+            entry("new_switch", Verb::Switch, Some(json!("state2")), Some(fixed_time(17, 0, 30)), None),
+            RenderContext { last_state: Some(json!("state1")), is_first_occurrence: false },
+        ),
+        (
+            "09 switch new_switch state3",
+            entry("new_switch", Verb::Switch, Some(json!("state3")), Some(fixed_time(17, 0, 38)), None),
+            RenderContext { last_state: Some(json!("state2")), is_first_occurrence: false },
+        ),
+        (
+            "10 switch new_switch repeat",
+            entry("new_switch", Verb::Switch, Some(json!("repeat")), Some(fixed_time(17, 0, 52)), None),
+            RenderContext { last_state: Some(json!("state3")), is_first_occurrence: false },
+        ),
+        (
+            "11 switch new_switch repeat (SAME)",
+            entry("new_switch", Verb::Switch, Some(json!("repeat")), Some(fixed_time(17, 0, 55)), None),
+            RenderContext { last_state: Some(json!("repeat")), is_first_occurrence: false },
+        ),
+        (
+            "12 end new_switch",
+            entry("new_switch", Verb::Stop, None, Some(fixed_time(17, 1, 13)), None),
+            RenderContext { last_state: Some(json!("repeat")), is_first_occurrence: false },
+        ),
+        (
+            "13 start repeat_start (already active)",
+            entry("repeat_start", Verb::Start, None, Some(fixed_time(17, 2, 0)), None),
+            RenderContext { last_state: Some(json!(true)), is_first_occurrence: false },
+        ),
+        (
+            "14 switch dur_blocks state1 (first)",
+            entry("dur_blocks", Verb::Switch, Some(json!("state1")), Some(fixed_time(17, 2, 26)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "15 switch dur_blocks state2 4 -t 1710",
+            entry(
+                "dur_blocks",
+                Verb::Switch,
+                Some(json!("state2")),
+                Some(fixed_time(17, 10, 0)),
+                Some(fixed_time(17, 14, 0)),
+            ),
+            RenderContext { last_state: Some(json!("state1")), is_first_occurrence: false },
+        ),
+        (
+            "16 switch field multi1,multi2",
+            entry(
+                "field",
+                Verb::Switch,
+                Some(json!(["multi1", "multi2"])),
+                Some(fixed_time(17, 12, 13)),
+                None,
+            ),
+            RenderContext { last_state: Some(json!("prior")), is_first_occurrence: false },
+        ),
+        (
+            "17 switch field momentary_single 1 -t +3",
+            entry(
+                "field",
+                Verb::Switch,
+                Some(json!("momentary_single")),
+                Some(future_time(17, 15)),
+                Some(future_time(17, 16)),
+            ),
+            RenderContext { last_state: Some(json!(["multi1", "multi2"])), is_first_occurrence: false },
+        ),
+        (
+            "18 ignore foo; now",
+            entry("foo", Verb::Switch, Some(json!("IGNORED")), Some(fixed_time(17, 30, 0)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "19 track foo; now",
+            entry("foo", Verb::Switch, Some(json!(false)), Some(fixed_time(17, 30, 5)), None),
+            RenderContext { last_state: None, is_first_occurrence: true },
+        ),
+        (
+            "20 add thing key=value",
+            {
+                let mut e = entry("thing", Verb::Add, None, Some(fixed_time(17, 40, 0)), None);
+                e.data = Some(json!({ "key": "value" }));
+                e
+            },
+            RenderContext { last_state: None, is_first_occurrence: false },
+        ),
+    ];
+
+    println!();
+    println!("══════════════════════════════════════════════════════════════════════");
+    println!(" Visual parity — 20 fixtures (per docs/visual-parity-analysis.md §11)");
+    println!("══════════════════════════════════════════════════════════════════════");
+    for (label, e, ctx) in &cases {
+        let line = format_info_line(e, None, ctx);
+        println!("{label:<46}  {line}");
+    }
+    println!("══════════════════════════════════════════════════════════════════════");
+}
+
 /// Visible width of a rendered line ignores ANSI escapes — a sanity check
 /// the fixture harness depends on.
 #[test]
