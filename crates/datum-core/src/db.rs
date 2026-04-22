@@ -1715,6 +1715,9 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .get::<_, Option<String>>("alias_chain")?
         .and_then(|s| serde_json::from_str(&s).ok());
     let parser_version: u32 = row.get::<_, i64>("parser_version")? as u32;
+    let user_asserted_last_state: Option<JsonValue> = row
+        .get::<_, Option<String>>("user_asserted_last_state")?
+        .and_then(|s| serde_json::from_str(&s).ok());
 
     Ok(Entry {
         hid: row.get("hid")?,
@@ -1745,6 +1748,7 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         raw_input: row.get("raw_input")?,
         alias_chain,
         parser_version,
+        user_asserted_last_state,
     })
 }
 
@@ -1874,7 +1878,8 @@ fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
-            raw_input, alias_chain, parser_version
+            raw_input, alias_chain, parser_version,
+            user_asserted_last_state
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6,
             ?7, ?8, ?9,
@@ -1885,7 +1890,8 @@ fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result
             ?20, ?21, ?22,
             ?23, ?24, ?25,
             ?26, ?27, ?28,
-            ?29, ?30, ?31
+            ?29, ?30, ?31,
+            ?32
         )"#,
         params![
             hid,
@@ -1919,6 +1925,7 @@ fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
+            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
         ],
     )?;
     Ok(())
@@ -1967,7 +1974,8 @@ fn raw_overwrite_mutables(
             device_id = ?23,
             raw_input = ?24,
             alias_chain = ?25,
-            parser_version = ?26
+            parser_version = ?26,
+            user_asserted_last_state = ?27
            WHERE slug = ?1"#,
         params![
             slug,
@@ -1996,6 +2004,7 @@ fn raw_overwrite_mutables(
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
+            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
         ],
     )?;
     Ok(())
@@ -2037,7 +2046,8 @@ fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
             field_structure = ?26,
             raw_input = ?27,
             alias_chain = ?28,
-            parser_version = ?29
+            parser_version = ?29,
+            user_asserted_last_state = ?30
            WHERE hid = ?1"#,
         params![
             entry.hid,
@@ -2069,6 +2079,7 @@ fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
+            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
         ],
     )?;
     if affected == 0 {
@@ -3012,6 +3023,7 @@ mod tests {
             raw_input: String::new(),
             alias_chain: None,
             parser_version: 1,
+            user_asserted_last_state: None,
         };
         db.insert_entry(&e).unwrap();
         e

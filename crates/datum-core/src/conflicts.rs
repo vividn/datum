@@ -26,7 +26,8 @@
 //! - `detected_at` / `resolved_at`: ISO 8601.
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
-//! - `conflict_kind`: `double_open` | `orphan_end` | `overlap`.
+//! - `conflict_kind`: `double_open` | `orphan_end` | `overlap`
+//!                    | `same_state_repeat` | `last_state_mismatch`.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
@@ -67,12 +68,22 @@ impl std::str::FromStr for DetectedBy {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictKind {
     /// A second `start` for a field that already has a live ongoing entry.
+    /// Special case of [`Self::SameStateRepeat`] where the new state is `true`;
+    /// retained as a distinct kind for the auto-resolver's close-older rule.
     DoubleOpen,
     /// A `stop`/`end` with no matching prior ongoing entry.
     OrphanEnd,
     /// Two `block`-shaped entries on the same field with overlapping
     /// `[start_time, end_time]` intervals.
     Overlap,
+    /// A state-affecting entry whose effective state equals the field's
+    /// computed active state immediately before the entry (S6). Generalizes
+    /// double-start to arbitrary values — e.g. switching to the same string
+    /// twice in a row.
+    SameStateRepeat,
+    /// An entry carried an explicit `--last-state=<v>` assertion whose
+    /// normalized value differs from the state computed from history (S6).
+    LastStateMismatch,
 }
 
 impl ConflictKind {
@@ -81,6 +92,8 @@ impl ConflictKind {
             ConflictKind::DoubleOpen => "double_open",
             ConflictKind::OrphanEnd => "orphan_end",
             ConflictKind::Overlap => "overlap",
+            ConflictKind::SameStateRepeat => "same_state_repeat",
+            ConflictKind::LastStateMismatch => "last_state_mismatch",
         }
     }
 }
@@ -98,6 +111,8 @@ impl std::str::FromStr for ConflictKind {
             "double_open" => Ok(ConflictKind::DoubleOpen),
             "orphan_end" => Ok(ConflictKind::OrphanEnd),
             "overlap" => Ok(ConflictKind::Overlap),
+            "same_state_repeat" => Ok(ConflictKind::SameStateRepeat),
+            "last_state_mismatch" => Ok(ConflictKind::LastStateMismatch),
             other => Err(format!("unknown conflict_kind: '{other}'")),
         }
     }
@@ -167,9 +182,9 @@ pub fn detect_for_entry(
     trigger: &Entry,
     detected_by: DetectedBy,
 ) -> Result<Vec<Conflict>> {
-    // Add / Occur shapes don't affect state-timeline consistency; skip
-    // them so freeform `datum add` and bare `datum occur` writes don't
-    // ever file a conflict.
+    // Add / Occur / Note don't affect the state timeline; skip them so
+    // freeform `datum add` and bare `datum occur` writes never file a
+    // conflict. Switch is new for S6.
     if !trigger_is_state_affecting(trigger) {
         return Ok(vec![]);
     }
@@ -223,14 +238,135 @@ pub fn detect_for_entry(
                 )?);
             }
         }
+        Verb::Switch => {
+            // S6: a switch whose normalized value equals the field's
+            // already-active state is a same-state-repeat. The entry still
+            // lands; the row is advisory.
+            if let Some(hit) = detect_same_state_repeat(conn, trigger)? {
+                filed.push(file_conflict(
+                    conn,
+                    trigger,
+                    Some(&hit),
+                    detected_by,
+                    ConflictKind::SameStateRepeat,
+                )?);
+            }
+        }
         _ => {}
+    }
+
+    // S6: cross-check an explicit `-L/--last-state=<v>` assertion against the
+    // state computed from history. Applies to any state-affecting verb.
+    if let Some(mismatch) = detect_last_state_mismatch(conn, trigger)? {
+        filed.push(file_conflict(
+            conn,
+            trigger,
+            mismatch.as_ref(),
+            detected_by,
+            ConflictKind::LastStateMismatch,
+        )?);
     }
 
     Ok(filed)
 }
 
 fn trigger_is_state_affecting(entry: &Entry) -> bool {
-    matches!(entry.verb, Verb::Start | Verb::Stop | Verb::Block)
+    matches!(
+        entry.verb,
+        Verb::Start | Verb::Stop | Verb::Block | Verb::Switch
+    )
+}
+
+/// S6: detect a switch whose normalized value matches the field's computed
+/// active state at the instant just before the entry. Returns the
+/// state-defining counterpart entry when the repeat is confirmed.
+///
+/// The detector is intentionally scoped to `Switch` here — [`Verb::Start`]'s
+/// double-open case has its own `DoubleOpen` kind (a special case of
+/// same-state-repeat where the new value is `true`), and stops that occur
+/// on an already-off field are covered by `OrphanEnd`.
+fn detect_same_state_repeat(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
+    let Some(ts) = &trigger.start_time else {
+        return Ok(None);
+    };
+    // Probe one microsecond before the entry's start so we ignore the
+    // just-inserted row (and any sibling logged at the exact same instant).
+    let probe = ts.utc - chrono::Duration::microseconds(1);
+    let prior = crate::state::last_state_at(conn, &trigger.field, probe, Some(&trigger.hid))?;
+    let Some(prior_state) = prior else {
+        return Ok(None);
+    };
+    let new_norm = trigger
+        .value
+        .as_ref()
+        .map(crate::state::normalize_state)
+        .unwrap_or(serde_json::Value::Null);
+    if new_norm != prior_state {
+        return Ok(None);
+    }
+    // Best-effort: surface the most recent state-defining counterpart so the
+    // conflicts list shows what the user was repeating.
+    let at_str = probe.to_rfc3339();
+    conn.query_row(
+        r#"SELECT * FROM entries
+           WHERE field = ?1
+             AND deleted_at IS NULL
+             AND verb IN ('switch', 'start', 'block')
+             AND start_time IS NOT NULL
+             AND start_time <= ?2
+             AND hid != ?3
+           ORDER BY start_time DESC, create_time DESC
+           LIMIT 1"#,
+        params![trigger.field, at_str, trigger.hid],
+        crate::db::row_to_entry_public,
+    )
+    .optional()
+    .map_err(DatumError::Db)
+}
+
+/// S6: compare the user's explicit `-L` assertion against the computed
+/// last-state. `Ok(None)` when there's no assertion or the assertion
+/// matches; `Ok(Some(None))` when the assertion is explicitly `null` with
+/// no counterpart to point at; `Ok(Some(Some(entry)))` when a prior
+/// state-defining entry exists.
+fn detect_last_state_mismatch(
+    conn: &Connection,
+    trigger: &Entry,
+) -> Result<Option<Option<Entry>>> {
+    let Some(asserted_raw) = trigger.user_asserted_last_state.as_ref() else {
+        return Ok(None);
+    };
+    let Some(ts) = &trigger.start_time else {
+        return Ok(None);
+    };
+    let probe = ts.utc - chrono::Duration::microseconds(1);
+    let asserted = crate::state::normalize_state(asserted_raw);
+    let actual = crate::state::last_state_at(conn, &trigger.field, probe, Some(&trigger.hid))?
+        .unwrap_or(serde_json::Value::Null);
+    if asserted == actual {
+        return Ok(None);
+    }
+    // Mismatch — find a counterpart for display (may be None).
+    let at_str = probe.to_rfc3339();
+    let counterpart = conn
+        .query_row(
+            r#"SELECT * FROM entries
+               WHERE field = ?1
+                 AND deleted_at IS NULL
+                 AND verb IN ('switch', 'start', 'stop', 'block')
+                 AND (
+                      (start_time IS NOT NULL AND start_time <= ?2)
+                   OR (end_time   IS NOT NULL AND end_time   <= ?2)
+                 )
+                 AND hid != ?3
+               ORDER BY COALESCE(start_time, end_time, create_time) DESC
+               LIMIT 1"#,
+            params![trigger.field, at_str, trigger.hid],
+            crate::db::row_to_entry_public,
+        )
+        .optional()
+        .map_err(DatumError::Db)?;
+    Ok(Some(counterpart))
 }
 
 /// Any other live `ongoing`-shape entry on the same field. An ongoing
@@ -555,8 +691,13 @@ pub fn auto_resolve_pending(
                     applied.push(c);
                 }
             }
-            ConflictKind::Overlap => {
+            ConflictKind::Overlap
+            | ConflictKind::SameStateRepeat
+            | ConflictKind::LastStateMismatch => {
                 // No auto-rule. User decides via `datum conflicts resolve`.
+                // (same_state_repeat / last_state_mismatch are advisory —
+                // the underlying entry already landed; no entry mutation
+                // is obviously correct without explicit intent.)
             }
         }
     }

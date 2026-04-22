@@ -250,6 +250,7 @@ mod tests {
             raw_input: String::new(),
             alias_chain: None,
             parser_version: 1,
+            user_asserted_last_state: None,
         };
         db.insert_entry(&e).unwrap();
         e

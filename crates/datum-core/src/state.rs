@@ -13,9 +13,11 @@
 //! `note` entries never affect state.
 
 use chrono::{DateTime, Utc};
+use rusqlite::{params, Connection};
 use serde_json::{Map, Value};
 
 use crate::entry::{Entry, Verb};
+use crate::error::{DatumError, Result};
 
 /// Active state type. `Value::Null` represents the "untracked" state.
 pub type ActiveState = Value;
@@ -160,6 +162,45 @@ pub fn compile_state(entries: &[Entry], at: DateTime<Utc>) -> ActiveState {
         .find(|(t, _, _)| *t <= at)
         .map(|(_, _, v)| v)
         .unwrap_or(Value::Null)
+}
+
+/// Compute the active state of `field` strictly before (or at) `time`,
+/// ignoring an entry identified by `exclude_hid` (so detection run on a
+/// just-inserted row can see "the state as it was without this entry").
+///
+/// Returns `None` when the field has no state-affecting history at all
+/// at-or-before `time` (state compiles to `Null`); otherwise the concrete
+/// value — including `Bool(false)` for an explicit stop.
+pub fn last_state_at(
+    conn: &Connection,
+    field: &str,
+    time: DateTime<Utc>,
+    exclude_hid: Option<&str>,
+) -> Result<Option<Value>> {
+    let at_str = time.to_rfc3339();
+    let exclude = exclude_hid.unwrap_or("");
+    let mut stmt = conn.prepare(
+        r#"SELECT * FROM entries
+           WHERE field = ?1
+             AND deleted_at IS NULL
+             AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
+             AND hid != ?3
+             AND (
+                  (start_time IS NOT NULL AND start_time <= ?2)
+               OR (end_time   IS NOT NULL AND end_time   <= ?2)
+             )
+           ORDER BY COALESCE(start_time, end_time, create_time) ASC"#,
+    )?;
+    let rows = stmt.query_map(params![field, at_str, exclude], crate::db::row_to_entry_public)?;
+    let entries: Vec<Entry> = rows
+        .map(|r| r.map_err(DatumError::Db))
+        .collect::<Result<Vec<_>>>()?;
+    let compiled = compile_state(&entries, time);
+    if compiled.is_null() {
+        Ok(None)
+    } else {
+        Ok(Some(compiled))
+    }
 }
 
 fn collect_events(

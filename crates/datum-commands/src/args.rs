@@ -686,10 +686,22 @@ pub struct LogArgs {
     pub id_delimiter: String,
 
     /// Stop: close the most recent open block (records its prior state).
-    /// Switch: transition from the currently-active state (errors if unchanged,
-    /// unless also --moment).
-    #[arg(long = "last-state")]
-    pub last_state: bool,
+    /// Switch: when given a value (`-L=<state>` or `--last-state=<state>`),
+    /// asserts the field's prior state. The system cross-checks against the
+    /// computed actual last-state and files a `last_state_mismatch` conflict
+    /// if they disagree, but the switch itself still lands.
+    ///
+    /// Bare `--last-state` with no value is a no-op on switch (no assertion
+    /// recorded); on stop it triggers the close-most-recent-open behavior.
+    #[arg(
+        short = 'L',
+        long = "last-state",
+        value_name = "STATE",
+        num_args = 0..=1,
+        require_equals = true,
+        default_missing_value = "",
+    )]
+    pub last_state: Option<String>,
 
     /// Switch: record a point-in-time state change (time_end == time_start).
     /// Also bypasses the --last-state dedup check.

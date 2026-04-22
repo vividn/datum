@@ -50,28 +50,131 @@ fn stop_last_state_errors_when_no_open_block() {
 }
 
 #[test]
-fn switch_last_state_dedupes_if_state_unchanged() {
+fn switch_to_same_state_files_same_state_repeat_conflict() {
+    // S6 supersedes the old dedup-error behavior: a switch whose value
+    // equals the field's current active state still lands, and a
+    // `same_state_repeat` conflict is filed for later review.
+    use datum_core::conflicts::{ConflictKind, ListFilter};
     let db = fresh_db();
 
-    run_cli(&["switch", "mood", "happy"], &db).expect("first switch");
-
-    // Re-switching to the same state with --last-state errors.
-    let err = run_cli(&["switch", "mood", "happy", "--last-state"], &db)
-        .expect_err("dedup should fail");
-    assert!(
-        err.to_string().contains("already in state"),
-        "error should mention dedup, got: {err}"
-    );
-
-    // Switching to a different state is allowed.
-    run_cli(&["switch", "mood", "sad", "--last-state"], &db).expect("switch to sad");
+    // Space the two switches so their timestamps (and content hashes) differ.
+    run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
+    run_cli(&["switch", "mood", "happy"], &db).expect("repeat switch must not error");
 
     let entries = db.entries_for_field("mood", None).unwrap();
-    assert_eq!(entries.len(), 2, "only two successful switches recorded");
+    assert_eq!(entries.len(), 2, "both switches landed");
 
-    // `--moment` bypasses the dedup even when the requested state matches.
-    run_cli(&["switch", "mood", "sad", "--last-state", "--moment"], &db)
-        .expect("moment bypasses dedup");
+    let conflicts = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::SameStateRepeat),
+            pending: Some(true),
+        })
+        .unwrap();
+    assert_eq!(conflicts.len(), 1, "one same_state_repeat conflict filed");
+    assert!(
+        conflicts[0].remote_entry.is_some(),
+        "same_state_repeat should carry the prior state-defining counterpart"
+    );
+}
+
+#[test]
+fn switch_to_different_state_does_not_file_conflict() {
+    use datum_core::conflicts::{ConflictKind, ListFilter};
+    let db = fresh_db();
+
+    run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
+    run_cli(&["switch", "mood", "sad"], &db).expect("switch to sad");
+
+    let conflicts = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::SameStateRepeat),
+            pending: Some(true),
+        })
+        .unwrap();
+    assert!(
+        conflicts.is_empty(),
+        "genuine state change should not file same_state_repeat"
+    );
+}
+
+#[test]
+fn switch_last_state_assertion_match_files_no_conflict() {
+    // S6: `-L=<v>` is an assertion. When it matches the computed prior state,
+    // no mismatch is filed.
+    use datum_core::conflicts::{ConflictKind, ListFilter};
+    let db = fresh_db();
+
+    run_cli(&["switch", "mood", "happy", "-t=-2"], &db).expect("seed happy");
+    run_cli(&["switch", "mood", "sad", "-L=happy"], &db).expect("assertion matches");
+
+    let conflicts = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::LastStateMismatch),
+            pending: Some(true),
+        })
+        .unwrap();
+    assert!(conflicts.is_empty(), "matching assertion files no conflict");
+
+    // The assertion is persisted on the triggering entry regardless.
+    let sad = db
+        .entries_for_field("mood", None)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.value.as_ref() == Some(&serde_json::json!("sad")))
+        .expect("sad entry present");
+    assert_eq!(
+        sad.user_asserted_last_state,
+        Some(serde_json::json!("happy"))
+    );
+}
+
+#[test]
+fn switch_last_state_assertion_mismatch_files_conflict() {
+    // S6: `-L=<v>` asserts something that disagrees with history → file a
+    // `last_state_mismatch` conflict, but still land the entry.
+    use datum_core::conflicts::{ConflictKind, ListFilter};
+    let db = fresh_db();
+
+    run_cli(&["switch", "mood", "happy", "-t=-2"], &db).expect("seed happy");
+    // User thinks prior state was "sad", but history says "happy".
+    run_cli(&["switch", "mood", "grumpy", "-L=sad"], &db).expect("assertion still lands");
+
+    let entries = db.entries_for_field("mood", None).unwrap();
+    assert_eq!(entries.len(), 2, "grumpy entry still lands");
+
+    let conflicts = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::LastStateMismatch),
+            pending: Some(true),
+        })
+        .unwrap();
+    assert_eq!(conflicts.len(), 1, "one last_state_mismatch filed");
+    assert_eq!(
+        conflicts[0].local_entry.user_asserted_last_state,
+        Some(serde_json::json!("sad"))
+    );
+}
+
+#[test]
+fn bare_switch_last_state_is_noop_assertion_wise() {
+    // Bare `--last-state` on switch carries no value → no user_asserted_last_state,
+    // no mismatch, no dedup error (unless the value itself repeats).
+    let db = fresh_db();
+
+    run_cli(&["switch", "mood", "happy", "-t=-1"], &db).expect("first switch");
+    run_cli(&["switch", "mood", "sad", "--last-state"], &db)
+        .expect("bare --last-state no longer errors");
+
+    let sad = db
+        .entries_for_field("mood", None)
+        .unwrap()
+        .into_iter()
+        .find(|e| e.value.as_ref() == Some(&serde_json::json!("sad")))
+        .expect("sad entry present");
+    assert!(
+        sad.user_asserted_last_state.is_none(),
+        "bare -L records no assertion"
+    );
 }
 
 #[test]

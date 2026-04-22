@@ -208,6 +208,13 @@ pub struct Entry {
     /// Version of the parser that produced this entry.
     #[serde(default = "default_parser_version")]
     pub parser_version: u32,
+
+    /// S6: explicit user assertion from `-L/--last-state=<v>`. Normalized JSON
+    /// value recorded verbatim; `None` for the common case (no assertion).
+    /// Mismatches against the computed last-state file a `last_state_mismatch`
+    /// conflict but never block the insert. Not included in `content_hash`.
+    #[serde(default)]
+    pub user_asserted_last_state: Option<JsonValue>,
 }
 
 /// Current parser version. Bump when parser behaviour changes so stored
@@ -291,6 +298,7 @@ impl Entry {
             raw_input: String::new(),
             alias_chain: None,
             parser_version: CURRENT_PARSER_VERSION,
+            user_asserted_last_state: None,
         }
     }
 

@@ -5,12 +5,12 @@
 //! case; doc headers identify the source.
 //!
 //! Divergences from datum:
-//!   * daydumb's `--last-state` on switch is a boolean (dedup guard) — it does
-//!     NOT accept a value the way datum's `--last-state <value>` did. Manual
-//!     override of the captured prior state is not supported.
-//!   * daydumb does NOT auto-record `last_state` in `extra_data` on switch.
-//!     Prior-state queries are answered by state compilation over entries,
-//!     not by a denormalized field on the switch entry itself.
+//!   * daydumb's `--last-state=<v>` on switch is a user **assertion** recorded
+//!     in a dedicated column (S6). The system cross-checks against the
+//!     computed prior state and files a `last_state_mismatch` conflict when
+//!     they disagree, but never refuses the switch. Bare `--last-state` with
+//!     no value is a no-op. Auto-record of prior state into `extra_data` is
+//!     NOT performed — state queries run over the timeline.
 //!   * daydumb has no `-T` / `--omit-timestamp`. Switch entries always anchor
 //!     `time_start`. The three TS cases that hinge on "no occurTime" become
 //!     structural checks that daydumb anchors time regardless.
@@ -105,18 +105,18 @@ fn switch_prior_state_queryable_via_compilation() {
 
 /// TS #3: "can take in a manually specified last state".
 ///
-/// Divergence: daydumb's `--last-state` is a boolean (dedup guard), not a
-/// value-accepting flag. Manual override of the captured prior state has no
-/// analogue. The portable assertion: `--last-state` parses as a bare flag
-/// and — when the new state differs from the active state — the switch
-/// proceeds without error.
+/// Port (S6): daydumb's `-L=<value>` is a user assertion recorded in a
+/// dedicated column, not a dedup guard. When the assertion matches the
+/// computed prior state, no conflict is filed; when it disagrees, a
+/// `last_state_mismatch` row goes into the D5 queue. The switch always
+/// lands either way.
 #[test]
-fn switch_last_state_is_boolean_flag_not_value() {
+fn switch_last_state_records_assertion_on_entry() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum", "-t=-1"], &db).expect("seed switch");
-    run_cli(&["switch", "project", "household", "--last-state"], &db)
-        .expect("--last-state parses as boolean flag");
+    run_cli(&["switch", "project", "household", "-L=datum"], &db)
+        .expect("-L=<value> assertion");
 
     let entries = db.entries_for_field("project", None).unwrap();
     assert_eq!(entries.len(), 2);
@@ -124,11 +124,15 @@ fn switch_last_state_is_boolean_flag_not_value() {
         .iter()
         .find(|e| e.value.as_ref() == Some(&json!("household")))
         .expect("household entry present");
-    // daydumb does not capture a prior-state value on the switch entry.
+    assert_eq!(
+        household.user_asserted_last_state,
+        Some(json!("datum")),
+        "-L=<v> records the assertion on the entry"
+    );
     if let Some(extra) = household.data.as_ref() {
         assert!(
             extra.get("last_state").is_none() && extra.get("lastState").is_none(),
-            "daydumb switch --last-state does not denormalize prior state into extra_data",
+            "daydumb switch -L does not denormalize prior state into extra_data",
         );
     }
 }
@@ -162,10 +166,10 @@ fn switch_always_anchors_time_no_omit_timestamp_flag() {
 /// TS #5: "still includes lastState if manually specified even when there is
 /// no occurTime".
 ///
-/// Divergence: daydumb has neither a value-accepting `--last-state` nor an
-/// `--omit-timestamp` flag. The portable assertion: passing `--last-state`
-/// alongside a state change still records the new entry with `time_start`
-/// anchored, and the switch is not otherwise affected.
+/// Divergence: daydumb has no `--omit-timestamp` flag — switch entries always
+/// anchor `time_start`. The portable assertion: passing `--last-state`
+/// (bare) alongside a state change still records the new entry with
+/// `time_start` set; the flag is a no-op assertion-wise with no value.
 #[test]
 fn switch_with_last_state_still_anchors_time() {
     let db = fresh_db();

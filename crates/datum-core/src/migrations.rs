@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 7;
+pub const CURRENT_SCHEMA_VERSION: u32 = 8;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -71,6 +71,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_state: add my_push_seq column (per-device AAD seq counter for C4c push)",
         apply: m6_to_7_sync_state_my_push_seq,
     },
+    Migration {
+        from: 7,
+        to: 8,
+        summary: "entries: add user_asserted_last_state column (S6 — explicit -L assertion value)",
+        apply: m7_to_8_entries_user_asserted_last_state,
+    },
 ];
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
@@ -101,6 +107,27 @@ fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_entries_content_hash;
          DROP TABLE IF EXISTS entries;",
     )?;
+    Ok(())
+}
+
+fn m7_to_8_entries_user_asserted_last_state(conn: &Connection) -> Result<()> {
+    // S6: record explicit --last-state=<v> assertions on switch entries.
+    // Nullable — most entries leave it NULL; mismatches between the assertion
+    // and the computed last-state are filed as `last_state_mismatch` rows in
+    // sync_conflicts. The column is metadata only and does not participate in
+    // content_hash so the same switch logged with or without -L dedups the same.
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name = 'user_asserted_last_state'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch(
+            "ALTER TABLE entries ADD COLUMN user_asserted_last_state TEXT;",
+        )?;
+    }
     Ok(())
 }
 

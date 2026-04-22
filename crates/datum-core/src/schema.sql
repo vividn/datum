@@ -57,6 +57,12 @@ CREATE TABLE IF NOT EXISTS entries (
     alias_chain     TEXT,                        -- JSON array of alias expansions, nullable
     parser_version  INTEGER NOT NULL DEFAULT 1,
 
+    -- S6: when the user passed `-L/--last-state=<v>`, the normalized assertion
+    -- value is stored here (JSON). NULL for the common case (no assertion).
+    -- Cross-checked against computed last-state at insert; mismatches file a
+    -- `last_state_mismatch` row in sync_conflicts rather than blocking the write.
+    user_asserted_last_state TEXT,
+
     -- Generated columns — read-only projections.
     --
     -- `verb`: intent overrides shape-derived classification, so `stop`/`note`
@@ -218,4 +224,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '7');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '8');

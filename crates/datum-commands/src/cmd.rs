@@ -611,8 +611,11 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
 
         // --last-state on Stop: close the most recent open block, recording
         // its prior state as `last_state` metadata. Errors if there's nothing
-        // to close.
-        if args.last_state && matches!(verb, Verb::Stop) {
+        // to close. S6: the flag is value-accepting (`-L=<v>`); any `Some(_)`
+        // form triggers the close-most-recent behavior. A provided value is
+        // carried onto the entry's `user_asserted_last_state` for the
+        // post-write mismatch detector.
+        if args.last_state.is_some() && matches!(verb, Verb::Stop) {
             match db.find_open_block(&field, base_time.utc)? {
                 None => anyhow::bail!(
                     "No open block for '{field}' to close with --last-state"
@@ -626,23 +629,6 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
                     obj.insert("last_state".to_string(), last_state);
                     extra_data = Some(JsonValue::Object(obj));
                 }
-            }
-        }
-
-        // --last-state on Switch: dedupe when the requested state matches the
-        // currently-active state. `--moment` bypasses the check.
-        if args.last_state && matches!(verb, Verb::Switch) && !args.moment {
-            let current = db.get_active_state(&field, base_time.utc)?;
-            let current_norm = datum_core::state::normalize_state(&current);
-            let new_norm = value
-                .as_ref()
-                .map(datum_core::state::normalize_state)
-                .unwrap_or(JsonValue::Bool(true));
-            if current_norm == new_norm {
-                anyhow::bail!(
-                    "'{field}' is already in state {} — nothing to switch to",
-                    serde_json::to_string(&current_norm).unwrap_or_else(|_| "?".to_string())
-                );
             }
         }
 
@@ -688,6 +674,17 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     // add-specific classification (e.g. `ongoing` when only start_time is set).
     if let Some(shape) = add_override_shape {
         entry.entry_shape = shape;
+    }
+
+    // S6: carry an explicit `-L/--last-state=<v>` assertion onto the entry.
+    // Bare `-L` (no value) is a no-op assertion-wise; only a supplied value
+    // enters the column. Parsed through the same token parser that handles
+    // positional switch values so `null` / `true` / numbers normalize
+    // consistently with state compilation downstream.
+    if let Some(raw) = args.last_state.as_deref() {
+        if !raw.is_empty() {
+            entry.user_asserted_last_state = Some(parse_value_token(raw));
+        }
     }
 
     // Persist the effective precision derived from the -q stack and any
@@ -3206,7 +3203,7 @@ mod tests {
             comment: None,
             id: None,
             id_delimiter: ":".to_string(),
-            last_state: false,
+            last_state: None,
             moment: false,
             conflict: None,
             update: false,
@@ -3244,7 +3241,7 @@ mod tests {
             comment: None,
             id: None,
             id_delimiter: ":".to_string(),
-            last_state: false,
+            last_state: None,
             moment: false,
             conflict: None,
             update: false,
@@ -3290,7 +3287,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: Some("cups".to_string()), keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
-            last_state: false, moment: false,
+            last_state: None, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
@@ -3311,7 +3308,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
-            last_state: false, moment: false,
+            last_state: None, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
@@ -3332,7 +3329,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
-            last_state: false, moment: false,
+            last_state: None, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
@@ -3453,7 +3450,7 @@ mod tests {
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
             timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
             id: None, id_delimiter: ":".to_string(),
-            last_state: false, moment: false,
+            last_state: None, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
@@ -3484,7 +3481,7 @@ mod tests {
             comment: None,
             id,
             id_delimiter: ":".to_string(),
-            last_state: false,
+            last_state: None,
             moment: false,
             conflict: None,
             update: false,
