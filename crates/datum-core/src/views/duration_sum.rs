@@ -1,16 +1,21 @@
 //! `duration_sum` — sum of block durations per `(field, local_date)`.
 //!
-//! Only entries with both `time_start` and `time_end` contribute (point-in-time
-//! events have no duration). Reduces via `_sum`; group by full key for
-//! per-day totals, or `group_level=1` for per-field totals, or un-grouped for
-//! an overall total.
+//! SQL-backed. Only entries with both `time_start` and `time_end` contribute
+//! (point-in-time events have no duration). Reduces via `_sum`; the dataset
+//! is scanned via `entries_field_start` (or `entries_live_field_start`),
+//! with the field filter pushed down when the caller supplies an array key
+//! whose first element is a field name.
 
+use chrono::{DateTime, Utc};
+use rusqlite::params_from_iter;
 use serde_json::{json, Value as JsonValue};
 
-use super::{View, ViewRow};
+use super::{
+    apply_limit, cmp_json, field_filter_from_params, filter_by_key, group_key, View, ViewParams,
+    ViewRow,
+};
 use crate::db::Db;
-use crate::error::Result;
-use crate::time::DatumTime;
+use crate::error::{DatumError, Result};
 
 pub struct DurationSumView;
 
@@ -19,45 +24,90 @@ impl View for DurationSumView {
         "duration_sum"
     }
 
-    fn map(&self, db: &Db) -> Result<Vec<ViewRow>> {
-        let entries = db.all_entries()?;
-        let mut rows = Vec::new();
-        for entry in entries {
-            if entry.deleted_at.is_some() {
-                continue;
-            }
-            let (Some(ts), Some(te)) = (&entry.start_time, &entry.end_time) else {
-                continue;
-            };
-            let dur_ms = (te.utc - ts.utc).num_milliseconds();
-            // Negative or zero durations are legal (datum emits corrective
-            // rows with -seconds for "hole" blocks), but for Phase 1 we only
-            // surface the wall-clock duration and let negatives cancel out
-            // when summed.
+    fn query(&self, db: &Db, params: &ViewParams) -> Result<Vec<ViewRow>> {
+        let field_filter = field_filter_from_params(params);
+
+        let mut sql = String::from(
+            "SELECT slug, field, start_time, start_time_offset, end_time
+             FROM entries
+             WHERE deleted_at IS NULL
+               AND start_time IS NOT NULL
+               AND end_time IS NOT NULL",
+        );
+        let mut args: Vec<String> = Vec::new();
+        if let Some(f) = &field_filter {
+            sql.push_str(" AND field = ?1");
+            args.push(f.clone());
+        }
+
+        let mut rows: Vec<ViewRow> = Vec::new();
+        let mut stmt = db.conn().prepare(&sql)?;
+        let mapped = stmt.query_map(
+            params_from_iter(args.iter()),
+            |row| -> rusqlite::Result<(String, String, String, Option<i32>, String)> {
+                Ok((
+                    row.get("slug")?,
+                    row.get("field")?,
+                    row.get("start_time")?,
+                    row.get("start_time_offset")?,
+                    row.get("end_time")?,
+                ))
+            },
+        )?;
+        for r in mapped {
+            let (slug, field, start_iso, start_offset, end_iso) = r.map_err(DatumError::Db)?;
+            let start: DateTime<Utc> = start_iso.parse().map_err(|e: chrono::ParseError| {
+                DatumError::Other(format!("bad start_time in entries row: {e}"))
+            })?;
+            let end: DateTime<Utc> = end_iso.parse().map_err(|e: chrono::ParseError| {
+                DatumError::Other(format!("bad end_time in entries row: {e}"))
+            })?;
+            let dur_ms = (end - start).num_milliseconds();
+            let local_date = local_date_for(&start, start_offset.unwrap_or(0));
             rows.push(ViewRow {
-                key: json!([entry.field.clone(), local_date_str(ts)]),
+                key: json!([field, local_date]),
                 value: json!(dur_ms),
-                id: Some(entry.slug.clone()),
+                id: Some(slug),
             });
         }
-        Ok(rows)
-    }
 
-    fn supports_reduce(&self) -> bool {
-        true
-    }
+        rows = filter_by_key(rows, params);
+        rows.sort_by(|a, b| cmp_json(&a.key, &b.key));
 
-    fn reduce(&self, _key: &JsonValue, values: &[JsonValue]) -> Result<JsonValue> {
-        let sum: i64 = values
-            .iter()
-            .filter_map(|v| v.as_i64().or_else(|| v.as_f64().map(|f| f as i64)))
-            .sum();
-        Ok(json!(sum))
+        if params.reduce {
+            rows = reduce_sum(rows, params);
+        }
+        Ok(apply_limit(rows, params))
     }
 }
 
-fn local_date_str(t: &DatumTime) -> String {
-    t.local_time().format("%Y-%m-%d").to_string()
+fn local_date_for(utc: &DateTime<Utc>, offset_minutes: i32) -> String {
+    let offset = chrono::FixedOffset::east_opt(offset_minutes * 60)
+        .unwrap_or_else(|| chrono::FixedOffset::east_opt(0).unwrap());
+    utc.with_timezone(&offset).format("%Y-%m-%d").to_string()
+}
+
+fn reduce_sum(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
+    let mut groups: Vec<(JsonValue, i64)> = Vec::new();
+    for r in rows {
+        let gk = group_key(&r.key, params);
+        let v = r.value.as_i64().unwrap_or_else(|| {
+            r.value.as_f64().map(|f| f as i64).unwrap_or(0)
+        });
+        if let Some(entry) = groups.iter_mut().find(|(k, _)| k == &gk) {
+            entry.1 += v;
+        } else {
+            groups.push((gk, v));
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(key, sum)| ViewRow {
+            key,
+            value: json!(sum),
+            id: None,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -76,7 +126,6 @@ mod tests {
         let afternoon = Utc.with_ymd_and_hms(2026, 4, 20, 14, 0, 0).unwrap();
         let next_day = Utc.with_ymd_and_hms(2026, 4, 21, 9, 0, 0).unwrap();
 
-        // 30-min + 45-min workouts on day 1; 60-min on day 2.
         entry_builder("workout")
             .verb(Verb::Start)
             .time_start_utc(morning)
@@ -93,14 +142,13 @@ mod tests {
             .time_end_utc(next_day + Duration::minutes(60))
             .insert(&db);
 
-        // Different field, same day: separate group.
         entry_builder("reading")
             .verb(Verb::Start)
             .time_start_utc(morning)
             .time_end_utc(morning + Duration::minutes(20))
             .insert(&db);
 
-        // Entry without time_end: skipped (no duration).
+        // Entry without end_time: skipped by SQL.
         entry_builder("coffee")
             .verb(Verb::Occur)
             .time_start_utc(morning)
@@ -108,7 +156,6 @@ mod tests {
 
         let reg = builtins();
 
-        // Grouped by full key (field, date).
         let params = ViewParams {
             reduce: true,
             group: true,
@@ -131,7 +178,6 @@ mod tests {
         );
         assert_eq!(by_key.len(), 3);
 
-        // group_level=1 collapses to per-field totals.
         let params = ViewParams {
             reduce: true,
             group_level: Some(1),
@@ -144,7 +190,6 @@ mod tests {
         assert_eq!(by_key[&json!(["reading"])], json!(20 * 60 * 1000));
         assert_eq!(by_key.len(), 2);
 
-        // Un-grouped reduce: overall total.
         let params = ViewParams {
             reduce: true,
             ..Default::default()
@@ -153,5 +198,32 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].key, JsonValue::Null);
         assert_eq!(rows[0].value, json!((30 + 45 + 60 + 20) * 60 * 1000));
+    }
+
+    #[test]
+    fn duration_sum_pushes_field_filter() {
+        let db = fresh_db();
+        let t0 = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
+        entry_builder("workout")
+            .verb(Verb::Start)
+            .time_start_utc(t0)
+            .time_end_utc(t0 + Duration::minutes(30))
+            .insert(&db);
+        entry_builder("reading")
+            .verb(Verb::Start)
+            .time_start_utc(t0)
+            .time_end_utc(t0 + Duration::minutes(20))
+            .insert(&db);
+
+        let params = ViewParams {
+            key: Some(json!(["workout"])),
+            reduce: true,
+            group_level: Some(1),
+            ..Default::default()
+        };
+        let rows = DurationSumView.query(&db, &params).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key, json!(["workout"]));
+        assert_eq!(rows[0].value, json!(30 * 60 * 1000));
     }
 }

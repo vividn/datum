@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 5;
+pub const CURRENT_SCHEMA_VERSION: u32 = 6;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -59,6 +59,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "sync_conflicts: non-blocking overlap / double-open / orphan-end queue (local_validator + sync_pull)",
         apply: m4_to_5_sync_conflicts,
     },
+    Migration {
+        from: 5,
+        to: 6,
+        summary: "entries_live_field_start: partial index for SQL-backed views (deleted_at IS NULL AND start_time IS NOT NULL)",
+        apply: m5_to_6_live_field_index,
+    },
 ];
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
@@ -88,6 +94,19 @@ fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_entries_time;
          DROP INDEX IF EXISTS idx_entries_content_hash;
          DROP TABLE IF EXISTS entries;",
+    )?;
+    Ok(())
+}
+
+fn m5_to_6_live_field_index(conn: &Connection) -> Result<()> {
+    // R3: the SQL-backed views (timing, duration_sum, state_change)
+    // consistently filter `deleted_at IS NULL AND start_time IS NOT NULL`
+    // and push a field equality down into SQL. A partial index lets the
+    // planner skip tombstoned/untimed rows entirely.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS entries_live_field_start
+            ON entries (field, start_time)
+            WHERE deleted_at IS NULL AND start_time IS NOT NULL;",
     )?;
     Ok(())
 }

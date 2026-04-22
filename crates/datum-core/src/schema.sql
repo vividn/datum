@@ -94,6 +94,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
 CREATE INDEX IF NOT EXISTS entries_field_start
     ON entries (field, start_time DESC);
 
+-- Live-only variant used by the SQL-backed views (R3). The views consistently
+-- filter tombstones and timestamped entries per field; a partial index lets
+-- SQLite skip deleted rows entirely rather than filter them after an index
+-- lookup.
+CREATE INDEX IF NOT EXISTS entries_live_field_start
+    ON entries (field, start_time)
+    WHERE deleted_at IS NULL AND start_time IS NOT NULL;
+
 -- Dedup lookup on the hashed content fingerprint.
 CREATE INDEX IF NOT EXISTS entries_content_hash
     ON entries (content_hash);
@@ -201,4 +209,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '5');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '6');

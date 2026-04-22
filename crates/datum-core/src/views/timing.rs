@@ -1,72 +1,131 @@
 //! `datum_timing` — one row per live entry with `(field, local_date, start, end, duration_ms)`.
 //!
-//! Ported from datum's `timingView`. The datum version emits separate rows
-//! per time metric (occur/create/modify/hybrid); we collapse to occur-time
-//! only (our canonical `time_start`) and instead carry the entry's end and
-//! duration in the value. The per-metric split is deferred until a caller
-//! asks for it.
+//! SQL-backed. Ported from datum's `timingView` — which emits per time-metric
+//! (hybrid/occur/create/modify) — with the same simplification as before:
+//! one row per live timestamped entry keyed on occur-time (our canonical
+//! `time_start`), with end and duration carried in the value. The per-metric
+//! split is deferred until a caller asks for it.
+//!
+//! Scan: `entries WHERE deleted_at IS NULL AND start_time IS NOT NULL`,
+//! index-backed via `entries_field_start` when the caller pushes a field
+//! filter down through `--key`/`--startkey`.
 
+use chrono::{DateTime, Utc};
+use rusqlite::params_from_iter;
 use serde_json::{json, Value as JsonValue};
 
-use super::{View, ViewRow};
+use super::{
+    apply_limit, cmp_json, field_filter_from_params, filter_by_key, group_key, View, ViewParams,
+    ViewRow,
+};
 use crate::db::Db;
-use crate::error::Result;
-use crate::time::DatumTime;
+use crate::error::{DatumError, Result};
 
 pub struct TimingView;
+
+/// SQL row tuple for `TimingView::query`:
+/// `(slug, field, start_time, start_time_offset, end_time)`.
+type TimingRow = (String, String, String, Option<i32>, Option<String>);
 
 impl View for TimingView {
     fn name(&self) -> &str {
         "datum_timing"
     }
 
-    fn map(&self, db: &Db) -> Result<Vec<ViewRow>> {
-        let entries = db.all_entries()?;
-        let mut rows = Vec::with_capacity(entries.len());
-        for entry in entries {
-            if entry.deleted_at.is_some() {
-                continue;
-            }
-            let Some(ts) = &entry.start_time else {
-                continue;
-            };
-            let local_date = local_date_str(ts);
-            let start_iso = ts.utc.to_rfc3339();
-            let (end_iso, duration_ms) = match &entry.end_time {
-                Some(te) => {
-                    let dur = (te.utc - ts.utc).num_milliseconds();
-                    (json!(te.utc.to_rfc3339()), json!(dur))
+    fn query(&self, db: &Db, params: &ViewParams) -> Result<Vec<ViewRow>> {
+        let field_filter = field_filter_from_params(params);
+
+        let mut sql = String::from(
+            "SELECT slug, field, start_time, start_time_offset, end_time
+             FROM entries
+             WHERE deleted_at IS NULL AND start_time IS NOT NULL",
+        );
+        let mut args: Vec<String> = Vec::new();
+        if let Some(f) = &field_filter {
+            sql.push_str(" AND field = ?1");
+            args.push(f.clone());
+        }
+
+        let mut rows: Vec<ViewRow> = Vec::new();
+        let mut stmt = db.conn().prepare(&sql)?;
+        let mapped = stmt.query_map(
+            params_from_iter(args.iter()),
+            |row| -> rusqlite::Result<TimingRow> {
+                Ok((
+                    row.get("slug")?,
+                    row.get("field")?,
+                    row.get("start_time")?,
+                    row.get("start_time_offset")?,
+                    row.get("end_time")?,
+                ))
+            },
+        )?;
+        for r in mapped {
+            let (slug, field, start_iso, start_offset, end_iso) = r.map_err(DatumError::Db)?;
+            let start: DateTime<Utc> = start_iso.parse().map_err(|e: chrono::ParseError| {
+                DatumError::Other(format!("bad start_time in entries row: {e}"))
+            })?;
+            let local_date = local_date_for(&start, start_offset.unwrap_or(0));
+            let (end_value, dur_value) = match end_iso {
+                Some(e_iso) => {
+                    let end: DateTime<Utc> =
+                        e_iso.parse().map_err(|e: chrono::ParseError| {
+                            DatumError::Other(format!("bad end_time in entries row: {e}"))
+                        })?;
+                    let ms = (end - start).num_milliseconds();
+                    (json!(end.to_rfc3339()), json!(ms))
                 }
                 None => (JsonValue::Null, JsonValue::Null),
             };
             rows.push(ViewRow {
-                key: json!([entry.field.clone(), local_date]),
+                key: json!([field, local_date]),
                 value: json!({
-                    "start": start_iso,
-                    "end": end_iso,
-                    "duration_ms": duration_ms,
+                    "start": start.to_rfc3339(),
+                    "end": end_value,
+                    "duration_ms": dur_value,
                 }),
-                id: Some(entry.slug.clone()),
+                id: Some(slug),
             });
         }
-        Ok(rows)
-    }
 
-    fn supports_reduce(&self) -> bool {
-        true
-    }
+        // Residual key filter (date component and arbitrary range).
+        rows = filter_by_key(rows, params);
+        rows.sort_by(|a, b| cmp_json(&a.key, &b.key));
 
-    /// `_count` in datum speak — one per map row in the group.
-    fn reduce(&self, _key: &JsonValue, values: &[JsonValue]) -> Result<JsonValue> {
-        Ok(json!(values.len()))
+        if params.reduce {
+            rows = reduce_count(rows, params);
+        }
+        Ok(apply_limit(rows, params))
     }
 }
 
-/// Local-date string (`YYYY-MM-DD`) for a `DatumTime`, using its stored
-/// `offset_minutes` so entries logged in different timezones land on the
-/// correct civic day.
-fn local_date_str(t: &DatumTime) -> String {
-    t.local_time().format("%Y-%m-%d").to_string()
+/// Local-date string (`YYYY-MM-DD`) from a UTC timestamp + offset minutes.
+fn local_date_for(utc: &DateTime<Utc>, offset_minutes: i32) -> String {
+    let offset = chrono::FixedOffset::east_opt(offset_minutes * 60)
+        .unwrap_or_else(|| chrono::FixedOffset::east_opt(0).unwrap());
+    utc.with_timezone(&offset).format("%Y-%m-%d").to_string()
+}
+
+/// Reduce via `_count`: one row per group containing the row count. Groups
+/// come from [`group_key`]; rows are emitted in ascending group-key order.
+fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
+    let mut groups: Vec<(JsonValue, i64)> = Vec::new();
+    for r in rows {
+        let gk = group_key(&r.key, params);
+        if let Some(entry) = groups.iter_mut().find(|(k, _)| k == &gk) {
+            entry.1 += 1;
+        } else {
+            groups.push((gk, 1));
+        }
+    }
+    groups
+        .into_iter()
+        .map(|(key, count)| ViewRow {
+            key,
+            value: json!(count),
+            id: None,
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -80,7 +139,6 @@ mod tests {
     fn timing_view_emits_entries_with_durations() {
         let db = fresh_db();
 
-        // Bounded block: 30 min workout.
         let start = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
         let end = Utc.with_ymd_and_hms(2026, 4, 20, 9, 30, 0).unwrap();
         let workout = entry_builder("workout")
@@ -89,7 +147,6 @@ mod tests {
             .time_end_utc(end)
             .insert(&db);
 
-        // Point-in-time occur.
         let coffee_at = Utc.with_ymd_and_hms(2026, 4, 20, 8, 15, 0).unwrap();
         let coffee = entry_builder("coffee")
             .verb(Verb::Occur)
@@ -97,20 +154,20 @@ mod tests {
             .time_start_utc(coffee_at)
             .insert(&db);
 
-        // Note with no time_start: skipped.
+        // Note with no time_start: skipped by SQL (start_time IS NOT NULL).
         entry_builder("word")
             .verb(Verb::Add)
             .no_time()
             .insert(&db);
 
-        // Tombstoned entry: skipped.
+        // Tombstoned entry: skipped by SQL (deleted_at IS NULL).
         let ghost = entry_builder("coffee")
             .verb(Verb::Occur)
             .time_start_utc(Utc.with_ymd_and_hms(2026, 4, 20, 7, 0, 0).unwrap())
             .insert(&db);
         db.soft_delete_entry(&ghost.slug).unwrap();
 
-        let rows = TimingView.map(&db).unwrap();
+        let rows = TimingView.query(&db, &ViewParams::default()).unwrap();
         assert_eq!(rows.len(), 2, "one row per live, timestamped entry");
 
         let by_id: std::collections::HashMap<_, _> =
@@ -138,7 +195,6 @@ mod tests {
                 .time_start_utc(day + chrono::Duration::minutes(offset as i64 * 30))
                 .insert(&db);
         }
-        // Different field, same day — separate group.
         entry_builder("mood")
             .verb(Verb::Switch)
             .value(serde_json::json!("good"))
@@ -164,5 +220,46 @@ mod tests {
             .unwrap();
         assert_eq!(mood.value, serde_json::json!(1));
     }
-}
 
+    #[test]
+    fn timing_view_pushes_field_filter_to_sql() {
+        let db = fresh_db();
+        let day = Utc.with_ymd_and_hms(2026, 4, 20, 8, 0, 0).unwrap();
+        entry_builder("coffee")
+            .verb(Verb::Occur)
+            .time_start_utc(day)
+            .insert(&db);
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(serde_json::json!("good"))
+            .time_start_utc(day)
+            .insert(&db);
+
+        // key=["coffee"] → only the coffee entry (field pushed down to SQL).
+        let params = ViewParams {
+            key: Some(serde_json::json!(["coffee"])),
+            ..Default::default()
+        };
+        let rows = TimingView.query(&db, &params).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key[0], serde_json::json!("coffee"));
+    }
+
+    #[test]
+    fn timing_view_respects_limit() {
+        let db = fresh_db();
+        let day = Utc.with_ymd_and_hms(2026, 4, 20, 8, 0, 0).unwrap();
+        for i in 0..5 {
+            entry_builder("coffee")
+                .verb(Verb::Occur)
+                .time_start_utc(day + chrono::Duration::minutes(i as i64 * 5))
+                .insert(&db);
+        }
+        let params = ViewParams {
+            limit: Some(2),
+            ..Default::default()
+        };
+        let rows = TimingView.query(&db, &params).unwrap();
+        assert_eq!(rows.len(), 2);
+    }
+}
