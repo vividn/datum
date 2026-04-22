@@ -3,7 +3,9 @@
 use anyhow::{Context, Result};
 use chrono::{Local, TimeZone, Utc};
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome, ListParams, RetimeFilter, TimeMetric},
+    db::{
+        ConflictStrategy, Db, GroupColumn, InsertOutcome, ListParams, RetimeFilter, TimeMetric,
+    },
     entry::{new_hid, Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
@@ -16,10 +18,10 @@ use crate::{
     args::{
         AliasCommand, BackupArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IgnoreArgs,
-        InfoArgs, LogArgs, MapArgs, MigrateCommand, MigrateImportArgs, NowArgs, RestoreArgs,
-        RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
-        UpdateArgs, WhyArgs,
+        CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs,
+        IdsArgs, IgnoreArgs, InfoArgs, LogArgs, MigrateCommand, MigrateImportArgs, NowArgs,
+        RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
+        UndoArgs, UpdateArgs, WhyArgs,
     },
     config::{self, device_id},
     render::{
@@ -28,7 +30,7 @@ use crate::{
         show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
 };
-use datum_core::views::{parse_key_arg, Registry, ViewParams};
+use datum_core::views::{Registry, ViewParams};
 
 /// Parse an argv vector through the full pre-pass → clap → dispatch path
 /// against `db`. Used by integration tests to exercise the CLI without
@@ -71,8 +73,8 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Restore(args) => commands::restore::restore(args, db),
         Command::Grep(args) => commands::grep::grep(args, db),
         Command::Check(args) => commands::check::check(args, db),
-        Command::Map(args) => commands::map::map(args, db),
-        Command::Reduce(args) => commands::reduce::reduce(args, db),
+        Command::Count(args) => commands::count::count(args, db),
+        Command::Ids(args) => commands::ids::ids(args, db),
         Command::Dayview(args) => commands::dayview::dayview(args, db),
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Setup(args) => commands::setup::setup(args, db),
@@ -86,33 +88,107 @@ fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
     Ok(db.load_registry()?)
 }
 
-// ─── Map / Reduce ────────────────────────────────────────────────────────────
+// ─── Count / Ids ─────────────────────────────────────────────────────────────
 
-fn build_registry() -> Registry {
-    datum_core::views::builtins()
+/// Parse `--since` into a UTC lower bound.
+///
+/// Grammar (tried in order):
+///   1. RFC3339 datetime, e.g. `2024-03-16T00:00:00Z`
+///   2. `YYYY-MM-DD` — interpreted as local midnight
+///   3. Duration offset (`1d`, `30m`, `2h`, `PT5M`) — treated as "N ago"
+fn parse_since(s: &str) -> Result<chrono::DateTime<Utc>> {
+    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Ok(dt.with_timezone(&Utc));
+    }
+    if let Ok(date) = chrono::NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+        let local_midnight = Local
+            .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+            .single()
+            .context("ambiguous local midnight")?;
+        return Ok(local_midnight.with_timezone(&Utc));
+    }
+    let dur = parse_duration(s)
+        .map_err(|e| anyhow::anyhow!("invalid --since '{s}': {e}"))?;
+    Ok(chrono::Utc::now() - dur)
 }
 
-pub(crate) fn cmd_map(args: MapArgs, db: &Db) -> Result<()> {
-    let registry = build_registry();
-    let params = map_args_to_params(&args, false);
-    let rows = registry
-        .query(&args.view_name, db, &params)
-        .with_context(|| format!("view query failed: {}", args.view_name))?;
-    print_view_rows(&rows);
+/// Structured result of `cmd_count` — either a single total or a grouped
+/// tally. Exposed so tests can assert on the data without parsing stdout.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CountResult {
+    Total(usize),
+    Grouped(Vec<(String, usize)>),
+}
+
+pub fn compute_count(args: &CountArgs, db: &Db) -> Result<CountResult> {
+    let since_utc = args.since.as_deref().map(parse_since).transpose()?;
+    let field = args.field.as_deref();
+
+    if let Some(raw) = &args.group_by {
+        let col: GroupColumn = raw
+            .parse()
+            .map_err(|e: String| anyhow::anyhow!(e))?;
+        let rows = db.count_entries_grouped(field, col, since_utc)?;
+        return Ok(CountResult::Grouped(rows));
+    }
+
+    let n = db.count_entries_filtered(field, since_utc)?;
+    Ok(CountResult::Total(n))
+}
+
+pub(crate) fn cmd_count(args: CountArgs, db: &Db) -> Result<()> {
+    let result = compute_count(&args, db)?;
+    match (&result, args.json) {
+        (CountResult::Total(n), false) => println!("{n}"),
+        (CountResult::Total(n), true) => {
+            println!("{}", serde_json::json!({ "count": n }));
+        }
+        (CountResult::Grouped(rows), false) => {
+            for (k, n) in rows {
+                println!("{n}\t{k}");
+            }
+        }
+        (CountResult::Grouped(rows), true) => {
+            let arr: Vec<_> = rows
+                .iter()
+                .map(|(k, n)| serde_json::json!({ "key": k, "count": n }))
+                .collect();
+            println!("{}", serde_json::Value::Array(arr));
+        }
+    }
     Ok(())
 }
 
-pub(crate) fn cmd_reduce(args: MapArgs, db: &Db) -> Result<()> {
-    let registry = build_registry();
-    let params = map_args_to_params(&args, true);
-    let rows = registry
-        .query(&args.view_name, db, &params)
-        .with_context(|| format!("view query failed: {}", args.view_name))?;
-    print_view_rows(&rows);
+pub fn compute_ids(args: &IdsArgs, db: &Db) -> Result<Vec<String>> {
+    let since_utc = args.since.as_deref().map(parse_since).transpose()?;
+    Ok(db.list_entry_ids(
+        args.field.as_deref(),
+        since_utc,
+        args.limit,
+        args.oldest_first,
+        args.slug,
+    )?)
+}
+
+pub(crate) fn cmd_ids(args: IdsArgs, db: &Db) -> Result<()> {
+    let ids = compute_ids(&args, db)?;
+    if args.json {
+        let arr: Vec<serde_json::Value> =
+            ids.iter().map(|s| serde_json::Value::String(s.clone())).collect();
+        println!("{}", serde_json::Value::Array(arr));
+    } else {
+        for id in ids {
+            println!("{id}");
+        }
+    }
     Ok(())
 }
 
 // ─── Dayview ────────────────────────────────────────────────────────────────
+
+fn build_registry() -> Registry {
+    datum_core::views::builtins()
+}
 
 pub(crate) fn cmd_dayview(args: DayviewArgs, db: &Db) -> Result<()> {
     use chrono::{Datelike, NaiveDate};
@@ -205,33 +281,6 @@ fn parse_iso_to_utc_ms(s: &str) -> Result<i64> {
         .with_context(|| format!("parse rfc3339: {s}"))?;
     Ok(dt.with_timezone(&Utc).timestamp_millis())
 }
-
-fn map_args_to_params(args: &MapArgs, force_reduce: bool) -> ViewParams {
-    let reduce = force_reduce || args.reduce || args.group || args.group_level.is_some();
-    let group = args.group || args.group_level.is_some();
-    ViewParams {
-        key: args.key.as_deref().map(parse_key_arg),
-        startkey: args.startkey.as_deref().map(parse_key_arg),
-        endkey: args.endkey.as_deref().map(parse_key_arg),
-        group,
-        group_level: args.group_level,
-        limit: args.limit,
-        reduce,
-    }
-}
-
-fn print_view_rows(rows: &[datum_core::views::ViewRow]) {
-    for row in rows {
-        // The view row's `id` carries the source entry's slug (its PK).
-        let obj = serde_json::json!({
-            "key": row.key,
-            "value": row.value,
-            "slug": row.id,
-        });
-        println!("{obj}");
-    }
-}
-
 
 // ─── info / setup ────────────────────────────────────────────────────────────
 

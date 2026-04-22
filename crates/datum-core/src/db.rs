@@ -53,6 +53,62 @@ impl std::str::FromStr for TimeMetric {
     }
 }
 
+/// Column to group on in [`Db::count_entries_grouped`]. Restricted to
+/// columns that map cleanly to SQL identifiers so callers never pass raw
+/// strings into the query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupColumn {
+    /// The `value` column (state for switch, quantity for occur, …).
+    Value,
+    /// The derived `verb` column.
+    Verb,
+    /// The `field` column.
+    Field,
+}
+
+impl GroupColumn {
+    pub fn as_sql(self) -> &'static str {
+        match self {
+            GroupColumn::Value => "value",
+            GroupColumn::Verb => "verb",
+            GroupColumn::Field => "field",
+        }
+    }
+}
+
+impl std::str::FromStr for GroupColumn {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "state" | "value" => Ok(GroupColumn::Value),
+            "verb" => Ok(GroupColumn::Verb),
+            "field" => Ok(GroupColumn::Field),
+            other => Err(format!(
+                "unsupported group-by key '{other}' (supported: state/value, verb, field)"
+            )),
+        }
+    }
+}
+
+/// Build the shared `WHERE` clause + parameter bindings used by
+/// `count_entries_filtered`, `count_entries_grouped`, and `list_entry_ids`.
+fn filtered_where(
+    field: Option<&str>,
+    since: Option<DateTime<Utc>>,
+) -> (String, Vec<String>) {
+    let mut parts: Vec<String> = vec!["deleted_at IS NULL".to_string()];
+    let mut bindings: Vec<String> = Vec::new();
+    if let Some(f) = field {
+        parts.push("field = ?".to_string());
+        bindings.push(f.to_string());
+    }
+    if let Some(since_utc) = since {
+        parts.push("COALESCE(start_time, create_time) >= ?".to_string());
+        bindings.push(since_utc.to_rfc3339());
+    }
+    (parts.join(" AND "), bindings)
+}
+
 /// Parameters for [`Db::list_entries`]: the unified entry query used by
 /// `tail` / `head`. Results are always returned oldest-first (unless
 /// `reverse` is set), so callers can treat the output as a time-ordered slice.
@@ -693,6 +749,80 @@ impl Db {
             |row| row.get(0),
         )?;
         Ok(n as usize)
+    }
+
+    /// Count live entries, optionally filtered by `field` and/or a lower
+    /// bound on occur-time (falling back to `create_time` when unset).
+    pub fn count_entries_filtered(
+        &self,
+        field: Option<&str>,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<usize> {
+        let (where_clause, bindings) = filtered_where(field, since);
+        let sql = format!("SELECT COUNT(*) FROM entries WHERE {where_clause}");
+        let n: i64 = self.conn.query_row(
+            &sql,
+            rusqlite::params_from_iter(bindings.iter()),
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
+    /// Group live entries by one of {`value`, `verb`, `field`} and return
+    /// `(group_key, count)` pairs ordered by count DESC, key ASC. NULL
+    /// group keys are emitted as the literal string `"null"`.
+    pub fn count_entries_grouped(
+        &self,
+        field: Option<&str>,
+        group_col: GroupColumn,
+        since: Option<DateTime<Utc>>,
+    ) -> Result<Vec<(String, usize)>> {
+        let col = group_col.as_sql();
+        let (where_clause, bindings) = filtered_where(field, since);
+        let sql = format!(
+            "SELECT {col} AS g, COUNT(*) AS n FROM entries \
+             WHERE {where_clause} GROUP BY {col} ORDER BY n DESC, g ASC"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            |row| {
+                let key: Option<String> = row.get(0)?;
+                let n: i64 = row.get(1)?;
+                Ok((key.unwrap_or_else(|| "null".to_string()), n as usize))
+            },
+        )?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
+    }
+
+    /// List live-entry identifiers (hid or slug, per `as_slug`) in
+    /// occur-time order. Accepts optional field / `--since` filters and a
+    /// cap. Ties broken by slug in the same direction as the primary sort.
+    pub fn list_entry_ids(
+        &self,
+        field: Option<&str>,
+        since: Option<DateTime<Utc>>,
+        limit: Option<usize>,
+        oldest_first: bool,
+        as_slug: bool,
+    ) -> Result<Vec<String>> {
+        let select_col = if as_slug { "slug" } else { "hid" };
+        let dir = if oldest_first { "ASC" } else { "DESC" };
+        let (where_clause, bindings) = filtered_where(field, since);
+        let mut sql = format!(
+            "SELECT {select_col} FROM entries WHERE {where_clause} \
+             ORDER BY COALESCE(start_time, end_time, create_time) {dir}, \
+                      slug {dir}"
+        );
+        if let Some(n) = limit {
+            sql.push_str(&format!(" LIMIT {n}"));
+        }
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            |row| row.get::<_, String>(0),
+        )?;
+        rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
     /// Whether any live (non-tombstoned) row has this content_hash. Read-only

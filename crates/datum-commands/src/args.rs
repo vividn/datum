@@ -161,7 +161,7 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "occur", "start", "stop", "end", "switch", "add",
     "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
     "history", "why",
-    "track", "ignore", "grep", "check", "map", "reduce", "red",
+    "track", "ignore", "grep", "check", "count", "ids",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
     "info", "setup", "config", "sync",
@@ -406,11 +406,10 @@ pub enum Command {
     /// Run database consistency checks.
     Check(CheckArgs),
 
-    /// Query a named view (map phase) and print rows as JSON.
-    Map(MapArgs),
-    /// Query a named view with reduce=true.
-    #[command(visible_alias = "red")]
-    Reduce(MapArgs),
+    /// Count entries (optionally filtered, grouped, or time-bounded).
+    Count(CountArgs),
+    /// List entry ids (or slugs), newest-first by default.
+    Ids(IdsArgs),
 
     /// Render a dayview SVG (or dump the layout struct as JSON).
     Dayview(DayviewArgs),
@@ -1144,39 +1143,54 @@ impl GrepArgs {
     pub fn output(&self) -> OutputArgs { self.output_flags.resolve() }
 }
 
-/// Arguments for `datum map` and `datum reduce`.
-#[derive(Args, Debug)]
-pub struct MapArgs {
-    /// View name (e.g. `timingView`)
-    pub view_name: String,
+/// Arguments for `datum count`.
+#[derive(Args, Debug, Default)]
+pub struct CountArgs {
+    /// Optional field filter (count only entries for this field).
+    pub field: Option<String>,
 
-    /// Exact key match (JSON; bare strings ok, e.g. `2026-04-15`)
+    /// Group the count by a column: `state`/`value`, `verb`, or `field`.
+    #[arg(long = "group-by", value_name = "KEY")]
+    pub group_by: Option<String>,
+
+    /// Lower bound (inclusive) on `start_time` (or `create_time` when
+    /// `start_time` is null). Accepts RFC3339 datetimes, `YYYY-MM-DD`
+    /// dates (interpreted as local midnight), or duration offsets like
+    /// `1d`, `30m`, `2h` (interpreted as "ago").
+    #[arg(long = "since", value_name = "TIME")]
+    pub since: Option<String>,
+
+    /// Machine-readable output.
     #[arg(long)]
-    pub key: Option<String>,
+    pub json: bool,
+}
 
-    /// Range start key (JSON; inclusive)
-    #[arg(long)]
-    pub startkey: Option<String>,
+/// Arguments for `datum ids`.
+#[derive(Args, Debug, Default)]
+pub struct IdsArgs {
+    /// Optional field filter (list ids only for this field).
+    pub field: Option<String>,
 
-    /// Range end key (JSON; inclusive)
-    #[arg(long)]
-    pub endkey: Option<String>,
-
-    /// Group reduced rows by full key
-    #[arg(long)]
-    pub group: bool,
-
-    /// Group reduced rows by the first N elements of array keys
-    #[arg(short = 'g', long = "group-level", value_name = "N")]
-    pub group_level: Option<usize>,
-
-    /// Cap the number of rows returned
-    #[arg(long)]
+    /// Cap the number of ids returned.
+    #[arg(short = 'n', long = "limit", value_name = "N")]
     pub limit: Option<usize>,
 
-    /// Run the view's reduce path (not all views reduce)
+    /// Return ids in oldest-first order (default is newest-first).
+    #[arg(long = "oldest-first")]
+    pub oldest_first: bool,
+
+    /// Lower bound (inclusive) on `start_time` (or `create_time` when
+    /// `start_time` is null). Same grammar as `datum count --since`.
+    #[arg(long = "since", value_name = "TIME")]
+    pub since: Option<String>,
+
+    /// Print slugs (`field:timestamp`) instead of short hids.
     #[arg(long)]
-    pub reduce: bool,
+    pub slug: bool,
+
+    /// Machine-readable output (JSON array).
+    #[arg(long)]
+    pub json: bool,
 }
 
 #[derive(Subcommand, Debug)]
