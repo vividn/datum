@@ -136,6 +136,34 @@ pub enum InsertOutcome {
     Ignored { slug: String },
 }
 
+/// Report returned from [`Db::save_field_spec_with_report`] describing which
+/// derived aliases from the spec were persisted vs skipped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SaveSpecReport {
+    /// Alias names that were inserted or overwritten for this spec.
+    pub saved: Vec<String>,
+    /// Aliases that conflicted with an existing row and were skipped.
+    pub skipped: Vec<AliasConflict>,
+}
+
+/// A single alias-name collision surfaced by the spec save path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasConflict {
+    /// The alias name that could not be inserted.
+    pub name: String,
+    /// What row already owns that name.
+    pub reason: AliasConflictReason,
+}
+
+/// Why a derived alias was skipped during a spec save.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AliasConflictReason {
+    /// A user-defined alias already exists under this name.
+    UserAlias,
+    /// Another field's spec already derives an alias under this name.
+    OwnedByField(String),
+}
+
 /// Max number of candidates returned in [`DatumError::AmbiguousPrefix`].
 /// A wide-enough error list to disambiguate in practice, but bounded so a
 /// pathological prefix (e.g. empty) can't dump the whole table.
@@ -771,7 +799,28 @@ impl Db {
     /// Save a field spec and sync its derived aliases into the aliases table.
     /// Any previously-derived aliases for this field are removed first (so
     /// states that were dropped lose their alias).
+    ///
+    /// Conflict policy:
+    /// - **User aliases** (derived_from_field IS NULL) are never overwritten;
+    ///   an auto-derived alias for the same name is dropped silently so the
+    ///   user's override stands.
+    /// - **Another spec's derived state alias** (`<state>` → `switch foo …`
+    ///   from spec `foo`, where this spec is `bar`) stays with the original
+    ///   owner — the later spec's conflicting state alias is skipped.
+    /// - **Another spec's derived alias of non-State kind** (bare-field,
+    ///   terminal-end) is cleared first via the prefix delete above; it
+    ///   cannot collide with this spec's bare-field because field names are
+    ///   unique PKs in `field_specs`.
     pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
+        let _ = self.save_field_spec_with_report(spec)?;
+        Ok(())
+    }
+
+    /// Variant of [`save_field_spec`] that returns a structured report of
+    /// which derived aliases were saved and which were skipped due to
+    /// conflicts. The caller can surface skipped entries to the user as
+    /// warnings.
+    pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
         let json = serde_json::to_string(spec)?;
         let tx = self.conn.unchecked_transaction()?;
 
@@ -786,24 +835,58 @@ impl Db {
             params![spec.field],
         )?;
 
+        let mut saved: Vec<String> = Vec::new();
+        let mut skipped: Vec<AliasConflict> = Vec::new();
+
         for d in &spec.derived_aliases {
+            // Look up any existing row with this alias name.
+            let existing: Option<(String, Option<String>)> = tx
+                .query_row(
+                    "SELECT alias_json, derived_from_field FROM aliases WHERE name = ?1",
+                    params![&d.state],
+                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                )
+                .optional()?;
+
+            if let Some((_json, derived_from)) = existing {
+                let reason = match derived_from {
+                    None => AliasConflictReason::UserAlias,
+                    Some(owner) if owner == spec.field => {
+                        // Same-field re-save — safe to overwrite.
+                        let alias = Alias {
+                            name: d.state.clone(),
+                            expands_to: d.expands_to.clone(),
+                            description: Some(format!("Derived from {} spec", spec.field)),
+                        };
+                        let alias_json = serde_json::to_string(&alias)?;
+                        tx.execute(
+                            "INSERT OR REPLACE INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)",
+                            params![alias.name, alias_json, spec.field],
+                        )?;
+                        saved.push(d.state.clone());
+                        continue;
+                    }
+                    Some(other) => AliasConflictReason::OwnedByField(other),
+                };
+                skipped.push(AliasConflict { name: d.state.clone(), reason });
+                continue;
+            }
+
             let alias = Alias {
                 name: d.state.clone(),
                 expands_to: d.expands_to.clone(),
                 description: Some(format!("Derived from {} spec", spec.field)),
             };
             let alias_json = serde_json::to_string(&alias)?;
-            // `INSERT OR REPLACE` so a derived alias overrides any stale
-            // user alias with the same name. Collisions between derived
-            // aliases from different fields are last-write-wins.
             tx.execute(
-                "INSERT OR REPLACE INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)",
+                "INSERT INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)",
                 params![alias.name, alias_json, spec.field],
             )?;
+            saved.push(d.state.clone());
         }
 
         tx.commit()?;
-        Ok(())
+        Ok(SaveSpecReport { saved, skipped })
     }
 
     /// Delete a field spec. Cascades to its derived aliases.
@@ -2255,14 +2338,14 @@ mod tests {
     }
 
     #[test]
-    fn user_alias_replaced_by_derived_alias() {
-        // User saves alias "happy" → "note journal happy"
-        // Then a field spec with allowed_state "happy" is created.
-        // The derived alias takes over (last-write-wins).
+    fn user_alias_survives_derived_alias_save() {
+        // D3 policy: user aliases are never overwritten by auto-derived
+        // aliases. The user wins the name; the derived alias is skipped and
+        // surfaced via the SaveSpecReport.
         let db = Db::open_in_memory().unwrap();
         db.save_alias(&Alias {
             name: "happy".into(),
-            expands_to: "note journal happy".into(),
+            expands_to: "add journal happy".into(),
             description: None,
         })
         .unwrap();
@@ -2272,11 +2355,20 @@ mod tests {
         spec.derived_aliases = vec![DerivedAlias {
             state: "happy".into(),
             expands_to: "switch mood happy".into(),
+            kind: crate::field_spec::DerivedAliasKind::State,
         }];
-        db.save_field_spec(&spec).unwrap();
+        let report = db.save_field_spec_with_report(&spec).unwrap();
 
         let alias = db.lookup_alias("happy").unwrap().unwrap();
-        assert_eq!(alias.expands_to, "switch mood happy");
+        assert_eq!(alias.expands_to, "add journal happy",
+            "user alias wins over derived");
+
+        assert_eq!(report.skipped.len(), 1);
+        assert_eq!(report.skipped[0].name, "happy");
+        assert!(matches!(
+            report.skipped[0].reason,
+            crate::db::AliasConflictReason::UserAlias
+        ));
     }
 
     // ────────────────────────────────────────────────────────────────────────

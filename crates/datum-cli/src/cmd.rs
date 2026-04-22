@@ -1979,13 +1979,36 @@ fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         spec.tracked = true;
         spec.ignored = true;
     }
+    if !args.id_keys.is_empty() {
+        spec.id_keys = args.id_keys.clone();
+    }
+    if !args.data_keys.is_empty() {
+        spec.data_keys = args.data_keys.clone();
+    }
+    if args.no_autoalias {
+        spec.no_autoalias = true;
+    }
 
-    // Always regenerate derived aliases from the current allowed_states so
-    // states that were dropped lose their alias.
+    spec.validate_default_verb()
+        .map_err(|e| anyhow::anyhow!(e))?;
+
+    // Always regenerate derived aliases from the current shape.
     spec.regenerate_derived_aliases();
 
-    db.save_field_spec(&spec)?;
+    let report = db.save_field_spec_with_report(&spec)?;
     println!("✓ Spec saved for '{}'", spec.field);
+    for conflict in &report.skipped {
+        match &conflict.reason {
+            datum_core::db::AliasConflictReason::UserAlias => eprintln!(
+                "  ⚠ auto-alias '{}' skipped — user alias with the same name already exists",
+                conflict.name
+            ),
+            datum_core::db::AliasConflictReason::OwnedByField(owner) => eprintln!(
+                "  ⚠ auto-alias '{}' skipped — owned by field '{}'",
+                conflict.name, owner
+            ),
+        }
+    }
     Ok(())
 }
 
@@ -2575,6 +2598,9 @@ mod tests {
             unit: None,
             track: true,
             ignore: false,
+            id_keys: vec![],
+            data_keys: vec![],
+            no_autoalias: false,
         };
         cmd_spec_set(args, &db).unwrap();
 
@@ -2604,6 +2630,9 @@ mod tests {
             unit: None,
             track: false,
             ignore: false,
+            id_keys: vec![],
+            data_keys: vec![],
+            no_autoalias: false,
         };
         cmd_spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());

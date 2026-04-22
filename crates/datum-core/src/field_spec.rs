@@ -41,21 +41,44 @@ pub enum SubfieldType {
     Any,
 }
 
-/// An alias auto-generated from a FieldSpec state. Lives inside FieldSpec
-/// and is mirrored into the aliases table on save.
+/// An alias auto-generated from a FieldSpec. Lives inside FieldSpec and is
+/// mirrored into the aliases table on save. Covers three kinds: bare-field
+/// (`sleep` → `start sleep`), terminal-end (`sleepe` → `end sleep`), and
+/// per-state (`happy` → `switch mood happy`).
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DerivedAlias {
-    /// State name that produced this alias (also used as the alias name).
+    /// Alias name — the invocation token the user types. Named `state` for
+    /// historical reasons (pre-D3 it only ever came from a state).
     pub state: String,
     /// The argv expansion (without leading "datum"), e.g. "switch mood happy".
     pub expands_to: String,
+    /// What flavour of auto-alias this is. Drives conflict handling.
+    #[serde(default)]
+    pub kind: DerivedAliasKind,
+}
+
+/// Conflict-tag for a [`DerivedAlias`]. Bare-field and terminal-end aliases
+/// are field-scoped by construction (no two specs share a field name); state
+/// aliases can collide across fields and the first-saved spec wins.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum DerivedAliasKind {
+    /// `<field>` → `<default_verb> <field>`.
+    #[default]
+    BareField,
+    /// `<field>e` → `end <field>`.
+    TerminalEnd,
+    /// `<state>` → `switch <field> <state>`.
+    State,
 }
 
 /// Full specification for a tracked field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldSpec {
     pub field: String,
-    /// Default verb when none is specified.
+    /// Default verb when none is specified. Must be one of the canonical
+    /// verbs: `occur | start | switch | add`. `stop`/`end`/`note` are not
+    /// permitted (they're terminal/compat-only, not defaults).
     pub default_verb: Verb,
     /// Named subfields with their constraints.
     #[serde(default)]
@@ -79,9 +102,24 @@ pub struct FieldSpec {
     /// Per-state color overrides.
     #[serde(default)]
     pub state_colors: HashMap<String, String>,
-    /// Auto-derived aliases (one per allowed state). Rebuilt on save.
+    /// Auto-derived aliases (bare-field, terminal-end, and per-state).
+    /// Rebuilt on save via [`FieldSpec::regenerate_derived_aliases`].
     #[serde(default)]
     pub derived_aliases: Vec<DerivedAlias>,
+
+    /// Spec-level declaration of the `-K` identity keys (slug-bearing).
+    /// Each entry may be `"key"` or `"key=default"`; parser semantics match
+    /// the `-K` flag surface.
+    #[serde(default)]
+    pub id_keys: Vec<String>,
+    /// Spec-level declaration of the `-k` data keys (extra_data only). Each
+    /// entry may be `"key"` or `"key=default"`.
+    #[serde(default)]
+    pub data_keys: Vec<String>,
+    /// When true, no auto-aliases are emitted for this field (the user takes
+    /// over).
+    #[serde(default)]
+    pub no_autoalias: bool,
 
     /// True when this field should appear in `datum now`.
     #[serde(default)]
@@ -90,6 +128,9 @@ pub struct FieldSpec {
     #[serde(default)]
     pub ignored: bool,
 }
+
+/// The subset of verbs permitted as a field's `default_verb`.
+pub const DEFAULT_VERB_CHOICES: &[Verb] = &[Verb::Occur, Verb::Start, Verb::Switch, Verb::Add];
 
 impl FieldSpec {
     /// New bare spec with sensible defaults for the given field name and verb.
@@ -105,24 +146,74 @@ impl FieldSpec {
             allowed_states: None,
             state_colors: HashMap::new(),
             derived_aliases: Vec::new(),
+            id_keys: Vec::new(),
+            data_keys: Vec::new(),
+            no_autoalias: false,
             tracked: false,
             ignored: false,
         }
     }
 
-    /// Regenerate derived_aliases from allowed_states. One alias per state,
-    /// expanding to `switch <field> <state>`. Idempotent.
+    /// Validate that `default_verb` is one of the accepted canonical choices.
+    /// Returns an error message if the verb is out of range (e.g. `Stop`,
+    /// `Block`).
+    pub fn validate_default_verb(&self) -> std::result::Result<(), String> {
+        if DEFAULT_VERB_CHOICES.contains(&self.default_verb) {
+            Ok(())
+        } else {
+            Err(format!(
+                "invalid default_verb '{}' — must be one of: occur, start, switch, add",
+                self.default_verb
+            ))
+        }
+    }
+
+    /// Regenerate `derived_aliases` from the current spec. Always produces:
+    ///
+    /// 1. `<field>` → `<default_verb> <field>` (kind=BareField)
+    /// 2. `<field>e` → `end <field>` (kind=TerminalEnd) — only when
+    ///    `default_verb ∈ {Start, Switch}` (duration-capable verbs).
+    /// 3. One `<state>` → `switch <field> <state>` per allowed state
+    ///    (kind=State).
+    ///
+    /// Idempotent. When `no_autoalias` is set, returns an empty list.
+    /// Cross-field state collisions are resolved at save time (see
+    /// `db::Db::save_field_spec`).
     pub fn regenerate_derived_aliases(&mut self) {
-        self.derived_aliases = match &self.allowed_states {
-            None => Vec::new(),
-            Some(states) => states
-                .iter()
-                .map(|s| DerivedAlias {
+        if self.no_autoalias {
+            self.derived_aliases = Vec::new();
+            return;
+        }
+        let mut out: Vec<DerivedAlias> = Vec::new();
+
+        // 1. Bare-field alias: `<field>` → `<default_verb> <field>`.
+        out.push(DerivedAlias {
+            state: self.field.clone(),
+            expands_to: format!("{} {}", self.default_verb, self.field),
+            kind: DerivedAliasKind::BareField,
+        });
+
+        // 2. Terminal-end alias: only for duration-capable default verbs.
+        if matches!(self.default_verb, Verb::Start | Verb::Switch) {
+            out.push(DerivedAlias {
+                state: format!("{}e", self.field),
+                expands_to: format!("end {}", self.field),
+                kind: DerivedAliasKind::TerminalEnd,
+            });
+        }
+
+        // 3. Per-state aliases.
+        if let Some(states) = &self.allowed_states {
+            for s in states {
+                out.push(DerivedAlias {
                     state: s.clone(),
                     expands_to: format!("switch {} {}", self.field, s),
-                })
-                .collect(),
-        };
+                    kind: DerivedAliasKind::State,
+                });
+            }
+        }
+
+        self.derived_aliases = out;
     }
 }
 
@@ -355,20 +446,10 @@ mod tests {
             default: None,
             unit: None,
         });
-        FieldSpec {
-            field: "word".to_string(),
-            default_verb: Verb::Add,
-            subfields,
-            description: Some("Vocabulary word in a foreign language".to_string()),
-            unit: None,
-            id_template: None,
-            color: None,
-            allowed_states: None,
-            state_colors: HashMap::new(),
-            derived_aliases: Vec::new(),
-            tracked: false,
-            ignored: false,
-        }
+        let mut spec = FieldSpec::new("word", Verb::Add);
+        spec.subfields = subfields;
+        spec.description = Some("Vocabulary word in a foreign language".to_string());
+        spec
     }
 
     #[test]
@@ -404,20 +485,66 @@ mod tests {
     }
 
     #[test]
-    fn regenerate_derived_aliases_builds_one_per_state() {
+    fn regenerate_derived_aliases_covers_bare_terminal_and_states() {
         let mut spec = FieldSpec::new("mood", Verb::Switch);
         spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
         spec.regenerate_derived_aliases();
-        assert_eq!(spec.derived_aliases.len(), 2);
+        // bare `mood` + terminal `moode` + two states
+        assert_eq!(spec.derived_aliases.len(), 4);
+
+        let bare = spec.derived_aliases.iter().find(|a| a.state == "mood").unwrap();
+        assert_eq!(bare.expands_to, "switch mood");
+        assert_eq!(bare.kind, DerivedAliasKind::BareField);
+
+        let terminal = spec.derived_aliases.iter().find(|a| a.state == "moode").unwrap();
+        assert_eq!(terminal.expands_to, "end mood");
+        assert_eq!(terminal.kind, DerivedAliasKind::TerminalEnd);
+
         let happy = spec.derived_aliases.iter().find(|a| a.state == "happy").unwrap();
         assert_eq!(happy.expands_to, "switch mood happy");
+        assert_eq!(happy.kind, DerivedAliasKind::State);
     }
 
     #[test]
-    fn regenerate_derived_aliases_empty_when_no_states() {
+    fn regenerate_derived_aliases_emits_bare_but_no_terminal_for_occur() {
         let mut spec = FieldSpec::new("coffee", Verb::Occur);
         spec.regenerate_derived_aliases();
+        // Only bare-field — Occur is not duration-capable, no terminal.
+        assert_eq!(spec.derived_aliases.len(), 1);
+        let bare = &spec.derived_aliases[0];
+        assert_eq!(bare.state, "coffee");
+        assert_eq!(bare.expands_to, "occur coffee");
+        assert_eq!(bare.kind, DerivedAliasKind::BareField);
+    }
+
+    #[test]
+    fn regenerate_derived_aliases_emits_terminal_for_start_default() {
+        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        spec.regenerate_derived_aliases();
+        // bare `sleep` + terminal `sleepe`
+        assert_eq!(spec.derived_aliases.len(), 2);
+        let bare = spec.derived_aliases.iter().find(|a| a.state == "sleep").unwrap();
+        assert_eq!(bare.expands_to, "start sleep");
+        let terminal = spec.derived_aliases.iter().find(|a| a.state == "sleepe").unwrap();
+        assert_eq!(terminal.expands_to, "end sleep");
+    }
+
+    #[test]
+    fn no_autoalias_suppresses_all_derived_aliases() {
+        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        spec.no_autoalias = true;
+        spec.regenerate_derived_aliases();
         assert!(spec.derived_aliases.is_empty());
+    }
+
+    #[test]
+    fn validate_default_verb_rejects_non_canonical() {
+        let mut spec = FieldSpec::new("mood", Verb::Stop);
+        assert!(spec.validate_default_verb().is_err());
+        spec.default_verb = Verb::Block;
+        assert!(spec.validate_default_verb().is_err());
+        spec.default_verb = Verb::Switch;
+        assert!(spec.validate_default_verb().is_ok());
     }
 
     #[test]
@@ -436,6 +563,9 @@ mod tests {
         assert!(!spec.ignored);
         assert!(spec.allowed_states.is_none());
         assert!(spec.derived_aliases.is_empty());
+        assert!(spec.id_keys.is_empty());
+        assert!(spec.data_keys.is_empty());
+        assert!(!spec.no_autoalias);
     }
 
     // ─── Template interpolation tests (A1 acceptance) ────────────────────────

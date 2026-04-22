@@ -787,7 +787,8 @@ pub struct SpecSetArgs {
     #[arg(long)]
     pub json: Option<String>,
 
-    /// Default verb: occur | start | stop | switch | note
+    /// Default verb: one of `occur | start | switch | add`. `end`/`stop`/`note`
+    /// are not valid defaults — they are terminal or compat-only.
     #[arg(long = "default-verb")]
     pub default_verb: Option<String>,
 
@@ -823,6 +824,20 @@ pub struct SpecSetArgs {
     /// Mark the field as ignored in `datum now`
     #[arg(long)]
     pub ignore: bool,
+
+    /// Spec-level `-K` identity key (repeatable). Each item may be `key` or
+    /// `key=default`.
+    #[arg(long = "id-key", value_name = "KEY[=DEFAULT]")]
+    pub id_keys: Vec<String>,
+
+    /// Spec-level `-k` data key (repeatable). Each item may be `key` or
+    /// `key=default`.
+    #[arg(long = "data-key", value_name = "KEY[=DEFAULT]")]
+    pub data_keys: Vec<String>,
+
+    /// Disable automatic alias generation for this field.
+    #[arg(long = "no-autoalias")]
+    pub no_autoalias: bool,
 }
 
 #[derive(Subcommand, Debug)]
