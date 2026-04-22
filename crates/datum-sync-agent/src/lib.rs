@@ -1,10 +1,29 @@
-//! `datum-sync-agent` — reserved for C4d (`da-ndd.15`).
+//! `datum-sync-agent` — background daemon that wraps `datum-sync-client` to
+//! push-on-write and pull on a periodic interval without requiring the CLI
+//! to be open.
 //!
-//! Scope (planned): a background daemon that wraps `datum-sync-client` to
-//! perform periodic push/pull and conflict-queue drain without requiring
-//! the CLI to be open. Anchors the `client` + `server` + `agent` split
-//! that R4 locked in.
+//! The library target (this file) only exposes **pure** scheduling /
+//! debounce / backoff types so they can be unit-tested without an async
+//! runtime or filesystem. The binary in `main.rs` wires them to a real
+//! tokio runtime, a `notify`-based file watcher, and a pid-file.
 //!
-//! Nothing is implemented yet — the directory, Cargo.toml, and this lib.rs
-//! exist so the crate name is reserved and downstream refactors can rely
-//! on it being in the workspace graph.
+//! Shape:
+//!
+//! | Module       | Purpose                                              |
+//! |--------------|------------------------------------------------------|
+//! | `debounce`   | Quiet-window write coalescing                        |
+//! | `backoff`    | Exponential retry schedule (5s → 15s → 60s → 5min)   |
+//! | `scheduler`  | Per-DB next-action policy driving push / pull        |
+//! | `liveness`   | PID-file + alive-check                               |
+//! | `install`    | systemd / launchd unit generation (install-daemon)   |
+//! | `log`        | tracing-subscriber bootstrap for the daemon          |
+//! | `targets`    | Enumerate auto-sync DBs from `datumrc.yml`           |
+//! | `status`     | Daemon-liveness readout for `datum sync status`      |
+
+pub mod backoff;
+pub mod debounce;
+pub mod liveness;
+pub mod log;
+pub mod scheduler;
+pub mod status;
+pub mod targets;

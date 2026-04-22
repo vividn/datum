@@ -511,6 +511,9 @@ pub enum SyncCommand {
     Key(SyncKeyCommand),
     /// Show sync status: configured server, last push/pull, pending conflicts.
     Status(SyncStatusArgs),
+    /// Install the background sync daemon as a user service (systemd on
+    /// Linux, launchd on macOS). Without flags: write unit + enable.
+    InstallDaemon(SyncInstallDaemonArgs),
 }
 
 #[derive(Args, Debug, Default)]
@@ -518,6 +521,16 @@ pub struct SyncStatusArgs {
     /// Override the configured sync server for the status lookup.
     #[arg(long, value_name = "URL")]
     pub server: Option<String>,
+}
+
+#[derive(Args, Debug, Default)]
+pub struct SyncInstallDaemonArgs {
+    /// Print the unit file that would be installed and exit.
+    #[arg(long)]
+    pub show: bool,
+    /// Remove the installed unit instead of installing one.
+    #[arg(long)]
+    pub uninstall: bool,
 }
 
 #[derive(Args, Debug, Default)]

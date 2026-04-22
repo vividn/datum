@@ -21,6 +21,7 @@ use datum_core::db::Db;
 use datum_sync_client::sync_state;
 
 use crate::args::SyncStatusArgs;
+use crate::commands::sync::daemon_status;
 use crate::commands::sync::key::load_token;
 use crate::config::{
     db_path, load_raw_config_or_default, resolve_db, resolve_sync_server,
@@ -47,6 +48,7 @@ pub fn run(args: SyncStatusArgs) -> Result<()> {
     };
     println!("Server: {label_server}");
     println!("User:   {user}");
+    println!("Daemon: {}", daemon_line());
     println!();
 
     // Render the active DB's row.
@@ -58,6 +60,23 @@ pub fn run(args: SyncStatusArgs) -> Result<()> {
         // iteration. Keep the output predictable for tests.
     }
     Ok(())
+}
+
+/// Compose the `Daemon:` row. Values:
+/// - `● running (pid N) started <ts>` when the agent is alive
+/// - `○ not running — run \`datum sync install-daemon\`` when it's not
+fn daemon_line() -> String {
+    let state = daemon_status::read();
+    if state.is_running() {
+        let pid = state.pid.unwrap_or(0);
+        let started = state
+            .started_at
+            .map(|t| t.with_timezone(&Local).format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_else(|| "?".to_string());
+        format!("● running (pid {pid}) started {started}")
+    } else {
+        "○ not running — run `datum sync install-daemon`".to_string()
+    }
 }
 
 fn active_db_name() -> Option<String> {

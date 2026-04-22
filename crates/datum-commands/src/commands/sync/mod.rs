@@ -22,6 +22,8 @@ use std::time::Duration;
 use crate::args::{SyncArgs, SyncCommand, SyncConfigCommand, SyncKeyCommand};
 
 pub mod config;
+pub mod daemon_status;
+pub mod install_daemon;
 pub mod key;
 pub mod login;
 pub mod pull;
@@ -51,6 +53,7 @@ pub fn dispatch(args: SyncArgs, db: &Db) -> Result<()> {
             SyncKeyCommand::ShowFingerprint { server } => key::show_fingerprint(server),
         },
         Some(SyncCommand::Status(a)) => status::run(a),
+        Some(SyncCommand::InstallDaemon(a)) => install_daemon::run(a.show, a.uninstall),
         None => run_sync(args, db),
     }
 }

@@ -71,3 +71,13 @@ serde_yaml = "0.9"
 
 # URL parsing
 url = "2"
+
+# Filesystem watching (used by datum-sync-agent)
+notify = "6"
+
+# Low-level syscalls (used by datum-sync-agent for pid-alive checks)
+libc = "0.2"
+
+# Structured logging (journalctl-friendly output for the daemon)
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }

@@ -1422,10 +1422,13 @@ pub(crate) fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// Prepend a stale-sync warning to `datum now` if a sync server is
-/// configured for the active DB AND the last successful pull is older
-/// than 1 hour. The daemon-liveness half of the check belongs to C4d; for
-/// C4c we just look at the pull watermark.
+/// Prepend a stale-sync warning to `datum now` when sync coverage looks
+/// broken for the active DB. C4d upgrade: check daemon liveness too.
+///
+/// Rules:
+/// - No sync configured → no warning
+/// - Daemon running AND recent pull (< 1h) → no warning
+/// - Daemon down OR stale pull (≥ 1h) → warn, explaining why
 fn emit_stale_sync_warning(db: &Db) {
     let threshold = chrono::Duration::hours(1);
 
@@ -1441,16 +1444,45 @@ fn emit_stale_sync_warning(db: &Db) {
         return;
     }
 
-    let Ok(Some(last_pull)) = datum_sync_client::sync_state::get_last_pull_at(db) else {
-        return;
-    };
-    let age = Utc::now().signed_duration_since(last_pull);
-    if age > threshold {
-        let label = db_name.as_deref().unwrap_or("main");
-        println!(
-            "⚠ sync stale: {label} last pulled {}",
-            human_age(age),
-        );
+    let daemon_running =
+        crate::commands::sync::daemon_status::read().is_running();
+    let last_pull =
+        datum_sync_client::sync_state::get_last_pull_at(db).ok().flatten();
+    let label = db_name.as_deref().unwrap_or("main");
+
+    match (daemon_running, last_pull) {
+        // Best case: daemon up, recent pull — say nothing.
+        (true, Some(t)) if Utc::now().signed_duration_since(t) <= threshold => {}
+
+        // Daemon running but pull still stale: the daemon's unhealthy
+        // (backing off, wrong server, expired token). Tell the user.
+        (true, Some(t)) => {
+            let age = Utc::now().signed_duration_since(t);
+            println!(
+                "⚠ sync stale: {label} last pulled {} (daemon running)",
+                human_age(age),
+            );
+        }
+        (true, None) => {
+            println!(
+                "⚠ sync stale: {label} has never pulled (daemon running)"
+            );
+        }
+
+        // Daemon down: user needs to install or start it.
+        (false, _) => {
+            let age_part = match last_pull {
+                Some(t) => format!(
+                    ", last pulled {}",
+                    human_age(Utc::now().signed_duration_since(t)),
+                ),
+                None => "".to_string(),
+            };
+            println!(
+                "⚠ sync daemon not running{age_part} — \
+                 run `datum sync install-daemon` to enable auto-sync",
+            );
+        }
     }
 }
 
