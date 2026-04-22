@@ -2407,7 +2407,48 @@ fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
 
 // ─── Backup / Restore ────────────────────────────────────────────────────────
 
-const BACKUP_SCHEMA_VERSION: u32 = 1;
+/// Version of the `.tar.gz` archive *envelope* (manifest + file layout).
+/// Independent of the DB schema version embedded in the JSONL header — this
+/// one only bumps if the tar layout itself (filenames, additional metadata
+/// files) changes.
+const BACKUP_ARCHIVE_VERSION: u32 = 1;
+
+/// Discriminator the JSONL header line carries so a restore can tell a
+/// headered backup apart from a legacy headerless one (which starts straight
+/// with an Entry).
+const BACKUP_HEADER_TYPE: &str = "daydumb_backup";
+
+/// Metadata line written as the first JSONL record of every backup produced
+/// by this binary (in both plain `.jsonl` and inside the tar.gz variant's
+/// `entries.jsonl`). The restore side uses it to decide whether to migrate,
+/// refuse, or proceed optimistically.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+struct BackupHeader {
+    #[serde(rename = "type")]
+    kind: String,
+    /// DB schema version (from `datum_core::migrations::CURRENT_SCHEMA_VERSION`)
+    /// at backup time. Restore compares this against the binary's current.
+    schema_version: u32,
+    /// RFC3339 UTC timestamp when the backup was written.
+    backup_time: String,
+    /// Best-effort source identifier — registered DB name or file path.
+    source_db: String,
+    /// Live entry count at backup time, used for a post-restore integrity
+    /// check (warning only; mismatch does not abort).
+    entry_count: usize,
+}
+
+/// Resolve a best-effort identifier for the DB being backed up. Prefers the
+/// registry name, falls back to the resolved path, and finally to an empty
+/// string when neither can be recovered (e.g. in-memory DB in tests).
+fn derive_source_db() -> String {
+    match config::resolve_db(None) {
+        Ok(r) => r
+            .name
+            .unwrap_or_else(|| r.path.to_string_lossy().into_owned()),
+        Err(_) => String::new(),
+    }
+}
 
 fn is_targz_path(path: &str) -> bool {
     let lower = path.to_lowercase();
@@ -2423,18 +2464,27 @@ pub(crate) fn cmd_backup(args: BackupArgs, db: &Db) -> Result<()> {
         );
     }
 
+    let header = BackupHeader {
+        kind: BACKUP_HEADER_TYPE.to_string(),
+        schema_version: datum_core::migrations::CURRENT_SCHEMA_VERSION,
+        backup_time: chrono::Utc::now().to_rfc3339(),
+        source_db: derive_source_db(),
+        entry_count: db.count_entries()?,
+    };
+
     if is_targz_path(&args.path) {
-        backup_targz(out_path, db)
+        backup_targz(out_path, db, &header)
     } else {
-        backup_jsonl(out_path, db)
+        backup_jsonl(out_path, db, &header)
     }
 }
 
-fn backup_jsonl(path: &std::path::Path, db: &Db) -> Result<()> {
+fn backup_jsonl(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Result<()> {
     use std::io::Write;
     let file = std::fs::File::create(path)
         .with_context(|| format!("Creating backup file: {}", path.display()))?;
     let mut writer = std::io::BufWriter::new(file);
+    writeln!(writer, "{}", serde_json::to_string(header)?)?;
     let mut count = 0usize;
     db.visit_all_entries::<anyhow::Error, _>(|entry| {
         let line = serde_json::to_string(&entry)?;
@@ -2455,11 +2505,13 @@ impl Drop for TempFileGuard {
     }
 }
 
-fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
+fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Result<()> {
     use std::io::Write;
 
     // Stage entries.jsonl to a temp file so we know its size for the tar
-    // header without buffering the whole dataset in memory.
+    // header without buffering the whole dataset in memory. The metadata
+    // header line goes first, followed by one JSON entry per line — same
+    // layout as plain .jsonl backups.
     let temp_path = std::env::temp_dir().join(format!(
         "datum-backup-{}.jsonl",
         new_hid()
@@ -2471,6 +2523,7 @@ fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
         let temp_file = std::fs::File::create(&guard.0)
             .with_context(|| format!("Creating staging file: {}", guard.0.display()))?;
         let mut writer = std::io::BufWriter::new(temp_file);
+        writeln!(writer, "{}", serde_json::to_string(header)?)?;
         db.visit_all_entries::<anyhow::Error, _>(|entry| {
             let line = serde_json::to_string(&entry)?;
             writeln!(writer, "{line}")?;
@@ -2481,8 +2534,10 @@ fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
     }
 
     let manifest = serde_json::json!({
-        "schema_version": BACKUP_SCHEMA_VERSION,
-        "timestamp": chrono::Utc::now().to_rfc3339(),
+        "archive_version": BACKUP_ARCHIVE_VERSION,
+        "schema_version": header.schema_version,
+        "timestamp": header.backup_time,
+        "source_db": header.source_db,
         "entry_count": count,
     });
     let manifest_bytes = serde_json::to_vec_pretty(&manifest)?;
@@ -2524,7 +2579,42 @@ fn backup_targz(path: &std::path::Path, db: &Db) -> Result<()> {
     Ok(())
 }
 
+/// Result of a restore for inspection by tests and the CLI printer. The
+/// `warnings` field carries human-readable notes about header state
+/// (legacy/missing, entry-count drift, etc.) — printed by `cmd_restore`
+/// after the outcome summary.
+#[derive(Debug, Default)]
+pub(crate) struct RestoreReport {
+    pub inserted: usize,
+    pub updated: usize,
+    pub skipped: usize,
+    /// Schema version the backup declares. `None` for headerless legacy
+    /// backups, where we optimistically assume v1.
+    pub header_schema_version: Option<u32>,
+    pub header_source_db: Option<String>,
+    pub header_entry_count: Option<usize>,
+    pub warnings: Vec<String>,
+}
+
+impl RestoreReport {
+    fn total_processed(&self) -> usize {
+        self.inserted + self.updated + self.skipped
+    }
+}
+
 pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
+    let report = cmd_restore_with_report(args, db)?;
+    for w in &report.warnings {
+        eprintln!("⚠ {w}");
+    }
+    println!(
+        "✓ Restore: {} inserted, {} updated, {} skipped",
+        report.inserted, report.updated, report.skipped
+    );
+    Ok(())
+}
+
+pub(crate) fn cmd_restore_with_report(args: RestoreArgs, db: &Db) -> Result<RestoreReport> {
     let strategy = if args.force {
         ConflictStrategy::Update
     } else {
@@ -2538,14 +2628,14 @@ pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
     }
 }
 
-fn restore_jsonl(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<()> {
+fn restore_jsonl(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<RestoreReport> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Opening backup: {path}"))?;
     let reader = std::io::BufReader::new(file);
     restore_from_reader(reader, db, strategy)
 }
 
-fn restore_targz(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<()> {
+fn restore_targz(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<RestoreReport> {
     let file = std::fs::File::open(path)
         .with_context(|| format!("Opening backup: {path}"))?;
     let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(file));
@@ -2561,30 +2651,151 @@ fn restore_targz(path: &str, db: &Db, strategy: ConflictStrategy) -> Result<()> 
     anyhow::bail!("entries.jsonl not found in archive");
 }
 
+/// Peek the first non-empty line. Returns `Some(header)` if it parses as a
+/// daydumb backup metadata object; returns `None` (and hands back the line
+/// via `leftover`) if it looks like a legacy entry instead. Empty files
+/// yield `(None, None)` so the caller can no-op cleanly.
+fn read_header_line<R: std::io::BufRead>(
+    reader: &mut R,
+) -> Result<(Option<BackupHeader>, Option<String>)> {
+    loop {
+        let mut line = String::new();
+        let n = reader
+            .read_line(&mut line)
+            .context("Reading first backup line")?;
+        if n == 0 {
+            return Ok((None, None));
+        }
+        let trimmed = line.trim_end_matches(['\n', '\r']).to_string();
+        if trimmed.trim().is_empty() {
+            continue;
+        }
+        // Only a metadata object carries the sentinel discriminator. Peek
+        // the "type" field first so a legacy Entry (which has no `type`
+        // key with that value) falls through to the headerless path
+        // without us running a full Entry deserialize twice.
+        let is_header = serde_json::from_str::<serde_json::Value>(&trimmed)
+            .ok()
+            .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|s| s.to_string()))
+            .map(|s| s == BACKUP_HEADER_TYPE)
+            .unwrap_or(false);
+        if is_header {
+            let header: BackupHeader = serde_json::from_str(&trimmed)
+                .with_context(|| format!("Parsing backup header: {trimmed}"))?;
+            return Ok((Some(header), None));
+        }
+        return Ok((None, Some(trimmed)));
+    }
+}
+
+/// Apply per-entry JSON migrations to bring an older-schema backup entry up
+/// to the current Entry shape. For the schema range currently supported
+/// (v1–v7) the entries table was rewritten wholesale at v2→v3 with no real
+/// production data, so no intermediate JSON transforms are needed — the
+/// function is an identity pass. Future schema bumps that change Entry
+/// serialization should add a match arm here (keyed by `from`).
+fn migrate_entry_json(
+    _raw: &mut serde_json::Value,
+    from: u32,
+    to: u32,
+) -> Result<()> {
+    if from == to {
+        return Ok(());
+    }
+    // No transforms registered yet. The Entry deserializer's own
+    // `#[serde(default)]` fields already absorb additive schema bumps
+    // (v3→v7 were all additive or index-only). A destructive Entry-shape
+    // change in a future version should branch on `from` here.
+    Ok(())
+}
+
 fn restore_from_reader<R: std::io::BufRead>(
-    reader: R,
+    mut reader: R,
     db: &Db,
     strategy: ConflictStrategy,
-) -> Result<()> {
-    let mut inserted = 0usize;
-    let mut skipped = 0usize;
-    let mut updated = 0usize;
-    for line in reader.lines() {
+) -> Result<RestoreReport> {
+    let mut report = RestoreReport::default();
+
+    let (header, legacy_first) = read_header_line(&mut reader)?;
+
+    // Gate on schema_version before touching the DB.
+    let current = datum_core::migrations::CURRENT_SCHEMA_VERSION;
+    let backup_version = match &header {
+        Some(h) => {
+            report.header_schema_version = Some(h.schema_version);
+            report.header_source_db = Some(h.source_db.clone());
+            report.header_entry_count = Some(h.entry_count);
+            if h.schema_version > current {
+                anyhow::bail!(
+                    "Backup is schema v{}; binary supports up to v{}. \
+                     Upgrade daydumb to restore this backup.",
+                    h.schema_version,
+                    current
+                );
+            }
+            if h.schema_version < current {
+                report.warnings.push(format!(
+                    "Backup was schema v{}; migrating to v{} during restore",
+                    h.schema_version, current
+                ));
+            }
+            h.schema_version
+        }
+        None => {
+            // Empty file → no-op. Non-empty with no header → legacy.
+            if legacy_first.is_some() {
+                report.warnings.push(
+                    "Legacy backup without metadata; assuming schema v1".to_string(),
+                );
+            }
+            1
+        }
+    };
+
+    // Decode either the legacy first line or fresh lines from the reader.
+    // Using `chain` keeps the streaming model intact — nothing is buffered
+    // beyond a single line.
+    let legacy_iter = legacy_first.into_iter().map(Ok);
+    let body_iter = reader.lines();
+    let all_lines = legacy_iter.chain(body_iter);
+
+    for line in all_lines {
         let line = line.context("Reading backup line")?;
         if line.trim().is_empty() {
             continue;
         }
-        let entry: Entry = serde_json::from_str(&line)
-            .with_context(|| format!("Parsing entry: {line}"))?;
+        let mut raw: serde_json::Value = serde_json::from_str(&line)
+            .with_context(|| format!("Parsing entry JSON: {line}"))?;
+        if backup_version < current {
+            migrate_entry_json(&mut raw, backup_version, current)?;
+        }
+        let entry: Entry = serde_json::from_value(raw)
+            .with_context(|| format!("Deserializing entry: {line}"))?;
         let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
         match outcome {
-            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => inserted += 1,
-            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => updated += 1,
-            InsertOutcome::Ignored { .. } => skipped += 1,
+            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
+                report.inserted += 1
+            }
+            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => {
+                report.updated += 1
+            }
+            InsertOutcome::Ignored { .. } => report.skipped += 1,
         }
     }
-    println!("✓ Restore: {inserted} inserted, {updated} updated, {skipped} skipped");
-    Ok(())
+
+    // Integrity check — warn only, do not abort. A mismatch here usually
+    // means the backup file was truncated or concurrently modified; the
+    // user still wants whatever we managed to read.
+    if let Some(expected) = report.header_entry_count {
+        let actual = report.total_processed();
+        if expected != actual {
+            report.warnings.push(format!(
+                "Entry-count mismatch: header declared {expected}, restored {actual}"
+            ));
+        }
+    }
+
+    Ok(report)
 }
 
 #[cfg(test)]
@@ -4149,18 +4360,36 @@ mod tests {
         )
         .unwrap();
 
-        // File is line-per-entry JSONL (not a JSON array).
+        // File is a metadata header line followed by line-per-entry JSONL.
         let contents = std::fs::read_to_string(&path).unwrap();
-        let line_count = contents
+        let non_empty: Vec<&str> = contents
             .lines()
             .filter(|l| !l.trim().is_empty())
-            .count();
-        assert_eq!(line_count, original.len());
+            .collect();
+        assert_eq!(
+            non_empty.len(),
+            original.len() + 1,
+            "one metadata line + one line per entry"
+        );
 
-        // Each line must parse as a full Entry.
-        for line in contents.lines().filter(|l| !l.trim().is_empty()) {
+        // Header: type == daydumb_backup and schema_version tracks the binary.
+        let header: serde_json::Value = serde_json::from_str(non_empty[0])
+            .expect("first line parses as JSON");
+        assert_eq!(header["type"], serde_json::json!("daydumb_backup"));
+        assert_eq!(
+            header["schema_version"],
+            serde_json::json!(datum_core::migrations::CURRENT_SCHEMA_VERSION)
+        );
+        assert_eq!(
+            header["entry_count"].as_u64(),
+            Some(original.len() as u64)
+        );
+        assert!(header["backup_time"].as_str().is_some());
+
+        // Remaining lines must parse as full Entries.
+        for line in &non_empty[1..] {
             let _entry: datum_core::entry::Entry =
-                serde_json::from_str(line).expect("each line is a parseable Entry");
+                serde_json::from_str(line).expect("each data line is a parseable Entry");
         }
 
         // Restore into a fresh db and verify equivalence.
@@ -4191,14 +4420,15 @@ mod tests {
         .unwrap();
         assert!(path.exists(), "tar.gz backup file should exist");
 
-        // Verify the archive contains manifest.json + entries.jsonl, and the
-        // manifest carries schema_version + timestamp.
+        // Verify the archive contains manifest.json + entries.jsonl, and
+        // that entries.jsonl starts with the new daydumb_backup header.
         let f = std::fs::File::open(&path).unwrap();
         let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(f));
         let mut archive = tar::Archive::new(gz);
         let mut seen_manifest = false;
         let mut seen_entries = false;
         let mut manifest_body = String::new();
+        let mut entries_body = String::new();
         for entry_res in archive.entries().unwrap() {
             use std::io::Read;
             let mut entry = entry_res.unwrap();
@@ -4210,6 +4440,7 @@ mod tests {
                 }
                 Some("entries.jsonl") => {
                     seen_entries = true;
+                    entry.read_to_string(&mut entries_body).unwrap();
                 }
                 _ => {}
             }
@@ -4218,10 +4449,23 @@ mod tests {
         assert!(seen_entries, "entries.jsonl present in archive");
         let manifest: serde_json::Value =
             serde_json::from_str(&manifest_body).expect("manifest is valid JSON");
-        assert_eq!(manifest["schema_version"], serde_json::json!(1));
+        assert_eq!(manifest["archive_version"], serde_json::json!(1));
+        assert_eq!(
+            manifest["schema_version"],
+            serde_json::json!(datum_core::migrations::CURRENT_SCHEMA_VERSION)
+        );
         assert!(
             manifest["timestamp"].as_str().is_some(),
             "manifest has a timestamp"
+        );
+
+        let first_line = entries_body.lines().next().expect("entries.jsonl non-empty");
+        let header: serde_json::Value = serde_json::from_str(first_line)
+            .expect("entries.jsonl first line is JSON");
+        assert_eq!(header["type"], serde_json::json!("daydumb_backup"));
+        assert_eq!(
+            header["schema_version"],
+            serde_json::json!(datum_core::migrations::CURRENT_SCHEMA_VERSION)
         );
 
         let dst = Db::open_in_memory().unwrap();
@@ -4371,6 +4615,212 @@ mod tests {
             &db,
         )
         .unwrap();
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    // ─── S7: header + schema-version gate + auto-migrate on restore ───────
+
+    /// Write a JSONL file by hand so we can exercise the restore-side header
+    /// parser with arbitrary schema versions without having to rebuild an
+    /// older binary.
+    fn write_jsonl(
+        path: &std::path::Path,
+        header: Option<&serde_json::Value>,
+        entries: &[datum_core::entry::Entry],
+    ) {
+        use std::io::Write;
+        let f = std::fs::File::create(path).unwrap();
+        let mut w = std::io::BufWriter::new(f);
+        if let Some(h) = header {
+            writeln!(w, "{}", serde_json::to_string(h).unwrap()).unwrap();
+        }
+        for e in entries {
+            writeln!(w, "{}", serde_json::to_string(e).unwrap()).unwrap();
+        }
+    }
+
+    #[test]
+    fn restore_header_match_produces_no_warnings() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let path = unique_tmp_path(".jsonl");
+        cmd_backup(
+            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            &src,
+        )
+        .unwrap();
+
+        let dst = Db::open_in_memory().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+
+        assert_eq!(
+            report.header_schema_version,
+            Some(datum_core::migrations::CURRENT_SCHEMA_VERSION)
+        );
+        assert_eq!(report.header_entry_count, Some(original.len()));
+        assert!(
+            report.warnings.is_empty(),
+            "same-version restore must not warn, got: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.inserted, original.len());
+        assert_entries_equivalent(&original, &all_entries_sorted(&dst));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_older_schema_warns_and_migrates() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        // Forge a backup with schema_version set one below current. The
+        // entries themselves are serialized from today's binary — the
+        // identity migrate_entry_json lets them round-trip cleanly.
+        let older = datum_core::migrations::CURRENT_SCHEMA_VERSION.saturating_sub(1).max(1);
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": older,
+            "backup_time": "2026-04-22T00:00:00Z",
+            "source_db": "forged",
+            "entry_count": original.len(),
+        });
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, Some(&header), &original);
+
+        let dst = Db::open_in_memory().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+
+        assert_eq!(report.header_schema_version, Some(older));
+        assert!(
+            report.warnings.iter().any(|w| w.contains("migrating to v")),
+            "expected migrating warning, got: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.inserted, original.len());
+        assert_entries_equivalent(&original, &all_entries_sorted(&dst));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_newer_schema_refuses() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        let newer = datum_core::migrations::CURRENT_SCHEMA_VERSION + 3;
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": newer,
+            "backup_time": "2026-04-22T00:00:00Z",
+            "source_db": "forged",
+            "entry_count": original.len(),
+        });
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, Some(&header), &original);
+
+        let dst = Db::open_in_memory().unwrap();
+        let err = cmd_restore_with_report(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains(&format!("schema v{newer}")) && msg.contains("Upgrade daydumb"),
+            "expected newer-schema refusal message, got: {msg}"
+        );
+        // No entries should have been touched — the gate fires before any insert.
+        assert_eq!(dst.count_entries().unwrap(), 0);
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_headerless_legacy_warns_and_proceeds() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        // Pre-S7 layout: no metadata header, just entries.
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, None, &original);
+
+        let dst = Db::open_in_memory().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+
+        assert_eq!(report.header_schema_version, None);
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("Legacy backup without metadata")),
+            "expected legacy warning, got: {:?}",
+            report.warnings
+        );
+        assert_eq!(report.inserted, original.len());
+        assert_entries_equivalent(&original, &all_entries_sorted(&dst));
+
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn restore_entry_count_mismatch_warns_only() {
+        use datum_core::db::Db;
+        let src = Db::open_in_memory().unwrap();
+        seed_entries(&src);
+        let original = all_entries_sorted(&src);
+
+        // Header claims one more entry than we actually include. Matching
+        // schema version so the only divergence is the integrity check.
+        let header = serde_json::json!({
+            "type": "daydumb_backup",
+            "schema_version": datum_core::migrations::CURRENT_SCHEMA_VERSION,
+            "backup_time": "2026-04-22T00:00:00Z",
+            "source_db": "forged",
+            "entry_count": original.len() + 1,
+        });
+        let path = unique_tmp_path(".jsonl");
+        write_jsonl(&path, Some(&header), &original);
+
+        let dst = Db::open_in_memory().unwrap();
+        let report = cmd_restore_with_report(
+            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false },
+            &dst,
+        )
+        .unwrap();
+
+        assert!(
+            report
+                .warnings
+                .iter()
+                .any(|w| w.contains("Entry-count mismatch")),
+            "expected integrity warning, got: {:?}",
+            report.warnings
+        );
+        // Mismatch is non-fatal — the rows we had still landed.
+        assert_eq!(report.inserted, original.len());
 
         std::fs::remove_file(&path).ok();
     }
