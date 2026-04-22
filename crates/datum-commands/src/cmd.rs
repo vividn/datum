@@ -20,9 +20,9 @@ use crate::{
         RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
         UpdateArgs, WhyArgs,
     },
-    check::{collect_issues, render_human, render_json},
+    commands::check::{collect_issues, render_human, render_json},
     config::{self, device_id},
-    output::{
+    render::{
         print_entry, print_entry_pretty, print_now_view, print_table, show_create, show_delete,
         show_exists, show_rename, show_update, OutputArgs, TableArgs, TimeMetricCol,
     },
@@ -64,7 +64,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => cmd_info(args, cli.db.as_deref(), db),
         Command::Setup(args) => cmd_setup(args, db),
         Command::Config(sub) => cmd_config(sub, cli.db.as_deref()),
-        Command::Sync(sub) => crate::sync::dispatch(sub),
+        Command::Sync(sub) => crate::commands::sync::dispatch(sub),
         Command::Conflicts(sub) => cmd_conflicts(sub, db),
     }
 }

@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use crate::args::SyncLoginArgs;
 use crate::config::{auth_token_path, load_raw_config_or_default, server_host_from_url};
-use crate::sync::{AuthToken, Prompter};
+use crate::commands::sync::{AuthToken, Prompter};
 
 /// Floor on the poll interval — even if the relay asks for 0s, we wait at
 /// least this long to avoid a hot loop.

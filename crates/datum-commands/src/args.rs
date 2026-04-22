@@ -12,7 +12,7 @@ use clap::{Args, Parser, Subcommand, ValueEnum};
 use datum_core::db::ConflictStrategy;
 use serde_json::json;
 
-use crate::output::{OutputArgs, Show};
+use crate::render::{OutputArgs, Show};
 
 /// Provenance captured during the CLI pre-pass: the literal argv the user
 /// typed and the chain of alias expansions (if any) that were applied. The

@@ -21,7 +21,7 @@ use std::time::Duration;
 use crate::config::{
     auth_token_path, load_raw_config_or_default, master_key_path, server_host_from_url,
 };
-use crate::sync::{AuthToken, Prompter};
+use crate::commands::sync::{AuthToken, Prompter};
 
 /// `datum sync key init`
 pub fn init(
