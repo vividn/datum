@@ -6,10 +6,74 @@
 //! Stacked short flags (-yy, -qqq) are handled by a pre-pass before clap
 //! sees the arguments (see `Cli::parse_with_alias_resolution`).
 
+use std::cell::RefCell;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use datum_core::db::ConflictStrategy;
+use serde_json::json;
 
 use crate::output::{OutputArgs, Show};
+
+/// Provenance captured during the CLI pre-pass: the literal argv the user
+/// typed and the chain of alias expansions (if any) that were applied. The
+/// current invocation pushes one of these onto the thread-local stack; the
+/// log-entry code path pops it and stamps it onto the Entry.
+#[derive(Debug, Clone, Default)]
+pub struct IntentContext {
+    /// Literal argv joined by spaces (no shell escaping).
+    pub raw_input: String,
+    /// Ordered list of alias expansion steps. Each step is an object
+    /// `{"name": "<alias>", "expansion": "<expanded text>"}`. Empty list →
+    /// stored as None on the entry.
+    pub alias_chain: Vec<AliasStep>,
+}
+
+/// A single alias expansion step, serialised as a small JSON object when
+/// persisted to the entry's alias_chain column.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasStep {
+    pub name: String,
+    pub expansion: String,
+}
+
+impl IntentContext {
+    /// Convert the alias_chain into a JSON value suitable for storage in the
+    /// entry's `alias_chain` column (or None if the chain is empty).
+    pub fn alias_chain_json(&self) -> Option<serde_json::Value> {
+        if self.alias_chain.is_empty() {
+            return None;
+        }
+        let arr: Vec<serde_json::Value> = self
+            .alias_chain
+            .iter()
+            .map(|step| json!({"name": step.name, "expansion": step.expansion}))
+            .collect();
+        Some(serde_json::Value::Array(arr))
+    }
+}
+
+thread_local! {
+    static INTENT_CTX: RefCell<Option<IntentContext>> = const { RefCell::new(None) };
+}
+
+/// Publish the current invocation's [`IntentContext`] to the thread-local
+/// slot. Called by the CLI and test harness immediately after `expand_argv`
+/// and before dispatch. Replaces any value already present.
+pub fn set_intent_context(ctx: IntentContext) {
+    INTENT_CTX.with(|slot| *slot.borrow_mut() = Some(ctx));
+}
+
+/// Take and clear the current [`IntentContext`]. Called by `log_entry` once
+/// per entry-write so the same context isn't accidentally reused.
+pub fn take_intent_context() -> Option<IntentContext> {
+    INTENT_CTX.with(|slot| slot.borrow_mut().take())
+}
+
+/// Peek without consuming. Used by report-style commands (e.g. `datum why`
+/// when diagnosing a problem in-flight) and by tests.
+pub fn peek_intent_context() -> Option<IntentContext> {
+    INTENT_CTX.with(|slot| slot.borrow().clone())
+}
 
 /// Clap-facing wrapper for the shared output flags.
 #[derive(Args, Debug, Clone, Default)]
@@ -63,10 +127,13 @@ pub struct Cli {
 
 impl Cli {
     /// Pre-process argv:
-    ///   1. Expand aliases (look up first arg in the DB alias table)
-    ///   2. Swap field/verb if field comes before verb
-    ///   3. Expand stacked flags like -yy → -y -y, -qqq → -q -q -q
-    ///   4. Parse with clap
+    ///   1. Capture raw argv into the thread-local intent context
+    ///   2. Expand aliases (look up first arg in the DB alias table) and
+    ///      record each expansion step on the context
+    ///   3. Apply terminal-verb override (`<field> end` → `end <field>`)
+    ///   4. Swap field/verb if field comes before verb
+    ///   5. Expand stacked flags like -yy → -y -y, -qqq → -q -q -q
+    ///   6. Parse with clap
     pub fn parse_with_alias_resolution() -> anyhow::Result<Self> {
         let raw: Vec<String> = std::env::args().collect();
         let expanded = expand_argv(raw)?;
@@ -86,20 +153,26 @@ const KNOWN_SUBCOMMANDS: &[&str] = &[
     "track", "ignore", "grep", "check", "map", "reduce", "red",
     "update", "merge", "rekey", "edit", "retime", "rt",
     "backup", "restore", "dayview",
-    "info", "setup", "config", "sync", "why",
+    "info", "setup", "config", "sync",
 ];
 
-/// Expand argv: resolve aliases, swap field/verb order, expand stacked flags.
+/// Terminal verb tokens the override pre-pass recognises. `end`/`stop` are
+/// synonymous — `<field> end` and `<field> stop` both rewrite to `end <field>`.
+const TERMINAL_VERBS: &[&str] = &["end", "stop"];
+
+/// Expand argv: capture intent context, resolve aliases, apply terminal-verb
+/// override, swap field/verb order, and expand stacked flags.
 pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
-    // Step 1: Alias resolution — try to expand argv[1] as an alias from the DB.
-    let argv = try_expand_alias(argv);
+    let raw_input = argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+    let mut ctx = IntentContext { raw_input, alias_chain: Vec::new() };
 
-    // Step 2: Field/verb swap — if argv[1] is a field (not a subcommand) and
-    //         argv[2] is a known verb, swap them so clap sees <verb> <field>.
+    let argv = try_expand_alias(argv, &mut ctx);
+    let argv = apply_terminal_verb_override(argv);
     let argv = maybe_swap_field_verb(argv);
+    let argv = expand_stacked_flags(argv);
 
-    // Step 3: Stacked flag expansion (-yy → -y -y, -qqq → -q -q -q)
-    Ok(expand_stacked_flags(argv))
+    set_intent_context(ctx);
+    Ok(argv)
 }
 
 /// Like [`expand_argv`] but uses the provided `db` for alias lookup instead of
@@ -109,9 +182,34 @@ pub fn expand_argv_with_db(
     argv: Vec<String>,
     db: &datum_core::db::Db,
 ) -> anyhow::Result<Vec<String>> {
-    let argv = try_expand_alias_with_db(argv, db);
+    let raw_input = argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+    let mut ctx = IntentContext { raw_input, alias_chain: Vec::new() };
+
+    let argv = try_expand_alias_with_db(argv, db, &mut ctx);
+    let argv = apply_terminal_verb_override(argv);
     let argv = maybe_swap_field_verb(argv);
-    Ok(expand_stacked_flags(argv))
+    let argv = expand_stacked_flags(argv);
+
+    set_intent_context(ctx);
+    Ok(argv)
+}
+
+/// Rewrite `datum <field> end [args...]` → `datum end <field> [args...]`.
+/// Only triggers when the second token is a recognised terminal verb and
+/// the first is not itself a known subcommand or verb — so `datum end mood`
+/// (already verb-first) and `datum stop field=value` (third token is a kv
+/// pair, not relevant here) are untouched.
+fn apply_terminal_verb_override(mut argv: Vec<String>) -> Vec<String> {
+    if argv.len() < 3 {
+        return argv;
+    }
+    let terminal_is_second = TERMINAL_VERBS.contains(&argv[2].as_str());
+    let first_is_known_subcommand = KNOWN_SUBCOMMANDS.contains(&argv[1].as_str());
+    if terminal_is_second && !first_is_known_subcommand {
+        // datum <field> end → datum end <field>
+        argv.swap(1, 2);
+    }
+    argv
 }
 
 fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
@@ -126,9 +224,14 @@ fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
     out
 }
 
-/// Try to resolve argv[1] as an alias from the database.
-/// On any failure (DB missing, alias not found, parse error) returns argv unchanged.
-fn try_expand_alias(argv: Vec<String>) -> Vec<String> {
+/// Maximum number of alias expansion hops before we give up (to guard
+/// against user-defined cycles like `a → b`, `b → a`).
+const MAX_ALIAS_HOPS: usize = 16;
+
+/// Try to resolve argv[1] as an alias from the database, recording each
+/// expansion step onto `ctx`. On any failure (DB missing, alias not found,
+/// parse error) returns argv unchanged.
+fn try_expand_alias(argv: Vec<String>, ctx: &mut IntentContext) -> Vec<String> {
     if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
         return argv;
     }
@@ -142,24 +245,38 @@ fn try_expand_alias(argv: Vec<String>) -> Vec<String> {
     })();
 
     match maybe_db {
-        Some(db) => try_expand_alias_with_db(argv, &db),
+        Some(db) => try_expand_alias_with_db(argv, &db, ctx),
         None => argv,
     }
 }
 
-/// Alias-expansion variant that uses the given `db` for lookup.
-fn try_expand_alias_with_db(argv: Vec<String>, db: &datum_core::db::Db) -> Vec<String> {
-    if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
-        return argv;
-    }
-    match db.lookup_alias(&argv[1]) {
-        Ok(Some(alias)) => {
-            let mut result = vec![argv[0].clone()];
-            result.extend(alias.expand(&argv[2..]));
-            result
+/// Alias-expansion variant that uses the given `db` for lookup. Follows
+/// alias chains up to [`MAX_ALIAS_HOPS`] steps, appending each expansion
+/// onto `ctx.alias_chain`.
+fn try_expand_alias_with_db(
+    mut argv: Vec<String>,
+    db: &datum_core::db::Db,
+    ctx: &mut IntentContext,
+) -> Vec<String> {
+    for _ in 0..MAX_ALIAS_HOPS {
+        if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
+            return argv;
         }
-        _ => argv,
+        let name = argv[1].clone();
+        match db.lookup_alias(&name) {
+            Ok(Some(alias)) => {
+                ctx.alias_chain.push(AliasStep {
+                    name: name.clone(),
+                    expansion: alias.expands_to.clone(),
+                });
+                let mut result = vec![argv[0].clone()];
+                result.extend(alias.expand(&argv[2..]));
+                argv = result;
+            }
+            _ => return argv,
+        }
     }
+    argv
 }
 
 /// Swap argv[1] and argv[2] when argv[1] is a field name and argv[2] is a verb.

@@ -615,6 +615,14 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         entry.device_id.clear();
     }
 
+    // Stamp provenance from the CLI pre-pass. `take_` clears the slot so the
+    // same invocation's context isn't reused for a subsequent entry in the
+    // same process (matters for tests that run multiple dispatches).
+    if let Some(ctx) = crate::args::take_intent_context() {
+        entry.raw_input = ctx.raw_input.clone();
+        entry.alias_chain = ctx.alias_chain_json();
+    }
+
     // Slug precedence:
     //   1. `-K` slug-keys (explicit per-invocation id chain)
     //   2. `--id` template
