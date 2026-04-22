@@ -522,7 +522,15 @@ pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Res
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
+pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
+    // -T/--no-timestamp: route any log verb through the timeless `add`
+    // codepath (S5). Time-specifying flags are rejected so silent discard
+    // can't mask a user misconception.
+    if args.no_timestamp {
+        check_no_time_flags(&args)?;
+        verb = Verb::Add;
+    }
+
     let parsed = parse_log_args(&args)?;
     let ParsedLogArgs {
         field,
@@ -530,86 +538,98 @@ pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         mut extra_data,
         slug_values,
     } = parsed;
-    let (base_time, base_precision) = build_time_with_precision(&args)?;
     let unit = args.unit.clone();
     let device = device_id()?;
 
-    // Verb::Add is the canonical shape-inferring verb. It peeks for
-    // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strips them
-    // out, and derives the entry's shape + start/end from their combination.
-    let add_override: Option<AddTimestampResult> = if matches!(verb, Verb::Add) {
-        let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
-        Some(hints.resolve(&base_time))
+    // Compute time_start, time_end, precision, and (for Verb::Add) a shape
+    // override. Skipped entirely for -T — a timeless entry carries no times
+    // and no precision metadata.
+    let (time_start, time_end, base_precision, add_override_shape) = if args.no_timestamp {
+        (None, None, None, None)
     } else {
-        None
-    };
+        let (base_time, base_precision) = build_time_with_precision(&args)?;
 
-    // --last-state on Stop: close the most recent open block, recording its
-    // prior state as `last_state` metadata. Errors if there's nothing to close.
-    if args.last_state && matches!(verb, Verb::Stop) {
-        match db.find_open_block(&field, base_time.utc)? {
-            None => anyhow::bail!(
-                "No open block for '{field}' to close with --last-state"
-            ),
-            Some(block) => {
-                let last_state = block.value.clone().unwrap_or(JsonValue::Bool(true));
-                let mut obj = match extra_data.take() {
-                    Some(JsonValue::Object(m)) => m,
-                    _ => serde_json::Map::new(),
-                };
-                obj.insert("last_state".to_string(), last_state);
-                extra_data = Some(JsonValue::Object(obj));
+        // Verb::Add is the canonical shape-inferring verb. It peeks for
+        // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strips
+        // them out, and derives the entry's shape + start/end from their
+        // combination.
+        let add_override: Option<AddTimestampResult> = if matches!(verb, Verb::Add) {
+            let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
+            Some(hints.resolve(&base_time))
+        } else {
+            None
+        };
+
+        // --last-state on Stop: close the most recent open block, recording
+        // its prior state as `last_state` metadata. Errors if there's nothing
+        // to close.
+        if args.last_state && matches!(verb, Verb::Stop) {
+            match db.find_open_block(&field, base_time.utc)? {
+                None => anyhow::bail!(
+                    "No open block for '{field}' to close with --last-state"
+                ),
+                Some(block) => {
+                    let last_state = block.value.clone().unwrap_or(JsonValue::Bool(true));
+                    let mut obj = match extra_data.take() {
+                        Some(JsonValue::Object(m)) => m,
+                        _ => serde_json::Map::new(),
+                    };
+                    obj.insert("last_state".to_string(), last_state);
+                    extra_data = Some(JsonValue::Object(obj));
+                }
             }
         }
-    }
 
-    // --last-state on Switch: dedupe when the requested state matches the
-    // currently-active state. `--moment` bypasses the check.
-    if args.last_state && matches!(verb, Verb::Switch) && !args.moment {
-        let current = db.get_active_state(&field, base_time.utc)?;
-        let current_norm = datum_core::state::normalize_state(&current);
-        let new_norm = value
-            .as_ref()
-            .map(datum_core::state::normalize_state)
-            .unwrap_or(JsonValue::Bool(true));
-        if current_norm == new_norm {
-            anyhow::bail!(
-                "'{field}' is already in state {} — nothing to switch to",
-                serde_json::to_string(&current_norm).unwrap_or_else(|_| "?".to_string())
-            );
-        }
-    }
-
-    // Fix 3: --dur flag sets time_end based on verb direction
-    let (time_start, time_end) = if let Some(result) = &add_override {
-        (result.start_time.clone(), result.end_time.clone())
-    } else if args.moment && matches!(verb, Verb::Switch) {
-        // --moment on switch: point-in-time change (time_start == time_end)
-        (Some(base_time.clone()), Some(base_time))
-    } else if let Some(dur_str) = &args.dur {
-        let dur = parse_duration(dur_str)?;
-        match verb {
-            Verb::Start => {
-                // start --dur: time_start=base, time_end=base+dur
-                let end_utc = base_time.utc + dur;
-                let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
-                (Some(base_time), Some(time_end))
-            }
-            Verb::Stop => {
-                // stop --dur: time_end=base, time_start=base-dur
-                let start_utc = base_time.utc - dur;
-                let time_start = DatumTime { utc: start_utc, ..base_time.clone() };
-                (Some(time_start), Some(base_time))
-            }
-            _ => {
-                // occur/switch/add with --dur: set time_end=time_start+dur
-                let end_utc = base_time.utc + dur;
-                let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
-                (Some(base_time), Some(time_end))
+        // --last-state on Switch: dedupe when the requested state matches the
+        // currently-active state. `--moment` bypasses the check.
+        if args.last_state && matches!(verb, Verb::Switch) && !args.moment {
+            let current = db.get_active_state(&field, base_time.utc)?;
+            let current_norm = datum_core::state::normalize_state(&current);
+            let new_norm = value
+                .as_ref()
+                .map(datum_core::state::normalize_state)
+                .unwrap_or(JsonValue::Bool(true));
+            if current_norm == new_norm {
+                anyhow::bail!(
+                    "'{field}' is already in state {} — nothing to switch to",
+                    serde_json::to_string(&current_norm).unwrap_or_else(|_| "?".to_string())
+                );
             }
         }
-    } else {
-        (Some(base_time), None)
+
+        let (time_start, time_end) = if let Some(result) = &add_override {
+            (result.start_time.clone(), result.end_time.clone())
+        } else if args.moment && matches!(verb, Verb::Switch) {
+            // --moment on switch: point-in-time change (time_start == time_end)
+            (Some(base_time.clone()), Some(base_time))
+        } else if let Some(dur_str) = &args.dur {
+            let dur = parse_duration(dur_str)?;
+            match verb {
+                Verb::Start => {
+                    // start --dur: time_start=base, time_end=base+dur
+                    let end_utc = base_time.utc + dur;
+                    let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
+                    (Some(base_time), Some(time_end))
+                }
+                Verb::Stop => {
+                    // stop --dur: time_end=base, time_start=base-dur
+                    let start_utc = base_time.utc - dur;
+                    let time_start = DatumTime { utc: start_utc, ..base_time.clone() };
+                    (Some(time_start), Some(base_time))
+                }
+                _ => {
+                    // occur/switch/add with --dur: set time_end=time_start+dur
+                    let end_utc = base_time.utc + dur;
+                    let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
+                    (Some(base_time), Some(time_end))
+                }
+            }
+        } else {
+            (Some(base_time), None)
+        };
+
+        let override_shape = add_override.map(|r| r.shape);
+        (time_start, time_end, Some(base_precision), override_shape)
     };
 
     let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
@@ -617,18 +637,20 @@ pub(crate) fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     // For Verb::Add, the shape was inferred from temporal hints; override the
     // shape-inference performed by `Entry::new` so `entry_shape` reflects the
     // add-specific classification (e.g. `ongoing` when only start_time is set).
-    if let Some(result) = &add_override {
-        entry.entry_shape = result.shape;
+    if let Some(shape) = add_override_shape {
+        entry.entry_shape = shape;
     }
 
     // Persist the effective precision derived from the -q stack and any
     // explicit `±N` uncertainty. The end_time precision mirrors start's
     // since both times flow from the same parse.
-    entry.start_time_precision = base_precision.seconds;
-    entry.start_time_precision_unit = base_precision.unit;
-    if entry.end_time.is_some() {
-        entry.end_time_precision = base_precision.seconds;
-        entry.end_time_precision_unit = base_precision.unit;
+    if let Some(precision) = base_precision {
+        entry.start_time_precision = precision.seconds;
+        entry.start_time_precision_unit = precision.unit;
+        if entry.end_time.is_some() {
+            entry.end_time_precision = precision.seconds;
+            entry.end_time_precision_unit = precision.unit;
+        }
     }
 
     if args.no_metadata {
@@ -1163,6 +1185,27 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
 
 /// Build the log entry's base time together with its effective precision
 /// (implicit from `-q*` stacks or explicit from a `±N` uncertainty suffix).
+/// Reject time-specifying flags when the caller passed `-T/--no-timestamp`.
+/// A timeless entry has no place for time offsets or duration — silently
+/// discarding them would mask a user misconception, so we bail with a list
+/// of the offending flags.
+fn check_no_time_flags(args: &LogArgs) -> Result<()> {
+    let mut bad: Vec<&str> = Vec::new();
+    if args.time.is_some() { bad.push("-t/--time"); }
+    if args.date.is_some() { bad.push("-d/--date"); }
+    if args.dur.is_some() { bad.push("--dur"); }
+    if args.timezone.is_some() { bad.push("-z/--timezone"); }
+    if args.yesterday > 0 { bad.push("-y"); }
+    if args.quick > 0 { bad.push("-q"); }
+    if !bad.is_empty() {
+        anyhow::bail!(
+            "-T/--no-timestamp cannot be combined with time flags: {}",
+            bad.join(", ")
+        );
+    }
+    Ok(())
+}
+
 fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
     let mut builder = TimeBuilder::now()
         .with_yesterday_count(args.yesterday as i64)
@@ -3019,6 +3062,7 @@ mod tests {
             update: false,
             merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
@@ -3056,6 +3100,7 @@ mod tests {
             update: false,
             merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Stop, args, &db).unwrap();
@@ -3098,6 +3143,7 @@ mod tests {
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Occur, args, &db).unwrap();
@@ -3118,6 +3164,7 @@ mod tests {
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Start, args, &db).unwrap();
@@ -3138,6 +3185,7 @@ mod tests {
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Add, args, &db).unwrap();
@@ -3258,6 +3306,7 @@ mod tests {
             last_state: false, moment: false,
             conflict: None, update: false, merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Switch, args, &db).unwrap();
@@ -3291,6 +3340,7 @@ mod tests {
             update: false,
             merge: false,
             no_metadata: false,
+            no_timestamp: false,
             output_flags: Default::default(),
         }
     }

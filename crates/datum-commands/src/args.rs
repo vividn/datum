@@ -716,6 +716,13 @@ pub struct LogArgs {
     #[arg(short = 'M', long = "no-metadata")]
     pub no_metadata: bool,
 
+    /// Route any log verb through the timeless `add` codepath — produces an
+    /// entry with no `start_time` / `end_time` (datum-compatible `-T`).
+    /// Incompatible with time-specifying flags (`-t`, `-d`, `--dur`, `-y`,
+    /// `-q`, `-z`) — providing any of those alongside `-T` errors out.
+    #[arg(short = 'T', long = "no-timestamp")]
+    pub no_timestamp: bool,
+
     #[command(flatten)]
     pub output_flags: OutputFlags,
 }
