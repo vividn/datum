@@ -531,6 +531,16 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let unit = args.unit.clone();
     let device = device_id()?;
 
+    // Verb::Add is the canonical shape-inferring verb. It peeks for
+    // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strips them
+    // out, and derives the entry's shape + start/end from their combination.
+    let add_override: Option<AddTimestampResult> = if matches!(verb, Verb::Add) {
+        let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
+        Some(hints.resolve(&base_time))
+    } else {
+        None
+    };
+
     // --last-state on Stop: close the most recent open block, recording its
     // prior state as `last_state` metadata. Errors if there's nothing to close.
     if args.last_state && matches!(verb, Verb::Stop) {
@@ -568,7 +578,9 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     }
 
     // Fix 3: --dur flag sets time_end based on verb direction
-    let (time_start, time_end) = if args.moment && matches!(verb, Verb::Switch) {
+    let (time_start, time_end) = if let Some(result) = &add_override {
+        (result.start_time.clone(), result.end_time.clone())
+    } else if args.moment && matches!(verb, Verb::Switch) {
         // --moment on switch: point-in-time change (time_start == time_end)
         (Some(base_time.clone()), Some(base_time))
     } else if let Some(dur_str) = &args.dur {
@@ -587,7 +599,7 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
                 (Some(time_start), Some(base_time))
             }
             _ => {
-                // occur/switch/note with --dur: set time_end=time_start+dur
+                // occur/switch/add with --dur: set time_end=time_start+dur
                 let end_utc = base_time.utc + dur;
                 let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
                 (Some(base_time), Some(time_end))
@@ -598,6 +610,13 @@ fn log_entry(verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     };
 
     let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
+
+    // For Verb::Add, the shape was inferred from temporal hints; override the
+    // shape-inference performed by `Entry::new` so `entry_shape` reflects the
+    // add-specific classification (e.g. `ongoing` when only start_time is set).
+    if let Some(result) = &add_override {
+        entry.entry_shape = result.shape;
+    }
 
     // Persist the effective precision derived from the -q stack and any
     // explicit `±N` uncertainty. The end_time precision mirrors start's
@@ -904,6 +923,194 @@ fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
     } else {
         None
     }
+}
+
+/// Temporal hints parsed out of extra_data during a `datum add` invocation.
+/// Present fields drive shape selection; `dur_is_null` is a sentinel for the
+/// explicit `dur=null` case (force-point).
+#[derive(Debug, Default)]
+struct AddTemporalHints {
+    start_time: Option<DatumTime>,
+    end_time: Option<DatumTime>,
+    dur: Option<chrono::Duration>,
+    dur_is_null: bool,
+}
+
+/// Shape + timestamp pair produced by resolving [`AddTemporalHints`].
+#[derive(Debug, Clone)]
+struct AddTimestampResult {
+    start_time: Option<DatumTime>,
+    end_time: Option<DatumTime>,
+    shape: datum_core::entry::EntryShape,
+}
+
+impl AddTemporalHints {
+    /// Apply the D3 decision table to the hints.
+    ///
+    /// Cases (shape | start | end):
+    /// - `dur=null`                         → point | `base`          | None
+    /// - no hints                           → point | `base`          | None
+    /// - start only                         → ongoing | start          | None
+    /// - end only                           → block | `base`           | end
+    /// - start + end                        → block | start            | end
+    /// - dur only                           → block | `base-dur`       | base
+    /// - start + dur                        → block | start            | start+dur
+    /// - end + dur                          → block | end-dur          | end
+    fn resolve(&self, base_time: &DatumTime) -> AddTimestampResult {
+        use datum_core::entry::EntryShape;
+        let mk = |utc: chrono::DateTime<chrono::Utc>| DatumTime { utc, ..base_time.clone() };
+
+        if self.dur_is_null {
+            return AddTimestampResult {
+                start_time: Some(base_time.clone()),
+                end_time: None,
+                shape: EntryShape::Point,
+            };
+        }
+
+        match (self.start_time.clone(), self.end_time.clone(), self.dur) {
+            (Some(s), Some(e), _) => AddTimestampResult {
+                start_time: Some(s),
+                end_time: Some(e),
+                shape: EntryShape::Block,
+            },
+            (Some(s), None, Some(d)) => {
+                let end = mk(s.utc + d);
+                AddTimestampResult {
+                    start_time: Some(s),
+                    end_time: Some(end),
+                    shape: EntryShape::Block,
+                }
+            }
+            (Some(s), None, None) => AddTimestampResult {
+                start_time: Some(s),
+                end_time: None,
+                shape: EntryShape::Ongoing,
+            },
+            (None, Some(e), Some(d)) => {
+                let start = mk(e.utc - d);
+                AddTimestampResult {
+                    start_time: Some(start),
+                    end_time: Some(e),
+                    shape: EntryShape::Block,
+                }
+            }
+            (None, Some(e), None) => AddTimestampResult {
+                start_time: Some(base_time.clone()),
+                end_time: Some(e),
+                shape: EntryShape::Block,
+            },
+            (None, None, Some(d)) => {
+                let start = mk(base_time.utc - d);
+                AddTimestampResult {
+                    start_time: Some(start),
+                    end_time: Some(base_time.clone()),
+                    shape: EntryShape::Block,
+                }
+            }
+            (None, None, None) => AddTimestampResult {
+                start_time: Some(base_time.clone()),
+                end_time: None,
+                shape: EntryShape::Point,
+            },
+        }
+    }
+}
+
+/// Extract and remove `start_time=`, `end_time=`, `dur=` keys from the
+/// extra_data payload for a `datum add` invocation. Returns the parsed
+/// values; leaves extra_data with only the remaining kv pairs. If extra_data
+/// becomes empty, it is reset to None.
+fn extract_add_temporal_keys(
+    extra_data: &mut Option<JsonValue>,
+    base_time: &DatumTime,
+) -> Result<AddTemporalHints> {
+    let mut hints = AddTemporalHints::default();
+
+    let obj = match extra_data.as_mut() {
+        Some(JsonValue::Object(m)) => m,
+        _ => return Ok(hints),
+    };
+
+    if let Some(v) = obj.remove("start_time") {
+        hints.start_time = Some(parse_add_time_value(&v, base_time)?);
+    }
+    if let Some(v) = obj.remove("end_time") {
+        hints.end_time = Some(parse_add_time_value(&v, base_time)?);
+    }
+    if let Some(v) = obj.remove("dur") {
+        if v.is_null() || matches!(v.as_str(), Some("null")) {
+            hints.dur_is_null = true;
+        } else {
+            hints.dur = Some(parse_duration(&json_to_raw_token(&v))?);
+        }
+    }
+
+    if obj.is_empty() {
+        *extra_data = None;
+    }
+    Ok(hints)
+}
+
+/// Undo `parse_value_token` for temporal keys: reconstruct the user's raw
+/// token string from its parsed JSON form. Handles unit-annotated objects
+/// (`{"v": 5, "u": "m"}` ← `5m`), numbers, and bare strings.
+fn json_to_raw_token(v: &JsonValue) -> String {
+    if let Some(s) = v.as_str() {
+        return s.to_string();
+    }
+    if let Some(obj) = v.as_object() {
+        if let (Some(num), Some(u)) = (obj.get("v"), obj.get("u")) {
+            let num_s = if let Some(n) = num.as_i64() {
+                n.to_string()
+            } else if let Some(n) = num.as_f64() {
+                n.to_string()
+            } else {
+                num.to_string()
+            };
+            let unit_s = u.as_str().unwrap_or("");
+            return format!("{num_s}{unit_s}");
+        }
+    }
+    if let Some(n) = v.as_i64() {
+        return n.to_string();
+    }
+    if let Some(n) = v.as_f64() {
+        return n.to_string();
+    }
+    v.to_string()
+}
+
+/// Parse a `start_time=…` or `end_time=…` value token against a base time.
+/// Accepts:
+///  * "now" → `base_time`
+///  * signed duration offsets like `-5m`, `+1h`, `-30s` → base ± offset
+///  * RFC3339 timestamps → absolute
+fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
+    let raw = json_to_raw_token(v);
+    let s = raw.trim();
+    if s.is_empty() || s.eq_ignore_ascii_case("now") {
+        return Ok(base.clone());
+    }
+    // Try RFC3339 absolute.
+    if let Ok(abs) = chrono::DateTime::parse_from_rfc3339(s) {
+        return Ok(DatumTime {
+            utc: abs.with_timezone(&chrono::Utc),
+            ..base.clone()
+        });
+    }
+    // Otherwise treat as a signed duration offset.
+    let (sign, body) = if let Some(rest) = s.strip_prefix('-') {
+        (-1i64, rest)
+    } else if let Some(rest) = s.strip_prefix('+') {
+        (1i64, rest)
+    } else {
+        (1i64, s)
+    };
+    let dur = parse_duration(body)?;
+    let delta = if sign < 0 { -dur } else { dur };
+    let utc = base.utc + delta;
+    Ok(DatumTime { utc, ..base.clone() })
 }
 
 /// Build the log entry's base time together with its effective precision
