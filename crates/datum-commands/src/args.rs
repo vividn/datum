@@ -411,9 +411,8 @@ pub enum Command {
     #[command(subcommand)]
     Config(ConfigCommand),
 
-    /// Sync — login, server config, and master-key management.
-    #[command(subcommand)]
-    Sync(SyncCommand),
+    /// Sync — push and/or pull changesets, manage auth and keys.
+    Sync(SyncArgs),
 
     /// Inspect and resolve overlap / double-open / orphan-end conflicts.
     #[command(subcommand)]
@@ -463,6 +462,32 @@ pub struct ConflictsAutoResolveArgs {
 
 // ─── Sync subcommands ────────────────────────────────────────────────────────
 
+/// `datum sync` — the top-level sync verb. Without a subcommand it performs a
+/// bidirectional sync (pull then push); `--push` / `--pull` narrow to one
+/// direction, and `--dry-run` reports without mutating anything.
+#[derive(Args, Debug, Default)]
+pub struct SyncArgs {
+    #[command(subcommand)]
+    pub command: Option<SyncCommand>,
+
+    /// Push only — skip the pull phase.
+    #[arg(long, conflicts_with = "pull")]
+    pub push: bool,
+
+    /// Pull only — skip the push phase.
+    #[arg(long)]
+    pub pull: bool,
+
+    /// Report what would happen without writing anything (no HTTP,
+    /// no DB mutations, no watermark advances).
+    #[arg(long)]
+    pub dry_run: bool,
+
+    /// Override the configured sync server for this invocation.
+    #[arg(long, value_name = "URL")]
+    pub server: Option<String>,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum SyncCommand {
     /// OAuth device-code login. Stores a bearer token per server.
@@ -473,6 +498,15 @@ pub enum SyncCommand {
     /// Manage the end-to-end encryption master key.
     #[command(subcommand)]
     Key(SyncKeyCommand),
+    /// Show sync status: configured server, last push/pull, pending conflicts.
+    Status(SyncStatusArgs),
+}
+
+#[derive(Args, Debug, Default)]
+pub struct SyncStatusArgs {
+    /// Override the configured sync server for the status lookup.
+    #[arg(long, value_name = "URL")]
+    pub server: Option<String>,
 }
 
 #[derive(Args, Debug, Default)]

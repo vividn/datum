@@ -75,7 +75,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Setup(args) => commands::setup::setup(args, db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
-        Command::Sync(sub) => commands::sync::dispatch(sub),
+        Command::Sync(args) => commands::sync::dispatch(args, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
     }
 }
@@ -1313,6 +1313,8 @@ pub(crate) fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
 }
 
 pub(crate) fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
+    emit_stale_sync_warning(db);
+
     let tracked = db.get_tracked_fields()?;
     if tracked.is_empty() {
         println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
@@ -1344,6 +1346,46 @@ pub(crate) fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
         args.show_all,
     );
     Ok(())
+}
+
+/// Prepend a stale-sync warning to `datum now` if a sync server is
+/// configured for the active DB AND the last successful pull is older
+/// than 1 hour. The daemon-liveness half of the check belongs to C4d; for
+/// C4c we just look at the pull watermark.
+fn emit_stale_sync_warning(db: &Db) {
+    let threshold = chrono::Duration::hours(1);
+
+    // Active DB name for per-db config lookup. Bare paths have no name.
+    let db_name = std::env::var("DATUM_DB").ok().filter(|v| {
+        !v.is_empty() && !config::looks_like_path(v)
+    });
+    let cfg = match config::load_raw_config_or_default() {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+    if config::resolve_sync_server(&cfg, db_name.as_deref()).is_none() {
+        return;
+    }
+
+    let Ok(Some(last_pull)) = datum_sync_client::sync_state::get_last_pull_at(db) else {
+        return;
+    };
+    let age = Utc::now().signed_duration_since(last_pull);
+    if age > threshold {
+        let label = db_name.as_deref().unwrap_or("main");
+        println!(
+            "⚠ sync stale: {label} last pulled {}",
+            human_age(age),
+        );
+    }
+}
+
+fn human_age(age: chrono::Duration) -> String {
+    if age.num_hours() < 24 {
+        format!("{}h ago", age.num_hours().max(1))
+    } else {
+        format!("{}d ago", age.num_days().max(1))
+    }
 }
 
 pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {

@@ -1,12 +1,140 @@
 //! Changeset push + pull HTTP clients.
 //!
-//! Reserved for C4c (the wire-up bead). Leaving this as a scaffold so R4
-//! closes the crate split without waiting on the C4c implementation.
+//! Wire format is locked by `docs/sync-protocol.md`:
 //!
-//! When filled in, this module owns:
-//! - `POST /v1/push` — upload encrypted changesets; on success the relay
-//!   echoes the assigned global `seq`, which the caller feeds into
-//!   [`crate::sync_state::advance_push_seq`].
-//! - `GET /v1/pull?since_seq=...` — fetch peers' changesets in ascending
-//!   order; after applying each, advance the local pull watermark via
-//!   [`crate::sync_state::advance_pull_seq`].
+//! - `POST /v1/push` — body `{device_id, payload_b64}`, response `{seq}`.
+//!   The server assigns a per-device monotonic `seq` and echoes it back.
+//! - `GET /v1/pull?since=<seq>&device=<id>` — returns peers' changesets in
+//!   ascending `seq` order. The caller's own device is excluded server-side.
+//!
+//! The payload is the raw bytes of an [`EncryptedBlob`] (nonce ‖ ciphertext ‖ tag),
+//! base64 url-safe no-pad encoded. This module knows nothing about plaintext
+//! or keys — encryption / decryption is the caller's job (see
+//! [`crate::crypto::changeset`]).
+//!
+//! Gated by the `http` cargo feature because it depends on `reqwest`; the
+//! WASM surface reimplements the same wire format over its own fetch shim.
+
+use anyhow::{Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use reqwest::blocking::Client;
+use serde::{Deserialize, Serialize};
+
+/// One row from `GET /v1/pull`, with the payload already base64-decoded to
+/// raw encrypted bytes. `uploaded_at` is an RFC-3339 string per the spec;
+/// callers that need a [`chrono::DateTime`] can parse it on their side.
+#[derive(Debug, Clone)]
+pub struct PulledChangeset {
+    /// Global monotonic id assigned by the relay — the value clients use
+    /// to advance their local `pull_seq` watermark (per spec §Sequence
+    /// semantics, `pull_seq` is the relay's row id, not a per-device seq).
+    pub id: i64,
+    pub device_id: String,
+    /// Per-device push counter, used as the AAD seq when
+    /// [`crate::crypto::changeset::decrypt_changeset`] unseals the blob.
+    pub seq: i64,
+    /// Raw [`EncryptedBlob`] bytes (already base64-decoded).
+    pub payload: Vec<u8>,
+    pub uploaded_at: String,
+}
+
+#[derive(Serialize)]
+struct PushRequestBody<'a> {
+    device_id: &'a str,
+    payload_b64: String,
+}
+
+#[derive(Deserialize)]
+struct PushResponseBody {
+    seq: i64,
+}
+
+#[derive(Deserialize)]
+struct PulledRow {
+    /// Relay-global monotonic row id. Optional for forward-compat with
+    /// servers that don't expose it yet (we fall back to `seq` as a
+    /// degraded watermark, which is safe as long as the caller only
+    /// talks to a single-device peer — good enough for local tests).
+    #[serde(default)]
+    id: Option<i64>,
+    device_id: String,
+    seq: i64,
+    payload_b64: String,
+    #[serde(default)]
+    uploaded_at: Option<String>,
+}
+
+/// POST a single encrypted changeset blob to the relay. Returns the
+/// server-assigned per-device `seq`.
+///
+/// `payload` is the raw bytes of an [`EncryptedBlob`]; this helper handles
+/// the base64 encoding on the wire.
+pub fn push_blob(
+    client: &Client,
+    server: &str,
+    bearer: &str,
+    device_id: &str,
+    payload: &[u8],
+) -> Result<i64> {
+    let payload_b64 = URL_SAFE_NO_PAD.encode(payload);
+    let body = PushRequestBody {
+        device_id,
+        payload_b64,
+    };
+    let resp = client
+        .post(format!("{server}/v1/push"))
+        .bearer_auth(bearer)
+        .json(&body)
+        .send()
+        .context("POST /v1/push")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().unwrap_or_default();
+        anyhow::bail!("push failed: {status} {text}");
+    }
+    let parsed: PushResponseBody = resp.json().context("parse push response")?;
+    Ok(parsed.seq)
+}
+
+/// Fetch every changeset the relay has with global id > `since` that was
+/// authored by a device other than `device_id`. Rows are returned in
+/// ascending server-assigned seq order. Empty vec means nothing new.
+pub fn pull_batch(
+    client: &Client,
+    server: &str,
+    bearer: &str,
+    device_id: &str,
+    since: i64,
+) -> Result<Vec<PulledChangeset>> {
+    let resp = client
+        .get(format!("{server}/v1/pull"))
+        .bearer_auth(bearer)
+        .query(&[
+            ("since", since.to_string()),
+            ("device", device_id.to_string()),
+        ])
+        .send()
+        .context("GET /v1/pull")?;
+    let status = resp.status();
+    if !status.is_success() {
+        let text = resp.text().unwrap_or_default();
+        anyhow::bail!("pull failed: {status} {text}");
+    }
+    let rows: Vec<PulledRow> = resp.json().context("parse pull response")?;
+    let mut out = Vec::with_capacity(rows.len());
+    for row in rows {
+        let payload = URL_SAFE_NO_PAD
+            .decode(row.payload_b64.as_bytes())
+            .with_context(|| {
+                format!("decode payload_b64 for seq {} from {}", row.seq, row.device_id)
+            })?;
+        out.push(PulledChangeset {
+            id: row.id.unwrap_or(row.seq),
+            device_id: row.device_id,
+            seq: row.seq,
+            payload,
+            uploaded_at: row.uploaded_at.unwrap_or_default(),
+        });
+    }
+    Ok(out)
+}

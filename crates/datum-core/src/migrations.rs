@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 6;
+pub const CURRENT_SCHEMA_VERSION: u32 = 7;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -65,6 +65,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_live_field_start: partial index for SQL-backed views (deleted_at IS NULL AND start_time IS NOT NULL)",
         apply: m5_to_6_live_field_index,
     },
+    Migration {
+        from: 6,
+        to: 7,
+        summary: "sync_state: add my_push_seq column (per-device AAD seq counter for C4c push)",
+        apply: m6_to_7_sync_state_my_push_seq,
+    },
 ];
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
@@ -95,6 +101,26 @@ fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_entries_content_hash;
          DROP TABLE IF EXISTS entries;",
     )?;
+    Ok(())
+}
+
+fn m6_to_7_sync_state_my_push_seq(conn: &Connection) -> Result<()> {
+    // Purely additive: the new column defaults to 0 so any DB that's
+    // already pushed (there aren't any pre-C4c) behaves as if it's never
+    // pushed. `ALTER TABLE ... ADD COLUMN` is natively idempotent via an
+    // introspection check so replaying this step is safe.
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('sync_state') WHERE name = 'my_push_seq'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch(
+            "ALTER TABLE sync_state ADD COLUMN my_push_seq INTEGER NOT NULL DEFAULT 0;",
+        )?;
+    }
     Ok(())
 }
 

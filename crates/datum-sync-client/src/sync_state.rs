@@ -31,6 +31,14 @@ pub fn get_pull_seq(db: &Db) -> Result<u64> {
     read_seq_column(db, "pull_seq")
 }
 
+/// Read the local per-device push counter. This mirrors the relay's
+/// server-assigned `seq` for this device and is used as the AAD seq when
+/// sealing outgoing changesets (the relay uses `MAX(seq)+1` per device, so
+/// local `my_push_seq + 1` is the value the server will stamp).
+pub fn get_my_push_seq(db: &Db) -> Result<u64> {
+    read_seq_column(db, "my_push_seq")
+}
+
 /// Advance `push_seq` and stamp `last_push_at` (epoch-ms). A rewind to a
 /// lower value is rejected — `push_seq` is monotonic.
 pub fn advance_push_seq(db: &Db, new_seq: u64) -> Result<()> {
@@ -40,6 +48,29 @@ pub fn advance_push_seq(db: &Db, new_seq: u64) -> Result<()> {
 /// Advance `pull_seq` and stamp `last_pull_at` (epoch-ms).
 pub fn advance_pull_seq(db: &Db, new_seq: u64) -> Result<()> {
     advance_seq(db, "pull_seq", "last_pull_at", new_seq)
+}
+
+/// Record the server-acknowledged per-device seq. Expected to be exactly
+/// the value the client predicted via `get_my_push_seq() + 1`; a relay
+/// that returns a mismatched seq indicates either a protocol bug or a
+/// second writer on the same device_id, so we surface it as an error.
+pub fn advance_my_push_seq(db: &Db, new_seq: u64) -> Result<()> {
+    let current = get_my_push_seq(db)?;
+    if new_seq < current {
+        return Err(DatumError::Other(format!(
+            "sync_state.my_push_seq rewind rejected: stored {current}, asked for {new_seq}"
+        )));
+    }
+    let now_ms = Utc::now().timestamp_millis();
+    db.conn().execute(
+        "INSERT INTO sync_state (db_id, my_push_seq, last_push_at)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(db_id) DO UPDATE SET
+            my_push_seq  = excluded.my_push_seq,
+            last_push_at = excluded.last_push_at",
+        params![DEFAULT_DB_ID, new_seq as i64, now_ms],
+    )?;
+    Ok(())
 }
 
 fn read_seq_column(db: &Db, col: &str) -> Result<u64> {

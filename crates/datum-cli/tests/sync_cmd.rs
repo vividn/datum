@@ -8,22 +8,20 @@ use datum_cli::config::{
 };
 use datum_cli::sync::{login, AuthToken, TestPrompter};
 use reqwest::blocking::Client;
-use std::sync::Mutex;
 use tempfile::TempDir;
 
-use sync_support::{StubRelay, StubRelayOptions};
-
-/// Serialize tests that mutate process-wide env (DATUM_HOME, DATUM_CONFIG_HOME, DATUM_DB, DATUM_CONFIG).
-/// These are global state; running in parallel would cause false failures.
-static ENV_LOCK: Mutex<()> = Mutex::new(());
+use sync_support::{StubRelay, StubRelayOptions, ENV_LOCK};
 
 struct EnvGuard {
+    // Fields drop in declaration order: env vars must be restored before
+    // the mutex is released, or a parallel test can observe an inconsistent
+    // partially-restored environment.
     _tmp: TempDir,
-    _guard: std::sync::MutexGuard<'static, ()>,
     _orig_home: EnvRestore,
     _orig_cfg_home: EnvRestore,
     _orig_db: EnvRestore,
     _orig_cfg: EnvRestore,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 struct EnvRestore {
@@ -65,11 +63,11 @@ fn scoped_env() -> EnvGuard {
 
     EnvGuard {
         _tmp: tmp,
-        _guard: guard,
         _orig_home: orig_home,
         _orig_cfg_home: orig_cfg,
         _orig_db: orig_db,
         _orig_cfg: orig_cfg_file,
+        _guard: guard,
     }
 }
 

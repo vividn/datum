@@ -8,6 +8,13 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::thread::JoinHandle;
 
+/// Process-wide lock for tests that mutate `DATUM_HOME` / `DATUM_CONFIG_HOME`
+/// / `DATUM_DB`. All integration tests across files MUST serialise through
+/// this lock — otherwise one test file's `EnvRestore::drop` can unset the
+/// env var that another file's test is mid-flight relying on.
+#[allow(dead_code)]
+pub static ENV_LOCK: Mutex<()> = Mutex::new(());
+
 use axum::{
     extract::{Query, State},
     http::StatusCode,
@@ -37,6 +44,17 @@ pub struct RelayInner {
     pub poll_counts: HashMap<String, usize>,
     pub slow_down_left: usize,
     pub user_id: String,
+    /// Stored changesets keyed by relay-assigned global id (simulates
+    /// `changesets.id` AUTOINCREMENT in the production server).
+    pub changesets: Vec<StoredChangeset>,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoredChangeset {
+    pub id: i64,
+    pub device_id: String,
+    pub seq: i64,
+    pub payload_b64: String,
 }
 
 #[derive(Debug, Clone)]
@@ -117,6 +135,7 @@ impl StubRelay {
         }
     }
 
+    #[allow(dead_code)]
     pub fn wrapped_key(&self) -> Option<JsonValue> {
         self.state.inner.lock().unwrap().wrapped.clone()
     }
@@ -124,6 +143,29 @@ impl StubRelay {
     #[allow(dead_code)]
     pub fn set_wrapped_key(&self, wrapped: JsonValue) {
         self.state.inner.lock().unwrap().wrapped = Some(wrapped);
+    }
+
+    /// Inject an already-encrypted blob as if a peer device had pushed
+    /// it. Used by tests that exercise the pull path without going
+    /// through `push_blob` first. `seq` is the per-device seq the AAD was
+    /// sealed with.
+    #[allow(dead_code)]
+    pub fn inject_changeset(&self, device_id: &str, seq: i64, payload: &[u8]) {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        let mut inner = self.state.inner.lock().unwrap();
+        let next_id = inner.changesets.len() as i64 + 1;
+        inner.changesets.push(StoredChangeset {
+            id: next_id,
+            device_id: device_id.to_string(),
+            seq,
+            payload_b64: URL_SAFE_NO_PAD.encode(payload),
+        });
+    }
+
+    /// Count of encrypted changesets the relay currently holds.
+    #[allow(dead_code)]
+    pub fn changeset_count(&self) -> usize {
+        self.state.inner.lock().unwrap().changesets.len()
     }
 }
 
@@ -143,6 +185,8 @@ fn build_app(state: Arc<RelayState>) -> Router {
         .route("/v1/auth/device-code", post(device_code_start))
         .route("/v1/auth/device-code/poll", get(device_code_poll))
         .route("/v1/keys/wrapped", post(put_wrapped).get(get_wrapped))
+        .route("/v1/push", post(push_changeset))
+        .route("/v1/pull", get(pull_changesets))
         .with_state(state)
 }
 
@@ -252,4 +296,61 @@ async fn get_wrapped(State(state): State<Arc<RelayState>>) -> impl IntoResponse 
         )
             .into_response(),
     }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PushBody {
+    pub device_id: String,
+    pub payload_b64: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PullParams {
+    pub since: i64,
+    pub device: String,
+}
+
+async fn push_changeset(
+    State(state): State<Arc<RelayState>>,
+    Json(body): Json<PushBody>,
+) -> impl IntoResponse {
+    let mut inner = state.inner.lock().unwrap();
+    let next_seq = inner
+        .changesets
+        .iter()
+        .filter(|c| c.device_id == body.device_id)
+        .map(|c| c.seq)
+        .max()
+        .unwrap_or(0)
+        + 1;
+    let next_id = inner.changesets.len() as i64 + 1;
+    inner.changesets.push(StoredChangeset {
+        id: next_id,
+        device_id: body.device_id,
+        seq: next_seq,
+        payload_b64: body.payload_b64,
+    });
+    (StatusCode::OK, Json(serde_json::json!({ "seq": next_seq })))
+}
+
+async fn pull_changesets(
+    State(state): State<Arc<RelayState>>,
+    Query(q): Query<PullParams>,
+) -> impl IntoResponse {
+    let inner = state.inner.lock().unwrap();
+    let rows: Vec<JsonValue> = inner
+        .changesets
+        .iter()
+        .filter(|c| c.id > q.since && c.device_id != q.device)
+        .map(|c| {
+            serde_json::json!({
+                "id": c.id,
+                "device_id": c.device_id,
+                "seq": c.seq,
+                "payload_b64": c.payload_b64,
+                "uploaded_at": "2026-04-22T12:00:00Z",
+            })
+        })
+        .collect();
+    (StatusCode::OK, Json(rows))
 }

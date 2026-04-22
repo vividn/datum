@@ -140,10 +140,19 @@ VALUES (
 );
 
 -- Sync state: per-DB bookkeeping for push/pull against a relay.
+--
+-- `push_seq`     — largest `modified_at` epoch-ms included in any prior push
+--                  (advances `pack_changeset`'s `since_seq` watermark).
+-- `pull_seq`     — largest server-assigned global seq consumed in a pull.
+-- `my_push_seq`  — per-device counter matching the relay's server-side
+--                  monotonic `seq` assignment; used as the AAD seq when
+--                  encrypting outgoing changesets (the client and server
+--                  agree because the server uses `MAX(seq)+1` per device).
 CREATE TABLE IF NOT EXISTS sync_state (
     db_id         TEXT NOT NULL,
     push_seq      INTEGER NOT NULL DEFAULT 0,
     pull_seq      INTEGER NOT NULL DEFAULT 0,
+    my_push_seq   INTEGER NOT NULL DEFAULT 0,
     last_push_at  INTEGER,
     last_pull_at  INTEGER,
     PRIMARY KEY (db_id)
@@ -209,4 +218,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '6');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '7');

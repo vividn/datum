@@ -10,3 +10,4 @@ pub mod push_pull;
 
 pub use device_flow::{run_device_flow, DeviceFlowPrompter};
 pub use keys::{fetch_wrapped, upload_wrapped};
+pub use push_pull::{pull_batch, push_blob, PulledChangeset};

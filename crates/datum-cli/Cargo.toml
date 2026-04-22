@@ -29,6 +29,7 @@ datum-sync-client = { path = "../datum-sync-client" }
 rusqlite = { workspace = true }
 tokio = { workspace = true }
 axum = { workspace = true }
+base64 = { workspace = true }
 chrono = { workspace = true }
 reqwest = { workspace = true }
 serde = { workspace = true }
