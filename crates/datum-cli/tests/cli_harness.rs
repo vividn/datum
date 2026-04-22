@@ -24,7 +24,7 @@ fn run_cli_harness_surfaces_field_verb_swap() {
     let db = fresh_db();
 
     // Field-first form: `datum mood switch happy` — the harness must route
-    // through the pre-pass swap so clap sees `switch mood happy`.
+    // through the pre-pass swap so the parser sees `switch mood happy`.
     run_cli(&["mood", "switch", "happy"], &db).expect("field/verb swap dispatch");
 
     assert_count!(db, "mood", 1);

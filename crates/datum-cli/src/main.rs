@@ -1,11 +1,35 @@
 use anyhow::Result;
 use datum_cli::{
-    args::{Cli, Command, InfoArgs},
+    args::{Cli, CliExt, Command, InfoArgs},
     cmd, config,
 };
+use datum_parse::{help, ParseError};
 
 fn main() -> Result<()> {
-    let cli = Cli::parse_with_alias_resolution()?;
+    let cli = match Cli::parse_with_alias_resolution() {
+        Ok(cli) => cli,
+        Err(e) => {
+            // Propagate `--help` / `--version` as a clean stdout print.
+            if let Some(pe) = e.downcast_ref::<ParseError>() {
+                match pe {
+                    ParseError::HelpRequested(cmd) => {
+                        let text = match cmd.as_deref() {
+                            Some(c) => help::command_help(c),
+                            None => help::top_level_help(),
+                        };
+                        print!("{text}");
+                        return Ok(());
+                    }
+                    ParseError::VersionRequested => {
+                        println!("{}", help::version_banner());
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            return Err(e);
+        }
+    };
 
     // `config` and `sync` don't touch any DB — skip resolution entirely.
     if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) {

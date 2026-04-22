@@ -53,7 +53,7 @@ fn start_after_switch_preserves_prior_state() {
     let db = fresh_db();
 
     // Switch one minute ago so its time_start is strictly earlier.
-    // `-t=-1` attaches the negative value to avoid clap treating `-1` as a
+    // `-t=-1` attaches the negative value to avoid `-1` being treated as a
     // standalone unknown-argument.
     run_cli(&["switch", "machine", "preparing", "-t=-1"], &db)
         .expect("switch dispatch");

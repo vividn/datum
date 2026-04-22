@@ -173,6 +173,17 @@ pub enum ConflictStrategy {
     Rekey,
 }
 
+impl From<datum_parse::cli::ConflictStrategyArg> for ConflictStrategy {
+    fn from(v: datum_parse::cli::ConflictStrategyArg) -> Self {
+        match v {
+            datum_parse::cli::ConflictStrategyArg::Update => ConflictStrategy::Update,
+            datum_parse::cli::ConflictStrategyArg::Merge => ConflictStrategy::Merge,
+            datum_parse::cli::ConflictStrategyArg::Rekey => ConflictStrategy::Rekey,
+            datum_parse::cli::ConflictStrategyArg::Ignore => ConflictStrategy::Ignore,
+        }
+    }
+}
+
 /// Outcome reported by [`Db::insert_entry_with_strategy`].
 ///
 /// All variants carry the stored slug — the primary key. On a successful

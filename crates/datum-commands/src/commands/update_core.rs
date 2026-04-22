@@ -14,7 +14,7 @@ use datum_core::{
 use serde_json::Value as JsonValue;
 
 use crate::{
-    args::{ConflictStrategyArg, UpdateArgs},
+    args::{ConflictStrategyArg, OutputFlagsExt, UpdateArgs},
     render::{show_create, show_rename, show_update, OutputArgs},
 };
 

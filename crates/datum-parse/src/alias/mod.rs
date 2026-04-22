@@ -9,3 +9,9 @@
 
 pub mod autogen;
 pub mod expand;
+
+pub use expand::{
+    apply_terminal_verb_override, expand_argv, expand_argv_no_alias, expand_stacked_flags,
+    maybe_swap_field_verb, shell_split, try_expand_alias, AliasStep, MapResolver, NoResolver,
+    ResolvedAlias, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, TERMINAL_VERBS,
+};

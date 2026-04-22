@@ -4,13 +4,13 @@
 //! * Time parsing ([`time`]) — date/time/duration string parsers,
 //!   uncertainty, `DatumTime`, `PrecisionUnit`.
 //! * Argv parsing primitives ([`input`]) — port of datum's
-//!   `src/input/*.ts`. In R2 step 3/N this will drive the bespoke parser
-//!   that replaces clap.
+//!   `src/input/*.ts` (flexiblePositional, consolidateKeys, dataArgs, …).
+//! * The bespoke CLI parser ([`parse`]) and its intent IR ([`cli`]):
+//!   owns argv parsing for the `datum` binary.
 //! * Alias expansion ([`alias`]) — pre-pass that resolves DB-backed and
-//!   spec-generated aliases before the parser runs.
-//! * [`CommandIntent`][intent] — the IR produced by the parser and
-//!   consumed by `datum-commands` (step 3/N).
-//! * Bespoke help rendering ([`help`]) — step 3/N.
+//!   spec-generated aliases before the parser runs. Callers plug in a
+//!   [`alias::Resolver`] implementation.
+//! * Hand-authored help rendering ([`help`]).
 //!
 //! ## WASM-safety
 //!
@@ -26,14 +26,18 @@
 //! WASM must supply a timezone explicitly.
 
 pub mod alias;
+pub mod cli;
 pub mod error;
 pub mod help;
 pub mod input;
 pub mod intent;
+pub mod parse;
 pub mod time;
 
+pub use cli::{Cli, Command};
 pub use error::{ParseError, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
+pub use parse::{parse_argv, parse_argv_string};
 pub use time::{
     DatumTime, DateArg, PrecisionUnit, TimeArg, TimeBuilder, Uncertainty,
 };

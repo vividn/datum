@@ -32,9 +32,6 @@ chrono-tz = { version = "0.10", features = ["serde"] }
 # IDs
 ulid = { version = "1", features = ["serde"] }
 
-# CLI
-clap = { version = "4", features = ["derive", "env"] }
-
 # Error handling
 thiserror = "2"
 anyhow = "1"

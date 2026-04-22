@@ -3,8 +3,8 @@
 //!
 //! Step 2b/N lifts the `Show` enum + `OutputFlags::resolve` algorithm out of
 //! `datum-commands` so that the bespoke parser (step 3/N) can own the
-//! resolution. `datum-commands` keeps its own clap-facing wrapper until
-//! step 3/N wires through `CommandIntent`; this module is a pure,
+//! resolution. `datum-commands` keeps its own wrapper to bridge
+//! `CommandIntent` into its command structs; this module is a pure,
 //! WASM-safe analogue that makes the same decisions.
 //!
 //! See `docs/parity-audit/parsing.md` ("`outputArgs.ts`") for the spec.
@@ -75,7 +75,7 @@ impl OutputArgs {
     ///
     /// 1. `-A` / `--show-all` → `Show::All` regardless of `--show`.
     /// 2. `--show <mode>` parses with [`Show::from_str`] (default on
-    ///    parse-failure, matching the pre-R2 clap-backed code).
+    ///    parse-failure, matching the pre-R2 code).
     /// 3. If `-o` is supplied with no other explicit override, `Show::Format`.
     pub fn resolve(&self) -> OutputResolved {
         let parsed = self
@@ -186,7 +186,7 @@ mod tests {
     #[test]
     fn unknown_show_value_falls_back_to_default() {
         // `.parse().unwrap_or_default()` in the resolve path keeps the
-        // clap-backed pre-R2 behaviour of silently degrading garbage.
+        // pre-R2 behaviour of silently degrading garbage.
         let a = OutputArgs {
             show_all: false,
             show: Some("not-a-show-mode".into()),

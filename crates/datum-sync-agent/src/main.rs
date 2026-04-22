@@ -14,8 +14,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
-use clap::Parser;
+use anyhow::{bail, Context, Result};
 use datum_sync_agent::liveness::{default_pid_path, PidFile};
 use datum_sync_agent::scheduler::{Action, Scheduler};
 use datum_sync_agent::targets::{self, SyncTarget};
@@ -25,25 +24,48 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tracing::{info, warn};
 
-#[derive(Parser, Debug)]
-#[command(
-    name = "datum-sync-agent",
-    about = "Background daemon that keeps datum DBs in sync with the relay"
-)]
+#[derive(Debug, Default)]
 struct Args {
     /// Override the pid-file location (default: $XDG_RUNTIME_DIR/datum-sync-agent.pid).
-    #[arg(long)]
     pid_file: Option<PathBuf>,
     /// Verbose logging (debug level).
-    #[arg(long, short = 'v')]
     verbose: bool,
     /// Run one poll cycle and exit (for systemd-less smoke tests).
-    #[arg(long)]
     one_shot: bool,
 }
 
+impl Args {
+    fn parse() -> Result<Self> {
+        let mut out = Args::default();
+        let mut it = std::env::args().skip(1);
+        while let Some(a) = it.next() {
+            match a.as_str() {
+                "--pid-file" => {
+                    let v = it.next().context("--pid-file requires a value")?;
+                    out.pid_file = Some(PathBuf::from(v));
+                }
+                s if s.starts_with("--pid-file=") => {
+                    out.pid_file = Some(PathBuf::from(&s["--pid-file=".len()..]));
+                }
+                "--verbose" | "-v" => out.verbose = true,
+                "--one-shot" => out.one_shot = true,
+                "--help" | "-h" => {
+                    println!(
+                        "datum-sync-agent — background daemon that keeps datum DBs in sync\n\
+                         \n\
+                         USAGE: datum-sync-agent [--pid-file PATH] [-v | --verbose] [--one-shot]"
+                    );
+                    std::process::exit(0);
+                }
+                other => bail!("unexpected argument: {other}"),
+            }
+        }
+        Ok(out)
+    }
+}
+
 fn main() -> Result<()> {
-    let args = Args::parse();
+    let args = Args::parse()?;
     agent_log::init(args.verbose);
 
     let pid_path = args.pid_file.unwrap_or_else(default_pid_path);

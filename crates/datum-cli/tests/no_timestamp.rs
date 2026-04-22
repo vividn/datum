@@ -107,7 +107,7 @@ fn minus_t_with_t_flag_errors() {
 #[test]
 fn minus_t_with_d_flag_errors() {
     let db = fresh_db();
-    // Use `-d=-1` form to dodge clap's `-1`-as-value-for-other-arg parsing.
+    // Use `-d=-1` form to dodge `-1`-as-value-for-other-arg parsing.
     let err = run_cli(&["occur", "coffee", "-T", "-d=-1"], &db)
         .expect_err("-T + -d must reject");
     assert!(format!("{err:#}").contains("-d"), "got: {err:#}");

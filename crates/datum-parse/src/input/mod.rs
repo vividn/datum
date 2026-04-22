@@ -1,7 +1,7 @@
 //! `input/` — port of datum's `src/input/` argparse layer.
 //!
-//! This module owns the bespoke parser that (in R2 step 3/N) will replace
-//! clap. Per-submodule mapping to the original TS files:
+//! This module owns the argument-parsing primitives feeding the bespoke
+//! CLI parser. Per-submodule mapping to the original TS files:
 //!
 //! | TS                      | Rust                              | Status |
 //! |-------------------------|-----------------------------------|--------|

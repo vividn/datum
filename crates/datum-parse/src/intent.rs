@@ -3,6 +3,6 @@
 //! `datum-commands`.
 //!
 //! Populated in R2 step 3/N. The per-variant shape mirrors what the
-//! existing clap-derived arg structs carry, minus the clap attributes,
-//! so the migration is mostly mechanical. See
-//! `docs/parity-audit/parsing.md` for the behavior inventory.
+//! existing typed arg structs carry, so the migration is mostly
+//! mechanical. See `docs/parity-audit/parsing.md` for the behavior
+//! inventory.

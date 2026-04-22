@@ -13,7 +13,7 @@ pub fn occur(args: LogArgs, db: &Db) -> Result<()> {
     crate::cmd::log_entry(Verb::Occur, args, db)
 }
 
-/// Parse argv (clap layout) and run the command. R1 stub.
+/// Parse argv and run the command. R1 stub.
 pub fn occur_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
     anyhow::bail!("occur_from_argv: stub — R2 extracts bespoke parser")
 }

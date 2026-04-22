@@ -226,7 +226,7 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
         .value(json!("focused"))
         .insert(&db);
 
-    // `get --pretty` through the full CLI path (alias pre-pass, clap,
+    // `get --pretty` through the full CLI path (alias pre-pass, parser,
     // dispatch, cmd_get → print_entry_pretty). Non-error → the arg is
     // recognized and the entry serializes.
     run_cli(&["get", &entry.slug, "--pretty"], &db).expect("get --pretty");

@@ -250,8 +250,8 @@ fn occur_flips_state_from_null_to_false() {
 ///
 /// Datum: `-d -1d -t -1h` → 1 day + 1 hour back; `-t -20` → 20 min back.
 /// Daydumb: `-d=-1` (days) and `-t=-60` (minutes) express the same offsets.
-/// The `=` form pins the negative value to the flag so clap does not treat
-/// `-1` as a standalone arg (identical trick used in `start_cmd.rs`).
+/// The `=` form pins the negative value to the flag so the parser does
+/// not treat `-1` as a standalone arg (identical trick in `start_cmd.rs`).
 #[test]
 fn stacked_negative_offsets_subtract_correctly() {
     let db = fresh_db();

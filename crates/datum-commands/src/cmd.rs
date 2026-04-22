@@ -19,9 +19,10 @@ use crate::{
         AliasCommand, BackupArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
         CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs,
-        IdsArgs, IgnoreArgs, InfoArgs, LogArgs, MigrateCommand, MigrateImportArgs, NowArgs,
-        RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs,
-        UndoArgs, UpdateArgs, WhyArgs,
+        IdsArgs, IgnoreArgs, InfoArgs, LogArgs, LogArgsExt, MigrateCommand,
+        MigrateImportArgs, MigrateImportArgsExt, NowArgs, OutputFlagsExt, RestoreArgs,
+        RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
+        UpdateArgs, WhyArgs,
     },
     config::{self, device_id},
     render::{
@@ -32,14 +33,14 @@ use crate::{
 };
 use datum_core::views::{Registry, ViewParams};
 
-/// Parse an argv vector through the full pre-pass → clap → dispatch path
-/// against `db`. Used by integration tests to exercise the CLI without
-/// importing clap themselves (so `datum-cli/Cargo.toml` can drop it from
-/// its dev-dependencies).
+/// Parse an argv vector through the full pre-pass → parser → dispatch
+/// path against `db`. Used by integration tests to exercise the CLI
+/// without going through the binary. Hides the bespoke parser behind
+/// `datum-commands`'s module boundary so consumers don't pull it in
+/// directly.
 pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
-    use clap::Parser;
     let expanded = crate::args::expand_argv_with_db(argv, db)?;
-    let cli = Cli::try_parse_from(expanded)?;
+    let cli = datum_parse::parse_argv(&expanded)?;
     dispatch(cli, db)
 }
 
@@ -3708,7 +3709,7 @@ mod tests {
             db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
         }
         // tail_params defaults count to 10 when no date window is set — same
-        // default the old head command hardcoded via clap's `default_value`.
+        // default the old head command hardcoded.
         let got = tail_entries(&head_args(Some("mood"), None), &db).unwrap();
         assert_eq!(got.len(), 10);
         // First entry should be the oldest (offset=0).

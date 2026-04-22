@@ -254,7 +254,7 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
 
 /// `stop` and its `end` alias must dispatch to the same command and
 /// produce structurally identical entries (same verb, same field, same
-/// shape). The CLI defines `end` as a clap alias of `stop`.
+/// shape). The CLI defines `end` as an alias of `stop`.
 #[test]
 fn stop_end_alias_equivalence() {
     let db_stop = fresh_db();

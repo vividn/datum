@@ -19,6 +19,7 @@ path = "src/main.rs"
 [dependencies]
 datum-core = { path = "../datum-core" }
 datum-commands = { path = "../datum-commands" }
+datum-parse = { path = "../datum-parse" }
 anyhow = { workspace = true }
 
 [dev-dependencies]

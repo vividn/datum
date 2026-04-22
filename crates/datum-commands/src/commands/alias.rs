@@ -1,7 +1,7 @@
 //! `datum alias` — CLI alias management (set, list, delete).
 //!
 //! Aliases are stored in the database and resolved in the CLI pre-pass
-//! before clap sees argv (see `crate::args::expand_argv`).
+//! before the parser sees argv (see `crate::args::expand_argv`).
 
 use anyhow::Result;
 use datum_core::db::Db;

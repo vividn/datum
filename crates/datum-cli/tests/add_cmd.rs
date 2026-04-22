@@ -74,7 +74,7 @@ fn field_promotion_from_positional_skipped_no_analog() {
     let db = fresh_db();
     run_cli(&["add", "foo=bar", "dataField"], &db)
         .expect("note foo=bar dataField");
-    // `foo=bar` is argv[1] for clap, so it becomes field_or_verb="foo=bar"
+    // `foo=bar` is argv[1], so it becomes field_or_verb="foo=bar"
     // — and the `=` means it lands in extra_data parsing as a kv pair... no,
     // field_or_verb is a *positional*, not a kv token. The field literally
     // becomes "foo=bar" (no split). That's the lock-in the test records.
@@ -91,7 +91,7 @@ fn field_promotion_from_positional_skipped_no_analog() {
 #[test]
 fn required_keys_positional_absorption_skipped_no_analog() {
     let db = fresh_db();
-    // In daydumb, `-k abc` (no `=`) is still consumed by clap as the -k
+    // In daydumb, `-k abc` (no `=`) is still consumed as the -k
     // value but `parse_log_args` only splits on `=`; it is silently dropped.
     // The positional `value` becomes the primary value.
     run_cli(&["add", "field", "-k", "abc=value"], &db)
@@ -109,12 +109,12 @@ fn required_keys_positional_absorption_skipped_no_analog() {
 fn fieldless_mode_skipped_no_analog() {
     let db = fresh_db();
     // The closest observable analog: omitting the field entirely must fail
-    // at the clap layer (field_or_verb is required positional).
+    // at the parser layer (field_or_verb is required positional).
     let err = run_cli(&["add"], &db).expect_err("bare `note` has no field");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("required") || msg.contains("missing"),
-        "expected clap 'required' error, got: {msg}",
+        "expected parser 'required' error, got: {msg}",
     );
 }
 
@@ -340,7 +340,7 @@ fn same_id_different_data_both_insert() {
 
 // ─── TS #15: "inserts id structure into the metadata" ────────────────────────
 
-/// Daydumb's `--id` only takes a single template (clap `Option<String>`).
+/// Daydumb's `--id` only takes a single template (`Option<String>`).
 /// Datum allowed two `--id` flags to concatenate; the equivalent daydumb
 /// form is the already-concatenated template. Locks in the one-flag shape.
 #[test]
@@ -380,7 +380,7 @@ fn base_data_flag_skipped_no_analog() {
     let msg = format!("{err:#}");
     assert!(
         msg.contains("unexpected") || msg.contains("-b"),
-        "expected clap rejection, got: {msg}",
+        "expected parser rejection, got: {msg}",
     );
 }
 

@@ -23,6 +23,17 @@ pub enum ParseError {
     /// in scope. Mirrors datum's `ExtraDataError([...remainders])`.
     #[error("Extra data with no matching key: {0:?}")]
     ExtraData(Vec<String>),
+
+    /// `--help` or `-h` was requested. Optional payload: the subcommand
+    /// name (if `datum help <cmd>` or `datum <cmd> --help`). Callers
+    /// render the help and exit with status 0.
+    #[error("help requested{}", .0.as_deref().map(|s| format!(" for '{s}'")).unwrap_or_default())]
+    HelpRequested(Option<String>),
+
+    /// `--version` or `-V` was requested. Callers render the version
+    /// banner and exit with status 0.
+    #[error("version requested")]
+    VersionRequested,
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

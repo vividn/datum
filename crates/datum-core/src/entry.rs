@@ -202,7 +202,7 @@ pub struct Entry {
     /// Literal argv of the command that produced this entry.
     #[serde(default)]
     pub raw_input: String,
-    /// Chain of alias expansions applied before clap saw the argv.
+    /// Chain of alias expansions applied before argv was parsed.
     #[serde(default)]
     pub alias_chain: Option<JsonValue>,
     /// Version of the parser that produced this entry.

@@ -662,9 +662,10 @@ fn t19_watch_live_updates() {
 
 #[test]
 fn tail_watch_flag_parses_with_and_without_interval() {
-    // `-w` alone and `-w <secs>` both populate `TailArgs::watch` via clap's
-    // `default_missing_value` — lock in the CLI surface contract.
-    use datum_cli::args::{Cli, Command};
+    // `-w` alone and `-w <secs>` both populate `TailArgs::watch` — the
+    // bespoke parser mirrors the pre-R2 `default_missing_value = "1"`
+    // semantics. Lock in the CLI surface contract.
+    use datum_cli::args::{Cli, CliExt, Command};
 
     let cli_bare = Cli::try_parse_argv(["datum", "tail", "-w"]).unwrap();
     match cli_bare.command {

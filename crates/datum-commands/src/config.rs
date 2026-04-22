@@ -482,7 +482,7 @@ fn timezone_default() -> String {
 impl Config {
     /// Load the effective config by layering CLI flag > env > yaml > default.
     ///
-    /// `cli_db` is the value of `--db` from clap (if any). Other CLI flags
+    /// `cli_db` is the value of `--db` from argv (if any). Other CLI flags
     /// aren't wired up for these keys yet — when they are, extend this
     /// function similarly.
     pub fn load(cli_db: Option<&str>) -> Result<Self> {
