@@ -134,13 +134,11 @@ fn no_metadata_zeros_bookkeeping_fields() {
 
 /// TS #4: "stores offset" (`-z +3`)
 ///
-/// Daydumb's `-z` flag is parsed into `LogArgs.timezone` but not yet applied
-/// to `build_time`, so specifying it is effectively a no-op. The ported case
-/// documents the current contract: the entry materializes at the local-zone
-/// interpretation of `2021-08-23 12:00` regardless of `-z`. When `-z` wiring
-/// lands, this test should be rewritten to assert the datum semantics.
+/// `-z +3` means "interpret -d/-t in UTC+3". The numeric form maps to
+/// `Etc/GMT-3` (POSIX sign inversion) and 12:00 local in UTC+3 = 09:00 UTC.
+/// The stored DatumTime.timezone is the resolved IANA name.
 #[test]
-fn offset_flag_currently_a_noop() {
+fn numeric_offset_flag_applies() {
     let db = fresh_db();
 
     run_cli(
@@ -150,27 +148,22 @@ fn offset_flag_currently_a_noop() {
     .expect("occur -z+3");
 
     let entry = &db.entries_for_field("event", None).unwrap()[0];
-    let ts = entry.start_time.as_ref().unwrap().utc;
+    let start = entry.start_time.as_ref().unwrap();
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)
         .unwrap()
-        .and_hms_opt(12, 0, 0)
+        .and_hms_opt(9, 0, 0)
         .unwrap()
-        .and_local_timezone(chrono::Local)
-        .single()
-        .unwrap()
-        .with_timezone(&Utc);
-    assert_eq!(
-        ts, expected_utc,
-        "`-z +3` is currently ignored — time resolves to local 12:00",
-    );
+        .and_utc();
+    assert_eq!(start.utc, expected_utc, "`-z +3`: 12:00 in UTC+3 = 09:00 UTC");
+    assert_eq!(start.timezone, "Etc/GMT-3", "POSIX-sign IANA name");
+    assert_eq!(start.offset_minutes, 180, "UTC+3 offset in minutes");
 }
 
 /// TS #5: "stores offset from an IANA timezone" (`-z Europe/Berlin`)
 ///
-/// Same divergence as #4: IANA zone parsing is not yet plumbed. The case
-/// locks in "does not crash, does not corrupt, does not silently rezone".
+/// 2023-12-04 is CET (UTC+1 in winter). 12:00 Berlin = 11:00 UTC.
 #[test]
-fn iana_timezone_flag_currently_a_noop() {
+fn iana_timezone_flag_applies() {
     let db = fresh_db();
 
     run_cli(
@@ -189,16 +182,15 @@ fn iana_timezone_flag_currently_a_noop() {
     .expect("occur -z Europe/Berlin");
 
     let entry = &db.entries_for_field("event", None).unwrap()[0];
-    let ts = entry.start_time.as_ref().unwrap().utc;
+    let start = entry.start_time.as_ref().unwrap();
     let expected_utc = chrono::NaiveDate::from_ymd_opt(2023, 12, 4)
         .unwrap()
-        .and_hms_opt(12, 0, 0)
+        .and_hms_opt(11, 0, 0)
         .unwrap()
-        .and_local_timezone(chrono::Local)
-        .single()
-        .unwrap()
-        .with_timezone(&Utc);
-    assert_eq!(ts, expected_utc);
+        .and_utc();
+    assert_eq!(start.utc, expected_utc, "12:00 CET (winter, UTC+1) = 11:00 UTC");
+    assert_eq!(start.timezone, "Europe/Berlin");
+    assert_eq!(start.offset_minutes, 60, "CET winter offset");
 }
 
 /// TS #6: "records lastState as null if the active state is null"

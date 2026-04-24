@@ -9,7 +9,7 @@ use datum_core::{
     entry::{new_hid, Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
-    time::{parse_date_arg, parse_duration, parse_time_arg, DatumTime, TimeBuilder},
+    time::{parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder},
 };
 use regex::Regex;
 use serde_json::Value as JsonValue;
@@ -1322,10 +1322,19 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
 }
 
 fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
+    let tz_name = match args.timezone.as_deref() {
+        Some(spec) => Some(
+            resolve_timezone(spec)
+                .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
+        ),
+        None => None,
+    };
+
     let mut builder = TimeBuilder::now()
         .with_yesterday_count(args.yesterday as i64)
         .with_quick_count(args.quick as i64)
-        .with_quick_precision(args.quick as u32);
+        .with_quick_precision(args.quick as u32)
+        .with_timezone(tz_name);
 
     if let Some(d) = &args.date {
         let da = parse_date_arg(d)?;

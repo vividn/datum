@@ -32,5 +32,7 @@ pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
 pub use precision::PrecisionUnit;
 pub use uncertainty::{parse_uncertainty, split_uncertainty, Uncertainty};
 
+pub use crate::input::time_args::resolve_timezone;
+
 #[cfg(test)]
 mod tests;
