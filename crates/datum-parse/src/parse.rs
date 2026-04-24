@@ -634,6 +634,10 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
                 out.oldest_first = true;
                 i += 1;
             }
+            FlagSplit::Long("table") => {
+                out.table = true;
+                i += 1;
+            }
             FlagSplit::Short('w') | FlagSplit::Long("watch") => {
                 // num_args = 0..=1: default_missing_value = 1. Try to peek
                 // at the next token; if it looks like a flag / subcommand,

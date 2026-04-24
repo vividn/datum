@@ -638,18 +638,15 @@ pub fn show_action_with_context(
         return;
     }
 
-    // Info line: occur_time + field + state + dur
-    let info_parts = [
-        ex.time_occur.as_deref(),
-        ex.field.as_deref(),
-        ex.state.as_deref(),
-        ex.dur.as_deref(),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
-    if !info_parts.is_empty() {
-        println!("{}", info_parts.join(" "));
+    // Info line via the §2 parity renderer: <time> <field-badge>
+    // <left-char><state-badge><right-char> [dur]. Replaces the older
+    // column-style `<time> <field> <prior ▶ current> <dur>` path.
+    let spec = registry.and_then(|r| r.fields.get(&entry.field));
+    let default_ctx = self::action::RenderContext::default();
+    let render_ctx = ctx.unwrap_or(&default_ctx);
+    let info = self::action::format_info_line(entry, spec, render_ctx);
+    if !info.is_empty() {
+        println!("{info}");
     }
 
     // Extra data

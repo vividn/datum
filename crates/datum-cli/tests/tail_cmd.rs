@@ -108,6 +108,7 @@ fn tail_args() -> TailArgs {
         quick: 0,
         oldest_first: false,
         watch: None,
+        table: false,
         output_flags: Default::default(),
     }
 }

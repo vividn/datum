@@ -26,9 +26,9 @@ use crate::{
     },
     config::{self, device_id},
     render::{
-        print_entry, print_entry_pretty, print_now_view, print_table, show_create,
-        show_create_with_context, show_delete, show_exists, show_rename, show_update,
-        show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
+        format_info_line, print_entry, print_entry_pretty, print_now_view, print_table,
+        show_create, show_create_with_context, show_delete, show_exists, show_rename,
+        show_update, show_update_with_context, RenderContext, Show, TableArgs, TimeMetricCol,
     },
 };
 use datum_core::views::{Registry, ViewParams};
@@ -749,13 +749,16 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     }
 
     // Capture render hints *before* the insert:
-    //   1. first-time: spec doesn't exist yet (so `ensure_tracked` will create
-    //      one for Occur/Start). Used to prefix `✨ ` on new-field writes.
+    //   1. first-time: no live entries exist for this field yet. Drives both
+    //      the `∅` left-char and the field-badge sparkle in the renderer.
+    //      The pre-R3 probe was `load_spec(field).is_none()`, but switches
+    //      never create a spec (only Occur / Start do via `ensure_tracked`),
+    //      so spec-absence was firing on every switch regardless of history.
     //   2. prior_state: for state-changing verbs, fetch the active state at
     //      `time_start` minus one microsecond. That's the "before" half of
     //      the transition indicator. A no-op prior (Null/False) means there
     //      was nothing active; the renderer skips the indicator in that case.
-    let is_first_occurrence = db.load_spec(&entry.field)?.is_none();
+    let is_first_occurrence = db.count_entries_filtered(Some(&entry.field), None)? == 0;
     let prior_state = capture_prior_state(db, &entry, &verb);
 
     let strategy = args.conflict_strategy();
@@ -1346,13 +1349,71 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
         .map_err(|e: String| anyhow::anyhow!(e))?;
     let entries = tail_entries(&args, db)?;
     let registry = load_registry(db).ok();
-    let tbl = TableArgs {
-        output: args.output(),
-        metric,
-        columns,
-        suppress_header: false,
-    };
-    print_table(&entries, registry.as_ref(), &tbl);
+    let output = args.output();
+
+    // Columnar view kicks in explicitly (--table), implicitly when the user
+    // asks for tabular affordances (--column, non-hybrid --metric), or under
+    // --show=Format so the existing format-string path still runs. Otherwise
+    // render the write-path info-line per row (§6 / §7 parity spec).
+    let explicit_table_opts =
+        !columns.is_empty() || !matches!(metric, TimeMetricCol::Hybrid);
+    let use_table =
+        args.table || explicit_table_opts || output.show == Show::Format;
+
+    if use_table {
+        let tbl = TableArgs {
+            output: output.clone(),
+            metric,
+            columns,
+            suppress_header: false,
+        };
+        print_table(&entries, registry.as_ref(), &tbl);
+
+        if let Some(secs) = args.watch {
+            let interval = watch_interval(secs);
+            let mut since = entries
+                .iter()
+                .map(|e| e.create_time)
+                .max()
+                .unwrap_or_else(chrono::Utc::now);
+            let field = args.field.as_deref();
+            let tick_tbl = TableArgs {
+                suppress_header: true,
+                ..tbl.clone()
+            };
+            loop {
+                std::thread::sleep(interval);
+                let new_rows = db.list_entries_created_after(field, since)?;
+                if let Some(latest) = new_rows.iter().map(|e| e.create_time).max() {
+                    since = latest;
+                }
+                if !new_rows.is_empty() {
+                    print_table(&new_rows, registry.as_ref(), &tick_tbl);
+                }
+            }
+        }
+
+        return Ok(());
+    }
+
+    if output.silent() {
+        if let Some(secs) = args.watch {
+            // `--show=none --watch` stays silent but we still keep the process
+            // alive so shell scripts can re-check exit codes later; match the
+            // columnar path's long-running behaviour.
+            let interval = watch_interval(secs);
+            loop {
+                std::thread::sleep(interval);
+            }
+        }
+        return Ok(());
+    }
+
+    if entries.is_empty() {
+        println!("[No data]");
+    } else {
+        print_info_lines(&entries, registry.as_ref(), db);
+    }
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
@@ -1362,10 +1423,6 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
             .max()
             .unwrap_or_else(chrono::Utc::now);
         let field = args.field.as_deref();
-        let tick_tbl = TableArgs {
-            suppress_header: true,
-            ..tbl.clone()
-        };
         loop {
             std::thread::sleep(interval);
             let new_rows = db.list_entries_created_after(field, since)?;
@@ -1373,12 +1430,49 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
                 since = latest;
             }
             if !new_rows.is_empty() {
-                print_table(&new_rows, registry.as_ref(), &tick_tbl);
+                print_info_lines(&new_rows, registry.as_ref(), db);
             }
         }
     }
 
     Ok(())
+}
+
+/// Render each entry as a write-path info line (time + field + state group +
+/// dur). Prior-state and first-tracked hints are looked up per-row so the
+/// state transition indicator matches what `show_update_with_context` would
+/// have emitted at write time.
+fn print_info_lines(
+    entries: &[Entry],
+    registry: Option<&datum_core::field_spec::SpecRegistry>,
+    db: &Db,
+) {
+    for entry in entries {
+        let ctx = build_render_context(entry, db);
+        let spec = registry.and_then(|r| r.fields.get(&entry.field));
+        let line = format_info_line(entry, spec, &ctx);
+        if !line.is_empty() {
+            println!("{line}");
+        }
+    }
+}
+
+/// Rebuild the `RenderContext` that `show_update_with_context` would have
+/// used when this entry was written. Errors in either probe degrade to the
+/// default (no prior, not first) — we'd rather render a lossy row than abort
+/// the whole tail.
+fn build_render_context(entry: &Entry, db: &Db) -> RenderContext {
+    let last_state = capture_prior_state(db, entry, &entry.verb);
+    let probe = entry
+        .start_time
+        .as_ref()
+        .map(|t| t.utc)
+        .unwrap_or(entry.create_time);
+    let is_first_occurrence = db
+        .count_entries_before(&entry.field, probe)
+        .unwrap_or(1)
+        == 0;
+    RenderContext { last_state, is_first_occurrence }
 }
 
 /// Clamp a user-supplied `--watch` interval into a sane poll cadence.
@@ -3702,6 +3796,7 @@ mod tests {
             quick: 0,
             oldest_first: true,
             watch: None,
+            table: false,
             output_flags: Default::default(),
         }
     }

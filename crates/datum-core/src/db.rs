@@ -762,6 +762,26 @@ impl Db {
         Ok(n as usize)
     }
 
+    /// Count live entries for `field` strictly before `t` (ordered by
+    /// `start_time`, falling back to `create_time`). Used by the renderer to
+    /// decide whether a given entry is the first-ever write for its field
+    /// (triggers the `∅` / sparkle first-tracked markers).
+    pub fn count_entries_before(
+        &self,
+        field: &str,
+        t: DateTime<Utc>,
+    ) -> Result<usize> {
+        let n: i64 = self.conn.query_row(
+            r#"SELECT COUNT(*) FROM entries
+               WHERE field = ?1
+                 AND deleted_at IS NULL
+                 AND COALESCE(start_time, create_time) < ?2"#,
+            params![field, t.to_rfc3339()],
+            |row| row.get(0),
+        )?;
+        Ok(n as usize)
+    }
+
     /// Count live entries, optionally filtered by `field` and/or a lower
     /// bound on occur-time (falling back to `create_time` when unset).
     pub fn count_entries_filtered(

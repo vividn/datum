@@ -66,12 +66,12 @@ fn occur_emits_two_line_create_with_hid_and_extra() {
 }
 
 #[test]
-fn tail_emits_aligned_table_with_hid_column() {
+fn tail_table_flag_emits_aligned_table_with_hid_column() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee"]);
     run(&db, &["switch", "mood", "happy"]);
-    let (stdout, _) = run(&db, &["tail"]);
+    let (stdout, _) = run(&db, &["tail", "--table"]);
 
     // Table header mentions our columns.
     assert!(stdout.contains("time"), "{stdout}");
@@ -80,6 +80,60 @@ fn tail_emits_aligned_table_with_hid_column() {
     // Data rows present.
     assert!(stdout.contains("coffee"), "{stdout}");
     assert!(stdout.contains("mood"), "{stdout}");
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// Default `datum tail` now renders each entry through the write-path
+/// info-line renderer (§2 of docs/visual-parity-analysis.md): no columnar
+/// header, one `<time> <field-badge> <state-group>` line per entry. The
+/// `hid` / `time` / `field` column headers that the legacy table view
+/// printed MUST NOT appear.
+#[test]
+fn tail_default_emits_info_line_no_table_headers() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+    run(&db, &["occur", "coffee"]);
+    run(&db, &["switch", "mood", "happy"]);
+    let (stdout, _) = run(&db, &["tail"]);
+
+    let header_line = stdout.lines().find(|l| l.contains("hid"));
+    assert!(
+        header_line.is_none(),
+        "default tail must not render a table header (saw: {header_line:?}):\n{stdout}"
+    );
+    // Field badges still contain the field name in plain text.
+    assert!(stdout.contains("coffee"), "{stdout}");
+    assert!(stdout.contains("mood"), "{stdout}");
+    // First-switch-to-a-new-field must carry the ∅ left-char (§6).
+    assert!(stdout.contains('∅'), "expected ∅ first-tracked marker:\n{stdout}");
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// Defect 1 (da-vkj): a second `switch` on a field must NOT re-trigger the
+/// first-tracked `∅` marker. Pre-fix, `is_first_occurrence` probed spec
+/// existence (never created for switch), firing on every write.
+#[test]
+fn second_switch_on_same_field_suppresses_first_tracked_marker() {
+    let db = tmp_db();
+    let _ = std::fs::remove_file(&db);
+    let (first, _) = run(&db, &["switch", "myfield", "abc"]);
+    let (second, _) = run(&db, &["switch", "myfield", "abcdefg"]);
+
+    assert!(
+        first.contains('∅'),
+        "first switch on new field should carry ∅:\n{first}"
+    );
+    assert!(
+        !second.contains('∅'),
+        "second switch on same field must not re-render ∅:\n{second}"
+    );
+    // The prior-state transition arrow IS expected on the second switch.
+    assert!(
+        second.contains('←'),
+        "second switch must render prior-state left-arrow:\n{second}"
+    );
 
     let _ = std::fs::remove_file(&db);
 }

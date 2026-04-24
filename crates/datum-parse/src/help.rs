@@ -144,6 +144,7 @@ fn tail_help() -> String {
     s.push_str("  -t, --time <VAL>      Upper-bound time\n");
     s.push_str("  -y / -q               Day / 5-min offsets (stackable)\n");
     s.push_str("  -w, --watch [INT]     Stream new entries (default poll 1s)\n");
+    s.push_str("      --table           Legacy columnar view (default: info-line)\n");
     s
 }
 

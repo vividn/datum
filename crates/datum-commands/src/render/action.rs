@@ -268,15 +268,16 @@ fn prior_has_visible_indicator(prior: &JsonValue) -> bool {
 pub(crate) fn format_field_badge(
     field: &str,
     spec: Option<&FieldSpec>,
-    first_time: bool,
+    _first_time: bool,
 ) -> String {
+    // The `first_time` flag is carried in `RenderContext::is_first_occurrence`
+    // and drives the `∅` first-tracked left-char inside the state-transition
+    // group (§6). Per spec §11, the field badge itself is NOT adorned — none
+    // of the 20 acceptance fixtures include a sparkle or other badge marker.
+    // Retained in the signature so callers can keep passing the flag without
+    // a refactor; the state group is the authoritative emission site.
     let rgb = field_rgb(field, spec);
-    let painted = paint_bg(rgb, &format!(" {field} "));
-    if first_time {
-        format!("{FIRST_TIME_MARKER}{painted}")
-    } else {
-        painted
-    }
+    paint_bg(rgb, &format!(" {field} "))
 }
 
 // ─── Timestamp (§3) ──────────────────────────────────────────────────────────

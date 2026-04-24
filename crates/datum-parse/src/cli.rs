@@ -292,6 +292,11 @@ pub struct TailArgs {
     /// `datum head`, which routes through tail with this flag set.
     pub oldest_first: bool,
     pub watch: Option<f64>,
+    /// `--table`: force the legacy columnar view (time | field | state | dur |
+    /// hid). Default is the info-line renderer matching `show_create` /
+    /// `show_update`. Auto-enabled when `--column` or a non-hybrid `--metric`
+    /// is set — those are tabular concerns.
+    pub table: bool,
     pub output_flags: OutputFlags,
 }
 
@@ -309,6 +314,7 @@ impl TailArgs {
             quick: 0,
             oldest_first: false,
             watch: None,
+            table: false,
             output_flags: OutputFlags::fresh(),
         }
     }
