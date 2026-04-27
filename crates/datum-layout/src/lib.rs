@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod dayview;
+pub mod dayview_svg;
 pub mod nowview;
 pub mod nowview_svg;
 pub mod svg;

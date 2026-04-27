@@ -1,12 +1,56 @@
-//! `datum dayview [--date YYYY-MM-DD]` — render a day's timeline (SVG/JSON).
+//! `datum dayview` — render a multi-day timeline visualization.
+//!
+//! Reference: `/tmp/datum-survey/src/dayview/{dayview,singleday,allFieldsSvg,fieldSvgBlocks}.ts`.
+//!
+//! Layout math + SVG emit live in `datum_layout::dayview` so the SvelteKit
+//! PWA can render the same view client-side via WASM. This file is the
+//! thin CLI wrapper: it resolves date windows, pulls entries from SQLite,
+//! resolves colors through `crate::render::colors`, queries the conflicts
+//! queue for per-day error overlays, and writes the chosen output format.
+//!
+//! TODO (timezone bifurcation): v1 renders in the host's local time. A day
+//! with entries in multiple timezones (DST or travel) should bifurcate
+//! visually during the ambiguous overlap window — see bead da-vp7's spec
+//! for the long-term plan. Bifurcation is a separate visualization bead.
 
-use anyhow::Result;
-use datum_core::db::Db;
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
+use datum_core::conflicts::ListFilter;
+use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
+use datum_core::entry::{Entry, EntryShape};
+use datum_core::field_spec::FieldSpec;
+use datum_layout::dayview::{
+    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
+    DayviewFieldInput, DayviewPoint,
+};
+use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
+use datum_parse::time::{parse_date_arg, DateArg};
+use serde_json::Value as JsonValue;
 
 use crate::args::DayviewArgs;
+use crate::render::colors::{md5_rgb, state_value_rgb, Rgb};
+
+/// Datum default per-day band height (matches dayview.ts:50).
+const DEFAULT_DAY_HEIGHT: f64 = 100.0;
+/// Datum default total SVG width (matches dayview.ts:38).
+const DEFAULT_WIDTH: f64 = 2000.0;
+/// Datum default interday margin (matches dayview.ts:51).
+const DEFAULT_INTERDAY_MARGIN: f64 = 15.0;
 
 pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
-    crate::cmd::cmd_dayview(args, db)
+    if args.watch {
+        // Datum's TS used a `db.changes` event stream + 5min timeout race;
+        // we approximate with a simple poll. DB-change events are a
+        // follow-up.
+        loop {
+            render_once(&args, db)?;
+            std::thread::sleep(std::time::Duration::from_secs(300));
+        }
+    } else {
+        render_once(&args, db)
+    }
 }
 
 pub fn dayview_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
@@ -15,4 +59,496 @@ pub fn dayview_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
 
 pub fn dayview_from_string(_input: &str, _db: &Db) -> Result<()> {
     anyhow::bail!("dayview_from_string: stub — R2 extracts bespoke parser")
+}
+
+fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
+    // 1. Resolve the visible day window.
+    let today = Local::now().date_naive();
+    let end_date = match args.end_date.as_deref() {
+        Some(s) => resolve_date_arg(s, today)
+            .with_context(|| format!("invalid --end-date: '{s}'"))?,
+        None => today,
+    };
+
+    // Resolve n_days from --start-date / --end-date / --n-days interaction
+    // (mirrors dayview.ts lines 19–37).
+    let n_days: u32 = match (args.start_date.as_deref(), args.n_days) {
+        (Some(start_str), explicit_n) => {
+            let start = resolve_date_arg(start_str, today)
+                .with_context(|| format!("invalid --start-date: '{start_str}'"))?;
+            let diff = (end_date - start).num_days() + 1;
+            if diff < 1 {
+                anyhow::bail!(
+                    "--start-date {} is after --end-date {}",
+                    start, end_date
+                );
+            }
+            let derived = diff as u32;
+            if let Some(n) = explicit_n {
+                if n != derived {
+                    anyhow::bail!(
+                        "--n-days {n} does not match the difference between --start-date \
+                         and --end-date ({derived})"
+                    );
+                }
+            }
+            derived
+        }
+        (None, Some(n)) => n.max(1),
+        (None, None) => 1,
+    };
+
+    // 2. Build the per-day windows (top → bottom = oldest → newest).
+    let day_dates: Vec<NaiveDate> = (0..n_days)
+        .map(|i| end_date - chrono::Duration::days((n_days - 1 - i) as i64))
+        .collect();
+
+    // 3. Pull conflicts (one global query, then bucket by day window).
+    //    Empty result is fine; just no error icons.
+    let conflicts = db
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
+        .unwrap_or_default();
+
+    // 4. For each day, build the field input list.
+    let mut days_input: Vec<DayviewDayInput> = Vec::with_capacity(day_dates.len());
+    let now_utc = Utc::now();
+    let now_ms = now_utc.timestamp_millis();
+
+    for date in &day_dates {
+        let (day_start_ms, day_end_ms) = local_day_bounds_ms(*date)?;
+        let label_lines = format_day_label(*date);
+
+        // Bucket pending conflicts whose detected_at falls in this day's
+        // local window.
+        let has_error = conflicts.iter().any(|c| {
+            let t = c.detected_at.timestamp_millis();
+            t >= day_start_ms && t < day_end_ms
+        });
+
+        let fields = build_day_fields(db, day_start_ms, day_end_ms)?;
+
+        days_input.push(DayviewDayInput {
+            label_lines,
+            start_ms: day_start_ms,
+            end_ms: day_end_ms,
+            has_error,
+            fields,
+        });
+    }
+
+    // 5. Resolve sizing per dayview.ts §44–78. Defaults: width=2000,
+    //    day_height=100, time_axis_height=15, interday_margin=15, margin=2.
+    let width = args.width.unwrap_or(DEFAULT_WIDTH);
+    let day_height = args.day_height.unwrap_or(DEFAULT_DAY_HEIGHT);
+    // If the user gave --height, derive day_height to fit; otherwise use
+    // day_height + interday_margin to grow total height. We keep the
+    // simpler "user picks height OR day_height" rule and rely on the
+    // layout to compute the total.
+    let day_height = match (args.height, args.day_height) {
+        (Some(total), None) => {
+            // Derive per-day height so the rows + axis + margins sum to total.
+            let usable = total - 2.0 * args.margin - args.time_axis_height
+                - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
+            if usable <= 0.0 || n_days == 0 {
+                day_height
+            } else {
+                (usable / n_days as f64).max(10.0)
+            }
+        }
+        _ => day_height,
+    };
+
+    let config = DayviewConfig {
+        days: days_input,
+        now_ms,
+        width,
+        day_height,
+        interday_margin: DEFAULT_INTERDAY_MARGIN,
+        time_axis_height: args.time_axis_height,
+        margin: args.margin,
+        label_width: None,
+    };
+
+    let layout = compute_dayview(&config);
+
+    if args.json {
+        let json = serde_json::to_string_pretty(&layout)?;
+        return write_payload(args.output_file.as_deref(), &json, OutputKind::Json);
+    }
+
+    let svg = render_dayview_svg(&layout);
+    write_payload(args.output_file.as_deref(), &svg, OutputKind::Svg)
+}
+
+enum OutputKind {
+    Svg,
+    Json,
+}
+
+fn write_payload(path: Option<&str>, body: &str, kind: OutputKind) -> Result<()> {
+    let Some(path) = path else {
+        println!("{body}");
+        return Ok(());
+    };
+    let p = Path::new(path);
+    let ext = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase());
+    match (ext.as_deref(), kind) {
+        (Some("json"), OutputKind::Json) | (Some("json"), OutputKind::Svg) => {
+            std::fs::write(path, body).with_context(|| format!("write {path}"))?;
+        }
+        (Some("svg"), OutputKind::Svg) => {
+            let mut out = String::with_capacity(body.len() + 64);
+            out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            out.push_str(body);
+            std::fs::write(path, out).with_context(|| format!("write {path}"))?;
+        }
+        (Some("html"), OutputKind::Svg) => {
+            let html = wrap_dayview_svg_in_html(body);
+            std::fs::write(path, html).with_context(|| format!("write {path}"))?;
+        }
+        (Some("png"), OutputKind::Svg) => {
+            let mut svg_xml = String::with_capacity(body.len() + 64);
+            svg_xml.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+            svg_xml.push_str(body);
+            let png = rasterize_to_png(&svg_xml)
+                .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
+            std::fs::write(path, png).with_context(|| format!("write {path}"))?;
+        }
+        _ => anyhow::bail!(
+            "output file must end in .svg, .png, .html, or .json: {path}"
+        ),
+    }
+    Ok(())
+}
+
+/// Pure-Rust SVG → PNG via resvg + tiny-skia. No system libs needed.
+fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
+    let opts = resvg::usvg::Options::default();
+    let tree = resvg::usvg::Tree::from_str(svg_xml, &opts)
+        .map_err(|e| anyhow::anyhow!("parse SVG: {e}"))?;
+    let size = tree.size().to_int_size();
+    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
+        .ok_or_else(|| anyhow::anyhow!("allocate pixmap {}x{}", size.width(), size.height()))?;
+    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    pixmap
+        .encode_png()
+        .map_err(|e| anyhow::anyhow!("encode PNG: {e}"))
+}
+
+/// Resolve an absolute or relative date arg against `today`.
+fn resolve_date_arg(s: &str, today: NaiveDate) -> Result<NaiveDate> {
+    let parsed: DateArg = parse_date_arg(s).map_err(|e| anyhow::anyhow!("{e}"))?;
+    if let Some(d) = parsed.absolute {
+        return Ok(d);
+    }
+    Ok(today + chrono::Duration::days(parsed.days_offset))
+}
+
+/// Local-day bounds in UTC ms. Local-time DST gaps/duplicates are resolved
+/// by `Local::from_local_datetime`'s `single` heuristic; we fall back to
+/// the earliest match if ambiguous.
+fn local_day_bounds_ms(date: NaiveDate) -> Result<(i64, i64)> {
+    let start_naive = date
+        .and_hms_opt(0, 0, 0)
+        .context("local midnight not representable")?;
+    let start = Local
+        .from_local_datetime(&start_naive)
+        .single()
+        .or_else(|| Local.from_local_datetime(&start_naive).earliest())
+        .context("ambiguous local midnight")?;
+    let end = start + chrono::Duration::days(1);
+    Ok((
+        start.with_timezone(&Utc).timestamp_millis(),
+        end.with_timezone(&Utc).timestamp_millis(),
+    ))
+}
+
+/// Format `date` as datum's 3-line label `["ccc", "LLL dd", "yyyy"]`. The
+/// layout drops lines as needed when the row is too short.
+fn format_day_label(date: NaiveDate) -> Vec<String> {
+    let weekday = match date.weekday() {
+        chrono::Weekday::Mon => "Mon",
+        chrono::Weekday::Tue => "Tue",
+        chrono::Weekday::Wed => "Wed",
+        chrono::Weekday::Thu => "Thu",
+        chrono::Weekday::Fri => "Fri",
+        chrono::Weekday::Sat => "Sat",
+        chrono::Weekday::Sun => "Sun",
+    };
+    let month = match date.month() {
+        1 => "Jan", 2 => "Feb", 3 => "Mar", 4 => "Apr",
+        5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Aug",
+        9 => "Sep", 10 => "Oct", 11 => "Nov", _ => "Dec",
+    };
+    vec![
+        weekday.to_string(),
+        format!("{} {:02}", month, date.day()),
+        format!("{}", date.year()),
+    ]
+}
+
+/// Build the per-field block/point list for a day window.
+fn build_day_fields(
+    db: &Db,
+    day_start_ms: i64,
+    day_end_ms: i64,
+) -> Result<Vec<DayviewFieldInput>> {
+    let day_start_utc = Utc.timestamp_millis_opt(day_start_ms).single()
+        .context("day_start_ms out of range")?;
+    let day_end_utc = Utc.timestamp_millis_opt(day_end_ms).single()
+        .context("day_end_ms out of range")?;
+
+    // Pull every entry whose hybrid time intersects this day. We include
+    // a leading buffer so a still-open block that started before the day
+    // starts can render. The layout clips to the visible window.
+    let buffer = chrono::Duration::days(2);
+    let params = ListParams {
+        field: None,
+        metric: TimeMetric::Hybrid,
+        start_utc: Some(day_start_utc - buffer),
+        end_utc: Some(day_end_utc),
+        limit: None,
+        head: false,
+        reverse: false,
+    };
+    let entries = db.list_entries(&params)?;
+
+    // Bucket by field.
+    let mut by_field: std::collections::BTreeMap<String, Vec<Entry>> =
+        std::collections::BTreeMap::new();
+    for e in entries {
+        by_field.entry(e.field.clone()).or_default().push(e);
+    }
+
+    let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
+    for (field, entries_for_field) in by_field {
+        let spec = db.load_spec(&field).ok().flatten();
+        let mut blocks: Vec<DayviewBlock> = Vec::new();
+        let mut points: Vec<DayviewPoint> = Vec::new();
+
+        for entry in &entries_for_field {
+            let Some(start_dt) = entry.start_time.as_ref() else {
+                continue;
+            };
+            let start_ms = start_dt.utc.timestamp_millis();
+
+            match entry.entry_shape {
+                EntryShape::Point => {
+                    // Skip if outside the window — also handled by layout
+                    // clip, but cheaper to short-circuit here.
+                    if start_ms < day_start_ms || start_ms > day_end_ms {
+                        continue;
+                    }
+                    let fg = state_value_rgb(
+                        entry.value.as_ref().unwrap_or(&JsonValue::Null),
+                        &field,
+                        spec.as_ref(),
+                    )
+                    .unwrap_or(md5_rgb(&field));
+                    let bg = match db.state_at(&field, start_dt.utc).unwrap_or(None) {
+                        Some(v) => state_value_rgb(&v, &field, spec.as_ref())
+                            .unwrap_or(Rgb::BLACK),
+                        None => Rgb::BLACK,
+                    };
+                    points.push(DayviewPoint {
+                        time_ms: start_ms,
+                        fg_color: rgb_to_hex(fg),
+                        bg_color: rgb_to_hex(bg),
+                        state_label: state_label(entry.value.as_ref()),
+                    });
+                }
+                EntryShape::Block => {
+                    let Some(end_dt) = entry.end_time.as_ref() else {
+                        continue;
+                    };
+                    let end_ms = end_dt.utc.timestamp_millis();
+                    if end_ms <= day_start_ms || start_ms >= day_end_ms {
+                        continue;
+                    }
+                    let fill = block_fill_for_value(
+                        entry.value.as_ref(),
+                        &field,
+                        spec.as_ref(),
+                    );
+                    blocks.push(DayviewBlock {
+                        start_ms,
+                        end_ms,
+                        fill,
+                        state_label: state_label(entry.value.as_ref()),
+                    });
+                }
+                EntryShape::Ongoing => {
+                    // Open block. Cap at min(now, day_end) so it doesn't
+                    // bleed past the visible domain when the ongoing
+                    // entry started yesterday.
+                    let cap_ms = day_end_ms.min(Utc::now().timestamp_millis());
+                    if cap_ms <= day_start_ms || start_ms >= day_end_ms {
+                        continue;
+                    }
+                    let fill = block_fill_for_value(
+                        entry.value.as_ref(),
+                        &field,
+                        spec.as_ref(),
+                    );
+                    blocks.push(DayviewBlock {
+                        start_ms,
+                        end_ms: cap_ms,
+                        fill,
+                        state_label: state_label(entry.value.as_ref()),
+                    });
+                }
+            }
+        }
+
+        // Per the bead spec: "Empty fields (zero entries in window) are
+        // SKIPPED. Don't pollute the SVG with empty bands." The layout
+        // also drops empties as a safety net.
+        if blocks.is_empty() && points.is_empty() {
+            continue;
+        }
+
+        // Resolve (y, height, z_index). Without a spec we still want the
+        // deterministic-hash y fallback — `FieldSpec::resolve_position`
+        // handles it via a transient default-spec instance.
+        let resolved = match &spec {
+            Some(s) => s.resolve_position(&field),
+            None => FieldSpec::new(field.clone(), datum_core::entry::Verb::Occur)
+                .resolve_position(&field),
+        };
+
+        out.push(DayviewFieldInput {
+            field,
+            y_frac: resolved.y,
+            height_frac: resolved.height,
+            z_index: resolved.z_index,
+            blocks,
+            points,
+        });
+    }
+    Ok(out)
+}
+
+/// Resolve a block's fill from its value. Arrays → multi-state stripes
+/// (one color per element); scalars → single solid color.
+fn block_fill_for_value(
+    value: Option<&JsonValue>,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) -> BlockFill {
+    match value {
+        Some(JsonValue::Array(items)) if !items.is_empty() => {
+            let colors: Vec<String> = items
+                .iter()
+                .map(|v| {
+                    let rgb = state_value_rgb(v, field, spec).unwrap_or(md5_rgb(field));
+                    rgb_to_hex(rgb)
+                })
+                .collect();
+            BlockFill::MultiState(colors)
+        }
+        Some(v) => {
+            // Skip "false" and "IGNORED" by falling back to the field's
+            // own md5 color. Datum's `simplifyState` returned `null|false`
+            // for these and the original renderer dropped them — we keep
+            // them visible but muted via the field color.
+            let rgb = if is_ignored_or_false(v) {
+                md5_rgb(field)
+            } else {
+                state_value_rgb(v, field, spec).unwrap_or(md5_rgb(field))
+            };
+            BlockFill::Single(rgb_to_hex(rgb))
+        }
+        None => BlockFill::Single(rgb_to_hex(md5_rgb(field))),
+    }
+}
+
+fn is_ignored_or_false(v: &JsonValue) -> bool {
+    matches!(v, JsonValue::Bool(false))
+        || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
+}
+
+fn rgb_to_hex(rgb: Rgb) -> String {
+    format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
+}
+
+fn state_label(v: Option<&JsonValue>) -> Option<String> {
+    v.map(|val| match val {
+        JsonValue::String(s) => s.clone(),
+        other => other.to_string(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn rgb_to_hex_lowercase_six_digit() {
+        assert_eq!(rgb_to_hex(Rgb { r: 0xab, g: 0x12, b: 0xcd }), "#ab12cd");
+        assert_eq!(rgb_to_hex(Rgb { r: 0, g: 0, b: 0 }), "#000000");
+    }
+
+    #[test]
+    fn format_day_label_three_lines() {
+        let d = NaiveDate::from_ymd_opt(2026, 4, 27).unwrap();
+        let labels = format_day_label(d);
+        assert_eq!(labels, vec!["Mon", "Apr 27", "2026"]);
+    }
+
+    #[test]
+    fn resolve_date_arg_handles_iso_and_relative() {
+        let today = NaiveDate::from_ymd_opt(2026, 4, 27).unwrap();
+        let abs = resolve_date_arg("2024-01-15", today).unwrap();
+        assert_eq!(abs, NaiveDate::from_ymd_opt(2024, 1, 15).unwrap());
+        let yesterday = resolve_date_arg("-1", today).unwrap();
+        assert_eq!(yesterday, NaiveDate::from_ymd_opt(2026, 4, 26).unwrap());
+        let tomorrow = resolve_date_arg("+1", today).unwrap();
+        assert_eq!(tomorrow, NaiveDate::from_ymd_opt(2026, 4, 28).unwrap());
+        let zero = resolve_date_arg("0", today).unwrap();
+        assert_eq!(zero, today);
+    }
+
+    #[test]
+    fn block_fill_array_yields_multi_state() {
+        let v = JsonValue::Array(vec![
+            JsonValue::String("happy".into()),
+            JsonValue::String("calm".into()),
+        ]);
+        match block_fill_for_value(Some(&v), "mood", None) {
+            BlockFill::MultiState(colors) => assert_eq!(colors.len(), 2),
+            _ => panic!("expected multi-state fill"),
+        }
+    }
+
+    #[test]
+    fn block_fill_scalar_yields_single() {
+        let v = JsonValue::String("happy".into());
+        match block_fill_for_value(Some(&v), "mood", None) {
+            BlockFill::Single(c) => assert!(c.starts_with('#')),
+            _ => panic!("expected single fill"),
+        }
+    }
+
+    #[test]
+    fn block_fill_empty_array_falls_back_to_field_color() {
+        let v = JsonValue::Array(vec![]);
+        match block_fill_for_value(Some(&v), "mood", None) {
+            BlockFill::Single(_) => {}
+            _ => panic!("expected single fill on empty array"),
+        }
+    }
+
+    #[test]
+    fn block_fill_none_uses_field_color() {
+        match block_fill_for_value(None, "mood", None) {
+            BlockFill::Single(c) => assert_eq!(c, rgb_to_hex(md5_rgb("mood"))),
+            _ => panic!("expected single fill"),
+        }
+    }
 }

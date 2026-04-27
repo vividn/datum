@@ -276,7 +276,7 @@ fn ids_help() -> String {
 
 fn dayview_help() -> String {
     String::from(
-        "datum dayview — render a dayview SVG (or layout JSON)\n\nUSAGE:\n  datum dayview [--date YYYY-MM-DD] [--output PATH] [--json] [--width F] [--height F]\n",
+        "datum dayview — render a multi-day timeline SVG/PNG/HTML\n\nUSAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  --json                   Emit layout JSON instead of SVG (debug)\n  -w, --watch              Redraw on a 5-minute poll loop\n",
     )
 }
 

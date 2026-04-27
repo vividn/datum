@@ -584,23 +584,57 @@ pub struct CheckArgs {
     pub json: bool,
 }
 
+/// `datum dayview` arguments — port of datum's `dayviewCmdArgs` (TS).
+///
+/// Defaults match the original. `width`, `height`, and `day_height` are
+/// `Option` so the command can apply datum's auto-sizing rules at dispatch
+/// time (see `dayview.ts` lines 38–78).
 #[derive(Debug)]
 pub struct DayviewArgs {
-    pub date: Option<String>,
-    pub output: Option<String>,
+    /// `--start-date` — inclusive start (ISO `YYYY-MM-DD` or relative
+    /// offset like `-3` or `0`). Resolved via `parse_date_arg`.
+    pub start_date: Option<String>,
+    /// `--end-date`/`-d` — inclusive end. Default: today.
+    pub end_date: Option<String>,
+    /// `--n-days`/`-n` — number of days. Default: 1 (when no other dates
+    /// are given).
+    pub n_days: Option<u32>,
+    /// `--width` — total SVG width in pixels. Default: 2000.
+    pub width: Option<f64>,
+    /// `--height` — total SVG height in pixels. None → auto from
+    /// `day_height + n_days`.
+    pub height: Option<f64>,
+    /// `--day-height` — per-day band height in pixels. Default: 100.
+    pub day_height: Option<f64>,
+    /// `--time-axis-height` — bottom time-axis strip height. Default: 15.
+    pub time_axis_height: f64,
+    /// `--margin` — outer margin. Default: 2.
+    pub margin: f64,
+    /// `-o`/`--output-file` — output path; extension picks format
+    /// (.svg / .png / .html). None → SVG to stdout.
+    pub output_file: Option<String>,
+    /// `--json` — emit the layout JSON instead of SVG (test-only / debug
+    /// hook; not in datum-TS).
     pub json: bool,
-    pub width: f64,
-    pub height: f64,
+    /// `--watch`/`-w` — redraw on a 5-minute interval (poll loop;
+    /// follow-up will swap to DB-change events).
+    pub watch: bool,
 }
 
 impl DayviewArgs {
     pub fn fresh() -> Self {
         Self {
-            date: None,
-            output: None,
+            start_date: None,
+            end_date: None,
+            n_days: None,
+            width: None,
+            height: None,
+            day_height: None,
+            time_axis_height: 15.0,
+            margin: 2.0,
+            output_file: None,
             json: false,
-            width: 2000.0,
-            height: 200.0,
+            watch: false,
         }
     }
 }

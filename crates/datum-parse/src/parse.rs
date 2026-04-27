@@ -1437,41 +1437,117 @@ fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Long("date") => {
-                let (v, ni) = take_value(tail, i, None, "--date")?;
-                out.date = Some(v.to_string());
+            FlagSplit::Long("start-date") => {
+                let (v, ni) = take_value(tail, i, None, "--start-date")?;
+                out.start_date = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("date", v) => {
-                out.date = Some(v.to_string());
+            FlagSplit::LongAttached("start-date", v) => {
+                out.start_date = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("output") => {
-                let (v, ni) = take_value(tail, i, None, "--output")?;
-                out.output = Some(v.to_string());
+            FlagSplit::Long("end-date") => {
+                let (v, ni) = take_value(tail, i, None, "--end-date")?;
+                out.end_date = Some(v.to_string());
                 i = ni;
             }
-            FlagSplit::LongAttached("output", v) => {
-                out.output = Some(v.to_string());
+            FlagSplit::LongAttached("end-date", v) => {
+                out.end_date = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Short('d') => {
+                let (v, ni) = take_value(tail, i, None, "-d")?;
+                out.end_date = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::ShortAttached('d', v) => {
+                out.end_date = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("n-days") => {
+                let (v, ni) = take_value(tail, i, None, "--n-days")?;
+                out.n_days = Some(parse_u32(v, "--n-days")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("n-days", v) => {
+                out.n_days = Some(parse_u32(v, "--n-days")?);
+                i += 1;
+            }
+            FlagSplit::Short('n') => {
+                let (v, ni) = take_value(tail, i, None, "-n")?;
+                out.n_days = Some(parse_u32(v, "-n")?);
+                i = ni;
+            }
+            FlagSplit::ShortAttached('n', v) => {
+                out.n_days = Some(parse_u32(v, "-n")?);
+                i += 1;
+            }
+            FlagSplit::Long("output-file") => {
+                let (v, ni) = take_value(tail, i, None, "--output-file")?;
+                out.output_file = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("output-file", v) => {
+                out.output_file = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Short('o') => {
+                let (v, ni) = take_value(tail, i, None, "-o")?;
+                out.output_file = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::ShortAttached('o', v) => {
+                out.output_file = Some(v.to_string());
                 i += 1;
             }
             FlagSplit::Long("json") => { out.json = true; i += 1; }
+            FlagSplit::Long("watch") | FlagSplit::Short('w') => {
+                out.watch = true;
+                i += 1;
+            }
             FlagSplit::Long("width") => {
                 let (v, ni) = take_value(tail, i, None, "--width")?;
-                out.width = parse_f64(v, "--width")?;
+                out.width = Some(parse_f64(v, "--width")?);
                 i = ni;
             }
             FlagSplit::LongAttached("width", v) => {
-                out.width = parse_f64(v, "--width")?;
+                out.width = Some(parse_f64(v, "--width")?);
                 i += 1;
             }
             FlagSplit::Long("height") => {
                 let (v, ni) = take_value(tail, i, None, "--height")?;
-                out.height = parse_f64(v, "--height")?;
+                out.height = Some(parse_f64(v, "--height")?);
                 i = ni;
             }
             FlagSplit::LongAttached("height", v) => {
-                out.height = parse_f64(v, "--height")?;
+                out.height = Some(parse_f64(v, "--height")?);
+                i += 1;
+            }
+            FlagSplit::Long("day-height") => {
+                let (v, ni) = take_value(tail, i, None, "--day-height")?;
+                out.day_height = Some(parse_f64(v, "--day-height")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("day-height", v) => {
+                out.day_height = Some(parse_f64(v, "--day-height")?);
+                i += 1;
+            }
+            FlagSplit::Long("time-axis-height") => {
+                let (v, ni) = take_value(tail, i, None, "--time-axis-height")?;
+                out.time_axis_height = parse_f64(v, "--time-axis-height")?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("time-axis-height", v) => {
+                out.time_axis_height = parse_f64(v, "--time-axis-height")?;
+                i += 1;
+            }
+            FlagSplit::Long("margin") => {
+                let (v, ni) = take_value(tail, i, None, "--margin")?;
+                out.margin = parse_f64(v, "--margin")?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("margin", v) => {
+                out.margin = parse_f64(v, "--margin")?;
                 i += 1;
             }
             FlagSplit::Positional(_) => {

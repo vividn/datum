@@ -19,7 +19,7 @@ use crate::{
     args::{
         AliasCommand, BackupArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs, CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs,
+        ConflictsShowArgs, CountArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs,
         HistoryArgs,
         IdsArgs, IgnoreArgs, InfoArgs, LogArgs, LogArgsExt, MigrateCommand,
         MigrateImportArgs, MigrateImportArgsExt, NowArgs, OutputFlagsExt, RestoreArgs,
@@ -34,7 +34,6 @@ use crate::{
         TimeMetricCol,
     },
 };
-use datum_core::views::{Registry, ViewParams};
 
 /// Parse an argv vector through the full pre-pass → parser → dispatch
 /// path against `db`. Used by integration tests to exercise the CLI
@@ -187,104 +186,6 @@ pub(crate) fn cmd_ids(args: IdsArgs, db: &Db) -> Result<()> {
         }
     }
     Ok(())
-}
-
-// ─── Dayview ────────────────────────────────────────────────────────────────
-
-fn build_registry() -> Registry {
-    datum_core::views::builtins()
-}
-
-pub(crate) fn cmd_dayview(args: DayviewArgs, db: &Db) -> Result<()> {
-    use chrono::{Datelike, NaiveDate};
-    use datum_layout::{layout_day, svg::render_svg, LayoutConfig, LayoutEntry};
-    use serde_json::Value as JsonValue;
-
-    // Resolve the target day in local time. We use the local civic day to
-    // pick which timing rows to include, and convert local-midnight bounds
-    // to UTC ms for the layout time domain.
-    let date: NaiveDate = match args.date.as_deref() {
-        Some(s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
-            .with_context(|| format!("invalid --date: '{s}' (expected YYYY-MM-DD)"))?,
-        None => Local::now().date_naive(),
-    };
-    let date_key = format!("{:04}-{:02}-{:02}", date.year(), date.month(), date.day());
-
-    let day_start_local = Local
-        .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
-        .single()
-        .context("ambiguous local midnight")?;
-    let day_end_local = day_start_local + chrono::Duration::days(1);
-    let day_start_ms = day_start_local.with_timezone(&Utc).timestamp_millis();
-    let day_end_ms = day_end_local.with_timezone(&Utc).timestamp_millis();
-
-    // Pull timing rows for this day. The TimingView key is `[field, YYYY-MM-DD]`,
-    // so a single-element prefix `[date]` won't match. Filter the date in the
-    // app layer instead.
-    let registry = build_registry();
-    let rows = registry
-        .query("datum_timing", db, &ViewParams::default())
-        .context("datum_timing view query failed")?;
-
-    let mut entries: Vec<LayoutEntry> = Vec::new();
-    for row in rows {
-        let JsonValue::Array(parts) = &row.key else {
-            continue;
-        };
-        let (Some(field), Some(day)) = (parts.first().and_then(|v| v.as_str()),
-                                        parts.get(1).and_then(|v| v.as_str())) else {
-            continue;
-        };
-        if day != date_key {
-            continue;
-        }
-        let start_str = row.value.get("start").and_then(|v| v.as_str());
-        let end_str = row.value.get("end").and_then(|v| v.as_str());
-        let Some(start_iso) = start_str else { continue };
-        let Ok(start_ms) = parse_iso_to_utc_ms(start_iso) else {
-            continue;
-        };
-        let end_ms = end_str.and_then(|s| parse_iso_to_utc_ms(s).ok());
-
-        entries.push(LayoutEntry {
-            field: field.to_string(),
-            start_ms,
-            end_ms,
-            state: None,
-        });
-    }
-
-    let config = LayoutConfig {
-        day_start_ms,
-        day_end_ms,
-        width: args.width,
-        height: args.height,
-        ..LayoutConfig::default()
-    };
-    let layout = layout_day(&entries, &config);
-
-    let payload: String = if args.json {
-        serde_json::to_string_pretty(&layout)?
-    } else {
-        render_svg(&layout)
-    };
-
-    match args.output.as_deref() {
-        Some(path) => {
-            std::fs::write(path, &payload)
-                .with_context(|| format!("write {path}"))?;
-        }
-        None => {
-            println!("{payload}");
-        }
-    }
-    Ok(())
-}
-
-fn parse_iso_to_utc_ms(s: &str) -> Result<i64> {
-    let dt = chrono::DateTime::parse_from_rfc3339(s)
-        .with_context(|| format!("parse rfc3339: {s}"))?;
-    Ok(dt.with_timezone(&Utc).timestamp_millis())
 }
 
 // ─── info / setup ────────────────────────────────────────────────────────────
