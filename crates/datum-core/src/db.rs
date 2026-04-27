@@ -1643,8 +1643,24 @@ impl Db {
         crate::conflicts::get_by_hid_or_id(&self.conn, token)
     }
 
-    /// Resolve a conflict: mark the row and, for `close_older`, end the
-    /// older ongoing entry at the newer's start_time.
+    /// Resolve a conflict: mark the row and apply the side effect implied
+    /// by `resolution`.
+    ///
+    /// Side-effect matrix:
+    /// - `CloseOlder` / `AutoCloseOlder`: end the older ongoing entry at
+    ///   `local_entry.start_time` (no-op if no `remote_entry`).
+    /// - `TakeLocal`: rewrite the row in `entries` matching
+    ///   `local_entry.slug` to the local snapshot. For sync_pull conflicts
+    ///   where the local entry was overwritten by a pulled remote, this
+    ///   restores the user's local version. Skipped silently if no row
+    ///   matches the slug.
+    /// - `TakeRemote`: same, but using `remote_entry`. No-op when
+    ///   `remote_entry IS NULL`.
+    /// - `Edit`: caller is expected to have already committed the merged
+    ///   version via [`Db::resolve_conflict_with_edited`]. This direct
+    ///   form just records the resolution — useful when the caller has
+    ///   already mutated entries through another channel.
+    /// - `KeepBoth`: no entry mutation.
     pub fn resolve_conflict(
         &self,
         token: &str,
@@ -1661,17 +1677,28 @@ impl Db {
             )));
         }
         let tx = self.conn.unchecked_transaction()?;
-        if matches!(
-            resolution,
+        match resolution {
             crate::conflicts::Resolution::CloseOlder
-                | crate::conflicts::Resolution::AutoCloseOlder
-        ) {
-            if let Some(older) = conflict.remote_entry.as_ref() {
-                crate::conflicts::close_older_at(
-                    &tx,
-                    older,
-                    conflict.local_entry.start_time.as_ref(),
-                )?;
+            | crate::conflicts::Resolution::AutoCloseOlder => {
+                if let Some(older) = conflict.remote_entry.as_ref() {
+                    crate::conflicts::close_older_at(
+                        &tx,
+                        older,
+                        conflict.local_entry.start_time.as_ref(),
+                    )?;
+                }
+            }
+            crate::conflicts::Resolution::TakeLocal => {
+                rewrite_entry_to_snapshot(&tx, &conflict.local_entry)?;
+            }
+            crate::conflicts::Resolution::TakeRemote => {
+                if let Some(remote) = conflict.remote_entry.as_ref() {
+                    rewrite_entry_to_snapshot(&tx, remote)?;
+                }
+            }
+            crate::conflicts::Resolution::Edit | crate::conflicts::Resolution::KeepBoth => {
+                // Edit: caller wrote the merged entry separately (see
+                // resolve_conflict_with_edited); KeepBoth: no DB mutation.
             }
         }
         crate::conflicts::mark_resolved(&tx, &conflict.id, resolution, Utc::now())?;
@@ -1680,6 +1707,52 @@ impl Db {
         Ok(self
             .get_conflict(&conflict.id)?
             .expect("just-resolved conflict vanished"))
+    }
+
+    /// Resolve via `--edit`: replace the row in `entries` matching
+    /// `edited.slug` with the supplied snapshot, and mark the conflict
+    /// `Edit`. Both mutations land in one transaction.
+    pub fn resolve_conflict_with_edited(
+        &self,
+        token: &str,
+        edited: &Entry,
+    ) -> Result<crate::conflicts::Conflict> {
+        let conflict = self
+            .get_conflict(token)?
+            .ok_or_else(|| DatumError::NotFound(format!("conflict {token}")))?;
+        if conflict.resolution.is_some() {
+            return Err(DatumError::Other(format!(
+                "conflict {} already resolved ({})",
+                conflict.hid,
+                conflict.resolution.clone().unwrap_or_default()
+            )));
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        rewrite_entry_to_snapshot(&tx, edited)?;
+        crate::conflicts::mark_resolved(
+            &tx,
+            &conflict.id,
+            crate::conflicts::Resolution::Edit,
+            Utc::now(),
+        )?;
+        tx.commit()?;
+        Ok(self
+            .get_conflict(&conflict.id)?
+            .expect("just-resolved conflict vanished"))
+    }
+
+    /// Count of pending conflicts (`resolution IS NULL`). The `now` view
+    /// uses this to print a top-line warning.
+    pub fn pending_conflict_count(&self) -> Result<u32> {
+        let n: i64 = self
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM sync_conflicts WHERE resolution IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(DatumError::Db)?;
+        Ok(n as u32)
     }
 
     /// Run the auto-resolver. `min_age_secs` is the delay before a pending
@@ -2000,6 +2073,32 @@ pub(crate) fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry
             entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
         ],
     )?;
+    Ok(())
+}
+
+/// Rewrite the `entries` row matching `snapshot.slug` to match the
+/// supplied snapshot. Used by conflict resolution paths
+/// (`take_local`, `take_remote`, `edit`) to apply the user's chosen
+/// version. Records a `user_edit` history row before the overwrite.
+///
+/// Lenient: if no row matches the slug (e.g., the snapshot describes an
+/// entry that was never written locally), this returns `Ok(())` without
+/// touching the table. That keeps the conflict-resolution surface usable
+/// even in the rare case where the queue's local/remote snapshots
+/// reference a deleted or never-applied row.
+fn rewrite_entry_to_snapshot(conn: &Connection, snapshot: &Entry) -> Result<()> {
+    let pre: Option<Entry> = conn
+        .query_row(
+            "SELECT * FROM entries WHERE slug = ?1 AND deleted_at IS NULL",
+            params![snapshot.slug],
+            row_to_entry,
+        )
+        .optional()?;
+    let Some(pre) = pre else {
+        return Ok(());
+    };
+    history::record(conn, &pre, ChangeKind::UserEdit)?;
+    raw_overwrite_mutables(conn, &pre.slug, snapshot, None)?;
     Ok(())
 }
 

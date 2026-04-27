@@ -24,6 +24,7 @@ pub mod backoff;
 pub mod debounce;
 pub mod liveness;
 pub mod log;
+pub mod notify;
 pub mod scheduler;
 pub mod status;
 pub mod targets;

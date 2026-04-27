@@ -1,21 +1,16 @@
-//! D5 acceptance tests — no double-start error; overlaps route to the
-//! conflict queue; auto-resolver closes obvious cases.
-//!
-//! These mirror the acceptance list in `da-gnj.5`:
-//! - `double_start_does_not_error`
-//! - `double_start_creates_conflict_row`
-//! - `orphan_end_does_not_error`
-//! - `orphan_end_creates_conflict_row`
-//! - `auto_resolver_closes_older_open_after_delay`
-//! - `auto_resolver_skips_if_kept_both`
-//! - `now_view_shows_overlap_warning`
+//! D5 + C4e acceptance tests — no double-start error; overlaps route to
+//! the conflict queue; auto-resolver closes obvious cases; the C4e
+//! conflict CLI surface (list filtering, take_local/take_remote/edit
+//! resolution paths, and the `now` warning) behaves as documented.
 
 mod common;
 
 use std::collections::HashMap;
 
 use common::run_cli;
-use datum_cli::output::{render_now_view, strip_ansi};
+use datum_cli::output::{
+    render_conflict_show, render_now_view, render_pending_conflict_warning, strip_ansi,
+};
 use datum_core::conflicts::{ConflictKind, ListFilter, Resolution};
 use datum_core::db::TrackedField;
 use datum_core::test_util::fresh_db;
@@ -233,5 +228,331 @@ fn now_view_shows_overlap_warning() {
     assert!(
         plain.contains("datum conflicts list"),
         "warning must point user to the conflicts CLI:\n{plain}"
+    );
+}
+
+// ─── C4e: list filtering ─────────────────────────────────────────────────────
+
+#[test]
+fn conflicts_list_shows_only_unresolved_by_default() {
+    // File two conflicts, resolve one. The default list (no `--all`) must
+    // only return the still-pending row.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
+    run_cli(&["start", "workout"], &db).expect("newer start");
+    run_cli(&["start", "shower", "-t=-5"], &db).expect("shower older");
+    run_cli(&["start", "shower"], &db).expect("shower newer");
+
+    let all = db
+        .list_conflicts(&ListFilter { kind: None, pending: None })
+        .unwrap();
+    assert_eq!(all.len(), 2, "two conflicts filed pre-resolution");
+
+    // Resolve one explicitly so the other stays pending.
+    let target = all
+        .iter()
+        .find(|c| c.local_entry.field == "workout")
+        .expect("workout conflict")
+        .clone();
+    db.resolve_conflict(&target.hid, Resolution::KeepBoth)
+        .unwrap();
+
+    let pending = db
+        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .unwrap();
+    assert_eq!(
+        pending.len(),
+        1,
+        "default list should only show pending"
+    );
+    assert_eq!(pending[0].local_entry.field, "shower");
+}
+
+#[test]
+fn conflicts_list_all_includes_resolved() {
+    // Same setup as above, but with `pending: None` (the `--all` form)
+    // we should see both rows including the resolved one.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
+    run_cli(&["start", "workout"], &db).expect("newer start");
+    run_cli(&["start", "shower", "-t=-5"], &db).expect("shower older");
+    run_cli(&["start", "shower"], &db).expect("shower newer");
+
+    let all = db
+        .list_conflicts(&ListFilter { kind: None, pending: None })
+        .unwrap();
+    let target = all[0].clone();
+    db.resolve_conflict(&target.hid, Resolution::KeepBoth)
+        .unwrap();
+
+    let after = db
+        .list_conflicts(&ListFilter { kind: None, pending: None })
+        .unwrap();
+    assert_eq!(after.len(), 2, "--all list returns both rows");
+    let resolved_count = after.iter().filter(|c| c.resolution.is_some()).count();
+    let pending_count = after.iter().filter(|c| c.resolution.is_none()).count();
+    assert_eq!(resolved_count, 1);
+    assert_eq!(pending_count, 1);
+}
+
+// ─── C4e: take_local / take_remote ───────────────────────────────────────────
+
+#[test]
+fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
+    // File a double-open, resolve `--take local`. The Db API must return
+    // the conflict row with `resolution = "take_local"` and the entry
+    // matching `local_entry.slug` must equal the snapshot. (For
+    // double-open the snapshot equals the live row, so we verify the
+    // row is present and untouched-but-confirmed.)
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
+    run_cli(&["start", "workout"], &db).expect("newer start");
+
+    let pending = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::DoubleOpen),
+            pending: Some(true),
+        })
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+    let hid = pending[0].hid.clone();
+    let local_slug = pending[0].local_entry.slug.clone();
+
+    let resolved = db.resolve_conflict(&hid, Resolution::TakeLocal).unwrap();
+    assert_eq!(resolved.resolution.as_deref(), Some("take_local"));
+    assert!(resolved.resolved_at.is_some(), "resolved_at must be stamped");
+
+    // The entry referenced by local_entry.slug is still in the table
+    // (rewrite_entry_to_snapshot is idempotent here).
+    let entries = db.entries_for_field("workout", None).unwrap();
+    assert!(
+        entries.iter().any(|e| e.slug == local_slug),
+        "local_entry slug must remain in entries table"
+    );
+}
+
+#[test]
+fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
+    // For sync_pull-style conflicts where remote_entry was applied to
+    // the table, `--take remote` is a no-op on data; here we just
+    // confirm the resolution string round-trips. The "rewrite a
+    // diverged row" case is exercised by
+    // `conflicts_resolve_edit_uses_saved_content`.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
+    run_cli(&["start", "workout"], &db).expect("newer start");
+
+    let pending = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::DoubleOpen),
+            pending: Some(true),
+        })
+        .unwrap();
+    let hid = pending[0].hid.clone();
+    let remote_slug = pending[0]
+        .remote_entry
+        .as_ref()
+        .expect("double_open carries remote")
+        .slug
+        .clone();
+
+    let resolved = db.resolve_conflict(&hid, Resolution::TakeRemote).unwrap();
+    assert_eq!(resolved.resolution.as_deref(), Some("take_remote"));
+
+    let entries = db.entries_for_field("workout", None).unwrap();
+    assert!(
+        entries.iter().any(|e| e.slug == remote_slug),
+        "remote_entry slug must remain in entries table"
+    );
+}
+
+// ─── C4e: --edit ─────────────────────────────────────────────────────────────
+
+#[test]
+fn conflicts_resolve_edit_uses_saved_content() {
+    // The `--edit` flow ultimately calls `db.resolve_conflict_with_edited`
+    // with the (possibly mutated) Entry parsed from the editor's saved
+    // file. This test exercises that data path directly: build a
+    // modified Entry, hand it to the API, and verify the live row was
+    // overwritten with the edited content.
+    use datum_core::entry::Verb;
+
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
+    run_cli(&["start", "workout"], &db).expect("newer start");
+
+    let pending = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::DoubleOpen),
+            pending: Some(true),
+        })
+        .unwrap();
+    let conflict = pending[0].clone();
+
+    // Edit: same slug, but stamp a unique value into `data` so we can
+    // tell it landed.
+    let mut edited = conflict.local_entry.clone();
+    edited.data = Some(serde_json::json!({"edited_marker": "c4e"}));
+
+    let resolved = db
+        .resolve_conflict_with_edited(&conflict.hid, &edited)
+        .unwrap();
+    assert_eq!(resolved.resolution.as_deref(), Some("edit"));
+
+    let entries = db.entries_for_field("workout", None).unwrap();
+    let row = entries
+        .iter()
+        .find(|e| e.slug == edited.slug)
+        .expect("edited slug must still be in table");
+    let data = row.data.as_ref().expect("data should be set after edit");
+    assert_eq!(
+        data.get("edited_marker").and_then(|v| v.as_str()),
+        Some("c4e"),
+        "edited content must replace the live row's data"
+    );
+
+    // Sanity: the conflict's verb didn't drift through the round-trip.
+    assert_eq!(row.verb, Verb::Start);
+}
+
+// ─── C4e: show ───────────────────────────────────────────────────────────────
+
+#[test]
+fn conflicts_show_renders_diff() {
+    // `datum conflicts show <hid>` renders a side-by-side LOCAL/REMOTE
+    // diff of the two snapshots, plus a footer pointing at the
+    // resolution flags.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older start");
+    run_cli(&["start", "workout"], &db).expect("newer start");
+
+    let pending = db
+        .list_conflicts(&ListFilter {
+            kind: Some(ConflictKind::DoubleOpen),
+            pending: Some(true),
+        })
+        .unwrap();
+    let conflict = pending[0].clone();
+
+    let out = render_conflict_show(&conflict);
+    assert!(out.contains("LOCAL"), "header must label LOCAL column:\n{out}");
+    assert!(out.contains("REMOTE"), "header must label REMOTE column:\n{out}");
+    assert!(out.contains("workout"), "field name must appear:\n{out}");
+    assert!(
+        out.contains("--take local|remote"),
+        "footer must hint at resolution flags:\n{out}"
+    );
+    assert!(
+        out.contains(&conflict.hid),
+        "footer must include the hid for copy/paste:\n{out}"
+    );
+}
+
+// ─── C4e: now warning ────────────────────────────────────────────────────────
+
+#[test]
+fn now_view_shows_conflict_warning_when_pending() {
+    // The header helper renders a warning line for non-zero counts and
+    // a blank for zero; both forms must satisfy callers that always
+    // print `render_pending_conflict_warning(n)`.
+    assert_eq!(render_pending_conflict_warning(0), "");
+
+    let one = render_pending_conflict_warning(1);
+    assert!(one.contains("1 unresolved conflict"));
+    // The pluralized noun "conflicts" must NOT appear in the count
+    // phrase — but the CLI hint at the end ("'datum conflicts list'")
+    // legitimately uses the plural form. Anchor the singular check on
+    // the count-prefix substring.
+    assert!(
+        !one.contains("1 unresolved conflicts"),
+        "singular form for n=1, got: {one:?}"
+    );
+    assert!(one.contains("datum conflicts list"));
+
+    let many = render_pending_conflict_warning(3);
+    assert!(many.contains("3 unresolved conflicts"));
+    assert!(many.contains("datum conflicts list"));
+}
+
+// ─── C4e: pending_conflict_count ─────────────────────────────────────────────
+
+#[test]
+fn pending_conflict_count_excludes_resolved() {
+    // The `now` view calls `db.pending_conflict_count` to decide whether
+    // to print the header. Make sure resolved rows don't count.
+    let db = fresh_db();
+    assert_eq!(db.pending_conflict_count().unwrap(), 0);
+
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
+    run_cli(&["start", "workout"], &db).expect("newer");
+    assert_eq!(db.pending_conflict_count().unwrap(), 1);
+
+    // Resolve it; count drops to 0.
+    let pending = db
+        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .unwrap();
+    db.resolve_conflict(&pending[0].hid, Resolution::KeepBoth)
+        .unwrap();
+    assert_eq!(db.pending_conflict_count().unwrap(), 0);
+}
+
+// ─── C4e: parser flag plumbing ───────────────────────────────────────────────
+
+#[test]
+fn conflicts_show_subcommand_dispatches_via_cli() {
+    // End-to-end smoke: the parser routes `conflicts show <hid>`
+    // through to render_conflict_show. We can't capture stdout here
+    // (run_cli writes to the test process's stdout), but the absence
+    // of a parse error is the gate the previous code was missing.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
+    run_cli(&["start", "workout"], &db).expect("newer");
+
+    let pending = db
+        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .unwrap();
+    let hid = pending[0].hid.clone();
+    run_cli(&["conflicts", "show", &hid], &db).expect("show dispatch");
+}
+
+#[test]
+fn conflicts_resolve_take_flag_dispatches_via_cli() {
+    // `--take local` round-trips through the parser, dispatcher, and
+    // db; we verify the resolution string was written.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
+    run_cli(&["start", "workout"], &db).expect("newer");
+
+    let pending = db
+        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .unwrap();
+    let hid = pending[0].hid.clone();
+    run_cli(&["conflicts", "resolve", &hid, "--take", "local"], &db)
+        .expect("resolve --take local dispatch");
+
+    let after = db.get_conflict(&hid).unwrap().expect("hid still queryable");
+    assert_eq!(after.resolution.as_deref(), Some("take_local"));
+}
+
+#[test]
+fn conflicts_resolve_skip_leaves_pending() {
+    // `--skip` is an explicit acknowledgement that the user is leaving
+    // the conflict pending. The row must NOT be marked resolved.
+    let db = fresh_db();
+    run_cli(&["start", "workout", "-t=-5"], &db).expect("older");
+    run_cli(&["start", "workout"], &db).expect("newer");
+
+    let pending = db
+        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .unwrap();
+    let hid = pending[0].hid.clone();
+    run_cli(&["conflicts", "resolve", &hid, "--skip"], &db)
+        .expect("resolve --skip dispatch");
+
+    let after = db.get_conflict(&hid).unwrap().expect("hid still queryable");
+    assert!(
+        after.resolution.is_none(),
+        "--skip must leave conflict pending; got {:?}",
+        after.resolution
     );
 }

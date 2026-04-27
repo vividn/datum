@@ -1258,6 +1258,102 @@ fn format_now_time(
 }
 
 /// Strip all ANSI escape sequences from a string. Handy for snapshot tests.
+/// One-line warning to print at the top of `datum now` when there are
+/// unresolved conflicts. Empty string for `n == 0` so callers can append
+/// unconditionally.
+pub fn render_pending_conflict_warning(n: u32) -> String {
+    if n == 0 {
+        return String::new();
+    }
+    let noun = if n == 1 { "conflict" } else { "conflicts" };
+    format!("⚠ {n} unresolved {noun} — run 'datum conflicts list'\n")
+}
+
+/// `datum conflicts show <hid>` rendering: header + side-by-side compare
+/// of the local snapshot vs the remote snapshot. The display is plain
+/// text so it composes cleanly with `less`/pipes; we deliberately don't
+/// reuse the colorised entry renderer (which assumes a live entry).
+pub fn render_conflict_show(c: &datum_core::conflicts::Conflict) -> String {
+    use std::fmt::Write;
+
+    let mut out = String::new();
+    let status = match &c.resolution {
+        None => "pending".to_string(),
+        Some(r) => format!("resolved:{r}"),
+    };
+    let _ = writeln!(
+        out,
+        "conflict {hid}  kind={kind}  detected_by={by}  [{status}]",
+        hid = c.hid,
+        kind = c.conflict_kind.as_str(),
+        by = c.detected_by.as_str(),
+    );
+    let _ = writeln!(out, "  slug:        {}", c.entry_slug);
+    let _ = writeln!(out, "  detected_at: {}", c.detected_at.to_rfc3339());
+    if let Some(t) = c.resolved_at {
+        let _ = writeln!(out, "  resolved_at: {}", t.to_rfc3339());
+    }
+    let _ = writeln!(out);
+
+    let local_lines = entry_summary_lines(&c.local_entry);
+    let remote_lines = match &c.remote_entry {
+        Some(e) => entry_summary_lines(e),
+        None => vec!["(no counterpart)".to_string()],
+    };
+
+    let lwidth = local_lines.iter().map(|s| s.len()).max().unwrap_or(0).max(5);
+    let _ = writeln!(out, "  {:<lw$}    {}", "LOCAL", "REMOTE", lw = lwidth);
+    let _ = writeln!(
+        out,
+        "  {:<lw$}    {}",
+        "-".repeat(lwidth.min(40)),
+        "-".repeat(40),
+        lw = lwidth
+    );
+    let n = local_lines.len().max(remote_lines.len());
+    for i in 0..n {
+        let l = local_lines.get(i).map(String::as_str).unwrap_or("");
+        let r = remote_lines.get(i).map(String::as_str).unwrap_or("");
+        let _ = writeln!(out, "  {:<lw$}    {}", l, r, lw = lwidth);
+    }
+    let _ = writeln!(out);
+    let _ = writeln!(
+        out,
+        "  resolve with: datum conflicts resolve {} --take local|remote | --edit | --skip",
+        c.hid,
+    );
+    out
+}
+
+/// One summary line per non-trivial Entry field. Stable order so the
+/// side-by-side display lines up across the local/remote columns.
+fn entry_summary_lines(e: &Entry) -> Vec<String> {
+    let mut lines = Vec::new();
+    lines.push(format!("hid={}", e.hid));
+    lines.push(format!("slug={}", e.slug));
+    lines.push(format!("field={}", e.field));
+    lines.push(format!("verb={:?}", e.verb));
+    lines.push(format!("shape={:?}", e.entry_shape));
+    if let Some(v) = &e.value {
+        lines.push(format!("value={v}"));
+    }
+    if let Some(d) = &e.data {
+        lines.push(format!("data={d}"));
+    }
+    if let Some(u) = &e.unit {
+        lines.push(format!("unit={u}"));
+    }
+    if let Some(t) = &e.start_time {
+        lines.push(format!("start={}", t.utc.to_rfc3339()));
+    }
+    if let Some(t) = &e.end_time {
+        lines.push(format!("end={}", t.utc.to_rfc3339()));
+    }
+    lines.push(format!("device={}", e.device_id));
+    lines.push(format!("modified={}", e.modify_time.to_rfc3339()));
+    lines
+}
+
 pub fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut in_esc = false;

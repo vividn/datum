@@ -321,6 +321,11 @@ pub struct RawConfig {
     pub sync: Option<SyncSection>,
     #[serde(default)]
     pub databases: BTreeMap<String, DbSection>,
+    /// Desktop notifications when the daemon files a new conflict
+    /// (C4e). `None` = use the platform default (`true`); explicit
+    /// `false` disables them.
+    #[serde(default)]
+    pub notifications: Option<bool>,
 }
 
 /// Global sync defaults. A per-DB entry under `databases:` may override the

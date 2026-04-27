@@ -19,7 +19,8 @@ use crate::{
     args::{
         AliasCommand, BackupArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs,
+        ConflictsShowArgs, CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs,
+        HistoryArgs,
         IdsArgs, IgnoreArgs, InfoArgs, LogArgs, LogArgsExt, MigrateCommand,
         MigrateImportArgs, MigrateImportArgsExt, NowArgs, OutputFlagsExt, RestoreArgs,
         RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
@@ -1643,6 +1644,16 @@ pub(crate) fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
 pub(crate) fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
     emit_stale_sync_warning(db);
 
+    // C4e: surface a top-line warning when there are unresolved conflicts.
+    // We swallow read errors silently — the now view is still useful even
+    // if the conflict-count query trips (e.g., a future schema migration
+    // hasn't run yet on this DB).
+    if let Ok(n) = db.pending_conflict_count() {
+        if n > 0 {
+            print!("{}", crate::render::render_pending_conflict_warning(n));
+        }
+    }
+
     let tracked = db.get_tracked_fields()?;
     if tracked.is_empty() {
         println!("No tracked fields. Use `datum track <field>` or log with `occur`/`start`.");
@@ -2646,6 +2657,7 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
 pub(crate) fn cmd_conflicts(sub: ConflictsCommand, db: &Db) -> Result<()> {
     match sub {
         ConflictsCommand::List(args) => cmd_conflicts_list(args, db),
+        ConflictsCommand::Show(args) => cmd_conflicts_show(args, db),
         ConflictsCommand::Resolve(args) => cmd_conflicts_resolve(args, db),
         ConflictsCommand::AutoResolve(args) => cmd_conflicts_auto_resolve(args, db),
     }
@@ -2686,21 +2698,64 @@ pub(crate) fn cmd_conflicts_list(args: ConflictsListArgs, db: &Db) -> Result<()>
     Ok(())
 }
 
+pub(crate) fn cmd_conflicts_show(args: ConflictsShowArgs, db: &Db) -> Result<()> {
+    let conflict = db
+        .get_conflict(&args.hid)?
+        .ok_or_else(|| anyhow::anyhow!("conflict '{}' not found", args.hid))?;
+    print!("{}", crate::render::render_conflict_show(&conflict));
+    Ok(())
+}
+
 pub(crate) fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
     use datum_core::conflicts::Resolution;
-    let resolution = if args.close_older {
-        Resolution::CloseOlder
-    } else {
-        // `--keep both` records the user's explicit keep-both decision;
-        // any other string is a usage error (we only support "both" today).
-        match args.keep.as_deref() {
-            Some("both") => Resolution::KeepBoth,
-            Some(other) => anyhow::bail!(
-                "--keep only supports 'both' (got '{other}'); use --close-older for auto-close"
-            ),
-            None => anyhow::bail!(
-                "specify a resolution: --keep both OR --close-older"
-            ),
+
+    if args.skip {
+        // `--skip` is an explicit no-op: leave the conflict pending.
+        // We still acknowledge so scripts get a stable signal.
+        let conflict = db
+            .get_conflict(&args.hid)?
+            .ok_or_else(|| anyhow::anyhow!("conflict '{}' not found", args.hid))?;
+        println!(
+            "↷ skipped {hid}  {kind}  (still pending)",
+            hid = conflict.hid,
+            kind = conflict.conflict_kind.as_str(),
+        );
+        return Ok(());
+    }
+
+    if args.edit {
+        let resolved = run_conflict_edit(&args.hid, db)?;
+        println!(
+            "✓ resolved {hid}  {kind}  {resolution}",
+            hid = resolved.hid,
+            kind = resolved.conflict_kind.as_str(),
+            resolution = resolved.resolution.as_deref().unwrap_or("?"),
+        );
+        return Ok(());
+    }
+
+    let resolution = match args.take.as_deref() {
+        Some("local") => Resolution::TakeLocal,
+        Some("remote") => Resolution::TakeRemote,
+        Some(other) => anyhow::bail!(
+            "--take only accepts 'local' or 'remote' (got '{other}')"
+        ),
+        None => {
+            if args.close_older {
+                Resolution::CloseOlder
+            } else {
+                // `--keep both` records the user's explicit keep-both decision;
+                // any other string is a usage error (we only support "both" today).
+                match args.keep.as_deref() {
+                    Some("both") => Resolution::KeepBoth,
+                    Some(other) => anyhow::bail!(
+                        "--keep only supports 'both' (got '{other}'); use --close-older for auto-close"
+                    ),
+                    None => anyhow::bail!(
+                        "specify a resolution: --keep both | --close-older | --take local|remote | --edit | --skip"
+                    ),
+                }
+            }
         }
     };
     let resolved = db.resolve_conflict(&args.hid, resolution)?;
@@ -2711,6 +2766,48 @@ pub(crate) fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Resu
         resolution = resolved.resolution.as_deref().unwrap_or("?"),
     );
     Ok(())
+}
+
+/// `--edit` flow: dump the local snapshot to a temp file as JSON, open
+/// `$EDITOR` (or `$VISUAL`, falling back to `vi`), parse the edited
+/// result back into an `Entry`, and apply it as the merged version.
+///
+/// The temp file is prefixed with the conflict hid so editors that show
+/// the buffer name surface it. We only support JSON for now; the user
+/// is expected to keep the structure intact. A blank save aborts the
+/// resolution (the conflict stays pending).
+fn run_conflict_edit(token: &str, db: &Db) -> Result<datum_core::conflicts::Conflict> {
+    use std::io::Write;
+
+    let conflict = db
+        .get_conflict(token)?
+        .ok_or_else(|| anyhow::anyhow!("conflict '{}' not found", token))?;
+    let initial = serde_json::to_string_pretty(&conflict.local_entry)?;
+
+    let mut tmp = std::env::temp_dir();
+    tmp.push(format!("datum-conflict-{}.json", conflict.hid));
+    {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(initial.as_bytes())?;
+    }
+
+    let editor = std::env::var("EDITOR")
+        .or_else(|_| std::env::var("VISUAL"))
+        .unwrap_or_else(|_| "vi".to_string());
+    let status = std::process::Command::new(&editor).arg(&tmp).status()?;
+    if !status.success() {
+        anyhow::bail!("editor '{editor}' exited with {status}; conflict left pending");
+    }
+
+    let edited_raw = std::fs::read_to_string(&tmp)?;
+    let _ = std::fs::remove_file(&tmp);
+    if edited_raw.trim().is_empty() {
+        anyhow::bail!("editor saved an empty file; conflict left pending");
+    }
+    let edited: datum_core::entry::Entry = serde_json::from_str(&edited_raw)
+        .map_err(|e| anyhow::anyhow!("could not parse edited entry as JSON Entry: {e}"))?;
+    db.resolve_conflict_with_edited(&conflict.id, &edited)
+        .map_err(Into::into)
 }
 
 pub(crate) fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result<()> {

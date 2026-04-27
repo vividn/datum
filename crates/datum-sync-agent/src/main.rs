@@ -16,10 +16,12 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use datum_sync_agent::liveness::{default_pid_path, PidFile};
+use datum_sync_agent::notify as agent_notify;
+use datum_sync_agent::notify::Notifier;
 use datum_sync_agent::scheduler::{Action, Scheduler};
 use datum_sync_agent::targets::{self, SyncTarget};
 use datum_sync_agent::{log as agent_log};
-use notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use ::notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tracing::{info, warn};
@@ -88,12 +90,19 @@ async fn run_forever(one_shot: bool) -> Result<()> {
     }
     info!(count = targets.len(), "enumerated sync targets");
 
+    // One notifier shared across workers; resolved from config at boot
+    // so every pull path uses the same setting. `enabled_default = true`
+    // matches the bead spec: "feature-flagged; disabled with
+    // `notifications: false`".
+    let notifier = agent_notify::from_config(true);
+
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
     let mut tasks: JoinSet<Result<()>> = JoinSet::new();
 
     for target in targets {
         let rx = shutdown_rx.clone();
-        tasks.spawn(run_worker(target, rx, one_shot));
+        let n = notifier.clone();
+        tasks.spawn(run_worker(target, rx, one_shot, n));
     }
 
     // Graceful-shutdown handler: first SIGTERM / SIGINT flips the
@@ -160,6 +169,7 @@ async fn run_worker(
     target: SyncTarget,
     mut shutdown: watch::Receiver<bool>,
     one_shot: bool,
+    notifier: std::sync::Arc<dyn Notifier>,
 ) -> Result<()> {
     let (write_tx, mut write_rx) = mpsc::unbounded_channel::<()>();
     let _watcher = spawn_watcher(&target.path, write_tx)?;
@@ -227,9 +237,20 @@ async fn run_worker(
                 let t = target.clone();
                 let res = tokio::task::spawn_blocking(move || do_pull(&t)).await;
                 match res {
-                    Ok(Ok(n)) => {
+                    Ok(Ok(out)) => {
                         scheduler.note_pull_success(Instant::now());
-                        info!(db = %target.name, applied = n, "pull ok");
+                        info!(
+                            db = %target.name,
+                            applied = out.applied,
+                            queued = out.conflicts_queued,
+                            "pull ok"
+                        );
+                        // C4e: announce newly-queued conflicts.
+                        agent_notify::announce_new_conflicts(
+                            notifier.as_ref(),
+                            &target.name,
+                            out.conflicts_queued,
+                        );
                     }
                     Ok(Err(e)) => {
                         scheduler.note_pull_failure(Instant::now());
@@ -312,7 +333,10 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
 }
 
 /// Execute a pull for `target`. Blocks; runs inside `spawn_blocking`.
-fn do_pull(target: &SyncTarget) -> Result<usize> {
+/// Returns the full [`PullOutcome`] so the caller can both log
+/// `applied` and decide whether to fire a desktop notification on
+/// `conflicts_queued > 0`.
+fn do_pull(target: &SyncTarget) -> Result<datum_commands::commands::sync::pull::PullOutcome> {
     use datum_commands::commands::sync::{preflight_checks, pull};
     use datum_core::db::Db;
     use std::time::Duration as StdDuration;
@@ -333,5 +357,5 @@ fn do_pull(target: &SyncTarget) -> Result<usize> {
         &db,
         false,
     )?;
-    Ok(out.applied)
+    Ok(out)
 }

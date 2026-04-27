@@ -129,6 +129,16 @@ pub enum Resolution {
     KeepBoth,
     /// User asked to close the older entry (manual form of AutoCloseOlder).
     CloseOlder,
+    /// User chose the local version as authoritative — for sync_pull,
+    /// rewrite the entry row to match `local_entry`. For local_validator,
+    /// behaves like keep_both (both rows remain; resolution is recorded).
+    TakeLocal,
+    /// User chose the remote/counterpart version — rewrite the entry row
+    /// to match `remote_entry`. No-op when `remote_entry IS NULL`.
+    TakeRemote,
+    /// User edited a merged version; the supplied entry replaces the
+    /// matching row in `entries` (matched by slug).
+    Edit,
 }
 
 impl Resolution {
@@ -137,6 +147,9 @@ impl Resolution {
             Resolution::AutoCloseOlder => "auto_close_older",
             Resolution::KeepBoth => "keep_both",
             Resolution::CloseOlder => "close_older",
+            Resolution::TakeLocal => "take_local",
+            Resolution::TakeRemote => "take_remote",
+            Resolution::Edit => "edit",
         }
     }
 }

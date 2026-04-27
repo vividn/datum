@@ -99,6 +99,7 @@ pub enum Command {
 #[derive(Debug)]
 pub enum ConflictsCommand {
     List(ConflictsListArgs),
+    Show(ConflictsShowArgs),
     Resolve(ConflictsResolveArgs),
     AutoResolve(ConflictsAutoResolveArgs),
 }
@@ -110,10 +111,22 @@ pub struct ConflictsListArgs {
 }
 
 #[derive(Debug)]
+pub struct ConflictsShowArgs {
+    pub hid: String,
+}
+
+/// A single resolve invocation may carry exactly one of: `--keep both`
+/// (legacy), `--close-older` (legacy), `--take local|remote`, `--edit`,
+/// `--skip`. The parser enforces mutual exclusion; the dispatcher maps
+/// them to [`datum_core::conflicts::Resolution`].
+#[derive(Debug)]
 pub struct ConflictsResolveArgs {
     pub hid: String,
     pub keep: Option<String>,
     pub close_older: bool,
+    pub take: Option<String>,
+    pub edit: bool,
+    pub skip: bool,
 }
 
 #[derive(Debug, Default)]

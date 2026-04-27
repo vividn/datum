@@ -1714,12 +1714,13 @@ fn take_server_only(tail: &[&str]) -> Result<Option<String>> {
 fn parse_conflicts_cmd(tail: &[&str]) -> Result<ConflictsCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing conflicts subcommand (list|resolve|auto-resolve)".into(),
+            "missing conflicts subcommand (list|show|resolve|auto-resolve)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
     match *sub {
         "list" => Ok(ConflictsCommand::List(parse_conflicts_list(rest)?)),
+        "show" => Ok(ConflictsCommand::Show(parse_conflicts_show(rest)?)),
         "resolve" => Ok(ConflictsCommand::Resolve(parse_conflicts_resolve(rest)?)),
         "auto-resolve" => Ok(ConflictsCommand::AutoResolve(parse_conflicts_auto(rest)?)),
         other => Err(ParseError::InvalidArg(format!(
@@ -1749,10 +1750,26 @@ fn parse_conflicts_list(tail: &[&str]) -> Result<ConflictsListArgs> {
     Ok(out)
 }
 
+fn parse_conflicts_show(tail: &[&str]) -> Result<ConflictsShowArgs> {
+    let mut pos: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < tail.len() {
+        match split_flag(tail[i]) {
+            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    let hid = require_first_pos(&pos, "<HID>")?;
+    Ok(ConflictsShowArgs { hid })
+}
+
 fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut keep: Option<String> = None;
     let mut close_older = false;
+    let mut take: Option<String> = None;
+    let mut edit = false;
+    let mut skip = false;
     let mut i = 0;
     while i < tail.len() {
         match split_flag(tail[i]) {
@@ -1767,16 +1784,44 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
                 i += 1;
             }
             FlagSplit::Long("close-older") => { close_older = true; i += 1; }
+            FlagSplit::Long("take") => {
+                let (v, ni) = take_value(tail, i, None, "--take")?;
+                take = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("take", v) => {
+                take = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("edit") => { edit = true; i += 1; }
+            FlagSplit::Long("skip") => { skip = true; i += 1; }
             f => return Err(unknown_flag(f)),
         }
     }
     let hid = require_first_pos(&pos, "<HID>")?;
-    if keep.is_some() && close_older {
+    let chosen = [
+        keep.is_some(),
+        close_older,
+        take.is_some(),
+        edit,
+        skip,
+    ]
+    .iter()
+    .filter(|b| **b)
+    .count();
+    if chosen > 1 {
         return Err(ParseError::InvalidArg(
-            "--keep and --close-older are mutually exclusive".into(),
+            "--keep, --close-older, --take, --edit, --skip are mutually exclusive".into(),
         ));
     }
-    Ok(ConflictsResolveArgs { hid, keep, close_older })
+    if let Some(t) = take.as_deref() {
+        if t != "local" && t != "remote" {
+            return Err(ParseError::InvalidArg(format!(
+                "--take only accepts 'local' or 'remote' (got '{t}')"
+            )));
+        }
+    }
+    Ok(ConflictsResolveArgs { hid, keep, close_older, take, edit, skip })
 }
 
 fn parse_conflicts_auto(tail: &[&str]) -> Result<ConflictsAutoResolveArgs> {
