@@ -10,12 +10,13 @@
 //! * [`parse_time_str`] — `-t` / `--time` argument parsing (`TimeArg`).
 //! * [`parse_duration_str`] — `--dur` argument parsing.
 //! * [`builder`] — `TimeBuilder` composes stacked flags into a `DatumTime`.
-//! * [`human_time`] — display helpers (stub — populated in R2 step 2+).
-//! * [`get_occur_time`] / [`get_timezone`] — higher-level helpers (stub).
+//! * [`human_time`] — doc-anchor stub; canonical impl is
+//!   `datum_commands::render::format_human_time`.
+//! * [`get_timezone`] — doc-anchor stub; canonical impl is
+//!   `datum_parse::input::time_args::resolve_timezone`.
 
 pub mod builder;
 pub mod datum_time;
-pub mod get_occur_time;
 pub mod get_timezone;
 pub mod human_time;
 pub mod parse_date_str;

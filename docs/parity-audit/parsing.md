@@ -426,8 +426,8 @@ submodule:
 | `time/__test__/parseDateStr.test.ts` | 102 | `datum-parse/src/time/parse_date_str.rs` tests | step 2/N |
 | `time/__test__/parseDurationStr.test.ts` | 53 | `datum-parse/src/time/parse_duration_str.rs` tests | step 2/N |
 | `time/__test__/datumTime.test.ts` | 34 | `datum-parse/src/time/datum_time.rs` tests | step 2/N |
-| `time/__test__/getOccurTime.test.ts` | 84 | `datum-parse/src/time/get_occur_time.rs` tests | step 2/N |
-| `time/__test__/humanTime.test.ts` | 93 | `datum-parse/src/time/human_time.rs` tests | step 2/N |
+| `time/__test__/getOccurTime.test.ts` | 84 | N/A — redundant with `TimeArgs::build()`; not ported | — |
+| `time/__test__/humanTime.test.ts` | 93 | `datum-commands/src/render/` tests (canonical impl lives there) | step 2/N |
 
 Tests already ported at R2 step 1/N (retained from the original
 `datum-core::time`): the 14 tests in `datum-parse/src/time/tests.rs`

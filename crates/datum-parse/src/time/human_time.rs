@@ -1,3 +1,3 @@
-//! Human-readable time rendering — port of datum's `src/time/humanTime.ts`.
-//!
-//! Stub — populated in R2 step 2+. See `docs/parity-audit/parsing.md`.
+//! See `datum_commands::render::format_human_time` for the canonical
+//! implementation. This file is a doc anchor for the parity audit
+//! (`docs/parity-audit/parsing.md`); it intentionally has no code.

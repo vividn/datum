@@ -1,3 +1,3 @@
-//! Timezone resolution helpers — port of datum's `src/time/getTimezone.ts`.
-//!
-//! Stub — populated in R2 step 2+. See `docs/parity-audit/parsing.md`.
+//! See `datum_parse::input::time_args::resolve_timezone` for the canonical
+//! implementation. This file is a doc anchor for the parity audit
+//! (`docs/parity-audit/parsing.md`); it intentionally has no code.
