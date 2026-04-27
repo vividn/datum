@@ -129,11 +129,10 @@ fn second_switch_on_same_field_suppresses_first_tracked_marker() {
         !second.contains('∅'),
         "second switch on same field must not re-render ∅:\n{second}"
     );
-    // The prior-state transition arrow IS expected on the second switch.
-    assert!(
-        second.contains('←'),
-        "second switch must render prior-state left-arrow:\n{second}"
-    );
+    // Per da-fck the prior-state transition is conveyed via the LEAD slot's
+    // bg colour rather than a left-arrow glyph. The new layout has no
+    // arrows; we just assert the second row rendered without ∅, which is
+    // already covered above.
 
     let _ = std::fs::remove_file(&db);
 }

@@ -1,19 +1,25 @@
 //! Per-verb write-action renderer.
 //!
-//! Implements the layout described in `docs/visual-parity-analysis.md` §§2, 6, 7:
+//! Implements the layout described in `docs/visual-parity-analysis.md` §§2, 6, 7,
+//! revised by `da-fck` (the state-transition group):
 //!
 //! ```text
-//! <time>  <field-badge>  <state-transition-group>  [duration]
-//!                        └─ <left-char><state-badge><right-char>
+//! <time>  <field-badge>  <LEAD><state-cell><TRAIL>  [duration]
 //! ```
 //!
-//! The state-transition group composes a LEFT-char (prior-state indicator),
-//! a STATE-badge (the new value), and a RIGHT-char (post-entry indicator)
-//! per §6. See `render_fixtures.rs` for the full 20-case acceptance suite.
+//! The state-transition group is `[LEAD][state cell][TRAIL]`, with no
+//! whitespace inside the trio. The state cell is the existing bg-coloured
+//! badge. The LEAD and TRAIL slots are single literal spaces painted with
+//! the prior / continuing state's colour, replacing the old directional
+//! arrows. When no prior or continuing state exists (or it's IGNORED), the
+//! slot falls back to a lighter-grey bg with the `∅` glyph as fg.
+//!
+//! See `crates/datum-cli/tests/render_state_group.rs` for the worked
+//! examples encoded as fixtures.
 
 use chrono::{FixedOffset, Timelike, Utc};
 use datum_core::{
-    entry::{Entry, Verb},
+    entry::{Entry, EntryShape, Verb},
     field_spec::{FieldSpec, SpecRegistry},
     time::DatumTime,
 };
@@ -67,27 +73,28 @@ pub(crate) fn now_local() -> DatumTime {
 
 // ─── Render context ──────────────────────────────────────────────────────────
 
-/// Caller-supplied rendering context — prior state + first-time hint.
+/// Caller-supplied rendering context — slot bg-colour inputs + first-time hint.
 ///
-/// * `last_state` — the field's prior active state. `None` = the field has
-///   no prior entries at all; `Some(false)` = prior was stopped/ended;
-///   `Some(value)` = active with that value.
+/// * `lead_state` — raw output of `state::last_state_at(field, start - ε,
+///   exclude=row)`. Drives the LEAD slot's bg colour. `None` = no prior
+///   history; the slot falls back to grey-`∅`.
+/// * `trail_state` — the state continuing forward from this row. For a
+///   `Block` shape, this is `state::last_state_at(field, end_time,
+///   exclude=row)` — what resumes after the block closes. For `Point`/
+///   `Ongoing`, it's the row's own emitted state (the new switch value,
+///   `Bool(true)` for start, `Bool(false)` for stop). Drives the TRAIL
+///   slot's bg colour, with the same grey-`∅` fallback.
 /// * `is_first_occurrence` — set by the command layer when a field spec
-///   is being created for the first time. Triggers the `∅` first-tracked
-///   marker per §6.
+///   is being created for the first time. Currently informational; the
+///   LEAD's no-state fallback already conveys the same signal.
 /// * `ongoing_state` — the field's compiled state at the row's own time,
-///   excluding the row itself (i.e. the result of
-///   `state::last_state_at(field, row.start_time, exclude=row)`). Drives
-///   the bg of an occur dot per da-k5z: `IGNORED` → grey, any other
-///   ongoing-state value → that state's color, `None`/`Bool(false)` →
-///   default terminal bg. Other verbs ignore this field.
-///
-/// "Same-state repeat" (yellow `!`) is derived inside the renderer by
-/// comparing `last_state` to the current entry's value, so callers don't
-/// need to pre-compute it.
+///   excluding the row itself. Drives the bg of an occur dot per
+///   `da-k5z`. State-transition verbs (switch / start / stop / block) use
+///   `lead_state` and `trail_state` instead.
 #[derive(Clone, Debug, Default)]
 pub struct RenderContext {
-    pub last_state: Option<JsonValue>,
+    pub lead_state: Option<JsonValue>,
+    pub trail_state: Option<JsonValue>,
     pub is_first_occurrence: bool,
     pub ongoing_state: Option<JsonValue>,
 }
@@ -107,9 +114,9 @@ pub fn format_state_group(
     match entry.verb {
         Verb::Add => Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR)),
         Verb::Occur => Some(render_occur(entry, spec, ctx)),
-        Verb::Start | Verb::Block => Some(render_start(entry, spec, ctx)),
-        Verb::Stop => Some(render_end(entry, spec, ctx)),
-        Verb::Switch => Some(render_switch(entry, spec, ctx)),
+        Verb::Start | Verb::Stop | Verb::Switch | Verb::Block => {
+            Some(render_state_transition_group(entry, spec, ctx))
+        }
     }
 }
 
@@ -167,135 +174,85 @@ fn paint_dot(fg: Rgb, bg: Option<Rgb>, body: &str) -> String {
     }
 }
 
-fn render_start(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
+/// Render the full `[LEAD][state cell][TRAIL]` trio for switch / start /
+/// stop / block. Per da-fck: no whitespace inside the trio so the three
+/// segments read as one tight unit; outer joining handled by the caller.
+fn render_state_transition_group(
+    entry: &Entry,
+    spec: Option<&FieldSpec>,
+    ctx: &RenderContext,
+) -> String {
     let mut out = String::new();
-    // "Already active" = prior was true OR prior was some non-false value
-    // that represents an open block. For start, the canonical repeat is
-    // `start → start` (prior == true).
-    let already_active = matches!(ctx.last_state, Some(JsonValue::Bool(true)));
-    if ctx.is_first_occurrence {
-        out.push_str(&paint(GRAY_FG, NULL_SET));
-    } else if already_active {
-        out.push_str(&paint(YELLOW_FG, WARNING));
-    } else if let Some(prior) = &ctx.last_state {
-        if prior_has_visible_indicator(prior) {
-            let c = state_value_rgb(prior, &entry.field, spec).unwrap_or(Rgb::IGNORED);
-            out.push_str(&paint(&c.fg(), ARROW_LEFT));
-        }
-    }
-    // State badge: "start" on field color.
-    let fc = field_rgb(&entry.field, spec);
-    out.push_str(&paint_bg(fc, " start "));
-    // Right-char: true/field color arrow.
-    out.push_str(&paint(&fc.fg(), ARROW_RIGHT));
+    out.push_str(&render_slot(ctx.lead_state.as_ref(), &entry.field, spec));
+    out.push_str(&render_state_cell(entry, spec));
+    out.push_str(&render_slot(ctx.trail_state.as_ref(), &entry.field, spec));
     out
 }
 
-fn render_end(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    let mut out = String::new();
-    // "Already ended" = prior was explicitly false.
-    let already_ended = matches!(ctx.last_state, Some(JsonValue::Bool(false)));
-    if already_ended {
-        out.push_str(&paint(YELLOW_FG, WARNING));
-    } else if ctx.is_first_occurrence {
-        out.push_str(&paint(GRAY_FG, NULL_SET));
-    } else if let Some(prior) = &ctx.last_state {
-        if prior_has_visible_indicator(prior) {
-            let c = state_value_rgb(prior, &entry.field, spec).unwrap_or(Rgb::IGNORED);
-            out.push_str(&paint(&c.fg(), ARROW_LEFT));
-        }
+/// Render the central state cell — a bg-coloured badge whose body depends
+/// on the verb / value. Field and state cell rendering is unchanged from
+/// the pre-da-fck implementation.
+fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
+    match entry.verb {
+        Verb::Start => paint_bg(field_rgb(&entry.field, spec), " start "),
+        Verb::Stop => " end ".to_string(),
+        Verb::Switch | Verb::Block => render_switch_badge(entry.value.as_ref(), &entry.field, spec),
+        // Add / Occur are handled by other branches of `format_state_group`
+        // and never reach this function.
+        _ => String::new(),
     }
-    // State badge: "end" — plain (no bg).
-    out.push_str(" end ");
-    // No right-char on end.
-    out
 }
 
-fn render_switch(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
-    let value = entry.value.as_ref();
-    let has_duration = entry.duration_seconds().is_some();
-
-    // Special case: IGNORED state → grey badge, no transition chars.
-    if let Some(JsonValue::String(s)) = value {
-        if s == IGNORED_STATE {
-            return paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &format!(" {IGNORED_STATE} "));
-        }
+/// Render a LEAD or TRAIL slot — a single literal space painted with the
+/// resolved state's colour, or the grey-`∅` fallback when there's no
+/// state to depict.
+pub(crate) fn render_slot(
+    state: Option<&JsonValue>,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) -> String {
+    match resolve_slot(state, field, spec) {
+        SlotKind::State(rgb) => paint_bg(rgb, " "),
+        SlotKind::Empty => paint_bg_fg(Rgb::EMPTY_SLOT_BG, Rgb::IGNORED, NULL_SET),
     }
-    // Special case: false value → `[end]`-style with ← from prior.
-    if matches!(value, Some(JsonValue::Bool(false))) {
-        return render_end(entry, spec, ctx);
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SlotKind {
+    State(Rgb),
+    Empty,
+}
+
+/// Resolve a slot's colour from a raw `state_at` output. `None`,
+/// `Some(Null)` and the `IGNORED` sentinel string all collapse to
+/// [`SlotKind::Empty`] — the no-state fallback. Other values defer to
+/// [`state_value_rgb`].
+fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> SlotKind {
+    match state {
+        None => SlotKind::Empty,
+        Some(JsonValue::Null) => SlotKind::Empty,
+        Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Empty,
+        Some(v) => match state_value_rgb(v, field, spec) {
+            Some(rgb) => SlotKind::State(rgb),
+            None => SlotKind::Empty,
+        },
     }
+}
 
-    let is_array = matches!(value, Some(JsonValue::Array(items)) if items.len() >= 2);
-    let prior_is_array =
-        matches!(&ctx.last_state, Some(JsonValue::Array(items)) if items.len() >= 2);
-
-    // Same-state repeat: prior value equals current value (including
-    // `prior == true`, which flags a `switch true` that duplicates the
-    // active state).
-    let is_same_state_repeat = match (&ctx.last_state, value) {
-        (Some(p), Some(v)) => p == v,
-        _ => false,
-    };
-
-    let mut out = String::new();
-    // ─── Left-char ───
-    if ctx.is_first_occurrence {
-        out.push_str(&paint(GRAY_FG, NULL_SET));
-    } else if is_same_state_repeat {
-        out.push_str(&paint(YELLOW_FG, WARNING));
-    } else if prior_is_array {
-        // §6: array prior → SHADING colored with first element.
-        let c = ctx
-            .last_state
-            .as_ref()
-            .and_then(|v| state_value_rgb(v, &entry.field, spec))
-            .unwrap_or(Rgb::IGNORED);
-        out.push_str(&paint(&c.fg(), SHADING));
-    } else if let Some(prior) = &ctx.last_state {
-        if prior_has_visible_indicator(prior) {
-            let c = state_value_rgb(prior, &entry.field, spec).unwrap_or(Rgb::IGNORED);
-            out.push_str(&paint(&c.fg(), ARROW_LEFT));
-        }
+/// Compute the trail-state from an entry alone — the post-effect state
+/// for `Point` / `Ongoing` shapes. Block-shaped rows can't be answered
+/// from the entry alone; the caller queries `state_at(end_time)` for
+/// those and supplies the result via `RenderContext::trail_state`.
+pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
+    if matches!(entry.entry_shape, EntryShape::Block) {
+        return None;
     }
-
-    // ─── State badge ───
-    out.push_str(&render_switch_badge(value, &entry.field, spec));
-
-    // ─── Right-char ───
-    // Determine the state that is active AFTER this entry:
-    //   - Switch with dur (block) → prior resumes
-    //   - Switch no dur → new state continues
-    let right_color: Option<Rgb> = if has_duration {
-        // Prior resumes
-        if prior_is_array {
-            // Emit SHADING instead of arrow to echo the checkerboard motif.
-            let c = ctx
-                .last_state
-                .as_ref()
-                .and_then(|v| state_value_rgb(v, &entry.field, spec));
-            if let Some(c) = c {
-                out.push_str(&paint(&c.fg(), SHADING));
-                None
-            } else {
-                None
-            }
-        } else {
-            ctx.last_state
-                .as_ref()
-                .and_then(|v| state_value_rgb(v, &entry.field, spec))
-        }
-    } else if is_array {
-        // Array, no dur → array continues; emit arrow colored with state[0].
-        value.and_then(|v| state_value_rgb(v, &entry.field, spec))
-    } else {
-        // Scalar, no dur → new state continues.
-        value.and_then(|v| state_value_rgb(v, &entry.field, spec))
-    };
-    if let Some(c) = right_color {
-        out.push_str(&paint(&c.fg(), ARROW_RIGHT));
+    match entry.verb {
+        Verb::Switch | Verb::Block => entry.value.clone(),
+        Verb::Start => Some(JsonValue::Bool(true)),
+        Verb::Stop => Some(JsonValue::Bool(false)),
+        Verb::Add | Verb::Occur => None,
     }
-    out
 }
 
 /// Render the switch state-badge body: scalar = solid coloured block; array
@@ -338,13 +295,6 @@ fn scalar_text(v: &JsonValue) -> String {
         JsonValue::String(s) => s.clone(),
         other => other.to_string(),
     }
-}
-
-/// Whether a prior state carries a visible left-char indicator. Prior=false
-/// is silent — neither an arrow nor a glyph — because the natural "stopped
-/// then starts" flow shouldn't clutter the line.
-fn prior_has_visible_indicator(prior: &JsonValue) -> bool {
-    !matches!(prior, JsonValue::Bool(false))
 }
 
 // ─── Field badge (§4) ────────────────────────────────────────────────────────

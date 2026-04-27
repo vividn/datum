@@ -111,10 +111,9 @@ fn tail_future_row_uses_plus_d_prefix() {
 }
 
 #[test]
-fn tail_state_cell_uses_canonical_left_state_right_group() {
-    // A `switch happy` row with prior `tired` must render the state cell
-    // as `<left-arrow><state badge><right-arrow>` per §6, matching what
-    // `datum switch` itself emits.
+fn tail_state_cell_uses_lead_state_trail_group() {
+    // Per da-fck: a `switch happy` row with prior `tired` renders as
+    // `[LEAD][state cell][TRAIL]` — bg-coloured slots, no arrows.
     let _g = no_color_scope();
     let e = entry_at(
         "mood",
@@ -123,26 +122,33 @@ fn tail_state_cell_uses_canonical_left_state_right_group() {
         dt(2026, 4, 22, 9, 15),
     );
     let ctx = RenderContext {
-        last_state: Some(json!("tired")),
+        lead_state: Some(json!("tired")),
+        trail_state: Some(json!("happy")),
         is_first_occurrence: false,
         ongoing_state: None,
     };
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);
-    assert!(stripped.contains("←"), "left arrow from prior state: {stripped:?}");
     assert!(stripped.contains("happy"), "current state badge: {stripped:?}");
-    assert!(stripped.contains("→"), "right arrow signalling continuation: {stripped:?}");
+    assert!(!stripped.contains("←"), "no left arrow in new layout: {stripped:?}");
+    assert!(!stripped.contains("→"), "no right arrow in new layout: {stripped:?}");
 }
 
 #[test]
-fn tail_state_cell_for_start_includes_arrows() {
-    // `datum start` writes a Switch with value=true. The canonical group
-    // emits ` start →` (with field-color block + right arrow).
+fn tail_state_cell_for_start_uses_bg_slots() {
+    // `datum start` writes a Start row. The canonical group emits the
+    // `start` badge, with LEAD/TRAIL slots coloured by surrounding state.
     let _g = no_color_scope();
     let e = entry_at("workout", Verb::Start, None, dt(2026, 4, 22, 9, 15));
     let ctx = RenderContext::default();
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);
     assert!(stripped.contains("start"), "start label: {stripped:?}");
-    assert!(stripped.contains("→"), "right arrow: {stripped:?}");
+    assert!(!stripped.contains("→"), "no arrows in new layout: {stripped:?}");
+    // Default ctx → both slots are empty → two `∅` glyphs.
+    assert_eq!(
+        stripped.matches('∅').count(),
+        2,
+        "two empty slots flank the state cell: {stripped:?}"
+    );
 }

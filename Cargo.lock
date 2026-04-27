@@ -444,6 +444,7 @@ dependencies = [
  "datum-core",
  "datum-parse",
  "datum-sync-client",
+ "md-5",
  "reqwest",
  "rusqlite",
  "serde",

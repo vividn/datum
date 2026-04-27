@@ -23,7 +23,6 @@ pub(crate) const RESET: &str = "\x1b[0m";
 pub(crate) const DIM: &str = "\x1b[2m";
 pub(crate) const UNDERLINE: &str = "\x1b[4m";
 pub(crate) const GRAY_FG: &str = "\x1b[90m";
-pub(crate) const YELLOW_FG: &str = "\x1b[33m";
 
 // ─── RGB + YIQ ───────────────────────────────────────────────────────────────
 
@@ -38,10 +37,18 @@ pub(crate) struct Rgb {
 impl Rgb {
     pub const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
     pub const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
-    /// `#888888` — the shared "ignored / null" grey per §8.
+    /// `#888888` — the shared "ignored / null" grey per §8. Doubles as the
+    /// fg of the empty LEAD/TRAIL slot rendered when there's no prior or
+    /// continuing state.
     pub const IGNORED: Rgb = Rgb { r: 0x88, g: 0x88, b: 0x88 };
     /// `#666666` — foreground over IGNORED bg per §5.
     pub const IGNORED_FG: Rgb = Rgb { r: 0x66, g: 0x66, b: 0x66 };
+    /// `#b0b0b0` — slightly-lighter grey used as the bg of an empty LEAD/
+    /// TRAIL slot in the state-transition group (da-fck). Sits above
+    /// [`Rgb::IGNORED`] (#888888) so the `∅` glyph painted in IGNORED-grey
+    /// reads against it. Distinct from the IGNORED state cell, which uses
+    /// `IGNORED` as bg and `IGNORED_FG` as fg.
+    pub const EMPTY_SLOT_BG: Rgb = Rgb { r: 0xb0, g: 0xb0, b: 0xb0 };
 
     pub fn fg(self) -> String {
         format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)

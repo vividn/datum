@@ -657,14 +657,20 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     //      the transition indicator. A no-op prior (Null/False) means there
     //      was nothing active; the renderer skips the indicator in that case.
     let is_first_occurrence = db.count_entries_filtered(Some(&entry.field), None)? == 0;
-    let prior_state = capture_prior_state(db, &entry, &verb);
+    let lead_state = capture_lead_state(db, &entry);
 
     let strategy = args.conflict_strategy();
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
     let registry = load_registry(db).ok();
     let output = args.output();
     let ongoing_state = capture_ongoing_state(db, &entry);
-    let ctx = RenderContext { last_state: prior_state, is_first_occurrence, ongoing_state };
+    let trail_state = capture_trail_state(db, &entry);
+    let ctx = RenderContext {
+        lead_state,
+        trail_state,
+        is_first_occurrence,
+        ongoing_state,
+    };
     match &outcome {
         InsertOutcome::Inserted { slug } => {
             // The stored slug may differ from entry.slug if a collision
@@ -698,26 +704,52 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-/// Look up the field's active state immediately before `entry`'s start time,
-/// so the renderer can draw a `[prior ▶ next]` transition indicator.
+/// Per da-fck: capture the field's compiled state at `entry.start_time -
+/// ε` for the LEAD slot of the state-transition group. Returns the raw
+/// `last_state_at` output — including `Bool(false)` and the IGNORED
+/// sentinels — so the renderer can decide between painting a state colour
+/// and falling back to the empty-slot grey.
 ///
-/// Returns `None` when:
-///   * the entry has no `start_time` (non-temporal note),
-///   * the verb doesn't represent a state change (Occur / Add / Block / Note),
-///   * the DB query fails or the active state is Null/False (no prior).
-fn capture_prior_state(db: &Db, entry: &Entry, verb: &Verb) -> Option<JsonValue> {
-    if !matches!(verb, Verb::Switch | Verb::Start | Verb::Stop) {
+/// Restricted to state-changing verbs (switch / start / stop / block).
+/// Other verbs ignore the LEAD slot and this returns `None`.
+fn capture_lead_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
+    if !matches!(
+        entry.verb,
+        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+    ) {
         return None;
     }
     let at = entry.start_time.as_ref()?.utc;
-    // Probe one microsecond before the entry's start to avoid picking up the
-    // just-inserted row (the insert hasn't run yet, but this matches
-    // datum's "state as of just before this event" semantics).
     let probe = at - chrono::Duration::microseconds(1);
-    match db.get_active_state(&entry.field, probe) {
-        Ok(JsonValue::Null) | Ok(JsonValue::Bool(false)) | Err(_) => None,
-        Ok(v) => Some(v),
+    datum_core::state::last_state_at(db.conn(), &entry.field, probe, Some(&entry.hid))
+        .ok()
+        .flatten()
+}
+
+/// Per da-fck: capture the trail-state for the TRAIL slot.
+///
+/// * `Block` shapes → `last_state_at(end_time, exclude=row)` — the state
+///   that resumes after the block closes.
+/// * `Point`/`Ongoing` → derive from the entry alone (no DB hit) via
+///   [`render::action::entry_self_trail_state`]; the row's own emitted
+///   state continues forward.
+fn capture_trail_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
+    if !matches!(
+        entry.verb,
+        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+    ) {
+        return None;
     }
+    if matches!(
+        entry.entry_shape,
+        datum_core::entry::EntryShape::Block
+    ) {
+        let end = entry.end_time.as_ref()?.utc;
+        return datum_core::state::last_state_at(db.conn(), &entry.field, end, Some(&entry.hid))
+            .ok()
+            .flatten();
+    }
+    crate::render::action::entry_self_trail_state(entry)
 }
 
 /// Parsed LogArgs — distinguishes the slug-contributing id-key values from
@@ -1386,7 +1418,8 @@ fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
 /// default (no prior, not first) — we'd rather render a lossy row than abort
 /// the whole tail.
 fn build_render_context(entry: &Entry, db: &Db) -> RenderContext {
-    let last_state = capture_prior_state(db, entry, &entry.verb);
+    let lead_state = capture_lead_state(db, entry);
+    let trail_state = capture_trail_state(db, entry);
     let probe = entry
         .start_time
         .as_ref()
@@ -1397,7 +1430,12 @@ fn build_render_context(entry: &Entry, db: &Db) -> RenderContext {
         .unwrap_or(1)
         == 0;
     let ongoing_state = capture_ongoing_state(db, entry);
-    RenderContext { last_state, is_first_occurrence, ongoing_state }
+    RenderContext {
+        lead_state,
+        trail_state,
+        is_first_occurrence,
+        ongoing_state,
+    }
 }
 
 /// Per da-k5z: for occur rows, look up the field's compiled state at the

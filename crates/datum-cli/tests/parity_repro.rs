@@ -73,22 +73,28 @@ fn switch_switch_tail_reproducer_matches_spec() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
 
-    // First switch on a brand-new field. Fixture #7: `∅[state]→`.
+    // Per da-fck the state-transition group renders as
+    // `[LEAD][state cell][TRAIL]` — no arrows. Empty LEAD = grey-`∅`,
+    // empty TRAIL = grey-`∅`, otherwise a single bg-coloured space.
+    // ANSI-stripped, both LEAD and TRAIL collapse to a single visible
+    // character (either `∅` or a space), so the asserts pin the layout.
+
+    // First switch on a brand-new field: LEAD empty, TRAIL = state colour.
     let first = run(&db, &["switch", "myfield", "abc"]);
     let first_info = info_line_of(&first);
     assert_eq!(
         after_timestamp(&first_info),
-        "myfield  ∅ abc →",
+        "myfield  ∅ abc",
         "first-switch info line mismatch:\n{first}"
     );
 
-    // Second switch on the same field. Fixture #8: `←[state2]→` with
-    // left-arrow coloured by prior state. No sparkle, no ∅.
+    // Second switch on the same field: LEAD = prior state colour, TRAIL
+    // = new state colour. Both slots render as a single space when stripped.
     let second = run(&db, &["switch", "myfield", "abcdefg"]);
     let second_info = info_line_of(&second);
     assert_eq!(
         after_timestamp(&second_info),
-        "myfield  ← abcdefg →",
+        "myfield    abcdefg",
         "second-switch info line mismatch:\n{second}"
     );
 
@@ -102,8 +108,8 @@ fn switch_switch_tail_reproducer_matches_spec() {
     assert_eq!(
         lines,
         vec![
-            "myfield  ∅ abc →".to_string(),
-            "myfield  ← abcdefg →".to_string(),
+            "myfield  ∅ abc".to_string(),
+            "myfield    abcdefg".to_string(),
         ],
         "tail info-line output mismatch:\n{tail}"
     );
