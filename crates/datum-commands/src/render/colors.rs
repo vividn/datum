@@ -140,7 +140,10 @@ pub(crate) fn state_rgb(state: &str, spec: Option<&FieldSpec>) -> Rgb {
 }
 
 /// Resolve an arbitrary JSON state value to its `getStateColor` result per §5.
-/// Returns `None` when the value has no canonical color (i.e. `false`).
+/// Returns `None` for `Bool(false)` — the "field has ended" sentinel — so
+/// LEAD/TRAIL slots can render terminal-default whitespace instead of a
+/// solid black bg cell. See `action::render_slot` for how the `None` case
+/// flows into [`SlotKind::FieldEnded`].
 pub(crate) fn state_value_rgb(
     value: &JsonValue,
     field: &str,
@@ -149,7 +152,7 @@ pub(crate) fn state_value_rgb(
     match value {
         JsonValue::Null => Some(Rgb::IGNORED),
         JsonValue::Bool(true) => Some(field_rgb(field, spec)),
-        JsonValue::Bool(false) => Some(Rgb::BLACK),
+        JsonValue::Bool(false) => None,
         JsonValue::String(s) if s == IGNORED_STATE => Some(Rgb::IGNORED),
         JsonValue::String(s) => Some(state_rgb(s, spec)),
         JsonValue::Array(items) => {

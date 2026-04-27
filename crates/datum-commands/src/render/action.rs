@@ -189,13 +189,13 @@ fn render_state_transition_group(
     out
 }
 
-/// Render the central state cell — a bg-coloured badge whose body depends
-/// on the verb / value. Field and state cell rendering is unchanged from
-/// the pre-da-fck implementation.
+/// Render the central state cell — a bg-coloured badge whose body is the
+/// state label itself, with no inline whitespace padding. The LEAD/TRAIL
+/// slots provide the visual separation around it.
 fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
     match entry.verb {
-        Verb::Start => paint_bg(field_rgb(&entry.field, spec), " start "),
-        Verb::Stop => " end ".to_string(),
+        Verb::Start => paint_bg(field_rgb(&entry.field, spec), "start"),
+        Verb::Stop => "end".to_string(),
         Verb::Switch | Verb::Block => render_switch_badge(entry.value.as_ref(), &entry.field, spec),
         // Add / Occur are handled by other branches of `format_state_group`
         // and never reach this function.
@@ -262,31 +262,29 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
         None => String::new(),
         Some(JsonValue::Bool(true)) => {
             let fc = field_rgb(field, spec);
-            paint_bg(fc, " start ")
+            paint_bg(fc, "start")
         }
-        Some(JsonValue::Bool(false)) => " end ".to_string(),
-        Some(JsonValue::Null) => {
-            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &format!(" {NULL_SET} "))
-        }
+        Some(JsonValue::Bool(false)) => "end".to_string(),
+        Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, NULL_SET),
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
-            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &format!(" {s} "))
+            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, s)
         }
-        Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), &format!(" {s} ")),
+        Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), s),
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
             let s1 = &items[0];
             let s2 = &items[1];
             let c1 = state_value_rgb(s1, field, spec).unwrap_or(Rgb::IGNORED);
             let c2 = state_value_rgb(s2, field, spec).unwrap_or(Rgb::IGNORED);
             let mut out = String::new();
-            out.push_str(&paint_bg_fg(c1, c2, &format!(" {} ", scalar_text(s1))));
+            out.push_str(&paint_bg_fg(c1, c2, &scalar_text(s1)));
             out.push_str(&paint(&c2.fg(), ","));
-            out.push_str(&paint_bg_fg(c1, c2, &format!(" {} ", scalar_text(s2))));
+            out.push_str(&paint_bg_fg(c1, c2, &scalar_text(s2)));
             out
         }
         Some(JsonValue::Array(items)) if items.len() == 1 => {
             render_switch_badge(Some(&items[0]), field, spec)
         }
-        Some(other) => paint_bg(state_rgb(&other.to_string(), spec), &format!(" {other} ")),
+        Some(other) => paint_bg(state_rgb(&other.to_string(), spec), &other.to_string()),
     }
 }
 
@@ -311,7 +309,7 @@ pub(crate) fn format_field_badge(
     // Retained in the signature so callers can keep passing the flag without
     // a refactor; the state group is the authoritative emission site.
     let rgb = field_rgb(field, spec);
-    paint_bg(rgb, &format!(" {field} "))
+    paint_bg(rgb, field)
 }
 
 // ─── Timestamp (§3) ──────────────────────────────────────────────────────────
