@@ -2629,6 +2629,15 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     if args.no_autoalias {
         spec.no_autoalias = true;
     }
+    if args.y.is_some() {
+        spec.y = args.y;
+    }
+    if args.height.is_some() {
+        spec.height = args.height;
+    }
+    if args.z_index.is_some() {
+        spec.z_index = args.z_index;
+    }
 
     spec.validate_default_verb()
         .map_err(|e| anyhow::anyhow!(e))?;
@@ -3824,6 +3833,9 @@ mod tests {
             id_keys: vec![],
             data_keys: vec![],
             no_autoalias: false,
+            y: None,
+            height: None,
+            z_index: None,
         };
         cmd_spec_set(args, &db).unwrap();
 
@@ -3860,6 +3872,9 @@ mod tests {
             id_keys: vec![],
             data_keys: vec![],
             no_autoalias: false,
+            y: None,
+            height: None,
+            z_index: None,
         };
         cmd_spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());

@@ -20,5 +20,6 @@ ulid = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 sha2 = { workspace = true }
+md-5 = { workspace = true }
 rand = { workspace = true }
 iana-time-zone = "0.1"

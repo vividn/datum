@@ -1110,11 +1110,43 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 i += 1;
             }
             FlagSplit::Long("no-autoalias") => { out.no_autoalias = true; i += 1; }
+            FlagSplit::Long("y") => {
+                let (v, ni) = take_value(tail, i, None, "--y")?;
+                out.y = Some(parse_position_f64(v, "--y")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("y", v) => {
+                out.y = Some(parse_position_f64(v, "--y")?);
+                i += 1;
+            }
+            FlagSplit::Long("height") => {
+                let (v, ni) = take_value(tail, i, None, "--height")?;
+                out.height = Some(parse_position_f64(v, "--height")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("height", v) => {
+                out.height = Some(parse_position_f64(v, "--height")?);
+                i += 1;
+            }
+            FlagSplit::Long("z-index") => {
+                let (v, ni) = take_value(tail, i, None, "--z-index")?;
+                out.z_index = Some(parse_position_f64(v, "--z-index")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("z-index", v) => {
+                out.z_index = Some(parse_position_f64(v, "--z-index")?);
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     out.field = require_first_pos(&pos.iter().copied().collect::<Vec<_>>(), "<FIELD>")?;
     Ok(out)
+}
+
+fn parse_position_f64(s: &str, flag: &str) -> Result<f64> {
+    s.parse::<f64>()
+        .map_err(|_| ParseError::InvalidArg(format!("{flag} expects a number, got '{s}'")))
 }
 
 fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {

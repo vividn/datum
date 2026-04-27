@@ -124,10 +124,58 @@ pub struct FieldSpec {
     /// over).
     #[serde(default)]
     pub no_autoalias: bool,
+
+    /// Vertical position of the field's row, expressed as a fraction
+    /// (0.0 = top, 1.0 = bottom) of the dayview's data area. When None,
+    /// `resolve_position` falls back to a deterministic hash of the field
+    /// name (port of original datum's
+    /// `parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32)`).
+    #[serde(default)]
+    pub y: Option<f64>,
+
+    /// Vertical height of the field's row, expressed as a fraction
+    /// (0.0 to 1.0) of the dayview's data area. When None, defaults to 0.12
+    /// (matching original datum's default).
+    #[serde(default)]
+    pub height: Option<f64>,
+
+    /// Stacking order. Higher values render on top. When None, defaults to
+    /// the resolved `y` value (so lower-positioned fields render above
+    /// higher ones by default — matches original's `spec.zIndex ?? pY`
+    /// behavior).
+    #[serde(default)]
+    pub z_index: Option<f64>,
 }
+
+/// Resolved triple of `(y, height, z_index)` after applying defaults and the
+/// deterministic-hash fallback for missing `y`. Consumed by dayview/nowview
+/// layout in `datum-layout`.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResolvedPosition {
+    pub y: f64,
+    pub height: f64,
+    pub z_index: f64,
+}
+
+/// Default row height when `FieldSpec::height` is unset. Matches original
+/// datum's `DEFAULT_HEIGHT`.
+pub const DEFAULT_FIELD_HEIGHT: f64 = 0.12;
 
 /// The subset of verbs permitted as a field's `default_verb`.
 pub const DEFAULT_VERB_CHOICES: &[Verb] = &[Verb::Occur, Verb::Start, Verb::Switch, Verb::Add];
+
+/// Deterministic-hash fallback for a field's `y` position. Stable across runs
+/// and platforms so unconfigured fields land at the same vertical position
+/// every time. Direct port of the original datum:
+/// `parseInt(md5(field).slice(0, 8), 16) / Math.pow(2, 32)` — takes the first
+/// 4 bytes of md5(field) as a big-endian u32 and divides by 2^32 to get a
+/// value in `[0.0, 1.0)`.
+fn hash_y(field: &str) -> f64 {
+    use md5::{Digest, Md5};
+    let digest = Md5::digest(field.as_bytes());
+    let n = u32::from_be_bytes([digest[0], digest[1], digest[2], digest[3]]);
+    f64::from(n) / (f64::from(u32::MAX) + 1.0)
+}
 
 impl FieldSpec {
     /// New bare spec with sensible defaults for the given field name and verb.
@@ -146,7 +194,22 @@ impl FieldSpec {
             id_keys: Vec::new(),
             data_keys: Vec::new(),
             no_autoalias: false,
+            y: None,
+            height: None,
+            z_index: None,
         }
+    }
+
+    /// Resolve `(y, height, z_index)` for this field, applying defaults and
+    /// the deterministic-hash fallback for an unset `y`. The `field_name`
+    /// argument exists to keep the resolver callable from layout code that
+    /// has the name in hand (avoids relying on `self.field` being populated
+    /// in flight).
+    pub fn resolve_position(&self, field_name: &str) -> ResolvedPosition {
+        let y = self.y.unwrap_or_else(|| hash_y(field_name));
+        let height = self.height.unwrap_or(DEFAULT_FIELD_HEIGHT);
+        let z_index = self.z_index.unwrap_or(y);
+        ResolvedPosition { y, height, z_index }
     }
 
     /// Validate that `default_verb` is one of the accepted canonical choices.
@@ -542,6 +605,120 @@ mod tests {
         assert!(spec.validate_default_verb().is_ok());
     }
 
+    // ─── Position resolution (da-dqb) ───────────────────────────────────────
+
+    #[test]
+    fn resolve_position_uses_explicit_values_when_set() {
+        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        spec.y = Some(0.05);
+        spec.height = Some(0.20);
+        spec.z_index = Some(7.0);
+        let r = spec.resolve_position("sleep");
+        assert_eq!(r.y, 0.05);
+        assert_eq!(r.height, 0.20);
+        assert_eq!(r.z_index, 7.0);
+    }
+
+    #[test]
+    fn resolve_position_falls_back_to_hash_y_and_default_height() {
+        // None for every position field → all three come from defaults.
+        let spec = FieldSpec::new("coffee", Verb::Occur);
+        let r = spec.resolve_position("coffee");
+        // hash fallback in [0.0, 1.0)
+        assert!(r.y >= 0.0 && r.y < 1.0);
+        assert_eq!(r.height, DEFAULT_FIELD_HEIGHT);
+        // z_index defaults to resolved y
+        assert_eq!(r.z_index, r.y);
+    }
+
+    #[test]
+    fn resolve_position_z_index_defaults_to_y_when_y_is_explicit() {
+        let mut spec = FieldSpec::new("focus", Verb::Switch);
+        spec.y = Some(0.42);
+        // height + z_index unset
+        let r = spec.resolve_position("focus");
+        assert_eq!(r.y, 0.42);
+        assert_eq!(r.height, DEFAULT_FIELD_HEIGHT);
+        assert_eq!(r.z_index, 0.42);
+    }
+
+    #[test]
+    fn resolve_position_partial_overrides() {
+        // Only height set; y and z_index come from defaults.
+        let mut spec = FieldSpec::new("dream", Verb::Switch);
+        spec.height = Some(0.30);
+        let r = spec.resolve_position("dream");
+        assert_eq!(r.height, 0.30);
+        assert!(r.y >= 0.0 && r.y < 1.0);
+        assert_eq!(r.z_index, r.y);
+
+        // Only z_index set; y comes from hash, height from default.
+        let mut spec = FieldSpec::new("dream", Verb::Switch);
+        spec.z_index = Some(99.0);
+        let r = spec.resolve_position("dream");
+        assert_eq!(r.z_index, 99.0);
+        assert_eq!(r.height, DEFAULT_FIELD_HEIGHT);
+    }
+
+    #[test]
+    fn hash_y_is_deterministic_and_in_range() {
+        // Same input → same output, every time.
+        let a = hash_y("sleep");
+        let b = hash_y("sleep");
+        assert_eq!(a, b);
+        assert!(a >= 0.0 && a < 1.0);
+
+        // Different fields hash to different positions (probabilistically;
+        // a collision on these specific names would be a regression).
+        assert_ne!(hash_y("sleep"), hash_y("coffee"));
+        assert_ne!(hash_y("coffee"), hash_y("project"));
+    }
+
+    #[test]
+    fn hash_y_matches_original_datum_reference_value() {
+        // Original datum: parseInt(md5(field).slice(0, 8), 16) / 2**32
+        // md5("sleep") = c9fab33e9458412c527c3fe8a13ee37d
+        // first 8 hex chars: 0xc9fab33e
+        let got = hash_y("sleep");
+        let expected = f64::from(0xc9fa_b33e_u32) / (f64::from(u32::MAX) + 1.0);
+        assert!((got - expected).abs() < 1e-12, "got {got}, expected {expected}");
+    }
+
+    #[test]
+    fn position_fields_serde_roundtrip() {
+        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        spec.y = Some(0.05);
+        spec.height = Some(0.20);
+        spec.z_index = Some(1.0);
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: FieldSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.y, Some(0.05));
+        assert_eq!(back.height, Some(0.20));
+        assert_eq!(back.z_index, Some(1.0));
+    }
+
+    #[test]
+    fn overlap_resolves_with_explicit_z_index_on_top() {
+        // Two fields share y/height; the one with the higher z_index renders
+        // on top. Resolver just exposes the z_index — the rendering layer
+        // owns the actual stacking — but we can verify the resolved triple.
+        let mut sleep = FieldSpec::new("sleep", Verb::Start);
+        sleep.y = Some(0.05);
+        sleep.height = Some(0.20);
+        sleep.z_index = Some(1.0);
+
+        let mut focus = FieldSpec::new("focus", Verb::Switch);
+        focus.y = Some(0.05);
+        focus.height = Some(0.20);
+        focus.z_index = Some(2.0);
+
+        let rs = sleep.resolve_position("sleep");
+        let rf = focus.resolve_position("focus");
+        assert_eq!(rs.y, rf.y);
+        assert_eq!(rs.height, rf.height);
+        assert!(rf.z_index > rs.z_index, "focus must render above sleep");
+    }
+
     #[test]
     fn legacy_spec_json_deserializes_with_defaults() {
         // Old field_specs JSON (phase-1 shape) must still deserialize.
@@ -563,6 +740,11 @@ mod tests {
         assert!(spec.id_keys.is_empty());
         assert!(spec.data_keys.is_empty());
         assert!(!spec.no_autoalias);
+        // da-dqb: position fields are forwards-compatible — default to None
+        // on legacy JSON, with resolve_position falling back to hash/defaults.
+        assert!(spec.y.is_none());
+        assert!(spec.height.is_none());
+        assert!(spec.z_index.is_none());
     }
 
     // ─── Template interpolation tests (A1 acceptance) ────────────────────────

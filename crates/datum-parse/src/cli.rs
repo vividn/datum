@@ -459,6 +459,17 @@ pub struct SpecSetArgs {
     pub id_keys: Vec<String>,
     pub data_keys: Vec<String>,
     pub no_autoalias: bool,
+    /// Vertical position of the field on the dayview/nowview, fraction
+    /// `[0.0, 1.0]`. `None` here means "leave as-is in the existing spec";
+    /// to clear an explicit value, the user must currently re-set the spec
+    /// from JSON. Default fallback is the `md5(field)` hash.
+    pub y: Option<f64>,
+    /// Vertical row height as a fraction of the dayview's data area.
+    /// `None` here means "leave as-is"; default fallback is `0.12`.
+    pub height: Option<f64>,
+    /// Stacking order. Higher values render on top. `None` here means
+    /// "leave as-is"; default fallback is the resolved `y`.
+    pub z_index: Option<f64>,
 }
 
 impl SpecSetArgs {
@@ -478,6 +489,9 @@ impl SpecSetArgs {
             id_keys: Vec::new(),
             data_keys: Vec::new(),
             no_autoalias: false,
+            y: None,
+            height: None,
+            z_index: None,
         }
     }
 }
