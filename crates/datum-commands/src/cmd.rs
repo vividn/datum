@@ -2774,6 +2774,9 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
     let device = device_id()?;
     let mut imported = 0usize;
     let mut skipped = 0usize;
+    let mut points = 0usize;
+    let mut blocks = 0usize;
+    let mut dur_parse_warnings = 0usize;
 
     for doc in docs {
         let data = &doc["data"];
@@ -2784,11 +2787,6 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
             None => { skipped += 1; continue; }
         };
 
-        // Map datum verbs from state type
-        let verb = if data["state"].is_boolean() { Verb::Switch }
-            else if data["occurTime"].is_object() { Verb::Occur }
-            else { Verb::Add };
-
         let value = if data["state"].is_null() {
             None
         } else {
@@ -2797,25 +2795,79 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
 
         let time_start = parse_datum_time(&data["occurTime"]);
 
-        // extra_data: everything in data except known fields
+        // Parse `dur` if present and non-null. On parse failure, leave
+        // end_time as None and let the literal fall through to extra_data
+        // so the user can recover the intent later.
+        let parsed_dur = parse_datum_dur(&data["dur"]);
+        if !data["dur"].is_null() && parsed_dur.is_none() {
+            eprintln!(
+                "warning: could not parse dur {} for {}; keeping literal in extra_data",
+                data["dur"], field,
+            );
+            dur_parse_warnings += 1;
+        }
+
+        let time_end = match (&time_start, parsed_dur) {
+            (Some(start), Some(d)) => Some(DatumTime {
+                utc: start.utc + d,
+                offset_minutes: start.offset_minutes,
+                timezone: start.timezone.clone(),
+            }),
+            _ => None,
+        };
+
+        // Pick the verb. A successfully-parsed dur on a non-boolean state
+        // means this is a block-shaped entry; switch (boolean state) wins
+        // over block; bare occur is the fallback when there's an
+        // occurTime; rows with no time at all map to add.
+        let verb = if data["state"].is_boolean() {
+            Verb::Switch
+        } else if time_end.is_some() {
+            Verb::Block
+        } else if data["occurTime"].is_object() {
+            Verb::Occur
+        } else {
+            Verb::Add
+        };
+
+        // extra_data: preserve everything in `data` except the fields we
+        // map onto first-class columns. `dur` and `lastState` are kept as
+        // intent (datum-compatible read-back); `_imported_from` marks the
+        // row's provenance for `--imported` queries later.
         let mut extra = serde_json::Map::new();
         if let Some(obj) = data.as_object() {
             for (k, v) in obj {
-                if !matches!(k.as_str(), "field" | "state" | "occurTime" | "dur" | "lastState") {
+                if !matches!(k.as_str(), "field" | "state" | "occurTime") {
                     extra.insert(k.clone(), v.clone());
                 }
             }
         }
-        let extra_data = if extra.is_empty() { None } else { Some(JsonValue::Object(extra)) };
+        extra.insert(
+            "_imported_from".to_string(),
+            JsonValue::String("datum-backup".to_string()),
+        );
+        let extra_data = Some(JsonValue::Object(extra));
 
         let created_at = parse_datum_time(&meta["createTime"])
             .map(|t| t.utc)
             .unwrap_or_else(chrono::Utc::now);
 
         let mut entry = Entry::new(
-            field, verb, value, extra_data, None, time_start, None, device.clone(),
+            field, verb, value, extra_data, None,
+            time_start, time_end, device.clone(),
         );
         entry.create_time = created_at;
+        // Imported rows weren't produced by a real parse pass; sentinel 0
+        // distinguishes them from `CURRENT_PARSER_VERSION` rows so a future
+        // re-derive sweep can find and reprocess them.
+        entry.parser_version = 0;
+        entry.raw_input = String::new();
+        entry.alias_chain = None;
+
+        match entry.entry_shape {
+            datum_core::entry::EntryShape::Block => blocks += 1,
+            _ => points += 1,
+        }
 
         if dry_run {
             println!("[dry-run] would import: {}", entry.slug);
@@ -2830,7 +2882,18 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
         }
     }
 
-    println!("Migration complete: {imported} imported, {skipped} skipped.");
+    if dry_run {
+        println!(
+            "[dry-run] Migration summary: {imported} would import ({points} point, {blocks} block), {skipped} skipped."
+        );
+    } else {
+        println!(
+            "Migration complete: {imported} imported ({points} point, {blocks} block), {skipped} skipped."
+        );
+    }
+    if dur_parse_warnings > 0 {
+        println!("({dur_parse_warnings} dur values could not be parsed; literals preserved in extra_data.)");
+    }
     Ok(())
 }
 
@@ -2840,6 +2903,28 @@ fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
     let tz = v["tz"].as_str().unwrap_or("UTC").to_string();
     let offset_minutes = v["o"].as_f64().map(|o| (o * 60.0) as i32).unwrap_or(0);
     Some(DatumTime { utc, offset_minutes, timezone: tz })
+}
+
+/// Parse a datum doc's `data.dur` field into a `chrono::Duration`.
+///
+/// Datum stores durations as ISO-8601 strings (e.g. `"PT8H"`, `"PT1M30S"`).
+/// Older rows occasionally appear as numbers (interpreted as seconds) or
+/// as JSON null (an explicit "no duration" marker — distinguishable from
+/// a missing key). Returns `None` for null/missing/unparseable inputs.
+fn parse_datum_dur(v: &JsonValue) -> Option<chrono::Duration> {
+    if v.is_null() {
+        return None;
+    }
+    if let Some(s) = v.as_str() {
+        return parse_duration(s).ok();
+    }
+    if let Some(n) = v.as_i64() {
+        return Some(chrono::Duration::seconds(n));
+    }
+    if let Some(f) = v.as_f64() {
+        return Some(chrono::Duration::seconds(f as i64));
+    }
+    None
 }
 
 // ─── Backup / Restore ────────────────────────────────────────────────────────
