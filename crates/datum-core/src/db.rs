@@ -413,68 +413,32 @@ impl Db {
         strategy: ConflictStrategy,
     ) -> Result<InsertOutcome> {
         let tx = self.conn.unchecked_transaction()?;
-        let existing: Option<(String, Option<String>)> = tx
-            .query_row(
-                "SELECT slug, data FROM entries
-                 WHERE content_hash = ?1 AND deleted_at IS NULL
-                 LIMIT 1",
-                params![entry.content_hash],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
-            )
-            .optional()?;
-
-        let outcome = match (existing, strategy) {
-            (None, _) => {
-                let stored_slug = raw_insert(&tx, entry)?;
-                let inserted = fetch_entry_any(&tx, &stored_slug)?;
-                history::record(&tx, &inserted, ChangeKind::Create)?;
-                // D5: post-write conflict detection. Runs inside the same
-                // transaction so the conflict row is atomic with the insert.
-                crate::conflicts::detect_for_entry(
-                    &tx,
-                    &inserted,
-                    crate::conflicts::DetectedBy::LocalValidator,
-                )?;
-                InsertOutcome::Inserted { slug: stored_slug }
-            }
-            (Some((slug, _)), ConflictStrategy::Ignore) => {
-                InsertOutcome::Ignored { slug }
-            }
-            (Some((slug, _)), ConflictStrategy::Update) => {
-                let pre = fetch_entry_any(&tx, &slug)?;
-                history::record(&tx, &pre, ChangeKind::UserEdit)?;
-                raw_overwrite_mutables(&tx, &slug, entry, None)?;
-                InsertOutcome::Updated { slug }
-            }
-            (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
-                let pre = fetch_entry_any(&tx, &slug)?;
-                history::record(&tx, &pre, ChangeKind::UserEdit)?;
-                let existing_data: Option<JsonValue> = existing_data_json
-                    .as_deref()
-                    .and_then(|s| serde_json::from_str(s).ok());
-                let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
-                raw_overwrite_mutables(&tx, &slug, entry, Some(merged))?;
-                InsertOutcome::Merged { slug }
-            }
-            (Some((old_slug, _)), ConflictStrategy::Rekey) => {
-                // Rekey: insert the incoming row with its own slug. Both rows
-                // share a content_hash — the content_hash column is not UNIQUE.
-                // The new row gets its own `Create` history entry; the
-                // original row is untouched.
-                let new_slug = raw_insert(&tx, entry)?;
-                let inserted = fetch_entry_any(&tx, &new_slug)?;
-                history::record(&tx, &inserted, ChangeKind::Create)?;
-                crate::conflicts::detect_for_entry(
-                    &tx,
-                    &inserted,
-                    crate::conflicts::DetectedBy::LocalValidator,
-                )?;
-                InsertOutcome::Rekeyed { old_slug, new_slug }
-            }
-        };
-
+        let outcome = insert_entry_in_tx(&tx, entry, strategy)?;
         tx.commit()?;
         Ok(outcome)
+    }
+
+    /// Bulk-insert entries inside a single SQLite transaction. Uses the
+    /// supplied [`ConflictStrategy`] for every row. One commit covers the
+    /// whole batch — at ~100k rows this is ~50-100x faster than calling
+    /// [`Self::insert_entry_with_strategy`] per row, which opens its own
+    /// transaction per call.
+    ///
+    /// The whole batch is atomic: if any row errors (other than a
+    /// duplicate-handled-as-`Ignored` outcome), the transaction is rolled
+    /// back and no rows are persisted.
+    pub fn insert_entries_batch(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+    ) -> Result<Vec<InsertOutcome>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut outcomes = Vec::with_capacity(entries.len());
+        for entry in entries {
+            outcomes.push(insert_entry_in_tx(&tx, entry, strategy)?);
+        }
+        tx.commit()?;
+        Ok(outcomes)
     }
 
     /// Persist a mutation to an existing entry, matched by `entry.slug`.
@@ -1981,6 +1945,74 @@ fn build_datum_time(
 // transactions alongside `entry_history` writes. The public `Db` methods above
 // wrap them with `unchecked_transaction` to keep the entries mutation and the
 // history row atomic.
+
+/// Per-entry insert logic shared by `insert_entry_with_strategy` (one tx per
+/// call) and `insert_entries_batch` (one tx for the whole batch).
+fn insert_entry_in_tx(
+    conn: &Connection,
+    entry: &Entry,
+    strategy: ConflictStrategy,
+) -> Result<InsertOutcome> {
+    let existing: Option<(String, Option<String>)> = conn
+        .query_row(
+            "SELECT slug, data FROM entries
+             WHERE content_hash = ?1 AND deleted_at IS NULL
+             LIMIT 1",
+            params![entry.content_hash],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()?;
+
+    let outcome = match (existing, strategy) {
+        (None, _) => {
+            let stored_slug = raw_insert(conn, entry)?;
+            let inserted = fetch_entry_any(conn, &stored_slug)?;
+            history::record(conn, &inserted, ChangeKind::Create)?;
+            // D5: post-write conflict detection. Runs inside the same
+            // transaction so the conflict row is atomic with the insert.
+            crate::conflicts::detect_for_entry(
+                conn,
+                &inserted,
+                crate::conflicts::DetectedBy::LocalValidator,
+            )?;
+            InsertOutcome::Inserted { slug: stored_slug }
+        }
+        (Some((slug, _)), ConflictStrategy::Ignore) => InsertOutcome::Ignored { slug },
+        (Some((slug, _)), ConflictStrategy::Update) => {
+            let pre = fetch_entry_any(conn, &slug)?;
+            history::record(conn, &pre, ChangeKind::UserEdit)?;
+            raw_overwrite_mutables(conn, &slug, entry, None)?;
+            InsertOutcome::Updated { slug }
+        }
+        (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
+            let pre = fetch_entry_any(conn, &slug)?;
+            history::record(conn, &pre, ChangeKind::UserEdit)?;
+            let existing_data: Option<JsonValue> = existing_data_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok());
+            let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
+            raw_overwrite_mutables(conn, &slug, entry, Some(merged))?;
+            InsertOutcome::Merged { slug }
+        }
+        (Some((old_slug, _)), ConflictStrategy::Rekey) => {
+            // Rekey: insert the incoming row with its own slug. Both rows
+            // share a content_hash — the content_hash column is not UNIQUE.
+            // The new row gets its own `Create` history entry; the original
+            // row is untouched.
+            let new_slug = raw_insert(conn, entry)?;
+            let inserted = fetch_entry_any(conn, &new_slug)?;
+            history::record(conn, &inserted, ChangeKind::Create)?;
+            crate::conflicts::detect_for_entry(
+                conn,
+                &inserted,
+                crate::conflicts::DetectedBy::LocalValidator,
+            )?;
+            InsertOutcome::Rekeyed { old_slug, new_slug }
+        }
+    };
+
+    Ok(outcome)
+}
 
 /// Insert an entry, retrying on slug/hid collisions with a suffixed slug or
 /// freshly-generated hid. Returns the slug actually stored.

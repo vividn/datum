@@ -97,6 +97,43 @@
         "humanId": "syn008",
         "createTime": {"utc": "2025-01-08T13:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
       }
+    },
+    {
+      "_id": "feeling:2025-01-08T14:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T14:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "feeling",
+        "state": {"primary": "calm", "intensity": 5}
+      },
+      "meta": {
+        "humanId": "syn009",
+        "createTime": {"utc": "2025-01-08T14:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "tags:2025-01-08T15:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T15:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "tags",
+        "state": ["focus", "deep-work"]
+      },
+      "meta": {
+        "humanId": "syn010",
+        "createTime": {"utc": "2025-01-08T15:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "thinking:2025-01-08T16:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T16:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "thinking",
+        "state": "idea",
+        "dur": null
+      },
+      "meta": {
+        "humanId": "syn011",
+        "createTime": {"utc": "2025-01-08T16:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
     }
   ]
 }

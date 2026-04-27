@@ -12,21 +12,24 @@
 //!
 //! | Doc # | Field          | Shape    | Notes                                                                        |
 //! | ----- | -------------- | -------- | ---------------------------------------------------------------------------- |
-//! | 1     | mood           | point    | string `state=happy`, no dur → `Verb::Occur` (only boolean state → `Switch`) |
+//! | 1     | mood           | point    | string `state=happy`, no dur → `Verb::Switch` (state present, dur absent)    |
 //! | 2     | sleep          | block    | `dur=PT8H` → `end_time = start + 8h`, dur literal preserved in extra_data    |
-//! | 3     | work           | block    | string `state=focus` + `dur=PT3M` → block with value preserved + dur intent  |
+//! | 3     | work           | block    | string `state=focus` + `dur=PT3M` → `Verb::Block` (state present + dur)      |
 //! | 4     | brushteeth     | point    | minimal occur-only — no state, no dur                                        |
-//! | 5     | tracking       | point    | boolean `state=true` → `Verb::Switch` via boolean-state heuristic            |
+//! | 5     | tracking       | point    | boolean `state=true` → `Verb::Switch`                                        |
 //! | 6     | test           | block    | `dur=PT1M`, `o=0` UTC → tz/offset round-trip                                 |
 //! | 7     | consume        | point    | extras `id`, `medium` survive into extra_data; no collision with `Entry.hid` |
 //! | 8     | malformed_dur  | point    | unparseable `dur` → warn-not-fail, no `end_time`, literal preserved verbatim |
+//! | 9     | feeling        | point    | object `state={primary, intensity}` → `Verb::Switch`, value stored verbatim  |
+//! | 10    | tags           | point    | array `state=[...]` → `Verb::Switch` (single entry; no expansion)            |
+//! | 11    | thinking       | point    | string `state=idea` + `dur=null` → `Verb::Switch` (null dur ≡ absent)        |
 //!
-//! Counts: 8 imported (5 point, 3 block).
+//! Counts: 11 imported (8 point, 3 block).
 
 mod common;
 
 use common::run_cli;
-use datum_core::entry::EntryShape;
+use datum_core::entry::{EntryShape, Verb};
 use datum_core::test_util::fresh_db;
 use std::collections::HashSet;
 
@@ -38,7 +41,7 @@ fn migrate_import_synthetic_locks_db_shape() {
     run_cli(&["migrate", "import", FIXTURE], &db).expect("synthetic import");
 
     let entries = db.all_entries().unwrap();
-    assert_eq!(entries.len(), 8, "fixture defines 8 importable docs");
+    assert_eq!(entries.len(), 11, "fixture defines 11 importable docs");
 
     let points = entries
         .iter()
@@ -48,7 +51,10 @@ fn migrate_import_synthetic_locks_db_shape() {
         .iter()
         .filter(|e| e.entry_shape == EntryShape::Block)
         .count();
-    assert_eq!(points, 5, "expected 5 point entries (docs 1, 4, 5, 7, 8)");
+    assert_eq!(
+        points, 8,
+        "expected 8 point entries (docs 1, 4, 5, 7, 8, 9, 10, 11)",
+    );
     assert_eq!(blocks, 3, "expected 3 block entries (docs 2, 3, 6)");
 
     // Every block has both times set and the original `dur` literal preserved
@@ -98,6 +104,13 @@ fn migrate_import_synthetic_locks_db_shape() {
     }
 
     // ─── Per-doc structural asserts ──────────────────────────────────────
+
+    // Doc 1 (mood, string state, no dur): non-boolean state still classifies
+    // as Switch under the state-aware rule (was Occur before da-1wf).
+    let mood = entries.iter().find(|e| e.field == "mood").expect("doc 1: mood");
+    assert_eq!(mood.entry_shape, EntryShape::Point);
+    assert_eq!(mood.verb, Verb::Switch);
+    assert_eq!(mood.value, Some(serde_json::json!("happy")));
 
     // Doc 2 (sleep / PT8H): end_time = start + 8h.
     let sleep = entries
@@ -175,6 +188,36 @@ fn migrate_import_synthetic_locks_db_shape() {
         serde_json::json!("not-a-duration"),
         "malformed dur literal must survive verbatim in extra_data",
     );
+
+    // Doc 9 (feeling, object state): object value stored verbatim under Switch.
+    let feeling = entries.iter().find(|e| e.field == "feeling").expect("doc 9: feeling");
+    assert_eq!(feeling.entry_shape, EntryShape::Point);
+    assert_eq!(feeling.verb, Verb::Switch);
+    assert_eq!(
+        feeling.value,
+        Some(serde_json::json!({"primary": "calm", "intensity": 5})),
+        "object state must round-trip as the entry's value verbatim",
+    );
+
+    // Doc 10 (tags, array state): array value stored as a single entry; the
+    // render layer decides what to do with multi-state values.
+    let tags = entries.iter().find(|e| e.field == "tags").expect("doc 10: tags");
+    assert_eq!(tags.entry_shape, EntryShape::Point);
+    assert_eq!(tags.verb, Verb::Switch);
+    assert_eq!(tags.value, Some(serde_json::json!(["focus", "deep-work"])));
+
+    // Doc 11 (thinking, state + dur=null): null dur is treated as absent,
+    // so this is Switch (state present, no derived end_time). The literal
+    // null survives in extra_data as datum-compatible read-back.
+    let thinking = entries.iter().find(|e| e.field == "thinking").expect("doc 11: thinking");
+    assert_eq!(thinking.entry_shape, EntryShape::Point);
+    assert_eq!(thinking.verb, Verb::Switch);
+    assert_eq!(thinking.value, Some(serde_json::json!("idea")));
+    assert!(thinking.end_time.is_none());
+    assert!(
+        thinking.data.as_ref().unwrap()["dur"].is_null(),
+        "explicit dur=null must round-trip into extra_data",
+    );
 }
 
 #[test]
@@ -182,7 +225,7 @@ fn migrate_import_synthetic_is_idempotent() {
     let db = fresh_db();
     run_cli(&["migrate", "import", FIXTURE], &db).expect("first import");
     let n1 = db.all_entries().unwrap().len();
-    assert_eq!(n1, 8);
+    assert_eq!(n1, 11);
 
     // Second run on the same DB: content_hash dedup must skip every doc.
     run_cli(&["migrate", "import", FIXTURE], &db).expect("second import");
@@ -219,12 +262,12 @@ fn migrate_import_synthetic_summary_reports_correct_counts() {
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("8 imported"),
-        "expected '8 imported' in stdout, got: {stdout}",
+        stdout.contains("11 imported"),
+        "expected '11 imported' in stdout, got: {stdout}",
     );
     assert!(
-        stdout.contains("5 point"),
-        "expected '5 point' in stdout, got: {stdout}",
+        stdout.contains("8 point"),
+        "expected '8 point' in stdout, got: {stdout}",
     );
     assert!(
         stdout.contains("3 block"),

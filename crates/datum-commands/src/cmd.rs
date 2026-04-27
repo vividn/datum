@@ -2892,11 +2892,11 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
         .context("Backup JSON missing 'docs' array")?;
 
     let device = device_id()?;
-    let mut imported = 0usize;
     let mut skipped = 0usize;
     let mut points = 0usize;
     let mut blocks = 0usize;
     let mut dur_parse_warnings = 0usize;
+    let mut entries: Vec<Entry> = Vec::with_capacity(docs.len());
 
     for doc in docs {
         let data = &doc["data"];
@@ -2907,10 +2907,13 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
             None => { skipped += 1; continue; }
         };
 
-        let value = if data["state"].is_null() {
-            None
-        } else {
+        // `state: null` is treated as state-absent — both
+        // `data.get("state") == None` and `Value::Null` collapse here.
+        let has_state = !data["state"].is_null();
+        let value = if has_state {
             Some(data["state"].clone())
+        } else {
+            None
         };
 
         let time_start = parse_datum_time(&data["occurTime"]);
@@ -2936,14 +2939,15 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
             _ => None,
         };
 
-        // Pick the verb. A successfully-parsed dur on a non-boolean state
-        // means this is a block-shaped entry; switch (boolean state) wins
-        // over block; bare occur is the fallback when there's an
-        // occurTime; rows with no time at all map to add.
-        let verb = if data["state"].is_boolean() {
-            Verb::Switch
-        } else if time_end.is_some() {
+        // Pick the verb. State present + dur → Block (state-transition with
+        // duration). State present, no dur → Switch (point-in-time state
+        // transition; covers any JSON value: bool, string, number, object,
+        // array). Stateless rows fall through to the existing
+        // block/occur/add classification by time-shape.
+        let verb = if time_end.is_some() {
             Verb::Block
+        } else if has_state {
+            Verb::Switch
         } else if data["occurTime"].is_object() {
             Verb::Occur
         } else {
@@ -2991,16 +2995,36 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
 
         if dry_run {
             println!("[dry-run] would import: {}", entry.slug);
-            imported += 1;
-            continue;
         }
-
-        match db.insert_entry(&entry) {
-            Ok(()) => imported += 1,
-            Err(datum_core::error::DatumError::Duplicate(_)) => skipped += 1,
-            Err(e) => return Err(e.into()),
-        }
+        entries.push(entry);
     }
+
+    let imported = if dry_run {
+        entries.len()
+    } else {
+        // Single-tx batch insert — for the 100k-doc backup this collapses
+        // 100k commits into one, the primary perf bottleneck. Dedup
+        // (`Ignored`) maps to `skipped` to mirror the previous per-row
+        // behavior; skipped rows also retract their point/block tally.
+        let outcomes = db.insert_entries_batch(&entries, ConflictStrategy::Ignore)?;
+        let mut inserted = 0usize;
+        for (entry, outcome) in entries.iter().zip(outcomes.iter()) {
+            match outcome {
+                InsertOutcome::Inserted { .. } => inserted += 1,
+                InsertOutcome::Ignored { .. } => {
+                    skipped += 1;
+                    match entry.entry_shape {
+                        datum_core::entry::EntryShape::Block => {
+                            blocks = blocks.saturating_sub(1);
+                        }
+                        _ => points = points.saturating_sub(1),
+                    }
+                }
+                _ => {}
+            }
+        }
+        inserted
+    };
 
     if dry_run {
         println!(
