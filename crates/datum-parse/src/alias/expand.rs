@@ -156,7 +156,10 @@ pub fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
     argv
 }
 
-/// Expand "-yy" → ["-y", "-y"], "-qqqq" → ["-q", "-q", "-q", "-q"], etc.
+/// Expand stacked short flags. Same-letter runs (`-yy`, `-qqq`) and
+/// stackable-prefix-plus-terminal forms (`-yyt`, `-qqqd`, `-yt`) both
+/// split into their constituent single-letter flags. The terminal char
+/// can be any short flag — the parser validates it downstream.
 pub fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(argv.len() + 4);
     for arg in argv {
@@ -170,17 +173,25 @@ pub fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
 }
 
 fn expand_stacked(s: &str) -> Option<Vec<String>> {
-    if !s.starts_with('-') || s.len() < 3 {
+    if !s.starts_with('-') || s.starts_with("--") || s.len() < 3 {
         return None;
     }
     let inner = &s[1..];
-    let ch = inner.chars().next()?;
-    if inner.chars().all(|c| c == ch) && matches!(ch, 'y' | 'q') {
-        let count = inner.len();
-        if count > 1 {
-            return Some(vec![format!("-{ch}"); count]);
-        }
+    let chars: Vec<char> = inner.chars().collect();
+    let stackable = |c: char| matches!(c, 'y' | 'q');
+    let prefix_len = chars.iter().take_while(|c| stackable(**c)).count();
+
+    // All-stackable run (e.g. `-yy`, `-qqq`).
+    if prefix_len == chars.len() {
+        return Some(chars.iter().map(|c| format!("-{c}")).collect());
     }
+
+    // Stackable prefix followed by exactly one terminal char
+    // (e.g. `-yyt` → `-y -y -t`, `-qqqd` → `-q -q -q -d`, `-yt` → `-y -t`).
+    if prefix_len >= 1 && prefix_len == chars.len() - 1 {
+        return Some(chars.iter().map(|c| format!("-{c}")).collect());
+    }
+
     None
 }
 
@@ -278,6 +289,35 @@ mod tests {
     fn stacked_flags_expand() {
         let (argv, _) = expand_argv(v(&["datum", "occur", "coffee", "-yy"]), &NoResolver);
         assert_eq!(argv, v(&["datum", "occur", "coffee", "-y", "-y"]));
+    }
+
+    #[test]
+    fn stacked_with_terminal_flag() {
+        // `-yyt 3` should mean `-y -y -t 3` (two days back at 3am).
+        let (argv, _) = expand_argv(
+            v(&["datum", "occur", "coffee", "-yyt", "3"]),
+            &NoResolver,
+        );
+        assert_eq!(argv, v(&["datum", "occur", "coffee", "-y", "-y", "-t", "3"]));
+
+        // Single stackable + terminal also works: `-yt 3` = `-y -t 3`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yt", "3"]), &NoResolver);
+        assert_eq!(argv, v(&["datum", "occur", "x", "-y", "-t", "3"]));
+
+        // Long stacked + terminal: `-qqqd -1` = `-q -q -q -d -1`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-qqqd", "-1"]), &NoResolver);
+        assert_eq!(
+            argv,
+            v(&["datum", "occur", "x", "-q", "-q", "-q", "-d", "-1"])
+        );
+
+        // Long flags untouched.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "--help"]), &NoResolver);
+        assert_eq!(argv, v(&["datum", "occur", "x", "--help"]));
+
+        // Non-stackable cluster left alone (parser handles).
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tD"]), &NoResolver);
+        assert_eq!(argv, v(&["datum", "occur", "x", "-tD"]));
     }
 
     #[test]
