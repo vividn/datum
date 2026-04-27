@@ -1,6 +1,6 @@
 //! Parse `-t` / `--time` arguments, plus stacked-flag counting helpers.
 
-use chrono::NaiveTime;
+use chrono::{DateTime, NaiveDateTime, NaiveTime, Utc};
 
 use crate::error::{ParseError, Result};
 use crate::time::uncertainty::{parse_uncertainty, split_uncertainty, Uncertainty};
@@ -9,6 +9,14 @@ use crate::time::uncertainty::{parse_uncertainty, split_uncertainty, Uncertainty
 pub struct TimeArg {
     pub minutes_offset: Option<i64>,
     pub absolute: Option<NaiveTime>,
+    /// Full ISO-8601 datetime with timezone suffix (`Z` or `±HH:MM`) — a
+    /// fully-resolved instant. Caller stores `utc` directly and keeps its
+    /// own `timezone` field (e.g. from `-z`).
+    pub iso_instant: Option<DateTime<Utc>>,
+    /// ISO-8601 datetime without a timezone suffix
+    /// (`2024-03-16T15:30:00`). Caller interprets the wall-clock moment
+    /// in its current effective timezone.
+    pub iso_naive: Option<NaiveDateTime>,
     pub uncertainty: Option<Uncertainty>,
 }
 
@@ -24,9 +32,12 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 
 /// Parse a -t / --time argument.
 /// Supports:
-///   "+5" / "-8"         relative minutes (+ = future, - = past)
-///   "1513" / "15:13"    absolute HH:MM today
-///   "9:15am" / "21:30"  absolute time today
+///   "+5" / "-8"                           relative minutes (+ = future, - = past)
+///   "1513" / "15:13"                      absolute HH:MM today
+///   "9:15am" / "21:30"                    absolute time today
+///   "2024-03-16T15:30:00Z"                ISO-8601 instant (Z or ±HH:MM)
+///   "2024-03-16T15:30:00"                 ISO-8601 datetime, no tz
+///                                         (caller interprets in effective tz)
 /// plus an optional trailing uncertainty `±N[unit]` / `+-N[unit]`.
 pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
     let (primary, uncert_body) = split_uncertainty(s);
@@ -34,41 +45,129 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
 
     // Literal "now" → current moment (minutes_offset = 0). Matches datum.
     if primary.eq_ignore_ascii_case("now") {
-        return Ok(TimeArg { minutes_offset: Some(0), absolute: None, uncertainty });
+        return Ok(TimeArg {
+            minutes_offset: Some(0),
+            absolute: None,
+            iso_instant: None,
+            iso_naive: None,
+            uncertainty,
+        });
+    }
+
+    // ISO-8601 datetime: `YYYY-MM-DDTHH:MM[:SS[.frac]][Z|±HH:MM]`. We detect
+    // the `T` separator (or space) preceded by a date prefix before trying
+    // the time-only branches, so the date portion isn't misread as a number.
+    if looks_like_iso_datetime(primary) {
+        if let Ok(dt) = DateTime::parse_from_rfc3339(primary) {
+            return Ok(TimeArg {
+                minutes_offset: None,
+                absolute: None,
+                iso_instant: Some(dt.with_timezone(&Utc)),
+                iso_naive: None,
+                uncertainty,
+            });
+        }
+        for fmt in &[
+            "%Y-%m-%dT%H:%M:%S%.f",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%dT%H:%M",
+        ] {
+            if let Ok(naive) = NaiveDateTime::parse_from_str(primary, fmt) {
+                return Ok(TimeArg {
+                    minutes_offset: None,
+                    absolute: None,
+                    iso_instant: None,
+                    iso_naive: Some(naive),
+                    uncertainty,
+                });
+            }
+        }
+        return Err(ParseError::InvalidTime(format!(
+            "Cannot parse ISO-8601 datetime: '{s}'"
+        )));
     }
 
     // Relative minute offset: "+5" (future) or "-8" (past).
     if let Ok(n) = primary.parse::<i64>() {
         if primary.starts_with('+') || primary.starts_with('-') {
-            return Ok(TimeArg { minutes_offset: Some(n), absolute: None, uncertainty });
+            return Ok(TimeArg {
+                minutes_offset: Some(n),
+                absolute: None,
+                iso_instant: None,
+                iso_naive: None,
+                uncertainty,
+            });
         }
         // Plain unsigned number → absolute time.
         // "H" / "HH" → hours; "HMM" → 3-digit hour+minute; "HHMM" → 4-digit.
         // Datum treats 24 as next-midnight.
         if let Some(t) = plain_number_to_time(primary) {
-            return Ok(TimeArg { minutes_offset: None, absolute: Some(t), uncertainty });
+            return Ok(TimeArg {
+                minutes_offset: None,
+                absolute: Some(t),
+                iso_instant: None,
+                iso_naive: None,
+                uncertainty,
+            });
         }
         // Fall back: relative minutes.
-        return Ok(TimeArg { minutes_offset: Some(n), absolute: None, uncertainty });
+        return Ok(TimeArg {
+            minutes_offset: Some(n),
+            absolute: None,
+            iso_instant: None,
+            iso_naive: None,
+            uncertainty,
+        });
     }
 
     // `5am` / `5pm` / `5a` / `5p` — hour + meridian, no minutes.
     if let Some(t) = parse_hour_meridian(primary) {
-        return Ok(TimeArg { minutes_offset: None, absolute: Some(t), uncertainty });
+        return Ok(TimeArg {
+            minutes_offset: None,
+            absolute: Some(t),
+            iso_instant: None,
+            iso_naive: None,
+            uncertainty,
+        });
     }
 
     // Absolute time formats. Short-meridian forms (single-char `a`/`p`)
     // aren't directly supported by chrono, so we handle them explicitly.
     if let Some(t) = parse_short_meridian(primary) {
-        return Ok(TimeArg { minutes_offset: None, absolute: Some(t), uncertainty });
+        return Ok(TimeArg {
+            minutes_offset: None,
+            absolute: Some(t),
+            iso_instant: None,
+            iso_naive: None,
+            uncertainty,
+        });
     }
     for fmt in &["%H:%M:%S%.f", "%H:%M:%S", "%H:%M", "%I:%M%P", "%I:%M %p", "%I%P", "%I %p"] {
         if let Ok(t) = NaiveTime::parse_from_str(primary, fmt) {
-            return Ok(TimeArg { minutes_offset: None, absolute: Some(t), uncertainty });
+            return Ok(TimeArg {
+                minutes_offset: None,
+                absolute: Some(t),
+                iso_instant: None,
+                iso_naive: None,
+                uncertainty,
+            });
         }
     }
 
     Err(ParseError::InvalidTime(format!("Cannot parse time: '{s}'")))
+}
+
+/// Cheap heuristic for ISO-8601 datetime: at least 11 chars, dashes at
+/// positions 4 and 7, `T` (or space) at position 10. No NLP risk — this
+/// only matches structured calendar prefixes.
+fn looks_like_iso_datetime(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() < 11 {
+        return false;
+    }
+    bytes[4] == b'-'
+        && bytes[7] == b'-'
+        && (bytes[10] == b'T' || bytes[10] == b't' || bytes[10] == b' ')
 }
 
 /// Convert a plain-integer string (no sign, variable width) into a

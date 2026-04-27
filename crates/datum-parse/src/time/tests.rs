@@ -153,3 +153,76 @@ fn relative_time_sign_future_vs_past() {
     let t = parse_time_arg("-8").unwrap();
     assert_eq!(t.minutes_offset, Some(-8));
 }
+
+// ── ISO-8601 datetime forms ─────────────────────────────────────────────
+
+#[test]
+fn iso_datetime_z_suffix() {
+    let t = parse_time_arg("2024-03-16T15:30:00Z").unwrap();
+    let dt = t.iso_instant.expect("iso_instant");
+    assert_eq!(
+        dt,
+        chrono::DateTime::parse_from_rfc3339("2024-03-16T15:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    );
+    assert!(t.iso_naive.is_none());
+    assert!(t.absolute.is_none());
+    assert!(t.minutes_offset.is_none());
+}
+
+#[test]
+fn iso_datetime_offset_suffix() {
+    let t = parse_time_arg("2024-03-16T15:30:00+02:00").unwrap();
+    let dt = t.iso_instant.expect("iso_instant");
+    // 15:30 at +02:00 ↔ 13:30 UTC.
+    assert_eq!(
+        dt,
+        chrono::DateTime::parse_from_rfc3339("2024-03-16T13:30:00Z")
+            .unwrap()
+            .with_timezone(&chrono::Utc)
+    );
+}
+
+#[test]
+fn iso_datetime_high_precision_fractional_seconds() {
+    let t = parse_time_arg("2024-03-16T15:30:00.123456789Z").unwrap();
+    let dt = t.iso_instant.expect("iso_instant");
+    // Fractional seconds carry through the parse.
+    assert_eq!(
+        dt.timestamp_subsec_nanos(),
+        123_456_789,
+        "expected nanosecond precision to survive parse"
+    );
+}
+
+#[test]
+fn iso_datetime_no_tz_suffix_returns_naive() {
+    let t = parse_time_arg("2024-03-16T15:30:00").unwrap();
+    let naive = t.iso_naive.expect("iso_naive");
+    assert_eq!(
+        naive,
+        chrono::NaiveDate::from_ymd_opt(2024, 3, 16)
+            .unwrap()
+            .and_hms_opt(15, 30, 0)
+            .unwrap()
+    );
+    assert!(t.iso_instant.is_none());
+}
+
+#[test]
+fn iso_datetime_with_uncertainty_suffix() {
+    let t = parse_time_arg("2024-03-16T15:30:00Z±5m").unwrap();
+    assert!(t.iso_instant.is_some());
+    let u = t.uncertainty.expect("uncertainty");
+    assert_eq!(u.seconds, 300);
+    assert_eq!(u.unit, PrecisionUnit::Minute);
+}
+
+#[test]
+fn iso_datetime_malformed_errors() {
+    // Looks like an ISO datetime (date prefix + T) but the time portion is
+    // garbage — we surface a structured error instead of falling through to
+    // the time-only branches and returning a confusing message.
+    assert!(parse_time_arg("2024-03-16Tnotatime").is_err());
+}

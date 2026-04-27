@@ -270,14 +270,14 @@ language fallback.
 
 - **Daydumb today:** `parse_time_arg` in
   `datum_parse::time::parse_time_str`. Covers: "now", `+N`/`-N`
-  minutes, 4-digit HHMM, absolute HH:MM[:SS], am/pm meridian, plus
+  minutes, 4-digit HHMM, absolute HH:MM[:SS], am/pm meridian, full
+  ISO-8601 datetime (`2024-03-16T15:30:00Z`, `±HH:MM` offsets,
+  fractional seconds, no-tz local form — shipped in da-nnr), plus
   `±N[unit]` uncertainty suffix (daydumb extension from D2).
 - **Missing in daydumb:**
   - Repeated-letter quick syntax (`qqqt` == `-3q -t`).
   - Chrono-node natural-language fallback ("yesterday at noon",
     "next Thursday 3pm").
-  - Full ISO-8601 fallback for date-time strings (only HH:MM forms
-    tested).
 - **Added in daydumb:**
   - `±N[unit]` uncertainty suffix (not in datum).
 
@@ -344,12 +344,13 @@ Resolves a timezone from number (UTC offset, hours), `"system"`,
 
 - **Daydumb today:** `resolve_timezone` in
   `datum_parse::input::time_args` handles IANA names, numeric UTC
-  offset (`-z -7`), and `UTC±N` literals (commit 95f3824, da-xv0).
-  **Still missing:** `"system"` literal — see follow-up bead for
-  ISO-8601 + `system` parser intake.
+  offset (`-z -7`), `UTC±N` literals (commit 95f3824, da-xv0), and
+  the `"system"` literal which resolves to the OS local zone via
+  `iana_time_zone::get_timezone()` (case-insensitive — `system`,
+  `SYSTEM`, `System` all work; native builds only, da-nnr).
 - The `get_timezone.rs` stub in `datum-parse/src/time/` is now a
   misleading leftover (real impl lives in `input/time_args.rs`);
-  flagged for cleanup in the same follow-up bead.
+  flagged for cleanup in a follow-up.
 
 ### `humanTime.ts` (47 LOC)
 

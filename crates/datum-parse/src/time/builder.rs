@@ -1,6 +1,6 @@
 //! `TimeBuilder` — compose stacked flags into a final `DatumTime`.
 
-use chrono::NaiveTime;
+use chrono::{DateTime, NaiveDateTime, NaiveTime, Utc};
 
 #[cfg(feature = "native")]
 use crate::time::datum_time::DatumTime;
@@ -16,6 +16,15 @@ pub struct TimeBuilder {
     pub minutes_back: i64,
     pub date_override: Option<chrono::NaiveDate>,
     pub time_override: Option<NaiveTime>,
+    /// ISO-8601 datetime with explicit zone (`...Z` / `...+02:00`) — a
+    /// fully-resolved instant. Replaces "now" as the build base. The
+    /// entry's `timezone` field still comes from `self.timezone` (i.e.
+    /// `-z`), so the literal sets the moment, not the display zone.
+    pub iso_instant_override: Option<DateTime<Utc>>,
+    /// ISO-8601 datetime without zone suffix (`2024-03-16T15:30:00`).
+    /// Interpreted as local-in-the-effective-zone (`self.timezone` or
+    /// host local) when [`build`] resolves it.
+    pub iso_naive_override: Option<NaiveDateTime>,
     /// Implicit precision produced by `-q*` stacks (None when no `-q` given).
     /// Overridden by any explicit `±N` attached to a `-d`/`-t` arg.
     pub quick_precision: Option<Uncertainty>,
@@ -39,6 +48,8 @@ impl TimeBuilder {
             minutes_back: 0,
             date_override: None,
             time_override: None,
+            iso_instant_override: None,
+            iso_naive_override: None,
             quick_precision: None,
             explicit_precision: None,
             timezone: None,
@@ -83,7 +94,11 @@ impl TimeBuilder {
     }
 
     pub fn with_time_arg(mut self, arg: TimeArg) -> Self {
-        if let Some(abs) = arg.absolute {
+        if let Some(instant) = arg.iso_instant {
+            self.iso_instant_override = Some(instant);
+        } else if let Some(naive) = arg.iso_naive {
+            self.iso_naive_override = Some(naive);
+        } else if let Some(abs) = arg.absolute {
             self.time_override = Some(abs);
         } else if let Some(offset) = arg.minutes_offset {
             self.minutes_back += -offset; // -8 means 8 min ago → minutes_back += 8
@@ -123,7 +138,7 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
-        use chrono::{Local, Offset, Utc};
+        use chrono::{Local, Offset};
 
         if let Some(tz_name) = self.timezone.as_deref() {
             // Panic-safe: resolve_timezone() already validated the name
@@ -133,7 +148,15 @@ impl TimeBuilder {
             let tz: chrono_tz::Tz = tz_name
                 .parse()
                 .expect("TimeBuilder: timezone field must be a validated IANA name");
-            let mut dt = Utc::now().with_timezone(&tz);
+            // ISO-8601 overrides establish the base instant; otherwise we
+            // anchor on "now" in the effective zone.
+            let mut dt = if let Some(instant) = self.iso_instant_override {
+                instant.with_timezone(&tz)
+            } else if let Some(naive) = self.iso_naive_override {
+                resolve_naive_in_tz(naive, tz)
+            } else {
+                Utc::now().with_timezone(&tz)
+            };
             dt = dt - chrono::Duration::minutes(self.minutes_back);
             dt = dt - chrono::Duration::days(self.days_back);
             if let Some(date) = self.date_override {
@@ -151,7 +174,17 @@ impl TimeBuilder {
             return DatumTime { utc, offset_minutes, timezone: tz_name.to_string() };
         }
 
-        let mut dt = Local::now();
+        // Local-zone path: same precedence — ISO overrides win over "now".
+        let mut dt = if let Some(instant) = self.iso_instant_override {
+            instant.with_timezone(&Local)
+        } else if let Some(naive) = self.iso_naive_override {
+            naive
+                .and_local_timezone(Local)
+                .single()
+                .expect("Ambiguous/non-existent local datetime")
+        } else {
+            Local::now()
+        };
 
         // Apply minute offsets first
         dt = dt - chrono::Duration::minutes(self.minutes_back);
@@ -175,5 +208,27 @@ impl TimeBuilder {
         let offset_minutes = dt.offset().local_minus_utc() / 60;
         let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
         DatumTime { utc, offset_minutes, timezone }
+    }
+}
+
+/// Resolve a no-zone ISO-8601 datetime into a concrete moment by reading
+/// it as wall-clock in the supplied IANA zone. Picks the earliest valid
+/// instant when the local time falls in a DST overlap, which matches what
+/// users expect from "the first time the clock read 01:30" on fall-back
+/// days. Spring-forward gaps fall through to a panic with a clear message
+/// — they're rare, and silently shifting the user's input by an hour is
+/// worse than failing loudly.
+#[cfg(feature = "native")]
+fn resolve_naive_in_tz(
+    naive: NaiveDateTime,
+    tz: chrono_tz::Tz,
+) -> chrono::DateTime<chrono_tz::Tz> {
+    use chrono::offset::LocalResult;
+    match naive.and_local_timezone(tz) {
+        LocalResult::Single(dt) => dt,
+        LocalResult::Ambiguous(earlier, _later) => earlier,
+        LocalResult::None => panic!(
+            "TimeBuilder: ISO-8601 wall clock {naive} does not exist in {tz} (DST gap)"
+        ),
     }
 }

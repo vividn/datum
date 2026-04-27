@@ -145,9 +145,29 @@ impl TimeArgs {
 /// * A bare numeric offset in hours: `"-7"`, `"+4"`, `"0"`, `"2"`. This
 ///   maps onto an `Etc/GMT∓N` name because IANA's `Etc/GMT*` zones use
 ///   the POSIX sign convention (UTC+4 → `Etc/GMT-4`).
+/// * `"system"` (case-insensitive): the OS-resolved local timezone.
+///   Native builds only — WASM builds error since the host has no
+///   single ambient zone to resolve to.
 pub fn resolve_timezone(spec: &str) -> Result<String> {
     if spec.is_empty() {
         return Err(ParseError::InvalidArg("Empty timezone".to_string()));
+    }
+
+    // `"system"` literal → OS local zone.
+    if spec.eq_ignore_ascii_case("system") {
+        #[cfg(feature = "native")]
+        {
+            let name = iana_time_zone::get_timezone().map_err(|e| {
+                ParseError::InvalidArg(format!("Cannot resolve system timezone: {e}"))
+            })?;
+            return validate_tz_name(&name);
+        }
+        #[cfg(not(feature = "native"))]
+        {
+            return Err(ParseError::InvalidArg(
+                "'system' timezone is not available in this (non-native) build".to_string(),
+            ));
+        }
     }
 
     // Numeric offset (hours).
@@ -220,6 +240,19 @@ fn apply_time_arg(cur: DatumTime, s: &str, uncertainty: &mut Option<Uncertainty>
         if let Some(u) = arg.uncertainty {
             *uncertainty = Some(u);
         }
+        // ISO-8601 instant (`...Z` / `...+02:00`) — the wall clock and zone
+        // are fully resolved by the literal. We keep the entry's `timezone`
+        // field (so `-z` still drives the IANA name) but the UTC moment is
+        // the literal's instant.
+        if let Some(instant) = arg.iso_instant {
+            return Ok(DatumTime { utc: instant, ..cur });
+        }
+        // ISO-8601 with no zone suffix (`2024-03-16T15:30:00`) — interpret
+        // as local-in-the-current-effective-zone (i.e. `cur.timezone`,
+        // which already reflects any `-z` override).
+        if let Some(naive) = arg.iso_naive {
+            return set_naive_datetime(cur, naive);
+        }
         if let Some(abs) = arg.absolute {
             return set_clock(cur, abs);
         }
@@ -239,15 +272,6 @@ fn apply_time_arg(cur: DatumTime, s: &str, uncertainty: &mut Option<Uncertainty>
                 ..cur
             });
         }
-    }
-
-    // ISO-8601 datetime (`2010-05-20T10:00:00Z`) — datum's parseTimeStr
-    // accepts this. Delegate to chrono.
-    if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
-        return Ok(DatumTime {
-            utc: dt.with_timezone(&Utc),
-            ..cur
-        });
     }
 
     Err(ParseError::InvalidTime(format!(
@@ -307,6 +331,21 @@ fn split_number_unit(s: &str) -> (&str, &str) {
         .map(|(i, _)| i)
         .unwrap_or(s.len());
     (&s[..idx], &s[idx..])
+}
+
+fn set_naive_datetime(cur: DatumTime, naive: chrono::NaiveDateTime) -> Result<DatumTime> {
+    let tz: Tz = cur
+        .timezone
+        .parse()
+        .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {}", cur.timezone)))?;
+    let utc = tz
+        .from_local_datetime(&naive)
+        .single()
+        .ok_or_else(|| {
+            ParseError::InvalidTime(format!("Ambiguous/non-existent local datetime: {naive}"))
+        })?
+        .with_timezone(&Utc);
+    Ok(DatumTime { utc, ..cur })
 }
 
 fn set_clock(cur: DatumTime, abs: chrono::NaiveTime) -> Result<DatumTime> {
@@ -428,6 +467,65 @@ mod tests {
         let mut a = TimeArgs::default();
         a.time = Some("2010-05-20T10:00:00Z".into());
         assert_utc(&build(a), "2010-05-20T10:00:00Z");
+    }
+
+    #[test]
+    fn iso_datetime_offset_suffix_resolves_to_utc() {
+        let mut a = TimeArgs::default();
+        a.time = Some("2024-03-16T15:30:00+02:00".into());
+        // 15:30 +02:00 ↔ 13:30 UTC.
+        assert_utc(&build(a), "2024-03-16T13:30:00Z");
+    }
+
+    #[test]
+    fn iso_datetime_high_precision_round_trips() {
+        let mut a = TimeArgs::default();
+        a.time = Some("2024-03-16T15:30:00.123456789Z".into());
+        let got = build(a);
+        let utc = got.time.unwrap().utc;
+        assert_eq!(utc.timestamp(), 1_710_603_000);
+        assert_eq!(utc.timestamp_subsec_nanos(), 123_456_789);
+    }
+
+    #[test]
+    fn iso_datetime_no_tz_uses_effective_zone() {
+        // No-tz datetime + `-z America/New_York`: the wall clock is read in
+        // NY; 2024-03-16 15:30 EDT ↔ 19:30 UTC (DST in effect by 16 March).
+        let mut a = TimeArgs::default();
+        a.timezone = Some("America/New_York".into());
+        a.time = Some("2024-03-16T15:30:00".into());
+        let got = build(a);
+        assert_utc(&got, "2024-03-16T19:30:00Z");
+        assert_eq!(got.time.unwrap().offset_minutes, -4 * 60);
+    }
+
+    #[test]
+    fn iso_instant_with_explicit_z_overrides_tz_for_instant() {
+        // `-t 2024-03-16T15:30:00Z -z America/New_York`: the literal's `Z`
+        // wins for the actual instant; `-z` still drives the `timezone`
+        // field so the entry stores its display zone.
+        let mut a = TimeArgs::default();
+        a.timezone = Some("America/New_York".into());
+        a.time = Some("2024-03-16T15:30:00Z".into());
+        let got = build(a);
+        assert_utc(&got, "2024-03-16T15:30:00Z");
+        assert_eq!(got.time.as_ref().unwrap().timezone, "America/New_York");
+        // Offset reflects NY at that instant (EDT = -4h on 2024-03-16).
+        assert_eq!(got.time.unwrap().offset_minutes, -4 * 60);
+    }
+
+    // ── `-z system` literal ────────────────────────────────────────────
+    #[test]
+    #[cfg(feature = "native")]
+    fn z_system_resolves_to_os_local_zone() {
+        let expected = iana_time_zone::get_timezone().expect("system tz available");
+        for spec in ["system", "SYSTEM", "System", "sYsTeM"] {
+            let resolved = resolve_timezone(spec).expect("resolve");
+            assert_eq!(
+                resolved, expected,
+                "spec {spec:?} should resolve to OS local zone"
+            );
+        }
     }
 
     // ── relative time strings ──────────────────────────────────────────
