@@ -3002,11 +3002,12 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
     let imported = if dry_run {
         entries.len()
     } else {
-        // Single-tx batch insert — for the 100k-doc backup this collapses
-        // 100k commits into one, the primary perf bottleneck. Dedup
-        // (`Ignored`) maps to `skipped` to mirror the previous per-row
+        // Bulk-load fast path: single tx, no per-row history rows, no
+        // per-row conflict detection. Source backups are self-consistent;
+        // run `datum conflicts list` post-import for belt-and-braces.
+        // Dedup (`Ignored`) maps to `skipped` to mirror the previous per-row
         // behavior; skipped rows also retract their point/block tally.
-        let outcomes = db.insert_entries_batch(&entries, ConflictStrategy::Ignore)?;
+        let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore)?;
         let mut inserted = 0usize;
         for (entry, outcome) in entries.iter().zip(outcomes.iter()) {
             match outcome {
@@ -3034,6 +3035,12 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
         println!(
             "Migration complete: {imported} imported ({points} point, {blocks} block), {skipped} skipped."
         );
+        if imported > 0 {
+            // Bulk-load fast path skipped per-row conflict detection.
+            // Source backups are self-consistent so this is normally fine,
+            // but give the user a one-liner manual fallback.
+            println!("(run `datum conflicts list` to verify nothing slipped through.)");
+        }
     }
     if dur_parse_warnings > 0 {
         println!("({dur_parse_warnings} dur values could not be parsed; literals preserved in extra_data.)");

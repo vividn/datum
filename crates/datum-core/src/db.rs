@@ -441,6 +441,47 @@ impl Db {
         Ok(outcomes)
     }
 
+    /// Bulk-load fast path for one-shot ingestion (e.g. `datum migrate import`).
+    ///
+    /// Like [`Self::insert_entries_batch`], one transaction wraps the whole
+    /// batch. Unlike it, this method **skips** per-row work that's only useful
+    /// for live writes from a user session:
+    ///
+    /// - No `entry_history` rows are written (the migration itself is the
+    ///   audit event; a 100k-row import doesn't need 100k matching `Create`
+    ///   history rows).
+    /// - No per-row conflict detection. `conflicts::detect_for_entry` runs
+    ///   time-range scans against `entries`; at 100k rows this dominates the
+    ///   wall-clock. Source data for migrations is already self-consistent —
+    ///   if you want belt-and-braces verification, run `datum conflicts list`
+    ///   once after the import completes.
+    ///
+    /// Still does: content_hash dedup, slug/hid collision retry. Honors
+    /// [`ConflictStrategy::Ignore`] only (the supported migrate-import mode).
+    /// Other strategies error — the fast path is deliberately narrow.
+    ///
+    /// **OPT-IN.** Existing per-row callers (`switch`, `block`, sync apply)
+    /// must keep using `insert_entry_with_strategy` / `insert_entries_batch`
+    /// so they get full conflict detection and history.
+    pub fn insert_entries_bulk(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+    ) -> Result<Vec<InsertOutcome>> {
+        if !matches!(strategy, ConflictStrategy::Ignore) {
+            return Err(DatumError::Other(format!(
+                "insert_entries_bulk supports only ConflictStrategy::Ignore, got {strategy:?}",
+            )));
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        let mut outcomes = Vec::with_capacity(entries.len());
+        for entry in entries {
+            outcomes.push(insert_entry_bulk_in_tx(&tx, entry)?);
+        }
+        tx.commit()?;
+        Ok(outcomes)
+    }
+
     /// Persist a mutation to an existing entry, matched by `entry.slug`.
     /// Errors [`DatumError::NotFound`] if the slug is unknown and
     /// [`DatumError::Tombstoned`] if the row is soft-deleted. Refreshes
@@ -2012,6 +2053,28 @@ fn insert_entry_in_tx(
     };
 
     Ok(outcome)
+}
+
+/// Bulk-load fast path: dedup-by-content-hash + raw_insert only. Skips
+/// `history::record` and `conflicts::detect_for_entry` — see
+/// [`Db::insert_entries_bulk`] for the rationale.
+fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
+    let existing_slug: Option<String> = conn
+        .query_row(
+            "SELECT slug FROM entries
+             WHERE content_hash = ?1 AND deleted_at IS NULL
+             LIMIT 1",
+            params![entry.content_hash],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    match existing_slug {
+        Some(slug) => Ok(InsertOutcome::Ignored { slug }),
+        None => {
+            let stored_slug = raw_insert(conn, entry)?;
+            Ok(InsertOutcome::Inserted { slug: stored_slug })
+        }
+    }
 }
 
 /// Insert an entry, retrying on slug/hid collisions with a suffixed slug or
@@ -3777,5 +3840,110 @@ mod tests {
         let versions = crate::history::list(db.conn(), &hid, false).unwrap();
         assert_eq!(versions.len(), 4);
         assert_eq!(versions[3].change_kind, crate::history::ChangeKind::Undo);
+    }
+
+    /// Bulk fast path inserts every row but writes zero `entry_history` rows
+    /// and zero `sync_conflicts` rows — both are deliberately skipped to
+    /// keep migration imports off the per-row hot path.
+    #[test]
+    fn insert_entries_bulk_skips_history_and_conflicts() {
+        let db = Db::open_in_memory().unwrap();
+        let t0 = DatumTime::now();
+
+        // Two overlapping blocks on the same field. Per-row conflict
+        // detection would file an overlap conflict; the bulk path must
+        // skip that and write a clean entries-only state.
+        let block_a = Entry::new(
+            "sleep", Verb::Block, None, None, None,
+            Some(t0.clone()),
+            Some(DatumTime { utc: t0.utc + chrono::Duration::hours(1), ..t0.clone() }),
+            "d1",
+        );
+        let block_b = Entry::new(
+            "sleep", Verb::Block, None, None, None,
+            Some(DatumTime { utc: t0.utc + chrono::Duration::minutes(30), ..t0.clone() }),
+            Some(DatumTime { utc: t0.utc + chrono::Duration::minutes(90), ..t0.clone() }),
+            "d1",
+        );
+        let hid_a = block_a.hid.clone();
+        let hid_b = block_b.hid.clone();
+
+        let outcomes = db
+            .insert_entries_bulk(&[block_a, block_b], ConflictStrategy::Ignore)
+            .unwrap();
+        assert_eq!(outcomes.len(), 2);
+        assert!(matches!(outcomes[0], InsertOutcome::Inserted { .. }));
+        assert!(matches!(outcomes[1], InsertOutcome::Inserted { .. }));
+
+        // No history rows.
+        let h_a = crate::history::list(db.conn(), &hid_a, false).unwrap();
+        let h_b = crate::history::list(db.conn(), &hid_b, false).unwrap();
+        assert!(h_a.is_empty(), "bulk path must not write history rows");
+        assert!(h_b.is_empty(), "bulk path must not write history rows");
+
+        // No sync_conflicts rows even though the two blocks overlap.
+        let conflict_count: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM sync_conflicts", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(
+            conflict_count, 0,
+            "bulk path must not run per-row conflict detection",
+        );
+
+        // But the entries themselves are present.
+        let n: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(n, 2);
+    }
+
+    /// Re-importing the same entries dedups by `content_hash` — the second
+    /// pass returns `Ignored` outcomes and does not double-write.
+    #[test]
+    fn insert_entries_bulk_idempotent_on_content_hash() {
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+        let entry = Entry::new(
+            "coffee", Verb::Occur, Some(serde_json::json!(1)), None,
+            Some("cup".to_string()), Some(t), None, "d1",
+        );
+
+        let first = db.insert_entries_bulk(&[entry.clone()], ConflictStrategy::Ignore).unwrap();
+        assert!(matches!(first[0], InsertOutcome::Inserted { .. }));
+
+        let second = db.insert_entries_bulk(&[entry], ConflictStrategy::Ignore).unwrap();
+        assert!(matches!(second[0], InsertOutcome::Ignored { .. }));
+
+        let n: i64 = db
+            .conn()
+            .query_row("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(n, 1, "re-import must not duplicate rows");
+    }
+
+    /// Non-Ignore strategies are deliberately rejected — the fast path is
+    /// narrow on purpose and live writes should keep using the full
+    /// `insert_entries_batch` API.
+    #[test]
+    fn insert_entries_bulk_rejects_non_ignore_strategy() {
+        let db = Db::open_in_memory().unwrap();
+        let t = DatumTime::now();
+        let entry = Entry::new(
+            "coffee", Verb::Occur, Some(serde_json::json!(1)), None,
+            Some("cup".to_string()), Some(t), None, "d1",
+        );
+        for s in [ConflictStrategy::Update, ConflictStrategy::Merge, ConflictStrategy::Rekey] {
+            let err = db.insert_entries_bulk(&[entry.clone()], s).unwrap_err();
+            assert!(
+                matches!(err, DatumError::Other(ref m) if m.contains("Ignore")),
+                "expected 'Ignore-only' error for {s:?}, got {err:?}",
+            );
+        }
     }
 }
