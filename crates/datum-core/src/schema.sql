@@ -115,6 +115,15 @@ CREATE INDEX IF NOT EXISTS entries_content_hash
 -- Filter by derived verb (e.g. "only switch events in this window").
 CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);
 
+-- Bare-time tail/head (no `--field` filter) orders by the hybrid metric
+-- `COALESCE(start_time, modify_time)`. Without this expression index the
+-- planner falls back to a full SCAN + temp B-tree sort, which dominates at
+-- 100k+ entries (see da-7iu). Including `slug` matches the secondary tie-break
+-- so the index covers the full ORDER BY. Partial-on-live keeps it skinny.
+CREATE INDEX IF NOT EXISTS entries_hybrid_time
+    ON entries (COALESCE(start_time, modify_time), slug)
+    WHERE deleted_at IS NULL;
+
 -- Field specs: single source of truth for a field's schema, tracking state,
 -- colors, allowed states, id template, and derived aliases. Stored as a JSON
 -- blob so the shape can evolve without migrations.
@@ -224,4 +233,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '9');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '10');

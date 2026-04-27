@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 9;
+pub const CURRENT_SCHEMA_VERSION: u32 = 10;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -83,7 +83,25 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "track/ignore unification (da-2sr): convert field_specs.ignored=true rows into switch IGNORED entries; spec retains schema only",
         apply: m8_to_9_track_ignore_unification,
     },
+    Migration {
+        from: 9,
+        to: 10,
+        summary: "entries_hybrid_time: expression index on COALESCE(start_time, modify_time) for bare-time tail/head (da-7iu)",
+        apply: m9_to_10_hybrid_time_index,
+    },
 ];
+
+fn m9_to_10_hybrid_time_index(conn: &Connection) -> Result<()> {
+    // da-7iu: bare-time `tail`/`head` (no `--field`) orders by the default
+    // hybrid metric `COALESCE(start_time, modify_time)`. Without this index
+    // the planner does a full SCAN + temp B-tree sort. Additive, idempotent.
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS entries_hybrid_time
+            ON entries (COALESCE(start_time, modify_time), slug)
+            WHERE deleted_at IS NULL;",
+    )?;
+    Ok(())
+}
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
     // The v1 sync_state shape was a placeholder that was never wired up to
