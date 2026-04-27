@@ -7,11 +7,12 @@ It is the R2 companion to the R1 commands audit (`docs/parity-audit/commands.md`
 Reference points:
 
 * daydumb parse (post-R2 layout): `crates/datum-parse/src/`.
-* daydumb clap args (pre-R2, still active at time of writing):
-  `crates/datum-commands/src/args.rs`.
-* daydumb alias/swap pre-pass: `crates/datum-commands/src/args.rs`
+* daydumb argv parsing (post step-3/N): `crates/datum-parse/src/parse.rs`
+  + `cli.rs` (typed `Command` enum). Bespoke parser; no clap.
+* daydumb alias/swap pre-pass: `crates/datum-parse/src/alias/`
   (`expand_argv`, `apply_terminal_verb_override`, `maybe_swap_field_verb`,
-  `expand_stacked_flags`, `try_expand_alias`).
+  `expand_stacked_flags`, `try_expand_alias`) — relocated from
+  `datum-commands` in step 3/N.
 * datum `src/input/`: argparse-backed argument groups, consolidation, and
   flexible positional handling.
 * datum `src/time/`: luxon-backed parsing and display.
@@ -29,7 +30,7 @@ The R2 bead lands incrementally:
 | 1/N | New `datum-parse/` crate; move `time.rs` → split `time/` submodules; `PrecisionUnit` moved from `datum-core::entry`; WASM build verified; **this audit** | **done** |
 | 2/N | `datum-parse` input/ + alias/ module scaffold; port `consolidate_keys` + `flexible_positional` with full TS-parity tests; stubs for the rest pointing back at this audit | **done** |
 | 2b/N | Port `data_args`, `time_args`, `duration_args`, `field_args`, `output_args`, `quick_id_arg` from TS + tests | **done** |
-| 3/N | Replace clap in `datum-commands::args`; remove `clap` workspace dep; `CommandIntent` + bespoke `--help` in `datum-parse`; alias expansion migrates into `datum-parse::alias` | pending (clap dev-dep already dropped from `datum-cli`) |
+| 3/N | Replace clap in `datum-commands::args`; remove `clap` workspace dep; `CommandIntent` + bespoke `--help` in `datum-parse`; alias expansion migrates into `datum-parse::alias` | **done** (commit 74fac61, da-jzj — clap removed from the entire workspace) |
 
 Everything below is what the final R2 target must cover. Where daydumb has
 *not yet* ported a behavior, it is marked **PENDING** with the step that
@@ -47,7 +48,7 @@ should deliver it.
 | `key=value` interleaved with positional | ✓ | ✓ (step 2b/N, `handle_data_args`) | ✓ | — |
 | `--lenient` / `--strict` / `-R` / `-S` / `-C` remainder modes | ✓ | ✓ (step 2b/N) | ✓ | — |
 | `-b/--base-data` (JSON object) | ✓ | ✗ | — | — |
-| `-d` / `-t` / `-y*` / `-q*` / `-z` / `-D` / `-T` | ✓ | ✓ (clap-backed) | ✓ | `-yy`/`-qqq` shorthand via pre-pass; `±N[unit]` uncertainty suffix (D2) |
+| `-d` / `-t` / `-y*` / `-q*` / `-z` / `-D` / `-T` | ✓ | ✓ (datum-parse) | ✓ | `-yy`/`-qqq` shorthand via pre-pass; `±N[unit]` uncertainty suffix (D2) |
 | `--dur` (duration) | `duration` positional | `--dur` flag | ✓ | explicit flag vs positional |
 | `-m/--moment` | ✓ | ✓ | ✓ | — |
 | field/verb order-swap | ✗ | ✓ | — | `datum <field> <verb>` ↔ `datum <verb> <field>` |
@@ -156,14 +157,11 @@ Top-level dispatch. Takes `cliInput: string | string[]` (tokenises via
 `shell-quote` when a string), extracts the first positional as the
 command name, hands remaining args to per-command dispatchers.
 
-- **Daydumb today:** clap `Subcommand` enum + a pre-pass
-  (`expand_argv`) that does terminal-verb override, alias expansion,
-  field/verb swap, and stacked-flag expansion. See
-  `crates/datum-commands/src/args.rs:170-400`.
-- **Target (step 3/N):** replace the clap `Parser` with
-  `datum_parse::parse_argv(&[String])` returning a `CommandIntent`
-  enum (one variant per command). The pre-pass stays as-is but moves
-  from `datum-commands` into `datum-parse::alias`.
+- **Daydumb today (post step-3/N):** `datum_parse::parse(argv)` returns
+  a typed `Command` enum (one variant per subcommand). The pre-pass
+  (`expand_argv` + `try_expand_alias` etc.) lives in
+  `datum-parse::alias`. See `crates/datum-parse/src/parse.rs` +
+  `crates/datum-parse/src/alias/`.
 - **Command aliases in datum (built into the switch):**
   - `stop` → `end`
   - `del` → `delete`
@@ -181,9 +179,9 @@ Argparse wrapper for the timing flags (`-d -y -t -q -z -D -T`).
 - **Daydumb today:** every log-verb arg struct has these fields
   individually (`yesterday_count: u8`, `quick_count: u8`, `date`,
   `time`, `timezone`, `full_day`, `omit_timestamp`). The stacked-flag
-  pre-pass turns `-yy`/`-qqq` into `-y -y`/`-q -q -q`, and clap's
-  `action = count` handles the rest. Composition happens in
-  `datum-commands/src/cmd.rs` (`build_time_with_precision`).
+  pre-pass turns `-yy`/`-qqq` into `-y -y`/`-q -q -q`, and the
+  bespoke parser counts the repetitions natively. Composition happens
+  in `datum-commands/src/cmd.rs` (`build_time_with_precision`).
 - **Target (step 2/N):** `datum_parse::input::time_args::TimeArgs`
   with a `build(now_fn: impl Fn() -> DatumTime) -> (DatumTime,
   Uncertainty, TimeFromArgs)` method. The `now_fn` injection is what
@@ -250,8 +248,7 @@ Optional positional `quickId` + `--on-ambiguous
 
 Raw-formatted description string for `datum --help` / `datum help`.
 
-- **Daydumb today:** clap auto-generates top-level help.
-- **Target (step 3/N):** `datum_parse::help::print_help()` renders a
+- **Daydumb today (post step-3/N):** `datum_parse::help` renders a
   hand-authored top-level description matching datum's layout plus
   daydumb-added commands (`spec`, `alias`, `track`, `ignore`, `info`,
   `config`, `history`, `undo`, `why`, `conflicts`, `setup`).
@@ -336,22 +333,23 @@ Defines `DatumTime = { utc, o?, tz? }`; `toDatumTime(Luxon)` and
 Reads `data.occurTime` off a datum document and converts to Luxon.
 
 - **Daydumb today:** N/A — `occurTime` is the `start_time` column
-  directly on the Entry row. Keep the file as a stub in
-  `datum-parse/src/time/get_occur_time.rs`; R2 step 2/N fills it
-  with a thin wrapper for migrating legacy CouchDB JSON.
+  directly on the Entry row. The `get_occur_time.rs` stub is redundant
+  with `TimeArgs::build()` and slated for removal (see follow-up bead
+  for stub cleanup).
 
 ### `getTimezone.ts` (25 LOC)
 
 Resolves a timezone from number (UTC offset, hours), `"system"`,
 `"UTC±N"`, or IANA name. Returns a luxon `Zone`.
 
-- **Daydumb today:** inline in
-  `datum_parse::time::DatumTime::from_utc_and_tz` (chrono-tz parse +
-  `iana-time-zone` for local). **Missing:** numeric UTC offset
-  input, `"system"` literal, `"UTC+N"` literal.
-- **Target (step 2/N):** centralise in
-  `datum_parse::time::get_timezone::resolve(spec: &str) -> Tz` so
-  `-z -7` and `-z UTC+7` work.
+- **Daydumb today:** `resolve_timezone` in
+  `datum_parse::input::time_args` handles IANA names, numeric UTC
+  offset (`-z -7`), and `UTC±N` literals (commit 95f3824, da-xv0).
+  **Still missing:** `"system"` literal — see follow-up bead for
+  ISO-8601 + `system` parser intake.
+- The `get_timezone.rs` stub in `datum-parse/src/time/` is now a
+  misleading leftover (real impl lives in `input/time_args.rs`);
+  flagged for cleanup in the same follow-up bead.
 
 ### `humanTime.ts` (47 LOC)
 
@@ -359,12 +357,11 @@ Renders a DatumTime for display: relative day prefix (`-2d`, `+1d`,
 ISO date for further), local HH:MM:SS, gray offset, chalk
 underline on future.
 
-- **Daydumb today:** `datum_commands::render` formats times inline
-  per output mode. **No chalk-style emphasis on future times.**
-- **Target (step 2/N):** `datum_parse::time::human_time::format(dt:
-  &DatumTime) -> String` (plain; colour decoration stays in
-  `datum-commands::render` since `datum-parse` must be WASM-safe
-  and shouldn't pull in a terminal library).
+- **Daydumb today:** `datum_commands::render::format_human_time`
+  (`render/mod.rs:569`) handles formatting; future-time underline
+  ships in the new renderer (da-vkj). The `human_time.rs` stub in
+  `datum-parse/src/time/` is a misleading leftover — flagged for
+  cleanup in the same follow-up bead.
 
 ### `timeUtils.ts` (40 LOC)
 
@@ -398,10 +395,10 @@ underline on future.
 | `±N[unit]` uncertainty (D2) | ✗ | ✓ | ✓ (already in `datum-parse`) |
 | Field/verb swap (`<field> <verb>`) | ✗ | ✓ | ✓ |
 | Terminal-verb override (`<field> end`) | ✗ | ✓ | ✓ |
-| DB-backed alias pre-pass | ✗ | ✓ (moved to `datum_parse::alias` in step 3/N) | ✓ (in `datum-commands`) |
+| DB-backed alias pre-pass | ✗ | ✓ (in `datum_parse::alias`) | ✓ (in `datum_parse::alias`, post step-3/N) |
 | Spec-driven auto-alias | ✗ | ✓ (planned D3) | stubbed |
-| String API (`datum_parse::parse_argv_string(&str)`) | ✓ (via `shell-quote`) | ✓ (step 3/N) | missing |
-| Typed API (construct `CommandIntent` directly) | ✗ | ✓ (step 2/N) | via clap-derived structs |
+| String API (`datum_parse::parse_argv_string(&str)`) | ✓ (via `shell-quote`) | ✓ (step 3/N) | ✓ (post step-3/N) |
+| Typed API (construct `CommandIntent` directly) | ✗ | ✓ (step 2/N) | ✓ (post step-3/N — `datum-parse::Command` enum) |
 | WASM-compilable parse layer | ✗ | ✓ | ✓ for `datum-parse` as of this commit |
 
 ---
@@ -497,10 +494,9 @@ Deliberately *not* carried forward from datum:
 | `cargo build --target wasm32-unknown-unknown -p datum-parse` succeeds | ✓ (uses `--no-default-features`) |
 | `datum-cli/Cargo.toml` no longer lists `clap` | ✓ (moved behind `datum_commands::cmd::dispatch_argv`) |
 | `datum-parse/` covers all ported `input/` and `time/` behaviors with tests | ✓ for what's ported (time, consolidate_keys, flexible_positional); remaining input/ submodules are stubs awaiting step 2b/N |
-| `--help` output is readable and covers every command | ✓ (clap in `datum-commands` still renders it; bespoke rendering lands with step 3/N) |
+| `--help` output is readable and covers every command | ✓ (rendered by `datum_parse::help` post step-3/N) |
 | `docs/parity-audit/parsing.md` exists and follows spec | ✓ |
 
-**Net clap footprint after R2 today:** removed from `datum-cli` entirely
-(main and dev deps); still present in `datum-commands` as the parser
-behind the public `args::Cli` struct and `cmd::dispatch_argv` helper.
-Step 3/N collapses that last dependency.
+**Net clap footprint after R2:** **zero.** Step 3/N (commit 74fac61,
+da-jzj) removed clap from the entire workspace; `datum-parse` owns
+argv parsing and `--help` rendering for all commands.
