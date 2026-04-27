@@ -21,6 +21,11 @@ pub struct TimeBuilder {
     pub quick_precision: Option<Uncertainty>,
     /// Explicit `±N` supplied via `-d` or `-t`. Beats `quick_precision`.
     pub explicit_precision: Option<Uncertainty>,
+    /// Pre-validated IANA timezone name from `-z/--timezone`. When `Some`,
+    /// `build()` anchors all date/time math in this zone instead of `Local`.
+    /// Callers must resolve numeric/UTC±N forms via
+    /// [`crate::time::resolve_timezone`] before passing the string in.
+    pub timezone: Option<String>,
 }
 
 #[cfg(feature = "native")]
@@ -36,6 +41,7 @@ impl TimeBuilder {
             time_override: None,
             quick_precision: None,
             explicit_precision: None,
+            timezone: None,
         }
     }
 }
@@ -88,6 +94,16 @@ impl TimeBuilder {
         self
     }
 
+    /// Anchor all date/time math in a specific IANA timezone. The string
+    /// must already be a valid IANA name (`America/New_York`, `Etc/GMT-5`,
+    /// `UTC`, …); resolve numeric/`UTC±N` forms via
+    /// [`crate::time::resolve_timezone`] at the call site first.
+    /// Passing `None` keeps the default `Local` behavior.
+    pub fn with_timezone(mut self, tz: Option<String>) -> Self {
+        self.timezone = tz;
+        self
+    }
+
     /// Effective precision — explicit `±` beats implicit `-q` precision.
     /// Returns `Uncertainty::exact()` when neither is set.
     pub fn precision(&self) -> Uncertainty {
@@ -107,7 +123,34 @@ impl TimeBuilder {
 
     #[cfg(feature = "native")]
     pub fn build(self) -> DatumTime {
-        use chrono::{Local, Utc};
+        use chrono::{Local, Offset, Utc};
+
+        if let Some(tz_name) = self.timezone.as_deref() {
+            // Panic-safe: resolve_timezone() already validated the name
+            // before it got here. A bad name at this point means the caller
+            // skipped validation — surface it loudly rather than silently
+            // falling back to Local.
+            let tz: chrono_tz::Tz = tz_name
+                .parse()
+                .expect("TimeBuilder: timezone field must be a validated IANA name");
+            let mut dt = Utc::now().with_timezone(&tz);
+            dt = dt - chrono::Duration::minutes(self.minutes_back);
+            dt = dt - chrono::Duration::days(self.days_back);
+            if let Some(date) = self.date_override {
+                let time = self.time_override.unwrap_or_else(|| dt.time());
+                if let Some(new_dt) = date.and_time(time).and_local_timezone(tz).single() {
+                    dt = new_dt;
+                }
+            } else if let Some(time) = self.time_override {
+                if let Some(new_dt) = dt.date_naive().and_time(time).and_local_timezone(tz).single() {
+                    dt = new_dt;
+                }
+            }
+            let utc = dt.with_timezone(&Utc);
+            let offset_minutes = dt.offset().fix().local_minus_utc() / 60;
+            return DatumTime { utc, offset_minutes, timezone: tz_name.to_string() };
+        }
+
         let mut dt = Local::now();
 
         // Apply minute offsets first

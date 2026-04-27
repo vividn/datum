@@ -145,7 +145,7 @@ impl TimeArgs {
 /// * A bare numeric offset in hours: `"-7"`, `"+4"`, `"0"`, `"2"`. This
 ///   maps onto an `Etc/GMT∓N` name because IANA's `Etc/GMT*` zones use
 ///   the POSIX sign convention (UTC+4 → `Etc/GMT-4`).
-pub(crate) fn resolve_timezone(spec: &str) -> Result<String> {
+pub fn resolve_timezone(spec: &str) -> Result<String> {
     if spec.is_empty() {
         return Err(ParseError::InvalidArg("Empty timezone".to_string()));
     }
