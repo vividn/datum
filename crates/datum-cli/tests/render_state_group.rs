@@ -6,8 +6,8 @@
 //!    LEAD = `sad` colour, TRAIL = `sad` colour (resumes after block).
 //! 2. `datum switch emotion happy` (point) on a field currently `sad`.
 //!    LEAD = `sad` colour, TRAIL = `happy` colour (continues forward).
-//! 3. First-ever switch on a field. LEAD = grey-`∅`, TRAIL = state colour.
-//! 4. Block on an IGNORED field. LEAD = grey-`∅`, TRAIL = grey-`∅`.
+//! 3. First-ever switch on a field. LEAD = IGNORED-grey, TRAIL = state colour.
+//! 4. Block on an IGNORED field. LEAD = IGNORED-grey, TRAIL = IGNORED-grey.
 //!
 //! The asserts pin the bg-colour sequence around the state cell. Colour
 //! values come from the renderer's MD5 + YIQ derivation; the test names
@@ -65,8 +65,9 @@ fn bg_escape(name: &str) -> String {
     format!("\x1b[48;2;{r};{g};{b}m")
 }
 
-/// `Rgb::EMPTY_SLOT_BG = #b0b0b0` per `render/colors.rs`.
-const EMPTY_SLOT_BG_ESC: &str = "\x1b[48;2;176;176;176m";
+/// `Rgb::IGNORED = #888888` per `render/colors.rs` — bg of LEAD/TRAIL
+/// slots when there's no prior or continuing state to depict (da-25l).
+const IGNORED_BG_ESC: &str = "\x1b[48;2;136;136;136m";
 
 /// Pull the second line out of the two-line `CREATE` output — that's the
 /// info line we want to assert on. The first line is the action header.
@@ -85,11 +86,9 @@ fn assert_lead_then_state_then_trail_bg(
     expected_state_bg: &str,
     expected_trail_bg: &str,
 ) {
-    // The output structure for the trio is (da-yiy):
-    //   <lead_bg><lead_fg> <RESET> <state_bg><state_fg>body<RESET> <trail_bg><trail_fg> <RESET>
-    // The leading-and-trailing uncoloured spaces between each escape group
-    // separate the bg-coloured slots from the bg-coloured cell body without
-    // re-introducing a colour halo.
+    // The output structure for the trio is (da-25l):
+    //   <lead_bg><lead_fg> <RESET><state_bg><state_fg>body<RESET><trail_bg><trail_fg> <RESET>
+    // LEAD/cell/TRAIL are flush — no whitespace between escape groups.
     let lead_idx = rendered
         .find(expected_lead_bg)
         .unwrap_or_else(|| panic!("LEAD bg {expected_lead_bg:?} not found in:\n{rendered:?}"));
@@ -175,11 +174,12 @@ fn first_switch_uses_empty_lead_slot() {
     let out = run_color(&db, &["switch", "mood", "happy"]);
     let line = info_line(&out);
 
-    // LEAD = empty-slot grey (no prior), state cell = happy, TRAIL = happy.
+    // LEAD = IGNORED-grey (no prior tracked state), state cell = happy,
+    // TRAIL = happy.
     assert_lead_then_state_then_trail_bg(
         &line,
         "happy",
-        EMPTY_SLOT_BG_ESC,
+        IGNORED_BG_ESC,
         &bg_escape("happy"),
         &bg_escape("happy"),
     );
@@ -202,14 +202,14 @@ fn block_on_ignored_field_uses_empty_trail_slot() {
     let out = run_color(&db, &["switch", "task", "doing", "--dur", "5m"]);
     let line = info_line(&out);
 
-    // LEAD = empty-slot grey (IGNORED collapses), state cell = doing,
-    // TRAIL = empty-slot grey (IGNORED resumes after block ends).
+    // LEAD = IGNORED-grey (IGNORED collapses), state cell = doing,
+    // TRAIL = IGNORED-grey (IGNORED resumes after block ends).
     assert_lead_then_state_then_trail_bg(
         &line,
         "doing",
-        EMPTY_SLOT_BG_ESC,
+        IGNORED_BG_ESC,
         &bg_escape("doing"),
-        EMPTY_SLOT_BG_ESC,
+        IGNORED_BG_ESC,
     );
 
     let _ = std::fs::remove_file(&db);

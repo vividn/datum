@@ -43,12 +43,6 @@ impl Rgb {
     pub const IGNORED: Rgb = Rgb { r: 0x88, g: 0x88, b: 0x88 };
     /// `#666666` — foreground over IGNORED bg per §5.
     pub const IGNORED_FG: Rgb = Rgb { r: 0x66, g: 0x66, b: 0x66 };
-    /// `#b0b0b0` — slightly-lighter grey used as the bg of an empty LEAD/
-    /// TRAIL slot in the state-transition group (da-fck). Sits above
-    /// [`Rgb::IGNORED`] (#888888) so the `∅` glyph painted in IGNORED-grey
-    /// reads against it. Distinct from the IGNORED state cell, which uses
-    /// `IGNORED` as bg and `IGNORED_FG` as fg.
-    pub const EMPTY_SLOT_BG: Rgb = Rgb { r: 0xb0, g: 0xb0, b: 0xb0 };
 
     pub fn fg(self) -> String {
         format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)

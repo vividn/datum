@@ -105,15 +105,18 @@ fn tail_default_emits_info_line_no_table_headers() {
     // Field badges still contain the field name in plain text.
     assert!(stdout.contains("coffee"), "{stdout}");
     assert!(stdout.contains("mood"), "{stdout}");
-    // First-switch-to-a-new-field must carry the ∅ left-char (§6).
-    assert!(stdout.contains('∅'), "expected ∅ first-tracked marker:\n{stdout}");
 
     let _ = std::fs::remove_file(&db);
 }
 
 /// Defect 1 (da-vkj): a second `switch` on a field must NOT re-trigger the
-/// first-tracked `∅` marker. Pre-fix, `is_first_occurrence` probed spec
+/// first-tracked indicator. Pre-fix, `is_first_occurrence` probed spec
 /// existence (never created for switch), firing on every write.
+///
+/// Per da-25l the LEAD slot for switch verbs no longer carries a `∅`
+/// glyph — first-tracked is conveyed by the IGNORED-grey LEAD bg, which
+/// is colour-only. Test: neither switch should carry `∅` (since neither
+/// goes through the occur path that would emit one).
 #[test]
 fn second_switch_on_same_field_suppresses_first_tracked_marker() {
     let db = tmp_db();
@@ -122,17 +125,15 @@ fn second_switch_on_same_field_suppresses_first_tracked_marker() {
     let (second, _) = run(&db, &["switch", "myfield", "abcdefg"]);
 
     assert!(
-        first.contains('∅'),
-        "first switch on new field should carry ∅:\n{first}"
+        !first.contains('∅'),
+        "first switch must not carry ∅ (LEAD is now IGNORED-bg, no glyph):\n{first}"
     );
     assert!(
         !second.contains('∅'),
         "second switch on same field must not re-render ∅:\n{second}"
     );
-    // Per da-fck the prior-state transition is conveyed via the LEAD slot's
-    // bg colour rather than a left-arrow glyph. The new layout has no
-    // arrows; we just assert the second row rendered without ∅, which is
-    // already covered above.
+    // Per da-25l the prior-state transition is conveyed via the LEAD slot's
+    // bg colour. Both rows must render without `∅`.
 
     let _ = std::fs::remove_file(&db);
 }

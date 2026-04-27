@@ -175,12 +175,11 @@ fn paint_dot(fg: Rgb, bg: Option<Rgb>, body: &str) -> String {
 }
 
 /// Render the full `[LEAD][state cell][TRAIL]` trio for switch / start /
-/// stop / block. Per da-fck the trio segments are rendered as bg-coloured
-/// LEAD/TRAIL slots flanking the state cell. Per da-yiy the cell body has
-/// no inline bg-painted padding; instead a single *uncoloured* space
-/// separates the cell text from each slot, so the only bg-coloured cells
-/// are the LEAD/TRAIL slots themselves and the cell text. Outer joining
-/// to the field badge is handled by the caller.
+/// stop / block. Per da-25l the three segments are flush against each
+/// other — no whitespace, coloured or otherwise, between LEAD/cell/TRAIL.
+/// LEAD and TRAIL are single bg-coloured cells; the cell body is the
+/// state label painted with the state's bg. Outer joining to the field
+/// badge is handled by the caller.
 fn render_state_transition_group(
     entry: &Entry,
     spec: Option<&FieldSpec>,
@@ -188,9 +187,7 @@ fn render_state_transition_group(
 ) -> String {
     let mut out = String::new();
     out.push_str(&render_slot(ctx.lead_state.as_ref(), &entry.field, spec));
-    out.push(' ');
     out.push_str(&render_state_cell(entry, spec));
-    out.push(' ');
     out.push_str(&render_slot(ctx.trail_state.as_ref(), &entry.field, spec));
     out
 }
@@ -209,9 +206,11 @@ fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
     }
 }
 
-/// Render a LEAD or TRAIL slot — a single literal space painted with the
-/// resolved state's colour, or the grey-`∅` fallback when there's no
-/// state to depict.
+/// Render a LEAD or TRAIL slot — a single bg-coloured space. Per da-25l
+/// "no prior tracked state" is itself a state (IGNORED), so the slot is
+/// painted with the IGNORED grey rather than the old `∅`-glyph fallback.
+/// Only the explicit "field has ended" case (`Bool(false)` trail after a
+/// stop) renders as an uncoloured space.
 pub(crate) fn render_slot(
     state: Option<&JsonValue>,
     field: &str,
@@ -219,7 +218,7 @@ pub(crate) fn render_slot(
 ) -> String {
     match resolve_slot(state, field, spec) {
         SlotKind::State(rgb) => paint_bg(rgb, " "),
-        SlotKind::Empty => paint_bg_fg(Rgb::EMPTY_SLOT_BG, Rgb::IGNORED, NULL_SET),
+        SlotKind::Ignored => paint_bg(Rgb::IGNORED, " "),
         SlotKind::FieldEnded => " ".to_string(),
     }
 }
@@ -227,26 +226,27 @@ pub(crate) fn render_slot(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlotKind {
     State(Rgb),
-    Empty,
+    Ignored,
     FieldEnded,
 }
 
 /// Resolve a slot's colour from a raw `state_at` output. `None`,
 /// `Some(Null)` and the `IGNORED` sentinel string collapse to
-/// [`SlotKind::Empty`] — the no-state fallback (grey `∅`).
+/// [`SlotKind::Ignored`] — a 1-cell IGNORED-bg space, treating "no prior
+/// tracked state" as a regular prior state (IGNORED).
 /// `Some(Bool(false))` — the explicit "field has ended" sentinel — maps to
 /// [`SlotKind::FieldEnded`] so the trail renders as terminal-default
 /// whitespace rather than a coloured cell. Other values defer to
 /// [`state_value_rgb`].
 fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> SlotKind {
     match state {
-        None => SlotKind::Empty,
-        Some(JsonValue::Null) => SlotKind::Empty,
+        None => SlotKind::Ignored,
+        Some(JsonValue::Null) => SlotKind::Ignored,
         Some(JsonValue::Bool(false)) => SlotKind::FieldEnded,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Empty,
+        Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Ignored,
         Some(v) => match state_value_rgb(v, field, spec) {
             Some(rgb) => SlotKind::State(rgb),
-            None => SlotKind::Empty,
+            None => SlotKind::Ignored,
         },
     }
 }
@@ -321,12 +321,13 @@ pub(crate) fn format_field_badge(
     // Retained in the signature so callers can keep passing the flag without
     // a refactor; the state group is the authoritative emission site.
     //
-    // Per da-yiy the badge wraps `paint_bg(rgb, field)` in *uncoloured*
-    // spaces so the bg-painted region is the field name itself with plain
-    // whitespace around it (no colour halo). The outer spaces preserve the
-    // layout that the original bg-padded `" {field} "` form provided.
+    // Per da-25l the badge has only a single uncoloured leading space —
+    // the trailing space is supplied by `parts.join(" ")` in
+    // `format_info_line_at`, yielding a 1-space gap between the field
+    // name and the state group. The leading space combined with the
+    // join space after the timestamp gives the existing 2-space landmark.
     let rgb = field_rgb(field, spec);
-    format!(" {} ", paint_bg(rgb, field))
+    format!(" {}", paint_bg(rgb, field))
 }
 
 // ─── Timestamp (§3) ──────────────────────────────────────────────────────────

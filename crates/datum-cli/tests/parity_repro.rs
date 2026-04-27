@@ -73,18 +73,22 @@ fn switch_switch_tail_reproducer_matches_spec() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
 
-    // Per da-fck the state-transition group renders as
-    // `[LEAD][state cell][TRAIL]` — no arrows. Empty LEAD = grey-`∅`,
-    // empty TRAIL = grey-`∅`, otherwise a single bg-coloured space.
-    // ANSI-stripped, both LEAD and TRAIL collapse to a single visible
-    // character (either `∅` or a space), so the asserts pin the layout.
+    // Per da-25l the state-transition group renders as
+    // `[LEAD][state cell][TRAIL]` flush — no inner whitespace. LEAD/TRAIL
+    // are single bg-coloured cells (no `∅` glyph); when there's no prior
+    // tracked state the LEAD is painted with the IGNORED grey. The badge
+    // gap to the state group is 1 space. ANSI-stripped, every slot
+    // collapses to a single space, so the asserts pin the layout via
+    // visible character counts.
 
-    // First switch on a brand-new field: LEAD empty, TRAIL = state colour.
+    // First switch on a brand-new field: LEAD = IGNORED bg-space, TRAIL
+    // = new-state bg-space. Stripped: 1 join space + 1 LEAD space before
+    // the state cell, then 1 TRAIL space (trimmed).
     let first = run(&db, &["switch", "myfield", "abc"]);
     let first_info = info_line_of(&first);
     assert_eq!(
         after_timestamp(&first_info),
-        "myfield  ∅ abc",
+        "myfield  abc",
         "first-switch info line mismatch:\n{first}"
     );
 
@@ -94,7 +98,7 @@ fn switch_switch_tail_reproducer_matches_spec() {
     let second_info = info_line_of(&second);
     assert_eq!(
         after_timestamp(&second_info),
-        "myfield    abcdefg",
+        "myfield  abcdefg",
         "second-switch info line mismatch:\n{second}"
     );
 
@@ -108,8 +112,8 @@ fn switch_switch_tail_reproducer_matches_spec() {
     assert_eq!(
         lines,
         vec![
-            "myfield  ∅ abc".to_string(),
-            "myfield    abcdefg".to_string(),
+            "myfield  abc".to_string(),
+            "myfield  abcdefg".to_string(),
         ],
         "tail info-line output mismatch:\n{tail}"
     );

@@ -145,10 +145,12 @@ fn tail_state_cell_for_start_uses_bg_slots() {
     let stripped = strip_ansi(&group);
     assert!(stripped.contains("start"), "start label: {stripped:?}");
     assert!(!stripped.contains("→"), "no arrows in new layout: {stripped:?}");
-    // Default ctx → both slots are empty → two `∅` glyphs.
+    // Default ctx → both slots are empty → two IGNORED-bg single-space
+    // cells flanking the state body, flush against it (da-25l). Stripped
+    // form is exactly " start " — single space on each side.
     assert_eq!(
-        stripped.matches('∅').count(),
-        2,
-        "two empty slots flank the state cell: {stripped:?}"
+        stripped, " start ",
+        "two IGNORED slots flank the state cell flush: {stripped:?}"
     );
+    assert!(!stripped.contains("∅"), "no ∅ glyph in slots post-da-25l: {stripped:?}");
 }

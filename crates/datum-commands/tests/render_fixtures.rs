@@ -7,12 +7,15 @@
 //! the *colour-bearing* form to prove MD5/YIQ + truecolor escapes are
 //! emitted where expected.
 //!
-//! Per da-fck, the state-transition group is `[LEAD][state cell][TRAIL]`
-//! with no directional arrows. LEAD/TRAIL are single literal spaces with
-//! state-coloured bg, falling back to a grey-`∅` empty slot when there's
-//! no prior or continuing state. These fixtures pin the layout (state-cell
-//! body, `∅`/`¢`/dot glyphs, separator counts) without asserting on the
-//! exact colour bytes — that's the visual-tuning surface.
+//! Per da-25l, the state-transition group is `[LEAD][state cell][TRAIL]`
+//! flush against itself with no whitespace inside. LEAD/TRAIL are single
+//! bg-coloured spaces; when there's no prior or continuing tracked state,
+//! the slot renders with the IGNORED grey rather than the old `∅`-glyph
+//! fallback (semantically, "no prior state" IS a state — it's IGNORED).
+//! Only an explicitly-stopped trail (`Bool(false)`) renders as an
+//! uncoloured space. These fixtures pin the layout (state-cell body,
+//! `¢`/dot glyphs, separator counts) without asserting on exact colour
+//! bytes — that's the visual-tuning surface.
 
 use chrono::{DateTime, TimeZone, Utc};
 use datum_commands::render::{
@@ -164,7 +167,7 @@ fn fx04_start_first() {
     // First-time start: no prior, trail = Bool(true).
     let ctx = ctx_with(None, Some(json!(true)), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(out.contains("∅"), "empty LEAD slot carries ∅: {out:?}");
+    assert!(!out.contains("∅"), "no ∅ glyph in LEAD slot post-da-25l: {out:?}");
     assert!(out.contains("start"), "state label 'start': {out:?}");
     assert!(!out.contains("→"), "no right-arrow: {out:?}");
     assert!(!out.contains("←"), "no left-arrow: {out:?}");
@@ -207,7 +210,7 @@ fn fx07_switch_first() {
     );
     let ctx = ctx_with(None, Some(json!("state1")), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(out.contains("∅"), "first marker in empty LEAD: {out:?}");
+    assert!(!out.contains("∅"), "no ∅ glyph in LEAD slot post-da-25l: {out:?}");
     assert!(out.contains("state1"), "new state label: {out:?}");
     assert!(!out.contains("→"), "no arrows: {out:?}");
 }
@@ -319,7 +322,7 @@ fn fx14_switch_with_dur_first() {
     );
     let ctx = ctx_with(None, Some(json!("state1")), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(out.contains("∅"));
+    assert!(!out.contains("∅"), "no ∅ glyph in LEAD slot post-da-25l: {out:?}");
     assert!(out.contains("state1"));
 }
 
@@ -406,12 +409,12 @@ fn fx18_ignore_renders_grey() {
         Some(fixed_time(17, 30, 0)),
         None,
     );
-    // Trail = IGNORED → empty-slot fallback (∅ glyph).
+    // Trail = IGNORED → IGNORED-bg slot (no ∅ glyph post-da-25l).
     let ctx = ctx_with(None, Some(json!("IGNORED")), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("IGNORED"), "state label present: {out:?}");
     assert!(out.contains(" foo "), "field badge: {out:?}");
-    assert!(out.contains("∅"), "trail-slot ∅ for IGNORED: {out:?}");
+    assert!(!out.contains("∅"), "no ∅ glyph in slots post-da-25l: {out:?}");
 }
 
 #[test]
