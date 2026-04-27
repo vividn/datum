@@ -27,9 +27,10 @@ use crate::{
     },
     config::{self, device_id},
     render::{
-        format_info_line, print_entry, print_entry_pretty, print_now_view, print_table,
-        show_create, show_create_with_context, show_delete, show_exists, show_rename,
-        show_update, show_update_with_context, RenderContext, Show, TableArgs, TimeMetricCol,
+        format_info_line_at, print_entry, print_entry_pretty, print_now_view, print_table,
+        print_table_with, show_create, show_create_with_context, show_delete, show_exists,
+        show_rename, show_update, show_update_with_context, RenderContext, Show, TableArgs,
+        TimeMetricCol,
     },
 };
 use datum_core::views::{Registry, ViewParams};
@@ -1367,7 +1368,9 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
             columns,
             suppress_header: false,
         };
-        print_table(&entries, registry.as_ref(), &tbl);
+        let now = DatumTime::now();
+        let ctxs = build_render_contexts(&entries, db);
+        print_table_with(&entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
 
         if let Some(secs) = args.watch {
             let interval = watch_interval(secs);
@@ -1388,7 +1391,15 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
                     since = latest;
                 }
                 if !new_rows.is_empty() {
-                    print_table(&new_rows, registry.as_ref(), &tick_tbl);
+                    let now = DatumTime::now();
+                    let tick_ctxs = build_render_contexts(&new_rows, db);
+                    print_table_with(
+                        &new_rows,
+                        Some(&tick_ctxs),
+                        Some(&now),
+                        registry.as_ref(),
+                        &tick_tbl,
+                    );
                 }
             }
         }
@@ -1441,20 +1452,29 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
 /// Render each entry as a write-path info line (time + field + state group +
 /// dur). Prior-state and first-tracked hints are looked up per-row so the
 /// state transition indicator matches what `show_update_with_context` would
-/// have emitted at write time.
+/// have emitted at write time. A single `now` is captured up front so all
+/// rows in the batch agree on what "today" means.
 fn print_info_lines(
     entries: &[Entry],
     registry: Option<&datum_core::field_spec::SpecRegistry>,
     db: &Db,
 ) {
+    let now = DatumTime::now();
     for entry in entries {
         let ctx = build_render_context(entry, db);
         let spec = registry.and_then(|r| r.fields.get(&entry.field));
-        let line = format_info_line(entry, spec, &ctx);
+        let line = format_info_line_at(entry, spec, &ctx, &now);
         if !line.is_empty() {
             println!("{line}");
         }
     }
+}
+
+/// Vector form of [`build_render_context`] — one context per entry, in
+/// the same order. Used by the table path so the canonical state-cell
+/// renderer can emit transition arrows for tail rows.
+fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
+    entries.iter().map(|e| build_render_context(e, db)).collect()
 }
 
 /// Rebuild the `RenderContext` that `show_update_with_context` would have

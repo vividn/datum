@@ -14,13 +14,17 @@ pub mod action;
 pub mod characters;
 pub mod colors;
 
-pub use self::action::{format_info_line, render_entry_line, RenderContext};
+pub use self::action::{
+    format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,
+    render_entry_line, RenderContext,
+};
 
 use chrono::Local;
 use datum_core::{
     db::TrackedField,
     entry::{Entry, Verb},
     field_spec::{FieldSpec, SpecRegistry},
+    time::DatumTime,
 };
 use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
@@ -36,16 +40,11 @@ const GRAY_FG: &str = "\x1b[90m";
 
 // ─── Glyphs (datum vocabulary) ───────────────────────────────────────────────
 
-const DOT: &str = "●";
-const NON_OCCUR: &str = "¢";
-const NULL_SET: &str = "∅";
 /// Prefix marker for the first write to a previously-unseen field.
 /// Deliberately a printable glyph (not an ANSI escape) so it survives
 /// `strip_ansi` and is visible in pipes — the user sees they just
 /// introduced a new field.
 const FIRST_TIME_MARKER: &str = "✨ ";
-/// Mid-run separator between the prior and new state blocks.
-const TRANSITION_ARROW: &str = "▶";
 
 // ─── Public API: Show / OutputArgs / Action ──────────────────────────────────
 
@@ -297,6 +296,7 @@ pub(crate) struct Extracted {
 }
 
 /// Extract per-entry rendered fragments. Colors, if enabled, are applied here.
+#[allow(dead_code)]
 pub(crate) fn extract(
     entry: &Entry,
     action: Option<Action>,
@@ -313,6 +313,19 @@ pub(crate) fn extract_with_context(
     registry: Option<&SpecRegistry>,
     ctx: Option<&RenderContext>,
 ) -> Extracted {
+    extract_with_context_at(entry, action, registry, ctx, &DatumTime::now())
+}
+
+/// As [`extract_with_context`] but with an explicit "now" reference instant.
+/// Batch consumers (e.g. tail) supply a single `now` so every row in the
+/// batch agrees on what "today" means.
+pub(crate) fn extract_with_context_at(
+    entry: &Entry,
+    action: Option<Action>,
+    registry: Option<&SpecRegistry>,
+    ctx: Option<&RenderContext>,
+    now: &DatumTime,
+) -> Extracted {
     let spec = registry.and_then(|r| r.fields.get(&entry.field));
     let action_text = action.map(paint_action);
     let slug_text = Some(paint(GRAY_FG, &entry.slug));
@@ -321,14 +334,22 @@ pub(crate) fn extract_with_context(
         &short_hid(&entry.hid),
     ));
 
-    let occur = entry.start_time.as_ref().map(|t| format_human_time(t.utc, false));
-    let create = Some(format_human_time(entry.create_time, true));
-    let modify = Some(format_human_time(entry.modify_time, true));
-    let hybrid = occur
-        .clone()
-        .or_else(|| Some(format_gray_prefix("c", format_human_time(entry.create_time, false))));
+    let occur = entry
+        .start_time
+        .as_ref()
+        .map(|t| format_human_time(t, now, false));
+    let create = Some(format_human_time_utc(entry.create_time, now, true));
+    let modify = Some(format_human_time_utc(entry.modify_time, now, true));
+    let hybrid = occur.clone().or_else(|| {
+        Some(format_gray_prefix(
+            "c",
+            format_human_time_utc(entry.create_time, now, false),
+        ))
+    });
 
     let first = ctx.map(|c| c.is_first_occurrence).unwrap_or(false);
+    let default_ctx = self::action::RenderContext::default();
+    let state_ctx = ctx.unwrap_or(&default_ctx);
     Extracted {
         action: action_text,
         slug: slug_text,
@@ -338,7 +359,7 @@ pub(crate) fn extract_with_context(
         time_modify: modify,
         time_hybrid: hybrid,
         field: Some(format_field(&entry.field, spec, first)),
-        state: format_state(entry, spec, ctx),
+        state: self::action::format_state_group(entry, spec, state_ctx),
         dur: entry.duration_seconds().map(format_duration),
     }
 }
@@ -376,217 +397,44 @@ fn field_rgb(field: &str, spec: Option<&FieldSpec>) -> Rgb {
     resolve_rgb(spec.and_then(|s| s.color.as_deref()), field)
 }
 
-/// Resolve state color as RGB: per-state override → field color → hash.
-fn state_rgb(field: &str, state: &str, spec: Option<&FieldSpec>) -> Rgb {
-    if let Some(s) = spec {
-        if let Some(c) = s.state_colors.get(state) {
-            return resolve_rgb(Some(c.as_str()), state);
-        }
-        if let Some(c) = s.color.as_deref() {
-            return resolve_rgb(Some(c), field);
-        }
-    }
-    hash_to_rgb(state)
-}
-
-/// A discrete "state piece" the renderer can emit — either a point glyph,
-/// a plain word (no color), or a padded bg-color block matching datum's
-/// `stateChalk`.
-enum StatePiece {
-    /// Foreground-only glyph in the given color. Used for `●` (point occur)
-    /// and `¢` (non-occur note) — matches datum's `chalk.hex(stateColor)(DOT)`.
-    Glyph { text: String, color: Rgb },
-    /// Padded background block: ` text ` on `color`, with contrast fg.
-    /// The visual workhorse — fields, start, strings, null, etc.
-    Block { text: String, color: Rgb },
-    /// Plain text, no ANSI at all (for `end` / false state).
-    Plain(String),
-    /// S12: concurrent states rendered as adjacent blocks separated by a
-    /// comma colored like the second element. Composed of 2+ pieces.
-    Multi { pieces: Vec<StatePiece>, separators: Vec<Rgb> },
-}
-
-impl StatePiece {
-    fn render(&self) -> String {
-        match self {
-            StatePiece::Glyph { text, color } => paint(&color.fg(), text),
-            StatePiece::Block { text, color } => paint_bg(*color, &format!(" {text} ")),
-            StatePiece::Plain(s) => s.clone(),
-            StatePiece::Multi { pieces, separators } => {
-                let mut out = String::new();
-                for (i, p) in pieces.iter().enumerate() {
-                    if i > 0 {
-                        let sep_color = separators.get(i - 1).copied().unwrap_or(Rgb::WHITE);
-                        out.push_str(&paint(&sep_color.fg(), ","));
-                    }
-                    out.push_str(&p.render());
-                }
-                out
-            }
-        }
-    }
-
-    /// Whether this piece contributes a coloured block that pairs naturally
-    /// with a transition arrow. Plain `end` and bare glyphs don't.
-    fn is_block(&self) -> bool {
-        matches!(self, StatePiece::Block { .. } | StatePiece::Multi { .. })
-    }
-}
-
-/// Map `value` → a [`StatePiece`] according to datum's `formatState` rules.
-/// Returns None when the value is absent (caller falls back to a verb-level
-/// bullet).
-fn piece_for_value(value: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> Option<StatePiece> {
-    match value? {
-        JsonValue::Null => Some(StatePiece::Block {
-            text: NULL_SET.to_string(),
-            color: Rgb { r: 136, g: 136, b: 136 }, // #888, datum's null grey
-        }),
-        // `start` uses the field's colour; it's the "field is active" signal.
-        JsonValue::Bool(true) => Some(StatePiece::Block {
-            text: "start".to_string(),
-            color: field_rgb(field, spec),
-        }),
-        // `end` renders plain — matches `stateChalk({state: false}) === chalk`.
-        JsonValue::Bool(false) => Some(StatePiece::Plain("end".to_string())),
-        JsonValue::String(s) => Some(StatePiece::Block {
-            text: s.clone(),
-            color: state_rgb(field, s, spec),
-        }),
-        // S12: multi-element arrays render as adjacent coloured blocks with
-        // per-element palette, comma separators coloured like the following
-        // element. Single-element arrays unfold (normalize_state already
-        // flattens these in the state timeline; this mirrors that at display).
-        JsonValue::Array(items) if items.len() >= 2 => {
-            let pieces: Vec<StatePiece> = items
-                .iter()
-                .filter_map(|v| piece_for_value(Some(v), field, spec))
-                .collect();
-            if pieces.is_empty() {
-                return None;
-            }
-            let separators: Vec<Rgb> = pieces
-                .iter()
-                .skip(1)
-                .map(|p| match p {
-                    StatePiece::Block { color, .. } => *color,
-                    StatePiece::Glyph { color, .. } => *color,
-                    _ => field_rgb(field, spec),
-                })
-                .collect();
-            if pieces.len() == 1 {
-                pieces.into_iter().next()
-            } else {
-                Some(StatePiece::Multi { pieces, separators })
-            }
-        }
-        JsonValue::Array(items) if items.len() == 1 => {
-            piece_for_value(Some(&items[0]), field, spec)
-        }
-        other => {
-            let t = other.to_string();
-            let c = state_rgb(field, &t, spec);
-            Some(StatePiece::Block { text: t, color: c })
-        }
-    }
-}
-
-/// Verb-level glyph when the entry has no explicit value (e.g. bare `occur`
-/// or `start`). Returns None for verbs without a default glyph.
-fn piece_for_verb(entry: &Entry, spec: Option<&FieldSpec>) -> Option<StatePiece> {
-    let fg = field_rgb(&entry.field, spec);
-    match &entry.verb {
-        // Point occur / start with no value → foreground-only bullet.
-        Verb::Occur | Verb::Start => Some(StatePiece::Glyph { text: DOT.to_string(), color: fg }),
-        Verb::Stop => Some(StatePiece::Plain("end".to_string())),
-        // `add` with no start_time is a free-floating note.
-        Verb::Add if entry.start_time.is_none() => {
-            Some(StatePiece::Glyph { text: NON_OCCUR.to_string(), color: fg })
-        }
-        _ => None,
-    }
-}
-
-/// Render the state column. When a prior state is available via
-/// [`RenderContext`] or `entry.data.last_state` AND both prior and next
-/// are real coloured blocks, emit datum's transition motif:
-/// `<prior> ▶ <next>`. Otherwise render the single current piece.
-fn format_state(
-    entry: &Entry,
-    spec: Option<&FieldSpec>,
-    ctx: Option<&RenderContext>,
-) -> Option<String> {
-    let current = match piece_for_value(entry.value.as_ref(), &entry.field, spec) {
-        Some(p) => p,
-        None => return piece_for_verb(entry, spec).map(|p| p.render()),
-    };
-
-    // Prior state: explicit ctx override wins; otherwise peek at
-    // `extra_data.last_state` (written by `stop --last-state`).
-    let prior_value = ctx
-        .and_then(|c| c.last_state.as_ref())
-        .or_else(|| {
-            entry
-                .data
-                .as_ref()
-                .and_then(|d| d.get("last_state"))
-        });
-
-    let transition = prior_value
-        .and_then(|pv| piece_for_value(Some(pv), &entry.field, spec))
-        .filter(|prior| {
-            // Only emit a transition when both sides are real blocks AND the
-            // colors differ. Two identical coloured blocks or a plain prior
-            // would be visual noise.
-            prior.is_block()
-                && current.is_block()
-                && piece_colors_differ(prior, &current)
-        });
-
-    Some(match transition {
-        Some(prior) => format!(
-            "{}{TRANSITION_ARROW}{}",
-            prior.render(),
-            current.render()
-        ),
-        None => current.render(),
-    })
-}
-
-fn piece_colors_differ(a: &StatePiece, b: &StatePiece) -> bool {
-    match (a, b) {
-        (StatePiece::Block { color: ca, .. }, StatePiece::Block { color: cb, .. }) => ca != cb,
-        // Multi-state blocks always carry at least one color that differs
-        // from any single block — emit the transition arrow so the user
-        // sees the scalar ↔ array shift.
-        (StatePiece::Multi { .. }, _) | (_, StatePiece::Multi { .. }) => true,
-        _ => false,
-    }
-}
-
 // ─── Time rendering ──────────────────────────────────────────────────────────
 
-fn format_human_time(utc: chrono::DateTime<chrono::Utc>, include_offset: bool) -> String {
-    let local = utc.with_timezone(&Local);
-    let today = Local::now().date_naive();
-    let date = local.date_naive();
-    let date_prefix = if date == today {
-        String::new()
-    } else {
-        let delta = (date - today).num_days();
-        if delta.abs() <= 3 {
-            if delta < 0 { format!("-{}d ", -delta) } else { format!("+{delta}d ") }
-        } else {
-            format!("{} ", date.format("%Y-%m-%d"))
-        }
-    };
+/// Render a `DatumTime` as `[<date-prefix> ]HH:MM:SS<offset>` per datum's
+/// `humanTime.ts`. The relative-day prefix is delegated to
+/// [`action::format_relative_day_prefix`] — single source of truth across
+/// the renderer.
+///
+/// Rendered in the row's own timezone so "today" follows the row's local
+/// calendar (da-n1q acceptance criterion). The `_include_offset` parameter
+/// is retained for symmetry with prior call sites; the offset is always
+/// printed because the row may have a different timezone from the host.
+fn format_human_time(t: &DatumTime, now: &DatumTime, _include_offset: bool) -> String {
+    let local = t.local_time();
+    let prefix = self::action::format_relative_day_prefix(t, now)
+        .map(|p| format!("{} ", paint(GRAY_FG, &p)))
+        .unwrap_or_default();
     let time_str = local.format("%H:%M:%S").to_string();
-    let offset = if include_offset || !date_prefix.is_empty() {
-        paint(GRAY_FG, &local.format("%z").to_string())
-    } else {
-        paint(GRAY_FG, &local.format("%z").to_string())
+    let offset = paint(GRAY_FG, &local.format("%z").to_string());
+    format!("{prefix}{time_str}{offset}")
+}
+
+/// Bridge for `chrono::DateTime<Utc>` values that have no associated
+/// timezone (e.g. `create_time`, `modify_time`). Renders in the host's
+/// local timezone — matches prior behaviour for these fields and keeps
+/// the date-prefix logic in one place.
+fn format_human_time_utc(
+    utc: chrono::DateTime<chrono::Utc>,
+    now: &DatumTime,
+    include_offset: bool,
+) -> String {
+    let local = utc.with_timezone(&Local);
+    let offset_minutes = local.offset().local_minus_utc() / 60;
+    let synth = DatumTime {
+        utc,
+        offset_minutes,
+        timezone: "Local".to_string(),
     };
-    format!("{date_prefix}{time_str}{offset}")
+    format_human_time(&synth, now, include_offset)
 }
 
 fn format_gray_prefix(prefix: &str, body: String) -> String {
@@ -763,6 +611,21 @@ pub struct TableArgs {
 /// (plus any extra `columns`). Empty result → `[No data]`. Silenced by
 /// `--show none`.
 pub fn print_table(entries: &[Entry], registry: Option<&SpecRegistry>, args: &TableArgs) {
+    print_table_with(entries, None, None, registry, args)
+}
+
+/// As [`print_table`] but with optional per-row [`RenderContext`]s and a
+/// shared `now` reference instant. The contexts populate the state-cell
+/// `<left><state><right>` group with prior-state arrows; the `now`
+/// snapshot drives the relative-day prefix on the time column. Both
+/// default-fall-through when omitted.
+pub fn print_table_with(
+    entries: &[Entry],
+    contexts: Option<&[RenderContext]>,
+    now: Option<&DatumTime>,
+    registry: Option<&SpecRegistry>,
+    args: &TableArgs,
+) {
     if args.output.silent() {
         return;
     }
@@ -800,9 +663,19 @@ pub fn print_table(entries: &[Entry], registry: Option<&SpecRegistry>, args: &Ta
         }
     };
 
+    let now_owned;
+    let now_ref: &DatumTime = match now {
+        Some(n) => n,
+        None => {
+            now_owned = DatumTime::now();
+            &now_owned
+        }
+    };
+
     let mut rows: Vec<Row> = Vec::with_capacity(entries.len());
-    for e in entries {
-        let ex = extract(e, None, registry);
+    for (i, e) in entries.iter().enumerate() {
+        let ctx = contexts.and_then(|c| c.get(i));
+        let ex = extract_with_context_at(e, None, registry, ctx, now_ref);
         let (time, prefix) = match args.metric {
             TimeMetricCol::Hybrid => (ex.time_hybrid.clone().unwrap_or_default(), ""),
             TimeMetricCol::Occur => (ex.time_occur.clone().unwrap_or_default(), ""),
@@ -1197,6 +1070,7 @@ pub fn render_now_view(
 ) -> String {
     use std::fmt::Write;
     let now = chrono::Utc::now();
+    let now_dt = DatumTime::now();
 
     let mut active: Vec<NowRow> = Vec::new();
     let mut stopped: Vec<NowRow> = Vec::new();
@@ -1253,13 +1127,7 @@ pub fn render_now_view(
                 let entry_time = entry.start_time.as_ref().or(entry.end_time.as_ref());
                 let time_str = match entry_time {
                     None => String::new(),
-                    Some(t) => {
-                        if !is_active && entry.verb == Verb::Occur {
-                            t.utc.with_timezone(&Local).format("@%H:%M").to_string()
-                        } else {
-                            format_ago((now - t.utc).num_seconds())
-                        }
-                    }
+                    Some(t) => format_now_time(t, &now_dt, now, is_active, &entry.verb),
                 };
 
                 let row = NowRow {
@@ -1367,6 +1235,28 @@ fn format_ago(secs: i64) -> String {
     }
 }
 
+/// Pick the right "last seen" stamp for a `datum now` row. Today entries
+/// keep the existing micro-format (`@HH:MM` for stopped occurs, `Nm ago`
+/// otherwise); rows from a different calendar day show the relative-day
+/// prefix instead so an inactive field doesn't render as `11304h ago`.
+fn format_now_time(
+    t: &DatumTime,
+    now_dt: &DatumTime,
+    now_utc: chrono::DateTime<chrono::Utc>,
+    is_active: bool,
+    verb: &Verb,
+) -> String {
+    if let Some(prefix) = self::action::format_relative_day_prefix(t, now_dt) {
+        let local = t.local_time();
+        return format!("{prefix} {}", local.format("%H:%M"));
+    }
+    if !is_active && *verb == Verb::Occur {
+        t.local_time().format("@%H:%M").to_string()
+    } else {
+        format_ago((now_utc - t.utc).num_seconds())
+    }
+}
+
 /// Strip all ANSI escape sequences from a string. Handy for snapshot tests.
 pub fn strip_ansi(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -1456,22 +1346,24 @@ mod tests {
     }
 
     #[test]
-    fn state_glyph_for_point_occur() {
-        // An `occur` with no value → foreground-only bullet glyph.
+    fn state_cell_for_point_occur_emits_dot() {
+        // `Occur` with no explicit value → padded DOT block via the canonical
+        // §6 state-group renderer.
         let entry = sample_entry("coffee", Verb::Occur, None);
-        let state = format_state(&entry, None, None).unwrap();
-        assert_eq!(strip_ansi(&state), DOT);
+        let ex = extract(&entry, None, None);
+        let state = ex.state.expect("state cell");
+        assert!(strip_ansi(&state).contains(super::characters::DOT));
     }
 
     #[test]
-    fn state_glyph_for_switch_true_false() {
-        // `true` renders as a padded "start" block ( start ); `false` is
-        // plain "end" (no bg). strip_ansi preserves the padding so we
-        // trim the result for portable assertions.
+    fn state_cell_for_switch_true_false() {
+        // `true` → padded "start" block + arrow; `false` renders as " end ".
         let entry_on = sample_entry("mood", Verb::Switch, Some(JsonValue::Bool(true)));
         let entry_off = sample_entry("mood", Verb::Switch, Some(JsonValue::Bool(false)));
-        assert_eq!(strip_ansi(&format_state(&entry_on, None, None).unwrap()).trim(), "start");
-        assert_eq!(strip_ansi(&format_state(&entry_off, None, None).unwrap()), "end");
+        let on = strip_ansi(&extract(&entry_on, None, None).state.unwrap());
+        let off = strip_ansi(&extract(&entry_off, None, None).state.unwrap());
+        assert!(on.contains("start"), "switch true → start label: {on:?}");
+        assert!(off.contains("end"), "switch false → end label: {off:?}");
     }
 
     #[test]
@@ -1516,62 +1408,13 @@ mod tests {
     /// port; previously only `38;5;…` foreground escapes were emitted.
     #[test]
     fn string_state_uses_truecolor_background() {
-        // Scope the env var to just this test.
         let _guard = ColorGuard::force_on();
         let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
-        let out = format_state(&entry, None, None).unwrap();
+        let out = extract(&entry, None, None).state.unwrap();
         assert!(
             out.contains("\x1b[48;2;"),
             "expected truecolor BG escape, got: {out:?}"
         );
-    }
-
-    /// Transition motif: prior-state block + arrow + current-state block,
-    /// both wrapping the state word with single-space padding per datum.
-    #[test]
-    fn transition_indicator_drawn_when_prior_state_differs() {
-        let _guard = ColorGuard::force_on();
-        let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
-        let ctx = RenderContext {
-            last_state: Some(JsonValue::from("tired")),
-            is_first_occurrence: false,
-        };
-        let out = format_state(&entry, None, Some(&ctx)).unwrap();
-        let stripped = strip_ansi(&out);
-        assert!(
-            stripped.contains(TRANSITION_ARROW),
-            "expected transition arrow in {stripped:?}"
-        );
-        assert!(stripped.contains("tired"), "prior state missing: {stripped:?}");
-        assert!(stripped.contains("happy"), "current state missing: {stripped:?}");
-        // Prior appears before current in the composed string.
-        assert!(
-            stripped.find("tired").unwrap() < stripped.find("happy").unwrap(),
-            "prior must render first: {stripped:?}"
-        );
-    }
-
-    /// No arrow when the prior state matches the current one — the user
-    /// would just see a doubled block.
-    #[test]
-    fn transition_suppressed_when_prior_equals_current() {
-        let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
-        let ctx = RenderContext {
-            last_state: Some(JsonValue::from("happy")),
-            is_first_occurrence: false,
-        };
-        let out = format_state(&entry, None, Some(&ctx)).unwrap();
-        assert!(!strip_ansi(&out).contains(TRANSITION_ARROW));
-    }
-
-    /// `extra_data.last_state` (written by `stop --last-state`) feeds the
-    /// transition when no explicit ctx override is present.
-    #[test]
-    fn transition_reads_last_state_from_extra_data() {
-        let mut entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
-        entry.data = Some(serde_json::json!({ "last_state": "tired" }));
-        let out = format_state(&entry, None, None).unwrap();
-        assert!(strip_ansi(&out).contains(TRANSITION_ARROW));
     }
 
     /// First-time marker prepends `✨ ` to the rendered field name. The

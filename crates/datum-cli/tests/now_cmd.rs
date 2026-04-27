@@ -14,6 +14,7 @@ mod common;
 
 use std::collections::HashMap;
 
+use chrono::Duration;
 use common::run_cli;
 use datum_cli::output::{render_now_view, strip_ansi};
 use datum_core::db::TrackedField;
@@ -221,6 +222,53 @@ fn now_dispatches_end_to_end_via_run_cli() {
     let entries = db.entries_for_field("mood", None).unwrap();
     assert_eq!(entries.len(), 2);
     assert!(entries.iter().all(|e| e.verb == Verb::Switch));
+}
+
+// ─── da-n1q: stale `last seen` rows use the relative-day prefix ──────────────
+
+/// An old stopped field shouldn't render as `NNNNNh ago` — bead da-n1q
+/// requires the relative-day prefix used by `tail` so the value stays
+/// readable. We construct an entry whose start_time is well over 3 days
+/// in the past; the rendered "last seen" must include the ISO-date prefix
+/// rather than an hours-only ago string.
+#[test]
+fn render_old_stopped_field_uses_iso_date_prefix() {
+    let now = DatumTime::now();
+    let stale_utc = now.utc - Duration::days(60);
+    let stale = DatumTime {
+        utc: stale_utc,
+        offset_minutes: now.offset_minutes,
+        timezone: now.timezone.clone(),
+    };
+    let tf = [tracked("nightlight")];
+    let mut latest = HashMap::new();
+    latest.insert(
+        "nightlight".to_string(),
+        entry_builder("nightlight")
+            .verb(Verb::Stop)
+            .time_start(stale)
+            .build(),
+    );
+
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let plain = strip_ansi(&out);
+
+    // The rendered date prefix must match the local-calendar date of the
+    // stale entry (60 days back, so guaranteed to be >3 days → ISO prefix).
+    let expected = stale_utc
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d")
+        .to_string();
+    assert!(
+        plain.contains(&expected),
+        "expected ISO-date prefix {expected:?} in last-seen column, got:\n{plain}"
+    );
+    // Old `Nh ago` shouldn't appear for entries this stale — the prefix
+    // replaces the ago string.
+    assert!(
+        !plain.contains("h ago"),
+        "expected no 'h ago' fragment for stale row, got:\n{plain}"
+    );
 }
 
 // ─── Gated on A0: per-field spec color ───────────────────────────────────────

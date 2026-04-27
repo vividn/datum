@@ -11,7 +11,7 @@
 //! a STATE-badge (the new value), and a RIGHT-char (post-entry indicator)
 //! per §6. See `render_fixtures.rs` for the full 20-case acceptance suite.
 
-use chrono::{Local, Timelike, Utc};
+use chrono::{FixedOffset, Timelike, Utc};
 use datum_core::{
     entry::{Entry, Verb},
     field_spec::{FieldSpec, SpecRegistry},
@@ -21,6 +21,49 @@ use serde_json::Value as JsonValue;
 
 use super::characters::*;
 use super::colors::*;
+
+// ─── Relative-day prefix (single source of truth) ────────────────────────────
+
+/// Datum-style relative-day prefix per `humanTime.ts`:
+///
+/// | target's local date vs. now's | prefix       |
+/// |---                            |---           |
+/// | same calendar day             | `None`       |
+/// | 1–3 days back                 | `-Nd`        |
+/// | 4+ days back                  | `YYYY-MM-DD` |
+/// | 1–3 days ahead                | `+Nd`        |
+/// | 4+ days ahead                 | `YYYY-MM-DD` |
+///
+/// Both timestamps are projected onto **target's** local calendar (the
+/// `offset_minutes` recorded with the row) so "today" follows the row's
+/// timezone rather than the host's. `now` is supplied by the caller so
+/// callers control "what today means" (testable + zone-correct).
+pub fn format_relative_day_prefix(target: &DatumTime, now: &DatumTime) -> Option<String> {
+    let off = FixedOffset::east_opt(target.offset_minutes * 60)
+        .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+    let target_date = target.utc.with_timezone(&off).date_naive();
+    let now_date = now.utc.with_timezone(&off).date_naive();
+    let delta = (target_date - now_date).num_days();
+    if delta == 0 {
+        return None;
+    }
+    if delta.abs() <= 3 {
+        Some(if delta < 0 {
+            format!("-{}d", -delta)
+        } else {
+            format!("+{delta}d")
+        })
+    } else {
+        Some(target_date.format("%Y-%m-%d").to_string())
+    }
+}
+
+/// Convenience: a `DatumTime` snapshot for "now" using the host's local
+/// timezone. Used as the default when callers don't supply their own
+/// reference instant.
+pub(crate) fn now_local() -> DatumTime {
+    DatumTime::now()
+}
 
 // ─── Render context ──────────────────────────────────────────────────────────
 
@@ -47,8 +90,9 @@ pub struct RenderContext {
 /// Render the `<left-char><state-badge><right-char>` group for an entry.
 ///
 /// The field badge is rendered separately and prepended in the info line.
-/// Returns `None` for `add` (handled inline with `¢`).
-pub(crate) fn format_state_group(
+/// Tail and other table consumers route the state cell through this so
+/// every surface that shows state shares the same left/state/right group.
+pub fn format_state_group(
     entry: &Entry,
     spec: Option<&FieldSpec>,
     ctx: &RenderContext,
@@ -288,19 +332,28 @@ pub(crate) fn format_field_badge(
 /// Format a `DatumTime` per §3: `HH:MM:SS+TZ` with the TZ offset rendered
 /// dim and compressed (leading zeros dropped). The whole stamp is underlined
 /// when `t` is in the future at render time.
-pub(crate) fn format_timestamp(t: &DatumTime) -> String {
-    let local = t.utc.with_timezone(&Local);
+///
+/// When `t`'s local calendar day differs from `now`'s (per
+/// [`format_relative_day_prefix`]), a gray relative-day prefix (`-1d`,
+/// `2026-04-15`, etc.) is prepended so day-axis context isn't lost when
+/// scanning across rows.
+pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime) -> String {
+    // Render in the row's own timezone — "today" is the row's local day,
+    // not the host's. See da-n1q acceptance criteria.
+    let local = t.local_time();
     let base = format!("{:02}:{:02}:{:02}", local.hour(), local.minute(), local.second());
     let offset = compress_tz_offset(&local.format("%z").to_string());
     let tz = paint(DIM, &offset);
-    let composed = format!("{base}{tz}");
+    let stamp = format!("{base}{tz}");
+    let composed = match format_relative_day_prefix(t, now) {
+        Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
+        None => stamp,
+    };
     if t.utc > Utc::now() && color_enabled() {
         format!("{UNDERLINE}{composed}{RESET}")
-    } else if t.utc > Utc::now() {
-        // Even without color, make it visually distinct via the same string;
-        // the underline escape is a no-op in stripped tests.
-        composed
     } else {
+        // Even without color, the underline escape is a no-op under
+        // strip_ansi — return the composed string unchanged.
         composed
     }
 }
@@ -333,16 +386,33 @@ fn compress_tz_offset(raw: &str) -> String {
 
 /// Produce the main info line `<time>  <field>  <state-group>  [dur]`.
 /// Returns an empty string when there's nothing to show.
+///
+/// Defaults `now` to the host's local time. Callers that render a batch of
+/// rows (e.g. `datum tail`) should pass a single shared `now` via
+/// [`format_info_line_at`] so every row in the batch agrees on what
+/// "today" means.
 pub fn format_info_line(
     entry: &Entry,
     spec: Option<&FieldSpec>,
     ctx: &RenderContext,
 ) -> String {
+    format_info_line_at(entry, spec, ctx, &now_local())
+}
+
+/// As [`format_info_line`] but with an explicit reference instant. Use this
+/// for any caller that renders multiple rows or that needs deterministic
+/// "today" semantics in a test.
+pub fn format_info_line_at(
+    entry: &Entry,
+    spec: Option<&FieldSpec>,
+    ctx: &RenderContext,
+    now: &DatumTime,
+) -> String {
     let mut parts: Vec<String> = Vec::new();
     if let Some(t) = &entry.start_time {
-        parts.push(format_timestamp(t));
+        parts.push(format_timestamp(t, now));
     } else if let Some(t) = &entry.end_time {
-        parts.push(format_timestamp(t));
+        parts.push(format_timestamp(t, now));
     }
     parts.push(format_field_badge(&entry.field, spec, ctx.is_first_occurrence));
     if let Some(group) = format_state_group(entry, spec, ctx) {
@@ -385,6 +455,7 @@ pub(crate) fn format_duration(secs: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::{DateTime, TimeZone};
 
     #[test]
     fn compress_tz_offset_drops_leading_zeros() {
@@ -400,5 +471,129 @@ mod tests {
         assert_eq!(format_duration(240), "4m");
         assert_eq!(format_duration(3600), "1h");
         assert_eq!(format_duration(3720), "1h2m");
+    }
+
+    fn dt(y: i32, mo: u32, d: u32) -> DatumTime {
+        let utc: DateTime<Utc> = Utc.with_ymd_and_hms(y, mo, d, 12, 0, 0).unwrap();
+        DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+    }
+
+    #[test]
+    fn relative_day_prefix_today_returns_none() {
+        let now = dt(2026, 4, 22);
+        assert_eq!(format_relative_day_prefix(&dt(2026, 4, 22), &now), None);
+    }
+
+    #[test]
+    fn relative_day_prefix_yesterday_to_three_days_ago() {
+        let now = dt(2026, 4, 22);
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 21), &now).as_deref(),
+            Some("-1d")
+        );
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 20), &now).as_deref(),
+            Some("-2d")
+        );
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 19), &now).as_deref(),
+            Some("-3d")
+        );
+    }
+
+    #[test]
+    fn relative_day_prefix_far_past_uses_iso_date() {
+        let now = dt(2026, 4, 22);
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 18), &now).as_deref(),
+            Some("2026-04-18")
+        );
+        assert_eq!(
+            format_relative_day_prefix(&dt(2024, 12, 13), &now).as_deref(),
+            Some("2024-12-13")
+        );
+    }
+
+    #[test]
+    fn relative_day_prefix_future_one_to_three_days() {
+        let now = dt(2026, 4, 22);
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 23), &now).as_deref(),
+            Some("+1d")
+        );
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 25), &now).as_deref(),
+            Some("+3d")
+        );
+    }
+
+    #[test]
+    fn relative_day_prefix_far_future_uses_iso_date() {
+        let now = dt(2026, 4, 22);
+        assert_eq!(
+            format_relative_day_prefix(&dt(2026, 4, 26), &now).as_deref(),
+            Some("2026-04-26")
+        );
+    }
+
+    #[test]
+    fn relative_day_prefix_uses_targets_local_calendar() {
+        // 22:00 UTC on the 21st in Auckland (UTC+12) → 10:00 on the 22nd
+        // local; "today" must be 2026-04-22 by the row's local clock.
+        let target = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 21, 22, 0, 0).unwrap(),
+            offset_minutes: 12 * 60,
+            timezone: "Pacific/Auckland".to_string(),
+        };
+        let now_in_utc = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 0, 0, 0).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        // Per UTC: target (Apr 21) is "yesterday" relative to now (Apr 22).
+        // Per target's local clock: both are Apr 22 → today, no prefix.
+        assert_eq!(format_relative_day_prefix(&target, &now_in_utc), None);
+    }
+
+    #[test]
+    fn timestamp_prepends_prefix_when_not_today() {
+        // No-color path so we can match the prefix verbatim.
+        std::env::set_var("DATUM_COLOR", "0");
+        std::env::set_var("NO_COLOR", "1");
+        let target = dt(2026, 4, 19);
+        let now = dt(2026, 4, 22);
+        let out = format_timestamp(&target, &now);
+        assert!(out.starts_with("-3d "), "expected '-3d ' prefix, got {out:?}");
+        let target_old = dt(2024, 12, 13);
+        let out_old = format_timestamp(&target_old, &now);
+        assert!(
+            out_old.starts_with("2024-12-13 "),
+            "expected ISO-date prefix, got {out_old:?}"
+        );
+        std::env::remove_var("DATUM_COLOR");
+        std::env::remove_var("NO_COLOR");
+    }
+
+    #[test]
+    fn timestamp_today_has_no_prefix() {
+        std::env::set_var("DATUM_COLOR", "0");
+        std::env::set_var("NO_COLOR", "1");
+        let target = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let now = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 17, 0, 0).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let out = format_timestamp(&target, &now);
+        assert!(
+            out.starts_with("09:15:30"),
+            "today rows must not carry a prefix: {out:?}"
+        );
+        std::env::remove_var("DATUM_COLOR");
+        std::env::remove_var("NO_COLOR");
     }
 }
