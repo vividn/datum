@@ -3,11 +3,12 @@
 //! All entry data, field specs, and aliases live in a single SQLite file.
 //! The schema is designed to be CRDT-friendly (append-mostly, ULID-ordered).
 //!
-//! FieldSpec is the source of truth for a field's tracking state, color,
-//! allowed states, and derived aliases. The `tracked_fields` and
-//! `field_state_colors` tables have been absorbed into the FieldSpec JSON;
-//! helper methods here project that shape back out for callers that still
-//! work in terms of "tracked fields" and "state colors".
+//! FieldSpec stores a field's schema (default verb, allowed states, color,
+//! derived aliases). Tracking state — whether a field is tracked or ignored
+//! — is NOT on the spec; it derives from the entry log via [`Db::state_at`].
+//! [`Db::get_tracked_fields`] is a thin projection that walks every distinct
+//! field in `entries` and labels each as ignored or tracked according to its
+//! most recent state-bearing entry.
 
 use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
@@ -20,12 +21,21 @@ use crate::history::{self, ChangeKind};
 use crate::time::DatumTime;
 use chrono::{DateTime, Duration, Utc};
 
-/// Projection of a FieldSpec for the `now` view. Built from FieldSpec on read.
+/// Projection of a field's tracking state for the `now` view.
+///
+/// `ignored` is derived from the entry log (most recent state == "IGNORED")
+/// and `color` is pulled from the field's [`FieldSpec`] when one exists.
+/// Built by [`Db::get_tracked_fields`].
 pub struct TrackedField {
     pub field: String,
     pub ignored: bool,
     pub color: Option<String>,
 }
+
+/// Sentinel state value representing an ignored field. Stored as the JSON
+/// string `"IGNORED"` in `entries.value`. The renderer's
+/// `render::characters::IGNORED_STATE` constant carries the same literal.
+pub const IGNORED_STATE_VALUE: &str = "IGNORED";
 
 /// Which timestamp to sort/filter entries by in [`Db::list_entries`].
 ///
@@ -1454,7 +1464,7 @@ impl Db {
     }
 
     // -------------------------------------------------------------------------
-    // Tracking / colors — thin projection over FieldSpec
+    // Tracking / colors — derived from the entry log
     // -------------------------------------------------------------------------
 
     fn load_or_new_spec(&self, field: &str) -> Result<FieldSpec> {
@@ -1464,46 +1474,77 @@ impl Db {
         }
     }
 
-    /// Set a field's tracking state (and optionally its color).
-    /// Creates the spec if it doesn't exist yet.
-    pub fn set_tracked(&self, field: &str, ignored: bool, color: Option<&str>) -> Result<()> {
-        let mut spec = self.load_or_new_spec(field)?;
-        spec.tracked = true;
-        spec.ignored = ignored;
-        if let Some(c) = color {
-            spec.color = Some(c.to_string());
-        }
-        self.save_field_spec(&spec)
-    }
-
-    /// Ensure a field has a tracked spec. Does nothing if a spec already exists.
-    pub fn ensure_tracked(&self, field: &str) -> Result<()> {
-        if self.load_spec(field)?.is_some() {
-            return Ok(());
-        }
-        let mut spec = FieldSpec::new(field, Verb::Occur);
-        spec.tracked = true;
-        self.save_field_spec(&spec)
-    }
-
-    /// Return all specs flagged `tracked`, projected to TrackedField.
-    /// Ordered alphabetically by field name.
-    pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
-        let mut stmt = self
-            .conn
-            .prepare("SELECT spec_json FROM field_specs ORDER BY field")?;
+    /// All distinct fields that appear in the entry log (live rows only).
+    /// Alphabetical. The `now` view feeds this into [`Db::state_at`] to
+    /// build its row set.
+    pub fn list_distinct_fields(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT DISTINCT field FROM entries
+             WHERE deleted_at IS NULL
+             ORDER BY field",
+        )?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         let mut out = Vec::new();
         for r in rows {
-            let spec: FieldSpec = serde_json::from_str(&r.map_err(DatumError::Db)?)?;
-            if !spec.tracked {
-                continue;
-            }
-            out.push(TrackedField {
-                field: spec.field,
-                ignored: spec.ignored,
-                color: spec.color,
-            });
+            out.push(r.map_err(DatumError::Db)?);
+        }
+        Ok(out)
+    }
+
+    /// Return the field's most recent state-bearing value at or before time
+    /// `t`. The state-bearing verbs are switch / occur / start / stop —
+    /// `add` (notes) does not change state. Tombstoned rows are excluded.
+    ///
+    /// `Ok(None)` means the field has no qualifying entries at or before
+    /// `t`, which callers should treat as IGNORED (the default for unseen
+    /// fields). `Ok(Some(JsonValue::String("IGNORED")))` is the explicit
+    /// ignore sentinel; any other value (including `Null` from a "track,
+    /// no current state" entry) means the field is tracked.
+    pub fn state_at(
+        &self,
+        field: &str,
+        t: DateTime<Utc>,
+    ) -> Result<Option<JsonValue>> {
+        let cutoff = t.to_rfc3339();
+        let row: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT value FROM entries
+                 WHERE field = ?1
+                   AND verb != 'add'
+                   AND deleted_at IS NULL
+                   AND COALESCE(start_time, end_time, create_time) <= ?2
+                 ORDER BY COALESCE(start_time, end_time, create_time) DESC
+                 LIMIT 1",
+                params![field, cutoff],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?;
+        match row {
+            None => Ok(None),
+            Some(None) => Ok(Some(JsonValue::Null)),
+            Some(Some(s)) => Ok(Some(serde_json::from_str(&s)?)),
+        }
+    }
+
+    /// Project the entry log into a [`TrackedField`] list for the `now`
+    /// view. A field appears here iff it has at least one live entry; its
+    /// `ignored` flag derives from [`Db::state_at`] at `now`. Per-field
+    /// color is read from the matching [`FieldSpec`] when one exists.
+    /// Ordered alphabetically by field name.
+    pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
+        let now = Utc::now();
+        let fields = self.list_distinct_fields()?;
+        let mut out = Vec::with_capacity(fields.len());
+        for field in fields {
+            let state = self.state_at(&field, now)?;
+            let ignored = match state.as_ref() {
+                None => true,
+                Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
+                _ => false,
+            };
+            let color = self.load_spec(&field)?.and_then(|s| s.color);
+            out.push(TrackedField { field, ignored, color });
         }
         Ok(out)
     }
@@ -1897,7 +1938,7 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<String> {
     }
 }
 
-fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
+pub(crate) fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
     conn.execute(
         r#"INSERT INTO entries (
             hid, slug, content_hash, field, entry_shape, intent,
@@ -2226,48 +2267,53 @@ mod tests {
         assert_eq!(limited[1].value.as_ref().unwrap().as_i64().unwrap(), 200);
     }
 
+    fn switch_at(field: &str, value: JsonValue, t: DatumTime) -> Entry {
+        Entry::new(field, Verb::Switch, Some(value), None, None, Some(t), None, "d1")
+    }
+
     #[test]
-    fn test_set_tracked_and_get() {
+    fn test_get_tracked_fields_derives_from_log() {
+        // Three fields, one explicitly ignored. get_tracked_fields walks
+        // distinct fields and labels each via state_at(now).
         let db = Db::open_in_memory().unwrap();
-        db.set_tracked("coffee", false, None).unwrap();
-        db.set_tracked("mood", false, Some("ff6600")).unwrap();
-        db.set_tracked("youtube", true, None).unwrap();
+        let t = DatumTime::now();
+        db.insert_entry(&switch_at("coffee", JsonValue::Null, t.clone())).unwrap();
+        // 'mood' has a real state (happy) — tracked, not ignored.
+        db.insert_entry(&switch_at("mood", serde_json::json!("happy"), t.clone())).unwrap();
+        // Stash a color spec on mood so the projection picks it up.
+        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        spec.color = Some("ff6600".to_string());
+        db.save_field_spec(&spec).unwrap();
+        // 'youtube' is explicitly ignored.
+        db.insert_entry(&switch_at("youtube", serde_json::json!("IGNORED"), t)).unwrap();
 
         let fields = db.get_tracked_fields().unwrap();
         assert_eq!(fields.len(), 3);
 
         let coffee = fields.iter().find(|f| f.field == "coffee").unwrap();
-        assert!(!coffee.ignored);
-        assert!(coffee.color.is_none());
+        assert!(!coffee.ignored, "track-with-null is tracked, not ignored");
 
         let mood = fields.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood.ignored);
         assert_eq!(mood.color.as_deref(), Some("ff6600"));
 
         let yt = fields.iter().find(|f| f.field == "youtube").unwrap();
-        assert!(yt.ignored);
+        assert!(yt.ignored, "switch IGNORED must surface as ignored");
     }
 
     #[test]
-    fn test_ensure_tracked_inserts_and_idempotent() {
+    fn test_list_distinct_fields_excludes_tombstones() {
         let db = Db::open_in_memory().unwrap();
-        db.ensure_tracked("coffee").unwrap();
-        let fields = db.get_tracked_fields().unwrap();
-        assert_eq!(fields.len(), 1);
-        assert!(!fields[0].ignored);
+        let t = DatumTime::now();
+        db.insert_entry(&switch_at("a", serde_json::json!(1), t.clone())).unwrap();
+        let b_entry = switch_at("b", serde_json::json!(1), t.clone());
+        db.insert_entry(&b_entry).unwrap();
+        db.insert_entry(&switch_at("c", serde_json::json!(1), t)).unwrap();
+        // Tombstone 'b'.
+        db.delete_entry(&b_entry.slug).unwrap();
 
-        db.ensure_tracked("coffee").unwrap();
-        let fields2 = db.get_tracked_fields().unwrap();
-        assert_eq!(fields2.len(), 1);
-    }
-
-    #[test]
-    fn test_ensure_tracked_does_not_override_ignored() {
-        let db = Db::open_in_memory().unwrap();
-        db.set_tracked("youtube", true, None).unwrap();
-        db.ensure_tracked("youtube").unwrap();
-        let fields = db.get_tracked_fields().unwrap();
-        assert!(fields[0].ignored, "ignored flag must be preserved");
+        let fields = db.list_distinct_fields().unwrap();
+        assert_eq!(fields, vec!["a".to_string(), "c".to_string()]);
     }
 
     #[test]
@@ -2611,28 +2657,208 @@ mod tests {
     }
 
     #[test]
-    fn track_ignore_round_trip_via_spec() {
+    fn track_ignore_round_trip_via_log() {
+        // da-2sr: tracking state lives in the entry log, not the spec.
+        // Track → ignore → track at three timepoints; state_at returns the
+        // value of the most recent state-bearing entry at each cutoff.
         let db = Db::open_in_memory().unwrap();
+        let t1 = utc_at(9, 0);
+        let t2 = utc_at(10, 0);
+        let t3 = utc_at(11, 0);
 
-        // Track via the projection helper.
-        db.set_tracked("mood", false, Some("ff6600")).unwrap();
-        let spec = db.load_spec("mood").unwrap().unwrap();
-        assert!(spec.tracked);
-        assert!(!spec.ignored);
-        assert_eq!(spec.color.as_deref(), Some("ff6600"));
+        // t1: track (switch with NULL value)
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            None,
+            None,
+            None,
+            Some(t1.clone()),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        // t2: ignore (switch IGNORED)
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("IGNORED")),
+            None,
+            None,
+            Some(t2.clone()),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        // t3: track again (switch with NULL value)
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            None,
+            None,
+            None,
+            Some(t3.clone()),
+            None,
+            "d1",
+        ))
+        .unwrap();
 
-        // Ignore flips the ignored bit but preserves everything else.
-        db.set_tracked("mood", true, None).unwrap();
-        let spec2 = db.load_spec("mood").unwrap().unwrap();
-        assert!(spec2.tracked);
-        assert!(spec2.ignored);
-        assert_eq!(spec2.color.as_deref(), Some("ff6600"));
+        // At t1: tracked (NULL value)
+        assert_eq!(
+            db.state_at("mood", t1.utc).unwrap(),
+            Some(JsonValue::Null),
+        );
+        // At t2: ignored
+        assert_eq!(
+            db.state_at("mood", t2.utc).unwrap(),
+            Some(JsonValue::String("IGNORED".to_string())),
+        );
+        // At t3: tracked again (NULL value)
+        assert_eq!(
+            db.state_at("mood", t3.utc).unwrap(),
+            Some(JsonValue::Null),
+        );
+        // Before any entry: None (the IGNORED default).
+        assert_eq!(
+            db.state_at("mood", as_utc(8, 0)).unwrap(),
+            None,
+        );
+    }
 
-        // Re-track clears the ignored bit.
-        db.set_tracked("mood", false, None).unwrap();
-        let spec3 = db.load_spec("mood").unwrap().unwrap();
-        assert!(!spec3.ignored);
-        assert_eq!(spec3.color.as_deref(), Some("ff6600"));
+    // ─── state_at — da-2sr acceptance tests ──────────────────────────────────
+
+    #[test]
+    fn state_at_returns_none_for_never_written_field() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.state_at("ghost", Utc::now()).unwrap(), None);
+    }
+
+    #[test]
+    fn state_at_latest_switch_wins() {
+        let db = Db::open_in_memory().unwrap();
+        for (h, v) in &[(9u32, "happy"), (10, "sad"), (11, "focused")] {
+            db.insert_entry(&Entry::new(
+                "mood",
+                Verb::Switch,
+                Some(serde_json::json!(*v)),
+                None,
+                None,
+                Some(utc_at(*h, 0)),
+                None,
+                "d1",
+            ))
+            .unwrap();
+        }
+        assert_eq!(
+            db.state_at("mood", as_utc(12, 0)).unwrap(),
+            Some(serde_json::json!("focused")),
+        );
+    }
+
+    #[test]
+    fn state_at_occur_contributes() {
+        let db = Db::open_in_memory().unwrap();
+        // Switch then occur — most recent is the occur.
+        db.insert_entry(&Entry::new(
+            "coffee",
+            Verb::Switch,
+            Some(serde_json::json!("on")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        db.insert_entry(&Entry::new(
+            "coffee",
+            Verb::Occur,
+            Some(serde_json::json!(2)),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        assert_eq!(
+            db.state_at("coffee", as_utc(11, 0)).unwrap(),
+            Some(serde_json::json!(2)),
+        );
+    }
+
+    #[test]
+    fn state_at_excludes_deleted_entries() {
+        let db = Db::open_in_memory().unwrap();
+        let e = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("IGNORED")),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+        db.delete_entry(&e.slug).unwrap();
+        assert_eq!(db.state_at("mood", as_utc(11, 0)).unwrap(), None);
+    }
+
+    #[test]
+    fn state_at_respects_time_cutoff() {
+        let db = Db::open_in_memory().unwrap();
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        // Cutoff before the entry → None.
+        assert_eq!(db.state_at("mood", as_utc(9, 0)).unwrap(), None);
+        // Cutoff after → Some.
+        assert_eq!(
+            db.state_at("mood", as_utc(11, 0)).unwrap(),
+            Some(serde_json::json!("happy")),
+        );
+    }
+
+    #[test]
+    fn state_at_skips_add_entries() {
+        // `add` (notes) doesn't carry state — it must not appear as the
+        // "most recent state-bearing entry" even when it's the latest write.
+        let db = Db::open_in_memory().unwrap();
+        db.insert_entry(&Entry::new(
+            "journal",
+            Verb::Switch,
+            Some(serde_json::json!("active")),
+            None,
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        db.insert_entry(&Entry::new(
+            "journal",
+            Verb::Add,
+            Some(serde_json::json!("a journal note")),
+            None,
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "d1",
+        ))
+        .unwrap();
+        assert_eq!(
+            db.state_at("journal", as_utc(11, 0)).unwrap(),
+            Some(serde_json::json!("active")),
+        );
     }
 
     #[test]

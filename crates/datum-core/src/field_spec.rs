@@ -1,9 +1,13 @@
 //! Field specs and the alias system.
 //!
-//! A FieldSpec is the source of truth for a tracked field. It defines:
-//! default verb, subfields, id template, color, allowed states with per-state
-//! color overrides, derived aliases (auto-created from allowed states), and
-//! tracking state (tracked / ignored flags in the `now` view).
+//! A FieldSpec is the source of truth for a field's schema: default verb,
+//! subfields, id template, color, allowed states with per-state color
+//! overrides, and derived aliases (auto-created from allowed states).
+//!
+//! Tracking state (tracked / ignored) is NOT stored on the spec — it's
+//! derived from the entry log via [`Db::state_at`](crate::db::Db::state_at).
+//! A field is ignored iff its most recent state-bearing entry has
+//! `value = "IGNORED"`; any other state (including null) means tracked.
 //!
 //! Aliases are pre-filled argument sets that resolve to a full datum command.
 //! "Derived" aliases are auto-generated from a field's allowed_states; they
@@ -120,13 +124,6 @@ pub struct FieldSpec {
     /// over).
     #[serde(default)]
     pub no_autoalias: bool,
-
-    /// True when this field should appear in `datum now`.
-    #[serde(default)]
-    pub tracked: bool,
-    /// True when this field is explicitly hidden from `datum now`.
-    #[serde(default)]
-    pub ignored: bool,
 }
 
 /// The subset of verbs permitted as a field's `default_verb`.
@@ -149,8 +146,6 @@ impl FieldSpec {
             id_keys: Vec::new(),
             data_keys: Vec::new(),
             no_autoalias: false,
-            tracked: false,
-            ignored: false,
         }
     }
 
@@ -550,17 +545,19 @@ mod tests {
     #[test]
     fn legacy_spec_json_deserializes_with_defaults() {
         // Old field_specs JSON (phase-1 shape) must still deserialize.
+        // Includes the now-removed `tracked`/`ignored` keys to prove serde
+        // tolerates them as unknown fields on a v8 → v9 upgrade.
         let legacy = r#"{
             "field": "mood",
             "default_verb": "switch",
             "subfields": {},
             "description": null,
-            "unit": null
+            "unit": null,
+            "tracked": true,
+            "ignored": true
         }"#;
         let spec: FieldSpec = serde_json::from_str(legacy).unwrap();
         assert_eq!(spec.field, "mood");
-        assert!(!spec.tracked);
-        assert!(!spec.ignored);
         assert!(spec.allowed_states.is_none());
         assert!(spec.derived_aliases.is_empty());
         assert!(spec.id_keys.is_empty());

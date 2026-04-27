@@ -70,9 +70,12 @@ fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) ->
     if ctx.is_first_occurrence {
         out.push_str(&paint(GRAY_FG, NULL_SET));
     }
-    // State badge: single coloured DOT. Tracked field → field color; ignored
-    // / untracked → grey.
-    let dot_color = if spec.map(|s| s.ignored).unwrap_or(false) {
+    // State badge: single coloured DOT. Tracked field → field color;
+    // ignored (prior state was the IGNORED sentinel) → grey.
+    let dot_color = if matches!(
+        &ctx.last_state,
+        Some(JsonValue::String(s)) if s == IGNORED_STATE
+    ) {
         Rgb::IGNORED
     } else {
         field_rgb(&entry.field, spec)

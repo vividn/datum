@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 8;
+pub const CURRENT_SCHEMA_VERSION: u32 = 9;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -77,6 +77,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: add user_asserted_last_state column (S6 — explicit -L assertion value)",
         apply: m7_to_8_entries_user_asserted_last_state,
     },
+    Migration {
+        from: 8,
+        to: 9,
+        summary: "track/ignore unification (da-2sr): convert field_specs.ignored=true rows into switch IGNORED entries; spec retains schema only",
+        apply: m8_to_9_track_ignore_unification,
+    },
 ];
 
 fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
@@ -107,6 +113,47 @@ fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
          DROP INDEX IF EXISTS idx_entries_content_hash;
          DROP TABLE IF EXISTS entries;",
     )?;
+    Ok(())
+}
+
+fn m8_to_9_track_ignore_unification(conn: &Connection) -> Result<()> {
+    // da-2sr: tracking state moves out of the spec and into the entry log.
+    // For every existing spec with `ignored = true`, write a switch entry
+    // with value = "IGNORED" at create_time = NOW so the field is reported
+    // as ignored under the new derivation. The legacy `tracked` / `ignored`
+    // keys remain inside `spec_json` (serde tolerates them as unknown
+    // fields on read); the binary just stops reading them.
+    let mut stmt = conn.prepare("SELECT spec_json FROM field_specs")?;
+    let specs: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(crate::error::DatumError::Db)?;
+    drop(stmt);
+
+    let now_dt = crate::time::DatumTime::now();
+    for spec_json in specs {
+        let v: serde_json::Value = serde_json::from_str(&spec_json)
+            .map_err(|e| crate::error::DatumError::Other(format!("bad spec_json: {e}")))?;
+        let ignored = v.get("ignored").and_then(|x| x.as_bool()).unwrap_or(false);
+        if !ignored {
+            continue;
+        }
+        let field = match v.get("field").and_then(|x| x.as_str()) {
+            Some(f) if !f.is_empty() => f.to_string(),
+            _ => continue,
+        };
+        let entry = crate::entry::Entry::new(
+            field,
+            crate::entry::Verb::Switch,
+            Some(serde_json::Value::String("IGNORED".to_string())),
+            None,
+            None,
+            Some(now_dt.clone()),
+            None,
+            "migration-v9",
+        );
+        crate::db::try_insert(conn, &entry.slug, &entry.hid, &entry)?;
+    }
     Ok(())
 }
 
@@ -515,5 +562,49 @@ mod tests {
             read_schema_version(db.conn()).unwrap(),
             Some(CURRENT_SCHEMA_VERSION)
         );
+    }
+
+    /// da-2sr: v8→v9 migration converts `field_specs` rows with
+    /// `ignored = true` into a switch IGNORED entry, and leaves
+    /// `ignored = false` rows alone.
+    #[test]
+    fn m8_to_9_writes_ignored_switch_for_each_ignored_spec() {
+        let db = Db::open_in_memory().unwrap();
+
+        // Roll back to v8 so the migration step is what we exercise.
+        set_schema_version(db.conn(), 8).unwrap();
+        // Seed two specs at the v8 shape (the JSON keeps `tracked`/`ignored`).
+        db.conn().execute(
+            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            rusqlite::params![
+                "youtube",
+                r#"{"field":"youtube","default_verb":"occur","subfields":{},"tracked":true,"ignored":true}"#,
+            ],
+        ).unwrap();
+        db.conn().execute(
+            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            rusqlite::params![
+                "mood",
+                r#"{"field":"mood","default_verb":"switch","subfields":{},"tracked":true,"ignored":false}"#,
+            ],
+        ).unwrap();
+
+        // Run the v8→v9 step.
+        migrate_to_current(db.conn()).unwrap();
+        assert_eq!(
+            read_schema_version(db.conn()).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION)
+        );
+
+        // youtube has the IGNORED sentinel; mood does not.
+        let now = chrono::Utc::now();
+        let yt_state = db.state_at("youtube", now).unwrap();
+        assert_eq!(
+            yt_state,
+            Some(serde_json::Value::String("IGNORED".to_string())),
+            "ignored=true spec must be converted to switch IGNORED",
+        );
+        let mood_state = db.state_at("mood", now).unwrap();
+        assert_eq!(mood_state, None, "ignored=false spec must NOT be migrated");
     }
 }

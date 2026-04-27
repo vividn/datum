@@ -5,6 +5,7 @@ use chrono::{Local, TimeZone, Utc};
 use datum_core::{
     db::{
         ConflictStrategy, Db, GroupColumn, InsertOutcome, ListParams, RetimeFilter, TimeMetric,
+        IGNORED_STATE_VALUE,
     },
     entry::{new_hid, Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
@@ -389,11 +390,7 @@ fn print_info_block(
 
     let tracked = db.get_tracked_fields().unwrap_or_default();
     let (t_count, i_count) = tracked.iter().fold((0usize, 0usize), |(t, i), f| {
-        if f.ignored {
-            (t, i + 1)
-        } else {
-            (t + 1, i)
-        }
+        if f.ignored { (t, i + 1) } else { (t + 1, i) }
     });
     println!("  fields:   {t_count} tracked, {i_count} ignored");
 
@@ -751,9 +748,6 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     // Capture render hints *before* the insert:
     //   1. first-time: no live entries exist for this field yet. Drives both
     //      the `∅` left-char and the field-badge sparkle in the renderer.
-    //      The pre-R3 probe was `load_spec(field).is_none()`, but switches
-    //      never create a spec (only Occur / Start do via `ensure_tracked`),
-    //      so spec-absence was firing on every switch regardless of history.
     //   2. prior_state: for state-changing verbs, fetch the active state at
     //      `time_start` minus one microsecond. That's the "before" half of
     //      the transition indicator. A no-op prior (Null/False) means there
@@ -768,9 +762,6 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let ctx = RenderContext { last_state: prior_state, is_first_occurrence };
     match &outcome {
         InsertOutcome::Inserted { slug } => {
-            if matches!(verb, Verb::Occur | Verb::Start) {
-                db.ensure_tracked(&entry.field)?;
-            }
             // The stored slug may differ from entry.slug if a collision
             // forced a suffixed retry — fetch the canonical row so the
             // display reflects what actually hit the DB.
@@ -1738,38 +1729,62 @@ fn human_age(age: chrono::Duration) -> String {
 }
 
 pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
-    // Load-or-create spec, flip tracked=true (ignored=false), merge color
-    // and per-state colors. Track is a thin wrapper over the spec.
-    let mut spec = match db.load_spec(&args.field)? {
-        Some(s) => s,
-        None => FieldSpec::new(&args.field, Verb::Occur),
-    };
-    spec.tracked = true;
-    spec.ignored = false;
-    if let Some(c) = &args.color {
-        spec.color = Some(c.clone());
-    }
-    for sc in &args.state_colors {
-        match sc.split_once('=') {
-            Some((state, color)) => {
-                spec.state_colors.insert(state.to_string(), color.to_string());
-            }
-            None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
+    // da-2sr: tracking lives in the entry log. `track` writes a switch
+    // entry with value=NULL — semantically "tracked, no current state".
+    // Any later real switch (`switch mood happy`) supersedes this. Color
+    // and per-state-color overrides still live on FieldSpec, so we update
+    // the spec only when the user actually passed those arguments.
+    let device = device_id()?;
+    let entry = Entry::new(
+        &args.field,
+        Verb::Switch,
+        None,
+        None,
+        None,
+        Some(DatumTime::now()),
+        None,
+        device,
+    );
+    db.insert_entry(&entry)?;
+
+    if args.color.is_some() || !args.state_colors.is_empty() {
+        let mut spec = match db.load_spec(&args.field)? {
+            Some(s) => s,
+            None => FieldSpec::new(&args.field, Verb::Occur),
+        };
+        if let Some(c) = &args.color {
+            spec.color = Some(c.clone());
         }
+        for sc in &args.state_colors {
+            match sc.split_once('=') {
+                Some((state, color)) => {
+                    spec.state_colors.insert(state.to_string(), color.to_string());
+                }
+                None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
+            }
+        }
+        db.save_field_spec(&spec)?;
     }
-    db.save_field_spec(&spec)?;
     println!("✓ Tracking '{}'", args.field);
     Ok(())
 }
 
 pub(crate) fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
-    let mut spec = match db.load_spec(&args.field)? {
-        Some(s) => s,
-        None => FieldSpec::new(&args.field, Verb::Occur),
-    };
-    spec.tracked = true;
-    spec.ignored = true;
-    db.save_field_spec(&spec)?;
+    // da-2sr: writing a switch entry with the IGNORED sentinel is the only
+    // way to mark a field ignored. No spec writes — the spec keeps its
+    // schema-only role.
+    let device = device_id()?;
+    let entry = Entry::new(
+        &args.field,
+        Verb::Switch,
+        Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
+        None,
+        None,
+        Some(DatumTime::now()),
+        None,
+        device,
+    );
+    db.insert_entry(&entry)?;
     println!("✓ Ignoring '{}'", args.field);
     Ok(())
 }
@@ -2542,13 +2557,36 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
             ),
         }
     }
+    // da-2sr: --track / --ignore on `spec set` write switch entries rather
+    // than mutating the spec. The flags are kept on the parser surface for
+    // backwards compatibility; they no longer touch the spec.
     if args.track {
-        spec.tracked = true;
-        spec.ignored = false;
+        let device = device_id()?;
+        let entry = Entry::new(
+            &args.field,
+            Verb::Switch,
+            None,
+            None,
+            None,
+            Some(DatumTime::now()),
+            None,
+            device,
+        );
+        db.insert_entry(&entry)?;
     }
     if args.ignore {
-        spec.tracked = true;
-        spec.ignored = true;
+        let device = device_id()?;
+        let entry = Entry::new(
+            &args.field,
+            Verb::Switch,
+            Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
+            None,
+            None,
+            Some(DatumTime::now()),
+            None,
+            device,
+        );
+        db.insert_entry(&entry)?;
     }
     if !args.id_keys.is_empty() {
         spec.id_keys = args.id_keys.clone();
@@ -3590,8 +3628,14 @@ mod tests {
             output_flags: Default::default(),
         };
         log_entry(Verb::Add, args, &db).unwrap();
+        // da-2sr: an add-only field has no state-bearing entry, so state_at
+        // returns None — the projection labels it ignored (the "no entries"
+        // default). It still appears in `get_tracked_fields` so callers
+        // know it exists, but `now` filters it out by default.
         let tracked = db.get_tracked_fields().unwrap();
-        assert!(!tracked.iter().any(|f| f.field == "journal"));
+        let journal = tracked.iter().find(|f| f.field == "journal");
+        assert!(journal.is_some(), "field should be present after any write");
+        assert!(journal.unwrap().ignored, "add-only field defaults to ignored");
     }
 
     #[test]
@@ -3607,6 +3651,8 @@ mod tests {
         };
         cmd_track(track_args, &db).unwrap();
 
+        // da-2sr: track wrote a switch entry (value=NULL) and a spec for the
+        // colors. The derived projection sees mood as tracked.
         let tracked = db.get_tracked_fields().unwrap();
         let mood = tracked.iter().find(|f| f.field == "mood").unwrap();
         assert!(!mood.ignored);
@@ -3618,13 +3664,23 @@ mod tests {
             Some("00ff00")
         );
 
-        // Now ignore mood
+        // Ignore writes a switch IGNORED entry — supersedes the prior
+        // track switch — and leaves the spec (and its color) alone.
         cmd_ignore(IgnoreArgs { field: "mood".to_string() }, &db).unwrap();
         let tracked2 = db.get_tracked_fields().unwrap();
         let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
         assert!(mood2.ignored);
-        // Color should be preserved (set_tracked with None color)
+        // Color survives because it lives on FieldSpec, not in the entry log.
         assert_eq!(mood2.color.as_deref(), Some("ff6600"));
+
+        // Re-track flips it back to tracked (most recent switch wins).
+        cmd_track(TrackArgs {
+            field: "mood".to_string(),
+            color: None,
+            state_colors: vec![],
+        }, &db).unwrap();
+        let tracked3 = db.get_tracked_fields().unwrap();
+        assert!(!tracked3.iter().find(|f| f.field == "mood").unwrap().ignored);
     }
 
     #[test]
@@ -3658,7 +3714,11 @@ mod tests {
         assert_eq!(spec.color.as_deref(), Some("green"));
         let states = spec.allowed_states.as_ref().unwrap();
         assert!(states.contains(&"happy".to_string()) && states.contains(&"sad".to_string()));
-        assert!(spec.tracked && !spec.ignored);
+        // da-2sr: --track on `spec set` writes a switch entry; the spec
+        // itself no longer carries tracked/ignored bits.
+        let mood_tracked = db.get_tracked_fields().unwrap();
+        let mood_row = mood_tracked.iter().find(|f| f.field == "mood").unwrap();
+        assert!(!mood_row.ignored);
 
         // Derived aliases landed in the aliases table (hot-path lookup).
         let happy = db.lookup_alias("happy").unwrap().unwrap();
@@ -3711,7 +3771,8 @@ mod tests {
             output_flags: Default::default(),
         };
         log_entry(Verb::Switch, args, &db).unwrap();
-        db.set_tracked("mood", false, None).unwrap();
+        // da-2sr: writing the switch entry alone makes mood tracked; no
+        // separate set_tracked / spec write is needed.
 
         cmd_now(NowArgs { show_all: false }, &db).unwrap();
         cmd_now(NowArgs { show_all: true }, &db).unwrap();

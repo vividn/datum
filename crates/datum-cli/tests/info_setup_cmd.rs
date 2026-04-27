@@ -58,11 +58,11 @@ fn setup_rejects_newer_schema_version() {
 #[test]
 fn info_runs_against_active_db() {
     let db = fresh_db();
-    // Seed a couple of entries and a tracked field for richer output.
+    // da-2sr: writing an entry is the only thing needed to make a field
+    // tracked. No separate set_tracked call.
     entry_builder("coffee")
         .value(serde_json::json!(2))
         .insert(&db);
-    db.set_tracked("coffee", false, None).unwrap();
     // info should dispatch cleanly.
     run_cli(&["info"], &db).expect("info dispatch");
 }

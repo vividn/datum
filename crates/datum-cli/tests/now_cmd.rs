@@ -216,10 +216,11 @@ fn now_dispatches_end_to_end_via_run_cli() {
     // `-A` is a presence-only flag; its expansion belongs to the render tests.
     run_cli(&["now", "-A"], &db).expect("now -A dispatch");
 
-    // Sanity: the switch landed in the db.
+    // Sanity: both writes landed. da-2sr: `track` now writes a switch with
+    // value=NULL, and the `switch happy` is a second switch entry.
     let entries = db.entries_for_field("mood", None).unwrap();
-    assert_eq!(entries.len(), 1);
-    assert_eq!(entries[0].verb, Verb::Switch);
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|e| e.verb == Verb::Switch));
 }
 
 // ─── Gated on A0: per-field spec color ───────────────────────────────────────
