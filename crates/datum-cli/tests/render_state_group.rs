@@ -75,9 +75,9 @@ fn info_line(stdout: &str) -> String {
 }
 
 /// Find positions of every state-cell badge body and the surrounding LEAD
-/// / TRAIL bg escapes. We walk the bytes, find the state-cell body
-/// (` state `), and look at the bg escape immediately preceding the LEAD
-/// space and the TRAIL space.
+/// / TRAIL bg escapes. `state_body` is the bare state label (no padding) —
+/// per da-yiy the cell is `paint_bg(rgb, label)` with no inline space
+/// padding, and a single uncoloured space separates it from each slot.
 fn assert_lead_then_state_then_trail_bg(
     rendered: &str,
     state_body: &str,
@@ -85,10 +85,11 @@ fn assert_lead_then_state_then_trail_bg(
     expected_state_bg: &str,
     expected_trail_bg: &str,
 ) {
-    // The output structure for the trio is:
-    //   <lead_bg><lead_fg> <RESET><state_bg><state_fg> body <RESET><trail_bg><trail_fg> <RESET>
-    // i.e. the escapes for lead/state/trail bg appear in order, separated
-    // by `\x1b[0m` resets and the body characters.
+    // The output structure for the trio is (da-yiy):
+    //   <lead_bg><lead_fg> <RESET> <state_bg><state_fg>body<RESET> <trail_bg><trail_fg> <RESET>
+    // The leading-and-trailing uncoloured spaces between each escape group
+    // separate the bg-coloured slots from the bg-coloured cell body without
+    // re-introducing a colour halo.
     let lead_idx = rendered
         .find(expected_lead_bg)
         .unwrap_or_else(|| panic!("LEAD bg {expected_lead_bg:?} not found in:\n{rendered:?}"));
@@ -130,7 +131,7 @@ fn switch_block_resumes_prior_state() {
     // (sad resumes after the 5-minute block closes).
     assert_lead_then_state_then_trail_bg(
         &line,
-        " happy ",
+        "happy",
         &bg_escape("sad"),
         &bg_escape("happy"),
         &bg_escape("sad"),
@@ -155,7 +156,7 @@ fn switch_point_trail_uses_new_state_color() {
     // LEAD = sad, state cell = happy, TRAIL = happy (continues forward).
     assert_lead_then_state_then_trail_bg(
         &line,
-        " happy ",
+        "happy",
         &bg_escape("sad"),
         &bg_escape("happy"),
         &bg_escape("happy"),
@@ -177,7 +178,7 @@ fn first_switch_uses_empty_lead_slot() {
     // LEAD = empty-slot grey (no prior), state cell = happy, TRAIL = happy.
     assert_lead_then_state_then_trail_bg(
         &line,
-        " happy ",
+        "happy",
         EMPTY_SLOT_BG_ESC,
         &bg_escape("happy"),
         &bg_escape("happy"),
@@ -205,7 +206,7 @@ fn block_on_ignored_field_uses_empty_trail_slot() {
     // TRAIL = empty-slot grey (IGNORED resumes after block ends).
     assert_lead_then_state_then_trail_bg(
         &line,
-        " doing ",
+        "doing",
         EMPTY_SLOT_BG_ESC,
         &bg_escape("doing"),
         EMPTY_SLOT_BG_ESC,

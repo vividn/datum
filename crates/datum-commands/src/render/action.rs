@@ -175,8 +175,12 @@ fn paint_dot(fg: Rgb, bg: Option<Rgb>, body: &str) -> String {
 }
 
 /// Render the full `[LEAD][state cell][TRAIL]` trio for switch / start /
-/// stop / block. Per da-fck: no whitespace inside the trio so the three
-/// segments read as one tight unit; outer joining handled by the caller.
+/// stop / block. Per da-fck the trio segments are rendered as bg-coloured
+/// LEAD/TRAIL slots flanking the state cell. Per da-yiy the cell body has
+/// no inline bg-painted padding; instead a single *uncoloured* space
+/// separates the cell text from each slot, so the only bg-coloured cells
+/// are the LEAD/TRAIL slots themselves and the cell text. Outer joining
+/// to the field badge is handled by the caller.
 fn render_state_transition_group(
     entry: &Entry,
     spec: Option<&FieldSpec>,
@@ -184,7 +188,9 @@ fn render_state_transition_group(
 ) -> String {
     let mut out = String::new();
     out.push_str(&render_slot(ctx.lead_state.as_ref(), &entry.field, spec));
+    out.push(' ');
     out.push_str(&render_state_cell(entry, spec));
+    out.push(' ');
     out.push_str(&render_slot(ctx.trail_state.as_ref(), &entry.field, spec));
     out
 }
@@ -314,8 +320,13 @@ pub(crate) fn format_field_badge(
     // of the 20 acceptance fixtures include a sparkle or other badge marker.
     // Retained in the signature so callers can keep passing the flag without
     // a refactor; the state group is the authoritative emission site.
+    //
+    // Per da-yiy the badge wraps `paint_bg(rgb, field)` in *uncoloured*
+    // spaces so the bg-painted region is the field name itself with plain
+    // whitespace around it (no colour halo). The outer spaces preserve the
+    // layout that the original bg-padded `" {field} "` form provided.
     let rgb = field_rgb(field, spec);
-    paint_bg(rgb, field)
+    format!(" {} ", paint_bg(rgb, field))
 }
 
 // ─── Timestamp (§3) ──────────────────────────────────────────────────────────
