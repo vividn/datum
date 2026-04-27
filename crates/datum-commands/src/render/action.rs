@@ -214,6 +214,7 @@ pub(crate) fn render_slot(
     match resolve_slot(state, field, spec) {
         SlotKind::State(rgb) => paint_bg(rgb, " "),
         SlotKind::Empty => paint_bg_fg(Rgb::EMPTY_SLOT_BG, Rgb::IGNORED, NULL_SET),
+        SlotKind::FieldEnded => " ".to_string(),
     }
 }
 
@@ -221,16 +222,21 @@ pub(crate) fn render_slot(
 enum SlotKind {
     State(Rgb),
     Empty,
+    FieldEnded,
 }
 
 /// Resolve a slot's colour from a raw `state_at` output. `None`,
-/// `Some(Null)` and the `IGNORED` sentinel string all collapse to
-/// [`SlotKind::Empty`] — the no-state fallback. Other values defer to
+/// `Some(Null)` and the `IGNORED` sentinel string collapse to
+/// [`SlotKind::Empty`] — the no-state fallback (grey `∅`).
+/// `Some(Bool(false))` — the explicit "field has ended" sentinel — maps to
+/// [`SlotKind::FieldEnded`] so the trail renders as terminal-default
+/// whitespace rather than a coloured cell. Other values defer to
 /// [`state_value_rgb`].
 fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> SlotKind {
     match state {
         None => SlotKind::Empty,
         Some(JsonValue::Null) => SlotKind::Empty,
+        Some(JsonValue::Bool(false)) => SlotKind::FieldEnded,
         Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Empty,
         Some(v) => match state_value_rgb(v, field, spec) {
             Some(rgb) => SlotKind::State(rgb),
