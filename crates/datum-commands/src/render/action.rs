@@ -596,4 +596,43 @@ mod tests {
         std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
+
+    /// da-r1q acceptance: an entry stored with a non-host timezone renders
+    /// in the entry's own zone, not the host's `Local`. The bead's example:
+    /// `datum occur x -z America/New_York` at Berlin 12:00 CET stores UTC
+    /// 10:00 and tail must show `06:00-4` (NY time), not the Berlin or
+    /// host conversion.
+    #[test]
+    fn timestamp_renders_in_entrys_stored_timezone() {
+        std::env::set_var("DATUM_COLOR", "0");
+        std::env::set_var("NO_COLOR", "1");
+        // Berlin 12:00 CEST (UTC+2) → UTC 10:00 → NY 06:00 EDT (UTC-4).
+        let ny_target = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 10, 0, 0).unwrap(),
+            offset_minutes: -4 * 60,
+            timezone: "America/New_York".to_string(),
+        };
+        // "now" is in Berlin — used to verify the relative-day calc
+        // also uses the row's local calendar, not the host's.
+        let berlin_now = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 10, 0, 0).unwrap(),
+            offset_minutes: 2 * 60,
+            timezone: "Europe/Berlin".to_string(),
+        };
+        let out = format_timestamp(&ny_target, &berlin_now);
+        assert!(
+            out.contains("06:00:00"),
+            "NY-stored row must render as NY wall-clock 06:00:00, got {out:?}"
+        );
+        assert!(
+            out.contains("-4"),
+            "NY-stored row must carry the stored -4 offset, got {out:?}"
+        );
+        assert!(
+            !out.contains("12:00:00"),
+            "must NOT render as Berlin wall-clock 12:00:00, got {out:?}"
+        );
+        std::env::remove_var("DATUM_COLOR");
+        std::env::remove_var("NO_COLOR");
+    }
 }
