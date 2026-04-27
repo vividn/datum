@@ -1,0 +1,102 @@
+{
+  "backupTime": "2025-02-02T12:26:32.488Z",
+  "docs": [
+    {
+      "_id": "mood:2025-01-08T08:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T08:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "mood",
+        "state": "happy"
+      },
+      "meta": {
+        "humanId": "syn001",
+        "createTime": {"utc": "2025-01-08T08:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "sleep:2025-01-08T22:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T22:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "sleep",
+        "dur": "PT8H"
+      },
+      "meta": {
+        "humanId": "syn002",
+        "createTime": {"utc": "2025-01-08T22:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "work:2025-01-08T09:30:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T09:30:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "work",
+        "dur": "PT3M",
+        "state": "focus"
+      },
+      "meta": {
+        "humanId": "syn003",
+        "createTime": {"utc": "2025-01-08T09:30:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "brushteeth:2025-01-08T07:30:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T07:30:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "brushteeth"
+      },
+      "meta": {
+        "humanId": "syn004",
+        "createTime": {"utc": "2025-01-08T07:30:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "tracking:2025-01-08T06:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T06:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "tracking",
+        "state": true
+      },
+      "meta": {
+        "humanId": "syn005",
+        "createTime": {"utc": "2025-01-08T06:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "test:2025-01-08T10:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T10:00:00.000Z", "o": 0, "tz": "UTC"},
+        "field": "test",
+        "dur": "PT1M"
+      },
+      "meta": {
+        "humanId": "syn006",
+        "createTime": {"utc": "2025-01-08T10:00:00.500Z", "o": 0, "tz": "UTC"}
+      }
+    },
+    {
+      "_id": "consume:2025-01-08T12:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T12:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "consume",
+        "id": "song-42",
+        "medium": "audio"
+      },
+      "meta": {
+        "humanId": "syn007",
+        "createTime": {"utc": "2025-01-08T12:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    },
+    {
+      "_id": "malformed_dur:2025-01-08T13:00:00.000Z",
+      "data": {
+        "occurTime": {"utc": "2025-01-08T13:00:00.000Z", "o": 1, "tz": "Europe/Berlin"},
+        "field": "malformed_dur",
+        "dur": "not-a-duration"
+      },
+      "meta": {
+        "humanId": "syn008",
+        "createTime": {"utc": "2025-01-08T13:00:00.500Z", "o": 1, "tz": "Europe/Berlin"}
+      }
+    }
+  ]
+}
