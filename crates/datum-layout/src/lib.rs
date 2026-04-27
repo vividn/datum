@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod nowview;
+pub mod nowview_svg;
 pub mod svg;
 
 /// One timed entry to lay out. Times are epoch-millis (UTC); the caller is

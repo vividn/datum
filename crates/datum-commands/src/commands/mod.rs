@@ -26,6 +26,7 @@ pub mod info;
 pub mod merge;
 pub mod migrate;
 pub mod now;
+pub mod nowview;
 pub mod occur;
 pub mod rekey;
 pub mod restore;

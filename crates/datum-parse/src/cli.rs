@@ -83,6 +83,7 @@ pub enum Command {
     Ids(IdsArgs),
 
     Dayview(DayviewArgs),
+    Nowview(NowviewArgs),
 
     Info(InfoArgs),
     Setup(SetupArgs),
@@ -586,6 +587,48 @@ impl DayviewArgs {
             json: false,
             width: 2000.0,
             height: 200.0,
+        }
+    }
+}
+
+/// `datum nowview` arguments — port of datum's `nowviewCmdArgs` (TS).
+///
+/// Defaults match the original. `width` is `None` so the command can apply
+/// the history-aware default (100/200/300/400 px) at dispatch time.
+#[derive(Debug, Default)]
+pub struct NowviewArgs {
+    /// History duration string ("15m", "1h", "2h"). Empty / None → no
+    /// history panel.
+    pub history: Option<String>,
+    /// SVG width in pixels. None → scale from `history` (datum behavior).
+    pub width: Option<f64>,
+    /// SVG height in pixels. Default 300.
+    pub height: f64,
+    /// Width of the right "now" panel in time units (e.g. "5m").
+    pub now_width: Option<String>,
+    /// Margin around the plot. Default 2.
+    pub margin: f64,
+    /// Pixel height of the time-axis strip. Default 15.
+    pub time_axis_height: f64,
+    /// Output file. Extension picks format: .svg / .png / .html. None →
+    /// SVG to stdout.
+    pub output_file: Option<String>,
+    /// Watch mode: redraw every minute (or on DB change in a future
+    /// follow-up).
+    pub watch: bool,
+}
+
+impl NowviewArgs {
+    pub fn fresh() -> Self {
+        Self {
+            history: None,
+            width: None,
+            height: 300.0,
+            now_width: None,
+            margin: 2.0,
+            time_axis_height: 15.0,
+            output_file: None,
+            watch: false,
         }
     }
 }

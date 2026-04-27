@@ -80,6 +80,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Count(args) => commands::count::count(args, db),
         Command::Ids(args) => commands::ids::ids(args, db),
         Command::Dayview(args) => commands::dayview::dayview(args, db),
+        Command::Nowview(args) => commands::nowview::nowview(args, db),
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Setup(args) => commands::setup::setup(args, db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),

@@ -36,7 +36,7 @@ pub use pcli::{
     ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DeleteArgs, EditArgs,
     GetArgs, GrepArgs,
     HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, LogArgs, MigrateCommand, MigrateImportArgs,
-    NowArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
+    NowArgs, NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
     SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
     SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
 };

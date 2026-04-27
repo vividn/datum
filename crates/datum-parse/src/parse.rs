@@ -222,6 +222,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "ids" => Command::Ids(parse_ids_args(rest)?),
 
         "dayview" => Command::Dayview(parse_dayview_args(rest)?),
+        "nowview" => Command::Nowview(parse_nowview_args(rest)?),
 
         "info" => Command::Info(parse_info_args(rest)?),
         "setup" => Command::Setup(parse_setup_args(rest)?),
@@ -1444,6 +1445,99 @@ fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
                     "dayview takes no positional arguments".into(),
+                ));
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(out)
+}
+
+fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
+    let mut out = NowviewArgs::fresh();
+    let mut i = 0;
+    while i < tail.len() {
+        let tok = tail[i];
+        match split_flag(tok) {
+            FlagSplit::Long("history") => {
+                let (v, ni) = take_value(tail, i, None, "--history")?;
+                out.history = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("history", v) => {
+                out.history = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("width") => {
+                let (v, ni) = take_value(tail, i, None, "--width")?;
+                out.width = Some(parse_f64(v, "--width")?);
+                i = ni;
+            }
+            FlagSplit::LongAttached("width", v) => {
+                out.width = Some(parse_f64(v, "--width")?);
+                i += 1;
+            }
+            FlagSplit::Long("height") => {
+                let (v, ni) = take_value(tail, i, None, "--height")?;
+                out.height = parse_f64(v, "--height")?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("height", v) => {
+                out.height = parse_f64(v, "--height")?;
+                i += 1;
+            }
+            FlagSplit::Long("now-width") => {
+                let (v, ni) = take_value(tail, i, None, "--now-width")?;
+                out.now_width = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("now-width", v) => {
+                out.now_width = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("margin") => {
+                let (v, ni) = take_value(tail, i, None, "--margin")?;
+                out.margin = parse_f64(v, "--margin")?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("margin", v) => {
+                out.margin = parse_f64(v, "--margin")?;
+                i += 1;
+            }
+            FlagSplit::Long("time-axis-height") => {
+                let (v, ni) = take_value(tail, i, None, "--time-axis-height")?;
+                out.time_axis_height = parse_f64(v, "--time-axis-height")?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("time-axis-height", v) => {
+                out.time_axis_height = parse_f64(v, "--time-axis-height")?;
+                i += 1;
+            }
+            FlagSplit::Long("output-file") => {
+                let (v, ni) = take_value(tail, i, None, "--output-file")?;
+                out.output_file = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("output-file", v) => {
+                out.output_file = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Short('o') => {
+                let (v, ni) = take_value(tail, i, None, "-o")?;
+                out.output_file = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::ShortAttached('o', v) => {
+                out.output_file = Some(v.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("watch") | FlagSplit::Short('w') => {
+                out.watch = true;
+                i += 1;
+            }
+            FlagSplit::Positional(_) => {
+                return Err(ParseError::InvalidArg(
+                    "nowview takes no positional arguments".into(),
                 ));
             }
             f => return Err(unknown_flag(f)),
