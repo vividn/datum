@@ -75,6 +75,12 @@ pub(crate) fn now_local() -> DatumTime {
 /// * `is_first_occurrence` — set by the command layer when a field spec
 ///   is being created for the first time. Triggers the `∅` first-tracked
 ///   marker per §6.
+/// * `ongoing_state` — the field's compiled state at the row's own time,
+///   excluding the row itself (i.e. the result of
+///   `state::last_state_at(field, row.start_time, exclude=row)`). Drives
+///   the bg of an occur dot per da-k5z: `IGNORED` → grey, any other
+///   ongoing-state value → that state's color, `None`/`Bool(false)` →
+///   default terminal bg. Other verbs ignore this field.
 ///
 /// "Same-state repeat" (yellow `!`) is derived inside the renderer by
 /// comparing `last_state` to the current entry's value, so callers don't
@@ -83,6 +89,7 @@ pub(crate) fn now_local() -> DatumTime {
 pub struct RenderContext {
     pub last_state: Option<JsonValue>,
     pub is_first_occurrence: bool,
+    pub ongoing_state: Option<JsonValue>,
 }
 
 // ─── State-transition group (§6 / §7) ────────────────────────────────────────
@@ -114,19 +121,50 @@ fn render_occur(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) ->
     if ctx.is_first_occurrence {
         out.push_str(&paint(GRAY_FG, NULL_SET));
     }
-    // State badge: single coloured DOT. Tracked field → field color;
-    // ignored (prior state was the IGNORED sentinel) → grey.
-    let dot_color = if matches!(
-        &ctx.last_state,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE
-    ) {
-        Rgb::IGNORED
-    } else {
-        field_rgb(&entry.field, spec)
-    };
-    out.push_str(&paint_bg(dot_color, DOT));
+    // Dot: field/state color as fg; bg encodes the field's ambient
+    // state at the row's time (ongoing block / IGNORED tracking / none).
+    let (fg, bg) = compute_occur_dot_colors(entry, spec, ctx.ongoing_state.as_ref());
+    out.push_str(&paint_dot(fg, bg, DOT));
     // Occur is a point — no right-char.
     out
+}
+
+/// Per da-k5z: the occur "dot" paints the row's field/state color as **fg**
+/// (a colored glyph against the terminal bg). `bg` is reserved for ambient
+/// context derived from `state_at(field, row.start_time)`:
+///
+/// 1. `IGNORED` (sentinel string or `Null`) → grey (`Rgb::IGNORED`)
+/// 2. Any other ongoing-state value → that state's MD5/spec color
+/// 3. `None` or `Bool(false)` (no ongoing block) → `None` (default term bg)
+///
+/// The caller is responsible for excluding the row itself from the
+/// `state_at` query so a non-IGNORED occur on an active block sees the
+/// block, not its own (false-emitting) state event.
+pub(crate) fn compute_occur_dot_colors(
+    row: &Entry,
+    spec: Option<&FieldSpec>,
+    ongoing_state: Option<&JsonValue>,
+) -> (Rgb, Option<Rgb>) {
+    let fg = field_rgb(&row.field, spec);
+    let bg = match ongoing_state {
+        // No prior state, or block was explicitly stopped → no bg.
+        None | Some(JsonValue::Bool(false)) => None,
+        // IGNORED tracking state → grey bg (sentinel string or null).
+        Some(JsonValue::Null) => Some(Rgb::IGNORED),
+        Some(JsonValue::String(s)) if s == IGNORED_STATE => Some(Rgb::IGNORED),
+        // Any other ongoing-state value → that state's color.
+        Some(v) => state_value_rgb(v, &row.field, spec),
+    };
+    (fg, bg)
+}
+
+/// Paint a glyph with explicit fg and an optional bg. With `bg = None`
+/// only the fg escape is emitted, leaving the terminal's default bg.
+fn paint_dot(fg: Rgb, bg: Option<Rgb>, body: &str) -> String {
+    match bg {
+        Some(bg) => paint_bg_fg(bg, fg, body),
+        None => paint(&fg.fg(), body),
+    }
 }
 
 fn render_start(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
@@ -189,7 +227,8 @@ fn render_switch(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -
     }
 
     let is_array = matches!(value, Some(JsonValue::Array(items)) if items.len() >= 2);
-    let prior_is_array = matches!(&ctx.last_state, Some(JsonValue::Array(items)) if items.len() >= 2);
+    let prior_is_array =
+        matches!(&ctx.last_state, Some(JsonValue::Array(items)) if items.len() >= 2);
 
     // Same-state repeat: prior value equals current value (including
     // `prior == true`, which flags a `switch true` that duplicates the
@@ -261,11 +300,7 @@ fn render_switch(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -
 
 /// Render the switch state-badge body: scalar = solid coloured block; array
 /// = two adjacent blocks with a `state2`-coloured comma. See §7.
-fn render_switch_badge(
-    value: Option<&JsonValue>,
-    field: &str,
-    spec: Option<&FieldSpec>,
-) -> String {
+fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> String {
     match value {
         None => String::new(),
         Some(JsonValue::Bool(true)) => {
@@ -273,7 +308,9 @@ fn render_switch_badge(
             paint_bg(fc, " start ")
         }
         Some(JsonValue::Bool(false)) => " end ".to_string(),
-        Some(JsonValue::Null) => paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &format!(" {NULL_SET} ")),
+        Some(JsonValue::Null) => {
+            paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &format!(" {NULL_SET} "))
+        }
         Some(JsonValue::String(s)) if s == IGNORED_STATE => {
             paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, &format!(" {s} "))
         }
@@ -341,7 +378,12 @@ pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime) -> String {
     // Render in the row's own timezone — "today" is the row's local day,
     // not the host's. See da-n1q acceptance criteria.
     let local = t.local_time();
-    let base = format!("{:02}:{:02}:{:02}", local.hour(), local.minute(), local.second());
+    let base = format!(
+        "{:02}:{:02}:{:02}",
+        local.hour(),
+        local.minute(),
+        local.second()
+    );
     let offset = compress_tz_offset(&local.format("%z").to_string());
     let tz = paint(DIM, &offset);
     let stamp = format!("{base}{tz}");
@@ -391,11 +433,7 @@ fn compress_tz_offset(raw: &str) -> String {
 /// rows (e.g. `datum tail`) should pass a single shared `now` via
 /// [`format_info_line_at`] so every row in the batch agrees on what
 /// "today" means.
-pub fn format_info_line(
-    entry: &Entry,
-    spec: Option<&FieldSpec>,
-    ctx: &RenderContext,
-) -> String {
+pub fn format_info_line(entry: &Entry, spec: Option<&FieldSpec>, ctx: &RenderContext) -> String {
     format_info_line_at(entry, spec, ctx, &now_local())
 }
 
@@ -414,7 +452,11 @@ pub fn format_info_line_at(
     } else if let Some(t) = &entry.end_time {
         parts.push(format_timestamp(t, now));
     }
-    parts.push(format_field_badge(&entry.field, spec, ctx.is_first_occurrence));
+    parts.push(format_field_badge(
+        &entry.field,
+        spec,
+        ctx.is_first_occurrence,
+    ));
     if let Some(group) = format_state_group(entry, spec, ctx) {
         if !group.is_empty() {
             parts.push(group);
@@ -448,7 +490,11 @@ pub(crate) fn format_duration(secs: i64) -> String {
     } else {
         let h = secs / 3600;
         let m = (secs % 3600) / 60;
-        if m == 0 { format!("{h}h") } else { format!("{h}h{m}m") }
+        if m == 0 {
+            format!("{h}h")
+        } else {
+            format!("{h}h{m}m")
+        }
     }
 }
 
@@ -475,7 +521,11 @@ mod tests {
 
     fn dt(y: i32, mo: u32, d: u32) -> DatumTime {
         let utc: DateTime<Utc> = Utc.with_ymd_and_hms(y, mo, d, 12, 0, 0).unwrap();
-        DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+        DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        }
     }
 
     #[test]
@@ -563,7 +613,10 @@ mod tests {
         let target = dt(2026, 4, 19);
         let now = dt(2026, 4, 22);
         let out = format_timestamp(&target, &now);
-        assert!(out.starts_with("-3d "), "expected '-3d ' prefix, got {out:?}");
+        assert!(
+            out.starts_with("-3d "),
+            "expected '-3d ' prefix, got {out:?}"
+        );
         let target_old = dt(2024, 12, 13);
         let out_old = format_timestamp(&target_old, &now);
         assert!(
@@ -634,5 +687,72 @@ mod tests {
         );
         std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
+    }
+
+    // ─── compute_occur_dot_colors (da-k5z) ───────────────────────────────
+
+    fn occur_row(field: &str) -> Entry {
+        let ts = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 0, 0).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        Entry::new(
+            field.to_string(),
+            Verb::Occur,
+            None,
+            None,
+            None,
+            Some(ts),
+            None,
+            "test-device".to_string(),
+        )
+    }
+
+    /// No ongoing state and an explicit-stop both collapse to "no bg" so
+    /// the dot floats on the terminal's default background.
+    #[test]
+    fn occur_dot_default_bg_when_no_ongoing_block() {
+        let row = occur_row("coffee");
+        let expected_fg = field_rgb(&row.field, None);
+
+        let (fg_none, bg_none) = compute_occur_dot_colors(&row, None, None);
+        assert_eq!(fg_none, expected_fg, "fg uses field color");
+        assert_eq!(bg_none, None, "no ongoing-state → no bg");
+
+        let stopped = JsonValue::Bool(false);
+        let (fg_off, bg_off) = compute_occur_dot_colors(&row, None, Some(&stopped));
+        assert_eq!(fg_off, expected_fg);
+        assert_eq!(bg_off, None, "explicit stop → no bg");
+    }
+
+    /// An occur during an ongoing block adopts the block's state color as
+    /// bg while keeping the field color as fg.
+    #[test]
+    fn occur_dot_uses_ongoing_state_color_as_bg() {
+        let row = occur_row("water");
+        let ongoing = JsonValue::String("sleep".to_string());
+        let (fg, bg) = compute_occur_dot_colors(&row, None, Some(&ongoing));
+        assert_eq!(fg, field_rgb(&row.field, None));
+        assert_eq!(
+            bg,
+            Some(state_rgb("sleep", None)),
+            "bg should be derived from the ongoing state name, not the field"
+        );
+        assert_ne!(fg, bg.unwrap(), "fg and bg are independently colored");
+    }
+
+    /// Both the IGNORED sentinel string and a `Null` ongoing-state map to
+    /// the shared grey bg per §8.
+    #[test]
+    fn occur_dot_uses_grey_bg_when_field_is_ignored() {
+        let row = occur_row("blocked");
+        let ignored_sentinel = JsonValue::String(IGNORED_STATE.to_string());
+        let (_, bg_str) = compute_occur_dot_colors(&row, None, Some(&ignored_sentinel));
+        assert_eq!(bg_str, Some(Rgb::IGNORED), "IGNORED sentinel → grey bg");
+
+        let null = JsonValue::Null;
+        let (_, bg_null) = compute_occur_dot_colors(&row, None, Some(&null));
+        assert_eq!(bg_null, Some(Rgb::IGNORED), "null state → grey bg");
     }
 }

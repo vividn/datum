@@ -110,7 +110,7 @@ fn entry(
 fn fx01_add_new_occur() {
     let _g = no_color_scope();
     let e = entry("new_occur", Verb::Add, None, Some(fixed_time(16, 58, 47)), None);
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" new_occur "), "field badge present: {out:?}");
     assert!(out.contains("¢"), "add glyph present: {out:?}");
@@ -121,7 +121,7 @@ fn fx01_add_new_occur() {
 fn fx02_occur_first() {
     let _g = no_color_scope();
     let e = entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 56)), None);
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("∅"), "first-tracked marker: {out:?}");
     assert!(out.contains("●"), "point dot: {out:?}");
@@ -134,7 +134,7 @@ fn fx02_occur_first() {
 fn fx03_occur_again() {
     let _g = no_color_scope();
     let e = entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 59)), None);
-    let ctx = RenderContext { last_state: None, is_first_occurrence: false };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: false, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(!out.contains("∅"), "repeat occur has no ∅: {out:?}");
     assert!(out.contains("●"), "still has dot: {out:?}");
@@ -144,7 +144,7 @@ fn fx03_occur_again() {
 fn fx04_start_first() {
     let _g = no_color_scope();
     let e = entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 40)), None);
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("∅"), "first marker: {out:?}");
     assert!(out.contains("start"), "state label 'start': {out:?}");
@@ -156,7 +156,7 @@ fn fx05_end() {
     let _g = no_color_scope();
     let e = entry("new_start", Verb::Stop, None, Some(fixed_time(16, 59, 46)), None);
     // Prior state = true (active block)
-    let ctx = RenderContext { last_state: Some(json!(true)), is_first_occurrence: false };
+    let ctx = RenderContext { last_state: Some(json!(true)), is_first_occurrence: false, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"), "left-arrow before end: {out:?}");
     assert!(out.contains("end"), "state label 'end': {out:?}");
@@ -168,7 +168,7 @@ fn fx06_start_after_end() {
     let _g = no_color_scope();
     let e = entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 52)), None);
     // Prior state = false (stopped)
-    let ctx = RenderContext { last_state: Some(json!(false)), is_first_occurrence: false };
+    let ctx = RenderContext { last_state: Some(json!(false)), is_first_occurrence: false, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(!out.contains("∅"), "no first-marker: {out:?}");
     assert!(!out.contains("←"), "no left-arrow on prior=false: {out:?}");
@@ -187,7 +187,7 @@ fn fx07_switch_first() {
         Some(fixed_time(17, 0, 21)),
         None,
     );
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("∅"), "first marker: {out:?}");
     assert!(out.contains("state1"), "new state label: {out:?}");
@@ -207,6 +207,7 @@ fn fx08_switch_prior_scalar() {
     let ctx = RenderContext {
         last_state: Some(json!("state1")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"), "left-arrow: {out:?}");
@@ -227,6 +228,7 @@ fn fx09_switch_chain() {
     let ctx = RenderContext {
         last_state: Some(json!("state2")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"));
@@ -247,6 +249,7 @@ fn fx10_switch_to_repeat_label() {
     let ctx = RenderContext {
         last_state: Some(json!("state3")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"));
@@ -267,6 +270,7 @@ fn fx11_switch_same_state_repeat() {
     let ctx = RenderContext {
         last_state: Some(json!("repeat")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("!"), "yellow warning: {out:?}");
@@ -281,6 +285,7 @@ fn fx12_end_switch() {
     let ctx = RenderContext {
         last_state: Some(json!("repeat")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"));
@@ -300,6 +305,7 @@ fn fx13_start_already_active() {
     let ctx = RenderContext {
         last_state: Some(json!(true)),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("!"), "yellow ! for already-active: {out:?}");
@@ -317,7 +323,7 @@ fn fx14_switch_with_dur_first() {
         Some(fixed_time(17, 2, 26)),
         None,
     );
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("∅"));
     assert!(out.contains("state1"));
@@ -340,6 +346,7 @@ fn fx15_switch_with_duration_block() {
     let ctx = RenderContext {
         last_state: Some(json!("state1")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"));
@@ -361,6 +368,7 @@ fn fx16_switch_array_state() {
     let ctx = RenderContext {
         last_state: Some(json!("prior")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("←"), "left arrow from scalar prior: {out:?}");
@@ -385,6 +393,7 @@ fn fx17_switch_scalar_with_array_prior_and_dur() {
     let ctx = RenderContext {
         last_state: Some(json!(["multi1", "multi2"])),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("▞"), "checkerboard marker from array prior: {out:?}");
@@ -405,7 +414,7 @@ fn fx18_ignore_renders_grey() {
         Some(fixed_time(17, 30, 0)),
         None,
     );
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("IGNORED"), "state label present: {out:?}");
     assert!(out.contains(" foo "), "field badge: {out:?}");
@@ -422,7 +431,7 @@ fn fx19_track_false_state() {
         Some(fixed_time(17, 30, 0)),
         None,
     );
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" foo "), "field badge: {out:?}");
     assert!(out.contains("end"), "false renders as 'end' label: {out:?}");
@@ -433,7 +442,7 @@ fn fx20_add_with_keys() {
     let _g = no_color_scope();
     let mut e = entry("thing", Verb::Add, None, Some(fixed_time(17, 40, 0)), None);
     e.data = Some(json!({ "key": "value" }));
-    let ctx = RenderContext { last_state: None, is_first_occurrence: false };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: false, ongoing_state: None };
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" thing "), "field badge: {out:?}");
     assert!(out.contains("¢"), "add marker: {out:?}");
@@ -454,7 +463,7 @@ fn color_mode_emits_truecolor_backgrounds() {
         Some(fixed_time(9, 15, 0)),
         None,
     );
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = format_info_line(&e, None, &ctx);
     assert!(out.contains("\x1b[48;2;"), "expected truecolor bg escape: {out:?}");
     assert!(out.contains("\x1b[38;2;"), "expected truecolor fg escape: {out:?}");
@@ -471,7 +480,7 @@ fn future_timestamp_is_underlined() {
         Some(future_time(10, 0)),
         None,
     );
-    let ctx = RenderContext { last_state: None, is_first_occurrence: true };
+    let ctx = RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None };
     let out = format_info_line(&e, None, &ctx);
     assert!(out.contains("\x1b[4m"), "expected underline escape: {out:?}");
 }
@@ -495,72 +504,72 @@ fn visual_dump_all_fixtures() {
         (
             "01 add new_occur",
             entry("new_occur", Verb::Add, None, Some(fixed_time(16, 58, 47)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "02 occur new_occur (first)",
             entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 56)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "03 occur new_occur (again)",
             entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 59)), None),
-            RenderContext { last_state: None, is_first_occurrence: false },
+            RenderContext { last_state: None, is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "04 start new_start (first)",
             entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 40)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "05 end new_start",
             entry("new_start", Verb::Stop, None, Some(fixed_time(16, 59, 46)), None),
-            RenderContext { last_state: Some(json!(true)), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!(true)), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "06 start new_start (after end)",
             entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 52)), None),
-            RenderContext { last_state: Some(json!(false)), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!(false)), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "07 switch new_switch state1 (first)",
             entry("new_switch", Verb::Switch, Some(json!("state1")), Some(fixed_time(17, 0, 21)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "08 switch new_switch state2",
             entry("new_switch", Verb::Switch, Some(json!("state2")), Some(fixed_time(17, 0, 30)), None),
-            RenderContext { last_state: Some(json!("state1")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("state1")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "09 switch new_switch state3",
             entry("new_switch", Verb::Switch, Some(json!("state3")), Some(fixed_time(17, 0, 38)), None),
-            RenderContext { last_state: Some(json!("state2")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("state2")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "10 switch new_switch repeat",
             entry("new_switch", Verb::Switch, Some(json!("repeat")), Some(fixed_time(17, 0, 52)), None),
-            RenderContext { last_state: Some(json!("state3")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("state3")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "11 switch new_switch repeat (SAME)",
             entry("new_switch", Verb::Switch, Some(json!("repeat")), Some(fixed_time(17, 0, 55)), None),
-            RenderContext { last_state: Some(json!("repeat")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("repeat")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "12 end new_switch",
             entry("new_switch", Verb::Stop, None, Some(fixed_time(17, 1, 13)), None),
-            RenderContext { last_state: Some(json!("repeat")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("repeat")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "13 start repeat_start (already active)",
             entry("repeat_start", Verb::Start, None, Some(fixed_time(17, 2, 0)), None),
-            RenderContext { last_state: Some(json!(true)), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!(true)), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "14 switch dur_blocks state1 (first)",
             entry("dur_blocks", Verb::Switch, Some(json!("state1")), Some(fixed_time(17, 2, 26)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "15 switch dur_blocks state2 4 -t 1710",
@@ -571,7 +580,7 @@ fn visual_dump_all_fixtures() {
                 Some(fixed_time(17, 10, 0)),
                 Some(fixed_time(17, 14, 0)),
             ),
-            RenderContext { last_state: Some(json!("state1")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("state1")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "16 switch field multi1,multi2",
@@ -582,7 +591,7 @@ fn visual_dump_all_fixtures() {
                 Some(fixed_time(17, 12, 13)),
                 None,
             ),
-            RenderContext { last_state: Some(json!("prior")), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!("prior")), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "17 switch field momentary_single 1 -t +3",
@@ -593,17 +602,17 @@ fn visual_dump_all_fixtures() {
                 Some(future_time(17, 15)),
                 Some(future_time(17, 16)),
             ),
-            RenderContext { last_state: Some(json!(["multi1", "multi2"])), is_first_occurrence: false },
+            RenderContext { last_state: Some(json!(["multi1", "multi2"])), is_first_occurrence: false, ongoing_state: None },
         ),
         (
             "18 ignore foo; now",
             entry("foo", Verb::Switch, Some(json!("IGNORED")), Some(fixed_time(17, 30, 0)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "19 track foo; now",
             entry("foo", Verb::Switch, Some(json!(false)), Some(fixed_time(17, 30, 5)), None),
-            RenderContext { last_state: None, is_first_occurrence: true },
+            RenderContext { last_state: None, is_first_occurrence: true, ongoing_state: None },
         ),
         (
             "20 add thing key=value",
@@ -612,7 +621,7 @@ fn visual_dump_all_fixtures() {
                 e.data = Some(json!({ "key": "value" }));
                 e
             },
-            RenderContext { last_state: None, is_first_occurrence: false },
+            RenderContext { last_state: None, is_first_occurrence: false, ongoing_state: None },
         ),
     ];
 

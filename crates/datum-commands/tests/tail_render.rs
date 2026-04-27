@@ -125,6 +125,7 @@ fn tail_state_cell_uses_canonical_left_state_right_group() {
     let ctx = RenderContext {
         last_state: Some(json!("tired")),
         is_first_occurrence: false,
+        ongoing_state: None,
     };
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);

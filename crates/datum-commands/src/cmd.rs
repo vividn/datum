@@ -663,7 +663,8 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
     let registry = load_registry(db).ok();
     let output = args.output();
-    let ctx = RenderContext { last_state: prior_state, is_first_occurrence };
+    let ongoing_state = capture_ongoing_state(db, &entry);
+    let ctx = RenderContext { last_state: prior_state, is_first_occurrence, ongoing_state };
     match &outcome {
         InsertOutcome::Inserted { slug } => {
             // The stored slug may differ from entry.slug if a collision
@@ -1395,7 +1396,22 @@ fn build_render_context(entry: &Entry, db: &Db) -> RenderContext {
         .count_entries_before(&entry.field, probe)
         .unwrap_or(1)
         == 0;
-    RenderContext { last_state, is_first_occurrence }
+    let ongoing_state = capture_ongoing_state(db, entry);
+    RenderContext { last_state, is_first_occurrence, ongoing_state }
+}
+
+/// Per da-k5z: for occur rows, look up the field's compiled state at the
+/// row's start_time excluding the row itself, so the dot's bg can encode
+/// "is this point happening inside an ongoing block?". Returns `None` for
+/// non-occur verbs and on any DB error (degrade to default-bg dot).
+fn capture_ongoing_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
+    if !matches!(entry.verb, Verb::Occur) {
+        return None;
+    }
+    let at = entry.start_time.as_ref()?.utc;
+    datum_core::state::last_state_at(db.conn(), &entry.field, at, Some(&entry.hid))
+        .ok()
+        .flatten()
 }
 
 /// Clamp a user-supplied `--watch` interval into a sane poll cadence.
