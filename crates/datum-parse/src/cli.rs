@@ -338,6 +338,17 @@ impl TailArgs {
 pub struct GetArgs {
     pub id_or_slug: String,
     pub pretty: bool,
+    pub output_flags: OutputFlags,
+}
+
+impl GetArgs {
+    pub fn fresh(id_or_slug: impl Into<String>) -> Self {
+        Self {
+            id_or_slug: id_or_slug.into(),
+            pretty: false,
+            output_flags: OutputFlags::fresh(),
+        }
+    }
 }
 
 // ─── Mutation (update / merge / rekey) ────────────────────────────────────

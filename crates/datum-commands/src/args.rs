@@ -284,6 +284,7 @@ impl_output_flags_ext!(EditArgs);
 impl_output_flags_ext!(DeleteArgs);
 impl_output_flags_ext!(UndoArgs);
 impl_output_flags_ext!(GrepArgs);
+impl_output_flags_ext!(GetArgs);
 
 /// `.resolved_path()` on [`MigrateImportArgs`].
 pub trait MigrateImportArgsExt {

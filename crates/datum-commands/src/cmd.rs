@@ -1835,10 +1835,11 @@ pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
         .map_err(anyhow::Error::from)?;
     if args.pretty {
         print_entry_pretty(&entry)?;
-    } else {
-        let registry = load_registry(db).ok();
-        print_entry(&entry, registry.as_ref());
+        return Ok(());
     }
+    let registry = load_registry(db).ok();
+    let output = args.output();
+    crate::render::show_action(&entry, crate::render::Action::Exists, registry.as_ref(), &output);
     Ok(())
 }
 

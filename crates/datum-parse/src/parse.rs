@@ -691,15 +691,23 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
 fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
     let mut pos: Vec<&str> = Vec::new();
     let mut pretty = false;
-    for tok in tail {
+    let mut output_flags = OutputFlags::fresh();
+    let mut i = 0;
+    while i < tail.len() {
+        let tok = tail[i];
+        if let Some(ni) = try_consume_output_flag(tail, i, &mut output_flags)? {
+            i = ni;
+            continue;
+        }
         match split_flag(tok) {
             FlagSplit::Positional(s) => pos.push(s),
             FlagSplit::Long("pretty") => pretty = true,
             f => return Err(unknown_flag(f)),
         }
+        i += 1;
     }
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
-    Ok(GetArgs { id_or_slug, pretty })
+    Ok(GetArgs { id_or_slug, pretty, output_flags })
 }
 
 fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {

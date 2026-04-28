@@ -12,12 +12,11 @@
 //!     base36 `hid` for prefix-addressable quick reference. Cases #1 and #2
 //!     cover the two prefix surfaces (slug, hid) that `resolve_prefix`
 //!     binds together.
-//!   * datum's standard `Show` emits an "EXISTS" tag from `getCmd`; daydumb's
-//!     `cmd_get` instead renders the resolved entry as a one-row preview
-//!     table (`print_entry` → `print_table`). Case #3 asserts the portable
-//!     observable: the entry's field and short id surface on stdout. The
-//!     divergence is intentional — `cmd_get` is a "show me this row" view,
-//!     not an "EXISTS" ping.
+//!   * datum's standard `Show` emits an "EXISTS" tag from `getCmd`; daydumb
+//!     now matches that contract (da-d5b): `cmd_get` renders through
+//!     `show_action` with `Action::Exists`, producing the same on-entry
+//!     header + info line + extra-data shape as a fresh log, prefixed with
+//!     the EXISTS action tag. Case #3 pins the EXISTS marker.
 //!   * datum accepted a compound quickId (`"abc,def,"` → multi-doc return).
 //!     daydumb's `GetArgs::id_or_slug` is a single string, so the compound
 //!     form resolves as one literal prefix that doesn't match. Case #4
@@ -90,42 +89,94 @@ fn get_resolves_hid_prefix() {
     assert_eq!(resolved.hid, entry.hid);
 }
 
-/// TS #3: "outputs an EXISTS message when show is standard"
+/// TS #3 (da-d5b): "outputs an EXISTS message when show is standard"
 ///
-/// Datum asserted `console.log` contained "EXISTS" when `Show.Standard`.
-/// daydumb's `cmd_get` does not emit an "EXISTS" action tag — the entry
-/// is rendered as a one-row preview table via `print_entry`. The portable
-/// invariant is: standard-show `get` produces non-empty stdout that
-/// surfaces the entry's field and short id (the observable handles a
-/// human would use to confirm "yes, this row exists").
+/// daydumb's `cmd_get` now renders through the same action-based path
+/// as on-entry log, tagged with `Action::Exists` — matching datum's
+/// `showExists` contract. The portable invariant: stdout contains the
+/// EXISTS marker plus the entry's field name.
 ///
 /// Runs against the compiled binary because the in-process harness does
 /// not capture stdout.
 #[test]
-fn get_standard_show_emits_entry_row() {
+fn get_standard_show_emits_exists_marker() {
     let db = tmp_db_path();
     let _ = std::fs::remove_file(&db);
 
     run_binary(&db, &["occur", "mood", "--id", "%field%:somethingElse"]);
     let (stdout, _) = run_binary(&db, &["get", "mood:some"]);
 
-    // Standard show must produce output — not a silent success.
     assert!(
         !stdout.trim().is_empty(),
         "standard `get` must produce output, got empty stdout",
     );
-    // daydumb's single-entry preview is a table row: `time | field | state |
-    // hid` with a column header line. Both the header and the seeded
-    // field name must appear — this is daydumb's observable analog to
-    // datum's "EXISTS" confirmation. (See the file-level divergence
-    // note for why we don't assert on the "EXISTS" string itself.)
+    // EXISTS action tag — datum-compat header for `get`.
     assert!(
-        stdout.contains("hid"),
-        "expected column header (with `hid`) in get output, got: {stdout:?}",
+        stdout.contains("EXISTS"),
+        "expected EXISTS marker in get output, got: {stdout:?}",
     );
     assert!(
         stdout.contains("mood"),
         "expected field name in get output, got: {stdout:?}",
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// da-d5b: `dm get -A <id>` dumps full entry metadata as JSON below the
+/// standard EXISTS header. Asserts both the header and the metadata
+/// fields the bead enumerates (raw_input, parser_version, content_hash,
+/// device_id, etc.) surface in the output.
+#[test]
+fn get_show_all_dumps_full_metadata() {
+    let db = tmp_db_path();
+    let _ = std::fs::remove_file(&db);
+
+    run_binary(&db, &["occur", "mood", "--id", "%field%:fullDump"]);
+    let (stdout, _) = run_binary(&db, &["get", "-A", "mood:fullDump"]);
+
+    // -A still surfaces the EXISTS header (Show::All extends Default).
+    assert!(
+        stdout.contains("EXISTS"),
+        "expected EXISTS marker in -A output, got: {stdout:?}",
+    );
+    // Full metadata dump as pretty JSON — every Entry field reachable.
+    for key in [
+        "\"hid\"",
+        "\"slug\"",
+        "\"content_hash\"",
+        "\"raw_input\"",
+        "\"parser_version\"",
+        "\"create_time\"",
+        "\"modify_time\"",
+        "\"device_id\"",
+    ] {
+        assert!(
+            stdout.contains(key),
+            "expected {key} in -A output, got: {stdout:?}",
+        );
+    }
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// da-d5b: `--show-all` is the long form of `-A` (datum-compat). Pin
+/// the spelling so a future flag-rename can't silently break parity.
+#[test]
+fn get_show_all_long_form_works() {
+    let db = tmp_db_path();
+    let _ = std::fs::remove_file(&db);
+
+    run_binary(&db, &["occur", "mood", "--id", "%field%:longForm"]);
+    let (stdout, _) = run_binary(&db, &["get", "--show-all", "mood:longForm"]);
+
+    assert!(
+        stdout.contains("EXISTS"),
+        "expected EXISTS marker, got: {stdout:?}",
+    );
+    assert!(
+        stdout.contains("\"raw_input\""),
+        "expected JSON metadata dump, got: {stdout:?}",
     );
 
     let _ = std::fs::remove_file(&db);
