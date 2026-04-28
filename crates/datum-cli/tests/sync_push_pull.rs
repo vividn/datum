@@ -137,7 +137,7 @@ fn fresh_db(env: &EnvGuard) -> Db {
 fn sync_push_uploads_new_changes_since_last_seq() {
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     write_master_key(&relay.base_url, &[0x11u8; 32]);
     let db = fresh_db(&env);
 
@@ -177,7 +177,7 @@ fn sync_push_uploads_new_changes_since_last_seq() {
 fn sync_pull_applies_changes_and_advances_seq() {
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let master_key = [0x22u8; 32];
     write_master_key(&relay.base_url, &master_key);
 
@@ -230,7 +230,7 @@ fn sync_pull_applies_changes_and_advances_seq() {
 fn sync_bidirectional_pulls_first() {
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let master_key = [0x33u8; 32];
     write_master_key(&relay.base_url, &master_key);
 
@@ -275,7 +275,7 @@ fn sync_bidirectional_pulls_first() {
 fn sync_dry_run_does_not_mutate() {
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     write_master_key(&relay.base_url, &[0x44u8; 32]);
 
     let db = fresh_db(&env);
@@ -306,7 +306,7 @@ fn sync_dry_run_does_not_mutate() {
 fn sync_status_reports_per_db() {
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     write_master_key(&relay.base_url, &[0x55u8; 32]);
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
@@ -356,7 +356,7 @@ fn sync_without_login_errors_cleanly() {
 fn sync_without_unlocked_key_errors_cleanly() {
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     // Deliberately skip writing a master key.
     let db = fresh_db(&env);
 
@@ -383,7 +383,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
     use chrono::{Duration, TimeZone};
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let master_key = [0x77u8; 32];
     write_master_key(&relay.base_url, &master_key);
 
@@ -476,7 +476,7 @@ fn two_instance_sync_converges() {
     // a handful of rounds they see the same entry set.
     let _env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let master_key = [0x88u8; 32];
     write_master_key(&relay.base_url, &master_key);
 
@@ -596,7 +596,7 @@ fn push_idempotent_on_replay() {
     // second call — the relay doesn't see a duplicate changeset.
     let env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     write_master_key(&relay.base_url, &[0x99u8; 32]);
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();

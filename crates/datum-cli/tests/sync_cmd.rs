@@ -97,16 +97,23 @@ fn sync_login_polls_until_authorized() {
     let token = login::run_with_client(&relay.base_url, &client, &mut prompter)
         .expect("login succeeds");
 
-    assert!(token.token.starts_with("bearer-for-"));
-    assert_eq!(token.user.as_deref(), Some("vividn@vividn.dev"));
+    assert!(!token.token.is_empty(), "non-empty bearer token");
+    // Per spec, /v1/auth/device-code/poll echoes the canonical UUID as
+    // user_id; the username only matters for the verification UX which
+    // is out of scope for v1.
+    assert_eq!(token.user.as_deref(), Some(relay.user_id.to_string().as_str()));
     assert_eq!(token.server, relay.base_url);
 
-    // Prompter captured the verification URL + user code.
+    // Prompter captured the verification URL + user code (exact values are
+    // server-side; the contract is just that *some* `login:...` event was
+    // emitted with both fields populated).
     assert!(
         prompter
             .events
             .iter()
-            .any(|e| e.contains("login:https://sync.example.com/activate:ABCD-1234")),
+            .any(|e| e.starts_with("login:")
+                && e.matches(':').count() >= 2
+                && !e.ends_with(':')),
         "expected login instructions, got: {:?}",
         prompter.events
     );
@@ -159,7 +166,7 @@ fn sync_login_stores_token_at_xdg_path() {
     assert!(path.exists(), "token file missing at {:?}", path);
     let bytes = std::fs::read(&path).unwrap();
     let stored: AuthToken = serde_json::from_slice(&bytes).unwrap();
-    assert!(stored.token.starts_with("bearer-for-"));
+    assert!(!stored.token.is_empty(), "non-empty bearer token");
     assert_eq!(stored.server, relay.base_url);
 
     // On unix the file must be mode 0600.
@@ -255,7 +262,7 @@ fn sync_config_disable_writes_none() {
 fn sync_key_init_creates_wrapped_upload() {
     let _env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let client = Client::builder().build().unwrap();
     let mut prompter = TestPrompter::new(["secret-passphrase", "secret-passphrase"]);
 
@@ -306,7 +313,7 @@ fn sync_key_init_creates_wrapped_upload() {
 fn sync_key_unlock_downloads_and_unwraps() {
     let _env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let client = Client::builder().build().unwrap();
 
     // Init on one device (simulating a prior session on the same host).
@@ -340,7 +347,7 @@ fn sync_key_unlock_downloads_and_unwraps() {
 fn sync_key_wrong_passphrase_fails() {
     let _env = scoped_env();
     let relay = StubRelay::start();
-    write_token_for(&relay.base_url, "bearer-XYZ");
+    write_token_for(&relay.base_url, &relay.mint_token());
     let client = Client::builder().build().unwrap();
 
     let mut prompter = TestPrompter::new(["right-pass", "right-pass"]);
