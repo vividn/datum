@@ -47,7 +47,8 @@ pub struct AuthToken {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PushRequest {
     pub device_id: String,
-    pub payload: String, // base64-encoded encrypted bytes
+    /// base64 url-safe no-pad encoded encrypted bytes (per docs/sync-protocol.md)
+    pub payload_b64: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -57,10 +58,36 @@ pub struct PushResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Changeset {
+    /// Server-assigned global monotonic row id (clients use this as pull_seq watermark)
+    pub id: i64,
     pub device_id: String,
     pub seq: i64,
-    pub payload: String,
+    pub payload_b64: String,
     pub uploaded_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCodeRequest {}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCodeResponse {
+    pub device_code: String,
+    pub user_code: String,
+    pub verification_uri: String,
+    pub verification_uri_complete: String,
+    pub expires_in: u64,
+    pub interval: u64,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCodePollQuery {
+    pub device_code: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DeviceCodeAuthorizeRequest {
+    pub device_code: String,
+    pub username: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -19,10 +19,10 @@ pub async fn push(
 ) -> Result<Json<PushResponse>, AppError> {
     let conn = state.db.lock().unwrap();
 
-    // Auto-register device if not present
     db::ensure_device(&conn, &req.device_id, &user.user_id)?;
 
-    let (_, seq) = db::insert_changeset(&conn, &req.device_id, &req.payload)?;
+    // Server is content-blind: stores payload_b64 string opaquely (per spec §Goals).
+    let (_, seq) = db::insert_changeset(&conn, &req.device_id, &req.payload_b64)?;
     Ok(Json(PushResponse { seq }))
 }
 
@@ -42,10 +42,11 @@ pub async fn pull(
 
     let changesets = rows
         .into_iter()
-        .map(|(device_id, seq, payload, uploaded_at)| Changeset {
+        .map(|(id, device_id, seq, payload_b64, uploaded_at)| Changeset {
+            id,
             device_id,
             seq,
-            payload,
+            payload_b64,
             uploaded_at,
         })
         .collect();

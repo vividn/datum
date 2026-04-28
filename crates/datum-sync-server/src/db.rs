@@ -34,6 +34,12 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             uploaded_at TEXT NOT NULL DEFAULT (datetime('now')),
             UNIQUE(device_id, seq)
         );
+
+        CREATE TABLE IF NOT EXISTS wrapped_keys (
+            user_id TEXT PRIMARY KEY,
+            blob TEXT NOT NULL,
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     ",
     )
     .context("init_db")?;
@@ -109,13 +115,14 @@ pub fn insert_changeset(conn: &Connection, device_id: &str, payload: &str) -> Re
 }
 
 /// Pull changesets with global id > since, from all devices except excluding_device.
+/// Returns (id, device_id, seq, payload_b64, uploaded_at) tuples in ascending id order.
 pub fn pull_changesets(
     conn: &Connection,
     since: i64,
     excluding_device: &str,
-) -> Result<Vec<(String, i64, String, String)>> {
+) -> Result<Vec<(i64, String, i64, String, String)>> {
     let mut stmt = conn.prepare(
-        "SELECT device_id, seq, payload, uploaded_at
+        "SELECT id, device_id, seq, payload, uploaded_at
          FROM changesets
          WHERE id > ?1 AND device_id != ?2
          ORDER BY id",
@@ -123,10 +130,11 @@ pub fn pull_changesets(
 
     let rows = stmt.query_map(params![since, excluding_device], |row| {
         Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, i64>(1)?,
-            row.get::<_, String>(2)?,
+            row.get::<_, i64>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, i64>(2)?,
             row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
         ))
     })?;
 
@@ -135,6 +143,30 @@ pub fn pull_changesets(
         results.push(row?);
     }
     Ok(results)
+}
+
+/// Upsert the wrapped master key blob for a user. Body is opaque JSON
+/// (the relay is content-blind about the inner shape per spec §Wrapped key exchange).
+pub fn upsert_wrapped_key(conn: &Connection, user_id: &Uuid, blob: &str) -> Result<()> {
+    conn.execute(
+        "INSERT INTO wrapped_keys (user_id, blob, updated_at)
+         VALUES (?1, ?2, datetime('now'))
+         ON CONFLICT(user_id) DO UPDATE SET blob = excluded.blob, updated_at = excluded.updated_at",
+        params![user_id.to_string(), blob],
+    )
+    .context("upsert_wrapped_key")?;
+    Ok(())
+}
+
+/// Get the wrapped master key blob for a user, or None if unset.
+pub fn get_wrapped_key(conn: &Connection, user_id: &Uuid) -> Result<Option<String>> {
+    let mut stmt = conn.prepare("SELECT blob FROM wrapped_keys WHERE user_id = ?1")?;
+    let mut rows = stmt.query(params![user_id.to_string()])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(row.get(0)?))
+    } else {
+        Ok(None)
+    }
 }
 
 /// Ensure a device is registered for a user (auto-registers if not present).
@@ -166,9 +198,10 @@ mod tests {
 
         let rows = pull_changesets(&conn, 0, "device-2").unwrap();
         assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].0, "device-1");
-        assert_eq!(rows[0].1, 1);
-        assert_eq!(rows[0].2, "payload-1");
+        assert_eq!(rows[0].0, id);
+        assert_eq!(rows[0].1, "device-1");
+        assert_eq!(rows[0].2, 1);
+        assert_eq!(rows[0].3, "payload-1");
     }
 
     #[test]
@@ -195,9 +228,9 @@ mod tests {
         assert_eq!(rows.len(), 3);
 
         // Check seq numbers are monotonic per device
-        assert_eq!(rows[0].1, 1);
-        assert_eq!(rows[1].1, 2);
-        assert_eq!(rows[2].1, 3);
+        assert_eq!(rows[0].2, 1);
+        assert_eq!(rows[1].2, 2);
+        assert_eq!(rows[2].2, 3);
     }
 
     #[test]
@@ -210,8 +243,27 @@ mod tests {
         // since=id1 means we want rows with global id > id1
         let rows = pull_changesets(&conn, id1, "device-2").unwrap();
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].2, "payload-2");
-        assert_eq!(rows[1].2, "payload-3");
+        assert_eq!(rows[0].3, "payload-2");
+        assert_eq!(rows[1].3, "payload-3");
+    }
+
+    #[test]
+    fn test_wrapped_key_roundtrip() {
+        let conn = setup();
+        let user_id = Uuid::new_v4();
+        // Need user row to exist? wrapped_keys table doesn't FK; skip user.
+        assert!(get_wrapped_key(&conn, &user_id).unwrap().is_none());
+        upsert_wrapped_key(&conn, &user_id, r#"{"wrapped_key_b64":"abc"}"#).unwrap();
+        assert_eq!(
+            get_wrapped_key(&conn, &user_id).unwrap().as_deref(),
+            Some(r#"{"wrapped_key_b64":"abc"}"#)
+        );
+        // Upsert overwrites.
+        upsert_wrapped_key(&conn, &user_id, r#"{"wrapped_key_b64":"xyz"}"#).unwrap();
+        assert_eq!(
+            get_wrapped_key(&conn, &user_id).unwrap().as_deref(),
+            Some(r#"{"wrapped_key_b64":"xyz"}"#)
+        );
     }
 
     #[test]

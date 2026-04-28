@@ -3,6 +3,10 @@ name = "datum-sync-server"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+name = "datum_sync_server"
+path = "src/lib.rs"
+
 [[bin]]
 name = "datum-sync-server"
 path = "src/main.rs"
