@@ -102,29 +102,31 @@ fn switch_switch_tail_reproducer_matches_spec() {
         "second-switch info line mismatch:\n{second}"
     );
 
-    // `datum tail myfield` must reproduce both info lines in order (no
-    // columnar headers).
+    // Per da-6t0, `datum tail myfield` now always renders through the
+    // tabular path: a header row followed by aligned data rows that include
+    // the `hid` column. The data-row layout (after the timestamp prefix)
+    // pads the field column to its widest visible width before the state
+    // cell, and the hid column tails the line.
     let tail = run(&db, &["tail", "myfield"]);
-    let lines: Vec<String> = tail
-        .lines()
-        .map(|l| after_timestamp(l).to_string())
-        .collect();
-    assert_eq!(
-        lines,
-        vec![
-            "myfield  abc".to_string(),
-            "myfield  abcdefg".to_string(),
-        ],
-        "tail info-line output mismatch:\n{tail}"
-    );
+    let mut tail_lines = tail.lines();
+    let header = tail_lines.next().unwrap_or("");
+    for tok in ["time", "field", "state", "hid"] {
+        assert!(header.contains(tok), "header missing {tok:?}:\n{tail}");
+    }
+    let data: Vec<&str> = tail_lines.collect();
+    assert_eq!(data.len(), 2, "expected 2 data rows:\n{tail}");
+    for row in &data {
+        assert!(row.contains("myfield"), "row missing field:\n{row:?}");
+    }
+    assert!(data[0].contains("abc"), "first row state missing:\n{tail}");
+    assert!(data[1].contains("abcdefg"), "second row state missing:\n{tail}");
 
     let _ = std::fs::remove_file(&db);
 }
 
-/// `datum tail --table` must still emit the legacy columnar view for
-/// scripts that depend on it. The switch-table pairing exists so we
-/// exercise BOTH the new renderer (write path) and the legacy renderer
-/// (opt-in table) in the same run.
+/// `datum tail --table` is now equivalent to the default tail path (per
+/// da-6t0 the gate is gone). The flag is kept for backward CLI compat;
+/// this test pins that it still produces a valid header + data layout.
 #[test]
 fn tail_table_flag_preserves_legacy_columnar_view() {
     let db = tmp_db();

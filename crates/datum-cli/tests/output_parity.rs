@@ -84,25 +84,23 @@ fn tail_table_flag_emits_aligned_table_with_hid_column() {
     let _ = std::fs::remove_file(&db);
 }
 
-/// Default `datum tail` now renders each entry through the write-path
-/// info-line renderer (§2 of docs/visual-parity-analysis.md): no columnar
-/// header, one `<time> <field-badge> <state-group>` line per entry. The
-/// `hid` / `time` / `field` column headers that the legacy table view
-/// printed MUST NOT appear.
+/// Per da-6t0: default `datum tail` always renders through the tabular
+/// path. The header row (`time | field | state | dur | hid` — empty
+/// columns dropped) is on by default, columns are aligned, and the
+/// `hid` column tails every data row.
 #[test]
-fn tail_default_emits_info_line_no_table_headers() {
+fn tail_default_emits_table_with_header_and_hid_column() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
     run(&db, &["occur", "coffee"]);
     run(&db, &["switch", "mood", "happy"]);
     let (stdout, _) = run(&db, &["tail"]);
 
-    let header_line = stdout.lines().find(|l| l.contains("hid"));
-    assert!(
-        header_line.is_none(),
-        "default tail must not render a table header (saw: {header_line:?}):\n{stdout}"
-    );
-    // Field badges still contain the field name in plain text.
+    let header = stdout.lines().next().unwrap_or("");
+    for tok in ["time", "field", "hid"] {
+        assert!(header.contains(tok), "default tail header missing {tok:?}:\n{stdout}");
+    }
+    // Data rows retain the field names in plain text.
     assert!(stdout.contains("coffee"), "{stdout}");
     assert!(stdout.contains("mood"), "{stdout}");
 

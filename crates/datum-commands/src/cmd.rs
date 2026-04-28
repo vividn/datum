@@ -28,10 +28,9 @@ use crate::{
     },
     config::{self, device_id},
     render::{
-        format_info_line_at, print_entry, print_entry_pretty, print_now_view, print_table,
-        print_table_with, show_create, show_create_with_context, show_delete, show_exists,
-        show_rename, show_update, show_update_with_context, RenderContext, Show, TableArgs,
-        TimeMetricCol,
+        print_entry, print_entry_pretty, print_now_view, print_table, print_table_with,
+        show_create, show_create_with_context, show_delete, show_exists, show_rename, show_update,
+        show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
 };
 
@@ -1301,79 +1300,19 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
     let output = args.output();
 
-    // Columnar view kicks in explicitly (--table), implicitly when the user
-    // asks for tabular affordances (--column, non-hybrid --metric), or under
-    // --show=Format so the existing format-string path still runs. Otherwise
-    // render the write-path info-line per row (§6 / §7 parity spec).
-    let explicit_table_opts =
-        !columns.is_empty() || !matches!(metric, TimeMetricCol::Hybrid);
-    let use_table =
-        args.table || explicit_table_opts || output.show == Show::Format;
-
-    if use_table {
-        let tbl = TableArgs {
-            output: output.clone(),
-            metric,
-            columns,
-            suppress_header: false,
-        };
-        let now = DatumTime::now();
-        let ctxs = build_render_contexts(&entries, db);
-        print_table_with(&entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
-
-        if let Some(secs) = args.watch {
-            let interval = watch_interval(secs);
-            let mut since = entries
-                .iter()
-                .map(|e| e.create_time)
-                .max()
-                .unwrap_or_else(chrono::Utc::now);
-            let field = args.field.as_deref();
-            let tick_tbl = TableArgs {
-                suppress_header: true,
-                ..tbl.clone()
-            };
-            loop {
-                std::thread::sleep(interval);
-                let new_rows = db.list_entries_created_after(field, since)?;
-                if let Some(latest) = new_rows.iter().map(|e| e.create_time).max() {
-                    since = latest;
-                }
-                if !new_rows.is_empty() {
-                    let now = DatumTime::now();
-                    let tick_ctxs = build_render_contexts(&new_rows, db);
-                    print_table_with(
-                        &new_rows,
-                        Some(&tick_ctxs),
-                        Some(&now),
-                        registry.as_ref(),
-                        &tick_tbl,
-                    );
-                }
-            }
-        }
-
-        return Ok(());
-    }
-
-    if output.silent() {
-        if let Some(secs) = args.watch {
-            // `--show=none --watch` stays silent but we still keep the process
-            // alive so shell scripts can re-check exit codes later; match the
-            // columnar path's long-running behaviour.
-            let interval = watch_interval(secs);
-            loop {
-                std::thread::sleep(interval);
-            }
-        }
-        return Ok(());
-    }
-
-    if entries.is_empty() {
-        println!("[No data]");
-    } else {
-        print_info_lines(&entries, registry.as_ref(), db);
-    }
+    // Per da-6t0: tail/head always render through the tabular path so the
+    // header row, column alignment, and `hid` column are on by default. The
+    // legacy info-line branch is gone; `--table` is now a no-op flag kept
+    // only for backward CLI compatibility.
+    let tbl = TableArgs {
+        output: output.clone(),
+        metric,
+        columns,
+        suppress_header: false,
+    };
+    let now = DatumTime::now();
+    let ctxs = build_render_contexts(&entries, db);
+    print_table_with(&entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
 
     if let Some(secs) = args.watch {
         let interval = watch_interval(secs);
@@ -1383,6 +1322,10 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
             .max()
             .unwrap_or_else(chrono::Utc::now);
         let field = args.field.as_deref();
+        let tick_tbl = TableArgs {
+            suppress_header: true,
+            ..tbl.clone()
+        };
         loop {
             std::thread::sleep(interval);
             let new_rows = db.list_entries_created_after(field, since)?;
@@ -1390,33 +1333,20 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
                 since = latest;
             }
             if !new_rows.is_empty() {
-                print_info_lines(&new_rows, registry.as_ref(), db);
+                let now = DatumTime::now();
+                let tick_ctxs = build_render_contexts(&new_rows, db);
+                print_table_with(
+                    &new_rows,
+                    Some(&tick_ctxs),
+                    Some(&now),
+                    registry.as_ref(),
+                    &tick_tbl,
+                );
             }
         }
     }
 
     Ok(())
-}
-
-/// Render each entry as a write-path info line (time + field + state group +
-/// dur). Prior-state and first-tracked hints are looked up per-row so the
-/// state transition indicator matches what `show_update_with_context` would
-/// have emitted at write time. A single `now` is captured up front so all
-/// rows in the batch agree on what "today" means.
-fn print_info_lines(
-    entries: &[Entry],
-    registry: Option<&datum_core::field_spec::SpecRegistry>,
-    db: &Db,
-) {
-    let now = DatumTime::now();
-    let ctxs = build_render_contexts(entries, db);
-    for (entry, ctx) in entries.iter().zip(ctxs.iter()) {
-        let spec = registry.and_then(|r| r.fields.get(&entry.field));
-        let line = format_info_line_at(entry, spec, ctx, &now);
-        if !line.is_empty() {
-            println!("{line}");
-        }
-    }
 }
 
 /// Vector form of `build_render_context_cached` — one context per entry, in
