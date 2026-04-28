@@ -2517,8 +2517,13 @@ mod tests {
     #[test]
     fn test_entries_for_field() {
         let db = Db::open_in_memory().unwrap();
-        for state in &["happy", "sad", "focused"] {
-            let t = DatumTime::now();
+        // Distinct per-state timestamps — slug collision on identical
+        // start_time hard-errors post-da-p5j, and `DatumTime::now()` in a
+        // tight loop returns the same value on fast machines.
+        let base = chrono::Utc::now();
+        for (i, state) in ["happy", "sad", "focused"].iter().enumerate() {
+            let utc = base + chrono::Duration::milliseconds(i as i64 + 1);
+            let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
             let e = Entry::new("mood", Verb::Switch, Some(serde_json::json!(state)), None, None, Some(t), None, "d1");
             db.insert_entry(&e).unwrap();
         }
