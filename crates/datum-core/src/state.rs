@@ -203,6 +203,188 @@ pub fn last_state_at(
     }
 }
 
+/// Pre-derived state events for a single field, loaded once per render
+/// batch so `tail` / `head` answer many lead/trail/ongoing state probes
+/// without re-issuing one (multi-row, all-columns) `last_state_at` query
+/// per output row. The events are the same ones [`compile_state`] would
+/// derive, tagged with the originating `hid` so probes can honour
+/// `exclude_hid` (matching `last_state_at`'s contract).
+#[derive(Default, Debug, Clone)]
+pub struct FieldStateEvents {
+    /// `(event_time, create_time, value, origin_hid)`, sorted ascending by
+    /// `event_time` then `create_time`. Probes scan from the tail and stop
+    /// at the first event ≤ probe time.
+    events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
+}
+
+impl FieldStateEvents {
+    /// Load every state-affecting event for `field`. See
+    /// [`Self::load_for_field_up_to`] for the bounded variant.
+    pub fn load_for_field(conn: &Connection, field: &str) -> Result<Self> {
+        Self::load_for_field_up_to(conn, field, None)
+    }
+
+    /// Load state-affecting events for `field`, optionally pruned to entries
+    /// that could contribute an event ≤ `max_probe`. Reads only the columns
+    /// [`compile_state`] needs.
+    ///
+    /// `max_probe` is an upper bound on every probe time the caller will
+    /// issue (e.g. `tail -yt 15` → max probe is yesterday-15:00). Events
+    /// strictly later than that never affect the answer, so the WHERE clause
+    /// matches `last_state_at`'s `(start_time <= ?) OR (end_time <= ?)`
+    /// predicate. Pass `None` for an unbounded load (used when probes can be
+    /// `now` and bounding wouldn't prune anything).
+    pub fn load_for_field_up_to(
+        conn: &Connection,
+        field: &str,
+        max_probe: Option<DateTime<Utc>>,
+    ) -> Result<Self> {
+        let mut events: Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)> = Vec::new();
+        let push = |row: &rusqlite::Row<'_>,
+                    out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>|
+         -> rusqlite::Result<()> {
+            let hid: String = row.get("hid")?;
+            let verb_str: String = row.get("verb")?;
+            let verb: Verb = verb_str.parse().map_err(|e: String| {
+                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+            })?;
+            let value: Option<Value> = row
+                .get::<_, Option<String>>("value")?
+                .and_then(|s| serde_json::from_str(&s).ok());
+            let start_time: Option<DateTime<Utc>> = row
+                .get::<_, Option<String>>("start_time")?
+                .and_then(|s| s.parse().ok());
+            let end_time: Option<DateTime<Utc>> = row
+                .get::<_, Option<String>>("end_time")?
+                .and_then(|s| s.parse().ok());
+            let create_time: DateTime<Utc> = row
+                .get::<_, String>("create_time")?
+                .parse()
+                .map_err(|e: chrono::ParseError| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        0,
+                        rusqlite::types::Type::Text,
+                        e.into(),
+                    )
+                })?;
+            collect_raw_events(
+                &hid, verb, value.as_ref(), start_time, end_time, create_time, out,
+            );
+            Ok(())
+        };
+
+        match max_probe {
+            Some(t) => {
+                let mut stmt = conn.prepare(
+                    r#"SELECT hid, verb, value, start_time, end_time, create_time
+                       FROM entries
+                       WHERE field = ?1
+                         AND deleted_at IS NULL
+                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
+                         AND (
+                              (start_time IS NOT NULL AND start_time <= ?2)
+                           OR (end_time   IS NOT NULL AND end_time   <= ?2)
+                         )"#,
+                )?;
+                let mut rows = stmt.query(params![field, t.to_rfc3339()])?;
+                while let Some(row) = rows.next()? {
+                    push(row, &mut events)?;
+                }
+            }
+            None => {
+                let mut stmt = conn.prepare(
+                    r#"SELECT hid, verb, value, start_time, end_time, create_time
+                       FROM entries
+                       WHERE field = ?1
+                         AND deleted_at IS NULL
+                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block')"#,
+                )?;
+                let mut rows = stmt.query(params![field])?;
+                while let Some(row) = rows.next()? {
+                    push(row, &mut events)?;
+                }
+            }
+        }
+
+        events.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+        Ok(FieldStateEvents { events })
+    }
+
+    /// Compile the active state at `time`, optionally ignoring events that
+    /// originated on `exclude_hid`. Mirrors [`last_state_at`]: a `Null`
+    /// result collapses to `None`.
+    pub fn at(&self, time: DateTime<Utc>, exclude_hid: Option<&str>) -> Option<Value> {
+        let exclude = exclude_hid.unwrap_or("");
+        for (t, _, value, hid) in self.events.iter().rev() {
+            if *t > time {
+                continue;
+            }
+            if !exclude.is_empty() && hid == exclude {
+                continue;
+            }
+            return if value.is_null() {
+                None
+            } else {
+                Some(value.clone())
+            };
+        }
+        None
+    }
+}
+
+/// Variant of [`collect_events`] that operates on already-extracted columns,
+/// tagging each emitted event with its origin `hid` so [`FieldStateEvents`]
+/// can honour `exclude_hid` probes.
+fn collect_raw_events(
+    hid: &str,
+    verb: Verb,
+    value: Option<&Value>,
+    start_time: Option<DateTime<Utc>>,
+    end_time: Option<DateTime<Utc>>,
+    create_time: DateTime<Utc>,
+    out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
+) {
+    match verb {
+        Verb::Switch => {
+            if let Some(ts) = start_time {
+                let state = value.map(normalize_state).unwrap_or(Value::Null);
+                out.push((ts, create_time, state, hid.to_string()));
+                if let Some(te) = end_time {
+                    out.push((te, create_time, Value::Bool(false), hid.to_string()));
+                }
+            }
+        }
+        Verb::Start => {
+            if let Some(ts) = start_time {
+                out.push((ts, create_time, Value::Bool(true), hid.to_string()));
+                if let Some(te) = end_time {
+                    out.push((te, create_time, Value::Bool(false), hid.to_string()));
+                }
+            }
+        }
+        Verb::Stop => {
+            if let Some(t) = end_time.or(start_time) {
+                out.push((t, create_time, Value::Bool(false), hid.to_string()));
+            }
+        }
+        Verb::Occur => {
+            if let Some(ts) = start_time {
+                out.push((ts, create_time, Value::Bool(false), hid.to_string()));
+            }
+        }
+        Verb::Block => {
+            if let Some(ts) = start_time {
+                let state = value.map(normalize_state).unwrap_or(Value::Bool(true));
+                out.push((ts, create_time, state, hid.to_string()));
+                if let Some(te) = end_time {
+                    out.push((te, create_time, Value::Bool(false), hid.to_string()));
+                }
+            }
+        }
+        Verb::Add => {}
+    }
+}
+
 fn collect_events(
     entry: &Entry,
     out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>,

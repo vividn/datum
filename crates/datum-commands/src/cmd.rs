@@ -1393,30 +1393,96 @@ fn print_info_lines(
     db: &Db,
 ) {
     let now = DatumTime::now();
-    for entry in entries {
-        let ctx = build_render_context(entry, db);
+    let ctxs = build_render_contexts(entries, db);
+    for (entry, ctx) in entries.iter().zip(ctxs.iter()) {
         let spec = registry.and_then(|r| r.fields.get(&entry.field));
-        let line = format_info_line_at(entry, spec, &ctx, &now);
+        let line = format_info_line_at(entry, spec, ctx, &now);
         if !line.is_empty() {
             println!("{line}");
         }
     }
 }
 
-/// Vector form of [`build_render_context`] — one context per entry, in
+/// Vector form of `build_render_context_cached` — one context per entry, in
 /// the same order. Used by the table path so the canonical state-cell
 /// renderer can emit transition arrows for tail rows.
+///
+/// Per da-uuu: builds a per-field [`FieldStateEvents`] cache up front so the
+/// lead / trail / ongoing state probes run in memory instead of issuing one
+/// (multi-row, all-columns) `last_state_at` query per entry. The previous
+/// implementation re-fetched the same field's state history once per output
+/// row, which dominated `dm tail` wall-clock — especially with `-yt`/`-d`
+/// filters where the probe time is far enough from `now` to defeat the OS
+/// page cache. The cache is scoped to this batch.
 fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
-    entries.iter().map(|e| build_render_context(e, db)).collect()
+    use std::collections::HashMap;
+    // Bound the per-field load by the latest probe time we'll issue. Block
+    // trail probes go to `end_time`; everything else to `start_time` (or
+    // `create_time` for the rare state-affecting row that lacks a start).
+    // Events strictly later than this max never affect any probe, so passing
+    // it to the loader prunes the WHERE clause and skips work for histories
+    // that extend far past this batch (`tail -yt 15` on a DB written to all
+    // morning will skip every today-event).
+    let max_probe: Option<chrono::DateTime<Utc>> = entries
+        .iter()
+        .filter(|e| needs_state_probe(e))
+        .filter_map(probe_upper_bound)
+        .max();
+    let mut cache: HashMap<String, datum_core::state::FieldStateEvents> = HashMap::new();
+    for e in entries {
+        if !cache.contains_key(&e.field) && needs_state_probe(e) {
+            let events = datum_core::state::FieldStateEvents::load_for_field_up_to(
+                db.conn(),
+                &e.field,
+                max_probe,
+            )
+            .unwrap_or_default();
+            cache.insert(e.field.clone(), events);
+        }
+    }
+    entries
+        .iter()
+        .map(|e| build_render_context_cached(e, db, &cache))
+        .collect()
 }
 
-/// Rebuild the `RenderContext` that `show_update_with_context` would have
-/// used when this entry was written. Errors in either probe degrade to the
-/// default (no prior, not first) — we'd rather render a lossy row than abort
-/// the whole tail.
-fn build_render_context(entry: &Entry, db: &Db) -> RenderContext {
-    let lead_state = capture_lead_state(db, entry);
-    let trail_state = capture_trail_state(db, entry);
+/// Whether this entry's `RenderContext` needs any state-history probe at
+/// all. `Add`/`Note` rows skip the cache load entirely.
+fn needs_state_probe(entry: &Entry) -> bool {
+    matches!(
+        entry.verb,
+        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block | Verb::Occur
+    )
+}
+
+/// The latest probe time `build_render_context_cached` will issue for this
+/// entry. Block rows probe at `end_time`; everything else at `start_time`,
+/// falling back to `create_time` for state-affecting rows that lack a start.
+fn probe_upper_bound(entry: &Entry) -> Option<chrono::DateTime<Utc>> {
+    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
+        if let Some(end) = entry.end_time.as_ref() {
+            return Some(end.utc);
+        }
+    }
+    entry
+        .start_time
+        .as_ref()
+        .map(|t| t.utc)
+        .or(Some(entry.create_time))
+}
+
+/// Cached variant of the per-row render context build. Lead/trail/ongoing
+/// probes hit the per-field event vector instead of re-querying the DB;
+/// `is_first_occurrence` still goes to the DB but does so via a cheap count
+/// against the field index — small relative to the state probes we replaced.
+fn build_render_context_cached(
+    entry: &Entry,
+    db: &Db,
+    cache: &std::collections::HashMap<String, datum_core::state::FieldStateEvents>,
+) -> RenderContext {
+    let events = cache.get(&entry.field);
+    let lead_state = capture_lead_state_cached(events, entry);
+    let trail_state = capture_trail_state_cached(events, entry);
     let probe = entry
         .start_time
         .as_ref()
@@ -1426,13 +1492,56 @@ fn build_render_context(entry: &Entry, db: &Db) -> RenderContext {
         .count_entries_before(&entry.field, probe)
         .unwrap_or(1)
         == 0;
-    let ongoing_state = capture_ongoing_state(db, entry);
+    let ongoing_state = capture_ongoing_state_cached(events, entry);
     RenderContext {
         lead_state,
         trail_state,
         is_first_occurrence,
         ongoing_state,
     }
+}
+
+fn capture_lead_state_cached(
+    events: Option<&datum_core::state::FieldStateEvents>,
+    entry: &Entry,
+) -> Option<JsonValue> {
+    if !matches!(
+        entry.verb,
+        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+    ) {
+        return None;
+    }
+    let at = entry.start_time.as_ref()?.utc;
+    let probe = at - chrono::Duration::microseconds(1);
+    events?.at(probe, Some(&entry.hid))
+}
+
+fn capture_trail_state_cached(
+    events: Option<&datum_core::state::FieldStateEvents>,
+    entry: &Entry,
+) -> Option<JsonValue> {
+    if !matches!(
+        entry.verb,
+        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+    ) {
+        return None;
+    }
+    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
+        let end = entry.end_time.as_ref()?.utc;
+        return events?.at(end, Some(&entry.hid));
+    }
+    crate::render::action::entry_self_trail_state(entry)
+}
+
+fn capture_ongoing_state_cached(
+    events: Option<&datum_core::state::FieldStateEvents>,
+    entry: &Entry,
+) -> Option<JsonValue> {
+    if !matches!(entry.verb, Verb::Occur) {
+        return None;
+    }
+    let at = entry.start_time.as_ref()?.utc;
+    events?.at(at, Some(&entry.hid))
 }
 
 /// Per da-k5z: for occur rows, look up the field's compiled state at the
