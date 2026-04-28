@@ -309,25 +309,26 @@ fn scalar_text(v: &JsonValue) -> String {
 
 // ─── Field badge (§4) ────────────────────────────────────────────────────────
 
-pub(crate) fn format_field_badge(
-    field: &str,
-    spec: Option<&FieldSpec>,
-    _first_time: bool,
-) -> String {
-    // The `first_time` flag is carried in `RenderContext::is_first_occurrence`
-    // and drives the `∅` first-tracked left-char inside the state-transition
-    // group (§6). Per spec §11, the field badge itself is NOT adorned — none
-    // of the 20 acceptance fixtures include a sparkle or other badge marker.
-    // Retained in the signature so callers can keep passing the flag without
-    // a refactor; the state group is the authoritative emission site.
-    //
-    // Per da-25l the badge has only a single uncoloured leading space —
-    // the trailing space is supplied by `parts.join(" ")` in
-    // `format_info_line_at`, yielding a 1-space gap between the field
-    // name and the state group. The leading space combined with the
-    // join space after the timestamp gives the existing 2-space landmark.
+/// Render the field name as a bg-painted cell — no decorations, no leading
+/// space. Single source of truth for "how to render a field cell"; called
+/// from both the info-line (via [`format_field_badge`]) and the table path
+/// (via `render::extract_with_context_at`).
+///
+/// Per spec §11 the field cell carries no sparkle or first-time adornment;
+/// the first-tracked signal is the `∅` glyph inside the state-transition
+/// group (§6), which is owned by [`format_state_group`].
+pub(crate) fn format_field_cell(field: &str, spec: Option<&FieldSpec>) -> String {
     let rgb = field_rgb(field, spec);
-    format!(" {}", paint_bg(rgb, field))
+    paint_bg(rgb, field)
+}
+
+/// Info-line wrapper for [`format_field_cell`]: prepends the single
+/// uncoloured leading space the §4 layout requires. The trailing space is
+/// supplied by `parts.join(" ")` in [`format_info_line_at`], yielding a
+/// 1-space gap between the field name and the state group; combined with
+/// the join space after the timestamp this gives the §2 2-space landmark.
+pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> String {
+    format!(" {}", format_field_cell(field, spec))
 }
 
 // ─── Timestamp (§3) ──────────────────────────────────────────────────────────
@@ -428,11 +429,7 @@ pub fn format_info_line_at(
         let synth = DatumTime { utc, offset_minutes, timezone: "Local".to_string() };
         parts.push(format!("{}{}", paint(GRAY_FG, "c"), format_timestamp(&synth, now)));
     }
-    parts.push(format_field_badge(
-        &entry.field,
-        spec,
-        ctx.is_first_occurrence,
-    ));
+    parts.push(format_field_badge(&entry.field, spec));
     if let Some(group) = format_state_group(entry, spec, ctx) {
         if !group.is_empty() {
             parts.push(group);

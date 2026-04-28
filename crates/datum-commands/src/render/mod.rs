@@ -23,10 +23,9 @@ use chrono::Local;
 use datum_core::{
     db::TrackedField,
     entry::{Entry, Verb},
-    field_spec::{FieldSpec, SpecRegistry},
+    field_spec::SpecRegistry,
     time::DatumTime,
 };
-use md5::{Digest, Md5};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 use std::io::IsTerminal;
@@ -37,14 +36,6 @@ const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
 const INVERSE: &str = "\x1b[7m";
 const GRAY_FG: &str = "\x1b[90m";
-
-// ─── Glyphs (datum vocabulary) ───────────────────────────────────────────────
-
-/// Prefix marker for the first write to a previously-unseen field.
-/// Deliberately a printable glyph (not an ANSI escape) so it survives
-/// `strip_ansi` and is visible in pipes — the user sees they just
-/// introduced a new field.
-const FIRST_TIME_MARKER: &str = "✨ ";
 
 // ─── Public API: Show / OutputArgs / Action ──────────────────────────────────
 
@@ -171,110 +162,10 @@ fn paint(code: &str, body: &str) -> String {
     }
 }
 
-// ─── Truecolor palette ────────────────────────────────────────────────────────
-//
-// Original datum renders field and state colors primarily as **backgrounds**
-// (`chalk.bgHex(...)`) with a contrast-aware foreground. Porting that look
-// requires RGB triples, not the ANSI-256 fallback we used previously. The
-// helpers below resolve spec colors (hex) or derive a stable fallback from
-// `md5(name)` per the visual-parity spec, then emit truecolor
-// 48/38;2;R;G;B escape pairs.
-
-/// RGB color triple.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct Rgb {
-    r: u8,
-    g: u8,
-    b: u8,
-}
-
-impl Rgb {
-    const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
-    const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
-
-    fn fg(self) -> String {
-        format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
-    }
-    fn bg(self) -> String {
-        format!("\x1b[48;2;{};{};{}m", self.r, self.g, self.b)
-    }
-}
-
-/// YIQ perceived brightness, matching datum's `getColorBrightness`.
-fn brightness(rgb: Rgb) -> u32 {
-    (rgb.r as u32 * 299 + rgb.g as u32 * 587 + rgb.b as u32 * 114) / 1000
-}
-
-/// Pick black or white to contrast against `bg`, matching datum's
-/// `getContrastTextColor` default path.
-fn contrast_fg(bg: Rgb) -> Rgb {
-    if brightness(bg) > 128 { Rgb::BLACK } else { Rgb::WHITE }
-}
-
-fn parse_hex(s: &str) -> Option<Rgb> {
-    let s = s.trim_start_matches('#');
-    if s.len() != 6 {
-        return None;
-    }
-    Some(Rgb {
-        r: u8::from_str_radix(&s[0..2], 16).ok()?,
-        g: u8::from_str_radix(&s[2..4], 16).ok()?,
-        b: u8::from_str_radix(&s[4..6], 16).ok()?,
-    })
-}
-
-/// ANSI-256 cube index → approximate RGB. Used only when a spec's `color`
-/// was stored as a legacy ANSI-256 number instead of a hex string.
-fn ansi256_rgb(n: u8) -> Rgb {
-    // Named colors 0..15 aren't well-defined in terminal standards; fall back
-    // to a mid-grey to keep contrast checks sensible.
-    if n < 16 {
-        return Rgb { r: 128, g: 128, b: 128 };
-    }
-    if n >= 232 {
-        let v = 8 + (n - 232) * 10;
-        return Rgb { r: v, g: v, b: v };
-    }
-    let idx = n - 16;
-    let r = idx / 36;
-    let g = (idx % 36) / 6;
-    let b = idx % 6;
-    let q = |c: u8| -> u8 { if c == 0 { 0 } else { 55 + 40 * c } };
-    Rgb { r: q(r), g: q(g), b: q(b) }
-}
-
-/// Derive a stable RGB color from `md5(name)`. Per the visual-parity spec §1:
-/// the first three bytes of the MD5 digest are used as-is (no brightness
-/// re-rolling — YIQ contrast on the fg handles readability).
-fn hash_to_rgb(name: &str) -> Rgb {
-    let hash = Md5::digest(name.as_bytes());
-    Rgb { r: hash[0], g: hash[1], b: hash[2] }
-}
-
-/// Resolve a stored color string (hex / ANSI-256 number) or fall back to a
-/// hash derived from `fallback_name`. Returns an RGB triple suitable for
-/// both foreground and background escape emission.
-fn resolve_rgb(stored: Option<&str>, fallback_name: &str) -> Rgb {
-    if let Some(s) = stored {
-        if let Some(rgb) = parse_hex(s) {
-            return rgb;
-        }
-        if let Ok(n) = s.trim_start_matches('#').parse::<u8>() {
-            return ansi256_rgb(n);
-        }
-    }
-    hash_to_rgb(fallback_name)
-}
-
-/// Paint `body` with `bg` color + contrast-derived fg. The "background is
-/// primary" style datum uses for field/state blocks.
-fn paint_bg(bg: Rgb, body: &str) -> String {
-    if !color_enabled() {
-        return body.to_string();
-    }
-    let fg = contrast_fg(bg);
-    format!("{}{}{}{}", bg.bg(), fg.fg(), body, RESET)
-}
+// Truecolor palette (Rgb / paint_bg / resolve_rgb / md5_rgb / parse_hex / …)
+// lives in `colors.rs` — single source of truth. The mod-local duplicates
+// were removed when `format_field` was unified into `action::format_field_cell`
+// (da-c11); colors.rs is the only palette implementation.
 
 // ─── Extraction (datum's `extractFormatted`) ─────────────────────────────────
 
@@ -347,7 +238,6 @@ pub(crate) fn extract_with_context_at(
         ))
     });
 
-    let first = ctx.map(|c| c.is_first_occurrence).unwrap_or(false);
     let default_ctx = self::action::RenderContext::default();
     let state_ctx = ctx.unwrap_or(&default_ctx);
     Extracted {
@@ -358,7 +248,7 @@ pub(crate) fn extract_with_context_at(
         time_create: create,
         time_modify: modify,
         time_hybrid: hybrid,
-        field: Some(format_field(&entry.field, spec, first)),
+        field: Some(self::action::format_field_cell(&entry.field, spec)),
         state: self::action::format_state_group(entry, spec, state_ctx),
         dur: entry.duration_seconds().map(format_duration),
     }
@@ -380,22 +270,6 @@ fn paint_action(action: Action) -> String {
     format!("{INVERSE}{code} {} {RESET}", action.name())
 }
 
-// ─── Field / state colors ────────────────────────────────────────────────────
-
-fn format_field(field: &str, spec: Option<&FieldSpec>, first_time: bool) -> String {
-    let rgb = field_rgb(field, spec);
-    let painted = paint_bg(rgb, field);
-    if first_time {
-        format!("{FIRST_TIME_MARKER}{painted}")
-    } else {
-        painted
-    }
-}
-
-/// Resolve field color as RGB: stored spec color → hash-derived fallback.
-fn field_rgb(field: &str, spec: Option<&FieldSpec>) -> Rgb {
-    resolve_rgb(spec.and_then(|s| s.color.as_deref()), field)
-}
 
 // ─── Time rendering ──────────────────────────────────────────────────────────
 
@@ -1441,6 +1315,33 @@ mod tests {
         assert!(ex.field.is_some());
     }
 
+    /// Per da-c11: table-path field cell and info-line field badge must
+    /// share a single renderer. The badge wraps the cell with the §4 leading
+    /// space; nothing else differs (no sparkle, no first-time adornment).
+    /// This guards against the legacy split that emitted `✨ field` in the
+    /// table while the info-line emitted plain `field`.
+    #[test]
+    fn field_cell_matches_info_line_badge() {
+        let _guard = ColorGuard::force_on();
+        let entry = sample_entry("newfield", Verb::Switch, Some(JsonValue::from("ok")));
+        let ctx = self::action::RenderContext {
+            is_first_occurrence: true,
+            ..Default::default()
+        };
+        let table_cell = extract_with_context(&entry, None, None, Some(&ctx))
+            .field
+            .expect("extractor populates field");
+        let badge = self::action::format_field_badge(&entry.field, None);
+        assert_eq!(
+            badge,
+            format!(" {table_cell}"),
+            "info-line badge must equal ' ' + table cell"
+        );
+        // And neither path adds the legacy sparkle prefix.
+        assert!(!strip_ansi(&table_cell).contains('✨'));
+        assert!(!strip_ansi(&badge).contains('✨'));
+    }
+
     #[test]
     fn state_cell_for_point_occur_emits_dot() {
         // `Occur` with no explicit value → padded DOT block via the canonical
@@ -1513,23 +1414,6 @@ mod tests {
         );
     }
 
-    /// First-time marker prepends `✨ ` to the rendered field name. The
-    /// sparkle is a printable glyph (not an ANSI escape) so pipes and
-    /// `strip_ansi` preserve it.
-    #[test]
-    fn first_time_marker_prepends_field() {
-        let out_plain = format_field("newthing", None, false);
-        let out_marked = format_field("newthing", None, true);
-        assert!(
-            !strip_ansi(&out_plain).starts_with(FIRST_TIME_MARKER),
-            "plain first-time=false must NOT have sparkle: {out_plain:?}"
-        );
-        assert!(
-            strip_ansi(&out_marked).starts_with(FIRST_TIME_MARKER),
-            "first-time=true must start with sparkle: {out_marked:?}"
-        );
-    }
-
     /// With the de-facto `NO_COLOR` env var set, the color gate should
     /// return false regardless of terminal state. This is the pipe-friendly
     /// behaviour the bead asks for.
@@ -1540,9 +1424,7 @@ mod tests {
         let _datum = ScopedEnv::set("DATUM_COLOR", None);
         let _no = ScopedEnv::set("NO_COLOR", Some("1"));
         assert!(!color_enabled());
-        let rgb = Rgb { r: 255, g: 0, b: 0 };
-        assert_eq!(paint_bg(rgb, "hi"), "hi");
-        assert_eq!(paint(&rgb.fg(), "hi"), "hi");
+        assert_eq!(paint("\x1b[38;2;255;0;0m", "hi"), "hi");
     }
 
     /// `DATUM_COLOR` overrides `NO_COLOR` — useful for the internal test
@@ -1552,23 +1434,6 @@ mod tests {
         let _no = ScopedEnv::set("NO_COLOR", Some("1"));
         let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
         assert!(color_enabled());
-    }
-
-    /// Contrast-fg picks black for bright backgrounds and white for dark —
-    /// matches datum's `getColorBrightness` / YIQ threshold.
-    #[test]
-    fn contrast_fg_flips_on_brightness_boundary() {
-        assert_eq!(contrast_fg(Rgb { r: 255, g: 255, b: 255 }), Rgb::BLACK);
-        assert_eq!(contrast_fg(Rgb { r: 0, g: 0, b: 0 }), Rgb::WHITE);
-    }
-
-    /// Hex parser accepts both `#rrggbb` and `rrggbb`, rejects bad lengths.
-    #[test]
-    fn parse_hex_accepts_hash_prefix_and_rejects_garbage() {
-        assert_eq!(parse_hex("#ff6600"), Some(Rgb { r: 0xff, g: 0x66, b: 0x00 }));
-        assert_eq!(parse_hex("ff6600"), Some(Rgb { r: 0xff, g: 0x66, b: 0x00 }));
-        assert_eq!(parse_hex("xxx"), None);
-        assert_eq!(parse_hex("f60"), None);
     }
 
     // ─── Test helpers ────────────────────────────────────────────────────────

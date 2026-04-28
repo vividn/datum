@@ -15,8 +15,5 @@ pub const NULL_SET: &str = "∅";
 /// Checkerboard fill for array states (upper-right + lower-left triangle).
 pub const SHADING: &str = "▞";
 
-/// First-time-seen sparkle prefix (printable, survives `strip_ansi`).
-pub const FIRST_TIME_MARKER: &str = "✨ ";
-
 /// Sentinel state-value for `datum ignore <field>` — §8.
 pub const IGNORED_STATE: &str = "IGNORED";
