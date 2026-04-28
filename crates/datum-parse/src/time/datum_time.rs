@@ -21,9 +21,9 @@ impl DatumTime {
     /// Construct `DatumTime` from a UTC instant and an IANA timezone name.
     /// Returns `InvalidTime` if the name isn't recognised.
     pub fn from_utc_and_tz(utc: DateTime<Utc>, timezone: &str) -> Result<Self> {
-        let tz: Tz = timezone.parse().map_err(|_| {
-            ParseError::InvalidTime(format!("Unknown timezone: {timezone}"))
-        })?;
+        let tz: Tz = timezone
+            .parse()
+            .map_err(|_| ParseError::InvalidTime(format!("Unknown timezone: {timezone}")))?;
         let local = utc.with_timezone(&tz);
         // chrono-tz: convert to fixed_offset to get total UTC offset in minutes
         let offset_secs = local.fixed_offset().offset().local_minus_utc();
@@ -46,15 +46,15 @@ impl DatumTime {
 impl DatumTime {
     /// Snapshot the current moment using the host's local timezone.
     ///
+    /// Routes through [`crate::time::clock`]: tests can install a
+    /// [`crate::time::clock::MockClock`] on the current thread to make
+    /// `now()` return a fixed instant; production code installs nothing
+    /// and falls through to [`crate::time::clock::SystemClock`].
+    ///
     /// Requires the `native` feature (default-on); disable when targeting
     /// `wasm32-unknown-unknown` and construct via [`DatumTime::from_utc_and_tz`]
     /// with an explicit timezone.
     pub fn now() -> Self {
-        let local = chrono::Local::now();
-        let utc = local.with_timezone(&Utc);
-        let offset_minutes = local.offset().local_minus_utc() / 60;
-        let timezone = iana_time_zone::get_timezone()
-            .unwrap_or_else(|_| "UTC".to_string());
-        DatumTime { utc, offset_minutes, timezone }
+        crate::time::clock::now()
     }
 }

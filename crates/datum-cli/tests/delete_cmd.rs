@@ -28,7 +28,7 @@
 mod common;
 
 use common::run_cli;
-use datum_core::test_util::{entry_builder, fresh_db};
+use datum_core::test_util::{advance_time, entry_builder, fresh_db, set_time};
 use datum_core::{assert_count, entry::Verb};
 use serde_json::json;
 use std::path::PathBuf;
@@ -192,10 +192,7 @@ fn delete_emits_delete_tag_on_standard_show() {
 
     // Second seed + delete with `--show none`: no tag, no noise.
     run_binary(&db, &["occur", "coffee", "--id", "%field%:pin2"]);
-    let (silent, _) = run_binary(
-        &db,
-        &["delete", "coffee:pin2", "--force", "--show", "none"],
-    );
+    let (silent, _) = run_binary(&db, &["delete", "coffee:pin2", "--force", "--show", "none"]);
     assert_eq!(
         silent, "",
         "--show none must silence the DELETE tag, got: {silent:?}",
@@ -260,18 +257,34 @@ fn compound_delete_expands_wildcards() {
             e.slug,
         );
     }
-    assert!(db.get_entry(&untouched.slug).is_ok(), "non-matching row survives");
+    assert!(
+        db.get_entry(&untouched.slug).is_ok(),
+        "non-matching row survives"
+    );
 }
 
 /// A comma-separated list mixing an exact slug, a hid prefix, and a wildcard
 /// all resolve through the same pipeline.
+///
+/// Five entries are inserted with explicit, monotonically-stepped timestamps
+/// via the deterministic test clock (da-5ss). The original
+/// [`entry_builder`] default times depended on `DatumTime::now()` plus a
+/// per-process millisecond nudge, which could let two slugs collide when
+/// the suite ran under heavy load (root cause of da-bex). Freezing the
+/// clock per-entry makes slug values reproducible and the test
+/// non-flaky by construction.
 #[test]
 fn compound_delete_mixes_hid_slug_and_wildcard() {
     let db = fresh_db();
+    let _g = set_time("2026-01-15T12:00:00Z");
     let by_slug = entry_builder("mood").value(json!("s")).insert(&db);
+    advance_time("1m");
     let by_hid = entry_builder("mood").value(json!("h")).insert(&db);
+    advance_time("1m");
     let in_wild = entry_builder("book").value(json!("the-hobbit")).insert(&db);
+    advance_time("1m");
     let in_wild2 = entry_builder("book").value(json!("the-iliad")).insert(&db);
+    advance_time("1m");
     let outside = entry_builder("coffee").value(json!(1)).insert(&db);
 
     let mixed = format!("{},{},book:*", by_slug.slug, by_hid.hid);
@@ -375,11 +388,8 @@ fn compound_delete_dry_run_does_not_mutate() {
     let a = entry_builder("mood").value(json!(1)).insert(&db);
     let b = entry_builder("mood").value(json!(2)).insert(&db);
 
-    run_cli(
-        &["delete", "mood:*", "--force", "--dry-run"],
-        &db,
-    )
-    .unwrap_or_else(|err| panic!("dry-run must succeed: {err:#}"));
+    run_cli(&["delete", "mood:*", "--force", "--dry-run"], &db)
+        .unwrap_or_else(|err| panic!("dry-run must succeed: {err:#}"));
 
     // Both rows still live.
     assert_count!(db, "mood", 2);

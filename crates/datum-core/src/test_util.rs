@@ -10,9 +10,13 @@
 //! - [`assert_entry_matches!`] / [`assert_count!`] — concise assertion macros.
 
 use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
+
+use datum_parse::time::clock::{self, MockClock};
+use datum_parse::time::{parse_duration, parse_time_arg, TimeBuilder};
 
 use crate::db::Db;
 use crate::entry::{Entry, Verb};
@@ -332,6 +336,93 @@ pub fn _assert_entry_field(entry: &Entry, field_name: &str, expected: &JsonValue
         &actual, expected,
         "entry.{field_name} mismatch: expected {expected}, got {actual}"
     );
+}
+
+// ─── Deterministic test clock ────────────────────────────────────────────────
+//
+// Tests rely on `DatumTime::now()` for slug generation, modify_time, etc.
+// Two calls landing in the same millisecond can produce colliding slugs and
+// flake the test. These helpers freeze (or step) the clock through the same
+// `-t` flag parser used by the CLI, so tests read like the user-facing flag
+// syntax instead of constructing chrono values inline.
+//
+// The clock is thread-local — `cargo test` runs threads in parallel and each
+// test owns its own mock without leaking into siblings.
+
+/// RAII guard returned by [`set_time`] / [`freeze_time`]. Drops uninstall
+/// the mock clock so leftover state cannot bleed into the next test on the
+/// same thread.
+#[must_use = "binding the guard to `_g` is fine; dropping it immediately resets the clock"]
+pub struct TimeGuard {
+    _private: (),
+}
+
+impl Drop for TimeGuard {
+    fn drop(&mut self) {
+        clock::uninstall();
+    }
+}
+
+/// Parse `s` with the same parser the CLI uses for `-t/--time`, install a
+/// [`MockClock`] frozen at that instant on the current thread, and return a
+/// guard that resets the clock on drop.
+///
+/// Accepted forms (full list lives in [`parse_time_arg`]):
+/// - ISO instants: `"2026-01-15T12:00:00Z"`, `"2026-01-15T12:00:00+02:00"`
+/// - ISO naive datetimes: `"2026-01-15T12:00:00"` (resolved as local)
+/// - Wall-clock times for "today": `"1530"`, `"15:30"`, `"3:30pm"`
+///
+/// Calling `set_time` again replaces the previously-installed clock.
+pub fn set_time(s: &str) -> TimeGuard {
+    let dt = parse_test_time(s);
+    clock::install(Arc::new(MockClock::new(dt)));
+    TimeGuard { _private: () }
+}
+
+/// Alias for [`set_time`] — reads more naturally when the test wants to
+/// emphasise the freezing aspect over the value being set.
+pub fn freeze_time(s: &str) -> TimeGuard {
+    set_time(s)
+}
+
+/// Step the current mock clock forward (or backward, with a leading `-`).
+/// The string is parsed via the same duration parser as `--dur`, plus an
+/// optional leading `+`/`-` for sign.
+///
+/// Examples: `"5m"`, `"+5m"`, `"-1h"`, `"30s"`, `"PT15M"`.
+///
+/// If no mock clock is installed, this installs one anchored at "now" + the
+/// supplied delta. Most tests should call [`set_time`] first.
+pub fn advance_time(s: &str) {
+    let (sign, rest) = match s.as_bytes().first() {
+        Some(b'+') => (1, &s[1..]),
+        Some(b'-') => (-1, &s[1..]),
+        _ => (1, s),
+    };
+    let mut dur = parse_duration(rest)
+        .unwrap_or_else(|e| panic!("advance_time: cannot parse duration {s:?}: {e}"));
+    if sign < 0 {
+        dur = -dur;
+    }
+    let cur = DatumTime::now();
+    let new = DatumTime {
+        utc: cur.utc + dur,
+        ..cur
+    };
+    clock::install(Arc::new(MockClock::new(new)));
+}
+
+/// Manually drop the mock clock. The [`TimeGuard`] returned by [`set_time`]
+/// also does this on drop; call this directly only when the guard pattern
+/// doesn't fit (e.g. mid-test reset before installing a different fake).
+pub fn reset_time() {
+    clock::uninstall();
+}
+
+fn parse_test_time(s: &str) -> DatumTime {
+    let arg =
+        parse_time_arg(s).unwrap_or_else(|e| panic!("set_time: cannot parse time {s:?}: {e}"));
+    TimeBuilder::now().with_time_arg(arg).build()
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────────

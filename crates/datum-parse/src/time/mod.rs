@@ -16,6 +16,8 @@
 //!   `datum_parse::input::time_args::resolve_timezone`.
 
 pub mod builder;
+#[cfg(feature = "native")]
+pub mod clock;
 pub mod datum_time;
 pub mod get_timezone;
 pub mod human_time;
