@@ -9,6 +9,8 @@
 //!   with sensible defaults so tests only specify fields they care about.
 //! - [`assert_entry_matches!`] / [`assert_count!`] — concise assertion macros.
 
+use std::sync::atomic::{AtomicI64, Ordering};
+
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
@@ -16,6 +18,21 @@ use crate::db::Db;
 use crate::entry::{Entry, Verb};
 use crate::field_spec::{Alias, FieldSpec, SubfieldSpec};
 use crate::time::DatumTime;
+
+/// Process-wide monotonic millisecond offset added to each
+/// [`EntryBuilder::new`] default `start_time`. Slug uniqueness now hard-errors
+/// on collision (da-p5j), so two back-to-back builders must not produce
+/// identical slugs. The slug encodes time at millisecond resolution, so
+/// stepping the default time by ≥1 ms per builder guarantees distinct slugs
+/// without forcing every test to call `time_start_utc(...)` explicitly.
+static TIME_NUDGE_MS: AtomicI64 = AtomicI64::new(0);
+
+fn next_default_time() -> DatumTime {
+    let nudge = TIME_NUDGE_MS.fetch_add(1, Ordering::Relaxed);
+    let mut t = DatumTime::now();
+    t.utc += chrono::Duration::milliseconds(nudge);
+    t
+}
 
 /// Return a brand-new in-memory SQLite [`Db`] with schema applied.
 ///
@@ -29,7 +46,9 @@ pub fn fresh_db() -> Db {
 
 /// Fluent builder for [`Entry`] test fixtures.
 ///
-/// Defaults: verb=`Occur`, start_time=`DatumTime::now()`, device="test-device".
+/// Defaults: verb=`Occur`, start_time=`DatumTime::now()` plus a small
+/// monotonic nudge so back-to-back builders land on distinct slugs,
+/// device="test-device".
 #[derive(Clone)]
 pub struct EntryBuilder {
     field: String,
@@ -50,7 +69,7 @@ impl EntryBuilder {
             value: None,
             data: None,
             unit: None,
-            start_time: Some(DatumTime::now()),
+            start_time: Some(next_default_time()),
             end_time: None,
             device_id: "test-device".to_string(),
         }
@@ -129,8 +148,9 @@ impl EntryBuilder {
     }
 
     /// Build and insert into `db`, returning the owned entry with the slug
-    /// reflecting what actually landed in the DB (may include a retry
-    /// suffix if the default slug collided on PK).
+    /// and hid reflecting what actually landed in the DB. The hid may differ
+    /// from the in-memory entry if raw_insert had to retry once on a hid
+    /// collision (vanishingly rare).
     pub fn insert(self, db: &Db) -> Entry {
         use crate::db::{ConflictStrategy, InsertOutcome};
         let mut e = self.build();
@@ -138,12 +158,17 @@ impl EntryBuilder {
             .insert_entry_with_strategy(&e, ConflictStrategy::Ignore)
             .expect("EntryBuilder::insert failed");
         match outcome {
-            InsertOutcome::Inserted { slug } => {
+            InsertOutcome::Inserted { slug, hid } => {
                 e.slug = slug;
+                e.hid = hid;
             }
             InsertOutcome::Ignored { slug } => {
                 // Identical content already exists — mirror the stored slug
-                // so callers comparing by slug land on the extant row.
+                // so callers comparing by slug land on the extant row. Read
+                // the stored hid back too.
+                if let Ok(stored) = db.get_entry(&slug) {
+                    e.hid = stored.hid;
+                }
                 e.slug = slug;
             }
             other => panic!("EntryBuilder::insert: unexpected outcome {other:?}"),

@@ -306,36 +306,28 @@ fn identical_content_triggers_exists_outcome() {
 
 // ─── TS #14: "fails if addedDocument conflicts with different data" ──────────
 
-/// Daydumb divergence: content_hash-based dedup means "same id, different
-/// data" produces distinct content_hashes and both rows insert without
-/// conflict. Datum's DocExistsError has no daydumb analog on the default
-/// (Ignore) strategy. After the slug-as-PK refactor the two rows can no
-/// longer share a slug — the second insert's slug PK collision is resolved
-/// by appending a random suffix, so the rows carry distinct slugs that
-/// share the same template-derived prefix.
+/// Daydumb divergence: slug uniqueness is the daydumb analog of datum's
+/// DocExistsError — "same id, different data" is essentially-duplicate data
+/// (the user explicitly asserted the same identity twice) and must error
+/// rather than silently store under a suffixed slug. Only the first row
+/// survives.
 #[test]
-fn same_id_different_data_both_insert() {
+fn same_id_different_data_errors_on_second() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "doug", "foo=bar"], &db)
         .expect("first note");
-    run_cli(&["add", "field", "--id", "doug", "different=data"], &db)
-        .expect("second note with same --id, different data");
-    let entries = db.entries_for_field("field", None).unwrap();
-    assert_eq!(entries.len(), 2, "distinct content_hashes ⇒ 2 rows");
-    let slugs: Vec<&str> = entries.iter().map(|e| e.slug.as_str()).collect();
-    assert!(slugs.iter().any(|s| *s == "doug"), "one row keeps the base slug: {slugs:?}");
+    let err = run_cli(&["add", "field", "--id", "doug", "different=data"], &db)
+        .expect_err("second note at same --id must fail");
+    let msg = format!("{err:#}");
     assert!(
-        slugs.iter().any(|s| s.starts_with("doug_")),
-        "second row gets a suffixed variant: {slugs:?}",
+        msg.to_lowercase().contains("duplicate") || msg.contains("doug"),
+        "error must mention the duplicate slug, got: {msg}",
     );
-    assert_ne!(
-        entries[0].content_hash, entries[1].content_hash,
-        "differing extra_data ⇒ differing content_hash",
-    );
-    // The template itself is still recorded verbatim on both rows.
-    for e in &entries {
-        assert_eq!(e.id_structure.as_deref(), Some("doug"));
-    }
+
+    let entries = db.entries_for_field("field", None).unwrap();
+    assert_eq!(entries.len(), 1, "second insert rejected");
+    assert_eq!(entries[0].slug, "doug");
+    assert_eq!(entries[0].id_structure.as_deref(), Some("doug"));
 }
 
 // ─── TS #15: "inserts id structure into the metadata" ────────────────────────

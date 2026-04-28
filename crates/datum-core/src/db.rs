@@ -196,19 +196,25 @@ impl From<datum_parse::cli::ConflictStrategyArg> for ConflictStrategy {
 
 /// Outcome reported by [`Db::insert_entry_with_strategy`].
 ///
-/// All variants carry the stored slug — the primary key. On a successful
-/// [`InsertOutcome::Inserted`] the slug may differ from `entry.slug` if a
-/// collision forced a suffixed retry.
+/// All variants carry the stored slug — the human-facing key. The
+/// [`InsertOutcome::Inserted`] variant also carries the actual stored `hid`,
+/// which can differ from `entry.hid` if a (vanishingly rare) hid collision
+/// forced a single retry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InsertOutcome {
     /// New row inserted (no collision).
-    Inserted { slug: String },
+    Inserted { slug: String, hid: String },
     /// Collision resolved by mutating the existing row in place.
     Updated { slug: String },
     /// Collision resolved by merging `extra_data` into the existing row.
     Merged { slug: String },
-    /// Collision resolved by inserting a new row under a new slug.
-    Rekeyed { old_slug: String, new_slug: String },
+    /// Collision resolved by inserting a new row under a new slug. The
+    /// `new_hid` reflects the actual stored hid for the freshly-inserted row.
+    Rekeyed {
+        old_slug: String,
+        new_slug: String,
+        new_hid: String,
+    },
     /// Collision left the existing row untouched.
     Ignored { slug: String },
 }
@@ -385,13 +391,16 @@ impl Db {
     // -------------------------------------------------------------------------
 
     /// Insert an entry using the default [`ConflictStrategy::Ignore`].
-    /// Returns `Err(Duplicate)` if the content_hash collides with a live row —
-    /// preserved for call sites that pre-date the strategy API.
+    /// Returns `Err(Duplicate)` if the content_hash collides with a live row,
+    /// or if the slug PK collides with an existing row (same field at the
+    /// same instant — semantically a duplicate even with different content).
+    /// Preserved for call sites that pre-date the strategy API.
     pub fn insert_entry(&self, entry: &Entry) -> Result<()> {
         match self.insert_entry_with_strategy(entry, ConflictStrategy::Ignore)? {
             InsertOutcome::Inserted { .. } => Ok(()),
             InsertOutcome::Ignored { .. } => Err(DatumError::Duplicate(format!(
-                "Entry with identical content already exists (hash: {})",
+                "Entry already exists at slug {} (or identical content with hash {})",
+                entry.slug,
                 &entry.content_hash[..entry.content_hash.len().min(12)]
             ))),
             // Ignore strategy never produces the other outcomes.
@@ -1902,8 +1911,9 @@ fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     })
 }
 
-/// Append a short random base36 suffix to a slug so a retried insert can
-/// dodge a PK collision without looking indistinguishable from the original.
+/// Append a short random base36 suffix to a slug. Used by the
+/// [`ConflictStrategy::Rekey`] path to derive a distinct slug for the new
+/// row when the natural slug already belongs to the existing one.
 fn suffixed_slug(base: &str) -> String {
     let mut rng = rand::thread_rng();
     let suffix: String = (0..4)
@@ -1919,14 +1929,33 @@ fn suffixed_slug(base: &str) -> String {
     format!("{base}_{suffix}")
 }
 
-/// SQLite returns a constraint-violation error when a UNIQUE or PRIMARY KEY
-/// is about to be duplicated. We don't try to distinguish slug vs hid here —
-/// the caller rotates both on retry.
-fn is_pk_collision(err: &rusqlite::Error) -> bool {
-    matches!(
-        err,
-        rusqlite::Error::SqliteFailure(e, _) if e.code == rusqlite::ErrorCode::ConstraintViolation
-    )
+/// Which uniqueness constraint a SQLite ConstraintViolation tripped: the
+/// `entries.slug` UNIQUE index, or the `entries.hid` PRIMARY KEY.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CollisionKind {
+    Slug,
+    Hid,
+}
+
+/// Inspect a rusqlite error and decide whether it's a slug or hid collision.
+/// SQLite's constraint-violation message names the offending column (e.g.
+/// `UNIQUE constraint failed: entries.slug`), which is the cheapest way to
+/// tell the two apart without a second query.
+fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
+    let rusqlite::Error::SqliteFailure(e, msg) = err else {
+        return None;
+    };
+    if e.code != rusqlite::ErrorCode::ConstraintViolation {
+        return None;
+    }
+    let msg = msg.as_deref().unwrap_or("");
+    if msg.contains("entries.slug") {
+        Some(CollisionKind::Slug)
+    } else if msg.contains("entries.hid") {
+        Some(CollisionKind::Hid)
+    } else {
+        None
+    }
 }
 
 /// Deep-merge `incoming` into `existing` for use by [`ConflictStrategy::Merge`].
@@ -2006,7 +2035,19 @@ fn insert_entry_in_tx(
 
     let outcome = match (existing, strategy) {
         (None, _) => {
-            let stored_slug = raw_insert(conn, entry)?;
+            // No content_hash match — distinct content. A slug collision
+            // here means the user is asserting a *different* thing at the
+            // same identity (same field, same instant, distinct content),
+            // which is semantically a duplicate-identity conflict. We let
+            // raw_insert's `Duplicate` propagate so the caller sees an
+            // error rather than silently dropping the second write — this
+            // applies even under `Ignore`, which is meant to skip true
+            // content duplicates, not different-content same-slug writes.
+            // (The bulk-import fast path takes the opposite stance — see
+            // `insert_entry_bulk_in_tx` — because backups commonly carry
+            // legitimate same-instant rows that the user has already
+            // accepted as historical.)
+            let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
             let inserted = fetch_entry_any(conn, &stored_slug)?;
             history::record(conn, &inserted, ChangeKind::Create)?;
             // D5: post-write conflict detection. Runs inside the same
@@ -2016,7 +2057,10 @@ fn insert_entry_in_tx(
                 &inserted,
                 crate::conflicts::DetectedBy::LocalValidator,
             )?;
-            InsertOutcome::Inserted { slug: stored_slug }
+            InsertOutcome::Inserted {
+                slug: stored_slug,
+                hid: stored_hid,
+            }
         }
         (Some((slug, _)), ConflictStrategy::Ignore) => InsertOutcome::Ignored { slug },
         (Some((slug, _)), ConflictStrategy::Update) => {
@@ -2040,7 +2084,24 @@ fn insert_entry_in_tx(
             // share a content_hash — the content_hash column is not UNIQUE.
             // The new row gets its own `Create` history entry; the original
             // row is untouched.
-            let new_slug = raw_insert(conn, entry)?;
+            //
+            // Default slug derives from field+timestamp; if it collides with
+            // the existing row, retry with a suffixed slug. raw_insert no
+            // longer auto-suffixes — that retry is a Rekey-strategy concern,
+            // not a slug-collision-must-error concern.
+            const REKEY_MAX_ATTEMPTS: u8 = 8;
+            let mut entry_for_rekey = entry.clone();
+            let mut attempts = 0u8;
+            let (new_slug, new_hid) = loop {
+                match raw_insert(conn, &entry_for_rekey) {
+                    Ok(pair) => break pair,
+                    Err(DatumError::Duplicate(_)) if attempts < REKEY_MAX_ATTEMPTS => {
+                        entry_for_rekey.slug = suffixed_slug(&entry.slug);
+                        attempts += 1;
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
             let inserted = fetch_entry_any(conn, &new_slug)?;
             history::record(conn, &inserted, ChangeKind::Create)?;
             crate::conflicts::detect_for_entry(
@@ -2048,7 +2109,11 @@ fn insert_entry_in_tx(
                 &inserted,
                 crate::conflicts::DetectedBy::LocalValidator,
             )?;
-            InsertOutcome::Rekeyed { old_slug, new_slug }
+            InsertOutcome::Rekeyed {
+                old_slug,
+                new_slug,
+                new_hid,
+            }
         }
     };
 
@@ -2074,38 +2139,68 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
     };
     match existing_slug {
         Some(slug) => Ok(InsertOutcome::Ignored { slug }),
-        None => {
-            let stored_slug = raw_insert(conn, entry)?;
-            Ok(InsertOutcome::Inserted { slug: stored_slug })
-        }
+        None => match raw_insert(conn, entry) {
+            Ok((stored_slug, stored_hid)) => Ok(InsertOutcome::Inserted {
+                slug: stored_slug,
+                hid: stored_hid,
+            }),
+            // Bulk import is always Ignore-equivalent (see
+            // `Db::insert_entries_bulk` precondition). Slug collision on
+            // distinct content is a same-field-same-instant duplicate from
+            // the source backup — skip silently rather than abort the batch.
+            Err(DatumError::Duplicate(_)) => Ok(InsertOutcome::Ignored {
+                slug: entry.slug.clone(),
+            }),
+            Err(e) => Err(e),
+        },
     }
 }
 
-/// Insert an entry, retrying on slug/hid collisions with a suffixed slug or
-/// freshly-generated hid. Returns the slug actually stored.
-pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<String> {
-    const MAX_ATTEMPTS: u8 = 8;
-    let mut slug = entry.slug.clone();
+/// Insert an entry. Returns the `(slug, hid)` actually stored.
+///
+/// Slug uniqueness exists to prevent essentially-duplicate data — two rows
+/// asserting the same field at the same instant. A slug collision is a
+/// semantic conflict, not a transient retryable failure, so this returns
+/// [`DatumError::Duplicate`] and lets the caller decide how to surface it
+/// (the `Ignore` strategy maps it to `Ignored`; live writers surface it to
+/// the user; the `Rekey` strategy retries with a suffixed slug).
+///
+/// Hid collisions, by contrast, are astronomical (12-char base36 = ~4.7
+/// quintillion values). We retry once with a fresh hid; a second collision
+/// almost certainly indicates a bug or environmental problem and is
+/// returned as [`DatumError::Other`].
+pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(String, String)> {
     let mut hid = entry.hid.clone();
-    let mut attempt = 0u8;
+    let mut hid_attempt = 0u8;
 
     loop {
-        match try_insert(conn, &slug, &hid, entry) {
-            Ok(()) => return Ok(slug),
-            Err(DatumError::Db(ref sql_err)) if is_pk_collision(sql_err) => {
-                if attempt >= MAX_ATTEMPTS {
-                    return Err(DatumError::Other(format!(
-                        "slug/hid collision persisted after {MAX_ATTEMPTS} retries",
-                    )));
+        match try_insert(conn, &entry.slug, &hid, entry) {
+            Ok(()) => return Ok((entry.slug.clone(), hid)),
+            Err(e) => {
+                let kind = match &e {
+                    DatumError::Db(sql_err) => collision_kind(sql_err),
+                    _ => None,
+                };
+                match kind {
+                    Some(CollisionKind::Slug) => {
+                        return Err(DatumError::Duplicate(format!(
+                            "Entry already exists with slug {}",
+                            entry.slug
+                        )));
+                    }
+                    Some(CollisionKind::Hid) => {
+                        if hid_attempt >= 1 {
+                            return Err(DatumError::Other(format!(
+                                "hid collision persisted after retry; second collision \
+                                 on {hid} indicates a bug or RNG failure",
+                            )));
+                        }
+                        hid = new_hid();
+                        hid_attempt += 1;
+                    }
+                    None => return Err(e),
                 }
-                // The collision could be on slug PK or hid UNIQUE. We can't
-                // cheaply tell which without a second query, so rotate both
-                // to converge quickly.
-                slug = suffixed_slug(&entry.slug);
-                hid = new_hid();
-                attempt += 1;
             }
-            Err(e) => return Err(e),
         }
     }
 }
@@ -3215,7 +3310,7 @@ mod tests {
         // raw insert retries with a suffixed slug (`<slug>_xxxx`). The
         // outcome carries that concrete stored slug.
         let (old_slug, new_slug) = match outcome {
-            InsertOutcome::Rekeyed { old_slug, new_slug } => (old_slug, new_slug),
+            InsertOutcome::Rekeyed { old_slug, new_slug, .. } => (old_slug, new_slug),
             other => panic!("expected Rekeyed, got {other:?}"),
         };
         assert_eq!(old_slug, first_slug);
@@ -3341,12 +3436,39 @@ mod tests {
     }
 
     #[test]
-    fn tombstoned_row_does_not_block_new_insert() {
-        // Soft-deleting a row should free its content_hash slot: re-inserting
-        // identical content is treated as a fresh insert, not a conflict.
+    fn tombstoned_row_does_not_block_distinct_new_insert() {
+        // Soft-deleting an entry must not interfere with subsequent inserts
+        // at *distinct* slugs: the tombstone is invisible to live queries,
+        // and the dedup-by-content_hash query filters tombstones, so a
+        // fresh write on a different slug lands as Inserted regardless of
+        // what the soft-deleted predecessor looked like.
+        //
+        // Re-inserting at the *same* slug as a tombstoned row is a separate
+        // case — the slug index is non-partial, so the tombstone retains
+        // ownership of the slug until the row is hard-deleted or undeleted.
+        // Callers that want to recycle a slug must `undelete` first.
         let db = Db::open_in_memory().unwrap();
-        let (first, second) = colliding_pair();
+        let first = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"source": "morning"})),
+            None,
+            Some(utc_at(9, 0)),
+            None,
+            "device-a",
+        );
         let first_slug = first.slug.clone();
+        let second = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("focused")),
+            Some(serde_json::json!({"source": "afternoon"})),
+            None,
+            Some(utc_at(10, 0)),
+            None,
+            "device-b",
+        );
         db.insert_entry(&first).unwrap();
         db.soft_delete_entry(&first_slug).unwrap();
 
@@ -3590,11 +3712,13 @@ mod tests {
     }
 
     #[test]
-    fn slug_collision_retries_with_suffix() {
+    fn slug_collision_returns_duplicate() {
         // Two distinct entries that happen to produce identical default slugs
-        // (same field + same timestamp, different content_hash). The second
-        // insert is a fresh insert, not a content collision — the raw insert
-        // must dodge the slug PK collision via a suffixed retry.
+        // (same field + same timestamp, different content_hash). Slug
+        // uniqueness is meant to enforce "one assertion per field per
+        // instant"; two such inserts is essentially-duplicate data, so the
+        // second insert must error rather than silently store under a
+        // suffixed slug.
         let db = Db::open_in_memory().unwrap();
         let t = utc_at(9, 0);
         let a = Entry::new(
@@ -3621,18 +3745,18 @@ mod tests {
         assert_ne!(a.content_hash, b.content_hash, "fixture: hashes distinct");
 
         db.insert_entry(&a).unwrap();
-        db.insert_entry(&b).unwrap();
-
-        let all = db.entries_for_field("mood", None).unwrap();
-        assert_eq!(all.len(), 2);
-        let slugs: std::collections::HashSet<_> = all.iter().map(|e| e.slug.clone()).collect();
-        assert_eq!(slugs.len(), 2, "stored slugs must be distinct");
-        assert!(slugs.contains(&a.slug));
+        let err = db
+            .insert_entry(&b)
+            .expect_err("second insert at same slug must fail");
         assert!(
-            slugs.iter().any(|s| s.starts_with(&a.slug) && s != &a.slug),
-            "expected a suffixed variant of {} in {slugs:?}",
-            a.slug,
+            matches!(err, DatumError::Duplicate(_)),
+            "expected Duplicate, got {err:?}",
         );
+
+        // Only the first row landed; the second was rejected.
+        let all = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(all.len(), 1);
+        assert_eq!(all[0].slug, a.slug);
     }
 
     #[test]

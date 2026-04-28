@@ -672,10 +672,7 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         ongoing_state,
     };
     match &outcome {
-        InsertOutcome::Inserted { slug } => {
-            // The stored slug may differ from entry.slug if a collision
-            // forced a suffixed retry — fetch the canonical row so the
-            // display reflects what actually hit the DB.
+        InsertOutcome::Inserted { slug, .. } => {
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
             show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
         }
@@ -687,7 +684,7 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
             show_update_with_context(&fresh, registry.as_ref(), &ctx, &output);
         }
-        InsertOutcome::Rekeyed { new_slug, old_slug } => {
+        InsertOutcome::Rekeyed { new_slug, old_slug, .. } => {
             show_rename(old_slug, new_slug, &output);
             if let Ok(fresh) = db.get_entry(new_slug) {
                 show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
@@ -4617,12 +4614,26 @@ mod tests {
 
     #[test]
     fn update_ambiguous_prefix_errors() {
-        use datum_core::db::Db;
+        use datum_core::{db::Db, entry::Entry, time::DatumTime};
         let db = Db::open_in_memory().unwrap();
-        // Two entries on the same field and same minute → identical slug
-        // timestamp, so the "gym:" prefix matches both.
-        seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
-        seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(2)), None);
+        // Two entries on the same field at distinct instants — both slugs
+        // start with `gym:`, so that prefix matches multiple rows.
+        let t0: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00.000Z".parse().unwrap();
+        let t1: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00.001Z".parse().unwrap();
+        for (t, v) in [(t0, 1), (t1, 2)] {
+            let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+            let e = Entry::new(
+                "gym",
+                Verb::Occur,
+                Some(serde_json::json!(v)),
+                None,
+                None,
+                Some(dt),
+                None,
+                "d1",
+            );
+            db.insert_entry(&e).unwrap();
+        }
         let err = update_from_args(
             update_args("gym:", vec!["note=x"]),
             UpdateStrategy::Replace,
