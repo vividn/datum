@@ -19,7 +19,7 @@ use anyhow::{Context, Result};
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
 use datum_core::conflicts::ListFilter;
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
-use datum_core::entry::{Entry, EntryShape};
+use datum_core::entry::{Entry, EntryShape, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_layout::dayview::{
     compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
@@ -327,18 +327,51 @@ fn build_day_fields(
     }
 
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
-    for (field, entries_for_field) in by_field {
+    for (field, mut entries_for_field) in by_field {
         let spec = db.load_spec(&field).ok().flatten();
         let mut blocks: Vec<DayviewBlock> = Vec::new();
         let mut points: Vec<DayviewPoint> = Vec::new();
 
-        for entry in &entries_for_field {
+        // Sort field entries by start_time so Switch entries can derive their
+        // region end from the next Switch on the same field.
+        entries_for_field.sort_by_key(|e| {
+            e.start_time
+                .as_ref()
+                .map(|t| t.utc.timestamp_millis())
+                .unwrap_or(i64::MIN)
+        });
+        let switch_region_ends =
+            switch_region_end_ms(&entries_for_field, day_end_ms);
+
+        for (idx, entry) in entries_for_field.iter().enumerate() {
             let Some(start_dt) = entry.start_time.as_ref() else {
                 continue;
             };
             let start_ms = start_dt.utc.timestamp_millis();
 
             match entry.entry_shape {
+                EntryShape::Point if entry.verb == Verb::Switch => {
+                    // Switch at time T starts a state region that runs until
+                    // the next Switch on the same field, or end of the day
+                    // window if none. Switches with null/false/IGNORED state
+                    // suppress rendering — they mark "state ended", not a new
+                    // colored region.
+                    let value = entry.value.as_ref();
+                    if is_unrendered_switch_value(value) {
+                        continue;
+                    }
+                    let end_ms = switch_region_ends[idx];
+                    if end_ms <= day_start_ms || start_ms >= day_end_ms {
+                        continue;
+                    }
+                    let fill = block_fill_for_value(value, &field, spec.as_ref());
+                    blocks.push(DayviewBlock {
+                        start_ms,
+                        end_ms,
+                        fill,
+                        state_label: state_label(value),
+                    });
+                }
                 EntryShape::Point => {
                     // Skip if outside the window — also handled by layout
                     // clip, but cheaper to short-circuit here.
@@ -473,6 +506,35 @@ fn is_ignored_or_false(v: &JsonValue) -> bool {
         || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
 }
 
+/// Switch values that should not produce a colored region. Mirrors original
+/// datum's `simplifyState === null || false` short-circuit in
+/// `fieldSvgBlocks.ts`: a switch to null / false / IGNORED ends a state but
+/// does not start a new one.
+fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
+    match v {
+        None | Some(JsonValue::Null) => true,
+        Some(v) => is_ignored_or_false(v),
+    }
+}
+
+/// For each entry, the UTC-ms end-time of its switch region (next Switch on
+/// the same field, or `fallback_end_ms` if it's the last). Non-switch entries
+/// get `fallback_end_ms` (the value is ignored — we only read it for Switch
+/// rows). Input must be sorted by start_time ascending.
+fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
+    let mut out = vec![fallback_end_ms; entries.len()];
+    let mut next_start_ms: Option<i64> = None;
+    for (i, entry) in entries.iter().enumerate().rev() {
+        if entry.verb == Verb::Switch && entry.entry_shape == EntryShape::Point {
+            out[i] = next_start_ms.unwrap_or(fallback_end_ms);
+            if let Some(t) = entry.start_time.as_ref() {
+                next_start_ms = Some(t.utc.timestamp_millis());
+            }
+        }
+    }
+    out
+}
+
 fn rgb_to_hex(rgb: Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
 }
@@ -550,5 +612,172 @@ mod tests {
             BlockFill::Single(c) => assert_eq!(c, rgb_to_hex(md5_rgb("mood"))),
             _ => panic!("expected single fill"),
         }
+    }
+
+    #[test]
+    fn unrendered_switch_value_skips_null_false_ignored() {
+        assert!(is_unrendered_switch_value(None));
+        assert!(is_unrendered_switch_value(Some(&JsonValue::Null)));
+        assert!(is_unrendered_switch_value(Some(&JsonValue::Bool(false))));
+        assert!(is_unrendered_switch_value(Some(&JsonValue::String(
+            IGNORED_STATE_VALUE.into()
+        ))));
+        assert!(!is_unrendered_switch_value(Some(&JsonValue::String(
+            "happy".into()
+        ))));
+        assert!(!is_unrendered_switch_value(Some(&JsonValue::Bool(true))));
+    }
+
+    #[test]
+    fn switch_region_end_ms_chains_consecutive_switches() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let mk = |hour: u32, value: &str| {
+            let utc = Utc.with_ymd_and_hms(2026, 4, 27, hour, 0, 0).unwrap();
+            let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+            Entry::new(
+                "mood",
+                Verb::Switch,
+                Some(JsonValue::String(value.into())),
+                None,
+                None,
+                Some(dt),
+                None,
+                "test",
+            )
+        };
+        let entries = vec![mk(8, "happy"), mk(12, "calm"), mk(16, "focus")];
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let ends = switch_region_end_ms(&entries, day_end);
+        assert_eq!(ends.len(), 3);
+        // First switch ends at second switch's start.
+        assert_eq!(
+            ends[0],
+            Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        );
+        // Second switch ends at third switch's start.
+        assert_eq!(
+            ends[1],
+            Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0)
+                .unwrap()
+                .timestamp_millis()
+        );
+        // Last switch falls back to day_end.
+        assert_eq!(ends[2], day_end);
+    }
+
+    #[test]
+    fn three_switches_render_as_three_regions_no_dots() {
+        // Bead da-7r4 acceptance: 3 Switch entries on the same field at 8am,
+        // 12pm, 4pm should render as 3 colored regions stacked end-to-end,
+        // not as 3 dots.
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        for (hour, state) in &[(8, "happy"), (12, "calm"), (16, "focus")] {
+            let utc = Utc.with_ymd_and_hms(2026, 4, 27, *hour, 0, 0).unwrap();
+            let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+            let e = Entry::new(
+                "mood",
+                Verb::Switch,
+                Some(JsonValue::String((*state).into())),
+                None,
+                None,
+                Some(dt),
+                None,
+                "test",
+            );
+            db.insert_entry(&e).unwrap();
+        }
+        // Sanity: read-back must surface verb=Switch (the SQL generated
+        // column is the source of truth at read-time).
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+
+        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        assert_eq!(fields.len(), 1);
+        let mood = &fields[0];
+        assert_eq!(mood.field, "mood");
+        // No dots — Switch entries become regions.
+        assert!(
+            mood.points.is_empty(),
+            "expected zero points, got {} (Switch should not render as dots)",
+            mood.points.len()
+        );
+        // Three regions, end-to-end.
+        assert_eq!(mood.blocks.len(), 3);
+        let t8 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap().timestamp_millis();
+        let t12 = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
+        let t16 = Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0).unwrap().timestamp_millis();
+        assert_eq!(mood.blocks[0].start_ms, t8);
+        assert_eq!(mood.blocks[0].end_ms, t12);
+        assert_eq!(mood.blocks[1].start_ms, t12);
+        assert_eq!(mood.blocks[1].end_ms, t16);
+        assert_eq!(mood.blocks[2].start_ms, t16);
+        assert_eq!(mood.blocks[2].end_ms, day_end);
+    }
+
+    #[test]
+    fn switch_to_false_skips_region_other_switches_still_render() {
+        // A switch to false ends a state but does not start a new colored
+        // region — matching original datum's `simplifyState === null|false`
+        // skip in fieldSvgBlocks.
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let mk = |hour: u32, value: JsonValue| {
+            let utc = Utc.with_ymd_and_hms(2026, 4, 27, hour, 0, 0).unwrap();
+            let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+            Entry::new(
+                "mood",
+                Verb::Switch,
+                Some(value),
+                None,
+                None,
+                Some(dt),
+                None,
+                "test",
+            )
+        };
+        for e in [
+            mk(8, JsonValue::String("happy".into())),
+            mk(12, JsonValue::Bool(false)),
+            mk(16, JsonValue::String("focus".into())),
+        ] {
+            db.insert_entry(&e).unwrap();
+        }
+        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
+        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+
+        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        assert_eq!(fields.len(), 1);
+        let mood = &fields[0];
+        // Two regions: 8-12 (happy) and 16-day_end (focus). The false-switch
+        // at 12 produces no region, just terminates the previous one.
+        assert_eq!(mood.blocks.len(), 2);
+        let t8 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap().timestamp_millis();
+        let t12 = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
+        let t16 = Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0).unwrap().timestamp_millis();
+        assert_eq!(mood.blocks[0].start_ms, t8);
+        assert_eq!(mood.blocks[0].end_ms, t12);
+        assert_eq!(mood.blocks[1].start_ms, t16);
+        assert_eq!(mood.blocks[1].end_ms, day_end);
     }
 }

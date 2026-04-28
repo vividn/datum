@@ -11,8 +11,8 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
-use datum_core::db::{Db, ListParams, TimeMetric};
-use datum_core::entry::{Entry, EntryShape};
+use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
+use datum_core::entry::{Entry, EntryShape, Verb};
 use datum_layout::nowview::{
     compute_nowview, default_width_for_history, NowviewBlock, NowviewConfig, NowviewField,
     NowviewPoint,
@@ -191,12 +191,23 @@ fn build_fields(
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
     for field in all_fields {
         let spec = db.load_spec(&field).ok().flatten();
-        let entries_for_field = by_field.remove(&field).unwrap_or_default();
+        let mut entries_for_field = by_field.remove(&field).unwrap_or_default();
 
         let mut blocks: Vec<NowviewBlock> = Vec::new();
         let mut points: Vec<NowviewPoint> = Vec::new();
 
-        for entry in &entries_for_field {
+        // Sort by start_time so Switch entries can derive their region end
+        // from the next Switch on the same field.
+        entries_for_field.sort_by_key(|e| {
+            e.start_time
+                .as_ref()
+                .map(|t| t.utc.timestamp_millis())
+                .unwrap_or(i64::MIN)
+        });
+        let now_ms = end.timestamp_millis();
+        let switch_region_ends = switch_region_end_ms(&entries_for_field, now_ms);
+
+        for (idx, entry) in entries_for_field.iter().enumerate() {
             // start_time present is required for visualization. Skip any
             // record (e.g. pure `add` notes) without one.
             let Some(start_dt) = entry.start_time.as_ref() else {
@@ -205,6 +216,27 @@ fn build_fields(
             let start_ms = start_dt.utc.timestamp_millis();
 
             match entry.entry_shape {
+                EntryShape::Point if entry.verb == Verb::Switch => {
+                    // Switch starts a state region that runs until the next
+                    // Switch on the same field, or until "now" if it's the
+                    // most recent.
+                    let value = entry.value.as_ref();
+                    if is_unrendered_switch_value(value) {
+                        continue;
+                    }
+                    let region_end_ms = switch_region_ends[idx];
+                    let color = match value {
+                        Some(v) => state_value_rgb(v, &field, spec.as_ref())
+                            .unwrap_or(md5_rgb(&field)),
+                        None => md5_rgb(&field),
+                    };
+                    blocks.push(NowviewBlock {
+                        start_ms,
+                        end_ms: region_end_ms,
+                        color: rgb_to_hex(color),
+                        state_label: state_label(value),
+                    });
+                }
                 EntryShape::Point => {
                     let fg = state_value_rgb(
                         entry.value.as_ref().unwrap_or(&JsonValue::Null),
@@ -278,6 +310,36 @@ fn build_fields(
 
 fn rgb_to_hex(rgb: Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
+}
+
+/// Switch values that should not produce a colored region. Mirrors original
+/// datum's `simplifyState === null || false` short-circuit: a switch to
+/// null/false/IGNORED ends a state but does not start a new colored region.
+fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
+    match v {
+        None | Some(JsonValue::Null) => true,
+        Some(JsonValue::Bool(false)) => true,
+        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
+        _ => false,
+    }
+}
+
+/// For each entry, the UTC-ms end-time of its switch region (next Switch on
+/// the same field, or `fallback_end_ms` if none). Non-Switch entries get
+/// `fallback_end_ms` (caller only reads the Switch positions). Input must be
+/// sorted by start_time ascending.
+fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
+    let mut out = vec![fallback_end_ms; entries.len()];
+    let mut next_start_ms: Option<i64> = None;
+    for (i, entry) in entries.iter().enumerate().rev() {
+        if entry.verb == Verb::Switch && entry.entry_shape == EntryShape::Point {
+            out[i] = next_start_ms.unwrap_or(fallback_end_ms);
+            if let Some(t) = entry.start_time.as_ref() {
+                next_start_ms = Some(t.utc.timestamp_millis());
+            }
+        }
+    }
+    out
 }
 
 fn state_label(v: Option<&JsonValue>) -> Option<String> {
