@@ -85,7 +85,7 @@ fn occur_with_dur_maps_to_block_and_derives_end_time() {
     // dur literal preserved as intent.
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra["dur"], serde_json::json!("PT30M"));
-    assert_eq!(extra["_imported_from"], serde_json::json!("datum-backup"));
+    assert_eq!(extra["_import"]["source"], serde_json::json!("datum-v2-couchdb"));
 }
 
 // ─── 3. switch (boolean state) → Point/Switch ────────────────────────
@@ -202,7 +202,13 @@ fn imported_rows_carry_sentinel_intent_fields() {
     assert_eq!(e.raw_input, "");
     assert!(e.alias_chain.is_none());
     let extra = e.data.as_ref().unwrap();
-    assert_eq!(extra["_imported_from"], serde_json::json!("datum-backup"));
+    let marker = &extra["_import"];
+    assert_eq!(marker["source"], serde_json::json!("datum-v2-couchdb"));
+    assert!(marker["backup_time"].is_string(), "backup_time must be present");
+    assert_eq!(
+        marker["original_id"],
+        serde_json::json!("brushteeth:2025-01-08T23:53:08.259Z"),
+    );
 }
 
 // ─── 7. Dry-run summary reports point/block split ────────────────────
@@ -267,12 +273,15 @@ fn import_3day_fixture_produces_blocks_and_points() {
 
     // Every imported row must carry the provenance marker.
     for e in &entries {
+        let marker = &e.data.as_ref().unwrap()["_import"];
         assert_eq!(
-            e.data.as_ref().unwrap()["_imported_from"],
-            serde_json::json!("datum-backup"),
-            "row {} missing _imported_from marker",
+            marker["source"],
+            serde_json::json!("datum-v2-couchdb"),
+            "row {} missing _import.source marker",
             e.slug,
         );
+        assert!(marker["backup_time"].is_string(), "row {} missing backup_time", e.slug);
+        assert!(marker["original_id"].is_string(), "row {} missing original_id", e.slug);
         assert_eq!(e.parser_version, 0);
     }
 }
@@ -296,4 +305,76 @@ fn second_import_is_idempotent_via_content_hash() {
     run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
     let n2 = db.all_entries().unwrap().len();
     assert_eq!(n1, n2, "re-importing same backup must be idempotent");
+}
+
+// ─── 10. create_time + modify_time + marker preserved (da-1el) ────────
+
+#[test]
+fn import_preserves_create_and_modify_times_and_marker() {
+    let db = fresh_db();
+    let create_iso = "2025-01-08T23:53:08.569Z";
+    let modify_iso = "2025-03-15T10:00:00.000Z";
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "brushteeth"
+        },
+        "meta": {
+            "humanId": "abc",
+            "createTime": {"utc": create_iso, "o": 1, "tz": "Europe/Berlin"},
+            "modifyTime": {"utc": modify_iso, "o": 1, "tz": "Europe/Berlin"}
+        }
+    }]));
+
+    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let e = &db.all_entries().unwrap()[0];
+    let expect_create: chrono::DateTime<chrono::Utc> = create_iso.parse().unwrap();
+    let expect_modify: chrono::DateTime<chrono::Utc> = modify_iso.parse().unwrap();
+    assert_eq!(e.create_time, expect_create, "create_time from meta.createTime");
+    assert_eq!(e.modify_time, expect_modify, "modify_time from meta.modifyTime");
+    assert_ne!(e.create_time, e.modify_time, "distinct source times must land distinctly");
+
+    let marker = &e.data.as_ref().unwrap()["_import"];
+    assert_eq!(marker["source"], serde_json::json!("datum-v2-couchdb"));
+    // backup_time comes from the backup file's `backupTime` field (set by
+    // write_backup to a fixed value), so it's stable across re-imports.
+    assert_eq!(
+        marker["backup_time"],
+        serde_json::json!("2025-02-02T12:26:32.488Z"),
+    );
+    assert_eq!(
+        marker["original_id"],
+        serde_json::json!("brushteeth:2025-01-08T23:53:08.259Z"),
+    );
+}
+
+// ─── 11. modify_time falls back to create_time when source omits it ───
+
+#[test]
+fn import_falls_back_to_create_time_when_modify_time_missing() {
+    let db = fresh_db();
+    let create_iso = "2025-01-08T23:53:08.569Z";
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "brushteeth"
+        },
+        "meta": {
+            "humanId": "abc",
+            "createTime": {"utc": create_iso, "o": 1, "tz": "Europe/Berlin"}
+        }
+    }]));
+
+    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let e = &db.all_entries().unwrap()[0];
+    let expect_create: chrono::DateTime<chrono::Utc> = create_iso.parse().unwrap();
+    assert_eq!(e.create_time, expect_create);
+    assert_eq!(
+        e.modify_time, expect_create,
+        "modify_time falls back to create_time, never to a fresh now()",
+    );
 }

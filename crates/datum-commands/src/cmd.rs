@@ -2897,6 +2897,12 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
     let mut blocks = 0usize;
     let mut dur_parse_warnings = 0usize;
     let mut entries: Vec<Entry> = Vec::with_capacity(docs.len());
+    // Stable provenance timestamp pulled from the backup file itself, not
+    // the wall clock at import time. Two imports of the same backup file
+    // produce the same _import marker → identical content_hash → dedup.
+    // Falls back to "" if the source omits backupTime; this still keeps
+    // idempotency (every re-import of that source uses "" too).
+    let backup_time = backup["backupTime"].as_str().unwrap_or("").to_string();
 
     for doc in docs {
         let data = &doc["data"];
@@ -2956,8 +2962,8 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
 
         // extra_data: preserve everything in `data` except the fields we
         // map onto first-class columns. `dur` and `lastState` are kept as
-        // intent (datum-compatible read-back); `_imported_from` marks the
-        // row's provenance for `--imported` queries later.
+        // intent (datum-compatible read-back); `_import` marks the row's
+        // provenance for `--imported` queries later.
         let mut extra = serde_json::Map::new();
         if let Some(obj) = data.as_object() {
             for (k, v) in obj {
@@ -2966,21 +2972,43 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
                 }
             }
         }
-        extra.insert(
-            "_imported_from".to_string(),
-            JsonValue::String("datum-backup".to_string()),
+        // The "_import" marker distinguishes this row's source. A future
+        // datum-v1 importer (bash + text documents) will set
+        // source: "datum-v1-shell". Keep this marker shape stable —
+        // downstream queries may filter on it.
+        let mut import_marker = serde_json::Map::new();
+        import_marker.insert(
+            "source".to_string(),
+            JsonValue::String("datum-v2-couchdb".to_string()),
         );
+        import_marker.insert(
+            "backup_time".to_string(),
+            JsonValue::String(backup_time.clone()),
+        );
+        if let Some(orig_id) = doc["_id"].as_str() {
+            import_marker.insert(
+                "original_id".to_string(),
+                JsonValue::String(orig_id.to_string()),
+            );
+        }
+        extra.insert("_import".to_string(), JsonValue::Object(import_marker));
         let extra_data = Some(JsonValue::Object(extra));
 
         let created_at = parse_datum_time(&meta["createTime"])
             .map(|t| t.utc)
             .unwrap_or_else(chrono::Utc::now);
+        // Prefer source modifyTime; fall back to createTime so imported rows
+        // never carry a fresh "now" stamp when the source had a time at all.
+        let modified_at = parse_datum_time(&meta["modifyTime"])
+            .map(|t| t.utc)
+            .unwrap_or(created_at);
 
         let mut entry = Entry::new(
             field, verb, value, extra_data, None,
             time_start, time_end, device.clone(),
         );
         entry.create_time = created_at;
+        entry.modify_time = modified_at;
         // Imported rows weren't produced by a real parse pass; sentinel 0
         // distinguishes them from `CURRENT_PARSER_VERSION` rows so a future
         // re-derive sweep can find and reprocess them.

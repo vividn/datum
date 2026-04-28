@@ -82,11 +82,11 @@ fn migrate_import_synthetic_locks_db_shape() {
         let extra = e
             .data
             .as_ref()
-            .expect("imported row should always have extra_data (at least _imported_from)");
+            .expect("imported row should always have extra_data (at least _import marker)");
         assert_eq!(
-            extra["_imported_from"],
-            serde_json::json!("datum-backup"),
-            "row {} missing _imported_from marker",
+            extra["_import"]["source"],
+            serde_json::json!("datum-v2-couchdb"),
+            "row {} missing _import.source marker",
             e.slug,
         );
         assert_eq!(
