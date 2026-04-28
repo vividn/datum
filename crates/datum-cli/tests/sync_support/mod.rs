@@ -219,8 +219,10 @@ impl StubRelay {
     #[allow(dead_code)]
     pub fn changeset_count(&self) -> usize {
         let conn = self.state.db.lock().unwrap();
-        conn.query_row("SELECT COUNT(*) FROM changesets", [], |row| row.get::<_, i64>(0))
-            .unwrap_or(0) as usize
+        conn.query_row("SELECT COUNT(*) FROM changesets", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .unwrap_or(0) as usize
     }
 
     /// How long since the relay started. Lets tests sanity-check that
@@ -229,6 +231,82 @@ impl StubRelay {
     pub fn uptime(&self) -> Duration {
         // Marker for parity with future debugging needs; not used yet.
         Instant::now().duration_since(Instant::now())
+    }
+
+    /// Stop the HTTP listener, leaving `state` (in-memory SQLite, users,
+    /// changesets, wrapped keys) intact. Tests that exercise the
+    /// "client points at a dead port" path call this to simulate a
+    /// network partition without losing server-side state.
+    #[allow(dead_code)]
+    pub fn stop_http(&mut self) {
+        if let Some(tx) = self.shutdown.take() {
+            let _ = tx.send(());
+        }
+        if let Some(h) = self.handle.take() {
+            let _ = h.join();
+        }
+    }
+
+    /// Bring the HTTP listener back up on a fresh port, reusing the same
+    /// `AppState`. Mirrors a real relay restart where the on-disk store
+    /// survives the process bounce. Updates `base_url` to the new port.
+    #[allow(dead_code)]
+    pub fn restart_http(&mut self) {
+        // Tear down the existing listener if it's still running.
+        self.stop_http();
+
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let (ready_tx, ready_rx) = std::sync::mpsc::channel::<String>();
+        let state_for_server = self.state.clone();
+
+        let handle = std::thread::Builder::new()
+            .name("datum-sync-test-server".into())
+            .spawn(move || {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .expect("build runtime");
+                rt.block_on(async move {
+                    let app = build_app(state_for_server);
+                    let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+                        .await
+                        .expect("bind");
+                    let addr = listener.local_addr().expect("local addr");
+                    ready_tx.send(format!("http://{addr}")).expect("ready");
+                    axum::serve(listener, app)
+                        .with_graceful_shutdown(async {
+                            let _ = shutdown_rx.await;
+                        })
+                        .await
+                        .expect("serve");
+                });
+            })
+            .expect("spawn server thread");
+
+        self.base_url = ready_rx.recv().expect("server ready");
+        self.shutdown = Some(shutdown_tx);
+        self.handle = Some(handle);
+    }
+
+    /// Iterate `(device_id, seq, raw_payload_b64)` for every changeset
+    /// the server has stored. Tests use this to assert ciphertext (no
+    /// plaintext field names leak) and to round-trip the AES-GCM seal.
+    #[allow(dead_code)]
+    pub fn dump_raw_changesets(&self) -> Vec<(String, i64, String)> {
+        let conn = self.state.db.lock().unwrap();
+        let mut stmt = conn
+            .prepare("SELECT device_id, seq, payload FROM changesets ORDER BY id")
+            .expect("prepare");
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((
+                    r.get::<_, String>(0)?,
+                    r.get::<_, i64>(1)?,
+                    r.get::<_, String>(2)?,
+                ))
+            })
+            .expect("query");
+        rows.filter_map(|r| r.ok()).collect()
     }
 }
 
