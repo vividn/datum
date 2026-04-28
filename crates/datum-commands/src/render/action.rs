@@ -17,7 +17,7 @@
 //! See `crates/datum-cli/tests/render_state_group.rs` for the worked
 //! examples encoded as fixtures.
 
-use chrono::{FixedOffset, Timelike, Utc};
+use chrono::{FixedOffset, Local, Timelike, Utc};
 use datum_core::{
     entry::{Entry, EntryShape, Verb},
     field_spec::{FieldSpec, SpecRegistry},
@@ -417,6 +417,16 @@ pub fn format_info_line_at(
         parts.push(format_timestamp(t, now));
     } else if let Some(t) = &entry.end_time {
         parts.push(format_timestamp(t, now));
+    } else {
+        // Hybrid fallback: row has no occur_time, so render create_time
+        // prefixed by a gray 'c' — same convention the table renderer
+        // applies via `format_gray_prefix("c", ...)` in the
+        // `time_hybrid` extractor (render/mod.rs).
+        let utc = entry.create_time;
+        let local = utc.with_timezone(&Local);
+        let offset_minutes = local.offset().local_minus_utc() / 60;
+        let synth = DatumTime { utc, offset_minutes, timezone: "Local".to_string() };
+        parts.push(format!("{}{}", paint(GRAY_FG, "c"), format_timestamp(&synth, now)));
     }
     parts.push(format_field_badge(
         &entry.field,

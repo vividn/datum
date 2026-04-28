@@ -60,6 +60,10 @@ fn entry_at(field: &str, verb: Verb, value: Option<serde_json::Value>, t: DatumT
     Entry::new(field, verb, value, None, None, Some(t), None, "test-device")
 }
 
+fn entry_no_time(field: &str, verb: Verb, value: Option<serde_json::Value>) -> Entry {
+    Entry::new(field, verb, value, None, None, None, None, "test-device")
+}
+
 #[test]
 fn tail_today_row_has_no_date_prefix() {
     let _g = no_color_scope();
@@ -153,4 +157,39 @@ fn tail_state_cell_for_start_uses_bg_slots() {
         "two IGNORED slots flank the state cell flush: {stripped:?}"
     );
     assert!(!stripped.contains("∅"), "no ∅ glyph in slots post-da-25l: {stripped:?}");
+}
+
+#[test]
+fn tail_row_with_occur_time_has_no_c_prefix() {
+    // ITEM B (da-7jl): rows with an occur_time render their timestamp
+    // bare, no creation prefix.
+    let _g = no_color_scope();
+    let now = dt(2026, 4, 22, 17, 0);
+    let e = entry_at("coffee", Verb::Occur, None, dt(2026, 4, 22, 9, 15));
+    let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
+    assert!(line.starts_with("09:15:00"), "occur row: bare time: {line:?}");
+    assert!(!line.starts_with('c'), "occur row must not be prefixed with 'c': {line:?}");
+}
+
+#[test]
+fn tail_row_without_occur_time_uses_create_time_with_gray_c_prefix() {
+    // ITEM B (da-7jl): when the row has neither start_time nor end_time,
+    // hybrid mode falls back to create_time prefixed by a gray 'c' so the
+    // time column is never empty. Mirrors the table renderer's
+    // `format_gray_prefix("c", ...)` path in render/mod.rs.
+    let _g = no_color_scope();
+    let now = dt(2026, 4, 22, 17, 0);
+    let mut e = entry_no_time("person", Verb::Add, Some(json!({"name": "john"})));
+    // Pin create_time deterministically to today so the relative-day
+    // prefix is suppressed and the row starts with the bare 'c' marker.
+    e.create_time = Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 0).unwrap();
+
+    let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
+    assert!(
+        line.starts_with('c'),
+        "no-occur-time row: must start with 'c' creation prefix: {line:?}"
+    );
+    // The body after 'c' is an HH:MM:SS stamp in the host's local zone;
+    // we only assert the prefix shape — exact local time depends on tz.
+    assert!(line.contains(":"), "stamp digits follow the 'c' prefix: {line:?}");
 }
