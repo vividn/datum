@@ -2058,16 +2058,20 @@ fn insert_entry_in_tx(
 /// Bulk-load fast path: dedup-by-content-hash + raw_insert only. Skips
 /// `history::record` and `conflicts::detect_for_entry` — see
 /// [`Db::insert_entries_bulk`] for the rationale.
+///
+/// Uses `prepare_cached` for the dedup SELECT so the bulk loop reuses one
+/// prepared statement rather than re-parsing SQL per row. The INSERT side
+/// (`try_insert`) is also cached.
 fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
-    let existing_slug: Option<String> = conn
-        .query_row(
+    let existing_slug: Option<String> = {
+        let mut stmt = conn.prepare_cached(
             "SELECT slug FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL
              LIMIT 1",
-            params![entry.content_hash],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
+        )?;
+        stmt.query_row(params![entry.content_hash], |row| row.get::<_, String>(0))
+            .optional()?
+    };
     match existing_slug {
         Some(slug) => Ok(InsertOutcome::Ignored { slug }),
         None => {
@@ -2107,7 +2111,7 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<String> {
 }
 
 pub(crate) fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
-    conn.execute(
+    let mut stmt = conn.prepare_cached(
         r#"INSERT INTO entries (
             hid, slug, content_hash, field, entry_shape, intent,
             value, data, unit,
@@ -2133,41 +2137,41 @@ pub(crate) fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry
             ?29, ?30, ?31,
             ?32
         )"#,
-        params![
-            hid,
-            slug,
-            entry.content_hash,
-            entry.field,
-            entry.entry_shape.to_string(),
-            entry.intent,
-            entry.value.as_ref().map(|v| v.to_string()),
-            entry.data.as_ref().map(|v| v.to_string()),
-            entry.unit,
-            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.start_time.as_ref().map(|t| t.offset_minutes),
-            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.start_time_precision,
-            entry.start_time_precision_unit.to_string(),
-            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.end_time.as_ref().map(|t| t.offset_minutes),
-            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.end_time_precision,
-            entry.end_time_precision_unit.to_string(),
-            entry.lat,
-            entry.lon,
-            entry.location.as_deref(),
-            entry.create_time.to_rfc3339(),
-            entry.modify_time.to_rfc3339(),
-            entry.device_id,
-            entry.deleted_at.map(|t| t.to_rfc3339()),
-            entry.id_structure.as_deref(),
-            entry.field_structure.as_deref(),
-            entry.raw_input,
-            entry.alias_chain.as_ref().map(|v| v.to_string()),
-            entry.parser_version,
-            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
-        ],
     )?;
+    stmt.execute(params![
+        hid,
+        slug,
+        entry.content_hash,
+        entry.field,
+        entry.entry_shape.to_string(),
+        entry.intent,
+        entry.value.as_ref().map(|v| v.to_string()),
+        entry.data.as_ref().map(|v| v.to_string()),
+        entry.unit,
+        entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        entry.start_time.as_ref().map(|t| t.offset_minutes),
+        entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+        entry.start_time_precision,
+        entry.start_time_precision_unit.to_string(),
+        entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        entry.end_time.as_ref().map(|t| t.offset_minutes),
+        entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+        entry.end_time_precision,
+        entry.end_time_precision_unit.to_string(),
+        entry.lat,
+        entry.lon,
+        entry.location.as_deref(),
+        entry.create_time.to_rfc3339(),
+        entry.modify_time.to_rfc3339(),
+        entry.device_id,
+        entry.deleted_at.map(|t| t.to_rfc3339()),
+        entry.id_structure.as_deref(),
+        entry.field_structure.as_deref(),
+        entry.raw_input,
+        entry.alias_chain.as_ref().map(|v| v.to_string()),
+        entry.parser_version,
+        entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+    ])?;
     Ok(())
 }
 
