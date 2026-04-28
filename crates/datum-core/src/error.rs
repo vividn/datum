@@ -46,6 +46,20 @@ pub enum DatumError {
     #[error("Cryptographic error: {0}")]
     Crypto(String),
 
+    /// `_LAST_WITH_PROTECTION` resolved against a stale pointer. The
+    /// caller can re-issue with `_LAST` to bypass the time guard, or
+    /// touch a document first to refresh the pointer.
+    #[error(
+        "Last docs were last touched more than {minutes} minutes ago. \
+         Use '_LAST' to bypass the protection window, or touch a document first."
+    )]
+    LastDocsTooOld { minutes: i64 },
+
+    /// `_LAST` / `_LAST_WITH_PROTECTION` was used but no command has
+    /// stamped the pointer yet.
+    #[error("No previous documents to refer to — touch a document first")]
+    NoLastDocsRef,
+
     #[error("{0}")]
     Other(String),
 }

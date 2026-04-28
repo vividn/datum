@@ -10,6 +10,7 @@ pub mod views;
 pub mod migrations;
 pub mod history;
 pub mod conflicts;
+pub mod last_docs;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;

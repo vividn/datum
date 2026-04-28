@@ -336,7 +336,9 @@ impl TailArgs {
 
 #[derive(Debug)]
 pub struct GetArgs {
-    pub id_or_slug: String,
+    /// Optional. When omitted, callers default to the `_LAST` quickId
+    /// token (resolves against the last-accessed pointer).
+    pub id_or_slug: Option<String>,
     pub pretty: bool,
     pub output_flags: OutputFlags,
 }
@@ -344,7 +346,16 @@ pub struct GetArgs {
 impl GetArgs {
     pub fn fresh(id_or_slug: impl Into<String>) -> Self {
         Self {
-            id_or_slug: id_or_slug.into(),
+            id_or_slug: Some(id_or_slug.into()),
+            pretty: false,
+            output_flags: OutputFlags::fresh(),
+        }
+    }
+
+    /// Constructor for the bare `datum get` form (no positional).
+    pub fn fresh_default() -> Self {
+        Self {
+            id_or_slug: None,
             pretty: false,
             output_flags: OutputFlags::fresh(),
         }
@@ -355,7 +366,10 @@ impl GetArgs {
 
 #[derive(Debug)]
 pub struct UpdateArgs {
-    pub id_or_slug: String,
+    /// Optional. When omitted, callers default to the
+    /// `_LAST_WITH_PROTECTION` quickId token (resolves against the
+    /// last-accessed pointer, refusing if it's > 15 min stale).
+    pub id_or_slug: Option<String>,
     pub rest: Vec<String>,
     pub strategy: Option<ConflictStrategyArg>,
     pub id: Option<String>,
@@ -370,7 +384,23 @@ pub struct UpdateArgs {
 impl UpdateArgs {
     pub fn fresh(id_or_slug: impl Into<String>) -> Self {
         Self {
-            id_or_slug: id_or_slug.into(),
+            id_or_slug: Some(id_or_slug.into()),
+            rest: Vec::new(),
+            strategy: None,
+            id: None,
+            id_delimiter: ":".to_string(),
+            keys: Vec::new(),
+            comment: None,
+            dry_run: false,
+            strict: false,
+            output_flags: OutputFlags::fresh(),
+        }
+    }
+
+    /// Constructor for the bare `datum update` form (no positional).
+    pub fn fresh_default() -> Self {
+        Self {
+            id_or_slug: None,
             rest: Vec::new(),
             strategy: None,
             id: None,
@@ -402,11 +432,36 @@ pub struct EditArgs {
 
 #[derive(Debug)]
 pub struct DeleteArgs {
-    pub id_or_slug: String,
+    /// Optional. When omitted, callers default to the
+    /// `_LAST_WITH_PROTECTION` quickId token (resolves against the
+    /// last-accessed pointer, refusing if it's > 15 min stale).
+    pub id_or_slug: Option<String>,
     pub force: bool,
     pub dry_run: bool,
     pub strict: bool,
     pub output_flags: OutputFlags,
+}
+
+impl DeleteArgs {
+    pub fn fresh(id_or_slug: impl Into<String>) -> Self {
+        Self {
+            id_or_slug: Some(id_or_slug.into()),
+            force: false,
+            dry_run: false,
+            strict: false,
+            output_flags: OutputFlags::fresh(),
+        }
+    }
+
+    pub fn fresh_default() -> Self {
+        Self {
+            id_or_slug: None,
+            force: false,
+            dry_run: false,
+            strict: false,
+            output_flags: OutputFlags::fresh(),
+        }
+    }
 }
 
 #[derive(Debug)]

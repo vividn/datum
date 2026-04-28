@@ -698,6 +698,22 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
             }
         }
     }
+
+    // Stamp the last-accessed pointer at the affected entry's hid so a
+    // follow-up bare `get` / `delete` / `update` can target it. Failure
+    // to write the pointer must not fail the user-visible insert.
+    if let Some(slug) = match &outcome {
+        InsertOutcome::Inserted { slug, .. }
+        | InsertOutcome::Updated { slug }
+        | InsertOutcome::Merged { slug }
+        | InsertOutcome::Ignored { slug } => Some(slug.as_str()),
+        InsertOutcome::Rekeyed { new_slug, .. } => Some(new_slug.as_str()),
+    } {
+        if let Ok(fresh) = db.get_entry(slug) {
+            let _ = datum_core::last_docs::set_last_docs(db, &[fresh.hid]);
+        }
+    }
+
     Ok(())
 }
 
@@ -1937,15 +1953,42 @@ pub(crate) fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry>
 }
 
 pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
-    let entry = resolve_quickid_single(db, &args.id_or_slug)
-        .map_err(anyhow::Error::from)?;
-    if args.pretty {
-        print_entry_pretty(&entry)?;
-        return Ok(());
+    // Bare `datum get` (no positional) defaults to `_LAST` — resolve
+    // against the last-accessed pointer with no time guard. The pointer
+    // may name multiple hids when the previous command was a batch
+    // insert/update; expand to all of them.
+    let pattern = args
+        .id_or_slug
+        .as_deref()
+        .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
+
+    let entries = resolve_quickid(db, pattern).map_err(anyhow::Error::from)?;
+    if entries.is_empty() {
+        return Err(anyhow::Error::from(
+            datum_core::error::DatumError::NotFound(pattern.to_string()),
+        ));
     }
+
     let registry = load_registry(db).ok();
     let output = args.output();
-    crate::render::show_action(&entry, crate::render::Action::Exists, registry.as_ref(), &output);
+    for entry in &entries {
+        if args.pretty {
+            print_entry_pretty(entry)?;
+        } else {
+            crate::render::show_action(
+                entry,
+                crate::render::Action::Exists,
+                registry.as_ref(),
+                &output,
+            );
+        }
+    }
+
+    // Stamp the pointer at the resolved hids so a follow-up bare command
+    // sees the same set. Read-only browsing commands (tail, head, grep)
+    // do NOT touch the pointer.
+    let hids: Vec<String> = entries.iter().map(|e| e.hid.clone()).collect();
+    let _ = datum_core::last_docs::set_last_docs(db, &hids);
     Ok(())
 }
 
@@ -2018,7 +2061,13 @@ pub(crate) fn resolve_batch(
 pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
     let output = args.output();
-    let (entries, token_errors) = resolve_batch(db, &args.id_or_slug, BatchMode::Live);
+    // Bare `datum delete` defaults to `_LAST_WITH_PROTECTION` —
+    // refuses if the last-accessed pointer is > 15 minutes stale.
+    let pattern = args
+        .id_or_slug
+        .as_deref()
+        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
+    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
 
     // Nothing resolved — propagate the first token error verbatim so single-token
     // NotFound / AmbiguousPrefix surfaces unchanged in the common case.
@@ -2076,9 +2125,13 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     }
 
     let mut first_err: Option<anyhow::Error> = None;
+    let mut deleted_hids: Vec<String> = Vec::new();
     for entry in &entries {
         match db.soft_delete_entry(&entry.slug) {
-            Ok(()) => show_delete(entry, registry.as_ref(), &output),
+            Ok(()) => {
+                show_delete(entry, registry.as_ref(), &output);
+                deleted_hids.push(entry.hid.clone());
+            }
             Err(e) => {
                 let msg = format!("{}: {}", entry.slug, e);
                 if args.strict {
@@ -2094,6 +2147,12 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
         let msg = format!("{tok}: {err}");
         eprintln!("{msg}");
         first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
+    }
+
+    // Pointer keeps the deleted hids so `undo` (with no arg) can
+    // restore them. Skipped if nothing actually got deleted.
+    if !deleted_hids.is_empty() {
+        let _ = datum_core::last_docs::set_last_docs(db, &deleted_hids);
     }
 
     match first_err {
@@ -2316,6 +2375,69 @@ fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
     anyhow::bail!("expected YYYY-MM-DD or RFC3339, got '{s}'")
 }
 
+/// Bare `undo` path: revert each hid named by the last-docs pointer.
+/// Tombstoned hids are restored (history-revert preferred, undelete as
+/// fallback); live hids fall back to history (undoing the most recent
+/// non-delete change). The pointer itself is rewritten to the restored
+/// hids so `_LAST` keeps tracking the user's "current" set.
+fn undo_via_last_docs(
+    db: &Db,
+    hids: &[String],
+    registry: &Option<datum_core::field_spec::SpecRegistry>,
+    output: &crate::render::OutputArgs,
+) -> Result<()> {
+    if hids.is_empty() {
+        anyhow::bail!("Last-docs pointer is empty — nothing to undo");
+    }
+    let mut restored_hids: Vec<String> = Vec::new();
+    let mut first_err: Option<anyhow::Error> = None;
+    for hid in hids {
+        let current = match resolve_prefix_or_tombstone(db, hid) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("undo {hid}: {e}");
+                first_err.get_or_insert(e);
+                continue;
+            }
+        };
+        let latest = datum_core::history::latest_version(db.conn(), &current.hid)
+            .map_err(anyhow::Error::from)?;
+        let restored: Result<datum_core::entry::Entry> = match latest {
+            Some(n) if n >= 2 => db
+                .revert_entry_to(&current.hid, n - 1)
+                .map_err(anyhow::Error::from),
+            _ => {
+                if current.deleted_at.is_some() {
+                    db.undelete(&current.slug).map_err(anyhow::Error::from)?;
+                    db.get_entry(&current.slug).map_err(anyhow::Error::from)
+                } else {
+                    Err(anyhow::anyhow!(
+                        "Nothing to undo for {} — no prior version recorded",
+                        current.slug,
+                    ))
+                }
+            }
+        };
+        match restored {
+            Ok(entry) => {
+                restored_hids.push(entry.hid.clone());
+                show_create(&entry, registry.as_ref(), output);
+            }
+            Err(e) => {
+                eprintln!("undo {hid}: {e}");
+                first_err.get_or_insert(e);
+            }
+        }
+    }
+    if !restored_hids.is_empty() {
+        let _ = datum_core::last_docs::set_last_docs(db, &restored_hids);
+    }
+    match first_err {
+        Some(e) if restored_hids.is_empty() => Err(e),
+        _ => Ok(()),
+    }
+}
+
 pub(crate) fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
     let registry = load_registry(db).ok();
 
@@ -2357,6 +2479,32 @@ pub(crate) fn cmd_undo(args: UndoArgs, db: &Db) -> Result<()> {
     } else {
         if args.to_version.is_some() {
             anyhow::bail!("--to-version requires an <id_or_slug> to target");
+        }
+
+        // Bare `undo` defaults to `_LAST_WITH_PROTECTION` (matches datum):
+        // revert whatever the last command targeted, refusing if the
+        // pointer is older than the protection window. `--force` skips
+        // the pointer entirely and falls through to the legacy
+        // most-recent-tombstone path so existing scripts keep working.
+        if !args.force {
+            match datum_core::last_docs::get_last_docs(db) {
+                Ok(Some(reference))
+                    if datum_core::last_docs::within_protection_window(
+                        reference.time,
+                        Utc::now(),
+                    ) =>
+                {
+                    return undo_via_last_docs(db, &reference.hids, &registry, &args.output());
+                }
+                Ok(Some(_)) => {
+                    // Pointer exists but is stale — fall through to the
+                    // window-based fallback so legacy `undo --window` and
+                    // bare-undo against ancient tombstones still works.
+                }
+                Ok(None) | Err(_) => {
+                    // No pointer (fresh DB or pre-da-e65 schema) — fall through.
+                }
+            }
         }
 
         let window = parse_duration(&args.window)
@@ -4445,7 +4593,7 @@ mod tests {
 
     fn update_args(id: &str, rest: Vec<&str>) -> UpdateArgs {
         UpdateArgs {
-            id_or_slug: id.to_string(),
+            id_or_slug: Some(id.to_string()),
             rest: rest.into_iter().map(String::from).collect(),
             strategy: None,
             id: None,
@@ -5104,7 +5252,7 @@ mod tests {
 
         cmd_delete(
             DeleteArgs {
-                id_or_slug: id.clone(),
+                id_or_slug: Some(id.clone()),
                 force: true,
                 dry_run: false,
                 strict: false,
@@ -6058,5 +6206,196 @@ mod tests {
         assert_eq!(dst.count_entries().unwrap(), 0);
 
         std::fs::remove_file(&path).ok();
+    }
+
+    // ─── da-e65: _LAST / _LAST_WITH_PROTECTION default targeting ─────────────
+    //
+    // Acceptance from the bead: bare get/delete/update/undo target the last
+    // entry the user touched, with a 15-minute protection window for the
+    // destructive variants. Read-only browsing (tail/head/grep) does NOT
+    // bump the pointer.
+
+    /// Bare `get` after `coffee=2` returns the just-inserted coffee entry.
+    /// (Acceptance #1.)
+    #[test]
+    fn last_docs_bare_get_returns_most_recent_insert() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        log_entry(Verb::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        let inserted = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
+
+        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+
+        let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
+        assert_eq!(pointer.hids.len(), 1);
+        // Pointer hid resolves to the same entry the get rendered.
+        let resolved = datum_core::ids::resolve_quickid_single(
+            &db,
+            &pointer.hids[0],
+        )
+        .unwrap();
+        assert_eq!(resolved.slug, inserted);
+    }
+
+    /// Bare `delete --force` deletes the just-inserted coffee entry without
+    /// prompting. (Acceptance #3 — the prompt path is interactive and not
+    /// covered here.)
+    #[test]
+    fn last_docs_bare_delete_force_removes_most_recent_insert() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        log_entry(Verb::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
+
+        cmd_delete(
+            DeleteArgs {
+                id_or_slug: None,
+                force: true,
+                dry_run: false,
+                strict: false,
+                output_flags: Default::default(),
+            },
+            &db,
+        )
+        .unwrap();
+        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
+    }
+
+    /// `_LAST_WITH_PROTECTION` refuses to resolve when the pointer is older
+    /// than the 15-minute window. The error mentions the bypass token so
+    /// the user knows what to do.
+    #[test]
+    fn last_docs_protection_window_rejects_stale_pointer() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        // Stamp the pointer with a timestamp from yesterday by hand-rolling
+        // the row — `set_last_docs` always writes "now".
+        let stale = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        db.conn()
+            .execute(
+                "INSERT INTO last_docs (id, hids, time) VALUES (1, ?1, ?2)",
+                rusqlite::params!["[\"abcdef012345\"]", stale],
+            )
+            .unwrap();
+
+        let err = cmd_delete(
+            DeleteArgs {
+                id_or_slug: None,
+                force: true,
+                dry_run: false,
+                strict: false,
+                output_flags: Default::default(),
+            },
+            &db,
+        )
+        .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("more than") && msg.contains("_LAST"),
+            "stale-pointer error should explain the bypass: {msg}"
+        );
+    }
+
+    /// `_LAST` (no protection) resolves regardless of staleness — and bare
+    /// `get` defaults to it.
+    #[test]
+    fn last_docs_plain_last_ignores_window() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let entry = make_entry_at("mood", 100, "d1");
+        let hid = entry.hid.clone();
+        db.insert_entry(&entry).unwrap();
+
+        // Stamp pointer at the entry but rewrite the time to be ancient.
+        let stale = (chrono::Utc::now() - chrono::Duration::days(2)).to_rfc3339();
+        db.conn()
+            .execute(
+                "INSERT INTO last_docs (id, hids, time) VALUES (1, ?1, ?2)",
+                rusqlite::params![format!("[\"{hid}\"]"), stale],
+            )
+            .unwrap();
+
+        // get is non-destructive → defaults to _LAST → no protection check.
+        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+    }
+
+    /// Bare `get` against a fresh DB (no pointer ever set) errors with a
+    /// "no previous documents" message rather than panicking.
+    #[test]
+    fn last_docs_bare_get_on_fresh_db_errors_clearly() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let err = cmd_get(GetArgs::fresh_default(), &db).unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("No previous documents") || msg.contains("touch a document"),
+            "fresh-DB get should surface NoLastDocsRef: {msg}"
+        );
+    }
+
+    /// Read-only browsing commands (tail in particular) do NOT bump the
+    /// pointer — only commands that target a specific entry do.
+    #[test]
+    fn last_docs_tail_does_not_update_pointer() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
+
+        cmd_tail(head_args(Some("mood"), Some(10)), &db).unwrap();
+
+        // Pointer must still be untouched after a pure browse.
+        assert!(datum_core::last_docs::get_last_docs(&db).unwrap().is_none());
+    }
+
+    /// When the pointer holds multiple hids (a future multi-insert batch
+    /// or a comma-separated update), bare `get` resolves to all of them.
+    /// Acceptance #4: after `dm coffee=2,coffee=3` the pointer holds two
+    /// hids and a bare `dm get` returns both.
+    #[test]
+    fn last_docs_bare_get_returns_full_batch() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let a = make_entry_at("coffee", 100, "d1");
+        let b = make_entry_at("coffee", 200, "d1");
+        let (a_hid, b_hid) = (a.hid.clone(), b.hid.clone());
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+        // Simulate a batch insert by stamping both hids in the pointer.
+        datum_core::last_docs::set_last_docs(&db, &[a_hid.clone(), b_hid.clone()]).unwrap();
+
+        // Bare `get` resolves _LAST → both entries are returned and
+        // re-stamped onto the pointer (idempotent).
+        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+        let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
+        let got: std::collections::HashSet<String> = pointer.hids.into_iter().collect();
+        assert_eq!(
+            got,
+            std::collections::HashSet::from([a_hid, b_hid]),
+            "bare get must surface every hid in the pointer"
+        );
+    }
+
+    /// Update through the batch path stamps the pointer so a follow-up
+    /// bare `get` reflects the just-mutated row.
+    #[test]
+    fn last_docs_update_stamps_pointer_for_followup_get() {
+        use crate::commands::update_core::{update_batch_from_args, UpdateStrategy};
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        log_entry(Verb::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        let slug = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
+
+        // Mutate via the explicit-id path; the batch should write the pointer.
+        update_batch_from_args(
+            update_args(&slug, vec!["3"]),
+            UpdateStrategy::Replace,
+            &db,
+        )
+        .unwrap();
+
+        let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
+        assert_eq!(pointer.hids.len(), 1);
+        cmd_get(GetArgs::fresh_default(), &db).unwrap();
     }
 }

@@ -32,11 +32,22 @@
 //! fallback for commands like `undo` / `history` stays in the command
 //! layer's wrapper.
 
+use chrono::Utc;
 use rusqlite::{params, OptionalExtension};
 
 use crate::db::{row_to_entry_public, Db};
 use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
+use crate::last_docs::{
+    get_last_docs, within_protection_window, PROTECTION_WINDOW_MINUTES,
+};
+
+/// `_LAST` — resolves to whatever hids the last-accessed pointer holds,
+/// no time guard.
+pub const LAST_TOKEN: &str = "_LAST";
+/// `_LAST_WITH_PROTECTION` — same as `_LAST`, but refuses if the
+/// pointer is older than [`PROTECTION_WINDOW_MINUTES`].
+pub const LAST_WITH_PROTECTION_TOKEN: &str = "_LAST_WITH_PROTECTION";
 
 /// Maximum number of candidates surfaced on an ambiguous resolution.
 const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
@@ -54,6 +65,30 @@ const AMBIGUOUS_CANDIDATE_CAP: usize = 16;
 /// [`resolve_quickid_single`] instead — it converts the 0/>1 cases into
 /// the appropriate [`DatumError`] variants.
 pub fn resolve_quickid(db: &Db, pattern: &str) -> Result<Vec<Entry>> {
+    // `_LAST` / `_LAST_WITH_PROTECTION` — expand to the last-accessed
+    // pointer's hids. Tombstoned hids are silently dropped so the
+    // resolver stays live-only; a follow-up `undo` can target them by
+    // explicit hid/slug if needed.
+    if pattern == LAST_TOKEN || pattern == LAST_WITH_PROTECTION_TOKEN {
+        let Some(reference) = get_last_docs(db)? else {
+            return Err(DatumError::NoLastDocsRef);
+        };
+        if pattern == LAST_WITH_PROTECTION_TOKEN
+            && !within_protection_window(reference.time, Utc::now())
+        {
+            return Err(DatumError::LastDocsTooOld {
+                minutes: PROTECTION_WINDOW_MINUTES,
+            });
+        }
+        let mut out = Vec::with_capacity(reference.hids.len());
+        for hid in &reference.hids {
+            if let Some(entry) = exact_live_match(db, hid)? {
+                out.push(entry);
+            }
+        }
+        return Ok(out);
+    }
+
     // Bare `_` — the most recent live entry across every field.
     if pattern == "_" {
         return Ok(last_live_entry(db)?.into_iter().collect());

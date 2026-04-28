@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 10;
+pub const CURRENT_SCHEMA_VERSION: u32 = 11;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -89,7 +89,26 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries_hybrid_time: expression index on COALESCE(start_time, modify_time) for bare-time tail/head (da-7iu)",
         apply: m9_to_10_hybrid_time_index,
     },
+    Migration {
+        from: 10,
+        to: 11,
+        summary: "last_docs: singleton pointer to the hids of the most-recently-accessed batch (da-e65)",
+        apply: m10_to_11_last_docs,
+    },
 ];
+
+fn m10_to_11_last_docs(conn: &Connection) -> Result<()> {
+    // da-e65: backs the `_LAST` / `_LAST_WITH_PROTECTION` quickId tokens.
+    // Single row keyed on a constant id; hids stored as a JSON array.
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS last_docs (
+             id    INTEGER NOT NULL PRIMARY KEY,
+             hids  TEXT NOT NULL,
+             time  TEXT NOT NULL
+         );",
+    )?;
+    Ok(())
+}
 
 fn m9_to_10_hybrid_time_index(conn: &Connection) -> Result<()> {
     // da-7iu: bare-time `tail`/`head` (no `--field`) orders by the default

@@ -225,6 +225,15 @@ CREATE INDEX IF NOT EXISTS sync_conflicts_slug ON sync_conflicts(entry_slug);
 CREATE INDEX IF NOT EXISTS sync_conflicts_pending
     ON sync_conflicts(detected_at) WHERE resolution IS NULL;
 
+-- Singleton pointer to the hids of the most-recently-accessed batch.
+-- Backs the `_LAST` / `_LAST_WITH_PROTECTION` quickId tokens. See
+-- `last_docs.rs` for read/write semantics.
+CREATE TABLE IF NOT EXISTS last_docs (
+    id    INTEGER NOT NULL PRIMARY KEY,
+    hids  TEXT NOT NULL,
+    time  TEXT NOT NULL
+);
+
 -- Schema version and other key/value metadata.
 CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
@@ -233,4 +242,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '10');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '11');

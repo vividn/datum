@@ -132,9 +132,14 @@ pub fn update_from_args(
     let (payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
     let output = args.output();
 
+    let pattern = args
+        .id_or_slug
+        .as_deref()
+        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
+
     let outcome = update_with_strategy(
         UpdateRequest {
-            id_or_slug: &args.id_or_slug,
+            id_or_slug: pattern,
             payload_value,
             payload_extra,
             strategy,
@@ -171,9 +176,13 @@ pub fn update_batch_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
+    let pattern = args
+        .id_or_slug
+        .as_deref()
+        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
     let (entries, token_errors) = crate::cmd::resolve_batch(
         db,
-        &args.id_or_slug,
+        pattern,
         crate::cmd::BatchMode::LiveOrTombstone,
     );
 
@@ -230,6 +239,7 @@ pub fn update_batch_from_args(
     }
 
     let mut first_err: Option<anyhow::Error> = None;
+    let mut touched_hids: Vec<String> = Vec::new();
     for existing in entries {
         if existing.deleted_at.is_some() {
             let msg = format!(
@@ -258,7 +268,10 @@ pub fn update_batch_from_args(
         );
 
         match result {
-            Ok(outcome) => render_outcome(&outcome, &output, db),
+            Ok(outcome) => {
+                touched_hids.push(outcome.entry.hid.clone());
+                render_outcome(&outcome, &output, db);
+            }
             Err(e) => {
                 if args.strict {
                     return Err(e);
@@ -273,6 +286,10 @@ pub fn update_batch_from_args(
         let msg = format!("{tok}: {err}");
         eprintln!("{msg}");
         first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
+    }
+
+    if !touched_hids.is_empty() {
+        let _ = datum_core::last_docs::set_last_docs(db, &touched_hids);
     }
 
     match first_err {
@@ -454,7 +471,7 @@ mod tests {
 
     fn update_args(id: &str, rest: Vec<&str>) -> UpdateArgs {
         UpdateArgs {
-            id_or_slug: id.to_string(),
+            id_or_slug: Some(id.to_string()),
             rest: rest.into_iter().map(String::from).collect(),
             strategy: None,
             id: None,

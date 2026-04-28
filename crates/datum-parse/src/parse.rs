@@ -706,19 +706,13 @@ fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
         }
         i += 1;
     }
-    let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
+    let id_or_slug = pos.first().map(|s| s.to_string());
     Ok(GetArgs { id_or_slug, pretty, output_flags })
 }
 
 fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
     let mut pos: Vec<&str> = Vec::new();
-    let mut out = DeleteArgs {
-        id_or_slug: String::new(),
-        force: false,
-        dry_run: false,
-        strict: false,
-        output_flags: OutputFlags::fresh(),
-    };
+    let mut out = DeleteArgs::fresh_default();
     let mut i = 0;
     while i < tail.len() {
         let tok = tail[i];
@@ -734,7 +728,7 @@ fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    out.id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
+    out.id_or_slug = pos.first().map(|s| s.to_string());
     Ok(out)
 }
 
@@ -849,7 +843,7 @@ fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
 }
 
 fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
-    let mut out = UpdateArgs::fresh(String::new());
+    let mut out = UpdateArgs::fresh_default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
@@ -911,10 +905,7 @@ fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
         }
     }
     let mut it = pos.into_iter();
-    out.id_or_slug = it
-        .next()
-        .ok_or_else(|| ParseError::InvalidArg("missing required positional: <ID_OR_SLUG>".into()))?
-        .to_string();
+    out.id_or_slug = it.next().map(|s| s.to_string());
     out.rest = it.map(|s| s.to_string()).collect();
     Ok(out)
 }
@@ -2202,7 +2193,7 @@ mod tests {
         let cli = parse_argv(&argv(&["del", "some:id", "--force"])).unwrap();
         match cli.command {
             Command::Delete(a) => {
-                assert_eq!(a.id_or_slug, "some:id");
+                assert_eq!(a.id_or_slug.as_deref(), Some("some:id"));
                 assert!(a.force);
             }
             _ => panic!(),
