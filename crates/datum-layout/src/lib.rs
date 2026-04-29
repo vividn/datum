@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 //! Pure layout for daydumb's dayview.
 //!
 //! `layout_day` takes a slice of [`LayoutEntry`] (simple POD) plus a

@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 //! datum commands — the command layer between argv parsing (in `datum-cli`
 //! via `datum-parse`) and the core data model (`datum-core`).
 //!

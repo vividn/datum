@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 //! `datum-sync-client` — the client-side library behind `datum sync` and the
 //! forthcoming `datum-sync-agent` daemon. It owns the wire protocol types,
 //! the on-device crypto, and the HTTP client; it does NOT own the relay

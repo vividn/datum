@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 //! `datum-sync-agent` — background daemon that wraps `datum-sync-client` to
 //! push-on-write and pull on a periodic interval without requiring the CLI
 //! to be open.

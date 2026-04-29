@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 //! datum-sync-server — relay library + binary.
 //!
 //! All HTTP routes live under the `/v1` version prefix per

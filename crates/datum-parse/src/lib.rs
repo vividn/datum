@@ -1,3 +1,5 @@
+#![doc = include_str!("../README.md")]
+
 //! datum-parse — pure-Rust parsing primitives for the datum CLI.
 //!
 //! This crate owns:
