@@ -360,15 +360,16 @@ underline on future.
 
 - **Daydumb today:** the relative-day prefix lives in
   `datum_commands::render::action::format_relative_day_prefix`
-  (single source of truth, da-n1q). Both `format_timestamp`
-  (info-line renderer) and `format_human_time` (table renderer)
-  delegate to it, so `datum tail`, `datum now`'s last-seen column,
-  and the write-action info line all share the same `-2d` / `+1d` /
-  ISO-date logic. Rendering is in the row's own timezone (so "today"
-  follows the row's local calendar). Future-time underline ships in
-  the new renderer (da-vkj). The `human_time.rs` stub in
-  `datum-parse/src/time/` is a misleading leftover — flagged for
-  cleanup in the same follow-up bead.
+  (single source of truth, da-n1q). The unified `format_timestamp`
+  (da-d5w.1) is the sole timestamp renderer — it is called by both
+  the info-line path and the table extractor (via the
+  `synthesize_local_datumtime` bridge for `create_time` / `modify_time`).
+  `datum tail`, `datum now`'s last-seen column, and the write-action
+  info line all share the same `-2d` / `+1d` / ISO-date logic.
+  Rendering is in the row's own timezone (so "today" follows the row's
+  local calendar). Future-time underline ships in the new renderer
+  (da-vkj). The `human_time.rs` stub in `datum-parse/src/time/` is a
+  misleading leftover — flagged for cleanup in the same follow-up bead.
 
 ### `timeUtils.ts` (40 LOC)
 

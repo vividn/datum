@@ -11,7 +11,7 @@
 //! * [`parse_duration_str`] — `--dur` argument parsing.
 //! * [`builder`] — `TimeBuilder` composes stacked flags into a `DatumTime`.
 //! * [`human_time`] — doc-anchor stub; canonical impl is
-//!   `datum_commands::render::format_human_time`.
+//!   `datum_commands::render::action::format_timestamp`.
 //! * [`get_timezone`] — doc-anchor stub; canonical impl is
 //!   `datum_parse::input::time_args::resolve_timezone`.
 

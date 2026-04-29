@@ -18,8 +18,8 @@ pub use self::action::{
     format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,
     render_entry_line, RenderContext,
 };
+pub use self::colors::{strip_ansi, visible_width};
 
-use chrono::Local;
 use datum_core::{
     db::TrackedField,
     entry::{Entry, Verb},
@@ -228,13 +228,22 @@ pub(crate) fn extract_with_context_at(
     let occur = entry
         .start_time
         .as_ref()
-        .map(|t| format_human_time(t, now, false));
-    let create = Some(format_human_time_utc(entry.create_time, now, true));
-    let modify = Some(format_human_time_utc(entry.modify_time, now, true));
+        .map(|t| self::action::format_timestamp(t, now));
+    let create = Some(self::action::format_timestamp(
+        &self::action::synthesize_local_datumtime(entry.create_time),
+        now,
+    ));
+    let modify = Some(self::action::format_timestamp(
+        &self::action::synthesize_local_datumtime(entry.modify_time),
+        now,
+    ));
     let hybrid = occur.clone().or_else(|| {
         Some(format_gray_prefix(
             "c",
-            format_human_time_utc(entry.create_time, now, false),
+            self::action::format_timestamp(
+                &self::action::synthesize_local_datumtime(entry.create_time),
+                now,
+            ),
         ))
     });
 
@@ -250,7 +259,7 @@ pub(crate) fn extract_with_context_at(
         time_hybrid: hybrid,
         field: Some(self::action::format_field_cell(&entry.field, spec)),
         state: self::action::format_state_group(entry, spec, state_ctx),
-        dur: entry.duration_seconds().map(format_duration),
+        dur: entry.duration_seconds().map(self::action::format_duration),
     }
 }
 
@@ -272,44 +281,6 @@ fn paint_action(action: Action) -> String {
 
 
 // ─── Time rendering ──────────────────────────────────────────────────────────
-
-/// Render a `DatumTime` as `[<date-prefix> ]HH:MM:SS<offset>` per datum's
-/// `humanTime.ts`. The relative-day prefix is delegated to
-/// [`action::format_relative_day_prefix`] — single source of truth across
-/// the renderer.
-///
-/// Rendered in the row's own timezone so "today" follows the row's local
-/// calendar (da-n1q acceptance criterion). The `_include_offset` parameter
-/// is retained for symmetry with prior call sites; the offset is always
-/// printed because the row may have a different timezone from the host.
-fn format_human_time(t: &DatumTime, now: &DatumTime, _include_offset: bool) -> String {
-    let local = t.local_time();
-    let prefix = self::action::format_relative_day_prefix(t, now)
-        .map(|p| format!("{} ", paint(GRAY_FG, &p)))
-        .unwrap_or_default();
-    let time_str = local.format("%H:%M:%S").to_string();
-    let offset = paint(GRAY_FG, &local.format("%z").to_string());
-    format!("{prefix}{time_str}{offset}")
-}
-
-/// Bridge for `chrono::DateTime<Utc>` values that have no associated
-/// timezone (e.g. `create_time`, `modify_time`). Renders in the host's
-/// local timezone — matches prior behaviour for these fields and keeps
-/// the date-prefix logic in one place.
-fn format_human_time_utc(
-    utc: chrono::DateTime<chrono::Utc>,
-    now: &DatumTime,
-    include_offset: bool,
-) -> String {
-    let local = utc.with_timezone(&Local);
-    let offset_minutes = local.offset().local_minus_utc() / 60;
-    let synth = DatumTime {
-        utc,
-        offset_minutes,
-        timezone: "Local".to_string(),
-    };
-    format_human_time(&synth, now, include_offset)
-}
 
 fn format_gray_prefix(prefix: &str, body: String) -> String {
     format!("{}{}", paint(GRAY_FG, prefix), body)
@@ -582,7 +553,7 @@ pub fn print_table_with(
     let show_hid = any(|r| &r.hid);
 
     // Column widths (visual, ANSI-aware).
-    let vw = visible_width;
+    let vw = colors::visible_width;
     let time_header = "time";
     let field_header = if rows.iter().any(|r| vw(&r.field) >= 5) { "field" } else { "f" };
     let state_header = if rows.iter().any(|r| vw(&r.state) >= 5) { "state" } else { "s" };
@@ -663,7 +634,7 @@ pub fn print_table_with(
 
 /// Push a left- or right-padded cell (ANSI-aware) with a 2-space gap.
 fn push_cell(buf: &mut String, body: &str, width: usize, right_align: bool) {
-    let w = visible_width(body);
+    let w = colors::visible_width(body);
     let pad = width.saturating_sub(w);
     if right_align {
         buf.push_str(&" ".repeat(pad));
@@ -673,26 +644,6 @@ fn push_cell(buf: &mut String, body: &str, width: usize, right_align: bool) {
         buf.push_str(&" ".repeat(pad));
     }
     buf.push_str("  ");
-}
-
-/// Count visible characters in a string, ignoring ANSI escape sequences.
-pub fn visible_width(s: &str) -> usize {
-    let mut in_esc = false;
-    let mut width = 0usize;
-    for c in s.chars() {
-        if in_esc {
-            if c == 'm' {
-                in_esc = false;
-            }
-            continue;
-        }
-        if c == '\x1b' {
-            in_esc = true;
-            continue;
-        }
-        width += 1;
-    }
-    width
 }
 
 // ─── Single-entry helpers (for `get` / `delete` preview) ─────────────────────
@@ -828,7 +779,7 @@ struct NowRow {
     bullet: &'static str,
     field: String,
     /// Pre-rendered state column — may include inline ANSI escapes, so
-    /// alignment math must go through [`visible_width`] rather than `len()`.
+    /// alignment math must go through [`colors::visible_width`] rather than `len()`.
     state_rendered: String,
     state_vw: usize,
     time_str: String,
@@ -859,7 +810,7 @@ fn state_ansi(
 /// original single-color treatment; arrays become a checkerboard-flavored
 /// sequence of per-element blocks so concurrent states are immediately
 /// distinguishable. Returns `(rendered, visible_width)` so the caller can
-/// align columns with [`visible_width`].
+/// align columns with [`colors::visible_width`].
 fn render_now_state(
     value: Option<&JsonValue>,
     field: &str,
@@ -1081,19 +1032,6 @@ pub fn render_now_view(
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-fn format_duration(secs: i64) -> String {
-    let secs = secs.abs();
-    if secs < 60 {
-        format!("{secs}s")
-    } else if secs < 3600 {
-        format!("{}m", secs / 60)
-    } else {
-        let h = secs / 3600;
-        let m = (secs % 3600) / 60;
-        if m == 0 { format!("{h}h") } else { format!("{h}h{m}m") }
-    }
-}
-
 fn format_ago(secs: i64) -> String {
     if secs < 0 {
         return "just now".to_string();
@@ -1228,44 +1166,11 @@ fn entry_summary_lines(e: &Entry) -> Vec<String> {
     lines
 }
 
-pub fn strip_ansi(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    let mut in_esc = false;
-    for c in s.chars() {
-        if in_esc {
-            if c == 'm' {
-                in_esc = false;
-            }
-            continue;
-        }
-        if c == '\x1b' {
-            in_esc = true;
-            continue;
-        }
-        out.push(c);
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::colors::strip_ansi;
     use datum_core::time::DatumTime;
-
-    #[test]
-    fn strip_ansi_removes_color_codes() {
-        let s = "\x1b[32mhello\x1b[0m world";
-        assert_eq!(strip_ansi(s), "hello world");
-    }
-
-    #[test]
-    fn visible_width_ignores_escapes() {
-        assert_eq!(visible_width("abc"), 3);
-        assert_eq!(visible_width("\x1b[32mabc\x1b[0m"), 3);
-        // Multibyte glyphs still count as 1 char each.
-        assert_eq!(visible_width("●"), 1);
-        assert_eq!(visible_width("\x1b[32m●\x1b[0m"), 1);
-    }
 
     #[test]
     fn show_none_propagates_as_silent() {

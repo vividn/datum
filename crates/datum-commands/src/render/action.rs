@@ -367,6 +367,19 @@ pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime) -> String {
     }
 }
 
+/// Wrap a host-local [`chrono::DateTime<Utc>`] (e.g. `create_time`,
+/// `modify_time`) as a [`DatumTime`] anchored to the host's local offset, so
+/// the same renderer used for occur/end times can format it.
+pub(crate) fn synthesize_local_datumtime(utc: chrono::DateTime<Utc>) -> DatumTime {
+    let local = utc.with_timezone(&Local);
+    let offset_minutes = local.offset().local_minus_utc() / 60;
+    DatumTime {
+        utc,
+        offset_minutes,
+        timezone: "Local".to_string(),
+    }
+}
+
 /// Compress `%z` output (`+0200`) → `+2` per §3.
 fn compress_tz_offset(raw: &str) -> String {
     // Expect `+HHMM` or `-HHMM`.
@@ -423,10 +436,7 @@ pub fn format_info_line_at(
         // prefixed by a gray 'c' — same convention the table renderer
         // applies via `format_gray_prefix("c", ...)` in the
         // `time_hybrid` extractor (render/mod.rs).
-        let utc = entry.create_time;
-        let local = utc.with_timezone(&Local);
-        let offset_minutes = local.offset().local_minus_utc() / 60;
-        let synth = DatumTime { utc, offset_minutes, timezone: "Local".to_string() };
+        let synth = synthesize_local_datumtime(entry.create_time);
         parts.push(format!("{}{}", paint(GRAY_FG, "c"), format_timestamp(&synth, now)));
     }
     parts.push(format_field_badge(&entry.field, spec));
