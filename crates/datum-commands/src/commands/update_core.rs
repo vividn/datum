@@ -52,7 +52,7 @@ impl UpdateStrategy {
 #[derive(Clone, Debug)]
 pub struct UpdateOutcome {
     pub entry: Entry,
-    pub old_slug: Option<String>,
+    pub old_slug: Option<datum_core::ids::Slug>,
 }
 
 /// Inputs to [`update_with_strategy`]. Constructed by the verb wrappers
@@ -239,7 +239,7 @@ pub fn update_batch_from_args(
     }
 
     let mut first_err: Option<anyhow::Error> = None;
-    let mut touched_hids: Vec<String> = Vec::new();
+    let mut touched_hids: Vec<datum_core::ids::Hid> = Vec::new();
     for existing in entries {
         if existing.deleted_at.is_some() {
             let msg = format!(
@@ -388,7 +388,7 @@ fn apply_rekey(
 
     let uid = new_entry.short_uid();
     let ctx = InterpolationContext::from_entry(&new_entry, &uid);
-    new_entry.slug = field_spec::interpolate(&template, &ctx, rekey_delimiter);
+    new_entry.slug = datum_core::ids::Slug(field_spec::interpolate(&template, &ctx, rekey_delimiter));
     new_entry.id_structure = Some(template);
 
     new_entry.content_hash = new_entry.expected_content_hash();

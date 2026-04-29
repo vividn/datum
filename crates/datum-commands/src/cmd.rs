@@ -643,7 +643,7 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         if let Some(tmpl) = template {
             let uid = entry.short_uid();
             let ctx = InterpolationContext::from_entry(&entry, &uid);
-            entry.slug = field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter);
+            entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter));
             entry.id_structure = Some(tmpl);
         }
     }
@@ -1917,7 +1917,7 @@ pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
     // Stamp the pointer at the resolved hids so a follow-up bare command
     // sees the same set. Read-only browsing commands (tail, head, grep)
     // do NOT touch the pointer.
-    let hids: Vec<String> = entries.iter().map(|e| e.hid.clone()).collect();
+    let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
     let _ = datum_core::last_docs::set_last_docs(db, &hids);
     Ok(())
 }
@@ -1948,7 +1948,7 @@ pub(crate) fn resolve_batch(
     mode: BatchMode,
 ) -> (Vec<Entry>, Vec<(String, anyhow::Error)>) {
     let mut entries: Vec<Entry> = Vec::new();
-    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<datum_core::ids::Slug> = std::collections::HashSet::new();
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     for raw in input.split(',') {
         let token = raw.trim();
@@ -2055,7 +2055,7 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     }
 
     let mut first_err: Option<anyhow::Error> = None;
-    let mut deleted_hids: Vec<String> = Vec::new();
+    let mut deleted_hids: Vec<datum_core::ids::Hid> = Vec::new();
     for entry in &entries {
         match db.soft_delete_entry(&entry.slug) {
             Ok(()) => {
@@ -2221,7 +2221,7 @@ pub(crate) fn cmd_retime(args: RetimeArgs, db: &Db) -> Result<()> {
     // slug wildcard) where retime previously required an exact slug/hid.
     // The underlying filter still matches on exact slug/hid, so we resolve
     // the user-supplied pattern to a concrete slug first.
-    let resolved_slug: Option<String> = args
+    let resolved_slug: Option<datum_core::ids::Slug> = args
         .slug
         .as_deref()
         .map(|raw| resolve_quickid_single(db, raw).map(|e| e.slug))
@@ -2312,14 +2312,14 @@ fn parse_time_bound(s: &str) -> Result<chrono::DateTime<chrono::Utc>> {
 /// hids so `_LAST` keeps tracking the user's "current" set.
 fn undo_via_last_docs(
     db: &Db,
-    hids: &[String],
+    hids: &[datum_core::ids::Hid],
     registry: &Option<datum_core::field_spec::SpecRegistry>,
     output: &crate::render::OutputArgs,
 ) -> Result<()> {
     if hids.is_empty() {
         anyhow::bail!("Last-docs pointer is empty — nothing to undo");
     }
-    let mut restored_hids: Vec<String> = Vec::new();
+    let mut restored_hids: Vec<datum_core::ids::Hid> = Vec::new();
     let mut first_err: Option<anyhow::Error> = None;
     for hid in hids {
         let current = match resolve_prefix_or_tombstone(db, hid) {

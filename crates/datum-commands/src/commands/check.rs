@@ -97,7 +97,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
             ),
             count: time_bad.len(),
             example: Some(IssueExample {
-                id: Some(first.slug.clone()),
+                id: Some(first.slug.to_string()),
                 field: Some(first.field.clone()),
                 detail: Some(format!(
                     "start={}  end={}",
@@ -114,7 +114,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
         let expected = e.expected_content_hash();
         if expected != e.content_hash {
             mismatches.push((
-                e.slug.clone(),
+                e.slug.to_string(),
                 e.field.clone(),
                 e.content_hash.clone(),
                 expected,
@@ -188,7 +188,7 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
                 if !spec.subfields.contains_key(key) {
                     orphan_count += 1;
                     if orphan_detail.is_none() {
-                        orphan_detail = Some((e.slug.clone(), e.field.clone(), key.clone()));
+                        orphan_detail = Some((e.slug.to_string(), e.field.clone(), key.clone()));
                     }
                 }
             }

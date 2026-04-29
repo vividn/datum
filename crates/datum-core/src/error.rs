@@ -1,11 +1,13 @@
 use thiserror::Error;
 
+use crate::ids::{Hid, Slug};
+
 /// One hit in an ambiguous prefix match — both the slug and hid are surfaced
 /// so callers can show users a disambiguating list.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PrefixCandidate {
-    pub slug: String,
-    pub hid: String,
+    pub slug: Slug,
+    pub hid: Hid,
 }
 
 #[derive(Error, Debug)]

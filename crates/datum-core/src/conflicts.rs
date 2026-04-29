@@ -34,6 +34,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::entry::{new_hid, Entry, EntryShape, Verb, SHORT_HID_LEN};
 use crate::error::{DatumError, Result};
+use crate::ids::Slug;
 
 /// Source that filed a conflict row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -165,7 +166,7 @@ impl std::fmt::Display for Resolution {
 pub struct Conflict {
     pub id: String,
     pub hid: String,
-    pub entry_slug: String,
+    pub entry_slug: Slug,
     pub local_entry: Entry,
     pub remote_entry: Option<Entry>,
     pub detected_at: DateTime<Utc>,
@@ -502,7 +503,7 @@ fn file_conflict(
     detected_by: DetectedBy,
     kind: ConflictKind,
 ) -> Result<Conflict> {
-    let id = new_hid();
+    let id: String = new_hid().into_string();
     let hid: String = id.chars().take(SHORT_HID_LEN).collect();
     let local_json = serde_json::to_string(trigger)?;
     let remote_json = match counterpart {

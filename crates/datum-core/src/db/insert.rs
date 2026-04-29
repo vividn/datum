@@ -13,6 +13,7 @@ use serde_json::Value as JsonValue;
 use crate::entry::{new_hid, Entry};
 use crate::error::{DatumError, Result};
 use crate::history::{self, ChangeKind};
+use crate::ids::{Hid, Slug};
 
 use super::lookup::fetch_entry_any;
 use super::row_mapper::row_to_entry;
@@ -137,8 +138,8 @@ impl Db {
             )
             .optional()?;
         match state {
-            None => return Err(DatumError::NotFound(entry.slug.clone())),
-            Some(Some(_)) => return Err(DatumError::Tombstoned(entry.slug.clone())),
+            None => return Err(DatumError::NotFound(entry.slug.to_string())),
+            Some(Some(_)) => return Err(DatumError::Tombstoned(entry.slug.to_string())),
             Some(None) => {
                 let pre = fetch_entry_any(&tx, &entry.slug)?;
                 history::record(&tx, &pre, ChangeKind::UserEdit)?;
@@ -153,7 +154,7 @@ impl Db {
 /// Append a short random base36 suffix to a slug. Used by the
 /// [`ConflictStrategy::Rekey`] path to derive a distinct slug for the new
 /// row when the natural slug already belongs to the existing one.
-fn suffixed_slug(base: &str) -> String {
+fn suffixed_slug(base: &str) -> Slug {
     let mut rng = rand::thread_rng();
     let suffix: String = (0..4)
         .map(|_| {
@@ -165,7 +166,7 @@ fn suffixed_slug(base: &str) -> String {
             }
         })
         .collect();
-    format!("{base}_{suffix}")
+    Slug(format!("{base}_{suffix}"))
 }
 
 /// Which uniqueness constraint a SQLite ConstraintViolation tripped: the
@@ -248,13 +249,13 @@ fn insert_entry_in_tx(
     entry: &Entry,
     strategy: ConflictStrategy,
 ) -> Result<InsertOutcome> {
-    let existing: Option<(String, Option<String>)> = conn
+    let existing: Option<(Slug, Option<String>)> = conn
         .query_row(
             "SELECT slug, data FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL
              LIMIT 1",
             params![entry.content_hash],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            |row| Ok((row.get::<_, Slug>(0)?, row.get::<_, Option<String>>(1)?)),
         )
         .optional()?;
 
@@ -353,13 +354,13 @@ fn insert_entry_in_tx(
 /// prepared statement rather than re-parsing SQL per row. The INSERT side
 /// (`try_insert`) is also cached.
 fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
-    let existing_slug: Option<String> = {
+    let existing_slug: Option<Slug> = {
         let mut stmt = conn.prepare_cached(
             "SELECT slug FROM entries
              WHERE content_hash = ?1 AND deleted_at IS NULL
              LIMIT 1",
         )?;
-        stmt.query_row(params![entry.content_hash], |row| row.get::<_, String>(0))
+        stmt.query_row(params![entry.content_hash], |row| row.get::<_, Slug>(0))
             .optional()?
     };
     match existing_slug {
@@ -394,7 +395,7 @@ fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOut
 /// quintillion values). We retry once with a fresh hid; a second collision
 /// almost certainly indicates a bug or environmental problem and is
 /// returned as [`DatumError::Other`].
-pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(String, String)> {
+pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)> {
     let mut hid = entry.hid.clone();
     let mut hid_attempt = 0u8;
 
@@ -430,7 +431,7 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(String, St
     }
 }
 
-pub(crate) fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
+pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entry) -> Result<()> {
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO entries (
             hid, slug, content_hash, field, entry_shape, intent,
@@ -673,7 +674,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         ],
     )?;
     if affected == 0 {
-        return Err(DatumError::NotFound(entry.hid.clone()));
+        return Err(DatumError::NotFound(entry.hid.to_string()));
     }
     Ok(())
 }

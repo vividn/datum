@@ -6,6 +6,7 @@
 //! the caller has no id-keys; the `-K` flag lets callers chain explicit
 //! values joined by `__`.
 
+use crate::ids::Slug;
 use crate::time::DatumTime;
 
 /// Build the slug for an entry.
@@ -19,7 +20,7 @@ use crate::time::DatumTime;
 ///   the DB retries with a suffix so the human-visible slug stays intact).
 /// - When neither id-keys nor a fallback time is provided, returns
 ///   `<field>:unset` — the historical placeholder for tagless entries.
-pub fn derive(field: &str, id_values: &[String], fallback_time: Option<&DatumTime>) -> String {
+pub fn derive(field: &str, id_values: &[String], fallback_time: Option<&DatumTime>) -> Slug {
     let joined: Vec<&str> = id_values
         .iter()
         .map(String::as_str)
@@ -31,13 +32,14 @@ pub fn derive(field: &str, id_values: &[String], fallback_time: Option<&DatumTim
         out.push_str(field);
         out.push(':');
         out.push_str(&joined.join("__"));
-        return out;
+        return Slug(out);
     }
 
-    match fallback_time {
+    let s = match fallback_time {
         Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
         None => format!("{}:unset", field),
-    }
+    };
+    Slug(s)
 }
 
 #[cfg(test)]

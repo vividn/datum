@@ -7,6 +7,8 @@
 
 use chrono::{DateTime, Utc};
 
+use crate::ids::{Hid, Slug};
+
 /// Projection of a field's tracking state for the `now` view.
 ///
 /// `ignored` is derived from the entry log (most recent state == "IGNORED")
@@ -160,7 +162,7 @@ pub struct RetimeFilter<'a> {
 /// Row reported by [`super::Db::find_time_end_before_start`].
 #[derive(Debug, Clone)]
 pub struct TimeOrderIssue {
-    pub slug: String,
+    pub slug: Slug,
     pub field: String,
     pub start_time: String,
     pub end_time: String,
@@ -207,20 +209,20 @@ impl From<datum_parse::cli::ConflictStrategyArg> for ConflictStrategy {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum InsertOutcome {
     /// New row inserted (no collision).
-    Inserted { slug: String, hid: String },
+    Inserted { slug: Slug, hid: Hid },
     /// Collision resolved by mutating the existing row in place.
-    Updated { slug: String },
+    Updated { slug: Slug },
     /// Collision resolved by merging `extra_data` into the existing row.
-    Merged { slug: String },
+    Merged { slug: Slug },
     /// Collision resolved by inserting a new row under a new slug. The
     /// `new_hid` reflects the actual stored hid for the freshly-inserted row.
     Rekeyed {
-        old_slug: String,
-        new_slug: String,
-        new_hid: String,
+        old_slug: Slug,
+        new_slug: Slug,
+        new_hid: Hid,
     },
     /// Collision left the existing row untouched.
-    Ignored { slug: String },
+    Ignored { slug: Slug },
 }
 
 /// Report returned from [`super::Db::save_field_spec_with_report`] describing

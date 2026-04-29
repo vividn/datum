@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 
+use crate::ids::{Hid, Slug};
 use crate::time::DatumTime;
 
 /// The verb describes what kind of event an entry represents. Read-back
@@ -112,9 +113,9 @@ pub const SHORT_HID_LEN: usize = 5;
 /// ~36^12 ≈ 4.7 quintillion distinct values, so collisions under normal use
 /// are astronomically unlikely; the DB still enforces uniqueness on the
 /// column so an accidental collision simply forces a regeneration.
-pub fn new_hid() -> String {
+pub fn new_hid() -> Hid {
     let mut rng = rand::thread_rng();
-    (0..HID_LEN)
+    let s: String = (0..HID_LEN)
         .map(|_| {
             let n = rng.gen_range(0..36u8);
             if n < 10 {
@@ -123,18 +124,19 @@ pub fn new_hid() -> String {
                 (b'a' + (n - 10)) as char
             }
         })
-        .collect()
+        .collect();
+    Hid(s)
 }
 
 /// An entry is the core data unit. All user-logged data becomes an Entry.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     /// Random 12-char base36 id — prefix-addressable, unique. PRIMARY KEY.
-    pub hid: String,
+    pub hid: Hid,
 
     /// datum-compatible human reference (`field:timestamp` or similar).
     /// UNIQUE-indexed, derived at write time from field + id-keys.
-    pub slug: String,
+    pub slug: Slug,
 
     /// SHA-256 of the identity-defining fields for dedup.
     pub content_hash: String,
@@ -382,11 +384,12 @@ fn compute_hash(field: &str, start: &str, end: &str, value: &str, extra: &str) -
 /// Default slug: `<field>:<timestamp>` — millisecond precision keeps
 /// same-field same-second inserts on distinct slugs. Entries without a time
 /// fall back to `<field>:unset`.
-fn build_slug(field: &str, time: Option<&DatumTime>) -> String {
-    match time {
+fn build_slug(field: &str, time: Option<&DatumTime>) -> Slug {
+    let s = match time {
         Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
         None => format!("{}:unset", field),
-    }
+    };
+    Slug(s)
 }
 
 #[cfg(test)]

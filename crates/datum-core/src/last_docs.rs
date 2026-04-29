@@ -21,6 +21,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::db::Db;
 use crate::error::{DatumError, Result};
+use crate::ids::Hid;
 
 /// Singleton row id for the `last_docs` table.
 const LAST_DOCS_ROW: i64 = 1;
@@ -32,13 +33,13 @@ pub const PROTECTION_WINDOW_MINUTES: i64 = 15;
 /// In-memory shape of the persisted last-docs row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LastDocsRef {
-    pub hids: Vec<String>,
+    pub hids: Vec<Hid>,
     pub time: DateTime<Utc>,
 }
 
 /// Replace the last-docs pointer with the given hids. An empty `hids`
 /// slice clears the row (a follow-up `_LAST` resolves to nothing).
-pub fn set_last_docs(db: &Db, hids: &[String]) -> Result<()> {
+pub fn set_last_docs(db: &Db, hids: &[Hid]) -> Result<()> {
     let json = serde_json::to_string(hids)?;
     let now = Utc::now().to_rfc3339();
     db.conn().execute(
@@ -65,7 +66,7 @@ pub fn get_last_docs(db: &Db) -> Result<Option<LastDocsRef>> {
     let Some((hids_json, time_str)) = row else {
         return Ok(None);
     };
-    let hids: Vec<String> = serde_json::from_str(&hids_json)?;
+    let hids: Vec<Hid> = serde_json::from_str(&hids_json)?;
     let time = DateTime::parse_from_rfc3339(&time_str)
         .map_err(|e| DatumError::Other(format!("bad last_docs time: {e}")))?
         .with_timezone(&Utc);
@@ -94,18 +95,18 @@ mod tests {
     #[test]
     fn set_then_get_round_trips_hids() {
         let db = fresh_db();
-        set_last_docs(&db, &["abc".to_string(), "def".to_string()]).unwrap();
+        set_last_docs(&db, &[Hid::from("abc"), Hid::from("def")]).unwrap();
         let got = get_last_docs(&db).unwrap().unwrap();
-        assert_eq!(got.hids, vec!["abc".to_string(), "def".to_string()]);
+        assert_eq!(got.hids, vec![Hid::from("abc"), Hid::from("def")]);
     }
 
     #[test]
     fn set_overwrites_previous_pointer() {
         let db = fresh_db();
-        set_last_docs(&db, &["aaa".to_string()]).unwrap();
-        set_last_docs(&db, &["bbb".to_string(), "ccc".to_string()]).unwrap();
+        set_last_docs(&db, &[Hid::from("aaa")]).unwrap();
+        set_last_docs(&db, &[Hid::from("bbb"), Hid::from("ccc")]).unwrap();
         let got = get_last_docs(&db).unwrap().unwrap();
-        assert_eq!(got.hids, vec!["bbb".to_string(), "ccc".to_string()]);
+        assert_eq!(got.hids, vec![Hid::from("bbb"), Hid::from("ccc")]);
     }
 
     #[test]
