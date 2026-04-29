@@ -26,7 +26,7 @@ the current data-model contract.
 
 There are no published binaries yet. From a checkout:
 
-```bash
+```bash,no_run
 cargo install --path crates/datum-cli
 ```
 
@@ -205,13 +205,13 @@ command: `none`, `minimal`, `standard`, `format` (template-driven), or
 `datum --man <subcommand>` does the same for one subcommand. Useful for
 ad-hoc viewing without installing the pages:
 
-```bash
+```bash,no_run
 man -l <(datum --man tail)
 ```
 
 To generate the man pages on disk for distro packaging, run:
 
-```bash
+```bash,no_run
 cargo xtask manpages           # writes man/datum*.1
 cargo xtask manpages /tmp/m    # custom output dir
 ```
