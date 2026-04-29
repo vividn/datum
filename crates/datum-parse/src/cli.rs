@@ -228,7 +228,11 @@ pub struct LogArgs {
     pub unit: Option<String>,
     pub keys: Vec<String>,
     pub slug_keys: Vec<String>,
-    pub comment: Option<String>,
+    /// `-c` / `--comment`. Repeatable per datum's argparse shape: a single
+    /// flag yields `extra_data.comment = "x"` (string); two or more yield
+    /// `extra_data.comment = [...]` (array). Joined into the entry by
+    /// [`datum_parse::input::data_args::handle_data_args`].
+    pub comment: Vec<String>,
     pub id: Option<String>,
     pub id_delimiter: String,
     /// `-L`/`--last-state` user assertion.
@@ -272,7 +276,7 @@ impl LogArgs {
             unit: None,
             keys: Vec::new(),
             slug_keys: Vec::new(),
-            comment: None,
+            comment: Vec::new(),
             id: None,
             id_delimiter: ":".to_string(),
             last_state: None,
@@ -386,7 +390,9 @@ pub struct UpdateArgs {
     pub id: Option<String>,
     pub id_delimiter: String,
     pub keys: Vec<String>,
-    pub comment: Option<String>,
+    /// `-c` / `--comment`. Repeatable: a single flag yields a string, two
+    /// or more yield an array — see [`LogArgs::comment`].
+    pub comment: Vec<String>,
     pub dry_run: bool,
     pub strict: bool,
     pub output_flags: OutputFlags,
@@ -401,7 +407,7 @@ impl UpdateArgs {
             id: None,
             id_delimiter: ":".to_string(),
             keys: Vec::new(),
-            comment: None,
+            comment: Vec::new(),
             dry_run: false,
             strict: false,
             output_flags: OutputFlags::fresh(),
@@ -417,7 +423,7 @@ impl UpdateArgs {
             id: None,
             id_delimiter: ":".to_string(),
             keys: Vec::new(),
-            comment: None,
+            comment: Vec::new(),
             dry_run: false,
             strict: false,
             output_flags: OutputFlags::fresh(),

@@ -476,7 +476,7 @@ struct LogExtras {
     unit: Option<String>,
     keys: Vec<String>,
     slug_keys: Vec<String>,
-    comment: Option<String>,
+    comment: Vec<String>,
     id: Option<String>,
     id_delimiter: Option<String>,
     last_state: Option<String>,
@@ -525,7 +525,7 @@ fn log_args_registry() -> Vec<LiftedSpec<LogParsing>> {
         Ok(())
     }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
-        p.extras.comment = Some(v.to_string());
+        p.extras.comment.push(v.to_string());
         Ok(())
     }));
     r.push(local_value(None, Some("id"), |p, v| {
@@ -1079,7 +1079,7 @@ struct UpdateParsing {
     id: Option<String>,
     id_delimiter: Option<String>,
     keys: Vec<String>,
-    comment: Option<String>,
+    comment: Vec<String>,
     dry_run: bool,
     strict: bool,
 }
@@ -1106,7 +1106,7 @@ fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
         Ok(())
     }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
-        p.comment = Some(v.to_string());
+        p.comment.push(v.to_string());
         Ok(())
     }));
     r.push(local_switch(None, Some("dry-run"), |p| {

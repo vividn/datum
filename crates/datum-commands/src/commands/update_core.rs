@@ -480,7 +480,7 @@ mod tests {
             id: None,
             id_delimiter: ":".to_string(),
             keys: vec![],
-            comment: None,
+            comment: Vec::new(),
             dry_run: false,
             strict: false,
             output_flags: Default::default(),

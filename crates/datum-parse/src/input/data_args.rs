@@ -126,6 +126,22 @@ pub struct DataArgs {
     /// `-l` / `--lenient`: when no `-R` is supplied, default the
     /// remainder bucket to `extraData` instead of raising.
     pub lenient: bool,
+    /// Daydumb compat flag — disables datum's state-aware path translation
+    /// (`state` → `state.id`, leading-dot `.x` → `state.x`). With
+    /// `flat_paths = true`, every key/path is taken as the user wrote it.
+    /// daydumb has no complex-state synthesis at the parser layer; flat
+    /// paths preserve `extra_data["state"]`, `extra_data[".medium"]`,
+    /// etc. as literal keys (see daydumb's `switch_dot_*` parity tests).
+    pub flat_paths: bool,
+    /// Daydumb compat flag — keeps the strings `"null"` / `"undefined"`
+    /// as `String` values rather than coercing them to `Value::Null` /
+    /// stripped (datum's TS behaviour). daydumb stores literal `"null"`
+    /// switch states verbatim and lets state compilation normalise on
+    /// read; eager null coercion at parse-time would lose that signal.
+    /// `dur=null` still resolves to point shape downstream because
+    /// `extract_add_temporal_keys` already accepts the `"null"` string
+    /// alongside `Value::Null`.
+    pub preserve_null_strings: bool,
 }
 
 impl FlexibleTarget for DataArgs {
@@ -147,12 +163,28 @@ impl DataArgs {
     }
 }
 
+/// Per-invocation behavioural switches consumed by the recursive
+/// helpers in this module. Built once by [`handle_data_args`] from the
+/// caller's [`DataArgs`].
+#[derive(Clone, Copy, Default)]
+struct Compat {
+    /// See [`DataArgs::flat_paths`].
+    flat_paths: bool,
+    /// See [`DataArgs::preserve_null_strings`].
+    preserve_null_strings: bool,
+}
+
 /// Resolve `DataArgs` into the final `DatumData` object.
 ///
 /// See the TS `handleDataArgs` for the reference algorithm; the Rust
 /// version differs only in that the excluded non-ports (`baseData`,
 /// command-change escape) never surface.
 pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
+    let compat = Compat {
+        flat_paths: args.flat_paths,
+        preserve_null_strings: args.preserve_null_strings,
+    };
+
     // Clone the bits we mutate; the input bag is treated as read-only.
     let mut data_queue: Vec<String> = args.data.clone();
     let mut keys: Vec<String> = consolidate_keys(&args.keys);
@@ -178,14 +210,14 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
 
         if let Some(value) = after_eq {
             // Explicit key=value in the positional stream.
-            let path = datum_path(before_eq);
-            let existing = get_path(&datum_data, &path).cloned();
+            let path = datum_path(before_eq, args.flat_paths);
+            let existing = get_path_with(&datum_data, &path, args.flat_paths).cloned();
             // Find the first declared key matching this path so an
             // explicit `key=.` can fall back to its default.
             let default_value = if let Some(v) = existing {
                 inferred_value_for_default(&v)
             } else {
-                find_default_for_path(&keys, &path)
+                find_default_for_path(&keys, &path, compat.flat_paths)
             };
             alter_datum_data(
                 &mut datum_data,
@@ -194,6 +226,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
                 default_value.as_deref(),
                 false, // append
                 false, // isRequired — explicit key=... is never required
+                compat,
             )?;
             continue;
         }
@@ -205,9 +238,9 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             let spec = keys.remove(0);
             let (raw_path, default_value) = split_first_eq(&spec);
             let is_required = default_value.is_none();
-            let path = datum_path(raw_path);
+            let path = datum_path(raw_path, args.flat_paths);
 
-            if get_path(&datum_data, &path).is_some() {
+            if get_path_with(&datum_data, &path, args.flat_paths).is_some() {
                 // Already filled manually — skip to the next declared key.
                 continue;
             }
@@ -219,6 +252,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
                 default_value,
                 false,
                 is_required,
+                compat,
             )?;
             consumed = true;
             break;
@@ -232,10 +266,10 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     // ── unfilled keys: apply defaults; unfilled required → error ───────
     for spec in keys.drain(..) {
         let (raw_path, default_value) = split_first_eq(&spec);
-        let path = datum_path(raw_path);
+        let path = datum_path(raw_path, args.flat_paths);
         let is_required = default_value.is_none();
 
-        match get_path(&datum_data, &path) {
+        match get_path_with(&datum_data, &path, args.flat_paths) {
             Some(existing) if !is_dot_scalar(existing) => continue,
             _ => {}
         }
@@ -246,6 +280,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             None,
             false,
             is_required,
+            compat,
         )?;
     }
 
@@ -258,6 +293,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             None,
             true,
             false,
+            compat,
         )?;
     }
 
@@ -276,6 +312,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
                 None,
                 true,
                 false,
+                compat,
             )?;
         } else {
             for rem in &remainder_data {
@@ -286,6 +323,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
                     None,
                     true,
                     false,
+                    compat,
                 )?;
             }
         }
@@ -297,8 +335,14 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
 // ─── path primitives ─────────────────────────────────────────────────────
 
 /// Port of datum's `datumPath`. Maps `state` → `state.id` and any
-/// leading-dot path (e.g. `.title`) → `state.title`.
-fn datum_path(path: &str) -> String {
+/// leading-dot path (e.g. `.title`) → `state.title`. With `flat=true`
+/// (daydumb compat), the input is returned unchanged so leading-dot
+/// keys land as literal extra_data entries instead of being routed
+/// into a synthesised `state.*` subtree.
+fn datum_path(path: &str, flat: bool) -> String {
+    if flat {
+        return path.to_string();
+    }
     if path == "state" {
         "state.id".to_string()
     } else if let Some(rest) = path.strip_prefix('.') {
@@ -317,9 +361,25 @@ fn split_first_eq(s: &str) -> (&str, Option<&str>) {
     }
 }
 
+/// Split a path into segments. With `flat=true`, the whole path is one
+/// segment so daydumb's flat-key store doesn't synthesise nested objects
+/// from leading-dot or `state.x` paths the user wrote literally.
+fn path_segs(path: &str, flat: bool) -> Vec<&str> {
+    if flat {
+        vec![path]
+    } else {
+        path.split('.').collect()
+    }
+}
+
 /// Walk a dotted path through a `Map` and return a reference to the leaf.
+#[cfg(test)]
 fn get_path<'a>(obj: &'a Map<String, Value>, path: &str) -> Option<&'a Value> {
-    let segs: Vec<&str> = path.split('.').collect();
+    get_path_with(obj, path, false)
+}
+
+fn get_path_with<'a>(obj: &'a Map<String, Value>, path: &str, flat: bool) -> Option<&'a Value> {
+    let segs: Vec<&str> = path_segs(path, flat);
     if segs.is_empty() {
         return None;
     }
@@ -336,8 +396,8 @@ fn get_path<'a>(obj: &'a Map<String, Value>, path: &str) -> Option<&'a Value> {
 }
 
 /// Remove a dotted path from `obj`. No-op if the path doesn't exist.
-fn remove_path(obj: &mut Map<String, Value>, path: &str) {
-    let segs: Vec<&str> = path.split('.').collect();
+fn remove_path(obj: &mut Map<String, Value>, path: &str, flat: bool) {
+    let segs: Vec<&str> = path_segs(path, flat);
     if segs.is_empty() {
         return;
     }
@@ -360,8 +420,8 @@ fn remove_path(obj: &mut Map<String, Value>, path: &str) {
 
 /// Set a dotted path to `value`. Scalars in the path are overwritten
 /// with fresh objects to match lodash.set's semantics.
-fn set_path(obj: &mut Map<String, Value>, path: &str, value: Value) {
-    let segs: Vec<&str> = path.split('.').collect();
+fn set_path(obj: &mut Map<String, Value>, path: &str, value: Value, flat: bool) {
+    let segs: Vec<&str> = path_segs(path, flat);
     if segs.is_empty() {
         return;
     }
@@ -402,10 +462,10 @@ fn inferred_value_for_default(v: &Value) -> Option<String> {
 }
 
 /// Find the default value declared for `path` in a keys list.
-fn find_default_for_path(keys: &[String], path: &str) -> Option<String> {
+fn find_default_for_path(keys: &[String], path: &str, flat: bool) -> Option<String> {
     keys.iter().find_map(|spec| {
         let (raw, default) = split_first_eq(spec);
-        if datum_path(raw) == path {
+        if datum_path(raw, flat) == path {
             default.map(|s| s.to_string())
         } else {
             None
@@ -425,16 +485,17 @@ fn alter_datum_data(
     default_value: Option<&str>,
     append: bool,
     is_required: bool,
+    compat: Compat,
 ) -> Result<()> {
-    let state_aware = datum_path(path);
+    let state_aware = datum_path(path, compat.flat_paths);
 
     // `.` → recurse with the default.
     if matches!(value, Some(".")) {
-        return alter_datum_data(obj, path, default_value, None, append, is_required);
+        return alter_datum_data(obj, path, default_value, None, append, is_required, compat);
     }
 
     let inferred = match value {
-        Some(v) => infer_typed_value(&state_aware, v, is_required)?,
+        Some(v) => infer_typed_value(&state_aware, v, is_required, compat)?,
         None => {
             if is_required {
                 return Err(ParseError::MissingRequiredKey(state_aware.clone()));
@@ -447,13 +508,13 @@ fn alter_datum_data(
         let Some(new_val) = inferred else {
             return Ok(());
         };
-        let existing = get_path(obj, &state_aware).cloned();
+        let existing = get_path_with(obj, &state_aware, compat.flat_paths).cloned();
         let combined = create_or_append(existing, new_val);
-        set_path(obj, &state_aware, combined);
+        set_path(obj, &state_aware, combined, compat.flat_paths);
     } else {
         match inferred {
-            Some(v) => set_path(obj, &state_aware, v),
-            None => remove_path(obj, &state_aware),
+            Some(v) => set_path(obj, &state_aware, v, compat.flat_paths),
+            None => remove_path(obj, &state_aware, compat.flat_paths),
         }
     }
     Ok(())
@@ -465,7 +526,22 @@ fn alter_datum_data(
 /// Returns `Ok(None)` for values the TS code would turn into `undefined`
 /// (empty string, literal `"undefined"`). Returns `Err(MissingRequiredKey)`
 /// when the slot is required and nothing was supplied.
-fn infer_typed_value(path: &str, value: &str, is_required: bool) -> Result<Option<Value>> {
+fn infer_typed_value(
+    path: &str,
+    value: &str,
+    is_required: bool,
+    compat: Compat,
+) -> Result<Option<Value>> {
+    // Daydumb compat: keep the literal strings `"null"` / `"undefined"` as
+    // string values regardless of path. Path-suffix coercion (below) is
+    // bypassed too — daydumb's `extract_add_temporal_keys` already accepts
+    // a string `"null"` for `dur=null`, so no signal is lost.
+    if compat.preserve_null_strings
+        && (value.eq_ignore_ascii_case("null") || value.eq_ignore_ascii_case("undefined"))
+    {
+        return Ok(Some(Value::String(value.to_string())));
+    }
+
     // `undefined` / empty → undefined; error if required.
     if value.is_empty() || value.eq_ignore_ascii_case("undefined") {
         if is_required {
@@ -507,7 +583,60 @@ fn infer_typed_value(path: &str, value: &str, is_required: bool) -> Result<Optio
         }
     }
 
+    // Unit-annotated number — daydumb extension over datum's `inferType`.
+    // `75.2kg` / `500ml` → `{"v": <num>, "u": "<unit>"}`. Time/date/dur
+    // suffix coercions above already won where they applied (e.g. `dur=5m`
+    // → ISO duration, not unit-annotation).
+    if let Some(v) = unit_annotated_value(value) {
+        return Ok(Some(v));
+    }
+
     Ok(infer_type(value))
+}
+
+/// daydumb extension: detect `75.2kg` / `500ml` style tokens and emit
+/// `{"v": <num>, "u": "<unit>"}`. Returns `None` when the token isn't of
+/// `<number><alpha-unit>` form. Public so the verb-specific switch-state
+/// parser in `datum-commands` can apply the same coercion.
+pub fn unit_annotated_value(value: &str) -> Option<Value> {
+    let (num, unit) = split_numeric_unit(value)?;
+    let n: f64 = num.parse().ok()?;
+    let n_value = serde_json::Number::from_f64(n).map(Value::Number)?;
+    let mut obj = Map::new();
+    obj.insert("v".to_string(), n_value);
+    obj.insert("u".to_string(), Value::String(unit.to_string()));
+    Some(Value::Object(obj))
+}
+
+/// Split `"75.2kg"` → `Some(("75.2", "kg"))`, `"hello"` → `None`. The
+/// numeric prefix may include digits, `.`, and a leading `-`; the unit
+/// suffix must be all-alphabetic.
+fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
+    let idx = s
+        .char_indices()
+        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.' || *c == '-')
+        .last()
+        .map(|(i, _)| i + 1)?;
+    if idx == 0 || idx == s.len() {
+        return None;
+    }
+    let (num, unit) = s.split_at(idx);
+    if unit.chars().all(|c| c.is_alphabetic()) {
+        Some((num, unit))
+    } else {
+        None
+    }
+}
+
+/// Resolve a free-form value with no path context — applies the
+/// daydumb unit-annotation extension first, then datum's `infer_type`.
+/// Used by call sites (switch-state list expansion) that have a single
+/// scalar token with no key path to dispatch on.
+pub fn infer_value(value: &str) -> Option<Value> {
+    if let Some(v) = unit_annotated_value(value) {
+        return Some(v);
+    }
+    infer_type(value)
 }
 
 fn path_is_time(path: &str) -> bool {
@@ -1410,10 +1539,17 @@ mod tests {
 
     #[test]
     fn datum_path_rewrites() {
-        assert_eq!(datum_path("plain"), "plain");
-        assert_eq!(datum_path("state"), "state.id");
-        assert_eq!(datum_path(".key"), "state.key");
-        assert_eq!(datum_path(".deep.sub"), "state.deep.sub");
+        assert_eq!(datum_path("plain", false), "plain");
+        assert_eq!(datum_path("state", false), "state.id");
+        assert_eq!(datum_path(".key", false), "state.key");
+        assert_eq!(datum_path(".deep.sub", false), "state.deep.sub");
+
+        // Daydumb compat: flat=true returns the path verbatim so leading
+        // dots and the literal `state` key land in extra_data unchanged.
+        assert_eq!(datum_path("plain", true), "plain");
+        assert_eq!(datum_path("state", true), "state");
+        assert_eq!(datum_path(".key", true), ".key");
+        assert_eq!(datum_path(".deep.sub", true), ".deep.sub");
     }
 
     #[test]
@@ -1436,27 +1572,58 @@ mod tests {
     #[test]
     fn set_and_get_paths_round_trip() {
         let mut m = Map::new();
-        set_path(&mut m, "a.b.c", json!(1));
+        set_path(&mut m, "a.b.c", json!(1), false);
         assert_eq!(get_path(&m, "a.b.c"), Some(&json!(1)));
-        set_path(&mut m, "a.b.c", json!(2));
+        set_path(&mut m, "a.b.c", json!(2), false);
         assert_eq!(get_path(&m, "a.b.c"), Some(&json!(2)));
-        set_path(&mut m, "a.b.d", json!("x"));
+        set_path(&mut m, "a.b.d", json!("x"), false);
         assert_eq!(get_path(&m, "a.b.d"), Some(&json!("x")));
     }
 
     #[test]
     fn set_path_overwrites_scalar_with_object() {
         let mut m = Map::new();
-        set_path(&mut m, "top", json!("primitive"));
-        set_path(&mut m, "top.nested", json!("abc"));
+        set_path(&mut m, "top", json!("primitive"), false);
+        set_path(&mut m, "top.nested", json!("abc"), false);
         assert_eq!(get_path(&m, "top.nested"), Some(&json!("abc")));
     }
 
     #[test]
     fn remove_path_removes_leaf() {
         let mut m = Map::new();
-        set_path(&mut m, "a.b.c", json!(1));
-        remove_path(&mut m, "a.b.c");
+        set_path(&mut m, "a.b.c", json!(1), false);
+        remove_path(&mut m, "a.b.c", false);
         assert_eq!(get_path(&m, "a.b.c"), None);
+    }
+
+    #[test]
+    fn flat_path_keeps_dotted_keys_literal() {
+        // Daydumb's `flat_paths` mode: leading dots and `state` keys land
+        // verbatim instead of being routed into a `state.*` subtree.
+        let mut m = Map::new();
+        set_path(&mut m, ".subtask", json!("mop"), true);
+        assert_eq!(m.get(".subtask"), Some(&json!("mop")));
+        assert!(m.get("state").is_none(), "no synthesised state subtree");
+
+        let mut a = args();
+        a.flat_paths = true;
+        a.preserve_null_strings = true;
+        a.data = vec![".subtask=mop".into(), "wake_time=8am".into()];
+        let out = run(a);
+        assert_eq!(out[".subtask"], json!("mop"));
+        assert_eq!(out["wake_time"], json!("08:00:00"));
+    }
+
+    #[test]
+    fn preserve_null_strings_keeps_literal_null() {
+        // Daydumb compat: `null` / `undefined` stay as strings on the
+        // primary-value path so the switch verb can store the literal.
+        let mut a = args();
+        a.flat_paths = true;
+        a.preserve_null_strings = true;
+        a.remainder = Some("__primary_value".into());
+        a.data = vec!["null".into()];
+        let out = run(a);
+        assert_eq!(out["__primary_value"], json!("null"));
     }
 }

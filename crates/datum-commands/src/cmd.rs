@@ -504,6 +504,20 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         verb = Verb::Add;
     }
 
+    // For switch, walk the bare positionals and reject leading/trailing/
+    // double-commas before handle_data_args runs. Datum's `infer_type`
+    // turns a leading-comma string into an array (`,a,b` → `["a","b"]`),
+    // which would silently bypass the strict-comma validation that lives
+    // downstream in `parse_switch_state_token`.
+    if matches!(verb, Verb::Switch) {
+        for token in &args.rest {
+            if token.contains('=') {
+                continue;
+            }
+            validate_switch_state_token(token)?;
+        }
+    }
+
     let parsed = parse_log_args(&args)?;
     let ParsedLogArgs {
         field,
@@ -799,186 +813,158 @@ struct ParsedLogArgs {
     slug_values: Vec<String>,
 }
 
-/// Which identity bucket a `-K` / `-k` slot contributes to.
-enum IdKeyKind { Slug, Data }
-
-/// Parsed form of a single `-K` / `-k` arg.
-enum IdKeySpec {
-    /// Slot that participates in positional fill. Always emitted for `-K`;
-    /// emitted for `-k` only in the `KEY` (required) or `KEY=` (omit-if-absent) forms.
-    Slot {
-        kind: IdKeyKind,
-        name: String,
-        default: Option<String>,
-        omit_if_absent: bool,
-    },
-    /// Legacy `-k KEY=VALUE`: immediate data assignment, no positional consumed.
-    /// Preserves the shape of Phase-1 recipes like `-k comment=hello`.
-    Immediate { name: String, value: String },
-}
-
-fn parse_id_key_spec(kind: IdKeyKind, spec: &str) -> Result<IdKeySpec> {
-    let (name, rhs): (&str, Option<&str>) = match spec.split_once('=') {
-        None => (spec, None),
-        Some((k, v)) => (k, Some(v)),
-    };
-    if name.is_empty() {
-        anyhow::bail!("empty id-key name in spec '{spec}'");
-    }
-
-    match (kind, rhs) {
-        // `-X KEY` (no `=`): required slot — consumes a positional or errors.
-        (kind, None) => Ok(IdKeySpec::Slot {
-            kind,
-            name: name.to_string(),
-            default: None,
-            omit_if_absent: false,
-        }),
-        // `-X KEY=` (empty RHS): optional slot, omitted if no positional.
-        (kind, Some("")) => Ok(IdKeySpec::Slot {
-            kind,
-            name: name.to_string(),
-            default: None,
-            omit_if_absent: true,
-        }),
-        // `-K KEY=VALUE`: optional slot with default. `-K` is new and always
-        // participates in positional fill.
-        (IdKeyKind::Slug, Some(v)) => Ok(IdKeySpec::Slot {
-            kind: IdKeyKind::Slug,
-            name: name.to_string(),
-            default: Some(v.to_string()),
-            omit_if_absent: false,
-        }),
-        // `-k KEY=VALUE` (legacy): immediate assignment — pre-D2 recipes
-        // expect `-k abc=123` to set `data.abc=123` without stealing a
-        // positional from the primary value.
-        (IdKeyKind::Data, Some(v)) => Ok(IdKeySpec::Immediate {
-            name: name.to_string(),
-            value: v.to_string(),
-        }),
-    }
-}
+/// Sentinel remainder-bucket key. Holds positionals that don't fill a
+/// declared `-K`/`-k` slot — extracted post-call as the entry's primary
+/// `value`. The `__datum_*` prefix avoids collision with any user key.
+const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 
 /// Parse LogArgs into a structured bundle — field, primary value, extra_data,
 /// and the list of `-K` slug-key values for slug derivation.
 ///
-/// Positional fill order: `-K` slots first, then `-k` slots, each in the
-/// order they appeared on the command line. `KEY=VALUE` positionals skip
-/// slot filling entirely and land directly in extra_data (matches the
-/// legacy behaviour so existing recipes still work).
+/// Delegates the data-assembly work (slot fill, `KEY=VALUE` positionals,
+/// suffix coercion for `_time`/`_date`/`_dur` keys, comment-list shaping)
+/// to [`datum_parse::input::data_args::handle_data_args`]. The wrapper
+/// here only owns the daydumb-specific concerns: extracting the primary
+/// `value` column from the un-keyed positionals, and pulling slug values
+/// out of the resolved [`DatumData`] for slug derivation.
 fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
+    use datum_parse::input::data_args::{handle_data_args, DataArgs};
+
     let field = args.field_or_verb.clone();
 
-    // Parse -K specs (all become slots) and -k specs (slots or legacy
-    // immediate assignments). -K is consumed first for positional fill.
-    let mut slots: Vec<(IdKeyKind, String, Option<String>, bool)> = Vec::new();
-    let mut immediate_extras: Vec<(String, String)> = Vec::new();
-    for spec_str in args.slug_keys.iter() {
-        match parse_id_key_spec(IdKeyKind::Slug, spec_str)? {
-            IdKeySpec::Slot { kind, name, default, omit_if_absent } => {
-                slots.push((kind, name, default, omit_if_absent));
-            }
-            IdKeySpec::Immediate { .. } => unreachable!("-K never yields Immediate"),
+    // Compose DataArgs from LogArgs. -K slug-keys come first in the slot
+    // list so they consume positionals ahead of plain -k slots, matching
+    // pre-da-26e ordering.
+    //
+    // `-k KEY=VALUE` (with non-empty VALUE) is a legacy immediate
+    // assignment from Phase-1 recipes — it must NOT consume a positional.
+    // handle_data_args treats `KEY=VALUE` declared keys as slot-with-default
+    // (the positional, if present, overrides the default). We translate
+    // immediates into a positional `KEY=VALUE` token prepended to the data
+    // queue so they write directly into datum_data without slot fill.
+    let mut data_args = DataArgs::default();
+    // Daydumb compat: flat paths (no `state.id` synthesis from `state` /
+    // `.x` keys) and literal `"null"` / `"undefined"` switch values. See
+    // the `DataArgs` field docs for why we diverge from datum's TS port.
+    data_args.flat_paths = true;
+    data_args.preserve_null_strings = true;
+    let mut slug_paths: Vec<String> = Vec::new();
+    for spec in &args.slug_keys {
+        let (name, _) = spec.split_once('=').map(|(n, v)| (n, Some(v))).unwrap_or((spec.as_str(), None));
+        if name.is_empty() {
+            anyhow::bail!("empty id-key name in spec '{spec}'");
         }
+        slug_paths.push(canonical_data_path(name));
+        data_args.push_id_key(spec.clone());
     }
-    for spec_str in args.keys.iter() {
-        match parse_id_key_spec(IdKeyKind::Data, spec_str)? {
-            IdKeySpec::Slot { kind, name, default, omit_if_absent } => {
-                slots.push((kind, name, default, omit_if_absent));
+
+    let mut injected_immediates: Vec<String> = Vec::new();
+    for spec in &args.keys {
+        let (name, rhs) = spec
+            .split_once('=')
+            .map(|(n, v)| (n, Some(v)))
+            .unwrap_or((spec.as_str(), None));
+        if name.is_empty() {
+            anyhow::bail!("empty id-key name in spec '{spec}'");
+        }
+        match rhs {
+            // `-k KEY=VALUE` (non-empty VALUE) → legacy immediate. Inject
+            // as positional KV so handle_data_args writes it directly.
+            Some(v) if !v.is_empty() => {
+                injected_immediates.push(format!("{name}={v}"));
             }
-            IdKeySpec::Immediate { name, value } => {
-                immediate_extras.push((name, value));
-            }
+            // `-k KEY` (required slot) and `-k KEY=` (omit-if-absent slot):
+            // declare to handle_data_args as a key.
+            _ => data_args.keys.push(spec.clone()),
         }
     }
 
-    // Split rest into bare positionals (for slot filling + primary value)
-    // and `KEY=VALUE` tokens (direct extra_data injection).
-    let mut positionals: Vec<&str> = Vec::with_capacity(args.rest.len());
-    let mut kvpair_tokens: Vec<(&str, &str)> = Vec::new();
-    for token in &args.rest {
-        match token.split_once('=') {
-            Some((k, v)) => kvpair_tokens.push((k, v)),
-            None => positionals.push(token),
-        }
+    for c in &args.comment {
+        data_args.comment.push(c.clone());
     }
 
-    // Fill slots.
-    let mut pos_iter = positionals.into_iter();
-    let mut slug_values: Vec<String> = Vec::new();
-    let mut slot_extras: Vec<(String, String)> = Vec::new();
-    for (kind, name, default, omit_if_absent) in &slots {
-        let slot_value: Option<String> = match (pos_iter.next(), default.as_ref(), *omit_if_absent) {
-            (Some(p), _, _) => Some(p.to_string()),
-            (None, Some(d), _) => Some(d.clone()),
-            (None, None, true) => None, // optional_no_default absent → omit
-            (None, None, false) => {
-                anyhow::bail!(
-                    "missing positional value for required id-key '{name}'"
-                );
-            }
-        };
-        if matches!(kind, IdKeyKind::Slug) {
-            slug_values.push(slot_value.clone().unwrap_or_default());
-        }
-        if let Some(v) = slot_value {
-            slot_extras.push((name.clone(), v));
-        }
+    // Data queue: immediates first (so they don't compete with slot fill),
+    // then user positionals in order.
+    data_args.data.reserve(injected_immediates.len() + args.rest.len());
+    data_args.data.extend(injected_immediates);
+    data_args.data.extend(args.rest.iter().cloned());
+
+    // Sentinel remainder so unconsumed positionals become the primary
+    // value rather than triggering datum's "extra data" error.
+    data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
+
+    let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
+
+    // Extract the primary value placed at the sentinel remainder bucket.
+    // handle_data_args appends each remainder positional, so a single token
+    // becomes a scalar and 2+ become an array — matching legacy behaviour.
+    let value = datum_data.remove(PRIMARY_VALUE_KEY);
+
+    // Slug values: the resolved value at each `-K` slot path, in
+    // declaration order. Slots that resolved to nothing (e.g. `-K key=`
+    // with no positional) contribute the empty string — matching legacy
+    // `slug_values.push(... .unwrap_or_default())`.
+    let mut slug_values: Vec<String> = Vec::with_capacity(slug_paths.len());
+    for path in &slug_paths {
+        slug_values.push(datum_value_to_slug_string(get_path_value(&datum_data, path)));
     }
 
-    // Remaining positionals fold into the primary value (first one) or
-    // extend it as an array (matches legacy behaviour).
-    let mut value: Option<JsonValue> = None;
-    for token in pos_iter {
-        if value.is_none() {
-            value = Some(parse_value_token(token));
-        } else {
-            match value.as_mut().unwrap() {
-                JsonValue::Array(arr) => arr.push(parse_value_token(token)),
-                existing => {
-                    let prev = existing.clone();
-                    *existing = JsonValue::Array(vec![prev, parse_value_token(token)]);
-                }
-            }
-        }
-    }
-
-    // `id=<name>` convention: a positional `id=` kvpair is promoted to the
-    // slug identity (slug becomes `<field>:<name>`) so entries can act as
-    // documents without needing an explicit `-K id` declaration. Explicit
-    // `-K` slug-keys already populate slug_values and win, in which case
-    // `id=` stays in extra_data as ordinary payload.
+    // `id=<name>` shorthand: when no `-K` slug-keys were declared, a
+    // positional `id=...` token is promoted to the slug identity. The
+    // value stays in extra_data only as a side effect — pre-existing
+    // behaviour stripped it from the payload, so we do the same here.
     if slug_values.is_empty() {
-        if let Some(pos) = kvpair_tokens.iter().position(|(k, _)| *k == "id") {
-            let (_, v) = kvpair_tokens.remove(pos);
-            slug_values.push(v.to_string());
+        if let Some(id_value) = datum_data.remove("id") {
+            slug_values.push(datum_value_to_slug_string(Some(&id_value)));
         }
     }
 
-    // Build extra_data. Order: slot fills, then legacy `-k KEY=VALUE`
-    // immediates, then `KEY=VALUE` positionals, then --comment. Later
-    // entries overwrite earlier ones so explicit user input beats defaults.
-    let mut extra = serde_json::Map::new();
-    for (k, v) in slot_extras {
-        extra.insert(k, parse_value_token(&v));
-    }
-    for (k, v) in immediate_extras {
-        extra.insert(k, parse_value_token(&v));
-    }
-    for (k, v) in kvpair_tokens {
-        extra.insert(k.to_string(), parse_value_token(v));
-    }
-    if let Some(comment) = &args.comment {
-        extra.insert("comment".to_string(), JsonValue::String(comment.clone()));
-    }
-
-    let extra_data = if extra.is_empty() {
+    let extra_data = if datum_data.is_empty() {
         None
     } else {
-        Some(JsonValue::Object(extra))
+        Some(JsonValue::Object(datum_data))
     };
 
     Ok(ParsedLogArgs { field, value, extra_data, slug_values })
+}
+
+/// Translate a `-K`/`-k` raw key name to the path `handle_data_args`
+/// writes to. With daydumb's `flat_paths` compat (set in `parse_log_args`),
+/// the path is taken verbatim — no `state` / leading-dot synthesis.
+fn canonical_data_path(raw: &str) -> String {
+    raw.to_string()
+}
+
+/// Resolve a slot path within `datum_data` for slug derivation. Daydumb's
+/// flat-paths compat stores `-K my.nested` as the literal key `my.nested`,
+/// so try the literal lookup first before walking dotted segments.
+fn get_path_value<'a>(
+    obj: &'a serde_json::Map<String, JsonValue>,
+    path: &str,
+) -> Option<&'a JsonValue> {
+    if let Some(v) = obj.get(path) {
+        return Some(v);
+    }
+    let mut segs = path.split('.');
+    let first = segs.next()?;
+    let mut cur = obj.get(first)?;
+    for seg in segs {
+        cur = cur.as_object().and_then(|m| m.get(seg))?;
+    }
+    Some(cur)
+}
+
+/// Stringify a resolved `DatumData` value for slug derivation. Missing
+/// or `null` slots collapse to `""`, matching the legacy
+/// `slot_value.unwrap_or_default()` behaviour. String values pass through
+/// without their JSON quoting; everything else uses serde's default
+/// representation.
+fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
+    match v {
+        None | Some(JsonValue::Null) => String::new(),
+        Some(JsonValue::String(s)) => s.clone(),
+        Some(other) => other.to_string(),
+    }
 }
 
 /// S12: parse a switch value token, splitting on `,` into an array of
@@ -986,8 +972,22 @@ fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
 /// leading/trailing commas and empty segments so users don't silently
 /// lose a state they meant to type.
 fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
+    validate_switch_state_token(s)?;
     if !s.contains(',') {
         return Ok(parse_value_token(s));
+    }
+    let parts: Vec<JsonValue> = s.split(',').map(parse_value_token).collect();
+    Ok(JsonValue::Array(parts))
+}
+
+/// Reject leading/trailing/double-commas in a switch state-list token.
+/// Surfaced separately from [`parse_switch_state_token`] because
+/// `log_entry` runs the same validation against raw `args.rest` tokens
+/// before [`handle_data_args`] gets a chance to silently coerce a
+/// leading-comma string into an array via datum's `infer_type` shorthand.
+fn validate_switch_state_token(s: &str) -> Result<()> {
+    if !s.contains(',') {
+        return Ok(());
     }
     if s.starts_with(',') || s.ends_with(',') {
         anyhow::bail!(
@@ -999,8 +999,7 @@ fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
             "invalid state list '{s}': empty segment between commas"
         );
     }
-    let parts: Vec<JsonValue> = s.split(',').map(parse_value_token).collect();
-    Ok(JsonValue::Array(parts))
+    Ok(())
 }
 
 /// S12: for `Verb::Switch`, expand any comma-containing string in the
@@ -2199,39 +2198,61 @@ pub(crate) fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
 pub(crate) fn parse_update_payload(
     args: &UpdateArgs,
 ) -> Result<(Option<JsonValue>, Option<JsonValue>)> {
-    let mut value: Option<JsonValue> = None;
-    let mut extra = serde_json::Map::new();
+    use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
-    for token in &args.rest {
+    // Same composition shape as `parse_log_args` — the only difference is
+    // there are no `-K` slug-keys in update (slug stays put) and no `-K`
+    // slot fill, so every `-k KEY=VALUE` is an immediate that bypasses
+    // the data queue. `-k KEY` (no `=`) and `-k KEY=` stay as declared
+    // slots so positionals can fill them.
+    let mut data_args = DataArgs::default();
+    // Same daydumb compat flags as the log path — see `parse_log_args`.
+    data_args.flat_paths = true;
+    data_args.preserve_null_strings = true;
+    let mut injected_immediates: Vec<String> = Vec::new();
+    for spec in &args.keys {
+        let (name, rhs) = spec
+            .split_once('=')
+            .map(|(n, v)| (n, Some(v)))
+            .unwrap_or((spec.as_str(), None));
+        if name.is_empty() {
+            anyhow::bail!("empty key name in spec '{spec}'");
+        }
+        match rhs {
+            Some(v) if !v.is_empty() => injected_immediates.push(format!("{name}={v}")),
+            _ => data_args.keys.push(spec.clone()),
+        }
+    }
+
+    for c in &args.comment {
+        data_args.comment.push(c.clone());
+    }
+
+    data_args.data.reserve(injected_immediates.len() + args.rest.len());
+    data_args.data.extend(injected_immediates);
+    data_args.data.extend(args.rest.iter().cloned());
+    data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
+
+    let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
+    let value = datum_data.remove(PRIMARY_VALUE_KEY);
+
+    // Preserve update's empty-string drop sentinel: `KEY=` (or `-k KEY=`)
+    // drops the key from the existing entry in `combine_extra`. handle_data_args
+    // turns an empty value into "remove from payload"; on the update path that
+    // erases the signal, so we re-introduce a String("") for each such token
+    // so `is_empty_string` downstream still fires.
+    for token in args.rest.iter().chain(args.keys.iter()) {
         if let Some((k, v)) = token.split_once('=') {
-            extra.insert(k.to_string(), parse_value_token(v));
-        } else if value.is_none() {
-            value = Some(parse_value_token(token));
-        } else {
-            match value.as_mut().unwrap() {
-                JsonValue::Array(arr) => arr.push(parse_value_token(token)),
-                existing => {
-                    let prev = existing.clone();
-                    *existing = JsonValue::Array(vec![prev, parse_value_token(token)]);
-                }
+            if v.is_empty() && !k.is_empty() {
+                datum_data.insert(k.to_string(), JsonValue::String(String::new()));
             }
         }
     }
 
-    for kv in &args.keys {
-        if let Some((k, v)) = kv.split_once('=') {
-            extra.insert(k.to_string(), parse_value_token(v));
-        }
-    }
-
-    if let Some(comment) = &args.comment {
-        extra.insert("comment".to_string(), JsonValue::String(comment.clone()));
-    }
-
-    let extra_data = if extra.is_empty() {
+    let extra_data = if datum_data.is_empty() {
         None
     } else {
-        Some(JsonValue::Object(extra))
+        Some(JsonValue::Object(datum_data))
     };
     Ok((value, extra_data))
 }
@@ -3378,7 +3399,7 @@ mod tests {
             unit: None,
             keys: vec![],
             slug_keys: vec![],
-            comment: None,
+            comment: Vec::new(),
             id: None,
             id_delimiter: ":".to_string(),
             last_state: None,
@@ -3418,7 +3439,7 @@ mod tests {
             unit: None,
             keys: vec![],
             slug_keys: vec![],
-            comment: None,
+            comment: Vec::new(),
             id: None,
             id_delimiter: ":".to_string(),
             last_state: None,
@@ -3467,7 +3488,7 @@ mod tests {
             field_or_verb: "coffee".to_string(),
             rest: vec!["2".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: Some("cups".to_string()), keys: vec![], slug_keys: vec![], comment: None,
+            timezone: None, unit: Some("cups".to_string()), keys: vec![], slug_keys: vec![], comment: Vec::new(),
             id: None, id_delimiter: ":".to_string(),
             last_state: None, moment: false,
             conflict: None, update: false, merge: false,
@@ -3490,7 +3511,7 @@ mod tests {
             field_or_verb: "work".to_string(),
             rest: vec![],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
+            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: Vec::new(),
             id: None, id_delimiter: ":".to_string(),
             last_state: None, moment: false,
             conflict: None, update: false, merge: false,
@@ -3513,7 +3534,7 @@ mod tests {
             field_or_verb: "journal".to_string(),
             rest: vec!["some text".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
+            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: Vec::new(),
             id: None, id_delimiter: ":".to_string(),
             last_state: None, moment: false,
             conflict: None, update: false, merge: false,
@@ -3664,7 +3685,7 @@ mod tests {
             field_or_verb: "mood".to_string(),
             rest: vec!["happy".to_string()],
             yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: None,
+            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: Vec::new(),
             id: None, id_delimiter: ":".to_string(),
             last_state: None, moment: false,
             conflict: None, update: false, merge: false,
@@ -3697,7 +3718,7 @@ mod tests {
             unit: None,
             keys: vec![],
             slug_keys: vec![],
-            comment: None,
+            comment: Vec::new(),
             id,
             id_delimiter: ":".to_string(),
             last_state: None,
@@ -4103,7 +4124,7 @@ mod tests {
             id: None,
             id_delimiter: ":".to_string(),
             keys: vec![],
-            comment: None,
+            comment: Vec::new(),
             dry_run: false,
             strict: false,
             output_flags: Default::default(),
