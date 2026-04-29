@@ -195,6 +195,41 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
     None
 }
 
+/// Inverse of [`shell_split`]: join tokens into a single shell-style
+/// string that round-trips back through `shell_split`. Tokens that
+/// contain whitespace, quotes, or backslashes are wrapped in double
+/// quotes with `\` and `"` escaped; the rest are emitted bare. Used by
+/// the alias-flag pre-pass when persisting a canonical command form.
+pub fn shell_join(tokens: &[String]) -> String {
+    tokens
+        .iter()
+        .map(|t| shell_quote_token(t))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn shell_quote_token(s: &str) -> String {
+    if s.is_empty() {
+        return "\"\"".to_string();
+    }
+    let needs_quoting = s
+        .chars()
+        .any(|c| c.is_whitespace() || matches!(c, '\'' | '"' | '\\' | '$' | '`' | '*' | '?' | '#' | '|' | '&' | ';' | '<' | '>' | '(' | ')'));
+    if !needs_quoting {
+        return s.to_string();
+    }
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        if c == '"' || c == '\\' {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out.push('"');
+    out
+}
+
 /// Shell-style split for alias expansion strings (e.g. when reading the
 /// alias's `expands_to` column). Single and double quotes, backslash
 /// escapes; no env-var expansion. Matches the minimal splitter in

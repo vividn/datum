@@ -145,6 +145,8 @@ OPTIONS:
       --merge           Shorthand for --conflict merge
   -M, --no-metadata     Zero created_at/modified_at, clear device_id
   -T, --no-timestamp    Route through timeless `add`
+      --alias <NAME>    On success, save current invocation as alias <NAME>
+      --alias-overwrite Allow --alias to replace an existing alias
 ";
 
 #[test]

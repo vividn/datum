@@ -204,6 +204,26 @@ const LOG_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    FlagSpec {
+        short: None,
+        long: "alias",
+        takes_value: true,
+        value_hint: Some("NAME"),
+        value_optional: false,
+        summary: "On success, save current invocation as alias <NAME>",
+        long_description: None,
+        left_override: None,
+    },
+    FlagSpec {
+        short: None,
+        long: "alias-overwrite",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Allow --alias to replace an existing alias",
+        long_description: None,
+        left_override: None,
+    },
 ];
 
 // Shared body for all log verbs — parameterized by the verb at lookup time.

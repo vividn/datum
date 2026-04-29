@@ -48,11 +48,11 @@ pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     use crate::commands;
     match cli.command {
-        Command::Occur(args) => commands::occur::occur(args, db),
-        Command::Start(args) => commands::start::start(args, db),
-        Command::Stop(args) => commands::end::stop(args, db),
-        Command::Switch(args) => commands::switch::switch(args, db),
-        Command::Add(args) => commands::add::add(args, db),
+        Command::Occur(args) => run_log_with_alias(args, db, commands::occur::occur),
+        Command::Start(args) => run_log_with_alias(args, db, commands::start::start),
+        Command::Stop(args) => run_log_with_alias(args, db, commands::end::stop),
+        Command::Switch(args) => run_log_with_alias(args, db, commands::switch::switch),
+        Command::Add(args) => run_log_with_alias(args, db, commands::add::add),
         Command::Tail(args) => commands::tail::tail(args, db),
         Command::Head(args) => commands::head::head(args, db),
         Command::Now(args) => commands::now::now(args, db),
@@ -85,6 +85,29 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Sync(args) => commands::sync::dispatch(args, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
     }
+}
+
+/// Wrap a logging-verb dispatcher so that `--alias <NAME>` (and
+/// `--alias-overwrite`) on the same invocation is honoured: the inner
+/// command runs first, then on success the canonical argv form is
+/// persisted to the alias table via
+/// [`crate::commands::alias::record_inline_alias`].
+///
+/// The raw pre-expansion argv must be captured *before* `inner` runs,
+/// because `log_entry` consumes the [`crate::args::IntentContext`] off
+/// the thread-local slot when stamping provenance onto the entry.
+fn run_log_with_alias(
+    args: LogArgs,
+    db: &Db,
+    inner: fn(LogArgs, &Db) -> Result<()>,
+) -> Result<()> {
+    let alias_name = args.alias_name.clone();
+    let alias_overwrite = args.alias_overwrite;
+    let raw_argv = crate::args::peek_intent_context()
+        .map(|ctx| ctx.raw_argv)
+        .unwrap_or_default();
+    inner(args, db)?;
+    crate::commands::alias::record_inline_alias(alias_name, alias_overwrite, &raw_argv, db)
 }
 
 fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
@@ -3365,6 +3388,8 @@ mod tests {
             merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         };
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
@@ -3403,6 +3428,8 @@ mod tests {
             merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Stop, args, &db).unwrap();
@@ -3446,6 +3473,8 @@ mod tests {
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Occur, args, &db).unwrap();
@@ -3467,6 +3496,8 @@ mod tests {
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Start, args, &db).unwrap();
@@ -3488,6 +3519,8 @@ mod tests {
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Add, args, &db).unwrap();
@@ -3637,6 +3670,8 @@ mod tests {
             conflict: None, update: false, merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         };
         log_entry(Verb::Switch, args, &db).unwrap();
@@ -3672,6 +3707,8 @@ mod tests {
             merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: Default::default(),
         }
     }

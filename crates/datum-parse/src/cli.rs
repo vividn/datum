@@ -246,6 +246,15 @@ pub struct LogArgs {
     pub merge: bool,
     pub no_metadata: bool,
     pub no_timestamp: bool,
+    /// `--alias <NAME>` — when set, after the command succeeds, persist
+    /// `<NAME> -> <canonical-form>` to the alias table. The canonical
+    /// form is the original argv with the alias-naming flag (and any
+    /// `--alias-overwrite`) stripped.
+    pub alias_name: Option<String>,
+    /// `--alias-overwrite` — companion to `--alias`. Allows replacing an
+    /// existing alias of the same name; without it, a name collision is
+    /// an error.
+    pub alias_overwrite: bool,
     pub output_flags: OutputFlags,
 }
 
@@ -273,6 +282,8 @@ impl LogArgs {
             merge: false,
             no_metadata: false,
             no_timestamp: false,
+            alias_name: None,
+            alias_overwrite: false,
             output_flags: OutputFlags::fresh(),
         }
     }

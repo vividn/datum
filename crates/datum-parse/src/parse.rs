@@ -484,6 +484,8 @@ struct LogExtras {
     update: bool,
     merge: bool,
     no_metadata: bool,
+    alias_name: Option<String>,
+    alias_overwrite: bool,
 }
 
 /// Build the per-command flag registry for logging verbs (occur, start,
@@ -566,6 +568,19 @@ fn log_args_registry() -> Vec<LiftedSpec<LogParsing>> {
         p.extras.no_metadata = true;
         Ok(())
     }));
+    r.push(local_value(None, Some("alias"), |p, v| {
+        if v.is_empty() {
+            return Err(ParseError::InvalidArg(
+                "--alias requires a non-empty name".into(),
+            ));
+        }
+        p.extras.alias_name = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("alias-overwrite"), |p| {
+        p.extras.alias_overwrite = true;
+        Ok(())
+    }));
     r
 }
 
@@ -631,6 +646,8 @@ fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
         merge: composed.extras.merge,
         no_metadata: composed.extras.no_metadata,
         no_timestamp: composed.time.omit_timestamp,
+        alias_name: composed.extras.alias_name,
+        alias_overwrite: composed.extras.alias_overwrite,
         output_flags: flatten_output(composed.output),
     })
 }

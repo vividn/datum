@@ -51,6 +51,11 @@ pub use pcli::{
 #[derive(Debug, Clone, Default)]
 pub struct IntentContext {
     pub raw_input: String,
+    /// Pre-expansion argv tail (i.e. argv[1..]). Distinct from
+    /// `raw_input`'s space-joined form so callers that need to
+    /// reconstruct a canonical command (e.g. the `--alias` flag's
+    /// post-success persist hook) don't have to re-shell-split.
+    pub raw_argv: Vec<String>,
     pub alias_chain: Vec<AliasStep>,
 }
 
@@ -142,9 +147,11 @@ impl CliExt for Cli {
 /// swap → stacked short-flag expansion. Also publishes the
 /// [`IntentContext`] on the thread-local slot so `log_entry` can stamp it.
 pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
-    let raw_input = argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+    let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
+    let raw_input = raw_argv.join(" ");
     let mut ctx = IntentContext {
         raw_input,
+        raw_argv,
         alias_chain: Vec::new(),
     };
 
@@ -174,9 +181,11 @@ pub fn expand_argv_with_db(
     argv: Vec<String>,
     db: &datum_core::db::Db,
 ) -> anyhow::Result<Vec<String>> {
-    let raw_input = argv.iter().skip(1).cloned().collect::<Vec<_>>().join(" ");
+    let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
+    let raw_input = raw_argv.join(" ");
     let mut ctx = IntentContext {
         raw_input,
+        raw_argv,
         alias_chain: Vec::new(),
     };
 
