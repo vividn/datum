@@ -6,7 +6,7 @@ use datum_core::db::Db;
 use crate::args::RestoreArgs;
 
 pub fn restore(args: RestoreArgs, db: &Db) -> Result<()> {
-    crate::cmd::cmd_restore(args, db)
+    super::backup_restore::cmd_restore(args, db)
 }
 
 pub fn restore_from_argv(_argv: &[String], _db: &Db) -> Result<()> {

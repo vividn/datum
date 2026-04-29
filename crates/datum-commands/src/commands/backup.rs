@@ -6,7 +6,7 @@ use datum_core::db::Db;
 use crate::args::BackupArgs;
 
 pub fn backup(args: BackupArgs, db: &Db) -> Result<()> {
-    crate::cmd::cmd_backup(args, db)
+    super::backup_restore::cmd_backup(args, db)
 }
 
 pub fn backup_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
