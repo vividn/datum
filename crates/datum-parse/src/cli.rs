@@ -10,9 +10,12 @@
 //! `OutputArgs`, `ConflictStrategy`) live in `datum-commands::args`
 //! alongside the re-exports.
 
-/// Parsed shape of `-A` / `--show` / `-o/--format-string`. The
-/// per-command `LogArgs::output()` etc. methods live in `datum-commands`
-/// and turn this into a resolved `OutputArgs`.
+use crate::input::{DurationArgs, OutputArgs, TimeArgs};
+
+/// Legacy flat output-flags shape, kept as a transitional shim for the
+/// per-command Args structs that haven't yet adopted the composed
+/// [`OutputArgs`] field. Phase A (da-e2e) migrated `LogArgs`; Phases B/C/D
+/// retire this for the remaining commands.
 #[derive(Debug, Clone, Default)]
 pub struct OutputFlags {
     pub show: String,
@@ -213,18 +216,23 @@ pub struct SetupArgs {
 
 // ─── Logging commands (occur/start/stop/switch/add) ──────────────────────
 
-/// The shared arg bag for all logging verbs. Must remain constructible
-/// field-by-field: tests build these directly (see `datum-cli/tests/*`).
+/// The shared arg bag for all logging verbs. Composed shape (da-e2e
+/// Phase A): timing/duration/output flags live in their concern bags so
+/// callers can call `args.time.build()`, `args.duration.build()`,
+/// `args.output.resolve()` directly. Log-specific extras (unit, keys,
+/// slug_keys, conflict, …) remain as direct fields since no shared
+/// concern module owns them.
 #[derive(Debug)]
 pub struct LogArgs {
     pub field_or_verb: String,
     pub rest: Vec<String>,
-    pub yesterday: u8,
-    pub quick: u8,
-    pub date: Option<String>,
-    pub time: Option<String>,
-    pub dur: Option<String>,
-    pub timezone: Option<String>,
+    /// `-y/-q/-d/-t/-z/-T` — composed timing concern. `-D/--full-day` is
+    /// not exposed for logging verbs; the parser strips that spec.
+    pub time: TimeArgs,
+    /// `--dur` / `-m/--moment` — composed duration concern.
+    pub duration: DurationArgs,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
     pub unit: Option<String>,
     pub keys: Vec<String>,
     pub slug_keys: Vec<String>,
@@ -244,12 +252,10 @@ pub struct LogArgs {
     /// * `Some("<value>")` — `-L=<value>`/`--last-state=<value>`; recorded
     ///   as an assertion on the entry's `user_asserted_last_state`.
     pub last_state: Option<String>,
-    pub moment: bool,
     pub conflict: Option<ConflictStrategyArg>,
     pub update: bool,
     pub merge: bool,
     pub no_metadata: bool,
-    pub no_timestamp: bool,
     /// `--alias <NAME>` — when set, after the command succeeds, persist
     /// `<NAME> -> <canonical-form>` to the alias table. The canonical
     /// form is the original argv with the alias-naming flag (and any
@@ -259,7 +265,6 @@ pub struct LogArgs {
     /// existing alias of the same name; without it, a name collision is
     /// an error.
     pub alias_overwrite: bool,
-    pub output_flags: OutputFlags,
 }
 
 impl LogArgs {
@@ -267,12 +272,9 @@ impl LogArgs {
         Self {
             field_or_verb: field_or_verb.into(),
             rest: Vec::new(),
-            yesterday: 0,
-            quick: 0,
-            date: None,
-            time: None,
-            dur: None,
-            timezone: None,
+            time: TimeArgs::default(),
+            duration: DurationArgs::default(),
+            output: OutputArgs::default(),
             unit: None,
             keys: Vec::new(),
             slug_keys: Vec::new(),
@@ -280,15 +282,12 @@ impl LogArgs {
             id: None,
             id_delimiter: ":".to_string(),
             last_state: None,
-            moment: false,
             conflict: None,
             update: false,
             merge: false,
             no_metadata: false,
-            no_timestamp: false,
             alias_name: None,
             alias_overwrite: false,
-            output_flags: OutputFlags::fresh(),
         }
     }
 }

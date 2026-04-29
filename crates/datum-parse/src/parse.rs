@@ -31,8 +31,8 @@
 use crate::cli::*;
 use crate::error::{ParseError, Result};
 use crate::input::{
-    self, lift, local_optional, local_switch, local_value, DurationArgs, LiftedSpec, OutputArgs,
-    TimeArgs, ValueMode,
+    self, lift, local_optional, local_switch, local_value, LiftedSpec, OutputArgs, TimeArgs,
+    ValueMode,
 };
 
 /// Entry point: parse an argv (including argv[0]) into a [`Cli`].
@@ -461,111 +461,85 @@ fn try_consume_output_flag(
 
 // ─── Subcommand parsers ──────────────────────────────────────────────────
 
-// Internal composed shape for logging verbs. Lives inside parse.rs only;
-// flattens into the public flat `LogArgs` at the end of `parse_log_args`.
-#[derive(Default)]
-struct LogParsing {
-    time: TimeArgs,
-    duration: DurationArgs,
-    output: OutputArgs,
-    extras: LogExtras,
-}
-
-#[derive(Default)]
-struct LogExtras {
-    unit: Option<String>,
-    keys: Vec<String>,
-    slug_keys: Vec<String>,
-    comment: Vec<String>,
-    id: Option<String>,
-    id_delimiter: Option<String>,
-    last_state: Option<String>,
-    conflict: Option<ConflictStrategyArg>,
-    update: bool,
-    merge: bool,
-    no_metadata: bool,
-    alias_name: Option<String>,
-    alias_overwrite: bool,
-}
-
 /// Build the per-command flag registry for logging verbs (occur, start,
-/// stop, switch, add). Combines lifted module specs with command-scoped
-/// extras.
-fn log_args_registry() -> Vec<LiftedSpec<LogParsing>> {
-    let mut r: Vec<LiftedSpec<LogParsing>> = Vec::new();
+/// stop, switch, add). Lifts the timing/duration/output module specs onto
+/// the public `LogArgs` shape directly — no intermediate parsing struct
+/// since da-e2e exposed the composed bags publicly.
+fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
+    let mut r: Vec<LiftedSpec<LogArgs>> = Vec::new();
     // Time concern (-y/-q/-d/-t/-z/-T). `-D/--full-day` is intentionally
     // omitted; logging verbs don't expose it today.
     for spec in input::time_args::FLAG_SPECS {
         if spec.short == Some('D') {
             continue;
         }
-        r.push(lift(|p: &mut LogParsing| &mut p.time, spec));
+        r.push(lift(|p: &mut LogArgs| &mut p.time, spec));
     }
     // Duration concern (--dur, -m).
     for spec in input::duration_args::FLAG_SPECS {
-        r.push(lift(|p: &mut LogParsing| &mut p.duration, spec));
+        r.push(lift(|p: &mut LogArgs| &mut p.duration, spec));
     }
     // Output concern (-A, --show, -o).
     for spec in input::output_args::FLAG_SPECS {
-        r.push(lift(|p: &mut LogParsing| &mut p.output, spec));
+        r.push(lift(|p: &mut LogArgs| &mut p.output, spec));
     }
     // Command-scoped extras. We don't lift DataArgs's FLAG_SPECS for log
     // because log overwrites comment (last-wins) and tracks slug-keys
-    // separately from keys — see `LogExtras`.
+    // separately from keys.
     r.push(local_value(Some('u'), Some("unit"), |p, v| {
-        p.extras.unit = Some(v.to_string());
+        p.unit = Some(v.to_string());
         Ok(())
     }));
     r.push(local_value(Some('k'), Some("key"), |p, v| {
-        p.extras.keys.push(v.to_string());
+        p.keys.push(v.to_string());
         Ok(())
     }));
     r.push(local_value(Some('K'), Some("slug-key"), |p, v| {
-        p.extras.slug_keys.push(v.to_string());
+        p.slug_keys.push(v.to_string());
         Ok(())
     }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
-        p.extras.comment.push(v.to_string());
+        p.comment.push(v.to_string());
         Ok(())
     }));
     r.push(local_value(None, Some("id"), |p, v| {
-        p.extras.id = Some(v.to_string());
+        p.id = Some(v.to_string());
         Ok(())
     }));
     r.push(local_value(None, Some("id-delimiter"), |p, v| {
-        p.extras.id_delimiter = Some(v.to_string());
+        p.id_delimiter = v.to_string();
         Ok(())
     }));
     r.push(local_optional(Some('L'), Some("last-state"), |p, v| {
         // Bare → Some(""), `=value` → Some(value). The empty-string sentinel
         // is the trigger for Stop's close-most-recent behaviour.
-        p.extras.last_state = Some(v.unwrap_or("").to_string());
+        p.last_state = Some(v.unwrap_or("").to_string());
         Ok(())
     }));
     r.push(local_value(None, Some("conflict"), |p, v| {
-        p.extras.conflict = Some(parse_conflict_strategy(v)?);
+        p.conflict = Some(parse_conflict_strategy(v)?);
         Ok(())
     }));
     r.push(local_switch(None, Some("update"), |p| {
-        if p.extras.merge {
+        if p.merge {
             return Err(ParseError::InvalidArg(
                 "--update conflicts with --merge".into(),
             ));
         }
-        p.extras.update = true;
+        p.update = true;
         Ok(())
     }));
     r.push(local_switch(None, Some("merge"), |p| {
-        if p.extras.update {
+        if p.update {
             return Err(ParseError::InvalidArg(
                 "--merge conflicts with --update".into(),
             ));
         }
-        p.extras.merge = true;
+        p.merge = true;
         Ok(())
     }));
     r.push(local_switch(Some('M'), Some("no-metadata"), |p| {
-        p.extras.no_metadata = true;
+        p.no_metadata = true;
         Ok(())
     }));
     r.push(local_value(None, Some("alias"), |p, v| {
@@ -574,11 +548,11 @@ fn log_args_registry() -> Vec<LiftedSpec<LogParsing>> {
                 "--alias requires a non-empty name".into(),
             ));
         }
-        p.extras.alias_name = Some(v.to_string());
+        p.alias_name = Some(v.to_string());
         Ok(())
     }));
     r.push(local_switch(None, Some("alias-overwrite"), |p| {
-        p.extras.alias_overwrite = true;
+        p.alias_overwrite = true;
         Ok(())
     }));
     r
@@ -586,6 +560,8 @@ fn log_args_registry() -> Vec<LiftedSpec<LogParsing>> {
 
 /// Flatten `OutputArgs` (R2 shape, `show: Option<String>`) into the
 /// pre-existing `OutputFlags` (`show: String` defaulting to "default").
+/// Used by parsers that haven't yet migrated to the composed shape
+/// (Phases B/C/D).
 fn flatten_output(o: OutputArgs) -> OutputFlags {
     OutputFlags {
         show: o.show.unwrap_or_else(|| "default".to_string()),
@@ -596,11 +572,11 @@ fn flatten_output(o: OutputArgs) -> OutputFlags {
 
 fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     let registry = log_args_registry();
-    let mut composed = LogParsing::default();
+    let mut out = LogArgs::fresh(String::new());
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+        if let Some(ni) = walk_registry(tail, i, &mut out, &registry)? {
             i = ni;
             continue;
         }
@@ -613,43 +589,14 @@ fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
         }
     }
     let mut it = pos.into_iter();
-    let field_or_verb = it
+    out.field_or_verb = it
         .next()
         .ok_or_else(|| {
             ParseError::InvalidArg("missing required positional: <FIELD_OR_VERB>".into())
         })?
         .to_string();
-    let rest: Vec<String> = it.map(|s| s.to_string()).collect();
-
-    Ok(LogArgs {
-        field_or_verb,
-        rest,
-        yesterday: u8::try_from(composed.time.yesterday).unwrap_or(u8::MAX),
-        quick: u8::try_from(composed.time.quick).unwrap_or(u8::MAX),
-        date: composed.time.date,
-        time: composed.time.time,
-        dur: composed.duration.duration,
-        timezone: composed.time.timezone,
-        unit: composed.extras.unit,
-        keys: composed.extras.keys,
-        slug_keys: composed.extras.slug_keys,
-        comment: composed.extras.comment,
-        id: composed.extras.id,
-        id_delimiter: composed
-            .extras
-            .id_delimiter
-            .unwrap_or_else(|| ":".to_string()),
-        last_state: composed.extras.last_state,
-        moment: composed.duration.moment,
-        conflict: composed.extras.conflict,
-        update: composed.extras.update,
-        merge: composed.extras.merge,
-        no_metadata: composed.extras.no_metadata,
-        no_timestamp: composed.time.omit_timestamp,
-        alias_name: composed.extras.alias_name,
-        alias_overwrite: composed.extras.alias_overwrite,
-        output_flags: flatten_output(composed.output),
-    })
+    out.rest = it.map(|s| s.to_string()).collect();
+    Ok(out)
 }
 
 fn parse_conflict_strategy(s: &str) -> Result<ConflictStrategyArg> {
@@ -2490,7 +2437,7 @@ mod tests {
         // --time=-5 should be accepted even though -5 starts with a hyphen.
         let cli = parse_argv(&argv(&["occur", "--time=-5", "coffee"])).unwrap();
         match cli.command {
-            Command::Occur(a) => assert_eq!(a.time.as_deref(), Some("-5")),
+            Command::Occur(a) => assert_eq!(a.time.time.as_deref(), Some("-5")),
             _ => panic!(),
         }
     }
@@ -2500,7 +2447,7 @@ mod tests {
         // -t=-5
         let cli = parse_argv(&argv(&["occur", "-t=-5", "coffee"])).unwrap();
         match cli.command {
-            Command::Occur(a) => assert_eq!(a.time.as_deref(), Some("-5")),
+            Command::Occur(a) => assert_eq!(a.time.time.as_deref(), Some("-5")),
             _ => panic!(),
         }
     }

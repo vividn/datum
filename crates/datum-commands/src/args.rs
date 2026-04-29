@@ -252,7 +252,17 @@ pub fn resolve_output_flags(f: &OutputFlags) -> OutputArgs {
         show: Some(f.show.clone()),
         format_string: f.format_string.clone(),
     };
-    let resolved = parse_args.resolve();
+    resolve_parse_output_args(&parse_args)
+}
+
+/// Render-time resolution starting from the composed
+/// [`datum_parse::input::OutputArgs`] (Phase A+ shape on `LogArgs`).
+/// Per-command Args structs that still carry the legacy [`OutputFlags`]
+/// route through [`resolve_output_flags`] until their phase migrates.
+pub fn resolve_parse_output_args(o: &datum_parse::input::OutputArgs) -> OutputArgs {
+    use datum_parse::input::output_args as parse_output;
+
+    let resolved = o.resolve();
     OutputArgs {
         show: match resolved.show {
             parse_output::Show::Default => Show::Default,
@@ -275,7 +285,7 @@ pub trait LogArgsExt {
 
 impl LogArgsExt for LogArgs {
     fn output(&self) -> OutputArgs {
-        resolve_output_flags(&self.output_flags)
+        resolve_parse_output_args(&self.output)
     }
     fn conflict_strategy(&self) -> ConflictStrategy {
         if self.update {

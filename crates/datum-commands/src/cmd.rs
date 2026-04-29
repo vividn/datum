@@ -499,7 +499,7 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     // -T/--no-timestamp: route any log verb through the timeless `add`
     // codepath (S5). Time-specifying flags are rejected so silent discard
     // can't mask a user misconception.
-    if args.no_timestamp {
+    if args.time.omit_timestamp {
         check_no_time_flags(&args)?;
         verb = Verb::Add;
     }
@@ -540,7 +540,7 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     // Compute time_start, time_end, precision, and (for Verb::Add) a shape
     // override. Skipped entirely for -T — a timeless entry carries no times
     // and no precision metadata.
-    let (time_start, time_end, base_precision, add_override_shape) = if args.no_timestamp {
+    let (time_start, time_end, base_precision, add_override_shape) = if args.time.omit_timestamp {
         (None, None, None, None)
     } else {
         let (base_time, base_precision) = build_time_with_precision(&args)?;
@@ -581,10 +581,10 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
 
         let (time_start, time_end) = if let Some(result) = &add_override {
             (result.start_time.clone(), result.end_time.clone())
-        } else if args.moment && matches!(verb, Verb::Switch) {
+        } else if args.duration.moment && matches!(verb, Verb::Switch) {
             // --moment on switch: point-in-time change (time_start == time_end)
             (Some(base_time.clone()), Some(base_time))
-        } else if let Some(dur_str) = &args.dur {
+        } else if let Some(dur_str) = &args.duration.duration {
             let dur = parse_duration(dur_str)?;
             match verb {
                 Verb::Start => {
@@ -1268,12 +1268,12 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
 /// of the offending flags.
 fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     let mut bad: Vec<&str> = Vec::new();
-    if args.time.is_some() { bad.push("-t/--time"); }
-    if args.date.is_some() { bad.push("-d/--date"); }
-    if args.dur.is_some() { bad.push("--dur"); }
-    if args.timezone.is_some() { bad.push("-z/--timezone"); }
-    if args.yesterday > 0 { bad.push("-y"); }
-    if args.quick > 0 { bad.push("-q"); }
+    if args.time.time.is_some() { bad.push("-t/--time"); }
+    if args.time.date.is_some() { bad.push("-d/--date"); }
+    if args.duration.duration.is_some() { bad.push("--dur"); }
+    if args.time.timezone.is_some() { bad.push("-z/--timezone"); }
+    if args.time.yesterday > 0 { bad.push("-y"); }
+    if args.time.quick > 0 { bad.push("-q"); }
     if !bad.is_empty() {
         anyhow::bail!(
             "-T/--no-timestamp cannot be combined with time flags: {}",
@@ -1284,7 +1284,7 @@ fn check_no_time_flags(args: &LogArgs) -> Result<()> {
 }
 
 fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::time::Uncertainty)> {
-    let tz_name = match args.timezone.as_deref() {
+    let tz_name = match args.time.timezone.as_deref() {
         Some(spec) => Some(
             resolve_timezone(spec)
                 .map_err(|e| anyhow::anyhow!("Invalid -z/--timezone value '{spec}': {e}"))?,
@@ -1293,16 +1293,16 @@ fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::t
     };
 
     let mut builder = TimeBuilder::now()
-        .with_yesterday_count(args.yesterday as i64)
-        .with_quick_count(args.quick as i64)
-        .with_quick_precision(args.quick as u32)
+        .with_yesterday_count(args.time.yesterday as i64)
+        .with_quick_count(args.time.quick as i64)
+        .with_quick_precision(args.time.quick)
         .with_timezone(tz_name);
 
-    if let Some(d) = &args.date {
+    if let Some(d) = &args.time.date {
         let da = parse_date_arg(d)?;
         builder = builder.with_date_arg(da);
     }
-    if let Some(t) = &args.time {
+    if let Some(t) = &args.time.time {
         let ta = parse_time_arg(t)?;
         builder = builder.with_time_arg(ta);
     }
@@ -3387,32 +3387,8 @@ mod tests {
     fn test_dur_start_sets_time_end() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let args = LogArgs {
-            field_or_verb: "sleep".to_string(),
-            rest: vec![],
-            yesterday: 0,
-            quick: 0,
-            date: None,
-            time: None,
-            dur: Some("8h".to_string()),
-            timezone: None,
-            unit: None,
-            keys: vec![],
-            slug_keys: vec![],
-            comment: Vec::new(),
-            id: None,
-            id_delimiter: ":".to_string(),
-            last_state: None,
-            moment: false,
-            conflict: None,
-            update: false,
-            merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        };
+        let mut args = LogArgs::fresh("sleep");
+        args.duration.duration = Some("8h".to_string());
         // Just verify the dur parsing logic: start --dur 8h → end = start + 8h
         let (base, _precision) = build_time_with_precision(&args).unwrap();
         let dur = parse_duration("8h").unwrap();
@@ -3427,32 +3403,8 @@ mod tests {
     fn test_dur_stop_sets_time_start() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let args = LogArgs {
-            field_or_verb: "sleep".to_string(),
-            rest: vec![],
-            yesterday: 0,
-            quick: 0,
-            date: None,
-            time: None,
-            dur: Some("8h".to_string()),
-            timezone: None,
-            unit: None,
-            keys: vec![],
-            slug_keys: vec![],
-            comment: Vec::new(),
-            id: None,
-            id_delimiter: ":".to_string(),
-            last_state: None,
-            moment: false,
-            conflict: None,
-            update: false,
-            merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        };
+        let mut args = LogArgs::fresh("sleep");
+        args.duration.duration = Some("8h".to_string());
         log_entry(Verb::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
         assert_eq!(entries.len(), 1);
@@ -3484,20 +3436,9 @@ mod tests {
     fn test_auto_track_on_occur() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let args = LogArgs {
-            field_or_verb: "coffee".to_string(),
-            rest: vec!["2".to_string()],
-            yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: Some("cups".to_string()), keys: vec![], slug_keys: vec![], comment: Vec::new(),
-            id: None, id_delimiter: ":".to_string(),
-            last_state: None, moment: false,
-            conflict: None, update: false, merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        };
+        let mut args = LogArgs::fresh("coffee");
+        args.rest = vec!["2".to_string()];
+        args.unit = Some("cups".to_string());
         log_entry(Verb::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
@@ -3507,20 +3448,7 @@ mod tests {
     fn test_auto_track_on_start() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let args = LogArgs {
-            field_or_verb: "work".to_string(),
-            rest: vec![],
-            yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: Vec::new(),
-            id: None, id_delimiter: ":".to_string(),
-            last_state: None, moment: false,
-            conflict: None, update: false, merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        };
+        let args = LogArgs::fresh("work");
         log_entry(Verb::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "work" && !f.ignored));
@@ -3530,20 +3458,8 @@ mod tests {
     fn test_no_auto_track_on_note() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let args = LogArgs {
-            field_or_verb: "journal".to_string(),
-            rest: vec!["some text".to_string()],
-            yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: Vec::new(),
-            id: None, id_delimiter: ":".to_string(),
-            last_state: None, moment: false,
-            conflict: None, update: false, merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        };
+        let mut args = LogArgs::fresh("journal");
+        args.rest = vec!["some text".to_string()];
         log_entry(Verb::Add, args, &db).unwrap();
         // da-2sr: an add-only field has no state-bearing entry, so state_at
         // returns None — the projection labels it ignored (the "no entries"
@@ -3681,20 +3597,8 @@ mod tests {
         cmd_now(NowArgs { show_all: false }, &db).unwrap();
 
         // With some tracked fields and entries
-        let args = LogArgs {
-            field_or_verb: "mood".to_string(),
-            rest: vec!["happy".to_string()],
-            yesterday: 0, quick: 0, date: None, time: None, dur: None,
-            timezone: None, unit: None, keys: vec![], slug_keys: vec![], comment: Vec::new(),
-            id: None, id_delimiter: ":".to_string(),
-            last_state: None, moment: false,
-            conflict: None, update: false, merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        };
+        let mut args = LogArgs::fresh("mood");
+        args.rest = vec!["happy".to_string()];
         log_entry(Verb::Switch, args, &db).unwrap();
         // da-2sr: writing the switch entry alone makes mood tracked; no
         // separate set_tracked / spec write is needed.
@@ -3706,32 +3610,10 @@ mod tests {
     // ─── id-template tests (A1 acceptance) ──────────────────────────────────
 
     fn log_args(field: &str, rest: Vec<String>, id: Option<String>) -> LogArgs {
-        LogArgs {
-            field_or_verb: field.to_string(),
-            rest,
-            yesterday: 0,
-            quick: 0,
-            date: None,
-            time: None,
-            dur: None,
-            timezone: None,
-            unit: None,
-            keys: vec![],
-            slug_keys: vec![],
-            comment: Vec::new(),
-            id,
-            id_delimiter: ":".to_string(),
-            last_state: None,
-            moment: false,
-            conflict: None,
-            update: false,
-            merge: false,
-            no_metadata: false,
-            no_timestamp: false,
-            alias_name: None,
-            alias_overwrite: false,
-            output_flags: Default::default(),
-        }
+        let mut args = LogArgs::fresh(field);
+        args.rest = rest;
+        args.id = id;
+        args
     }
 
     #[test]
