@@ -4,8 +4,8 @@
 //!   the previous hand-written `top_level_help` / `command_help`).
 //! - [`render_markdown`] produces a Markdown rendering for downstream
 //!   docs (README, cargo doc).
-//! - [`render_roff`] produces roff for man-page generation. The current
-//!   implementation is a stub; the full implementation lands in da-docs.2.
+//! - [`render_roff`] produces roff for man-page generation; see the
+//!   roff section of this module for the formatting conventions.
 
 use super::commands::{
     find_command, COMMANDS, GLOBAL_FLAGS, GLOBAL_FLAGS_COL, TOP_LEVEL_FOOTER, TOP_LEVEL_USAGE,
@@ -247,24 +247,176 @@ fn render_markdown_command(spec: &CommandSpec) -> String {
     if !spec.examples.is_empty() {
         s.push_str("\n## Examples\n\n");
         for ex in spec.examples {
-            s.push_str(&format!("```\n{}\n```\n\n{}\n\n", ex.command, ex.description));
+            s.push_str(&format!(
+                "```\n{}\n```\n\n{}\n\n",
+                ex.command, ex.description
+            ));
         }
     }
     s
 }
 
 // ---------------------------------------------------------------------------
-// Roff (man-page) rendering — stub. Full implementation in da-docs.2.
+// Roff (man-page) rendering.
 // ---------------------------------------------------------------------------
+//
+// Conventions follow `man-pages(7)`:
+//   .TH  — title header (NAME SECTION DATE SOURCE MANUAL)
+//   .SH  — section heading (uppercase)
+//   .SS  — subsection
+//   .TP  — tagged paragraph (next line is the tag, then body)
+//   .B   — bold line
+//   .I   — italic line
+//   \-   — literal ASCII hyphen (preserves `-` in copy/paste)
+//
+// `cmd = None` produces the top-level `datum(1)` man page; `cmd =
+// Some(name)` produces the per-subcommand `datum-NAME(1)` page. Unknown
+// names fall back to the top-level page (matches the help-text and
+// markdown renderers).
 
-/// Render roff source for a man page. This is currently a stub
-/// returning a minimal `.TH` header so callers can integrate; the full
-/// implementation lands in `da-docs.2`.
+use super::DATUM_VERSION;
+
+/// Render roff source for the `datum(1)` man page (`cmd = None`) or for
+/// a specific subcommand (`cmd = Some("tail")` → `datum-tail(1)`).
 pub fn render_roff(cmd: Option<&str>) -> String {
-    let name = cmd.unwrap_or("datum");
+    match cmd {
+        None => render_roff_top_level(),
+        Some(name) => match find_command(name) {
+            Some((spec, _)) => render_roff_command(spec),
+            None => render_roff_top_level(),
+        },
+    }
+}
+
+fn render_roff_top_level() -> String {
+    let mut s = String::new();
+    s.push_str(&render_th("DATUM", 1));
+    s.push_str(".SH NAME\ndatum \\- personal data tracker\n");
+    // TOP_LEVEL_USAGE already starts with "datum"; emit the first word
+    // bold and the remainder as plain text on the same logical line.
+    s.push_str(".SH SYNOPSIS\n");
+    let (first, rest) = TOP_LEVEL_USAGE
+        .split_once(' ')
+        .unwrap_or((TOP_LEVEL_USAGE, ""));
+    s.push_str(&format!(".B {}\n", roff_escape(first)));
+    if !rest.is_empty() {
+        s.push_str(&format!("{}\n", roff_escape(rest)));
+    }
+    s.push_str(".SH DESCRIPTION\n");
+    s.push_str(
+        "datum is a local-first personal data tracker. \
+         Entries are logged from the command line and stored in a local \
+         SQLite database; an optional encrypted relay synchronises devices.\n",
+    );
+
+    s.push_str(".SH COMMANDS\n");
+    for cat in Category::order() {
+        let in_section: Vec<&CommandSpec> =
+            COMMANDS.iter().filter(|c| c.category == *cat).collect();
+        if in_section.is_empty() {
+            continue;
+        }
+        s.push_str(&format!(".SS {}\n", roff_escape(cat.label())));
+        for spec in &in_section {
+            let summary = spec
+                .top_summary
+                .map(String::from)
+                .unwrap_or_else(|| capitalize_first(spec.summary));
+            s.push_str(".TP\n");
+            s.push_str(&format!(".B {}\n", roff_escape(spec.name)));
+            s.push_str(&format!("{}\n", roff_escape(&summary)));
+        }
+    }
+
+    s.push_str(".SH GLOBAL OPTIONS\n");
+    s.push_str(&render_roff_flag_table(GLOBAL_FLAGS));
+
+    s.push_str(".SH SEE ALSO\n");
+    let names: Vec<String> = COMMANDS
+        .iter()
+        .map(|c| format!(".BR datum\\-{} (1)", roff_escape(c.name)))
+        .collect();
+    s.push_str(&names.join(",\n"));
+    s.push('\n');
+
+    s
+}
+
+fn render_roff_command(spec: &CommandSpec) -> String {
+    let mut s = String::new();
+    let title = format!("DATUM-{}", spec.name.to_ascii_uppercase());
+    s.push_str(&render_th(&title, 1));
+    s.push_str(&format!(
+        ".SH NAME\ndatum\\-{} \\- {}\n",
+        roff_escape(spec.name),
+        roff_escape(spec.summary),
+    ));
+
+    s.push_str(".SH SYNOPSIS\n");
+    for line in spec.usage {
+        s.push_str(&format!("{}\n.br\n", roff_escape(line)));
+    }
+
+    if let Some(desc) = spec.long_description {
+        s.push_str(".SH DESCRIPTION\n");
+        s.push_str(&roff_escape(desc));
+        s.push('\n');
+    }
+
+    if !spec.flags.is_empty() {
+        s.push_str(".SH OPTIONS\n");
+        s.push_str(&render_roff_flag_table(spec.flags));
+    }
+
+    if !spec.examples.is_empty() {
+        s.push_str(".SH EXAMPLES\n");
+        for ex in spec.examples {
+            s.push_str(".TP\n");
+            s.push_str(&format!(".B {}\n", roff_escape(ex.command)));
+            s.push_str(&format!("{}\n", roff_escape(ex.description)));
+        }
+    }
+
+    s.push_str(".SH SEE ALSO\n.BR datum (1)\n");
+    s
+}
+
+fn render_th(name: &str, section: u8) -> String {
     format!(
-        ".TH \"{}\" \"1\" \"\" \"\" \"datum manual\"\n.SH NAME\n{} \\- (man-page rendering not yet implemented; see da-docs.2)\n",
-        name.to_uppercase(),
-        name
+        ".TH \"{}\" \"{}\" \"\" \"datum {}\" \"datum manual\"\n",
+        name, section, DATUM_VERSION
     )
+}
+
+fn render_roff_flag_table(flags: &[FlagSpec]) -> String {
+    let mut s = String::new();
+    for f in flags {
+        s.push_str(".TP\n");
+        s.push_str(&format!(".B {}\n", roff_escape(&render_flag_left(f))));
+        s.push_str(&format!("{}\n", roff_escape(f.summary)));
+    }
+    s
+}
+
+/// Escape user-supplied text for safe inclusion as roff source.
+///
+/// - `\` is doubled so groff doesn't interpret it as an escape introducer.
+/// - `-` becomes `\-` so copy/paste from a rendered man page yields the
+///   ASCII hyphen rather than the Unicode hyphen-minus.
+/// - A leading `.` or `'` would otherwise be interpreted as a request;
+///   prefix with `\&` to neuter it.
+fn roff_escape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.chars().peekable();
+    if matches!(chars.peek(), Some('.') | Some('\'')) {
+        out.push_str("\\&");
+    }
+    for c in chars {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '-' => out.push_str("\\-"),
+            _ => out.push(c),
+        }
+    }
+    out
 }

@@ -34,6 +34,12 @@ pub enum ParseError {
     /// banner and exit with status 0.
     #[error("version requested")]
     VersionRequested,
+
+    /// `--man [SUBCOMMAND]` was requested. Optional payload: the
+    /// subcommand whose man page should be rendered. `None` means the
+    /// top-level `datum(1)` page. Callers render the roff and exit 0.
+    #[error("man requested{}", .0.as_deref().map(|s| format!(" for '{s}'")).unwrap_or_default())]
+    ManRequested(Option<String>),
 }
 
 pub type Result<T> = std::result::Result<T, ParseError>;

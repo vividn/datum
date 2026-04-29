@@ -150,7 +150,10 @@ OPTIONS:
 #[test]
 fn snapshot_add_help() {
     let actual = command_help("add");
-    assert_eq!(actual, EXPECTED_ADD, "datum add --help drifted from snapshot");
+    assert_eq!(
+        actual, EXPECTED_ADD,
+        "datum add --help drifted from snapshot"
+    );
 }
 
 #[test]
@@ -240,13 +243,52 @@ fn markdown_command_has_usage() {
 }
 
 // ---------------------------------------------------------------------------
-// Roff stub — the full implementation lands in da-docs.2; for now just
-// ensure callers get a valid `.TH` header back.
+// Roff (man-page) renderer.
 // ---------------------------------------------------------------------------
 
 #[test]
-fn roff_stub_emits_th_header() {
+fn roff_top_level_has_expected_sections() {
+    let r = super::render::render_roff(None);
+    assert!(r.starts_with(".TH \"DATUM\" \"1\""));
+    assert!(r.contains(".SH NAME\ndatum \\- personal data tracker\n"));
+    assert!(r.contains(".SH SYNOPSIS\n"));
+    assert!(r.contains(".SH DESCRIPTION\n"));
+    assert!(r.contains(".SH COMMANDS\n"));
+    assert!(r.contains(".SS LOGGING\n"));
+    assert!(r.contains(".SS VIEWS / SYNC\n"));
+    assert!(r.contains(".SH GLOBAL OPTIONS\n"));
+    assert!(r.contains(".SH SEE ALSO\n"));
+    // Cross-reference uses the per-command form `datum-tail(1)`.
+    assert!(r.contains(".BR datum\\-tail (1)"));
+}
+
+#[test]
+fn roff_per_command_has_expected_sections() {
     let r = super::render::render_roff(Some("tail"));
-    assert!(r.starts_with(".TH"));
-    assert!(r.contains("TAIL"));
+    assert!(r.starts_with(".TH \"DATUM-TAIL\" \"1\""));
+    assert!(r.contains(".SH NAME\ndatum\\-tail \\- show recent entries\n"));
+    assert!(r.contains(".SH SYNOPSIS\n"));
+    assert!(r.contains("datum tail [FIELD]"));
+    assert!(r.contains(".SH OPTIONS\n"));
+    assert!(r.contains(".SH SEE ALSO\n.BR datum (1)\n"));
+    // Flag entries render as .TP / .B lines.
+    assert!(r.contains(".TP\n.B \\-n <N>\n"));
+    assert!(r.contains("Number of entries (default 10)"));
+}
+
+#[test]
+fn roff_unknown_command_falls_back_to_top_level() {
+    let r = super::render::render_roff(Some("not-a-real-command"));
+    assert!(r.starts_with(".TH \"DATUM\" \"1\""));
+}
+
+#[test]
+fn roff_escapes_hyphens_and_backslashes() {
+    // The synopsis line for the top-level page contains `--db`, which
+    // must render as `\-\-db` so that `man -l` produces a copy-pasteable
+    // ASCII hyphen.
+    let r = super::render::render_roff(None);
+    assert!(r.contains("\\-\\-db"));
+    // No raw double-hyphen sequences leaked through.
+    assert!(!r.contains("--db"));
 }

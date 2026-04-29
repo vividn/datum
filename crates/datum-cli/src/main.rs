@@ -24,6 +24,10 @@ fn main() -> Result<()> {
                         println!("{}", help::version_banner());
                         return Ok(());
                     }
+                    ParseError::ManRequested(cmd) => {
+                        print!("{}", help::render_roff(cmd.as_deref()));
+                        return Ok(());
+                    }
                     _ => {}
                 }
             }
@@ -42,7 +46,10 @@ fn main() -> Result<()> {
     if matches!(
         &cli.command,
         Command::Info(InfoArgs { all: true, .. })
-            | Command::Info(InfoArgs { target: Some(_), .. })
+            | Command::Info(InfoArgs {
+                target: Some(_),
+                ..
+            })
     ) && cli.db.is_none()
     {
         let placeholder = datum_core::db::Db::open_in_memory()?;

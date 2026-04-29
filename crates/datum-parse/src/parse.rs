@@ -127,9 +127,9 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
                 i += 1;
             }
             FlagSplit::Long("db") => {
-                let v = tail.get(i + 1).ok_or_else(|| {
-                    ParseError::InvalidArg("--db requires a value".into())
-                })?;
+                let v = tail
+                    .get(i + 1)
+                    .ok_or_else(|| ParseError::InvalidArg("--db requires a value".into()))?;
                 db = Some((*v).to_string());
                 i += 2;
             }
@@ -144,6 +144,20 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
             }
             FlagSplit::ShortAttached('V', _) | FlagSplit::Short('V') => {
                 return Err(ParseError::VersionRequested);
+            }
+            FlagSplit::LongAttached("man", v) => {
+                return Err(ParseError::ManRequested(Some(v.to_string())));
+            }
+            FlagSplit::Long("man") => {
+                // Optional positional subcommand: `datum --man tail`.
+                // Skip flags so `datum --man --foo` still renders the
+                // top-level page.
+                let next = tail
+                    .get(i + 1)
+                    .copied()
+                    .filter(|s| !s.starts_with('-'))
+                    .map(String::from);
+                return Err(ParseError::ManRequested(next));
             }
             FlagSplit::Positional(_) => break i,
             FlagSplit::Long(name) | FlagSplit::LongAttached(name, _) => {
@@ -168,6 +182,9 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
     for tok in rest {
         match *tok {
             "--help" | "-h" => return Err(ParseError::HelpRequested(Some(sub.to_string()))),
+            // `datum SUB --man` and (after the field/verb prepass swap)
+            // `datum --man SUB` both land here.
+            "--man" => return Err(ParseError::ManRequested(Some(sub.to_string()))),
             _ => {}
         }
     }
@@ -254,10 +271,10 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FlagSplit<'a> {
     Positional(&'a str),
-    Long(&'a str),                 // --name (no attached value)
+    Long(&'a str),                  // --name (no attached value)
     LongAttached(&'a str, &'a str), // --name=value
-    Short(char),                   // -c
-    ShortAttached(char, &'a str),  // -c=value, or -cVALUE (only `-c=` form used here)
+    Short(char),                    // -c
+    ShortAttached(char, &'a str),   // -c=value, or -cVALUE (only `-c=` form used here)
 }
 
 fn split_flag(tok: &str) -> FlagSplit<'_> {
@@ -344,7 +361,11 @@ fn try_consume_output_flag(
             Ok(Some(i + 1))
         }
         FlagSplit::Long("format-string") | FlagSplit::Short('o') => {
-            let lbl = if tok.starts_with("--") { "--format-string" } else { "-o" };
+            let lbl = if tok.starts_with("--") {
+                "--format-string"
+            } else {
+                "-o"
+            };
             let (v, ni) = take_value(tail, i, None, lbl)?;
             out.format_string = Some(v.to_string());
             Ok(Some(ni))
@@ -531,14 +552,10 @@ fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
                 i += 1;
             }
             FlagSplit::Long(name) | FlagSplit::LongAttached(name, _) => {
-                return Err(ParseError::InvalidArg(format!(
-                    "unexpected flag: --{name}"
-                )));
+                return Err(ParseError::InvalidArg(format!("unexpected flag: --{name}")));
             }
             FlagSplit::Short(c) | FlagSplit::ShortAttached(c, _) => {
-                return Err(ParseError::InvalidArg(format!(
-                    "unexpected flag: -{c}"
-                )));
+                return Err(ParseError::InvalidArg(format!("unexpected flag: -{c}")));
             }
         }
     }
@@ -547,9 +564,7 @@ fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     out.field_or_verb = it
         .next()
         .ok_or_else(|| {
-            ParseError::InvalidArg(
-                "missing required positional: <FIELD_OR_VERB>".into(),
-            )
+            ParseError::InvalidArg("missing required positional: <FIELD_OR_VERB>".into())
         })?
         .to_string();
     out.rest = it.map(|s| s.to_string()).collect();
@@ -579,9 +594,18 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
             continue;
         }
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
-            FlagSplit::Short('y') => { out.yesterday = out.yesterday.saturating_add(1); i += 1; }
-            FlagSplit::Short('q') => { out.quick = out.quick.saturating_add(1); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
+            FlagSplit::Short('y') => {
+                out.yesterday = out.yesterday.saturating_add(1);
+                i += 1;
+            }
+            FlagSplit::Short('q') => {
+                out.quick = out.quick.saturating_add(1);
+                i += 1;
+            }
             FlagSplit::Short('n') => {
                 let (v, ni) = take_value(tail, i, None, "-n")?;
                 out.count = Some(parse_usize(v, "-n")?);
@@ -660,14 +684,10 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
                 i += 1;
             }
             FlagSplit::Long(name) | FlagSplit::LongAttached(name, _) => {
-                return Err(ParseError::InvalidArg(format!(
-                    "unexpected flag: --{name}"
-                )));
+                return Err(ParseError::InvalidArg(format!("unexpected flag: --{name}")));
             }
             FlagSplit::Short(c) | FlagSplit::ShortAttached(c, _) => {
-                return Err(ParseError::InvalidArg(format!(
-                    "unexpected flag: -{c}"
-                )));
+                return Err(ParseError::InvalidArg(format!("unexpected flag: -{c}")));
             }
         }
     }
@@ -707,7 +727,11 @@ fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
         i += 1;
     }
     let id_or_slug = pos.first().map(|s| s.to_string());
-    Ok(GetArgs { id_or_slug, pretty, output_flags })
+    Ok(GetArgs {
+        id_or_slug,
+        pretty,
+        output_flags,
+    })
 }
 
 fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
@@ -721,10 +745,22 @@ fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
             continue;
         }
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
-            FlagSplit::Long("force") => { out.force = true; i += 1; }
-            FlagSplit::Long("dry-run") => { out.dry_run = true; i += 1; }
-            FlagSplit::Long("strict") => { out.strict = true; i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
+            FlagSplit::Long("force") => {
+                out.force = true;
+                i += 1;
+            }
+            FlagSplit::Long("dry-run") => {
+                out.dry_run = true;
+                i += 1;
+            }
+            FlagSplit::Long("strict") => {
+                out.strict = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -743,7 +779,10 @@ fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
             continue;
         }
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("to-version") => {
                 let (v, ni) = take_value(tail, i, None, "--to-version")?;
                 out.to_version = Some(parse_u32(v, "--to-version")?);
@@ -753,7 +792,10 @@ fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
                 out.to_version = Some(parse_u32(v, "--to-version")?);
                 i += 1;
             }
-            FlagSplit::Long("force") => { out.force = true; i += 1; }
+            FlagSplit::Long("force") => {
+                out.force = true;
+                i += 1;
+            }
             FlagSplit::Long("window") => {
                 let (v, ni) = take_value(tail, i, None, "--window")?;
                 out.window = v.to_string();
@@ -781,7 +823,10 @@ fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("version") => {
                 let (v, ni) = take_value(tail, i, None, "--version")?;
                 version = Some(parse_u32(v, "--version")?);
@@ -792,21 +837,29 @@ fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
                 i += 1;
             }
             FlagSplit::Long("diff") => {
-                let a = tail.get(i + 1).ok_or_else(|| {
-                    ParseError::InvalidArg("--diff requires two values".into())
-                })?;
-                let b = tail.get(i + 2).ok_or_else(|| {
-                    ParseError::InvalidArg("--diff requires two values".into())
-                })?;
+                let a = tail
+                    .get(i + 1)
+                    .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
+                let b = tail
+                    .get(i + 2)
+                    .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
                 diff = Some(vec![parse_u32(a, "--diff")?, parse_u32(b, "--diff")?]);
                 i += 3;
             }
-            FlagSplit::Long("json") => { json = true; i += 1; }
+            FlagSplit::Long("json") => {
+                json = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
-    Ok(HistoryArgs { id_or_slug, version, diff, json })
+    Ok(HistoryArgs {
+        id_or_slug,
+        version,
+        diff,
+        json,
+    })
 }
 
 fn parse_why_args(tail: &[&str]) -> Result<WhyArgs> {
@@ -834,12 +887,18 @@ fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
             continue;
         }
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
-    Ok(EditArgs { id_or_slug, output_flags: out_flags })
+    Ok(EditArgs {
+        id_or_slug,
+        output_flags: out_flags,
+    })
 }
 
 fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
@@ -853,7 +912,10 @@ fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
             continue;
         }
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("strategy") => {
                 let (v, ni) = take_value(tail, i, None, "--strategy")?;
                 out.strategy = Some(parse_conflict_strategy(v)?);
@@ -899,8 +961,14 @@ fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
                 out.comment = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("dry-run") => { out.dry_run = true; i += 1; }
-            FlagSplit::Long("strict") => { out.strict = true; i += 1; }
+            FlagSplit::Long("dry-run") => {
+                out.dry_run = true;
+                i += 1;
+            }
+            FlagSplit::Long("strict") => {
+                out.strict = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -924,7 +992,10 @@ fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("offset") => {
                 let (v, ni) = take_value(tail, i, None, "--offset")?;
                 out.offset = Some(v.to_string());
@@ -1015,7 +1086,10 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("json") => {
                 let (v, ni) = take_value(tail, i, None, "--json")?;
                 out.json = Some(v.to_string());
@@ -1088,8 +1162,14 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.unit = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("track") => { out.track = true; i += 1; }
-            FlagSplit::Long("ignore") => { out.ignore = true; i += 1; }
+            FlagSplit::Long("track") => {
+                out.track = true;
+                i += 1;
+            }
+            FlagSplit::Long("ignore") => {
+                out.ignore = true;
+                i += 1;
+            }
             FlagSplit::Long("id-key") => {
                 let (v, ni) = take_value(tail, i, None, "--id-key")?;
                 out.id_keys.push(v.to_string());
@@ -1108,7 +1188,10 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.data_keys.push(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("no-autoalias") => { out.no_autoalias = true; i += 1; }
+            FlagSplit::Long("no-autoalias") => {
+                out.no_autoalias = true;
+                i += 1;
+            }
             FlagSplit::Long("y") => {
                 let (v, ni) = take_value(tail, i, None, "--y")?;
                 out.y = Some(parse_position_f64(v, "--y")?);
@@ -1193,7 +1276,10 @@ fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("color") => {
                 let (v, ni) = take_value(tail, i, None, "--color")?;
                 out.color = Some(v.to_string());
@@ -1256,7 +1342,10 @@ fn parse_migrate_import(tail: &[&str]) -> Result<MigrateImportArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("from") | FlagSplit::Long("backup") => {
                 let (v, ni) = take_value(tail, i, None, "--from")?;
                 out.backup_file = Some(v.to_string());
@@ -1266,7 +1355,10 @@ fn parse_migrate_import(tail: &[&str]) -> Result<MigrateImportArgs> {
                 out.backup_file = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("dry-run") => { out.dry_run = true; i += 1; }
+            FlagSplit::Long("dry-run") => {
+                out.dry_run = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1305,7 +1397,12 @@ fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
         }
     }
     let path = require_first_pos(&pos, "<PATH>")?;
-    Ok(RestoreArgs { path, force, dry_run, json })
+    Ok(RestoreArgs {
+        path,
+        force,
+        dry_run,
+        json,
+    })
 }
 
 fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
@@ -1320,7 +1417,10 @@ fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
             continue;
         }
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Short('f') | FlagSplit::Long("field") => {
                 let (v, ni) = take_value(tail, i, None, "-f/--field")?;
                 field = Some(v.to_string());
@@ -1363,7 +1463,10 @@ fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("group-by") => {
                 let (v, ni) = take_value(tail, i, None, "--group-by")?;
                 out.group_by = Some(v.to_string());
@@ -1382,7 +1485,10 @@ fn parse_count_args(tail: &[&str]) -> Result<CountArgs> {
                 out.since = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("json") => { out.json = true; i += 1; }
+            FlagSplit::Long("json") => {
+                out.json = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1399,7 +1505,10 @@ fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
     while i < tail.len() {
         let tok = tail[i];
         match split_flag(tok) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Short('n') | FlagSplit::Long("limit") => {
                 let (v, ni) = take_value(tail, i, None, "-n/--limit")?;
                 out.limit = Some(parse_usize(v, "-n/--limit")?);
@@ -1409,7 +1518,10 @@ fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
                 out.limit = Some(parse_usize(v, "-n/--limit")?);
                 i += 1;
             }
-            FlagSplit::Long("oldest-first") => { out.oldest_first = true; i += 1; }
+            FlagSplit::Long("oldest-first") => {
+                out.oldest_first = true;
+                i += 1;
+            }
             FlagSplit::Long("since") => {
                 let (v, ni) = take_value(tail, i, None, "--since")?;
                 out.since = Some(v.to_string());
@@ -1419,8 +1531,14 @@ fn parse_ids_args(tail: &[&str]) -> Result<IdsArgs> {
                 out.since = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("slug") => { out.slug = true; i += 1; }
-            FlagSplit::Long("json") => { out.json = true; i += 1; }
+            FlagSplit::Long("slug") => {
+                out.slug = true;
+                i += 1;
+            }
+            FlagSplit::Long("json") => {
+                out.json = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1499,7 +1617,10 @@ fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.output_file = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("json") => { out.json = true; i += 1; }
+            FlagSplit::Long("json") => {
+                out.json = true;
+                i += 1;
+            }
             FlagSplit::Long("watch") | FlagSplit::Short('w') => {
                 out.watch = true;
                 i += 1;
@@ -1723,9 +1844,7 @@ fn parse_sync_args(tail: &[&str]) -> Result<SyncArgs> {
                         "config" => SyncCommand::Config(parse_sync_config(rest)?),
                         "key" => SyncCommand::Key(parse_sync_key(rest)?),
                         "status" => SyncCommand::Status(parse_sync_status(rest)?),
-                        "install-daemon" => {
-                            SyncCommand::InstallDaemon(parse_sync_install(rest)?)
-                        }
+                        "install-daemon" => SyncCommand::InstallDaemon(parse_sync_install(rest)?),
                         _ => unreachable!(),
                     });
                     return Ok(args);
@@ -1734,9 +1853,18 @@ fn parse_sync_args(tail: &[&str]) -> Result<SyncArgs> {
                     "unexpected positional: {s}"
                 )));
             }
-            FlagSplit::Long("push") => { args.push = true; i += 1; }
-            FlagSplit::Long("pull") => { args.pull = true; i += 1; }
-            FlagSplit::Long("dry-run") => { args.dry_run = true; i += 1; }
+            FlagSplit::Long("push") => {
+                args.push = true;
+                i += 1;
+            }
+            FlagSplit::Long("pull") => {
+                args.pull = true;
+                i += 1;
+            }
+            FlagSplit::Long("dry-run") => {
+                args.dry_run = true;
+                i += 1;
+            }
             FlagSplit::Long("server") => {
                 let (v, ni) = take_value(tail, i, None, "--server")?;
                 args.server = Some(v.to_string());
@@ -1871,7 +1999,10 @@ fn parse_sync_key(tail: &[&str]) -> Result<SyncKeyCommand> {
                         server = Some(v.to_string());
                         i += 1;
                     }
-                    FlagSplit::Long("force") => { force = true; i += 1; }
+                    FlagSplit::Long("force") => {
+                        force = true;
+                        i += 1;
+                    }
                     f => return Err(unknown_flag(f)),
                 }
             }
@@ -1944,7 +2075,10 @@ fn parse_conflicts_list(tail: &[&str]) -> Result<ConflictsListArgs> {
                 out.kind = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("all") => { out.all = true; i += 1; }
+            FlagSplit::Long("all") => {
+                out.all = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1956,7 +2090,10 @@ fn parse_conflicts_show(tail: &[&str]) -> Result<ConflictsShowArgs> {
     let mut i = 0;
     while i < tail.len() {
         match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1974,7 +2111,10 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
     let mut i = 0;
     while i < tail.len() {
         match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => { pos.push(s); i += 1; }
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             FlagSplit::Long("keep") => {
                 let (v, ni) = take_value(tail, i, None, "--keep")?;
                 keep = Some(v.to_string());
@@ -1984,7 +2124,10 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
                 keep = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("close-older") => { close_older = true; i += 1; }
+            FlagSplit::Long("close-older") => {
+                close_older = true;
+                i += 1;
+            }
             FlagSplit::Long("take") => {
                 let (v, ni) = take_value(tail, i, None, "--take")?;
                 take = Some(v.to_string());
@@ -1994,22 +2137,22 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
                 take = Some(v.to_string());
                 i += 1;
             }
-            FlagSplit::Long("edit") => { edit = true; i += 1; }
-            FlagSplit::Long("skip") => { skip = true; i += 1; }
+            FlagSplit::Long("edit") => {
+                edit = true;
+                i += 1;
+            }
+            FlagSplit::Long("skip") => {
+                skip = true;
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     let hid = require_first_pos(&pos, "<HID>")?;
-    let chosen = [
-        keep.is_some(),
-        close_older,
-        take.is_some(),
-        edit,
-        skip,
-    ]
-    .iter()
-    .filter(|b| **b)
-    .count();
+    let chosen = [keep.is_some(), close_older, take.is_some(), edit, skip]
+        .iter()
+        .filter(|b| **b)
+        .count();
     if chosen > 1 {
         return Err(ParseError::InvalidArg(
             "--keep, --close-older, --take, --edit, --skip are mutually exclusive".into(),
@@ -2022,7 +2165,14 @@ fn parse_conflicts_resolve(tail: &[&str]) -> Result<ConflictsResolveArgs> {
             )));
         }
     }
-    Ok(ConflictsResolveArgs { hid, keep, close_older, take, edit, skip })
+    Ok(ConflictsResolveArgs {
+        hid,
+        keep,
+        close_older,
+        take,
+        edit,
+        skip,
+    })
 }
 
 fn parse_conflicts_auto(tail: &[&str]) -> Result<ConflictsAutoResolveArgs> {
@@ -2035,7 +2185,9 @@ fn parse_conflicts_auto(tail: &[&str]) -> Result<ConflictsAutoResolveArgs> {
     // defaulted to 0 here and let the caller `.max(default)` if needed
     // (matching the original behaviour, which also passed the default
     // through).
-    let mut out = ConflictsAutoResolveArgs { min_age: DEFAULT_AUTO_RESOLVE_MIN_AGE };
+    let mut out = ConflictsAutoResolveArgs {
+        min_age: DEFAULT_AUTO_RESOLVE_MIN_AGE,
+    };
     let mut i = 0;
     let mut got_min_age = false;
     while i < tail.len() {
@@ -2085,9 +2237,9 @@ fn unknown_flag(f: FlagSplit<'_>) -> ParseError {
         FlagSplit::Short(c) | FlagSplit::ShortAttached(c, _) => {
             ParseError::InvalidArg(format!("unexpected flag: -{c}"))
         }
-        FlagSplit::Positional(s) => ParseError::InvalidArg(format!(
-            "unexpected positional argument: {s}"
-        )),
+        FlagSplit::Positional(s) => {
+            ParseError::InvalidArg(format!("unexpected positional argument: {s}"))
+        }
     }
 }
 

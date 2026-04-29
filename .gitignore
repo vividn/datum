@@ -2,6 +2,7 @@
 /.beads
 /.claude
 /.runtime
+/man
 
 # Gas Town (added by gt)
 .logs/

@@ -9,6 +9,7 @@ members = [
     "crates/datum-sync-client",
     "crates/datum-sync-protocol",
     "crates/datum-sync-server",
+    "xtask",
 ]
 resolver = "2"
 

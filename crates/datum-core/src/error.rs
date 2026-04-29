@@ -34,7 +34,10 @@ pub enum DatumError {
     #[error("Missing required field: {0}")]
     MissingRequired(String),
 
-    #[error("'{prefix}' is ambiguous and may refer to:{}", format_candidates(candidates))]
+    #[error(
+        "'{prefix}' is ambiguous and may refer to:{}",
+        format_candidates(candidates)
+    )]
     AmbiguousPrefix {
         prefix: String,
         candidates: Vec<PrefixCandidate>,
@@ -96,6 +99,12 @@ impl From<datum_parse::ParseError> for DatumError {
             }
             datum_parse::ParseError::VersionRequested => {
                 DatumError::Other("version requested".to_string())
+            }
+            datum_parse::ParseError::ManRequested(Some(cmd)) => {
+                DatumError::Other(format!("man requested for '{cmd}'"))
+            }
+            datum_parse::ParseError::ManRequested(None) => {
+                DatumError::Other("man requested".to_string())
             }
         }
     }
