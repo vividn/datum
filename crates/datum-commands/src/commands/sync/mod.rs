@@ -154,44 +154,28 @@ pub fn run_sync_inner(
     dry_run: bool,
     db: &Db,
 ) -> Result<SyncOutcome> {
+    use datum_sync_client::sync_once::{self, Direction as ClientDirection, SyncConfig};
+
     let preflight = preflight_checks(server)?;
-    let mut outcome = SyncOutcome {
+    let cfg = SyncConfig {
+        server,
+        bearer: &preflight.token.token,
+        device_id: &preflight.device_id,
+        master_key: &preflight.master_key,
+        direction: match direction {
+            Direction::Both => ClientDirection::Both,
+            Direction::PushOnly => ClientDirection::PushOnly,
+            Direction::PullOnly => ClientDirection::PullOnly,
+        },
         dry_run,
-        ..Default::default()
     };
-
-    // Pull first — giving the push phase the most up-to-date view so it
-    // sends incremental deltas rather than re-sending rows that the pull
-    // just wrote. Any pull-side conflicts land in the conflict queue but
-    // do NOT block the subsequent push.
-    if direction.does_pull() {
-        let pulled = pull::run(
-            server,
-            client,
-            &preflight.token.token,
-            &preflight.device_id,
-            &preflight.master_key,
-            db,
-            dry_run,
-        )?;
-        outcome.pulled = pulled.applied;
-        outcome.conflicts_queued = pulled.conflicts_queued;
-    }
-
-    if direction.does_push() {
-        let pushed = push::run(
-            server,
-            client,
-            &preflight.token.token,
-            &preflight.device_id,
-            &preflight.master_key,
-            db,
-            dry_run,
-        )?;
-        outcome.pushed = pushed.pushed;
-    }
-
-    Ok(outcome)
+    let report = sync_once::sync_once(client, db, &cfg)?;
+    Ok(SyncOutcome {
+        pushed: report.push.pushed,
+        pulled: report.pull.applied,
+        conflicts_queued: report.pull.conflicts_queued,
+        dry_run,
+    })
 }
 
 /// Bundle of inputs every sync direction needs — token, key, device_id —

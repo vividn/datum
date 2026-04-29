@@ -308,9 +308,15 @@ fn spawn_watcher(
 }
 
 /// Execute a push for `target`. Blocks; runs inside `spawn_blocking`.
+///
+/// Drives the sync cycle through `datum_sync_client::sync_once::push_once`
+/// directly — `datum-commands` (clap + render) is only consulted for
+/// preflight (token/key/device-id loading), which is local-state I/O,
+/// not CLI surface.
 fn do_push(target: &SyncTarget) -> Result<usize> {
-    use datum_commands::commands::sync::{preflight_checks, push};
+    use datum_commands::commands::sync::preflight_checks;
     use datum_core::db::Db;
+    use datum_sync_client::sync_once;
     use std::time::Duration as StdDuration;
 
     let pre = preflight_checks(&target.server)?;
@@ -320,7 +326,7 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
         .context("build reqwest client")?;
     let db = Db::open(&target.path.to_string_lossy())
         .with_context(|| format!("open {}", target.path.display()))?;
-    let out = push::run(
+    let out = sync_once::push_once(
         &target.server,
         &client,
         &pre.token.token,
@@ -336,9 +342,10 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
 /// Returns the full [`PullOutcome`] so the caller can both log
 /// `applied` and decide whether to fire a desktop notification on
 /// `conflicts_queued > 0`.
-fn do_pull(target: &SyncTarget) -> Result<datum_commands::commands::sync::pull::PullOutcome> {
-    use datum_commands::commands::sync::{preflight_checks, pull};
+fn do_pull(target: &SyncTarget) -> Result<datum_sync_client::sync_once::PullOutcome> {
+    use datum_commands::commands::sync::preflight_checks;
     use datum_core::db::Db;
+    use datum_sync_client::sync_once;
     use std::time::Duration as StdDuration;
 
     let pre = preflight_checks(&target.server)?;
@@ -348,7 +355,7 @@ fn do_pull(target: &SyncTarget) -> Result<datum_commands::commands::sync::pull::
         .context("build reqwest client")?;
     let db = Db::open(&target.path.to_string_lossy())
         .with_context(|| format!("open {}", target.path.display()))?;
-    let out = pull::run(
+    let out = sync_once::pull_once(
         &target.server,
         &client,
         &pre.token.token,

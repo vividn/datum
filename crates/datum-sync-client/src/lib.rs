@@ -37,6 +37,9 @@ pub mod sync_state;
 #[cfg(feature = "http")]
 pub mod http;
 
+#[cfg(all(feature = "http", feature = "db"))]
+pub mod sync_once;
+
 // Convenience top-level re-exports of the most commonly used types so
 // downstream crates don't need to chase module paths. Keeping the list
 // narrow on purpose — anything deeper should import explicitly.
