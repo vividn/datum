@@ -19,6 +19,33 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`durationArgs.ts`") for the spec.
 
+use crate::input::flag_registry::{FlagAction, FlagSpec};
+
+/// Canonical flag set for the duration concern.
+///
+/// `--dur` carries the positional duration value (datum's TS shape uses a
+/// proper positional, but the bespoke parser exposes it as `--dur` so it
+/// composes with the rest of the flag stream); `-m`/`--moment` is the
+/// "no duration" override.
+pub static FLAG_SPECS: &[FlagSpec<DurationArgs>] = &[
+    FlagSpec {
+        short: None,
+        long: Some("dur"),
+        action: FlagAction::Value(|a, v| {
+            a.duration = Some(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('m'),
+        long: Some("moment"),
+        action: FlagAction::Switch(|a| {
+            a.moment = true;
+            Ok(())
+        }),
+    },
+];
+
 /// Parsed shape of the duration flag pair.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct DurationArgs {

@@ -23,8 +23,78 @@ use serde_json::{Map, Value};
 
 use crate::error::{ParseError, Result};
 use crate::input::consolidate_keys::consolidate_keys;
+use crate::input::flag_registry::{FlagAction, FlagSpec};
 use crate::input::flexible_positional::FlexibleTarget;
 use crate::time::{parse_date_arg, parse_duration, parse_time_arg};
+
+/// Canonical flag set for the data concern.
+///
+/// `-c`/`--comment` is repeatable per datum's argparse shape (the TS code
+/// joins multiple comments into a `comment: [...]` array); each occurrence
+/// pushes onto `comment`. `-k` and `-K` likewise repeat — `-K` also tracks
+/// the bare key name in `id_parts` so callers can render the slug template.
+///
+/// Positional `data` tokens (`key=value`, bare values) are NOT in this
+/// registry — they're consumed by the parser's positional path because
+/// they don't have a flag form.
+pub static FLAG_SPECS: &[FlagSpec<DataArgs>] = &[
+    FlagSpec {
+        short: Some('k'),
+        long: Some("key"),
+        action: FlagAction::Value(|a, v| {
+            a.keys.push(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('K'),
+        long: Some("slug-key"),
+        action: FlagAction::Value(|a, v| {
+            a.push_id_key(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('c'),
+        long: Some("comment"),
+        action: FlagAction::Value(|a, v| {
+            a.comment.push(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('R'),
+        long: Some("remainder"),
+        action: FlagAction::Value(|a, v| {
+            a.remainder = Some(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('S'),
+        long: Some("string-remainder"),
+        action: FlagAction::Switch(|a| {
+            a.string_remainder = true;
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('C'),
+        long: Some("comment-remainder"),
+        action: FlagAction::Switch(|a| {
+            a.comment_remainder = true;
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('l'),
+        long: Some("lenient"),
+        action: FlagAction::Switch(|a| {
+            a.lenient = true;
+            Ok(())
+        }),
+    },
+];
 
 /// The untyped data payload produced by [`handle_data_args`] — the direct
 /// analogue of datum's `DatumData` (a plain object).

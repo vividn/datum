@@ -23,6 +23,7 @@ use chrono::{Duration, Offset, TimeZone, Utc};
 use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
+use crate::input::flag_registry::{FlagAction, FlagSpec};
 use crate::time::{parse_date_arg, parse_time_arg, DatumTime, Uncertainty};
 
 /// Parsed shape of the timing flag group.
@@ -133,6 +134,73 @@ impl TimeArgs {
         })
     }
 }
+
+// ─── flag registry ──────────────────────────────────────────────────────
+
+/// Canonical flag set for the timing concern.
+///
+/// `parse.rs` lifts these onto a per-command target via
+/// [`crate::input::flag_registry::lift`]. Commands that don't accept all
+/// of these (e.g. logging verbs don't expose `-D/--full-day` today) pick
+/// the relevant subset at registry-build time.
+pub static FLAG_SPECS: &[FlagSpec<TimeArgs>] = &[
+    FlagSpec {
+        short: Some('y'),
+        long: Some("yesterday"),
+        action: FlagAction::Switch(|a| {
+            a.yesterday = a.yesterday.saturating_add(1);
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('q'),
+        long: Some("quick"),
+        action: FlagAction::Switch(|a| {
+            a.quick = a.quick.saturating_add(1);
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('d'),
+        long: Some("date"),
+        action: FlagAction::Value(|a, v| {
+            a.date = Some(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('t'),
+        long: Some("time"),
+        action: FlagAction::Value(|a, v| {
+            a.time = Some(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('z'),
+        long: Some("timezone"),
+        action: FlagAction::Value(|a, v| {
+            a.timezone = Some(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('T'),
+        long: Some("no-timestamp"),
+        action: FlagAction::Switch(|a| {
+            a.omit_timestamp = true;
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('D'),
+        long: Some("full-day"),
+        action: FlagAction::Switch(|a| {
+            a.full_day = true;
+            Ok(())
+        }),
+    },
+];
 
 // ─── timezone resolution ────────────────────────────────────────────────
 

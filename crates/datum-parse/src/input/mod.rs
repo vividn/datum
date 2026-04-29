@@ -23,6 +23,7 @@ pub mod data_args;
 pub mod defaults;
 pub mod duration_args;
 pub mod field_args;
+pub mod flag_registry;
 pub mod flexible_positional;
 pub mod main_args;
 pub mod output_args;
@@ -33,6 +34,9 @@ pub use consolidate_keys::consolidate_keys;
 pub use data_args::{handle_data_args, infer_type, DataArgs, DatumData};
 pub use duration_args::{DurationArgs, DurationIntent};
 pub use field_args::FieldArgs;
+pub use flag_registry::{
+    lift, local_optional, local_switch, local_value, FlagAction, FlagSpec, LiftedSpec, ValueMode,
+};
 pub use flexible_positional::{flexible_positional, FlexibleTarget};
 pub use output_args::{OutputArgs, OutputResolved, Show};
 pub use quick_id_arg::{OnAmbiguous, QuickIdArg};

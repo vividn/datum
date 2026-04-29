@@ -223,20 +223,37 @@ impl<'a> Resolver for DbAliasResolver<'a> {
 // that already imported `crate::args::*`.
 
 /// Resolve raw [`OutputFlags`] into the render-time [`OutputArgs`].
+///
+/// Delegates the show/format/show-all precedence rules to the canonical
+/// implementation in `datum_parse::input::OutputArgs::resolve`, then
+/// translates the parse-crate `Show` enum back to the render-crate one.
+/// The two `Show` enums have parallel variants; the conversion is a flat
+/// match. Centralising the logic in `datum-parse` is da-26e's "wire each
+/// module's build() so reconciliation is single-source-of-truth" pass —
+/// the legacy duplicated copy here is gone.
 pub fn resolve_output_flags(f: &OutputFlags) -> OutputArgs {
-    let show = if f.show_all {
-        Show::All
-    } else {
-        f.show.parse::<Show>().unwrap_or_default()
-    };
-    let show = if f.format_string.is_some() && f.show == "default" && !f.show_all {
-        Show::Format
-    } else {
-        show
-    };
-    OutputArgs {
-        show,
+    use datum_parse::input::output_args as parse_output;
+
+    let parse_args = parse_output::OutputArgs {
+        show_all: f.show_all,
+        // Pre-existing semantics treat the literal string `"default"` as
+        // "not explicitly set"; `OutputArgs::resolve` already handles that
+        // via `matches!(show.as_deref(), None | Some("default"))`, so the
+        // raw string passes through unchanged.
+        show: Some(f.show.clone()),
         format_string: f.format_string.clone(),
+    };
+    let resolved = parse_args.resolve();
+    OutputArgs {
+        show: match resolved.show {
+            parse_output::Show::Default => Show::Default,
+            parse_output::Show::None => Show::None,
+            parse_output::Show::Minimal => Show::Minimal,
+            parse_output::Show::Standard => Show::Standard,
+            parse_output::Show::Format => Show::Format,
+            parse_output::Show::All => Show::All,
+        },
+        format_string: resolved.format_string,
     }
 }
 

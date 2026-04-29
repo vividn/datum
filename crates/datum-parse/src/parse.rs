@@ -30,6 +30,10 @@
 
 use crate::cli::*;
 use crate::error::{ParseError, Result};
+use crate::input::{
+    self, lift, local_optional, local_switch, local_value, DurationArgs, LiftedSpec, OutputArgs,
+    TimeArgs, ValueMode,
+};
 
 /// Entry point: parse an argv (including argv[0]) into a [`Cli`].
 pub fn parse_argv(argv: &[String]) -> Result<Cli> {
@@ -331,6 +335,83 @@ fn take_value<'a>(
     }
 }
 
+// ─── Central flag registry walker ────────────────────────────────────────
+//
+// The walker matches one token at `i` against every spec in `registry`,
+// applying the first match. Specs are pulled from per-module FLAG_SPECS
+// arrays via `lift()` and combined into a per-command registry. Compound
+// shorts (`-yyt 3`) are pre-expanded by `alias::expand_stacked_flags` so
+// the walker only sees single-letter forms.
+
+/// Try to consume one flag from `tail[i]` against `registry`. Returns the
+/// new index when consumed; `None` when the token isn't a flag (i.e.
+/// positional) or doesn't match any spec.
+fn walk_registry<P: 'static>(
+    tail: &[&str],
+    i: usize,
+    target: &mut P,
+    registry: &[LiftedSpec<P>],
+) -> Result<Option<usize>> {
+    let tok = tail[i];
+    let split = split_flag(tok);
+
+    let (spec, attached) = match split {
+        FlagSplit::Long(name) => {
+            match registry.iter().find(|s| s.long == Some(name)) {
+                Some(s) => (s, None),
+                None => return Ok(None),
+            }
+        }
+        FlagSplit::LongAttached(name, v) => {
+            match registry.iter().find(|s| s.long == Some(name)) {
+                Some(s) => (s, Some(v)),
+                None => return Ok(None),
+            }
+        }
+        FlagSplit::Short(c) => match registry.iter().find(|s| s.short == Some(c)) {
+            Some(s) => (s, None),
+            None => return Ok(None),
+        },
+        FlagSplit::ShortAttached(c, v) => match registry.iter().find(|s| s.short == Some(c)) {
+            Some(s) => (s, Some(v)),
+            None => return Ok(None),
+        },
+        FlagSplit::Positional(_) => return Ok(None),
+    };
+
+    match (spec.value_mode, attached) {
+        (ValueMode::None, _) => {
+            // Switch flag — attached `=value` form is silently ignored,
+            // matching pre-registry behaviour for things like `--show-all=foo`.
+            (spec.apply)(target, None)?;
+            Ok(Some(i + 1))
+        }
+        (ValueMode::Required, Some(v)) => {
+            (spec.apply)(target, Some(v))?;
+            Ok(Some(i + 1))
+        }
+        (ValueMode::Required, None) => {
+            let label = spec_label(spec);
+            let (v, ni) = take_value(tail, i, None, &label)?;
+            (spec.apply)(target, Some(v))?;
+            Ok(Some(ni))
+        }
+        (ValueMode::OptionalAttached, attached) => {
+            (spec.apply)(target, attached)?;
+            Ok(Some(i + 1))
+        }
+    }
+}
+
+fn spec_label<P: 'static>(spec: &LiftedSpec<P>) -> String {
+    match (spec.short, spec.long) {
+        (Some(c), Some(l)) => format!("-{c}/--{l}"),
+        (None, Some(l)) => format!("--{l}"),
+        (Some(c), None) => format!("-{c}"),
+        (None, None) => "<flag>".to_string(),
+    }
+}
+
 // ─── Output-flag parsing (shared across every subcommand) ────────────────
 
 /// Try to consume one `--show` / `-A` / `-o` / `--format-string` /
@@ -380,195 +461,178 @@ fn try_consume_output_flag(
 
 // ─── Subcommand parsers ──────────────────────────────────────────────────
 
+// Internal composed shape for logging verbs. Lives inside parse.rs only;
+// flattens into the public flat `LogArgs` at the end of `parse_log_args`.
+#[derive(Default)]
+struct LogParsing {
+    time: TimeArgs,
+    duration: DurationArgs,
+    output: OutputArgs,
+    extras: LogExtras,
+}
+
+#[derive(Default)]
+struct LogExtras {
+    unit: Option<String>,
+    keys: Vec<String>,
+    slug_keys: Vec<String>,
+    comment: Option<String>,
+    id: Option<String>,
+    id_delimiter: Option<String>,
+    last_state: Option<String>,
+    conflict: Option<ConflictStrategyArg>,
+    update: bool,
+    merge: bool,
+    no_metadata: bool,
+}
+
+/// Build the per-command flag registry for logging verbs (occur, start,
+/// stop, switch, add). Combines lifted module specs with command-scoped
+/// extras.
+fn log_args_registry() -> Vec<LiftedSpec<LogParsing>> {
+    let mut r: Vec<LiftedSpec<LogParsing>> = Vec::new();
+    // Time concern (-y/-q/-d/-t/-z/-T). `-D/--full-day` is intentionally
+    // omitted; logging verbs don't expose it today.
+    for spec in input::time_args::FLAG_SPECS {
+        if spec.short == Some('D') {
+            continue;
+        }
+        r.push(lift(|p: &mut LogParsing| &mut p.time, spec));
+    }
+    // Duration concern (--dur, -m).
+    for spec in input::duration_args::FLAG_SPECS {
+        r.push(lift(|p: &mut LogParsing| &mut p.duration, spec));
+    }
+    // Output concern (-A, --show, -o).
+    for spec in input::output_args::FLAG_SPECS {
+        r.push(lift(|p: &mut LogParsing| &mut p.output, spec));
+    }
+    // Command-scoped extras. We don't lift DataArgs's FLAG_SPECS for log
+    // because log overwrites comment (last-wins) and tracks slug-keys
+    // separately from keys — see `LogExtras`.
+    r.push(local_value(Some('u'), Some("unit"), |p, v| {
+        p.extras.unit = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(Some('k'), Some("key"), |p, v| {
+        p.extras.keys.push(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(Some('K'), Some("slug-key"), |p, v| {
+        p.extras.slug_keys.push(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(Some('c'), Some("comment"), |p, v| {
+        p.extras.comment = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(None, Some("id"), |p, v| {
+        p.extras.id = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(None, Some("id-delimiter"), |p, v| {
+        p.extras.id_delimiter = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_optional(Some('L'), Some("last-state"), |p, v| {
+        // Bare → Some(""), `=value` → Some(value). The empty-string sentinel
+        // is the trigger for Stop's close-most-recent behaviour.
+        p.extras.last_state = Some(v.unwrap_or("").to_string());
+        Ok(())
+    }));
+    r.push(local_value(None, Some("conflict"), |p, v| {
+        p.extras.conflict = Some(parse_conflict_strategy(v)?);
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("update"), |p| {
+        if p.extras.merge {
+            return Err(ParseError::InvalidArg(
+                "--update conflicts with --merge".into(),
+            ));
+        }
+        p.extras.update = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("merge"), |p| {
+        if p.extras.update {
+            return Err(ParseError::InvalidArg(
+                "--merge conflicts with --update".into(),
+            ));
+        }
+        p.extras.merge = true;
+        Ok(())
+    }));
+    r.push(local_switch(Some('M'), Some("no-metadata"), |p| {
+        p.extras.no_metadata = true;
+        Ok(())
+    }));
+    r
+}
+
+/// Flatten `OutputArgs` (R2 shape, `show: Option<String>`) into the
+/// pre-existing `OutputFlags` (`show: String` defaulting to "default").
+fn flatten_output(o: OutputArgs) -> OutputFlags {
+    OutputFlags {
+        show: o.show.unwrap_or_else(|| "default".to_string()),
+        show_all: o.show_all,
+        format_string: o.format_string,
+    }
+}
+
 fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
-    let mut out = LogArgs::fresh(String::new());
+    let registry = log_args_registry();
+    let mut composed = LogParsing::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out.output_flags)? {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
                 i += 1;
             }
-            FlagSplit::Short('y') => {
-                out.yesterday = out.yesterday.saturating_add(1);
-                i += 1;
-            }
-            FlagSplit::Short('q') => {
-                out.quick = out.quick.saturating_add(1);
-                i += 1;
-            }
-            FlagSplit::Short('d') => {
-                let (v, ni) = take_value(tail, i, None, "-d")?;
-                out.date = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('d', v) | FlagSplit::LongAttached("date", v) => {
-                out.date = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("date") => {
-                let (v, ni) = take_value(tail, i, None, "--date")?;
-                out.date = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::Short('t') => {
-                let (v, ni) = take_value(tail, i, None, "-t")?;
-                out.time = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('t', v) | FlagSplit::LongAttached("time", v) => {
-                out.time = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("time") => {
-                let (v, ni) = take_value(tail, i, None, "--time")?;
-                out.time = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::Long("dur") => {
-                let (v, ni) = take_value(tail, i, None, "--dur")?;
-                out.dur = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("dur", v) => {
-                out.dur = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('z') | FlagSplit::Long("timezone") => {
-                let (v, ni) = take_value(tail, i, None, "-z/--timezone")?;
-                out.timezone = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('z', v) | FlagSplit::LongAttached("timezone", v) => {
-                out.timezone = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('u') | FlagSplit::Long("unit") => {
-                let (v, ni) = take_value(tail, i, None, "-u/--unit")?;
-                out.unit = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('u', v) | FlagSplit::LongAttached("unit", v) => {
-                out.unit = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('k') | FlagSplit::Long("key") => {
-                let (v, ni) = take_value(tail, i, None, "-k/--key")?;
-                out.keys.push(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('k', v) | FlagSplit::LongAttached("key", v) => {
-                out.keys.push(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('K') | FlagSplit::Long("slug-key") => {
-                let (v, ni) = take_value(tail, i, None, "-K/--slug-key")?;
-                out.slug_keys.push(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('K', v) | FlagSplit::LongAttached("slug-key", v) => {
-                out.slug_keys.push(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('c') | FlagSplit::Long("comment") => {
-                let (v, ni) = take_value(tail, i, None, "-c/--comment")?;
-                out.comment = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('c', v) | FlagSplit::LongAttached("comment", v) => {
-                out.comment = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("id") => {
-                let (v, ni) = take_value(tail, i, None, "--id")?;
-                out.id = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("id", v) => {
-                out.id = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("id-delimiter") => {
-                let (v, ni) = take_value(tail, i, None, "--id-delimiter")?;
-                out.id_delimiter = v.to_string();
-                i = ni;
-            }
-            FlagSplit::LongAttached("id-delimiter", v) => {
-                out.id_delimiter = v.to_string();
-                i += 1;
-            }
-            FlagSplit::Short('L') | FlagSplit::Long("last-state") => {
-                // `require_equals = true` — bare form is no-value.
-                out.last_state = Some(String::new());
-                i += 1;
-            }
-            FlagSplit::ShortAttached('L', v) | FlagSplit::LongAttached("last-state", v) => {
-                out.last_state = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('m') | FlagSplit::Long("moment") => {
-                out.moment = true;
-                i += 1;
-            }
-            FlagSplit::Long("conflict") => {
-                let (v, ni) = take_value(tail, i, None, "--conflict")?;
-                out.conflict = Some(parse_conflict_strategy(v)?);
-                i = ni;
-            }
-            FlagSplit::LongAttached("conflict", v) => {
-                out.conflict = Some(parse_conflict_strategy(v)?);
-                i += 1;
-            }
-            FlagSplit::Long("update") => {
-                if out.merge {
-                    return Err(ParseError::InvalidArg(
-                        "--update conflicts with --merge".into(),
-                    ));
-                }
-                out.update = true;
-                i += 1;
-            }
-            FlagSplit::Long("merge") => {
-                if out.update {
-                    return Err(ParseError::InvalidArg(
-                        "--merge conflicts with --update".into(),
-                    ));
-                }
-                out.merge = true;
-                i += 1;
-            }
-            FlagSplit::Short('M') | FlagSplit::Long("no-metadata") => {
-                out.no_metadata = true;
-                i += 1;
-            }
-            FlagSplit::Short('T') | FlagSplit::Long("no-timestamp") => {
-                out.no_timestamp = true;
-                i += 1;
-            }
-            FlagSplit::Long(name) | FlagSplit::LongAttached(name, _) => {
-                return Err(ParseError::InvalidArg(format!("unexpected flag: --{name}")));
-            }
-            FlagSplit::Short(c) | FlagSplit::ShortAttached(c, _) => {
-                return Err(ParseError::InvalidArg(format!("unexpected flag: -{c}")));
-            }
+            f => return Err(unknown_flag(f)),
         }
     }
-    // Required positional: field_or_verb.
     let mut it = pos.into_iter();
-    out.field_or_verb = it
+    let field_or_verb = it
         .next()
         .ok_or_else(|| {
             ParseError::InvalidArg("missing required positional: <FIELD_OR_VERB>".into())
         })?
         .to_string();
-    out.rest = it.map(|s| s.to_string()).collect();
-    Ok(out)
+    let rest: Vec<String> = it.map(|s| s.to_string()).collect();
+
+    Ok(LogArgs {
+        field_or_verb,
+        rest,
+        yesterday: u8::try_from(composed.time.yesterday).unwrap_or(u8::MAX),
+        quick: u8::try_from(composed.time.quick).unwrap_or(u8::MAX),
+        date: composed.time.date,
+        time: composed.time.time,
+        dur: composed.duration.duration,
+        timezone: composed.time.timezone,
+        unit: composed.extras.unit,
+        keys: composed.extras.keys,
+        slug_keys: composed.extras.slug_keys,
+        comment: composed.extras.comment,
+        id: composed.extras.id,
+        id_delimiter: composed
+            .extras
+            .id_delimiter
+            .unwrap_or_else(|| ":".to_string()),
+        last_state: composed.extras.last_state,
+        moment: composed.duration.moment,
+        conflict: composed.extras.conflict,
+        update: composed.extras.update,
+        merge: composed.extras.merge,
+        no_metadata: composed.extras.no_metadata,
+        no_timestamp: composed.time.omit_timestamp,
+        output_flags: flatten_output(composed.output),
+    })
 }
 
 fn parse_conflict_strategy(s: &str) -> Result<ConflictStrategyArg> {
@@ -583,189 +647,245 @@ fn parse_conflict_strategy(s: &str) -> Result<ConflictStrategyArg> {
     }
 }
 
+// Internal composed shape for tail/head.
+#[derive(Default)]
+struct TailParsing {
+    time: TimeArgs,
+    output: OutputArgs,
+    extras: TailExtras,
+}
+
+#[derive(Default)]
+struct TailExtras {
+    count: Option<usize>,
+    metric: Option<String>,
+    reverse: bool,
+    columns: Vec<String>,
+    oldest_first: bool,
+    table: bool,
+    watch: Option<f64>,
+}
+
+fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
+    let mut r: Vec<LiftedSpec<TailParsing>> = Vec::new();
+    // Time (-y/-q/-d/-t). `-z`, `-T`, `-D` not exposed by tail.
+    for spec in input::time_args::FLAG_SPECS {
+        match (spec.short, spec.long) {
+            (Some('y'), _) | (Some('q'), _) | (Some('d'), _) | (Some('t'), _) => {
+                r.push(lift(|p: &mut TailParsing| &mut p.time, spec));
+            }
+            _ => {}
+        }
+    }
+    // Output.
+    for spec in input::output_args::FLAG_SPECS {
+        r.push(lift(|p: &mut TailParsing| &mut p.output, spec));
+    }
+    // Tail-scoped extras.
+    r.push(local_value(Some('n'), None, |p, v| {
+        p.extras.count = Some(parse_usize(v, "-n")?);
+        Ok(())
+    }));
+    r.push(local_value(Some('m'), Some("metric"), |p, v| {
+        p.extras.metric = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(Some('r'), Some("reverse"), |p| {
+        p.extras.reverse = true;
+        Ok(())
+    }));
+    r.push(local_value(None, Some("column"), |p, v| {
+        p.extras.columns.push(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("oldest-first"), |p| {
+        p.extras.oldest_first = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("table"), |p| {
+        p.extras.table = true;
+        Ok(())
+    }));
+    // `-w/--watch` is special — bare or attached or detached non-flag value.
+    // The detached-peek form is handled by the caller after the registry walker.
+    r.push(local_optional(Some('w'), Some("watch"), |p, v| {
+        match v {
+            Some(s) => p.extras.watch = Some(parse_f64(s, "-w/--watch")?),
+            None => p.extras.watch = Some(1.0),
+        }
+        Ok(())
+    }));
+    r
+}
+
 fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
-    let mut out = TailArgs::fresh();
+    let registry = tail_args_registry();
+    let mut composed = TailParsing::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out.output_flags)? {
+        // `-w/--watch <N>` (detached value form): when the bare flag is
+        // followed by a non-flag token, consume it as the watch interval.
+        // The OptionalAttached registry entry handles bare and `=value`.
+        if matches!(
+            split_flag(tail[i]),
+            FlagSplit::Short('w') | FlagSplit::Long("watch")
+        ) {
+            if let Some(next) = tail.get(i + 1).copied().filter(|s| !looks_like_flag(s)) {
+                composed.extras.watch = Some(parse_f64(next, "-w/--watch")?);
+                i += 2;
+                continue;
+            }
+        }
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
                 i += 1;
             }
-            FlagSplit::Short('y') => {
-                out.yesterday = out.yesterday.saturating_add(1);
-                i += 1;
-            }
-            FlagSplit::Short('q') => {
-                out.quick = out.quick.saturating_add(1);
-                i += 1;
-            }
-            FlagSplit::Short('n') => {
-                let (v, ni) = take_value(tail, i, None, "-n")?;
-                out.count = Some(parse_usize(v, "-n")?);
-                i = ni;
-            }
-            FlagSplit::ShortAttached('n', v) => {
-                out.count = Some(parse_usize(v, "-n")?);
-                i += 1;
-            }
-            FlagSplit::Short('m') | FlagSplit::Long("metric") => {
-                let (v, ni) = take_value(tail, i, None, "-m/--metric")?;
-                out.metric = v.to_string();
-                i = ni;
-            }
-            FlagSplit::ShortAttached('m', v) | FlagSplit::LongAttached("metric", v) => {
-                out.metric = v.to_string();
-                i += 1;
-            }
-            FlagSplit::Short('r') | FlagSplit::Long("reverse") => {
-                out.reverse = true;
-                i += 1;
-            }
-            FlagSplit::Long("column") => {
-                let (v, ni) = take_value(tail, i, None, "--column")?;
-                out.columns.push(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("column", v) => {
-                out.columns.push(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('d') | FlagSplit::Long("date") => {
-                let (v, ni) = take_value(tail, i, None, "-d/--date")?;
-                out.date = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('d', v) | FlagSplit::LongAttached("date", v) => {
-                out.date = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('t') | FlagSplit::Long("time") => {
-                let (v, ni) = take_value(tail, i, None, "-t/--time")?;
-                out.time = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('t', v) | FlagSplit::LongAttached("time", v) => {
-                out.time = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("oldest-first") => {
-                out.oldest_first = true;
-                i += 1;
-            }
-            FlagSplit::Long("table") => {
-                out.table = true;
-                i += 1;
-            }
-            FlagSplit::Short('w') | FlagSplit::Long("watch") => {
-                // num_args = 0..=1: default_missing_value = 1. Try to peek
-                // at the next token; if it looks like a flag / subcommand,
-                // it's the no-value form.
-                let next = tail.get(i + 1).map(|s| *s);
-                match next {
-                    Some(v) if !looks_like_flag(v) => {
-                        out.watch = Some(parse_f64(v, "-w/--watch")?);
-                        i += 2;
-                    }
-                    _ => {
-                        out.watch = Some(1.0);
-                        i += 1;
-                    }
-                }
-            }
-            FlagSplit::ShortAttached('w', v) | FlagSplit::LongAttached("watch", v) => {
-                out.watch = Some(parse_f64(v, "-w/--watch")?);
-                i += 1;
-            }
-            FlagSplit::Long(name) | FlagSplit::LongAttached(name, _) => {
-                return Err(ParseError::InvalidArg(format!("unexpected flag: --{name}")));
-            }
-            FlagSplit::Short(c) | FlagSplit::ShortAttached(c, _) => {
-                return Err(ParseError::InvalidArg(format!("unexpected flag: -{c}")));
-            }
-        }
-    }
-    if let Some(f) = pos.first() {
-        out.field = Some(f.to_string());
-    }
-    Ok(out)
-}
-
-fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
-    let mut out = NowArgs::default();
-    for tok in tail {
-        match split_flag(tok) {
-            FlagSplit::Short('A') => out.show_all = true,
             f => return Err(unknown_flag(f)),
         }
     }
-    Ok(out)
-}
-
-fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
-    let mut pos: Vec<&str> = Vec::new();
-    let mut pretty = false;
-    let mut output_flags = OutputFlags::fresh();
-    let mut i = 0;
-    while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut output_flags)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tok) {
-            FlagSplit::Positional(s) => pos.push(s),
-            FlagSplit::Long("pretty") => pretty = true,
-            f => return Err(unknown_flag(f)),
-        }
-        i += 1;
-    }
-    let id_or_slug = pos.first().map(|s| s.to_string());
-    Ok(GetArgs {
-        id_or_slug,
-        pretty,
-        output_flags,
+    Ok(TailArgs {
+        field: pos.first().map(|s| s.to_string()),
+        count: composed.extras.count,
+        metric: composed.extras.metric.unwrap_or_else(|| "hybrid".to_string()),
+        reverse: composed.extras.reverse,
+        columns: composed.extras.columns,
+        date: composed.time.date,
+        time: composed.time.time,
+        yesterday: u8::try_from(composed.time.yesterday).unwrap_or(u8::MAX),
+        quick: u8::try_from(composed.time.quick).unwrap_or(u8::MAX),
+        oldest_first: composed.extras.oldest_first,
+        watch: composed.extras.watch,
+        table: composed.extras.table,
+        output_flags: flatten_output(composed.output),
     })
 }
 
-fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
-    let mut pos: Vec<&str> = Vec::new();
-    let mut out = DeleteArgs::fresh_default();
+fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
+    // `now` only consumes `-A/--show-all`. Use OutputArgs FLAG_SPECS for
+    // the registry so the spec stays canonical, but only honor the
+    // show-all bit on the way out.
+    let mut composed = OutputArgs::default();
+    let registry: Vec<LiftedSpec<OutputArgs>> = input::output_args::FLAG_SPECS
+        .iter()
+        .filter(|s| s.short == Some('A'))
+        .map(|s| lift(|p: &mut OutputArgs| p, s))
+        .collect();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out.output_flags)? {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        return Err(unknown_flag(split_flag(tail[i])));
+    }
+    Ok(NowArgs {
+        show_all: composed.show_all,
+    })
+}
+
+// Internal composed shape for the read-only `get` command.
+#[derive(Default)]
+struct GetParsing {
+    output: OutputArgs,
+    pretty: bool,
+}
+
+fn get_args_registry() -> Vec<LiftedSpec<GetParsing>> {
+    let mut r: Vec<LiftedSpec<GetParsing>> = Vec::new();
+    for spec in input::output_args::FLAG_SPECS {
+        r.push(lift(|p: &mut GetParsing| &mut p.output, spec));
+    }
+    r.push(local_switch(None, Some("pretty"), |p| {
+        p.pretty = true;
+        Ok(())
+    }));
+    r
+}
+
+fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
+    let registry = get_args_registry();
+    let mut composed = GetParsing::default();
+    let mut pos: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < tail.len() {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("force") => {
-                out.force = true;
-                i += 1;
-            }
-            FlagSplit::Long("dry-run") => {
-                out.dry_run = true;
-                i += 1;
-            }
-            FlagSplit::Long("strict") => {
-                out.strict = true;
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
         }
     }
-    out.id_or_slug = pos.first().map(|s| s.to_string());
-    Ok(out)
+    Ok(GetArgs {
+        id_or_slug: pos.first().map(|s| s.to_string()),
+        pretty: composed.pretty,
+        output_flags: flatten_output(composed.output),
+    })
+}
+
+#[derive(Default)]
+struct DeleteParsing {
+    output: OutputArgs,
+    force: bool,
+    dry_run: bool,
+    strict: bool,
+}
+
+fn delete_args_registry() -> Vec<LiftedSpec<DeleteParsing>> {
+    let mut r: Vec<LiftedSpec<DeleteParsing>> = Vec::new();
+    for spec in input::output_args::FLAG_SPECS {
+        r.push(lift(|p: &mut DeleteParsing| &mut p.output, spec));
+    }
+    r.push(local_switch(None, Some("force"), |p| {
+        p.force = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("dry-run"), |p| {
+        p.dry_run = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("strict"), |p| {
+        p.strict = true;
+        Ok(())
+    }));
+    r
+}
+
+fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
+    let registry = delete_args_registry();
+    let mut composed = DeleteParsing::default();
+    let mut pos: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < tail.len() {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(DeleteArgs {
+        id_or_slug: pos.first().map(|s| s.to_string()),
+        force: composed.force,
+        dry_run: composed.dry_run,
+        strict: composed.strict,
+        output_flags: flatten_output(composed.output),
+    })
 }
 
 fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
@@ -814,40 +934,53 @@ fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     Ok(out)
 }
 
+#[derive(Default)]
+struct HistoryParsing {
+    version: Option<u32>,
+    diff: Option<Vec<u32>>,
+    json: bool,
+}
+
+fn history_args_registry() -> Vec<LiftedSpec<HistoryParsing>> {
+    let mut r: Vec<LiftedSpec<HistoryParsing>> = Vec::new();
+    r.push(local_value(None, Some("version"), |p, v| {
+        p.version = Some(parse_u32(v, "--version")?);
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("json"), |p| {
+        p.json = true;
+        Ok(())
+    }));
+    // `--diff` consumes TWO detached values — handled by the caller as a
+    // pre-walker special case; not represented here.
+    r
+}
+
 fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
+    let registry = history_args_registry();
+    let mut composed = HistoryParsing::default();
     let mut pos: Vec<&str> = Vec::new();
-    let mut version: Option<u32> = None;
-    let mut diff: Option<Vec<u32>> = None;
-    let mut json = false;
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        match split_flag(tok) {
+        // `--diff A B` — two-arg form, no central-registry support today.
+        if matches!(split_flag(tail[i]), FlagSplit::Long("diff")) {
+            let a = tail
+                .get(i + 1)
+                .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
+            let b = tail
+                .get(i + 2)
+                .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
+            composed.diff = Some(vec![parse_u32(a, "--diff")?, parse_u32(b, "--diff")?]);
+            i += 3;
+            continue;
+        }
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("version") => {
-                let (v, ni) = take_value(tail, i, None, "--version")?;
-                version = Some(parse_u32(v, "--version")?);
-                i = ni;
-            }
-            FlagSplit::LongAttached("version", v) => {
-                version = Some(parse_u32(v, "--version")?);
-                i += 1;
-            }
-            FlagSplit::Long("diff") => {
-                let a = tail
-                    .get(i + 1)
-                    .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
-                let b = tail
-                    .get(i + 2)
-                    .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
-                diff = Some(vec![parse_u32(a, "--diff")?, parse_u32(b, "--diff")?]);
-                i += 3;
-            }
-            FlagSplit::Long("json") => {
-                json = true;
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
@@ -856,37 +989,58 @@ fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(HistoryArgs {
         id_or_slug,
-        version,
-        diff,
-        json,
+        version: composed.version,
+        diff: composed.diff,
+        json: composed.json,
     })
 }
 
 fn parse_why_args(tail: &[&str]) -> Result<WhyArgs> {
+    #[derive(Default)]
+    struct WhyParsing {
+        full: bool,
+    }
+    let registry: Vec<LiftedSpec<WhyParsing>> = vec![local_switch(None, Some("full"), |p| {
+        p.full = true;
+        Ok(())
+    })];
+    let mut composed = WhyParsing::default();
     let mut pos: Vec<&str> = Vec::new();
-    let mut full = false;
-    for tok in tail {
-        match split_flag(tok) {
-            FlagSplit::Positional(s) => pos.push(s),
-            FlagSplit::Long("full") => full = true,
+    let mut i = 0;
+    while i < tail.len() {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
-    Ok(WhyArgs { id_or_slug, full })
+    Ok(WhyArgs {
+        id_or_slug,
+        full: composed.full,
+    })
 }
 
 fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
+    let mut composed = OutputArgs::default();
+    let registry: Vec<LiftedSpec<OutputArgs>> = input::output_args::FLAG_SPECS
+        .iter()
+        .map(|s| lift(|p: &mut OutputArgs| p, s))
+        .collect();
     let mut pos: Vec<&str> = Vec::new();
-    let mut out_flags = OutputFlags::fresh();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out_flags)? {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
                 i += 1;
@@ -897,162 +1051,151 @@ fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(EditArgs {
         id_or_slug,
-        output_flags: out_flags,
+        output_flags: flatten_output(composed),
     })
 }
 
+#[derive(Default)]
+struct UpdateParsing {
+    output: OutputArgs,
+    strategy: Option<ConflictStrategyArg>,
+    id: Option<String>,
+    id_delimiter: Option<String>,
+    keys: Vec<String>,
+    comment: Option<String>,
+    dry_run: bool,
+    strict: bool,
+}
+
+fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
+    let mut r: Vec<LiftedSpec<UpdateParsing>> = Vec::new();
+    for spec in input::output_args::FLAG_SPECS {
+        r.push(lift(|p: &mut UpdateParsing| &mut p.output, spec));
+    }
+    r.push(local_value(None, Some("strategy"), |p, v| {
+        p.strategy = Some(parse_conflict_strategy(v)?);
+        Ok(())
+    }));
+    r.push(local_value(None, Some("id"), |p, v| {
+        p.id = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(None, Some("id-delimiter"), |p, v| {
+        p.id_delimiter = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(Some('k'), Some("key"), |p, v| {
+        p.keys.push(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(Some('c'), Some("comment"), |p, v| {
+        p.comment = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("dry-run"), |p| {
+        p.dry_run = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("strict"), |p| {
+        p.strict = true;
+        Ok(())
+    }));
+    r
+}
+
 fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
-    let mut out = UpdateArgs::fresh_default();
+    let registry = update_args_registry();
+    let mut composed = UpdateParsing::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out.output_flags)? {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("strategy") => {
-                let (v, ni) = take_value(tail, i, None, "--strategy")?;
-                out.strategy = Some(parse_conflict_strategy(v)?);
-                i = ni;
-            }
-            FlagSplit::LongAttached("strategy", v) => {
-                out.strategy = Some(parse_conflict_strategy(v)?);
-                i += 1;
-            }
-            FlagSplit::Long("id") => {
-                let (v, ni) = take_value(tail, i, None, "--id")?;
-                out.id = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("id", v) => {
-                out.id = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("id-delimiter") => {
-                let (v, ni) = take_value(tail, i, None, "--id-delimiter")?;
-                out.id_delimiter = v.to_string();
-                i = ni;
-            }
-            FlagSplit::LongAttached("id-delimiter", v) => {
-                out.id_delimiter = v.to_string();
-                i += 1;
-            }
-            FlagSplit::Short('k') | FlagSplit::Long("key") => {
-                let (v, ni) = take_value(tail, i, None, "-k/--key")?;
-                out.keys.push(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('k', v) | FlagSplit::LongAttached("key", v) => {
-                out.keys.push(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('c') | FlagSplit::Long("comment") => {
-                let (v, ni) = take_value(tail, i, None, "-c/--comment")?;
-                out.comment = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('c', v) | FlagSplit::LongAttached("comment", v) => {
-                out.comment = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("dry-run") => {
-                out.dry_run = true;
-                i += 1;
-            }
-            FlagSplit::Long("strict") => {
-                out.strict = true;
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
         }
     }
     let mut it = pos.into_iter();
-    out.id_or_slug = it.next().map(|s| s.to_string());
-    out.rest = it.map(|s| s.to_string()).collect();
-    Ok(out)
+    Ok(UpdateArgs {
+        id_or_slug: it.next().map(|s| s.to_string()),
+        rest: it.map(|s| s.to_string()).collect(),
+        strategy: composed.strategy,
+        id: composed.id,
+        id_delimiter: composed.id_delimiter.unwrap_or_else(|| ":".to_string()),
+        keys: composed.keys,
+        comment: composed.comment,
+        dry_run: composed.dry_run,
+        strict: composed.strict,
+        output_flags: flatten_output(composed.output),
+    })
 }
 
 fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
-    let mut out = RetimeArgs {
-        slug: None,
-        offset: None,
-        time: None,
-        field: None,
-        after: None,
-        before: None,
-    };
+    #[derive(Default)]
+    struct RetimeParsing {
+        offset: Option<String>,
+        time: Option<String>,
+        field: Option<String>,
+        after: Option<String>,
+        before: Option<String>,
+    }
+    let mut registry: Vec<LiftedSpec<RetimeParsing>> = Vec::new();
+    registry.push(local_value(None, Some("offset"), |p, v| {
+        p.offset = Some(v.to_string());
+        Ok(())
+    }));
+    registry.push(local_value(Some('t'), Some("time"), |p, v| {
+        p.time = Some(v.to_string());
+        Ok(())
+    }));
+    registry.push(local_value(Some('f'), Some("field"), |p, v| {
+        p.field = Some(v.to_string());
+        Ok(())
+    }));
+    registry.push(local_value(None, Some("after"), |p, v| {
+        p.after = Some(v.to_string());
+        Ok(())
+    }));
+    registry.push(local_value(None, Some("before"), |p, v| {
+        p.before = Some(v.to_string());
+        Ok(())
+    }));
+
+    let mut composed = RetimeParsing::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        match split_flag(tok) {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("offset") => {
-                let (v, ni) = take_value(tail, i, None, "--offset")?;
-                out.offset = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("offset", v) => {
-                out.offset = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('t') | FlagSplit::Long("time") => {
-                let (v, ni) = take_value(tail, i, None, "-t/--time")?;
-                out.time = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('t', v) | FlagSplit::LongAttached("time", v) => {
-                out.time = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Short('f') | FlagSplit::Long("field") => {
-                let (v, ni) = take_value(tail, i, None, "-f/--field")?;
-                out.field = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('f', v) | FlagSplit::LongAttached("field", v) => {
-                out.field = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("after") => {
-                let (v, ni) = take_value(tail, i, None, "--after")?;
-                out.after = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("after", v) => {
-                out.after = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("before") => {
-                let (v, ni) = take_value(tail, i, None, "--before")?;
-                out.before = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("before", v) => {
-                out.before = Some(v.to_string());
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
         }
     }
-    if out.offset.is_some() && out.time.is_some() {
+    if composed.offset.is_some() && composed.time.is_some() {
         return Err(ParseError::InvalidArg(
             "--offset and --time are mutually exclusive".into(),
         ));
     }
-    if let Some(p) = pos.first() {
-        out.slug = Some(p.to_string());
-    }
-    Ok(out)
+    Ok(RetimeArgs {
+        slug: pos.first().map(|s| s.to_string()),
+        offset: composed.offset,
+        time: composed.time,
+        field: composed.field,
+        after: composed.after,
+        before: composed.before,
+    })
 }
 
 fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
@@ -1266,46 +1409,47 @@ fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
 }
 
 fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
-    let mut out = TrackArgs {
-        field: String::new(),
-        color: None,
-        state_colors: Vec::new(),
-    };
+    #[derive(Default)]
+    struct TrackParsing {
+        color: Option<String>,
+        state_colors: Vec<String>,
+    }
+    let registry: Vec<LiftedSpec<TrackParsing>> = vec![
+        local_value(None, Some("color"), |p, v| {
+            p.color = Some(v.to_string());
+            Ok(())
+        }),
+        local_value(None, Some("state"), |p, v| {
+            p.state_colors.push(v.to_string());
+            Ok(())
+        }),
+    ];
+    let mut composed = TrackParsing::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        match split_flag(tok) {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("color") => {
-                let (v, ni) = take_value(tail, i, None, "--color")?;
-                out.color = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("color", v) => {
-                out.color = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("state") => {
-                let (v, ni) = take_value(tail, i, None, "--state")?;
-                out.state_colors.push(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("state", v) => {
-                out.state_colors.push(v.to_string());
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
         }
     }
-    out.field = require_first_pos(&pos, "<FIELD>")?;
-    Ok(out)
+    Ok(TrackArgs {
+        field: require_first_pos(&pos, "<FIELD>")?,
+        color: composed.color,
+        state_colors: composed.state_colors,
+    })
 }
 
 fn parse_ignore_args(tail: &[&str]) -> Result<IgnoreArgs> {
+    // `ignore` takes only a positional field — no flags. Skip the
+    // registry walker and just collect positionals.
     let mut pos: Vec<&str> = Vec::new();
     for tok in tail {
         match split_flag(tok) {
@@ -1313,8 +1457,9 @@ fn parse_ignore_args(tail: &[&str]) -> Result<IgnoreArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    let field = require_first_pos(&pos, "<FIELD>")?;
-    Ok(IgnoreArgs { field })
+    Ok(IgnoreArgs {
+        field: require_first_pos(&pos, "<FIELD>")?,
+    })
 }
 
 fn parse_migrate_cmd(tail: &[&str]) -> Result<MigrateCommand> {
@@ -1406,28 +1551,31 @@ fn parse_restore_args(tail: &[&str]) -> Result<RestoreArgs> {
 }
 
 fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
+    #[derive(Default)]
+    struct GrepParsing {
+        output: OutputArgs,
+        field: Option<String>,
+    }
+    let mut registry: Vec<LiftedSpec<GrepParsing>> = Vec::new();
+    for spec in input::output_args::FLAG_SPECS {
+        registry.push(lift(|p: &mut GrepParsing| &mut p.output, spec));
+    }
+    registry.push(local_value(Some('f'), Some("field"), |p, v| {
+        p.field = Some(v.to_string());
+        Ok(())
+    }));
+
+    let mut composed = GrepParsing::default();
     let mut pos: Vec<&str> = Vec::new();
-    let mut field: Option<String> = None;
-    let mut out_flags = OutputFlags::fresh();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out_flags)? {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Short('f') | FlagSplit::Long("field") => {
-                let (v, ni) = take_value(tail, i, None, "-f/--field")?;
-                field = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::ShortAttached('f', v) | FlagSplit::LongAttached("field", v) => {
-                field = Some(v.to_string());
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
@@ -1440,8 +1588,8 @@ fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
     }
     Ok(GrepArgs {
         patterns: pos.into_iter().map(|s| s.to_string()).collect(),
-        field,
-        output_flags: out_flags,
+        field: composed.field,
+        output_flags: flatten_output(composed.output),
     })
 }
 

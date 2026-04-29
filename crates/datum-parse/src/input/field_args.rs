@@ -9,6 +9,23 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`fieldArgs.ts`") for the full spec.
 
+use crate::input::flag_registry::{FlagAction, FlagSpec};
+
+/// Canonical flag set for the `field` concern. The positional `field` is
+/// captured by the parser's positional path (not a flag), so this only
+/// declares `-F/--fieldless`. Commands that don't accept fieldless mode
+/// (logging verbs today) skip this spec when assembling their registry.
+pub static FLAG_SPECS: &[FlagSpec<FieldArgs>] = &[
+    FlagSpec {
+        short: Some('F'),
+        long: Some("fieldless"),
+        action: FlagAction::Switch(|a| {
+            a.fieldless = true;
+            Ok(())
+        }),
+    },
+];
+
 /// Parsed shape of the `field` / `--fieldless` flag pair.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FieldArgs {

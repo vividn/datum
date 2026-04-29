@@ -11,6 +11,36 @@
 
 use std::str::FromStr;
 
+use crate::input::flag_registry::{FlagAction, FlagSpec};
+
+/// Canonical flag set for the output concern.
+pub static FLAG_SPECS: &[FlagSpec<OutputArgs>] = &[
+    FlagSpec {
+        short: Some('A'),
+        long: Some("show-all"),
+        action: FlagAction::Switch(|a| {
+            a.show_all = true;
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: None,
+        long: Some("show"),
+        action: FlagAction::Value(|a, v| {
+            a.show = Some(v.to_string());
+            Ok(())
+        }),
+    },
+    FlagSpec {
+        short: Some('o'),
+        long: Some("format-string"),
+        action: FlagAction::Value(|a, v| {
+            a.format_string = Some(v.to_string());
+            Ok(())
+        }),
+    },
+];
+
 /// Output verbosity — mirrors datum's `Show` enum. Default is `Default`
 /// so constructing [`OutputArgs::default`] matches an unsupplied `--show`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
