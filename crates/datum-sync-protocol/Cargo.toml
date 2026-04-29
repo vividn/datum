@@ -1,0 +1,23 @@
+[package]
+name = "datum-sync-protocol"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+name = "datum_sync_protocol"
+path = "src/lib.rs"
+
+# WASM-safe: pure data + serde. NO reqwest, NO datum-core, NO rusqlite,
+# NO webauthn-rs. Register/Login types stay server-side (per da-6hn
+# duplication map: "server-only (OK)") because their challenge bodies
+# carry webauthn-rs types — pulling that into the shared crate would
+# violate the WASM-safe constraint without unifying anything (no client
+# duplicate to remove).
+#
+# Both `datum-sync-server` and `datum-sync-client` depend on this crate
+# so the wire types that ARE duplicated live in exactly one place.
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+uuid = { version = "1", features = ["v4", "serde"] }

@@ -12,6 +12,9 @@ name = "datum-sync-server"
 path = "src/main.rs"
 
 [dependencies]
+# Shared wire types — single source of truth between client and server.
+datum-sync-protocol = { path = "../datum-sync-protocol" }
+
 # Workspace
 tokio = { workspace = true }
 axum = { workspace = true }

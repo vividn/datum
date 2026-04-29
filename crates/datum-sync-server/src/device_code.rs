@@ -88,8 +88,11 @@ pub async fn start(
         device_code,
         user_code: user_code.clone(),
         verification_uri: "/auth/device-code/verify".to_string(),
-        verification_uri_complete: format!("/auth/device-code/verify?user_code={}", user_code),
-        expires_in: DEFAULT_EXPIRES_IN,
+        verification_uri_complete: Some(format!(
+            "/auth/device-code/verify?user_code={}",
+            user_code
+        )),
+        expires_in: Some(DEFAULT_EXPIRES_IN),
         interval: DEFAULT_INTERVAL,
     };
     (StatusCode::OK, Json(resp))
@@ -147,7 +150,9 @@ pub async fn poll(
                 state.device_codes.lock().unwrap().remove(&q.device_code);
                 let body = AuthToken {
                     token,
-                    user_id: user_id.to_string(),
+                    user_id: Some(user_id.to_string()),
+                    refreshed_at: None,
+                    server: None,
                 };
                 (StatusCode::OK, Json(body)).into_response()
             }

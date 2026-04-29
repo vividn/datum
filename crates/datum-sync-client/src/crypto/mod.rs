@@ -3,15 +3,15 @@
 //!
 //! Pure Rust, no I/O, no datum-core dependency. All three submodules are
 //! WASM-safe; enable them unconditionally on every target.
+//!
+//! The `CryptoError` type and wire-locked constants (`NONCE_LEN`,
+//! `CHANGESET_MAGIC_V1`) live in `datum-sync-protocol` so non-Rust clients
+//! and a future WASM build can target them without depending on this
+//! crate's actual crypto implementation. They are re-exported here so
+//! existing `crate::crypto::CryptoError` paths keep working unchanged.
 
 pub mod changeset;
 pub mod key_wrap;
 pub mod pair;
 
-/// Crate-internal error type for every crypto failure. All variants collapse
-/// to a single string because callers MUST NOT branch on the reason —
-/// distinguishing wrong-key from tampered-ciphertext leaks information
-/// useful to attackers (padding-oracle family).
-#[derive(Debug, Clone, thiserror::Error)]
-#[error("crypto: {0}")]
-pub struct CryptoError(pub String);
+pub use datum_sync_protocol::crypto::CryptoError;

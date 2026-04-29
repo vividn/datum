@@ -102,14 +102,14 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
         // A non-202 status with a token field means success.
         if status.is_success() {
             if let Some(tok) = payload.token {
-                let user = payload.user_id.clone();
+                let user_id = payload.user_id.clone();
                 let token = AuthToken {
                     token: tok,
-                    refreshed_at: chrono::Utc::now().to_rfc3339(),
-                    server: server.to_string(),
-                    user,
+                    refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
+                    server: Some(server.to_string()),
+                    user_id,
                 };
-                let label = token.user.as_deref().unwrap_or("user");
+                let label = token.user_id.as_deref().unwrap_or("user");
                 prompter.status(&format!("✓ Authorized as {label}"));
                 return Ok(token);
             }

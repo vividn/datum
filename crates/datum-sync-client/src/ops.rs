@@ -25,10 +25,7 @@ use rusqlite::{params, OptionalExtension};
 use serde::{Deserialize, Serialize};
 
 use crate::crypto::changeset::Changeset;
-
-/// Magic prefix identifying a v1 changeset payload. Bumping the trailing
-/// digit is the versioning mechanism for the on-device changeset format.
-const CHANGESET_MAGIC_V1: &[u8; 4] = b"DSC1";
+use datum_sync_protocol::crypto::constants::CHANGESET_MAGIC_V1;
 
 /// Internal v1 payload: a flat list of entries (live + tombstoned).
 /// Tombstones carry `deleted_at = Some(..)`; peers apply them as soft

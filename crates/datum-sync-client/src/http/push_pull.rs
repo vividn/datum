@@ -17,12 +17,18 @@
 
 use anyhow::{Context, Result};
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use datum_sync_protocol::messages::sync::{
+    Changeset as WireChangeset, PushRequest, PushResponse,
+};
 use reqwest::blocking::Client;
-use serde::{Deserialize, Serialize};
 
 /// One row from `GET /v1/pull`, with the payload already base64-decoded to
-/// raw encrypted bytes. `uploaded_at` is an RFC-3339 string per the spec;
-/// callers that need a [`chrono::DateTime`] can parse it on their side.
+/// raw encrypted bytes. The wire shape itself is
+/// [`datum_sync_protocol::messages::sync::Changeset`]; this struct is the
+/// post-decode native form used by callers (`payload: Vec<u8>` instead of
+/// `payload_b64: String`). The `uploaded_at` field is an RFC-3339 string
+/// per the spec; callers that need a [`chrono::DateTime`] can parse it on
+/// their side.
 #[derive(Debug, Clone)]
 pub struct PulledChangeset {
     /// Global monotonic id assigned by the relay — the value clients use
@@ -38,32 +44,6 @@ pub struct PulledChangeset {
     pub uploaded_at: String,
 }
 
-#[derive(Serialize)]
-struct PushRequestBody<'a> {
-    device_id: &'a str,
-    payload_b64: String,
-}
-
-#[derive(Deserialize)]
-struct PushResponseBody {
-    seq: i64,
-}
-
-#[derive(Deserialize)]
-struct PulledRow {
-    /// Relay-global monotonic row id. Optional for forward-compat with
-    /// servers that don't expose it yet (we fall back to `seq` as a
-    /// degraded watermark, which is safe as long as the caller only
-    /// talks to a single-device peer — good enough for local tests).
-    #[serde(default)]
-    id: Option<i64>,
-    device_id: String,
-    seq: i64,
-    payload_b64: String,
-    #[serde(default)]
-    uploaded_at: Option<String>,
-}
-
 /// POST a single encrypted changeset blob to the relay. Returns the
 /// server-assigned per-device `seq`.
 ///
@@ -76,10 +56,9 @@ pub fn push_blob(
     device_id: &str,
     payload: &[u8],
 ) -> Result<i64> {
-    let payload_b64 = URL_SAFE_NO_PAD.encode(payload);
-    let body = PushRequestBody {
-        device_id,
-        payload_b64,
+    let body = PushRequest {
+        device_id: device_id.to_string(),
+        payload_b64: URL_SAFE_NO_PAD.encode(payload),
     };
     let resp = client
         .post(format!("{server}/v1/push"))
@@ -92,7 +71,7 @@ pub fn push_blob(
         let text = resp.text().unwrap_or_default();
         anyhow::bail!("push failed: {status} {text}");
     }
-    let parsed: PushResponseBody = resp.json().context("parse push response")?;
+    let parsed: PushResponse = resp.json().context("parse push response")?;
     Ok(parsed.seq)
 }
 
@@ -120,7 +99,7 @@ pub fn pull_batch(
         let text = resp.text().unwrap_or_default();
         anyhow::bail!("pull failed: {status} {text}");
     }
-    let rows: Vec<PulledRow> = resp.json().context("parse pull response")?;
+    let rows: Vec<WireChangeset> = resp.json().context("parse pull response")?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let payload = URL_SAFE_NO_PAD
@@ -129,11 +108,11 @@ pub fn pull_batch(
                 format!("decode payload_b64 for seq {} from {}", row.seq, row.device_id)
             })?;
         out.push(PulledChangeset {
-            id: row.id.unwrap_or(row.seq),
+            id: row.id,
             device_id: row.device_id,
             seq: row.seq,
             payload,
-            uploaded_at: row.uploaded_at.unwrap_or_default(),
+            uploaded_at: row.uploaded_at,
         });
     }
     Ok(out)

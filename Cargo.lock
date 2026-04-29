@@ -558,6 +558,7 @@ dependencies = [
  "base64 0.22.1",
  "chrono",
  "datum-core",
+ "datum-sync-protocol",
  "getrandom 0.2.17",
  "rand 0.8.6",
  "reqwest",
@@ -570,6 +571,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "datum-sync-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "uuid",
+]
+
+[[package]]
 name = "datum-sync-server"
 version = "0.1.0"
 dependencies = [
@@ -577,6 +588,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "datum-sync-protocol",
  "http-body-util",
  "jsonwebtoken",
  "rusqlite",

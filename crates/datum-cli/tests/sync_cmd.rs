@@ -76,9 +76,9 @@ fn write_token_for(server: &str, token: &str) {
     let path = auth_token_path(&host).unwrap();
     let t = AuthToken {
         token: token.to_string(),
-        refreshed_at: chrono::Utc::now().to_rfc3339(),
-        server: server.to_string(),
-        user: Some("vividn@vividn.dev".to_string()),
+        refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
+        server: Some(server.to_string()),
+        user_id: Some("vividn@vividn.dev".to_string()),
     };
     std::fs::write(path, serde_json::to_vec_pretty(&t).unwrap()).unwrap();
 }
@@ -101,8 +101,8 @@ fn sync_login_polls_until_authorized() {
     // Per spec, /v1/auth/device-code/poll echoes the canonical UUID as
     // user_id; the username only matters for the verification UX which
     // is out of scope for v1.
-    assert_eq!(token.user.as_deref(), Some(relay.user_id.to_string().as_str()));
-    assert_eq!(token.server, relay.base_url);
+    assert_eq!(token.user_id.as_deref(), Some(relay.user_id.to_string().as_str()));
+    assert_eq!(token.server.as_deref(), Some(relay.base_url.as_str()));
 
     // Prompter captured the verification URL + user code (exact values are
     // server-side; the contract is just that *some* `login:...` event was
@@ -167,7 +167,7 @@ fn sync_login_stores_token_at_xdg_path() {
     let bytes = std::fs::read(&path).unwrap();
     let stored: AuthToken = serde_json::from_slice(&bytes).unwrap();
     assert!(!stored.token.is_empty(), "non-empty bearer token");
-    assert_eq!(stored.server, relay.base_url);
+    assert_eq!(stored.server.as_deref(), Some(relay.base_url.as_str()));
 
     // On unix the file must be mode 0600.
     #[cfg(unix)]

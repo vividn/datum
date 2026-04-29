@@ -8,56 +8,33 @@
 
 use aes_gcm::aead::{Aead, KeyInit};
 use aes_gcm::{Aes256Gcm, Key, Nonce};
+use datum_sync_protocol::crypto::constants::{
+    ARGON2_DEFAULT_M_COST_KIB, ARGON2_DEFAULT_P_COST, ARGON2_DEFAULT_SALT_LEN,
+    ARGON2_DEFAULT_T_COST,
+};
 use rand::RngCore;
-use serde::{Deserialize, Serialize};
 
-use crate::crypto::changeset::NONCE_LEN;
 use crate::crypto::CryptoError;
 
-/// Parameters for the Argon2id KDF used to derive a key-encryption key from a
-/// user passphrase. The wire protocol (`docs/sync-protocol.md`) locks the
-/// field names and encoding — do not rename without bumping the version.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct KdfParams {
-    /// Memory cost in KiB (typical: 65536 = 64 MiB).
-    pub m_cost: u32,
-    /// Time cost (passes). Typical: 3.
-    pub t_cost: u32,
-    /// Parallelism. Typical: 1.
-    pub p_cost: u32,
-    /// Base64 (url-safe, no-pad) encoded salt bytes (16 bytes recommended).
-    pub salt_b64: String,
-}
+// `KdfParams` and `WrappedKey` wire types live in `datum-sync-protocol`
+// so client and server can never drift; this module owns the actual
+// crypto (Argon2id + AES-256-GCM) that operates on those types.
+pub use datum_sync_protocol::messages::sync::{KdfParams, WrappedKey};
+pub use datum_sync_protocol::crypto::constants::NONCE_LEN;
 
-impl KdfParams {
-    /// Recommended defaults: 64 MiB × 3 passes × p=1 with a fresh 16-byte salt.
-    pub fn default_with_fresh_salt() -> Self {
-        let mut salt = [0u8; 16];
-        rand::thread_rng().fill_bytes(&mut salt);
-        Self {
-            m_cost: 65536,
-            t_cost: 3,
-            p_cost: 1,
-            salt_b64: b64_encode(&salt),
-        }
+/// Recommended defaults: 64 MiB × 3 passes × p=1 with a fresh 16-byte salt.
+/// Free function (rather than an inherent impl on `KdfParams`) because the
+/// type lives in a no-`rand` crate; we can't add an `impl` block in client
+/// crate that depends on `rand` without trait-extension noise.
+pub fn default_kdf_params_with_fresh_salt() -> KdfParams {
+    let mut salt = vec![0u8; ARGON2_DEFAULT_SALT_LEN];
+    rand::thread_rng().fill_bytes(&mut salt);
+    KdfParams {
+        m_cost: ARGON2_DEFAULT_M_COST_KIB,
+        t_cost: ARGON2_DEFAULT_T_COST,
+        p_cost: ARGON2_DEFAULT_P_COST,
+        salt_b64: b64_encode(&salt),
     }
-}
-
-/// The passphrase-wrapped master key, ready to send on the wire.
-///
-/// Round-trips through `/v1/keys/wrapped` (see `docs/sync-protocol.md`).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct WrappedKey {
-    /// Ciphertext of the master key, base64 url-safe no-pad. Includes the
-    /// 16-byte GCM authenticator.
-    pub wrapped_key_b64: String,
-    /// Always `"argon2id"` in v1.
-    pub kdf: String,
-    pub kdf_params: KdfParams,
-    /// Always `"aes-256-gcm"` in v1.
-    pub wrap_alg: String,
-    /// Base64 url-safe no-pad 12-byte nonce.
-    pub nonce_b64: String,
 }
 
 /// Wrap a 32-byte master key with a passphrase. The returned blob is safe to
@@ -66,7 +43,7 @@ pub fn wrap_master_key(
     passphrase: &str,
     master_key: &[u8; 32],
 ) -> Result<WrappedKey, CryptoError> {
-    let params = KdfParams::default_with_fresh_salt();
+    let params = default_kdf_params_with_fresh_salt();
     wrap_master_key_with_params(passphrase, master_key, params)
 }
 

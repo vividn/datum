@@ -12,8 +12,10 @@ use rand::RngCore;
 
 use crate::crypto::CryptoError;
 
-/// 96-bit nonce — the aes-gcm crate's required size for `Aes256Gcm`.
-pub(crate) const NONCE_LEN: usize = 12;
+/// 96-bit nonce — wire-locked by `datum-sync-protocol`. Re-exported here
+/// so existing `crate::crypto::changeset::NONCE_LEN` references keep
+/// working.
+pub use datum_sync_protocol::crypto::constants::NONCE_LEN;
 
 /// Opaque container holding the on-device changeset bytes. The wire format
 /// (see `docs/sync-protocol.md`) is a 4-byte magic prefix + JSON payload;
