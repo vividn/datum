@@ -747,9 +747,9 @@ fn resolve_template_key(key: &str, entry: &Entry) -> String {
         "field" => entry.field.clone(),
         // `%id%` was the old ULID template key; kept as an alias for slug
         // (the new primary identifier) so any stored format strings still work.
-        "id" | "slug" => entry.slug.clone(),
+        "id" | "slug" => entry.slug.to_string(),
         "hid" => short_hid(&entry.hid),
-        "full_hid" => entry.hid.clone(),
+        "full_hid" => entry.hid.to_string(),
         "value" | "state" => entry
             .value
             .as_ref()

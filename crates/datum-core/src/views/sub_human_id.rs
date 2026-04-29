@@ -150,8 +150,8 @@ mod tests {
         use crate::entry::{EntryShape, PrecisionUnit};
         let now = chrono::Utc::now();
         let e = Entry {
-            hid: hid.to_string(),
-            slug: slug.to_string(),
+            hid: crate::ids::Hid(hid.to_string()),
+            slug: crate::ids::Slug(slug.to_string()),
             content_hash: format!("hash-{hid}"),
             field: field.to_string(),
             entry_shape: EntryShape::Point,
@@ -222,7 +222,7 @@ mod tests {
         };
         let hits = reg.query("datum_sub_human_id", &db, &params).unwrap();
         let slugs: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
-        assert_eq!(slugs, std::collections::HashSet::from([Some(e3.slug.clone())]));
+        assert_eq!(slugs, std::collections::HashSet::from([Some(e3.slug.to_string())]));
 
         let params = ViewParams {
             key: Some(json!("ab")),
@@ -232,7 +232,7 @@ mod tests {
         let slugs: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
         assert_eq!(
             slugs,
-            std::collections::HashSet::from([Some(e1.slug.clone()), Some(e2.slug.clone())])
+            std::collections::HashSet::from([Some(e1.slug.to_string()), Some(e2.slug.to_string())])
         );
 
         let params = ViewParams {

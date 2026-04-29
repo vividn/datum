@@ -257,8 +257,8 @@ mod tests {
         assert_eq!(hid.len(), HID_LEN, "hid fixtures must be {HID_LEN} chars");
         let now = Utc::now();
         let e = Entry {
-            hid: hid.to_string(),
-            slug: slug.to_string(),
+            hid: crate::ids::Hid(hid.to_string()),
+            slug: crate::ids::Slug(slug.to_string()),
             content_hash: format!("hash-{slug}"),
             field: field.to_string(),
             entry_shape: EntryShape::Point,
@@ -465,8 +465,8 @@ mod tests {
         assert_eq!(
             slugs,
             std::collections::HashSet::from([
-                "book:golden".to_string(),
-                "book:goldfish".to_string(),
+                crate::ids::Slug::from("book:golden"),
+                crate::ids::Slug::from("book:goldfish"),
             ]),
         );
     }
@@ -497,7 +497,7 @@ mod tests {
             slugs,
             std::collections::HashSet::from([
                 e.slug.clone(),
-                "mood:ab".to_string(),
+                crate::ids::Slug::from("mood:ab"),
             ]),
         );
     }

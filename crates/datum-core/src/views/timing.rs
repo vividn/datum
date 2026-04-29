@@ -173,13 +173,13 @@ mod tests {
         let by_id: std::collections::HashMap<_, _> =
             rows.iter().map(|r| (r.id.clone().unwrap(), r)).collect();
 
-        let w = by_id.get(&workout.slug).expect("workout row present");
+        let w = by_id.get(workout.slug.as_str()).expect("workout row present");
         assert_eq!(w.key, serde_json::json!(["workout", "2026-04-20"]));
         assert_eq!(w.value["duration_ms"], serde_json::json!(30 * 60 * 1000));
         assert_eq!(w.value["start"], serde_json::json!(start.to_rfc3339()));
         assert_eq!(w.value["end"], serde_json::json!(end.to_rfc3339()));
 
-        let c = by_id.get(&coffee.slug).expect("coffee row present");
+        let c = by_id.get(coffee.slug.as_str()).expect("coffee row present");
         assert_eq!(c.key, serde_json::json!(["coffee", "2026-04-20"]));
         assert_eq!(c.value["duration_ms"], JsonValue::Null);
         assert_eq!(c.value["end"], JsonValue::Null);

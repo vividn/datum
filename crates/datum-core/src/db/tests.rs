@@ -853,7 +853,7 @@ fn insert_conflict_rekey_creates_new_slug_keeps_old() {
     assert_eq!(old_slug, first_slug);
     assert_ne!(new_slug, first_slug, "rekeyed slug must be distinct");
     assert!(
-        new_slug.starts_with(&first_slug),
+        new_slug.starts_with(first_slug.as_str()),
         "rekeyed slug should start with the original: {new_slug}"
     );
 
@@ -1109,8 +1109,8 @@ fn insert_fixture(db: &Db, slug: &str, hid: &str, field: &str) -> Entry {
     use chrono::Utc;
     let now = Utc::now();
     let e = Entry {
-        hid: hid.to_string(),
-        slug: slug.to_string(),
+        hid: crate::ids::Hid(hid.to_string()),
+        slug: crate::ids::Slug(slug.to_string()),
         content_hash: format!("hash-{slug}"),
         field: field.to_string(),
         entry_shape: EntryShape::Point,
@@ -1197,10 +1197,10 @@ fn resolve_ambiguous_prefix_errors_with_candidates() {
     let err = db.resolve_prefix("coffee:ab").unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("ambiguous"), "expected 'ambiguous' in: {msg}");
-    assert!(msg.contains(&e1.slug), "candidate slug missing: {msg}");
-    assert!(msg.contains(&e2.slug), "candidate slug missing: {msg}");
-    assert!(msg.contains(&e1.hid), "candidate hid missing: {msg}");
-    assert!(msg.contains(&e2.hid), "candidate hid missing: {msg}");
+    assert!(msg.contains(e1.slug.as_str()), "candidate slug missing: {msg}");
+    assert!(msg.contains(e2.slug.as_str()), "candidate slug missing: {msg}");
+    assert!(msg.contains(e1.hid.as_str()), "candidate hid missing: {msg}");
+    assert!(msg.contains(e2.hid.as_str()), "candidate hid missing: {msg}");
 }
 
 #[test]

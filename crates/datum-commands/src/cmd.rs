@@ -4702,7 +4702,7 @@ mod tests {
 
         cmd_delete(
             DeleteArgs {
-                id_or_slug: Some(id.clone()),
+                id_or_slug: Some(id.to_string()),
                 force: true,
                 dry_run: false,
                 strict: false,
@@ -4771,7 +4771,7 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         with_datum_editor(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db).unwrap();
+            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output_flags: Default::default() }, &db).unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -4801,7 +4801,7 @@ mod tests {
 
         // `true` ignores its args → tempfile is left untouched.
         with_datum_editor("true", || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db).unwrap();
+            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output_flags: Default::default() }, &db).unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -4832,7 +4832,7 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         let result = with_datum_editor_result(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.clone(), output_flags: Default::default() }, &db)
+            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output_flags: Default::default() }, &db)
         });
         let err = result.unwrap_err();
         assert!(
@@ -5020,7 +5020,7 @@ mod tests {
         // re-stamped onto the pointer (idempotent).
         cmd_get(GetArgs::fresh_default(), &db).unwrap();
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
-        let got: std::collections::HashSet<String> = pointer.hids.into_iter().collect();
+        let got: std::collections::HashSet<datum_core::ids::Hid> = pointer.hids.into_iter().collect();
         assert_eq!(
             got,
             std::collections::HashSet::from([a_hid, b_hid]),
