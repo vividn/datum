@@ -17,7 +17,7 @@ pub enum AppError {
     Jwt(#[from] jsonwebtoken::errors::Error),
 
     #[error("webauthn error: {0}")]
-    WebAuthn(String),
+    WebAuthn(#[from] webauthn_rs::prelude::WebauthnError),
 
     #[error("unauthorized")]
     Unauthorized,

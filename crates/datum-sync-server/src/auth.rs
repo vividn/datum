@@ -26,8 +26,7 @@ pub async fn register_begin(
 
         let (ccr, reg_state) = state
             .webauthn
-            .start_passkey_registration(user_id, &req.username, display_name, None)
-            .map_err(|e| AppError::WebAuthn(e.to_string()))?;
+            .start_passkey_registration(user_id, &req.username, display_name, None)?;
 
         state
             .reg_states
@@ -60,8 +59,7 @@ pub async fn register_finish(
 
     let passkey = state
         .webauthn
-        .finish_passkey_registration(&req.credential, &reg_state)
-        .map_err(|e| AppError::WebAuthn(e.to_string()))?;
+        .finish_passkey_registration(&req.credential, &reg_state)?;
 
     {
         let conn = state.db.lock().unwrap();
@@ -94,8 +92,7 @@ pub async fn login_begin(
 
         let (rcr, auth_state) = state
             .webauthn
-            .start_passkey_authentication(&passkeys)
-            .map_err(|e| AppError::WebAuthn(e.to_string()))?;
+            .start_passkey_authentication(&passkeys)?;
 
         state
             .auth_states
@@ -130,8 +127,7 @@ pub async fn login_finish(
 
     let auth_result = state
         .webauthn
-        .finish_passkey_authentication(&req.credential, &auth_state)
-        .map_err(|e| AppError::WebAuthn(e.to_string()))?;
+        .finish_passkey_authentication(&req.credential, &auth_state)?;
 
     // Update passkey counter for the used credential
     {
