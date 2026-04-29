@@ -100,6 +100,24 @@ impl std::str::FromStr for GroupColumn {
     }
 }
 
+/// SQL expression for an entry's effective sort time under a given
+/// [`TimeMetric`]. Centralizes the metric-aware branch used by `tail`/`head`.
+fn time_expr(metric: TimeMetric) -> &'static str {
+    match metric {
+        TimeMetric::Hybrid => "COALESCE(start_time, modify_time)",
+        TimeMetric::Occur => "start_time",
+        TimeMetric::Create => "create_time",
+        TimeMetric::Modify => "modify_time",
+    }
+}
+
+/// SQL expression for an entry's "endbound" time — the canonical occurrence
+/// sort key used when no explicit metric is selected. Falls back through
+/// `start_time` → `end_time` → `create_time`.
+fn time_expr_endbound() -> &'static str {
+    "COALESCE(start_time, end_time, create_time)"
+}
+
 /// Build the shared `WHERE` clause + parameter bindings used by
 /// `count_entries_filtered`, `count_entries_grouped`, and `list_entry_ids`.
 fn filtered_where(
@@ -113,7 +131,7 @@ fn filtered_where(
         bindings.push(f.to_string());
     }
     if let Some(since_utc) = since {
-        parts.push("COALESCE(start_time, create_time) >= ?".to_string());
+        parts.push(format!("{} >= ?", time_expr_endbound()));
         bindings.push(since_utc.to_rfc3339());
     }
     (parts.join(" AND "), bindings)
@@ -622,7 +640,8 @@ impl Db {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND deleted_at IS NULL
-             ORDER BY COALESCE(start_time, end_time, create_time) DESC{}",
+             ORDER BY {} DESC{}",
+            time_expr_endbound(),
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -635,7 +654,8 @@ impl Db {
         let sql = format!(
             "SELECT * FROM entries
              WHERE field = ?1 AND deleted_at IS NULL
-             ORDER BY COALESCE(start_time, end_time, create_time) ASC{}",
+             ORDER BY {} ASC{}",
+            time_expr_endbound(),
             limit.map(|l| format!(" LIMIT {l}")).unwrap_or_default()
         );
         let mut stmt = self.conn.prepare(&sql)?;
@@ -650,12 +670,7 @@ impl Db {
     /// optional final reverse. The returned vec is oldest-first by default
     /// (so tail's output reads top-to-bottom in chronological order).
     pub fn list_entries(&self, params: &ListParams) -> Result<Vec<Entry>> {
-        let metric_expr: &str = match params.metric {
-            TimeMetric::Hybrid => "COALESCE(start_time, modify_time)",
-            TimeMetric::Occur => "start_time",
-            TimeMetric::Create => "create_time",
-            TimeMetric::Modify => "modify_time",
-        };
+        let metric_expr: &str = time_expr(params.metric);
 
         let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
         let mut bindings: Vec<String> = Vec::new();
@@ -738,13 +753,15 @@ impl Db {
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<Entry>> {
-        let mut stmt = self.conn.prepare(
-            r#"SELECT * FROM entries
-               WHERE COALESCE(start_time, end_time, create_time) >= ?1
-                 AND COALESCE(start_time, end_time, create_time) <= ?2
-                 AND deleted_at IS NULL
-               ORDER BY COALESCE(start_time, end_time, create_time) ASC"#,
-        )?;
+        let expr = time_expr_endbound();
+        let sql = format!(
+            "SELECT * FROM entries
+             WHERE {expr} >= ?1
+               AND {expr} <= ?2
+               AND deleted_at IS NULL
+             ORDER BY {expr} ASC",
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(
             params![start.to_rfc3339(), end.to_rfc3339()],
             row_to_entry,
@@ -795,11 +812,15 @@ impl Db {
         field: &str,
         t: DateTime<Utc>,
     ) -> Result<usize> {
+        let sql = format!(
+            "SELECT COUNT(*) FROM entries
+             WHERE field = ?1
+               AND deleted_at IS NULL
+               AND {} < ?2",
+            time_expr_endbound(),
+        );
         let n: i64 = self.conn.query_row(
-            r#"SELECT COUNT(*) FROM entries
-               WHERE field = ?1
-                 AND deleted_at IS NULL
-                 AND COALESCE(start_time, create_time) < ?2"#,
+            &sql,
             params![field, t.to_rfc3339()],
             |row| row.get(0),
         )?;
@@ -866,8 +887,8 @@ impl Db {
         let (where_clause, bindings) = filtered_where(field, since);
         let mut sql = format!(
             "SELECT {select_col} FROM entries WHERE {where_clause} \
-             ORDER BY COALESCE(start_time, end_time, create_time) {dir}, \
-                      slug {dir}"
+             ORDER BY {expr} {dir}, slug {dir}",
+            expr = time_expr_endbound(),
         );
         if let Some(n) = limit {
             sql.push_str(&format!(" LIMIT {n}"));
@@ -1031,6 +1052,40 @@ impl Db {
             Some(j) => Ok(Some(serde_json::from_str(&j)?)),
             None => Ok(None),
         }
+    }
+
+    /// Load specs for many fields in a single query. Fields without a
+    /// stored spec are absent from the returned map.
+    pub fn batch_load_specs(
+        &self,
+        fields: &[&str],
+    ) -> Result<std::collections::HashMap<String, FieldSpec>> {
+        let mut out: std::collections::HashMap<String, FieldSpec> =
+            std::collections::HashMap::with_capacity(fields.len());
+        if fields.is_empty() {
+            return Ok(out);
+        }
+        let placeholders = std::iter::repeat_n("?", fields.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT field, spec_json FROM field_specs WHERE field IN ({placeholders})"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(fields.iter()),
+            |row| {
+                let field: String = row.get(0)?;
+                let json: String = row.get(1)?;
+                Ok((field, json))
+            },
+        )?;
+        for r in rows {
+            let (field, json) = r.map_err(DatumError::Db)?;
+            let spec: FieldSpec = serde_json::from_str(&json)?;
+            out.insert(field, spec);
+        }
+        Ok(out)
     }
 
     /// Save a field spec and sync its derived aliases into the aliases table.
@@ -1357,17 +1412,19 @@ impl Db {
         at: DateTime<Utc>,
     ) -> Result<JsonValue> {
         let at_str = at.to_rfc3339();
-        let mut stmt = self.conn.prepare(
-            r#"SELECT * FROM entries
-               WHERE field = ?1
-                 AND deleted_at IS NULL
-                 AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
-                 AND (
-                      (start_time IS NOT NULL AND start_time <= ?2)
-                   OR (end_time   IS NOT NULL AND end_time   <= ?2)
-                 )
-               ORDER BY COALESCE(start_time, end_time, create_time) ASC"#,
-        )?;
+        let sql = format!(
+            "SELECT * FROM entries
+             WHERE field = ?1
+               AND deleted_at IS NULL
+               AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
+               AND (
+                    (start_time IS NOT NULL AND start_time <= ?2)
+                 OR (end_time   IS NOT NULL AND end_time   <= ?2)
+               )
+             ORDER BY {} ASC",
+            time_expr_endbound(),
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt.query_map(params![field, at_str], row_to_entry)?;
         let entries: Vec<Entry> = rows
             .map(|r| r.map_err(DatumError::Db))
@@ -1520,16 +1577,20 @@ impl Db {
         t: DateTime<Utc>,
     ) -> Result<Option<JsonValue>> {
         let cutoff = t.to_rfc3339();
+        let sql = format!(
+            "SELECT value FROM entries
+             WHERE field = ?1
+               AND verb != 'add'
+               AND deleted_at IS NULL
+               AND {expr} <= ?2
+             ORDER BY {expr} DESC
+             LIMIT 1",
+            expr = time_expr_endbound(),
+        );
         let row: Option<Option<String>> = self
             .conn
             .query_row(
-                "SELECT value FROM entries
-                 WHERE field = ?1
-                   AND verb != 'add'
-                   AND deleted_at IS NULL
-                   AND COALESCE(start_time, end_time, create_time) <= ?2
-                 ORDER BY COALESCE(start_time, end_time, create_time) DESC
-                 LIMIT 1",
+                &sql,
                 params![field, cutoff],
                 |row| row.get::<_, Option<String>>(0),
             )
@@ -1541,6 +1602,65 @@ impl Db {
         }
     }
 
+    /// Batch version of [`Db::state_at`]: latest state-bearing `value` for
+    /// every field in `fields`, evaluated at time `t`. Fields with no
+    /// qualifying entry are absent from the returned map. A present entry
+    /// whose `value` column was NULL maps to [`JsonValue::Null`].
+    ///
+    /// Avoids the N+1 query pattern in callers that scan every distinct
+    /// field in the store (see [`Db::get_tracked_fields`]).
+    pub fn batch_state_at(
+        &self,
+        fields: &[&str],
+        t: DateTime<Utc>,
+    ) -> Result<std::collections::HashMap<String, JsonValue>> {
+        let mut out: std::collections::HashMap<String, JsonValue> =
+            std::collections::HashMap::with_capacity(fields.len());
+        if fields.is_empty() {
+            return Ok(out);
+        }
+        let cutoff = t.to_rfc3339();
+        let endbound = time_expr_endbound();
+        let placeholders = std::iter::repeat_n("?", fields.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!(
+            "SELECT field, value FROM (
+                SELECT field, value,
+                  ROW_NUMBER() OVER (
+                    PARTITION BY field
+                    ORDER BY {endbound} DESC, slug DESC
+                  ) AS rn
+                FROM entries
+                WHERE field IN ({placeholders})
+                  AND verb != 'add'
+                  AND deleted_at IS NULL
+                  AND {endbound} <= ?
+            ) WHERE rn = 1"
+        );
+        let mut bindings: Vec<String> =
+            fields.iter().map(|s| s.to_string()).collect();
+        bindings.push(cutoff);
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(
+            rusqlite::params_from_iter(bindings.iter()),
+            |row| {
+                let field: String = row.get(0)?;
+                let value: Option<String> = row.get(1)?;
+                Ok((field, value))
+            },
+        )?;
+        for r in rows {
+            let (field, value) = r.map_err(DatumError::Db)?;
+            let json = match value {
+                None => JsonValue::Null,
+                Some(s) => serde_json::from_str(&s)?,
+            };
+            out.insert(field, json);
+        }
+        Ok(out)
+    }
+
     /// Project the entry log into a [`TrackedField`] list for the `now`
     /// view. A field appears here iff it has at least one live entry; its
     /// `ignored` flag derives from [`Db::state_at`] at `now`. Per-field
@@ -1549,15 +1669,17 @@ impl Db {
     pub fn get_tracked_fields(&self) -> Result<Vec<TrackedField>> {
         let now = Utc::now();
         let fields = self.list_distinct_fields()?;
+        let field_refs: Vec<&str> = fields.iter().map(String::as_str).collect();
+        let states = self.batch_state_at(&field_refs, now)?;
+        let specs = self.batch_load_specs(&field_refs)?;
         let mut out = Vec::with_capacity(fields.len());
         for field in fields {
-            let state = self.state_at(&field, now)?;
-            let ignored = match state.as_ref() {
+            let ignored = match states.get(&field) {
                 None => true,
                 Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
                 _ => false,
             };
-            let color = self.load_spec(&field)?.and_then(|s| s.color);
+            let color = specs.get(&field).and_then(|s| s.color.clone());
             out.push(TrackedField { field, ignored, color });
         }
         Ok(out)
@@ -1792,15 +1914,15 @@ impl Db {
     /// view. `add` is skipped because it represents free-form data with no
     /// state effect; the now view shows the most recent state-bearing entry.
     pub fn latest_entry_for_now(&self, field: &str) -> Result<Option<Entry>> {
+        let sql = format!(
+            "SELECT * FROM entries
+             WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
+             ORDER BY {} DESC
+             LIMIT 1",
+            time_expr_endbound(),
+        );
         self.conn
-            .query_row(
-                "SELECT * FROM entries
-                 WHERE field = ?1 AND verb != 'add' AND deleted_at IS NULL
-                 ORDER BY COALESCE(start_time, end_time, create_time) DESC
-                 LIMIT 1",
-                params![field],
-                row_to_entry,
-            )
+            .query_row(&sql, params![field], row_to_entry)
             .optional()
             .map_err(DatumError::Db)
     }
