@@ -3153,8 +3153,10 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
 
         // extra_data: preserve everything in `data` except the fields we
         // map onto first-class columns. `dur` and `lastState` are kept as
-        // intent (datum-compatible read-back); `_import` marks the row's
-        // provenance for `--imported` queries later.
+        // intent (datum-compatible read-back). System provenance — the
+        // `_import` marker — lives in `extra_metadata` (da-tsw), strictly
+        // disjoint from user payload so round-tripping data doesn't risk
+        // re-eating the marker as if it were user content.
         let mut extra = serde_json::Map::new();
         if let Some(obj) = data.as_object() {
             for (k, v) in obj {
@@ -3163,10 +3165,17 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
                 }
             }
         }
+        let extra_data = if extra.is_empty() {
+            None
+        } else {
+            Some(JsonValue::Object(extra))
+        };
+
         // The "_import" marker distinguishes this row's source. A future
         // datum-v1 importer (bash + text documents) will set
         // source: "datum-v1-shell". Keep this marker shape stable —
-        // downstream queries may filter on it.
+        // downstream queries may filter on it (e.g. dedup by `original_id`
+        // on re-import).
         let mut import_marker = serde_json::Map::new();
         import_marker.insert(
             "source".to_string(),
@@ -3182,8 +3191,9 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
                 JsonValue::String(orig_id.to_string()),
             );
         }
-        extra.insert("_import".to_string(), JsonValue::Object(import_marker));
-        let extra_data = Some(JsonValue::Object(extra));
+        let mut metadata_obj = serde_json::Map::new();
+        metadata_obj.insert("_import".to_string(), JsonValue::Object(import_marker));
+        let extra_metadata = Some(JsonValue::Object(metadata_obj));
 
         let created_at = parse_datum_time(&meta["createTime"])
             .map(|t| t.utc)
@@ -3206,6 +3216,7 @@ pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()>
         entry.parser_version = 0;
         entry.raw_input = String::new();
         entry.alias_chain = None;
+        entry.extra_metadata = extra_metadata;
 
         match entry.entry_shape {
             datum_core::entry::EntryShape::Block => blocks += 1,

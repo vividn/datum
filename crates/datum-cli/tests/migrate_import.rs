@@ -82,10 +82,20 @@ fn occur_with_dur_maps_to_block_and_derives_end_time() {
     let start = e.start_time.as_ref().unwrap();
     let end = e.end_time.as_ref().unwrap();
     assert_eq!((end.utc - start.utc).num_minutes(), 30);
-    // dur literal preserved as intent.
+    // dur literal preserved as user payload in `data`.
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra["dur"], serde_json::json!("PT30M"));
-    assert_eq!(extra["_import"]["source"], serde_json::json!("datum-v2-couchdb"));
+    // `_import` provenance now lives in `extra_metadata` (da-tsw), strictly
+    // disjoint from user-payload `data`.
+    let metadata = e.extra_metadata.as_ref().expect("extra_metadata must hold _import");
+    assert_eq!(
+        metadata["_import"]["source"],
+        serde_json::json!("datum-v2-couchdb"),
+    );
+    assert!(
+        e.data.as_ref().and_then(|d| d.get("_import")).is_none(),
+        "`_import` must NOT appear in user-payload `data`",
+    );
 }
 
 // ─── 3. switch (boolean state) → Point/Switch ────────────────────────
@@ -201,14 +211,18 @@ fn imported_rows_carry_sentinel_intent_fields() {
     assert_eq!(e.parser_version, 0, "imported rows use sentinel parser_version=0");
     assert_eq!(e.raw_input, "");
     assert!(e.alias_chain.is_none());
-    let extra = e.data.as_ref().unwrap();
-    let marker = &extra["_import"];
+    // Provenance lives in `extra_metadata`. The user-payload `data` is
+    // empty for this fixture (no fields beyond occurTime/field/state) so it
+    // stays NULL — strict separation, no marker bleed-through (da-tsw).
+    let metadata = e.extra_metadata.as_ref().unwrap();
+    let marker = &metadata["_import"];
     assert_eq!(marker["source"], serde_json::json!("datum-v2-couchdb"));
     assert!(marker["backup_time"].is_string(), "backup_time must be present");
     assert_eq!(
         marker["original_id"],
         serde_json::json!("brushteeth:2025-01-08T23:53:08.259Z"),
     );
+    assert!(e.data.is_none(), "no user payload → `data` stays NULL");
 }
 
 // ─── 7. Dry-run summary reports point/block split ────────────────────
@@ -271,9 +285,14 @@ fn import_3day_fixture_produces_blocks_and_points() {
         );
     }
 
-    // Every imported row must carry the provenance marker.
+    // Every imported row must carry the provenance marker — in
+    // `extra_metadata`, never in user-payload `data` (da-tsw).
     for e in &entries {
-        let marker = &e.data.as_ref().unwrap()["_import"];
+        let metadata = e
+            .extra_metadata
+            .as_ref()
+            .unwrap_or_else(|| panic!("row {} missing extra_metadata", e.slug));
+        let marker = &metadata["_import"];
         assert_eq!(
             marker["source"],
             serde_json::json!("datum-v2-couchdb"),
@@ -282,6 +301,11 @@ fn import_3day_fixture_produces_blocks_and_points() {
         );
         assert!(marker["backup_time"].is_string(), "row {} missing backup_time", e.slug);
         assert!(marker["original_id"].is_string(), "row {} missing original_id", e.slug);
+        assert!(
+            e.data.as_ref().and_then(|d| d.get("_import")).is_none(),
+            "row {} leaked `_import` into user-payload `data`",
+            e.slug,
+        );
         assert_eq!(e.parser_version, 0);
     }
 }
@@ -336,7 +360,7 @@ fn import_preserves_create_and_modify_times_and_marker() {
     assert_eq!(e.modify_time, expect_modify, "modify_time from meta.modifyTime");
     assert_ne!(e.create_time, e.modify_time, "distinct source times must land distinctly");
 
-    let marker = &e.data.as_ref().unwrap()["_import"];
+    let marker = &e.extra_metadata.as_ref().unwrap()["_import"];
     assert_eq!(marker["source"], serde_json::json!("datum-v2-couchdb"));
     // backup_time comes from the backup file's `backupTime` field (set by
     // write_backup to a fixed value), so it's stable across re-imports.

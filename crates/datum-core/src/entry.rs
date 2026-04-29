@@ -217,6 +217,16 @@ pub struct Entry {
     /// conflict but never block the insert. Not included in `content_hash`.
     #[serde(default)]
     pub user_asserted_last_state: Option<JsonValue>,
+
+    /// da-tsw: system-managed provenance (e.g. `_import` for datum-migrate
+    /// rows, future sync conflict resolution markers). Strictly disjoint from
+    /// `data`, which holds untouched user payload. Hidden from default
+    /// render paths; surfaced under `-A`/Show::All. Not part of
+    /// `content_hash` — provenance does not change row identity. Survives
+    /// `datum edit` of `data`; only re-imports / sync conflict resolver
+    /// touch it.
+    #[serde(default)]
+    pub extra_metadata: Option<JsonValue>,
 }
 
 /// Current parser version. Bump when parser behaviour changes so stored
@@ -301,6 +311,7 @@ impl Entry {
             alias_chain: None,
             parser_version: CURRENT_PARSER_VERSION,
             user_asserted_last_state: None,
+            extra_metadata: None,
         }
     }
 

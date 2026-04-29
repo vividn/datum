@@ -1138,6 +1138,7 @@ fn insert_fixture(db: &Db, slug: &str, hid: &str, field: &str) -> Entry {
         alias_chain: None,
         parser_version: 1,
         user_asserted_last_state: None,
+        extra_metadata: None,
     };
     db.insert_entry(&e).unwrap();
     e
@@ -1590,6 +1591,68 @@ fn insert_entries_bulk_idempotent_on_content_hash() {
         })
         .unwrap();
     assert_eq!(n, 1, "re-import must not duplicate rows");
+}
+
+/// da-tsw: `extra_metadata` round-trips through insert and read-back as
+/// arbitrary JSON, completely separate from `data`.
+#[test]
+fn extra_metadata_round_trips_via_get_metadata() {
+    let db = Db::open_in_memory().unwrap();
+    let t = DatumTime::now();
+    let mut entry = Entry::new(
+        "coffee",
+        Verb::Occur,
+        Some(serde_json::json!(1)),
+        Some(serde_json::json!({"mug": "blue"})),
+        None,
+        Some(t),
+        None,
+        "d1",
+    );
+    entry.extra_metadata = Some(serde_json::json!({
+        "_import": {"source": "datum-v2-couchdb", "original_id": "abc"}
+    }));
+    db.insert_entry(&entry).unwrap();
+
+    let fetched = db.get_entry(&entry.slug).unwrap();
+    assert_eq!(
+        fetched.extra_metadata.as_ref().unwrap()["_import"]["source"],
+        serde_json::json!("datum-v2-couchdb"),
+    );
+    assert_eq!(
+        fetched.data.as_ref().unwrap()["mug"],
+        serde_json::json!("blue"),
+        "user payload survives untouched alongside extra_metadata",
+    );
+
+    let direct = db.get_metadata(&entry.slug).unwrap().unwrap();
+    assert_eq!(direct["_import"]["original_id"], serde_json::json!("abc"));
+
+    // set_metadata overwrites without touching data, modify_time, or hash.
+    let pre_modify = fetched.modify_time;
+    let pre_hash = fetched.content_hash.clone();
+    db.set_metadata(&entry.slug, Some(&serde_json::json!({"sync": "merged"})))
+        .unwrap();
+    let after = db.get_entry(&entry.slug).unwrap();
+    assert_eq!(
+        after.extra_metadata.as_ref().unwrap()["sync"],
+        serde_json::json!("merged"),
+    );
+    assert_eq!(after.modify_time, pre_modify, "modify_time must NOT change");
+    assert_eq!(after.content_hash, pre_hash, "content_hash must NOT change");
+    assert_eq!(
+        after.data.as_ref().unwrap()["mug"],
+        serde_json::json!("blue"),
+        "set_metadata must NOT touch data",
+    );
+
+    // Clear with None.
+    db.set_metadata(&entry.slug, None).unwrap();
+    assert!(db.get_metadata(&entry.slug).unwrap().is_none());
+
+    // Missing rows error from set_metadata.
+    let err = db.set_metadata("no-such-row", None).unwrap_err();
+    assert!(matches!(err, DatumError::NotFound(_)));
 }
 
 /// Non-Ignore strategies are deliberately rejected — the fast path is

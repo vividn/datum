@@ -16,6 +16,47 @@ use super::types::{
 use super::Db;
 
 impl Db {
+    /// Read the `extra_metadata` JSON for a row, addressed by slug or hid.
+    /// Returns `None` for live rows that carry no provenance and for rows
+    /// that don't exist (callers wanting NotFound should compose with
+    /// [`Db::get_entry`]). System provenance — never user-visible payload.
+    pub fn get_metadata(&self, slug_or_hid: &str) -> Result<Option<JsonValue>> {
+        let raw: Option<Option<String>> = self
+            .conn
+            .query_row(
+                "SELECT extra_metadata FROM entries
+                 WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL
+                 LIMIT 1",
+                params![slug_or_hid],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()?;
+        Ok(raw
+            .flatten()
+            .and_then(|s| serde_json::from_str(&s).ok()))
+    }
+
+    /// Overwrite `extra_metadata` for a row. Pass `None` to clear it.
+    /// Errors [`DatumError::NotFound`] if no live row matches. Does NOT
+    /// touch `data`, `modify_time`, or `content_hash` — provenance is
+    /// orthogonal to identity and to user-edit semantics.
+    pub fn set_metadata(
+        &self,
+        slug_or_hid: &str,
+        metadata: Option<&JsonValue>,
+    ) -> Result<()> {
+        let stored = metadata.map(|v| v.to_string());
+        let affected = self.conn.execute(
+            "UPDATE entries SET extra_metadata = ?2
+             WHERE (slug = ?1 OR hid = ?1) AND deleted_at IS NULL",
+            params![slug_or_hid, stored],
+        )?;
+        if affected == 0 {
+            return Err(DatumError::NotFound(slug_or_hid.to_string()));
+        }
+        Ok(())
+    }
+
     /// Fetch a live entry by slug or hid. Tombstoned rows are hidden — use
     /// [`Db::list_including_deleted`] or [`Db::get_entry_including_deleted`]
     /// if you need to see them.

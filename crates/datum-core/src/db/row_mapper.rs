@@ -82,6 +82,9 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     let user_asserted_last_state: Option<JsonValue> = row
         .get::<_, Option<String>>("user_asserted_last_state")?
         .and_then(|s| serde_json::from_str(&s).ok());
+    let extra_metadata: Option<JsonValue> = row
+        .get::<_, Option<String>>("extra_metadata")?
+        .and_then(|s| serde_json::from_str(&s).ok());
 
     Ok(Entry {
         hid: row.get("hid")?,
@@ -113,6 +116,7 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         alias_chain,
         parser_version,
         user_asserted_last_state,
+        extra_metadata,
     })
 }
 

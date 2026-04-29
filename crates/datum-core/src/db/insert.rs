@@ -444,7 +444,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
             raw_input, alias_chain, parser_version,
-            user_asserted_last_state
+            user_asserted_last_state, extra_metadata
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6,
             ?7, ?8, ?9,
@@ -456,7 +456,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
             ?23, ?24, ?25,
             ?26, ?27, ?28,
             ?29, ?30, ?31,
-            ?32
+            ?32, ?33
         )"#,
     )?;
     stmt.execute(params![
@@ -492,6 +492,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.alias_chain.as_ref().map(|v| v.to_string()),
         entry.parser_version,
         entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+        entry.extra_metadata.as_ref().map(|v| v.to_string()),
     ])?;
     Ok(())
 }
@@ -638,7 +639,8 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             raw_input = ?27,
             alias_chain = ?28,
             parser_version = ?29,
-            user_asserted_last_state = ?30
+            user_asserted_last_state = ?30,
+            extra_metadata = ?31
            WHERE hid = ?1"#,
         params![
             entry.hid,
@@ -671,6 +673,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
             entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+            entry.extra_metadata.as_ref().map(|v| v.to_string()),
         ],
     )?;
     if affected == 0 {

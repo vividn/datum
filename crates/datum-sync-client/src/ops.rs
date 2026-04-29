@@ -135,7 +135,8 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
-            raw_input, alias_chain, parser_version
+            raw_input, alias_chain, parser_version,
+            extra_metadata
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6,
             ?7, ?8, ?9,
@@ -146,7 +147,8 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             ?20, ?21, ?22,
             ?23, ?24, ?25,
             ?26, ?27, ?28,
-            ?29, ?30, ?31
+            ?29, ?30, ?31,
+            ?32
         )
         ON CONFLICT(slug) DO UPDATE SET
             hid             = excluded.hid,
@@ -178,7 +180,8 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             field_structure = excluded.field_structure,
             raw_input       = excluded.raw_input,
             alias_chain     = excluded.alias_chain,
-            parser_version  = excluded.parser_version"#,
+            parser_version  = excluded.parser_version,
+            extra_metadata  = excluded.extra_metadata"#,
         params![
             entry.hid,
             entry.slug,
@@ -211,6 +214,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
+            entry.extra_metadata.as_ref().map(|v| v.to_string()),
         ],
     )?;
     Ok(())

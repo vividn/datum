@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 11;
+pub const CURRENT_SCHEMA_VERSION: u32 = 12;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -95,7 +95,114 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "last_docs: singleton pointer to the hids of the most-recently-accessed batch (da-e65)",
         apply: m10_to_11_last_docs,
     },
+    Migration {
+        from: 11,
+        to: 12,
+        summary: "entries: add extra_metadata column for system provenance; relocate datum-migrate `_import` marker out of data (da-tsw)",
+        apply: m11_to_12_extra_metadata,
+    },
 ];
+
+fn m11_to_12_extra_metadata(conn: &Connection) -> Result<()> {
+    // da-tsw: separate system-managed provenance from user-supplied `data`.
+    //
+    // Step 1 — additive column. Idempotent via pragma_table_info introspection
+    // so a half-applied migration can be retried.
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name = 'extra_metadata'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch("ALTER TABLE entries ADD COLUMN extra_metadata TEXT;")?;
+    }
+
+    // Step 2 — relocate `_import` markers written by previous datum-migrate
+    // runs from `data` to `extra_metadata`. Recompute `content_hash` to match
+    // the post-relocation `data` so re-imports of the same source dedup
+    // against the migrated rows. Sets `data` to NULL when the strip leaves
+    // an empty object so the column matches the freshly-imported shape.
+    let mut stmt = conn.prepare(
+        "SELECT hid, field, start_time, end_time, value, data
+         FROM entries
+         WHERE data IS NOT NULL AND data LIKE '%\"_import\"%'",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, String>(5)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(crate::error::DatumError::Db)?;
+    drop(stmt);
+
+    for (hid, field, start_str, end_str, value_str, data_str) in rows {
+        let mut data_val: serde_json::Value = serde_json::from_str(&data_str)
+            .map_err(|e| crate::error::DatumError::Other(format!("bad data JSON for hid {hid}: {e}")))?;
+        let import_val = match data_val.as_object_mut() {
+            Some(map) => map.remove("_import"),
+            None => None,
+        };
+        if import_val.is_none() {
+            // LIKE pattern matched a non-_import literal — skip without
+            // touching the row.
+            continue;
+        }
+        let metadata_val = serde_json::Value::Object({
+            let mut m = serde_json::Map::new();
+            m.insert("_import".to_string(), import_val.unwrap());
+            m
+        });
+
+        // Empty post-strip → store NULL so the column matches a fresh import.
+        let new_data: Option<String> = match &data_val {
+            serde_json::Value::Object(map) if map.is_empty() => None,
+            _ => Some(data_val.to_string()),
+        };
+
+        // Recompute content_hash from the post-relocation columns. Mirrors
+        // `Entry::expected_content_hash` so re-imports collide.
+        let new_hash = recompute_content_hash(
+            &field,
+            start_str.as_deref().unwrap_or(""),
+            end_str.as_deref().unwrap_or(""),
+            value_str.as_deref().unwrap_or(""),
+            new_data.as_deref().unwrap_or(""),
+        );
+
+        conn.execute(
+            "UPDATE entries
+             SET data = ?2, extra_metadata = ?3, content_hash = ?4
+             WHERE hid = ?1",
+            params![hid, new_data, metadata_val.to_string(), new_hash],
+        )?;
+    }
+
+    Ok(())
+}
+
+fn recompute_content_hash(field: &str, start: &str, end: &str, value: &str, extra: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut h = Sha256::new();
+    h.update(field.as_bytes());
+    h.update(b"\x00");
+    h.update(start.as_bytes());
+    h.update(b"\x00");
+    h.update(end.as_bytes());
+    h.update(b"\x00");
+    h.update(value.as_bytes());
+    h.update(b"\x00");
+    h.update(extra.as_bytes());
+    format!("{:x}", h.finalize())
+}
 
 fn m10_to_11_last_docs(conn: &Connection) -> Result<()> {
     // da-e65: backs the `_LAST` / `_LAST_WITH_PROTECTION` quickId tokens.
@@ -643,5 +750,157 @@ mod tests {
         );
         let mood_state = db.state_at("mood", now).unwrap();
         assert_eq!(mood_state, None, "ignored=false spec must NOT be migrated");
+    }
+
+    /// da-tsw: v11→v12 relocates `_import` markers out of user-payload `data`
+    /// into the new `extra_metadata` column, recomputing `content_hash` so
+    /// re-imports of the same source dedup against the migrated row.
+    #[test]
+    fn m11_to_12_relocates_import_marker_and_recomputes_hash() {
+        // Open a fresh DB at the current schema, then roll the column back
+        // and seed a row in the legacy shape (`_import` inside `data`).
+        let db = Db::open_in_memory().unwrap();
+
+        // Seed a row whose `data` mixes user payload (`dur`) with the
+        // system marker (`_import`) — exactly what pre-da-tsw migrate
+        // import wrote.
+        let legacy_data = serde_json::json!({
+            "dur": "PT30M",
+            "_import": {
+                "source": "datum-v2-couchdb",
+                "backup_time": "2025-02-02T12:26:32.488Z",
+                "original_id": "exercise:2025-01-08T08:00:00.000Z"
+            }
+        }).to_string();
+        let legacy_data_only_marker = serde_json::json!({
+            "_import": {
+                "source": "datum-v2-couchdb",
+                "backup_time": "2025-02-02T12:26:32.488Z",
+                "original_id": "brushteeth:2025-01-08T23:53:08.259Z"
+            }
+        }).to_string();
+
+        // Wipe extra_metadata so the row looks pre-v12 — the column
+        // already exists at the current schema; we just leave it NULL.
+        db.conn().execute(
+            r#"INSERT INTO entries (
+                hid, slug, content_hash, field, entry_shape, intent,
+                value, data, unit,
+                start_time, start_time_offset, start_time_tz,
+                start_time_precision, start_time_precision_unit,
+                end_time, end_time_offset, end_time_tz,
+                end_time_precision, end_time_precision_unit,
+                lat, lon, location,
+                create_time, modify_time, device_id,
+                deleted_at, id_structure, field_structure,
+                raw_input, alias_chain, parser_version,
+                user_asserted_last_state, extra_metadata
+            ) VALUES (
+                'h1blockrowfix', 'exercise:2025-01-08T08:00:00.000Z',
+                'oldhash-block', 'exercise', 'block', NULL,
+                NULL, ?1, NULL,
+                '2025-01-08T08:00:00+00:00', 0, 'UTC', 0, 'exact',
+                '2025-01-08T08:30:00+00:00', 0, 'UTC', 0, 'exact',
+                NULL, NULL, NULL,
+                '2025-01-08T08:00:00.500+00:00', '2025-01-08T08:00:00.500+00:00', 'test',
+                NULL, NULL, NULL,
+                '', NULL, 0,
+                NULL, NULL
+            )"#,
+            rusqlite::params![legacy_data],
+        ).unwrap();
+        db.conn().execute(
+            r#"INSERT INTO entries (
+                hid, slug, content_hash, field, entry_shape, intent,
+                value, data, unit,
+                start_time, start_time_offset, start_time_tz,
+                start_time_precision, start_time_precision_unit,
+                end_time, end_time_offset, end_time_tz,
+                end_time_precision, end_time_precision_unit,
+                lat, lon, location,
+                create_time, modify_time, device_id,
+                deleted_at, id_structure, field_structure,
+                raw_input, alias_chain, parser_version,
+                user_asserted_last_state, extra_metadata
+            ) VALUES (
+                'h2pointrowok1', 'brushteeth:2025-01-08T23:53:08.259Z',
+                'oldhash-point', 'brushteeth', 'point', NULL,
+                NULL, ?1, NULL,
+                '2025-01-08T23:53:08.259+00:00', 0, 'UTC', 0, 'exact',
+                NULL, NULL, NULL, 0, 'exact',
+                NULL, NULL, NULL,
+                '2025-01-08T23:53:08.569+00:00', '2025-01-08T23:53:08.569+00:00', 'test',
+                NULL, NULL, NULL,
+                '', NULL, 0,
+                NULL, NULL
+            )"#,
+            rusqlite::params![legacy_data_only_marker],
+        ).unwrap();
+
+        // Roll back the version stamp to v11 so migrate_to_current
+        // re-runs the v11→v12 step against the seeded rows.
+        set_schema_version(db.conn(), 11).unwrap();
+        migrate_to_current(db.conn()).unwrap();
+        assert_eq!(
+            read_schema_version(db.conn()).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION)
+        );
+
+        // Block row: dur survives in data; _import moved to extra_metadata.
+        let (data_str, meta_str): (Option<String>, Option<String>) = db
+            .conn()
+            .query_row(
+                "SELECT data, extra_metadata FROM entries WHERE hid = 'h1blockrowfix'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        let data: serde_json::Value =
+            serde_json::from_str(data_str.as_deref().unwrap()).unwrap();
+        let meta: serde_json::Value =
+            serde_json::from_str(meta_str.as_deref().unwrap()).unwrap();
+        assert_eq!(data["dur"], serde_json::json!("PT30M"));
+        assert!(
+            data.get("_import").is_none(),
+            "_import must be stripped from data",
+        );
+        assert_eq!(
+            meta["_import"]["source"],
+            serde_json::json!("datum-v2-couchdb"),
+        );
+
+        // Point row: data was only the marker → relocated then nulled.
+        let (point_data_str, point_meta_str): (Option<String>, Option<String>) = db
+            .conn()
+            .query_row(
+                "SELECT data, extra_metadata FROM entries WHERE hid = 'h2pointrowok1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert!(
+            point_data_str.is_none(),
+            "marker-only data must NULL after relocation, got {point_data_str:?}",
+        );
+        let point_meta: serde_json::Value =
+            serde_json::from_str(point_meta_str.as_deref().unwrap()).unwrap();
+        assert_eq!(
+            point_meta["_import"]["original_id"],
+            serde_json::json!("brushteeth:2025-01-08T23:53:08.259Z"),
+        );
+
+        // content_hash recomputed (no longer matches the seeded `oldhash-*`).
+        let new_hash: String = db
+            .conn()
+            .query_row(
+                "SELECT content_hash FROM entries WHERE hid = 'h1blockrowfix'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_ne!(
+            new_hash, "oldhash-block",
+            "content_hash must be recomputed after data changes",
+        );
     }
 }

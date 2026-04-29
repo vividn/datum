@@ -63,6 +63,14 @@ CREATE TABLE IF NOT EXISTS entries (
     -- `last_state_mismatch` row in sync_conflicts rather than blocking the write.
     user_asserted_last_state TEXT,
 
+    -- da-tsw: system-managed provenance, strictly disjoint from `data` (the
+    -- user-supplied JSON bucket). Writers: migrate, sync conflict resolver,
+    -- future imports. Readers: dedup-on-reimport (`original_id`), debugging.
+    -- Hidden from default render paths (tail/now/show) — only `-A`/Show::All
+    -- exposes it. SURVIVES `datum edit` of `data`; only re-imports / sync
+    -- conflict resolution mutate it. Not part of `content_hash`.
+    extra_metadata TEXT,
+
     -- Generated columns — read-only projections.
     --
     -- `verb`: intent overrides shape-derived classification, so `stop`/`note`
@@ -242,4 +250,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '11');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '12');

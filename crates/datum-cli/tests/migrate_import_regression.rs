@@ -78,15 +78,22 @@ fn migrate_import_synthetic_locks_db_shape() {
     }
 
     // Provenance + sentinel intent fields on every imported row.
+    // `_import` lives in `extra_metadata` (da-tsw), strictly disjoint from
+    // user-payload `data`.
     for e in &entries {
-        let extra = e
-            .data
+        let metadata = e
+            .extra_metadata
             .as_ref()
-            .expect("imported row should always have extra_data (at least _import marker)");
+            .unwrap_or_else(|| panic!("row {} missing extra_metadata", e.slug));
         assert_eq!(
-            extra["_import"]["source"],
+            metadata["_import"]["source"],
             serde_json::json!("datum-v2-couchdb"),
             "row {} missing _import.source marker",
+            e.slug,
+        );
+        assert!(
+            e.data.as_ref().and_then(|d| d.get("_import")).is_none(),
+            "row {} leaked `_import` into user-payload `data`",
             e.slug,
         );
         assert_eq!(
