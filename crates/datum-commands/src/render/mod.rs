@@ -655,14 +655,32 @@ pub fn print_entry_pretty(entry: &Entry) -> serde_json::Result<()> {
 }
 
 /// Print a single entry's table row (no action header). Useful as a preview.
-pub fn print_entry(entry: &Entry, registry: Option<&SpecRegistry>) {
+///
+/// `ctx` and `now` mirror [`print_table_with`]: when both are supplied, the
+/// state cell renders the same ambient/transition decoration the live `tail`
+/// view uses, so dry-run / confirm previews match what the row will look like
+/// after the mutation. Pass `None` for both to fall back to the
+/// context-free rendering.
+pub fn print_entry(
+    entry: &Entry,
+    ctx: Option<&RenderContext>,
+    now: Option<&DatumTime>,
+    registry: Option<&SpecRegistry>,
+) {
     let args = TableArgs {
         output: OutputArgs::default(),
         metric: TimeMetricCol::Hybrid,
         columns: vec![],
         suppress_header: false,
     };
-    print_table(std::slice::from_ref(entry), registry, &args);
+    let ctx_slice = ctx.map(std::slice::from_ref);
+    print_table_with(
+        std::slice::from_ref(entry),
+        ctx_slice,
+        now,
+        registry,
+        &args,
+    );
 }
 
 /// Back-compat shim: old callers used `print_logged(&entry)`. Maps to

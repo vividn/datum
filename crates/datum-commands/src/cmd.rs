@@ -28,7 +28,7 @@ use crate::{
     },
     config::{self, device_id},
     render::{
-        print_entry, print_entry_pretty, print_now_view, print_table, print_table_with,
+        print_entry, print_entry_pretty, print_now_view, print_table_with,
         show_create, show_create_with_context, show_delete, show_exists, show_rename, show_update,
         show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
@@ -1360,7 +1360,7 @@ pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
 /// row, which dominated `dm tail` wall-clock — especially with `-yt`/`-d`
 /// filters where the probe time is far enough from `now` to defeat the OS
 /// page cache. The cache is scoped to this batch.
-fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
+pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderContext> {
     use std::collections::HashMap;
     // Bound the per-field load by the latest probe time we'll issue. Block
     // trail probes go to `end_time`; everything else to `start_time` (or
@@ -1645,7 +1645,9 @@ pub(crate) fn cmd_grep(args: GrepArgs, db: &Db) -> Result<()> {
         columns: vec![],
         suppress_header: false,
     };
-    print_table(&matches, registry.as_ref(), &tbl);
+    let now = DatumTime::now();
+    let ctxs = build_render_contexts(&matches, db);
+    print_table_with(&matches, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
     Ok(())
 }
 
@@ -2017,8 +2019,10 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     }
 
     if args.dry_run {
-        for entry in &entries {
-            print_entry(entry, registry.as_ref());
+        let now = DatumTime::now();
+        let ctxs = build_render_contexts(&entries, db);
+        for (i, entry) in entries.iter().enumerate() {
+            print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
         }
         for (tok, err) in &token_errors {
             eprintln!("[dry-run] resolve '{tok}': {err}");
@@ -2032,8 +2036,10 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
     }
 
     if !args.force {
-        for entry in &entries {
-            print_entry(entry, registry.as_ref());
+        let now = DatumTime::now();
+        let ctxs = build_render_contexts(&entries, db);
+        for (i, entry) in entries.iter().enumerate() {
+            print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
         }
         let prompt = if entries.len() == 1 {
             "Delete this entry?".to_string()

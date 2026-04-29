@@ -10,6 +10,7 @@ use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome},
     entry::{new_hid, Entry},
     field_spec::{self, InterpolationContext},
+    time::DatumTime,
 };
 use serde_json::Value as JsonValue;
 
@@ -215,7 +216,9 @@ pub fn update_batch_from_args(
 
     if args.dry_run {
         let registry = db.load_registry().ok();
-        for entry in &entries {
+        let now = DatumTime::now();
+        let ctxs = crate::cmd::build_render_contexts(&entries, db);
+        for (i, entry) in entries.iter().enumerate() {
             if entry.deleted_at.is_some() {
                 eprintln!(
                     "[dry-run] skip tombstoned: {} (restore first with `datum undelete`)",
@@ -223,7 +226,7 @@ pub fn update_batch_from_args(
                 );
                 continue;
             }
-            crate::render::print_entry(entry, registry.as_ref());
+            crate::render::print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
         }
         for (tok, err) in &token_errors {
             eprintln!("[dry-run] resolve '{tok}': {err}");
