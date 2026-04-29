@@ -1,0 +1,273 @@
+//! Public types and internal helpers shared across the db submodules.
+//!
+//! Type definitions for `TimeMetric`, `GroupColumn`, `ListParams`, etc. live
+//! here so each submodule can pull them in from a single sibling. The internal
+//! helpers (`time_expr`, `filtered_where`, `like_prefix_pattern`) are
+//! `pub(super)` — visible to other db submodules but not the wider crate.
+
+use chrono::{DateTime, Utc};
+
+/// Projection of a field's tracking state for the `now` view.
+///
+/// `ignored` is derived from the entry log (most recent state == "IGNORED")
+/// and `color` is pulled from the field's [`crate::field_spec::FieldSpec`]
+/// when one exists. Built by [`super::Db::get_tracked_fields`].
+pub struct TrackedField {
+    pub field: String,
+    pub ignored: bool,
+    pub color: Option<String>,
+}
+
+/// Sentinel state value representing an ignored field. Stored as the JSON
+/// string `"IGNORED"` in `entries.value`. The renderer's
+/// `render::characters::IGNORED_STATE` constant carries the same literal.
+pub const IGNORED_STATE_VALUE: &str = "IGNORED";
+
+/// Which timestamp to sort/filter entries by in [`super::Db::list_entries`].
+///
+/// `Hybrid` falls back to `modify_time` for entries without a `start_time`
+/// (e.g. notes). `Occur` excludes rows lacking `start_time` entirely.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum TimeMetric {
+    #[default]
+    Hybrid,
+    Occur,
+    Create,
+    Modify,
+}
+
+impl std::str::FromStr for TimeMetric {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "hybrid" => Ok(TimeMetric::Hybrid),
+            "occur" => Ok(TimeMetric::Occur),
+            "create" => Ok(TimeMetric::Create),
+            "modify" => Ok(TimeMetric::Modify),
+            other => Err(format!("unknown time metric: {other}")),
+        }
+    }
+}
+
+/// Column to group on in [`super::Db::count_entries_grouped`]. Restricted to
+/// columns that map cleanly to SQL identifiers so callers never pass raw
+/// strings into the query.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GroupColumn {
+    /// The `value` column (state for switch, quantity for occur, …).
+    Value,
+    /// The derived `verb` column.
+    Verb,
+    /// The `field` column.
+    Field,
+}
+
+impl GroupColumn {
+    pub fn as_sql(self) -> &'static str {
+        match self {
+            GroupColumn::Value => "value",
+            GroupColumn::Verb => "verb",
+            GroupColumn::Field => "field",
+        }
+    }
+}
+
+impl std::str::FromStr for GroupColumn {
+    type Err = String;
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        match s {
+            "state" | "value" => Ok(GroupColumn::Value),
+            "verb" => Ok(GroupColumn::Verb),
+            "field" => Ok(GroupColumn::Field),
+            other => Err(format!(
+                "unsupported group-by key '{other}' (supported: state/value, verb, field)"
+            )),
+        }
+    }
+}
+
+/// SQL expression for an entry's effective sort time under a given
+/// [`TimeMetric`]. Centralizes the metric-aware branch used by `tail`/`head`.
+pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
+    match metric {
+        TimeMetric::Hybrid => "COALESCE(start_time, modify_time)",
+        TimeMetric::Occur => "start_time",
+        TimeMetric::Create => "create_time",
+        TimeMetric::Modify => "modify_time",
+    }
+}
+
+/// SQL expression for an entry's "endbound" time — the canonical occurrence
+/// sort key used when no explicit metric is selected. Falls back through
+/// `start_time` → `end_time` → `create_time`.
+pub(super) fn time_expr_endbound() -> &'static str {
+    "COALESCE(start_time, end_time, create_time)"
+}
+
+/// Build the shared `WHERE` clause + parameter bindings used by
+/// `count_entries_filtered`, `count_entries_grouped`, and `list_entry_ids`.
+pub(super) fn filtered_where(
+    field: Option<&str>,
+    since: Option<DateTime<Utc>>,
+) -> (String, Vec<String>) {
+    let mut parts: Vec<String> = vec!["deleted_at IS NULL".to_string()];
+    let mut bindings: Vec<String> = Vec::new();
+    if let Some(f) = field {
+        parts.push("field = ?".to_string());
+        bindings.push(f.to_string());
+    }
+    if let Some(since_utc) = since {
+        parts.push(format!("{} >= ?", time_expr_endbound()));
+        bindings.push(since_utc.to_rfc3339());
+    }
+    (parts.join(" AND "), bindings)
+}
+
+/// Parameters for [`super::Db::list_entries`]: the unified entry query used by
+/// `tail` / `head`. Results are always returned oldest-first (unless
+/// `reverse` is set), so callers can treat the output as a time-ordered slice.
+#[derive(Debug, Clone, Default)]
+pub struct ListParams {
+    /// Restrict to entries with `field == <name>` when Some.
+    pub field: Option<String>,
+    /// Which timestamp governs ordering and the bound checks.
+    pub metric: TimeMetric,
+    /// Inclusive lower bound on the metric timestamp.
+    pub start_utc: Option<DateTime<Utc>>,
+    /// Inclusive upper bound on the metric timestamp.
+    pub end_utc: Option<DateTime<Utc>>,
+    /// `None` = unlimited. For tail/head, bounds the returned count.
+    pub limit: Option<usize>,
+    /// If true, take the *first* `limit` entries in the window (head semantics).
+    /// If false (default), take the *last* `limit` entries (tail semantics).
+    pub head: bool,
+    /// Invert the final output ordering (newest-first).
+    pub reverse: bool,
+}
+
+/// Selection filter for [`super::Db::update_times`]. Every non-None field narrows
+/// the match. `slug_or_hid` matches either column. `after_utc` / `before_utc`
+/// bound `start_time` (inclusive); rows with null `start_time` are
+/// excluded whenever a time bound is set.
+#[derive(Debug, Clone, Default)]
+pub struct RetimeFilter<'a> {
+    pub slug_or_hid: Option<&'a str>,
+    pub field: Option<&'a str>,
+    pub after_utc: Option<DateTime<Utc>>,
+    pub before_utc: Option<DateTime<Utc>>,
+}
+
+/// Row reported by [`super::Db::find_time_end_before_start`].
+#[derive(Debug, Clone)]
+pub struct TimeOrderIssue {
+    pub slug: String,
+    pub field: String,
+    pub start_time: String,
+    pub end_time: String,
+}
+
+/// Strategy for handling content_hash collisions on insert.
+///
+/// Rows are mutable: `Update` / `Merge` / `Rekey` all bump `modify_time`.
+/// CRDT/sync reconciliation is deferred.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ConflictStrategy {
+    /// Silently skip the new row and return [`InsertOutcome::Ignored`] with
+    /// the existing id. Current default.
+    #[default]
+    Ignore,
+    /// Overwrite the existing row's mutable fields with the incoming entry's
+    /// values (bumps `modify_time`).
+    Update,
+    /// Deep-merge incoming `data` into the existing row's `data`
+    /// and otherwise behave like [`ConflictStrategy::Update`].
+    Merge,
+    /// Insert the incoming row anyway with its new ULID, leaving the existing
+    /// row untouched. Both rows end up with the same `content_hash`.
+    Rekey,
+}
+
+impl From<datum_parse::cli::ConflictStrategyArg> for ConflictStrategy {
+    fn from(v: datum_parse::cli::ConflictStrategyArg) -> Self {
+        match v {
+            datum_parse::cli::ConflictStrategyArg::Update => ConflictStrategy::Update,
+            datum_parse::cli::ConflictStrategyArg::Merge => ConflictStrategy::Merge,
+            datum_parse::cli::ConflictStrategyArg::Rekey => ConflictStrategy::Rekey,
+            datum_parse::cli::ConflictStrategyArg::Ignore => ConflictStrategy::Ignore,
+        }
+    }
+}
+
+/// Outcome reported by [`super::Db::insert_entry_with_strategy`].
+///
+/// All variants carry the stored slug — the human-facing key. The
+/// [`InsertOutcome::Inserted`] variant also carries the actual stored `hid`,
+/// which can differ from `entry.hid` if a (vanishingly rare) hid collision
+/// forced a single retry.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InsertOutcome {
+    /// New row inserted (no collision).
+    Inserted { slug: String, hid: String },
+    /// Collision resolved by mutating the existing row in place.
+    Updated { slug: String },
+    /// Collision resolved by merging `extra_data` into the existing row.
+    Merged { slug: String },
+    /// Collision resolved by inserting a new row under a new slug. The
+    /// `new_hid` reflects the actual stored hid for the freshly-inserted row.
+    Rekeyed {
+        old_slug: String,
+        new_slug: String,
+        new_hid: String,
+    },
+    /// Collision left the existing row untouched.
+    Ignored { slug: String },
+}
+
+/// Report returned from [`super::Db::save_field_spec_with_report`] describing
+/// which derived aliases from the spec were persisted vs skipped.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct SaveSpecReport {
+    /// Alias names that were inserted or overwritten for this spec.
+    pub saved: Vec<String>,
+    /// Aliases that conflicted with an existing row and were skipped.
+    pub skipped: Vec<AliasConflict>,
+}
+
+/// A single alias-name collision surfaced by the spec save path.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AliasConflict {
+    /// The alias name that could not be inserted.
+    pub name: String,
+    /// What row already owns that name.
+    pub reason: AliasConflictReason,
+}
+
+/// Why a derived alias was skipped during a spec save.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AliasConflictReason {
+    /// A user-defined alias already exists under this name.
+    UserAlias,
+    /// Another field's spec already derives an alias under this name.
+    OwnedByField(String),
+}
+
+/// Max number of candidates returned in [`crate::error::DatumError::AmbiguousPrefix`].
+/// A wide-enough error list to disambiguate in practice, but bounded so a
+/// pathological prefix (e.g. empty) can't dump the whole table.
+pub(super) const AMBIGUOUS_PREFIX_CANDIDATE_CAP: usize = 16;
+
+/// Build a SQL LIKE pattern that matches anything starting with `prefix`
+/// literally — `%`, `_`, and `\` in the user-supplied prefix are escaped so
+/// they are treated as plain characters. Pair with `ESCAPE '\\'` in the query.
+pub(super) fn like_prefix_pattern(prefix: &str) -> String {
+    let mut out = String::with_capacity(prefix.len() + 1);
+    for ch in prefix.chars() {
+        if ch == '\\' || ch == '%' || ch == '_' {
+            out.push('\\');
+        }
+        out.push(ch);
+    }
+    out.push('%');
+    out
+}
+

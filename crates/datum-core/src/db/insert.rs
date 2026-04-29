@@ -1,0 +1,679 @@
+//! Entry insert / update paths and the in-transaction helpers they share.
+//!
+//! All write paths funnel through `insert_entry_in_tx` (live writes; runs
+//! conflict detection + history) or `insert_entry_bulk_in_tx` (migration
+//! fast path; skips both). The `Db::insert_*` methods just open a tx and
+//! delegate.
+
+use chrono::Utc;
+use rand::Rng;
+use rusqlite::{params, Connection, OptionalExtension};
+use serde_json::Value as JsonValue;
+
+use crate::entry::{new_hid, Entry};
+use crate::error::{DatumError, Result};
+use crate::history::{self, ChangeKind};
+
+use super::lookup::fetch_entry_any;
+use super::row_mapper::row_to_entry;
+use super::types::{ConflictStrategy, InsertOutcome};
+use super::Db;
+
+impl Db {
+    /// Insert an entry using the default [`ConflictStrategy::Ignore`].
+    /// Returns `Err(Duplicate)` if the content_hash collides with a live row,
+    /// or if the slug PK collides with an existing row (same field at the
+    /// same instant — semantically a duplicate even with different content).
+    /// Preserved for call sites that pre-date the strategy API.
+    pub fn insert_entry(&self, entry: &Entry) -> Result<()> {
+        match self.insert_entry_with_strategy(entry, ConflictStrategy::Ignore)? {
+            InsertOutcome::Inserted { .. } => Ok(()),
+            InsertOutcome::Ignored { .. } => Err(DatumError::Duplicate(format!(
+                "Entry already exists at slug {} (or identical content with hash {})",
+                entry.slug,
+                &entry.content_hash[..entry.content_hash.len().min(12)]
+            ))),
+            // Ignore strategy never produces the other outcomes.
+            other => unreachable!("Ignore strategy produced {other:?}"),
+        }
+    }
+
+    /// Insert an entry and dispatch on [`ConflictStrategy`] when the incoming
+    /// `content_hash` already matches a live row. Tombstoned rows are ignored
+    /// for collision detection — re-inserting a deleted-then-identical payload
+    /// behaves like a fresh insert.
+    ///
+    /// Both the entries mutation and the companion `entry_history` row land in
+    /// the same transaction: `Create` is recorded for new inserts and Rekey,
+    /// `UserEdit` for Update / Merge, and `Ignored` writes no history at all.
+    pub fn insert_entry_with_strategy(
+        &self,
+        entry: &Entry,
+        strategy: ConflictStrategy,
+    ) -> Result<InsertOutcome> {
+        let tx = self.conn.unchecked_transaction()?;
+        let outcome = insert_entry_in_tx(&tx, entry, strategy)?;
+        tx.commit()?;
+        Ok(outcome)
+    }
+
+    /// Bulk-insert entries inside a single SQLite transaction. Uses the
+    /// supplied [`ConflictStrategy`] for every row. One commit covers the
+    /// whole batch — at ~100k rows this is ~50-100x faster than calling
+    /// [`Self::insert_entry_with_strategy`] per row, which opens its own
+    /// transaction per call.
+    ///
+    /// The whole batch is atomic: if any row errors (other than a
+    /// duplicate-handled-as-`Ignored` outcome), the transaction is rolled
+    /// back and no rows are persisted.
+    pub fn insert_entries_batch(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+    ) -> Result<Vec<InsertOutcome>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut outcomes = Vec::with_capacity(entries.len());
+        for entry in entries {
+            outcomes.push(insert_entry_in_tx(&tx, entry, strategy)?);
+        }
+        tx.commit()?;
+        Ok(outcomes)
+    }
+
+    /// Bulk-load fast path for one-shot ingestion (e.g. `datum migrate import`).
+    ///
+    /// Like [`Self::insert_entries_batch`], one transaction wraps the whole
+    /// batch. Unlike it, this method **skips** per-row work that's only useful
+    /// for live writes from a user session:
+    ///
+    /// - No `entry_history` rows are written (the migration itself is the
+    ///   audit event; a 100k-row import doesn't need 100k matching `Create`
+    ///   history rows).
+    /// - No per-row conflict detection. `conflicts::detect_for_entry` runs
+    ///   time-range scans against `entries`; at 100k rows this dominates the
+    ///   wall-clock. Source data for migrations is already self-consistent —
+    ///   if you want belt-and-braces verification, run `datum conflicts list`
+    ///   once after the import completes.
+    ///
+    /// Still does: content_hash dedup, slug/hid collision retry. Honors
+    /// [`ConflictStrategy::Ignore`] only (the supported migrate-import mode).
+    /// Other strategies error — the fast path is deliberately narrow.
+    ///
+    /// **OPT-IN.** Existing per-row callers (`switch`, `block`, sync apply)
+    /// must keep using `insert_entry_with_strategy` / `insert_entries_batch`
+    /// so they get full conflict detection and history.
+    pub fn insert_entries_bulk(
+        &self,
+        entries: &[Entry],
+        strategy: ConflictStrategy,
+    ) -> Result<Vec<InsertOutcome>> {
+        if !matches!(strategy, ConflictStrategy::Ignore) {
+            return Err(DatumError::Other(format!(
+                "insert_entries_bulk supports only ConflictStrategy::Ignore, got {strategy:?}",
+            )));
+        }
+        let tx = self.conn.unchecked_transaction()?;
+        let mut outcomes = Vec::with_capacity(entries.len());
+        for entry in entries {
+            outcomes.push(insert_entry_bulk_in_tx(&tx, entry)?);
+        }
+        tx.commit()?;
+        Ok(outcomes)
+    }
+
+    /// Persist a mutation to an existing entry, matched by `entry.slug`.
+    /// Errors [`DatumError::NotFound`] if the slug is unknown and
+    /// [`DatumError::Tombstoned`] if the row is soft-deleted. Refreshes
+    /// `modify_time` and rewrites all mutable fields (including
+    /// `content_hash`, `data`) from the incoming payload. Records a
+    /// `user_edit` history row for the pre-edit state in the same transaction.
+    pub fn save_existing_entry(&self, entry: &Entry) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let state: Option<Option<String>> = tx
+            .query_row(
+                "SELECT deleted_at FROM entries WHERE slug = ?1",
+                params![entry.slug],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match state {
+            None => return Err(DatumError::NotFound(entry.slug.clone())),
+            Some(Some(_)) => return Err(DatumError::Tombstoned(entry.slug.clone())),
+            Some(None) => {
+                let pre = fetch_entry_any(&tx, &entry.slug)?;
+                history::record(&tx, &pre, ChangeKind::UserEdit)?;
+                raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
+            }
+        }
+        tx.commit()?;
+        Ok(())
+    }
+}
+
+/// Append a short random base36 suffix to a slug. Used by the
+/// [`ConflictStrategy::Rekey`] path to derive a distinct slug for the new
+/// row when the natural slug already belongs to the existing one.
+fn suffixed_slug(base: &str) -> String {
+    let mut rng = rand::thread_rng();
+    let suffix: String = (0..4)
+        .map(|_| {
+            let n = rng.gen_range(0..36u8);
+            if n < 10 {
+                (b'0' + n) as char
+            } else {
+                (b'a' + (n - 10)) as char
+            }
+        })
+        .collect();
+    format!("{base}_{suffix}")
+}
+
+/// Which uniqueness constraint a SQLite ConstraintViolation tripped: the
+/// `entries.slug` UNIQUE index, or the `entries.hid` PRIMARY KEY.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum CollisionKind {
+    Slug,
+    Hid,
+}
+
+/// Inspect a rusqlite error and decide whether it's a slug or hid collision.
+/// SQLite's constraint-violation message names the offending column (e.g.
+/// `UNIQUE constraint failed: entries.slug`), which is the cheapest way to
+/// tell the two apart without a second query.
+fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
+    let rusqlite::Error::SqliteFailure(e, msg) = err else {
+        return None;
+    };
+    if e.code != rusqlite::ErrorCode::ConstraintViolation {
+        return None;
+    }
+    let msg = msg.as_deref().unwrap_or("");
+    if msg.contains("entries.slug") {
+        Some(CollisionKind::Slug)
+    } else if msg.contains("entries.hid") {
+        Some(CollisionKind::Hid)
+    } else {
+        None
+    }
+}
+
+/// Deep-merge `incoming` into `existing` for use by [`ConflictStrategy::Merge`].
+///
+/// - If either side is `None`, the other is returned.
+/// - Object + object: keys are unioned; nested objects recurse; scalar
+///   conflicts → incoming wins (LWW).
+/// - Any non-object pair: incoming replaces existing.
+fn merge_extra_data(
+    existing: Option<&JsonValue>,
+    incoming: Option<&JsonValue>,
+) -> Option<JsonValue> {
+    match (existing, incoming) {
+        (None, None) => None,
+        (Some(e), None) => Some(e.clone()),
+        (None, Some(n)) => Some(n.clone()),
+        (Some(e), Some(n)) => Some(merge_json(e.clone(), n.clone())),
+    }
+}
+
+fn merge_json(existing: JsonValue, incoming: JsonValue) -> JsonValue {
+    match (existing, incoming) {
+        (JsonValue::Object(mut e_map), JsonValue::Object(n_map)) => {
+            for (k, v) in n_map {
+                match e_map.remove(&k) {
+                    Some(existing_v) => {
+                        e_map.insert(k, merge_json(existing_v, v));
+                    }
+                    None => {
+                        e_map.insert(k, v);
+                    }
+                }
+            }
+            JsonValue::Object(e_map)
+        }
+        (_, incoming) => incoming,
+    }
+}
+
+// --- Free-function mutators ---------------------------------------------------
+//
+// These take an explicit `&Connection` so they can run inside caller-owned
+// transactions alongside `entry_history` writes. The public `Db` methods above
+// wrap them with `unchecked_transaction` to keep the entries mutation and the
+// history row atomic.
+
+/// Per-entry insert logic shared by `insert_entry_with_strategy` (one tx per
+/// call) and `insert_entries_batch` (one tx for the whole batch).
+fn insert_entry_in_tx(
+    conn: &Connection,
+    entry: &Entry,
+    strategy: ConflictStrategy,
+) -> Result<InsertOutcome> {
+    let existing: Option<(String, Option<String>)> = conn
+        .query_row(
+            "SELECT slug, data FROM entries
+             WHERE content_hash = ?1 AND deleted_at IS NULL
+             LIMIT 1",
+            params![entry.content_hash],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+        )
+        .optional()?;
+
+    let outcome = match (existing, strategy) {
+        (None, _) => {
+            // No content_hash match — distinct content. A slug collision
+            // here means the user is asserting a *different* thing at the
+            // same identity (same field, same instant, distinct content),
+            // which is semantically a duplicate-identity conflict. We let
+            // raw_insert's `Duplicate` propagate so the caller sees an
+            // error rather than silently dropping the second write — this
+            // applies even under `Ignore`, which is meant to skip true
+            // content duplicates, not different-content same-slug writes.
+            // (The bulk-import fast path takes the opposite stance — see
+            // `insert_entry_bulk_in_tx` — because backups commonly carry
+            // legitimate same-instant rows that the user has already
+            // accepted as historical.)
+            let (stored_slug, stored_hid) = raw_insert(conn, entry)?;
+            let inserted = fetch_entry_any(conn, &stored_slug)?;
+            history::record(conn, &inserted, ChangeKind::Create)?;
+            // D5: post-write conflict detection. Runs inside the same
+            // transaction so the conflict row is atomic with the insert.
+            crate::conflicts::detect_for_entry(
+                conn,
+                &inserted,
+                crate::conflicts::DetectedBy::LocalValidator,
+            )?;
+            InsertOutcome::Inserted {
+                slug: stored_slug,
+                hid: stored_hid,
+            }
+        }
+        (Some((slug, _)), ConflictStrategy::Ignore) => InsertOutcome::Ignored { slug },
+        (Some((slug, _)), ConflictStrategy::Update) => {
+            let pre = fetch_entry_any(conn, &slug)?;
+            history::record(conn, &pre, ChangeKind::UserEdit)?;
+            raw_overwrite_mutables(conn, &slug, entry, None)?;
+            InsertOutcome::Updated { slug }
+        }
+        (Some((slug, existing_data_json)), ConflictStrategy::Merge) => {
+            let pre = fetch_entry_any(conn, &slug)?;
+            history::record(conn, &pre, ChangeKind::UserEdit)?;
+            let existing_data: Option<JsonValue> = existing_data_json
+                .as_deref()
+                .and_then(|s| serde_json::from_str(s).ok());
+            let merged = merge_extra_data(existing_data.as_ref(), entry.data.as_ref());
+            raw_overwrite_mutables(conn, &slug, entry, Some(merged))?;
+            InsertOutcome::Merged { slug }
+        }
+        (Some((old_slug, _)), ConflictStrategy::Rekey) => {
+            // Rekey: insert the incoming row with its own slug. Both rows
+            // share a content_hash — the content_hash column is not UNIQUE.
+            // The new row gets its own `Create` history entry; the original
+            // row is untouched.
+            //
+            // Default slug derives from field+timestamp; if it collides with
+            // the existing row, retry with a suffixed slug. raw_insert no
+            // longer auto-suffixes — that retry is a Rekey-strategy concern,
+            // not a slug-collision-must-error concern.
+            const REKEY_MAX_ATTEMPTS: u8 = 8;
+            let mut entry_for_rekey = entry.clone();
+            let mut attempts = 0u8;
+            let (new_slug, new_hid) = loop {
+                match raw_insert(conn, &entry_for_rekey) {
+                    Ok(pair) => break pair,
+                    Err(DatumError::Duplicate(_)) if attempts < REKEY_MAX_ATTEMPTS => {
+                        entry_for_rekey.slug = suffixed_slug(&entry.slug);
+                        attempts += 1;
+                    }
+                    Err(e) => return Err(e),
+                }
+            };
+            let inserted = fetch_entry_any(conn, &new_slug)?;
+            history::record(conn, &inserted, ChangeKind::Create)?;
+            crate::conflicts::detect_for_entry(
+                conn,
+                &inserted,
+                crate::conflicts::DetectedBy::LocalValidator,
+            )?;
+            InsertOutcome::Rekeyed {
+                old_slug,
+                new_slug,
+                new_hid,
+            }
+        }
+    };
+
+    Ok(outcome)
+}
+
+/// Bulk-load fast path: dedup-by-content-hash + raw_insert only. Skips
+/// `history::record` and `conflicts::detect_for_entry` — see
+/// [`Db::insert_entries_bulk`] for the rationale.
+///
+/// Uses `prepare_cached` for the dedup SELECT so the bulk loop reuses one
+/// prepared statement rather than re-parsing SQL per row. The INSERT side
+/// (`try_insert`) is also cached.
+fn insert_entry_bulk_in_tx(conn: &Connection, entry: &Entry) -> Result<InsertOutcome> {
+    let existing_slug: Option<String> = {
+        let mut stmt = conn.prepare_cached(
+            "SELECT slug FROM entries
+             WHERE content_hash = ?1 AND deleted_at IS NULL
+             LIMIT 1",
+        )?;
+        stmt.query_row(params![entry.content_hash], |row| row.get::<_, String>(0))
+            .optional()?
+    };
+    match existing_slug {
+        Some(slug) => Ok(InsertOutcome::Ignored { slug }),
+        None => match raw_insert(conn, entry) {
+            Ok((stored_slug, stored_hid)) => Ok(InsertOutcome::Inserted {
+                slug: stored_slug,
+                hid: stored_hid,
+            }),
+            // Bulk import is always Ignore-equivalent (see
+            // `Db::insert_entries_bulk` precondition). Slug collision on
+            // distinct content is a same-field-same-instant duplicate from
+            // the source backup — skip silently rather than abort the batch.
+            Err(DatumError::Duplicate(_)) => Ok(InsertOutcome::Ignored {
+                slug: entry.slug.clone(),
+            }),
+            Err(e) => Err(e),
+        },
+    }
+}
+
+/// Insert an entry. Returns the `(slug, hid)` actually stored.
+///
+/// Slug uniqueness exists to prevent essentially-duplicate data — two rows
+/// asserting the same field at the same instant. A slug collision is a
+/// semantic conflict, not a transient retryable failure, so this returns
+/// [`DatumError::Duplicate`] and lets the caller decide how to surface it
+/// (the `Ignore` strategy maps it to `Ignored`; live writers surface it to
+/// the user; the `Rekey` strategy retries with a suffixed slug).
+///
+/// Hid collisions, by contrast, are astronomical (12-char base36 = ~4.7
+/// quintillion values). We retry once with a fresh hid; a second collision
+/// almost certainly indicates a bug or environmental problem and is
+/// returned as [`DatumError::Other`].
+pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(String, String)> {
+    let mut hid = entry.hid.clone();
+    let mut hid_attempt = 0u8;
+
+    loop {
+        match try_insert(conn, &entry.slug, &hid, entry) {
+            Ok(()) => return Ok((entry.slug.clone(), hid)),
+            Err(e) => {
+                let kind = match &e {
+                    DatumError::Db(sql_err) => collision_kind(sql_err),
+                    _ => None,
+                };
+                match kind {
+                    Some(CollisionKind::Slug) => {
+                        return Err(DatumError::Duplicate(format!(
+                            "Entry already exists with slug {}",
+                            entry.slug
+                        )));
+                    }
+                    Some(CollisionKind::Hid) => {
+                        if hid_attempt >= 1 {
+                            return Err(DatumError::Other(format!(
+                                "hid collision persisted after retry; second collision \
+                                 on {hid} indicates a bug or RNG failure",
+                            )));
+                        }
+                        hid = new_hid();
+                        hid_attempt += 1;
+                    }
+                    None => return Err(e),
+                }
+            }
+        }
+    }
+}
+
+pub(crate) fn try_insert(conn: &Connection, slug: &str, hid: &str, entry: &Entry) -> Result<()> {
+    let mut stmt = conn.prepare_cached(
+        r#"INSERT INTO entries (
+            hid, slug, content_hash, field, entry_shape, intent,
+            value, data, unit,
+            start_time, start_time_offset, start_time_tz,
+            start_time_precision, start_time_precision_unit,
+            end_time, end_time_offset, end_time_tz,
+            end_time_precision, end_time_precision_unit,
+            lat, lon, location,
+            create_time, modify_time, device_id,
+            deleted_at, id_structure, field_structure,
+            raw_input, alias_chain, parser_version,
+            user_asserted_last_state
+        ) VALUES (
+            ?1, ?2, ?3, ?4, ?5, ?6,
+            ?7, ?8, ?9,
+            ?10, ?11, ?12,
+            ?13, ?14,
+            ?15, ?16, ?17,
+            ?18, ?19,
+            ?20, ?21, ?22,
+            ?23, ?24, ?25,
+            ?26, ?27, ?28,
+            ?29, ?30, ?31,
+            ?32
+        )"#,
+    )?;
+    stmt.execute(params![
+        hid,
+        slug,
+        entry.content_hash,
+        entry.field,
+        entry.entry_shape.to_string(),
+        entry.intent,
+        entry.value.as_ref().map(|v| v.to_string()),
+        entry.data.as_ref().map(|v| v.to_string()),
+        entry.unit,
+        entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        entry.start_time.as_ref().map(|t| t.offset_minutes),
+        entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+        entry.start_time_precision,
+        entry.start_time_precision_unit.to_string(),
+        entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        entry.end_time.as_ref().map(|t| t.offset_minutes),
+        entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+        entry.end_time_precision,
+        entry.end_time_precision_unit.to_string(),
+        entry.lat,
+        entry.lon,
+        entry.location.as_deref(),
+        entry.create_time.to_rfc3339(),
+        entry.modify_time.to_rfc3339(),
+        entry.device_id,
+        entry.deleted_at.map(|t| t.to_rfc3339()),
+        entry.id_structure.as_deref(),
+        entry.field_structure.as_deref(),
+        entry.raw_input,
+        entry.alias_chain.as_ref().map(|v| v.to_string()),
+        entry.parser_version,
+        entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+    ])?;
+    Ok(())
+}
+
+/// Rewrite the `entries` row matching `snapshot.slug` to match the
+/// supplied snapshot. Used by conflict resolution paths
+/// (`take_local`, `take_remote`, `edit`) to apply the user's chosen
+/// version. Records a `user_edit` history row before the overwrite.
+///
+/// Lenient: if no row matches the slug (e.g., the snapshot describes an
+/// entry that was never written locally), this returns `Ok(())` without
+/// touching the table. That keeps the conflict-resolution surface usable
+/// even in the rare case where the queue's local/remote snapshots
+/// reference a deleted or never-applied row.
+pub(super) fn rewrite_entry_to_snapshot(conn: &Connection, snapshot: &Entry) -> Result<()> {
+    let pre: Option<Entry> = conn
+        .query_row(
+            "SELECT * FROM entries WHERE slug = ?1 AND deleted_at IS NULL",
+            params![snapshot.slug],
+            row_to_entry,
+        )
+        .optional()?;
+    let Some(pre) = pre else {
+        return Ok(());
+    };
+    history::record(conn, &pre, ChangeKind::UserEdit)?;
+    raw_overwrite_mutables(conn, &pre.slug, snapshot, None)?;
+    Ok(())
+}
+
+/// Overwrite an existing row identified by `slug` with the mutable fields
+/// from `entry`. When `override_data` is `Some`, it replaces the stored
+/// `data`; otherwise the incoming `entry.data` wins. Refreshes `modify_time`
+/// to now. The slug is immutable — this never renames the row.
+fn raw_overwrite_mutables(
+    conn: &Connection,
+    slug: &str,
+    entry: &Entry,
+    override_data: Option<Option<JsonValue>>,
+) -> Result<()> {
+    let data_value: Option<&JsonValue> = match override_data.as_ref() {
+        Some(o) => o.as_ref(),
+        None => entry.data.as_ref(),
+    };
+    let data_json = data_value.map(|v| v.to_string());
+    let now = Utc::now().to_rfc3339();
+
+    conn.execute(
+        r#"UPDATE entries SET
+            content_hash = ?2,
+            field = ?3,
+            entry_shape = ?4,
+            intent = ?5,
+            value = ?6,
+            data = ?7,
+            unit = ?8,
+            start_time = ?9,
+            start_time_offset = ?10,
+            start_time_tz = ?11,
+            start_time_precision = ?12,
+            start_time_precision_unit = ?13,
+            end_time = ?14,
+            end_time_offset = ?15,
+            end_time_tz = ?16,
+            end_time_precision = ?17,
+            end_time_precision_unit = ?18,
+            lat = ?19,
+            lon = ?20,
+            location = ?21,
+            modify_time = ?22,
+            device_id = ?23,
+            raw_input = ?24,
+            alias_chain = ?25,
+            parser_version = ?26,
+            user_asserted_last_state = ?27
+           WHERE slug = ?1"#,
+        params![
+            slug,
+            entry.content_hash,
+            entry.field,
+            entry.entry_shape.to_string(),
+            entry.intent,
+            entry.value.as_ref().map(|v| v.to_string()),
+            data_json,
+            entry.unit,
+            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.start_time.as_ref().map(|t| t.offset_minutes),
+            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.start_time_precision,
+            entry.start_time_precision_unit.to_string(),
+            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.end_time.as_ref().map(|t| t.offset_minutes),
+            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.end_time_precision,
+            entry.end_time_precision_unit.to_string(),
+            entry.lat,
+            entry.lon,
+            entry.location.as_deref(),
+            now,
+            entry.device_id,
+            entry.raw_input,
+            entry.alias_chain.as_ref().map(|v| v.to_string()),
+            entry.parser_version,
+            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+        ],
+    )?;
+    Ok(())
+}
+
+/// Apply `entry` wholesale to the `entries` table (live or tombstoned) — the
+/// hid/slug are treated as the identifying target, every other column takes
+/// the snapshot's value. Used by `revert_entry_to` so a revert can flip the
+/// `deleted_at` column back to NULL (or set it) in lockstep with the rest of
+/// the row. `modify_time` is taken from the snapshot verbatim; the caller has
+/// already persisted a history row capturing the pre-revert state.
+pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
+    let affected = conn.execute(
+        r#"UPDATE entries SET
+            content_hash = ?2,
+            field = ?3,
+            entry_shape = ?4,
+            intent = ?5,
+            value = ?6,
+            data = ?7,
+            unit = ?8,
+            start_time = ?9,
+            start_time_offset = ?10,
+            start_time_tz = ?11,
+            start_time_precision = ?12,
+            start_time_precision_unit = ?13,
+            end_time = ?14,
+            end_time_offset = ?15,
+            end_time_tz = ?16,
+            end_time_precision = ?17,
+            end_time_precision_unit = ?18,
+            lat = ?19,
+            lon = ?20,
+            location = ?21,
+            modify_time = ?22,
+            device_id = ?23,
+            deleted_at = ?24,
+            id_structure = ?25,
+            field_structure = ?26,
+            raw_input = ?27,
+            alias_chain = ?28,
+            parser_version = ?29,
+            user_asserted_last_state = ?30
+           WHERE hid = ?1"#,
+        params![
+            entry.hid,
+            entry.content_hash,
+            entry.field,
+            entry.entry_shape.to_string(),
+            entry.intent,
+            entry.value.as_ref().map(|v| v.to_string()),
+            entry.data.as_ref().map(|v| v.to_string()),
+            entry.unit,
+            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.start_time.as_ref().map(|t| t.offset_minutes),
+            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.start_time_precision,
+            entry.start_time_precision_unit.to_string(),
+            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+            entry.end_time.as_ref().map(|t| t.offset_minutes),
+            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+            entry.end_time_precision,
+            entry.end_time_precision_unit.to_string(),
+            entry.lat,
+            entry.lon,
+            entry.location.as_deref(),
+            entry.modify_time.to_rfc3339(),
+            entry.device_id,
+            entry.deleted_at.map(|t| t.to_rfc3339()),
+            entry.id_structure.as_deref(),
+            entry.field_structure.as_deref(),
+            entry.raw_input,
+            entry.alias_chain.as_ref().map(|v| v.to_string()),
+            entry.parser_version,
+            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+        ],
+    )?;
+    if affected == 0 {
+        return Err(DatumError::NotFound(entry.hid.clone()));
+    }
+    Ok(())
+}
