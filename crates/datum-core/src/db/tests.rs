@@ -441,7 +441,16 @@ fn active_state_ignores_other_fields() {
 #[test]
 fn test_latest_entry_for_now_skips_note() {
     let db = Db::open_in_memory().unwrap();
-    let t1 = DatumTime::now();
+    // Distinct timestamps — slug uses millisecond precision and two
+    // `DatumTime::now()` calls on fast machines land in the same ms,
+    // collapsing to the same slug (hard-errors post-da-p5j).
+    let base = Utc::now();
+    let mk = |offset_ms: i64| DatumTime {
+        utc: base + Duration::milliseconds(offset_ms),
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    };
+    let t1 = mk(0);
     let switch_entry = Entry::new(
         "mood",
         Verb::Switch,
@@ -453,7 +462,7 @@ fn test_latest_entry_for_now_skips_note() {
         "d1",
     );
     db.insert_entry(&switch_entry).unwrap();
-    let t2 = DatumTime::now();
+    let t2 = mk(1);
     let note_entry = Entry::new(
         "mood",
         Verb::Add,
