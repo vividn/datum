@@ -31,7 +31,7 @@ use datum_parse::time::{parse_date_arg, DateArg};
 use serde_json::Value as JsonValue;
 
 use crate::args::DayviewArgs;
-use crate::render::colors::{md5_rgb, state_value_rgb, Rgb};
+use crate::render::colors::{field_rgb, md5_rgb, state_value_rgb, Rgb};
 
 /// Datum default per-day band height (matches dayview.ts:50).
 const DEFAULT_DAY_HEIGHT: f64 = 100.0;
@@ -408,12 +408,13 @@ fn build_day_fields(
                     if start_ms < day_start_ms || start_ms > day_end_ms {
                         continue;
                     }
-                    let fg = state_value_rgb(
-                        entry.value.as_ref().unwrap_or(&JsonValue::Null),
-                        &field,
-                        spec.as_ref(),
-                    )
-                    .unwrap_or(md5_rgb(&field));
+                    // Occur/note dots belong to a field, not a state — the
+                    // value (when present) is a quantity or note text, not
+                    // a state name. Color comes from the field spec
+                    // (spec.color → md5(field)). Treating null as
+                    // `Rgb::IGNORED` here would render every occur dot
+                    // grey (da-8mu).
+                    let fg = field_rgb(&field, spec.as_ref());
                     let bg = match db.state_at(&field, start_dt.utc).unwrap_or(None) {
                         Some(v) => state_value_rgb(&v, &field, spec.as_ref())
                             .unwrap_or(Rgb::BLACK),
@@ -913,5 +914,88 @@ mod tests {
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
         );
+    }
+
+    /// da-8mu: an occur entry's dot must take its fg from the field spec's
+    /// `color`, not from the (typically null) value via `state_value_rgb`
+    /// — null mapped to `Rgb::IGNORED` (#888888) and made every dot grey.
+    #[test]
+    fn occur_dot_fg_uses_field_spec_color() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::field_spec::FieldSpec;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("caffeine", Verb::Occur);
+        spec.color = Some("#643200".into());
+        db.save_field_spec(&spec).unwrap();
+
+        let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "caffeine",
+            Verb::Occur,
+            None,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let caffeine = fields
+            .iter()
+            .find(|f| f.field == "caffeine")
+            .expect("caffeine field present");
+        assert_eq!(caffeine.points.len(), 1);
+        assert_eq!(caffeine.points[0].fg_color, "#643200");
+        assert_ne!(caffeine.points[0].fg_color, "#888888");
+    }
+
+    /// da-8mu: without a spec.color override the dot still uses the field's
+    /// derived (md5) color, never the null-state grey `#888888`.
+    #[test]
+    fn occur_dot_fg_falls_back_to_md5_field_color() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "alarm",
+            Verb::Occur,
+            None,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
+        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let alarm = fields
+            .iter()
+            .find(|f| f.field == "alarm")
+            .expect("alarm field present");
+        assert_eq!(alarm.points.len(), 1);
+        let expected = rgb_to_hex(md5_rgb("alarm"));
+        assert_eq!(alarm.points[0].fg_color, expected);
+        assert_ne!(alarm.points[0].fg_color, "#888888");
     }
 }
