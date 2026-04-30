@@ -2043,14 +2043,10 @@ fn parse_info_args(tail: &[&str]) -> Result<InfoArgs> {
 }
 
 fn parse_setup_args(tail: &[&str]) -> Result<SetupArgs> {
-    let mut force_recreate = false;
-    for tok in tail {
-        match split_flag(tok) {
-            FlagSplit::Long("force-recreate") => force_recreate = true,
-            f => return Err(unknown_flag(f)),
-        }
+    if let Some(tok) = tail.first() {
+        return Err(unknown_flag(split_flag(tok)));
     }
-    Ok(SetupArgs { force_recreate })
+    Ok(SetupArgs {})
 }
 
 fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {

@@ -69,10 +69,10 @@ impl Db {
     }
 
     /// Open the database without running migrations. Use only for
-    /// destructive recovery paths (`datum setup --force-recreate`) that
-    /// will rebuild the schema from scratch — auto-migrate on a half-state
-    /// DB can fail before the recovery code has a chance to run, leaving
-    /// the user with no escape hatch.
+    /// destructive recovery paths (`datum db purge`) that will rebuild the
+    /// schema from scratch — auto-migrate on a half-state DB can fail
+    /// before the recovery code has a chance to run, leaving the user with
+    /// no escape hatch.
     pub fn open_unmigrated(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
         Ok(Db { conn })
@@ -175,8 +175,8 @@ impl Db {
     }
 
     /// Drop every datum table and rebuild the schema from scratch. Used by
-    /// `datum setup --force-recreate`. Caller is responsible for warning
-    /// about data loss before invoking this.
+    /// `datum db purge`. Caller is responsible for warning about data loss
+    /// before invoking this.
     pub fn force_recreate_schema(&self) -> Result<Vec<String>> {
         let tables = [
             "entries",

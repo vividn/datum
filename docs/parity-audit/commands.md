@@ -32,7 +32,7 @@ Reference points:
 | now | ✓ | ✓ | ✓ | — |
 | check | ✓ (with `--fix`) | ✓ (`--json`) | ✓ | structured `--json` report |
 | migrate | ✓ | ✓ | run/status/edit/import | — |
-| setup | ✓ | ✓ | ✓ | `--force-recreate` |
+| setup | ✓ | ✓ | ✓ | bare migrate-only (purge moved to `db purge`) |
 | sync | ✓ | ✓ | both exist, **different protocols** | OAuth + E2E key mgmt |
 | spec | ✗ | ✓ | — | field schemas in DB |
 | alias | ✗ | ✓ | — | DB-backed CLI aliases |
@@ -367,15 +367,16 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 ### setup
 
 - **Original datum:** no flags; bare `datum setup` initialises PouchDB.
-- **Daydumb today:** `SetupArgs` — `--force-recreate` (drops and
-  rebuilds schema; destructive).
+- **Daydumb today:** bare `datum setup` — applies any pending schema
+  migrations and stamps the version. The destructive rebuild moved to
+  `datum db purge` (da-e16); the `--force-recreate` alias was removed
+  in da-57t.
 - **Missing in daydumb:** nothing.
-- **Divergences:** `--force-recreate` is daydumb-only and must be
-  called out in `--help` (data-loss risk).
-- **Tests in datum not in daydumb:** 4 tests. `setup_cmd.rs` covers
-  both normal and force-recreate paths.
-- **Ideas / cleanup:** require confirmation prompt on
-  `--force-recreate` unless `--force-recreate --yes` is given.
+- **Divergences:** `db purge` is daydumb-only.
+- **Tests in datum not in daydumb:** none material; idempotency and
+  newer-schema rejection covered in `info_setup_cmd.rs`, destructive
+  rebuild covered by `db_cmd.rs`.
+- **Ideas / cleanup:** none.
 
 ### sync
 
@@ -511,12 +512,10 @@ wildcards, `--watch`, batch mutations) is the main follow-up.
    Currently only exact id or slug is accepted.
 3. **Batch mutations.** `del`, `update`, `merge`, `rekey` should accept
    a quickId that matches multiple rows.
-4. **`datum setup --force-recreate --yes` confirmation gate.** Destructive
-   without a safety net today.
-5. **JSONL backup header.** Carry a `backupTime` sentinel so restore
+4. **JSONL backup header.** Carry a `backupTime` sentinel so restore
    can validate schema version.
-6. **Head/tail unification.** R2 candidate — collapse into one command.
-7. **Map/reduce unification.** R3 candidate — same underlying view.
-8. **Command `--help` text alignment.** Every command's help should
+5. **Head/tail unification.** R2 candidate — collapse into one command.
+6. **Map/reduce unification.** R3 candidate — same underlying view.
+7. **Command `--help` text alignment.** Every command's help should
    call out daydumb-specific flags that have no datum equivalent
-   (`-K`, `--reverse`, `--force-recreate`, the auto-alias behavior, ...).
+   (`-K`, `--reverse`, the auto-alias behavior, ...).

@@ -4,8 +4,7 @@
 //! against [`CURRENT_SCHEMA_VERSION`]. Forward-compatible migrations
 //! (ADD COLUMN, CREATE INDEX IF NOT EXISTS, CREATE TABLE IF NOT EXISTS)
 //! run silently on open; anything destructive (column removal, PK change)
-//! must go through `datum setup --force-recreate` or a proper migration
-//! entry here.
+//! must go through `datum db purge` or a proper migration entry here.
 
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -2215,8 +2214,8 @@ mod tests {
 
     /// da-9u9.1: `Db::open_unmigrated` returns a usable connection that
     /// has NOT had migrations applied. It's the recovery path's foothold:
-    /// `setup --force-recreate` opens a possibly-corrupt DB without
-    /// auto-migrate, then drops & recreates the schema.
+    /// `db purge` opens a possibly-corrupt DB without auto-migrate, then
+    /// drops & recreates the schema.
     #[test]
     fn open_unmigrated_skips_migration_pipeline() {
         // Build a temp file path — we need real path-backed open() since
@@ -2242,7 +2241,7 @@ mod tests {
 
         // `Db::open_unmigrated` succeeds — it does not consult _meta.
         let db = Db::open_unmigrated(&path_str).unwrap();
-        // And from here, force-recreate brings the DB back to current.
+        // And from here, purge brings the DB back to current.
         db.force_recreate_schema().unwrap();
         assert_eq!(
             read_schema_version(db.conn()).unwrap(),

@@ -1,8 +1,7 @@
 //! `datum db purge` integration tests (da-e16).
 //!
-//! Covers the new verb's three confirmation paths: `--yes` (no prompt),
-//! interactive (path match / mismatch), and non-TTY without `--yes`. Also
-//! verifies the deprecated `setup --force-recreate` alias keeps working.
+//! Covers the verb's three confirmation paths: `--yes` (no prompt),
+//! interactive (path match / mismatch), and non-TTY without `--yes`.
 
 mod common;
 
@@ -42,9 +41,11 @@ fn db_purge_short_yes_flag_wipes_data() {
     assert_eq!(db.count_entries().unwrap(), 0);
 }
 
-/// Mirrors da-9u9.1's `setup_force_recreate_recovers_corrupt_db` — the
-/// new verb must inherit the escape-hatch contract since it's the
-/// canonical replacement.
+/// `db purge --yes` must recover a deliberately corrupt DB (no `_meta`,
+/// half-shape `field_specs` without `kit_id`). Exercises the
+/// `Db::open_unmigrated` path: the auto-migrate pipeline would error
+/// before recovery code gets a chance to run, so the binary skips it for
+/// this command.
 #[test]
 fn db_purge_yes_recovers_corrupt_db() {
     let db = Db::open_unmigrated(":memory:").unwrap();
@@ -110,7 +111,7 @@ fn db_purge_interactive_path_mismatch_aborts() {
         err.to_string().to_lowercase().contains("did not match"),
         "expected 'did not match' message, got: {err}"
     );
-    // Data must be intact — abort happens before force_recreate_schema.
+    // Data must be intact — abort happens before the schema rebuild.
     assert_eq!(db.count_entries().unwrap(), 1);
 }
 
@@ -131,17 +132,21 @@ fn db_purge_non_tty_without_yes_aborts() {
     assert_eq!(db.count_entries().unwrap(), 1);
 }
 
-/// `datum setup --force-recreate` is deprecated but must keep working
-/// until removal in a future minor release. The integration test in
-/// `info_setup_cmd.rs` already asserts the data-wiping behavior; this
-/// test exists to pin the deprecation contract from the new verb's
-/// vantage.
+/// `datum setup --force-recreate` was removed (da-57t); the flag must now
+/// be rejected as unknown so users discover `datum db purge` instead.
 #[test]
-fn deprecated_setup_force_recreate_still_dispatches() {
+fn setup_force_recreate_flag_is_rejected() {
     let db = fresh_db();
     entry_builder("coffee")
         .value(serde_json::json!(1))
         .insert(&db);
-    run_cli(&["setup", "--force-recreate"], &db).expect("deprecated path still works");
-    assert_eq!(db.count_entries().unwrap(), 0);
+    let err = run_cli(&["setup", "--force-recreate"], &db)
+        .expect_err("--force-recreate is no longer accepted");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--force-recreate") || msg.to_lowercase().contains("unexpected flag"),
+        "expected unknown-flag error, got: {msg}"
+    );
+    // Data is intact — the rejection happens at parse time.
+    assert_eq!(db.count_entries().unwrap(), 1);
 }

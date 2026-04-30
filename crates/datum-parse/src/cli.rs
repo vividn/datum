@@ -220,17 +220,14 @@ pub struct InfoArgs {
     pub all: bool,
 }
 
-#[derive(Debug)]
-pub struct SetupArgs {
-    pub force_recreate: bool,
-}
+#[derive(Debug, Default)]
+pub struct SetupArgs {}
 
 // ─── Db (subcommand group) ────────────────────────────────────────────────
 
 #[derive(Debug)]
 pub enum DbCommand {
     /// `datum db purge` — drop every datum table and rebuild from scratch.
-    /// Replaces `datum setup --force-recreate` (deprecated). See da-e16.
     Purge(DbPurgeArgs),
 }
 

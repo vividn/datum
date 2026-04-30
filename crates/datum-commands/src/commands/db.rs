@@ -1,9 +1,9 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
-//! Replaces `datum setup --force-recreate` (now deprecated) and is the
-//! landing pad for the rest of the `db` group (migrate / backup / restore
+//! Landing pad for the rest of the `db` group (migrate / backup / restore
 //! / import / setup) tracked in da-9u9.3. The current shape is `db purge`
-//! only, the verb-naming lock-in from da-e16.
+//! only, the verb-naming lock-in from da-e16. da-57t removed the
+//! deprecated `setup --force-recreate` alias.
 
 use std::io::{BufRead, IsTerminal, Write};
 

@@ -382,25 +382,7 @@ fn format_size(bytes: u64) -> String {
     }
 }
 
-pub(crate) fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
-    if args.force_recreate {
-        // da-e16: 'setup --force-recreate' is deprecated in favor of
-        // 'datum db purge'. Path still works for one or two minor releases
-        // so existing scripts don't break.
-        eprintln!(
-            "warning: `datum setup --force-recreate` is deprecated; use `datum db purge` instead."
-        );
-        let dropped = db.force_recreate_schema()?;
-        println!("setup: force-recreate");
-        println!("  dropped: {}", dropped.join(", "));
-        println!(
-            "  schema: v{}",
-            datum_core::migrations::CURRENT_SCHEMA_VERSION
-        );
-        println!("  OK");
-        return Ok(());
-    }
-
+pub(crate) fn cmd_setup(_args: SetupArgs, db: &Db) -> Result<()> {
     let target = datum_core::migrations::CURRENT_SCHEMA_VERSION;
     let current = datum_core::migrations::read_schema_version(db.conn())?
         .unwrap_or(target);

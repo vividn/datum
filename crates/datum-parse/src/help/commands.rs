@@ -386,7 +386,7 @@ const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --h
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
-const SETUP_BODY: &str = "USAGE:\n  datum setup [--force-recreate]\n\n--force-recreate is DEPRECATED; use `datum db purge` instead.\n";
+const SETUP_BODY: &str = "USAGE:\n  datum setup\n\nApplies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n";
 
 const DB_BODY: &str = "USAGE:\n  datum db purge [--yes | -y]\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n";
 
@@ -950,7 +950,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "initialize or migrate the DB schema",
         top_summary: None,
         long_description: None,
-        usage: &["datum setup [--force-recreate]"],
+        usage: &["datum setup"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,
