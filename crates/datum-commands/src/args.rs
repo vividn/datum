@@ -33,13 +33,13 @@ use crate::render::{OutputArgs, Show};
 pub use pcli::{
     AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
     ConflictStrategyArg, ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs,
-    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DbCommand, DbPurgeArgs,
-    DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
-    KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand,
-    MigrateImportArgs, NowArgs, NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs,
-    SpecCommand, SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs,
-    SyncKeyCommand, SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
-    ViewArgs, ViewFormat, WhyArgs,
+    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DbCommand, DbImportArgs,
+    DbPurgeArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs,
+    InfoArgs, KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand,
+    NowArgs, NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand,
+    SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
+    SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat,
+    WhyArgs,
 };
 
 // ─── Intent context (provenance for the current invocation) ──────────────
@@ -329,20 +329,18 @@ impl_output_args_ext!(EditArgs);
 impl_output_args_ext!(DeleteArgs);
 impl_output_args_ext!(UndoArgs);
 
-/// `.resolved_path()` on [`MigrateImportArgs`].
-pub trait MigrateImportArgsExt {
+/// `.resolved_path()` on [`DbImportArgs`].
+pub trait DbImportArgsExt {
     fn resolved_path(&self) -> anyhow::Result<&str>;
 }
 
-impl MigrateImportArgsExt for MigrateImportArgs {
+impl DbImportArgsExt for DbImportArgs {
     fn resolved_path(&self) -> anyhow::Result<&str> {
         self.backup_file
             .as_deref()
             .or(self.backup_file_positional.as_deref())
             .ok_or_else(|| {
-                anyhow::anyhow!(
-                    "migrate import requires a backup file (pass as positional or --from)"
-                )
+                anyhow::anyhow!("db import requires a backup file (pass as positional or --from)")
             })
     }
 }

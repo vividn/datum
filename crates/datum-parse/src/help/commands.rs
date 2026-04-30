@@ -366,7 +366,8 @@ const TRACK_BODY: &str =
 
 const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>\n";
 
-const MIGRATE_BODY: &str = "USAGE:\n  datum migrate run\n  datum migrate status\n  datum migrate edit\n  datum migrate import [FILE | --from FILE] [--dry-run]\n";
+const MIGRATE_BODY: &str =
+    "USAGE:\n  datum migrate run\n  datum migrate status\n  datum migrate edit\n";
 
 const BACKUP_BODY: &str = "USAGE:\n  datum backup <PATH> [--overwrite]\n\nPath ending in .tar.gz / .tgz → tar.gz; otherwise JSONL.\n";
 
@@ -388,7 +389,7 @@ const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
 const SETUP_BODY: &str = "USAGE:\n  datum setup\n\nApplies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n";
 
-const DB_BODY: &str = "USAGE:\n  datum db purge [--yes | -y]\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n";
+const DB_BODY: &str = "USAGE:\n  datum db purge [--yes | -y]\n  datum db import [FILE | --from FILE] [--dry-run]\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nImport ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`) into\nthe active database. Idempotent — re-importing the same backup is a no-op.\n";
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
@@ -882,14 +883,13 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "migrate",
         aliases: &[],
         category: Category::Admin,
-        summary: "schema migrations + legacy datum import",
+        summary: "schema migrations",
         top_summary: None,
         long_description: None,
         usage: &[
             "datum migrate run",
             "datum migrate status",
             "datum migrate edit",
-            "datum migrate import [FILE | --from FILE] [--dry-run]",
         ],
         args: NO_ARGS,
         flags: NO_FLAGS,
@@ -963,9 +963,12 @@ pub const COMMANDS: &[CommandSpec] = &[
         aliases: &[],
         category: Category::Admin,
         summary: "DB-lifecycle subcommands",
-        top_summary: Some("DB-lifecycle subcommands (purge, …)"),
+        top_summary: Some("DB-lifecycle subcommands (purge, import, …)"),
         long_description: None,
-        usage: &["datum db purge [--yes | -y]"],
+        usage: &[
+            "datum db purge [--yes | -y]",
+            "datum db import [FILE | --from FILE] [--dry-run]",
+        ],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,

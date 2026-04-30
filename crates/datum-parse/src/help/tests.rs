@@ -52,12 +52,12 @@ RENDER:
 ADMIN:
   spec     Manage field specs (schemas)
   alias    Manage aliases
-  migrate  Schema migrations + legacy datum import
+  migrate  Schema migrations
   backup   Dump live entries to JSONL / tar.gz
   restore  Re-import entries from a backup
   check    Run database consistency checks
   setup    Initialize or migrate the DB schema
-  db       DB-lifecycle subcommands (purge, …)
+  db       DB-lifecycle subcommands (purge, import, …)
   info     Show health/metadata for DB(s)
   config   Show or manage user configuration
 

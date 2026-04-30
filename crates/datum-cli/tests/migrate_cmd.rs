@@ -187,7 +187,7 @@ fn migrate_status_lists_applied_and_pending() {
     run_cli(&["migrate", "status"], &db).expect("migrate status dispatch");
 }
 
-// ─── Acceptance: legacy `migrate import --from backup.json` still works
+// ─── Acceptance: legacy `db import --from backup.json` still works
 #[test]
 fn legacy_backup_json_import_still_works() {
     let db = fresh_db();
@@ -220,7 +220,7 @@ fn legacy_backup_json_import_still_works() {
     std::fs::write(tmp.path(), serde_json::to_string(&backup).unwrap()).expect("write backup.json");
 
     run_cli(
-        &["migrate", "import", "--from", tmp.path().to_str().unwrap()],
+        &["db", "import", "--from", tmp.path().to_str().unwrap()],
         &db,
     )
     .expect("legacy backup.json import dispatch");

@@ -271,7 +271,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Tests in datum not in daydumb:** 4 tests. `restore_cmd.rs` covers
   JSONL + tar.gz paths.
 - **Ideas / cleanup:** wire up a `--dry-run` to mirror the behaviour
-  we already give `migrate import`.
+  we already give `db import`.
 
 ### grep
 
@@ -352,15 +352,20 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Original datum:** `run`, `status`, `edit`, `import` subcommands.
   import: `--from`, `--backup`, `--dry-run`.
-- **Daydumb today:** `MigrateCommand` with same four subcommands and
-  same import flags. `cmd_migrate_edit` is a stub (open `$EDITOR`
-  against the migration file).
+- **Daydumb today:** `MigrateCommand` with `run`, `status`, `edit` —
+  schema-migration only. The legacy `import` verb moved to
+  `datum db import` (da-fab); see the `db` section. `cmd_migrate_edit`
+  is a stub (open `$EDITOR` against the migration file).
 - **Missing in daydumb:** interactive migration editing is just a
   `$EDITOR` launcher.
 - **Divergences:** schema version check during `run` refuses to proceed
-  if the binary is older than the stored schema.
-- **Tests in datum not in daydumb:** no dedicated file; `migrate_import`
-  is exercised by `migrate_cmd.rs`.
+  if the binary is older than the stored schema. `import` lives under
+  `db` (DB-admin verbs), not `migrate` (schema migrations) — semantic
+  split tracked in da-33g.
+- **Tests in datum not in daydumb:** no dedicated file; the legacy
+  `db import` path is exercised by `db_import.rs` /
+  `db_import_regression.rs` and one acceptance check in
+  `migrate_cmd.rs`.
 - **Ideas / cleanup:** `status` could print the list of pending
   migrations with descriptions, not just a version range.
 
@@ -467,7 +472,7 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Purpose:** legacy v1 entry shape normalization.
 - **Daydumb:** **not ported.** Legacy entries come in via `datum
-  migrate import --from <backup.json>` which normalizes on ingest.
+  db import --from <backup.json>` which normalizes on ingest.
 
 ---
 

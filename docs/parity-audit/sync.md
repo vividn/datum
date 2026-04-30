@@ -242,7 +242,7 @@ single command — the steps model distinct trust decisions.
   actually sync.
 - No Couch URL migration path. If an existing datum user has a
   populated CouchDB, there's no `datum sync adopt-couch` command.
-  Unlikely to matter in practice (the `datum migrate --from
+  Unlikely to matter in practice (the `datum db import --from
   backup.json` flow already handles historical data imports).
 - No explicit "this device is not yet trusted" UX beyond the
   `key unlock` failing. Compare to datum, where a wrong Couch

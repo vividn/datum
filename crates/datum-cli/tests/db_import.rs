@@ -1,4 +1,4 @@
-//! `datum migrate import` integration tests (da-a8u).
+//! `datum db import` integration tests (da-a8u).
 //!
 //! Verifies the v2-aware mapping from legacy datum CouchDB-shaped JSON
 //! into v2 entries: dur preservation as intent, end_time derivation,
@@ -42,7 +42,7 @@ fn occur_only_doc_maps_to_point_occur() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
@@ -72,7 +72,7 @@ fn occur_with_dur_maps_to_block_and_derives_end_time() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
@@ -117,7 +117,7 @@ fn switch_doc_with_boolean_state_maps_to_point_switch() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
@@ -148,7 +148,7 @@ fn explicit_dur_null_maps_to_point_occur_and_preserves_null() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
@@ -177,7 +177,7 @@ fn doc_without_occur_time_maps_to_add() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
@@ -205,7 +205,7 @@ fn imported_rows_carry_sentinel_intent_fields() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.all_entries().unwrap()[0];
     assert_eq!(e.parser_version, 0, "imported rows use sentinel parser_version=0");
@@ -250,7 +250,7 @@ fn dry_run_does_not_insert() {
         }
     ]));
 
-    run_cli(&["migrate", "import", "--dry-run", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", "--dry-run", f.path().to_str().unwrap()], &db).unwrap();
     assert_eq!(db.all_entries().unwrap().len(), 0, "dry-run must not insert");
 }
 
@@ -260,7 +260,7 @@ fn dry_run_does_not_insert() {
 fn import_3day_fixture_produces_blocks_and_points() {
     let db = fresh_db();
     let fixture = "tests/fixtures/datum_backup_3days.json";
-    run_cli(&["migrate", "import", fixture], &db).expect("import 3day fixture");
+    run_cli(&["db", "import", fixture], &db).expect("import 3day fixture");
 
     let entries = db.all_entries().unwrap();
     assert!(entries.len() > 100, "fixture has hundreds of docs (got {})", entries.len());
@@ -324,9 +324,9 @@ fn second_import_is_idempotent_via_content_hash() {
         "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
     let n1 = db.all_entries().unwrap().len();
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
     let n2 = db.all_entries().unwrap().len();
     assert_eq!(n1, n2, "re-importing same backup must be idempotent");
 }
@@ -351,7 +351,7 @@ fn import_preserves_create_and_modify_times_and_marker() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.all_entries().unwrap()[0];
     let expect_create: chrono::DateTime<chrono::Utc> = create_iso.parse().unwrap();
@@ -392,7 +392,7 @@ fn import_falls_back_to_create_time_when_modify_time_missing() {
         }
     }]));
 
-    run_cli(&["migrate", "import", f.path().to_str().unwrap()], &db).unwrap();
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
 
     let e = &db.all_entries().unwrap()[0];
     let expect_create: chrono::DateTime<chrono::Utc> = create_iso.parse().unwrap();

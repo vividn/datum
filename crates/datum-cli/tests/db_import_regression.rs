@@ -1,4 +1,4 @@
-//! Regression test for `datum migrate import` against a committed synthetic
+//! Regression test for `datum db import` against a committed synthetic
 //! fixture (da-zio).
 //!
 //! This test locks the **structural correctness** of legacy-data ingestion
@@ -36,9 +36,9 @@ use std::collections::HashSet;
 const FIXTURE: &str = "tests/fixtures/datum_backup_synthetic.json";
 
 #[test]
-fn migrate_import_synthetic_locks_db_shape() {
+fn db_import_synthetic_locks_db_shape() {
     let db = fresh_db();
-    run_cli(&["migrate", "import", FIXTURE], &db).expect("synthetic import");
+    run_cli(&["db", "import", FIXTURE], &db).expect("synthetic import");
 
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 11, "fixture defines 11 importable docs");
@@ -228,14 +228,14 @@ fn migrate_import_synthetic_locks_db_shape() {
 }
 
 #[test]
-fn migrate_import_synthetic_is_idempotent() {
+fn db_import_synthetic_is_idempotent() {
     let db = fresh_db();
-    run_cli(&["migrate", "import", FIXTURE], &db).expect("first import");
+    run_cli(&["db", "import", FIXTURE], &db).expect("first import");
     let n1 = db.all_entries().unwrap().len();
     assert_eq!(n1, 11);
 
     // Second run on the same DB: content_hash dedup must skip every doc.
-    run_cli(&["migrate", "import", FIXTURE], &db).expect("second import");
+    run_cli(&["db", "import", FIXTURE], &db).expect("second import");
     let n2 = db.all_entries().unwrap().len();
     assert_eq!(n2, n1, "re-importing same fixture must not add rows");
 }
@@ -243,21 +243,21 @@ fn migrate_import_synthetic_is_idempotent() {
 // ─── Binary harness: lock the user-visible summary line ──────────────────
 
 #[test]
-fn migrate_import_synthetic_summary_reports_correct_counts() {
+fn db_import_synthetic_summary_reports_correct_counts() {
     let mut db_path = std::env::temp_dir();
     let pid = std::process::id();
     let nonce = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
-    db_path.push(format!("datum-migrate-import-regression-{pid}-{nonce}.db"));
+    db_path.push(format!("datum-db-import-regression-{pid}-{nonce}.db"));
     let _ = std::fs::remove_file(&db_path);
 
     let bin = env!("CARGO_BIN_EXE_datum");
     let out = std::process::Command::new(bin)
         .env("DATUM_DB", &db_path)
         .env("DATUM_COLOR", "0")
-        .args(["migrate", "import", FIXTURE])
+        .args(["db", "import", FIXTURE])
         .output()
         .expect("run datum binary");
     let _ = std::fs::remove_file(&db_path);

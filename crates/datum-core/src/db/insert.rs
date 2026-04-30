@@ -81,7 +81,7 @@ impl Db {
         Ok(outcomes)
     }
 
-    /// Bulk-load fast path for one-shot ingestion (e.g. `datum migrate import`).
+    /// Bulk-load fast path for one-shot ingestion (e.g. `datum db import`).
     ///
     /// Like [`Self::insert_entries_batch`], one transaction wraps the whole
     /// batch. Unlike it, this method **skips** per-row work that's only useful
@@ -97,7 +97,7 @@ impl Db {
     ///   once after the import completes.
     ///
     /// Still does: content_hash dedup, slug/hid collision retry. Honors
-    /// [`ConflictStrategy::Ignore`] only (the supported migrate-import mode).
+    /// [`ConflictStrategy::Ignore`] only (the supported db-import mode).
     /// Other strategies error — the fast path is deliberately narrow.
     ///
     /// **OPT-IN.** Existing per-row callers (`switch`, `block`, sync apply)

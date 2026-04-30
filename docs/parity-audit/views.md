@@ -245,7 +245,7 @@ but have no Rust counterpart. Disposition below.
 | `structure.ts` (`structures`)   | Per-doc `[idStructure, fieldStructure]`.     | **Drop (for now)**: template metadata lives in `entries.id_structure/field_structure`; callers can SELECT. |
 | `overlappingBlocks.ts`     | `+1/-1` at block boundaries for overlap detection. | **Defer**: daydumb overlap detection is in `sync_conflicts` (`detected_by='local_validator'`). File a follow-up if block-style detection is ever needed. |
 | `durationBlocks.ts`        | Per-block `(field, blockBegin, blockEnd)`.         | **Defer**: duplicative with `duration_sum`; port only on demand. |
-| `datumV1.ts`               | Legacy DatumV1 migration helper.                    | **Drop**: daydumb migrates via `datum migrate --from backup.json` (TS-free). |
+| `datumV1.ts`               | Legacy DatumV1 migration helper.                    | **Drop**: daydumb migrates via `datum db import --from backup.json` (TS-free). |
 | `idToHumanView.ts`         | Map `docId → humanId`.                              | **Drop**: daydumb slug *is* the human id. |
 | `dataStructuresView.ts`    | JSON-shape survey of `doc.data` fields.             | **Defer**: no current caller; useful only for schema discovery. |
 | `idStructures.ts`          | Group by `meta.idStructure` template.               | **Defer**: spec templates tracked in `field_specs` table. |

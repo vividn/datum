@@ -1,8 +1,8 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
 //! Landing pad for the rest of the `db` group (migrate / backup / restore
-//! / import / setup) tracked in da-9u9.3. The current shape is `db purge`
-//! only, the verb-naming lock-in from da-e16. da-57t removed the
+//! / setup) tracked in da-9u9.3. Current verbs: `db purge` (da-e16) and
+//! `db import` (da-fab — moved from `migrate import`). da-57t removed the
 //! deprecated `setup --force-recreate` alias.
 
 use std::io::{BufRead, IsTerminal, Write};
@@ -15,6 +15,7 @@ use crate::args::{DbCommand, DbPurgeArgs};
 pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
     match cmd {
         DbCommand::Purge(args) => purge(args, db),
+        DbCommand::Import(args) => crate::cmd::cmd_db_import(args, db),
     }
 }
 

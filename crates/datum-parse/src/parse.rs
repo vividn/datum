@@ -1498,23 +1498,21 @@ fn parse_ignore_args(tail: &[&str]) -> Result<IgnoreArgs> {
 fn parse_migrate_cmd(tail: &[&str]) -> Result<MigrateCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing migrate subcommand (run|status|edit|import)".into(),
+            "missing migrate subcommand (run|status|edit)".into(),
         ));
     };
-    let rest: &[&str] = &tail[1..];
     match *sub {
         "run" => Ok(MigrateCommand::Run),
         "status" => Ok(MigrateCommand::Status),
         "edit" => Ok(MigrateCommand::Edit),
-        "import" => Ok(MigrateCommand::Import(parse_migrate_import(rest)?)),
         other => Err(ParseError::InvalidArg(format!(
             "unknown migrate subcommand: '{other}'"
         ))),
     }
 }
 
-fn parse_migrate_import(tail: &[&str]) -> Result<MigrateImportArgs> {
-    let mut out = MigrateImportArgs::default();
+fn parse_db_import(tail: &[&str]) -> Result<DbImportArgs> {
+    let mut out = DbImportArgs::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
@@ -2065,12 +2063,13 @@ fn parse_setup_args(tail: &[&str]) -> Result<SetupArgs> {
 fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (purge)".into(),
+            "missing db subcommand (purge|import)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
     match *sub {
         "purge" => Ok(DbCommand::Purge(parse_db_purge_args(rest)?)),
+        "import" => Ok(DbCommand::Import(parse_db_import(rest)?)),
         other => Err(ParseError::InvalidArg(format!(
             "unknown db subcommand: '{other}'"
         ))),

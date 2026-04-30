@@ -19,12 +19,10 @@ use crate::{
     args::{
         AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs, CountArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs,
-        HistoryArgs,
-        IdsArgs, IgnoreArgs, InfoArgs, LogArgs, LogArgsExt, MigrateCommand,
-        MigrateImportArgs, MigrateImportArgsExt, NowArgs, OutputFlagsExt,
-        RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs, TrackArgs, UndoArgs,
-        UpdateArgs, WhyArgs,
+        ConflictsShowArgs, CountArgs, DbImportArgs, DbImportArgsExt, DeleteArgs, EditArgs, GetArgs,
+        GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, LogArgs, LogArgsExt, MigrateCommand,
+        NowArgs, OutputFlagsExt, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs,
+        TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
     },
     config::{self, device_id},
     render::{
@@ -3139,7 +3137,6 @@ pub(crate) fn cmd_migrate(cmd: MigrateCommand, db: &Db) -> Result<()> {
         MigrateCommand::Run => cmd_migrate_run(db),
         MigrateCommand::Status => cmd_migrate_status(db),
         MigrateCommand::Edit => cmd_migrate_edit(),
-        MigrateCommand::Import(args) => cmd_migrate_import(args, db),
     }
 }
 
@@ -3185,7 +3182,7 @@ pub(crate) fn cmd_migrate_edit() -> Result<()> {
     )
 }
 
-pub(crate) fn cmd_migrate_import(args: MigrateImportArgs, db: &Db) -> Result<()> {
+pub(crate) fn cmd_db_import(args: DbImportArgs, db: &Db) -> Result<()> {
     let backup_path = args.resolved_path()?.to_string();
     let dry_run = args.dry_run;
 

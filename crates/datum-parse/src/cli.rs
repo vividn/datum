@@ -229,6 +229,8 @@ pub struct SetupArgs {}
 pub enum DbCommand {
     /// `datum db purge` — drop every datum table and rebuild from scratch.
     Purge(DbPurgeArgs),
+    /// `datum db import` — load a legacy datum CouchDB backup JSON.
+    Import(DbImportArgs),
 }
 
 #[derive(Debug, Default)]
@@ -236,6 +238,13 @@ pub struct DbPurgeArgs {
     /// `--yes` / `-y` — skip the type-the-database-path confirmation prompt
     /// and purge non-interactively. Required when stdin is not a TTY.
     pub yes: bool,
+}
+
+#[derive(Debug, Default)]
+pub struct DbImportArgs {
+    pub backup_file: Option<String>,
+    pub backup_file_positional: Option<String>,
+    pub dry_run: bool,
 }
 
 // ─── Logging commands (occur/start/stop/switch/add) ──────────────────────
@@ -722,14 +731,6 @@ pub enum MigrateCommand {
     Run,
     Status,
     Edit,
-    Import(MigrateImportArgs),
-}
-
-#[derive(Debug, Default)]
-pub struct MigrateImportArgs {
-    pub backup_file: Option<String>,
-    pub backup_file_positional: Option<String>,
-    pub dry_run: bool,
 }
 
 #[derive(Debug)]
