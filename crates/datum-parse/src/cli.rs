@@ -97,6 +97,10 @@ pub enum Command {
 
     Info(InfoArgs),
     Setup(SetupArgs),
+    /// `datum db <subcommand>` — DB-lifecycle group introduced in da-e16
+    /// alongside `db purge`. Future subcommands (migrate / backup / restore
+    /// / import / setup) follow in da-9u9.3.
+    Db(DbCommand),
 
     Config(ConfigCommand),
 
@@ -219,6 +223,22 @@ pub struct InfoArgs {
 #[derive(Debug)]
 pub struct SetupArgs {
     pub force_recreate: bool,
+}
+
+// ─── Db (subcommand group) ────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub enum DbCommand {
+    /// `datum db purge` — drop every datum table and rebuild from scratch.
+    /// Replaces `datum setup --force-recreate` (deprecated). See da-e16.
+    Purge(DbPurgeArgs),
+}
+
+#[derive(Debug, Default)]
+pub struct DbPurgeArgs {
+    /// `--yes` / `-y` — skip the type-the-database-path confirmation prompt
+    /// and purge non-interactively. Required when stdin is not a TTY.
+    pub yes: bool,
 }
 
 // ─── Logging commands (occur/start/stop/switch/add) ──────────────────────

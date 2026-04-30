@@ -1,6 +1,6 @@
 use anyhow::Result;
 use datum_cli::{
-    args::{Cli, CliExt, Command, InfoArgs, SetupArgs},
+    args::{Cli, CliExt, Command, DbCommand, InfoArgs, SetupArgs},
     cmd, config,
 };
 use datum_commands::commands;
@@ -79,17 +79,19 @@ fn main() -> Result<()> {
         }
     }
 
-    // `setup --force-recreate` is the user's escape hatch for a corrupt
-    // or half-migrated DB (da-9u9.1). Auto-migrate runs inside `Db::open`
-    // and would error before the recovery code gets a chance to run on
-    // exactly the DB that needs recovering. Open without migrating; the
-    // command then drops and recreates the schema from scratch.
+    // Escape hatch for a corrupt or half-migrated DB (da-9u9.1, renamed
+    // by da-e16): both `setup --force-recreate` (deprecated) and
+    // `db purge` route through `open_unmigrated`. Auto-migrate runs
+    // inside `Db::open` and would error before the recovery code gets a
+    // chance to run on exactly the DB that needs recovering. Open without
+    // migrating; the command then drops and recreates the schema from
+    // scratch.
     let db = if matches!(
         &cli.command,
         Command::Setup(SetupArgs {
             force_recreate: true,
             ..
-        })
+        }) | Command::Db(DbCommand::Purge(_))
     ) {
         datum_core::db::Db::open_unmigrated(&resolved.path.to_string_lossy())?
     } else {

@@ -249,6 +249,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "info" => Command::Info(parse_info_args(rest)?),
         "setup" => Command::Setup(parse_setup_args(rest)?),
+        "db" => Command::Db(parse_db_cmd(rest)?),
 
         "config" => Command::Config(parse_config_cmd(rest)?),
 
@@ -2050,6 +2051,32 @@ fn parse_setup_args(tail: &[&str]) -> Result<SetupArgs> {
         }
     }
     Ok(SetupArgs { force_recreate })
+}
+
+fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
+    let Some(sub) = tail.first() else {
+        return Err(ParseError::InvalidArg(
+            "missing db subcommand (purge)".into(),
+        ));
+    };
+    let rest: &[&str] = &tail[1..];
+    match *sub {
+        "purge" => Ok(DbCommand::Purge(parse_db_purge_args(rest)?)),
+        other => Err(ParseError::InvalidArg(format!(
+            "unknown db subcommand: '{other}'"
+        ))),
+    }
+}
+
+fn parse_db_purge_args(tail: &[&str]) -> Result<DbPurgeArgs> {
+    let mut yes = false;
+    for tok in tail {
+        match split_flag(tok) {
+            FlagSplit::Long("yes") | FlagSplit::Short('y') => yes = true,
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(DbPurgeArgs { yes })
 }
 
 fn parse_config_cmd(tail: &[&str]) -> Result<ConfigCommand> {

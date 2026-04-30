@@ -385,7 +385,9 @@ const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --h
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
-const SETUP_BODY: &str = "USAGE:\n  datum setup [--force-recreate]\n";
+const SETUP_BODY: &str = "USAGE:\n  datum setup [--force-recreate]\n\n--force-recreate is DEPRECATED; use `datum db purge` instead.\n";
+
+const DB_BODY: &str = "USAGE:\n  datum db purge [--yes | -y]\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n";
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
@@ -947,6 +949,21 @@ pub const COMMANDS: &[CommandSpec] = &[
         examples: NO_EXAMPLES,
         summary_col: 0,
         body_override: Some(SETUP_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "db",
+        aliases: &[],
+        category: Category::Admin,
+        summary: "DB-lifecycle subcommands",
+        top_summary: Some("DB-lifecycle subcommands (purge, …)"),
+        long_description: None,
+        usage: &["datum db purge [--yes | -y]"],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(DB_BODY),
         display_input_name: false,
     },
     CommandSpec {

@@ -137,6 +137,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `restore` — Re-import entries from a backup
 - `check` — Run database consistency checks
 - `setup` — Initialize or migrate the DB schema
+- `db` — DB-lifecycle subcommands (purge, …)
 - `info` — Show health/metadata for DB(s)
 - `config` — Show or manage user configuration
 

@@ -33,12 +33,13 @@ use crate::render::{OutputArgs, Show};
 pub use pcli::{
     AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
     ConflictStrategyArg, ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs,
-    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs,
-    GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, KitCommand, KitExportArgs,
-    KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, MigrateImportArgs, NowArgs,
-    NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
-    SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand, SyncLoginArgs,
-    SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
+    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DbCommand, DbPurgeArgs,
+    DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs,
+    KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand,
+    MigrateImportArgs, NowArgs, NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs,
+    SpecCommand, SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs,
+    SyncKeyCommand, SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs,
+    ViewArgs, ViewFormat, WhyArgs,
 };
 
 // ─── Intent context (provenance for the current invocation) ──────────────

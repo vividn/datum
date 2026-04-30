@@ -83,6 +83,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::View(args) => commands::view::view(args, db),
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
         Command::Setup(args) => commands::setup::setup(args, db),
+        Command::Db(sub) => commands::db::dispatch(sub, db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
         Command::Sync(args) => commands::sync::dispatch(args, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
@@ -383,6 +384,12 @@ fn format_size(bytes: u64) -> String {
 
 pub(crate) fn cmd_setup(args: SetupArgs, db: &Db) -> Result<()> {
     if args.force_recreate {
+        // da-e16: 'setup --force-recreate' is deprecated in favor of
+        // 'datum db purge'. Path still works for one or two minor releases
+        // so existing scripts don't break.
+        eprintln!(
+            "warning: `datum setup --force-recreate` is deprecated; use `datum db purge` instead."
+        );
         let dropped = db.force_recreate_schema()?;
         println!("setup: force-recreate");
         println!("  dropped: {}", dropped.join(", "));
