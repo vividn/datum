@@ -3508,7 +3508,15 @@ mod tests {
     fn test_cmd_track_and_ignore() {
         use crate::args::{IgnoreArgs, TrackArgs};
         use datum_core::db::Db;
+        use datum_core::test_util::{advance_time, set_time};
         let db = Db::open_in_memory().unwrap();
+
+        // da-afk: cmd_track/cmd_ignore stamp entries with `DatumTime::now()`,
+        // and the slug is `field:<ms-iso>`. Three back-to-back calls on a fast
+        // machine can land in the same millisecond and hard-error on the slug
+        // collision. Freeze the clock and step it between calls so the slugs
+        // are distinct by construction.
+        let _g = set_time("2026-01-15T12:00:00Z");
 
         let track_args = TrackArgs {
             field: "mood".to_string(),
@@ -3531,6 +3539,7 @@ mod tests {
             Some("00ff00")
         );
 
+        advance_time("1m");
         // Ignore writes a switch IGNORED entry — supersedes the prior
         // track switch — and leaves the spec (and its color) alone.
         cmd_ignore(IgnoreArgs { field: "mood".to_string() }, &db).unwrap();
@@ -3540,6 +3549,7 @@ mod tests {
         // Color survives because it lives on FieldSpec, not in the entry log.
         assert_eq!(mood2.color.as_deref(), Some("ff6600"));
 
+        advance_time("1m");
         // Re-track flips it back to tracked (most recent switch wins).
         cmd_track(TrackArgs {
             field: "mood".to_string(),
