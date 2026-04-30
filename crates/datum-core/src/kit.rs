@@ -72,6 +72,14 @@ pub struct FieldEntry {
     /// Stacking order. Higher renders on top.
     #[serde(default, rename = "zIndex")]
     pub z_index: Option<f64>,
+    /// Anchor field whose resolved (pos, size) drive this field's effective
+    /// position at render time. When set, `pos` is reinterpreted as the
+    /// pos-ratio against the anchor and `size` as the size-ratio (mapping to
+    /// [`FieldSpec::anchor_pos_ratio`] / [`FieldSpec::anchor_size_ratio`]),
+    /// and the field's own `y`/`height` are not stored — resolution happens
+    /// at render time via [`crate::field_spec::resolve_positions`].
+    #[serde(default)]
+    pub relative_to: Option<String>,
     /// Identity-keys declaration (`-K` flag surface).
     #[serde(default)]
     pub id_keys: Vec<String>,
@@ -146,11 +154,25 @@ impl FieldEntry {
 
         let mut spec = FieldSpec::new(&self.name, verb);
         spec.color = color_resolved;
-        spec.y = self.pos;
-        spec.height = self.size;
         spec.z_index = self.z_index;
         spec.id_keys = self.id_keys;
         spec.data_keys = self.data_keys;
+
+        // When `relative_to` is set, `pos`/`size` are reinterpreted as ratios
+        // against the anchor. The field's own `y`/`height` stay None — the
+        // effective position is derived at render time from the anchor's
+        // resolved triple. Triple invariant: relative_to/anchor_pos_ratio/
+        // anchor_size_ratio are all-or-nothing, with sensible defaults of 0.0
+        // for an anchored field that omits one ratio (covers the user who
+        // writes `relative_to = "body"` and forgets `pos`).
+        if let Some(anchor) = self.relative_to {
+            spec.relative_to = Some(anchor);
+            spec.anchor_pos_ratio = Some(self.pos.unwrap_or(0.0));
+            spec.anchor_size_ratio = Some(self.size.unwrap_or(1.0));
+        } else {
+            spec.y = self.pos;
+            spec.height = self.size;
+        }
 
         if !self.states.is_empty() {
             let allowed: Vec<String> = self.states.iter().map(|s| s.name.clone()).collect();
@@ -192,17 +214,32 @@ impl FieldEntry {
             _ => None,
         };
 
+        // Anchored specs project `relative_to`/anchor_pos_ratio/anchor_size_ratio
+        // back into TOML's `relative_to`/`pos`/`size` shape. Absolute specs
+        // emit y/height as `pos`/`size`. An anchored spec never carries a
+        // standalone y/height, so the projection is unambiguous.
+        let (pos, size, relative_to) = if let Some(anchor) = &spec.relative_to {
+            (
+                spec.anchor_pos_ratio,
+                spec.anchor_size_ratio,
+                Some(anchor.clone()),
+            )
+        } else {
+            (spec.y, spec.height, None)
+        };
+
         Self {
             name: spec.field.clone(),
             default_verb,
             kind: None,
-            pos: spec.y,
-            size: spec.height,
+            pos,
+            size,
             color: spec.color.clone(),
             hidden: false,
             state_pos: None,
             state_size: None,
             z_index: spec.z_index,
+            relative_to,
             id_keys: spec.id_keys.clone(),
             data_keys: spec.data_keys.clone(),
             states,
@@ -287,6 +324,7 @@ name = "japan"
             state_pos: None,
             state_size: None,
             z_index: None,
+            relative_to: None,
             id_keys: vec![],
             data_keys: vec![],
             states: vec![],
@@ -309,6 +347,7 @@ name = "japan"
             state_pos: None,
             state_size: None,
             z_index: None,
+            relative_to: None,
             id_keys: vec![],
             data_keys: vec![],
             states: vec![
@@ -340,6 +379,62 @@ name = "japan"
         assert!(!spec.state_colors.contains_key("sad"));
         // Derived aliases populated from regenerate at the end of into_spec.
         assert!(!spec.derived_aliases.is_empty());
+    }
+
+    #[test]
+    fn parses_field_with_relative_to() {
+        // `relative_to` reinterprets `pos` and `size` as anchor ratios.
+        let src = r##"
+[kit]
+name = "anchored"
+
+[[field]]
+name = "body"
+default_verb = "occur"
+pos = 0.20
+size = 0.40
+
+[[field]]
+name = "contacts"
+default_verb = "occur"
+relative_to = "body"
+pos = 0.10
+size = 0.05
+"##;
+        let kit = KitToml::from_str(src).unwrap();
+        let contacts = kit.fields.iter().find(|f| f.name == "contacts").unwrap();
+        assert_eq!(contacts.relative_to.as_deref(), Some("body"));
+        assert_eq!(contacts.pos, Some(0.10));
+        assert_eq!(contacts.size, Some(0.05));
+
+        // Into-spec maps the ratios into the FieldSpec anchor triple and
+        // leaves y/height unset (resolution happens at render time).
+        let spec = contacts.clone().into_spec(None).unwrap();
+        assert_eq!(spec.relative_to.as_deref(), Some("body"));
+        assert_eq!(spec.anchor_pos_ratio, Some(0.10));
+        assert_eq!(spec.anchor_size_ratio, Some(0.05));
+        assert!(spec.y.is_none());
+        assert!(spec.height.is_none());
+    }
+
+    #[test]
+    fn anchored_round_trip_preserves_relative_to() {
+        let mut anchor = FieldSpec::new("body", Verb::Occur);
+        anchor.y = Some(0.20);
+        anchor.height = Some(0.40);
+
+        let mut dependent = FieldSpec::new("contacts", Verb::Occur);
+        dependent.relative_to = Some("body".into());
+        dependent.anchor_pos_ratio = Some(0.10);
+        dependent.anchor_size_ratio = Some(0.05);
+
+        let kit = KitToml::from_field_specs("anchored", None, &[anchor, dependent]);
+        let toml = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&toml).unwrap();
+        let contacts = back.fields.iter().find(|f| f.name == "contacts").unwrap();
+        assert_eq!(contacts.relative_to.as_deref(), Some("body"));
+        assert_eq!(contacts.pos, Some(0.10));
+        assert_eq!(contacts.size, Some(0.05));
     }
 
     #[test]

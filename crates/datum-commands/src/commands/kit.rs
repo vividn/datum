@@ -13,8 +13,11 @@
 use std::fs;
 use std::path::Path;
 
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use datum_core::db::Db;
+use datum_core::field_spec::{detect_anchor_cycles, format_cycle};
 use datum_core::kit::{FieldEntry, KitToml};
 use datum_core::kit_color::resolve_color;
 
@@ -49,6 +52,40 @@ fn install(args: KitInstallArgs, db: &Db) -> Result<()> {
             ..entry
         };
         specs.push(entry_with_resolved.into_spec(Some(resolved))?);
+    }
+
+    // Cycle detection on the kit's own anchor graph. Cycles abort install —
+    // there's no sensible interpretation of `A relative_to B relative_to A`.
+    // Checked across the kit's specs alone (cross-kit anchors fall through to
+    // the missing-anchor warning instead, which is non-fatal).
+    let spec_map: HashMap<String, _> = specs.iter().map(|s| (s.field.clone(), s.clone())).collect();
+    let cycles = detect_anchor_cycles(&spec_map);
+    if !cycles.is_empty() {
+        let rendered: Vec<String> = cycles.iter().map(|c| format_cycle(c)).collect();
+        anyhow::bail!(
+            "Cycle detected in field positioning: {}",
+            rendered.join("; ")
+        );
+    }
+
+    // Missing-anchor diagnostics: anchors that point at fields not in this
+    // kit (and not already in the DB) get a warning. The dependent will
+    // fall back to absolute positioning at render time.
+    let mut missing: Vec<(String, String)> = Vec::new();
+    for spec in &specs {
+        if let Some(anchor) = spec.relative_to.as_deref() {
+            if !spec_map.contains_key(anchor) && db.load_spec(anchor)?.is_none() {
+                missing.push((spec.field.clone(), anchor.to_string()));
+            }
+        }
+    }
+    if !missing.is_empty() {
+        for (field, anchor) in &missing {
+            eprintln!(
+                "warning: field '{}' references missing anchor '{}'; falling back to absolute positioning",
+                field, anchor
+            );
+        }
     }
 
     let report = db.install_kit(&kit.kit.name, &specs, args.force)?;

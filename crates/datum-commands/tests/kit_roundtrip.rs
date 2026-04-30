@@ -149,6 +149,156 @@ default_verb = "start"
 }
 
 #[test]
+fn install_anchored_field_round_trips_relative_to() {
+    let dir = tempfile::tempdir().unwrap();
+    let in_path = dir.path().join("anchored.toml");
+    let out_path = dir.path().join("export.toml");
+    fs::write(
+        &in_path,
+        r##"[kit]
+name = "anchored"
+
+[[field]]
+name = "body"
+default_verb = "occur"
+pos = 0.20
+size = 0.40
+
+[[field]]
+name = "contacts"
+default_verb = "occur"
+relative_to = "body"
+pos = 0.10
+size = 0.05
+"##,
+    )
+    .unwrap();
+
+    let db = fresh_db();
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "install".into(),
+            in_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+
+    let contacts = db.load_spec("contacts").unwrap().unwrap();
+    assert_eq!(contacts.relative_to.as_deref(), Some("body"));
+    assert_eq!(contacts.anchor_pos_ratio, Some(0.10));
+    assert_eq!(contacts.anchor_size_ratio, Some(0.05));
+    assert!(contacts.y.is_none());
+    assert!(contacts.height.is_none());
+
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "export".into(),
+            "anchored".into(),
+            out_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+    let exported = fs::read_to_string(&out_path).unwrap();
+    let kit = datum_core::kit::KitToml::from_str(&exported).unwrap();
+    let contacts = kit.fields.iter().find(|f| f.name == "contacts").unwrap();
+    assert_eq!(contacts.relative_to.as_deref(), Some("body"));
+    assert_eq!(contacts.pos, Some(0.10));
+    assert_eq!(contacts.size, Some(0.05));
+}
+
+#[test]
+fn install_rejects_anchor_cycle() {
+    let dir = tempfile::tempdir().unwrap();
+    let in_path = dir.path().join("cycle.toml");
+    fs::write(
+        &in_path,
+        r##"[kit]
+name = "cyclic"
+
+[[field]]
+name = "a"
+default_verb = "occur"
+relative_to = "b"
+pos = 0.1
+size = 0.5
+
+[[field]]
+name = "b"
+default_verb = "occur"
+relative_to = "c"
+pos = 0.1
+size = 0.5
+
+[[field]]
+name = "c"
+default_verb = "occur"
+relative_to = "a"
+pos = 0.1
+size = 0.5
+"##,
+    )
+    .unwrap();
+    let db = fresh_db();
+    let err = dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "install".into(),
+            in_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("Cycle detected"),
+        "expected cycle error, got: {msg}"
+    );
+    // Nothing should have been installed.
+    assert!(db.list_kits().unwrap().is_empty());
+}
+
+#[test]
+fn install_warns_on_missing_anchor_but_succeeds() {
+    let dir = tempfile::tempdir().unwrap();
+    let in_path = dir.path().join("missing.toml");
+    fs::write(
+        &in_path,
+        r##"[kit]
+name = "missing-anchor"
+
+[[field]]
+name = "contacts"
+default_verb = "occur"
+relative_to = "body"
+pos = 0.10
+size = 0.05
+"##,
+    )
+    .unwrap();
+    let db = fresh_db();
+    // Install must succeed despite the dangling anchor — slice 2 specifies
+    // missing anchors as a warning, not an error.
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "install".into(),
+            in_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+    assert!(db.load_spec("contacts").unwrap().is_some());
+}
+
+#[test]
 fn install_skips_existing_user_field_without_force() {
     use datum_core::entry::Verb;
     use datum_core::field_spec::FieldSpec;
