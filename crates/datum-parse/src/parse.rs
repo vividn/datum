@@ -671,17 +671,44 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
 }
 
 fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
-    // `now` only consumes `-A/--show-all`. Use OutputArgs FLAG_SPECS for
-    // the registry so the spec stays canonical, but only honor the
-    // show-all bit on the way out.
+    // `now` consumes `-A/--show-all` (via OutputArgs registry, kept
+    // canonical) plus its own band-rendering flags: `--bare`, `--no-color`,
+    // `--cols`.
     let mut composed = OutputArgs::default();
     let registry: Vec<LiftedSpec<OutputArgs>> = input::output_args::FLAG_SPECS
         .iter()
         .filter(|s| s.short == Some('A'))
         .map(|s| lift(|p: &mut OutputArgs| p, s))
         .collect();
+    let mut bare = false;
+    let mut no_color = false;
+    let mut cols: Option<u16> = None;
     let mut i = 0;
     while i < tail.len() {
+        match split_flag(tail[i]) {
+            FlagSplit::Long("bare") => {
+                bare = true;
+                i += 1;
+                continue;
+            }
+            FlagSplit::Long("no-color") => {
+                no_color = true;
+                i += 1;
+                continue;
+            }
+            FlagSplit::Long("cols") => {
+                let (v, ni) = take_value(tail, i, None, "--cols")?;
+                cols = Some(parse_f64(v, "--cols")? as u16);
+                i = ni;
+                continue;
+            }
+            FlagSplit::LongAttached("cols", v) => {
+                cols = Some(parse_f64(v, "--cols")? as u16);
+                i += 1;
+                continue;
+            }
+            _ => {}
+        }
         if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
@@ -690,6 +717,9 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     }
     Ok(NowArgs {
         show_all: composed.show_all,
+        bare,
+        no_color,
+        cols,
     })
 }
 
@@ -1939,23 +1969,6 @@ fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
             }
             FlagSplit::Long("watch") | FlagSplit::Short('w') => {
                 out.watch = true;
-                i += 1;
-            }
-            FlagSplit::Long("terminal") | FlagSplit::Short('T') => {
-                out.terminal = true;
-                i += 1;
-            }
-            FlagSplit::Long("no-color") => {
-                out.no_color = true;
-                i += 1;
-            }
-            FlagSplit::Long("cols") => {
-                let (v, ni) = take_value(tail, i, None, "--cols")?;
-                out.cols = Some(parse_f64(v, "--cols")? as u16);
-                i = ni;
-            }
-            FlagSplit::LongAttached("cols", v) => {
-                out.cols = Some(parse_f64(v, "--cols")? as u16);
                 i += 1;
             }
             FlagSplit::Positional(_) => {

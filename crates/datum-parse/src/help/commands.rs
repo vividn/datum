@@ -334,7 +334,7 @@ const TAIL_FLAGS: &[FlagSpec] = &[
 
 const HEAD_BODY: &str = "USAGE:\n  datum head [FIELD]\n\nOPTIONS:\n  -n, --limit <N>   Number of entries (default 10)\n";
 
-const NOW_BODY: &str = "USAGE:\n  datum now [-A]\n\n  -A  Show ignored fields too (dim)\n";
+const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
 
 const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n";
 
@@ -382,7 +382,7 @@ const IDS_BODY: &str = "USAGE:\n  datum ids [FIELD] [-n N] [--oldest-first] [--s
 
 const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  --json                   Emit layout JSON instead of SVG (debug)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
 
-const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Omit for now-only view.\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --now-width <DUR>        Width of the right \"now\" panel in time units (default 5m)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  -T, --terminal           Render ANSI/Unicode block art instead of SVG\n                           (auto when stdout is a TTY and no output file is set)\n  --no-color               Disable ANSI color in --terminal mode\n  --cols <N>               Override terminal width in cells (auto-detected from $COLUMNS)\n  -w, --watch              Redraw every minute\n";
+const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Omit for now-only view.\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --now-width <DUR>        Width of the right \"now\" panel in time units (default 5m)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  -w, --watch              Redraw every minute\n";
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
@@ -591,21 +591,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         display_input_name: false,
     },
     CommandSpec {
-        name: "now",
-        aliases: &[],
-        category: Category::Read,
-        summary: "current state of tracked fields",
-        top_summary: Some("Show current state of tracked fields"),
-        long_description: None,
-        usage: &["datum now [-A]"],
-        args: NO_ARGS,
-        flags: NO_FLAGS,
-        examples: NO_EXAMPLES,
-        summary_col: 0,
-        body_override: Some(NOW_BODY),
-        display_input_name: false,
-    },
-    CommandSpec {
         name: "get",
         aliases: &[],
         category: Category::Read,
@@ -654,8 +639,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "nowview",
         aliases: &[],
         category: Category::Render,
-        summary: "render a near-current-time band view (terminal or SVG)",
-        top_summary: Some("Render a nowview — terminal block art by default, SVG with -o"),
+        summary: "render an SVG showing each field's current state plus history",
+        top_summary: Some("Render a nowview SVG (drop -o to write to stdout)"),
         long_description: None,
         usage: &["datum nowview [OPTIONS]"],
         args: NO_ARGS,
@@ -663,6 +648,21 @@ pub const COMMANDS: &[CommandSpec] = &[
         examples: NO_EXAMPLES,
         summary_col: 27,
         body_override: Some(NOWVIEW_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "now",
+        aliases: &[],
+        category: Category::Render,
+        summary: "current state of tracked fields + terminal nowview band",
+        top_summary: Some("Show current state of tracked fields + terminal nowview band"),
+        long_description: None,
+        usage: &["datum now [-A] [--bare]"],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 0,
+        body_override: Some(NOW_BODY),
         display_input_name: false,
     },
     CommandSpec {

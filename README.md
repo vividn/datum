@@ -120,7 +120,6 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 - `tail` — Show recent entries
 - `head` — Show oldest entries
-- `now` — Show current state of tracked fields
 - `get` — Print a single entry by id or slug
 - `grep` — Regex search over entry JSON content
 - `history` — Show the full modification trail for an entry
@@ -129,7 +128,8 @@ datum [--db NAME_OR_PATH] <command> [args]
 ## RENDER
 
 - `dayview` — Render a dayview SVG (or dump layout JSON)
-- `nowview` — Render a nowview — terminal block art by default, SVG with -o
+- `nowview` — Render a nowview SVG (drop -o to write to stdout)
+- `now` — Show current state of tracked fields + terminal nowview band
 
 ## ADMIN
 

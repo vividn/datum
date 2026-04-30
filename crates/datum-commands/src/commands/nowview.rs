@@ -6,8 +6,12 @@
 //! SvelteKit PWA can render the same view client-side via WASM. This file
 //! is the thin CLI wrapper: it pulls entries from SQLite, resolves colors
 //! through `crate::render::colors`, and writes the chosen output format.
+//!
+//! Terminal rendering used to live here too, gated by `--terminal`. Per
+//! da-raz that role belongs to `datum now`, which renders a terminal
+//! nowview band by default. `nowview` is now SVG-only, paralleling
+//! `dayview`.
 
-use std::io::IsTerminal;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -19,7 +23,6 @@ use datum_layout::nowview::{
     NowviewPoint,
 };
 use datum_layout::nowview_svg::{render_nowview_svg, with_xml_declaration, wrap_svg_in_html};
-use datum_layout::nowview_terminal::{render_nowview_terminal, TerminalConfig};
 use datum_parse::time::parse_duration_str::parse_duration;
 use serde_json::Value as JsonValue;
 
@@ -69,42 +72,6 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
 
     let fields = build_fields(db, end, history_minutes)?;
 
-    // Decide rendering path. `--terminal` forces terminal; otherwise we
-    // pick terminal automatically when there's no output file and stdout
-    // is a TTY.
-    let auto_terminal =
-        args.output_file.is_none() && std::io::stdout().is_terminal();
-    if args.terminal || auto_terminal {
-        let cols = args.cols.unwrap_or_else(detect_terminal_cols);
-        let use_color = !args.no_color
-            && std::env::var_os("NO_COLOR").is_none()
-            && std::io::stdout().is_terminal();
-        let term_cfg = TerminalConfig {
-            end_ms,
-            history_minutes: if history_minutes > 0.0 {
-                history_minutes
-            } else {
-                60.0 // sensible default for terminal — show last hour
-            },
-            now_width_minutes,
-            cols,
-            use_color,
-            current_time_label: format_local_hh_mm(end),
-        };
-        let text = render_nowview_terminal(&fields, &term_cfg);
-        match args.output_file.as_deref() {
-            None => {
-                println!("{text}");
-                return Ok(());
-            }
-            Some(path) => {
-                std::fs::write(path, format!("{text}\n"))
-                    .with_context(|| format!("write {path}"))?;
-                return Ok(());
-            }
-        }
-    }
-
     let config = NowviewConfig {
         end_ms,
         history_minutes,
@@ -126,20 +93,6 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         }
         Some(path) => write_output(path, &svg),
     }
-}
-
-/// Detect terminal width via `tput cols` env hint or fall back to 80.
-/// Pure-Rust path: read the COLUMNS env var. Many shells export it; if
-/// not set, 80 is a safe baseline that still fits modern terminals.
-fn detect_terminal_cols() -> u16 {
-    if let Ok(s) = std::env::var("COLUMNS") {
-        if let Ok(n) = s.parse::<u16>() {
-            if n >= 20 {
-                return n;
-            }
-        }
-    }
-    80
 }
 
 fn write_output(path: &str, svg: &str) -> Result<()> {
@@ -197,7 +150,11 @@ fn duration_minutes(s: &str) -> Result<f64> {
 
 /// Build the per-field input list for the layout: blocks (closed/ongoing)
 /// and points, with state colors pre-resolved.
-fn build_fields(
+///
+/// Exposed crate-wide so `datum now` can reuse the exact same data shape
+/// for its terminal nowview band (per da-raz: `now` renders the band by
+/// default; `nowview` is SVG-only).
+pub(crate) fn build_fields(
     db: &Db,
     end: DateTime<Utc>,
     history_minutes: f64,
@@ -409,7 +366,7 @@ fn state_label(v: Option<&JsonValue>) -> Option<String> {
     })
 }
 
-fn format_local_hh_mm(t: DateTime<Utc>) -> String {
+pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
     let local = t.with_timezone(&Local);
     format!("{}:{:02}", local.hour(), local.minute())
 }

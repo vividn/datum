@@ -1707,7 +1707,63 @@ pub(crate) fn cmd_now(args: NowArgs, db: &Db) -> Result<()> {
         &overlap_counts,
         args.show_all,
     );
+
+    // da-raz: `datum now` also renders a terminal nowview band beneath the
+    // active-states list. `--bare` suppresses it (e.g. for piping). The
+    // band defaults to a 1-hour window, paralleling the SVG `nowview`
+    // surface but in cells instead of pixels.
+    if !args.bare {
+        print_now_band(&args, db);
+    }
     Ok(())
+}
+
+/// Render the terminal nowview band beneath `datum now`. Mirrors the old
+/// `datum nowview --terminal` path that lived in commands/nowview.rs.
+fn print_now_band(args: &NowArgs, db: &Db) {
+    use std::io::IsTerminal;
+
+    use chrono::Utc;
+    use datum_layout::nowview_terminal::{render_nowview_terminal, TerminalConfig};
+
+    use crate::commands::nowview::{build_fields, format_local_hh_mm};
+
+    const HISTORY_MINUTES: f64 = 60.0;
+    const NOW_WIDTH_MINUTES: f64 = 5.0;
+
+    let end = Utc::now();
+    let fields = match build_fields(db, end, HISTORY_MINUTES) {
+        Ok(f) => f,
+        Err(_) => return, // never block the state list on a band-render error
+    };
+    let cols = args.cols.unwrap_or_else(detect_terminal_cols);
+    let use_color = !args.no_color
+        && std::env::var_os("NO_COLOR").is_none()
+        && std::io::stdout().is_terminal();
+    let cfg = TerminalConfig {
+        end_ms: end.timestamp_millis(),
+        history_minutes: HISTORY_MINUTES,
+        now_width_minutes: NOW_WIDTH_MINUTES,
+        cols,
+        use_color,
+        current_time_label: format_local_hh_mm(end),
+    };
+    let band = render_nowview_terminal(&fields, &cfg);
+    println!("{band}");
+}
+
+/// Detect terminal width via `$COLUMNS`, falling back to 80. Pure-Rust
+/// (no termios crate) so the code path stays wasm-safe in case a host
+/// embedder ever calls into `cmd_now` from a non-tty context.
+fn detect_terminal_cols() -> u16 {
+    if let Ok(s) = std::env::var("COLUMNS") {
+        if let Ok(n) = s.parse::<u16>() {
+            if n >= 20 {
+                return n;
+            }
+        }
+    }
+    80
 }
 
 /// Prepend a stale-sync warning to `datum now` when sync coverage looks
@@ -3623,7 +3679,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Empty db
-        cmd_now(NowArgs { show_all: false }, &db).unwrap();
+        cmd_now(NowArgs { show_all: false, bare: true, ..NowArgs::default() }, &db).unwrap();
 
         // With some tracked fields and entries
         let mut args = LogArgs::fresh("mood");
@@ -3632,8 +3688,8 @@ mod tests {
         // da-2sr: writing the switch entry alone makes mood tracked; no
         // separate set_tracked / spec write is needed.
 
-        cmd_now(NowArgs { show_all: false }, &db).unwrap();
-        cmd_now(NowArgs { show_all: true }, &db).unwrap();
+        cmd_now(NowArgs { show_all: false, bare: true, ..NowArgs::default() }, &db).unwrap();
+        cmd_now(NowArgs { show_all: true, bare: true, ..NowArgs::default() }, &db).unwrap();
     }
 
     // ─── id-template tests (A1 acceptance) ──────────────────────────────────

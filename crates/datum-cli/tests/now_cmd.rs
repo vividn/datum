@@ -221,6 +221,14 @@ fn now_dispatches_end_to_end_via_run_cli() {
     // `-A` is a presence-only flag; its expansion belongs to the render tests.
     run_cli(&["now", "-A"], &db).expect("now -A dispatch");
 
+    // da-raz: `now` now also accepts the band-tuning flags ported from
+    // the old `nowview --terminal` mode. They must dispatch without error
+    // even when stdout isn't a TTY (the band still emits, just without
+    // ANSI color).
+    run_cli(&["now", "--bare"], &db).expect("now --bare dispatch");
+    run_cli(&["now", "--no-color", "--cols", "60"], &db)
+        .expect("now --no-color --cols dispatch");
+
     // Sanity: both writes landed. da-2sr: `track` now writes a switch with
     // value=NULL, and the `switch happy` is a second switch entry.
     let entries = db.entries_for_field("mood", None).unwrap();
