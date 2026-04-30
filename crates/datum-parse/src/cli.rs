@@ -14,8 +14,9 @@ use crate::input::{DurationArgs, OutputArgs, TimeArgs};
 
 /// Legacy flat output-flags shape, kept as a transitional shim for the
 /// per-command Args structs that haven't yet adopted the composed
-/// [`OutputArgs`] field. Phase A (da-e2e) migrated `LogArgs`; Phases B/C/D
-/// retire this for the remaining commands.
+/// [`OutputArgs`] field. Phase A (da-e2e) migrated `LogArgs`; Phase C
+/// (da-6qj) migrated the mutate commands (Update/Edit/Delete/Undo).
+/// Phase B/D retire this for the remaining read/spec commands.
 #[derive(Debug, Clone, Default)]
 pub struct OutputFlags {
     pub show: String,
@@ -394,7 +395,8 @@ pub struct UpdateArgs {
     pub comment: Vec<String>,
     pub dry_run: bool,
     pub strict: bool,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 impl UpdateArgs {
@@ -409,7 +411,7 @@ impl UpdateArgs {
             comment: Vec::new(),
             dry_run: false,
             strict: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 
@@ -425,7 +427,7 @@ impl UpdateArgs {
             comment: Vec::new(),
             dry_run: false,
             strict: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 }
@@ -443,7 +445,8 @@ pub struct RetimeArgs {
 #[derive(Debug)]
 pub struct EditArgs {
     pub id_or_slug: String,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 #[derive(Debug)]
@@ -455,7 +458,8 @@ pub struct DeleteArgs {
     pub force: bool,
     pub dry_run: bool,
     pub strict: bool,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 impl DeleteArgs {
@@ -465,7 +469,7 @@ impl DeleteArgs {
             force: false,
             dry_run: false,
             strict: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 
@@ -475,7 +479,7 @@ impl DeleteArgs {
             force: false,
             dry_run: false,
             strict: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 }
@@ -486,7 +490,8 @@ pub struct UndoArgs {
     pub to_version: Option<u32>,
     pub force: bool,
     pub window: String,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 impl UndoArgs {
@@ -496,7 +501,7 @@ impl UndoArgs {
             to_version: None,
             force: false,
             window: "15m".to_string(),
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 }

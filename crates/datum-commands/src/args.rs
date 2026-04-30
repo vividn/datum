@@ -298,8 +298,8 @@ impl LogArgsExt for LogArgs {
     }
 }
 
-/// Generic `.output()` bridge for every non-LogArgs intent that carries
-/// an [`OutputFlags`] bag.
+/// Generic `.output()` bridge for intents that still carry the legacy
+/// flat [`OutputFlags`] bag (Phase B/D-pending commands).
 pub trait OutputFlagsExt {
     fn output(&self) -> OutputArgs;
 }
@@ -315,12 +315,26 @@ macro_rules! impl_output_flags_ext {
 }
 
 impl_output_flags_ext!(TailArgs);
-impl_output_flags_ext!(UpdateArgs);
-impl_output_flags_ext!(EditArgs);
-impl_output_flags_ext!(DeleteArgs);
-impl_output_flags_ext!(UndoArgs);
 impl_output_flags_ext!(GrepArgs);
 impl_output_flags_ext!(GetArgs);
+
+// Phase C (da-6qj) — mutate commands carry the composed `OutputArgs`
+// directly. The same `.output()` method shape is preserved by routing
+// through `resolve_parse_output_args` against `&self.output`.
+macro_rules! impl_output_args_ext {
+    ($ty:ty) => {
+        impl OutputFlagsExt for $ty {
+            fn output(&self) -> OutputArgs {
+                resolve_parse_output_args(&self.output)
+            }
+        }
+    };
+}
+
+impl_output_args_ext!(UpdateArgs);
+impl_output_args_ext!(EditArgs);
+impl_output_args_ext!(DeleteArgs);
+impl_output_args_ext!(UndoArgs);
 
 /// `.resolved_path()` on [`MigrateImportArgs`].
 pub trait MigrateImportArgsExt {

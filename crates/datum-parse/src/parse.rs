@@ -412,53 +412,6 @@ fn spec_label<P: 'static>(spec: &LiftedSpec<P>) -> String {
     }
 }
 
-// ─── Output-flag parsing (shared across every subcommand) ────────────────
-
-/// Try to consume one `--show` / `-A` / `-o` / `--format-string` /
-/// `--show-all` flag at `i`. Returns the new position if consumed, or
-/// `None` if the token at `i` isn't one of our output flags.
-fn try_consume_output_flag(
-    tail: &[&str],
-    i: usize,
-    out: &mut OutputFlags,
-) -> Result<Option<usize>> {
-    let tok = tail[i];
-    match split_flag(tok) {
-        FlagSplit::Long("show") => {
-            let (v, ni) = take_value(tail, i, None, "--show")?;
-            out.show = v.to_string();
-            Ok(Some(ni))
-        }
-        FlagSplit::LongAttached("show", v) => {
-            out.show = v.to_string();
-            Ok(Some(i + 1))
-        }
-        FlagSplit::Long("show-all") | FlagSplit::Short('A') => {
-            out.show_all = true;
-            Ok(Some(i + 1))
-        }
-        FlagSplit::LongAttached("show-all", _) => {
-            out.show_all = true;
-            Ok(Some(i + 1))
-        }
-        FlagSplit::Long("format-string") | FlagSplit::Short('o') => {
-            let lbl = if tok.starts_with("--") {
-                "--format-string"
-            } else {
-                "-o"
-            };
-            let (v, ni) = take_value(tail, i, None, lbl)?;
-            out.format_string = Some(v.to_string());
-            Ok(Some(ni))
-        }
-        FlagSplit::LongAttached("format-string", v) | FlagSplit::ShortAttached('o', v) => {
-            out.format_string = Some(v.to_string());
-            Ok(Some(i + 1))
-        }
-        _ => Ok(None),
-    }
-}
-
 // ─── Subcommand parsers ──────────────────────────────────────────────────
 
 /// Build the per-command flag registry for logging verbs (occur, start,
@@ -848,54 +801,63 @@ fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
         force: composed.force,
         dry_run: composed.dry_run,
         strict: composed.strict,
-        output_flags: flatten_output(composed.output),
+        output: composed.output,
     })
 }
 
+#[derive(Default)]
+struct UndoParsing {
+    output: OutputArgs,
+    to_version: Option<u32>,
+    force: bool,
+    window: Option<String>,
+}
+
+fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
+    let mut r: Vec<LiftedSpec<UndoParsing>> = Vec::new();
+    for spec in input::output_args::FLAG_SPECS {
+        r.push(lift(|p: &mut UndoParsing| &mut p.output, spec));
+    }
+    r.push(local_value(None, Some("to-version"), |p, v| {
+        p.to_version = Some(parse_u32(v, "--to-version")?);
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("force"), |p| {
+        p.force = true;
+        Ok(())
+    }));
+    r.push(local_value(None, Some("window"), |p, v| {
+        p.window = Some(v.to_string());
+        Ok(())
+    }));
+    r
+}
+
 fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
-    let mut out = UndoArgs::fresh();
+    let registry = undo_args_registry();
+    let mut composed = UndoParsing::default();
     let mut pos: Vec<&str> = Vec::new();
     let mut i = 0;
     while i < tail.len() {
-        let tok = tail[i];
-        if let Some(ni) = try_consume_output_flag(tail, i, &mut out.output_flags)? {
+        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
             i = ni;
             continue;
         }
-        match split_flag(tok) {
+        match split_flag(tail[i]) {
             FlagSplit::Positional(s) => {
                 pos.push(s);
-                i += 1;
-            }
-            FlagSplit::Long("to-version") => {
-                let (v, ni) = take_value(tail, i, None, "--to-version")?;
-                out.to_version = Some(parse_u32(v, "--to-version")?);
-                i = ni;
-            }
-            FlagSplit::LongAttached("to-version", v) => {
-                out.to_version = Some(parse_u32(v, "--to-version")?);
-                i += 1;
-            }
-            FlagSplit::Long("force") => {
-                out.force = true;
-                i += 1;
-            }
-            FlagSplit::Long("window") => {
-                let (v, ni) = take_value(tail, i, None, "--window")?;
-                out.window = v.to_string();
-                i = ni;
-            }
-            FlagSplit::LongAttached("window", v) => {
-                out.window = v.to_string();
                 i += 1;
             }
             f => return Err(unknown_flag(f)),
         }
     }
-    if let Some(p) = pos.first() {
-        out.id_or_slug = Some(p.to_string());
-    }
-    Ok(out)
+    Ok(UndoArgs {
+        id_or_slug: pos.first().map(|s| s.to_string()),
+        to_version: composed.to_version,
+        force: composed.force,
+        window: composed.window.unwrap_or_else(|| "15m".to_string()),
+        output: composed.output,
+    })
 }
 
 #[derive(Default)]
@@ -1015,7 +977,7 @@ fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(EditArgs {
         id_or_slug,
-        output_flags: flatten_output(composed),
+        output: composed,
     })
 }
 
@@ -1096,7 +1058,7 @@ fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
         comment: composed.comment,
         dry_run: composed.dry_run,
         strict: composed.strict,
-        output_flags: flatten_output(composed.output),
+        output: composed.output,
     })
 }
 

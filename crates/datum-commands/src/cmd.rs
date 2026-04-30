@@ -4009,7 +4009,7 @@ mod tests {
             comment: Vec::new(),
             dry_run: false,
             strict: false,
-            output_flags: Default::default(),
+            output: Default::default(),
         }
     }
 
@@ -4430,7 +4430,7 @@ mod tests {
             to_version: None,
             force,
             window: window.to_string(),
-            output_flags: Default::default(),
+            output: Default::default(),
         }
     }
 
@@ -4663,7 +4663,7 @@ mod tests {
                 force: true,
                 dry_run: false,
                 strict: false,
-                output_flags: Default::default(),
+                output: Default::default(),
             },
             &db,
         )
@@ -4728,7 +4728,7 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         with_datum_editor(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output_flags: Default::default() }, &db).unwrap();
+            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() }, &db).unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -4758,7 +4758,7 @@ mod tests {
 
         // `true` ignores its args → tempfile is left untouched.
         with_datum_editor("true", || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output_flags: Default::default() }, &db).unwrap();
+            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() }, &db).unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -4789,7 +4789,7 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         let result = with_datum_editor_result(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output_flags: Default::default() }, &db)
+            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() }, &db)
         });
         let err = result.unwrap_err();
         assert!(
@@ -4862,7 +4862,7 @@ mod tests {
                 force: true,
                 dry_run: false,
                 strict: false,
-                output_flags: Default::default(),
+                output: Default::default(),
             },
             &db,
         )
@@ -4893,7 +4893,7 @@ mod tests {
                 force: true,
                 dry_run: false,
                 strict: false,
-                output_flags: Default::default(),
+                output: Default::default(),
             },
             &db,
         )

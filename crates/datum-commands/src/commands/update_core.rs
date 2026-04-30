@@ -483,7 +483,7 @@ mod tests {
             comment: Vec::new(),
             dry_run: false,
             strict: false,
-            output_flags: Default::default(),
+            output: Default::default(),
         }
     }
 
