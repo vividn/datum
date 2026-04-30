@@ -711,7 +711,25 @@ pub struct CheckArgs {
     pub json: bool,
 }
 
-/// `datum dayview` arguments — port of datum's `dayviewCmdArgs` (TS).
+/// Render orientation for `datum dayview`. Mirrors
+/// [`datum_layout::dayview::Orientation`] so callers don't need a layout
+/// dep just to construct args.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DayviewOrientation {
+    /// Time runs horizontally, days stack vertically (datum's original).
+    Vertical,
+    /// Time runs vertically, days stack horizontally (per bead da-a7f).
+    Horizontal,
+}
+
+impl Default for DayviewOrientation {
+    fn default() -> Self {
+        DayviewOrientation::Horizontal
+    }
+}
+
+/// `datum dayview` arguments — port of datum's `dayviewCmdArgs` (TS) plus
+/// the orientation knob from bead da-a7f.
 ///
 /// Defaults match the original. `width`, `height`, and `day_height` are
 /// `Option` so the command can apply datum's auto-sizing rules at dispatch
@@ -726,14 +744,15 @@ pub struct DayviewArgs {
     /// `--n-days`/`-n` — number of days. Default: 1 (when no other dates
     /// are given).
     pub n_days: Option<u32>,
-    /// `--width` — total SVG width in pixels. Default: 2000.
+    /// `--width` — total SVG width in pixels. Default: 2000 (vertical) or
+    /// derived from day-stack (horizontal).
     pub width: Option<f64>,
     /// `--height` — total SVG height in pixels. None → auto from
-    /// `day_height + n_days`.
+    /// `day_height + n_days` (vertical) or default time extent (horizontal).
     pub height: Option<f64>,
-    /// `--day-height` — per-day band height in pixels. Default: 100.
+    /// `--day-height` — per-day cross-axis extent in pixels. Default: 100.
     pub day_height: Option<f64>,
-    /// `--time-axis-height` — bottom time-axis strip height. Default: 15.
+    /// `--time-axis-height` — time-axis strip thickness. Default: 15.
     pub time_axis_height: f64,
     /// `--margin` — outer margin. Default: 2.
     pub margin: f64,
@@ -746,6 +765,9 @@ pub struct DayviewArgs {
     /// `--watch`/`-w` — redraw on a 5-minute interval (poll loop;
     /// follow-up will swap to DB-change events).
     pub watch: bool,
+    /// `--orientation horizontal|vertical` (or shorthand `--horizontal` /
+    /// `--vertical`). Defaults to horizontal per bead da-a7f.
+    pub orientation: DayviewOrientation,
 }
 
 impl DayviewArgs {
@@ -762,6 +784,7 @@ impl DayviewArgs {
             output_file: None,
             json: false,
             watch: false,
+            orientation: DayviewOrientation::default(),
         }
     }
 }

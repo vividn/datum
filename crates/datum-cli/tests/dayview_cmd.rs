@@ -36,6 +36,7 @@ fn dayview_writes_svg_to_output() {
         &[
             "dayview",
             "-o", &path,
+            "--vertical",
             "--width", "1200",
             "--day-height", "120",
         ],
@@ -127,9 +128,50 @@ fn dayview_n_days_stacks_multiple_rows() {
     assert_eq!(days.len(), 3);
 
     // Only the most recent day (today) should have the now-line.
-    assert!(days[0]["now_x"].is_null(), "day 0 (oldest) has no now_x");
-    assert!(days[1]["now_x"].is_null(), "day 1 has no now_x");
-    assert!(days[2]["now_x"].is_number(), "day 2 (today) has now_x");
+    assert!(days[0]["now_time_pos"].is_null(), "day 0 (oldest) has no now");
+    assert!(days[1]["now_time_pos"].is_null(), "day 1 has no now");
+    assert!(days[2]["now_time_pos"].is_number(), "day 2 (today) has now");
+}
+
+#[test]
+fn dayview_horizontal_orientation_round_trips_to_layout() {
+    let db = fresh_db();
+
+    let noon = local_noon_today_utc();
+    entry_builder("workout")
+        .verb(Verb::Start)
+        .time_start_utc(noon)
+        .time_end_utc(noon + chrono::Duration::hours(1))
+        .insert(&db);
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+
+    run_cli(
+        &["dayview", "--horizontal", "--json", "-o", &path],
+        &db,
+    )
+    .expect("dayview --horizontal dispatch");
+
+    let raw = std::fs::read_to_string(&path).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    assert_eq!(json["orientation"], "horizontal");
+}
+
+#[test]
+fn dayview_vertical_orientation_explicit_flag() {
+    let db = fresh_db();
+    let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+    run_cli(
+        &["dayview", "--orientation", "vertical", "--json", "-o", &path],
+        &db,
+    )
+    .expect("dayview --orientation vertical dispatch");
+
+    let raw = std::fs::read_to_string(&path).unwrap();
+    let json: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
+    assert_eq!(json["orientation"], "vertical");
 }
 
 #[test]

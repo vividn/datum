@@ -1788,6 +1788,23 @@ fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
                 out.margin = parse_f64(v, "--margin")?;
                 i += 1;
             }
+            FlagSplit::Long("orientation") => {
+                let (v, ni) = take_value(tail, i, None, "--orientation")?;
+                out.orientation = parse_orientation(v)?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("orientation", v) => {
+                out.orientation = parse_orientation(v)?;
+                i += 1;
+            }
+            FlagSplit::Long("horizontal") => {
+                out.orientation = DayviewOrientation::Horizontal;
+                i += 1;
+            }
+            FlagSplit::Long("vertical") => {
+                out.orientation = DayviewOrientation::Vertical;
+                i += 1;
+            }
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
                     "dayview takes no positional arguments".into(),
@@ -1797,6 +1814,16 @@ fn parse_dayview_args(tail: &[&str]) -> Result<DayviewArgs> {
         }
     }
     Ok(out)
+}
+
+fn parse_orientation(s: &str) -> Result<DayviewOrientation> {
+    match s {
+        "horizontal" | "h" => Ok(DayviewOrientation::Horizontal),
+        "vertical" | "v" => Ok(DayviewOrientation::Vertical),
+        other => Err(ParseError::InvalidArg(format!(
+            "--orientation must be 'horizontal' or 'vertical', got '{other}'"
+        ))),
+    }
 }
 
 fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {

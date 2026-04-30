@@ -23,9 +23,10 @@ use datum_core::entry::{Entry, EntryShape, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_layout::dayview::{
     compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
-    DayviewFieldInput, DayviewPoint,
+    DayviewFieldInput, DayviewPoint, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
+use datum_parse::cli::DayviewOrientation;
 use datum_parse::time::{parse_date_arg, DateArg};
 use serde_json::Value as JsonValue;
 
@@ -141,35 +142,55 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
 
     // 5. Resolve sizing per dayview.ts §44–78. Defaults: width=2000,
     //    day_height=100, time_axis_height=15, interday_margin=15, margin=2.
+    //    Orientation flips which dim `--height` derives `day_height` from
+    //    (vertical: total height; horizontal: total width).
+    let orientation = match args.orientation {
+        DayviewOrientation::Vertical => Orientation::Vertical,
+        DayviewOrientation::Horizontal => Orientation::Horizontal,
+    };
     let width = args.width.unwrap_or(DEFAULT_WIDTH);
-    let day_height = args.day_height.unwrap_or(DEFAULT_DAY_HEIGHT);
-    // If the user gave --height, derive day_height to fit; otherwise use
-    // day_height + interday_margin to grow total height. We keep the
-    // simpler "user picks height OR day_height" rule and rely on the
-    // layout to compute the total.
-    let day_height = match (args.height, args.day_height) {
-        (Some(total), None) => {
-            // Derive per-day height so the rows + axis + margins sum to total.
-            let usable = total - 2.0 * args.margin - args.time_axis_height
-                - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
-            if usable <= 0.0 || n_days == 0 {
-                day_height
-            } else {
-                (usable / n_days as f64).max(10.0)
+    let day_height_default = args.day_height.unwrap_or(DEFAULT_DAY_HEIGHT);
+    // If the user gave --height (vertical) or --width (horizontal) without
+    // an explicit --day-height, derive day_height to fit the day-stack
+    // axis. Otherwise use the configured day_height.
+    let day_height = match orientation {
+        Orientation::Vertical => match (args.height, args.day_height) {
+            (Some(total), None) => {
+                let usable = total - 2.0 * args.margin - args.time_axis_height
+                    - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
+                if usable <= 0.0 || n_days == 0 {
+                    day_height_default
+                } else {
+                    (usable / n_days as f64).max(10.0)
+                }
             }
-        }
-        _ => day_height,
+            _ => day_height_default,
+        },
+        Orientation::Horizontal => match (args.width, args.day_height) {
+            (Some(total), None) => {
+                let usable = total - 2.0 * args.margin - args.time_axis_height
+                    - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
+                if usable <= 0.0 || n_days == 0 {
+                    day_height_default
+                } else {
+                    (usable / n_days as f64).max(10.0)
+                }
+            }
+            _ => day_height_default,
+        },
     };
 
     let config = DayviewConfig {
         days: days_input,
         now_ms,
         width,
+        height: args.height,
         day_height,
         interday_margin: DEFAULT_INTERDAY_MARGIN,
         time_axis_height: args.time_axis_height,
         margin: args.margin,
         label_width: None,
+        orientation,
     };
 
     let layout = compute_dayview(&config);
