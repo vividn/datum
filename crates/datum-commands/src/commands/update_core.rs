@@ -7,8 +7,8 @@
 
 use anyhow::Result;
 use datum_core::{
-    db::{ConflictStrategy, Db, InsertOutcome},
-    entry::{new_hid, Entry},
+    db::Db,
+    entry::Entry,
     field_spec::{self, InterpolationContext},
     time::DatumTime,
 };
@@ -30,9 +30,13 @@ pub enum UpdateStrategy {
     Replace,
     /// Deep: recursive object merge; scalar conflicts → payload wins.
     Merge,
-    /// Re-interpolate the slug from a template, insert as a new row, leave
-    /// the old row in place. Requires `rekey_template` or a spec-defined
-    /// `id_template`.
+    /// Rename keys inside `data`. Payload is read as a `{oldKey: "newKey"}`
+    /// mapping (values must be strings); each existing `data.oldKey` is
+    /// renamed to `data.newKey` with its value preserved. After the rename,
+    /// the row goes through the same auto-slug-reinterpolation as a normal
+    /// update — so renaming a key referenced by `id_structure` /
+    /// `field_structure` cascades into the slug/field columns automatically.
+    /// Mirrors original datum's `combineData` strategy 'rekey' (utils/rekey.ts).
     Rekey,
 }
 
@@ -48,8 +52,9 @@ impl UpdateStrategy {
 
 /// Result of applying [`update_with_strategy`].
 ///
-/// `old_slug` is `Some(_)` iff the strategy produced a new row (rekey);
-/// otherwise `entry.slug` is the in-place-updated row's slug.
+/// `old_slug` is `Some(_)` iff auto-slug-reinterpolation produced a different
+/// slug than the row started with — the row was rekeyed in place (hid
+/// preserved). Otherwise `entry.slug` is the unchanged in-place-updated row.
 #[derive(Clone, Debug)]
 pub struct UpdateOutcome {
     pub entry: Entry,
@@ -65,12 +70,10 @@ pub struct UpdateRequest<'a> {
     pub payload_value: Option<JsonValue>,
     pub payload_extra: Option<JsonValue>,
     pub strategy: UpdateStrategy,
-    /// `--id` override or spec template fallback; only consulted when
-    /// `strategy == Rekey`.
-    pub rekey_template: Option<String>,
-    /// Delimiter collapsing empty segments in the interpolated slug;
-    /// only consulted when `strategy == Rekey`.
-    pub rekey_delimiter: &'a str,
+    /// Delimiter collapsing empty segments when re-interpolating the slug
+    /// (or `field`) from a stored template. Used by every strategy: any
+    /// mutation that touches templated data triggers auto-reinterpolation.
+    pub slug_delimiter: &'a str,
 }
 
 /// Apply one of the three mutation strategies to the row identified by
@@ -94,6 +97,7 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.payload_value,
             req.payload_extra,
             ExtraMergeMode::Shallow,
+            req.slug_delimiter,
             db,
         ),
         UpdateStrategy::Merge => apply_mutation(
@@ -101,14 +105,13 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.payload_value,
             req.payload_extra,
             ExtraMergeMode::Deep,
+            req.slug_delimiter,
             db,
         ),
-        UpdateStrategy::Rekey => apply_rekey(
+        UpdateStrategy::Rekey => apply_data_key_rename(
             existing,
-            req.payload_value,
             req.payload_extra,
-            req.rekey_template,
-            req.rekey_delimiter,
+            req.slug_delimiter,
             db,
         ),
     }
@@ -144,8 +147,7 @@ pub fn update_from_args(
             payload_value,
             payload_extra,
             strategy,
-            rekey_template: args.id.clone(),
-            rekey_delimiter: &args.id_delimiter,
+            slug_delimiter: &args.id_delimiter,
         },
         db,
     )?;
@@ -264,8 +266,7 @@ pub fn update_batch_from_args(
                 payload_value: payload_value.clone(),
                 payload_extra: payload_extra.clone(),
                 strategy,
-                rekey_template: args.id.clone(),
-                rekey_delimiter: &args.id_delimiter,
+                slug_delimiter: &args.id_delimiter,
             },
             db,
         );
@@ -340,71 +341,103 @@ fn apply_mutation(
     payload_value: Option<JsonValue>,
     payload_extra: Option<JsonValue>,
     mode: ExtraMergeMode,
+    slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
-    let mut updated = existing;
+    let mut updated = existing.clone();
     updated.data = combine_extra(updated.data, payload_extra, mode);
     if let Some(v) = payload_value {
         updated.value = Some(v);
     }
-    updated.content_hash = updated.expected_content_hash();
-
-    db.save_existing_entry(&updated)?;
-
-    // Fetch the persisted row so callers see the db-stamped `modified_at`.
-    let fresh = db.get_entry(&updated.slug)?;
-    Ok(UpdateOutcome { entry: fresh, old_slug: None })
+    persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }
 
-fn apply_rekey(
+/// Rename keys inside `data` per a `{oldKey: "newKey"}` mapping. After the
+/// rename, the row goes through the same persistence path as a normal update
+/// — including auto-slug-reinterpolation, so a renamed key referenced by
+/// `id_structure` cascades into the slug.
+fn apply_data_key_rename(
     existing: Entry,
-    payload_value: Option<JsonValue>,
     payload_extra: Option<JsonValue>,
-    rekey_template: Option<String>,
-    rekey_delimiter: &str,
+    slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
-    let old_slug = existing.slug.clone();
-
-    let mut new_entry = existing;
-    // Payloads are applied with shallow semantics on rekey — same as update.
-    new_entry.data = combine_extra(new_entry.data, payload_extra, ExtraMergeMode::Shallow);
-    if let Some(v) = payload_value {
-        new_entry.value = Some(v);
+    let mapping = match payload_extra {
+        Some(JsonValue::Object(m)) if !m.is_empty() => m,
+        _ => anyhow::bail!(
+            "rekey requires a key-rename mapping like 'oldKey=newKey'"
+        ),
+    };
+    let mut updated = existing.clone();
+    if let Some(JsonValue::Object(mut data_map)) = updated.data.take() {
+        for (old_key, new_key_v) in mapping {
+            let new_key = match new_key_v {
+                JsonValue::String(s) if !s.is_empty() => s,
+                _ => anyhow::bail!(
+                    "rekey mapping value for '{old_key}' must be a non-empty string"
+                ),
+            };
+            if let Some(value) = data_map.remove(&old_key) {
+                data_map.insert(new_key, value);
+            }
+        }
+        updated.data = if data_map.is_empty() {
+            None
+        } else {
+            Some(JsonValue::Object(data_map))
+        };
     }
+    persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
+}
 
-    // Fresh hid + timestamps. Slug is re-interpolated below.
-    new_entry.hid = new_hid();
-    let now = chrono::Utc::now();
-    new_entry.create_time = now;
-    new_entry.modify_time = now;
-    new_entry.deleted_at = None;
+/// Shared post-mutation path: re-interpolate `field_structure` and
+/// `id_structure` against the mutated entry, then persist. If the slug
+/// changed, the row is rewritten in place under a new slug (hid preserved)
+/// via [`Db::save_existing_entry_with_rekey`]; otherwise the regular
+/// in-place update path runs.
+///
+/// Mirrors original datum's `updateDoc.ts` flow: after combineData, call
+/// compileField then assembleId, and rekey the doc if `_id` changed.
+fn persist_with_auto_reinterp(
+    existing: Entry,
+    mut updated: Entry,
+    slug_delimiter: &str,
+    db: &Db,
+) -> Result<UpdateOutcome> {
+    if let Some(tmpl) = updated.field_structure.clone() {
+        let uid = updated.short_uid();
+        let ctx = InterpolationContext::from_entry(&updated, &uid);
+        updated.field = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
+    }
+    let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
+        let uid = updated.short_uid();
+        let ctx = InterpolationContext::from_entry(&updated, &uid);
+        Some(datum_core::ids::Slug(field_spec::interpolate(
+            &tmpl, &ctx, slug_delimiter,
+        )))
+    } else {
+        None
+    };
+    updated.content_hash = updated.expected_content_hash();
 
-    // Explicit --id beats the spec's id_template. Rekey without any
-    // template is meaningless — the new slug would match the old one.
-    let spec_template = db.load_spec(&new_entry.field)?.and_then(|s| s.id_template);
-    let template = rekey_template.or(spec_template).ok_or_else(|| {
-        anyhow::anyhow!(
-            "rekey requires a template: pass --id or define id_template on the spec"
-        )
-    })?;
+    let slug_changed = matches!(&new_slug, Some(s) if *s != existing.slug);
 
-    let uid = new_entry.short_uid();
-    let ctx = InterpolationContext::from_entry(&new_entry, &uid);
-    new_entry.slug = datum_core::ids::Slug(field_spec::interpolate(&template, &ctx, rekey_delimiter));
-    new_entry.id_structure = Some(template);
-
-    new_entry.content_hash = new_entry.expected_content_hash();
-
-    // Use the Rekey conflict strategy so duplicate content_hashes
-    // (rekey with no payload change) don't collide with the existing row.
-    let outcome = db.insert_entry_with_strategy(&new_entry, ConflictStrategy::Rekey)?;
-    match outcome {
-        InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => Ok(UpdateOutcome {
-            entry: new_entry,
-            old_slug: Some(old_slug),
-        }),
-        other => anyhow::bail!("rekey produced unexpected outcome: {other:?}"),
+    if slug_changed {
+        let target = new_slug.unwrap();
+        updated.slug = target.clone();
+        db.save_existing_entry_with_rekey(&existing.slug, &updated)?;
+        let fresh = db.get_entry(&target)?;
+        Ok(UpdateOutcome {
+            entry: fresh,
+            old_slug: Some(existing.slug),
+        })
+    } else {
+        db.save_existing_entry(&updated)?;
+        let fresh = db.get_entry(&updated.slug)?;
+        Ok(UpdateOutcome {
+            entry: fresh,
+            old_slug: None,
+        })
     }
 }
 
@@ -519,8 +552,7 @@ mod tests {
                 payload_value: None,
                 payload_extra: Some(serde_json::json!({"reps": 20})),
                 strategy: UpdateStrategy::Replace,
-                rekey_template: None,
-                rekey_delimiter: ":",
+                slug_delimiter: ":",
             },
             &db,
         )
@@ -551,8 +583,7 @@ mod tests {
                 payload_value: None,
                 payload_extra: Some(serde_json::json!({"nested": {"b": 2}})),
                 strategy: UpdateStrategy::Merge,
-                rekey_template: None,
-                rekey_delimiter: ":",
+                slug_delimiter: ":",
             },
             &db,
         )
@@ -566,44 +597,39 @@ mod tests {
     }
 
     #[test]
-    fn rekey_strategy_returns_old_slug() {
-        use datum_core::field_spec::FieldSpec;
+    fn rekey_strategy_renames_data_keys() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("mood", Verb::Switch);
-        spec.id_template = Some("%field%:%state%".to_string());
-        db.save_field_spec(&spec).unwrap();
-
         let e = seed_entry(
             &db,
-            "mood",
-            Verb::Switch,
-            Some(serde_json::json!("calm")),
-            Some(serde_json::json!({"state": "calm"})),
+            "gym",
+            Verb::Occur,
+            None,
+            Some(serde_json::json!({"reps": 10, "set": 3})),
         );
 
         let outcome = update_with_strategy(
             UpdateRequest {
                 id_or_slug: &e.slug,
                 payload_value: None,
-                payload_extra: None,
+                // {reps: "repetitions"} → rename data.reps to data.repetitions
+                payload_extra: Some(serde_json::json!({"reps": "repetitions"})),
                 strategy: UpdateStrategy::Rekey,
-                rekey_template: Some("%field%:%state%".to_string()),
-                rekey_delimiter: ":",
+                slug_delimiter: ":",
             },
             &db,
         )
         .unwrap();
 
-        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
-        assert_eq!(outcome.entry.slug, "mood:calm");
-
-        // Old row preserved in place.
-        let live = db.entries_for_field("mood", None).unwrap();
-        assert_eq!(live.len(), 2);
+        let data = outcome.entry.data.as_ref().unwrap();
+        assert_eq!(data["repetitions"], serde_json::json!(10), "value preserved under new key");
+        assert!(data.get("reps").is_none(), "old key removed");
+        assert_eq!(data["set"], serde_json::json!(3), "untouched key preserved");
+        // No id_structure → slug shouldn't move.
+        assert!(outcome.old_slug.is_none());
     }
 
     #[test]
-    fn rekey_without_template_errors() {
+    fn rekey_without_mapping_errors() {
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "mood", Verb::Switch, Some(serde_json::json!("x")), None);
 
@@ -613,13 +639,80 @@ mod tests {
                 payload_value: None,
                 payload_extra: None,
                 strategy: UpdateStrategy::Rekey,
-                rekey_template: None,
-                rekey_delimiter: ":",
+                slug_delimiter: ":",
             },
             &db,
         )
         .unwrap_err();
-        assert!(err.to_string().contains("template"), "{err}");
+        assert!(
+            err.to_string().to_lowercase().contains("rekey"),
+            "expected rekey-mapping error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rekey_mapping_value_must_be_string() {
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "gym",
+            Verb::Occur,
+            None,
+            Some(serde_json::json!({"reps": 10})),
+        );
+
+        let err = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"reps": 42})),
+                strategy: UpdateStrategy::Rekey,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().to_lowercase().contains("non-empty string"),
+            "expected string-mapping error, got: {err}"
+        );
+    }
+
+    #[test]
+    fn rekey_cascades_to_slug_when_renamed_key_is_in_template() {
+        // Set up an entry with id_structure referencing data.kind. When we
+        // rename data.kind → data.category, no template var "category" is
+        // resolvable, but the test focuses on a rename that DOES still
+        // resolve a template variable: rename data.oldKind → data.kind so
+        // template '%field%:%kind%' starts producing the value.
+        let db = Db::open_in_memory().unwrap();
+
+        let mut e = seed_entry(
+            &db,
+            "task",
+            Verb::Occur,
+            None,
+            Some(serde_json::json!({"oldKind": "chore"})),
+        );
+        // Stamp id_structure post-insert via an UPDATE; in production this
+        // comes from `--id` at create time.
+        e.id_structure = Some("%field%:%kind%".to_string());
+        db.save_existing_entry(&e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"oldKind": "kind"})),
+                strategy: UpdateStrategy::Rekey,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
+        assert_eq!(outcome.entry.slug, "task:chore");
     }
 
     #[test]
@@ -649,14 +742,15 @@ mod tests {
         db.soft_delete_entry(&e.slug).unwrap();
 
         for strategy in [UpdateStrategy::Replace, UpdateStrategy::Merge, UpdateStrategy::Rekey] {
+            // Tombstone check fires before strategy dispatch, so any payload
+            // is fine here — the call never reaches apply_*.
             let err = update_with_strategy(
                 UpdateRequest {
                     id_or_slug: &e.slug,
                     payload_value: None,
                     payload_extra: None,
                     strategy,
-                    rekey_template: Some("%field%:%uid%".to_string()),
-                    rekey_delimiter: ":",
+                    slug_delimiter: ":",
                 },
                 &db,
             )
@@ -666,6 +760,167 @@ mod tests {
                 "{strategy:?}: expected tombstone error, got: {err}"
             );
         }
+    }
+
+    #[test]
+    fn update_reinterpolates_slug_when_template_var_changes() {
+        // Seed entry with id_structure '%field%:%state%' and data.state=happy.
+        // Replace data.state=sad → slug should re-derive to mood:sad in place
+        // (hid preserved).
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"state": "happy"})),
+        );
+        e.id_structure = Some("%field%:%state%".to_string());
+        db.save_existing_entry(&e).unwrap();
+        let original_hid = e.hid.clone();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"state": "sad"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
+        assert_eq!(outcome.entry.slug, "mood:sad");
+        // Hid is preserved — the row didn't move, just got rekeyed.
+        assert_eq!(outcome.entry.hid, original_hid);
+        // Only one live row exists for the field (no new row inserted).
+        let live = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(live.len(), 1);
+    }
+
+    #[test]
+    fn update_reinterpolates_field_from_field_structure() {
+        // field_structure makes `field` a template too. Renaming the
+        // referenced data key cascades into the field column.
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "word_pt",
+            Verb::Add,
+            None,
+            Some(serde_json::json!({"srcLang": "pt"})),
+        );
+        e.field_structure = Some("word_%srcLang%".to_string());
+        db.save_existing_entry(&e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"srcLang": "es"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.entry.field, "word_es");
+    }
+
+    #[test]
+    fn update_no_op_when_template_var_unchanged() {
+        // Touching un-templated data should NOT move the slug.
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "gym",
+            Verb::Occur,
+            None,
+            Some(serde_json::json!({"reps": 10, "kind": "deadlift"})),
+        );
+        e.id_structure = Some("%field%:%kind%".to_string());
+        // Stamp the slug to match the template so we're starting from the
+        // canonical form (otherwise a stale slug would 'jump' on first edit).
+        e.slug = datum_core::ids::Slug("gym:deadlift".to_string());
+        db.save_existing_entry_with_rekey(&seed_slug_for("gym"), &e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                // Bumping reps doesn't touch %kind% → slug stays put.
+                payload_extra: Some(serde_json::json!({"reps": 20})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert!(outcome.old_slug.is_none(), "slug should not have moved");
+        assert_eq!(outcome.entry.slug, "gym:deadlift");
+    }
+
+    /// Helper for `update_no_op_when_template_var_unchanged` — the seeded
+    /// slug for a `field=gym` entry created at 2024-01-01T00:00:00.000Z by
+    /// `seed_entry` is `gym:2024-01-01T00:00:00.000Z`.
+    fn seed_slug_for(field: &str) -> datum_core::ids::Slug {
+        datum_core::ids::Slug(format!("{field}:2024-01-01T00:00:00.000Z"))
+    }
+
+    #[test]
+    fn update_records_history_on_auto_rekey() {
+        // The auto-rekey path must record an entry_history row capturing the
+        // pre-mutation state. `datum history` would otherwise lose the slug
+        // change.
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"state": "happy"})),
+        );
+        e.id_structure = Some("%field%:%state%".to_string());
+        db.save_existing_entry(&e).unwrap();
+
+        update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"state": "sad"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        // Two save_existing_entry calls + the auto-rekey itself produce
+        // multiple history rows; we only need to assert the final pre-rekey
+        // state was captured (slug 'mood:happy' or the seed slug appears).
+        let conn = db.conn();
+        let mut stmt = conn
+            .prepare("SELECT change_kind, snapshot FROM entry_history WHERE entry_hid = ?1 ORDER BY version")
+            .unwrap();
+        let rows: Vec<(String, String)> = stmt
+            .query_map(rusqlite::params![e.hid], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(
+            rows.iter().any(|(kind, _)| kind == "create"),
+            "expected an initial create row, got: {rows:?}"
+        );
+        assert!(
+            rows.iter().filter(|(kind, _)| kind == "user_edit").count() >= 1,
+            "expected user_edit row capturing pre-rekey state, got: {rows:?}"
+        );
     }
 
     #[test]

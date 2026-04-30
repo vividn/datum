@@ -149,6 +149,49 @@ impl Db {
         tx.commit()?;
         Ok(())
     }
+
+    /// Rekey an existing entry in place: rewrite mutable columns AND change
+    /// `slug` / `field` / `id_structure` / `field_structure` while preserving
+    /// the row's `hid`. Used by the update path's auto-reinterpolation when
+    /// a templated field/slug re-derives to a different value after data
+    /// changes (port of datum's `idStructure` / `fieldStructure` semantics).
+    ///
+    /// Looks the row up by `old_slug`; uses `entry.hid` as the identity for
+    /// the actual UPDATE so the slug column can change in the same statement
+    /// without losing the row. Records a `user_edit` history row for the
+    /// pre-rekey state in the same transaction. Returns
+    /// [`DatumError::Duplicate`] if the new slug collides with another live
+    /// row.
+    pub fn save_existing_entry_with_rekey(
+        &self,
+        old_slug: &Slug,
+        entry: &Entry,
+    ) -> Result<()> {
+        let tx = self.conn.unchecked_transaction()?;
+        let pre = fetch_entry_any(&tx, old_slug)?;
+        if pre.deleted_at.is_some() {
+            return Err(DatumError::Tombstoned(old_slug.to_string()));
+        }
+        if pre.hid != entry.hid {
+            return Err(DatumError::Other(format!(
+                "save_existing_entry_with_rekey: hid mismatch — pre={} new={}",
+                pre.hid, entry.hid,
+            )));
+        }
+        history::record(&tx, &pre, ChangeKind::UserEdit)?;
+        match raw_overwrite_full_by_hid(&tx, entry) {
+            Ok(()) => {}
+            Err(DatumError::Db(e)) if collision_kind(&e) == Some(CollisionKind::Slug) => {
+                return Err(DatumError::Duplicate(format!(
+                    "Cannot rekey {old_slug} → {}: slug already taken",
+                    entry.slug,
+                )));
+            }
+            Err(e) => return Err(e),
+        }
+        tx.commit()?;
+        Ok(())
+    }
 }
 
 /// Append a short random base36 suffix to a slug. Used by the
@@ -567,7 +610,9 @@ fn raw_overwrite_mutables(
             raw_input = ?24,
             alias_chain = ?25,
             parser_version = ?26,
-            user_asserted_last_state = ?27
+            user_asserted_last_state = ?27,
+            id_structure = ?28,
+            field_structure = ?29
            WHERE slug = ?1"#,
         params![
             slug,
@@ -597,8 +642,91 @@ fn raw_overwrite_mutables(
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
             entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+            entry.id_structure.as_deref(),
+            entry.field_structure.as_deref(),
         ],
     )?;
+    Ok(())
+}
+
+/// Rewrite an existing live row identified by `entry.hid` with every mutable
+/// column AND the templated identity columns (`slug`, `field`, `id_structure`,
+/// `field_structure`). Refreshes `modify_time` to now. Returns whatever
+/// SQLite returns for a slug UNIQUE collision so the caller can map it to
+/// [`DatumError::Duplicate`].
+///
+/// `deleted_at` is intentionally NOT touched — a rekey of a live row keeps
+/// it live; tombstoned rows must be filtered out by the caller.
+fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let mut stmt = conn.prepare_cached(
+        r#"UPDATE entries SET
+            slug = ?2,
+            content_hash = ?3,
+            field = ?4,
+            entry_shape = ?5,
+            intent = ?6,
+            value = ?7,
+            data = ?8,
+            unit = ?9,
+            start_time = ?10,
+            start_time_offset = ?11,
+            start_time_tz = ?12,
+            start_time_precision = ?13,
+            start_time_precision_unit = ?14,
+            end_time = ?15,
+            end_time_offset = ?16,
+            end_time_tz = ?17,
+            end_time_precision = ?18,
+            end_time_precision_unit = ?19,
+            lat = ?20,
+            lon = ?21,
+            location = ?22,
+            modify_time = ?23,
+            device_id = ?24,
+            id_structure = ?25,
+            field_structure = ?26,
+            raw_input = ?27,
+            alias_chain = ?28,
+            parser_version = ?29,
+            user_asserted_last_state = ?30
+           WHERE hid = ?1"#,
+    )?;
+    let affected = stmt.execute(params![
+        entry.hid,
+        entry.slug,
+        entry.content_hash,
+        entry.field,
+        entry.entry_shape.to_string(),
+        entry.intent,
+        entry.value.as_ref().map(|v| v.to_string()),
+        entry.data.as_ref().map(|v| v.to_string()),
+        entry.unit,
+        entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        entry.start_time.as_ref().map(|t| t.offset_minutes),
+        entry.start_time.as_ref().map(|t| t.timezone.as_str()),
+        entry.start_time_precision,
+        entry.start_time_precision_unit.to_string(),
+        entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
+        entry.end_time.as_ref().map(|t| t.offset_minutes),
+        entry.end_time.as_ref().map(|t| t.timezone.as_str()),
+        entry.end_time_precision,
+        entry.end_time_precision_unit.to_string(),
+        entry.lat,
+        entry.lon,
+        entry.location.as_deref(),
+        now,
+        entry.device_id,
+        entry.id_structure.as_deref(),
+        entry.field_structure.as_deref(),
+        entry.raw_input,
+        entry.alias_chain.as_ref().map(|v| v.to_string()),
+        entry.parser_version,
+        entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+    ])?;
+    if affected == 0 {
+        return Err(DatumError::NotFound(entry.hid.to_string()));
+    }
     Ok(())
 }
 

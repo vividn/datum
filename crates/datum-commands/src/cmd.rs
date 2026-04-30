@@ -4235,54 +4235,46 @@ mod tests {
     }
 
     #[test]
-    fn rekey_creates_new_row_preserves_old() {
+    fn rekey_renames_data_key_via_cli() {
+        // CLI: `update <slug> --strategy rekey reps=repetitions` should
+        // rename `data.reps` → `data.repetitions` in place. No new row.
         use datum_core::db::Db;
-        use datum_core::field_spec::FieldSpec;
         let db = Db::open_in_memory().unwrap();
-
-        // Spec supplies an id_template so the rekey has somewhere to reinterpolate to.
-        let mut spec = FieldSpec::new("mood", Verb::Switch);
-        spec.id_template = Some("%field%:%state%".to_string());
-        db.save_field_spec(&spec).unwrap();
-
-        // Original row uses the default slug (no template applied on insert).
         let e = seed_entry(
             &db,
-            "mood",
-            Verb::Switch,
-            Some(serde_json::json!("happy")),
-            Some(serde_json::json!({"state": "happy"})),
+            "gym",
+            Verb::Occur,
+            None,
+            Some(serde_json::json!({"reps": 10, "set": 3})),
         );
 
-        let mut args = update_args(&e.slug, vec![]);
-        args.id = Some("%field%:%state%".to_string());
+        update_from_args(
+            update_args(&e.slug, vec!["reps=repetitions"]),
+            UpdateStrategy::Rekey,
+            &db,
+        )
+        .unwrap();
 
-        update_from_args(args, UpdateStrategy::Rekey, &db).unwrap();
-
-        // Both the old and new rows exist.
-        let live = db.entries_for_field("mood", None).unwrap();
-        assert_eq!(live.len(), 2, "rekey must leave the old row in place");
-
-        // New row has the interpolated slug.
-        let new_row = live
-            .iter()
-            .find(|r| r.slug == "mood:happy")
-            .expect("rekeyed slug should match template");
-        assert_ne!(new_row.slug, e.slug, "new row gets its own ULID");
-        // Old row still reachable by its original slug.
-        let old = db.get_entry(&e.slug).unwrap();
-        assert_eq!(old.slug, e.slug);
+        let live = db.entries_for_field("gym", None).unwrap();
+        assert_eq!(live.len(), 1, "rekey is a key-rename, not a copy");
+        let data = live[0].data.as_ref().unwrap();
+        assert_eq!(data["repetitions"], serde_json::json!(10));
+        assert!(data.get("reps").is_none());
+        assert_eq!(data["set"], serde_json::json!(3));
     }
 
     #[test]
-    fn rekey_without_template_errors() {
+    fn rekey_without_mapping_errors() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(&db, "mood", Verb::Switch, Some(serde_json::json!("x")), None);
 
         let err = update_from_args(update_args(&e.slug, vec![]), UpdateStrategy::Rekey, &db)
             .unwrap_err();
-        assert!(err.to_string().contains("template"), "{err}");
+        assert!(
+            err.to_string().to_lowercase().contains("rekey"),
+            "expected rekey-mapping error, got: {err}"
+        );
     }
 
     #[test]
@@ -4320,8 +4312,9 @@ mod tests {
         .unwrap_err();
         assert!(err.to_string().to_lowercase().contains("tombstoned"));
 
-        let mut rk = update_args(&e.slug, vec![]);
-        rk.id = Some("%field%:%uid%".to_string());
+        // Rekey: pass a valid mapping so the tombstone check (which fires
+        // before strategy dispatch) is what trips, not the empty-mapping check.
+        let rk = update_args(&e.slug, vec!["reps=repetitions"]);
         let err = update_from_args(rk, UpdateStrategy::Rekey, &db).unwrap_err();
         assert!(err.to_string().to_lowercase().contains("tombstoned"));
     }
@@ -4444,55 +4437,64 @@ mod tests {
     }
 
     #[test]
-    fn rekey_from_spec_template_when_no_id_flag() {
+    fn update_auto_reinterps_slug_when_id_structure_present() {
+        // Headline behavior: a regular `update` on a row whose id_structure
+        // references a data key should auto-rekey the slug when that key's
+        // value changes — no manual --strategy rekey, no --id flag.
         use datum_core::db::Db;
-        use datum_core::field_spec::FieldSpec;
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("mood", Verb::Switch);
-        spec.id_template = Some("%field%:%state%".to_string());
-        db.save_field_spec(&spec).unwrap();
-
-        let e = seed_entry(
+        let mut e = seed_entry(
             &db,
             "mood",
             Verb::Switch,
-            Some(serde_json::json!("calm")),
-            Some(serde_json::json!({"state": "calm"})),
+            Some(serde_json::json!("happy")),
+            Some(serde_json::json!({"state": "happy"})),
         );
+        e.id_structure = Some("%field%:%state%".to_string());
+        db.save_existing_entry(&e).unwrap();
 
-        update_from_args(update_args(&e.slug, vec![]), UpdateStrategy::Rekey, &db).unwrap();
+        update_from_args(
+            update_args(&e.slug, vec!["state=sad"]),
+            UpdateStrategy::Replace,
+            &db,
+        )
+        .unwrap();
 
         let live = db.entries_for_field("mood", None).unwrap();
-        assert_eq!(live.len(), 2);
-        assert!(live.iter().any(|r| r.slug == "mood:calm"));
+        assert_eq!(live.len(), 1, "auto-rekey is in-place; no new row");
+        assert_eq!(live[0].slug, "mood:sad");
     }
 
     #[test]
-    fn rekey_with_payload_change() {
+    fn rekey_renames_key_referenced_by_id_structure_cascades_to_slug() {
+        // Renaming a data key that the id_structure template references
+        // should cascade: the rename triggers auto-reinterp, which moves
+        // the slug.
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(
+        let mut e = seed_entry(
             &db,
-            "word",
-            Verb::Add,
-            Some(serde_json::json!("correr")),
-            Some(serde_json::json!({"lang": "pt", "pos": "verb"})),
+            "task",
+            Verb::Occur,
+            None,
+            Some(serde_json::json!({"oldKind": "chore"})),
         );
+        e.id_structure = Some("%field%:%kind%".to_string());
+        db.save_existing_entry(&e).unwrap();
 
-        let mut args = update_args(&e.slug, vec!["pos=noun"]);
-        args.id = Some("%field%:%pos%:%uid%".to_string());
-        update_from_args(args, UpdateStrategy::Rekey, &db).unwrap();
+        update_from_args(
+            update_args(&e.slug, vec!["oldKind=kind"]),
+            UpdateStrategy::Rekey,
+            &db,
+        )
+        .unwrap();
 
-        let rows = db.entries_for_field("word", None).unwrap();
-        assert_eq!(rows.len(), 2);
-        let rekeyed = rows
-            .iter()
-            .find(|r| r.slug.starts_with("word:noun:"))
-            .expect("rekeyed row should exist");
-        assert_eq!(rekeyed.data.as_ref().unwrap()["pos"], serde_json::json!("noun"));
-        // Payload changes are visible on the new row only.
-        let original = rows.iter().find(|r| r.slug == e.slug).unwrap();
-        assert_eq!(original.data.as_ref().unwrap()["pos"], serde_json::json!("verb"));
+        let live = db.entries_for_field("task", None).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].slug, "task:chore");
+        let data = live[0].data.as_ref().unwrap();
+        assert_eq!(data["kind"], serde_json::json!("chore"));
+        assert!(data.get("oldKind").is_none());
     }
 
     // ─── B7: undo via soft-delete tombstone ─────────────────────────────────

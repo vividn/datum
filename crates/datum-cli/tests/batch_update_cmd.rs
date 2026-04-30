@@ -12,7 +12,7 @@
 mod common;
 
 use common::run_cli;
-use datum_core::test_util::{entry_builder, fresh_db, spec_builder};
+use datum_core::test_util::{entry_builder, fresh_db};
 use datum_core::{assert_count, entry::Verb};
 use serde_json::json;
 
@@ -206,36 +206,40 @@ fn strict_compound_update_rejects_later_tombstone_without_partial_mutation() {
     }
 }
 
-/// Compound rekey applies the spec's `id_template` per row, leaving both
-/// originals in place and creating one new row per batch element.
+/// Compound rekey renames the same data key on every row in the batch.
+/// Per da-4ud, rekey is a key-rename strategy (not a slug-template re-derive);
+/// slug auto-reinterp picks up cascades when id_structure references the
+/// renamed key, but a vanilla rekey on rows without an id_structure leaves
+/// the slug alone and just rewrites the data column.
 #[test]
-fn compound_rekey_creates_new_row_per_entry() {
+fn compound_rekey_renames_data_key_per_entry() {
     let db = fresh_db();
-    let mut spec = spec_builder("mood").default_verb(Verb::Switch).build();
-    spec.id_template = Some("%field%:%state%".to_string());
-    db.save_field_spec(&spec).unwrap();
-
-    let happy = entry_builder("mood")
-        .verb(Verb::Switch)
-        .value(json!("happy"))
-        .extra_data(json!({"state": "happy"}))
+    let a = entry_builder("gym")
+        .value(json!(1))
+        .extra_data(json!({"reps": 10, "set": 1}))
         .insert(&db);
-    let sad = entry_builder("mood")
-        .verb(Verb::Switch)
-        .value(json!("sad"))
-        .extra_data(json!({"state": "sad"}))
+    let b = entry_builder("gym")
+        .value(json!(2))
+        .extra_data(json!({"reps": 12, "set": 2}))
         .insert(&db);
 
-    let compound = format!("{},{}", happy.slug, sad.slug);
-    run_cli(&["rekey", &compound], &db)
+    let compound = format!("{},{}", a.slug, b.slug);
+    run_cli(&["rekey", &compound, "reps=repetitions"], &db)
         .unwrap_or_else(|err| panic!("compound rekey must succeed: {err:#}"));
 
-    // Originals remain, plus two new rows under the templated slugs.
-    assert_count!(db, "mood", 4);
-    assert!(db.get_entry("mood:happy").is_ok(), "happy rekey landed");
-    assert!(db.get_entry("mood:sad").is_ok(), "sad rekey landed");
-    assert!(db.get_entry(&happy.slug).is_ok(), "happy original preserved");
-    assert!(db.get_entry(&sad.slug).is_ok(), "sad original preserved");
+    // Same row count — no new rows, no copies left behind.
+    assert_count!(db, "gym", 2);
+
+    for (slug, expected_reps) in [(&a.slug, 10), (&b.slug, 12)] {
+        let row = db.get_entry(slug).unwrap();
+        let data = row.data.as_ref().unwrap();
+        assert_eq!(
+            data["repetitions"],
+            json!(expected_reps),
+            "value preserved under new key for {slug}",
+        );
+        assert!(data.get("reps").is_none(), "old key removed for {slug}");
+    }
 }
 
 /// Trailing empty segments are silently dropped — datum's `"abc,def,"`
