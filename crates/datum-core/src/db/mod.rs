@@ -31,6 +31,7 @@ mod state;
 mod time;
 mod tombstone;
 mod types;
+mod view;
 
 use rusqlite::{params, Connection};
 
@@ -39,10 +40,10 @@ use crate::error::{DatumError, Result};
 pub use kit::{InstallReport, InstalledKit, KitFieldOutcome};
 pub use row_mapper::row_to_entry_public;
 pub use types::{
-    AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome,
-    ListParams, RetimeFilter, SaveSpecReport, TimeMetric, TimeOrderIssue, TrackedField,
-    IGNORED_STATE_VALUE,
+    AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome, ListParams,
+    RetimeFilter, SaveSpecReport, TimeMetric, TimeOrderIssue, TrackedField, IGNORED_STATE_VALUE,
 };
+pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 
 // `try_insert` is a `pub(crate)` free function in `insert.rs`; re-export it
 // at `crate::db::try_insert` to preserve the historical import path used by
@@ -74,10 +75,9 @@ impl Db {
         // Pre-a0 aliases table only carried (name, alias_json); add the
         // derived_from_field column before schema.sql tries to index it.
         // Missing-table errors on a fresh DB are ignored.
-        let _ = self.conn.execute(
-            "ALTER TABLE aliases ADD COLUMN derived_from_field TEXT",
-            [],
-        );
+        let _ = self
+            .conn
+            .execute("ALTER TABLE aliases ADD COLUMN derived_from_field TEXT", []);
 
         // Reject pre-refactor entries tables (which have an `id` column):
         // this refactor drops ULID entirely and slug is now PK. Silent
@@ -99,7 +99,8 @@ impl Db {
                 return Err(DatumError::IncompatibleSchema(
                     "legacy entries table with `id` column found; this version drops ULID \
                      and uses slug as PK. Delete the DB and recreate it, or migrate from a \
-                     backup with `datum migrate`.".to_string(),
+                     backup with `datum migrate`."
+                        .to_string(),
                 ));
             }
         }
@@ -142,6 +143,7 @@ impl Db {
             "aliases",
             "sync_state",
             "sync_conflicts",
+            "views",
             "_meta",
         ];
         let mut dropped = Vec::new();

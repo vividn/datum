@@ -1947,3 +1947,197 @@ fn save_field_spec_preserves_kit_id() {
     let loaded = db.load_spec("sleep").unwrap().unwrap();
     assert_eq!(loaded.color.as_deref(), Some("#ffffff"));
 }
+
+// ─── Kit views (da-d4t.4) ───────────────────────────────────────────────
+
+#[test]
+fn install_kit_views_persists_with_kit_id() {
+    let db = Db::open_in_memory().unwrap();
+    let views = vec![
+        crate::kit::ViewEntry {
+            name: "field_counts".into(),
+            sql: "SELECT field, COUNT(*) AS n FROM entries GROUP BY field".into(),
+        },
+        crate::kit::ViewEntry {
+            name: "all_one".into(),
+            sql: "SELECT 1 AS v".into(),
+        },
+    ];
+    let report = db.install_kit_views("core", &views, false).unwrap();
+    let installed: Vec<&str> = report.installed().collect();
+    assert_eq!(installed, vec!["field_counts", "all_one"]);
+    assert_eq!(report.skipped().count(), 0);
+
+    let listed = db.list_views().unwrap();
+    assert_eq!(listed.len(), 2);
+    assert!(listed.iter().all(|v| v.kit_id.as_deref() == Some("core")));
+
+    // List_kits picks up a views-only kit even with no fields.
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1);
+    assert_eq!(kits[0].kit_id, "core");
+    assert_eq!(kits[0].field_count, 0);
+    assert_eq!(kits[0].view_count, 2);
+}
+
+#[test]
+fn install_kit_views_skips_existing_without_force() {
+    let db = Db::open_in_memory().unwrap();
+    // Pre-existing user view (kit_id NULL).
+    db.conn()
+        .execute(
+            "INSERT INTO views (name, sql_text, kit_id) VALUES (?1, ?2, NULL)",
+            rusqlite::params!["mine", "SELECT 1"],
+        )
+        .unwrap();
+
+    let views = vec![crate::kit::ViewEntry {
+        name: "mine".into(),
+        sql: "SELECT 2".into(),
+    }];
+    let report = db.install_kit_views("core", &views, false).unwrap();
+    let skipped: Vec<&str> = report.skipped().collect();
+    assert_eq!(skipped, vec!["mine"]);
+
+    // Existing SQL preserved; row not retagged.
+    let row = db.get_view("mine").unwrap().unwrap();
+    assert_eq!(row.sql_text, "SELECT 1");
+    assert_eq!(row.kit_id, None);
+}
+
+#[test]
+fn install_kit_views_force_overwrites_and_retags() {
+    let db = Db::open_in_memory().unwrap();
+    db.conn()
+        .execute(
+            "INSERT INTO views (name, sql_text, kit_id) VALUES (?1, ?2, NULL)",
+            rusqlite::params!["mine", "SELECT 1"],
+        )
+        .unwrap();
+
+    let views = vec![crate::kit::ViewEntry {
+        name: "mine".into(),
+        sql: "SELECT 2 AS v".into(),
+    }];
+    let report = db.install_kit_views("core", &views, true).unwrap();
+    let installed: Vec<&str> = report.installed().collect();
+    assert_eq!(installed, vec!["mine"]);
+
+    let row = db.get_view("mine").unwrap().unwrap();
+    assert_eq!(row.sql_text, "SELECT 2 AS v");
+    assert_eq!(row.kit_id.as_deref(), Some("core"));
+}
+
+#[test]
+fn uninstall_kit_views_removes_only_owned_rows() {
+    let db = Db::open_in_memory().unwrap();
+    // User view + kit view.
+    db.conn()
+        .execute(
+            "INSERT INTO views (name, sql_text, kit_id) VALUES (?1, ?2, NULL)",
+            rusqlite::params!["user_one", "SELECT 1"],
+        )
+        .unwrap();
+    db.install_kit_views(
+        "core",
+        &[crate::kit::ViewEntry {
+            name: "kit_one".into(),
+            sql: "SELECT 2".into(),
+        }],
+        false,
+    )
+    .unwrap();
+
+    let removed = db.uninstall_kit_views("core").unwrap();
+    assert_eq!(removed, vec!["kit_one"]);
+    assert!(db.get_view("kit_one").unwrap().is_none());
+    // User view untouched.
+    assert!(db.get_view("user_one").unwrap().is_some());
+}
+
+#[test]
+fn execute_view_returns_columns_and_rows() {
+    let db = Db::open_in_memory().unwrap();
+    let entry = Entry::new(
+        "coffee",
+        Verb::Occur,
+        Some(JsonValue::from(2)),
+        None,
+        None,
+        Some(DatumTime::now()),
+        None,
+        "test",
+    );
+    let _ = db.insert_entry(&entry).unwrap();
+
+    let result = db
+        .execute_view("SELECT field, COUNT(*) AS n FROM entries GROUP BY field")
+        .unwrap();
+    assert_eq!(result.columns, vec!["field".to_string(), "n".to_string()]);
+    assert_eq!(result.rows.len(), 1);
+    assert_eq!(result.rows[0][0], JsonValue::String("coffee".into()));
+    assert_eq!(result.rows[0][1], JsonValue::from(1));
+}
+
+#[test]
+fn execute_view_blocks_writes_via_query_only() {
+    let db = Db::open_in_memory().unwrap();
+    // INSERT against entries should fail under PRAGMA query_only=1 — that's
+    // the whole point of the read-only enforcement.
+    let err = db
+        .execute_view(
+            "INSERT INTO entries (hid, slug, content_hash, field, entry_shape) \
+             VALUES ('h','s','c','f','point')",
+        )
+        .unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("read")
+            || msg.to_lowercase().contains("readonly")
+            || msg.contains("query_only"),
+        "expected read-only rejection, got: {msg}"
+    );
+
+    // After the failed query, writes through the normal path still work —
+    // the PRAGMA was reset.
+    let entry = Entry::new(
+        "coffee",
+        Verb::Occur,
+        None,
+        None,
+        None,
+        Some(DatumTime::now()),
+        None,
+        "test",
+    );
+    db.insert_entry(&entry).unwrap();
+}
+
+#[test]
+fn execute_view_rejects_empty_sql() {
+    let db = Db::open_in_memory().unwrap();
+    let err = db.execute_view("   \n  ").unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("empty"), "expected empty error, got: {msg}");
+}
+
+#[test]
+fn load_views_by_kit_round_trips_for_export() {
+    let db = Db::open_in_memory().unwrap();
+    let views = vec![
+        crate::kit::ViewEntry {
+            name: "b".into(),
+            sql: "SELECT 2".into(),
+        },
+        crate::kit::ViewEntry {
+            name: "a".into(),
+            sql: "SELECT 1".into(),
+        },
+    ];
+    db.install_kit_views("core", &views, false).unwrap();
+    let loaded = db.load_views_by_kit("core").unwrap();
+    let names: Vec<&str> = loaded.iter().map(|v| v.name.as_str()).collect();
+    assert_eq!(names, vec!["a", "b"], "results should be ordered by name");
+    assert_eq!(loaded[0].sql, "SELECT 1");
+    assert_eq!(loaded[1].sql, "SELECT 2");
+}

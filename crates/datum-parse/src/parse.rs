@@ -245,6 +245,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "dayview" => Command::Dayview(parse_dayview_args(rest)?),
         "nowview" => Command::Nowview(parse_nowview_args(rest)?),
+        "view" => Command::View(parse_view_args(rest)?),
 
         "info" => Command::Info(parse_info_args(rest)?),
         "setup" => Command::Setup(parse_setup_args(rest)?),
@@ -1934,6 +1935,63 @@ fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
         }
     }
     Ok(out)
+}
+
+/// `datum view <name> [--format pretty|tsv|csv|json] [--watch]`.
+///
+/// One required positional (the view name); everything else is a flag.
+/// Slice 4 (da-d4t.4) — the SQL itself comes from the `views` table at
+/// dispatch time, not from argv.
+fn parse_view_args(tail: &[&str]) -> Result<ViewArgs> {
+    let mut name: Option<String> = None;
+    let mut out = ViewArgs::fresh("");
+    let mut i = 0;
+    while i < tail.len() {
+        let tok = tail[i];
+        match split_flag(tok) {
+            FlagSplit::Positional(s) => {
+                if name.is_some() {
+                    return Err(ParseError::InvalidArg(format!(
+                        "view takes a single name positional, got extra '{s}'"
+                    )));
+                }
+                name = Some(s.to_string());
+                i += 1;
+            }
+            FlagSplit::Long("format") | FlagSplit::Short('f') => {
+                let (v, ni) = take_value(tail, i, None, "--format")?;
+                out.format = parse_view_format(v)?;
+                i = ni;
+            }
+            FlagSplit::LongAttached("format", v) | FlagSplit::ShortAttached('f', v) => {
+                out.format = parse_view_format(v)?;
+                i += 1;
+            }
+            FlagSplit::Long("watch") | FlagSplit::Short('w') => {
+                out.watch = true;
+                i += 1;
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    let name = name.ok_or_else(|| {
+        ParseError::InvalidArg("view requires a name (e.g. `datum view chores_due`)".into())
+    })?;
+    out.name = name;
+    Ok(out)
+}
+
+fn parse_view_format(s: &str) -> Result<ViewFormat> {
+    match s {
+        "auto" => Ok(ViewFormat::Auto),
+        "pretty" => Ok(ViewFormat::Pretty),
+        "tsv" => Ok(ViewFormat::Tsv),
+        "csv" => Ok(ViewFormat::Csv),
+        "json" => Ok(ViewFormat::Json),
+        other => Err(ParseError::InvalidArg(format!(
+            "--format must be one of pretty|tsv|csv|json (or auto), got '{other}'"
+        ))),
+    }
 }
 
 fn parse_info_args(tail: &[&str]) -> Result<InfoArgs> {

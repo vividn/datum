@@ -145,6 +145,19 @@ CREATE TABLE IF NOT EXISTS field_specs (
 
 CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);
 
+-- Named views: read-only SELECT statements installed by kits or declared
+-- by the user. `kit_id` is NULL for user-declared rows, the kit's name
+-- for rows installed via `datum kit install`. Powers `datum view <name>`.
+-- Read-only enforcement happens at execution time (PRAGMA query_only=1);
+-- this table just stores the SQL text.
+CREATE TABLE IF NOT EXISTS views (
+    name      TEXT NOT NULL PRIMARY KEY,
+    sql_text  TEXT NOT NULL,
+    kit_id    TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_views_kit_id ON views(kit_id);
+
 -- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
 -- when the alias was auto-generated from a FieldSpec state; such rows
 -- cascade-delete when the owning spec is deleted or its states change.
@@ -255,4 +268,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '13');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '14');

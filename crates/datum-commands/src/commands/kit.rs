@@ -89,9 +89,14 @@ fn install(args: KitInstallArgs, db: &Db) -> Result<()> {
     }
 
     let report = db.install_kit(&kit.kit.name, &specs, args.force)?;
+    // Views are independent of fields; installed in the same kit-install
+    // pass so a TOML containing both lands atomically (per slice 4 bead).
+    let view_report = db.install_kit_views(&kit.kit.name, &kit.views, args.force)?;
 
     let installed: Vec<&str> = report.installed().collect();
     let skipped: Vec<&str> = report.skipped().collect();
+    let views_installed: Vec<&str> = view_report.installed().collect();
+    let views_skipped: Vec<&str> = view_report.skipped().collect();
 
     if !installed.is_empty() {
         println!(
@@ -114,24 +119,42 @@ fn install(args: KitInstallArgs, db: &Db) -> Result<()> {
             println!("  - {f}");
         }
     }
+    if !views_installed.is_empty() {
+        println!("Installed {} view(s):", views_installed.len());
+        for v in &views_installed {
+            println!("  + {v}");
+        }
+    }
+    if !views_skipped.is_empty() {
+        println!(
+            "Skipped {} view(s) (existing rows kept; use --force to overwrite):",
+            views_skipped.len()
+        );
+        for v in &views_skipped {
+            println!("  - {v}");
+        }
+    }
     Ok(())
 }
 
 fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let specs = db.load_specs_by_kit(&args.name)?;
-    if specs.is_empty() {
+    let views = db.load_views_by_kit(&args.name)?;
+    if specs.is_empty() && views.is_empty() {
         anyhow::bail!("no installed kit named '{}'", args.name);
     }
-    let kit = KitToml::from_field_specs(&args.name, None, &specs);
+    let view_count = views.len();
+    let kit = KitToml::from_kit_rows(&args.name, None, &specs, views);
     let toml = kit.to_toml()?;
 
     match args.path.as_deref() {
         Some(p) => {
             fs::write(p, &toml).with_context(|| format!("write kit TOML to {p}"))?;
             println!(
-                "Exported kit '{}' ({} field(s)) → {p}",
+                "Exported kit '{}' ({} field(s), {} view(s)) → {p}",
                 args.name,
-                specs.len()
+                specs.len(),
+                view_count
             );
         }
         None => print!("{toml}"),
@@ -145,25 +168,30 @@ fn list(db: &Db) -> Result<()> {
         println!("No kits installed.");
         return Ok(());
     }
-    println!("{:<24} fields", "kit");
+    println!("{:<24} {:>6}  {:>5}", "kit", "fields", "views");
     for k in kits {
-        println!("{:<24} {}", k.kit_id, k.field_count);
+        println!("{:<24} {:>6}  {:>5}", k.kit_id, k.field_count, k.view_count);
     }
     Ok(())
 }
 
 fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     let removed = db.uninstall_kit(&args.name)?;
-    if removed.is_empty() {
-        println!("No fields tagged with kit '{}'.", args.name);
+    let removed_views = db.uninstall_kit_views(&args.name)?;
+    if removed.is_empty() && removed_views.is_empty() {
+        println!("No fields or views tagged with kit '{}'.", args.name);
     } else {
         println!(
-            "Uninstalled kit '{}': {} field(s)",
+            "Uninstalled kit '{}': {} field(s), {} view(s)",
             args.name,
-            removed.len()
+            removed.len(),
+            removed_views.len()
         );
         for f in &removed {
-            println!("  - {f}");
+            println!("  - field {f}");
+        }
+        for v in &removed_views {
+            println!("  - view  {v}");
         }
     }
     Ok(())

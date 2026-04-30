@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 13;
+pub const CURRENT_SCHEMA_VERSION: u32 = 14;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -107,7 +107,29 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "field_specs: add kit_id column for kit-namespaced field specs; index on kit_id (da-d4t.1)",
         apply: m12_to_13_field_specs_kit_id,
     },
+    Migration {
+        from: 13,
+        to: 14,
+        summary: "views: named SQL views table (kit-scoped); powers `datum view <name>` (da-d4t.4)",
+        apply: m13_to_14_views_table,
+    },
 ];
+
+/// da-d4t.4: kit-installable named SELECT views. Rows are tagged with
+/// `kit_id` (NULL for user-declared rows, the kit's name for installed
+/// rows); uninstall drops only rows with the matching `kit_id`. Additive +
+/// idempotent — `CREATE TABLE IF NOT EXISTS` lets a half-applied run retry.
+fn m13_to_14_views_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS views (
+            name      TEXT NOT NULL PRIMARY KEY,
+            sql_text  TEXT NOT NULL,
+            kit_id    TEXT
+         );
+         CREATE INDEX IF NOT EXISTS idx_views_kit_id ON views(kit_id);",
+    )?;
+    Ok(())
+}
 
 /// da-d4t.1: kits scope `field_specs` rows. `kit_id` is NULL for
 /// user-declared specs (set via `datum spec set` or auto-tracked) and

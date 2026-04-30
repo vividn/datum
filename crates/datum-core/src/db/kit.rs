@@ -58,6 +58,7 @@ impl InstallReport {
 pub struct InstalledKit {
     pub kit_id: String,
     pub field_count: usize,
+    pub view_count: usize,
 }
 
 impl Db {
@@ -182,20 +183,39 @@ impl Db {
         Ok(fields)
     }
 
-    /// List installed kits and the count of fields each owns. User-declared
-    /// rows (kit_id NULL) are excluded.
+    /// List installed kits with per-kit field and view counts. User-declared
+    /// rows (`kit_id IS NULL` in either `field_specs` or `views`) are excluded.
+    /// A kit appears in the result if it owns at least one field or one view.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(
-            "SELECT kit_id, COUNT(*)
-             FROM field_specs
-             WHERE kit_id IS NOT NULL
-             GROUP BY kit_id
-             ORDER BY kit_id",
+            "WITH
+                kit_fields AS (
+                    SELECT kit_id, COUNT(*) AS n
+                    FROM field_specs
+                    WHERE kit_id IS NOT NULL
+                    GROUP BY kit_id
+                ),
+                kit_views AS (
+                    SELECT kit_id, COUNT(*) AS n
+                    FROM views
+                    WHERE kit_id IS NOT NULL
+                    GROUP BY kit_id
+                )
+             SELECT k.kit_id, IFNULL(f.n, 0), IFNULL(v.n, 0)
+             FROM (
+                 SELECT kit_id FROM kit_fields
+                 UNION
+                 SELECT kit_id FROM kit_views
+             ) k
+             LEFT JOIN kit_fields f ON f.kit_id = k.kit_id
+             LEFT JOIN kit_views  v ON v.kit_id = k.kit_id
+             ORDER BY k.kit_id",
         )?;
         let rows = stmt.query_map([], |row| {
             Ok(InstalledKit {
                 kit_id: row.get::<_, String>(0)?,
                 field_count: row.get::<_, i64>(1)? as usize,
+                view_count: row.get::<_, i64>(2)? as usize,
             })
         })?;
         let mut out = Vec::new();

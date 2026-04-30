@@ -91,6 +91,9 @@ pub enum Command {
 
     Dayview(DayviewArgs),
     Nowview(NowviewArgs),
+    /// `datum view <name>` — execute a named SELECT installed via a kit
+    /// (or declared by the user) and render the rows. Slice 4 (da-d4t.4).
+    View(ViewArgs),
 
     Info(InfoArgs),
     Setup(SetupArgs),
@@ -838,6 +841,46 @@ impl NowviewArgs {
             terminal: false,
             no_color: false,
             cols: None,
+        }
+    }
+}
+
+/// Output format for `datum view <name>`. `Auto` resolves at dispatch
+/// time: pretty when stdout is a TTY, tsv when piped (matching the
+/// slice 4 bead's "pretty when tty, tsv when piped" rule).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ViewFormat {
+    Auto,
+    Pretty,
+    Tsv,
+    Csv,
+    Json,
+}
+
+impl Default for ViewFormat {
+    fn default() -> Self {
+        ViewFormat::Auto
+    }
+}
+
+/// `datum view <name>` arguments.
+#[derive(Debug)]
+pub struct ViewArgs {
+    /// View name, looked up in the `views` table.
+    pub name: String,
+    /// `--format pretty|tsv|csv|json`. Defaults to [`ViewFormat::Auto`].
+    pub format: ViewFormat,
+    /// `--watch` — re-run the query on a poll interval until interrupted.
+    /// Slice 4 polls; the daemon-hook integration is a follow-up.
+    pub watch: bool,
+}
+
+impl ViewArgs {
+    pub fn fresh(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            format: ViewFormat::default(),
+            watch: false,
         }
     }
 }

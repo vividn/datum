@@ -16,12 +16,18 @@ use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{FieldSpec, DEFAULT_FIELD_HEIGHT};
 
-/// Top-level TOML schema. `[kit]` is required; `[[field]]` may be empty.
+/// Top-level TOML schema. `[kit]` is required; `[[field]]` and `[[view]]`
+/// may be empty.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KitToml {
     pub kit: KitMeta,
     #[serde(default, rename = "field")]
     pub fields: Vec<FieldEntry>,
+    /// `[[view]]` declarations. Each is a named read-only SELECT installed
+    /// into the `views` table tagged with the kit's id. Powers
+    /// `datum view <name>` (slice 4).
+    #[serde(default, rename = "view")]
+    pub views: Vec<ViewEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -91,6 +97,17 @@ pub struct FieldEntry {
     pub states: Vec<StateEntry>,
 }
 
+/// A `[[view]]` entry — a named read-only SELECT.
+///
+/// Slice 4: views may join system tables (entries, entry_history,
+/// field_specs, _meta). Read-only enforcement happens at execution time
+/// (`PRAGMA query_only = 1`); this entry just round-trips the SQL text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ViewEntry {
+    pub name: String,
+    pub sql: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateEntry {
     pub name: String,
@@ -126,7 +143,21 @@ impl KitToml {
                 description: None,
             },
             fields,
+            views: Vec::new(),
         }
+    }
+
+    /// Build a [`KitToml`] from both stored field specs and view rows. Used
+    /// by `datum kit export <name>` once view round-trip is wired (slice 4).
+    pub fn from_kit_rows(
+        name: &str,
+        version: Option<&str>,
+        specs: &[FieldSpec],
+        views: Vec<ViewEntry>,
+    ) -> Self {
+        let mut kit = Self::from_field_specs(name, version, specs);
+        kit.views = views;
+        kit
     }
 }
 
