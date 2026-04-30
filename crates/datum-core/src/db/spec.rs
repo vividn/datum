@@ -83,16 +83,19 @@ impl Db {
     /// warnings.
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
         let json = serde_json::to_string(spec)?;
+        let tags_json = serde_json::to_string(&spec.tags)?;
         let tx = self.conn.unchecked_transaction()?;
 
         // UPSERT preserves an existing `kit_id` on re-save. Kit installs go
         // through `Db::install_kit` (which sets kit_id explicitly); a
         // user-driven `datum spec set` on a kit-owned field updates the JSON
-        // body in place without breaking the kit linkage.
+        // body in place without breaking the kit linkage. `tags` mirrors
+        // `spec.tags` so SQL filters can avoid a JSON walk.
         tx.execute(
-            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)
-             ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json",
-            params![spec.field, json],
+            "INSERT INTO field_specs (field, spec_json, tags) VALUES (?1, ?2, ?3)
+             ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json,
+                                              tags      = excluded.tags",
+            params![spec.field, json, tags_json],
         )?;
 
         // Replace the set of derived aliases for this field.
@@ -170,6 +173,27 @@ impl Db {
         Ok(())
     }
 
+    /// Return field specs whose `tags` array contains `tag`. The `tags`
+    /// column stores the canonical JSON form (e.g. `["chore","daily"]`); a
+    /// coarse LIKE prefilter narrows the scan, then Rust-side `has_tag`
+    /// verifies (so a tag substring like `"chore"` doesn't match a tag named
+    /// `"chores"`).
+    pub fn list_specs_by_tag(&self, tag: &str) -> Result<Vec<FieldSpec>> {
+        let needle = format!("%{tag}%");
+        let mut stmt = self
+            .conn
+            .prepare("SELECT spec_json FROM field_specs WHERE tags LIKE ?1 ORDER BY field")?;
+        let rows = stmt.query_map(params![needle], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for row in rows {
+            let spec: FieldSpec = serde_json::from_str(&row?)?;
+            if spec.has_tag(tag) {
+                out.push(spec);
+            }
+        }
+        Ok(out)
+    }
+
     pub fn load_registry(&self) -> Result<SpecRegistry> {
         let mut registry = SpecRegistry::new();
 
@@ -188,5 +212,71 @@ impl Db {
         }
 
         Ok(registry)
+    }
+}
+
+#[cfg(test)]
+mod tag_tests {
+    use super::Db;
+    use crate::entry::Verb;
+    use crate::field_spec::FieldSpec;
+
+    #[test]
+    fn save_mirrors_tags_into_column() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        spec.tags = vec!["chore".into(), "daily".into()];
+        db.save_field_spec(&spec).unwrap();
+
+        let stored: String = db
+            .conn()
+            .query_row(
+                "SELECT tags FROM field_specs WHERE field = 'dishes'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored, r#"["chore","daily"]"#);
+
+        // Re-saving with a different tag set updates the column.
+        let mut spec2 = spec.clone();
+        spec2.tags = vec!["chore".into()];
+        db.save_field_spec(&spec2).unwrap();
+        let stored2: String = db
+            .conn()
+            .query_row(
+                "SELECT tags FROM field_specs WHERE field = 'dishes'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored2, r#"["chore"]"#);
+    }
+
+    #[test]
+    fn list_specs_by_tag_filters_membership_not_substring() {
+        let db = Db::open_in_memory().unwrap();
+        let mut dishes = FieldSpec::new("dishes", Verb::Occur);
+        dishes.tags = vec!["chore".into()];
+        let mut laundry = FieldSpec::new("laundry", Verb::Occur);
+        laundry.tags = vec!["chore".into(), "weekly".into()];
+        let mood = FieldSpec::new("mood", Verb::Switch);
+        // `chores` (with trailing s) must NOT match a search for `chore` —
+        // the LIKE prefilter would, but the Rust verifier rejects it.
+        let mut almost = FieldSpec::new("almost", Verb::Occur);
+        almost.tags = vec!["chores".into()];
+
+        db.save_field_spec(&dishes).unwrap();
+        db.save_field_spec(&laundry).unwrap();
+        db.save_field_spec(&mood).unwrap();
+        db.save_field_spec(&almost).unwrap();
+
+        let mut hits = db.list_specs_by_tag("chore").unwrap();
+        hits.sort_by(|a, b| a.field.cmp(&b.field));
+        let names: Vec<&str> = hits.iter().map(|s| s.field.as_str()).collect();
+        assert_eq!(names, vec!["dishes", "laundry"]);
+
+        // Tag with no members → empty list.
+        assert!(db.list_specs_by_tag("nonexistent").unwrap().is_empty());
     }
 }

@@ -1812,7 +1812,7 @@ pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
     );
     db.insert_entry(&entry)?;
 
-    if args.color.is_some() || !args.state_colors.is_empty() {
+    if args.color.is_some() || !args.state_colors.is_empty() || !args.tags.is_empty() {
         let mut spec = match db.load_spec(&args.field)? {
             Some(s) => s,
             None => FieldSpec::new(&args.field, Verb::Occur),
@@ -1827,6 +1827,11 @@ pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
                 }
                 None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
             }
+        }
+        // da-a7g: `--tag <name>` is repeatable and idempotent — each flag adds
+        // the tag if absent. To replace the full set, use `datum spec set`.
+        for tag in &args.tags {
+            spec.add_tag(tag);
         }
         db.save_field_spec(&spec)?;
     }
@@ -2721,13 +2726,26 @@ pub(crate) fn cmd_spec(sub: SpecCommand, db: &Db) -> Result<()> {
             None => println!("No spec defined for field '{field}'"),
         },
         SpecCommand::Set(args) => cmd_spec_set(args, db)?,
-        SpecCommand::List => {
-            let reg = db.load_registry()?;
-            if reg.fields.is_empty() {
-                println!("No field specs defined.");
+        SpecCommand::List { tag } => {
+            if let Some(tag) = tag {
+                let specs = db.list_specs_by_tag(&tag)?;
+                if specs.is_empty() {
+                    println!("No field specs tagged '{tag}'.");
+                } else {
+                    for spec in &specs {
+                        println!("  {}", spec.field);
+                    }
+                }
             } else {
-                for (name, _spec) in &reg.fields {
-                    println!("  {name}");
+                let reg = db.load_registry()?;
+                if reg.fields.is_empty() {
+                    println!("No field specs defined.");
+                } else {
+                    let mut names: Vec<&String> = reg.fields.keys().collect();
+                    names.sort();
+                    for name in names {
+                        println!("  {name}");
+                    }
                 }
             }
         }
@@ -2829,6 +2847,12 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     }
     if args.z_index.is_some() {
         spec.z_index = args.z_index;
+    }
+    // da-a7g: `--tag <name>` repeats replace the spec's full tag set
+    // (mirrors how `--state <name>` replaces `allowed_states`). To clear
+    // tags, re-set the spec from JSON with `tags: []`.
+    if !args.tags.is_empty() {
+        spec.tags = args.tags.clone();
     }
 
     spec.validate_default_verb()
@@ -3483,6 +3507,7 @@ mod tests {
             field: "mood".to_string(),
             color: Some("ff6600".to_string()),
             state_colors: vec!["happy=00ff00".to_string(), "sad=ff0000".to_string()],
+            tags: vec![],
         };
         cmd_track(track_args, &db).unwrap();
 
@@ -3513,6 +3538,7 @@ mod tests {
             field: "mood".to_string(),
             color: None,
             state_colors: vec![],
+            tags: vec![],
         }, &db).unwrap();
         let tracked3 = db.get_tracked_fields().unwrap();
         assert!(!tracked3.iter().find(|f| f.field == "mood").unwrap().ignored);
@@ -3544,6 +3570,7 @@ mod tests {
             y: None,
             height: None,
             z_index: None,
+            tags: vec![],
         };
         cmd_spec_set(args, &db).unwrap();
 
@@ -3583,6 +3610,7 @@ mod tests {
             y: None,
             height: None,
             z_index: None,
+            tags: vec![],
         };
         cmd_spec_set(args2, &db).unwrap();
         assert!(db.lookup_alias("sad").unwrap().is_none());

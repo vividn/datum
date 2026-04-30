@@ -1135,7 +1135,9 @@ fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             Ok(SpecCommand::Show { field })
         }
         "set" => Ok(SpecCommand::Set(parse_spec_set(rest)?)),
-        "list" => Ok(SpecCommand::List),
+        "list" => Ok(SpecCommand::List {
+            tag: parse_spec_list_tag(rest)?,
+        }),
         "remove" => {
             let field = require_first_pos(rest, "<FIELD>")?;
             Ok(SpecCommand::Remove { field })
@@ -1144,6 +1146,26 @@ fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             "unknown spec subcommand: '{other}'"
         ))),
     }
+}
+
+fn parse_spec_list_tag(tail: &[&str]) -> Result<Option<String>> {
+    let mut tag: Option<String> = None;
+    let mut i = 0;
+    while i < tail.len() {
+        match split_flag(tail[i]) {
+            FlagSplit::Long("tag") => {
+                let (v, ni) = take_value(tail, i, None, "--tag")?;
+                tag = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("tag", v) => {
+                tag = Some(v.to_string());
+                i += 1;
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(tag)
 }
 
 fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
@@ -1286,6 +1308,15 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
                 out.z_index = Some(parse_position_f64(v, "--z-index")?);
                 i += 1;
             }
+            FlagSplit::Long("tag") => {
+                let (v, ni) = take_value(tail, i, None, "--tag")?;
+                out.tags.push(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("tag", v) => {
+                out.tags.push(v.to_string());
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -1390,6 +1421,7 @@ fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
     struct TrackParsing {
         color: Option<String>,
         state_colors: Vec<String>,
+        tags: Vec<String>,
     }
     let registry: Vec<LiftedSpec<TrackParsing>> = vec![
         local_value(None, Some("color"), |p, v| {
@@ -1398,6 +1430,10 @@ fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         }),
         local_value(None, Some("state"), |p, v| {
             p.state_colors.push(v.to_string());
+            Ok(())
+        }),
+        local_value(None, Some("tag"), |p, v| {
+            p.tags.push(v.to_string());
             Ok(())
         }),
     ];
@@ -1421,6 +1457,7 @@ fn parse_track_args(tail: &[&str]) -> Result<TrackArgs> {
         field: require_first_pos(&pos, "<FIELD>")?,
         color: composed.color,
         state_colors: composed.state_colors,
+        tags: composed.tags,
     })
 }
 

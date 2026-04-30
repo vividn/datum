@@ -168,6 +168,14 @@ pub struct FieldSpec {
     /// `anchor.height * anchor_size_ratio`.
     #[serde(default)]
     pub anchor_size_ratio: Option<f64>,
+
+    /// Free-form tags. Used by views and kit commands to group fields by a
+    /// schema-level marker (e.g. `["chore"]`). Mirrored into the
+    /// `field_specs.tags` column at save time so SQL filters
+    /// (`WHERE tags LIKE '%"chore"%'`) and the
+    /// `datum spec list --tag` filter can avoid a JSON walk.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 /// Resolved triple of `(y, height, z_index)` after applying defaults and the
@@ -223,7 +231,24 @@ impl FieldSpec {
             relative_to: None,
             anchor_pos_ratio: None,
             anchor_size_ratio: None,
+            tags: Vec::new(),
         }
+    }
+
+    /// Append `tag` to `tags` if it isn't already present. Returns true when
+    /// the tag was newly added (caller wants to know if a save is needed).
+    pub fn add_tag(&mut self, tag: impl Into<String>) -> bool {
+        let tag = tag.into();
+        if self.tags.iter().any(|t| t == &tag) {
+            return false;
+        }
+        self.tags.push(tag);
+        true
+    }
+
+    /// True when `tag` appears in this spec's tag list.
+    pub fn has_tag(&self, tag: &str) -> bool {
+        self.tags.iter().any(|t| t == tag)
     }
 
     /// True if this spec has any of the anchor fields set. Used for cycle
@@ -1139,6 +1164,37 @@ mod tests {
         assert!(spec.y.is_none());
         assert!(spec.height.is_none());
         assert!(spec.z_index.is_none());
+        // da-a7g: tags default to empty when absent from the JSON.
+        assert!(spec.tags.is_empty());
+    }
+
+    // ─── Tag tests (da-a7g) ──────────────────────────────────────────────────
+
+    #[test]
+    fn add_tag_is_idempotent_and_preserves_insertion_order() {
+        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        assert!(spec.add_tag("chore"));
+        assert!(spec.add_tag("daily"));
+        // Re-adding a known tag is a no-op and reports false.
+        assert!(!spec.add_tag("chore"));
+        assert_eq!(spec.tags, vec!["chore".to_string(), "daily".to_string()]);
+        assert!(spec.has_tag("chore"));
+        assert!(!spec.has_tag("chores"), "substring must not match");
+    }
+
+    #[test]
+    fn tags_serde_roundtrip_omits_empty() {
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        let json = serde_json::to_string(&spec).unwrap();
+        // Empty tags are skipped to keep the on-disk shape small + diffable.
+        assert!(!json.contains("\"tags\""), "json = {json}");
+
+        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        spec.tags = vec!["chore".into(), "daily".into()];
+        let json = serde_json::to_string(&spec).unwrap();
+        assert!(json.contains("\"tags\":[\"chore\",\"daily\"]"));
+        let back: FieldSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.tags, spec.tags);
     }
 
     // ─── Anchored layout tests (da-d4t.2) ────────────────────────────────────

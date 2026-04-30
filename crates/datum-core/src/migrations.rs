@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 17;
+pub const CURRENT_SCHEMA_VERSION: u32 = 18;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -131,7 +131,31 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "kit_commands: kit-defined Level 1/2 commands (alias expansion + view+presentation) (da-d4t.6)",
         apply: m16_to_17_kit_commands_table,
     },
+    Migration {
+        from: 17,
+        to: 18,
+        summary: "field_specs: add tags TEXT column (JSON array, default '[]') for kit/view tag filtering (da-a7g)",
+        apply: m17_to_18_field_specs_tags,
+    },
 ];
+
+/// da-a7g: tag-based field grouping. `tags` mirrors `FieldSpec.tags` out of
+/// `spec_json` into a column so SQL filters (`tags LIKE '%"chore"%'`) and
+/// the `datum spec list --tag` query can run without JSON parsing. Additive
+/// + idempotent.
+fn m17_to_18_field_specs_tags(conn: &Connection) -> Result<()> {
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('field_specs') WHERE name = 'tags'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch("ALTER TABLE field_specs ADD COLUMN tags TEXT NOT NULL DEFAULT '[]';")?;
+    }
+    Ok(())
+}
 
 /// da-d4t.3: kits scope `aliases` rows. `kit_id` is NULL for user-declared
 /// aliases (set via `datum alias set` or seeded into the schema) and the
@@ -1077,5 +1101,57 @@ mod tests {
             new_hash, "oldhash-block",
             "content_hash must be recomputed after data changes",
         );
+    }
+
+    /// da-a7g: v17→v18 adds the `tags` column with default `'[]'` so existing
+    /// rows stay readable as having no tags.
+    #[test]
+    fn m17_to_18_adds_tags_column_with_default_empty_array() {
+        // Build a v17-shape connection from scratch so the test exercises
+        // the migration end-to-end. We avoid `ALTER TABLE DROP COLUMN` here
+        // because it leaves a generated-column-style residue on some SQLite
+        // builds when other generated columns reference table-wide state.
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE field_specs (
+                field      TEXT NOT NULL PRIMARY KEY,
+                spec_json  TEXT NOT NULL,
+                kit_id     TEXT
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            rusqlite::params![
+                "legacy",
+                r#"{"field":"legacy","default_verb":"occur","subfields":{}}"#,
+            ],
+        )
+        .unwrap();
+        set_schema_version(&conn, 17).unwrap();
+
+        // The full migration runner walks the registry; only v17→v18 is
+        // pending in this synthetic conn, so this exercises the new step.
+        let applied = migrate_to_current(&conn).unwrap();
+        assert!(applied.iter().any(|s| s.contains("v17→v18")));
+        assert_eq!(
+            read_schema_version(&conn).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION),
+        );
+
+        let tags: String = conn
+            .query_row(
+                "SELECT tags FROM field_specs WHERE field = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tags, "[]", "default tags JSON must be '[]' for legacy rows");
+
+        // Re-running migrate_to_current is a no-op and doesn't error on the
+        // already-present column.
+        let again = migrate_to_current(&conn).unwrap();
+        assert!(again.is_empty());
     }
 }

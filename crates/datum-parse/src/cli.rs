@@ -531,7 +531,7 @@ pub struct WhyArgs {
 pub enum SpecCommand {
     Show { field: String },
     Set(SpecSetArgs),
-    List,
+    List { tag: Option<String> },
     Remove { field: String },
 }
 
@@ -562,6 +562,9 @@ pub struct SpecSetArgs {
     /// Stacking order. Higher values render on top. `None` here means
     /// "leave as-is"; default fallback is the resolved `y`.
     pub z_index: Option<f64>,
+    /// Replace the spec's `tags` list with this. Empty (`Vec::is_empty`) is
+    /// treated as "leave as-is" — to clear tags, pass `--json '...tags=[]'`.
+    pub tags: Vec<String>,
 }
 
 impl SpecSetArgs {
@@ -584,6 +587,7 @@ impl SpecSetArgs {
             y: None,
             height: None,
             z_index: None,
+            tags: Vec::new(),
         }
     }
 }
@@ -649,6 +653,9 @@ pub struct TrackArgs {
     pub field: String,
     pub color: Option<String>,
     pub state_colors: Vec<String>,
+    /// Each `--tag <name>` flag adds the tag to the field's spec
+    /// idempotently. Repeatable; order preserved on first-add.
+    pub tags: Vec<String>,
 }
 
 #[derive(Debug)]

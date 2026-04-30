@@ -356,11 +356,12 @@ const REKEY_BODY: &str = "USAGE:\n  datum rekey <ID_OR_SLUG> [VALUE | KEY=VALUE]
 
 const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] (--offset DUR | --time NEW) [--field F] [--after BND] [--before BND]\n";
 
-const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD>\n  datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... ...\n  datum spec list\n  datum spec remove <FIELD>\n";
+const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD>\n  datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n";
 
 const ALIAS_BODY: &str = "USAGE:\n  datum alias show <NAME>\n  datum alias set <NAME> <EXPANSION>\n  datum alias list\n  datum alias remove <NAME>\n";
 
-const TRACK_BODY: &str = "USAGE:\n  datum track <FIELD> [--color C] [--state S=C]...\n";
+const TRACK_BODY: &str =
+    "USAGE:\n  datum track <FIELD> [--color C] [--state S=C]... [--tag T]...\n";
 
 const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>\n";
 
@@ -807,8 +808,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         long_description: None,
         usage: &[
             "datum spec show <FIELD>",
-            "datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... ...",
-            "datum spec list",
+            "datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... [--tag T]... ...",
+            "datum spec list [--tag T]",
             "datum spec remove <FIELD>",
         ],
         args: NO_ARGS,
@@ -845,7 +846,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "track a field in the now view",
         top_summary: None,
         long_description: None,
-        usage: &["datum track <FIELD> [--color C] [--state S=C]..."],
+        usage: &["datum track <FIELD> [--color C] [--state S=C]... [--tag T]..."],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,

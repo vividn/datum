@@ -117,6 +117,10 @@ pub struct FieldEntry {
     /// Allowed states with per-state overrides.
     #[serde(default, rename = "states")]
     pub states: Vec<StateEntry>,
+    /// Free-form tags used by views and kit commands to group fields
+    /// (e.g. `tags = ["chore"]`). Round-trips into [`FieldSpec::tags`].
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
 }
 
 /// A `[[view]]` entry — a named read-only SELECT.
@@ -358,6 +362,8 @@ impl FieldEntry {
             spec.allowed_states = Some(allowed);
         }
 
+        spec.tags = self.tags;
+
         spec.regenerate_derived_aliases();
         Ok(spec)
     }
@@ -417,6 +423,7 @@ impl FieldEntry {
             id_keys: spec.id_keys.clone(),
             data_keys: spec.data_keys.clone(),
             states,
+            tags: spec.tags.clone(),
         }
     }
 }
@@ -715,6 +722,7 @@ name = "japan"
             id_keys: vec![],
             data_keys: vec![],
             states: vec![],
+            tags: vec![],
         };
         let err = entry.into_spec(None).unwrap_err();
         let msg = format!("{err}");
@@ -751,6 +759,7 @@ name = "japan"
                     state_size: None,
                 },
             ],
+            tags: vec![],
         };
         let spec = entry.into_spec(Some("#ff0000".into())).unwrap();
         assert_eq!(spec.field, "mood");
@@ -848,6 +857,46 @@ size = 0.05
         assert_eq!(f.states.len(), 1);
         assert_eq!(f.states[0].name, "asleep");
         assert_eq!(f.states[0].color.as_deref(), Some("#000000"));
+    }
+
+    // ─── Tags (da-a7g) ────────────────────────────────────────────────
+
+    #[test]
+    fn parses_field_with_tags() {
+        let src = r##"
+[kit]
+name = "chores"
+
+[[field]]
+name = "dishes"
+default_verb = "occur"
+tags = ["chore", "daily"]
+"##;
+        let kit = KitToml::from_str(src).unwrap();
+        let dishes = &kit.fields[0];
+        assert_eq!(dishes.tags, vec!["chore".to_string(), "daily".to_string()]);
+
+        let spec = dishes.clone().into_spec(None).unwrap();
+        assert_eq!(spec.tags, vec!["chore".to_string(), "daily".to_string()]);
+    }
+
+    #[test]
+    fn round_trip_preserves_field_tags() {
+        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        spec.tags = vec!["chore".into(), "daily".into()];
+        let kit = KitToml::from_field_specs("chores", None, &[spec.clone()], &[]);
+        let toml = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&toml).unwrap();
+        assert_eq!(back.fields[0].tags, spec.tags);
+    }
+
+    #[test]
+    fn round_trip_omits_empty_tags() {
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        let kit = KitToml::from_field_specs("k", None, &[spec], &[]);
+        let toml = kit.to_toml().unwrap();
+        // skip_serializing_if keeps empty tag arrays out of the emitted TOML.
+        assert!(!toml.contains("tags"), "toml = {toml}");
     }
 
     // ─── slice 5: indices ─────────────────────────────────────────────

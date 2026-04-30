@@ -124,10 +124,13 @@ impl Db {
             }
 
             let json = serde_json::to_string(spec)?;
+            let tags_json = serde_json::to_string(&spec.tags)?;
             tx.execute(
-                "INSERT INTO field_specs (field, spec_json, kit_id) VALUES (?1, ?2, ?3)
-                 ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json, kit_id = excluded.kit_id",
-                params![spec.field, json, kit_id],
+                "INSERT INTO field_specs (field, spec_json, kit_id, tags) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json,
+                                                  kit_id    = excluded.kit_id,
+                                                  tags      = excluded.tags",
+                params![spec.field, json, kit_id, tags_json],
             )?;
 
             // Replace derived aliases for this field. Mirrors save_field_spec's

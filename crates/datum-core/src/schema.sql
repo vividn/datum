@@ -140,7 +140,11 @@ CREATE INDEX IF NOT EXISTS entries_hybrid_time
 CREATE TABLE IF NOT EXISTS field_specs (
     field       TEXT NOT NULL PRIMARY KEY,
     spec_json   TEXT NOT NULL,
-    kit_id      TEXT
+    kit_id      TEXT,
+    -- Mirror of `FieldSpec.tags` (JSON array of strings, default '[]').
+    -- Pulled out of `spec_json` so SQL filters (`tags LIKE '%"chore"%'`) and
+    -- the `datum spec list --tag` query can avoid JSON parsing.
+    tags        TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);
@@ -320,4 +324,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '17');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '18');
