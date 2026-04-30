@@ -209,7 +209,11 @@ fn now_dispatches_end_to_end_via_run_cli() {
     // output content is asserted by the render_* tests above.
     let db = fresh_db();
     run_cli(&["track", "mood"], &db).expect("track dispatch");
-    run_cli(&["switch", "mood", "happy"], &db).expect("switch dispatch");
+    // `-t +1` keeps the switch's timestamp distinct from `track`'s default
+    // `now()` — both write Switch entries with slug `mood:<start_time>`, and
+    // on fast machines a same-millisecond collision hard-errors (da-p5j,
+    // family of da-e65). Same-test fix pattern used in test_entries_for_field.
+    run_cli(&["switch", "mood", "happy", "-t", "+1"], &db).expect("switch dispatch");
 
     // Bare `now` honours the default ignored-hidden contract.
     run_cli(&["now"], &db).expect("now dispatch");
