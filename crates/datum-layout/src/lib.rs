@@ -15,6 +15,7 @@ pub mod dayview;
 pub mod dayview_svg;
 pub mod nowview;
 pub mod nowview_svg;
+pub mod nowview_terminal;
 pub mod svg;
 
 /// One timed entry to lay out. Times are epoch-millis (UTC); the caller is

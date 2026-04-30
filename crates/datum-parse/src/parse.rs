@@ -1881,6 +1881,23 @@ fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.watch = true;
                 i += 1;
             }
+            FlagSplit::Long("terminal") | FlagSplit::Short('T') => {
+                out.terminal = true;
+                i += 1;
+            }
+            FlagSplit::Long("no-color") => {
+                out.no_color = true;
+                i += 1;
+            }
+            FlagSplit::Long("cols") => {
+                let (v, ni) = take_value(tail, i, None, "--cols")?;
+                out.cols = Some(parse_f64(v, "--cols")? as u16);
+                i = ni;
+            }
+            FlagSplit::LongAttached("cols", v) => {
+                out.cols = Some(parse_f64(v, "--cols")? as u16);
+                i += 1;
+            }
             FlagSplit::Positional(_) => {
                 return Err(ParseError::InvalidArg(
                     "nowview takes no positional arguments".into(),

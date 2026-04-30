@@ -380,6 +380,8 @@ const IDS_BODY: &str = "USAGE:\n  datum ids [FIELD] [-n N] [--oldest-first] [--s
 
 const DAYVIEW_BODY: &str = "USAGE:\n  datum dayview [OPTIONS]\n\nOPTIONS:\n  --start-date <DATE>      Start date (ISO YYYY-MM-DD or relative offset like -3, 0)\n  --end-date <DATE>, -d    End date (default: today)\n  --n-days <N>, -n         Number of days (default: 1)\n  --width <N>              SVG width in pixels (default: 2000)\n  --height <N>             Total SVG height (auto from day-height + n-days when unset)\n  --day-height <N>         Per-day band height (default: 100)\n  --time-axis-height <N>   Bottom time-axis strip height (default: 15)\n  --margin <N>             Outer margin (default: 2)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  --json                   Emit layout JSON instead of SVG (debug)\n  -w, --watch              Redraw on a 5-minute poll loop\n";
 
+const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --history <DUR>          History window before \"now\" (e.g. 15m, 1h). Omit for now-only view.\n  --width <N>              SVG width in pixels (auto-scales with --history when unset)\n  --height <N>             SVG height in pixels (default 300)\n  --now-width <DUR>        Width of the right \"now\" panel in time units (default 5m)\n  --margin <N>             Outer margin (default 2)\n  --time-axis-height <N>   Time-axis strip height (default 15)\n  -o, --output-file <PATH> .svg / .png / .html (default: SVG to stdout)\n  -T, --terminal           Render ANSI/Unicode block art instead of SVG\n                           (auto when stdout is a TTY and no output file is set)\n  --no-color               Disable ANSI color in --terminal mode\n  --cols <N>               Override terminal width in cells (auto-detected from $COLUMNS)\n  -w, --watch              Redraw every minute\n";
+
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
 const SETUP_BODY: &str = "USAGE:\n  datum setup [--force-recreate]\n";
@@ -642,6 +644,21 @@ pub const COMMANDS: &[CommandSpec] = &[
         examples: NO_EXAMPLES,
         summary_col: 27,
         body_override: Some(DAYVIEW_BODY),
+        display_input_name: false,
+    },
+    CommandSpec {
+        name: "nowview",
+        aliases: &[],
+        category: Category::Read,
+        summary: "render a near-current-time band view (terminal or SVG)",
+        top_summary: Some("Render a nowview — terminal block art by default, SVG with -o"),
+        long_description: None,
+        usage: &["datum nowview [OPTIONS]"],
+        args: NO_ARGS,
+        flags: NO_FLAGS,
+        examples: NO_EXAMPLES,
+        summary_col: 27,
+        body_override: Some(NOWVIEW_BODY),
         display_input_name: false,
     },
     CommandSpec {

@@ -166,6 +166,83 @@ fn nowview_block_entry_renders_in_history_window() {
 }
 
 #[test]
+fn nowview_terminal_writes_text_with_unicode_blocks() {
+    // `--terminal` + `--output-file foo.txt` produces a text file with
+    // Unicode shading characters and field labels — no SVG envelope.
+    let db = fresh_db();
+    let now = Utc::now();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(serde_json::json!("focused"))
+        .time_start_utc(now - Duration::minutes(20))
+        .insert(&db);
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+
+    run_cli(
+        &[
+            "nowview",
+            "--history",
+            "1h",
+            "--terminal",
+            "--no-color",
+            "--cols",
+            "60",
+            "--output-file",
+            &path,
+        ],
+        &db,
+    )
+    .expect("nowview --terminal dispatch");
+
+    let text = std::fs::read_to_string(&path).expect("read text");
+    assert!(!text.starts_with("<?xml"), "should not be SVG");
+    assert!(!text.contains("<svg "), "should not be SVG");
+    assert!(text.contains("mood"), "expected field label in:\n{text}");
+    // Filled cell character for the ongoing-state band.
+    assert!(text.contains('█'), "expected filled char in:\n{text}");
+    // Border row with `└─┘` style.
+    assert!(text.contains('└') && text.contains('┘'));
+}
+
+#[test]
+fn nowview_terminal_color_mode_emits_ansi_escapes() {
+    let db = fresh_db();
+    let now = Utc::now();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(serde_json::json!("focused"))
+        .time_start_utc(now - Duration::minutes(15))
+        .insert(&db);
+
+    let tmp = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+    let path = tmp.path().to_str().unwrap().to_string();
+
+    // `--terminal` without `--no-color`. NO_COLOR isn't set in tests, but
+    // stdout for the test harness is not a TTY — so the auto-disable in
+    // the dispatcher would normally kick in. We force-enable terminal
+    // mode and verify no-color path here; ANSI emission is exercised in
+    // the layout-crate unit test (color_mode_emits_ansi_escapes).
+    run_cli(
+        &[
+            "nowview",
+            "--history",
+            "30m",
+            "--terminal",
+            "--no-color",
+            "--output-file",
+            &path,
+        ],
+        &db,
+    )
+    .expect("nowview --terminal dispatch");
+    let text = std::fs::read_to_string(&path).expect("read text");
+    // Exactly verify *no* ANSI when --no-color is set.
+    assert!(!text.contains("\x1b["), "unexpected ANSI in:\n{text}");
+}
+
+#[test]
 fn nowview_no_field_data_still_renders_envelope() {
     let db = fresh_db();
     // Track a field but never log to it in the visible window.

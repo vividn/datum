@@ -791,6 +791,14 @@ pub struct NowviewArgs {
     /// Watch mode: redraw every minute (or on DB change in a future
     /// follow-up).
     pub watch: bool,
+    /// Terminal mode: render ANSI/Unicode block art to stdout instead of
+    /// SVG. Auto-enabled when stdout is a TTY and no output file is set.
+    pub terminal: bool,
+    /// Force-disable color in terminal mode (for redirected output, or
+    /// users who set `NO_COLOR`).
+    pub no_color: bool,
+    /// Override terminal width in cells. None → auto-detect, fall back to 80.
+    pub cols: Option<u16>,
 }
 
 impl NowviewArgs {
@@ -804,6 +812,9 @@ impl NowviewArgs {
             time_axis_height: 15.0,
             output_file: None,
             watch: false,
+            terminal: false,
+            no_color: false,
+            cols: None,
         }
     }
 }

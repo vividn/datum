@@ -112,6 +112,7 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `get` — Print a single entry by id or slug
 - `grep` — Regex search over entry JSON content
 - `dayview` — Render a dayview SVG (or dump layout JSON)
+- `nowview` — Render a nowview — terminal block art by default, SVG with -o
 - `history` — Show the full modification trail for an entry
 - `why` — Explain the intent behind an entry
 
