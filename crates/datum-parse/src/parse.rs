@@ -509,18 +509,6 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     r
 }
 
-/// Flatten `OutputArgs` (R2 shape, `show: Option<String>`) into the
-/// pre-existing `OutputFlags` (`show: String` defaulting to "default").
-/// Used by parsers that haven't yet migrated to the composed shape
-/// (Phases B/C/D).
-fn flatten_output(o: OutputArgs) -> OutputFlags {
-    OutputFlags {
-        show: o.show.unwrap_or_else(|| "default".to_string()),
-        show_all: o.show_all,
-        format_string: o.format_string,
-    }
-}
-
 fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     let registry = log_args_registry();
     let mut out = LogArgs::fresh(String::new());

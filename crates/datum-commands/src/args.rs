@@ -310,20 +310,6 @@ pub trait OutputFlagsExt {
     fn output(&self) -> OutputArgs;
 }
 
-macro_rules! impl_output_flags_ext {
-    ($ty:ty) => {
-        impl OutputFlagsExt for $ty {
-            fn output(&self) -> OutputArgs {
-                resolve_output_flags(&self.output_flags)
-            }
-        }
-    };
-}
-
-// Phase B (da-ngq) + Phase C (da-6qj) — read and mutate commands carry
-// the composed `OutputArgs` directly. The same `.output()` method shape
-// is preserved by routing through `resolve_parse_output_args` against
-// `&self.output`.
 macro_rules! impl_output_args_ext {
     ($ty:ty) => {
         impl OutputFlagsExt for $ty {
