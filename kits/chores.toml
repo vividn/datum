@@ -1,0 +1,74 @@
+[kit]
+name = "chores"
+version = "0.1"
+description = "Paradigm bundle for tracking chores by next-due date. Users author their own chore fields with `datum track <name>` and log entries with `datum occur <name> next_date=<ISO ts> done=true`. The kit ships the index, the chores_due view, and the chorelist Level-2 command. Slice 7 (da-d4t.7) — chore/chored alias-creator subcommands deferred until placeholder substitution lands; see follow-up beads filed by the mayor."
+
+# Index over the next-due timestamp across all four spelling conventions
+# (next_time, nextTime, next_date, nextDate). Partial: only entries that
+# carry a next-due timestamp and aren't tombstoned. Used by chores_due.
+[[index]]
+name = "chore_next_due"
+on = "entries"
+expression = "COALESCE(json_extract(data,'$.next_time'), json_extract(data,'$.nextTime'), json_extract(data,'$.next_date'), json_extract(data,'$.nextDate'))"
+where = "deleted_at IS NULL AND COALESCE(json_extract(data,'$.next_time'), json_extract(data,'$.nextTime'), json_extract(data,'$.next_date'), json_extract(data,'$.nextDate')) IS NOT NULL"
+
+# One row per field whose latest entry carries a next-due timestamp.
+# MAX(create_time)-wins reduce: same-field entries collapse to the most
+# recently logged. `last_done` is the start_time of that latest entry;
+# `done_today` flags whether it was logged today (local-midnight). The
+# join-on-(field, max_ct) shape lets the chore_next_due index serve the
+# inner aggregate without a sort.
+[[view]]
+name = "chores_due"
+sql = """
+SELECT
+  e.field                                                  AS field,
+  COALESCE(json_extract(e.data, '$.next_time'),
+           json_extract(e.data, '$.nextTime'),
+           json_extract(e.data, '$.next_date'),
+           json_extract(e.data, '$.nextDate'))             AS next_due_raw,
+  e.start_time                                             AS last_done,
+  CASE
+    WHEN e.start_time IS NOT NULL
+     AND date(e.start_time) = date('now') THEN 1
+    ELSE 0
+  END                                                      AS done_today
+FROM entries e
+INNER JOIN (
+  SELECT field, MAX(create_time) AS max_ct
+  FROM entries
+  WHERE deleted_at IS NULL
+    AND COALESCE(json_extract(data, '$.next_time'),
+                 json_extract(data, '$.nextTime'),
+                 json_extract(data, '$.next_date'),
+                 json_extract(data, '$.nextDate')) IS NOT NULL
+  GROUP BY field
+) latest ON latest.field = e.field AND latest.max_ct = e.create_time
+WHERE e.deleted_at IS NULL
+"""
+
+# Level 2 command: `datum chorelist` runs the chores_due view, sorts by
+# next-due ascending, applies smart-date formatting, and paints rows by
+# urgency. Color rules are first-match-wins so done-today wins over
+# overdue (a chore you completed today shouldn't keep glowing red).
+[[command]]
+name = "chorelist"
+view = "chores_due"
+help = "List chores by next-due date with overdue/due-soon coloring"
+columns = ["field", "next_due_raw", "last_done", "done_today"]
+labels = { next_due_raw = "due", last_done = "last", done_today = "today?" }
+formats = { next_due_raw = "smart_date", last_done = "smart_date" }
+sort = "next_due_raw"
+flags = ["watch"]
+
+[[command.color_rules]]
+when = "done_today = 1"
+color = "green"
+
+[[command.color_rules]]
+when = "next_due_raw < now"
+color = "red"
+
+[[command.color_rules]]
+when = "next_due_raw < today + 1d"
+color = "yellow"
