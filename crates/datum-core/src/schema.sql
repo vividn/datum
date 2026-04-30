@@ -134,11 +134,16 @@ CREATE INDEX IF NOT EXISTS entries_hybrid_time
 
 -- Field specs: single source of truth for a field's schema, tracking state,
 -- colors, allowed states, id template, and derived aliases. Stored as a JSON
--- blob so the shape can evolve without migrations.
+-- blob so the shape can evolve without migrations. `kit_id` is NULL for
+-- user-declared specs and the kit's name for rows installed via
+-- `datum kit install`; uninstall removes only rows with that kit_id.
 CREATE TABLE IF NOT EXISTS field_specs (
     field       TEXT NOT NULL PRIMARY KEY,
-    spec_json   TEXT NOT NULL
+    spec_json   TEXT NOT NULL,
+    kit_id      TEXT
 );
+
+CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);
 
 -- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
 -- when the alias was auto-generated from a FieldSpec state; such rows
@@ -250,4 +255,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '12');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '13');

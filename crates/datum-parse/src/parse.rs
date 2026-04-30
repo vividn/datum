@@ -227,6 +227,7 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
 
         "spec" => Command::Spec(parse_spec_cmd(rest)?),
         "alias" => Command::Alias(parse_alias_cmd(rest)?),
+        "kit" => Command::Kit(parse_kit_cmd(rest)?),
 
         "track" => Command::Track(parse_track_args(rest)?),
         "ignore" => Command::Ignore(parse_ignore_args(rest)?),
@@ -356,18 +357,14 @@ fn walk_registry<P: 'static>(
     let split = split_flag(tok);
 
     let (spec, attached) = match split {
-        FlagSplit::Long(name) => {
-            match registry.iter().find(|s| s.long == Some(name)) {
-                Some(s) => (s, None),
-                None => return Ok(None),
-            }
-        }
-        FlagSplit::LongAttached(name, v) => {
-            match registry.iter().find(|s| s.long == Some(name)) {
-                Some(s) => (s, Some(v)),
-                None => return Ok(None),
-            }
-        }
+        FlagSplit::Long(name) => match registry.iter().find(|s| s.long == Some(name)) {
+            Some(s) => (s, None),
+            None => return Ok(None),
+        },
+        FlagSplit::LongAttached(name, v) => match registry.iter().find(|s| s.long == Some(name)) {
+            Some(s) => (s, Some(v)),
+            None => return Ok(None),
+        },
         FlagSplit::Short(c) => match registry.iter().find(|s| s.short == Some(c)) {
             Some(s) => (s, None),
             None => return Ok(None),
@@ -669,7 +666,10 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
     Ok(TailArgs {
         field: pos.first().map(|s| s.to_string()),
         count: composed.extras.count,
-        metric: composed.extras.metric.unwrap_or_else(|| "hybrid".to_string()),
+        metric: composed
+            .extras
+            .metric
+            .unwrap_or_else(|| "hybrid".to_string()),
         reverse: composed.extras.reverse,
         columns: composed.extras.columns,
         time: composed.time,
@@ -1327,6 +1327,53 @@ fn parse_alias_cmd(tail: &[&str]) -> Result<AliasCommand> {
         }
         other => Err(ParseError::InvalidArg(format!(
             "unknown alias subcommand: '{other}'"
+        ))),
+    }
+}
+
+fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
+    let Some(sub) = tail.first() else {
+        return Err(ParseError::InvalidArg(
+            "missing kit subcommand (install|export|list|uninstall)".into(),
+        ));
+    };
+    let rest: &[&str] = &tail[1..];
+    match *sub {
+        "install" => {
+            let mut force = false;
+            let mut pos: Vec<&str> = Vec::new();
+            for tok in rest {
+                match split_flag(tok) {
+                    FlagSplit::Positional(s) => pos.push(s),
+                    FlagSplit::Long("force") | FlagSplit::Short('f') => force = true,
+                    f => return Err(unknown_flag(f)),
+                }
+            }
+            let path = require_first_pos(&pos, "<PATH>")?;
+            Ok(KitCommand::Install(KitInstallArgs { path, force }))
+        }
+        "export" => {
+            let mut pos: Vec<&str> = Vec::new();
+            for tok in rest {
+                match split_flag(tok) {
+                    FlagSplit::Positional(s) => pos.push(s),
+                    f => return Err(unknown_flag(f)),
+                }
+            }
+            let name = pos
+                .first()
+                .ok_or_else(|| ParseError::InvalidArg("kit export requires <NAME>".into()))?
+                .to_string();
+            let path = pos.get(1).map(|s| s.to_string());
+            Ok(KitCommand::Export(KitExportArgs { name, path }))
+        }
+        "list" => Ok(KitCommand::List),
+        "uninstall" => {
+            let name = require_first_pos(rest, "<NAME>")?;
+            Ok(KitCommand::Uninstall(KitUninstallArgs { name }))
+        }
+        other => Err(ParseError::InvalidArg(format!(
+            "unknown kit subcommand: '{other}'"
         ))),
     }
 }

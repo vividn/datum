@@ -39,7 +39,16 @@ fn test_insert_and_fetch() {
 fn test_duplicate_rejected() {
     let db = Db::open_in_memory().unwrap();
     let t = DatumTime::now();
-    let entry = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t), None, "d1");
+    let entry = Entry::new(
+        "mood",
+        Verb::Switch,
+        Some(serde_json::json!("happy")),
+        None,
+        None,
+        Some(t),
+        None,
+        "d1",
+    );
     db.insert_entry(&entry).unwrap();
     // Same content_hash → should fail
     let err = db.insert_entry(&entry);
@@ -55,8 +64,21 @@ fn test_entries_for_field() {
     let base = chrono::Utc::now();
     for (i, state) in ["happy", "sad", "focused"].iter().enumerate() {
         let utc = base + chrono::Duration::milliseconds(i as i64 + 1);
-        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        let e = Entry::new("mood", Verb::Switch, Some(serde_json::json!(state)), None, None, Some(t), None, "d1");
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let e = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!(state)),
+            None,
+            None,
+            Some(t),
+            None,
+            "d1",
+        );
         db.insert_entry(&e).unwrap();
     }
     let entries = db.entries_for_field("mood", None).unwrap();
@@ -66,11 +88,14 @@ fn test_entries_for_field() {
 #[test]
 fn test_entries_for_field_asc() {
     let db = Db::open_in_memory().unwrap();
-    let base: chrono::DateTime<chrono::Utc> =
-        "2024-01-01T00:00:00Z".parse().unwrap();
+    let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
     for secs in &[300i64, 100, 200] {
         let utc = base + chrono::Duration::seconds(*secs);
-        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         let e = Entry::new(
             "mood",
             Verb::Occur,
@@ -98,7 +123,16 @@ fn test_entries_for_field_asc() {
 }
 
 fn switch_at(field: &str, value: JsonValue, t: DatumTime) -> Entry {
-    Entry::new(field, Verb::Switch, Some(value), None, None, Some(t), None, "d1")
+    Entry::new(
+        field,
+        Verb::Switch,
+        Some(value),
+        None,
+        None,
+        Some(t),
+        None,
+        "d1",
+    )
 }
 
 #[test]
@@ -107,15 +141,18 @@ fn test_get_tracked_fields_derives_from_log() {
     // distinct fields and labels each via state_at(now).
     let db = Db::open_in_memory().unwrap();
     let t = DatumTime::now();
-    db.insert_entry(&switch_at("coffee", JsonValue::Null, t.clone())).unwrap();
+    db.insert_entry(&switch_at("coffee", JsonValue::Null, t.clone()))
+        .unwrap();
     // 'mood' has a real state (happy) — tracked, not ignored.
-    db.insert_entry(&switch_at("mood", serde_json::json!("happy"), t.clone())).unwrap();
+    db.insert_entry(&switch_at("mood", serde_json::json!("happy"), t.clone()))
+        .unwrap();
     // Stash a color spec on mood so the projection picks it up.
     let mut spec = FieldSpec::new("mood", Verb::Switch);
     spec.color = Some("ff6600".to_string());
     db.save_field_spec(&spec).unwrap();
     // 'youtube' is explicitly ignored.
-    db.insert_entry(&switch_at("youtube", serde_json::json!("IGNORED"), t)).unwrap();
+    db.insert_entry(&switch_at("youtube", serde_json::json!("IGNORED"), t))
+        .unwrap();
 
     let fields = db.get_tracked_fields().unwrap();
     assert_eq!(fields.len(), 3);
@@ -135,10 +172,12 @@ fn test_get_tracked_fields_derives_from_log() {
 fn test_list_distinct_fields_excludes_tombstones() {
     let db = Db::open_in_memory().unwrap();
     let t = DatumTime::now();
-    db.insert_entry(&switch_at("a", serde_json::json!(1), t.clone())).unwrap();
+    db.insert_entry(&switch_at("a", serde_json::json!(1), t.clone()))
+        .unwrap();
     let b_entry = switch_at("b", serde_json::json!(1), t.clone());
     db.insert_entry(&b_entry).unwrap();
-    db.insert_entry(&switch_at("c", serde_json::json!(1), t)).unwrap();
+    db.insert_entry(&switch_at("c", serde_json::json!(1), t))
+        .unwrap();
     // Tombstone 'b'.
     db.delete_entry(&b_entry.slug).unwrap();
 
@@ -153,8 +192,16 @@ fn test_state_colors() {
     db.set_state_color("mood", "sad", "ff0000").unwrap();
 
     let map = db.get_all_state_colors().unwrap();
-    assert_eq!(map.get(&("mood".to_string(), "happy".to_string())).map(|s| s.as_str()), Some("00ff00"));
-    assert_eq!(map.get(&("mood".to_string(), "sad".to_string())).map(|s| s.as_str()), Some("ff0000"));
+    assert_eq!(
+        map.get(&("mood".to_string(), "happy".to_string()))
+            .map(|s| s.as_str()),
+        Some("00ff00")
+    );
+    assert_eq!(
+        map.get(&("mood".to_string(), "sad".to_string()))
+            .map(|s| s.as_str()),
+        Some("ff0000")
+    );
 }
 
 // ------------------------------------------------------------------
@@ -162,11 +209,9 @@ fn test_state_colors() {
 // ------------------------------------------------------------------
 
 fn utc_at(h: u32, m: u32) -> DatumTime {
-    let utc = chrono::DateTime::parse_from_rfc3339(
-        &format!("2024-01-01T{h:02}:{m:02}:00Z"),
-    )
-    .unwrap()
-    .with_timezone(&Utc);
+    let utc = chrono::DateTime::parse_from_rfc3339(&format!("2024-01-01T{h:02}:{m:02}:00Z"))
+        .unwrap()
+        .with_timezone(&Utc);
     DatumTime {
         utc,
         offset_minutes: 0,
@@ -397,10 +442,28 @@ fn active_state_ignores_other_fields() {
 fn test_latest_entry_for_now_skips_note() {
     let db = Db::open_in_memory().unwrap();
     let t1 = DatumTime::now();
-    let switch_entry = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t1), None, "d1");
+    let switch_entry = Entry::new(
+        "mood",
+        Verb::Switch,
+        Some(serde_json::json!("happy")),
+        None,
+        None,
+        Some(t1),
+        None,
+        "d1",
+    );
     db.insert_entry(&switch_entry).unwrap();
     let t2 = DatumTime::now();
-    let note_entry = Entry::new("mood", Verb::Add, Some(serde_json::json!("journal entry")), None, None, Some(t2), None, "d1");
+    let note_entry = Entry::new(
+        "mood",
+        Verb::Add,
+        Some(serde_json::json!("journal entry")),
+        None,
+        None,
+        Some(t2),
+        None,
+        "d1",
+    );
     db.insert_entry(&note_entry).unwrap();
 
     let latest = db.latest_entry_for_now("mood").unwrap();
@@ -435,7 +498,10 @@ fn field_spec_stores_color_and_states() {
     let states = loaded.allowed_states.as_ref().unwrap();
     assert!(states.contains(&"happy".to_string()));
     assert!(states.contains(&"sad".to_string()));
-    assert_eq!(loaded.state_colors.get("happy").map(|s| s.as_str()), Some("00ff00"));
+    assert_eq!(
+        loaded.state_colors.get("happy").map(|s| s.as_str()),
+        Some("00ff00")
+    );
 }
 
 #[test]
@@ -446,7 +512,10 @@ fn adding_state_creates_derived_alias() {
     spec.regenerate_derived_aliases();
     db.save_field_spec(&spec).unwrap();
 
-    let alias = db.lookup_alias("happy").unwrap().expect("derived alias present");
+    let alias = db
+        .lookup_alias("happy")
+        .unwrap()
+        .expect("derived alias present");
     assert_eq!(alias.expands_to, "switch mood happy");
 
     // Registry also sees it as an alias.
@@ -469,8 +538,14 @@ fn removing_state_drops_derived_alias() {
     updated.regenerate_derived_aliases();
     db.save_field_spec(&updated).unwrap();
 
-    assert!(db.lookup_alias("sad").unwrap().is_none(), "sad alias must be dropped");
-    assert!(db.lookup_alias("happy").unwrap().is_some(), "happy alias must remain");
+    assert!(
+        db.lookup_alias("sad").unwrap().is_none(),
+        "sad alias must be dropped"
+    );
+    assert!(
+        db.lookup_alias("happy").unwrap().is_some(),
+        "happy alias must remain"
+    );
 }
 
 #[test]
@@ -534,25 +609,16 @@ fn track_ignore_round_trip_via_log() {
     .unwrap();
 
     // At t1: tracked (NULL value)
-    assert_eq!(
-        db.state_at("mood", t1.utc).unwrap(),
-        Some(JsonValue::Null),
-    );
+    assert_eq!(db.state_at("mood", t1.utc).unwrap(), Some(JsonValue::Null),);
     // At t2: ignored
     assert_eq!(
         db.state_at("mood", t2.utc).unwrap(),
         Some(JsonValue::String("IGNORED".to_string())),
     );
     // At t3: tracked again (NULL value)
-    assert_eq!(
-        db.state_at("mood", t3.utc).unwrap(),
-        Some(JsonValue::Null),
-    );
+    assert_eq!(db.state_at("mood", t3.utc).unwrap(), Some(JsonValue::Null),);
     // Before any entry: None (the IGNORED default).
-    assert_eq!(
-        db.state_at("mood", as_utc(8, 0)).unwrap(),
-        None,
-    );
+    assert_eq!(db.state_at("mood", as_utc(8, 0)).unwrap(), None,);
 }
 
 // ─── state_at — da-2sr acceptance tests ──────────────────────────────────
@@ -714,8 +780,10 @@ fn user_alias_survives_derived_alias_save() {
     let report = db.save_field_spec_with_report(&spec).unwrap();
 
     let alias = db.lookup_alias("happy").unwrap().unwrap();
-    assert_eq!(alias.expands_to, "add journal happy",
-        "user alias wins over derived");
+    assert_eq!(
+        alias.expands_to, "add journal happy",
+        "user alias wins over derived"
+    );
 
     assert_eq!(report.skipped.len(), 1);
     assert_eq!(report.skipped[0].name, "happy");
@@ -777,7 +845,12 @@ fn insert_conflict_update_mutates_in_place() {
     let outcome = db
         .insert_entry_with_strategy(&second, ConflictStrategy::Update)
         .unwrap();
-    assert_eq!(outcome, InsertOutcome::Updated { slug: first_slug.clone() });
+    assert_eq!(
+        outcome,
+        InsertOutcome::Updated {
+            slug: first_slug.clone()
+        }
+    );
 
     // Still exactly one row; it mutated in place (original slug preserved).
     let all = db.entries_for_field("mood", None).unwrap();
@@ -822,7 +895,12 @@ fn insert_conflict_merge_unions_extra_data() {
     let outcome = db
         .insert_entry_with_strategy(&incoming, ConflictStrategy::Merge)
         .unwrap();
-    assert_eq!(outcome, InsertOutcome::Merged { slug: existing_slug.clone() });
+    assert_eq!(
+        outcome,
+        InsertOutcome::Merged {
+            slug: existing_slug.clone()
+        }
+    );
 
     // Still one row. data = union, scalar conflict → incoming wins.
     let all = db.entries_for_field("mood", None).unwrap();
@@ -847,7 +925,9 @@ fn insert_conflict_rekey_creates_new_slug_keeps_old() {
     // raw insert retries with a suffixed slug (`<slug>_xxxx`). The
     // outcome carries that concrete stored slug.
     let (old_slug, new_slug) = match outcome {
-        InsertOutcome::Rekeyed { old_slug, new_slug, .. } => (old_slug, new_slug),
+        InsertOutcome::Rekeyed {
+            old_slug, new_slug, ..
+        } => (old_slug, new_slug),
         other => panic!("expected Rekeyed, got {other:?}"),
     };
     assert_eq!(old_slug, first_slug);
@@ -876,7 +956,12 @@ fn insert_conflict_ignore_returns_existing() {
     let outcome = db
         .insert_entry_with_strategy(&second, ConflictStrategy::Ignore)
         .unwrap();
-    assert_eq!(outcome, InsertOutcome::Ignored { slug: first_slug.clone() });
+    assert_eq!(
+        outcome,
+        InsertOutcome::Ignored {
+            slug: first_slug.clone()
+        }
+    );
 
     // Original row untouched; second row not inserted.
     let all = db.entries_for_field("mood", None).unwrap();
@@ -923,9 +1008,7 @@ fn soft_deleted_rows_excluded_from_list() {
     assert_eq!(by_field_asc.len(), 1);
     assert_ne!(by_field_asc[0].slug, doomed_slug);
 
-    let in_range = db
-        .entries_in_range(as_utc(0, 0), as_utc(23, 59))
-        .unwrap();
+    let in_range = db.entries_in_range(as_utc(0, 0), as_utc(23, 59)).unwrap();
     assert_eq!(in_range.len(), 1);
     assert_ne!(in_range[0].slug, doomed_slug);
 
@@ -1025,8 +1108,7 @@ fn migrates_pre_a0_aliases_table_adds_derived_from_field() {
     // `aliases` table with only (name, alias_json). `Db::open` must add
     // the `derived_from_field` column and index without erroring, so that
     // downstream queries like `lookup_alias` keep working.
-    let path = std::env::temp_dir()
-        .join(format!("datum-migrate-{}.db", new_hid()));
+    let path = std::env::temp_dir().join(format!("datum-migrate-{}.db", new_hid()));
     let path_str = path.to_str().unwrap().to_string();
 
     {
@@ -1048,8 +1130,7 @@ fn migrates_pre_a0_aliases_table_adds_derived_from_field() {
         .unwrap();
     }
 
-    let db = Db::open(&path_str)
-        .expect("Db::open must migrate a pre-a0 aliases table");
+    let db = Db::open(&path_str).expect("Db::open must migrate a pre-a0 aliases table");
 
     // The pre-existing row is still queryable (this hits the SELECT that
     // surfaced the original user-facing error).
@@ -1198,10 +1279,22 @@ fn resolve_ambiguous_prefix_errors_with_candidates() {
     let err = db.resolve_prefix("coffee:ab").unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("ambiguous"), "expected 'ambiguous' in: {msg}");
-    assert!(msg.contains(e1.slug.as_str()), "candidate slug missing: {msg}");
-    assert!(msg.contains(e2.slug.as_str()), "candidate slug missing: {msg}");
-    assert!(msg.contains(e1.hid.as_str()), "candidate hid missing: {msg}");
-    assert!(msg.contains(e2.hid.as_str()), "candidate hid missing: {msg}");
+    assert!(
+        msg.contains(e1.slug.as_str()),
+        "candidate slug missing: {msg}"
+    );
+    assert!(
+        msg.contains(e2.slug.as_str()),
+        "candidate slug missing: {msg}"
+    );
+    assert!(
+        msg.contains(e1.hid.as_str()),
+        "candidate hid missing: {msg}"
+    );
+    assert!(
+        msg.contains(e2.hid.as_str()),
+        "candidate hid missing: {msg}"
+    );
 }
 
 #[test]
@@ -1302,8 +1395,7 @@ fn legacy_entries_schema_is_rejected() {
     // Databases created by pre-refactor datum carry an `id` column as
     // the entries PK. This version drops ULID; silent migration would
     // destroy identity semantics, so `Db::open` must error out instead.
-    let path = std::env::temp_dir()
-        .join(format!("datum-legacy-{}.db", new_hid()));
+    let path = std::env::temp_dir().join(format!("datum-legacy-{}.db", new_hid()));
     let path_str = path.to_str().unwrap().to_string();
 
     {
@@ -1390,13 +1482,17 @@ fn update_creates_new_version_with_pre_edit_snapshot() {
     // snapshot preserves the original.
     let mut update = pre.clone();
     update.device_id = "d2".to_string();
-    db.insert_entry_with_strategy(&update, ConflictStrategy::Update).unwrap();
+    db.insert_entry_with_strategy(&update, ConflictStrategy::Update)
+        .unwrap();
 
     let versions = crate::history::list(db.conn(), &hid, false).unwrap();
     assert_eq!(versions.len(), 2, "create + user_edit");
     assert_eq!(versions[0].change_kind, crate::history::ChangeKind::Create);
     assert_eq!(versions[1].version, 2);
-    assert_eq!(versions[1].change_kind, crate::history::ChangeKind::UserEdit);
+    assert_eq!(
+        versions[1].change_kind,
+        crate::history::ChangeKind::UserEdit
+    );
     // Snapshot at v2 = pre-edit state → device_id == d1 (the original).
     assert_eq!(versions[1].snapshot.device_id, "d1");
 }
@@ -1407,13 +1503,20 @@ fn update_creates_new_version_with_pre_edit_snapshot() {
 fn retime_recorded_as_change_kind_retime() {
     let db = Db::open_in_memory().unwrap();
     let t_at: DateTime<Utc> = "2024-01-01T10:00:00Z".parse().unwrap();
-    let t = DatumTime { utc: t_at, offset_minutes: 0, timezone: "UTC".to_string() };
+    let t = DatumTime {
+        utc: t_at,
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    };
 
     let e = Entry::new("nap", Verb::Occur, None, None, None, Some(t), None, "d1");
     let hid = e.hid.clone();
     db.insert_entry(&e).unwrap();
 
-    let filter = RetimeFilter { slug_or_hid: Some(&hid), ..Default::default() };
+    let filter = RetimeFilter {
+        slug_or_hid: Some(&hid),
+        ..Default::default()
+    };
     db.update_times(&filter, Duration::minutes(30)).unwrap();
 
     let versions = crate::history::list(db.conn(), &hid, false).unwrap();
@@ -1450,7 +1553,8 @@ fn undo_reverts_to_previous_version_and_records_change() {
     let mut v2_entry = v1_entry.clone();
     v2_entry.value = Some(serde_json::json!("sad"));
     v2_entry.content_hash = v1_entry.content_hash.clone();
-    db.insert_entry_with_strategy(&v2_entry, ConflictStrategy::Update).unwrap();
+    db.insert_entry_with_strategy(&v2_entry, ConflictStrategy::Update)
+        .unwrap();
 
     // Sanity: current state is v2 (mood=sad).
     let before = db.get_entry(&v1_entry.slug).unwrap();
@@ -1491,12 +1595,14 @@ fn undo_to_specific_version_works() {
     // v2: sad
     let mut v2 = v1_entry.clone();
     v2.value = Some(serde_json::json!("sad"));
-    db.insert_entry_with_strategy(&v2, ConflictStrategy::Update).unwrap();
+    db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
+        .unwrap();
 
     // v3: focused
     let mut v3 = v1_entry.clone();
     v3.value = Some(serde_json::json!("focused"));
-    db.insert_entry_with_strategy(&v3, ConflictStrategy::Update).unwrap();
+    db.insert_entry_with_strategy(&v3, ConflictStrategy::Update)
+        .unwrap();
 
     // Revert directly to v1 by id_or_slug.
     let restored = db.revert_entry_to(&slug, 1).unwrap();
@@ -1520,15 +1626,32 @@ fn insert_entries_bulk_skips_history_and_conflicts() {
     // detection would file an overlap conflict; the bulk path must
     // skip that and write a clean entries-only state.
     let block_a = Entry::new(
-        "sleep", Verb::Block, None, None, None,
+        "sleep",
+        Verb::Block,
+        None,
+        None,
+        None,
         Some(t0.clone()),
-        Some(DatumTime { utc: t0.utc + chrono::Duration::hours(1), ..t0.clone() }),
+        Some(DatumTime {
+            utc: t0.utc + chrono::Duration::hours(1),
+            ..t0.clone()
+        }),
         "d1",
     );
     let block_b = Entry::new(
-        "sleep", Verb::Block, None, None, None,
-        Some(DatumTime { utc: t0.utc + chrono::Duration::minutes(30), ..t0.clone() }),
-        Some(DatumTime { utc: t0.utc + chrono::Duration::minutes(90), ..t0.clone() }),
+        "sleep",
+        Verb::Block,
+        None,
+        None,
+        None,
+        Some(DatumTime {
+            utc: t0.utc + chrono::Duration::minutes(30),
+            ..t0.clone()
+        }),
+        Some(DatumTime {
+            utc: t0.utc + chrono::Duration::minutes(90),
+            ..t0.clone()
+        }),
         "d1",
     );
     let hid_a = block_a.hid.clone();
@@ -1560,9 +1683,11 @@ fn insert_entries_bulk_skips_history_and_conflicts() {
     // But the entries themselves are present.
     let n: i64 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
     assert_eq!(n, 2);
 }
@@ -1574,21 +1699,33 @@ fn insert_entries_bulk_idempotent_on_content_hash() {
     let db = Db::open_in_memory().unwrap();
     let t = DatumTime::now();
     let entry = Entry::new(
-        "coffee", Verb::Occur, Some(serde_json::json!(1)), None,
-        Some("cup".to_string()), Some(t), None, "d1",
+        "coffee",
+        Verb::Occur,
+        Some(serde_json::json!(1)),
+        None,
+        Some("cup".to_string()),
+        Some(t),
+        None,
+        "d1",
     );
 
-    let first = db.insert_entries_bulk(&[entry.clone()], ConflictStrategy::Ignore).unwrap();
+    let first = db
+        .insert_entries_bulk(&[entry.clone()], ConflictStrategy::Ignore)
+        .unwrap();
     assert!(matches!(first[0], InsertOutcome::Inserted { .. }));
 
-    let second = db.insert_entries_bulk(&[entry], ConflictStrategy::Ignore).unwrap();
+    let second = db
+        .insert_entries_bulk(&[entry], ConflictStrategy::Ignore)
+        .unwrap();
     assert!(matches!(second[0], InsertOutcome::Ignored { .. }));
 
     let n: i64 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL", [], |row| {
-            row.get(0)
-        })
+        .query_row(
+            "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+            [],
+            |row| row.get(0),
+        )
         .unwrap();
     assert_eq!(n, 1, "re-import must not duplicate rows");
 }
@@ -1663,14 +1800,150 @@ fn insert_entries_bulk_rejects_non_ignore_strategy() {
     let db = Db::open_in_memory().unwrap();
     let t = DatumTime::now();
     let entry = Entry::new(
-        "coffee", Verb::Occur, Some(serde_json::json!(1)), None,
-        Some("cup".to_string()), Some(t), None, "d1",
+        "coffee",
+        Verb::Occur,
+        Some(serde_json::json!(1)),
+        None,
+        Some("cup".to_string()),
+        Some(t),
+        None,
+        "d1",
     );
-    for s in [ConflictStrategy::Update, ConflictStrategy::Merge, ConflictStrategy::Rekey] {
+    for s in [
+        ConflictStrategy::Update,
+        ConflictStrategy::Merge,
+        ConflictStrategy::Rekey,
+    ] {
         let err = db.insert_entries_bulk(&[entry.clone()], s).unwrap_err();
         assert!(
             matches!(err, DatumError::Other(ref m) if m.contains("Ignore")),
             "expected 'Ignore-only' error for {s:?}, got {err:?}",
         );
     }
+}
+
+// ─── Kit (da-d4t.1) ─────────────────────────────────────────────────────
+
+#[test]
+fn install_kit_persists_specs_with_kit_id() {
+    let db = Db::open_in_memory().unwrap();
+    let mut sleep = FieldSpec::new("sleep", Verb::Start);
+    sleep.color = Some("#1a3d6e".into());
+    sleep.regenerate_derived_aliases();
+    let mut coffee = FieldSpec::new("coffee", Verb::Occur);
+    coffee.regenerate_derived_aliases();
+
+    let report = db
+        .install_kit("core", &[sleep.clone(), coffee.clone()], false)
+        .unwrap();
+    let installed: Vec<&str> = report.installed().collect();
+    assert_eq!(installed, vec!["sleep", "coffee"]);
+    assert_eq!(report.skipped().count(), 0);
+
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1);
+    assert_eq!(kits[0].kit_id, "core");
+    assert_eq!(kits[0].field_count, 2);
+
+    let by_kit = db.load_specs_by_kit("core").unwrap();
+    assert_eq!(by_kit.len(), 2);
+    let names: Vec<&str> = by_kit.iter().map(|s| s.field.as_str()).collect();
+    assert_eq!(names, vec!["coffee", "sleep"]); // alphabetical
+}
+
+#[test]
+fn install_kit_skips_existing_field_without_force() {
+    let db = Db::open_in_memory().unwrap();
+    let mut existing = FieldSpec::new("sleep", Verb::Start);
+    existing.color = Some("#user000".into());
+    db.save_field_spec(&existing).unwrap();
+
+    let mut kit_sleep = FieldSpec::new("sleep", Verb::Start);
+    kit_sleep.color = Some("#kit0000".into());
+    let report = db.install_kit("naps", &[kit_sleep], false).unwrap();
+    let skipped: Vec<&str> = report.skipped().collect();
+    assert_eq!(skipped, vec!["sleep"]);
+
+    // Existing color preserved; row not tagged with kit_id.
+    let loaded = db.load_spec("sleep").unwrap().unwrap();
+    assert_eq!(loaded.color.as_deref(), Some("#user000"));
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 0, "skipped row should not register a kit");
+}
+
+#[test]
+fn install_kit_force_overwrites_and_retags() {
+    let db = Db::open_in_memory().unwrap();
+    let mut existing = FieldSpec::new("sleep", Verb::Start);
+    existing.color = Some("#user000".into());
+    db.save_field_spec(&existing).unwrap();
+
+    let mut kit_sleep = FieldSpec::new("sleep", Verb::Start);
+    kit_sleep.color = Some("#kit0000".into());
+    let report = db.install_kit("naps", &[kit_sleep], true).unwrap();
+    let installed: Vec<&str> = report.installed().collect();
+    assert_eq!(installed, vec!["sleep"]);
+
+    let loaded = db.load_spec("sleep").unwrap().unwrap();
+    assert_eq!(loaded.color.as_deref(), Some("#kit0000"));
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1);
+    assert_eq!(kits[0].kit_id, "naps");
+}
+
+#[test]
+fn uninstall_kit_removes_only_owned_rows() {
+    let db = Db::open_in_memory().unwrap();
+    let mut user_field = FieldSpec::new("custom", Verb::Switch);
+    user_field.allowed_states = Some(vec!["a".into(), "b".into()]);
+    user_field.regenerate_derived_aliases();
+    db.save_field_spec(&user_field).unwrap();
+
+    let mut k1 = FieldSpec::new("sleep", Verb::Start);
+    k1.regenerate_derived_aliases();
+    let mut k2 = FieldSpec::new("coffee", Verb::Occur);
+    k2.regenerate_derived_aliases();
+    db.install_kit("core", &[k1, k2], false).unwrap();
+
+    let removed = db.uninstall_kit("core").unwrap();
+    assert_eq!(removed, vec!["coffee", "sleep"]);
+
+    // User-declared field still there.
+    assert!(db.load_spec("custom").unwrap().is_some());
+    assert!(db.load_spec("sleep").unwrap().is_none());
+    assert!(db.load_spec("coffee").unwrap().is_none());
+
+    // Derived aliases for the kit's fields are cleaned up; the user's
+    // state aliases survive.
+    let reg = db.load_registry().unwrap();
+    assert!(reg.aliases.contains_key("a"));
+    assert!(!reg.aliases.contains_key("sleep"));
+    assert!(!reg.aliases.contains_key("coffee"));
+}
+
+#[test]
+fn uninstall_unknown_kit_is_noop() {
+    let db = Db::open_in_memory().unwrap();
+    let removed = db.uninstall_kit("ghost").unwrap();
+    assert!(removed.is_empty());
+}
+
+#[test]
+fn save_field_spec_preserves_kit_id() {
+    let db = Db::open_in_memory().unwrap();
+    let mut spec = FieldSpec::new("sleep", Verb::Start);
+    spec.color = Some("#000000".into());
+    spec.regenerate_derived_aliases();
+    db.install_kit("core", &[spec.clone()], false).unwrap();
+
+    // User edits the spec via `datum spec set` — should NOT lose kit_id.
+    let mut edited = spec.clone();
+    edited.color = Some("#ffffff".into());
+    db.save_field_spec(&edited).unwrap();
+
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1, "save_field_spec must not strip kit_id");
+    assert_eq!(kits[0].kit_id, "core");
+    let loaded = db.load_spec("sleep").unwrap().unwrap();
+    assert_eq!(loaded.color.as_deref(), Some("#ffffff"));
 }

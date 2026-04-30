@@ -73,6 +73,7 @@ pub enum Command {
 
     Spec(SpecCommand),
     Alias(AliasCommand),
+    Kit(KitCommand),
 
     Track(TrackArgs),
     Ignore(IgnoreArgs),
@@ -590,6 +591,43 @@ pub enum AliasCommand {
     Set { name: String, expansion: String },
     List,
     Remove { name: String },
+}
+
+// ─── Kit (da-d4t.1) ────────────────────────────────────────────────────────
+
+#[derive(Debug)]
+pub enum KitCommand {
+    /// `datum kit install <path>` — parse a kit TOML and upsert its field
+    /// specs. Existing rows for the same field win unless `--force`.
+    Install(KitInstallArgs),
+    /// `datum kit export <name> [path]` — serialize the kit's installed
+    /// rows back to TOML. None path → stdout.
+    Export(KitExportArgs),
+    /// `datum kit list` — installed kits + per-kit field counts.
+    List,
+    /// `datum kit uninstall <name>` — remove every row tagged with this
+    /// kit's id; user-declared rows untouched.
+    Uninstall(KitUninstallArgs),
+}
+
+#[derive(Debug)]
+pub struct KitInstallArgs {
+    pub path: String,
+    /// When true, conflicting field rows are overwritten and re-tagged
+    /// with this kit's id.
+    pub force: bool,
+}
+
+#[derive(Debug)]
+pub struct KitExportArgs {
+    pub name: String,
+    /// Output file. None → write to stdout.
+    pub path: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct KitUninstallArgs {
+    pub name: String,
 }
 
 // ─── Now / Track / Ignore ─────────────────────────────────────────────────

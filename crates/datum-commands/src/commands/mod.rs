@@ -24,6 +24,7 @@ pub mod history;
 pub mod ids;
 pub mod ignore;
 pub mod info;
+pub mod kit;
 pub mod merge;
 pub mod migrate;
 pub mod now;

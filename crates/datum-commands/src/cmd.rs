@@ -68,6 +68,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Why(args) => commands::why::why(args, db),
         Command::Spec(sub) => commands::spec::spec(sub, db),
         Command::Alias(sub) => commands::alias::alias(sub, db),
+        Command::Kit(sub) => commands::kit::kit(sub, db),
         Command::Track(args) => commands::track::track(args, db),
         Command::Ignore(args) => commands::ignore::ignore(args, db),
         Command::Migrate(sub) => commands::migrate::migrate(sub, db),

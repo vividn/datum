@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 12;
+pub const CURRENT_SCHEMA_VERSION: u32 = 13;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -101,7 +101,34 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: add extra_metadata column for system provenance; relocate datum-migrate `_import` marker out of data (da-tsw)",
         apply: m11_to_12_extra_metadata,
     },
+    Migration {
+        from: 12,
+        to: 13,
+        summary: "field_specs: add kit_id column for kit-namespaced field specs; index on kit_id (da-d4t.1)",
+        apply: m12_to_13_field_specs_kit_id,
+    },
 ];
+
+/// da-d4t.1: kits scope `field_specs` rows. `kit_id` is NULL for
+/// user-declared specs (set via `datum spec set` or auto-tracked) and
+/// non-NULL for rows installed by `datum kit install`. Uninstall deletes
+/// only rows with the matching `kit_id`. Additive + idempotent.
+fn m12_to_13_field_specs_kit_id(conn: &Connection) -> Result<()> {
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('field_specs') WHERE name = 'kit_id'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch("ALTER TABLE field_specs ADD COLUMN kit_id TEXT;")?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);",
+    )?;
+    Ok(())
+}
 
 fn m11_to_12_extra_metadata(conn: &Connection) -> Result<()> {
     // da-tsw: separate system-managed provenance from user-supplied `data`.
@@ -145,8 +172,9 @@ fn m11_to_12_extra_metadata(conn: &Connection) -> Result<()> {
     drop(stmt);
 
     for (hid, field, start_str, end_str, value_str, data_str) in rows {
-        let mut data_val: serde_json::Value = serde_json::from_str(&data_str)
-            .map_err(|e| crate::error::DatumError::Other(format!("bad data JSON for hid {hid}: {e}")))?;
+        let mut data_val: serde_json::Value = serde_json::from_str(&data_str).map_err(|e| {
+            crate::error::DatumError::Other(format!("bad data JSON for hid {hid}: {e}"))
+        })?;
         let import_val = match data_val.as_object_mut() {
             Some(map) => map.remove("_import"),
             None => None,
@@ -315,9 +343,7 @@ fn m7_to_8_entries_user_asserted_last_state(conn: &Connection) -> Result<()> {
         )
         .unwrap_or(false);
     if !has_col {
-        conn.execute_batch(
-            "ALTER TABLE entries ADD COLUMN user_asserted_last_state TEXT;",
-        )?;
+        conn.execute_batch("ALTER TABLE entries ADD COLUMN user_asserted_last_state TEXT;")?;
     }
     Ok(())
 }
@@ -586,8 +612,18 @@ mod tests {
             Ok(())
         }
         let migrations = &[
-            Migration { from: 1, to: 2, summary: "v2 table", apply: m1_to_2 },
-            Migration { from: 2, to: 3, summary: "v3 table", apply: m2_to_3 },
+            Migration {
+                from: 1,
+                to: 2,
+                summary: "v2 table",
+                apply: m1_to_2,
+            },
+            Migration {
+                from: 2,
+                to: 3,
+                summary: "v3 table",
+                apply: m2_to_3,
+            },
         ];
         let applied = apply_migrations(&conn, migrations, 1, 3).unwrap();
         assert_eq!(applied.len(), 2);
@@ -630,8 +666,18 @@ mod tests {
             Ok(())
         }
         let migrations = &[
-            Migration { from: 1, to: 2, summary: "add t2", apply: m1_to_2 },
-            Migration { from: 2, to: 3, summary: "add t3", apply: m2_to_3 },
+            Migration {
+                from: 1,
+                to: 2,
+                summary: "add t2",
+                apply: m1_to_2,
+            },
+            Migration {
+                from: 2,
+                to: 3,
+                summary: "add t3",
+                apply: m2_to_3,
+            },
         ];
 
         apply_migrations(&conn, migrations, 1, 3).unwrap();
@@ -655,9 +701,24 @@ mod tests {
             Ok(())
         }
         let migrations = &[
-            Migration { from: 1, to: 2, summary: "m12", apply: m1_to_2 },
-            Migration { from: 2, to: 3, summary: "m23", apply: m2_to_3 },
-            Migration { from: 3, to: 4, summary: "m34", apply: m3_to_4 },
+            Migration {
+                from: 1,
+                to: 2,
+                summary: "m12",
+                apply: m1_to_2,
+            },
+            Migration {
+                from: 2,
+                to: 3,
+                summary: "m23",
+                apply: m2_to_3,
+            },
+            Migration {
+                from: 3,
+                to: 4,
+                summary: "m34",
+                apply: m3_to_4,
+            },
         ];
 
         let conn = rusqlite::Connection::open_in_memory().unwrap();
@@ -676,7 +737,10 @@ mod tests {
             )
             .unwrap_or(false)
         }
-        assert!(!table_exists(&conn, "ran_1_2"), "v1→v2 must NOT have re-run");
+        assert!(
+            !table_exists(&conn, "ran_1_2"),
+            "v1→v2 must NOT have re-run"
+        );
         assert!(table_exists(&conn, "ran_2_3"), "v2→v3 should have run");
         assert!(table_exists(&conn, "ran_3_4"), "v3→v4 should have run");
     }
@@ -689,11 +753,17 @@ mod tests {
 
         let first = migrate_to_current(&conn).unwrap();
         assert!(first.is_empty(), "no migrations should run on a current DB");
-        assert_eq!(read_schema_version(&conn).unwrap(), Some(CURRENT_SCHEMA_VERSION));
+        assert_eq!(
+            read_schema_version(&conn).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION)
+        );
 
         let second = migrate_to_current(&conn).unwrap();
         assert!(second.is_empty(), "second run remains a no-op");
-        assert_eq!(read_schema_version(&conn).unwrap(), Some(CURRENT_SCHEMA_VERSION));
+        assert_eq!(
+            read_schema_version(&conn).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION)
+        );
     }
 
     #[test]
@@ -771,19 +841,22 @@ mod tests {
                 "backup_time": "2025-02-02T12:26:32.488Z",
                 "original_id": "exercise:2025-01-08T08:00:00.000Z"
             }
-        }).to_string();
+        })
+        .to_string();
         let legacy_data_only_marker = serde_json::json!({
             "_import": {
                 "source": "datum-v2-couchdb",
                 "backup_time": "2025-02-02T12:26:32.488Z",
                 "original_id": "brushteeth:2025-01-08T23:53:08.259Z"
             }
-        }).to_string();
+        })
+        .to_string();
 
         // Wipe extra_metadata so the row looks pre-v12 — the column
         // already exists at the current schema; we just leave it NULL.
-        db.conn().execute(
-            r#"INSERT INTO entries (
+        db.conn()
+            .execute(
+                r#"INSERT INTO entries (
                 hid, slug, content_hash, field, entry_shape, intent,
                 value, data, unit,
                 start_time, start_time_offset, start_time_tz,
@@ -807,10 +880,12 @@ mod tests {
                 '', NULL, 0,
                 NULL, NULL
             )"#,
-            rusqlite::params![legacy_data],
-        ).unwrap();
-        db.conn().execute(
-            r#"INSERT INTO entries (
+                rusqlite::params![legacy_data],
+            )
+            .unwrap();
+        db.conn()
+            .execute(
+                r#"INSERT INTO entries (
                 hid, slug, content_hash, field, entry_shape, intent,
                 value, data, unit,
                 start_time, start_time_offset, start_time_tz,
@@ -834,8 +909,9 @@ mod tests {
                 '', NULL, 0,
                 NULL, NULL
             )"#,
-            rusqlite::params![legacy_data_only_marker],
-        ).unwrap();
+                rusqlite::params![legacy_data_only_marker],
+            )
+            .unwrap();
 
         // Roll back the version stamp to v11 so migrate_to_current
         // re-runs the v11→v12 step against the seeded rows.
@@ -855,10 +931,8 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .unwrap();
-        let data: serde_json::Value =
-            serde_json::from_str(data_str.as_deref().unwrap()).unwrap();
-        let meta: serde_json::Value =
-            serde_json::from_str(meta_str.as_deref().unwrap()).unwrap();
+        let data: serde_json::Value = serde_json::from_str(data_str.as_deref().unwrap()).unwrap();
+        let meta: serde_json::Value = serde_json::from_str(meta_str.as_deref().unwrap()).unwrap();
         assert_eq!(data["dur"], serde_json::json!("PT30M"));
         assert!(
             data.get("_import").is_none(),

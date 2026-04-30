@@ -33,12 +33,12 @@ use crate::render::{OutputArgs, Show};
 pub use pcli::{
     AliasCommand, BackupArgs, CheckArgs, Cli, Command, ConfigCommand, ConfigShowArgs,
     ConflictStrategyArg, ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs,
-    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DeleteArgs, EditArgs,
-    GetArgs, GrepArgs,
-    HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, LogArgs, MigrateCommand, MigrateImportArgs,
-    NowArgs, NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
-    SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
-    SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
+    ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DeleteArgs, EditArgs, GetArgs,
+    GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, KitCommand, KitExportArgs,
+    KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand, MigrateImportArgs, NowArgs,
+    NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs,
+    SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand, SyncLoginArgs,
+    SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
 };
 
 // ─── Intent context (provenance for the current invocation) ──────────────
@@ -353,7 +353,6 @@ impl MigrateImportArgsExt for MigrateImportArgs {
             })
     }
 }
-
 
 // `datum-parse` returns `ParseError`, but most callers use `anyhow`.
 // The conversion is automatic through anyhow's blanket

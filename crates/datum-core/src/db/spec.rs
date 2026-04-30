@@ -41,18 +41,14 @@ impl Db {
         let placeholders = std::iter::repeat_n("?", fields.len())
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!(
-            "SELECT field, spec_json FROM field_specs WHERE field IN ({placeholders})"
-        );
+        let sql =
+            format!("SELECT field, spec_json FROM field_specs WHERE field IN ({placeholders})");
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(fields.iter()),
-            |row| {
-                let field: String = row.get(0)?;
-                let json: String = row.get(1)?;
-                Ok((field, json))
-            },
-        )?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(fields.iter()), |row| {
+            let field: String = row.get(0)?;
+            let json: String = row.get(1)?;
+            Ok((field, json))
+        })?;
         for r in rows {
             let (field, json) = r.map_err(DatumError::Db)?;
             let spec: FieldSpec = serde_json::from_str(&json)?;
@@ -89,8 +85,13 @@ impl Db {
         let json = serde_json::to_string(spec)?;
         let tx = self.conn.unchecked_transaction()?;
 
+        // UPSERT preserves an existing `kit_id` on re-save. Kit installs go
+        // through `Db::install_kit` (which sets kit_id explicitly); a
+        // user-driven `datum spec set` on a kit-owned field updates the JSON
+        // body in place without breaking the kit linkage.
         tx.execute(
-            "INSERT OR REPLACE INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)
+             ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json",
             params![spec.field, json],
         )?;
 
@@ -133,7 +134,10 @@ impl Db {
                     }
                     Some(other) => AliasConflictReason::OwnedByField(other),
                 };
-                skipped.push(AliasConflict { name: d.state.clone(), reason });
+                skipped.push(AliasConflict {
+                    name: d.state.clone(),
+                    reason,
+                });
                 continue;
             }
 
@@ -161,10 +165,7 @@ impl Db {
             "DELETE FROM aliases WHERE derived_from_field = ?1",
             params![field],
         )?;
-        tx.execute(
-            "DELETE FROM field_specs WHERE field = ?1",
-            params![field],
-        )?;
+        tx.execute("DELETE FROM field_specs WHERE field = ?1", params![field])?;
         tx.commit()?;
         Ok(())
     }

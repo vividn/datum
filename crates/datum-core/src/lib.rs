@@ -3,6 +3,8 @@
 pub mod doc_ref;
 pub mod entry;
 pub mod field_spec;
+pub mod kit;
+pub mod kit_color;
 pub mod db;
 pub mod error;
 pub mod ids;
