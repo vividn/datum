@@ -37,6 +37,7 @@ use rusqlite::{params, Connection};
 
 use crate::error::{DatumError, Result};
 
+pub use alias::{InstallAliasesReport, KitAliasOutcome};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use row_mapper::row_to_entry_public;
 pub use types::{
@@ -73,11 +74,15 @@ impl Db {
 
     fn migrate(&self) -> Result<()> {
         // Pre-a0 aliases table only carried (name, alias_json); add the
-        // derived_from_field column before schema.sql tries to index it.
-        // Missing-table errors on a fresh DB are ignored.
+        // derived_from_field and kit_id columns before schema.sql tries to
+        // index them. Missing-table errors on a fresh DB are ignored, as are
+        // duplicate-column errors when one column already exists.
         let _ = self
             .conn
             .execute("ALTER TABLE aliases ADD COLUMN derived_from_field TEXT", []);
+        let _ = self
+            .conn
+            .execute("ALTER TABLE aliases ADD COLUMN kit_id TEXT", []);
 
         // Reject pre-refactor entries tables (which have an `id` column):
         // this refactor drops ULID entirely and slug is now PK. Silent

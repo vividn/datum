@@ -1,18 +1,61 @@
 //! User aliases: `lookup_alias`, `delete_alias`, `save_alias`.
 //! Derived aliases are managed through the `field_specs` save path — see
 //! [`super::Db::save_field_spec`].
+//!
+//! Kit-scoped aliases (slice 3, da-d4t.3) live alongside user-declared
+//! ones in the same `aliases` table. The `kit_id` column tags rows that
+//! came from a `[[alias]]` block in a kit TOML; `install_kit_aliases` /
+//! `uninstall_kit_aliases` / `load_aliases_by_kit` operate on those rows
+//! and leave `kit_id IS NULL` rows alone (mirroring the field-spec /
+//! view kit pattern).
 
 use rusqlite::{params, OptionalExtension};
 
-use crate::error::Result;
+use crate::error::{DatumError, Result};
 use crate::field_spec::Alias;
+use crate::kit::AliasEntry;
 
 use super::Db;
+
+/// Per-alias outcome reported by [`Db::install_kit_aliases`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum KitAliasOutcome {
+    /// Alias newly installed (or overwritten under `force`).
+    Installed,
+    /// A row for this alias name already existed and the kit's row was
+    /// dropped silently; the existing row remains the source of truth.
+    SkippedExisting {
+        /// Name of the kit that currently owns the row, or `None` if it's
+        /// a user-declared / derived row.
+        existing_kit: Option<String>,
+    },
+}
+
+/// Aggregate report from [`Db::install_kit_aliases`].
+#[derive(Debug, Clone, Default)]
+pub struct InstallAliasesReport {
+    pub outcomes: Vec<(String, KitAliasOutcome)>,
+}
+
+impl InstallAliasesReport {
+    pub fn installed(&self) -> impl Iterator<Item = &str> {
+        self.outcomes
+            .iter()
+            .filter_map(|(name, o)| matches!(o, KitAliasOutcome::Installed).then(|| name.as_str()))
+    }
+
+    pub fn skipped(&self) -> impl Iterator<Item = &str> {
+        self.outcomes.iter().filter_map(|(name, o)| {
+            matches!(o, KitAliasOutcome::SkippedExisting { .. }).then(|| name.as_str())
+        })
+    }
+}
 
 impl Db {
     /// Look up a single alias by name. Returns None if not found.
     pub fn lookup_alias(&self, name: &str) -> Result<Option<Alias>> {
-        let result: Option<String> = self.conn
+        let result: Option<String> = self
+            .conn
             .query_row(
                 "SELECT alias_json FROM aliases WHERE name = ?1",
                 params![name],
@@ -35,15 +78,111 @@ impl Db {
         Ok(())
     }
 
-    /// Save a user-created alias (derived_from_field = NULL).
+    /// Save a user-created alias (derived_from_field = NULL, kit_id = NULL).
     pub fn save_alias(&self, alias: &Alias) -> Result<()> {
         let json = serde_json::to_string(alias)?;
         self.conn.execute(
-            "INSERT INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, NULL)
+            "INSERT INTO aliases (name, alias_json, derived_from_field, kit_id)
+             VALUES (?1, ?2, NULL, NULL)
              ON CONFLICT(name) DO UPDATE SET alias_json = excluded.alias_json,
-                                             derived_from_field = NULL",
+                                             derived_from_field = NULL,
+                                             kit_id = NULL",
             params![alias.name, json],
         )?;
         Ok(())
+    }
+
+    /// Install a kit's aliases. `kit_id` tags every persisted row; callers
+    /// should pass the kit's `[kit].name` from the TOML.
+    ///
+    /// Conflict policy mirrors [`Db::install_kit`] / [`Db::install_kit_views`]:
+    /// - `force = false` → leave any existing row, record `SkippedExisting`.
+    ///   This protects user-declared aliases (`kit_id IS NULL`,
+    ///   `derived_from_field IS NULL`), derived aliases from a field spec
+    ///   (`derived_from_field IS NOT NULL`), and aliases owned by another
+    ///   kit alike — all are reported as a skip carrying the existing owner.
+    /// - `force = true`  → overwrite the row's `alias_json` and re-tag its
+    ///   `kit_id` to the new owner; clears `derived_from_field` so the row
+    ///   becomes a kit-owned alias.
+    pub fn install_kit_aliases(
+        &self,
+        kit_id: &str,
+        aliases: &[AliasEntry],
+        force: bool,
+    ) -> Result<InstallAliasesReport> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut report = InstallAliasesReport::default();
+
+        for entry in aliases {
+            let existing_kit: Option<Option<String>> = tx
+                .query_row(
+                    "SELECT kit_id FROM aliases WHERE name = ?1",
+                    params![entry.name],
+                    |row| row.get::<_, Option<String>>(0),
+                )
+                .optional()?;
+
+            if let Some(existing) = existing_kit {
+                if !force {
+                    report.outcomes.push((
+                        entry.name.clone(),
+                        KitAliasOutcome::SkippedExisting {
+                            existing_kit: existing,
+                        },
+                    ));
+                    continue;
+                }
+            }
+
+            let alias = entry.clone().into_alias();
+            let json = serde_json::to_string(&alias)?;
+            tx.execute(
+                "INSERT INTO aliases (name, alias_json, derived_from_field, kit_id)
+                 VALUES (?1, ?2, NULL, ?3)
+                 ON CONFLICT(name) DO UPDATE SET alias_json          = excluded.alias_json,
+                                                 derived_from_field  = NULL,
+                                                 kit_id              = excluded.kit_id",
+                params![alias.name, json, kit_id],
+            )?;
+
+            report
+                .outcomes
+                .push((entry.name.clone(), KitAliasOutcome::Installed));
+        }
+
+        tx.commit()?;
+        Ok(report)
+    }
+
+    /// Drop every alias tagged with this `kit_id`. User-declared and
+    /// derived rows are untouched. Returns the names removed.
+    pub fn uninstall_kit_aliases(&self, kit_id: &str) -> Result<Vec<String>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut stmt = tx.prepare("SELECT name FROM aliases WHERE kit_id = ?1 ORDER BY name")?;
+        let names: Vec<String> = stmt
+            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(DatumError::Db)?;
+        drop(stmt);
+        tx.execute("DELETE FROM aliases WHERE kit_id = ?1", params![kit_id])?;
+        tx.commit()?;
+        Ok(names)
+    }
+
+    /// Load every [`Alias`] tagged with the given `kit_id`. Used by
+    /// `datum kit export`. Returns rows ordered by name for stable TOML
+    /// output.
+    pub fn load_aliases_by_kit(&self, kit_id: &str) -> Result<Vec<Alias>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT alias_json FROM aliases WHERE kit_id = ?1 ORDER BY name")?;
+        let rows = stmt.query_map(params![kit_id], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            let json = r.map_err(DatumError::Db)?;
+            let alias: Alias = serde_json::from_str(&json)?;
+            out.push(alias);
+        }
+        Ok(out)
     }
 }

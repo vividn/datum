@@ -2141,3 +2141,168 @@ fn load_views_by_kit_round_trips_for_export() {
     assert_eq!(loaded[0].sql, "SELECT 1");
     assert_eq!(loaded[1].sql, "SELECT 2");
 }
+
+// ─── Kit aliases (da-d4t.3) ─────────────────────────────────────────────
+
+#[test]
+fn install_kit_aliases_persists_with_kit_id() {
+    let db = Db::open_in_memory().unwrap();
+    let aliases = vec![
+        crate::kit::AliasEntry {
+            name: "chore".into(),
+            expands_to: "occur -k next_date".into(),
+            description: None,
+        },
+        crate::kit::AliasEntry {
+            name: "done".into(),
+            expands_to: "occur".into(),
+            description: Some("mark a chore done".into()),
+        },
+    ];
+    let report = db.install_kit_aliases("core", &aliases, false).unwrap();
+    let installed: Vec<&str> = report.installed().collect();
+    assert_eq!(installed, vec!["chore", "done"]);
+    assert_eq!(report.skipped().count(), 0);
+
+    // Round-trips through lookup_alias with the kit's expansion text.
+    let chore = db.lookup_alias("chore").unwrap().unwrap();
+    assert_eq!(chore.expands_to, "occur -k next_date");
+    let done = db.lookup_alias("done").unwrap().unwrap();
+    assert_eq!(done.description.as_deref(), Some("mark a chore done"));
+
+    // List_kits picks up an aliases-only kit even with no fields/views.
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1);
+    assert_eq!(kits[0].kit_id, "core");
+    assert_eq!(kits[0].field_count, 0);
+    assert_eq!(kits[0].view_count, 0);
+    assert_eq!(kits[0].alias_count, 2);
+}
+
+#[test]
+fn install_kit_aliases_skips_existing_user_alias_without_force() {
+    let db = Db::open_in_memory().unwrap();
+    // Pre-existing user-declared alias.
+    db.save_alias(&crate::field_spec::Alias {
+        name: "vbp".into(),
+        expands_to: "note word srcLang=pt pos=verb".into(),
+        description: None,
+    })
+    .unwrap();
+
+    let aliases = vec![crate::kit::AliasEntry {
+        name: "vbp".into(),
+        expands_to: "occur".into(),
+        description: None,
+    }];
+    let report = db.install_kit_aliases("kit-x", &aliases, false).unwrap();
+    let skipped: Vec<&str> = report.skipped().collect();
+    assert_eq!(skipped, vec!["vbp"]);
+
+    // User's alias preserved; row not retagged.
+    let row = db.lookup_alias("vbp").unwrap().unwrap();
+    assert_eq!(row.expands_to, "note word srcLang=pt pos=verb");
+    let owner: Option<String> = db
+        .conn()
+        .query_row("SELECT kit_id FROM aliases WHERE name = 'vbp'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(owner, None, "user alias must keep kit_id NULL");
+}
+
+#[test]
+fn install_kit_aliases_force_overwrites_and_retags() {
+    let db = Db::open_in_memory().unwrap();
+    db.save_alias(&crate::field_spec::Alias {
+        name: "vbp".into(),
+        expands_to: "old expansion".into(),
+        description: None,
+    })
+    .unwrap();
+
+    let aliases = vec![crate::kit::AliasEntry {
+        name: "vbp".into(),
+        expands_to: "new expansion".into(),
+        description: None,
+    }];
+    let report = db.install_kit_aliases("kit-x", &aliases, true).unwrap();
+    let installed: Vec<&str> = report.installed().collect();
+    assert_eq!(installed, vec!["vbp"]);
+
+    let row = db.lookup_alias("vbp").unwrap().unwrap();
+    assert_eq!(row.expands_to, "new expansion");
+    let owner: Option<String> = db
+        .conn()
+        .query_row("SELECT kit_id FROM aliases WHERE name = 'vbp'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(owner.as_deref(), Some("kit-x"));
+}
+
+#[test]
+fn uninstall_kit_aliases_removes_only_owned_rows() {
+    let db = Db::open_in_memory().unwrap();
+    db.save_alias(&crate::field_spec::Alias {
+        name: "user_one".into(),
+        expands_to: "occur".into(),
+        description: None,
+    })
+    .unwrap();
+    db.install_kit_aliases(
+        "core",
+        &[crate::kit::AliasEntry {
+            name: "kit_one".into(),
+            expands_to: "occur".into(),
+            description: None,
+        }],
+        false,
+    )
+    .unwrap();
+
+    let removed = db.uninstall_kit_aliases("core").unwrap();
+    assert_eq!(removed, vec!["kit_one"]);
+    assert!(db.lookup_alias("kit_one").unwrap().is_none());
+    // User alias untouched.
+    assert!(db.lookup_alias("user_one").unwrap().is_some());
+}
+
+#[test]
+fn load_aliases_by_kit_round_trips_for_export() {
+    let db = Db::open_in_memory().unwrap();
+    let aliases = vec![
+        crate::kit::AliasEntry {
+            name: "b".into(),
+            expands_to: "occur b".into(),
+            description: None,
+        },
+        crate::kit::AliasEntry {
+            name: "a".into(),
+            expands_to: "occur a".into(),
+            description: Some("first".into()),
+        },
+    ];
+    db.install_kit_aliases("core", &aliases, false).unwrap();
+    let loaded = db.load_aliases_by_kit("core").unwrap();
+    let names: Vec<&str> = loaded.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, vec!["a", "b"], "results should be ordered by name");
+    assert_eq!(loaded[0].expands_to, "occur a");
+    assert_eq!(loaded[0].description.as_deref(), Some("first"));
+    assert_eq!(loaded[1].expands_to, "occur b");
+}
+
+#[test]
+fn install_kit_aliases_preserves_expansion_byte_for_byte() {
+    let db = Db::open_in_memory().unwrap();
+    // Whitespace and special chars survive the JSON round-trip exactly.
+    let raw = "  occur  -k  next_date=2024-01-01T09:00Z  ";
+    let aliases = vec![crate::kit::AliasEntry {
+        name: "weirdspaces".into(),
+        expands_to: raw.to_string(),
+        description: None,
+    }];
+    db.install_kit_aliases("core", &aliases, false).unwrap();
+    let loaded = db.load_aliases_by_kit("core").unwrap();
+    assert_eq!(loaded[0].expands_to, raw);
+}

@@ -67,6 +67,7 @@ pub struct InstalledKit {
     pub kit_id: String,
     pub field_count: usize,
     pub view_count: usize,
+    pub alias_count: usize,
     pub index_count: usize,
 }
 
@@ -247,10 +248,10 @@ impl Db {
         Ok(fields)
     }
 
-    /// List installed kits with per-kit field, view, and index counts.
-    /// User-declared rows (`kit_id IS NULL` in any of `field_specs`,
-    /// `views`, `kit_indices`) are excluded. A kit appears if it owns at
-    /// least one field, one view, or one index.
+    /// List installed kits with per-kit field, view, alias, and index
+    /// counts. User-declared rows (`kit_id IS NULL` in any of
+    /// `field_specs`, `views`, `aliases`, or `kit_indices`) are excluded.
+    /// A kit appears if it owns at least one row in any of those tables.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(
             "WITH
@@ -266,22 +267,35 @@ impl Db {
                     WHERE kit_id IS NOT NULL
                     GROUP BY kit_id
                 ),
+                kit_aliases AS (
+                    SELECT kit_id, COUNT(*) AS n
+                    FROM aliases
+                    WHERE kit_id IS NOT NULL
+                    GROUP BY kit_id
+                ),
                 kit_idx AS (
                     SELECT kit_id, COUNT(*) AS n
                     FROM kit_indices
                     GROUP BY kit_id
                 )
-             SELECT k.kit_id, IFNULL(f.n, 0), IFNULL(v.n, 0), IFNULL(i.n, 0)
+             SELECT k.kit_id,
+                    IFNULL(f.n, 0),
+                    IFNULL(v.n, 0),
+                    IFNULL(a.n, 0),
+                    IFNULL(i.n, 0)
              FROM (
                  SELECT kit_id FROM kit_fields
                  UNION
                  SELECT kit_id FROM kit_views
                  UNION
+                 SELECT kit_id FROM kit_aliases
+                 UNION
                  SELECT kit_id FROM kit_idx
              ) k
-             LEFT JOIN kit_fields f ON f.kit_id = k.kit_id
-             LEFT JOIN kit_views  v ON v.kit_id = k.kit_id
-             LEFT JOIN kit_idx    i ON i.kit_id = k.kit_id
+             LEFT JOIN kit_fields  f ON f.kit_id = k.kit_id
+             LEFT JOIN kit_views   v ON v.kit_id = k.kit_id
+             LEFT JOIN kit_aliases a ON a.kit_id = k.kit_id
+             LEFT JOIN kit_idx     i ON i.kit_id = k.kit_id
              ORDER BY k.kit_id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -289,7 +303,8 @@ impl Db {
                 kit_id: row.get::<_, String>(0)?,
                 field_count: row.get::<_, i64>(1)? as usize,
                 view_count: row.get::<_, i64>(2)? as usize,
-                index_count: row.get::<_, i64>(3)? as usize,
+                alias_count: row.get::<_, i64>(3)? as usize,
+                index_count: row.get::<_, i64>(4)? as usize,
             })
         })?;
         let mut out = Vec::new();

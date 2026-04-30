@@ -176,14 +176,22 @@ CREATE TABLE IF NOT EXISTS kit_indices (
 -- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
 -- when the alias was auto-generated from a FieldSpec state; such rows
 -- cascade-delete when the owning spec is deleted or its states change.
+-- `kit_id` is non-NULL for rows installed via `datum kit install` from a
+-- `[[alias]]` block; uninstall removes only rows with the matching kit_id.
+-- (`derived_from_field` and `kit_id` are mutually exclusive — derived rows
+-- live on the FieldSpec save path and never carry a kit_id.)
 CREATE TABLE IF NOT EXISTS aliases (
     name                TEXT NOT NULL PRIMARY KEY,
     alias_json          TEXT NOT NULL,
-    derived_from_field  TEXT
+    derived_from_field  TEXT,
+    kit_id              TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
     ON aliases (derived_from_field);
+
+CREATE INDEX IF NOT EXISTS idx_aliases_kit_id
+    ON aliases (kit_id);
 
 -- Seed alias: `note` routes to `add`. After D3 `note` is no longer a
 -- first-class verb; this alias preserves muscle memory. User can override

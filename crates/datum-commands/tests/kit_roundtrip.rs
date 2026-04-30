@@ -299,6 +299,164 @@ size = 0.05
 }
 
 #[test]
+fn install_kit_with_aliases_round_trips() {
+    let dir = tempfile::tempdir().unwrap();
+    let in_path = dir.path().join("chores.toml");
+    let out_path = dir.path().join("export.toml");
+
+    fs::write(
+        &in_path,
+        r##"[kit]
+name = "chores"
+
+[[field]]
+name = "dishes"
+default_verb = "occur"
+
+[[alias]]
+name = "chore"
+expands_to = "occur -k next_date"
+
+[[alias]]
+name = "done"
+expands_to = "occur"
+description = "mark a chore done"
+"##,
+    )
+    .unwrap();
+
+    let db = fresh_db();
+
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "install".into(),
+            in_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+
+    // Aliases are present in the live aliases table tagged with the kit's id.
+    let chore = db.lookup_alias("chore").unwrap().unwrap();
+    assert_eq!(chore.expands_to, "occur -k next_date");
+    let done = db.lookup_alias("done").unwrap().unwrap();
+    assert_eq!(done.description.as_deref(), Some("mark a chore done"));
+
+    // list_kits reports the alias count.
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1);
+    assert_eq!(kits[0].kit_id, "chores");
+    assert_eq!(kits[0].field_count, 1);
+    assert_eq!(kits[0].alias_count, 2);
+
+    // Export round-trips both the field and the aliases.
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "export".into(),
+            "chores".into(),
+            out_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+
+    let exported = fs::read_to_string(&out_path).unwrap();
+    let kit = datum_core::kit::KitToml::from_str(&exported).unwrap();
+    assert_eq!(kit.kit.name, "chores");
+    assert_eq!(kit.fields.len(), 1);
+    assert_eq!(kit.aliases.len(), 2);
+
+    // Expansion text is preserved byte-for-byte (the "round-trip" invariant
+    // for aliases per the slice-3 bead).
+    let chore_e = kit.aliases.iter().find(|a| a.name == "chore").unwrap();
+    assert_eq!(chore_e.expands_to, "occur -k next_date");
+    let done_e = kit.aliases.iter().find(|a| a.name == "done").unwrap();
+    assert_eq!(done_e.description.as_deref(), Some("mark a chore done"));
+
+    // Uninstall removes the kit's aliases without touching unrelated rows.
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "uninstall".into(),
+            "chores".into(),
+        ],
+        &db,
+    )
+    .unwrap();
+    assert!(db.lookup_alias("chore").unwrap().is_none());
+    assert!(db.lookup_alias("done").unwrap().is_none());
+}
+
+#[test]
+fn install_kit_alias_skips_user_alias_without_force() {
+    let dir = tempfile::tempdir().unwrap();
+    let in_path = dir.path().join("conflict.toml");
+    fs::write(
+        &in_path,
+        r##"[kit]
+name = "intruder"
+
+[[alias]]
+name = "vbp"
+expands_to = "kit_expansion"
+"##,
+    )
+    .unwrap();
+
+    let db = fresh_db();
+
+    // Pre-existing user-declared alias.
+    db.save_alias(&datum_core::field_spec::Alias {
+        name: "vbp".into(),
+        expands_to: "user_expansion".into(),
+        description: None,
+    })
+    .unwrap();
+
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "install".into(),
+            in_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+
+    let loaded = db.lookup_alias("vbp").unwrap().unwrap();
+    assert_eq!(
+        loaded.expands_to, "user_expansion",
+        "user alias must win without --force"
+    );
+    // The kit installed nothing — list_kits should be empty.
+    assert!(db.list_kits().unwrap().is_empty());
+
+    // --force re-tags the row with the kit's id.
+    dispatch_argv(
+        vec![
+            "datum".into(),
+            "kit".into(),
+            "install".into(),
+            "--force".into(),
+            in_path.to_string_lossy().into(),
+        ],
+        &db,
+    )
+    .unwrap();
+    let loaded = db.lookup_alias("vbp").unwrap().unwrap();
+    assert_eq!(loaded.expands_to, "kit_expansion");
+    let kits = db.list_kits().unwrap();
+    assert_eq!(kits.len(), 1);
+    assert_eq!(kits[0].alias_count, 1);
+}
+
+#[test]
 fn install_skips_existing_user_field_without_force() {
     use datum_core::entry::Verb;
     use datum_core::field_spec::FieldSpec;

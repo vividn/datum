@@ -248,11 +248,16 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
     // Views are independent of fields; installed in the same kit-install
     // pass so a TOML containing both lands atomically (per slice 4 bead).
     let view_report = db.install_kit_views(&kit.kit.name, &kit.views, args.force)?;
+    // Aliases (slice 3): same pattern. Tagged with the kit's id so
+    // uninstall removes only what this kit owns.
+    let alias_report = db.install_kit_aliases(&kit.kit.name, &kit.aliases, args.force)?;
 
     let installed: Vec<&str> = report.installed().collect();
     let skipped: Vec<&str> = report.skipped().collect();
     let views_installed: Vec<&str> = view_report.installed().collect();
     let views_skipped: Vec<&str> = view_report.skipped().collect();
+    let aliases_installed: Vec<&str> = alias_report.installed().collect();
+    let aliases_skipped: Vec<&str> = alias_report.skipped().collect();
 
     if !installed.is_empty() {
         println!(
@@ -263,7 +268,8 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
         for f in &installed {
             println!("  + {f}");
         }
-    } else if kit.indices.is_empty() && views_installed.is_empty() {
+    } else if kit.indices.is_empty() && views_installed.is_empty() && aliases_installed.is_empty()
+    {
         println!("Installed kit '{}' (no new fields)", kit.kit.name);
     }
     if !skipped.is_empty() {
@@ -290,6 +296,21 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
             println!("  - {v}");
         }
     }
+    if !aliases_installed.is_empty() {
+        println!("Installed {} alias(es):", aliases_installed.len());
+        for a in &aliases_installed {
+            println!("  + {a}");
+        }
+    }
+    if !aliases_skipped.is_empty() {
+        println!(
+            "Skipped {} alias(es) (existing rows kept; use --force to overwrite):",
+            aliases_skipped.len()
+        );
+        for a in &aliases_skipped {
+            println!("  - {a}");
+        }
+    }
     if !report.indices_dropped.is_empty() {
         println!(
             "Replaced {} previously-installed index/indices.",
@@ -312,11 +333,13 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
 fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let specs = db.load_specs_by_kit(&args.name)?;
     let views = db.load_views_by_kit(&args.name)?;
+    let aliases = db.load_aliases_by_kit(&args.name)?;
     let installed_indices = db.load_indices_by_kit(&args.name)?;
-    if specs.is_empty() && views.is_empty() && installed_indices.is_empty() {
+    if specs.is_empty() && views.is_empty() && aliases.is_empty() && installed_indices.is_empty() {
         anyhow::bail!("no installed kit named '{}'", args.name);
     }
     let view_count = views.len();
+    let alias_count = aliases.len();
     // Reconstruct the TOML-side `IndexEntry` shape from the persisted
     // SQL text. The on-disk DDL is what matters for re-install, and the
     // `sql_text` is preserved verbatim so users can audit it. Slice 5
@@ -333,7 +356,7 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
             unique: false,
         })
         .collect();
-    let mut kit = KitToml::from_kit_rows(&args.name, None, &specs, views);
+    let mut kit = KitToml::from_kit_rows(&args.name, None, &specs, views, &aliases);
     kit.indices = synthetic_indices;
     let toml = kit.to_toml()?;
 
@@ -341,10 +364,11 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
         Some(p) => {
             fs::write(p, &toml).with_context(|| format!("write kit TOML to {p}"))?;
             println!(
-                "Exported kit '{}' ({} field(s), {} view(s), {} index/indices) → {p}",
+                "Exported kit '{}' ({} field(s), {} view(s), {} alias(es), {} index/indices) → {p}",
                 args.name,
                 specs.len(),
                 view_count,
+                alias_count,
                 installed_indices.len()
             );
         }
@@ -360,13 +384,13 @@ fn list(db: &Db) -> Result<()> {
         return Ok(());
     }
     println!(
-        "{:<24} {:>6}  {:>5}  {:>7}",
-        "kit", "fields", "views", "indices"
+        "{:<24} {:>6}  {:>5}  {:>7}  {:>7}",
+        "kit", "fields", "views", "aliases", "indices"
     );
     for k in kits {
         println!(
-            "{:<24} {:>6}  {:>5}  {:>7}",
-            k.kit_id, k.field_count, k.view_count, k.index_count
+            "{:<24} {:>6}  {:>5}  {:>7}  {:>7}",
+            k.kit_id, k.field_count, k.view_count, k.alias_count, k.index_count
         );
     }
     Ok(())
@@ -378,17 +402,23 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     let indices_before = db.load_indices_by_kit(&args.name)?;
     let removed = db.uninstall_kit(&args.name)?;
     let removed_views = db.uninstall_kit_views(&args.name)?;
-    if removed.is_empty() && removed_views.is_empty() && indices_before.is_empty() {
+    let removed_aliases = db.uninstall_kit_aliases(&args.name)?;
+    if removed.is_empty()
+        && removed_views.is_empty()
+        && removed_aliases.is_empty()
+        && indices_before.is_empty()
+    {
         println!(
-            "No fields, views, or indices tagged with kit '{}'.",
+            "No fields, views, aliases, or indices tagged with kit '{}'.",
             args.name
         );
     } else {
         println!(
-            "Uninstalled kit '{}': {} field(s), {} view(s), {} index/indices",
+            "Uninstalled kit '{}': {} field(s), {} view(s), {} alias(es), {} index/indices",
             args.name,
             removed.len(),
             removed_views.len(),
+            removed_aliases.len(),
             indices_before.len()
         );
         for f in &removed {
@@ -396,6 +426,9 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
         }
         for v in &removed_views {
             println!("  - view  {v}");
+        }
+        for a in &removed_aliases {
+            println!("  - alias {a}");
         }
         for ix in &indices_before {
             println!("  - index {}", ix.index_name);

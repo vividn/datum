@@ -19,10 +19,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::entry::Verb;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{FieldSpec, DEFAULT_FIELD_HEIGHT};
+use crate::field_spec::{Alias, FieldSpec, DEFAULT_FIELD_HEIGHT};
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
-/// and `[[index]]` may all be empty.
+/// `[[alias]]`, and `[[index]]` may all be empty.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KitToml {
     pub kit: KitMeta,
@@ -31,8 +31,13 @@ pub struct KitToml {
     /// `[[view]]` declarations. Each is a named read-only SELECT installed
     /// into the `views` table tagged with the kit's id. Powers
     /// `datum view <name>` (slice 4).
-    #[serde(default, rename = "view")]
+    #[serde(default, rename = "view", skip_serializing_if = "Vec::is_empty")]
     pub views: Vec<ViewEntry>,
+    /// `[[alias]]` declarations. Each row becomes an entry in the `aliases`
+    /// table tagged with the kit's id. Round-trip preserves `expands_to`
+    /// byte-for-byte. Slice 3 (da-d4t.3).
+    #[serde(default, rename = "alias", skip_serializing_if = "Vec::is_empty")]
+    pub aliases: Vec<AliasEntry>,
     /// `[[index]]` declarations. Each becomes a `CREATE INDEX` against
     /// `entries` recorded in `kit_indices`. Trust-gated at install time;
     /// see slice 5 (da-d4t.5).
@@ -118,6 +123,39 @@ pub struct ViewEntry {
     pub sql: String,
 }
 
+/// A `[[alias]]` entry — a named expansion of a `datum` invocation.
+///
+/// Slice 3: round-trips byte-for-byte with the stored [`Alias`]; install
+/// copies `expands_to` verbatim into the `aliases` row, export reads it
+/// back unchanged.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AliasEntry {
+    pub name: String,
+    pub expands_to: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl AliasEntry {
+    /// Convert the parsed TOML form into the stored [`Alias`].
+    pub fn into_alias(self) -> Alias {
+        Alias {
+            name: self.name,
+            expands_to: self.expands_to,
+            description: self.description,
+        }
+    }
+
+    /// Project a stored [`Alias`] back into the TOML shape.
+    pub fn from_alias(alias: &Alias) -> Self {
+        Self {
+            name: alias.name.clone(),
+            expands_to: alias.expands_to.clone(),
+            description: alias.description.clone(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateEntry {
     pub name: String,
@@ -161,20 +199,24 @@ impl KitToml {
             },
             fields,
             views: Vec::new(),
+            aliases: Vec::new(),
             indices: indices.to_vec(),
         }
     }
 
-    /// Build a [`KitToml`] from both stored field specs and view rows. Used
-    /// by `datum kit export <name>` once view round-trip is wired (slice 4).
+    /// Build a [`KitToml`] from stored field specs, view rows, and alias
+    /// rows. Used by `datum kit export <name>` to round-trip the full kit
+    /// shape introduced through slices 1/3/4.
     pub fn from_kit_rows(
         name: &str,
         version: Option<&str>,
         specs: &[FieldSpec],
         views: Vec<ViewEntry>,
+        aliases: &[Alias],
     ) -> Self {
         let mut kit = Self::from_field_specs(name, version, specs, &[]);
         kit.views = views;
+        kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
         kit
     }
 }
@@ -898,6 +940,7 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
             },
             fields: vec![],
             views: vec![],
+            aliases: vec![],
             indices: vec![IndexEntry {
                 name: "by_field".into(),
                 on: "entries".into(),

@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 15;
+pub const CURRENT_SCHEMA_VERSION: u32 = 16;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -119,7 +119,33 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "kit_indices: track CREATE INDEX statements installed by kits so uninstall can DROP INDEX cleanly (da-d4t.5)",
         apply: m14_to_15_kit_indices,
     },
+    Migration {
+        from: 15,
+        to: 16,
+        summary: "aliases: add kit_id column for kit-namespaced [[alias]] rows; index on kit_id (da-d4t.3)",
+        apply: m15_to_16_aliases_kit_id,
+    },
 ];
+
+/// da-d4t.3: kits scope `aliases` rows. `kit_id` is NULL for user-declared
+/// aliases (set via `datum alias set` or seeded into the schema) and the
+/// kit's name for rows installed by `datum kit install` from a `[[alias]]`
+/// block. Uninstall deletes only rows with the matching `kit_id`. Additive +
+/// idempotent.
+fn m15_to_16_aliases_kit_id(conn: &Connection) -> Result<()> {
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('aliases') WHERE name = 'kit_id'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch("ALTER TABLE aliases ADD COLUMN kit_id TEXT;")?;
+    }
+    conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_aliases_kit_id ON aliases(kit_id);")?;
+    Ok(())
+}
 
 /// da-d4t.4: kit-installable named SELECT views. Rows are tagged with
 /// `kit_id` (NULL for user-declared rows, the kit's name for installed
