@@ -36,6 +36,14 @@ fn synth_v2_to_v3(conn: &Connection) -> datum_core::error::Result<()> {
     conn.execute_batch("CREATE TABLE IF NOT EXISTS synth_v3 (x INTEGER);")?;
     Ok(())
 }
+fn synth_down_v2_to_v1(conn: &Connection) -> datum_core::error::Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS synth_v2;")?;
+    Ok(())
+}
+fn synth_down_v3_to_v2(conn: &Connection) -> datum_core::error::Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS synth_v3;")?;
+    Ok(())
+}
 
 const SYNTH: &[Migration] = &[
     Migration {
@@ -43,12 +51,14 @@ const SYNTH: &[Migration] = &[
         to: 2,
         summary: "synth v1→v2",
         apply: synth_v1_to_v2,
+        down: synth_down_v2_to_v1,
     },
     Migration {
         from: 2,
         to: 3,
         summary: "synth v2→v3",
         apply: synth_v2_to_v3,
+        down: synth_down_v3_to_v2,
     },
 ];
 
@@ -166,7 +176,10 @@ fn migrate_status_lists_applied_and_pending() {
     assert_eq!(current, 2);
     assert_eq!(rows.len(), 2);
     assert!(rows[0].applied, "v1→v2 must be marked applied at current=2");
-    assert!(!rows[1].applied, "v2→v3 must be marked pending at current=2");
+    assert!(
+        !rows[1].applied,
+        "v2→v3 must be marked pending at current=2"
+    );
 
     // And the real CLI dispatch path also runs cleanly against the live
     // (empty) MIGRATIONS registry at any schema version ≤ CURRENT.
@@ -204,16 +217,10 @@ fn legacy_backup_json_import_still_works() {
         ]
     });
     let tmp = tempfile::NamedTempFile::new().expect("tempfile");
-    std::fs::write(tmp.path(), serde_json::to_string(&backup).unwrap())
-        .expect("write backup.json");
+    std::fs::write(tmp.path(), serde_json::to_string(&backup).unwrap()).expect("write backup.json");
 
     run_cli(
-        &[
-            "migrate",
-            "import",
-            "--from",
-            tmp.path().to_str().unwrap(),
-        ],
+        &["migrate", "import", "--from", tmp.path().to_str().unwrap()],
         &db,
     )
     .expect("legacy backup.json import dispatch");

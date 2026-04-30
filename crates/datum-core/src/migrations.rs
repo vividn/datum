@@ -25,11 +25,19 @@ pub const CURRENT_SCHEMA_VERSION: u32 = 19;
 /// be idempotent against a partially-applied state where possible — in
 /// practice this means using `CREATE … IF NOT EXISTS` / `ALTER … ADD
 /// COLUMN` patterns so interrupted runs can be retried safely.
+///
+/// `down` reverses `apply` to restore the v=`from` schema shape. It runs
+/// inside a transaction opened by the caller. Where the forward migration
+/// is data-destructive (e.g. v2→v3 replaces the entries table), the
+/// docstring on `down` MUST document the data-loss; the down may either
+/// proceed with documented loss or return [`DatumError::NotReversible`]
+/// when it would silently destroy production data.
 pub struct Migration {
     pub from: u32,
     pub to: u32,
     pub summary: &'static str,
     pub apply: fn(&Connection) -> Result<()>,
+    pub down: fn(&Connection) -> Result<()>,
 }
 
 /// Ordered forward migrations. Append-only — never reorder, rename, or
@@ -40,108 +48,126 @@ pub const MIGRATIONS: &[Migration] = &[
         to: 2,
         summary: "sync_state: replace (device_id,last_seq,updated_at) with (db_id,push_seq,pull_seq,last_push_at,last_pull_at)",
         apply: m1_to_2_sync_state,
+        down: down_2_to_1_sync_state,
     },
     Migration {
         from: 2,
         to: 3,
         summary: "data model v2: entries table replaced — entry_shape, intent, precision fields, timestamp rename, hid-PK, generated verb/dur_seconds, raw_input/alias_chain/parser_version",
         apply: m2_to_3_entries_v2,
+        down: down_3_to_2_entries_v2,
     },
     Migration {
         from: 3,
         to: 4,
         summary: "entry_history: append-only modification trail (entry_hid, version, snapshot, change_kind)",
         apply: m3_to_4_entry_history,
+        down: down_4_to_3_entry_history,
     },
     Migration {
         from: 4,
         to: 5,
         summary: "sync_conflicts: non-blocking overlap / double-open / orphan-end queue (local_validator + sync_pull)",
         apply: m4_to_5_sync_conflicts,
+        down: down_5_to_4_sync_conflicts,
     },
     Migration {
         from: 5,
         to: 6,
         summary: "entries_live_field_start: partial index for SQL-backed views (deleted_at IS NULL AND start_time IS NOT NULL)",
         apply: m5_to_6_live_field_index,
+        down: down_6_to_5_live_field_index,
     },
     Migration {
         from: 6,
         to: 7,
         summary: "sync_state: add my_push_seq column (per-device AAD seq counter for C4c push)",
         apply: m6_to_7_sync_state_my_push_seq,
+        down: down_7_to_6_sync_state_my_push_seq,
     },
     Migration {
         from: 7,
         to: 8,
         summary: "entries: add user_asserted_last_state column (S6 — explicit -L assertion value)",
         apply: m7_to_8_entries_user_asserted_last_state,
+        down: down_8_to_7_entries_user_asserted_last_state,
     },
     Migration {
         from: 8,
         to: 9,
         summary: "track/ignore unification (da-2sr): convert field_specs.ignored=true rows into switch IGNORED entries; spec retains schema only",
         apply: m8_to_9_track_ignore_unification,
+        down: down_9_to_8_track_ignore_unification,
     },
     Migration {
         from: 9,
         to: 10,
         summary: "entries_hybrid_time: expression index on COALESCE(start_time, modify_time) for bare-time tail/head (da-7iu)",
         apply: m9_to_10_hybrid_time_index,
+        down: down_10_to_9_hybrid_time_index,
     },
     Migration {
         from: 10,
         to: 11,
         summary: "last_docs: singleton pointer to the hids of the most-recently-accessed batch (da-e65)",
         apply: m10_to_11_last_docs,
+        down: down_11_to_10_last_docs,
     },
     Migration {
         from: 11,
         to: 12,
         summary: "entries: add extra_metadata column for system provenance; relocate datum-migrate `_import` marker out of data (da-tsw)",
         apply: m11_to_12_extra_metadata,
+        down: down_12_to_11_extra_metadata,
     },
     Migration {
         from: 12,
         to: 13,
         summary: "field_specs: add kit_id column for kit-namespaced field specs; index on kit_id (da-d4t.1)",
         apply: m12_to_13_field_specs_kit_id,
+        down: down_13_to_12_field_specs_kit_id,
     },
     Migration {
         from: 13,
         to: 14,
         summary: "views: named SQL views table (kit-scoped); powers `datum view <name>` (da-d4t.4)",
         apply: m13_to_14_views_table,
+        down: down_14_to_13_views_table,
     },
     Migration {
         from: 14,
         to: 15,
         summary: "kit_indices: track CREATE INDEX statements installed by kits so uninstall can DROP INDEX cleanly (da-d4t.5)",
         apply: m14_to_15_kit_indices,
+        down: down_15_to_14_kit_indices,
     },
     Migration {
         from: 15,
         to: 16,
         summary: "aliases: add kit_id column for kit-namespaced [[alias]] rows; index on kit_id (da-d4t.3)",
         apply: m15_to_16_aliases_kit_id,
+        down: down_16_to_15_aliases_kit_id,
     },
     Migration {
         from: 16,
         to: 17,
         summary: "kit_commands: kit-defined Level 1/2 commands (alias expansion + view+presentation) (da-d4t.6)",
         apply: m16_to_17_kit_commands_table,
+        down: down_17_to_16_kit_commands_table,
     },
     Migration {
         from: 17,
         to: 18,
         summary: "field_specs: add tags TEXT column (JSON array, default '[]') for kit/view tag filtering (da-a7g)",
         apply: m17_to_18_field_specs_tags,
+        down: down_18_to_17_field_specs_tags,
     },
     Migration {
         from: 18,
         to: 19,
         summary: "field_specs: add render_json TEXT column (NULL = visible everywhere) for per-surface render visibility (da-2zd)",
         apply: m18_to_19_field_specs_render_json,
+        down: down_19_to_18_field_specs_render_json,
     },
 ];
 
@@ -425,14 +451,79 @@ fn m1_to_2_sync_state(conn: &Connection) -> Result<()> {
 
 fn m2_to_3_entries_v2(conn: &Connection) -> Result<()> {
     // No production data yet — the v2 → v3 jump is a structural rewrite of
-    // the entries table. Drop and let schema.sql recreate with the new
+    // the entries table. Drop the v2 shape and recreate with the v3
     // shape (hid PK, entry_shape, precision, intent, generated verb, etc.).
+    //
+    // Self-contained recreation matters because (a) callers shouldn't have
+    // to re-run schema.sql to land at a coherent v3, and (b) later
+    // migrations (m5→6, m7→8, m9→10, m11→12) ALTER/INDEX `entries` and
+    // would break otherwise. The shape here matches schema.sql today MINUS
+    // the columns added by later migrations (`user_asserted_last_state` is
+    // added at v7→8; `extra_metadata` is added at v11→12) — those flow
+    // back in via their own ALTER TABLE steps.
     conn.execute_batch(
         "DROP INDEX IF EXISTS idx_entries_hid;
          DROP INDEX IF EXISTS idx_entries_field;
          DROP INDEX IF EXISTS idx_entries_time;
          DROP INDEX IF EXISTS idx_entries_content_hash;
-         DROP TABLE IF EXISTS entries;",
+         DROP TABLE IF EXISTS entries;
+         CREATE TABLE entries (
+             hid             TEXT NOT NULL PRIMARY KEY,
+             slug            TEXT NOT NULL,
+             content_hash    TEXT NOT NULL,
+             field           TEXT NOT NULL,
+             entry_shape     TEXT NOT NULL,
+             intent          TEXT,
+             value           TEXT,
+             data            TEXT,
+             unit            TEXT,
+             start_time      TEXT,
+             start_time_offset INTEGER,
+             start_time_tz   TEXT,
+             start_time_precision INTEGER NOT NULL DEFAULT 0,
+             start_time_precision_unit TEXT NOT NULL DEFAULT 'exact',
+             end_time        TEXT,
+             end_time_offset INTEGER,
+             end_time_tz     TEXT,
+             end_time_precision INTEGER NOT NULL DEFAULT 0,
+             end_time_precision_unit TEXT NOT NULL DEFAULT 'exact',
+             lat             REAL,
+             lon             REAL,
+             location        TEXT,
+             create_time     TEXT NOT NULL,
+             modify_time     TEXT NOT NULL,
+             device_id       TEXT NOT NULL,
+             deleted_at      TEXT,
+             id_structure    TEXT,
+             field_structure TEXT,
+             raw_input       TEXT NOT NULL DEFAULT '',
+             alias_chain     TEXT,
+             parser_version  INTEGER NOT NULL DEFAULT 1,
+             verb TEXT GENERATED ALWAYS AS (
+                 CASE
+                     WHEN intent IS NOT NULL THEN intent
+                     WHEN entry_shape = 'ongoing' THEN 'start'
+                     WHEN entry_shape = 'block' THEN 'block'
+                     WHEN entry_shape = 'point' AND value IS NULL THEN 'occur'
+                     WHEN entry_shape = 'point' AND json_valid(value)
+                          AND json_type(value) IN ('true','false') THEN 'switch'
+                     WHEN entry_shape = 'point' AND value IS NOT NULL THEN 'switch'
+                     ELSE 'add'
+                 END
+             ) VIRTUAL,
+             dur_seconds INTEGER GENERATED ALWAYS AS (
+                 CASE WHEN start_time IS NOT NULL AND end_time IS NOT NULL
+                     THEN CAST((julianday(end_time) - julianday(start_time)) * 86400 AS INTEGER)
+                     ELSE NULL
+                 END
+             ) VIRTUAL
+         );
+         CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
+         CREATE INDEX IF NOT EXISTS entries_field_start
+             ON entries (field, start_time DESC);
+         CREATE INDEX IF NOT EXISTS entries_content_hash
+             ON entries (content_hash);
+         CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);",
     )?;
     Ok(())
 }
@@ -595,6 +686,545 @@ fn m3_to_4_entry_history(conn: &Connection) -> Result<()> {
          CREATE INDEX IF NOT EXISTS entry_history_change_kind
             ON entry_history(change_kind);",
     )?;
+    Ok(())
+}
+
+// ─── Down migrations ─────────────────────────────────────────────────
+//
+// Each forward migration above has a paired `down` here that reverses
+// the schema change. Conventions:
+//
+// * Every down is wrapped in the same outer transaction the runner
+//   opens, so a partial failure rolls the whole step back.
+// * Pure schema changes (CREATE INDEX, CREATE TABLE) reverse trivially.
+// * Column additions are reversed via `ALTER TABLE ... DROP COLUMN`
+//   (SQLite ≥ 3.35) on tables that have no generated columns. For
+//   `entries` we still use DROP COLUMN because the dropped columns
+//   (`extra_metadata`, `user_asserted_last_state`) are not referenced
+//   by the generated `verb` / `dur_seconds` projections, so the drop
+//   is safe.
+// * Forward steps that destructively rewrote a table or wrote new rows
+//   (v2→v3, v8→v9, v11→v12) document the data-loss in the down's
+//   docstring. The down still runs to make the schema reversible for
+//   round-trip testing; production callers should back up before
+//   walking back across these.
+
+/// Reverse v1→v2: restore the v1 sync_state placeholder shape.
+/// Drops the C4a-shape table and recreates the (device_id, last_seq,
+/// updated_at) placeholder. The v2 table was a no-op for any DB that
+/// hadn't synced, so this loses no real data on rollback.
+fn down_2_to_1_sync_state(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP TABLE IF EXISTS sync_state;
+         CREATE TABLE sync_state (
+             device_id   TEXT NOT NULL PRIMARY KEY,
+             last_seq    INTEGER NOT NULL DEFAULT 0,
+             updated_at  TEXT
+         );",
+    )?;
+    Ok(())
+}
+
+/// Reverse v2→v3: drop the v3 entries table and recreate a minimal
+/// v2-shape stub.
+///
+/// **DATA LOSS.** The v2→v3 forward jump was itself a structural rewrite
+/// that dropped the old entries table. Walking back across this step
+/// destroys every row in the current entries table. The v2 stub
+/// recreated here mirrors the public columns the v2 schema exposed
+/// (slug PK, JSON value, plain timestamps) but is not a faithful
+/// restoration — it exists so the runner can land at v=2 and the
+/// chain-test harness can verify schema reversibility. Production
+/// callers must back up before walking down across this step.
+fn down_3_to_2_entries_v2(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_slug;
+         DROP INDEX IF EXISTS entries_field_start;
+         DROP INDEX IF EXISTS entries_live_field_start;
+         DROP INDEX IF EXISTS entries_content_hash;
+         DROP INDEX IF EXISTS entries_verb;
+         DROP INDEX IF EXISTS entries_hybrid_time;
+         DROP TABLE IF EXISTS entries;
+         CREATE TABLE entries (
+             slug            TEXT NOT NULL PRIMARY KEY,
+             content_hash    TEXT NOT NULL,
+             field           TEXT NOT NULL,
+             value           TEXT,
+             data            TEXT,
+             time_start      TEXT,
+             time_end        TEXT,
+             timezone        TEXT,
+             create_time     TEXT NOT NULL,
+             modify_time     TEXT NOT NULL,
+             device_id       TEXT NOT NULL,
+             deleted_at      TEXT
+         );",
+    )?;
+    Ok(())
+}
+
+/// Reverse v3→v4: drop the entry_history table and its indexes.
+/// Forward step was purely additive, so the down is a clean schema
+/// reversal — but any history rows recorded between the up and down
+/// are lost.
+fn down_4_to_3_entry_history(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entry_history_entry;
+         DROP INDEX IF EXISTS entry_history_change_kind;
+         DROP TABLE IF EXISTS entry_history;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v4→v5: drop the sync_conflicts table and its indexes.
+/// Any pending conflict rows are discarded.
+fn down_5_to_4_sync_conflicts(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS sync_conflicts_hid;
+         DROP INDEX IF EXISTS sync_conflicts_slug;
+         DROP INDEX IF EXISTS sync_conflicts_pending;
+         DROP TABLE IF EXISTS sync_conflicts;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v5→v6: drop the partial live-field-start index. The base
+/// `entries_field_start` index is unaffected.
+fn down_6_to_5_live_field_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_live_field_start;")?;
+    Ok(())
+}
+
+/// Reverse v6→v7: drop the `my_push_seq` column from sync_state via a
+/// table-rebuild. SQLite's `ALTER TABLE … DROP COLUMN` re-parses the
+/// stored CREATE statement and stumbles on inline `--` comments in our
+/// schema.sql, so we use the 12-step rebuild pattern instead.
+/// Any per-device push-seq counters are lost — but at v6 there were
+/// no production pushes that depended on them.
+fn down_7_to_6_sync_state_my_push_seq(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE sync_state__v6 (
+             db_id         TEXT NOT NULL,
+             push_seq      INTEGER NOT NULL DEFAULT 0,
+             pull_seq      INTEGER NOT NULL DEFAULT 0,
+             last_push_at  INTEGER,
+             last_pull_at  INTEGER,
+             PRIMARY KEY (db_id)
+         );
+         INSERT INTO sync_state__v6 (db_id, push_seq, pull_seq, last_push_at, last_pull_at)
+            SELECT db_id, push_seq, pull_seq, last_push_at, last_pull_at FROM sync_state;
+         DROP TABLE sync_state;
+         ALTER TABLE sync_state__v6 RENAME TO sync_state;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v7→v8: drop `entries.user_asserted_last_state` via a table
+/// rebuild. The column is metadata-only and is not referenced by any
+/// generated column. We use rebuild rather than `ALTER TABLE … DROP
+/// COLUMN` so we don't depend on SQLite's stored-DDL re-parser. Any -L
+/// assertion values recorded between up and down are discarded.
+fn down_8_to_7_entries_user_asserted_last_state(conn: &Connection) -> Result<()> {
+    rebuild_entries_v3(
+        conn, /* with_user_asserted = */ false, /* with_extra_metadata = */ false,
+    )
+}
+
+/// Reverse v8→v9: delete the synthetic IGNORED switch entries written
+/// by the forward step.
+///
+/// **DATA LOSS / HEURISTIC.** The forward migration tagged its writes
+/// with `device_id = 'migration-v9'`, so the down deletes exactly those
+/// entries. If the user has manually written legitimate switch entries
+/// with that sentinel device_id (extremely unlikely — it is only ever
+/// emitted by this migration), they will be removed. The legacy
+/// `tracked` / `ignored` fields inside `field_specs.spec_json` were
+/// not touched by the forward step and remain readable, so the spec
+/// side is reversible without effort.
+fn down_9_to_8_track_ignore_unification(conn: &Connection) -> Result<()> {
+    // Best-effort: only delete if the entries table still exists at this
+    // point in the down walk. The runner walks v19→v1 so entries is
+    // present here.
+    let entries_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='entries'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if entries_exists {
+        conn.execute("DELETE FROM entries WHERE device_id = 'migration-v9'", [])?;
+    }
+    Ok(())
+}
+
+/// Reverse v9→v10: drop the hybrid-time expression index.
+fn down_10_to_9_hybrid_time_index(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_hybrid_time;")?;
+    Ok(())
+}
+
+/// Reverse v10→v11: drop the last_docs table.
+fn down_11_to_10_last_docs(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS last_docs;")?;
+    Ok(())
+}
+
+/// Reverse v11→v12: drop `entries.extra_metadata` and merge any
+/// `_import` markers back into `data`.
+///
+/// **PARTIAL DATA LOSS.** `content_hash` cannot be cleanly recomputed
+/// to its pre-migration value (the v=11 hash is gone). After the down,
+/// rows whose `_import` was relocated have `data` restored but
+/// `content_hash` reflects the v=12 inputs. This is acceptable because
+/// `content_hash` is internal: it is recomputed on rewrite, and dedup
+/// against an external import re-derives it from the row payload.
+fn down_12_to_11_extra_metadata(conn: &Connection) -> Result<()> {
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('entries') WHERE name = 'extra_metadata'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        return Ok(());
+    }
+
+    // Re-merge any extra_metadata._import back into data so a later
+    // forward walk reproduces the v=11 → v=12 transformation.
+    let mut stmt = conn.prepare(
+        "SELECT hid, data, extra_metadata
+         FROM entries
+         WHERE extra_metadata IS NOT NULL",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(crate::error::DatumError::Db)?;
+    drop(stmt);
+
+    for (hid, data_str, meta_str) in rows {
+        let meta_val: serde_json::Value = serde_json::from_str(&meta_str).map_err(|e| {
+            crate::error::DatumError::Other(format!("bad extra_metadata for hid {hid}: {e}"))
+        })?;
+        let import_val = meta_val.as_object().and_then(|m| m.get("_import")).cloned();
+        let Some(import_val) = import_val else {
+            continue;
+        };
+        let mut data_obj = match data_str.as_deref() {
+            Some(s) => match serde_json::from_str::<serde_json::Value>(s) {
+                Ok(serde_json::Value::Object(m)) => m,
+                Ok(_) | Err(_) => serde_json::Map::new(),
+            },
+            None => serde_json::Map::new(),
+        };
+        data_obj.insert("_import".to_string(), import_val);
+        let new_data = serde_json::Value::Object(data_obj).to_string();
+        conn.execute(
+            "UPDATE entries SET data = ?2 WHERE hid = ?1",
+            params![hid, new_data],
+        )?;
+    }
+
+    rebuild_entries_v3(
+        conn, /* with_user_asserted = */ true, /* with_extra_metadata = */ false,
+    )
+}
+
+/// Reverse v12→v13: drop `field_specs.kit_id` and its index via table
+/// rebuild. Any kit-installed rows lose their kit linkage; uninstall
+/// by kit_id is no longer possible while at v=12.
+fn down_13_to_12_field_specs_kit_id(conn: &Connection) -> Result<()> {
+    rebuild_field_specs(
+        conn, /* with_kit_id = */ false, /* with_tags = */ false,
+        /* with_render_json = */ false,
+    )
+}
+
+/// Reverse v13→v14: drop the views table and its index. Any installed
+/// view definitions are lost; reinstall the kit to recreate them.
+fn down_14_to_13_views_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_views_kit_id;
+         DROP TABLE IF EXISTS views;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v14→v15: drop the kit_indices bookkeeping table. Any
+/// real CREATE INDEX statements installed by kits remain on `entries`
+/// but their (kit_id, index_name) ownership record is gone, so a
+/// subsequent uninstall at v=14 cannot find them. Reinstall the kit
+/// to repopulate the bookkeeping.
+fn down_15_to_14_kit_indices(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP TABLE IF EXISTS kit_indices;")?;
+    Ok(())
+}
+
+/// Reverse v15→v16: drop `aliases.kit_id` and its index via table
+/// rebuild. Kit-installed alias rows lose their kit linkage but remain
+/// in the table.
+fn down_16_to_15_aliases_kit_id(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_aliases_kit_id;
+         CREATE TABLE aliases__v15 (
+             name                TEXT NOT NULL PRIMARY KEY,
+             alias_json          TEXT NOT NULL,
+             derived_from_field  TEXT
+         );
+         INSERT INTO aliases__v15 (name, alias_json, derived_from_field)
+            SELECT name, alias_json, derived_from_field FROM aliases;
+         DROP TABLE aliases;
+         ALTER TABLE aliases__v15 RENAME TO aliases;
+         CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
+            ON aliases (derived_from_field);",
+    )?;
+    Ok(())
+}
+
+/// Reverse v16→v17: drop the kit_commands table and its index. Any
+/// installed kit commands are lost; reinstall the kit to recreate them.
+fn down_17_to_16_kit_commands_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_kit_commands_kit_id;
+         DROP TABLE IF EXISTS kit_commands;",
+    )?;
+    Ok(())
+}
+
+/// Reverse v17→v18: drop `field_specs.tags` via table rebuild. Any
+/// tag values written after the up are discarded. Spec-side tags inside
+/// `spec_json` are untouched (they were never moved out by the up).
+fn down_18_to_17_field_specs_tags(conn: &Connection) -> Result<()> {
+    rebuild_field_specs(
+        conn, /* with_kit_id = */ true, /* with_tags = */ false,
+        /* with_render_json = */ false,
+    )
+}
+
+/// Reverse v18→v19: drop `field_specs.render_json` via table rebuild.
+/// Render-visibility overrides written after the up are discarded;
+/// spec-side `render` values inside `spec_json` are untouched.
+fn down_19_to_18_field_specs_render_json(conn: &Connection) -> Result<()> {
+    rebuild_field_specs(
+        conn, /* with_kit_id = */ true, /* with_tags = */ true,
+        /* with_render_json = */ false,
+    )
+}
+
+// ─── Table rebuild helpers ───────────────────────────────────────────
+//
+// SQLite's `ALTER TABLE … DROP COLUMN` re-parses the stored CREATE
+// statement and trips on the inline `--` comments embedded in
+// schema.sql. Rather than rewriting schema.sql, the down migrations
+// rebuild affected tables in-place using the standard 12-step pattern
+// (CREATE new, copy rows, drop old, rename) so they don't depend on
+// SQLite's stored-DDL re-parser.
+
+/// Rebuild `field_specs` to a specific (kit_id, tags, render_json)
+/// shape, preserving all rows. The PK and `idx_field_specs_kit_id`
+/// index are recreated as appropriate for the target shape.
+fn rebuild_field_specs(
+    conn: &Connection,
+    with_kit_id: bool,
+    with_tags: bool,
+    with_render_json: bool,
+) -> Result<()> {
+    let mut cols = vec!["field TEXT NOT NULL PRIMARY KEY", "spec_json TEXT NOT NULL"];
+    if with_kit_id {
+        cols.push("kit_id TEXT");
+    }
+    if with_tags {
+        cols.push("tags TEXT NOT NULL DEFAULT '[]'");
+    }
+    if with_render_json {
+        cols.push("render_json TEXT");
+    }
+    let create = format!("CREATE TABLE field_specs__new ({});", cols.join(", "));
+
+    let mut select_cols = vec!["field", "spec_json"];
+    if with_kit_id {
+        select_cols.push("kit_id");
+    }
+    if with_tags {
+        select_cols.push("tags");
+    }
+    if with_render_json {
+        select_cols.push("render_json");
+    }
+    let copy = format!(
+        "INSERT INTO field_specs__new ({c}) SELECT {c} FROM field_specs;",
+        c = select_cols.join(", ")
+    );
+
+    let mut sql = String::new();
+    sql.push_str("DROP INDEX IF EXISTS idx_field_specs_kit_id;\n");
+    sql.push_str(&create);
+    sql.push_str(&copy);
+    sql.push_str("DROP TABLE field_specs;\n");
+    sql.push_str("ALTER TABLE field_specs__new RENAME TO field_specs;\n");
+    if with_kit_id {
+        sql.push_str("CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);\n");
+    }
+    conn.execute_batch(&sql)?;
+    Ok(())
+}
+
+/// Rebuild `entries` to the v3 shape with optional v8 (`user_asserted_last_state`)
+/// and v12 (`extra_metadata`) columns. Generated columns (`verb`, `dur_seconds`)
+/// and the v3-era indexes are recreated. Late-binding indexes
+/// (`entries_live_field_start`, `entries_hybrid_time`) are NOT recreated
+/// here — the chain runner only invokes this from down steps that have
+/// already torn those indexes down via their own dedicated downs.
+fn rebuild_entries_v3(
+    conn: &Connection,
+    with_user_asserted: bool,
+    with_extra_metadata: bool,
+) -> Result<()> {
+    // Build the column list for the new table. Order must match the
+    // SELECT below so positional INSERT lines up.
+    let mut cols: Vec<&str> = vec![
+        "hid TEXT NOT NULL PRIMARY KEY",
+        "slug TEXT NOT NULL",
+        "content_hash TEXT NOT NULL",
+        "field TEXT NOT NULL",
+        "entry_shape TEXT NOT NULL",
+        "intent TEXT",
+        "value TEXT",
+        "data TEXT",
+        "unit TEXT",
+        "start_time TEXT",
+        "start_time_offset INTEGER",
+        "start_time_tz TEXT",
+        "start_time_precision INTEGER NOT NULL DEFAULT 0",
+        "start_time_precision_unit TEXT NOT NULL DEFAULT 'exact'",
+        "end_time TEXT",
+        "end_time_offset INTEGER",
+        "end_time_tz TEXT",
+        "end_time_precision INTEGER NOT NULL DEFAULT 0",
+        "end_time_precision_unit TEXT NOT NULL DEFAULT 'exact'",
+        "lat REAL",
+        "lon REAL",
+        "location TEXT",
+        "create_time TEXT NOT NULL",
+        "modify_time TEXT NOT NULL",
+        "device_id TEXT NOT NULL",
+        "deleted_at TEXT",
+        "id_structure TEXT",
+        "field_structure TEXT",
+        "raw_input TEXT NOT NULL DEFAULT ''",
+        "alias_chain TEXT",
+        "parser_version INTEGER NOT NULL DEFAULT 1",
+    ];
+    if with_user_asserted {
+        cols.push("user_asserted_last_state TEXT");
+    }
+    if with_extra_metadata {
+        cols.push("extra_metadata TEXT");
+    }
+    // Generated columns are positional and must come last.
+    let generated = "verb TEXT GENERATED ALWAYS AS (
+                CASE
+                    WHEN intent IS NOT NULL THEN intent
+                    WHEN entry_shape = 'ongoing' THEN 'start'
+                    WHEN entry_shape = 'block' THEN 'block'
+                    WHEN entry_shape = 'point' AND value IS NULL THEN 'occur'
+                    WHEN entry_shape = 'point' AND json_valid(value)
+                         AND json_type(value) IN ('true','false') THEN 'switch'
+                    WHEN entry_shape = 'point' AND value IS NOT NULL THEN 'switch'
+                    ELSE 'add'
+                END
+            ) VIRTUAL,
+            dur_seconds INTEGER GENERATED ALWAYS AS (
+                CASE WHEN start_time IS NOT NULL AND end_time IS NOT NULL
+                    THEN CAST((julianday(end_time) - julianday(start_time)) * 86400 AS INTEGER)
+                    ELSE NULL
+                END
+            ) VIRTUAL";
+
+    // The columns we copy = stored columns only (no generated).
+    let stored: Vec<&str> = vec![
+        "hid",
+        "slug",
+        "content_hash",
+        "field",
+        "entry_shape",
+        "intent",
+        "value",
+        "data",
+        "unit",
+        "start_time",
+        "start_time_offset",
+        "start_time_tz",
+        "start_time_precision",
+        "start_time_precision_unit",
+        "end_time",
+        "end_time_offset",
+        "end_time_tz",
+        "end_time_precision",
+        "end_time_precision_unit",
+        "lat",
+        "lon",
+        "location",
+        "create_time",
+        "modify_time",
+        "device_id",
+        "deleted_at",
+        "id_structure",
+        "field_structure",
+        "raw_input",
+        "alias_chain",
+        "parser_version",
+    ];
+    let mut copy_cols: Vec<&str> = stored.clone();
+    if with_user_asserted {
+        copy_cols.push("user_asserted_last_state");
+    }
+    if with_extra_metadata {
+        copy_cols.push("extra_metadata");
+    }
+    let copy_list = copy_cols.join(", ");
+
+    let create = format!(
+        "CREATE TABLE entries__new ({}, {});",
+        cols.join(", "),
+        generated
+    );
+    let copy = format!(
+        "INSERT INTO entries__new ({c}) SELECT {c} FROM entries;",
+        c = copy_list
+    );
+
+    let mut sql = String::new();
+    // Drop indexes that reference `entries` so the rename can succeed
+    // without renaming dependents. The chain runner has typically
+    // already torn down v6+ / v10+ indexes via their dedicated downs,
+    // but DROP INDEX IF EXISTS keeps this idempotent either way.
+    sql.push_str("DROP INDEX IF EXISTS entries_slug;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_field_start;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_content_hash;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_verb;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_live_field_start;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_hybrid_time;\n");
+    sql.push_str(&create);
+    sql.push_str(&copy);
+    sql.push_str("DROP TABLE entries;\n");
+    sql.push_str("ALTER TABLE entries__new RENAME TO entries;\n");
+    // Recreate the v3-era indexes that always exist on entries.
+    sql.push_str("CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);\n");
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_field_start ON entries (field, start_time DESC);\n",
+    );
+    sql.push_str("CREATE INDEX IF NOT EXISTS entries_content_hash ON entries (content_hash);\n");
+    sql.push_str("CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);\n");
+    conn.execute_batch(&sql)?;
     Ok(())
 }
 
@@ -783,6 +1413,52 @@ pub fn migration_status(
     Ok((current, target, rows))
 }
 
+/// Walk the registry backward from `current` down to `target`, calling
+/// each step's `down` in version-descending order. All steps run inside
+/// a single transaction so a partial failure rolls back to `current`.
+/// Returns one summary line per applied down step.
+pub fn apply_migrations_down(
+    conn: &Connection,
+    migrations: &[Migration],
+    current: u32,
+    target: u32,
+) -> Result<Vec<String>> {
+    if current == target {
+        return Ok(vec![]);
+    }
+    if current < target {
+        return Err(DatumError::IncompatibleSchema(format!(
+            "down-walk requires current ({current}) >= target ({target})"
+        )));
+    }
+    let tx = conn.unchecked_transaction()?;
+    let mut applied = Vec::new();
+    let mut version = current;
+    while version > target {
+        let step = migrations.iter().find(|m| m.to == version).ok_or_else(|| {
+            DatumError::IncompatibleSchema(format!(
+                "no down-migration path from schema v{version} toward v{target}"
+            ))
+        })?;
+        (step.down)(&tx)?;
+        version = step.from;
+        set_schema_version(&tx, version)?;
+        applied.push(format!(
+            "v{}→v{}: down — {}",
+            step.to, step.from, step.summary
+        ));
+    }
+    tx.commit()?;
+    Ok(applied)
+}
+
+/// Walk the module-level [`MIGRATIONS`] registry backward to `target`.
+/// Convenience wrapper around [`apply_migrations_down`].
+pub fn migrate_down_to(conn: &Connection, target: u32) -> Result<Vec<String>> {
+    let current = read_schema_version(conn)?.unwrap_or(CURRENT_SCHEMA_VERSION);
+    apply_migrations_down(conn, MIGRATIONS, current, target)
+}
+
 /// Migrate an open connection to [`CURRENT_SCHEMA_VERSION`] using the
 /// module-level [`MIGRATIONS`] registry. Returns the summary lines.
 pub fn migrate_to_current(conn: &Connection) -> Result<Vec<String>> {
@@ -843,18 +1519,23 @@ mod tests {
             conn.execute_batch("CREATE TABLE IF NOT EXISTS synth_v3 (y INTEGER);")?;
             Ok(())
         }
+        fn noop_down(_: &Connection) -> Result<()> {
+            Ok(())
+        }
         let migrations = &[
             Migration {
                 from: 1,
                 to: 2,
                 summary: "v2 table",
                 apply: m1_to_2,
+                down: noop_down,
             },
             Migration {
                 from: 2,
                 to: 3,
                 summary: "v3 table",
                 apply: m2_to_3,
+                down: noop_down,
             },
         ];
         let applied = apply_migrations(&conn, migrations, 1, 3).unwrap();
@@ -897,18 +1578,23 @@ mod tests {
             c.execute_batch("CREATE TABLE IF NOT EXISTS t3 (x INTEGER);")?;
             Ok(())
         }
+        fn noop_down(_: &Connection) -> Result<()> {
+            Ok(())
+        }
         let migrations = &[
             Migration {
                 from: 1,
                 to: 2,
                 summary: "add t2",
                 apply: m1_to_2,
+                down: noop_down,
             },
             Migration {
                 from: 2,
                 to: 3,
                 summary: "add t3",
                 apply: m2_to_3,
+                down: noop_down,
             },
         ];
 
@@ -932,24 +1618,30 @@ mod tests {
             c.execute_batch("CREATE TABLE IF NOT EXISTS ran_3_4 (x INTEGER);")?;
             Ok(())
         }
+        fn noop_down(_: &Connection) -> Result<()> {
+            Ok(())
+        }
         let migrations = &[
             Migration {
                 from: 1,
                 to: 2,
                 summary: "m12",
                 apply: m1_to_2,
+                down: noop_down,
             },
             Migration {
                 from: 2,
                 to: 3,
                 summary: "m23",
                 apply: m2_to_3,
+                down: noop_down,
             },
             Migration {
                 from: 3,
                 to: 4,
                 summary: "m34",
                 apply: m3_to_4,
+                down: noop_down,
             },
         ];
 

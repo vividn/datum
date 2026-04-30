@@ -48,6 +48,13 @@ pub enum DatumError {
     #[error("Incompatible database schema: {0}")]
     IncompatibleSchema(String),
 
+    /// A migration's `down` step refused to silently destroy data. Surfaced
+    /// when rolling a database back across a step that the forward
+    /// migration documented as data-destructive (e.g. v2→v3 entries
+    /// rewrite). Callers must back up first or accept the loss explicitly.
+    #[error("Migration is not reversible: {0}")]
+    NotReversible(String),
+
     #[error("Cryptographic error: {0}")]
     Crypto(String),
 
