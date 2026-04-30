@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 18;
+pub const CURRENT_SCHEMA_VERSION: u32 = 19;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -137,7 +137,31 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "field_specs: add tags TEXT column (JSON array, default '[]') for kit/view tag filtering (da-a7g)",
         apply: m17_to_18_field_specs_tags,
     },
+    Migration {
+        from: 18,
+        to: 19,
+        summary: "field_specs: add render_json TEXT column (NULL = visible everywhere) for per-surface render visibility (da-2zd)",
+        apply: m18_to_19_field_specs_render_json,
+    },
 ];
+
+/// da-2zd: per-surface render visibility. `render_json` mirrors
+/// `FieldSpec.render` out of `spec_json` so visual surfaces (dayview,
+/// nowview, future renderers) can filter without a JSON parse. NULL means
+/// the implicit default — visible everywhere. Additive + idempotent.
+fn m18_to_19_field_specs_render_json(conn: &Connection) -> Result<()> {
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('field_specs') WHERE name = 'render_json'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        conn.execute_batch("ALTER TABLE field_specs ADD COLUMN render_json TEXT;")?;
+    }
+    Ok(())
+}
 
 /// da-a7g: tag-based field grouping. `tags` mirrors `FieldSpec.tags` out of
 /// `spec_json` into a column so SQL filters (`tags LIKE '%"chore"%'`) and
@@ -1151,6 +1175,55 @@ mod tests {
 
         // Re-running migrate_to_current is a no-op and doesn't error on the
         // already-present column.
+        let again = migrate_to_current(&conn).unwrap();
+        assert!(again.is_empty());
+    }
+
+    /// da-2zd: v18→v19 adds the nullable `render_json` column. Existing
+    /// rows stay readable as having no render override (NULL = visible
+    /// everywhere).
+    #[test]
+    fn m18_to_19_adds_render_json_column_nullable() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        // Build a v18-shape field_specs from scratch (no render_json column).
+        conn.execute_batch(
+            "CREATE TABLE field_specs (
+                field      TEXT NOT NULL PRIMARY KEY,
+                spec_json  TEXT NOT NULL,
+                kit_id     TEXT,
+                tags       TEXT NOT NULL DEFAULT '[]'
+             );",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+            rusqlite::params![
+                "legacy",
+                r#"{"field":"legacy","default_verb":"occur","subfields":{}}"#,
+            ],
+        )
+        .unwrap();
+        set_schema_version(&conn, 18).unwrap();
+
+        let applied = migrate_to_current(&conn).unwrap();
+        assert!(applied.iter().any(|s| s.contains("v18→v19")));
+        assert_eq!(
+            read_schema_version(&conn).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION),
+        );
+
+        // Legacy row's render_json must default to NULL — visible everywhere.
+        let render_json: Option<String> = conn
+            .query_row(
+                "SELECT render_json FROM field_specs WHERE field = 'legacy'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(render_json.is_none(), "expected NULL, got {render_json:?}");
+
+        // Idempotent — re-running is a no-op.
         let again = migrate_to_current(&conn).unwrap();
         assert!(again.is_empty());
     }

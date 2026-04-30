@@ -243,6 +243,14 @@ fn build_fields(
     let mut out: Vec<NowviewField> = Vec::with_capacity(all_fields.len());
     for field in all_fields {
         let spec = db.load_spec(&field).ok().flatten();
+        // da-2zd: per-surface visibility. Hidden-on-nowview specs drop
+        // out before any per-entry work — data still flows through other
+        // surfaces (tail/get/grep/view).
+        if let Some(s) = spec.as_ref() {
+            if !s.renders_on("nowview") {
+                continue;
+            }
+        }
         let mut entries_for_field = by_field.remove(&field).unwrap_or_default();
 
         let mut blocks: Vec<NowviewBlock> = Vec::new();
@@ -450,5 +458,85 @@ mod tests {
         let parts: Vec<&str> = s.split(':').collect();
         assert_eq!(parts.len(), 2);
         assert_eq!(parts[1].len(), 2);
+    }
+
+    /// da-2zd: render visibility for nowview. `render.nowview = false`
+    /// drops the field from nowview; the same spec rendering on dayview
+    /// stays unaffected (verified by the dayview test in dayview.rs).
+    #[test]
+    fn render_nowview_false_drops_field_from_nowview() {
+        use chrono::Utc;
+        use datum_core::entry::{Entry, Verb};
+        use datum_core::field_spec::{FieldSpec, Render};
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+
+        // muted has render.nowview = false → drops out of nowview.
+        let mut muted = FieldSpec::new("muted", Verb::Occur);
+        let mut map = std::collections::HashMap::new();
+        map.insert("nowview".to_string(), false);
+        muted.render = Some(Render::PerSurface(map));
+        db.save_field_spec(&muted).unwrap();
+
+        // visible has the default → stays visible.
+        db.save_field_spec(&FieldSpec::new("visible", Verb::Occur))
+            .unwrap();
+
+        let now = Utc::now();
+        let dt = DatumTime::from_utc_and_tz(now, "UTC").unwrap();
+        for f in ["muted", "visible"] {
+            db.insert_entry(&Entry::new(
+                f,
+                Verb::Occur,
+                None,
+                None,
+                None,
+                Some(dt.clone()),
+                None,
+                "test",
+            ))
+            .unwrap();
+        }
+
+        let fields = build_fields(&db, now, 60.0).unwrap();
+        let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
+        assert!(names.contains(&"visible"), "names = {names:?}");
+        assert!(
+            !names.contains(&"muted"),
+            "render.nowview=false must drop muted, names = {names:?}",
+        );
+    }
+
+    /// da-2zd: a bool-form `render = false` hides on every surface,
+    /// including nowview.
+    #[test]
+    fn render_all_false_drops_field_from_nowview() {
+        use chrono::Utc;
+        use datum_core::entry::{Entry, Verb};
+        use datum_core::field_spec::{FieldSpec, Render};
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("background_telemetry", Verb::Occur);
+        spec.render = Some(Render::All(false));
+        db.save_field_spec(&spec).unwrap();
+
+        let now = Utc::now();
+        let dt = DatumTime::from_utc_and_tz(now, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "background_telemetry",
+            Verb::Occur,
+            None,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let fields = build_fields(&db, now, 60.0).unwrap();
+        assert!(fields.iter().all(|f| f.field != "background_telemetry"));
     }
 }

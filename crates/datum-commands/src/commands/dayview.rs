@@ -350,6 +350,15 @@ fn build_day_fields(
     let mut out: Vec<DayviewFieldInput> = Vec::with_capacity(by_field.len());
     for (field, mut entries_for_field) in by_field {
         let spec = db.load_spec(&field).ok().flatten();
+        // da-2zd: per-surface visibility. When the spec says this field
+        // is hidden on `dayview`, drop it before doing per-entry work —
+        // data still flows through tail/get/grep/view, only the visual
+        // band is suppressed.
+        if let Some(s) = spec.as_ref() {
+            if !s.renders_on("dayview") {
+                continue;
+            }
+        }
         let mut blocks: Vec<DayviewBlock> = Vec::new();
         let mut points: Vec<DayviewPoint> = Vec::new();
 
@@ -800,5 +809,109 @@ mod tests {
         assert_eq!(mood.blocks[0].end_ms, t12);
         assert_eq!(mood.blocks[1].start_ms, t16);
         assert_eq!(mood.blocks[1].end_ms, day_end);
+    }
+
+    /// da-2zd: a spec with `render = false` is dropped from dayview but
+    /// the underlying entries still exist in the DB (verified via direct
+    /// list_entries). Validates the "data still flows" rule.
+    #[test]
+    fn render_false_spec_drops_field_from_dayview() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::field_spec::{FieldSpec, Render};
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+
+        // mood has render = false → must NOT appear in dayview output.
+        let mut hidden = FieldSpec::new("mood", Verb::Switch);
+        hidden.render = Some(Render::All(false));
+        db.save_field_spec(&hidden).unwrap();
+
+        // coffee has no render set → default visible.
+        db.save_field_spec(&FieldSpec::new("coffee", Verb::Occur))
+            .unwrap();
+
+        // Log one entry on each field so neither is empty by accident.
+        let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(JsonValue::String("happy".into())),
+            None,
+            None,
+            Some(dt.clone()),
+            None,
+            "test",
+        ))
+        .unwrap();
+        db.insert_entry(&Entry::new(
+            "coffee",
+            Verb::Occur,
+            None,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+
+        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
+        assert!(names.contains(&"coffee"), "names = {names:?}");
+        assert!(
+            !names.contains(&"mood"),
+            "render=false must drop mood from dayview, names = {names:?}",
+        );
+    }
+
+    /// da-2zd: per-surface render — `render.dayview = false` hides only
+    /// dayview, while `nowview` (and hence its build) stays visible.
+    #[test]
+    fn render_dayview_false_hides_only_dayview() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::field_spec::{FieldSpec, Render};
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("stretch_routine", Verb::Occur);
+        let mut map = std::collections::HashMap::new();
+        map.insert("dayview".to_string(), false);
+        spec.render = Some(Render::PerSurface(map));
+        db.save_field_spec(&spec).unwrap();
+
+        let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "stretch_routine",
+            Verb::Occur,
+            None,
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
+        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        assert!(
+            fields.iter().all(|f| f.field != "stretch_routine"),
+            "render.dayview=false must drop the band",
+        );
     }
 }

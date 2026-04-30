@@ -144,7 +144,12 @@ CREATE TABLE IF NOT EXISTS field_specs (
     -- Mirror of `FieldSpec.tags` (JSON array of strings, default '[]').
     -- Pulled out of `spec_json` so SQL filters (`tags LIKE '%"chore"%'`) and
     -- the `datum spec list --tag` query can avoid JSON parsing.
-    tags        TEXT NOT NULL DEFAULT '[]'
+    tags        TEXT NOT NULL DEFAULT '[]',
+    -- Mirror of `FieldSpec.render` (JSON: bool or {surface: bool} map).
+    -- NULL means the implicit default — visible on every surface. Pulled
+    -- out of `spec_json` so future per-surface visibility filters can run
+    -- without parsing the full spec body.
+    render_json TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_field_specs_kit_id ON field_specs(kit_id);

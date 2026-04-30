@@ -176,6 +176,45 @@ pub struct FieldSpec {
     /// `datum spec list --tag` filter can avoid a JSON walk.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+
+    /// Per-surface render visibility. `None` means visible on every surface
+    /// (the implicit default — most fields don't need an explicit setting).
+    /// `Some(Render::All(false))` hides the field everywhere visual; a
+    /// `PerSurface` map names individual surfaces (`dayview`, `nowview`,
+    /// future renderers) and treats absent surfaces as visible. Affects
+    /// only visual presentation: data still flows through `tail`, `get`,
+    /// `grep`, `view`, sync, and export. Mirrored into
+    /// `field_specs.render_json` at save time (NULL = visible everywhere).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render: Option<Render>,
+}
+
+/// Visibility setting for a [`FieldSpec`] across visual surfaces.
+///
+/// Two acceptable shapes:
+/// - [`Render::All`] — bool applied to every surface. `Render::All(false)`
+///   hides the field on all visual renderers.
+/// - [`Render::PerSurface`] — map keyed by surface name; missing keys
+///   default to visible (`true`).
+///
+/// Untagged so the TOML form `render = false` parses as [`Render::All`]
+/// and `render.dayview = false` parses as [`Render::PerSurface`].
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(untagged)]
+pub enum Render {
+    All(bool),
+    PerSurface(HashMap<String, bool>),
+}
+
+impl Render {
+    /// True when this setting permits drawing on the named surface.
+    /// Per-surface maps treat absent keys as visible.
+    pub fn is_visible_on(&self, surface: &str) -> bool {
+        match self {
+            Render::All(b) => *b,
+            Render::PerSurface(map) => map.get(surface).copied().unwrap_or(true),
+        }
+    }
 }
 
 /// Resolved triple of `(y, height, z_index)` after applying defaults and the
@@ -232,7 +271,19 @@ impl FieldSpec {
             anchor_pos_ratio: None,
             anchor_size_ratio: None,
             tags: Vec::new(),
+            render: None,
         }
+    }
+
+    /// True when this spec permits drawing on `surface`. `None` (the
+    /// default) means visible on every surface. Used by visual renderers
+    /// (`dayview`, `nowview`) to skip emitting a band; non-visual paths
+    /// (`tail`, `get`, `grep`, `view`, sync) ignore this setting.
+    pub fn renders_on(&self, surface: &str) -> bool {
+        self.render
+            .as_ref()
+            .map(|r| r.is_visible_on(surface))
+            .unwrap_or(true)
     }
 
     /// Append `tag` to `tags` if it isn't already present. Returns true when
@@ -1166,6 +1217,111 @@ mod tests {
         assert!(spec.z_index.is_none());
         // da-a7g: tags default to empty when absent from the JSON.
         assert!(spec.tags.is_empty());
+        // da-2zd: render defaults to None (visible everywhere) when absent.
+        assert!(spec.render.is_none());
+        assert!(spec.renders_on("dayview"));
+        assert!(spec.renders_on("nowview"));
+    }
+
+    // ─── Render visibility tests (da-2zd) ────────────────────────────────────
+
+    #[test]
+    fn renders_on_defaults_to_true_when_render_is_none() {
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        assert!(spec.renders_on("dayview"));
+        assert!(spec.renders_on("nowview"));
+        assert!(spec.renders_on("future_surface"));
+    }
+
+    #[test]
+    fn render_all_false_hides_every_surface() {
+        let mut spec = FieldSpec::new("background_telemetry", Verb::Occur);
+        spec.render = Some(Render::All(false));
+        assert!(!spec.renders_on("dayview"));
+        assert!(!spec.renders_on("nowview"));
+        assert!(!spec.renders_on("anything"));
+    }
+
+    #[test]
+    fn render_all_true_shows_every_surface() {
+        let mut spec = FieldSpec::new("loud", Verb::Occur);
+        spec.render = Some(Render::All(true));
+        assert!(spec.renders_on("dayview"));
+        assert!(spec.renders_on("nowview"));
+    }
+
+    #[test]
+    fn render_per_surface_hides_only_named_surface() {
+        let mut spec = FieldSpec::new("stretch_routine", Verb::Occur);
+        let mut map = HashMap::new();
+        map.insert("dayview".to_string(), false);
+        spec.render = Some(Render::PerSurface(map));
+        // dayview hidden, nowview defaults to visible.
+        assert!(!spec.renders_on("dayview"));
+        assert!(spec.renders_on("nowview"));
+        // Unknown surfaces also default to visible.
+        assert!(spec.renders_on("future"));
+    }
+
+    #[test]
+    fn render_per_surface_explicit_overrides() {
+        let mut spec = FieldSpec::new("experimental", Verb::Occur);
+        let mut map = HashMap::new();
+        map.insert("dayview".to_string(), false);
+        map.insert("nowview".to_string(), false);
+        spec.render = Some(Render::PerSurface(map));
+        assert!(!spec.renders_on("dayview"));
+        assert!(!spec.renders_on("nowview"));
+    }
+
+    #[test]
+    fn render_serde_roundtrip_bool_form() {
+        let mut spec = FieldSpec::new("hidden", Verb::Occur);
+        spec.render = Some(Render::All(false));
+        let json = serde_json::to_string(&spec).unwrap();
+        // bool form serializes as a bare bool (untagged enum).
+        assert!(json.contains("\"render\":false"), "json = {json}");
+        let back: FieldSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.render, Some(Render::All(false)));
+    }
+
+    #[test]
+    fn render_serde_roundtrip_per_surface_form() {
+        let mut spec = FieldSpec::new("partial", Verb::Occur);
+        let mut map = HashMap::new();
+        map.insert("dayview".to_string(), false);
+        spec.render = Some(Render::PerSurface(map));
+        let json = serde_json::to_string(&spec).unwrap();
+        let back: FieldSpec = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.render, spec.render);
+    }
+
+    #[test]
+    fn render_serde_omits_when_none() {
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        let json = serde_json::to_string(&spec).unwrap();
+        // skip_serializing_if = Option::is_none keeps the JSON tidy.
+        assert!(!json.contains("render"), "json = {json}");
+    }
+
+    #[test]
+    fn render_deserializes_from_bare_bool_json() {
+        // Untagged enum picks the bool variant first.
+        let json = r#"{"field":"x","default_verb":"occur","subfields":{},"render":false}"#;
+        let spec: FieldSpec = serde_json::from_str(json).unwrap();
+        assert_eq!(spec.render, Some(Render::All(false)));
+    }
+
+    #[test]
+    fn render_deserializes_from_object_json() {
+        let json = r#"{"field":"x","default_verb":"occur","subfields":{},"render":{"dayview":false}}"#;
+        let spec: FieldSpec = serde_json::from_str(json).unwrap();
+        match spec.render {
+            Some(Render::PerSurface(m)) => {
+                assert_eq!(m.get("dayview").copied(), Some(false));
+            }
+            other => panic!("expected per-surface, got {other:?}"),
+        }
     }
 
     // ─── Tag tests (da-a7g) ──────────────────────────────────────────────────

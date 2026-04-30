@@ -84,18 +84,28 @@ impl Db {
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
         let json = serde_json::to_string(spec)?;
         let tags_json = serde_json::to_string(&spec.tags)?;
+        // da-2zd: NULL when the spec leaves render unset (i.e. visible
+        // everywhere), otherwise the canonical JSON form of the Render
+        // enum. The column shape lets us add a SQL-side visibility filter
+        // later without re-parsing spec_json.
+        let render_json: Option<String> = match &spec.render {
+            Some(r) => Some(serde_json::to_string(r)?),
+            None => None,
+        };
         let tx = self.conn.unchecked_transaction()?;
 
         // UPSERT preserves an existing `kit_id` on re-save. Kit installs go
         // through `Db::install_kit` (which sets kit_id explicitly); a
         // user-driven `datum spec set` on a kit-owned field updates the JSON
         // body in place without breaking the kit linkage. `tags` mirrors
-        // `spec.tags` so SQL filters can avoid a JSON walk.
+        // `spec.tags` so SQL filters can avoid a JSON walk; `render_json`
+        // mirrors `spec.render` for the same reason.
         tx.execute(
-            "INSERT INTO field_specs (field, spec_json, tags) VALUES (?1, ?2, ?3)
-             ON CONFLICT(field) DO UPDATE SET spec_json = excluded.spec_json,
-                                              tags      = excluded.tags",
-            params![spec.field, json, tags_json],
+            "INSERT INTO field_specs (field, spec_json, tags, render_json) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(field) DO UPDATE SET spec_json   = excluded.spec_json,
+                                              tags        = excluded.tags,
+                                              render_json = excluded.render_json",
+            params![spec.field, json, tags_json, render_json],
         )?;
 
         // Replace the set of derived aliases for this field.
@@ -219,7 +229,8 @@ impl Db {
 mod tag_tests {
     use super::Db;
     use crate::entry::Verb;
-    use crate::field_spec::FieldSpec;
+    use crate::field_spec::{FieldSpec, Render};
+    use std::collections::HashMap;
 
     #[test]
     fn save_mirrors_tags_into_column() {
@@ -278,5 +289,101 @@ mod tag_tests {
 
         // Tag with no members → empty list.
         assert!(db.list_specs_by_tag("nonexistent").unwrap().is_empty());
+    }
+
+    // ─── Render visibility tests (da-2zd) ────────────────────────────────────
+
+    #[test]
+    fn save_leaves_render_json_null_when_render_is_none() {
+        let db = Db::open_in_memory().unwrap();
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        db.save_field_spec(&spec).unwrap();
+
+        let stored: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT render_json FROM field_specs WHERE field = 'plain'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(
+            stored.is_none(),
+            "render_json must be NULL for default-visible specs, got {stored:?}",
+        );
+
+        // Round-trip: load_spec returns a None render.
+        let back = db.load_spec("plain").unwrap().unwrap();
+        assert!(back.render.is_none());
+    }
+
+    #[test]
+    fn save_mirrors_render_bool_into_column() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("background_telemetry", Verb::Occur);
+        spec.render = Some(Render::All(false));
+        db.save_field_spec(&spec).unwrap();
+
+        let stored: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT render_json FROM field_specs WHERE field = 'background_telemetry'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(stored.as_deref(), Some("false"));
+
+        let back = db.load_spec("background_telemetry").unwrap().unwrap();
+        assert_eq!(back.render, Some(Render::All(false)));
+    }
+
+    #[test]
+    fn save_mirrors_per_surface_render_into_column() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("stretch_routine", Verb::Occur);
+        let mut map = HashMap::new();
+        map.insert("dayview".to_string(), false);
+        spec.render = Some(Render::PerSurface(map));
+        db.save_field_spec(&spec).unwrap();
+
+        let stored: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT render_json FROM field_specs WHERE field = 'stretch_routine'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        // Object form serializes as a JSON object; we don't pin the exact
+        // ordering since HashMap iteration is non-deterministic.
+        let stored = stored.expect("render_json should be set");
+        assert!(stored.contains("\"dayview\":false"), "stored = {stored}");
+
+        let back = db.load_spec("stretch_routine").unwrap().unwrap();
+        assert!(!back.renders_on("dayview"));
+        assert!(back.renders_on("nowview"));
+    }
+
+    #[test]
+    fn re_save_clears_render_json_when_spec_drops_render() {
+        let db = Db::open_in_memory().unwrap();
+        let mut spec = FieldSpec::new("toggle", Verb::Occur);
+        spec.render = Some(Render::All(false));
+        db.save_field_spec(&spec).unwrap();
+
+        // Drop render and re-save — column must reset to NULL.
+        spec.render = None;
+        db.save_field_spec(&spec).unwrap();
+
+        let stored: Option<String> = db
+            .conn()
+            .query_row(
+                "SELECT render_json FROM field_specs WHERE field = 'toggle'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert!(stored.is_none(), "expected NULL after drop, got {stored:?}");
     }
 }

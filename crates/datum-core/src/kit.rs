@@ -21,7 +21,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::entry::Verb;
 use crate::error::{DatumError, Result};
-use crate::field_spec::{Alias, FieldSpec, DEFAULT_FIELD_HEIGHT};
+use crate::field_spec::{Alias, FieldSpec, Render, DEFAULT_FIELD_HEIGHT};
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
 /// `[[alias]]`, `[[index]]`, and `[[command]]` may all be empty.
@@ -128,6 +128,12 @@ pub struct FieldEntry {
     /// (e.g. `tags = ["chore"]`). Round-trips into [`FieldSpec::tags`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
+    /// Per-surface render visibility (da-2zd). Two acceptable shapes:
+    /// `render = false` (bool — hidden everywhere) and
+    /// `render.dayview = false` (table — per-surface override). Absent
+    /// means "visible everywhere" and round-trips back as omitted TOML.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render: Option<Render>,
 }
 
 /// A `[[view]]` entry — a named read-only SELECT.
@@ -376,6 +382,7 @@ impl FieldEntry {
         }
 
         spec.tags = self.tags;
+        spec.render = self.render;
 
         spec.regenerate_derived_aliases();
         Ok(spec)
@@ -441,6 +448,7 @@ impl FieldEntry {
             data_keys: spec.data_keys.clone(),
             states,
             tags: spec.tags.clone(),
+            render: spec.render.clone(),
         }
     }
 }
@@ -737,6 +745,7 @@ states.japan = {}
             data_keys: vec![],
             states: BTreeMap::new(),
             tags: vec![],
+            render: None,
         };
         let err = entry.into_spec(None).unwrap_err();
         let msg = format!("{err}");
@@ -773,6 +782,7 @@ states.japan = {}
                 m
             },
             tags: vec![],
+            render: None,
         };
         let spec = entry.into_spec(Some("#ff0000".into())).unwrap();
         assert_eq!(spec.field, "mood");
@@ -944,6 +954,92 @@ tags = ["chore", "daily"]
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.fields[0].tags, spec.tags);
+    }
+
+    // ─── Render visibility (da-2zd) ───────────────────────────────────
+
+    #[test]
+    fn parses_field_with_render_false_bool() {
+        let src = r##"
+[kit]
+name = "stealth"
+
+[[field]]
+name = "background_telemetry"
+default_verb = "occur"
+render = false
+"##;
+        let kit = KitToml::from_str(src).unwrap();
+        let f = &kit.fields[0];
+        assert_eq!(f.render, Some(Render::All(false)));
+
+        let spec = f.clone().into_spec(None).unwrap();
+        assert!(!spec.renders_on("dayview"));
+        assert!(!spec.renders_on("nowview"));
+    }
+
+    #[test]
+    fn parses_field_with_per_surface_render_table() {
+        let src = r##"
+[kit]
+name = "stealth"
+
+[[field]]
+name = "stretch_routine"
+default_verb = "occur"
+render.dayview = false
+"##;
+        let kit = KitToml::from_str(src).unwrap();
+        let f = &kit.fields[0];
+        match &f.render {
+            Some(Render::PerSurface(map)) => {
+                assert_eq!(map.get("dayview").copied(), Some(false));
+                assert!(!map.contains_key("nowview"));
+            }
+            other => panic!("expected per-surface, got {other:?}"),
+        }
+
+        let spec = f.clone().into_spec(None).unwrap();
+        // dayview hidden, nowview defaults to visible.
+        assert!(!spec.renders_on("dayview"));
+        assert!(spec.renders_on("nowview"));
+    }
+
+    #[test]
+    fn round_trip_preserves_render_bool() {
+        let mut spec = FieldSpec::new("hidden", Verb::Occur);
+        spec.render = Some(Render::All(false));
+        let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
+        let toml = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&toml).unwrap();
+        assert_eq!(back.fields[0].render, Some(Render::All(false)));
+    }
+
+    #[test]
+    fn round_trip_preserves_per_surface_render() {
+        let mut spec = FieldSpec::new("partial", Verb::Occur);
+        let mut map = std::collections::HashMap::new();
+        map.insert("dayview".to_string(), false);
+        spec.render = Some(Render::PerSurface(map.clone()));
+        let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
+        let toml = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&toml).unwrap();
+        match &back.fields[0].render {
+            Some(Render::PerSurface(m)) => {
+                assert_eq!(m.get("dayview").copied(), Some(false));
+            }
+            other => panic!("expected per-surface, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn round_trip_omits_render_when_default() {
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        let kit = KitToml::from_field_specs("k", None, &[spec], &[]);
+        let toml = kit.to_toml().unwrap();
+        // skip_serializing_if = Option::is_none keeps the TOML diff-clean
+        // for the common case where render is unset.
+        assert!(!toml.contains("render"), "toml = {toml}");
     }
 
     #[test]
