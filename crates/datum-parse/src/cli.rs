@@ -15,8 +15,10 @@ use crate::input::{DurationArgs, OutputArgs, TimeArgs};
 /// Legacy flat output-flags shape, kept as a transitional shim for the
 /// per-command Args structs that haven't yet adopted the composed
 /// [`OutputArgs`] field. Phase A (da-e2e) migrated `LogArgs`; Phase C
-/// (da-6qj) migrated the mutate commands (Update/Edit/Delete/Undo).
-/// Phase B/D retire this for the remaining read/spec commands.
+/// (da-6qj) migrated the mutate commands (Update/Edit/Delete/Undo);
+/// Phase B (da-ngq) migrated the read commands (`TailArgs` / `GetArgs`
+/// / `GrepArgs`). Phase D retires this for the remaining spec/alias
+/// commands.
 #[derive(Debug, Clone, Default)]
 pub struct OutputFlags {
     pub show: String,
@@ -313,10 +315,10 @@ pub struct TailArgs {
     pub metric: String,
     pub reverse: bool,
     pub columns: Vec<String>,
-    pub date: Option<String>,
-    pub time: Option<String>,
-    pub yesterday: u8,
-    pub quick: u8,
+    /// `-y/-q/-d/-t` — composed timing concern. Tail does not expose
+    /// `-z/-T/-D`; the parser strips those specs when building the
+    /// registry.
+    pub time: TimeArgs,
     /// Take the first N (oldest) instead of the last N (newest). Powers
     /// `datum head`, which routes through tail with this flag set.
     pub oldest_first: bool,
@@ -326,7 +328,8 @@ pub struct TailArgs {
     /// `show_update`. Auto-enabled when `--column` or a non-hybrid `--metric`
     /// is set — those are tabular concerns.
     pub table: bool,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 impl TailArgs {
@@ -337,14 +340,11 @@ impl TailArgs {
             metric: "hybrid".to_string(),
             reverse: false,
             columns: Vec::new(),
-            date: None,
-            time: None,
-            yesterday: 0,
-            quick: 0,
+            time: TimeArgs::default(),
             oldest_first: false,
             watch: None,
             table: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 }
@@ -355,7 +355,8 @@ pub struct GetArgs {
     /// token (resolves against the last-accessed pointer).
     pub id_or_slug: Option<String>,
     pub pretty: bool,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 impl GetArgs {
@@ -363,7 +364,7 @@ impl GetArgs {
         Self {
             id_or_slug: Some(id_or_slug.into()),
             pretty: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 
@@ -372,7 +373,7 @@ impl GetArgs {
         Self {
             id_or_slug: None,
             pretty: false,
-            output_flags: OutputFlags::fresh(),
+            output: OutputArgs::default(),
         }
     }
 }
@@ -616,7 +617,8 @@ pub struct IgnoreArgs {
 pub struct GrepArgs {
     pub patterns: Vec<String>,
     pub field: Option<String>,
-    pub output_flags: OutputFlags,
+    /// `-A/--show-all` / `--show` / `-o/--format-string`.
+    pub output: OutputArgs,
 }
 
 #[derive(Debug, Default)]

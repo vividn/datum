@@ -299,7 +299,7 @@ impl LogArgsExt for LogArgs {
 }
 
 /// Generic `.output()` bridge for intents that still carry the legacy
-/// flat [`OutputFlags`] bag (Phase B/D-pending commands).
+/// flat [`OutputFlags`] bag (Phase D-pending spec/alias commands).
 pub trait OutputFlagsExt {
     fn output(&self) -> OutputArgs;
 }
@@ -314,13 +314,10 @@ macro_rules! impl_output_flags_ext {
     };
 }
 
-impl_output_flags_ext!(TailArgs);
-impl_output_flags_ext!(GrepArgs);
-impl_output_flags_ext!(GetArgs);
-
-// Phase C (da-6qj) — mutate commands carry the composed `OutputArgs`
-// directly. The same `.output()` method shape is preserved by routing
-// through `resolve_parse_output_args` against `&self.output`.
+// Phase B (da-ngq) + Phase C (da-6qj) — read and mutate commands carry
+// the composed `OutputArgs` directly. The same `.output()` method shape
+// is preserved by routing through `resolve_parse_output_args` against
+// `&self.output`.
 macro_rules! impl_output_args_ext {
     ($ty:ty) => {
         impl OutputFlagsExt for $ty {
@@ -331,6 +328,9 @@ macro_rules! impl_output_args_ext {
     };
 }
 
+impl_output_args_ext!(TailArgs);
+impl_output_args_ext!(GrepArgs);
+impl_output_args_ext!(GetArgs);
 impl_output_args_ext!(UpdateArgs);
 impl_output_args_ext!(EditArgs);
 impl_output_args_ext!(DeleteArgs);

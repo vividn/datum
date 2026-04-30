@@ -1568,8 +1568,8 @@ pub fn tail_params(args: &TailArgs) -> Result<ListParams> {
         .parse()
         .map_err(|e: String| anyhow::anyhow!(e))?;
 
-    let has_date = args.date.is_some() || args.yesterday > 0;
-    let has_time = args.time.is_some() || args.quick > 0;
+    let has_date = args.time.date.is_some() || args.time.yesterday > 0;
+    let has_time = args.time.time.is_some() || args.time.quick > 0;
     let is_date_only = has_date && !has_time;
 
     let (start_utc, end_utc) = if !has_date && !has_time {
@@ -1608,12 +1608,12 @@ struct TailWindow {
 
 fn build_window(args: &TailArgs) -> Result<TailWindow> {
     let mut builder = TimeBuilder::now()
-        .with_yesterday_count(args.yesterday as i64)
-        .with_quick_count(args.quick as i64);
-    if let Some(d) = &args.date {
+        .with_yesterday_count(args.time.yesterday as i64)
+        .with_quick_count(args.time.quick as i64);
+    if let Some(d) = &args.time.date {
         builder = builder.with_date_arg(parse_date_arg(d)?);
     }
-    if let Some(t) = &args.time {
+    if let Some(t) = &args.time.time {
         builder = builder.with_time_arg(parse_time_arg(t)?);
     }
     let point = builder.build();
@@ -3751,17 +3751,8 @@ mod tests {
         TailArgs {
             field: field.map(String::from),
             count,
-            metric: "hybrid".to_string(),
-            reverse: false,
-            columns: vec![],
-            date: None,
-            time: None,
-            yesterday: 0,
-            quick: 0,
             oldest_first: true,
-            watch: None,
-            table: false,
-            output_flags: Default::default(),
+            ..TailArgs::fresh()
         }
     }
 
@@ -3897,7 +3888,7 @@ mod tests {
 
         // Exercise the command dispatch path for completeness
         cmd_grep(
-            GrepArgs { patterns: vec!["happy".to_string()], field: None, output_flags: Default::default() },
+            GrepArgs { patterns: vec!["happy".to_string()], field: None, output: Default::default() },
             &db,
         )
         .unwrap();
@@ -3976,7 +3967,7 @@ mod tests {
             GrepArgs {
                 patterns: vec!["rust".to_string()],
                 field: Some("mood".to_string()),
-                output_flags: Default::default(),
+                output: Default::default(),
             },
             &db,
         )

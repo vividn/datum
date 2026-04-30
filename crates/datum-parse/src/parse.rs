@@ -672,14 +672,11 @@ fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
         metric: composed.extras.metric.unwrap_or_else(|| "hybrid".to_string()),
         reverse: composed.extras.reverse,
         columns: composed.extras.columns,
-        date: composed.time.date,
-        time: composed.time.time,
-        yesterday: u8::try_from(composed.time.yesterday).unwrap_or(u8::MAX),
-        quick: u8::try_from(composed.time.quick).unwrap_or(u8::MAX),
+        time: composed.time,
         oldest_first: composed.extras.oldest_first,
         watch: composed.extras.watch,
         table: composed.extras.table,
-        output_flags: flatten_output(composed.output),
+        output: composed.output,
     })
 }
 
@@ -746,7 +743,7 @@ fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
     Ok(GetArgs {
         id_or_slug: pos.first().map(|s| s.to_string()),
         pretty: composed.pretty,
-        output_flags: flatten_output(composed.output),
+        output: composed.output,
     })
 }
 
@@ -1515,7 +1512,7 @@ fn parse_grep_args(tail: &[&str]) -> Result<GrepArgs> {
     Ok(GrepArgs {
         patterns: pos.into_iter().map(|s| s.to_string()).collect(),
         field: composed.field,
-        output_flags: flatten_output(composed.output),
+        output: composed.output,
     })
 }
 

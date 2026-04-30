@@ -96,21 +96,7 @@ fn sample_morning(db: &Db) -> Vec<Entry> {
 
 /// Minimal `TailArgs` with all-defaults; tests tweak fields they care about.
 fn tail_args() -> TailArgs {
-    TailArgs {
-        field: None,
-        count: None,
-        metric: "hybrid".to_string(),
-        reverse: false,
-        columns: vec![],
-        date: None,
-        time: None,
-        yesterday: 0,
-        quick: 0,
-        oldest_first: false,
-        watch: None,
-        table: false,
-        output_flags: Default::default(),
-    }
+    TailArgs::fresh()
 }
 
 // ─── Direct db::list_entries acceptance tests ────────────────────────────────
@@ -518,7 +504,7 @@ fn t13_date_only_window_no_default_limit() {
     }
 
     let mut args = tail_args();
-    args.date = Some("2024-03-16".to_string());
+    args.time.date = Some("2024-03-16".to_string());
     let params = tail_params(&args).unwrap();
     assert!(params.limit.is_none(), "date-only ⇒ no default limit");
 
@@ -547,7 +533,7 @@ fn t14_timezone_aware_day_window() {
     db.insert_entry(&e).unwrap();
 
     let mut args = tail_args();
-    args.date = Some("2024-03-16".to_string());
+    args.time.date = Some("2024-03-16".to_string());
     let params = tail_params(&args).unwrap();
     let got = db.list_entries(&params).unwrap();
     // ±1 day pad keeps the entry reachable regardless of the runner's local tz.
@@ -569,7 +555,7 @@ fn t15_future_date_entries_appear_on_that_date() {
     let tomorrow_entry = insert(&db, "x", Verb::Occur, 24 * 60 + 60);
 
     let mut args = tail_args();
-    args.date = Some("2024-03-17".to_string());
+    args.time.date = Some("2024-03-17".to_string());
     let got = tail_entries(&args, &db).unwrap();
     assert!(got.iter().any(|e| e.slug == tomorrow_entry.slug));
 }
@@ -583,12 +569,12 @@ fn t16_date_plus_n_takes_last_n_on_day() {
     }
 
     let mut args_all = tail_args();
-    args_all.date = Some("2024-03-16".to_string());
+    args_all.time.date = Some("2024-03-16".to_string());
     let all = tail_entries(&args_all, &db).unwrap();
     assert!(all.len() >= 12);
 
     let mut args_n = tail_args();
-    args_n.date = Some("2024-03-16".to_string());
+    args_n.time.date = Some("2024-03-16".to_string());
     args_n.count = Some(5);
     let limited = tail_entries(&args_n, &db).unwrap();
     assert_eq!(limited.len(), 5);
