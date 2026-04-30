@@ -37,7 +37,7 @@ use rusqlite::{params, Connection};
 
 use crate::error::{DatumError, Result};
 
-pub use kit::{InstallReport, InstalledKit, KitFieldOutcome};
+pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
 pub use row_mapper::row_to_entry_public;
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome, ListParams,
@@ -140,6 +140,7 @@ impl Db {
             "entries",
             "entry_history",
             "field_specs",
+            "kit_indices",
             "aliases",
             "sync_state",
             "sync_conflicts",

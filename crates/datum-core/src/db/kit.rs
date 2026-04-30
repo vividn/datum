@@ -15,6 +15,7 @@ use rusqlite::{params, OptionalExtension};
 
 use crate::error::{DatumError, Result};
 use crate::field_spec::{Alias, FieldSpec};
+use crate::kit::IndexEntry;
 
 use super::Db;
 
@@ -37,6 +38,13 @@ pub enum KitFieldOutcome {
 pub struct InstallReport {
     /// Field name → outcome.
     pub outcomes: Vec<(String, KitFieldOutcome)>,
+    /// Index names (TOML-side, not the on-disk SQLite name) that were
+    /// created (or recreated) by this install.
+    pub indices_installed: Vec<String>,
+    /// On-disk SQLite names of indices dropped by this install — only
+    /// non-empty on a re-install where the kit previously owned indices
+    /// that are now gone or replaced.
+    pub indices_dropped: Vec<String>,
 }
 
 impl InstallReport {
@@ -59,6 +67,16 @@ pub struct InstalledKit {
     pub kit_id: String,
     pub field_count: usize,
     pub view_count: usize,
+    pub index_count: usize,
+}
+
+/// One row from `kit_indices`, returned by [`Db::load_indices_by_kit`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstalledKitIndex {
+    pub kit_id: String,
+    pub index_name: String,
+    pub on_disk_name: String,
+    pub sql_text: String,
 }
 
 impl Db {
@@ -76,6 +94,7 @@ impl Db {
         &self,
         kit_id: &str,
         specs: &[FieldSpec],
+        indices: &[IndexEntry],
         force: bool,
     ) -> Result<InstallReport> {
         let tx = self.conn.unchecked_transaction()?;
@@ -155,6 +174,36 @@ impl Db {
                 .push((spec.field.clone(), KitFieldOutcome::Installed));
         }
 
+        // Indices: drop everything previously owned by this kit, then
+        // (re)create from the new TOML. Re-install is idempotent because
+        // the DDL uses CREATE INDEX IF NOT EXISTS but we drop-first to
+        // ensure obsolete indices don't survive a TOML edit.
+        let mut prev_stmt = tx.prepare(
+            "SELECT on_disk_name FROM kit_indices WHERE kit_id = ?1 ORDER BY index_name",
+        )?;
+        let prev_names: Vec<String> = prev_stmt
+            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(DatumError::Db)?;
+        drop(prev_stmt);
+        for name in &prev_names {
+            tx.execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
+        }
+        tx.execute("DELETE FROM kit_indices WHERE kit_id = ?1", params![kit_id])?;
+        report.indices_dropped = prev_names;
+
+        for entry in indices {
+            let ddl = entry.build_ddl(kit_id)?;
+            let on_disk = entry.sqlite_name(kit_id);
+            tx.execute_batch(&ddl)?;
+            tx.execute(
+                "INSERT INTO kit_indices (kit_id, index_name, on_disk_name, sql_text)
+                 VALUES (?1, ?2, ?3, ?4)",
+                params![kit_id, entry.name, on_disk, ddl],
+            )?;
+            report.indices_installed.push(entry.name.clone());
+        }
+
         tx.commit()?;
         Ok(report)
     }
@@ -179,13 +228,29 @@ impl Db {
             )?;
         }
         tx.execute("DELETE FROM field_specs WHERE kit_id = ?1", params![kit_id])?;
+
+        // Drop installed indices owned by this kit. Index drops are
+        // unconditional — the underlying data is fine, and the design
+        // explicitly declines to gate uninstall on a trust prompt.
+        let mut idx_stmt = tx.prepare("SELECT on_disk_name FROM kit_indices WHERE kit_id = ?1")?;
+        let idx_names: Vec<String> = idx_stmt
+            .query_map(params![kit_id], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(DatumError::Db)?;
+        drop(idx_stmt);
+        for name in &idx_names {
+            tx.execute_batch(&format!("DROP INDEX IF EXISTS \"{name}\""))?;
+        }
+        tx.execute("DELETE FROM kit_indices WHERE kit_id = ?1", params![kit_id])?;
+
         tx.commit()?;
         Ok(fields)
     }
 
-    /// List installed kits with per-kit field and view counts. User-declared
-    /// rows (`kit_id IS NULL` in either `field_specs` or `views`) are excluded.
-    /// A kit appears in the result if it owns at least one field or one view.
+    /// List installed kits with per-kit field, view, and index counts.
+    /// User-declared rows (`kit_id IS NULL` in any of `field_specs`,
+    /// `views`, `kit_indices`) are excluded. A kit appears if it owns at
+    /// least one field, one view, or one index.
     pub fn list_kits(&self) -> Result<Vec<InstalledKit>> {
         let mut stmt = self.conn.prepare(
             "WITH
@@ -200,15 +265,23 @@ impl Db {
                     FROM views
                     WHERE kit_id IS NOT NULL
                     GROUP BY kit_id
+                ),
+                kit_idx AS (
+                    SELECT kit_id, COUNT(*) AS n
+                    FROM kit_indices
+                    GROUP BY kit_id
                 )
-             SELECT k.kit_id, IFNULL(f.n, 0), IFNULL(v.n, 0)
+             SELECT k.kit_id, IFNULL(f.n, 0), IFNULL(v.n, 0), IFNULL(i.n, 0)
              FROM (
                  SELECT kit_id FROM kit_fields
                  UNION
                  SELECT kit_id FROM kit_views
+                 UNION
+                 SELECT kit_id FROM kit_idx
              ) k
              LEFT JOIN kit_fields f ON f.kit_id = k.kit_id
              LEFT JOIN kit_views  v ON v.kit_id = k.kit_id
+             LEFT JOIN kit_idx    i ON i.kit_id = k.kit_id
              ORDER BY k.kit_id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -216,6 +289,33 @@ impl Db {
                 kit_id: row.get::<_, String>(0)?,
                 field_count: row.get::<_, i64>(1)? as usize,
                 view_count: row.get::<_, i64>(2)? as usize,
+                index_count: row.get::<_, i64>(3)? as usize,
+            })
+        })?;
+        let mut out = Vec::new();
+        for r in rows {
+            out.push(r.map_err(DatumError::Db)?);
+        }
+        Ok(out)
+    }
+
+    /// Load every kit-owned index entry tagged with `kit_id`. Used by
+    /// `datum kit export` to round-trip the `[[index]]` blocks back to
+    /// TOML. Rows are returned ordered by `index_name` for stable
+    /// output.
+    pub fn load_indices_by_kit(&self, kit_id: &str) -> Result<Vec<InstalledKitIndex>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT kit_id, index_name, on_disk_name, sql_text
+             FROM kit_indices
+             WHERE kit_id = ?1
+             ORDER BY index_name",
+        )?;
+        let rows = stmt.query_map(params![kit_id], |row| {
+            Ok(InstalledKitIndex {
+                kit_id: row.get::<_, String>(0)?,
+                index_name: row.get::<_, String>(1)?,
+                on_disk_name: row.get::<_, String>(2)?,
+                sql_text: row.get::<_, String>(3)?,
             })
         })?;
         let mut out = Vec::new();

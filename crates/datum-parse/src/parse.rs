@@ -1342,16 +1342,22 @@ fn parse_kit_cmd(tail: &[&str]) -> Result<KitCommand> {
     match *sub {
         "install" => {
             let mut force = false;
+            let mut assume_yes = false;
             let mut pos: Vec<&str> = Vec::new();
             for tok in rest {
                 match split_flag(tok) {
                     FlagSplit::Positional(s) => pos.push(s),
                     FlagSplit::Long("force") | FlagSplit::Short('f') => force = true,
+                    FlagSplit::Long("yes") | FlagSplit::Short('y') => assume_yes = true,
                     f => return Err(unknown_flag(f)),
                 }
             }
             let path = require_first_pos(&pos, "<PATH>")?;
-            Ok(KitCommand::Install(KitInstallArgs { path, force }))
+            Ok(KitCommand::Install(KitInstallArgs {
+                path,
+                force,
+                assume_yes,
+            }))
         }
         "export" => {
             let mut pos: Vec<&str> = Vec::new();

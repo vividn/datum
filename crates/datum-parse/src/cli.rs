@@ -619,6 +619,10 @@ pub struct KitInstallArgs {
     /// When true, conflicting field rows are overwritten and re-tagged
     /// with this kit's id.
     pub force: bool,
+    /// When true, auto-approve the index trust prompt (used for
+    /// non-interactive shells / CI). Without `--yes`, the dispatcher
+    /// prints the proposed indices and reads y/N from stdin.
+    pub assume_yes: bool,
 }
 
 #[derive(Debug)]

@@ -1834,7 +1834,7 @@ fn install_kit_persists_specs_with_kit_id() {
     coffee.regenerate_derived_aliases();
 
     let report = db
-        .install_kit("core", &[sleep.clone(), coffee.clone()], false)
+        .install_kit("core", &[sleep.clone(), coffee.clone()], &[], false)
         .unwrap();
     let installed: Vec<&str> = report.installed().collect();
     assert_eq!(installed, vec!["sleep", "coffee"]);
@@ -1860,7 +1860,7 @@ fn install_kit_skips_existing_field_without_force() {
 
     let mut kit_sleep = FieldSpec::new("sleep", Verb::Start);
     kit_sleep.color = Some("#kit0000".into());
-    let report = db.install_kit("naps", &[kit_sleep], false).unwrap();
+    let report = db.install_kit("naps", &[kit_sleep], &[], false).unwrap();
     let skipped: Vec<&str> = report.skipped().collect();
     assert_eq!(skipped, vec!["sleep"]);
 
@@ -1880,7 +1880,7 @@ fn install_kit_force_overwrites_and_retags() {
 
     let mut kit_sleep = FieldSpec::new("sleep", Verb::Start);
     kit_sleep.color = Some("#kit0000".into());
-    let report = db.install_kit("naps", &[kit_sleep], true).unwrap();
+    let report = db.install_kit("naps", &[kit_sleep], &[], true).unwrap();
     let installed: Vec<&str> = report.installed().collect();
     assert_eq!(installed, vec!["sleep"]);
 
@@ -1903,7 +1903,7 @@ fn uninstall_kit_removes_only_owned_rows() {
     k1.regenerate_derived_aliases();
     let mut k2 = FieldSpec::new("coffee", Verb::Occur);
     k2.regenerate_derived_aliases();
-    db.install_kit("core", &[k1, k2], false).unwrap();
+    db.install_kit("core", &[k1, k2], &[], false).unwrap();
 
     let removed = db.uninstall_kit("core").unwrap();
     assert_eq!(removed, vec!["coffee", "sleep"]);
@@ -1934,7 +1934,7 @@ fn save_field_spec_preserves_kit_id() {
     let mut spec = FieldSpec::new("sleep", Verb::Start);
     spec.color = Some("#000000".into());
     spec.regenerate_derived_aliases();
-    db.install_kit("core", &[spec.clone()], false).unwrap();
+    db.install_kit("core", &[spec.clone()], &[], false).unwrap();
 
     // User edits the spec via `datum spec set` — should NOT lose kit_id.
     let mut edited = spec.clone();

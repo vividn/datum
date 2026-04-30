@@ -1,5 +1,5 @@
 //! Kit format — installable, exportable, shareable bundles of field specs
-//! (slice 1: field-spec subset only).
+//! (slice 1: field-spec subset; slice 5: indices).
 //!
 //! A kit is a TOML file declaring named fields with absolute layout (pos /
 //! size / color / states). On install, each `[[field]]` is converted into a
@@ -7,8 +7,13 @@
 //! on uninstall, every row tagged with that `kit_id` is deleted. Round-trip
 //! (install → export → diff) is required to be clean.
 //!
-//! Slice 2+ adds `relative_to` anchor positioning, aliases, views, indices,
-//! and Level-1/2 commands. This module only handles the `[[field]]` subset.
+//! Slice 5 also accepts `[[index]]` entries; each becomes a `CREATE INDEX`
+//! against the `entries` table, with the SQL text recorded in
+//! `kit_indices` so uninstall can `DROP INDEX` cleanly. The DDL is gated
+//! by [`validate_index_entry`] which restricts it to a narrow allowlist
+//! (no triggers, no ATTACH, no statement chaining). Trust enforcement
+//! (prompt the user for local files, reject URLs until signing arrives)
+//! lives one layer up in `datum-commands::commands::kit`.
 
 use serde::{Deserialize, Serialize};
 
@@ -16,8 +21,8 @@ use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{FieldSpec, DEFAULT_FIELD_HEIGHT};
 
-/// Top-level TOML schema. `[kit]` is required; `[[field]]` and `[[view]]`
-/// may be empty.
+/// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
+/// and `[[index]]` may all be empty.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KitToml {
     pub kit: KitMeta,
@@ -28,6 +33,11 @@ pub struct KitToml {
     /// `datum view <name>` (slice 4).
     #[serde(default, rename = "view")]
     pub views: Vec<ViewEntry>,
+    /// `[[index]]` declarations. Each becomes a `CREATE INDEX` against
+    /// `entries` recorded in `kit_indices`. Trust-gated at install time;
+    /// see slice 5 (da-d4t.5).
+    #[serde(default, rename = "index")]
+    pub indices: Vec<IndexEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -133,8 +143,15 @@ impl KitToml {
     }
 
     /// Build a [`KitToml`] from the kit's stored [`FieldSpec`] rows. Used
-    /// by `datum kit export <name>`.
-    pub fn from_field_specs(name: &str, version: Option<&str>, specs: &[FieldSpec]) -> Self {
+    /// by `datum kit export <name>`. `indices` carries the rows from
+    /// `kit_indices` for the same kit; pass `&[]` if the kit had no
+    /// indices (or the caller doesn't want to round-trip them).
+    pub fn from_field_specs(
+        name: &str,
+        version: Option<&str>,
+        specs: &[FieldSpec],
+        indices: &[IndexEntry],
+    ) -> Self {
         let fields = specs.iter().map(FieldEntry::from_spec).collect();
         Self {
             kit: KitMeta {
@@ -144,6 +161,7 @@ impl KitToml {
             },
             fields,
             views: Vec::new(),
+            indices: indices.to_vec(),
         }
     }
 
@@ -155,7 +173,7 @@ impl KitToml {
         specs: &[FieldSpec],
         views: Vec<ViewEntry>,
     ) -> Self {
-        let mut kit = Self::from_field_specs(name, version, specs);
+        let mut kit = Self::from_field_specs(name, version, specs, &[]);
         kit.views = views;
         kit
     }
@@ -282,6 +300,219 @@ impl FieldEntry {
 /// [`crate::field_spec::DEFAULT_FIELD_HEIGHT`] so the layout fallback
 /// matches between user-declared and kit-declared specs.
 pub const KIT_DEFAULT_SIZE: f64 = DEFAULT_FIELD_HEIGHT;
+
+// ─── Indices (slice 5) ────────────────────────────────────────────────────
+
+/// A `[[index]]` entry as it appears in the TOML.
+///
+/// The shipped DDL is constructed by [`IndexEntry::build_ddl`] (which the
+/// kit installer calls): we own the outer `CREATE INDEX … ON entries(…)`
+/// shape, so a malicious kit can't sneak in a different statement form.
+/// `expression` and `where_clause` are validated by
+/// [`validate_index_entry`] before they reach SQLite.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct IndexEntry {
+    /// Index name. Must match `[a-zA-Z_][a-zA-Z0-9_]*`. Persisted under
+    /// the kit's `kit_id` namespace so two kits can use the same name
+    /// without colliding (the on-disk SQL name is prefixed at install
+    /// time — see [`IndexEntry::sqlite_name`]).
+    pub name: String,
+    /// Target table. Slice 5 hard-codes `entries`; the field is part of
+    /// the schema so future slices (e.g. indexing `field_specs`) can
+    /// extend it without a TOML break.
+    pub on: String,
+    /// Index expression — what goes between the parens. Validated as
+    /// SQL fragment; cannot contain `;`, comments, or DDL keywords.
+    pub expression: String,
+    /// Optional partial-index predicate. Same fragment validation.
+    #[serde(default, rename = "where")]
+    pub where_clause: Option<String>,
+    /// Whether to emit `CREATE UNIQUE INDEX`.
+    #[serde(default)]
+    pub unique: bool,
+}
+
+impl IndexEntry {
+    /// Compute the on-disk SQLite index name for this entry under a
+    /// given kit. Prefixed so two kits can declare the same TOML name
+    /// without colliding. The prefix also makes orphaned indices easy
+    /// to spot in `sqlite_master` if a kit row goes missing.
+    pub fn sqlite_name(&self, kit_id: &str) -> String {
+        format!("kit_{}__{}", sanitize_ident(kit_id), self.name)
+    }
+
+    /// Build the full validated `CREATE INDEX` statement for this entry
+    /// under `kit_id`. Returns the SQL text the installer will execute
+    /// and persist into `kit_indices.sql_text`.
+    pub fn build_ddl(&self, kit_id: &str) -> Result<String> {
+        validate_index_entry(self)?;
+        let unique = if self.unique { "UNIQUE " } else { "" };
+        let stmt = format!(
+            "CREATE {unique}INDEX IF NOT EXISTS \"{name}\" ON {table}({expr}){where_part}",
+            name = self.sqlite_name(kit_id),
+            table = self.on,
+            expr = self.expression.trim(),
+            where_part = match &self.where_clause {
+                Some(w) => format!(" WHERE {}", w.trim()),
+                None => String::new(),
+            }
+        );
+        Ok(stmt)
+    }
+}
+
+/// Sanitize a kit_id into something that's safe to embed in an index
+/// name — non-alphanumeric chars become `_`. Kit names are already
+/// expected to be slugs in practice; this is just defense in depth so
+/// we never paste an unescaped kit name into a SQL identifier.
+fn sanitize_ident(s: &str) -> String {
+    s.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Tables a kit's index DDL is allowed to touch. Slice 5 ships only
+/// `entries`; the WHERE clause may also reference `field_specs` for
+/// schema-driven partial indices (see the chore-tracking example in the
+/// design doc).
+pub const ALLOWED_INDEX_TABLES: &[&str] = &["entries", "field_specs"];
+
+/// SQL keywords that have no business appearing inside a kit's index
+/// expression or WHERE clause. The validator rejects any of these as a
+/// whole-word match (case-insensitive). Note that `SELECT`/`FROM` are
+/// allowed: the bead's own design example uses a `field IN (SELECT …
+/// FROM field_specs WHERE …)` partial-index predicate.
+const FORBIDDEN_DDL_KEYWORDS: &[&str] = &[
+    "ATTACH",
+    "DETACH",
+    "PRAGMA",
+    "ALTER",
+    "DROP",
+    "INSERT",
+    "UPDATE",
+    "DELETE",
+    "REPLACE",
+    "CREATE",
+    "TRIGGER",
+    "RAISE",
+    "BEGIN",
+    "COMMIT",
+    "ROLLBACK",
+    "VACUUM",
+    "EXPLAIN",
+    "SAVEPOINT",
+    "RELEASE",
+    "REINDEX",
+    "ANALYZE",
+    "LOAD_EXTENSION",
+];
+
+/// Validate an [`IndexEntry`] against the slice-5 DDL allowlist.
+///
+/// Checks:
+/// - `name` matches `[a-zA-Z_][a-zA-Z0-9_]*`
+/// - `on` is in [`ALLOWED_INDEX_TABLES`]
+/// - `expression` is non-empty and passes [`validate_sql_fragment`]
+/// - `where_clause`, if present, also passes the fragment check
+pub fn validate_index_entry(entry: &IndexEntry) -> Result<()> {
+    if !is_safe_identifier(&entry.name) {
+        return Err(DatumError::Other(format!(
+            "kit index '{}': name must match [a-zA-Z_][a-zA-Z0-9_]*",
+            entry.name
+        )));
+    }
+    if !ALLOWED_INDEX_TABLES.iter().any(|t| *t == entry.on) {
+        return Err(DatumError::Other(format!(
+            "kit index '{}': only {:?} are allowed for `on` (got '{}')",
+            entry.name, ALLOWED_INDEX_TABLES, entry.on
+        )));
+    }
+    if entry.expression.trim().is_empty() {
+        return Err(DatumError::Other(format!(
+            "kit index '{}': expression is empty",
+            entry.name
+        )));
+    }
+    validate_sql_fragment(&entry.name, "expression", &entry.expression)?;
+    if let Some(w) = &entry.where_clause {
+        validate_sql_fragment(&entry.name, "where", w)?;
+    }
+    Ok(())
+}
+
+/// Run the safety scan on a piece of user-supplied SQL fragment.
+///
+/// We do not parse the SQL; we apply a tight blocklist that's sufficient
+/// for v1's threat model (a malicious kit author who wants to do more
+/// than declare an index). The grammar restriction sits at three levels:
+/// (1) the outer `CREATE INDEX … ON entries(…)` shape is built by us;
+/// (2) statement chaining via `;` and SQL comments is blocked here;
+/// (3) DDL/DML keywords (CREATE/DROP/ATTACH/…) are rejected here.
+fn validate_sql_fragment(index_name: &str, label: &str, s: &str) -> Result<()> {
+    if s.contains(';') {
+        return Err(DatumError::Other(format!(
+            "kit index '{index_name}' {label}: ';' is not allowed (no statement chaining)"
+        )));
+    }
+    if s.contains("--") || s.contains("/*") || s.contains("*/") {
+        return Err(DatumError::Other(format!(
+            "kit index '{index_name}' {label}: SQL comments are not allowed"
+        )));
+    }
+    let upper = s.to_ascii_uppercase();
+    for forbidden in FORBIDDEN_DDL_KEYWORDS {
+        if contains_word(&upper, forbidden) {
+            return Err(DatumError::Other(format!(
+                "kit index '{index_name}' {label}: forbidden keyword '{forbidden}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn is_safe_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+}
+
+/// Whole-word case-insensitive containment check on already-uppercased
+/// haystack vs uppercase needle. A "word" is bounded by non-`[A-Z0-9_]`
+/// characters, mirroring SQL identifier conventions.
+fn contains_word(upper_haystack: &str, upper_needle: &str) -> bool {
+    let bytes = upper_haystack.as_bytes();
+    let needle = upper_needle.as_bytes();
+    let nlen = needle.len();
+    let hlen = bytes.len();
+    if nlen == 0 || hlen < nlen {
+        return false;
+    }
+    let is_ident_byte = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+    let mut i = 0;
+    while i + nlen <= hlen {
+        if &bytes[i..i + nlen] == needle {
+            let left_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
+            let right_ok = i + nlen == hlen || !is_ident_byte(bytes[i + nlen]);
+            if left_ok && right_ok {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
 
 #[cfg(test)]
 mod tests {
@@ -459,7 +690,7 @@ size = 0.05
         dependent.anchor_pos_ratio = Some(0.10);
         dependent.anchor_size_ratio = Some(0.05);
 
-        let kit = KitToml::from_field_specs("anchored", None, &[anchor, dependent]);
+        let kit = KitToml::from_field_specs("anchored", None, &[anchor, dependent], &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         let contacts = back.fields.iter().find(|f| f.name == "contacts").unwrap();
@@ -478,7 +709,7 @@ size = 0.05
         spec.allowed_states = Some(vec!["asleep".into()]);
         spec.state_colors.insert("asleep".into(), "#000000".into());
 
-        let kit = KitToml::from_field_specs("core", Some("0.1"), &[spec.clone()]);
+        let kit = KitToml::from_field_specs("core", Some("0.1"), &[spec.clone()], &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.kit.name, "core");
@@ -492,5 +723,192 @@ size = 0.05
         assert_eq!(f.states.len(), 1);
         assert_eq!(f.states[0].name, "asleep");
         assert_eq!(f.states[0].color.as_deref(), Some("#000000"));
+    }
+
+    // ─── slice 5: indices ─────────────────────────────────────────────
+
+    #[test]
+    fn parses_kit_with_indices() {
+        let src = r##"
+[kit]
+name = "chores"
+
+[[index]]
+name = "chore_next_due"
+on = "entries"
+expression = "COALESCE(json_extract(data,'$.next_time'), start_time)"
+where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
+"##;
+        let kit = KitToml::from_str(src).unwrap();
+        assert_eq!(kit.indices.len(), 1);
+        let i = &kit.indices[0];
+        assert_eq!(i.name, "chore_next_due");
+        assert_eq!(i.on, "entries");
+        assert!(!i.unique);
+        assert!(i.where_clause.as_deref().unwrap().contains("field_specs"));
+    }
+
+    #[test]
+    fn build_ddl_emits_create_index_if_not_exists() {
+        let entry = IndexEntry {
+            name: "by_field".into(),
+            on: "entries".into(),
+            expression: "field, start_time DESC".into(),
+            where_clause: Some("deleted_at IS NULL".into()),
+            unique: false,
+        };
+        let ddl = entry.build_ddl("chores").unwrap();
+        assert_eq!(
+            ddl,
+            "CREATE INDEX IF NOT EXISTS \"kit_chores__by_field\" \
+             ON entries(field, start_time DESC) WHERE deleted_at IS NULL"
+        );
+    }
+
+    #[test]
+    fn build_ddl_emits_unique_when_requested() {
+        let entry = IndexEntry {
+            name: "uniq_slug".into(),
+            on: "entries".into(),
+            expression: "slug".into(),
+            where_clause: None,
+            unique: true,
+        };
+        let ddl = entry.build_ddl("k").unwrap();
+        assert!(ddl.contains("CREATE UNIQUE INDEX IF NOT EXISTS"));
+    }
+
+    #[test]
+    fn rejects_index_name_with_unsafe_chars() {
+        let entry = IndexEntry {
+            name: "bad name; DROP TABLE entries".into(),
+            on: "entries".into(),
+            expression: "field".into(),
+            where_clause: None,
+            unique: false,
+        };
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(err.contains("name must match"), "msg = {err}");
+    }
+
+    #[test]
+    fn rejects_disallowed_table() {
+        let entry = IndexEntry {
+            name: "ix".into(),
+            on: "_meta".into(),
+            expression: "key".into(),
+            where_clause: None,
+            unique: false,
+        };
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(err.contains("only"), "msg = {err}");
+    }
+
+    #[test]
+    fn rejects_semicolon_in_expression() {
+        let entry = IndexEntry {
+            name: "ix".into(),
+            on: "entries".into(),
+            expression: "field; SELECT 1".into(),
+            where_clause: None,
+            unique: false,
+        };
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(err.contains("';'"), "msg = {err}");
+    }
+
+    #[test]
+    fn rejects_sql_comment() {
+        let entry = IndexEntry {
+            name: "ix".into(),
+            on: "entries".into(),
+            expression: "field -- nasty".into(),
+            where_clause: None,
+            unique: false,
+        };
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(err.contains("comments"), "msg = {err}");
+    }
+
+    #[test]
+    fn rejects_attach_keyword() {
+        let entry = IndexEntry {
+            name: "ix".into(),
+            on: "entries".into(),
+            expression: "ATTACH DATABASE '/tmp/x' AS evil".into(),
+            where_clause: None,
+            unique: false,
+        };
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(err.contains("ATTACH"), "msg = {err}");
+    }
+
+    #[test]
+    fn rejects_drop_inside_where() {
+        let entry = IndexEntry {
+            name: "ix".into(),
+            on: "entries".into(),
+            expression: "field".into(),
+            where_clause: Some("1=1 OR DROP TABLE entries".into()),
+            unique: false,
+        };
+        let err = entry.build_ddl("k").unwrap_err().to_string();
+        assert!(err.contains("DROP"), "msg = {err}");
+    }
+
+    #[test]
+    fn allows_select_subquery_in_where() {
+        // SELECT/FROM are deliberately *not* on the blocklist so the
+        // bead's own design example (chore-tracking partial index)
+        // remains expressible.
+        let entry = IndexEntry {
+            name: "chore_next_due".into(),
+            on: "entries".into(),
+            expression: "COALESCE(json_extract(data,'$.next_time'), start_time)".into(),
+            where_clause: Some(
+                "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')".into(),
+            ),
+            unique: false,
+        };
+        entry.build_ddl("chores").unwrap();
+    }
+
+    #[test]
+    fn sqlite_name_sanitizes_kit_id() {
+        let entry = IndexEntry {
+            name: "ix".into(),
+            on: "entries".into(),
+            expression: "field".into(),
+            where_clause: None,
+            unique: false,
+        };
+        // A weird (but technically syntactically-valid in TOML) kit name
+        // gets non-alphanumerics flattened to `_` so we never paste an
+        // unescaped string into a SQL identifier.
+        assert_eq!(entry.sqlite_name("my-kit.v2"), "kit_my_kit_v2__ix");
+    }
+
+    #[test]
+    fn round_trip_preserves_indices() {
+        let kit = KitToml {
+            kit: KitMeta {
+                name: "k".into(),
+                version: None,
+                description: None,
+            },
+            fields: vec![],
+            views: vec![],
+            indices: vec![IndexEntry {
+                name: "by_field".into(),
+                on: "entries".into(),
+                expression: "field, start_time".into(),
+                where_clause: Some("deleted_at IS NULL".into()),
+                unique: false,
+            }],
+        };
+        let toml = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&toml).unwrap();
+        assert_eq!(back.indices.len(), 1);
+        assert_eq!(back.indices[0], kit.indices[0]);
     }
 }

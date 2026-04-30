@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 14;
+pub const CURRENT_SCHEMA_VERSION: u32 = 15;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -113,6 +113,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "views: named SQL views table (kit-scoped); powers `datum view <name>` (da-d4t.4)",
         apply: m13_to_14_views_table,
     },
+    Migration {
+        from: 14,
+        to: 15,
+        summary: "kit_indices: track CREATE INDEX statements installed by kits so uninstall can DROP INDEX cleanly (da-d4t.5)",
+        apply: m14_to_15_kit_indices,
+    },
 ];
 
 /// da-d4t.4: kit-installable named SELECT views. Rows are tagged with
@@ -127,6 +133,22 @@ fn m13_to_14_views_table(conn: &Connection) -> Result<()> {
             kit_id    TEXT
          );
          CREATE INDEX IF NOT EXISTS idx_views_kit_id ON views(kit_id);",
+    )?;
+    Ok(())
+}
+
+/// da-d4t.5: kits can declare `[[index]]` entries; each is materialized
+/// as a real SQL index against `entries` and recorded in `kit_indices`
+/// so uninstall can `DROP INDEX` symmetrically. Additive + idempotent.
+fn m14_to_15_kit_indices(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS kit_indices (
+             kit_id       TEXT NOT NULL,
+             index_name   TEXT NOT NULL,
+             on_disk_name TEXT NOT NULL,
+             sql_text     TEXT NOT NULL,
+             PRIMARY KEY (kit_id, index_name)
+         );",
     )?;
     Ok(())
 }

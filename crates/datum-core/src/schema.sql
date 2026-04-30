@@ -158,6 +158,21 @@ CREATE TABLE IF NOT EXISTS views (
 
 CREATE INDEX IF NOT EXISTS idx_views_kit_id ON views(kit_id);
 
+-- Kit-installed indices on `entries` (slice 5). Each row tracks one DDL
+-- statement created by `datum kit install`; uninstall does
+-- `DROP INDEX IF EXISTS <on_disk_name>` for every row matching `kit_id`
+-- and then deletes the rows. `sql_text` is stored verbatim so reinstalls
+-- can detect "no-op" cases and so a DB inspector can see what was
+-- actually run. Re-install drops every row tagged with the kit and
+-- rewrites them, so identity is `(kit_id, index_name)`.
+CREATE TABLE IF NOT EXISTS kit_indices (
+    kit_id      TEXT NOT NULL,
+    index_name  TEXT NOT NULL,
+    on_disk_name TEXT NOT NULL,
+    sql_text    TEXT NOT NULL,
+    PRIMARY KEY (kit_id, index_name)
+);
+
 -- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
 -- when the alias was auto-generated from a FieldSpec state; such rows
 -- cascade-delete when the owning spec is deleted or its states change.
@@ -268,4 +283,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '14');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '15');
