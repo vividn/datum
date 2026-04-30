@@ -33,12 +33,8 @@ name = "mood"
 default_verb = "switch"
 color = "blue"
 
-[[field.states]]
-name = "happy"
-color = "#00ff00"
-
-[[field.states]]
-name = "sad"
+states.happy = { color = "#00ff00" }
+states.sad = {}
 "##,
     )
     .unwrap();
@@ -95,8 +91,10 @@ name = "sad"
     // "blue" was resolved to a hex at install time and stored that way.
     assert!(mood.color.as_ref().unwrap().starts_with('#'));
     assert_eq!(mood.states.len(), 2);
-    let happy = mood.states.iter().find(|s| s.name == "happy").unwrap();
+    let happy = mood.states.get("happy").unwrap();
     assert_eq!(happy.color.as_deref(), Some("#00ff00"));
+    // "sad" carries no overrides — it round-trips as an empty inline table.
+    assert!(mood.states.contains_key("sad"));
 }
 
 #[test]

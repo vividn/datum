@@ -15,6 +15,8 @@
 //! (prompt the user for local files, reject URLs until signing arrives)
 //! lives one layer up in `datum-commands::commands::kit`.
 
+use std::collections::BTreeMap;
+
 use serde::{Deserialize, Serialize};
 
 use crate::entry::Verb;
@@ -114,9 +116,14 @@ pub struct FieldEntry {
     /// Data-keys declaration (`-k` flag surface).
     #[serde(default)]
     pub data_keys: Vec<String>,
-    /// Allowed states with per-state overrides.
-    #[serde(default, rename = "states")]
-    pub states: Vec<StateEntry>,
+    /// Allowed states with per-state overrides. Keyed by state name; emit
+    /// order is alphabetical (BTreeMap) so round-trip is diff-clean.
+    /// Per-state values use `pos`/`size` (not `state_pos`/`state_size`) —
+    /// the field-level defaults retain the `state_pos`/`state_size`
+    /// spelling because *those* describe the parent's child-defaults, not
+    /// the parent's own band.
+    #[serde(default, rename = "states", skip_serializing_if = "BTreeMap::is_empty")]
+    pub states: BTreeMap<String, StateSpec>,
     /// Free-form tags used by views and kit commands to group fields
     /// (e.g. `tags = ["chore"]`). Round-trips into [`FieldSpec::tags`].
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -223,15 +230,21 @@ pub struct ColorRuleEntry {
     pub color: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct StateEntry {
-    pub name: String,
-    #[serde(default)]
+/// Per-state override carried inside `states.<name> = { ... }` inline tables.
+///
+/// The `name` of the state is the map key in [`FieldEntry::states`], so it's
+/// not duplicated here. `pos`/`size` describe this state's band within its
+/// parent field (not the parent's own band — for that, see
+/// [`FieldEntry::pos`] / [`FieldEntry::size`]). They are round-trip only at
+/// this slice; layout consumes them in slice 2+.
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
+pub struct StateSpec {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub color: Option<String>,
-    #[serde(default)]
-    pub state_pos: Option<f64>,
-    #[serde(default)]
-    pub state_size: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pos: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub size: Option<f64>,
 }
 
 impl KitToml {
@@ -353,10 +366,10 @@ impl FieldEntry {
         }
 
         if !self.states.is_empty() {
-            let allowed: Vec<String> = self.states.iter().map(|s| s.name.clone()).collect();
-            for s in &self.states {
+            let allowed: Vec<String> = self.states.keys().cloned().collect();
+            for (name, s) in &self.states {
                 if let Some(c) = &s.color {
-                    spec.state_colors.insert(s.name.clone(), c.clone());
+                    spec.state_colors.insert(name.clone(), c.clone());
                 }
             }
             spec.allowed_states = Some(allowed);
@@ -372,18 +385,22 @@ impl FieldEntry {
     /// that were never set on install survive as `None` so the round-trip
     /// is clean.
     pub fn from_spec(spec: &FieldSpec) -> Self {
-        let states = if let Some(allowed) = &spec.allowed_states {
+        let states: BTreeMap<String, StateSpec> = if let Some(allowed) = &spec.allowed_states {
             allowed
                 .iter()
-                .map(|name| StateEntry {
-                    name: name.clone(),
-                    color: spec.state_colors.get(name).cloned(),
-                    state_pos: None,
-                    state_size: None,
+                .map(|name| {
+                    (
+                        name.clone(),
+                        StateSpec {
+                            color: spec.state_colors.get(name).cloned(),
+                            pos: None,
+                            size: None,
+                        },
+                    )
                 })
                 .collect()
         } else {
-            Vec::new()
+            BTreeMap::new()
         };
 
         let default_verb = match spec.default_verb {
@@ -686,23 +703,20 @@ name = "lang"
 name = "vibe"
 default_verb = "switch"
 
-[[field.states]]
-name = "germany"
-color = "#303030"
-state_pos = 0.0
-state_size = 1.0
-
-[[field.states]]
-name = "japan"
+states.germany = { color = "#303030", pos = 0.0, size = 1.0 }
+states.japan = {}
 "##;
         let kit = KitToml::from_str(src).unwrap();
         assert_eq!(kit.fields.len(), 1);
         let f = &kit.fields[0];
         assert_eq!(f.states.len(), 2);
-        assert_eq!(f.states[0].name, "germany");
-        assert_eq!(f.states[0].color.as_deref(), Some("#303030"));
-        assert_eq!(f.states[0].state_pos, Some(0.0));
-        assert_eq!(f.states[1].color, None);
+        let germany = f.states.get("germany").unwrap();
+        assert_eq!(germany.color.as_deref(), Some("#303030"));
+        assert_eq!(germany.pos, Some(0.0));
+        assert_eq!(germany.size, Some(1.0));
+        let japan = f.states.get("japan").unwrap();
+        assert_eq!(japan.color, None);
+        assert_eq!(japan.pos, None);
     }
 
     #[test]
@@ -721,7 +735,7 @@ name = "japan"
             relative_to: None,
             id_keys: vec![],
             data_keys: vec![],
-            states: vec![],
+            states: BTreeMap::new(),
             tags: vec![],
         };
         let err = entry.into_spec(None).unwrap_err();
@@ -745,20 +759,19 @@ name = "japan"
             relative_to: None,
             id_keys: vec![],
             data_keys: vec![],
-            states: vec![
-                StateEntry {
-                    name: "happy".into(),
-                    color: Some("#00ff00".into()),
-                    state_pos: None,
-                    state_size: None,
-                },
-                StateEntry {
-                    name: "sad".into(),
-                    color: None,
-                    state_pos: None,
-                    state_size: None,
-                },
-            ],
+            states: {
+                let mut m = BTreeMap::new();
+                m.insert(
+                    "happy".into(),
+                    StateSpec {
+                        color: Some("#00ff00".into()),
+                        pos: None,
+                        size: None,
+                    },
+                );
+                m.insert("sad".into(), StateSpec::default());
+                m
+            },
             tags: vec![],
         };
         let spec = entry.into_spec(Some("#ff0000".into())).unwrap();
@@ -855,8 +868,51 @@ size = 0.05
         assert_eq!(f.size, Some(0.30));
         assert_eq!(f.color.as_deref(), Some("#1a3d6e"));
         assert_eq!(f.states.len(), 1);
-        assert_eq!(f.states[0].name, "asleep");
-        assert_eq!(f.states[0].color.as_deref(), Some("#000000"));
+        let asleep = f.states.get("asleep").unwrap();
+        assert_eq!(asleep.color.as_deref(), Some("#000000"));
+    }
+
+    #[test]
+    fn states_map_round_trips_through_toml() {
+        // Authoring-format → emit → re-parse preserves the map shape and
+        // per-state pos/size. (FieldSpec doesn't store per-state pos/size
+        // yet, so this checks the TOML layer only — see slice 2+ for the
+        // install/export side.)
+        let src = r##"
+[kit]
+name = "lang"
+
+[[field]]
+name = "vibe"
+default_verb = "switch"
+
+states.germany = { color = "#303030", pos = 0.0, size = 1.0 }
+states.japan = { color = "#aa0000" }
+states.empty = {}
+"##;
+        let kit = KitToml::from_str(src).unwrap();
+        let toml = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&toml).unwrap();
+        let f = &back.fields[0];
+        assert_eq!(f.states.len(), 3);
+        let germany = f.states.get("germany").unwrap();
+        assert_eq!(germany.color.as_deref(), Some("#303030"));
+        assert_eq!(germany.pos, Some(0.0));
+        assert_eq!(germany.size, Some(1.0));
+        let japan = f.states.get("japan").unwrap();
+        assert_eq!(japan.color.as_deref(), Some("#aa0000"));
+        assert_eq!(japan.pos, None);
+        let empty = f.states.get("empty").unwrap();
+        assert_eq!(empty, &StateSpec::default());
+    }
+
+    #[test]
+    fn empty_states_omitted_from_emitted_toml() {
+        let spec = FieldSpec::new("plain", Verb::Occur);
+        let kit = KitToml::from_field_specs("k", None, &[spec], &[]);
+        let toml = kit.to_toml().unwrap();
+        // skip_serializing_if keeps empty state maps out of the emitted TOML.
+        assert!(!toml.contains("states"), "toml = {toml}");
     }
 
     // ─── Tags (da-a7g) ────────────────────────────────────────────────

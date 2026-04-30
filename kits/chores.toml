@@ -1,6 +1,6 @@
 [kit]
 name = "chores"
-version = "0.1"
+version = "0.2"
 description = "Paradigm bundle for tracking chores by next-due date. Users author their own chore fields with `datum track <name>` and log entries with `datum occur <name> next_date=<ISO ts> done=true`. The kit ships the index, the chores_due view, and the chorelist Level-2 command. Slice 7 (da-d4t.7) — chore/chored alias-creator subcommands deferred until placeholder substitution lands; see follow-up beads filed by the mayor."
 
 # Index over the next-due timestamp across all four spelling conventions
