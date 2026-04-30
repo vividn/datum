@@ -9,6 +9,22 @@
 //! If it's an alias, we splice the expansion in, keeping argv[0]
 //! intact. We keep looping until we hit a known subcommand, a missing
 //! alias, or [`MAX_ALIAS_HOPS`].
+//!
+//! ## Positional placeholders
+//!
+//! An alias's `expands_to` may reference positional arguments via `$N`
+//! or `${N}` (1-based). At expansion time, the highest referenced index
+//! is consumed from the trailing argv and substituted into the alias
+//! tokens before the remaining args are spliced in. Example:
+//!
+//! ```text
+//! alias 'chore' → 'alias set $1 "occur -k next_date done=true $1"'
+//! datum chore laundry  →  datum alias set laundry "occur -k next_date done=true laundry"
+//! ```
+//!
+//! Substitution applies inside tokens (so `$1` inside a quoted string
+//! resolves correctly). If `$N` references a position with no
+//! corresponding argv entry, expansion fails with [`ParseError::InvalidArg`].
 
 /// Maximum number of alias-expansion hops before we give up (guard
 /// against user-defined cycles).
@@ -53,13 +69,44 @@ impl<'a> Resolver for MapResolver<'a> {
 /// Known subcommand names we stop expanding at. Kept in one place so
 /// both datum-parse and datum-commands agree.
 pub const KNOWN_SUBCOMMANDS: &[&str] = &[
-    "occur", "start", "stop", "end", "switch", "add",
-    "tail", "head", "now", "spec", "alias", "migrate", "get", "delete", "del", "undo", "help",
-    "history", "why",
-    "track", "ignore", "grep", "check", "count", "ids",
-    "update", "merge", "rekey", "edit", "retime", "rt",
-    "backup", "restore", "dayview",
-    "info", "setup", "config", "sync",
+    "occur",
+    "start",
+    "stop",
+    "end",
+    "switch",
+    "add",
+    "tail",
+    "head",
+    "now",
+    "spec",
+    "alias",
+    "migrate",
+    "get",
+    "delete",
+    "del",
+    "undo",
+    "help",
+    "history",
+    "why",
+    "track",
+    "ignore",
+    "grep",
+    "check",
+    "count",
+    "ids",
+    "update",
+    "merge",
+    "rekey",
+    "edit",
+    "retime",
+    "rt",
+    "backup",
+    "restore",
+    "dayview",
+    "info",
+    "setup",
+    "config",
+    "sync",
     "conflicts",
 ];
 
@@ -83,16 +130,18 @@ pub struct AliasStep {
 /// 4. Stacked short-flag expansion: `-yy` → `-y -y`.
 ///
 /// Returns the expanded argv plus the list of alias steps that were
-/// applied (for provenance stamping onto the entry).
+/// applied (for provenance stamping onto the entry). Returns
+/// [`ParseError::InvalidArg`] if a positional placeholder (`$N`) in an
+/// alias expansion references a slot with no argv value.
 pub fn expand_argv(
     argv: Vec<String>,
     resolver: &dyn Resolver,
-) -> (Vec<String>, Vec<AliasStep>) {
+) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
     let argv = apply_terminal_verb_override(argv);
-    let (argv, chain) = try_expand_alias(argv, resolver);
+    let (argv, chain) = try_expand_alias(argv, resolver)?;
     let argv = maybe_swap_field_verb(argv);
     let argv = expand_stacked_flags(argv);
-    (argv, chain)
+    Ok((argv, chain))
 }
 
 /// Like [`expand_argv`] but skips alias resolution (no resolver required).
@@ -116,32 +165,190 @@ pub fn apply_terminal_verb_override(mut argv: Vec<String>) -> Vec<String> {
 }
 
 /// Resolve argv[1] as an alias from the resolver, recording each
-/// expansion step. On any failure returns argv unchanged (empty chain).
+/// expansion step. Stops on a known subcommand or missing alias.
+/// Returns [`ParseError::InvalidArg`] if a positional placeholder
+/// references an argv slot that does not exist.
 pub fn try_expand_alias(
     mut argv: Vec<String>,
     resolver: &dyn Resolver,
-) -> (Vec<String>, Vec<AliasStep>) {
+) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
     let mut chain: Vec<AliasStep> = Vec::new();
     for _ in 0..MAX_ALIAS_HOPS {
         if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
-            return (argv, chain);
+            return Ok((argv, chain));
         }
         let name = argv[1].clone();
         match resolver.lookup(&name) {
             Some(alias) => {
+                let trailing = &argv[2..];
+                let max_n = max_placeholder(&alias.tokens);
+                if max_n > trailing.len() {
+                    return Err(crate::error::ParseError::InvalidArg(format!(
+                        "alias '{name}': $${max_n} but only {} positional arg(s) provided",
+                        trailing.len()
+                    )));
+                }
+                let consumed: Vec<String> = trailing[..max_n].to_vec();
+                let remaining: Vec<String> = trailing[max_n..].to_vec();
+                let substituted: Vec<String> = alias
+                    .tokens
+                    .iter()
+                    .map(|t| substitute_placeholders(t, &consumed))
+                    .collect();
+                let expansion = if max_n == 0 {
+                    alias.expands_to.clone()
+                } else {
+                    shell_join(&substituted)
+                };
                 chain.push(AliasStep {
                     name: name.clone(),
-                    expansion: alias.expands_to.clone(),
+                    expansion,
                 });
                 let mut result = vec![argv[0].clone()];
-                result.extend(alias.tokens);
-                result.extend(argv[2..].iter().cloned());
+                result.extend(substituted);
+                result.extend(remaining);
                 argv = result;
             }
-            None => return (argv, chain),
+            None => return Ok((argv, chain)),
         }
     }
-    (argv, chain)
+    Ok((argv, chain))
+}
+
+/// Highest `$N` (or `${N}`) placeholder index referenced across the
+/// given tokens. Returns 0 when no placeholder is present.
+fn max_placeholder(tokens: &[String]) -> usize {
+    let mut max_n = 0usize;
+    for t in tokens {
+        scan_placeholders(t, |n| {
+            if n > max_n {
+                max_n = n;
+            }
+        });
+    }
+    max_n
+}
+
+/// Substitute `$N` / `${N}` references in `s` using `args` (1-indexed).
+/// Indices outside `1..=args.len()` are left as literal text. Callers
+/// must validate via [`max_placeholder`] before calling if they want to
+/// reject out-of-range references.
+fn substitute_placeholders(s: &str, args: &[String]) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut chars = s.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c != '$' {
+            out.push(c);
+            continue;
+        }
+        let Some(&(_, next)) = chars.peek() else {
+            out.push('$');
+            continue;
+        };
+        if next == '{' {
+            chars.next();
+            let mut digits = String::new();
+            let mut closed = false;
+            while let Some(&(_, c2)) = chars.peek() {
+                if c2 == '}' {
+                    chars.next();
+                    closed = true;
+                    break;
+                }
+                if !c2.is_ascii_digit() {
+                    break;
+                }
+                digits.push(c2);
+                chars.next();
+            }
+            if closed && !digits.is_empty() {
+                if let Ok(n) = digits.parse::<usize>() {
+                    if (1..=args.len()).contains(&n) {
+                        out.push_str(&args[n - 1]);
+                        continue;
+                    }
+                }
+            }
+            out.push('$');
+            out.push('{');
+            out.push_str(&digits);
+            if closed {
+                out.push('}');
+            }
+        } else if next.is_ascii_digit() {
+            let mut digits = String::new();
+            while let Some(&(_, c2)) = chars.peek() {
+                if !c2.is_ascii_digit() {
+                    break;
+                }
+                digits.push(c2);
+                chars.next();
+            }
+            if let Ok(n) = digits.parse::<usize>() {
+                if (1..=args.len()).contains(&n) {
+                    out.push_str(&args[n - 1]);
+                    continue;
+                }
+            }
+            out.push('$');
+            out.push_str(&digits);
+        } else {
+            out.push('$');
+        }
+    }
+    out
+}
+
+/// Scan `s` for `$N` / `${N}` placeholders, invoking `f` with each
+/// numeric index found. `$0` and malformed `${...}` runs are ignored.
+fn scan_placeholders(s: &str, mut f: impl FnMut(usize)) {
+    let mut chars = s.char_indices().peekable();
+    while let Some((_, c)) = chars.next() {
+        if c != '$' {
+            continue;
+        }
+        let Some(&(_, next)) = chars.peek() else {
+            continue;
+        };
+        if next == '{' {
+            chars.next();
+            let mut digits = String::new();
+            let mut closed = false;
+            while let Some(&(_, c2)) = chars.peek() {
+                if c2 == '}' {
+                    chars.next();
+                    closed = true;
+                    break;
+                }
+                if !c2.is_ascii_digit() {
+                    break;
+                }
+                digits.push(c2);
+                chars.next();
+            }
+            if closed {
+                if let Ok(n) = digits.parse::<usize>() {
+                    if n >= 1 {
+                        f(n);
+                    }
+                }
+            }
+        } else if next.is_ascii_digit() {
+            let mut digits = String::new();
+            while let Some(&(_, c2)) = chars.peek() {
+                if !c2.is_ascii_digit() {
+                    break;
+                }
+                digits.push(c2);
+                chars.next();
+            }
+            if let Ok(n) = digits.parse::<usize>() {
+                if n >= 1 {
+                    f(n);
+                }
+            }
+        }
+    }
 }
 
 /// Swap argv[1] and argv[2] when argv[1] is a field name and argv[2] is
@@ -212,9 +419,26 @@ fn shell_quote_token(s: &str) -> String {
     if s.is_empty() {
         return "\"\"".to_string();
     }
-    let needs_quoting = s
-        .chars()
-        .any(|c| c.is_whitespace() || matches!(c, '\'' | '"' | '\\' | '$' | '`' | '*' | '?' | '#' | '|' | '&' | ';' | '<' | '>' | '(' | ')'));
+    let needs_quoting = s.chars().any(|c| {
+        c.is_whitespace()
+            || matches!(
+                c,
+                '\'' | '"'
+                    | '\\'
+                    | '$'
+                    | '`'
+                    | '*'
+                    | '?'
+                    | '#'
+                    | '|'
+                    | '&'
+                    | ';'
+                    | '<'
+                    | '>'
+                    | '('
+                    | ')'
+            )
+    });
     if !needs_quoting {
         return s.to_string();
     }
@@ -303,55 +527,57 @@ mod tests {
 
     #[test]
     fn no_alias_with_known_subcommand() {
-        let (argv, chain) = expand_argv(v(&["datum", "occur", "coffee"]), &NoResolver);
+        let (argv, chain) = expand_argv(v(&["datum", "occur", "coffee"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "coffee"]));
         assert!(chain.is_empty());
     }
 
     #[test]
     fn field_verb_swap() {
-        let (argv, _) = expand_argv(v(&["datum", "mood", "switch", "happy"]), &NoResolver);
+        let (argv, _) = expand_argv(v(&["datum", "mood", "switch", "happy"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "switch", "mood", "happy"]));
     }
 
     #[test]
     fn terminal_verb_override() {
-        let (argv, _) = expand_argv(v(&["datum", "work", "end"]), &NoResolver);
+        let (argv, _) = expand_argv(v(&["datum", "work", "end"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "end", "work"]));
     }
 
     #[test]
     fn stacked_flags_expand() {
-        let (argv, _) = expand_argv(v(&["datum", "occur", "coffee", "-yy"]), &NoResolver);
+        let (argv, _) = expand_argv(v(&["datum", "occur", "coffee", "-yy"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "coffee", "-y", "-y"]));
     }
 
     #[test]
     fn stacked_with_terminal_flag() {
         // `-yyt 3` should mean `-y -y -t 3` (two days back at 3am).
-        let (argv, _) = expand_argv(
-            v(&["datum", "occur", "coffee", "-yyt", "3"]),
-            &NoResolver,
+        let (argv, _) =
+            expand_argv(v(&["datum", "occur", "coffee", "-yyt", "3"]), &NoResolver).unwrap();
+        assert_eq!(
+            argv,
+            v(&["datum", "occur", "coffee", "-y", "-y", "-t", "3"])
         );
-        assert_eq!(argv, v(&["datum", "occur", "coffee", "-y", "-y", "-t", "3"]));
 
         // Single stackable + terminal also works: `-yt 3` = `-y -t 3`.
-        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yt", "3"]), &NoResolver);
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-yt", "3"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-y", "-t", "3"]));
 
         // Long stacked + terminal: `-qqqd -1` = `-q -q -q -d -1`.
-        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-qqqd", "-1"]), &NoResolver);
+        let (argv, _) =
+            expand_argv(v(&["datum", "occur", "x", "-qqqd", "-1"]), &NoResolver).unwrap();
         assert_eq!(
             argv,
             v(&["datum", "occur", "x", "-q", "-q", "-q", "-d", "-1"])
         );
 
         // Long flags untouched.
-        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "--help"]), &NoResolver);
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "--help"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "--help"]));
 
         // Non-stackable cluster left alone (parser handles).
-        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tD"]), &NoResolver);
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tD"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-tD"]));
     }
 
@@ -365,10 +591,128 @@ mod tests {
                 tokens: v(&["occur", "coffee"]),
             },
         );
-        let (argv, chain) = expand_argv(v(&["datum", "c", "2"]), &MapResolver(&aliases));
+        let (argv, chain) = expand_argv(v(&["datum", "c", "2"]), &MapResolver(&aliases)).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "coffee", "2"]));
         assert_eq!(chain.len(), 1);
         assert_eq!(chain[0].name, "c");
         assert_eq!(chain[0].expansion, "occur coffee");
+    }
+
+    fn alias(expands_to: &str) -> ResolvedAlias {
+        ResolvedAlias {
+            expands_to: expands_to.to_string(),
+            tokens: shell_split(expands_to),
+        }
+    }
+
+    #[test]
+    fn placeholder_basic_dollar_one() {
+        // `chore` → `alias set $1 "occur -k next_date done=true $1"`
+        // `datum chore laundry` → `datum alias set laundry "occur -k next_date done=true laundry"`
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert(
+            "chore".to_string(),
+            alias("alias set $1 \"occur -k next_date done=true $1\""),
+        );
+        let (argv, chain) =
+            expand_argv(v(&["datum", "chore", "laundry"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(
+            argv,
+            v(&[
+                "datum",
+                "alias",
+                "set",
+                "laundry",
+                "occur -k next_date done=true laundry",
+            ])
+        );
+        assert_eq!(chain.len(), 1);
+        assert_eq!(chain[0].name, "chore");
+        // Substituted form, not the original. Tokens with whitespace get re-quoted.
+        assert!(
+            chain[0].expansion.contains("laundry"),
+            "expansion records substituted form: {}",
+            chain[0].expansion
+        );
+        assert!(!chain[0].expansion.contains("$1"));
+    }
+
+    #[test]
+    fn placeholder_multiple_positionals() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("pair".to_string(), alias("note word src=$1 tgt=$2"));
+        let (argv, _) = expand_argv(
+            v(&["datum", "pair", "pt", "en", "extra"]),
+            &MapResolver(&aliases),
+        )
+        .unwrap();
+        // $1=pt, $2=en consumed; "extra" passes through as trailing arg.
+        assert_eq!(
+            argv,
+            v(&["datum", "note", "word", "src=pt", "tgt=en", "extra"])
+        );
+    }
+
+    #[test]
+    fn placeholder_repeated_reference_consumes_once() {
+        // $1 appears twice but only consumes one positional arg.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("dup".to_string(), alias("occur $1 also=$1"));
+        let (argv, _) =
+            expand_argv(v(&["datum", "dup", "X", "Y"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "X", "also=X", "Y"]));
+    }
+
+    #[test]
+    fn placeholder_braced_form() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("br".to_string(), alias("occur ${1}_thing"));
+        let (argv, _) = expand_argv(v(&["datum", "br", "foo"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "foo_thing"]));
+    }
+
+    #[test]
+    fn placeholder_missing_arg_errors() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("chore".to_string(), alias("alias set $1 \"x $1\""));
+        let err = expand_argv(v(&["datum", "chore"]), &MapResolver(&aliases)).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("chore"),
+            "msg should mention alias name: {msg}"
+        );
+        assert!(msg.contains("$1"), "msg should mention placeholder: {msg}");
+    }
+
+    #[test]
+    fn placeholder_no_substitution_preserves_raw_expansion() {
+        // No placeholders → chain expansion is the raw expands_to string,
+        // matching pre-feature behavior.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("vbp".to_string(), alias("note word srcLang=pt pos=verb"));
+        let (_, chain) =
+            expand_argv(v(&["datum", "vbp", "correr"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(chain[0].expansion, "note word srcLang=pt pos=verb");
+    }
+
+    #[test]
+    fn placeholder_two_digit_index() {
+        // ${10} should resolve to the 10th positional. Greedy digit match.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("ten".to_string(), alias("occur ${10}"));
+        let args: Vec<&str> = vec![
+            "datum", "ten", "1", "2", "3", "4", "5", "6", "7", "8", "9", "X",
+        ];
+        let (argv, _) = expand_argv(v(&args), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "X"]));
+    }
+
+    #[test]
+    fn placeholder_dollar_zero_left_literal() {
+        // $0 has no positional meaning — left as literal text.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("z".to_string(), alias("occur $0"));
+        let (argv, _) = expand_argv(v(&["datum", "z"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "$0"]));
     }
 }

@@ -166,7 +166,7 @@ pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
     let (expanded, chain) = match maybe_db {
         Some(db) => {
             let resolver = DbAliasResolver::new(&db);
-            palias::expand_argv(argv, &resolver)
+            palias::expand_argv(argv, &resolver)?
         }
         None => (palias::expand_argv_no_alias(argv), Vec::new()),
     };
@@ -190,7 +190,7 @@ pub fn expand_argv_with_db(
     };
 
     let resolver = DbAliasResolver::new(db);
-    let (expanded, chain) = palias::expand_argv(argv, &resolver);
+    let (expanded, chain) = palias::expand_argv(argv, &resolver)?;
 
     ctx.alias_chain = chain.into_iter().map(Into::into).collect();
     set_intent_context(ctx);
@@ -226,10 +226,7 @@ impl<'a> Resolver for DbAliasResolver<'a> {
         let cmd = self.db.get_kit_command(name).ok().flatten()?;
         let expands_to = cmd.expands_to?;
         let tokens = palias::shell_split(&expands_to);
-        Some(palias::ResolvedAlias {
-            expands_to,
-            tokens,
-        })
+        Some(palias::ResolvedAlias { expands_to, tokens })
     }
 }
 
