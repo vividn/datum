@@ -12,8 +12,9 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Category {
     Logging,
-    Read,
     Mutate,
+    Read,
+    Render,
     Admin,
     ViewsSync,
 }
@@ -23,8 +24,9 @@ impl Category {
     pub fn label(self) -> &'static str {
         match self {
             Category::Logging => "LOGGING",
-            Category::Read => "READ",
             Category::Mutate => "MUTATE",
+            Category::Read => "READ",
+            Category::Render => "RENDER",
             Category::Admin => "ADMIN",
             Category::ViewsSync => "VIEWS / SYNC",
         }
@@ -34,8 +36,9 @@ impl Category {
     pub fn order() -> &'static [Category] {
         &[
             Category::Logging,
-            Category::Read,
             Category::Mutate,
+            Category::Read,
+            Category::Render,
             Category::Admin,
             Category::ViewsSync,
         ]

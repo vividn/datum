@@ -98,23 +98,13 @@ datum [--db NAME_OR_PATH] <command> [args]
 
 ## LOGGING
 
-- `add` — Add a new entry (shape inferred from kv keys)
+- `add` — Add a new entry (timeless data)
 - `occur` — Record a point-in-time event
 - `start` — Begin a duration-tracked activity
 - `stop` — End a duration-tracked activity (alias: end)
 - `switch` — Transition a field to a new state
-
-## READ
-
-- `tail` — Show recent entries
-- `head` — Show oldest entries
-- `now` — Show current state of tracked fields
-- `get` — Print a single entry by id or slug
-- `grep` — Regex search over entry JSON content
-- `dayview` — Render a dayview SVG (or dump layout JSON)
-- `nowview` — Render a nowview — terminal block art by default, SVG with -o
-- `history` — Show the full modification trail for an entry
-- `why` — Explain the intent behind an entry
+- `track` — Track a field in the now view
+- `ignore` — Ignore a field in the now view
 
 ## MUTATE
 
@@ -124,14 +114,27 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `rekey` — Copy an entry to a new id (old row stays)
 - `retime` — Shift time_start/time_end on entries (alias: rt)
 - `delete` — Delete an entry (alias: del)
-- `undo` — Restore the most recently soft-deleted entry
+- `undo` — Undo the last change to an entry (revert via history)
+
+## READ
+
+- `tail` — Show recent entries
+- `head` — Show oldest entries
+- `now` — Show current state of tracked fields
+- `get` — Print a single entry by id or slug
+- `grep` — Regex search over entry JSON content
+- `history` — Show the full modification trail for an entry
+- `why` — Explain the intent behind an entry
+
+## RENDER
+
+- `dayview` — Render a dayview SVG (or dump layout JSON)
+- `nowview` — Render a nowview — terminal block art by default, SVG with -o
 
 ## ADMIN
 
 - `spec` — Manage field specs (schemas)
 - `alias` — Manage aliases
-- `track` — Track a field in the now view
-- `ignore` — Ignore a field in the now view
 - `migrate` — Schema migrations + legacy datum import
 - `backup` — Dump live entries to JSONL / tar.gz
 - `restore` — Re-import entries from a backup

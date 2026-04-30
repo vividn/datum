@@ -1,7 +1,7 @@
 //! The `COMMANDS` table — one [`CommandSpec`] per subcommand of `datum`.
 //!
 //! Layout mirrors the section ordering of `datum --help`:
-//! Logging → Read → Mutate → Admin → ViewsSync.
+//! Logging → Mutate → Read → Render → Admin → ViewsSync.
 
 use super::spec::{ArgSpec, Category, CommandSpec, ExampleSpec, FlagSpec};
 
@@ -340,9 +340,10 @@ const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n";
 
 const DELETE_BODY: &str = "USAGE:\n  datum delete <ID_OR_SLUG> [--force] [--dry-run] [--strict]\n";
 
-const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG] [--to-version N] [--force] [--window 15m]\n";
+const UNDO_BODY: &str = "USAGE:\n  datum undo [ID_OR_SLUG] [--to-version N] [--force] [--window 15m]\n\nReverts an entry to a prior version via its entry_history trail. By default,\nrestores the immediately-previous version; --to-version N picks an explicit\nversion. Falls back to undeleting recently-tombstoned legacy entries (no\nhistory) within --window (default 15m).\n";
 
-const HISTORY_BODY: &str = "USAGE:\n  datum history <ID_OR_SLUG> [--version N | --diff A B] [--json]\n";
+const HISTORY_BODY: &str =
+    "USAGE:\n  datum history <ID_OR_SLUG> [--version N | --diff A B] [--json]\n";
 
 const WHY_BODY: &str = "USAGE:\n  datum why <ID_OR_SLUG> [--full]\n";
 
@@ -481,8 +482,8 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "add",
         aliases: &[],
         category: Category::Logging,
-        summary: "log an entry",
-        top_summary: Some("Add a new entry (shape inferred from kv keys)"),
+        summary: "log an entry (timeless data)",
+        top_summary: Some("Add a new entry (timeless data)"),
         long_description: None,
         usage: &["datum add <FIELD> [VALUE | KEY=VALUE]..."],
         args: NO_ARGS,
@@ -637,7 +638,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "dayview",
         aliases: &[],
-        category: Category::Read,
+        category: Category::Render,
         summary: "render a multi-day timeline SVG/PNG/HTML",
         top_summary: Some("Render a dayview SVG (or dump layout JSON)"),
         long_description: None,
@@ -652,7 +653,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "nowview",
         aliases: &[],
-        category: Category::Read,
+        category: Category::Render,
         summary: "render a near-current-time band view (terminal or SVG)",
         top_summary: Some("Render a nowview — terminal block art by default, SVG with -o"),
         long_description: None,
@@ -789,9 +790,15 @@ pub const COMMANDS: &[CommandSpec] = &[
         name: "undo",
         aliases: &[],
         category: Category::Mutate,
-        summary: "restore a soft-deleted or reverted entry",
-        top_summary: Some("Restore the most recently soft-deleted entry"),
-        long_description: None,
+        summary: "undo the last change to an entry (revert via history)",
+        top_summary: Some("Undo the last change to an entry (revert via history)"),
+        long_description: Some(
+            "Reverts an entry to a prior version using its entry_history trail. \
+             By default, undo restores the immediately-previous version; pass \
+             --to-version N to restore an explicit version number. \
+             For legacy entries without a history trail, undo falls back to \
+             undeleting a recently tombstoned entry within --window (default 15m).",
+        ),
         usage: &["datum undo [ID_OR_SLUG] [--to-version N] [--force] [--window 15m]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
@@ -844,7 +851,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "track",
         aliases: &[],
-        category: Category::Admin,
+        category: Category::Logging,
         summary: "track a field in the now view",
         top_summary: None,
         long_description: None,
@@ -859,7 +866,7 @@ pub const COMMANDS: &[CommandSpec] = &[
     CommandSpec {
         name: "ignore",
         aliases: &[],
-        category: Category::Admin,
+        category: Category::Logging,
         summary: "ignore a field in the now view",
         top_summary: None,
         long_description: None,

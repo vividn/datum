@@ -19,22 +19,13 @@ USAGE:
   datum [--db NAME_OR_PATH] <command> [args]
 
 LOGGING:
-  add      Add a new entry (shape inferred from kv keys)
+  add      Add a new entry (timeless data)
   occur    Record a point-in-time event
   start    Begin a duration-tracked activity
   stop     End a duration-tracked activity (alias: end)
   switch   Transition a field to a new state
-
-READ:
-  tail     Show recent entries
-  head     Show oldest entries
-  now      Show current state of tracked fields
-  get      Print a single entry by id or slug
-  grep     Regex search over entry JSON content
-  dayview  Render a dayview SVG (or dump layout JSON)
-  nowview  Render a nowview — terminal block art by default, SVG with -o
-  history  Show the full modification trail for an entry
-  why      Explain the intent behind an entry
+  track    Track a field in the now view
+  ignore   Ignore a field in the now view
 
 MUTATE:
   edit     Open an entry in $EDITOR
@@ -43,13 +34,24 @@ MUTATE:
   rekey    Copy an entry to a new id (old row stays)
   retime   Shift time_start/time_end on entries (alias: rt)
   delete   Delete an entry (alias: del)
-  undo     Restore the most recently soft-deleted entry
+  undo     Undo the last change to an entry (revert via history)
+
+READ:
+  tail     Show recent entries
+  head     Show oldest entries
+  now      Show current state of tracked fields
+  get      Print a single entry by id or slug
+  grep     Regex search over entry JSON content
+  history  Show the full modification trail for an entry
+  why      Explain the intent behind an entry
+
+RENDER:
+  dayview  Render a dayview SVG (or dump layout JSON)
+  nowview  Render a nowview — terminal block art by default, SVG with -o
 
 ADMIN:
   spec     Manage field specs (schemas)
   alias    Manage aliases
-  track    Track a field in the now view
-  ignore   Ignore a field in the now view
   migrate  Schema migrations + legacy datum import
   backup   Dump live entries to JSONL / tar.gz
   restore  Re-import entries from a backup
@@ -122,7 +124,7 @@ fn snapshot_tail_help() {
 // log verb, exercising LOG_FLAGS through the table renderer. The expected
 // string is byte-identical to the legacy `log_help("add")` output.
 const EXPECTED_ADD: &str = "\
-datum add — log an entry
+datum add — log an entry (timeless data)
 
 USAGE:
   datum add <FIELD> [VALUE | KEY=VALUE]...
@@ -166,8 +168,13 @@ fn snapshot_end_alias_substitutes_verb() {
     // both the header and the USAGE line, matching the legacy behaviour
     // of `log_help("end")`.
     let s = command_help("end");
+    // `end` is an alias of `stop`, whose summary is the bare "log an entry"
+    // — so the header drops the `add`-specific "(timeless data)" parenthetical.
     let expected = EXPECTED_ADD
-        .replace("datum add — log an entry", "datum end — log an entry")
+        .replace(
+            "datum add — log an entry (timeless data)",
+            "datum end — log an entry",
+        )
         .replace(
             "datum add <FIELD> [VALUE | KEY=VALUE]...",
             "datum end <FIELD> [VALUE | KEY=VALUE]...",
