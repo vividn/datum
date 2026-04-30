@@ -68,6 +68,16 @@ impl Db {
         Ok(db)
     }
 
+    /// Open the database without running migrations. Use only for
+    /// destructive recovery paths (`datum setup --force-recreate`) that
+    /// will rebuild the schema from scratch — auto-migrate on a half-state
+    /// DB can fail before the recovery code has a chance to run, leaving
+    /// the user with no escape hatch.
+    pub fn open_unmigrated(path: &str) -> Result<Self> {
+        let conn = Connection::open(path)?;
+        Ok(Db { conn })
+    }
+
     /// Open an in-memory database (for tests).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
@@ -87,6 +97,29 @@ impl Db {
         let _ = self
             .conn
             .execute("ALTER TABLE aliases ADD COLUMN kit_id TEXT", []);
+
+        // da-9u9.1: schema.sql's `CREATE INDEX … ON field_specs(kit_id)` and
+        // `field_specs.tags` / `field_specs.render_json` references blow up
+        // on a legacy v12-shape DB whose field_specs predates those columns.
+        // The proper fix is the migration runner — but schema.sql executes
+        // first and would error before `migrate_to_current` ever sees the
+        // DB. Mirror the aliases-table escape hatch: idempotently add the
+        // columns up front so schema.sql can compile. The migration steps
+        // (m12_to_13 / m17_to_18 / m18_to_19) still run and remain the
+        // version-stamping authority — these ALTERs are a parser unblock,
+        // not a substitute for migrations. Errors are swallowed: a missing
+        // table on a fresh DB and a duplicate column on an already-current
+        // DB are both expected outcomes here.
+        let _ = self
+            .conn
+            .execute("ALTER TABLE field_specs ADD COLUMN kit_id TEXT", []);
+        let _ = self.conn.execute(
+            "ALTER TABLE field_specs ADD COLUMN tags TEXT NOT NULL DEFAULT '[]'",
+            [],
+        );
+        let _ = self
+            .conn
+            .execute("ALTER TABLE field_specs ADD COLUMN render_json TEXT", []);
 
         // Reject pre-refactor entries tables (which have an `id` column):
         // this refactor drops ULID entirely and slug is now PK. Silent

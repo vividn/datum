@@ -322,11 +322,15 @@ CREATE TABLE IF NOT EXISTS last_docs (
 );
 
 -- Schema version and other key/value metadata.
+--
+-- IMPORTANT: schema.sql does NOT seed `schema_version`. The migration
+-- runner owns that, via `infer_legacy_version` + `set_schema_version`,
+-- after introspecting actual table/column shapes. A literal INSERT here
+-- would falsely stamp every pre-`_meta` legacy DB at the seed version
+-- (the 2026-04-30 kit_id incident — schema.sql ran INSERT OR IGNORE,
+-- read_schema_version then returned the seed, and migrations v1..v17
+-- — including m12_to_13 — were skipped against a still-v12-shape DB).
 CREATE TABLE IF NOT EXISTS _meta (
     key    TEXT PRIMARY KEY,
     value  TEXT NOT NULL
 );
-
--- Seed schema_version at the initial shape. Migrations bump this through
--- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '18');

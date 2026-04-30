@@ -9,6 +9,9 @@ default = []
 # assertion macros) for use by integration tests in sibling crates.
 test-util = []
 
+[dev-dependencies]
+tempfile = "3"
+
 [dependencies]
 datum-parse = { path = "../datum-parse" }
 serde = { workspace = true }

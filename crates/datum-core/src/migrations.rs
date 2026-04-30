@@ -444,6 +444,13 @@ fn m8_to_9_track_ignore_unification(conn: &Connection) -> Result<()> {
     // as ignored under the new derivation. The legacy `tracked` / `ignored`
     // keys remain inside `spec_json` (serde tolerates them as unknown
     // fields on read); the binary just stops reading them.
+    //
+    // Idempotency (da-9u9.1): the new shape-aware `infer_legacy_version`
+    // can resume migrations from v8 on a DB that was previously stamped
+    // here via the old buggy schema.sql seed. Re-running unconditionally
+    // would write duplicate IGNORED entries at a fresh `now`, since the
+    // content_hash binds to start_time. Skip fields that already carry an
+    // IGNORED switch entry — the prior run is canonical.
     let mut stmt = conn.prepare("SELECT spec_json FROM field_specs")?;
     let specs: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>(0))?
@@ -463,6 +470,17 @@ fn m8_to_9_track_ignore_unification(conn: &Connection) -> Result<()> {
             Some(f) if !f.is_empty() => f.to_string(),
             _ => continue,
         };
+        let already: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM entries
+                 WHERE field = ?1 AND value = '\"IGNORED\"' AND deleted_at IS NULL",
+                params![&field],
+                |row| row.get(0),
+            )
+            .unwrap_or(0);
+        if already > 0 {
+            continue;
+        }
         let entry = crate::entry::Entry::new(
             field,
             crate::entry::Verb::Switch,
@@ -622,12 +640,77 @@ pub fn set_schema_version(conn: &Connection, version: u32) -> Result<()> {
 }
 
 /// Detect the schema shape of a DB that predates `_meta`. Returns the
-/// version we should stamp it at. For now, any slug-as-PK shape is v1;
-/// anything older is rejected upstream by `Db::open`.
-pub fn infer_legacy_version(_conn: &Connection) -> Result<u32> {
-    // The legacy check in `Db::migrate()` has already rejected pre-refactor
-    // ULID-based tables by the time we get here. Anything else is v1.
-    Ok(1)
+/// version we should stamp it at, by introspecting actual table/column
+/// shapes — never blindly 1.
+///
+/// **Why this matters (2026-04-30 incident).** Before this function was
+/// shape-aware, it returned 1 unconditionally and `schema.sql` carried a
+/// literal `INSERT OR IGNORE INTO _meta VALUES ('schema_version', '18')`
+/// seed. Together those two paths produced silent half-states: a legacy
+/// DB without `_meta` had its version stamped at 18 by schema.sql, then
+/// `migrate_to_current` saw no work to do, and migrations v1..v17 — including
+/// the `m12_to_13` step that adds `field_specs.kit_id` — never ran. The
+/// next `dm` invocation hit "no such column: kit_id". Fix: schema.sql no
+/// longer seeds `_meta`; this function does the stamping after walking the
+/// real shape.
+///
+/// **Floor at v3.** `Db::migrate` runs `schema.sql` *before* this function,
+/// so any missing tables already exist in their latest shape. Pre-v3 entries
+/// (ULID `id` PK) are rejected upstream in `Db::migrate`. The destructive
+/// migrations are v1→v2 (DROP/CREATE `sync_state`) and v2→v3 (DROP `entries`)
+/// — re-running them on a real-data DB would wipe live rows. Returning >= 3
+/// guarantees they're skipped.
+///
+/// **How we detect.** Walk the column-add migrations in order. Adding a
+/// column to a pre-existing table is the one operation `CREATE TABLE IF
+/// NOT EXISTS` (run by schema.sql moments earlier) cannot mask: if a
+/// legacy DB is at v12 shape, `field_specs.kit_id` is genuinely absent
+/// post-schema.sql, and we can prove it. The first missing column fixes
+/// the resume point at the version *immediately before* the migration
+/// that adds it.
+pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
+    // m6_to_7: sync_state.my_push_seq.
+    if !has_column(conn, "sync_state", "my_push_seq")? {
+        return Ok(6);
+    }
+    // m7_to_8: entries.user_asserted_last_state.
+    if !has_column(conn, "entries", "user_asserted_last_state")? {
+        return Ok(7);
+    }
+    // m11_to_12: entries.extra_metadata.
+    if !has_column(conn, "entries", "extra_metadata")? {
+        return Ok(11);
+    }
+    // m12_to_13: field_specs.kit_id — the 2026-04-30 regression site.
+    if !has_column(conn, "field_specs", "kit_id")? {
+        return Ok(12);
+    }
+    // m15_to_16: aliases.kit_id.
+    if !has_column(conn, "aliases", "kit_id")? {
+        return Ok(15);
+    }
+    // m17_to_18: field_specs.tags.
+    if !has_column(conn, "field_specs", "tags")? {
+        return Ok(17);
+    }
+    // m18_to_19: field_specs.render_json.
+    if !has_column(conn, "field_specs", "render_json")? {
+        return Ok(18);
+    }
+    // All column-add features present → DB is already at current shape.
+    // Idempotent re-runs are CREATE/INDEX-IF-NOT-EXISTS and will no-op.
+    Ok(CURRENT_SCHEMA_VERSION)
+}
+
+fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+    let n: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info(?1) WHERE name = ?2",
+            params![table, column],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+    Ok(n > 0)
 }
 
 /// Run forward migrations from `current` up to `target`, using the given
@@ -1226,5 +1309,252 @@ mod tests {
         // Idempotent — re-running is a no-op.
         let again = migrate_to_current(&conn).unwrap();
         assert!(again.is_empty());
+    }
+
+    /// da-9u9.1: regression for the 2026-04-30 user incident.
+    ///
+    /// Before this fix `schema.sql` carried an `INSERT OR IGNORE INTO _meta
+    /// VALUES ('schema_version', '18')` seed. On a legacy DB that lacked
+    /// `_meta`, schema.sql's first run created `_meta` and stamped 18, then
+    /// `migrate_to_current` saw v18, ran only m18_to_19, and skipped
+    /// m12_to_13 — leaving `field_specs` without the `kit_id` column.
+    /// First subsequent `dm` invocation hit "no such column: kit_id".
+    ///
+    /// We reproduce that broken pre-state on a synthetic v12-shape DB and
+    /// confirm the new shape-aware `infer_legacy_version` resumes
+    /// migrations from 12, restoring the kit_id column without losing
+    /// pre-existing field_specs rows.
+    #[test]
+    fn legacy_db_without_meta_self_heals_to_current() {
+        // Build a v12-shape DB on disk (file-backed, like production):
+        // entries with v12 columns, field_specs without kit_id/tags/
+        // render_json, aliases without kit_id, no _meta, no
+        // views/kit_indices/kit_commands. Mirrors the actual half-applied
+        // state the user hit on 2026-04-30.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("legacy_v12.db");
+        let path_str = path.to_string_lossy().to_string();
+        {
+            let conn = rusqlite::Connection::open(&path_str).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE entries (
+                    hid             TEXT NOT NULL PRIMARY KEY,
+                    slug            TEXT NOT NULL,
+                    content_hash    TEXT NOT NULL,
+                    field           TEXT NOT NULL,
+                    entry_shape     TEXT NOT NULL,
+                    intent          TEXT,
+                    value           TEXT,
+                    data            TEXT,
+                    unit            TEXT,
+                    start_time      TEXT,
+                    start_time_offset INTEGER,
+                    start_time_tz   TEXT,
+                    start_time_precision INTEGER NOT NULL DEFAULT 0,
+                    start_time_precision_unit TEXT NOT NULL DEFAULT 'exact',
+                    end_time        TEXT,
+                    end_time_offset INTEGER,
+                    end_time_tz     TEXT,
+                    end_time_precision INTEGER NOT NULL DEFAULT 0,
+                    end_time_precision_unit TEXT NOT NULL DEFAULT 'exact',
+                    lat             REAL,
+                    lon             REAL,
+                    location        TEXT,
+                    create_time     TEXT NOT NULL,
+                    modify_time     TEXT NOT NULL,
+                    device_id       TEXT NOT NULL,
+                    deleted_at      TEXT,
+                    id_structure    TEXT,
+                    field_structure TEXT,
+                    raw_input       TEXT NOT NULL DEFAULT '',
+                    alias_chain     TEXT,
+                    parser_version  INTEGER NOT NULL DEFAULT 1,
+                    user_asserted_last_state TEXT,
+                    extra_metadata TEXT,
+                    verb TEXT GENERATED ALWAYS AS (
+                        CASE
+                            WHEN intent IS NOT NULL THEN intent
+                            WHEN entry_shape = 'ongoing' THEN 'start'
+                            WHEN entry_shape = 'block' THEN 'block'
+                            WHEN entry_shape = 'point' AND value IS NULL THEN 'occur'
+                            WHEN entry_shape = 'point' AND json_valid(value)
+                                 AND json_type(value) IN ('true','false') THEN 'switch'
+                            WHEN entry_shape = 'point' AND value IS NOT NULL THEN 'switch'
+                            ELSE 'add'
+                        END
+                    ) VIRTUAL,
+                    dur_seconds INTEGER GENERATED ALWAYS AS (
+                        CASE WHEN start_time IS NOT NULL AND end_time IS NOT NULL
+                            THEN CAST((julianday(end_time) - julianday(start_time)) * 86400 AS INTEGER)
+                            ELSE NULL
+                        END
+                    ) VIRTUAL
+                 );
+                 CREATE TABLE field_specs (
+                    field      TEXT NOT NULL PRIMARY KEY,
+                    spec_json  TEXT NOT NULL
+                 );
+                 CREATE TABLE aliases (
+                    name                TEXT NOT NULL PRIMARY KEY,
+                    alias_json          TEXT NOT NULL,
+                    derived_from_field  TEXT
+                 );
+                 CREATE TABLE sync_state (
+                    db_id         TEXT NOT NULL,
+                    push_seq      INTEGER NOT NULL DEFAULT 0,
+                    pull_seq      INTEGER NOT NULL DEFAULT 0,
+                    my_push_seq   INTEGER NOT NULL DEFAULT 0,
+                    last_push_at  INTEGER,
+                    last_pull_at  INTEGER,
+                    PRIMARY KEY (db_id)
+                 );",
+            )
+            .unwrap();
+            // Seed user data on the legacy table — must survive migration.
+            conn.execute(
+                "INSERT INTO field_specs (field, spec_json) VALUES (?1, ?2)",
+                params![
+                    "legacy_field",
+                    r#"{"field":"legacy_field","default_verb":"occur","subfields":{}}"#,
+                ],
+            )
+            .unwrap();
+        }
+
+        // Open through the production path. Pre-fix this would have errored
+        // either at schema.sql (`no such column: kit_id` on the
+        // idx_field_specs_kit_id index) or silently stamped v18 and skipped
+        // m12_to_13 — the exact 2026-04-30 failure.
+        let db = Db::open(&path_str).expect("legacy v12 DB must self-heal under Db::open");
+
+        assert_eq!(
+            read_schema_version(db.conn()).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION),
+        );
+
+        // The pre-existing field_specs row survived, and now has kit_id +
+        // tags + render_json columns at their default shape.
+        let (spec_json, kit_id, tags, render_json): (
+            String,
+            Option<String>,
+            String,
+            Option<String>,
+        ) = db
+            .conn()
+            .query_row(
+                "SELECT spec_json, kit_id, tags, render_json FROM field_specs
+                 WHERE field = 'legacy_field'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .unwrap();
+        assert!(spec_json.contains("legacy_field"));
+        assert!(kit_id.is_none(), "user-declared spec must have kit_id NULL");
+        assert_eq!(tags, "[]");
+        assert!(render_json.is_none());
+
+        // Tables introduced by later migrations (>= v13) are now present.
+        for tbl in ["views", "kit_indices", "kit_commands", "last_docs"] {
+            let n: i64 = db
+                .conn()
+                .query_row(
+                    "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?1",
+                    params![tbl],
+                    |row| row.get(0),
+                )
+                .unwrap();
+            assert_eq!(n, 1, "expected {tbl} to exist post-migration");
+        }
+    }
+
+    /// da-9u9.1: `infer_legacy_version` returns the correct resume point
+    /// for each column-add boundary. The first missing column fixes the
+    /// resume point at the version *immediately before* the migration
+    /// that adds it.
+    #[test]
+    fn infer_legacy_version_resumes_at_first_missing_column() {
+        // Helper: build a synthetic shape and assert the inferred resume.
+        fn assert_resume(setup: &str, expected: u32, label: &str) {
+            let conn = rusqlite::Connection::open_in_memory().unwrap();
+            conn.execute_batch(setup).unwrap();
+            let v = infer_legacy_version(&conn).unwrap();
+            assert_eq!(v, expected, "{label}: expected v{expected}, got v{v}");
+        }
+
+        // sync_state without my_push_seq → resume at 6.
+        assert_resume(
+            "CREATE TABLE sync_state (db_id TEXT PRIMARY KEY);",
+            6,
+            "missing my_push_seq",
+        );
+
+        // entries without user_asserted_last_state → resume at 7.
+        assert_resume(
+            "CREATE TABLE sync_state (db_id TEXT PRIMARY KEY, my_push_seq INTEGER);
+             CREATE TABLE entries (hid TEXT PRIMARY KEY);",
+            7,
+            "missing user_asserted_last_state",
+        );
+
+        // field_specs without kit_id → resume at 12 (the 2026-04-30 case).
+        assert_resume(
+            "CREATE TABLE sync_state (db_id TEXT PRIMARY KEY, my_push_seq INTEGER);
+             CREATE TABLE entries (hid TEXT PRIMARY KEY,
+                                   user_asserted_last_state TEXT,
+                                   extra_metadata TEXT);
+             CREATE TABLE field_specs (field TEXT PRIMARY KEY, spec_json TEXT);",
+            12,
+            "missing field_specs.kit_id",
+        );
+
+        // All column-add features present → at current shape.
+        assert_resume(
+            "CREATE TABLE sync_state (db_id TEXT PRIMARY KEY, my_push_seq INTEGER);
+             CREATE TABLE entries (hid TEXT PRIMARY KEY,
+                                   user_asserted_last_state TEXT,
+                                   extra_metadata TEXT);
+             CREATE TABLE field_specs (field TEXT PRIMARY KEY, spec_json TEXT,
+                                       kit_id TEXT, tags TEXT, render_json TEXT);
+             CREATE TABLE aliases (name TEXT PRIMARY KEY, kit_id TEXT);",
+            CURRENT_SCHEMA_VERSION,
+            "all column features present",
+        );
+    }
+
+    /// da-9u9.1: `Db::open_unmigrated` returns a usable connection that
+    /// has NOT had migrations applied. It's the recovery path's foothold:
+    /// `setup --force-recreate` opens a possibly-corrupt DB without
+    /// auto-migrate, then drops & recreates the schema.
+    #[test]
+    fn open_unmigrated_skips_migration_pipeline() {
+        // Build a temp file path — we need real path-backed open() since
+        // open_unmigrated takes &str.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("corrupt.db");
+        let path_str = path.to_string_lossy().to_string();
+
+        // Pre-corrupt the DB: write a `_meta.schema_version` past
+        // CURRENT_SCHEMA_VERSION so a normal `Db::open` would error.
+        {
+            let conn = rusqlite::Connection::open(&path_str).unwrap();
+            ensure_meta_table(&conn).unwrap();
+            set_schema_version(&conn, CURRENT_SCHEMA_VERSION + 99).unwrap();
+        }
+
+        // `Db::open` errors on the bad version.
+        match Db::open(&path_str) {
+            Err(DatumError::IncompatibleSchema(_)) => {}
+            Err(other) => panic!("expected IncompatibleSchema, got {other:?}"),
+            Ok(_) => panic!("Db::open must surface the corrupt version"),
+        }
+
+        // `Db::open_unmigrated` succeeds — it does not consult _meta.
+        let db = Db::open_unmigrated(&path_str).unwrap();
+        // And from here, force-recreate brings the DB back to current.
+        db.force_recreate_schema().unwrap();
+        assert_eq!(
+            read_schema_version(db.conn()).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION),
+        );
     }
 }
