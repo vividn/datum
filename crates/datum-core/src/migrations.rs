@@ -17,7 +17,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 16;
+pub const CURRENT_SCHEMA_VERSION: u32 = 17;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -125,6 +125,12 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "aliases: add kit_id column for kit-namespaced [[alias]] rows; index on kit_id (da-d4t.3)",
         apply: m15_to_16_aliases_kit_id,
     },
+    Migration {
+        from: 16,
+        to: 17,
+        summary: "kit_commands: kit-defined Level 1/2 commands (alias expansion + view+presentation) (da-d4t.6)",
+        apply: m16_to_17_kit_commands_table,
+    },
 ];
 
 /// da-d4t.3: kits scope `aliases` rows. `kit_id` is NULL for user-declared
@@ -144,6 +150,31 @@ fn m15_to_16_aliases_kit_id(conn: &Connection) -> Result<()> {
         conn.execute_batch("ALTER TABLE aliases ADD COLUMN kit_id TEXT;")?;
     }
     conn.execute_batch("CREATE INDEX IF NOT EXISTS idx_aliases_kit_id ON aliases(kit_id);")?;
+    Ok(())
+}
+
+/// da-d4t.6: kit-installable Level 1 (alias-style) and Level 2
+/// (view-rendered) commands. Each row is tagged with `kit_id` (NULL
+/// reserved for future user-declared parity); uninstall drops only the
+/// rows it owns. Additive + idempotent.
+fn m16_to_17_kit_commands_table(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS kit_commands (
+            name              TEXT NOT NULL PRIMARY KEY,
+            kit_id            TEXT,
+            expands_to        TEXT,
+            view_name         TEXT,
+            help              TEXT,
+            columns_json      TEXT,
+            labels_json       TEXT,
+            formats_json      TEXT,
+            sort_col          TEXT,
+            flags_json        TEXT,
+            color_rules_json  TEXT,
+            script_text       TEXT
+         );
+         CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);",
+    )?;
     Ok(())
 }
 

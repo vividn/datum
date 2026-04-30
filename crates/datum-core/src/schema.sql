@@ -173,6 +173,35 @@ CREATE TABLE IF NOT EXISTS kit_indices (
     PRIMARY KEY (kit_id, index_name)
 );
 
+-- Kit-defined commands (slice 6). Two flavours, distinguished by which
+-- payload column is non-NULL:
+--   - Level 1 (alias-style): `expands_to` is set; the dispatcher splices the
+--     stored token list before the parser runs.
+--   - Level 2 (view-rendered): `view_name` is set; the dispatcher invokes a
+--     read-only renderer that runs the named view, projects `columns_json`,
+--     applies `labels_json` / `formats_json` / `sort_col` / `color_rules_json`,
+--     and prints the result. Level 3 (`script_text`) is parsed and reserved
+--     for forward-compat but the renderer errors at execution time.
+-- `kit_id` tags the owning kit (NULL for user-declared rows; user-declared
+-- rows are not yet wired but the schema permits them for parity with views).
+CREATE TABLE IF NOT EXISTS kit_commands (
+    name              TEXT NOT NULL PRIMARY KEY,
+    kit_id            TEXT,
+    expands_to        TEXT,
+    view_name         TEXT,
+    help              TEXT,
+    columns_json      TEXT,
+    labels_json       TEXT,
+    formats_json      TEXT,
+    sort_col          TEXT,
+    flags_json        TEXT,
+    color_rules_json  TEXT,
+    script_text       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);
+
+
 -- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
 -- when the alias was auto-generated from a FieldSpec state; such rows
 -- cascade-delete when the owning spec is deleted or its states change.
@@ -291,4 +320,4 @@ CREATE TABLE IF NOT EXISTS _meta (
 
 -- Seed schema_version at the initial shape. Migrations bump this through
 -- the migration runner; the INSERT OR IGNORE keeps existing rows untouched.
-INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '15');
+INSERT OR IGNORE INTO _meta (key, value) VALUES ('schema_version', '17');

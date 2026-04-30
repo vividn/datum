@@ -69,6 +69,7 @@ pub struct InstalledKit {
     pub view_count: usize,
     pub alias_count: usize,
     pub index_count: usize,
+    pub command_count: usize,
 }
 
 /// One row from `kit_indices`, returned by [`Db::load_indices_by_kit`].
@@ -277,12 +278,19 @@ impl Db {
                     SELECT kit_id, COUNT(*) AS n
                     FROM kit_indices
                     GROUP BY kit_id
+                ),
+                kit_cmds AS (
+                    SELECT kit_id, COUNT(*) AS n
+                    FROM kit_commands
+                    WHERE kit_id IS NOT NULL
+                    GROUP BY kit_id
                 )
              SELECT k.kit_id,
                     IFNULL(f.n, 0),
                     IFNULL(v.n, 0),
                     IFNULL(a.n, 0),
-                    IFNULL(i.n, 0)
+                    IFNULL(i.n, 0),
+                    IFNULL(c.n, 0)
              FROM (
                  SELECT kit_id FROM kit_fields
                  UNION
@@ -291,11 +299,14 @@ impl Db {
                  SELECT kit_id FROM kit_aliases
                  UNION
                  SELECT kit_id FROM kit_idx
+                 UNION
+                 SELECT kit_id FROM kit_cmds
              ) k
              LEFT JOIN kit_fields  f ON f.kit_id = k.kit_id
              LEFT JOIN kit_views   v ON v.kit_id = k.kit_id
              LEFT JOIN kit_aliases a ON a.kit_id = k.kit_id
              LEFT JOIN kit_idx     i ON i.kit_id = k.kit_id
+             LEFT JOIN kit_cmds    c ON c.kit_id = k.kit_id
              ORDER BY k.kit_id",
         )?;
         let rows = stmt.query_map([], |row| {
@@ -305,6 +316,7 @@ impl Db {
                 view_count: row.get::<_, i64>(2)? as usize,
                 alias_count: row.get::<_, i64>(3)? as usize,
                 index_count: row.get::<_, i64>(4)? as usize,
+                command_count: row.get::<_, i64>(5)? as usize,
             })
         })?;
         let mut out = Vec::new();

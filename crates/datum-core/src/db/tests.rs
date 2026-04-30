@@ -2306,3 +2306,250 @@ fn install_kit_aliases_preserves_expansion_byte_for_byte() {
     let loaded = db.load_aliases_by_kit("core").unwrap();
     assert_eq!(loaded[0].expands_to, raw);
 }
+
+#[test]
+fn install_kit_command_level1_round_trip() {
+    use crate::kit::CommandEntry;
+    let db = Db::open_in_memory().unwrap();
+    let cmds = vec![CommandEntry {
+        name: "chore".to_string(),
+        expands_to: Some("occur chore -k next_date".to_string()),
+        view: None,
+        help: Some("log a chore".to_string()),
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![],
+        script: None,
+    }];
+    let report = db.install_kit_commands("chores", &cmds, false).unwrap();
+    let names: Vec<&str> = report.installed().collect();
+    assert_eq!(names, vec!["chore"]);
+
+    let row = db.get_kit_command("chore").unwrap().unwrap();
+    assert_eq!(row.kit_id.as_deref(), Some("chores"));
+    assert_eq!(
+        row.expands_to.as_deref(),
+        Some("occur chore -k next_date")
+    );
+    assert!(row.view_name.is_none());
+    assert_eq!(row.help.as_deref(), Some("log a chore"));
+
+    let exported = db.load_commands_by_kit("chores").unwrap();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].name, "chore");
+    assert_eq!(exported[0].expands_to.as_deref(), Some("occur chore -k next_date"));
+}
+
+#[test]
+fn install_kit_command_level2_round_trip() {
+    use crate::kit::{ColorRuleEntry, CommandEntry};
+    let db = Db::open_in_memory().unwrap();
+    let mut labels = std::collections::BTreeMap::new();
+    labels.insert("next_due_raw".to_string(), "due".to_string());
+    let mut formats = std::collections::BTreeMap::new();
+    formats.insert("next_due_raw".to_string(), "smart_date".to_string());
+
+    let cmds = vec![CommandEntry {
+        name: "chorelist".to_string(),
+        expands_to: None,
+        view: Some("chores_due".to_string()),
+        help: Some("list chores by next-due date".to_string()),
+        columns: vec!["field".into(), "next_due_raw".into(), "iti".into()],
+        labels,
+        formats,
+        sort: Some("next_due_raw".into()),
+        flags: vec!["watch".into()],
+        color_rules: vec![
+            ColorRuleEntry {
+                when: "next_due_raw < now".into(),
+                color: "red".into(),
+            },
+            ColorRuleEntry {
+                when: "next_due_raw < today + 1d".into(),
+                color: "yellow".into(),
+            },
+        ],
+        script: None,
+    }];
+    db.install_kit_commands("chores", &cmds, false).unwrap();
+
+    let row = db.get_kit_command("chorelist").unwrap().unwrap();
+    assert_eq!(row.view_name.as_deref(), Some("chores_due"));
+    assert_eq!(row.columns, vec!["field".to_string(), "next_due_raw".into(), "iti".into()]);
+    assert_eq!(row.sort_col.as_deref(), Some("next_due_raw"));
+    assert_eq!(row.flags, vec!["watch".to_string()]);
+    assert_eq!(row.color_rules.len(), 2);
+    assert_eq!(row.color_rules[0].color, "red");
+
+    let exported = db.load_commands_by_kit("chores").unwrap();
+    assert_eq!(exported.len(), 1);
+    assert_eq!(exported[0].view.as_deref(), Some("chores_due"));
+    assert_eq!(exported[0].sort.as_deref(), Some("next_due_raw"));
+}
+
+#[test]
+fn install_kit_command_rejects_script() {
+    use crate::kit::CommandEntry;
+    let db = Db::open_in_memory().unwrap();
+    let cmds = vec![CommandEntry {
+        name: "doit".into(),
+        expands_to: None,
+        view: None,
+        help: None,
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![],
+        script: Some("println('nope')".into()),
+    }];
+    let err = db.install_kit_commands("k", &cmds, false).unwrap_err();
+    let msg = format!("{err}");
+    assert!(msg.contains("Level 3"), "got: {msg}");
+}
+
+#[test]
+fn install_kit_command_rejects_both_or_neither() {
+    use crate::kit::CommandEntry;
+    let db = Db::open_in_memory().unwrap();
+    // neither
+    let cmds = vec![CommandEntry {
+        name: "x".into(),
+        expands_to: None,
+        view: None,
+        help: None,
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![],
+        script: None,
+    }];
+    let err = db.install_kit_commands("k", &cmds, false).unwrap_err();
+    assert!(format!("{err}").contains("exactly one"));
+
+    // both
+    let cmds = vec![CommandEntry {
+        name: "x".into(),
+        expands_to: Some("occur x".into()),
+        view: Some("v".into()),
+        help: None,
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![],
+        script: None,
+    }];
+    let err = db.install_kit_commands("k", &cmds, false).unwrap_err();
+    assert!(format!("{err}").contains("exactly one"));
+}
+
+#[test]
+fn install_kit_command_rejects_bad_color_rule() {
+    use crate::kit::{ColorRuleEntry, CommandEntry};
+    let db = Db::open_in_memory().unwrap();
+    let cmds = vec![CommandEntry {
+        name: "list".into(),
+        expands_to: None,
+        view: Some("v".into()),
+        help: None,
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![ColorRuleEntry {
+            when: "trash garbage(x)".into(),
+            color: "red".into(),
+        }],
+        script: None,
+    }];
+    let err = db.install_kit_commands("k", &cmds, false).unwrap_err();
+    assert!(format!("{err}").contains("color rule"));
+}
+
+#[test]
+fn uninstall_kit_commands_removes_only_owned_rows() {
+    use crate::kit::CommandEntry;
+    let db = Db::open_in_memory().unwrap();
+    let cmds_a = vec![CommandEntry {
+        name: "a_cmd".into(),
+        expands_to: Some("occur a".into()),
+        view: None,
+        help: None,
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![],
+        script: None,
+    }];
+    let cmds_b = vec![CommandEntry {
+        name: "b_cmd".into(),
+        expands_to: Some("occur b".into()),
+        view: None,
+        help: None,
+        columns: vec![],
+        labels: Default::default(),
+        formats: Default::default(),
+        sort: None,
+        flags: vec![],
+        color_rules: vec![],
+        script: None,
+    }];
+    db.install_kit_commands("kit_a", &cmds_a, false).unwrap();
+    db.install_kit_commands("kit_b", &cmds_b, false).unwrap();
+
+    let removed = db.uninstall_kit_commands("kit_a").unwrap();
+    assert_eq!(removed, vec!["a_cmd".to_string()]);
+    assert!(db.get_kit_command("a_cmd").unwrap().is_none());
+    assert!(db.get_kit_command("b_cmd").unwrap().is_some());
+}
+
+#[test]
+fn list_kits_includes_command_count() {
+    use crate::kit::CommandEntry;
+    let db = Db::open_in_memory().unwrap();
+    let cmds = vec![
+        CommandEntry {
+            name: "c1".into(),
+            expands_to: Some("occur a".into()),
+            view: None,
+            help: None,
+            columns: vec![],
+            labels: Default::default(),
+            formats: Default::default(),
+            sort: None,
+            flags: vec![],
+            color_rules: vec![],
+            script: None,
+        },
+        CommandEntry {
+            name: "c2".into(),
+            expands_to: Some("occur b".into()),
+            view: None,
+            help: None,
+            columns: vec![],
+            labels: Default::default(),
+            formats: Default::default(),
+            sort: None,
+            flags: vec![],
+            color_rules: vec![],
+            script: None,
+        },
+    ];
+    db.install_kit_commands("kx", &cmds, false).unwrap();
+    let kits = db.list_kits().unwrap();
+    let kx = kits.iter().find(|k| k.kit_id == "kx").unwrap();
+    assert_eq!(kx.command_count, 2);
+    assert_eq!(kx.field_count, 0);
+    assert_eq!(kx.view_count, 0);
+}

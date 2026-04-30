@@ -22,6 +22,7 @@ mod alias;
 mod conflict;
 mod insert;
 mod kit;
+mod kit_command;
 mod list;
 mod lookup;
 mod query;
@@ -39,6 +40,9 @@ use crate::error::{DatumError, Result};
 
 pub use alias::{InstallAliasesReport, KitAliasOutcome};
 pub use kit::{InstallReport, InstalledKit, InstalledKitIndex, KitFieldOutcome};
+pub use kit_command::{
+    validate_command, InstallCommandsReport, InstalledKitCommand, KitCommandOutcome,
+};
 pub use row_mapper::row_to_entry_public;
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome, ListParams,
@@ -150,6 +154,7 @@ impl Db {
             "sync_state",
             "sync_conflicts",
             "views",
+            "kit_commands",
             "_meta",
         ];
         let mut dropped = Vec::new();

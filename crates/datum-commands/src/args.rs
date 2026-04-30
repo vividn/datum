@@ -211,14 +211,23 @@ impl<'a> DbAliasResolver<'a> {
 
 impl<'a> Resolver for DbAliasResolver<'a> {
     fn lookup(&self, name: &str) -> Option<palias::ResolvedAlias> {
-        let alias = self.db.lookup_alias(name).ok().flatten()?;
-        // `Alias::expand(&[])` replays the stored tokens with no extra
-        // args — exactly what we want for a pre-pass splice. But we
-        // need the token list WITHOUT any trailing args, so construct
-        // it fresh via a shell-split.
-        let tokens = palias::shell_split(&alias.expands_to);
+        // Precedence: user alias (and derived state aliases) first;
+        // Level 1 kit_commands (`expands_to`) fall through second so a
+        // user can shadow a kit-defined alias by registering their own.
+        // Level 2 kit_commands (no `expands_to`) are NOT splice-style
+        // and are handled separately by the post-parse dispatcher.
+        if let Some(alias) = self.db.lookup_alias(name).ok().flatten() {
+            let tokens = palias::shell_split(&alias.expands_to);
+            return Some(palias::ResolvedAlias {
+                expands_to: alias.expands_to,
+                tokens,
+            });
+        }
+        let cmd = self.db.get_kit_command(name).ok().flatten()?;
+        let expands_to = cmd.expands_to?;
+        let tokens = palias::shell_split(&expands_to);
         Some(palias::ResolvedAlias {
-            expands_to: alias.expands_to,
+            expands_to,
             tokens,
         })
     }

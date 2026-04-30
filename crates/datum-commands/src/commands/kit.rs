@@ -251,6 +251,9 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
     // Aliases (slice 3): same pattern. Tagged with the kit's id so
     // uninstall removes only what this kit owns.
     let alias_report = db.install_kit_aliases(&kit.kit.name, &kit.aliases, args.force)?;
+    // Slice 6: kit-defined commands. Validation runs first so a bad rule
+    // surfaces before any partial-install of fields/views.
+    let cmd_report = db.install_kit_commands(&kit.kit.name, &kit.commands, args.force)?;
 
     let installed: Vec<&str> = report.installed().collect();
     let skipped: Vec<&str> = report.skipped().collect();
@@ -258,6 +261,8 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
     let views_skipped: Vec<&str> = view_report.skipped().collect();
     let aliases_installed: Vec<&str> = alias_report.installed().collect();
     let aliases_skipped: Vec<&str> = alias_report.skipped().collect();
+    let cmds_installed: Vec<&str> = cmd_report.installed().collect();
+    let cmds_skipped: Vec<&str> = cmd_report.skipped().collect();
 
     if !installed.is_empty() {
         println!(
@@ -268,7 +273,10 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
         for f in &installed {
             println!("  + {f}");
         }
-    } else if kit.indices.is_empty() && views_installed.is_empty() && aliases_installed.is_empty()
+    } else if kit.indices.is_empty()
+        && views_installed.is_empty()
+        && aliases_installed.is_empty()
+        && cmds_installed.is_empty()
     {
         println!("Installed kit '{}' (no new fields)", kit.kit.name);
     }
@@ -327,6 +335,21 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
             println!("  + {ix}");
         }
     }
+    if !cmds_installed.is_empty() {
+        println!("Installed {} command(s):", cmds_installed.len());
+        for c in &cmds_installed {
+            println!("  + {c}");
+        }
+    }
+    if !cmds_skipped.is_empty() {
+        println!(
+            "Skipped {} command(s) (existing rows kept; use --force to overwrite):",
+            cmds_skipped.len()
+        );
+        for c in &cmds_skipped {
+            println!("  - {c}");
+        }
+    }
     Ok(())
 }
 
@@ -335,11 +358,19 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
     let views = db.load_views_by_kit(&args.name)?;
     let aliases = db.load_aliases_by_kit(&args.name)?;
     let installed_indices = db.load_indices_by_kit(&args.name)?;
-    if specs.is_empty() && views.is_empty() && aliases.is_empty() && installed_indices.is_empty() {
+    let commands = db.load_commands_by_kit(&args.name)?;
+    if specs.is_empty()
+        && views.is_empty()
+        && aliases.is_empty()
+        && installed_indices.is_empty()
+        && commands.is_empty()
+    {
         anyhow::bail!("no installed kit named '{}'", args.name);
     }
     let view_count = views.len();
     let alias_count = aliases.len();
+    let cmd_count = commands.len();
+    let index_count = installed_indices.len();
     // Reconstruct the TOML-side `IndexEntry` shape from the persisted
     // SQL text. The on-disk DDL is what matters for re-install, and the
     // `sql_text` is preserved verbatim so users can audit it. Slice 5
@@ -356,20 +387,28 @@ fn export(args: KitExportArgs, db: &Db) -> Result<()> {
             unique: false,
         })
         .collect();
-    let mut kit = KitToml::from_kit_rows(&args.name, None, &specs, views, &aliases);
-    kit.indices = synthetic_indices;
+    let kit = KitToml::from_kit_rows_full(
+        &args.name,
+        None,
+        &specs,
+        views,
+        &aliases,
+        &synthetic_indices,
+        commands,
+    );
     let toml = kit.to_toml()?;
 
     match args.path.as_deref() {
         Some(p) => {
             fs::write(p, &toml).with_context(|| format!("write kit TOML to {p}"))?;
             println!(
-                "Exported kit '{}' ({} field(s), {} view(s), {} alias(es), {} index/indices) → {p}",
+                "Exported kit '{}' ({} field(s), {} view(s), {} alias(es), {} index/indices, {} command(s)) → {p}",
                 args.name,
                 specs.len(),
                 view_count,
                 alias_count,
-                installed_indices.len()
+                index_count,
+                cmd_count
             );
         }
         None => print!("{toml}"),
@@ -384,13 +423,18 @@ fn list(db: &Db) -> Result<()> {
         return Ok(());
     }
     println!(
-        "{:<24} {:>6}  {:>5}  {:>7}  {:>7}",
-        "kit", "fields", "views", "aliases", "indices"
+        "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}",
+        "kit", "fields", "views", "aliases", "indices", "cmds"
     );
     for k in kits {
         println!(
-            "{:<24} {:>6}  {:>5}  {:>7}  {:>7}",
-            k.kit_id, k.field_count, k.view_count, k.alias_count, k.index_count
+            "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}",
+            k.kit_id,
+            k.field_count,
+            k.view_count,
+            k.alias_count,
+            k.index_count,
+            k.command_count
         );
     }
     Ok(())
@@ -403,23 +447,26 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     let removed = db.uninstall_kit(&args.name)?;
     let removed_views = db.uninstall_kit_views(&args.name)?;
     let removed_aliases = db.uninstall_kit_aliases(&args.name)?;
+    let removed_cmds = db.uninstall_kit_commands(&args.name)?;
     if removed.is_empty()
         && removed_views.is_empty()
         && removed_aliases.is_empty()
         && indices_before.is_empty()
+        && removed_cmds.is_empty()
     {
         println!(
-            "No fields, views, aliases, or indices tagged with kit '{}'.",
+            "No fields, views, aliases, indices, or commands tagged with kit '{}'.",
             args.name
         );
     } else {
         println!(
-            "Uninstalled kit '{}': {} field(s), {} view(s), {} alias(es), {} index/indices",
+            "Uninstalled kit '{}': {} field(s), {} view(s), {} alias(es), {} index/indices, {} command(s)",
             args.name,
             removed.len(),
             removed_views.len(),
             removed_aliases.len(),
-            indices_before.len()
+            indices_before.len(),
+            removed_cmds.len()
         );
         for f in &removed {
             println!("  - field {f}");
@@ -432,6 +479,9 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
         }
         for ix in &indices_before {
             println!("  - index {}", ix.index_name);
+        }
+        for c in &removed_cmds {
+            println!("  - cmd   {c}");
         }
     }
     Ok(())

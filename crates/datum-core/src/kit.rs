@@ -22,7 +22,7 @@ use crate::error::{DatumError, Result};
 use crate::field_spec::{Alias, FieldSpec, DEFAULT_FIELD_HEIGHT};
 
 /// Top-level TOML schema. `[kit]` is required; `[[field]]`, `[[view]]`,
-/// `[[alias]]`, and `[[index]]` may all be empty.
+/// `[[alias]]`, `[[index]]`, and `[[command]]` may all be empty.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct KitToml {
     pub kit: KitMeta,
@@ -43,6 +43,13 @@ pub struct KitToml {
     /// see slice 5 (da-d4t.5).
     #[serde(default, rename = "index")]
     pub indices: Vec<IndexEntry>,
+    /// `[[command]]` declarations. Two flavours:
+    /// - Level 1 (`expands_to`): alias-style splice before the parser runs.
+    /// - Level 2 (`view` + `columns`/...): dispatch to a structured renderer.
+    /// Level 3 (`script`) is parsed and reserved for forward-compat but the
+    /// renderer errors at execution time. Slice 6 (da-d4t.6).
+    #[serde(default, rename = "command")]
+    pub commands: Vec<CommandEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -156,6 +163,62 @@ impl AliasEntry {
     }
 }
 
+/// A `[[command]]` entry. Both Level 1 and Level 2 share this struct;
+/// validation at install time enforces that exactly one of `expands_to`
+/// / `view` / `script` is set (script is rejected with a clear error).
+///
+/// Level 1 fields:
+/// - `expands_to`: alias-style argv splice text (shell-tokenised at install).
+///
+/// Level 2 fields (all driven by `view`):
+/// - `view`: name of an installed view to query.
+/// - `help`: short doc string.
+/// - `columns`: ordered list of column names to project from the view's
+///   result (defaults to all columns).
+/// - `labels`: column-name → display-header overrides.
+/// - `formats`: column-name → renderer hint (`smart_date`, `duration`, …).
+/// - `sort`: column to sort by (ascending; descending sort is forward-compat).
+/// - `flags`: pass-through verbs supported by this command (e.g. `watch`).
+/// - `color_rules`: list of `{ when, color }` painters; first match wins.
+///
+/// Level 3 (forward-compat):
+/// - `script`: reserved; the renderer errors with "scripted commands not
+///   yet supported" at execution time.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommandEntry {
+    pub name: String,
+    #[serde(default)]
+    pub expands_to: Option<String>,
+    #[serde(default)]
+    pub view: Option<String>,
+    #[serde(default)]
+    pub help: Option<String>,
+    #[serde(default)]
+    pub columns: Vec<String>,
+    #[serde(default)]
+    pub labels: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub formats: std::collections::BTreeMap<String, String>,
+    #[serde(default)]
+    pub sort: Option<String>,
+    #[serde(default)]
+    pub flags: Vec<String>,
+    #[serde(default)]
+    pub color_rules: Vec<ColorRuleEntry>,
+    /// Level 3 placeholder. Round-trips but install rejects it with
+    /// "scripted commands not yet supported (Level 3 deferred)".
+    #[serde(default)]
+    pub script: Option<String>,
+}
+
+/// One color-rule TOML entry: `{ when = "...", color = "..." }`. The
+/// expression grammar is implemented in [`crate::kit_color_rule`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColorRuleEntry {
+    pub when: String,
+    pub color: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StateEntry {
     pub name: String,
@@ -201,6 +264,7 @@ impl KitToml {
             views: Vec::new(),
             aliases: Vec::new(),
             indices: indices.to_vec(),
+            commands: Vec::new(),
         }
     }
 
@@ -217,6 +281,25 @@ impl KitToml {
         let mut kit = Self::from_field_specs(name, version, specs, &[]);
         kit.views = views;
         kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
+        kit
+    }
+
+    /// Build a [`KitToml`] from field specs, view rows, alias rows, indices,
+    /// and command rows. Used by `datum kit export <name>` with slices
+    /// 1/3/4/5/6 all wired in.
+    pub fn from_kit_rows_full(
+        name: &str,
+        version: Option<&str>,
+        specs: &[FieldSpec],
+        views: Vec<ViewEntry>,
+        aliases: &[Alias],
+        indices: &[IndexEntry],
+        commands: Vec<CommandEntry>,
+    ) -> Self {
+        let mut kit = Self::from_field_specs(name, version, specs, indices);
+        kit.views = views;
+        kit.aliases = aliases.iter().map(AliasEntry::from_alias).collect();
+        kit.commands = commands;
         kit
     }
 }
@@ -948,10 +1031,98 @@ where = "field IN (SELECT name FROM field_specs WHERE kit_id = 'chores')"
                 where_clause: Some("deleted_at IS NULL".into()),
                 unique: false,
             }],
+            commands: vec![],
         };
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
         assert_eq!(back.indices.len(), 1);
         assert_eq!(back.indices[0], kit.indices[0]);
+    }
+
+    #[test]
+    fn parses_kit_with_level1_and_level2_commands() {
+        let toml = r#"
+[kit]
+name = "chores"
+
+[[command]]
+name = "chore"
+expands_to = "occur chore -k next_date"
+
+[[command]]
+name = "chorelist"
+view = "chores_due"
+help = "list chores by next-due date"
+columns = ["field", "next_due_raw", "iti"]
+labels = { next_due_raw = "due", iti = "freq" }
+formats = { next_due_raw = "smart_date", iti = "duration" }
+sort = "next_due_raw"
+flags = ["watch"]
+
+[[command.color_rules]]
+when = "next_due_raw < now"
+color = "red"
+
+[[command.color_rules]]
+when = "next_due_raw < today + 1d"
+color = "yellow"
+"#;
+        let kit = KitToml::from_str(toml).unwrap();
+        assert_eq!(kit.commands.len(), 2);
+        assert_eq!(kit.commands[0].name, "chore");
+        assert_eq!(
+            kit.commands[0].expands_to.as_deref(),
+            Some("occur chore -k next_date")
+        );
+        assert_eq!(kit.commands[1].name, "chorelist");
+        assert_eq!(kit.commands[1].view.as_deref(), Some("chores_due"));
+        assert_eq!(kit.commands[1].columns, vec!["field", "next_due_raw", "iti"]);
+        assert_eq!(kit.commands[1].sort.as_deref(), Some("next_due_raw"));
+        assert_eq!(kit.commands[1].flags, vec!["watch".to_string()]);
+        assert_eq!(kit.commands[1].color_rules.len(), 2);
+        assert_eq!(kit.commands[1].color_rules[0].color, "red");
+    }
+
+    #[test]
+    fn round_trip_preserves_commands() {
+        let toml_in = r#"
+[kit]
+name = "chores"
+
+[[command]]
+name = "chorelist"
+view = "chores_due"
+columns = ["field", "next_due_raw"]
+sort = "next_due_raw"
+
+[[command.color_rules]]
+when = "next_due_raw < now"
+color = "red"
+"#;
+        let kit = KitToml::from_str(toml_in).unwrap();
+        let emitted = kit.to_toml().unwrap();
+        let back = KitToml::from_str(&emitted).unwrap();
+        assert_eq!(back.commands.len(), 1);
+        assert_eq!(back.commands[0].view.as_deref(), Some("chores_due"));
+        assert_eq!(back.commands[0].sort.as_deref(), Some("next_due_raw"));
+        assert_eq!(back.commands[0].color_rules.len(), 1);
+        assert_eq!(back.commands[0].color_rules[0].when, "next_due_raw < now");
+    }
+
+    #[test]
+    fn level3_script_round_trips_for_forward_compat() {
+        // The TOML can declare a script field; install rejects it but
+        // round-trip preserves it (so future versions could honour it).
+        let toml = r#"
+[kit]
+name = "future"
+
+[[command]]
+name = "doit"
+script = "shellout"
+"#;
+        let kit = KitToml::from_str(toml).unwrap();
+        assert_eq!(kit.commands.len(), 1);
+        assert_eq!(kit.commands[0].script.as_deref(), Some("shellout"));
     }
 }

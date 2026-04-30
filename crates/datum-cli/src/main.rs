@@ -3,6 +3,7 @@ use datum_cli::{
     args::{Cli, CliExt, Command, InfoArgs},
     cmd, config,
 };
+use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
 fn main() -> Result<()> {
@@ -27,6 +28,17 @@ fn main() -> Result<()> {
                     ParseError::ManRequested(cmd) => {
                         print!("{}", help::render_roff(cmd.as_deref()));
                         return Ok(());
+                    }
+                    ParseError::InvalidArg(msg) if msg.starts_with("unknown subcommand") => {
+                        // The pre-pass already ran (alias + Level-1
+                        // kit_command resolution); the only remaining way
+                        // to recognise this token is a Level-2 kit command
+                        // installed in the user's DB. Resolve it now and
+                        // dispatch to the structured renderer; otherwise
+                        // bubble the original parse error.
+                        if let Some(()) = try_kit_level2_dispatch()? {
+                            return Ok(());
+                        }
                     }
                     _ => {}
                 }
@@ -74,4 +86,42 @@ fn main() -> Result<()> {
     }
 
     cmd::dispatch(cli, &db)
+}
+
+/// Best-effort Level-2 kit command dispatch invoked when `parse_argv`
+/// rejects the verb as unknown. Opens the default DB, looks for a row
+/// in `kit_commands` with `view_name` set, and runs the renderer with
+/// any tokens after the command name passed through. Returns `Some(())`
+/// if the command was found and dispatched, `None` if no match (so the
+/// caller surfaces the original parse error).
+fn try_kit_level2_dispatch() -> Result<Option<()>> {
+    let raw: Vec<String> = std::env::args().collect();
+    if raw.len() < 2 {
+        return Ok(None);
+    }
+
+    let resolved = config::resolve_db(None)?;
+    if !resolved.path.exists() {
+        return Ok(None);
+    }
+    let db = datum_core::db::Db::open(&resolved.path.to_string_lossy())?;
+
+    // Re-run the alias/Level-1 pre-pass against the actual DB so that a
+    // Level-2 command name buried under a Level-1 alias is reachable.
+    let expanded = datum_commands::args::expand_argv_with_db(raw, &db)?;
+    if expanded.len() < 2 {
+        return Ok(None);
+    }
+    let name = &expanded[1];
+
+    let Some(cmd) = db.get_kit_command(name)? else {
+        return Ok(None);
+    };
+    if cmd.view_name.is_none() {
+        return Ok(None);
+    }
+
+    let extra: Vec<String> = expanded.iter().skip(2).cloned().collect();
+    commands::kit_command::run(name, &extra, &db)?;
+    Ok(Some(()))
 }
