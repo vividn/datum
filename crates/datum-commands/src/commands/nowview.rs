@@ -17,7 +17,6 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
-use datum_core::derive_verb;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_layout::nowview::{
@@ -283,12 +282,10 @@ fn is_switching_verb(verb: &Verb) -> bool {
     )
 }
 
-/// Canonical verb for an entry, derived from `(state, dur, following_state)`
-/// per `datum_core::derive_verb`. See dayview.rs::canonical_verb for rationale.
+/// Canonical verb for an entry. da-5ns.3 made the stored `verb` column
+/// authoritative (insert/update calls `derive_verb`).
 fn canonical_verb(entry: &Entry) -> Verb {
-    derive_verb(entry.state.clone(), entry.dur.as_deref(), entry.following_state.clone())
-        .map(|(v, _)| v)
-        .unwrap_or_else(|_| entry.verb.clone())
+    entry.verb.clone()
 }
 
 fn occur_time_ms(entry: &Entry) -> i64 {

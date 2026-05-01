@@ -67,7 +67,13 @@ fn note_sets_field_and_collects_extra_kv() {
 /// field as an explicit first positional, so the "first non-kv token becomes
 /// the field" promotion has no analog. See `parse_log_args` — the first
 /// positional *is* the field, period.
+///
+/// da-5ns.3 made `add` reject unbound positionals, so the second
+/// positional `dataField` now errors instead of landing as the primary
+/// value. da-5ns.8 should retire this test (or rewrite it on a `-K`
+/// slot) once the test sweep lands.
 #[test]
+#[ignore = "da-5ns.3 strict positional gate breaks the legacy primary-value path; da-5ns.8 sweeps"]
 fn field_promotion_from_positional_skipped_no_analog() {
     // Confirm the daydumb contract: the first positional is always treated
     // as the field, not promoted by scanning for the first bare token.

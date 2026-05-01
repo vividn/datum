@@ -19,7 +19,6 @@ use anyhow::{Context, Result};
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Utc};
 use datum_core::conflicts::ListFilter;
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
-use datum_core::derive_verb;
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_layout::dayview::{
@@ -487,16 +486,11 @@ fn is_switching_verb(verb: &Verb) -> bool {
     )
 }
 
-/// Canonical verb for an entry, derived from `(state, dur, following_state)`
-/// per `datum_core::derive_verb`. Falls back to the row's stored `verb` column
-/// when derivation rejects the shape (e.g. legacy rows whose triples don't fit
-/// the post-pivot truth table). The render dispatches on this canonical verb
-/// so legacy rows whose `verb` column is stale (insert hardcodes "point" until
-/// da-5ns.3 wires derivation) still render with the correct shape.
+/// Canonical verb for an entry. da-5ns.3 wired `derive_verb` into the
+/// insert/update path so the stored `verb` column is authoritative; the
+/// render dispatches on it directly.
 fn canonical_verb(entry: &Entry) -> Verb {
-    derive_verb(entry.state.clone(), entry.dur.as_deref(), entry.following_state.clone())
-        .map(|(v, _)| v)
-        .unwrap_or_else(|_| entry.verb.clone())
+    entry.verb.clone()
 }
 
 /// Sort key for an entry's effective time. Falls back to i64::MIN so

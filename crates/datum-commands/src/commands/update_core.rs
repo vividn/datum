@@ -344,11 +344,31 @@ fn apply_mutation(
     slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
+    // da-5ns.3: peel reserved column-bound keys (`state=`, `dur=`,
+    // `following_state=`, `occur_time=`) out of the payload and route
+    // them to the entry's columns instead of `data`. Rejects `value=`
+    // outright. The storage layer's `derive_verb` call recomputes the
+    // verb on the resulting (state, dur, fs) triple.
+    let mut payload_extra = payload_extra;
+    let reserved = crate::cmd::extract_reserved_columns(&mut payload_extra)?;
+
     let mut updated = existing.clone();
     updated.data = combine_extra(updated.data, payload_extra, mode);
     if let Some(v) = payload_value {
-        updated.value = Some(v);
+        updated.value = Some(v.clone());
+        updated.state = Some(v);
     }
+    if let Some(s) = reserved.state {
+        updated.state = Some(s.clone());
+        updated.value = Some(s);
+    }
+    if let Some(d) = reserved.dur {
+        updated.dur = Some(d);
+    }
+    if let Some(fs) = reserved.following_state {
+        updated.following_state = Some(fs);
+    }
+    let _ = reserved.occur_time;
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }
 
@@ -764,16 +784,16 @@ mod tests {
 
     #[test]
     fn update_reinterpolates_slug_when_template_var_changes() {
-        // Seed entry with id_structure '%field%:%state%' and data.state=happy.
-        // Replace data.state=sad → slug should re-derive to mood:sad in place
-        // (hid preserved).
+        // da-5ns.3: `state=` is a column-bound reserved key. The
+        // `%state%` lookup falls back to `entry.state` for Verb::Switch,
+        // so updating `state=sad` re-derives the slug.
         let db = Db::open_in_memory().unwrap();
         let mut e = seed_entry(
             &db,
             "mood",
             Verb::Switch,
             Some(serde_json::json!("happy")),
-            Some(serde_json::json!({"state": "happy"})),
+            None,
         );
         e.id_structure = Some("%field%:%state%".to_string());
         db.save_existing_entry(&e).unwrap();

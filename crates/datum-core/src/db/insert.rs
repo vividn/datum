@@ -14,11 +14,30 @@ use crate::entry::{new_hid, Entry};
 use crate::error::{DatumError, Result};
 use crate::history::{self, ChangeKind};
 use crate::ids::{Hid, Slug};
+use crate::verb::derive_verb;
 
 use super::lookup::fetch_entry_any;
 use super::row_mapper::row_to_entry;
 use super::types::{ConflictStrategy, InsertOutcome};
 use super::Db;
+
+/// Derive the storage-layer verb string and canonical state JSON for an
+/// outgoing entry write. da-5ns.3: every insert/update path runs this so
+/// the `verb` column is sourced from `derive_verb(state, dur, fs)` rather
+/// than the legacy stub. The returned state is `entry.state` after the
+/// null→true promotion (`Some(true)` when the caller passed `None`).
+/// The caller's `entry.verb` is intentionally ignored — the (state, dur,
+/// following_state) triple is the single source of truth.
+fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
+    let (verb, canonical_state) = derive_verb(
+        entry.state.clone(),
+        entry.dur.as_deref(),
+        entry.following_state.clone(),
+    )?;
+    let verb_str = verb.to_string();
+    let state_str = canonical_state.as_ref().map(|v| v.to_string());
+    Ok((verb_str, state_str))
+}
 
 impl Db {
     /// Insert an entry using the default [`ConflictStrategy::Ignore`].
@@ -507,10 +526,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    // Sub-bead 1 stub: verb is hardcoded to "point" until sub-bead 3
-    // wires `derive_verb` into the insert path. The struct's `verb`
-    // is intentionally ignored here.
-    let verb_str = "point";
+    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
 
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO entries (
@@ -539,7 +555,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.content_hash,
         entry.field,
         verb_str,
-        entry.state.as_ref().map(|v| v.to_string()),
+        state_str,
         entry.dur,
         entry.following_state.as_ref().map(|v| v.to_string()),
         entry.data.as_ref().map(|v| v.to_string()),
@@ -619,9 +635,7 @@ fn raw_overwrite_mutables(
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    // Sub-bead 1 stub: verb is hardcoded to "point" — sub-bead 3 wires
-    // derive_verb on every (state, dur, following_state) mutation.
-    let verb_str = "point";
+    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
 
     conn.execute(
         r#"UPDATE entries SET
@@ -654,7 +668,7 @@ fn raw_overwrite_mutables(
             entry.content_hash,
             entry.field,
             verb_str,
-            entry.state.as_ref().map(|v| v.to_string()),
+            state_str,
             entry.dur,
             entry.following_state.as_ref().map(|v| v.to_string()),
             data_json,
@@ -699,7 +713,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    let verb_str = "point";
+    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
 
     let mut stmt = conn.prepare_cached(
         r#"UPDATE entries SET
@@ -735,7 +749,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         entry.content_hash,
         entry.field,
         verb_str,
-        entry.state.as_ref().map(|v| v.to_string()),
+        state_str,
         entry.dur,
         entry.following_state.as_ref().map(|v| v.to_string()),
         entry.data.as_ref().map(|v| v.to_string()),
@@ -779,7 +793,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
         .occur_time
         .as_ref()
         .map(|t| t.timezone.as_str().to_string());
-    let verb_str = "point";
+    let (verb_str, state_str) = derive_verb_for_storage(entry)?;
 
     let affected = conn.execute(
         r#"UPDATE entries SET
@@ -814,7 +828,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.content_hash,
             entry.field,
             verb_str,
-            entry.state.as_ref().map(|v| v.to_string()),
+            state_str,
             entry.dur,
             entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),

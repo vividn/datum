@@ -511,6 +511,24 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         mut extra_data,
         slug_values,
     } = parsed;
+
+    // da-5ns.3: route reserved column-bound keys (`state=`, `dur=`,
+    // `following_state=`, `occur_time=`) out of the data blob, and
+    // reject the unknown `value=` key.
+    let reserved = extract_reserved_columns(&mut extra_data)?;
+
+    // da-5ns.3 strict positional gate (Verb::Add only): the v=20 model
+    // expects `state=<v>` for the primary state. A bare unkeyed
+    // positional with no `-K` slot binding has nowhere to land — the
+    // legacy primary-value column is gone. Reject so a stale `dm add
+    // field 80` doesn't silently lose data.
+    if matches!(verb, Verb::Add) && value.is_some() && args.slug_keys.is_empty() {
+        anyhow::bail!(
+            "unbound positional value: `dm add` requires `state=<v>` (or a `-K` slot \
+             binding) — the v=20 schema dropped the implicit `value` column"
+        );
+    }
+
     // S12 (da-u4k.12): for `switch`, a comma-separated value string is split
     // into a JSON array of concurrent states (e.g. `switch f a,b` →
     // `["a","b"]`). Single states stay scalar. Applied post-parse so the
@@ -608,6 +626,23 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     if let Some(shape) = add_override_shape {
         entry.entry_shape = shape;
     }
+
+    // da-5ns.3: stamp the reserved columns extracted upstream onto the
+    // entry. `state=` overrides the value-derived state assignment from
+    // `Entry::new_legacy`; `dur=` and `following_state=` overwrite the
+    // legacy time-shape derivation. The storage layer's `derive_verb`
+    // call then classifies the resulting (state, dur, fs) triple.
+    if let Some(s) = reserved.state {
+        entry.state = Some(s.clone());
+        entry.value = Some(s);
+    }
+    if let Some(d) = reserved.dur {
+        entry.dur = Some(d);
+    }
+    if let Some(fs) = reserved.following_state {
+        entry.following_state = Some(fs);
+    }
+    let _ = reserved.occur_time;
 
     // S6: carry an explicit `-L/--last-state=<v>` assertion onto the entry.
     // Bare `-L` (no value) is a no-op assertion-wise; only a supplied value
@@ -1148,6 +1183,75 @@ impl AddTemporalHints {
             },
         }
     }
+}
+
+/// Reserved column values pulled out of the data blob by
+/// [`extract_reserved_columns`]. Each field is `None` when the user
+/// did not pass the corresponding key.
+#[derive(Debug, Default)]
+pub(crate) struct ReservedColumns {
+    pub(crate) state: Option<JsonValue>,
+    pub(crate) dur: Option<String>,
+    pub(crate) following_state: Option<JsonValue>,
+    pub(crate) occur_time: Option<JsonValue>,
+}
+
+/// da-5ns.3: route the reserved column-bound keys (`state=`, `dur=`,
+/// `following_state=`, `occur_time=`) out of the user's `data` payload
+/// and reject the unknown `value=` key that callers might reach for out
+/// of muscle memory from the v=19 schema.
+///
+/// `occur_time=` is captured but its value-shape grammar (RFC3339,
+/// signed offsets, `now`) is left to callers to interpret — the
+/// existing time-flag pipeline already handles common cases via
+/// `-t/--time`; sub-bead 6 (import) drives the column-keyed form.
+pub(crate) fn extract_reserved_columns(
+    extra_data: &mut Option<JsonValue>,
+) -> Result<ReservedColumns> {
+    let mut out = ReservedColumns::default();
+    let Some(JsonValue::Object(obj)) = extra_data.as_mut() else {
+        return Ok(out);
+    };
+    if obj.contains_key("value") {
+        anyhow::bail!(
+            "unknown key 'value=': the v=20 schema replaced `value` with `state`; \
+             use `state=<v>` instead"
+        );
+    }
+    if let Some(v) = obj.remove("state") {
+        out.state = Some(v);
+    }
+    if let Some(v) = obj.remove("dur") {
+        // `dur=null` (or string `"null"`) is a sentinel for "no
+        // duration" — leave entry.dur as None rather than writing the
+        // string "null" which derive_verb would reject.
+        if v.is_null() || matches!(v.as_str(), Some("null")) {
+            // intentionally drop — None signals point shape.
+        } else {
+            out.dur = Some(json_to_dur_string(&v)?);
+        }
+    }
+    if let Some(v) = obj.remove("following_state") {
+        out.following_state = Some(v);
+    }
+    if let Some(v) = obj.remove("occur_time") {
+        out.occur_time = Some(v);
+    }
+    if obj.is_empty() {
+        *extra_data = None;
+    }
+    Ok(out)
+}
+
+/// Coerce a parsed JSON value back to an ISO-8601 duration string. The
+/// CLI parses `dur=PT1H` into `JsonValue::String("PT1H")`; the unit-
+/// annotated forms (`dur=5m` → `{"v": 5, "u": "m"}`) get reconstructed
+/// via [`json_to_raw_token`].
+fn json_to_dur_string(v: &JsonValue) -> Result<String> {
+    if let Some(s) = v.as_str() {
+        return Ok(s.to_string());
+    }
+    Ok(json_to_raw_token(v))
 }
 
 /// Extract and remove `start_time=`, `end_time=`, `dur=` keys from the
@@ -4488,8 +4592,10 @@ mod tests {
     #[test]
     fn update_auto_reinterps_slug_when_id_structure_present() {
         // Headline behavior: a regular `update` on a row whose id_structure
-        // references a data key should auto-rekey the slug when that key's
-        // value changes — no manual --strategy rekey, no --id flag.
+        // references a state-bearing template var should auto-rekey the
+        // slug when that var changes — no manual --strategy rekey, no
+        // --id flag. da-5ns.3: `state=` writes the column; `%state%`
+        // resolves to `entry.state` for Verb::Switch.
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let mut e = seed_entry(
@@ -4497,7 +4603,7 @@ mod tests {
             "mood",
             Verb::Switch,
             Some(serde_json::json!("happy")),
-            Some(serde_json::json!({"state": "happy"})),
+            None,
         );
         e.id_structure = Some("%field%:%state%".to_string());
         db.save_existing_entry(&e).unwrap();
@@ -5130,5 +5236,153 @@ mod tests {
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
         cmd_get(GetArgs::fresh_default(), &db).unwrap();
+    }
+
+    // ─── da-5ns.3: insert/update path wires the new schema ───────────────
+    //
+    // CLI scenarios from the bead description: reserved keys land on
+    // entry columns, the storage layer's `derive_verb` classifies the
+    // verb, `value=` is rejected, and an unbound positional on `add`
+    // errors instead of silently dropping the value.
+
+    fn make_add_args(field: &str, rest: Vec<&str>) -> LogArgs {
+        let mut a = LogArgs::fresh(field);
+        a.rest = rest.into_iter().map(String::from).collect();
+        a
+    }
+
+    #[test]
+    fn add_with_state_and_dur_lands_block_verb() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        log_entry(
+            Verb::Add,
+            make_add_args("focus", vec!["state=true", "dur=PT1H"]),
+            &db,
+        )
+        .unwrap();
+        let live = db.entries_for_field("focus", None).unwrap();
+        assert_eq!(live.len(), 1);
+        let e = &live[0];
+        assert_eq!(e.verb, Verb::Block);
+        assert_eq!(e.state, Some(serde_json::json!(true)));
+        assert_eq!(e.dur.as_deref(), Some("PT1H"));
+    }
+
+    #[test]
+    fn add_with_state_zero_dur_following_state_lands_point_switch() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        log_entry(
+            Verb::Add,
+            make_add_args(
+                "phase",
+                vec!["state=true", "dur=PT0S", "following_state=false"],
+            ),
+            &db,
+        )
+        .unwrap();
+        let live = db.entries_for_field("phase", None).unwrap();
+        assert_eq!(live.len(), 1);
+        let e = &live[0];
+        assert_eq!(e.verb, Verb::PointSwitch);
+        assert_eq!(e.state, Some(serde_json::json!(true)));
+        assert_eq!(e.dur.as_deref(), Some("PT0S"));
+        assert_eq!(e.following_state, Some(serde_json::json!(false)));
+    }
+
+    #[test]
+    fn add_rejects_unknown_value_key() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let err = log_entry(
+            Verb::Add,
+            make_add_args("focus", vec!["state=true", "value=80"]),
+            &db,
+        )
+        .unwrap_err();
+        let msg = err.to_string().to_lowercase();
+        assert!(
+            msg.contains("value"),
+            "expected 'value' rejection, got: {err}"
+        );
+    }
+
+    #[test]
+    fn add_rejects_unbound_positional_value() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let err = log_entry(Verb::Add, make_add_args("focus", vec!["80"]), &db)
+            .unwrap_err();
+        let msg = err.to_string().to_lowercase();
+        assert!(
+            msg.contains("unbound") || msg.contains("positional"),
+            "expected unbound-positional rejection, got: {err}"
+        );
+    }
+
+    #[test]
+    fn update_state_recomputes_verb() {
+        use datum_core::{db::Db, time::DatumTime};
+        let db = Db::open_in_memory().unwrap();
+        let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
+        let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+        let e = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(dt),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+        let after_seed = db.get_entry(&e.slug).unwrap();
+        assert_eq!(after_seed.verb, Verb::Switch);
+
+        // Mutate via update with a dur=PT30M — the row becomes a Block.
+        crate::commands::update_core::update_from_args(
+            update_args(&e.slug, vec!["dur=PT30M"]),
+            crate::commands::update_core::UpdateStrategy::Replace,
+            &db,
+        )
+        .unwrap();
+        let after_update = db.get_entry(&e.slug).unwrap();
+        assert_eq!(after_update.verb, Verb::Block);
+        assert_eq!(after_update.dur.as_deref(), Some("PT30M"));
+        assert_eq!(after_update.state, Some(serde_json::json!("happy")));
+    }
+
+    #[test]
+    fn update_negative_dur_rejected() {
+        use datum_core::{db::Db, time::DatumTime};
+        let db = Db::open_in_memory().unwrap();
+        let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
+        let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+        let e = Entry::new(
+            "focus",
+            Verb::Switch,
+            Some(serde_json::json!("on")),
+            None,
+            None,
+            Some(dt),
+            None,
+            "d1",
+        );
+        db.insert_entry(&e).unwrap();
+        // Negative-dur rejection lives in the storage layer's
+        // `derive_verb` call; it bubbles up from the update path.
+        let err = crate::commands::update_core::update_from_args(
+            update_args(&e.slug, vec!["dur=-PT5M"]),
+            crate::commands::update_core::UpdateStrategy::Replace,
+            &db,
+        )
+        .unwrap_err();
+        let msg = err.to_string().to_lowercase();
+        assert!(
+            msg.contains("negative") || msg.contains("dur"),
+            "expected negative-dur rejection, got: {err}"
+        );
     }
 }
