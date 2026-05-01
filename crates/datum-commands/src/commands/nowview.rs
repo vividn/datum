@@ -17,7 +17,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local, Timelike, Utc};
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
-use datum_core::entry::{Entry, EntryShape, Verb};
+use datum_core::derive_verb;
+use datum_core::entry::{Entry, Verb};
+use datum_core::field_spec::FieldSpec;
 use datum_layout::nowview::{
     compute_nowview, default_width_for_history, NowviewBlock, NowviewConfig, NowviewField,
     NowviewPoint,
@@ -27,7 +29,7 @@ use datum_parse::time::parse_duration_str::parse_duration;
 use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;
-use crate::render::colors::{md5_rgb, state_value_rgb, Rgb};
+use crate::render::colors::{field_rgb, md5_rgb, state_value_rgb, Rgb};
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
@@ -210,106 +212,19 @@ pub(crate) fn build_fields(
         }
         let mut entries_for_field = by_field.remove(&field).unwrap_or_default();
 
-        let mut blocks: Vec<NowviewBlock> = Vec::new();
-        let mut points: Vec<NowviewPoint> = Vec::new();
-
-        // Sort by start_time so Switch entries can derive their region end
-        // from the next Switch on the same field.
-        entries_for_field.sort_by_key(|e| {
-            e.start_time
-                .as_ref()
-                .map(|t| t.utc.timestamp_millis())
-                .unwrap_or(i64::MIN)
-        });
+        // Sort by occur_time so the next-switching-event lookup can walk
+        // the list in order.
+        entries_for_field.sort_by_key(occur_time_ms);
         let now_ms = end.timestamp_millis();
         let switch_region_ends = switch_region_end_ms(&entries_for_field, now_ms);
 
-        for (idx, entry) in entries_for_field.iter().enumerate() {
-            // start_time present is required for visualization. Skip any
-            // record (e.g. pure `add` notes) without one.
-            let Some(start_dt) = entry.start_time.as_ref() else {
-                continue;
-            };
-            let start_ms = start_dt.utc.timestamp_millis();
-
-            match entry.entry_shape {
-                EntryShape::Point if entry.verb == Verb::Switch => {
-                    // Switch starts a state region that runs until the next
-                    // Switch on the same field, or until "now" if it's the
-                    // most recent.
-                    let value = entry.value.as_ref();
-                    if is_unrendered_switch_value(value) {
-                        continue;
-                    }
-                    let region_end_ms = switch_region_ends[idx];
-                    let color = match value {
-                        Some(v) => state_value_rgb(v, &field, spec.as_ref())
-                            .unwrap_or(md5_rgb(&field)),
-                        None => md5_rgb(&field),
-                    };
-                    blocks.push(NowviewBlock {
-                        start_ms,
-                        end_ms: region_end_ms,
-                        color: rgb_to_hex(color),
-                        state_label: state_label(value),
-                    });
-                }
-                EntryShape::Point => {
-                    let fg = state_value_rgb(
-                        entry.value.as_ref().unwrap_or(&JsonValue::Null),
-                        &field,
-                        spec.as_ref(),
-                    )
-                    .unwrap_or(md5_rgb(&field));
-                    // Background ring color: state at this instant
-                    // (per da-k5z fg/bg rule). Falls back to black when
-                    // no underlying ongoing state is tracked.
-                    let bg = match db.state_at(&field, start_dt.utc).unwrap_or(None) {
-                        Some(v) => state_value_rgb(&v, &field, spec.as_ref())
-                            .unwrap_or(Rgb::BLACK),
-                        None => Rgb::BLACK,
-                    };
-                    points.push(NowviewPoint {
-                        time_ms: start_ms,
-                        fg_color: rgb_to_hex(fg),
-                        bg_color: rgb_to_hex(bg),
-                        state_label: state_label(entry.value.as_ref()),
-                    });
-                }
-                EntryShape::Block => {
-                    let Some(end_dt) = entry.end_time.as_ref() else {
-                        continue;
-                    };
-                    let end_ms = end_dt.utc.timestamp_millis();
-                    let color = match entry.value.as_ref() {
-                        Some(v) => {
-                            state_value_rgb(v, &field, spec.as_ref()).unwrap_or(md5_rgb(&field))
-                        }
-                        None => md5_rgb(&field),
-                    };
-                    blocks.push(NowviewBlock {
-                        start_ms,
-                        end_ms,
-                        color: rgb_to_hex(color),
-                        state_label: state_label(entry.value.as_ref()),
-                    });
-                }
-                EntryShape::Ongoing => {
-                    let color = match entry.value.as_ref() {
-                        Some(v) => {
-                            state_value_rgb(v, &field, spec.as_ref()).unwrap_or(md5_rgb(&field))
-                        }
-                        None => md5_rgb(&field),
-                    };
-                    blocks.push(NowviewBlock {
-                        start_ms,
-                        end_ms: end.timestamp_millis(),
-                        color: rgb_to_hex(color),
-                        state_label: state_label(entry.value.as_ref()),
-                    });
-                }
-            }
-        }
+        let (blocks, points) = render_field_visuals_nowview(
+            &entries_for_field,
+            &field,
+            spec.as_ref(),
+            &switch_region_ends,
+            db,
+        );
 
         // Skip fields that have no visualizable data at all in the window.
         if blocks.is_empty() && points.is_empty() {
@@ -341,22 +256,198 @@ fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
     }
 }
 
-/// For each entry, the UTC-ms end-time of its switch region (next Switch on
-/// the same field, or `fallback_end_ms` if none). Non-Switch entries get
-/// `fallback_end_ms` (caller only reads the Switch positions). Input must be
-/// sorted by start_time ascending.
+/// For each entry, the UTC-ms end-time of its switch region (the occur_time
+/// of the next switching event on the same field, or `fallback_end_ms` if
+/// it's the last). Input must be sorted by occur_time ascending.
+///
+/// Switching verbs are Switch / BlockSwitch / PointSwitch — every verb whose
+/// `occur_time` updates the prevailing state. See da-5ns.5.
 fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
     let mut out = vec![fallback_end_ms; entries.len()];
-    let mut next_start_ms: Option<i64> = None;
+    let mut next_occur_ms: Option<i64> = None;
     for (i, entry) in entries.iter().enumerate().rev() {
-        if entry.verb == Verb::Switch && entry.entry_shape == EntryShape::Point {
-            out[i] = next_start_ms.unwrap_or(fallback_end_ms);
-            if let Some(t) = entry.start_time.as_ref() {
-                next_start_ms = Some(t.utc.timestamp_millis());
+        if is_switching_verb(&canonical_verb(entry)) {
+            out[i] = next_occur_ms.unwrap_or(fallback_end_ms);
+            if let Some(ms) = occur_time_ms_opt(entry) {
+                next_occur_ms = Some(ms);
             }
         }
     }
     out
+}
+
+fn is_switching_verb(verb: &Verb) -> bool {
+    matches!(
+        verb,
+        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch | Verb::Start | Verb::Stop
+    )
+}
+
+/// Canonical verb for an entry, derived from `(state, dur, following_state)`
+/// per `datum_core::derive_verb`. See dayview.rs::canonical_verb for rationale.
+fn canonical_verb(entry: &Entry) -> Verb {
+    derive_verb(entry.state.clone(), entry.dur.as_deref(), entry.following_state.clone())
+        .map(|(v, _)| v)
+        .unwrap_or_else(|_| entry.verb.clone())
+}
+
+fn occur_time_ms(entry: &Entry) -> i64 {
+    occur_time_ms_opt(entry).unwrap_or(i64::MIN)
+}
+
+fn occur_time_ms_opt(entry: &Entry) -> Option<i64> {
+    entry.occur_time.as_ref().map(|t| t.utc.timestamp_millis())
+}
+
+fn dur_seconds(entry: &Entry) -> Option<i64> {
+    entry.duration_seconds().map(|s| s.max(0))
+}
+
+/// Verb-driven render of one field's blocks and points for nowview.
+/// Mirrors the dayview spec in da-5ns.5 — Block emits `[occur - dur, occur]`,
+/// Block-switch / Point-switch open a switch region at `occur` colored by
+/// `following_state`.
+fn render_field_visuals_nowview(
+    entries: &[Entry],
+    field: &str,
+    spec: Option<&FieldSpec>,
+    switch_region_ends: &[i64],
+    db: &Db,
+) -> (Vec<NowviewBlock>, Vec<NowviewPoint>) {
+    let mut blocks: Vec<NowviewBlock> = Vec::new();
+    let mut points: Vec<NowviewPoint> = Vec::new();
+
+    for (idx, entry) in entries.iter().enumerate() {
+        let Some(occur_dt) = entry.occur_time.as_ref() else {
+            continue;
+        };
+        let occur_ms = occur_dt.utc.timestamp_millis();
+
+        match canonical_verb(entry) {
+            Verb::Block => {
+                push_block_window_nowview(&mut blocks, entry, occur_ms, field, spec);
+            }
+            Verb::BlockSwitch => {
+                push_block_window_nowview(&mut blocks, entry, occur_ms, field, spec);
+                push_switch_region_nowview(
+                    &mut blocks,
+                    entry.following_state.as_ref(),
+                    occur_ms,
+                    switch_region_ends[idx],
+                    field,
+                    spec,
+                );
+            }
+            Verb::PointSwitch => {
+                let fg_rgb = entry
+                    .state
+                    .as_ref()
+                    .and_then(|v| state_value_rgb(v, field, spec))
+                    .unwrap_or_else(|| field_rgb(field, spec));
+                let bg_rgb = entry
+                    .following_state
+                    .as_ref()
+                    .and_then(|v| state_value_rgb(v, field, spec))
+                    .unwrap_or_else(|| field_rgb(field, spec));
+                points.push(NowviewPoint {
+                    time_ms: occur_ms,
+                    fg_color: rgb_to_hex(fg_rgb),
+                    bg_color: rgb_to_hex(bg_rgb),
+                    state_label: state_label(entry.state.as_ref()),
+                });
+                push_switch_region_nowview(
+                    &mut blocks,
+                    entry.following_state.as_ref(),
+                    occur_ms,
+                    switch_region_ends[idx],
+                    field,
+                    spec,
+                );
+            }
+            Verb::Switch => {
+                push_switch_region_nowview(
+                    &mut blocks,
+                    entry.state.as_ref(),
+                    occur_ms,
+                    switch_region_ends[idx],
+                    field,
+                    spec,
+                );
+            }
+            Verb::Point | Verb::Occur => {
+                let fg = state_value_rgb(
+                    entry.state.as_ref().unwrap_or(&JsonValue::Null),
+                    field,
+                    spec,
+                )
+                .unwrap_or_else(|| md5_rgb(field));
+                let bg = match db.state_at(field, occur_dt.utc).unwrap_or(None) {
+                    Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
+                    None => Rgb::BLACK,
+                };
+                points.push(NowviewPoint {
+                    time_ms: occur_ms,
+                    fg_color: rgb_to_hex(fg),
+                    bg_color: rgb_to_hex(bg),
+                    state_label: state_label(entry.state.as_ref()),
+                });
+            }
+            Verb::Add | Verb::Start | Verb::Stop => {}
+        }
+    }
+    (blocks, points)
+}
+
+fn push_block_window_nowview(
+    blocks: &mut Vec<NowviewBlock>,
+    entry: &Entry,
+    occur_ms: i64,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) {
+    let Some(dur_secs) = dur_seconds(entry) else {
+        return;
+    };
+    if dur_secs == 0 {
+        return;
+    }
+    let start_ms = occur_ms - dur_secs * 1000;
+    let color = match entry.state.as_ref() {
+        Some(v) => state_value_rgb(v, field, spec).unwrap_or_else(|| md5_rgb(field)),
+        None => md5_rgb(field),
+    };
+    blocks.push(NowviewBlock {
+        start_ms,
+        end_ms: occur_ms,
+        color: rgb_to_hex(color),
+        state_label: state_label(entry.state.as_ref()),
+    });
+}
+
+fn push_switch_region_nowview(
+    blocks: &mut Vec<NowviewBlock>,
+    value: Option<&JsonValue>,
+    start_ms: i64,
+    region_end_ms: i64,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) {
+    if is_unrendered_switch_value(value) {
+        return;
+    }
+    if region_end_ms <= start_ms {
+        return;
+    }
+    let color = match value {
+        Some(v) => state_value_rgb(v, field, spec).unwrap_or_else(|| md5_rgb(field)),
+        None => md5_rgb(field),
+    };
+    blocks.push(NowviewBlock {
+        start_ms,
+        end_ms: region_end_ms,
+        color: rgb_to_hex(color),
+        state_label: state_label(value),
+    });
 }
 
 fn state_label(v: Option<&JsonValue>) -> Option<String> {
@@ -495,5 +586,104 @@ mod tests {
 
         let fields = build_fields(&db, now, 60.0).unwrap();
         assert!(fields.iter().all(|f| f.field != "background_telemetry"));
+    }
+
+    // ─── da-5ns.5: verb-driven render tests ────────────────────────────
+
+    fn stub_entry(
+        field: &str,
+        verb: Verb,
+        occur_utc: chrono::DateTime<Utc>,
+        dur: Option<&str>,
+        state: Option<JsonValue>,
+        following_state: Option<JsonValue>,
+    ) -> Entry {
+        use datum_core::entry::Entry;
+        use datum_core::time::DatumTime;
+        let dt = DatumTime::from_utc_and_tz(occur_utc, "UTC").unwrap();
+        let mut e = Entry::new(
+            field,
+            verb.clone(),
+            state.clone(),
+            None,
+            None,
+            Some(dt),
+            dur.map(|s| s.to_string()),
+            "test",
+        );
+        e.verb = verb;
+        e.following_state = following_state;
+        e
+    }
+
+    #[test]
+    fn nowview_block_renders_at_occur_minus_dur_to_occur() {
+        use chrono::TimeZone;
+        let db = Db::open_in_memory().unwrap();
+        let occur = Utc.with_ymd_and_hms(2026, 4, 27, 12, 30, 0).unwrap();
+        let entries = vec![stub_entry(
+            "lunch",
+            Verb::Block,
+            occur,
+            Some("PT30M"),
+            Some(JsonValue::String("eating".into())),
+            None,
+        )];
+        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 13, 0, 0).unwrap().timestamp_millis();
+        let ends = switch_region_end_ms(&entries, now_ms);
+        let (blocks, points) =
+            render_field_visuals_nowview(&entries, "lunch", None, &ends, &db);
+        assert!(points.is_empty());
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis() - 30 * 60 * 1000);
+        assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
+    }
+
+    #[test]
+    fn nowview_block_switch_emits_block_and_following_region() {
+        use chrono::TimeZone;
+        let db = Db::open_in_memory().unwrap();
+        let occur = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();
+        let entries = vec![stub_entry(
+            "mood",
+            Verb::BlockSwitch,
+            occur,
+            Some("PT1H"),
+            Some(JsonValue::String("groggy".into())),
+            Some(JsonValue::String("focused".into())),
+        )];
+        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
+        let ends = switch_region_end_ms(&entries, now_ms);
+        let (blocks, points) =
+            render_field_visuals_nowview(&entries, "mood", None, &ends, &db);
+        assert!(points.is_empty());
+        assert_eq!(blocks.len(), 2);
+        assert_ne!(blocks[0].color, blocks[1].color);
+        assert_eq!(blocks[1].start_ms, occur.timestamp_millis());
+        assert_eq!(blocks[1].end_ms, now_ms);
+    }
+
+    #[test]
+    fn nowview_point_switch_emits_dot_and_following_region() {
+        use chrono::TimeZone;
+        let db = Db::open_in_memory().unwrap();
+        let occur = Utc.with_ymd_and_hms(2026, 4, 27, 10, 0, 0).unwrap();
+        let entries = vec![stub_entry(
+            "task",
+            Verb::PointSwitch,
+            occur,
+            Some("PT0S"),
+            Some(JsonValue::String("commit".into())),
+            Some(JsonValue::String("review".into())),
+        )];
+        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
+        let ends = switch_region_end_ms(&entries, now_ms);
+        let (blocks, points) =
+            render_field_visuals_nowview(&entries, "task", None, &ends, &db);
+        assert_eq!(points.len(), 1);
+        assert_ne!(points[0].fg_color, points[0].bg_color);
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].start_ms, occur.timestamp_millis());
+        assert_eq!(blocks[0].state_label.as_deref(), Some("review"));
     }
 }
