@@ -33,11 +33,11 @@ fn start_creates_open_block_with_no_time_end() {
     assert_count!(db, "dance", 1);
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "start");
-    assert!(entry.start_time.is_some(), "start must set time_start");
-    assert!(entry.end_time.is_none(), "open block must not set time_end");
+    assert!(entry.occur_time.is_some(), "start must set time_start");
+    assert!(entry.dur.is_none(), "open block must not set time_end");
 
     let state = db
-        .get_active_state("dance", entry.start_time.as_ref().unwrap().utc)
+        .get_active_state("dance", entry.occur_time.as_ref().unwrap().utc)
         .unwrap();
     assert_eq!(state, json!(true), "start compiles to state=true at time_start");
 }
@@ -71,8 +71,8 @@ fn start_after_switch_preserves_prior_state() {
         .find(|e| matches!(e.verb, Verb::Switch))
         .expect("switch entry present");
 
-    let start_ts = start_entry.start_time.as_ref().unwrap().utc;
-    let switch_ts = switch_entry.start_time.as_ref().unwrap().utc;
+    let start_ts = start_entry.occur_time.as_ref().unwrap().utc;
+    let switch_ts = switch_entry.occur_time.as_ref().unwrap().utc;
 
     // A hair before the start, the switch state still governs.
     let just_before_start = start_ts - chrono::Duration::seconds(1);
@@ -103,8 +103,8 @@ fn dur_flag_sets_time_end_for_closed_block() {
     // Start with a closed duration → shape=block, generated verb='block'.
     assert_entry_matches!(entry, field: "dance", verb: "block");
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
-    let ts = entry.start_time.as_ref().unwrap().utc;
-    let te = entry.end_time.as_ref().unwrap().utc;
+    let ts = entry.occur_time.as_ref().unwrap().utc;
+    let te = entry.computed_end_time().unwrap().utc;
     assert_eq!((te - ts).num_seconds(), 5 * 60);
 }
 
@@ -154,9 +154,9 @@ fn start_without_dur_is_moment_like() {
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "start");
-    assert!(entry.start_time.is_some());
+    assert!(entry.occur_time.is_some());
     assert!(
-        entry.end_time.is_none(),
+        entry.dur.is_none(),
         "no --dur ⇒ no time_end (moment semantics)",
     );
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
@@ -185,7 +185,7 @@ fn start_extras_do_not_imply_duration() {
     assert_eq!(extra["skillPoints"], json!(3));
     assert_eq!(extra["tempo"], json!("fast"));
     assert!(
-        entry.end_time.is_none(),
+        entry.dur.is_none(),
         "keys alone never derive a duration",
     );
 }
@@ -204,7 +204,7 @@ fn positional_values_never_become_duration() {
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "start", value: "reqVal1");
     assert!(
-        entry.end_time.is_none(),
+        entry.dur.is_none(),
         "positional values do not derive a time_end",
     );
 }
@@ -273,12 +273,12 @@ fn yesterday_flag_does_not_consume_positional_as_duration() {
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "start", value: 315);
     assert!(
-        entry.end_time.is_none(),
+        entry.dur.is_none(),
         "`315` is a value, not a duration",
     );
 
     // Anchored roughly one day back (within the test's wall-clock window).
-    let ts = entry.start_time.as_ref().unwrap().utc;
+    let ts = entry.occur_time.as_ref().unwrap().utc;
     let day = chrono::Duration::days(1);
     let lower = before - day - chrono::Duration::seconds(1);
     let upper = after - day + chrono::Duration::seconds(1);

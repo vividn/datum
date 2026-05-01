@@ -133,7 +133,7 @@ fn auto_resolver_closes_older_open_after_delay() {
     // isn't guaranteed, so identify newer/older by start_time.
     let entries = db.entries_for_field("workout", None).unwrap();
     let mut sorted = entries.clone();
-    sorted.sort_by_key(|e| e.start_time.as_ref().unwrap().utc);
+    sorted.sort_by_key(|e| e.occur_time.as_ref().unwrap().utc);
     let older = sorted[0].clone();
     let newer = sorted[1].clone();
     assert_eq!(
@@ -142,10 +142,10 @@ fn auto_resolver_closes_older_open_after_delay() {
         "older open should be closed into a block; got shape={:?}",
         older.entry_shape
     );
-    assert!(older.end_time.is_some(), "older open must have end_time");
+    assert!(older.dur.is_some(), "older open must have end_time");
     assert_eq!(
-        older.end_time.as_ref().unwrap().utc,
-        newer.start_time.as_ref().unwrap().utc,
+        older.computed_end_time().unwrap().utc,
+        newer.occur_time.as_ref().unwrap().utc,
         "older's end_time should match newer's start_time"
     );
     // Newer remains ongoing.
@@ -194,7 +194,7 @@ fn auto_resolver_skips_if_kept_both() {
     let entries = db.entries_for_field("workout", None).unwrap();
     for e in &entries {
         assert!(
-            e.end_time.is_none(),
+            e.dur.is_none(),
             "keep_both must not have closed either entry"
         );
     }

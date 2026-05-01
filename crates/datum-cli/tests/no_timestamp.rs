@@ -20,8 +20,8 @@ fn occur_minus_t_is_timeless_add() {
     assert_count!(db, "coffee", 1);
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
     assert_entry_matches!(e, field: "coffee", verb: "add");
-    assert!(e.start_time.is_none(), "occur -T must not set start_time");
-    assert!(e.end_time.is_none(), "occur -T must not set end_time");
+    assert!(e.occur_time.is_none(), "occur -T must not set start_time");
+    assert!(e.dur.is_none(), "occur -T must not set end_time");
 }
 
 #[test]
@@ -30,8 +30,8 @@ fn start_minus_t_is_timeless_add() {
     run_cli(&["start", "sleep", "-T"], &db).expect("start -T");
     let e = &db.entries_for_field("sleep", None).unwrap()[0];
     assert_entry_matches!(e, verb: "add");
-    assert!(e.start_time.is_none());
-    assert!(e.end_time.is_none());
+    assert!(e.occur_time.is_none());
+    assert!(e.dur.is_none());
 }
 
 #[test]
@@ -40,8 +40,8 @@ fn stop_minus_t_is_timeless_add() {
     run_cli(&["stop", "task", "-T"], &db).expect("stop -T");
     let e = &db.entries_for_field("task", None).unwrap()[0];
     assert_entry_matches!(e, verb: "add");
-    assert!(e.start_time.is_none());
-    assert!(e.end_time.is_none());
+    assert!(e.occur_time.is_none());
+    assert!(e.dur.is_none());
 }
 
 #[test]
@@ -50,8 +50,8 @@ fn end_minus_t_is_timeless_add() {
     run_cli(&["end", "task", "-T"], &db).expect("end -T");
     let e = &db.entries_for_field("task", None).unwrap()[0];
     assert_entry_matches!(e, verb: "add");
-    assert!(e.start_time.is_none());
-    assert!(e.end_time.is_none());
+    assert!(e.occur_time.is_none());
+    assert!(e.dur.is_none());
 }
 
 #[test]
@@ -62,8 +62,8 @@ fn switch_minus_t_is_timeless_add_preserves_value() {
     // The primary value ("happy") must still land on the entry — `-T` only
     // suppresses the timestamp, not the payload. Verb rides back as `add`.
     assert_entry_matches!(e, field: "mood", verb: "add", value: "happy");
-    assert!(e.start_time.is_none());
-    assert!(e.end_time.is_none());
+    assert!(e.occur_time.is_none());
+    assert!(e.dur.is_none());
 }
 
 #[test]
@@ -72,8 +72,8 @@ fn add_minus_t_is_timeless() {
     run_cli(&["add", "note", "-T"], &db).expect("add -T");
     let e = &db.entries_for_field("note", None).unwrap()[0];
     assert_entry_matches!(e, verb: "add");
-    assert!(e.start_time.is_none());
-    assert!(e.end_time.is_none());
+    assert!(e.occur_time.is_none());
+    assert!(e.dur.is_none());
 }
 
 // ─── Payload preservation: -T still routes through the normal kv parsing ─────
@@ -87,7 +87,7 @@ fn minus_t_keeps_extra_data_kv_pairs() {
     let data = e.data.as_ref().expect("kv pairs land in extra_data");
     assert_eq!(data.get("pos"), Some(&serde_json::json!("verb")));
     assert_eq!(data.get("srcLang"), Some(&serde_json::json!("pt")));
-    assert!(e.start_time.is_none());
+    assert!(e.occur_time.is_none());
 }
 
 // ─── Rejection: -T plus any time flag is a hard error ────────────────────────
@@ -153,7 +153,7 @@ fn without_minus_t_occur_still_timestamps() {
     run_cli(&["occur", "coffee"], &db).expect("plain occur");
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
     assert!(
-        e.start_time.is_some(),
+        e.occur_time.is_some(),
         "plain `occur` must still stamp start_time"
     );
 }

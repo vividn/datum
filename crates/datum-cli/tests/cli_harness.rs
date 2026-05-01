@@ -13,10 +13,11 @@ fn run_cli_harness_dispatches_to_occur() {
     // Verb-first form: `datum occur coffee 2`
     run_cli(&["occur", "coffee", "2"], &db).expect("occur dispatch");
 
-    // Exactly one coffee entry with verb=occur and value=2.
+    // Exactly one coffee entry. Under v3 (da-5ns), `occur coffee 2` derives
+    // a `switch` verb because state=2 lands without a duration.
     assert_count!(db, "coffee", 1);
     let entry = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "coffee", verb: "occur", value: 2);
+    assert_entry_matches!(entry, field: "coffee", verb: "switch", state: 2);
 }
 
 #[test]
@@ -29,7 +30,7 @@ fn run_cli_harness_surfaces_field_verb_swap() {
 
     assert_count!(db, "mood", 1);
     let entry = &db.entries_for_field("mood", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "mood", verb: "switch", value: "happy");
+    assert_entry_matches!(entry, field: "mood", verb: "switch", state: "happy");
 }
 
 #[test]
@@ -70,7 +71,8 @@ fn get_pretty_emits_indented_json() {
     // Key fields round-trip.
     let parsed: serde_json::Value = serde_json::from_str(&pretty).unwrap();
     assert_eq!(parsed["field"], serde_json::json!("mood"));
-    assert_eq!(parsed["value"], serde_json::json!("happy"));
+    // da-5ns: `value` was renamed to `state` on the JSON wire format.
+    assert_eq!(parsed["state"], serde_json::json!("happy"));
 }
 
 #[test]

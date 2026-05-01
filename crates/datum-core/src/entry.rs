@@ -448,6 +448,17 @@ impl Entry {
         parse_iso_duration_seconds(self.dur.as_deref()?)
     }
 
+    /// Trailing-edge timestamp derived from `occur_time + dur`. `None`
+    /// when either is unset (point/switch shapes have no end). Replaces
+    /// the v=19 `end_time` column-as-field access in tests / render code.
+    pub fn computed_end_time(&self) -> Option<DatumTime> {
+        let occur = self.occur_time.as_ref()?;
+        let secs = parse_iso_duration_seconds(self.dur.as_deref()?)?;
+        let mut e = occur.clone();
+        e.utc += chrono::Duration::seconds(secs);
+        Some(e)
+    }
+
     /// Recompute the content_hash from the entry's current fields.
     pub fn expected_content_hash(&self) -> String {
         let occur_str = self

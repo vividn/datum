@@ -120,7 +120,7 @@ fn switch_last_state_assertion_match_files_no_conflict() {
         .entries_for_field("mood", None)
         .unwrap()
         .into_iter()
-        .find(|e| e.value.as_ref() == Some(&serde_json::json!("sad")))
+        .find(|e| e.state.as_ref() == Some(&serde_json::json!("sad")))
         .expect("sad entry present");
     assert_eq!(
         sad.user_asserted_last_state,
@@ -169,7 +169,7 @@ fn bare_switch_last_state_is_noop_assertion_wise() {
         .entries_for_field("mood", None)
         .unwrap()
         .into_iter()
-        .find(|e| e.value.as_ref() == Some(&serde_json::json!("sad")))
+        .find(|e| e.state.as_ref() == Some(&serde_json::json!("sad")))
         .expect("sad entry present");
     assert!(
         sad.user_asserted_last_state.is_none(),
@@ -186,8 +186,8 @@ fn switch_moment_records_point_in_time() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
 
-    let ts = e.start_time.as_ref().expect("time_start set");
-    let te = e.end_time.as_ref().expect("time_end set on --moment");
+    let ts = e.occur_time.as_ref().expect("time_start set");
+    let te = e.computed_end_time().expect("time_end set on --moment");
     assert_eq!(ts.utc, te.utc, "--moment: time_start == time_end");
 
     // Short-flag form (-m) also works.
@@ -195,8 +195,8 @@ fn switch_moment_records_point_in_time() {
     run_cli(&["switch", "mood", "happy", "-m"], &db2).expect("short -m");
     let e2 = &db2.entries_for_field("mood", None).unwrap()[0];
     assert_eq!(
-        e2.start_time.as_ref().unwrap().utc,
-        e2.end_time.as_ref().unwrap().utc,
+        e2.occur_time.as_ref().unwrap().utc,
+        e2.computed_end_time().unwrap().utc,
     );
 }
 
@@ -222,7 +222,7 @@ fn derived_alias_from_spec_routes_to_switch() {
     let entries = db.entries_for_field("mood", None).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].verb, Verb::Switch);
-    assert_eq!(entries[0].value.as_ref(), Some(&serde_json::json!("happy")));
+    assert_eq!(entries[0].state.as_ref(), Some(&serde_json::json!("happy")));
 }
 
 #[test]

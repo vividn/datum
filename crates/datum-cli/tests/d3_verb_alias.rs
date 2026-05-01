@@ -46,7 +46,7 @@ fn end_and_stop_are_synonyms() {
     assert_eq!(end_close.verb, Verb::Stop);
     assert_eq!(stop_close.verb, Verb::Stop);
     assert_eq!(end_close.field, stop_close.field);
-    assert_eq!(end_close.value, stop_close.value);
+    assert_eq!(end_close.state, stop_close.state);
 }
 
 // ─── 2. Auto-generated bare-field alias ──────────────────────────────────────
@@ -74,7 +74,7 @@ fn default_verb_in_spec_autogenerates_bare_alias() {
     let entries = db.entries_for_field("mood", None).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].verb, Verb::Switch);
-    assert_eq!(entries[0].value.as_ref(), Some(&json!("happy")));
+    assert_eq!(entries[0].state.as_ref(), Some(&json!("happy")));
 }
 
 // ─── 3. Cross-field state-alias collision ────────────────────────────────────
@@ -196,8 +196,8 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
 
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
     assert_eq!(e.entry_shape, EntryShape::Block);
-    assert!(e.start_time.is_some());
-    assert!(e.end_time.is_some());
+    assert!(e.occur_time.is_some());
+    assert!(e.dur.is_some());
     // Temporal keys get consumed — they don't survive into extra_data.
     assert!(
         e.data.is_none()
@@ -212,8 +212,8 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
     run_cli(&["add", "nap", "start_time=-5m", "-t", "14:00"], &db2).expect("add ongoing");
     let e2 = &db2.entries_for_field("nap", None).unwrap()[0];
     assert_eq!(e2.entry_shape, EntryShape::Ongoing);
-    assert!(e2.start_time.is_some());
-    assert!(e2.end_time.is_none());
+    assert!(e2.occur_time.is_some());
+    assert!(e2.dur.is_none());
 
     // no temporal hints → point
     let db3 = fresh_db();
@@ -235,7 +235,7 @@ fn add_with_dur_null_yields_point_shape() {
 
     let e = &db.entries_for_field("note_field", None).unwrap()[0];
     assert_eq!(e.entry_shape, EntryShape::Point);
-    assert!(e.end_time.is_none(), "dur=null must not set end_time");
+    assert!(e.dur.is_none(), "dur=null must not set end_time");
     assert!(
         e.data.as_ref().and_then(|d| d.get("dur")).is_none(),
         "dur=null sentinel must be stripped from extra_data, got {:?}",

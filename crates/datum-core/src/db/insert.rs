@@ -10,7 +10,7 @@ use rand::Rng;
 use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value as JsonValue;
 
-use crate::entry::{new_hid, Entry};
+use crate::entry::{new_hid, Entry, Verb};
 use crate::error::{DatumError, Result};
 use crate::history::{self, ChangeKind};
 use crate::ids::{Hid, Slug};
@@ -26,11 +26,22 @@ use super::Db;
 /// the `verb` column is sourced from `derive_verb(state, dur, fs)` rather
 /// than the legacy stub. The returned state is `entry.state` after the
 /// null→true promotion (`Some(true)` when the caller passed `None`).
-/// The caller's `entry.verb` is intentionally ignored — the (state, dur,
-/// following_state) triple is the single source of truth.
+///
+/// The caller's `entry.verb` informs one promotion: when it names a
+/// switch-style verb (`switch`, `block-switch`, `point-switch`, or the
+/// legacy `start`/`stop`/`add`) and `state` is `None`, the state is
+/// canonicalized to `true` *before* derive_verb runs so an unannotated
+/// `datum switch <field>` lands as `Verb::Switch` (not `Verb::Point`).
+/// The (state, dur, fs) triple remains the source of truth — verb is a
+/// hint for how to read absence-of-state.
 fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
+    let state_in = match (entry.state.clone(), &entry.verb) {
+        (None, Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch
+              | Verb::Start | Verb::Stop) => Some(serde_json::Value::Bool(true)),
+        (s, _) => s,
+    };
     let (verb, canonical_state) = derive_verb(
-        entry.state.clone(),
+        state_in,
         entry.dur.as_deref(),
         entry.following_state.clone(),
     )?;

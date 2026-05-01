@@ -1,5 +1,14 @@
 # Views — Parity Audit + Refactor Plan (daydumb vs datum)
 
+> **⚠️ Pre-pivot reference (2026-05-01).** This audit was written against
+> the v=19 schema (`start_time` + `end_time` + `value`). The **da-5ns**
+> time-shape pivot replaced that with `occur_time` + `state` + `dur` +
+> `following_state` and a stored five-verb classifier. Column names and
+> SQL fragments below refer to the pre-pivot shape; the *behaviour* still
+> applies, but the SQL must be re-projected onto the v=20 columns when
+> referencing this doc. A v3-aligned rewrite is filed as follow-up
+> (out-of-scope for sub-bead 8).
+
 This document audits datum's CouchDB views against daydumb's SQL-backed
 replacements (post-R3, `da-t6t.3`). For each view ported into daydumb we
 record the original map/reduce, the new SQL form, and any divergences;

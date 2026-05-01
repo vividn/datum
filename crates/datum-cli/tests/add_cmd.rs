@@ -47,7 +47,9 @@ fn note_sets_field_and_collects_extra_kv() {
     let db = fresh_db();
     run_cli(&["add", "field"], &db).expect("note field");
     let e1 = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(e1, field: "field", verb: "add");
+    // da-5ns: verb is derived from (state, dur, following_state). `add field`
+    // with no time-shape inputs derives to `point` under the v3 model.
+    assert_entry_matches!(e1, field: "field", verb: "point");
     assert!(
         e1.data.is_none(),
         "no kv pairs ⇒ extra_data stays None",
@@ -745,10 +747,13 @@ fn note_verb_removed_but_alias_works() {
     let a = &db_add.entries_for_field("field", None).unwrap()[0];
 
     assert_eq!(n.field, a.field);
-    assert_eq!(n.verb, Verb::Add, "note alias resolves to Verb::Add");
-    assert_eq!(a.verb, Verb::Add);
-    assert_eq!(n.verb.to_string(), "add");
-    assert_eq!(n.value, a.value);
+    // da-5ns: `add` derives the verb from data shape — `add field foo=bar`
+    // (no state, no dur) ⇒ `point`. The `note` seeded alias still routes to
+    // `add`, so both dispatches must produce identical rows.
+    assert_eq!(n.verb, Verb::Point, "note alias dispatches to add → derives Point");
+    assert_eq!(a.verb, Verb::Point);
+    assert_eq!(n.verb.to_string(), "point");
+    assert_eq!(n.state, a.state);
     assert_eq!(n.data, a.data);
     // content_hash derives only from field/time/value/extra — must match
     // across the two dispatches.

@@ -28,7 +28,7 @@ fn switch_comma_separated_states_becomes_array_value() {
     let entries = db.entries_for_field("task", None).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(
-        entries[0].value.as_ref(),
+        entries[0].state.as_ref(),
         Some(&json!(["reading", "writing"])),
         "comma-split states land as a JSON array in `value`",
     );
@@ -42,7 +42,7 @@ fn switch_single_state_stays_scalar() {
     run_cli(&["switch", "task", "reading"], &db).expect("single-state switch");
 
     let entries = db.entries_for_field("task", None).unwrap();
-    assert_eq!(entries[0].value.as_ref(), Some(&json!("reading")));
+    assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
 }
 
 /// Acceptance: trailing comma rejected (original datum required one — drop
@@ -93,7 +93,7 @@ fn array_state_is_queryable_over_timeline() {
         .expect("switch to concurrent states");
 
     let entries = db.entries_for_field("project", None).unwrap();
-    let ts = entries[0].start_time.as_ref().unwrap().utc;
+    let ts = entries[0].occur_time.as_ref().unwrap().utc;
     assert_eq!(
         db.get_active_state("project", ts).unwrap(),
         json!(["datum", "household"]),
