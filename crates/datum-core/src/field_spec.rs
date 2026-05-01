@@ -807,7 +807,7 @@ impl<'a> InterpolationContext<'a> {
         Self {
             field: &entry.field,
             verb: &entry.verb,
-            value: entry.value.as_ref(),
+            value: entry.state.as_ref(),
             extra_data: entry.data.as_ref(),
             uid: uid_buf,
         }

@@ -132,24 +132,15 @@ impl Db {
     }
 
     /// Rows where both time bounds exist and `end_time` precedes `start_time`.
+    ///
+    /// da-5ns sub-bead 1 stub: post-pivot there is no separate
+    /// `end_time` column — duration is captured by the `dur` ISO
+    /// string. A negative duration is rejected at parse time
+    /// (sub-bead 3), so the legacy "end before start" anomaly cannot
+    /// be expressed in the v=20 schema. Returns an empty vec; sub-bead
+    /// 7 (`dm check --verbs`) covers the analogous drift category.
     pub fn find_time_end_before_start(&self) -> Result<Vec<TimeOrderIssue>> {
-        let mut stmt = self.conn.prepare(
-            r#"SELECT slug, field, start_time, end_time FROM entries
-               WHERE start_time IS NOT NULL
-                 AND end_time IS NOT NULL
-                 AND end_time < start_time
-                 AND deleted_at IS NULL
-               ORDER BY slug ASC"#,
-        )?;
-        let rows = stmt.query_map([], |row| {
-            Ok(TimeOrderIssue {
-                slug: row.get(0)?,
-                field: row.get(1)?,
-                start_time: row.get(2)?,
-                end_time: row.get(3)?,
-            })
-        })?;
-        rows.map(|r| r.map_err(DatumError::Db)).collect()
+        Ok(Vec::new())
     }
 
     /// Distinct field names across all non-deleted entries.

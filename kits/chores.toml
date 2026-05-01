@@ -27,10 +27,10 @@ SELECT
            json_extract(e.data, '$.nextTime'),
            json_extract(e.data, '$.next_date'),
            json_extract(e.data, '$.nextDate'))             AS next_due_raw,
-  e.start_time                                             AS last_done,
+  e.occur_time                                             AS last_done,
   CASE
-    WHEN e.start_time IS NOT NULL
-     AND date(e.start_time) = date('now') THEN 1
+    WHEN e.occur_time IS NOT NULL
+     AND date(e.occur_time) = date('now') THEN 1
     ELSE 0
   END                                                      AS done_today
 FROM entries e

@@ -67,7 +67,7 @@ pub enum GroupColumn {
 impl GroupColumn {
     pub fn as_sql(self) -> &'static str {
         match self {
-            GroupColumn::Value => "value",
+            GroupColumn::Value => "state",
             GroupColumn::Verb => "verb",
             GroupColumn::Field => "field",
         }
@@ -91,19 +91,20 @@ impl std::str::FromStr for GroupColumn {
 /// SQL expression for an entry's effective sort time under a given
 /// [`TimeMetric`]. Centralizes the metric-aware branch used by `tail`/`head`.
 pub(super) fn time_expr(metric: TimeMetric) -> &'static str {
+    // da-5ns: occur_time is NOT NULL post-pivot, so the COALESCE
+    // chains collapse to single-column references.
     match metric {
-        TimeMetric::Hybrid => "COALESCE(start_time, modify_time)",
-        TimeMetric::Occur => "start_time",
+        TimeMetric::Hybrid | TimeMetric::Occur => "occur_time",
         TimeMetric::Create => "create_time",
         TimeMetric::Modify => "modify_time",
     }
 }
 
 /// SQL expression for an entry's "endbound" time — the canonical occurrence
-/// sort key used when no explicit metric is selected. Falls back through
-/// `start_time` → `end_time` → `create_time`.
+/// sort key used when no explicit metric is selected. Post-pivot,
+/// `occur_time` is NOT NULL so the v=19 COALESCE chain collapses.
 pub(super) fn time_expr_endbound() -> &'static str {
-    "COALESCE(start_time, end_time, create_time)"
+    "occur_time"
 }
 
 /// Build the shared `WHERE` clause + parameter bindings used by

@@ -124,7 +124,7 @@ fn make_occur(field: &str, offset_secs: i64, device: &str) -> Entry {
         offset_minutes: 0,
         timezone: "UTC".to_string(),
     };
-    let mut e = Entry::new(
+    let mut e = Entry::new_legacy(
         field,
         Verb::Occur,
         Some(serde_json::json!(1)),
@@ -148,7 +148,7 @@ fn make_switch(field: &str, state: &str, offset_secs: i64, device: &str) -> Entr
         offset_minutes: 0,
         timezone: "UTC".to_string(),
     };
-    let mut e = Entry::new(
+    let mut e = Entry::new_legacy(
         field,
         Verb::Switch,
         Some(serde_json::json!(state)),
@@ -189,7 +189,7 @@ fn make_block(
         "weight": {"v": weight_kg, "u": "kg"},
         "reps": 10
     });
-    let mut e = Entry::new(
+    let mut e = Entry::new_legacy(
         field,
         Verb::Block,
         None,
@@ -879,7 +879,7 @@ fn s8_conflict_surface_and_resolve() {
     // Disconnected starts on the same `focus` field 30 minutes apart —
     // textbook double_open from B's perspective once it pulls A's row.
     let base = Utc.with_ymd_and_hms(2026, 4, 21, 12, 0, 0).unwrap();
-    let mut a_start = Entry::new(
+    let mut a_start = Entry::new_legacy(
         "focus",
         Verb::Start,
         None,
@@ -898,7 +898,7 @@ fn s8_conflict_surface_and_resolve() {
     db_a.insert_entry(&a_start).unwrap();
 
     let b_at = base + Duration::minutes(30);
-    let mut b_start = Entry::new(
+    let mut b_start = Entry::new_legacy(
         "focus",
         Verb::Start,
         None,

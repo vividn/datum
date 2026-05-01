@@ -38,7 +38,7 @@ impl Db {
     ) -> Result<Option<JsonValue>> {
         let cutoff = t.to_rfc3339();
         let sql = format!(
-            "SELECT value FROM entries
+            "SELECT state FROM entries
              WHERE field = ?1
                AND verb != 'add'
                AND deleted_at IS NULL
@@ -85,8 +85,8 @@ impl Db {
             .collect::<Vec<_>>()
             .join(",");
         let sql = format!(
-            "SELECT field, value FROM (
-                SELECT field, value,
+            "SELECT field, state FROM (
+                SELECT field, state,
                   ROW_NUMBER() OVER (
                     PARTITION BY field
                     ORDER BY {endbound} DESC, slug DESC

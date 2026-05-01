@@ -599,7 +599,7 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         (time_start, time_end, Some(base_precision), override_shape)
     };
 
-    let mut entry = Entry::new(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
+    let mut entry = Entry::new_legacy(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
 
     // For Verb::Add, the shape was inferred from temporal hints; override the
     // shape-inference performed by `Entry::new` so `entry_shape` reflects the
@@ -1839,7 +1839,7 @@ pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
     // and per-state-color overrides still live on FieldSpec, so we update
     // the spec only when the user actually passed those arguments.
     let device = device_id()?;
-    let entry = Entry::new(
+    let entry = Entry::new_legacy(
         &args.field,
         Verb::Switch,
         None,
@@ -1883,7 +1883,7 @@ pub(crate) fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
     // way to mark a field ignored. No spec writes — the spec keeps its
     // schema-only role.
     let device = device_id()?;
-    let entry = Entry::new(
+    let entry = Entry::new_legacy(
         &args.field,
         Verb::Switch,
         Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
@@ -2843,7 +2843,7 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // backwards compatibility; they no longer touch the spec.
     if args.track {
         let device = device_id()?;
-        let entry = Entry::new(
+        let entry = Entry::new_legacy(
             &args.field,
             Verb::Switch,
             None,
@@ -2857,7 +2857,7 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     }
     if args.ignore {
         let device = device_id()?;
-        let entry = Entry::new(
+        let entry = Entry::new_legacy(
             &args.field,
             Verb::Switch,
             Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
@@ -3312,7 +3312,7 @@ pub(crate) fn cmd_db_import(args: DbImportArgs, db: &Db) -> Result<()> {
             .map(|t| t.utc)
             .unwrap_or(created_at);
 
-        let mut entry = Entry::new(
+        let mut entry = Entry::new_legacy(
             field, verb, value, extra_data, None,
             time_start, time_end, device.clone(),
         );
@@ -3482,7 +3482,7 @@ mod tests {
         use datum_core::{db::Db, entry::Entry, time::DatumTime};
         let db = Db::open_in_memory().unwrap();
         let t = DatumTime::now();
-        let entry = Entry::new("test", Verb::Occur, None, None, None, Some(t), None, "dev");
+        let entry = Entry::new_legacy("test", Verb::Occur, None, None, None, Some(t), None, "dev");
         let slug = entry.slug.clone();
         db.insert_entry(&entry).unwrap();
 
@@ -3811,7 +3811,7 @@ mod tests {
             "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new(
+        Entry::new_legacy(
             field,
             Verb::Occur,
             Some(serde_json::json!(secs_offset)),
@@ -3922,7 +3922,7 @@ mod tests {
             "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new(field, Verb::Occur, Some(value), extra, None, Some(t), None, "d1")
+        Entry::new_legacy(field, Verb::Occur, Some(value), extra, None, Some(t), None, "d1")
     }
 
     fn run_grep(db: &datum_core::db::Db, patterns: &[&str], field: Option<&str>) -> Vec<Entry> {
@@ -4092,7 +4092,7 @@ mod tests {
         use datum_core::{entry::Entry, time::DatumTime};
         let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
-        let e = Entry::new(field, verb, value, extra, None, Some(dt), None, "d1");
+        let e = Entry::new_legacy(field, verb, value, extra, None, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
         e
     }
@@ -4348,7 +4348,7 @@ mod tests {
         let t1: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00.001Z".parse().unwrap();
         for (t, v) in [(t0, 1), (t1, 2)] {
             let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
-            let e = Entry::new(
+            let e = Entry::new_legacy(
                 "gym",
                 Verb::Occur,
                 Some(serde_json::json!(v)),
@@ -4612,7 +4612,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        Entry::new(
+        Entry::new_legacy(
             field,
             Verb::Start,
             None,
@@ -4716,7 +4716,7 @@ mod tests {
     ) -> datum_core::entry::Entry {
         use datum_core::{entry::Entry, time::DatumTime};
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new(field, Verb::Occur, None, None, None, Some(t), None, device)
+        Entry::new_legacy(field, Verb::Occur, None, None, None, Some(t), None, device)
     }
 
     #[test]

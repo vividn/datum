@@ -183,13 +183,11 @@ pub fn last_state_at(
         r#"SELECT * FROM entries
            WHERE field = ?1
              AND deleted_at IS NULL
-             AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
+             AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
+                          'point', 'block-switch', 'point-switch')
              AND hid != ?3
-             AND (
-                  (start_time IS NOT NULL AND start_time <= ?2)
-               OR (end_time   IS NOT NULL AND end_time   <= ?2)
-             )
-           ORDER BY COALESCE(start_time, end_time, create_time) ASC"#,
+             AND occur_time <= ?2
+           ORDER BY occur_time ASC"#,
     )?;
     let rows = stmt.query_map(params![field, at_str, exclude], crate::db::row_to_entry_public)?;
     let entries: Vec<Entry> = rows
@@ -248,14 +246,11 @@ impl FieldStateEvents {
             let verb: Verb = verb_str.parse().map_err(|e: String| {
                 rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
             })?;
-            let value: Option<Value> = row
-                .get::<_, Option<String>>("value")?
+            let state: Option<Value> = row
+                .get::<_, Option<String>>("state")?
                 .and_then(|s| serde_json::from_str(&s).ok());
-            let start_time: Option<DateTime<Utc>> = row
-                .get::<_, Option<String>>("start_time")?
-                .and_then(|s| s.parse().ok());
-            let end_time: Option<DateTime<Utc>> = row
-                .get::<_, Option<String>>("end_time")?
+            let occur_time: Option<DateTime<Utc>> = row
+                .get::<_, Option<String>>("occur_time")?
                 .and_then(|s| s.parse().ok());
             let create_time: DateTime<Utc> = row
                 .get::<_, String>("create_time")?
@@ -268,7 +263,7 @@ impl FieldStateEvents {
                     )
                 })?;
             collect_raw_events(
-                &hid, verb, value.as_ref(), start_time, end_time, create_time, out,
+                &hid, verb, state.as_ref(), occur_time, None, create_time, out,
             );
             Ok(())
         };
@@ -276,15 +271,13 @@ impl FieldStateEvents {
         match max_probe {
             Some(t) => {
                 let mut stmt = conn.prepare(
-                    r#"SELECT hid, verb, value, start_time, end_time, create_time
+                    r#"SELECT hid, verb, state, occur_time, create_time
                        FROM entries
                        WHERE field = ?1
                          AND deleted_at IS NULL
-                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
-                         AND (
-                              (start_time IS NOT NULL AND start_time <= ?2)
-                           OR (end_time   IS NOT NULL AND end_time   <= ?2)
-                         )"#,
+                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
+                                      'point', 'block-switch', 'point-switch')
+                         AND occur_time <= ?2"#,
                 )?;
                 let mut rows = stmt.query(params![field, t.to_rfc3339()])?;
                 while let Some(row) = rows.next()? {
@@ -293,11 +286,12 @@ impl FieldStateEvents {
             }
             None => {
                 let mut stmt = conn.prepare(
-                    r#"SELECT hid, verb, value, start_time, end_time, create_time
+                    r#"SELECT hid, verb, state, occur_time, create_time
                        FROM entries
                        WHERE field = ?1
                          AND deleted_at IS NULL
-                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block')"#,
+                         AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
+                                      'point', 'block-switch', 'point-switch')"#,
                 )?;
                 let mut rows = stmt.query(params![field])?;
                 while let Some(row) = rows.next()? {
@@ -344,30 +338,33 @@ fn collect_raw_events(
     create_time: DateTime<Utc>,
     out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value, String)>,
 ) {
+    // da-5ns sub-bead 1 stub: emit one event per state-affecting verb at
+    // `start_time` (which the caller supplies as occur_time). The
+    // trailing-edge "off" event that the v19 model emitted at
+    // `end_time` for blocks/switches goes away — sub-bead 5 reads the
+    // matching following_state column to decide what the trailing edge
+    // looks like under the new shape. The legacy verb arms (Switch /
+    // Start / Stop / Occur / Block / Add) remain for rows whose stored
+    // verb wasn't rewritten by sub-bead 7's `dm check --verbs --fix`.
+    let _ = end_time;
     match verb {
-        Verb::Switch => {
+        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {
             if let Some(ts) = start_time {
                 let state = value.map(normalize_state).unwrap_or(Value::Null);
                 out.push((ts, create_time, state, hid.to_string()));
-                if let Some(te) = end_time {
-                    out.push((te, create_time, Value::Bool(false), hid.to_string()));
-                }
             }
         }
         Verb::Start => {
             if let Some(ts) = start_time {
                 out.push((ts, create_time, Value::Bool(true), hid.to_string()));
-                if let Some(te) = end_time {
-                    out.push((te, create_time, Value::Bool(false), hid.to_string()));
-                }
             }
         }
         Verb::Stop => {
-            if let Some(t) = end_time.or(start_time) {
-                out.push((t, create_time, Value::Bool(false), hid.to_string()));
+            if let Some(ts) = start_time {
+                out.push((ts, create_time, Value::Bool(false), hid.to_string()));
             }
         }
-        Verb::Occur => {
+        Verb::Occur | Verb::Point => {
             if let Some(ts) = start_time {
                 out.push((ts, create_time, Value::Bool(false), hid.to_string()));
             }
@@ -376,9 +373,6 @@ fn collect_raw_events(
             if let Some(ts) = start_time {
                 let state = value.map(normalize_state).unwrap_or(Value::Bool(true));
                 out.push((ts, create_time, state, hid.to_string()));
-                if let Some(te) = end_time {
-                    out.push((te, create_time, Value::Bool(false), hid.to_string()));
-                }
             }
         }
         Verb::Add => {}
@@ -389,55 +383,43 @@ fn collect_events(
     entry: &Entry,
     out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>,
 ) {
+    // da-5ns sub-bead 1 stub: see the comment on `collect_raw_events`.
+    // Each state-affecting verb emits at most one event at occur_time;
+    // sub-bead 5 expands this with following_state-aware tail events.
     match entry.verb {
-        Verb::Switch => {
-            if let Some(ts) = &entry.start_time {
+        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {
+            if let Some(ts) = &entry.occur_time {
                 let state = entry
-                    .value
+                    .state
                     .as_ref()
                     .map(normalize_state)
                     .unwrap_or(Value::Null);
                 out.push((ts.utc, entry.create_time, state));
-                if let Some(te) = &entry.end_time {
-                    out.push((te.utc, entry.create_time, Value::Bool(false)));
-                }
             }
         }
         Verb::Start => {
-            if let Some(ts) = &entry.start_time {
+            if let Some(ts) = &entry.occur_time {
                 out.push((ts.utc, entry.create_time, Value::Bool(true)));
-                if let Some(te) = &entry.end_time {
-                    out.push((te.utc, entry.create_time, Value::Bool(false)));
-                }
             }
         }
         Verb::Stop => {
-            let at = entry
-                .end_time
-                .as_ref()
-                .or(entry.start_time.as_ref());
-            if let Some(t) = at {
-                out.push((t.utc, entry.create_time, Value::Bool(false)));
+            if let Some(ts) = &entry.occur_time {
+                out.push((ts.utc, entry.create_time, Value::Bool(false)));
             }
         }
-        Verb::Occur => {
-            if let Some(ts) = &entry.start_time {
+        Verb::Occur | Verb::Point => {
+            if let Some(ts) = &entry.occur_time {
                 out.push((ts.utc, entry.create_time, Value::Bool(false)));
             }
         }
         Verb::Block => {
-            // A closed block: emit an "on" event at start_time (value when
-            // present, true otherwise) and a terminal "off" at end_time.
-            if let Some(ts) = &entry.start_time {
+            if let Some(ts) = &entry.occur_time {
                 let state = entry
-                    .value
+                    .state
                     .as_ref()
                     .map(normalize_state)
                     .unwrap_or(Value::Bool(true));
                 out.push((ts.utc, entry.create_time, state));
-                if let Some(te) = &entry.end_time {
-                    out.push((te.utc, entry.create_time, Value::Bool(false)));
-                }
             }
         }
         Verb::Add => {}

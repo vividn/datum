@@ -1,4 +1,12 @@
--- datum SQLite schema (v3 — data model v2)
+-- datum SQLite schema (v20 — time-shape pivot, da-5ns).
+--
+-- Time-shape pivot 2026-05-01: the entries table reverts from the
+-- start_time/end_time/entry_shape/intent shape to the original datum
+-- model — `occur_time` (when), `state` (what), `dur` (how long, ISO
+-- duration string), `following_state` (what changed to). The verb is
+-- derived from the (state, dur, following_state) triple but stored as
+-- a plain column so it can be indexed and `dm check --verbs` can detect
+-- drift.
 --
 -- Timestamps are stored as ISO 8601 UTC strings. CRDT-friendliness: entries
 -- are append-mostly; updates use modify_time for LWW. hid is the primary key
@@ -16,23 +24,35 @@ CREATE TABLE IF NOT EXISTS entries (
 
     -- What
     field           TEXT NOT NULL,
-    entry_shape     TEXT NOT NULL,               -- 'point' | 'block' | 'ongoing'
-    intent          TEXT,                        -- NULL | 'stop' | 'add' | 'occur' | 'switch' (user-intent override for generated verb)
-    value           TEXT,                        -- JSON (primary value)
+    -- `state`: any JSON value; NULL means undefined (intentionally
+    -- different from original datum, which collapsed null and
+    -- undefined). Promoted to literal `true` at insert when paired with
+    -- a switch/block-switch shape so the verb-derivation table is total.
+    state           TEXT,
+    -- `dur`: ISO-8601 duration string (e.g. "PT30M", "P1D"). NULL = no
+    -- duration (point/switch). "PT0S" = explicit zero (point-with-state
+    -- or point-switch). Negative durations are not supported.
+    dur             TEXT,
+    -- `following_state`: target state for switch-style events. Only
+    -- meaningful when `dur` is set; the table-level CHECK below enforces
+    -- this. Same JSON shape as `state`.
+    following_state TEXT,
+    -- `verb`: stored-not-derived classifier. One of point | switch |
+    -- block | block-switch | point-switch. Derived from the (state, dur,
+    -- following_state) triple at insert/update time; `dm check --verbs`
+    -- detects drift between stored and re-derived values.
+    verb            TEXT NOT NULL DEFAULT 'point',
     data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)
     unit            TEXT,                        -- top-level unit for value
 
     -- When
-    start_time      TEXT,                        -- ISO 8601 UTC
-    start_time_offset INTEGER,                   -- UTC offset in minutes
-    start_time_tz   TEXT,                        -- IANA timezone name
-    start_time_precision INTEGER NOT NULL DEFAULT 0,     -- absolute uncertainty in seconds
-    start_time_precision_unit TEXT NOT NULL DEFAULT 'exact', -- exact|second|minute|hour|date|month|year
-    end_time        TEXT,
-    end_time_offset INTEGER,
-    end_time_tz     TEXT,
-    end_time_precision INTEGER NOT NULL DEFAULT 0,
-    end_time_precision_unit TEXT NOT NULL DEFAULT 'exact',
+    occur_time           TEXT NOT NULL,          -- ISO 8601 UTC, required
+    occur_time_offset    INTEGER,                -- UTC offset in minutes
+    occur_time_tz        TEXT,                   -- IANA timezone name
+    -- Single ISO-8601 duration string (e.g. "PT1S", "PT1M", "PT1H",
+    -- "P1D", "P1W"). Replaces the v3-era (precision INTEGER seconds,
+    -- precision_unit TEXT) pair.
+    occur_time_precision TEXT,
 
     -- Where
     lat             REAL,
@@ -71,32 +91,11 @@ CREATE TABLE IF NOT EXISTS entries (
     -- conflict resolution mutate it. Not part of `content_hash`.
     extra_metadata TEXT,
 
-    -- Generated columns — read-only projections.
-    --
-    -- `verb`: intent overrides shape-derived classification, so `stop`/`note`
-    -- survive as first-class verbs for state compilation and the CLI's verb
-    -- filters. When intent is NULL, shape + value determine the verb.
-    verb TEXT GENERATED ALWAYS AS (
-        CASE
-            WHEN intent IS NOT NULL THEN intent
-            WHEN entry_shape = 'ongoing' THEN 'start'
-            WHEN entry_shape = 'block' THEN 'block'
-            WHEN entry_shape = 'point' AND value IS NULL THEN 'occur'
-            WHEN entry_shape = 'point' AND json_valid(value)
-                 AND json_type(value) IN ('true','false') THEN 'switch'
-            WHEN entry_shape = 'point' AND value IS NOT NULL THEN 'switch'
-            ELSE 'add'
-        END
-    ) VIRTUAL,
-
-    -- `dur_seconds`: derived duration in integer seconds. NULL when either
-    -- bound is absent, so callers can coalesce without a separate check.
-    dur_seconds INTEGER GENERATED ALWAYS AS (
-        CASE WHEN start_time IS NOT NULL AND end_time IS NOT NULL
-            THEN CAST((julianday(end_time) - julianday(start_time)) * 86400 AS INTEGER)
-            ELSE NULL
-        END
-    ) VIRTUAL
+    -- `following_state` is only meaningful when `dur` is set. The
+    -- parser-level rejection in da-5ns.3 keeps malformed inserts from
+    -- ever reaching this layer; the CHECK is a defence-in-depth gate
+    -- against accidental writes from future code paths.
+    CHECK (following_state IS NULL OR dur IS NOT NULL)
 );
 
 -- Unique slug — the human-facing id. Prevents accidental slug collisions on
@@ -104,32 +103,32 @@ CREATE TABLE IF NOT EXISTS entries (
 CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
 
 -- Field-scoped tail queries: most reads are "last N entries for field F" so
--- a composite (field, start_time DESC) index lets them avoid a sort.
-CREATE INDEX IF NOT EXISTS entries_field_start
-    ON entries (field, start_time DESC);
+-- a composite (field, occur_time DESC) index lets them avoid a sort.
+CREATE INDEX IF NOT EXISTS entries_field_occur
+    ON entries (field, occur_time DESC);
 
 -- Live-only variant used by the SQL-backed views (R3). The views consistently
--- filter tombstones and timestamped entries per field; a partial index lets
--- SQLite skip deleted rows entirely rather than filter them after an index
--- lookup.
-CREATE INDEX IF NOT EXISTS entries_live_field_start
-    ON entries (field, start_time)
-    WHERE deleted_at IS NULL AND start_time IS NOT NULL;
+-- filter tombstones per field; a partial index lets SQLite skip deleted rows
+-- entirely rather than filter them after an index lookup. `occur_time` is
+-- NOT NULL so no separate `IS NOT NULL` predicate is needed.
+CREATE INDEX IF NOT EXISTS entries_live_field_occur
+    ON entries (field, occur_time)
+    WHERE deleted_at IS NULL;
 
 -- Dedup lookup on the hashed content fingerprint.
 CREATE INDEX IF NOT EXISTS entries_content_hash
     ON entries (content_hash);
 
--- Filter by derived verb (e.g. "only switch events in this window").
+-- Filter by stored verb (e.g. "only switch events in this window").
 CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);
 
--- Bare-time tail/head (no `--field` filter) orders by the hybrid metric
--- `COALESCE(start_time, modify_time)`. Without this expression index the
--- planner falls back to a full SCAN + temp B-tree sort, which dominates at
--- 100k+ entries (see da-7iu). Including `slug` matches the secondary tie-break
--- so the index covers the full ORDER BY. Partial-on-live keeps it skinny.
-CREATE INDEX IF NOT EXISTS entries_hybrid_time
-    ON entries (COALESCE(start_time, modify_time), slug)
+-- Bare-time tail/head (no `--field` filter) orders by `occur_time`.
+-- Without this index the planner falls back to a full SCAN + temp
+-- B-tree sort, which dominates at 100k+ entries (see da-7iu). Including
+-- `slug` matches the secondary tie-break so the index covers the full
+-- ORDER BY. Partial-on-live keeps it skinny.
+CREATE INDEX IF NOT EXISTS entries_occur_time
+    ON entries (occur_time, slug)
     WHERE deleted_at IS NULL;
 
 -- Field specs: single source of truth for a field's schema, tracking state,

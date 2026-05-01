@@ -124,51 +124,56 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
         history::record(tx, entry, ChangeKind::SyncMerge)?;
     }
 
+    // da-5ns sub-bead 1: write the new (occur_time, state, dur,
+    // following_state, verb) shape. Sub-bead 3 wires verb-derivation
+    // through this path; for now the stored verb is whatever the peer
+    // sent.
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.timezone.as_str().to_string());
+    let verb_str = entry.verb.to_string();
+
     tx.execute(
         r#"INSERT INTO entries (
-            hid, slug, content_hash, field, entry_shape, intent,
-            value, data, unit,
-            start_time, start_time_offset, start_time_tz,
-            start_time_precision, start_time_precision_unit,
-            end_time, end_time_offset, end_time_tz,
-            end_time_precision, end_time_precision_unit,
+            hid, slug, content_hash, field,
+            verb, state, dur, following_state, data, unit,
+            occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
             raw_input, alias_chain, parser_version,
             extra_metadata
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6,
-            ?7, ?8, ?9,
-            ?10, ?11, ?12,
-            ?13, ?14,
+            ?1, ?2, ?3, ?4,
+            ?5, ?6, ?7, ?8, ?9, ?10,
+            ?11, ?12, ?13, ?14,
             ?15, ?16, ?17,
-            ?18, ?19,
-            ?20, ?21, ?22,
-            ?23, ?24, ?25,
-            ?26, ?27, ?28,
-            ?29, ?30, ?31,
-            ?32
+            ?18, ?19, ?20,
+            ?21, ?22, ?23,
+            ?24, ?25, ?26,
+            ?27
         )
         ON CONFLICT(slug) DO UPDATE SET
             hid             = excluded.hid,
             content_hash    = excluded.content_hash,
             field           = excluded.field,
-            entry_shape     = excluded.entry_shape,
-            intent          = excluded.intent,
-            value           = excluded.value,
+            verb            = excluded.verb,
+            state           = excluded.state,
+            dur             = excluded.dur,
+            following_state = excluded.following_state,
             data            = excluded.data,
             unit            = excluded.unit,
-            start_time      = excluded.start_time,
-            start_time_offset = excluded.start_time_offset,
-            start_time_tz   = excluded.start_time_tz,
-            start_time_precision = excluded.start_time_precision,
-            start_time_precision_unit = excluded.start_time_precision_unit,
-            end_time        = excluded.end_time,
-            end_time_offset = excluded.end_time_offset,
-            end_time_tz     = excluded.end_time_tz,
-            end_time_precision = excluded.end_time_precision,
-            end_time_precision_unit = excluded.end_time_precision_unit,
+            occur_time      = excluded.occur_time,
+            occur_time_offset = excluded.occur_time_offset,
+            occur_time_tz   = excluded.occur_time_tz,
+            occur_time_precision = excluded.occur_time_precision,
             lat             = excluded.lat,
             lon             = excluded.lon,
             location        = excluded.location,
@@ -187,21 +192,16 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             entry.slug,
             entry.content_hash,
             entry.field,
-            entry.entry_shape.to_string(),
-            entry.intent,
-            entry.value.as_ref().map(|v| v.to_string()),
+            verb_str,
+            entry.state.as_ref().map(|v| v.to_string()),
+            entry.dur,
+            entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),
             entry.unit,
-            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.start_time.as_ref().map(|t| t.offset_minutes),
-            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.start_time_precision,
-            entry.start_time_precision_unit.to_string(),
-            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.end_time.as_ref().map(|t| t.offset_minutes),
-            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.end_time_precision,
-            entry.end_time_precision_unit.to_string(),
+            occur_str,
+            occur_offset,
+            occur_tz,
+            entry.occur_time_precision,
             entry.lat,
             entry.lon,
             entry.location.as_deref(),

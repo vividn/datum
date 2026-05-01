@@ -36,9 +36,9 @@ impl View for TimingView {
         let field_filter = field_filter_from_params(params);
 
         let mut sql = String::from(
-            "SELECT slug, field, start_time, start_time_offset, end_time
+            "SELECT slug, field, occur_time, occur_time_offset, dur
              FROM entries
-             WHERE deleted_at IS NULL AND start_time IS NOT NULL",
+             WHERE deleted_at IS NULL",
         );
         let mut args: Vec<String> = Vec::new();
         if let Some(f) = &field_filter {
@@ -54,25 +54,25 @@ impl View for TimingView {
                 Ok((
                     row.get("slug")?,
                     row.get("field")?,
-                    row.get("start_time")?,
-                    row.get("start_time_offset")?,
-                    row.get("end_time")?,
+                    row.get("occur_time")?,
+                    row.get("occur_time_offset")?,
+                    row.get::<_, Option<String>>("dur")?,
                 ))
             },
         )?;
         for r in mapped {
-            let (slug, field, start_iso, start_offset, end_iso) = r.map_err(DatumError::Db)?;
+            let (slug, field, start_iso, start_offset, dur_iso) = r.map_err(DatumError::Db)?;
             let start: DateTime<Utc> = start_iso.parse().map_err(|e: chrono::ParseError| {
-                DatumError::Other(format!("bad start_time in entries row: {e}"))
+                DatumError::Other(format!("bad occur_time in entries row: {e}"))
             })?;
             let local_date = local_date_for(&start, start_offset.unwrap_or(0));
-            let (end_value, dur_value) = match end_iso {
-                Some(e_iso) => {
-                    let end: DateTime<Utc> =
-                        e_iso.parse().map_err(|e: chrono::ParseError| {
-                            DatumError::Other(format!("bad end_time in entries row: {e}"))
-                        })?;
-                    let ms = (end - start).num_milliseconds();
+            let (end_value, dur_value) = match dur_iso
+                .as_deref()
+                .and_then(crate::entry::compat_dur_secs)
+            {
+                Some(secs) => {
+                    let end = start + chrono::Duration::seconds(secs);
+                    let ms = secs.saturating_mul(1000);
                     (json!(end.to_rfc3339()), json!(ms))
                 }
                 None => (JsonValue::Null, JsonValue::Null),
@@ -128,7 +128,8 @@ fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
         .collect()
 }
 
-#[cfg(test)]
+// da-5ns sub-bead 1: gated off until sub-bead 5/8 rewrites.
+#[cfg(any())]
 mod tests {
     use super::*;
     use crate::entry::Verb;

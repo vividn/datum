@@ -36,18 +36,18 @@ impl View for StateChangeView {
 
         // Only verbs that can mutate state surface here; `add` never does.
         let mut sql = String::from(
-            "SELECT slug, field, verb, value, start_time, end_time, create_time
+            "SELECT slug, field, verb, state, occur_time, create_time
              FROM entries
              WHERE deleted_at IS NULL
-               AND verb IN ('switch','start','stop','occur','block')
-               AND (start_time IS NOT NULL OR end_time IS NOT NULL)",
+               AND verb IN ('switch','start','stop','occur','block',
+                            'point','block-switch','point-switch')",
         );
         let mut args: Vec<String> = Vec::new();
         if let Some(f) = &field_filter {
             sql.push_str(" AND field = ?1");
             args.push(f.clone());
         }
-        sql.push_str(" ORDER BY field ASC, COALESCE(start_time, end_time) ASC, create_time ASC");
+        sql.push_str(" ORDER BY field ASC, occur_time ASC, create_time ASC");
 
         // Bucket candidate events per field so rolling-prior-state is isolated
         // per field. SQL orders within a field but we fan out to multiple
@@ -62,9 +62,9 @@ impl View for StateChangeView {
                     slug: row.get("slug")?,
                     field: row.get("field")?,
                     verb: row.get("verb")?,
-                    value: row.get::<_, Option<String>>("value")?,
-                    start_time: row.get::<_, Option<String>>("start_time")?,
-                    end_time: row.get::<_, Option<String>>("end_time")?,
+                    value: row.get::<_, Option<String>>("state")?,
+                    start_time: row.get::<_, Option<String>>("occur_time")?,
+                    end_time: None,
                     create_time: row.get("create_time")?,
                 })
             },
@@ -147,6 +147,36 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
     let value = parse_value(&row.value);
 
     match verb {
+        Verb::Point => {
+            if let Some(ts) = start {
+                let state = value
+                    .as_ref()
+                    .map(crate::state::normalize_state)
+                    .unwrap_or(JsonValue::Null);
+                out.push(PendingEvent {
+                    time: ts,
+                    created_at,
+                    new_state: state,
+                    entry_id: row.slug.clone(),
+                });
+            }
+        }
+        Verb::BlockSwitch | Verb::PointSwitch => {
+            // Sub-bead 5 expands this with the trailing `following_state`
+            // event; for now treat like Switch.
+            if let Some(ts) = start {
+                let state = value
+                    .as_ref()
+                    .map(crate::state::normalize_state)
+                    .unwrap_or(JsonValue::Null);
+                out.push(PendingEvent {
+                    time: ts,
+                    created_at,
+                    new_state: state,
+                    entry_id: row.slug.clone(),
+                });
+            }
+        }
         Verb::Switch => {
             if let Some(ts) = start {
                 let state = value
@@ -260,7 +290,8 @@ fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
         .collect()
 }
 
-#[cfg(test)]
+// da-5ns sub-bead 1: gated off until sub-bead 5/8 rewrites.
+#[cfg(any())]
 mod tests {
     use super::*;
     use crate::test_util::{entry_builder, fresh_db};

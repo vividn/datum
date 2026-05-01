@@ -135,6 +135,7 @@ fn every_pair_has_a_roundtrip_test() {
         (16, 17),
         (17, 18),
         (18, 19),
+        (19, 20),
     ];
     assert_eq!(
         covered.len(),
@@ -301,15 +302,49 @@ fn roundtrip_v8_to_v9_track_ignore_unification() {
     let db = fresh_at(8);
     let conn = db.conn();
 
-    // m8_to_9's `crate::db::try_insert` uses the current Entry shape,
-    // which includes `extra_metadata` (added at v11→v12). At v=8 that
-    // column doesn't yet exist; add it so the migration's insert path
-    // matches the layout production hits (Db::migrate runs schema.sql
-    // first, so all v19 columns are already present when m8_to_9 fires).
-    // `user_asserted_last_state` was added at v7→v8 so it's already
-    // present at v=8.
-    conn.execute_batch("ALTER TABLE entries ADD COLUMN extra_metadata TEXT;")
-        .unwrap();
+    // m8_to_9's `crate::db::try_insert` uses the CURRENT Entry shape
+    // (post-da-5ns: occur_time/state/dur/following_state plus a stored
+    // verb). At v=8 the entries table is still in the v3-era
+    // start_time/end_time shape, so try_insert would fail. In
+    // production this is fine because Db::migrate runs schema.sql
+    // (creating the v=20 entries shape) before walking the migration
+    // chain. We simulate that here by rebuilding entries to the v=20
+    // shape before invoking m8_to_9.
+    conn.execute_batch(
+        "DROP TABLE entries;
+         CREATE TABLE entries (
+             hid             TEXT NOT NULL PRIMARY KEY,
+             slug            TEXT NOT NULL,
+             content_hash    TEXT NOT NULL,
+             field           TEXT NOT NULL,
+             state           TEXT,
+             dur             TEXT,
+             following_state TEXT,
+             verb            TEXT NOT NULL DEFAULT 'point',
+             data            TEXT,
+             unit            TEXT,
+             occur_time           TEXT NOT NULL,
+             occur_time_offset    INTEGER,
+             occur_time_tz        TEXT,
+             occur_time_precision TEXT,
+             lat             REAL,
+             lon             REAL,
+             location        TEXT,
+             create_time     TEXT NOT NULL,
+             modify_time     TEXT NOT NULL,
+             device_id       TEXT NOT NULL,
+             deleted_at      TEXT,
+             id_structure    TEXT,
+             field_structure TEXT,
+             raw_input       TEXT NOT NULL DEFAULT '',
+             alias_chain     TEXT,
+             parser_version  INTEGER NOT NULL DEFAULT 1,
+             user_asserted_last_state TEXT,
+             extra_metadata  TEXT,
+             CHECK (following_state IS NULL OR dur IS NOT NULL)
+         );",
+    )
+    .unwrap();
 
     // Seed a spec with ignored=true at the v=8 shape (no `tags`,
     // no `render_json`, no `kit_id` columns yet).
@@ -521,6 +556,103 @@ fn roundtrip_v17_to_v18_field_specs_tags() {
         )
         .unwrap();
     assert_eq!(n, 1);
+}
+
+#[test]
+fn roundtrip_v19_to_v20_time_shape_pivot() {
+    let db = fresh_at(19);
+    let conn = db.conn();
+
+    // v=19 entries shape: start_time/end_time/entry_shape/intent/value
+    // present; generated verb + dur_seconds present; no occur_time, no
+    // dur, no following_state. The v19-era partial/expression indexes
+    // are present.
+    assert!(column_exists(conn, "entries", "start_time"));
+    assert!(column_exists(conn, "entries", "end_time"));
+    assert!(column_exists(conn, "entries", "entry_shape"));
+    assert!(column_exists(conn, "entries", "intent"));
+    assert!(column_exists(conn, "entries", "value"));
+    assert!(column_exists(conn, "entries", "verb"));
+    assert!(column_exists(conn, "entries", "dur_seconds"));
+    assert!(!column_exists(conn, "entries", "occur_time"));
+    assert!(!column_exists(conn, "entries", "dur"));
+    assert!(!column_exists(conn, "entries", "following_state"));
+    assert!(index_exists(conn, "entries_field_start"));
+    assert!(index_exists(conn, "entries_live_field_start"));
+    assert!(index_exists(conn, "entries_hybrid_time"));
+
+    apply_one_up(conn, 19);
+
+    // v=20 entries shape: occur_time/state/dur/following_state plus a
+    // stored verb column. Old time-shape columns and the generated
+    // dur_seconds projection are gone. New indexes are reseated on
+    // occur_time.
+    assert!(column_exists(conn, "entries", "occur_time"));
+    assert!(column_exists(conn, "entries", "occur_time_precision"));
+    assert!(column_exists(conn, "entries", "state"));
+    assert!(column_exists(conn, "entries", "dur"));
+    assert!(column_exists(conn, "entries", "following_state"));
+    assert!(column_exists(conn, "entries", "verb"));
+    assert!(!column_exists(conn, "entries", "start_time"));
+    assert!(!column_exists(conn, "entries", "end_time"));
+    assert!(!column_exists(conn, "entries", "entry_shape"));
+    assert!(!column_exists(conn, "entries", "intent"));
+    assert!(!column_exists(conn, "entries", "value"));
+    assert!(!column_exists(conn, "entries", "dur_seconds"));
+    assert!(index_exists(conn, "entries_field_occur"));
+    assert!(index_exists(conn, "entries_live_field_occur"));
+    assert!(index_exists(conn, "entries_occur_time"));
+    assert!(!index_exists(conn, "entries_field_start"));
+    assert!(!index_exists(conn, "entries_live_field_start"));
+    assert!(!index_exists(conn, "entries_hybrid_time"));
+
+    // CHECK constraint: rejecting following_state without dur. Try to
+    // insert a row that violates the invariant; the insert must fail.
+    let bad = conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, occur_time,
+             create_time, modify_time, device_id, following_state)
+         VALUES
+            ('h0', 's0', 'c0', 'f', '2026-05-01T00:00:00Z',
+             '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'd', '\"x\"')",
+        [],
+    );
+    assert!(bad.is_err(), "CHECK must reject following_state without dur");
+
+    // verb defaults to 'point' when not supplied.
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, occur_time,
+             create_time, modify_time, device_id)
+         VALUES
+            ('h1', 's1', 'c1', 'f', '2026-05-01T00:00:00Z',
+             '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'd')",
+        [],
+    )
+    .unwrap();
+    let v: String = conn
+        .query_row("SELECT verb FROM entries WHERE hid = 'h1'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert_eq!(v, "point", "verb default is 'point'");
+
+    apply_one_down(conn, 20);
+
+    // After down: back to the v=19 shape. The pre-v1 hard-cut means the
+    // row inserted above is discarded — the docstring on the down step
+    // documents this.
+    assert!(column_exists(conn, "entries", "start_time"));
+    assert!(column_exists(conn, "entries", "entry_shape"));
+    assert!(column_exists(conn, "entries", "verb"));
+    assert!(column_exists(conn, "entries", "dur_seconds"));
+    assert!(!column_exists(conn, "entries", "occur_time"));
+    assert!(!column_exists(conn, "entries", "dur"));
+    assert!(!column_exists(conn, "entries", "following_state"));
+    assert!(index_exists(conn, "entries_field_start"));
+    assert!(index_exists(conn, "entries_live_field_start"));
+    assert!(index_exists(conn, "entries_hybrid_time"));
+    assert!(!index_exists(conn, "entries_field_occur"));
 }
 
 #[test]

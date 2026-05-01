@@ -113,10 +113,13 @@ pub fn format_state_group(
 ) -> Option<String> {
     match entry.verb {
         Verb::Add => Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR)),
-        Verb::Occur => Some(render_occur(entry, spec, ctx)),
-        Verb::Start | Verb::Stop | Verb::Switch | Verb::Block => {
-            Some(render_state_transition_group(entry, spec, ctx))
-        }
+        Verb::Occur | Verb::Point => Some(render_occur(entry, spec, ctx)),
+        Verb::Start
+        | Verb::Stop
+        | Verb::Switch
+        | Verb::Block
+        | Verb::BlockSwitch
+        | Verb::PointSwitch => Some(render_state_transition_group(entry, spec, ctx)),
     }
 }
 
@@ -260,10 +263,12 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
         return None;
     }
     match entry.verb {
-        Verb::Switch | Verb::Block => entry.value.clone(),
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
+            entry.value.clone()
+        }
         Verb::Start => Some(JsonValue::Bool(true)),
         Verb::Stop => Some(JsonValue::Bool(false)),
-        Verb::Add | Verb::Occur => None,
+        Verb::Add | Verb::Occur | Verb::Point => None,
     }
 }
 

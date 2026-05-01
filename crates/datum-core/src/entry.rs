@@ -1,4 +1,11 @@
 //! Core entry type — the fundamental unit of data in datum.
+//!
+//! da-5ns time-shape pivot (2026-05-01): the entry's time/state shape is
+//! `occur_time` + `state` + `dur` + `following_state`, with `verb` stored
+//! (not derived) as a classifier. Sub-bead 1 lands the schema and the
+//! Rust struct; sub-beads 2/3 add derive_verb() and the strict CLI
+//! parsing that fills these columns from user input. Until sub-bead 3
+//! lands, `Entry::new` writes a stub `Verb::Point` for the verb column.
 
 use chrono::{DateTime, Utc};
 use rand::Rng;
@@ -9,39 +16,65 @@ use sha2::{Digest, Sha256};
 use crate::ids::{Hid, Slug};
 use crate::time::DatumTime;
 
-/// The verb describes what kind of event an entry represents. Read-back
-/// values come from the `verb` generated column in SQLite; on write, verb
-/// is derived from `entry_shape` + `value` + `intent`.
+/// The verb classifies an entry's (state, dur, following_state) shape.
+/// Stored as plain text in the `verb` column (the SQL CHECK does not
+/// constrain values; `dm check --verbs` (sub-bead 7) detects drift
+/// between stored and re-derived verbs).
 ///
-/// `note` is no longer a first-class verb — legacy `note` invocations are
-/// routed to `add` via a seeded alias. `end` and `stop` are synonymous at
-/// the CLI layer (both map to `Verb::Stop` for intent storage).
+/// Sub-bead 2 (da-5ns.2) introduces the new five-verb set — Point,
+/// Switch, Block, BlockSwitch, PointSwitch — and the derivation
+/// function. Until then this enum carries both the new variants and
+/// the legacy v19 ones (Occur/Start/Stop/Add) so callers that haven't
+/// migrated still compile. The legacy variants serialize to their old
+/// strings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Verb {
-    /// Single point-in-time event (e.g. "drank coffee")
-    Occur,
-    /// Begin a duration block (e.g. "started working out")
-    Start,
-    /// End a duration block (e.g. "stopped working out")
-    Stop,
-    /// Transition to a new state (e.g. "project = daydumb")
+    /// Single point-in-time event with no state change (`dur is NULL,
+    /// state is null/true, following_state is NULL`).
+    Point,
+    /// Transition to a new state (`dur is NULL, state is set,
+    /// following_state is NULL`).
     Switch,
-    /// Completed block with a value (e.g. "slept 8h with mood=tired")
+    /// Duration block (`dur is set/positive, following_state is NULL`).
     Block,
-    /// Canonical add — shape (point | block | ongoing) is inferred from the
-    /// temporal keys present on the invocation.
+    /// Block + switch at the trailing edge (`dur is set/positive,
+    /// following_state is set`).
+    BlockSwitch,
+    /// Point + switch at the same instant (`dur is "PT0S",
+    /// following_state is set`).
+    PointSwitch,
+    // ─── Legacy v19 variants ─────────────────────────────────────────
+    // Kept so call sites that haven't migrated to the new five-verb
+    // set still compile. Sub-bead 8 sweeps these out alongside the
+    // test rewrite.
+    /// Legacy: single point-in-time event (e.g. "drank coffee").
+    Occur,
+    /// Legacy: begin a duration block (e.g. "started working out").
+    Start,
+    /// Legacy: end a duration block (e.g. "stopped working out").
+    Stop,
+    /// Legacy: canonical add — shape inferred from temporal keys.
     Add,
+}
+
+impl Default for Verb {
+    fn default() -> Self {
+        Verb::Point
+    }
 }
 
 impl std::fmt::Display for Verb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Verb::Point => write!(f, "point"),
+            Verb::Switch => write!(f, "switch"),
+            Verb::Block => write!(f, "block"),
+            Verb::BlockSwitch => write!(f, "block-switch"),
+            Verb::PointSwitch => write!(f, "point-switch"),
             Verb::Occur => write!(f, "occur"),
             Verb::Start => write!(f, "start"),
             Verb::Stop => write!(f, "stop"),
-            Verb::Switch => write!(f, "switch"),
-            Verb::Block => write!(f, "block"),
             Verb::Add => write!(f, "add"),
         }
     }
@@ -51,29 +84,46 @@ impl std::str::FromStr for Verb {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         match s.to_lowercase().as_str() {
+            "point" => Ok(Verb::Point),
+            "switch" => Ok(Verb::Switch),
+            "block" => Ok(Verb::Block),
+            "block-switch" => Ok(Verb::BlockSwitch),
+            "point-switch" => Ok(Verb::PointSwitch),
             "occur" => Ok(Verb::Occur),
             "start" => Ok(Verb::Start),
             "stop" | "end" => Ok(Verb::Stop),
-            "switch" => Ok(Verb::Switch),
-            "block" => Ok(Verb::Block),
             "add" | "note" => Ok(Verb::Add),
             _ => Err(format!("Unknown verb: '{s}'")),
         }
     }
 }
 
-/// Shape of an entry's time footprint. Stored explicitly so the generated
-/// `verb` column (and read-time queries) can classify entries without
-/// re-parsing timestamps or value types.
+/// Granularity at which a timestamp is meaningful — re-exported from
+/// `datum-parse` so `entry::PrecisionUnit` remains a valid path. Definition
+/// lives in `datum_parse::time::precision`.
+pub use datum_parse::PrecisionUnit;
+
+/// Legacy shape classifier kept on the public surface as a compatibility
+/// shim for sub-bead 1: callers that were matching on
+/// `entry.entry_shape` still compile, but the value is derived from
+/// `dur` rather than stored. Sub-beads 2/5/8 replace shape-based
+/// switches with the verb-based truth table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum EntryShape {
-    /// Instantaneous event at `start_time`.
+    /// `dur is NULL`.
     Point,
-    /// Closed interval: `start_time` and `end_time` both set.
+    /// `dur is set` (non-NULL, non-zero).
     Block,
-    /// Open-ended: `start_time` is set, `end_time` is absent (still running).
+    /// Pre-pivot only. Never derived from a v=20 entry. Kept so legacy
+    /// match arms still type-check.
     Ongoing,
+}
+
+impl Default for EntryShape {
+    fn default() -> Self {
+        EntryShape::Point
+    }
 }
 
 impl std::fmt::Display for EntryShape {
@@ -97,11 +147,6 @@ impl std::str::FromStr for EntryShape {
         }
     }
 }
-
-/// Granularity at which a timestamp is meaningful — re-exported from
-/// `datum-parse` so `entry::PrecisionUnit` remains a valid path. Definition
-/// lives in `datum_parse::time::precision`.
-pub use datum_parse::PrecisionUnit;
 
 /// Length of the stored `hid` column (base36 characters).
 pub const HID_LEN: usize = 12;
@@ -129,6 +174,10 @@ pub fn new_hid() -> Hid {
 }
 
 /// An entry is the core data unit. All user-logged data becomes an Entry.
+///
+/// Time-shape pivot (da-5ns): replaces start_time/end_time/entry_shape
+/// /intent/value with occur_time/state/dur/following_state plus a stored
+/// `verb` classifier.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Entry {
     /// Random 12-char base36 id — prefix-addressable, unique. PRIMARY KEY.
@@ -143,40 +192,39 @@ pub struct Entry {
 
     // --- What ---
     pub field: String,
-    /// Shape of the entry's time footprint — stored, not derived.
-    pub entry_shape: EntryShape,
-    /// Optional verb-intent override. When set (e.g. "stop", "note"), the
-    /// generated `verb` column returns this value verbatim. When None, verb
-    /// is derived from `entry_shape` + `value`.
-    #[serde(default)]
-    pub intent: Option<String>,
-    /// Verb classification — populated from the generated SQL column on read.
-    /// On write this field is derived from entry_shape + value + intent.
+    /// Verb classification — stored, not derived (da-5ns). Sub-bead 2
+    /// adds `derive_verb` which the insert/update path (sub-bead 3)
+    /// calls; until then this is a stub `Verb::Point`.
     pub verb: Verb,
-    /// Primary value (the state for switch, quantity for occur, etc.)
-    pub value: Option<JsonValue>,
+    /// Permissive JSON. `None` (column NULL) means undefined; on
+    /// insert/update a switch-style verb promotes None to literal
+    /// `true` (sub-bead 3).
+    #[serde(default)]
+    pub state: Option<JsonValue>,
+    /// ISO-8601 duration string (e.g. "PT30M"). `None` = no duration
+    /// (point/switch). `"PT0S"` = explicit zero (point-with-state or
+    /// point-switch).
+    #[serde(default)]
+    pub dur: Option<String>,
+    /// Trailing-edge state for switch-style verbs. Only meaningful when
+    /// `dur` is set (the SQL CHECK enforces this).
+    #[serde(default)]
+    pub following_state: Option<JsonValue>,
     /// Arbitrarily nested JSON. Individual leaf values may use {"v": x, "u": "unit"}.
     pub data: Option<JsonValue>,
-    /// Top-level unit for `value` (e.g. "cups", "kg").
+    /// Top-level unit for `state` (e.g. "cups", "kg").
     pub unit: Option<String>,
 
     // --- When ---
-    /// Start of event (or the moment of occurrence for `occur`).
-    pub start_time: Option<DatumTime>,
-    /// End of event. Duration = end_time - start_time (generated in DB).
-    pub end_time: Option<DatumTime>,
-    /// Absolute uncertainty in seconds on `start_time`.
+    /// When the event occurred. Required at the schema level (occur_time
+    /// is NOT NULL). Optional in Rust to keep the construction surface
+    /// uniform — the insert path errors on None.
+    pub occur_time: Option<DatumTime>,
+    /// Single ISO-8601 duration string (e.g. "PT1S", "P1D") capturing
+    /// the granularity at which `occur_time` is meaningful. `None` =
+    /// exact second.
     #[serde(default)]
-    pub start_time_precision: u32,
-    /// Granularity unit for `start_time`.
-    #[serde(default)]
-    pub start_time_precision_unit: PrecisionUnit,
-    /// Absolute uncertainty in seconds on `end_time`.
-    #[serde(default)]
-    pub end_time_precision: u32,
-    /// Granularity unit for `end_time`.
-    #[serde(default)]
-    pub end_time_precision_unit: PrecisionUnit,
+    pub occur_time_precision: Option<String>,
 
     // --- Where ---
     pub lat: Option<f64>,
@@ -213,29 +261,56 @@ pub struct Entry {
 
     /// S6: explicit user assertion from `-L/--last-state=<v>`. Normalized JSON
     /// value recorded verbatim; `None` for the common case (no assertion).
-    /// Mismatches against the computed last-state file a `last_state_mismatch`
-    /// conflict but never block the insert. Not included in `content_hash`.
     #[serde(default)]
     pub user_asserted_last_state: Option<JsonValue>,
 
     /// da-tsw: system-managed provenance (e.g. `_import` for datum-migrate
-    /// rows, future sync conflict resolution markers). Strictly disjoint from
-    /// `data`, which holds untouched user payload. Hidden from default
-    /// render paths; surfaced under `-A`/Show::All. Not part of
-    /// `content_hash` — provenance does not change row identity. Survives
-    /// `datum edit` of `data`; only re-imports / sync conflict resolver
-    /// touch it.
+    /// rows). Strictly disjoint from `data`.
     #[serde(default)]
     pub extra_metadata: Option<JsonValue>,
+
+    // ─── da-5ns sub-bead 1 compatibility shims ──────────────────────
+    //
+    // Pre-pivot Rust code reads `entry.start_time`, `entry.end_time`,
+    // `entry.value`, `entry.entry_shape`, etc. directly. The v=20
+    // schema dropped those columns, but Rust call sites are out of
+    // scope for sub-bead 1 (sub-bead 3 wires the new flows; sub-bead
+    // 8 sweeps the residue). To keep the crate compiling these fields
+    // are kept on the struct as a compatibility layer:
+    //
+    // - On read (row_to_entry): populated from the new columns —
+    //   start_time mirrors occur_time, value mirrors state, etc.
+    // - On write (try_insert et al.): IGNORED. The SQL paths now
+    //   write occur_time/state/dur/etc. exclusively.
+    // - On serialization: skipped (`#[serde(skip)]`) so the JSON wire
+    //   format reflects the v=20 shape and round-trips cleanly across
+    //   sync.
+    //
+    // Sub-bead 8 deletes these fields and rewrites the residual call
+    // sites to the new accessors.
+    #[serde(skip)]
+    pub start_time: Option<DatumTime>,
+    #[serde(skip)]
+    pub end_time: Option<DatumTime>,
+    #[serde(skip)]
+    pub start_time_precision: u32,
+    #[serde(skip)]
+    pub start_time_precision_unit: PrecisionUnit,
+    #[serde(skip)]
+    pub end_time_precision: u32,
+    #[serde(skip)]
+    pub end_time_precision_unit: PrecisionUnit,
+    #[serde(skip)]
+    pub entry_shape: EntryShape,
+    #[serde(skip)]
+    pub intent: Option<String>,
+    #[serde(skip)]
+    pub value: Option<JsonValue>,
 }
 
 /// Current parser version. Bump when parser behaviour changes so stored
 /// entries can be replayed through the new parser if we ever discover a
 /// parse bug and want to re-derive the canonical fields.
-///
-/// v1: initial shape-first parser (D1 / schema v3).
-/// v2: D2 — uncertainty syntax (±N), `-q*` precision scaling, `-K`/`-k`
-///     id-key chaining, retime precision re-derivation.
 pub const CURRENT_PARSER_VERSION: u32 = 2;
 
 fn default_parser_version() -> u32 {
@@ -245,18 +320,18 @@ fn default_parser_version() -> u32 {
 impl Entry {
     /// Build a new entry with auto-generated hid, slug, and content_hash.
     ///
-    /// `verb` is a convenience input: callers that haven't migrated to the
-    /// shape-first API still think in terms of Occur/Start/Stop/Switch/Note
-    /// and this constructor picks an `entry_shape` + `intent` that matches
-    /// the verb's intended semantics.
+    /// **Stub for sub-bead 1.** The `verb` argument is currently ignored
+    /// by the insert path which writes a literal `"point"` until
+    /// sub-bead 3 wires `derive_verb`. Callers that pass a meaningful
+    /// verb still see it round-tripped through the struct itself.
     pub fn new(
         field: impl Into<String>,
         verb: Verb,
-        value: Option<JsonValue>,
+        state: Option<JsonValue>,
         data: Option<JsonValue>,
         unit: Option<String>,
-        start_time: Option<DatumTime>,
-        end_time: Option<DatumTime>,
+        occur_time: Option<DatumTime>,
+        dur: Option<String>,
         device_id: impl Into<String>,
     ) -> Self {
         let field = field.into();
@@ -265,39 +340,47 @@ impl Entry {
 
         let hid = new_hid();
 
-        let (entry_shape, intent) = infer_shape_and_intent(
-            &verb,
-            value.as_ref(),
-            start_time.as_ref(),
-            end_time.as_ref(),
-        );
-
-        let start_str = start_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let end_str = end_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let occur_str = occur_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let dur_str = dur.clone().unwrap_or_default();
         let data_str = data.as_ref().map(|v| v.to_string()).unwrap_or_default();
-        let value_str = value.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        let state_str = state.as_ref().map(|v| v.to_string()).unwrap_or_default();
 
-        let content_hash = compute_hash(&field, &start_str, &end_str, &value_str, &data_str);
+        let content_hash = compute_hash(&field, &occur_str, &dur_str, &state_str, &data_str);
 
-        let slug = build_slug(&field, start_time.as_ref().or(end_time.as_ref()));
+        let slug = build_slug(&field, occur_time.as_ref());
+
+        // Populate the compat shims so call sites that read
+        // entry.start_time / entry.value / entry.entry_shape see the
+        // same data they did pre-pivot. See the comment on the field
+        // block.
+        let entry_shape = match dur.as_deref() {
+            None => EntryShape::Point,
+            Some(d) if matches!(d, "PT0S" | "P0D" | "PT0M" | "PT0H") => EntryShape::Point,
+            Some(_) => EntryShape::Block,
+        };
+        let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_deref()) {
+            (Some(t), Some(d)) => parse_iso_duration_seconds(d).map(|secs| {
+                let mut e = t.clone();
+                e.utc += chrono::Duration::seconds(secs);
+                e
+            }),
+            _ => None,
+        };
+        let start_time_compat = occur_time.clone();
 
         Entry {
             hid,
             slug,
             content_hash,
             field,
-            entry_shape,
-            intent,
             verb,
-            value,
+            state: state.clone(),
+            dur,
+            following_state: None,
             data,
             unit,
-            start_time,
-            end_time,
-            start_time_precision: 0,
-            start_time_precision_unit: PrecisionUnit::Exact,
-            end_time_precision: 0,
-            end_time_precision_unit: PrecisionUnit::Exact,
+            occur_time,
+            occur_time_precision: None,
             lat: None,
             lon: None,
             location: None,
@@ -312,7 +395,43 @@ impl Entry {
             parser_version: CURRENT_PARSER_VERSION,
             user_asserted_last_state: None,
             extra_metadata: None,
+            // Compat shims:
+            start_time: start_time_compat,
+            end_time: end_time_compat,
+            start_time_precision: 0,
+            start_time_precision_unit: PrecisionUnit::Exact,
+            end_time_precision: 0,
+            end_time_precision_unit: PrecisionUnit::Exact,
+            entry_shape,
+            intent: None,
+            value: state,
         }
+    }
+
+    /// Compatibility constructor mirroring the v=19 (start_time,
+    /// end_time) signature. Computes `dur` from the time delta, maps
+    /// `value` → `state`, and otherwise delegates to [`Self::new`].
+    /// Sub-bead 8 sweeps remaining call sites onto the v=20
+    /// signature; until then this keeps `datum-commands` compiling.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_legacy(
+        field: impl Into<String>,
+        verb: Verb,
+        value: Option<JsonValue>,
+        data: Option<JsonValue>,
+        unit: Option<String>,
+        start_time: Option<DatumTime>,
+        end_time: Option<DatumTime>,
+        device_id: impl Into<String>,
+    ) -> Self {
+        let dur = match (start_time.as_ref(), end_time.as_ref()) {
+            (Some(s), Some(e)) => {
+                let secs = (e.utc - s.utc).num_seconds().max(0);
+                Some(format!("PT{}S", secs))
+            }
+            _ => None,
+        };
+        Self::new(field, verb, value, data, unit, start_time, dur, device_id)
     }
 
     /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.
@@ -320,76 +439,81 @@ impl Entry {
         self.hid.chars().take(SHORT_HID_LEN).collect()
     }
 
-    /// Duration in seconds (derived from start_time and end_time).
+    /// Duration in seconds, parsed from the ISO-8601 `dur` string.
+    /// Returns `None` for entries without a duration or with a malformed
+    /// duration string. Sub-bead 2 lands a proper ISO-duration helper;
+    /// for the sub-bead 1 stub this only handles "PT*S" / "PT*M" /
+    /// "PT*H" / "P*D" — enough to keep callers compiling.
     pub fn duration_seconds(&self) -> Option<i64> {
-        match (&self.start_time, &self.end_time) {
-            (Some(start), Some(end)) => {
-                Some((end.utc - start.utc).num_seconds())
-            }
-            _ => None,
-        }
+        parse_iso_duration_seconds(self.dur.as_deref()?)
     }
 
     /// Recompute the content_hash from the entry's current fields.
     pub fn expected_content_hash(&self) -> String {
-        let start_str = self.start_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let end_str = self.end_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let occur_str = self
+            .occur_time
+            .as_ref()
+            .map(|t| t.utc.to_rfc3339())
+            .unwrap_or_default();
+        let dur_str = self.dur.clone().unwrap_or_default();
         let data_str = self.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
-        let value_str = self.value.as_ref().map(|v| v.to_string()).unwrap_or_default();
-        compute_hash(&self.field, &start_str, &end_str, &value_str, &data_str)
+        let state_str = self.state.as_ref().map(|v| v.to_string()).unwrap_or_default();
+        compute_hash(
+            &self.field,
+            &occur_str,
+            &dur_str,
+            &state_str,
+            &data_str,
+        )
     }
 }
 
-/// Pick an `(entry_shape, intent)` pair that reconstructs the caller's verb
-/// when fed through the SQL generated column. Verbs that don't survive the
-/// shape-based projection (Stop, Note, Add, and Occur-with-value) ride along
-/// in `intent`.
-fn infer_shape_and_intent(
-    verb: &Verb,
-    value: Option<&JsonValue>,
-    start_time: Option<&DatumTime>,
-    end_time: Option<&DatumTime>,
-) -> (EntryShape, Option<String>) {
-    let shape = match (verb, start_time, end_time) {
-        (Verb::Start, Some(_), None) => EntryShape::Ongoing,
-        (Verb::Start, Some(_), Some(_)) => EntryShape::Block,
-        (Verb::Block, _, _) => EntryShape::Block,
-        (_, Some(_), Some(_)) => EntryShape::Block,
-        _ => EntryShape::Point,
-    };
-    let intent = match verb {
-        // These verbs can't be recovered from shape + value alone.
-        Verb::Stop => Some("stop".to_string()),
-        Verb::Add => Some("add".to_string()),
-        // point + non-null value generates 'switch' in SQL; an explicit
-        // Occur with a quantity (e.g. "drank 2 cups") needs the intent
-        // override to survive round-trip.
-        Verb::Occur if value.is_some() => Some("occur".to_string()),
-        // Switch with no value would generate 'occur'; pin the intent.
-        Verb::Switch if value.is_none() => Some("switch".to_string()),
-        // Switch with both times → shape=block → generated 'block';
-        // preserve the caller's Switch identity.
-        Verb::Switch if start_time.is_some() && end_time.is_some() => Some("switch".to_string()),
-        // `datum start sleep 5` is a block; the spec's acceptance expects
-        // verb='block' there, so Start with both times rides shape=block
-        // without an intent override and becomes Verb::Block on read-back.
-        _ => None,
-    };
-    (shape, intent)
-}
-
-fn compute_hash(field: &str, start: &str, end: &str, value: &str, extra: &str) -> String {
+fn compute_hash(field: &str, occur: &str, dur: &str, state: &str, extra: &str) -> String {
     let mut h = Sha256::new();
     h.update(field.as_bytes());
     h.update(b"\x00");
-    h.update(start.as_bytes());
+    h.update(occur.as_bytes());
     h.update(b"\x00");
-    h.update(end.as_bytes());
+    h.update(dur.as_bytes());
     h.update(b"\x00");
-    h.update(value.as_bytes());
+    h.update(state.as_bytes());
     h.update(b"\x00");
     h.update(extra.as_bytes());
     format!("{:x}", h.finalize())
+}
+
+/// Stub ISO-8601 duration → seconds parser. Sub-bead 2 lands the real
+/// one (with proper week/day/composite handling); this just covers the
+/// common single-unit cases used by call sites that survived the
+/// time-shape pivot.
+pub(crate) fn compat_dur_secs(s: &str) -> Option<i64> {
+    parse_iso_duration_seconds(s)
+}
+
+fn parse_iso_duration_seconds(s: &str) -> Option<i64> {
+    if s.is_empty() {
+        return None;
+    }
+    let rest = s.strip_prefix('P')?;
+    if let Some(t) = rest.strip_prefix('T') {
+        if let Some(num) = t.strip_suffix('S') {
+            return num.parse::<f64>().ok().map(|n| n as i64);
+        }
+        if let Some(num) = t.strip_suffix('M') {
+            return num.parse::<f64>().ok().map(|n| (n * 60.0) as i64);
+        }
+        if let Some(num) = t.strip_suffix('H') {
+            return num.parse::<f64>().ok().map(|n| (n * 3600.0) as i64);
+        }
+        return None;
+    }
+    if let Some(num) = rest.strip_suffix('D') {
+        return num.parse::<f64>().ok().map(|n| (n * 86400.0) as i64);
+    }
+    if let Some(num) = rest.strip_suffix('W') {
+        return num.parse::<f64>().ok().map(|n| (n * 7.0 * 86400.0) as i64);
+    }
+    None
 }
 
 /// Default slug: `<field>:<timestamp>` — millisecond precision keeps
@@ -413,7 +537,7 @@ mod tests {
         let t = DatumTime::now();
         let e = Entry::new(
             "coffee",
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(2)),
             None,
             Some("cups".to_string()),
@@ -422,8 +546,7 @@ mod tests {
             "device-test",
         );
         assert_eq!(e.field, "coffee");
-        assert_eq!(e.verb, Verb::Occur);
-        assert_eq!(e.entry_shape, EntryShape::Point);
+        assert_eq!(e.verb, Verb::Point);
         assert_eq!(e.hid.len(), HID_LEN);
         assert!(e.hid.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         assert!(e.slug.starts_with("coffee:"));
@@ -431,30 +554,55 @@ mod tests {
 
     #[test]
     fn test_verb_roundtrip() {
-        for v in ["occur", "start", "stop", "switch", "block", "add"] {
+        for v in [
+            "point",
+            "switch",
+            "block",
+            "block-switch",
+            "point-switch",
+            "occur",
+            "start",
+            "stop",
+            "add",
+        ] {
             let parsed: Verb = v.parse().unwrap();
             let displayed = format!("{parsed}");
             assert!(!displayed.is_empty());
         }
-        // `note` parses to Verb::Add for backward compat; CLI shell reaches
-        // the same place via a seeded alias, this covers direct string parse.
         assert_eq!("note".parse::<Verb>().unwrap(), Verb::Add);
-        // `end` is a synonym for `stop` at parse time.
         assert_eq!("end".parse::<Verb>().unwrap(), Verb::Stop);
     }
 
     #[test]
     fn test_dedup_via_content_hash() {
         let t = DatumTime::now();
-        let e1 = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t.clone()), None, "d1");
-        let e2 = Entry::new("mood", Verb::Switch, Some(serde_json::json!("happy")), None, None, Some(t.clone()), None, "d2");
+        let e1 = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(t.clone()),
+            None,
+            "d1",
+        );
+        let e2 = Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(t.clone()),
+            None,
+            "d2",
+        );
         assert_eq!(e1.content_hash, e2.content_hash);
     }
 
     #[test]
     fn short_uid_is_first_five_of_hid() {
         let t = DatumTime::now();
-        let e = Entry::new("coffee", Verb::Occur, None, None, None, Some(t), None, "d");
+        let e = Entry::new("coffee", Verb::Point, None, None, None, Some(t), None, "d");
         let uid = e.short_uid();
         assert_eq!(uid.len(), SHORT_HID_LEN);
         assert!(e.hid.starts_with(&uid));
@@ -467,27 +615,5 @@ mod tests {
             assert_eq!(h.len(), HID_LEN);
             assert!(h.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         }
-    }
-
-    #[test]
-    fn shape_inference_matches_verb_and_times() {
-        let t = DatumTime::now();
-        // Start with no end → Ongoing
-        let e = Entry::new("nap", Verb::Start, None, None, None, Some(t.clone()), None, "d");
-        assert_eq!(e.entry_shape, EntryShape::Ongoing);
-        assert_eq!(e.intent, None);
-
-        // Start with end → Block
-        let e = Entry::new("nap", Verb::Start, None, None, None, Some(t.clone()), Some(t.clone()), "d");
-        assert_eq!(e.entry_shape, EntryShape::Block);
-
-        // Stop rides along via intent so state compilation can still pick it up.
-        let e = Entry::new("nap", Verb::Stop, None, None, None, Some(t.clone()), None, "d");
-        assert_eq!(e.entry_shape, EntryShape::Point);
-        assert_eq!(e.intent.as_deref(), Some("stop"));
-
-        // Add carries an explicit intent so it survives shape-derivation round-trip.
-        let e = Entry::new("journal", Verb::Add, Some(serde_json::json!("hello")), None, None, Some(t), None, "d");
-        assert_eq!(e.intent.as_deref(), Some("add"));
     }
 }

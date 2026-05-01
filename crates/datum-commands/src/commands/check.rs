@@ -314,7 +314,7 @@ mod tests {
         // Intentional: end precedes start.
         let start = t_at("2024-01-01T10:00:00+00:00");
         let end = t_at("2024-01-01T09:00:00+00:00");
-        let entry = Entry::new(
+        let entry = Entry::new_legacy(
             "work",
             Verb::Stop,
             None,
@@ -343,7 +343,7 @@ mod tests {
     fn check_reports_unknown_field_as_warning() {
         let db = Db::open_in_memory().unwrap();
         // Insert an entry for "mood" without registering a spec.
-        let entry = Entry::new(
+        let entry = Entry::new_legacy(
             "mood",
             Verb::Switch,
             Some(serde_json::json!("happy")),
@@ -374,7 +374,7 @@ mod tests {
     fn check_json_output_shape() {
         let db = Db::open_in_memory().unwrap();
         // Populate one error-level and one warning-level issue.
-        let bad = Entry::new(
+        let bad = Entry::new_legacy(
             "work",
             Verb::Stop,
             None,
@@ -386,7 +386,7 @@ mod tests {
         );
         db.insert_entry(&bad).unwrap();
         // Unknown-field warning on another field.
-        let unknown = Entry::new(
+        let unknown = Entry::new_legacy(
             "mystery",
             Verb::Occur,
             None,
@@ -449,7 +449,7 @@ mod tests {
         db.save_field_spec(&spec).unwrap();
 
         // Entry carries an *undeclared* extra_data key "weather".
-        let entry = Entry::new(
+        let entry = Entry::new_legacy(
             "mood",
             Verb::Switch,
             Some(serde_json::json!("happy")),

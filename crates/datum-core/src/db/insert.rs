@@ -475,31 +475,45 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
 }
 
 pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entry) -> Result<()> {
+    // da-5ns sub-bead 1 stub: occur_time is required at the schema
+    // level. The CLI parser hasn't been updated yet (sub-bead 3) so
+    // call sites may still produce entries with no time set; default
+    // to create_time so the insert doesn't violate NOT NULL. Sub-bead
+    // 3 promotes this to a parser-level requirement.
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.timezone.as_str().to_string());
+    // Sub-bead 1 stub: verb is hardcoded to "point" until sub-bead 3
+    // wires `derive_verb` into the insert path. The struct's `verb`
+    // is intentionally ignored here.
+    let verb_str = "point";
+
     let mut stmt = conn.prepare_cached(
         r#"INSERT INTO entries (
-            hid, slug, content_hash, field, entry_shape, intent,
-            value, data, unit,
-            start_time, start_time_offset, start_time_tz,
-            start_time_precision, start_time_precision_unit,
-            end_time, end_time_offset, end_time_tz,
-            end_time_precision, end_time_precision_unit,
+            hid, slug, content_hash, field,
+            verb, state, dur, following_state, data, unit,
+            occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
             raw_input, alias_chain, parser_version,
             user_asserted_last_state, extra_metadata
         ) VALUES (
-            ?1, ?2, ?3, ?4, ?5, ?6,
-            ?7, ?8, ?9,
-            ?10, ?11, ?12,
-            ?13, ?14,
+            ?1, ?2, ?3, ?4,
+            ?5, ?6, ?7, ?8, ?9, ?10,
+            ?11, ?12, ?13, ?14,
             ?15, ?16, ?17,
-            ?18, ?19,
-            ?20, ?21, ?22,
-            ?23, ?24, ?25,
-            ?26, ?27, ?28,
-            ?29, ?30, ?31,
-            ?32, ?33
+            ?18, ?19, ?20,
+            ?21, ?22, ?23,
+            ?24, ?25, ?26,
+            ?27, ?28
         )"#,
     )?;
     stmt.execute(params![
@@ -507,21 +521,16 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         slug,
         entry.content_hash,
         entry.field,
-        entry.entry_shape.to_string(),
-        entry.intent,
-        entry.value.as_ref().map(|v| v.to_string()),
+        verb_str,
+        entry.state.as_ref().map(|v| v.to_string()),
+        entry.dur,
+        entry.following_state.as_ref().map(|v| v.to_string()),
         entry.data.as_ref().map(|v| v.to_string()),
         entry.unit,
-        entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-        entry.start_time.as_ref().map(|t| t.offset_minutes),
-        entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-        entry.start_time_precision,
-        entry.start_time_precision_unit.to_string(),
-        entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-        entry.end_time.as_ref().map(|t| t.offset_minutes),
-        entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-        entry.end_time_precision,
-        entry.end_time_precision_unit.to_string(),
+        occur_str,
+        occur_offset,
+        occur_tz,
+        entry.occur_time_precision,
         entry.lat,
         entry.lon,
         entry.location.as_deref(),
@@ -583,56 +592,60 @@ fn raw_overwrite_mutables(
     let data_json = data_value.map(|v| v.to_string());
     let now = Utc::now().to_rfc3339();
 
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.timezone.as_str().to_string());
+    // Sub-bead 1 stub: verb is hardcoded to "point" — sub-bead 3 wires
+    // derive_verb on every (state, dur, following_state) mutation.
+    let verb_str = "point";
+
     conn.execute(
         r#"UPDATE entries SET
             content_hash = ?2,
             field = ?3,
-            entry_shape = ?4,
-            intent = ?5,
-            value = ?6,
-            data = ?7,
-            unit = ?8,
-            start_time = ?9,
-            start_time_offset = ?10,
-            start_time_tz = ?11,
-            start_time_precision = ?12,
-            start_time_precision_unit = ?13,
-            end_time = ?14,
-            end_time_offset = ?15,
-            end_time_tz = ?16,
-            end_time_precision = ?17,
-            end_time_precision_unit = ?18,
-            lat = ?19,
-            lon = ?20,
-            location = ?21,
-            modify_time = ?22,
-            device_id = ?23,
-            raw_input = ?24,
-            alias_chain = ?25,
-            parser_version = ?26,
-            user_asserted_last_state = ?27,
-            id_structure = ?28,
-            field_structure = ?29
+            verb = ?4,
+            state = ?5,
+            dur = ?6,
+            following_state = ?7,
+            data = ?8,
+            unit = ?9,
+            occur_time = ?10,
+            occur_time_offset = ?11,
+            occur_time_tz = ?12,
+            occur_time_precision = ?13,
+            lat = ?14,
+            lon = ?15,
+            location = ?16,
+            modify_time = ?17,
+            device_id = ?18,
+            raw_input = ?19,
+            alias_chain = ?20,
+            parser_version = ?21,
+            user_asserted_last_state = ?22,
+            id_structure = ?23,
+            field_structure = ?24
            WHERE slug = ?1"#,
         params![
             slug,
             entry.content_hash,
             entry.field,
-            entry.entry_shape.to_string(),
-            entry.intent,
-            entry.value.as_ref().map(|v| v.to_string()),
+            verb_str,
+            entry.state.as_ref().map(|v| v.to_string()),
+            entry.dur,
+            entry.following_state.as_ref().map(|v| v.to_string()),
             data_json,
             entry.unit,
-            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.start_time.as_ref().map(|t| t.offset_minutes),
-            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.start_time_precision,
-            entry.start_time_precision_unit.to_string(),
-            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.end_time.as_ref().map(|t| t.offset_minutes),
-            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.end_time_precision,
-            entry.end_time_precision_unit.to_string(),
+            occur_str,
+            occur_offset,
+            occur_tz,
+            entry.occur_time_precision,
             entry.lat,
             entry.lon,
             entry.location.as_deref(),
@@ -659,37 +672,44 @@ fn raw_overwrite_mutables(
 /// it live; tombstoned rows must be filtered out by the caller.
 fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
     let now = Utc::now().to_rfc3339();
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.timezone.as_str().to_string());
+    let verb_str = "point";
+
     let mut stmt = conn.prepare_cached(
         r#"UPDATE entries SET
             slug = ?2,
             content_hash = ?3,
             field = ?4,
-            entry_shape = ?5,
-            intent = ?6,
-            value = ?7,
-            data = ?8,
-            unit = ?9,
-            start_time = ?10,
-            start_time_offset = ?11,
-            start_time_tz = ?12,
-            start_time_precision = ?13,
-            start_time_precision_unit = ?14,
-            end_time = ?15,
-            end_time_offset = ?16,
-            end_time_tz = ?17,
-            end_time_precision = ?18,
-            end_time_precision_unit = ?19,
-            lat = ?20,
-            lon = ?21,
-            location = ?22,
-            modify_time = ?23,
-            device_id = ?24,
-            id_structure = ?25,
-            field_structure = ?26,
-            raw_input = ?27,
-            alias_chain = ?28,
-            parser_version = ?29,
-            user_asserted_last_state = ?30
+            verb = ?5,
+            state = ?6,
+            dur = ?7,
+            following_state = ?8,
+            data = ?9,
+            unit = ?10,
+            occur_time = ?11,
+            occur_time_offset = ?12,
+            occur_time_tz = ?13,
+            occur_time_precision = ?14,
+            lat = ?15,
+            lon = ?16,
+            location = ?17,
+            modify_time = ?18,
+            device_id = ?19,
+            id_structure = ?20,
+            field_structure = ?21,
+            raw_input = ?22,
+            alias_chain = ?23,
+            parser_version = ?24,
+            user_asserted_last_state = ?25
            WHERE hid = ?1"#,
     )?;
     let affected = stmt.execute(params![
@@ -697,21 +717,16 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         entry.slug,
         entry.content_hash,
         entry.field,
-        entry.entry_shape.to_string(),
-        entry.intent,
-        entry.value.as_ref().map(|v| v.to_string()),
+        verb_str,
+        entry.state.as_ref().map(|v| v.to_string()),
+        entry.dur,
+        entry.following_state.as_ref().map(|v| v.to_string()),
         entry.data.as_ref().map(|v| v.to_string()),
         entry.unit,
-        entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-        entry.start_time.as_ref().map(|t| t.offset_minutes),
-        entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-        entry.start_time_precision,
-        entry.start_time_precision_unit.to_string(),
-        entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-        entry.end_time.as_ref().map(|t| t.offset_minutes),
-        entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-        entry.end_time_precision,
-        entry.end_time_precision_unit.to_string(),
+        occur_str,
+        occur_offset,
+        occur_tz,
+        entry.occur_time_precision,
         entry.lat,
         entry.lon,
         entry.location.as_deref(),
@@ -737,58 +752,60 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
 /// the row. `modify_time` is taken from the snapshot verbatim; the caller has
 /// already persisted a history row capturing the pre-revert state.
 pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> {
+    let occur_str = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.utc.to_rfc3339())
+        .unwrap_or_else(|| entry.create_time.to_rfc3339());
+    let occur_offset = entry.occur_time.as_ref().map(|t| t.offset_minutes);
+    let occur_tz = entry
+        .occur_time
+        .as_ref()
+        .map(|t| t.timezone.as_str().to_string());
+    let verb_str = "point";
+
     let affected = conn.execute(
         r#"UPDATE entries SET
             content_hash = ?2,
             field = ?3,
-            entry_shape = ?4,
-            intent = ?5,
-            value = ?6,
-            data = ?7,
-            unit = ?8,
-            start_time = ?9,
-            start_time_offset = ?10,
-            start_time_tz = ?11,
-            start_time_precision = ?12,
-            start_time_precision_unit = ?13,
-            end_time = ?14,
-            end_time_offset = ?15,
-            end_time_tz = ?16,
-            end_time_precision = ?17,
-            end_time_precision_unit = ?18,
-            lat = ?19,
-            lon = ?20,
-            location = ?21,
-            modify_time = ?22,
-            device_id = ?23,
-            deleted_at = ?24,
-            id_structure = ?25,
-            field_structure = ?26,
-            raw_input = ?27,
-            alias_chain = ?28,
-            parser_version = ?29,
-            user_asserted_last_state = ?30,
-            extra_metadata = ?31
+            verb = ?4,
+            state = ?5,
+            dur = ?6,
+            following_state = ?7,
+            data = ?8,
+            unit = ?9,
+            occur_time = ?10,
+            occur_time_offset = ?11,
+            occur_time_tz = ?12,
+            occur_time_precision = ?13,
+            lat = ?14,
+            lon = ?15,
+            location = ?16,
+            modify_time = ?17,
+            device_id = ?18,
+            deleted_at = ?19,
+            id_structure = ?20,
+            field_structure = ?21,
+            raw_input = ?22,
+            alias_chain = ?23,
+            parser_version = ?24,
+            user_asserted_last_state = ?25,
+            extra_metadata = ?26
            WHERE hid = ?1"#,
         params![
             entry.hid,
             entry.content_hash,
             entry.field,
-            entry.entry_shape.to_string(),
-            entry.intent,
-            entry.value.as_ref().map(|v| v.to_string()),
+            verb_str,
+            entry.state.as_ref().map(|v| v.to_string()),
+            entry.dur,
+            entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),
             entry.unit,
-            entry.start_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.start_time.as_ref().map(|t| t.offset_minutes),
-            entry.start_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.start_time_precision,
-            entry.start_time_precision_unit.to_string(),
-            entry.end_time.as_ref().map(|t| t.utc.to_rfc3339()),
-            entry.end_time.as_ref().map(|t| t.offset_minutes),
-            entry.end_time.as_ref().map(|t| t.timezone.as_str()),
-            entry.end_time_precision,
-            entry.end_time_precision_unit.to_string(),
+            occur_str,
+            occur_offset,
+            occur_tz,
+            entry.occur_time_precision,
             entry.lat,
             entry.lon,
             entry.location.as_deref(),

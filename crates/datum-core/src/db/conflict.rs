@@ -65,10 +65,14 @@ impl Db {
             crate::conflicts::Resolution::CloseOlder
             | crate::conflicts::Resolution::AutoCloseOlder => {
                 if let Some(older) = conflict.remote_entry.as_ref() {
+                    // da-5ns sub-bead 1 stub: pass the local entry's
+                    // occur_time (formerly `start_time` in v19). Sub-bead
+                    // 5 reimplements close_older_at against the new
+                    // (occur_time, dur, following_state) shape.
                     crate::conflicts::close_older_at(
                         &tx,
                         older,
-                        conflict.local_entry.start_time.as_ref(),
+                        conflict.local_entry.occur_time.as_ref(),
                     )?;
                 }
             }

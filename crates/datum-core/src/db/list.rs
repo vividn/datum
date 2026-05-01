@@ -52,8 +52,10 @@ impl Db {
         let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
         let mut bindings: Vec<String> = Vec::new();
 
+        // da-5ns: occur_time is NOT NULL post-pivot, so the
+        // explicit IS NOT NULL filter is no longer required.
         if params.metric == TimeMetric::Occur {
-            sql.push_str(" AND start_time IS NOT NULL");
+            // No-op kept for symmetry with v=19.
         }
         if let Some(field) = &params.field {
             sql.push_str(" AND field = ?");

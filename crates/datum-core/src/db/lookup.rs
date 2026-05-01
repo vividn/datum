@@ -174,11 +174,9 @@ impl Db {
             "SELECT * FROM entries
              WHERE field = ?1
                AND deleted_at IS NULL
-               AND verb IN ('switch', 'start', 'stop', 'occur', 'block')
-               AND (
-                    (start_time IS NOT NULL AND start_time <= ?2)
-                 OR (end_time   IS NOT NULL AND end_time   <= ?2)
-               )
+               AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
+                            'point', 'block-switch', 'point-switch')
+               AND occur_time <= ?2
              ORDER BY {} ASC",
             time_expr_endbound(),
         );
@@ -210,10 +208,9 @@ impl Db {
             r#"SELECT * FROM entries
                WHERE field = ?1
                  AND deleted_at IS NULL
-                 AND verb IN ('start', 'switch')
-                 AND start_time IS NOT NULL
-                 AND start_time <= ?2
-               ORDER BY start_time DESC, create_time DESC
+                 AND verb IN ('start', 'switch', 'block', 'block-switch')
+                 AND occur_time <= ?2
+               ORDER BY occur_time DESC, create_time DESC
                LIMIT 1"#,
         )?;
         let row = stmt

@@ -97,7 +97,7 @@ fn entry(
     start: Option<DatumTime>,
     end: Option<DatumTime>,
 ) -> Entry {
-    Entry::new(
+    Entry::new_legacy(
         field.to_string(),
         verb,
         value,
