@@ -752,6 +752,14 @@ pub struct RestoreArgs {
 #[derive(Debug, Default)]
 pub struct CheckArgs {
     pub json: bool,
+    /// `--verbs` — run only the verb-drift check (state/dur/following_state
+    /// → derive_verb vs the stored `verb` column). When unset, the verb
+    /// check still runs as part of the default battery; this flag narrows
+    /// the report to that one category.
+    pub verbs: bool,
+    /// `--fix` — rewrite drifted `verb` columns to match `derive_verb`.
+    /// Only meaningful in combination with verb-drift detection.
+    pub fix: bool,
 }
 
 /// Render orientation for `datum dayview`, named by time-axis direction.

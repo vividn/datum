@@ -39,6 +39,23 @@ impl Db {
         }
     }
 
+    /// Rewrite just the `verb` column of the row identified by `slug`.
+    /// `dm check --verbs --fix` (da-5ns sub-bead 7) uses this to repair
+    /// drift between the stored verb and `derive_verb`. Touches no other
+    /// columns and does not write a history row — verb is a derived
+    /// classifier, so a repair is not a user-visible edit. Errors
+    /// [`DatumError::NotFound`] when the slug doesn't match.
+    pub fn set_entry_verb(&self, slug: &str, verb: &str) -> Result<()> {
+        let affected = self.conn.execute(
+            "UPDATE entries SET verb = ?2 WHERE slug = ?1",
+            params![slug, verb],
+        )?;
+        if affected == 0 {
+            return Err(DatumError::NotFound(slug.to_string()));
+        }
+        Ok(())
+    }
+
     /// Insert an entry and dispatch on [`ConflictStrategy`] when the incoming
     /// `content_hash` already matches a live row. Tombstoned rows are ignored
     /// for collision detection — re-inserting a deleted-then-identical payload

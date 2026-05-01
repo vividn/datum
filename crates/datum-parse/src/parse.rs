@@ -1623,6 +1623,8 @@ fn parse_check_args(tail: &[&str]) -> Result<CheckArgs> {
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Long("json") => out.json = true,
+            FlagSplit::Long("verbs") => out.verbs = true,
+            FlagSplit::Long("fix") => out.fix = true,
             f => return Err(unknown_flag(f)),
         }
     }

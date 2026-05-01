@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 use datum_core::db::Db;
+use datum_core::derive_verb;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -12,8 +13,37 @@ use crate::args::CheckArgs;
 
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
+///
+/// `--verbs` narrows the report to verb-drift detection only. `--fix`
+/// rewrites the stored `verb` column for any drifted live row to match
+/// `derive_verb`; rows in a "rejected" shape (per the truth table) are
+/// flagged but never auto-fixed because there is no derivable verb for
+/// them.
 pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
-    let report = collect_issues(db)?;
+    let report = if args.verbs {
+        let verb_report = collect_verb_drift(db)?;
+        if args.fix {
+            apply_verb_fixes(db, &verb_report.fixes)?;
+        }
+        Report {
+            issues: verb_report.issues,
+            summary: Summary {
+                errors: 0, // recomputed below
+                warnings: 0,
+                clean: false,
+            },
+        }
+        .with_recomputed_summary()
+    } else {
+        let mut report = collect_issues(db)?;
+        let verb_report = collect_verb_drift(db)?;
+        if args.fix {
+            apply_verb_fixes(db, &verb_report.fixes)?;
+        }
+        report.issues.extend(verb_report.issues);
+        report.with_recomputed_summary()
+    };
+
     if args.json {
         println!("{}", render_json(&report)?);
     } else {
@@ -77,6 +107,143 @@ impl Report {
     pub fn has_errors(&self) -> bool {
         self.summary.errors > 0
     }
+
+    /// Recompute the summary counts from the current `issues`. Used after
+    /// merging verb-drift issues into a previously-built report.
+    fn with_recomputed_summary(mut self) -> Self {
+        let errors = self
+            .issues
+            .iter()
+            .filter(|i| i.severity == Severity::Error)
+            .count();
+        let warnings = self
+            .issues
+            .iter()
+            .filter(|i| i.severity == Severity::Warning)
+            .count();
+        self.summary = Summary {
+            errors,
+            warnings,
+            clean: errors == 0 && warnings == 0,
+        };
+        self
+    }
+}
+
+/// One drifted row queued for `--fix` to rewrite.
+#[derive(Debug, Clone)]
+struct VerbFix {
+    slug: String,
+    expected_verb: String,
+}
+
+#[derive(Debug, Default)]
+struct VerbReport {
+    issues: Vec<Issue>,
+    fixes: Vec<VerbFix>,
+}
+
+/// Walk every live entry and compare its stored `verb` against
+/// `derive_verb(state, dur, following_state)`. Produces:
+///
+/// * a `verb_drift` ERROR (with the count of drifted rows) when one or
+///   more rows have a stored verb that differs from the derived verb,
+/// * a `verb_corruption` ERROR when a row is in a shape that
+///   `derive_verb` rejects per the truth table (e.g. `state=NULL`,
+///   `dur=NULL`, `following_state=set`). Such rows should never reach
+///   the DB; their presence is a corruption signal.
+///
+/// Drifted rows are accumulated into `fixes` so `--fix` can rewrite
+/// them in a single pass. Corruption-shape rows are *not* fixed —
+/// there is no derivable verb to write.
+fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
+    let entries = db.all_entries()?;
+
+    let mut drift_count: usize = 0;
+    let mut drift_example: Option<IssueExample> = None;
+    let mut corrupt_count: usize = 0;
+    let mut corrupt_example: Option<IssueExample> = None;
+    let mut fixes: Vec<VerbFix> = Vec::new();
+
+    for e in &entries {
+        // Skip tombstones — they are historical rows, not live data;
+        // reviving one through restore re-runs the insert path and
+        // re-derives the verb.
+        if e.deleted_at.is_some() {
+            continue;
+        }
+        match derive_verb(e.state.clone(), e.dur.as_deref(), e.following_state.clone()) {
+            Ok((expected, _canonical_state)) => {
+                let stored = e.verb.to_string();
+                let expected_str = expected.to_string();
+                if stored != expected_str {
+                    drift_count += 1;
+                    if drift_example.is_none() {
+                        drift_example = Some(IssueExample {
+                            id: Some(e.slug.to_string()),
+                            field: Some(e.field.clone()),
+                            detail: Some(format!(
+                                "stored={stored}  expected={expected_str}"
+                            )),
+                        });
+                    }
+                    fixes.push(VerbFix {
+                        slug: e.slug.to_string(),
+                        expected_verb: expected_str,
+                    });
+                }
+            }
+            Err(err) => {
+                corrupt_count += 1;
+                if corrupt_example.is_none() {
+                    corrupt_example = Some(IssueExample {
+                        id: Some(e.slug.to_string()),
+                        field: Some(e.field.clone()),
+                        detail: Some(err.to_string()),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut issues = Vec::new();
+    if drift_count > 0 {
+        issues.push(Issue {
+            severity: Severity::Error,
+            category: "verb_drift",
+            message: format!(
+                "{} entr{} have a stored verb that disagrees with derive_verb",
+                drift_count,
+                if drift_count == 1 { "y" } else { "ies" },
+            ),
+            count: drift_count,
+            example: drift_example,
+        });
+    }
+    if corrupt_count > 0 {
+        issues.push(Issue {
+            severity: Severity::Error,
+            category: "verb_corruption",
+            message: format!(
+                "{} entr{} are in a shape derive_verb rejects \
+                 (state/dur/following_state truth-table violation)",
+                corrupt_count,
+                if corrupt_count == 1 { "y" } else { "ies" },
+            ),
+            count: corrupt_count,
+            example: corrupt_example,
+        });
+    }
+
+    Ok(VerbReport { issues, fixes })
+}
+
+/// Rewrite the stored `verb` column for each queued drifted row.
+fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<()> {
+    for fix in fixes {
+        db.set_entry_verb(&fix.slug, &fix.expected_verb)?;
+    }
+    Ok(())
 }
 
 /// Run every consistency check and return a structured report.
@@ -470,5 +637,160 @@ mod tests {
             .expect("orphaned_extra_data_key warning must be reported");
         assert_eq!(issue.severity, Severity::Warning);
         assert_eq!(issue.count, 1);
+    }
+
+    // ─── da-5ns sub-bead 7: verb drift detection + --fix ────────────────
+
+    /// Hand-corrupt a row's stored verb and verify
+    /// `collect_verb_drift` flags it as `verb_drift` with the
+    /// expected severity, count, and example detail.
+    #[test]
+    fn verb_drift_detected_when_stored_verb_disagrees() {
+        let db = Db::open_in_memory().unwrap();
+        // A switch-shape entry: state=set, dur=NULL, fs=NULL → derive_verb=Switch.
+        let entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        let slug = entry.slug.to_string();
+        db.insert_entry(&entry).unwrap();
+        // The insert path currently writes the stub verb "point" (sub-bead 3
+        // wires derive_verb later); regardless, force the column to a value
+        // that derive_verb would NOT produce so the test is independent of
+        // sub-bead 3 status.
+        db.set_entry_verb(&slug, "block").unwrap();
+
+        let report = collect_verb_drift(&db).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "verb_drift")
+            .expect("verb_drift issue must be reported");
+        assert_eq!(issue.severity, Severity::Error);
+        assert_eq!(issue.count, 1);
+        let example = issue.example.as_ref().unwrap();
+        assert_eq!(example.id.as_deref(), Some(slug.as_str()));
+        let detail = example.detail.as_deref().unwrap();
+        assert!(detail.contains("stored=block"), "got: {detail}");
+        assert!(detail.contains("expected=switch"), "got: {detail}");
+    }
+
+    /// `--fix` rewrites a hand-corrupted verb back to what
+    /// `derive_verb` produces, and a re-run of the check finds no drift.
+    #[test]
+    fn verb_fix_rewrites_drifted_verb_to_derived() {
+        let db = Db::open_in_memory().unwrap();
+        // Block-shape: state=set, dur=positive, fs=NULL → derive_verb=Block.
+        let start = t_at("2024-01-01T10:00:00+00:00");
+        let end = t_at("2024-01-01T10:30:00+00:00");
+        let entry = Entry::new_legacy(
+            "work",
+            Verb::Block,
+            Some(serde_json::json!("on")),
+            None,
+            None,
+            Some(start),
+            Some(end),
+            "d1",
+        );
+        let slug = entry.slug.to_string();
+        db.insert_entry(&entry).unwrap();
+        // Hand-corrupt: write a verb derive_verb would never produce here.
+        db.set_entry_verb(&slug, "switch").unwrap();
+
+        // Pre-fix: drift detected.
+        let report = collect_verb_drift(&db).unwrap();
+        let drift = report
+            .issues
+            .iter()
+            .find(|i| i.category == "verb_drift")
+            .expect("pre-fix run must report drift");
+        assert_eq!(drift.count, 1);
+        assert_eq!(report.fixes.len(), 1);
+        assert_eq!(report.fixes[0].slug, slug);
+        assert_eq!(report.fixes[0].expected_verb, "block");
+
+        // Apply the fix.
+        apply_verb_fixes(&db, &report.fixes).unwrap();
+
+        // Post-fix: no drift, and the row's stored verb is now `block`.
+        let report2 = collect_verb_drift(&db).unwrap();
+        assert!(
+            !report2.issues.iter().any(|i| i.category == "verb_drift"),
+            "post-fix drift must be zero, got issues: {:?}",
+            report2.issues,
+        );
+        let row = db.get_entry(&slug).unwrap();
+        assert_eq!(row.verb, Verb::Block);
+    }
+
+    /// `check --verbs` (typed API) narrows the report to the verb-drift
+    /// category — other categories (e.g. `unknown_field`) are excluded.
+    #[test]
+    fn check_verbs_only_narrows_to_verb_category() {
+        let db = Db::open_in_memory().unwrap();
+        // Insert a clean switch entry (no drift expected from derive_verb).
+        let entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("calm")),
+            None,
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        let slug = entry.slug.to_string();
+        db.insert_entry(&entry).unwrap();
+        db.set_entry_verb(&slug, "point").unwrap(); // force drift
+
+        let report = collect_verb_drift(&db).unwrap();
+        // Only verb-related categories should appear.
+        for issue in &report.issues {
+            assert!(
+                issue.category == "verb_drift" || issue.category == "verb_corruption",
+                "unexpected category in --verbs run: {}",
+                issue.category,
+            );
+        }
+        assert!(
+            report.issues.iter().any(|i| i.category == "verb_drift"),
+            "verb_drift must be present"
+        );
+    }
+
+    /// Tombstoned rows are skipped — verb drift on a soft-deleted row
+    /// is historical and not actionable.
+    #[test]
+    fn verb_drift_skips_tombstoned_rows() {
+        let db = Db::open_in_memory().unwrap();
+        let entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        let slug = entry.slug.to_string();
+        db.insert_entry(&entry).unwrap();
+        db.set_entry_verb(&slug, "block").unwrap(); // drift
+        db.soft_delete_entry(&slug).unwrap();
+
+        let report = collect_verb_drift(&db).unwrap();
+        assert!(
+            !report.issues.iter().any(|i| i.category == "verb_drift"),
+            "tombstoned rows must not contribute to drift count, got: {:?}",
+            report.issues,
+        );
+        assert!(report.fixes.is_empty());
     }
 }
