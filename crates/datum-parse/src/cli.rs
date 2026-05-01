@@ -754,14 +754,16 @@ pub struct CheckArgs {
     pub json: bool,
 }
 
-/// Render orientation for `datum dayview`. Mirrors
-/// [`datum_layout::dayview::Orientation`] so callers don't need a layout
-/// dep just to construct args.
+/// Render orientation for `datum dayview`, named by time-axis direction.
+/// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a
+/// layout dep just to construct args.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DayviewOrientation {
-    /// Time runs horizontally, days stack vertically (datum's original).
+    /// Time runs vertically (top→bottom); days stack horizontally — each
+    /// day is a column.
     Vertical,
-    /// Time runs vertically, days stack horizontally (per bead da-a7f).
+    /// Time runs horizontally (left→right); days stack vertically. Datum's
+    /// original layout and the default per bead da-tbe.
     Horizontal,
 }
 
@@ -787,11 +789,11 @@ pub struct DayviewArgs {
     /// `--n-days`/`-n` — number of days. Default: 1 (when no other dates
     /// are given).
     pub n_days: Option<u32>,
-    /// `--width` — total SVG width in pixels. Default: 2000 (vertical) or
-    /// derived from day-stack (horizontal).
+    /// `--width` — total SVG width in pixels. Default: 2000 (horizontal) or
+    /// derived from day-stack (vertical).
     pub width: Option<f64>,
     /// `--height` — total SVG height in pixels. None → auto from
-    /// `day_height + n_days` (vertical) or default time extent (horizontal).
+    /// `day_height + n_days` (horizontal) or default time extent (vertical).
     pub height: Option<f64>,
     /// `--day-height` — per-day cross-axis extent in pixels. Default: 100.
     pub day_height: Option<f64>,
@@ -809,7 +811,8 @@ pub struct DayviewArgs {
     /// follow-up will swap to DB-change events).
     pub watch: bool,
     /// `--orientation horizontal|vertical` (or shorthand `--horizontal` /
-    /// `--vertical`). Defaults to horizontal per bead da-a7f.
+    /// `--vertical`), named by time-axis direction. Defaults to horizontal
+    /// per bead da-tbe.
     pub orientation: DayviewOrientation,
 }
 

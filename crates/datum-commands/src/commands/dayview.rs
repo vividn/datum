@@ -142,19 +142,20 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
 
     // 5. Resolve sizing per dayview.ts §44–78. Defaults: width=2000,
     //    day_height=100, time_axis_height=15, interday_margin=15, margin=2.
-    //    Orientation flips which dim `--height` derives `day_height` from
-    //    (vertical: total height; horizontal: total width).
+    //    Orientation flips which dim `--day-height` derives from: in
+    //    horizontal mode days stack along y (use --height); in vertical
+    //    mode days stack along x (use --width).
     let orientation = match args.orientation {
         DayviewOrientation::Vertical => Orientation::Vertical,
         DayviewOrientation::Horizontal => Orientation::Horizontal,
     };
     let width = args.width.unwrap_or(DEFAULT_WIDTH);
     let day_height_default = args.day_height.unwrap_or(DEFAULT_DAY_HEIGHT);
-    // If the user gave --height (vertical) or --width (horizontal) without
-    // an explicit --day-height, derive day_height to fit the day-stack
-    // axis. Otherwise use the configured day_height.
+    // If the user gave --height (horizontal mode) or --width (vertical mode)
+    // without an explicit --day-height, derive day_height to fit the
+    // day-stack axis. Otherwise use the configured day_height.
     let day_height = match orientation {
-        Orientation::Vertical => match (args.height, args.day_height) {
+        Orientation::Horizontal => match (args.height, args.day_height) {
             (Some(total), None) => {
                 let usable = total - 2.0 * args.margin - args.time_axis_height
                     - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
@@ -166,7 +167,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             }
             _ => day_height_default,
         },
-        Orientation::Horizontal => match (args.width, args.day_height) {
+        Orientation::Vertical => match (args.width, args.day_height) {
             (Some(total), None) => {
                 let usable = total - 2.0 * args.margin - args.time_axis_height
                     - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;

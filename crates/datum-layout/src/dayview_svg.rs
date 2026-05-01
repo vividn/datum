@@ -8,13 +8,13 @@
 //! - Black background.
 //! - Hourly gridlines (40% opacity every 3rd hour, 10% otherwise).
 //! - Per-day stack with date labels on the side adjacent to the data area
-//!   (left for vertical, top for horizontal — see bead da-a7f).
+//!   (left for horizontal, top for vertical — see bead da-tbe).
 //! - Per-field band rendering: solid blocks, multi-state diagonal stripes,
 //!   point markers (fg + bg circles per da-k5z).
 //! - Yellow dashed "now" line on today's row only.
 //! - Warning icon next to date labels for days with conflicts.
 //! - Time-axis strip on the side opposite the date labels (bottom for
-//!   vertical, left for horizontal).
+//!   horizontal, left for vertical).
 
 use std::fmt::Write;
 
@@ -44,13 +44,13 @@ impl PlotGeom {
             + (layout.days.len().saturating_sub(1)) as f64 * layout.interday_margin;
         match layout.orientation {
             // Date-label strip on the left, time-axis strip at the bottom.
-            Orientation::Vertical => Self {
+            Orientation::Horizontal => Self {
                 data_x: layout.label_width,
                 data_y: 0.0,
                 cross_total,
             },
             // Date-label strip on top, time-axis strip on the left.
-            Orientation::Horizontal => Self {
+            Orientation::Vertical => Self {
                 data_x: layout.time_axis_height,
                 data_y: layout.label_width,
                 cross_total,
@@ -62,8 +62,8 @@ impl PlotGeom {
 /// Map orientation-neutral (time, cross) → SVG (x, y) within the plot.
 fn to_xy(layout: &DayviewLayout, geom: &PlotGeom, time: f64, cross: f64) -> (f64, f64) {
     match layout.orientation {
-        Orientation::Vertical => (geom.data_x + time, geom.data_y + cross),
-        Orientation::Horizontal => (geom.data_x + cross, geom.data_y + time),
+        Orientation::Horizontal => (geom.data_x + time, geom.data_y + cross),
+        Orientation::Vertical => (geom.data_x + cross, geom.data_y + time),
     }
 }
 
@@ -101,11 +101,11 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
     for tick in &layout.axis_ticks {
         let opacity = if tick.hour % 3 == 0 { 0.4 } else { 0.1 };
         let (x1, y1, x2, y2) = match layout.orientation {
-            Orientation::Vertical => {
+            Orientation::Horizontal => {
                 let x = geom.data_x + tick.time_pos;
                 (x, geom.data_y, x, geom.data_y + geom.cross_total)
             }
-            Orientation::Horizontal => {
+            Orientation::Vertical => {
                 let y = geom.data_y + tick.time_pos;
                 (geom.data_x, y, geom.data_x + geom.cross_total, y)
             }
@@ -122,8 +122,8 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         // Date label group — positioned at the start of this day's slot
         // along the cross axis, centered on the perpendicular dim.
         let (label_group_x, label_group_y) = match layout.orientation {
-            Orientation::Vertical => (0.0, day.day_offset),
-            Orientation::Horizontal => (geom.data_x + day.day_offset, 0.0),
+            Orientation::Horizontal => (0.0, day.day_offset),
+            Orientation::Vertical => (geom.data_x + day.day_offset, 0.0),
         };
         let _ = write!(
             &mut out,
@@ -135,13 +135,13 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         let n_lines = day.label_lines.len().max(1);
         for (j, line) in day.label_lines.iter().enumerate() {
             let (lx, ly, anchor) = match layout.orientation {
-                Orientation::Vertical => {
+                Orientation::Horizontal => {
                     // Right-aligned within the label strip; lines stacked
                     // vertically across the row.
                     let line_y = ((j as f64 + 0.5) * layout.day_height) / n_lines as f64;
                     (layout.label_width - 4.0, line_y, "end")
                 }
-                Orientation::Horizontal => {
+                Orientation::Vertical => {
                     // Centered horizontally within the column; lines
                     // stacked vertically within the top label strip.
                     let cx = layout.day_height / 2.0;
@@ -162,11 +162,11 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         if day.has_error {
             let icon_size = (layout.day_height * 0.4).min(20.0).max(8.0);
             let (icon_x, icon_y) = match layout.orientation {
-                Orientation::Vertical => (
+                Orientation::Horizontal => (
                     layout.label_width - 2.0,
                     (layout.day_height - icon_size) / 2.0,
                 ),
-                Orientation::Horizontal => (
+                Orientation::Vertical => (
                     (layout.day_height - icon_size) / 2.0,
                     layout.label_width - 2.0 - icon_size,
                 ),
@@ -273,11 +273,11 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         // Per-day now-line. Drawn after the bands so it sits on top.
         if let Some(nt) = day.now_time_pos {
             let (x1, y1, x2, y2) = match layout.orientation {
-                Orientation::Vertical => {
+                Orientation::Horizontal => {
                     let x = geom.data_x + nt;
                     (x, geom.data_y + day.day_offset, x, geom.data_y + day.now_extent_far)
                 }
-                Orientation::Horizontal => {
+                Orientation::Vertical => {
                     let y = geom.data_y + nt;
                     (geom.data_x + day.day_offset, y, geom.data_x + day.now_extent_far, y)
                 }
@@ -290,7 +290,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         }
     }
 
-    // Time axis — bottom strip in vertical, left strip in horizontal.
+    // Time axis — bottom strip in horizontal, left strip in vertical.
     if layout.time_axis_height > 0.0 {
         emit_time_axis(&mut out, layout, &geom);
     }
@@ -319,13 +319,13 @@ fn block_rect(
     time_ext: f64,
 ) -> (f64, f64, f64, f64) {
     match layout.orientation {
-        Orientation::Vertical => (
+        Orientation::Horizontal => (
             geom.data_x + time_off,
             geom.data_y + cross_off,
             time_ext,
             cross_ext,
         ),
-        Orientation::Horizontal => (
+        Orientation::Vertical => (
             geom.data_x + cross_off,
             geom.data_y + time_off,
             cross_ext,
@@ -342,7 +342,7 @@ fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom) {
     };
     let n = layout.axis_ticks.len();
     match layout.orientation {
-        Orientation::Vertical => {
+        Orientation::Horizontal => {
             // Baseline beneath the day-stack data area.
             let axis_y = geom.data_y + geom.cross_total;
             let _ = write!(
@@ -379,7 +379,7 @@ fn emit_time_axis(out: &mut String, layout: &DayviewLayout, geom: &PlotGeom) {
                 }
             }
         }
-        Orientation::Horizontal => {
+        Orientation::Vertical => {
             // Baseline at the right edge of the time-axis strip.
             let axis_x = geom.data_x;
             let _ = write!(
@@ -536,7 +536,7 @@ mod tests {
 
     #[test]
     fn emits_valid_svg_envelope() {
-        let layout = compute_dayview(&one_day_with_block(false, Orientation::Vertical));
+        let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
         let svg = render_dayview_svg(&layout);
         assert!(svg.starts_with("<svg "));
         assert!(svg.ends_with("</svg>"));
@@ -545,8 +545,8 @@ mod tests {
     }
 
     #[test]
-    fn vertical_renders_block_field_label_axis() {
-        let layout = compute_dayview(&one_day_with_block(false, Orientation::Vertical));
+    fn horizontal_renders_block_field_label_axis() {
+        let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
         let svg = render_dayview_svg(&layout);
         assert!(svg.contains(r#"data-field="mood""#));
         assert!(svg.contains(r#"class="block""#));
@@ -565,10 +565,10 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_renders_block_field_label_axis() {
-        let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
+    fn vertical_renders_block_field_label_axis() {
+        let layout = compute_dayview(&one_day_with_block(false, Orientation::Vertical));
         let svg = render_dayview_svg(&layout);
-        // Same logical content present, just laid out for horizontal mode.
+        // Same logical content present, just laid out for vertical mode.
         assert!(svg.contains(r#"data-field="mood""#));
         assert!(svg.contains(r#"class="block""#));
         assert!(svg.contains("#abcdef"));
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn warning_icon_on_error_day() {
-        let layout = compute_dayview(&one_day_with_block(true, Orientation::Vertical));
+        let layout = compute_dayview(&one_day_with_block(true, Orientation::Horizontal));
         let svg = render_dayview_svg(&layout);
         assert!(svg.contains("day-error"));
         assert!(svg.contains("#ffff00"));
@@ -592,14 +592,14 @@ mod tests {
 
     #[test]
     fn no_warning_icon_when_no_error() {
-        let layout = compute_dayview(&one_day_with_block(false, Orientation::Vertical));
+        let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
         let svg = render_dayview_svg(&layout);
         assert!(!svg.contains("day-error"));
     }
 
     #[test]
     fn multi_state_block_emits_pattern_def() {
-        let mut cfg = one_day_with_block(false, Orientation::Vertical);
+        let mut cfg = one_day_with_block(false, Orientation::Horizontal);
         cfg.days[0].fields[0].blocks[0].fill = BlockFill::MultiState(vec![
             "#ff0000".into(),
             "#00ff00".into(),
@@ -630,7 +630,7 @@ mod tests {
             now_ms: DAY_START + 100 * HOUR,
             width: 800.0,
             day_height: 100.0,
-            orientation: Orientation::Vertical,
+            orientation: Orientation::Horizontal,
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);

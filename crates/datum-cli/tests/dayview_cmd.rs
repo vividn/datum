@@ -36,7 +36,7 @@ fn dayview_writes_svg_to_output() {
         &[
             "dayview",
             "-o", &path,
-            "--vertical",
+            "--horizontal",
             "--width", "1200",
             "--day-height", "120",
         ],

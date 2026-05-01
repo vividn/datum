@@ -15,8 +15,10 @@
 //!   axis within a day, AND days stack on this axis across rows/cols
 //!
 //! The renderer maps `(time, cross)` → SVG `(x, y)` per orientation:
-//! - [`Orientation::Vertical`]: time→x, cross→y (datum's original layout)
-//! - [`Orientation::Horizontal`]: time→y, cross→x (each day is a column)
+//! - [`Orientation::Horizontal`]: time→x, cross→y (datum's original layout —
+//!   time axis runs left-to-right, days stack top-to-bottom)
+//! - [`Orientation::Vertical`]: time→y, cross→x (time axis runs top-to-bottom,
+//!   each day is a column)
 //!
 //! No I/O, no datum-core, no system deps — compiles cleanly to
 //! `wasm32-unknown-unknown` so the SvelteKit PWA can render the same view
@@ -29,17 +31,19 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Visual orientation of the dayview. Default is [`Orientation::Horizontal`]
-/// per the kit-spec design discussion (2026-04-30).
+/// Visual orientation of the dayview. Named by the time-axis direction.
+/// Default is [`Orientation::Horizontal`] per the kit-spec design
+/// discussion (2026-04-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Orientation {
-    /// Time runs horizontally (X axis); days stack vertically (Y axis).
-    /// Date labels on the left, time-axis ticks at the bottom. This is
-    /// datum's original layout.
+    /// Time runs vertically (Y axis, top→bottom); days stack horizontally
+    /// (X axis). Date labels on top of each column, time-axis ticks on
+    /// the left. Each day is a column.
     Vertical,
-    /// Time runs vertically (Y axis); days stack horizontally (X axis).
-    /// Date labels on top of each column, time-axis ticks on the left.
+    /// Time runs horizontally (X axis, left→right); days stack vertically
+    /// (Y axis). Date labels on the left, time-axis ticks at the bottom.
+    /// This is datum's original layout.
     Horizontal,
 }
 
@@ -80,10 +84,10 @@ pub struct DayviewDayInput {
 pub struct DayviewFieldInput {
     pub field: String,
     /// Position along the cross-axis (perpendicular to time) as a fraction
-    /// (0.0 = near edge, 1.0 = far edge) of the day's data area. In vertical
-    /// mode 0.0 = top, in horizontal mode 0.0 = left of the day's column.
-    /// Caller resolves from [`FieldSpec`] (y, height, z_index columns) with
-    /// deterministic-hash fallback.
+    /// (0.0 = near edge, 1.0 = far edge) of the day's data area. In horizontal
+    /// mode 0.0 = top of the row, in vertical mode 0.0 = left of the day's
+    /// column. Caller resolves from [`FieldSpec`] (y, height, z_index columns)
+    /// with deterministic-hash fallback.
     pub y_frac: f64,
     /// Cross-axis extent as a fraction of the day's data area.
     pub height_frac: f64,
@@ -135,25 +139,25 @@ pub struct DayviewConfig {
     /// Total SVG width in pixels (including margins + label area).
     pub width: f64,
     /// Total SVG height in pixels. None → auto from `day_height + n_days`
-    /// in vertical mode; defaults to a reasonable time-axis extent in
-    /// horizontal mode.
+    /// in horizontal mode; defaults to a reasonable time-axis extent in
+    /// vertical mode.
     pub height: Option<f64>,
     /// Per-day cross-axis extent in pixels (the size perpendicular to
-    /// time). Vertical mode: per-day band height. Horizontal mode: per-day
+    /// time). Horizontal mode: per-day band height. Vertical mode: per-day
     /// column width. Default 100.
     pub day_height: f64,
     /// Pixel gap between adjacent days along the day-stacking axis.
     /// Default 15 (matches datum).
     pub interday_margin: f64,
-    /// Pixel size of the time-axis strip (perpendicular to time). Vertical
-    /// mode: height of bottom strip. Horizontal mode: width of left strip.
+    /// Pixel size of the time-axis strip (perpendicular to time). Horizontal
+    /// mode: height of bottom strip. Vertical mode: width of left strip.
     /// Default 15.
     pub time_axis_height: f64,
     /// Outer margin around the plot. Default 2.
     pub margin: f64,
     /// Optional fixed date-label strip size on the side adjacent to the
-    /// time-axis-perpendicular edge. Vertical: width on the left.
-    /// Horizontal: height on top. When None, derived from `font_size * 4`
+    /// time-axis-perpendicular edge. Horizontal: width on the left.
+    /// Vertical: height on top. When None, derived from `font_size * 4`
     /// (matches datum).
     pub label_width: Option<f64>,
     /// Render orientation. Default [`Orientation::Horizontal`].
@@ -285,9 +289,10 @@ const MAX_LABEL_FONT: f64 = 20.0;
 const LABEL_FONT_PAD: f64 = 6.0;
 
 /// Default time-axis extent (px) when caller doesn't pass `height` in
-/// horizontal mode. Roughly matches the default vertical-mode density
-/// (24 hours over ~2000px → ~83 px/hour) scaled to a portrait aspect.
-const DEFAULT_HORIZONTAL_TIME_EXTENT: f64 = 1200.0;
+/// vertical mode (time runs along Y). Roughly matches the default
+/// horizontal-mode density (24 hours over ~2000px → ~83 px/hour) scaled
+/// to a portrait aspect.
+const DEFAULT_VERTICAL_TIME_EXTENT: f64 = 1200.0;
 
 /// Compute the dayview layout.
 pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
@@ -317,7 +322,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     // orientation. The layout always lays out `(time, cross)` logically;
     // the renderer maps to SVG (x, y).
     let (width, height, plot, time_axis_extent) = match config.orientation {
-        Orientation::Vertical => {
+        Orientation::Horizontal => {
             let plot_width = (config.width - 2.0 * config.margin).max(0.0);
             let time_axis_extent = (plot_width - label_width).max(0.0);
             let plot_height = data_rows_extent + config.time_axis_height;
@@ -330,7 +335,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             };
             (config.width, height, plot, time_axis_extent)
         }
-        Orientation::Horizontal => {
+        Orientation::Vertical => {
             // Days stack along x; time runs along y. The data area sits
             // below the date-label strip and to the right of the time-axis
             // strip.
@@ -341,7 +346,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             let _ = plot_width;
             let total_height_resolved = config
                 .height
-                .unwrap_or(DEFAULT_HORIZONTAL_TIME_EXTENT + label_width + 2.0 * config.margin);
+                .unwrap_or(DEFAULT_VERTICAL_TIME_EXTENT + label_width + 2.0 * config.margin);
             let plot_height = (total_height_resolved - 2.0 * config.margin).max(0.0);
             let time_axis_extent = (plot_height - label_width).max(0.0);
             // Recompute total width from the day-stack data plus axis strip.
@@ -530,9 +535,11 @@ mod tests {
         }
     }
 
-    /// Helper: build a vertical-orientation config for the legacy tests.
-    fn vertical(cfg: DayviewConfig) -> DayviewConfig {
-        DayviewConfig { orientation: Orientation::Vertical, ..cfg }
+    /// Helper: build a horizontal-orientation config (datum's original
+    /// layout: time runs L→R, days stack top-to-bottom) for the legacy
+    /// tests.
+    fn horizontal(cfg: DayviewConfig) -> DayviewConfig {
+        DayviewConfig { orientation: Orientation::Horizontal, ..cfg }
     }
 
     #[test]
@@ -543,7 +550,7 @@ mod tests {
 
     #[test]
     fn label_font_picks_three_lines_when_fits() {
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![empty_day(&["Mon", "Apr 27", "2026"])],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -559,7 +566,7 @@ mod tests {
 
     #[test]
     fn label_font_shrinks_to_two_lines_then_one() {
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![empty_day(&["Mon", "Apr 27", "2026"])],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -575,7 +582,7 @@ mod tests {
 
     #[test]
     fn label_font_shrinks_to_two_lines() {
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![empty_day(&["Mon", "Apr 27", "2026"])],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -590,7 +597,7 @@ mod tests {
     #[test]
     fn n_day_stack_height_includes_axis_and_margins() {
         let day = empty_day(&["Mon", "Apr 27", "2026"]);
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day.clone(), day.clone(), day.clone()],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -626,7 +633,7 @@ mod tests {
             fields: vec![],
         };
         let now_ms = DAY_START + 24 * HOUR + 12 * HOUR;
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day1, day2],
             now_ms,
             width: 800.0,
@@ -654,7 +661,7 @@ mod tests {
             has_error: false,
             fields: vec![],
         };
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day1, day2],
             now_ms: DAY_START + 24 * HOUR + 12 * HOUR,
             width: 800.0,
@@ -700,7 +707,7 @@ mod tests {
                 },
             ],
         };
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -738,7 +745,7 @@ mod tests {
             has_error: false,
             fields: vec![mk_field("c", 0.9), mk_field("a", 0.1), mk_field("b", 0.5)],
         };
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -775,7 +782,7 @@ mod tests {
                 points: vec![],
             }],
         };
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -794,7 +801,7 @@ mod tests {
 
     #[test]
     fn axis_ticks_emit_25_hourly_positions() {
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![empty_day(&["Mon"])],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -837,7 +844,7 @@ mod tests {
                 points: vec![],
             }],
         };
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -862,7 +869,7 @@ mod tests {
     fn has_error_propagates_to_rendered_day() {
         let mut day = empty_day(&["Mon", "Apr 27", "2026"]);
         day.has_error = true;
-        let cfg = vertical(DayviewConfig {
+        let cfg = horizontal(DayviewConfig {
             days: vec![day],
             now_ms: DAY_START + 12 * HOUR,
             width: 800.0,
@@ -874,20 +881,20 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_orientation_propagates_to_layout() {
+    fn vertical_orientation_propagates_to_layout() {
         let cfg = DayviewConfig {
             days: vec![empty_day(&["Mon", "Apr 27", "2026"])],
             now_ms: DAY_START + 12 * HOUR,
             day_height: 100.0,
-            orientation: Orientation::Horizontal,
+            orientation: Orientation::Vertical,
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
-        assert_eq!(layout.orientation, Orientation::Horizontal);
+        assert_eq!(layout.orientation, Orientation::Vertical);
     }
 
     #[test]
-    fn horizontal_total_width_derives_from_day_stack() {
+    fn vertical_total_width_derives_from_day_stack() {
         // 3 days × 100 + 2 × 15 (interday) + 15 (time-axis strip) + 2 × 2 (margin)
         // = 300 + 30 + 15 + 4 = 349.
         let day = empty_day(&["Mon"]);
@@ -899,7 +906,7 @@ mod tests {
             time_axis_height: 15.0,
             margin: 2.0,
             height: Some(800.0),
-            orientation: Orientation::Horizontal,
+            orientation: Orientation::Vertical,
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
@@ -913,7 +920,7 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_time_axis_extent_is_data_height() {
+    fn vertical_time_axis_extent_is_data_height() {
         // height 800 - 2*margin(2) - label_width(label_font*4 ~=80) = 716.
         let cfg = DayviewConfig {
             days: vec![empty_day(&["Mon", "Apr 27", "2026"])],
@@ -921,7 +928,7 @@ mod tests {
             day_height: 100.0,
             margin: 2.0,
             height: Some(800.0),
-            orientation: Orientation::Horizontal,
+            orientation: Orientation::Vertical,
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
@@ -936,7 +943,7 @@ mod tests {
     }
 
     #[test]
-    fn horizontal_blocks_clip_to_day_window() {
+    fn vertical_blocks_clip_to_day_window() {
         let day = DayviewDayInput {
             label_lines: vec!["Mon".into()],
             start_ms: DAY_START,
@@ -964,7 +971,7 @@ mod tests {
             label_width: Some(0.0),
             time_axis_height: 0.0,
             height: Some(800.0),
-            orientation: Orientation::Horizontal,
+            orientation: Orientation::Vertical,
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
