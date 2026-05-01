@@ -28,7 +28,7 @@ use crate::time::DatumTime;
 /// migrated still compile. The legacy variants serialize to their old
 /// strings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "kebab-case")]
 pub enum Verb {
     /// Single point-in-time event with no state change (`dur is NULL,
     /// state is null/true, following_state is NULL`).

@@ -16,6 +16,9 @@ pub mod migrations;
 pub mod history;
 pub mod conflicts;
 pub mod last_docs;
+pub mod verb;
+
+pub use verb::derive_verb;
 
 #[cfg(any(test, feature = "test-util"))]
 pub mod test_util;
