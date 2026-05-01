@@ -1,37 +1,60 @@
 //! Regression test for `datum db import` against a committed synthetic
-//! fixture (da-zio).
+//! fixture (da-zio, rewritten for v=20 schema under da-5ns.6).
 //!
-//! This test locks the **structural correctness** of legacy-data ingestion
-//! so future refactors (parser changes, schema migrations, render rewrites)
-//! cannot silently break it. It deliberately does NOT assert rendered output
-//! — the `dayview` / `now` renderers are still being tuned and golden-file
-//! diffs would generate noise. Only the import-mapping shape is locked here.
+//! Locks the **structural correctness** of legacy-data ingestion against
+//! the new (occur_time, state, dur, following_state, verb) schema so
+//! future refactors cannot silently break it. Doesn't assert rendered
+//! output — golden-file diffs from the in-flux renderer would be noise.
 //!
-//! Fixture: `tests/fixtures/datum_backup_synthetic.json`. Each doc covers a
-//! distinct slice of the import-mapping matrix:
+//! Fixture: `tests/fixtures/datum_backup_synthetic.json`. Each doc covers
+//! a distinct slice of the v=20 import mapping. Verbs below are derived
+//! from (state, dur, following_state) via `datum_core::derive_verb` —
+//! the `entry.verb` column is hardcoded "point" until da-5ns.3 wires
+//! derivation into the insert path.
 //!
-//! | Doc # | Field          | Shape    | Notes                                                                        |
-//! | ----- | -------------- | -------- | ---------------------------------------------------------------------------- |
-//! | 1     | mood           | point    | string `state=happy`, no dur → `Verb::Switch` (state present, dur absent)    |
-//! | 2     | sleep          | block    | `dur=PT8H` → `end_time = start + 8h`, dur literal preserved in extra_data    |
-//! | 3     | work           | block    | string `state=focus` + `dur=PT3M` → `Verb::Block` (state present + dur)      |
-//! | 4     | brushteeth     | point    | minimal occur-only — no state, no dur                                        |
-//! | 5     | tracking       | point    | boolean `state=true` → `Verb::Switch`                                        |
-//! | 6     | test           | block    | `dur=PT1M`, `o=0` UTC → tz/offset round-trip                                 |
-//! | 7     | consume        | point    | extras `id`, `medium` survive into extra_data; no collision with `Entry.hid` |
-//! | 8     | malformed_dur  | point    | unparseable `dur` → warn-not-fail, no `end_time`, literal preserved verbatim |
-//! | 9     | feeling        | point    | object `state={primary, intensity}` → `Verb::Switch`, value stored verbatim  |
-//! | 10    | tags           | point    | array `state=[...]` → `Verb::Switch` (single entry; no expansion)            |
-//! | 11    | thinking       | point    | string `state=idea` + `dur=null` → `Verb::Switch` (null dur ≡ absent)        |
+//! "Verb (derived)" is what `derive_verb(state, dur, fs)` returns when called
+//! on the **stored** columns. Note: the null→true promotion is destructive
+//! — once a "no state" entry is stored as `state=true`, re-deriving gives
+//! Switch (state set, no dur) rather than Point. This is by design; the
+//! renderer treats a Switch-to-true the same as a no-state Point.
 //!
-//! Counts: 11 imported (8 point, 3 block).
+//! | Doc # | Field          | dur in   | dur out | state in        | state out      | Verb (derived) |
+//! | ----- | -------------- | -------- | ------- | --------------- | -------------- | -------------- |
+//! | 1     | mood           | absent   | NULL    | "happy"         | "happy"        | Switch         |
+//! | 2     | sleep          | "PT8H"   | "PT8H"  | absent          | true           | Block          |
+//! | 3     | work           | "PT3M"   | "PT3M"  | "focus"         | "focus"        | Block          |
+//! | 4     | brushteeth     | absent   | NULL    | absent          | true           | Switch (re-derived from state=true)|
+//! | 5     | tracking       | absent   | NULL    | true            | true           | Switch         |
+//! | 6     | test           | "PT1M"   | "PT1M"  | absent          | true           | Block          |
+//! | 7     | consume        | absent   | NULL    | absent          | true           | Switch (re-derived from state=true)|
+//! | 8     | malformed_dur  | bad str  | NULL    | absent          | true           | Switch (re-derived from state=true)|
+//! | 9     | feeling        | absent   | NULL    | {prim, int}     | {prim, int}    | Switch         |
+//! | 10    | tags           | absent   | NULL    | [arr]           | [arr]          | Switch         |
+//! | 11    | thinking       | null     | "PT0S"  | "idea"          | "idea"         | Point          |
+//!
+//! Counts: 11 imported (8 dur=NULL/zero, 3 dur=positive).
 
 mod common;
 
 use common::run_cli;
-use datum_core::entry::{EntryShape, Verb};
+use datum_core::derive_verb;
+use datum_core::entry::Verb;
 use datum_core::test_util::fresh_db;
 use std::collections::HashSet;
+
+fn verb_of(e: &datum_core::entry::Entry) -> Verb {
+    derive_verb(e.state.clone(), e.dur.as_deref(), e.following_state.clone())
+        .expect("derive_verb on imported entry")
+        .0
+}
+
+fn is_block_dur(d: &Option<String>) -> bool {
+    match d.as_deref() {
+        None => false,
+        Some(s) if matches!(s, "PT0S" | "P0D" | "PT0M" | "PT0H") => false,
+        Some(_) => true,
+    }
+}
 
 const FIXTURE: &str = "tests/fixtures/datum_backup_synthetic.json";
 
@@ -43,36 +66,39 @@ fn db_import_synthetic_locks_db_shape() {
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 11, "fixture defines 11 importable docs");
 
-    let points = entries
-        .iter()
-        .filter(|e| e.entry_shape == EntryShape::Point)
-        .count();
-    let blocks = entries
-        .iter()
-        .filter(|e| e.entry_shape == EntryShape::Block)
-        .count();
+    // Per the table above: 8 entries have dur NULL or zero, 3 have positive dur.
+    let zero_or_null = entries.iter().filter(|e| !is_block_dur(&e.dur)).count();
+    let positive = entries.iter().filter(|e| is_block_dur(&e.dur)).count();
     assert_eq!(
-        points, 8,
-        "expected 8 point entries (docs 1, 4, 5, 7, 8, 9, 10, 11)",
+        zero_or_null, 8,
+        "expected 8 entries with dur=NULL or dur=zero (docs 1, 4, 5, 7, 8, 9, 10, 11)",
     );
-    assert_eq!(blocks, 3, "expected 3 block entries (docs 2, 3, 6)");
+    assert_eq!(
+        positive, 3,
+        "expected 3 entries with positive dur (docs 2, 3, 6)"
+    );
 
-    // Every block has both times set and the original `dur` literal preserved
-    // in extra_data as intent (datum-compatible read-back).
-    for e in entries
-        .iter()
-        .filter(|e| e.entry_shape == EntryShape::Block)
-    {
+    // Every entry with positive dur must carry the original `dur` literal in
+    // the `data` blob as intent (datum-compatible read-back) AND store it
+    // verbatim in the `dur` column.
+    for e in entries.iter().filter(|e| is_block_dur(&e.dur)) {
         assert!(
-            e.start_time.is_some(),
-            "block {} missing start_time",
+            e.occur_time.is_some(),
+            "block {} missing occur_time",
             e.slug
         );
-        assert!(e.end_time.is_some(), "block {} missing end_time", e.slug);
-        let extra = e.data.as_ref().expect("block must have extra_data");
+        let dur_str = e.dur.as_deref().expect("block has dur set");
+        let extra = e.data.as_ref().expect("block must have data blob");
         assert!(
-            !extra["dur"].is_null(),
-            "block {} must preserve `dur` literal in extra_data",
+            extra["dur"].is_string(),
+            "block {} must preserve `dur` literal in data, got {}",
+            e.slug,
+            extra["dur"],
+        );
+        assert_eq!(
+            extra["dur"].as_str().unwrap(),
+            dur_str,
+            "block {} data.dur literal must match dur column",
             e.slug,
         );
     }
@@ -110,63 +136,64 @@ fn db_import_synthetic_locks_db_shape() {
         assert!(seen.insert(e.hid.clone()), "duplicate hid {}", e.hid);
     }
 
-    // ─── Per-doc structural asserts ──────────────────────────────────────
+    // ─── Per-doc structural asserts (v=20 columns) ──────────────────────
 
-    // Doc 1 (mood, string state, no dur): non-boolean state still classifies
-    // as Switch under the state-aware rule (was Occur before da-1wf).
-    let mood = entries.iter().find(|e| e.field == "mood").expect("doc 1: mood");
-    assert_eq!(mood.entry_shape, EntryShape::Point);
-    assert_eq!(mood.verb, Verb::Switch);
-    assert_eq!(mood.value, Some(serde_json::json!("happy")));
+    // Doc 1 (mood, string state, no dur): state set + no dur → Switch.
+    let mood = entries
+        .iter()
+        .find(|e| e.field == "mood")
+        .expect("doc 1: mood");
+    assert!(mood.dur.is_none());
+    assert_eq!(mood.state, Some(serde_json::json!("happy")));
+    assert_eq!(verb_of(mood), Verb::Switch);
 
-    // Doc 2 (sleep / PT8H): end_time = start + 8h.
+    // Doc 2 (sleep / PT8H): no state → state=true (promoted), dur="PT8H" → Block.
     let sleep = entries
         .iter()
         .find(|e| e.field == "sleep")
         .expect("doc 2: sleep");
-    let span = sleep.end_time.as_ref().unwrap().utc - sleep.start_time.as_ref().unwrap().utc;
-    assert_eq!(span.num_hours(), 8, "sleep block must span exactly 8h");
+    assert_eq!(sleep.dur.as_deref(), Some("PT8H"), "sleep dur verbatim");
+    assert_eq!(
+        sleep.state,
+        Some(serde_json::json!(true)),
+        "null→true promotion"
+    );
+    assert_eq!(verb_of(sleep), Verb::Block);
     assert_eq!(
         sleep.data.as_ref().unwrap()["dur"],
         serde_json::json!("PT8H"),
-        "sleep dur literal must round-trip",
+        "sleep dur literal also preserved in data",
     );
 
-    // Doc 3 (work): block with value preserved and dur intent kept.
+    // Doc 3 (work, string state + dur): Block with state preserved.
     let work = entries
         .iter()
         .find(|e| e.field == "work")
         .expect("doc 3: work");
-    assert_eq!(work.entry_shape, EntryShape::Block);
-    assert_eq!(work.value, Some(serde_json::json!("focus")));
-    assert_eq!(
-        work.data.as_ref().unwrap()["dur"],
-        serde_json::json!("PT3M"),
-    );
+    assert_eq!(work.dur.as_deref(), Some("PT3M"));
+    assert_eq!(work.state, Some(serde_json::json!("focus")));
+    assert_eq!(verb_of(work), Verb::Block);
 
-    // Doc 5 (tracking, boolean state): switch shape is Point + value=true.
+    // Doc 5 (tracking, boolean state): Switch with state=true.
     let tracking = entries
         .iter()
         .find(|e| e.field == "tracking")
         .expect("doc 5: tracking");
-    assert_eq!(tracking.entry_shape, EntryShape::Point);
-    assert_eq!(tracking.value, Some(serde_json::json!(true)));
+    assert!(tracking.dur.is_none());
+    assert_eq!(tracking.state, Some(serde_json::json!(true)));
+    assert_eq!(verb_of(tracking), Verb::Switch);
 
-    // Doc 6 (test / PT1M, o:0 UTC): tz=UTC, offset=0 round-trip through DatumTime.
+    // Doc 6 (test / PT1M, o:0 UTC): tz=UTC, offset=0 round-trip.
     let test = entries
         .iter()
         .find(|e| e.field == "test")
         .expect("doc 6: test");
-    assert_eq!(test.entry_shape, EntryShape::Block);
-    assert_eq!(test.start_time.as_ref().unwrap().offset_minutes, 0);
-    assert_eq!(test.start_time.as_ref().unwrap().timezone, "UTC");
-    assert_eq!(
-        (test.end_time.as_ref().unwrap().utc - test.start_time.as_ref().unwrap().utc).num_minutes(),
-        1,
-    );
+    assert_eq!(test.dur.as_deref(), Some("PT1M"));
+    assert_eq!(test.occur_time.as_ref().unwrap().offset_minutes, 0);
+    assert_eq!(test.occur_time.as_ref().unwrap().timezone, "UTC");
 
-    // Doc 7 (consume): no field-name collision — `id` and `medium` from the
-    // datum doc go into extra_data, NOT into the Entry's own `hid` PK.
+    // Doc 7 (consume): extras `id`, `medium` go into `data` and don't
+    // collide with Entry.hid.
     let consume = entries
         .iter()
         .find(|e| e.field == "consume")
@@ -179,51 +206,60 @@ fn db_import_synthetic_locks_db_shape() {
         "datum doc's `data.id` must NOT overwrite Entry.hid",
     );
 
-    // Doc 8 (malformed dur): imports as Point/Occur, dur literal preserved
-    // verbatim, no derived end_time.
+    // Doc 8 (malformed dur): warn-not-fail, dur=NULL, literal preserved
+    // in `data`. State absent → promoted to true; re-derive of
+    // (state=true, dur=NULL, fs=None) → Switch.
     let malformed = entries
         .iter()
         .find(|e| e.field == "malformed_dur")
         .expect("doc 8: malformed_dur");
-    assert_eq!(malformed.entry_shape, EntryShape::Point);
-    assert!(
-        malformed.end_time.is_none(),
-        "unparseable dur must NOT derive an end_time",
+    assert!(malformed.dur.is_none(), "unparseable dur → dur column NULL");
+    assert_eq!(
+        malformed.state,
+        Some(serde_json::json!(true)),
+        "null→true promotion"
     );
+    assert_eq!(verb_of(malformed), Verb::Switch);
     assert_eq!(
         malformed.data.as_ref().unwrap()["dur"],
         serde_json::json!("not-a-duration"),
-        "malformed dur literal must survive verbatim in extra_data",
+        "malformed dur literal must survive verbatim in data",
     );
 
-    // Doc 9 (feeling, object state): object value stored verbatim under Switch.
-    let feeling = entries.iter().find(|e| e.field == "feeling").expect("doc 9: feeling");
-    assert_eq!(feeling.entry_shape, EntryShape::Point);
-    assert_eq!(feeling.verb, Verb::Switch);
+    // Doc 9 (feeling, object state): object state → Switch verbatim.
+    let feeling = entries
+        .iter()
+        .find(|e| e.field == "feeling")
+        .expect("doc 9: feeling");
+    assert!(feeling.dur.is_none());
+    assert_eq!(verb_of(feeling), Verb::Switch);
     assert_eq!(
-        feeling.value,
+        feeling.state,
         Some(serde_json::json!({"primary": "calm", "intensity": 5})),
-        "object state must round-trip as the entry's value verbatim",
+        "object state must round-trip verbatim",
     );
 
-    // Doc 10 (tags, array state): array value stored as a single entry; the
-    // render layer decides what to do with multi-state values.
-    let tags = entries.iter().find(|e| e.field == "tags").expect("doc 10: tags");
-    assert_eq!(tags.entry_shape, EntryShape::Point);
-    assert_eq!(tags.verb, Verb::Switch);
-    assert_eq!(tags.value, Some(serde_json::json!(["focus", "deep-work"])));
+    // Doc 10 (tags, array state): array state → Switch verbatim.
+    let tags = entries
+        .iter()
+        .find(|e| e.field == "tags")
+        .expect("doc 10: tags");
+    assert!(tags.dur.is_none());
+    assert_eq!(verb_of(tags), Verb::Switch);
+    assert_eq!(tags.state, Some(serde_json::json!(["focus", "deep-work"])));
 
-    // Doc 11 (thinking, state + dur=null): null dur is treated as absent,
-    // so this is Switch (state present, no derived end_time). The literal
-    // null survives in extra_data as datum-compatible read-back.
-    let thinking = entries.iter().find(|e| e.field == "thinking").expect("doc 11: thinking");
-    assert_eq!(thinking.entry_shape, EntryShape::Point);
-    assert_eq!(thinking.verb, Verb::Switch);
-    assert_eq!(thinking.value, Some(serde_json::json!("idea")));
-    assert!(thinking.end_time.is_none());
+    // Doc 11 (thinking, state + dur=null): explicit null → dur="PT0S".
+    // state="idea" + DurKind::Zero + no fs → Verb::Point (state preserved).
+    let thinking = entries
+        .iter()
+        .find(|e| e.field == "thinking")
+        .expect("doc 11: thinking");
+    assert_eq!(thinking.dur.as_deref(), Some("PT0S"), "null dur → PT0S");
+    assert_eq!(thinking.state, Some(serde_json::json!("idea")));
+    assert_eq!(verb_of(thinking), Verb::Point);
     assert!(
         thinking.data.as_ref().unwrap()["dur"].is_null(),
-        "explicit dur=null must round-trip into extra_data",
+        "explicit dur=null must round-trip into data",
     );
 }
 

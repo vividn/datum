@@ -482,38 +482,73 @@ fn compute_hash(field: &str, occur: &str, dur: &str, state: &str, extra: &str) -
     format!("{:x}", h.finalize())
 }
 
-/// Stub ISO-8601 duration → seconds parser. Sub-bead 2 lands the real
-/// one (with proper week/day/composite handling); this just covers the
-/// common single-unit cases used by call sites that survived the
-/// time-shape pivot.
+/// ISO-8601 duration → seconds. Handles composite forms (`P1DT2H30M`,
+/// `PT1M30S`) and week-form (`P3W`). Years and months are approximated
+/// (365d / 30d) — only used by callers that need an approximate seconds
+/// count (the compat `end_time` shim, render-layer span calculations);
+/// the canonical `dur` string is stored verbatim, never recomputed from
+/// this number.
 pub(crate) fn compat_dur_secs(s: &str) -> Option<i64> {
     parse_iso_duration_seconds(s)
 }
 
-fn parse_iso_duration_seconds(s: &str) -> Option<i64> {
-    if s.is_empty() {
+fn parse_iso_duration_seconds(input: &str) -> Option<i64> {
+    let (sign, body) = match input.strip_prefix('-') {
+        Some(rest) => (-1f64, rest),
+        None => (1.0, input),
+    };
+    let rest = body.strip_prefix('P')?;
+    if rest.is_empty() {
         return None;
     }
-    let rest = s.strip_prefix('P')?;
-    if let Some(t) = rest.strip_prefix('T') {
-        if let Some(num) = t.strip_suffix('S') {
-            return num.parse::<f64>().ok().map(|n| n as i64);
+
+    // Week form (PnW) is mutually exclusive with the rest of the grammar.
+    if rest.ends_with('W') && !rest.contains('T') {
+        let n_str = &rest[..rest.len() - 1];
+        if n_str.is_empty() {
+            return None;
         }
-        if let Some(num) = t.strip_suffix('M') {
-            return num.parse::<f64>().ok().map(|n| (n * 60.0) as i64);
+        let n: f64 = n_str.parse().ok()?;
+        return Some((sign * n * 7.0 * 86400.0) as i64);
+    }
+
+    let mut total: f64 = 0.0;
+    let mut buf = String::new();
+    let mut seen_t = false;
+    let mut had_any = false;
+
+    for c in rest.chars() {
+        if c == 'T' {
+            if seen_t || !buf.is_empty() {
+                return None;
+            }
+            seen_t = true;
+        } else if c.is_ascii_digit() || c == '.' || c == ',' {
+            buf.push(if c == ',' { '.' } else { c });
+        } else {
+            if buf.is_empty() {
+                return None;
+            }
+            let n: f64 = buf.parse().ok()?;
+            buf.clear();
+            let secs = match (seen_t, c) {
+                (false, 'Y') => n * 365.0 * 86400.0,
+                (false, 'M') => n * 30.0 * 86400.0,
+                (false, 'D') => n * 86400.0,
+                (true, 'H') => n * 3600.0,
+                (true, 'M') => n * 60.0,
+                (true, 'S') => n,
+                _ => return None,
+            };
+            total += secs;
+            had_any = true;
         }
-        if let Some(num) = t.strip_suffix('H') {
-            return num.parse::<f64>().ok().map(|n| (n * 3600.0) as i64);
-        }
+    }
+
+    if !buf.is_empty() || !had_any {
         return None;
     }
-    if let Some(num) = rest.strip_suffix('D') {
-        return num.parse::<f64>().ok().map(|n| (n * 86400.0) as i64);
-    }
-    if let Some(num) = rest.strip_suffix('W') {
-        return num.parse::<f64>().ok().map(|n| (n * 7.0 * 86400.0) as i64);
-    }
-    None
+    Some((sign * total) as i64)
 }
 
 /// Default slug: `<field>:<timestamp>` — millisecond precision keeps

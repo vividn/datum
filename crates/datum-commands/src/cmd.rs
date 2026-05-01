@@ -7,6 +7,7 @@ use datum_core::{
         ConflictStrategy, Db, GroupColumn, InsertOutcome, ListParams, RetimeFilter, TimeMetric,
         IGNORED_STATE_VALUE,
     },
+    derive_verb,
     entry::{Entry, Verb},
     field_spec::{self, Alias, FieldSpec, InterpolationContext},
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
@@ -3212,71 +3213,96 @@ pub(crate) fn cmd_db_import(args: DbImportArgs, db: &Db) -> Result<()> {
             None => { skipped += 1; continue; }
         };
 
-        // `state: null` is treated as state-absent — both
-        // `data.get("state") == None` and `Value::Null` collapse here.
-        let has_state = !data["state"].is_null();
-        let value = if has_state {
-            Some(data["state"].clone())
-        } else {
-            None
+        // ─── state ──────────────────────────────────────────────────
+        // `data.state` undefined → state column NULL.
+        // `data.state == null` → state column NULL (legacy datum can't
+        //   distinguish missing from explicit null on read; collapse them
+        //   here so the canonical state goes through derive_verb's
+        //   null→true promotion below).
+        // anything else → Some(value), preserved verbatim.
+        let raw_state = data.get("state");
+        let state_in: Option<JsonValue> = match raw_state {
+            None => None,
+            Some(v) if v.is_null() => None,
+            Some(v) => Some(v.clone()),
         };
 
-        let time_start = parse_datum_time(&data["occurTime"]);
+        let occur_time = parse_datum_time(&data["occurTime"]);
+        let occur_time_precision = parse_datum_precision(&data["occurTime"]);
 
-        // Parse `dur` if present and non-null. On parse failure, leave
-        // end_time as None and let the literal fall through to extra_data
-        // so the user can recover the intent later.
-        let parsed_dur = parse_datum_dur(&data["dur"]);
-        if !data["dur"].is_null() && parsed_dur.is_none() {
-            eprintln!(
-                "warning: could not parse dur {} for {}; keeping literal in extra_data",
-                data["dur"], field,
-            );
-            dur_parse_warnings += 1;
-        }
-
-        let time_end = match (&time_start, parsed_dur) {
-            (Some(start), Some(d)) => Some(DatumTime {
-                utc: start.utc + d,
-                offset_minutes: start.offset_minutes,
-                timezone: start.timezone.clone(),
-            }),
-            _ => None,
+        // ─── dur ────────────────────────────────────────────────────
+        // Per da-5ns.6:
+        //   legacy `dur` undefined (key missing) → dur=NULL
+        //   legacy `dur` null (explicit null)    → dur="PT0S"  (point-for-state)
+        //   legacy `dur` "<ISO>"                 → dur="<ISO>" verbatim
+        //   legacy `dur` malformed               → dur=NULL, warn, preserve
+        //                                          literal in `data` blob
+        //   legacy `dur` numeric (rare)          → dur="PT<n>S" (seconds)
+        let raw_dur = data.get("dur");
+        let dur_in: Option<String> = match raw_dur {
+            None => None,
+            Some(v) if v.is_null() => Some("PT0S".to_string()),
+            Some(JsonValue::String(s)) => {
+                if parse_duration(s).is_ok() {
+                    Some(s.clone())
+                } else {
+                    eprintln!(
+                        "warning: could not parse dur \"{}\" for {}; keeping literal in extra_data",
+                        s, field,
+                    );
+                    dur_parse_warnings += 1;
+                    None
+                }
+            }
+            Some(v) => {
+                if let Some(secs) = v.as_i64() {
+                    Some(format!("PT{}S", secs))
+                } else if let Some(secs) = v.as_f64() {
+                    Some(format!("PT{}S", secs as i64))
+                } else {
+                    eprintln!(
+                        "warning: could not parse dur {} for {}; keeping literal in extra_data",
+                        v, field,
+                    );
+                    dur_parse_warnings += 1;
+                    None
+                }
+            }
         };
 
-        // Pick the verb. State present + dur → Block (state-transition with
-        // duration). State present, no dur → Switch (point-in-time state
-        // transition; covers any JSON value: bool, string, number, object,
-        // array). Stateless rows fall through to the existing
-        // block/occur/add classification by time-shape.
-        let verb = if time_end.is_some() {
-            Verb::Block
-        } else if has_state {
-            Verb::Switch
-        } else if data["occurTime"].is_object() {
-            Verb::Occur
-        } else {
-            Verb::Add
+        // ─── verb + canonical state ─────────────────────────────────
+        // following_state is always None for legacy entries (block-switch /
+        // point-switch are daydumb-new shapes — they never appear in a
+        // CouchDB dump). derive_verb handles null→true promotion: when
+        // state_in is None it returns Some(JsonValue::Bool(true)).
+        let (verb, state) = match derive_verb(state_in.clone(), dur_in.as_deref(), None) {
+            Ok(pair) => pair,
+            Err(e) => {
+                eprintln!("warning: skipping {}: {}", field, e);
+                skipped += 1;
+                continue;
+            }
         };
 
-        // extra_data: preserve everything in `data` except the fields we
-        // map onto first-class columns. `dur` and `lastState` are kept as
-        // intent (datum-compatible read-back). System provenance — the
-        // `_import` marker — lives in `extra_metadata` (da-tsw), strictly
-        // disjoint from user payload so round-tripping data doesn't risk
-        // re-eating the marker as if it were user content.
-        let mut extra = serde_json::Map::new();
+        // ─── data blob ──────────────────────────────────────────────
+        // Everything in `data` except first-class columns goes into the
+        // `data` blob. Note: `dur` is preserved here as user-visible intent
+        // (datum-compatible read-back). System provenance lives in
+        // `extra_metadata._import` (da-tsw) — strictly disjoint.
+        // Doc-root `_rev` and `_attachments` are CouchDB plumbing and never
+        // make it into `data` (they live on the doc, not on `data.*`).
+        let mut blob = serde_json::Map::new();
         if let Some(obj) = data.as_object() {
             for (k, v) in obj {
                 if !matches!(k.as_str(), "field" | "state" | "occurTime") {
-                    extra.insert(k.clone(), v.clone());
+                    blob.insert(k.clone(), v.clone());
                 }
             }
         }
-        let extra_data = if extra.is_empty() {
+        let data_blob = if blob.is_empty() {
             None
         } else {
-            Some(JsonValue::Object(extra))
+            Some(JsonValue::Object(blob))
         };
 
         // The "_import" marker distinguishes this row's source. A future
@@ -3312,12 +3338,27 @@ pub(crate) fn cmd_db_import(args: DbImportArgs, db: &Db) -> Result<()> {
             .map(|t| t.utc)
             .unwrap_or(created_at);
 
-        let mut entry = Entry::new_legacy(
-            field, verb, value, extra_data, None,
-            time_start, time_end, device.clone(),
+        let mut entry = Entry::new(
+            field,
+            verb,
+            state,
+            data_blob,
+            None, // unit — legacy datum stored unit annotations inside data values
+            occur_time,
+            dur_in.clone(),
+            device.clone(),
         );
         entry.create_time = created_at;
         entry.modify_time = modified_at;
+        entry.occur_time_precision = occur_time_precision;
+        entry.id_structure = meta
+            .get("idStructure")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        entry.field_structure = meta
+            .get("fieldStructure")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
         // Imported rows weren't produced by a real parse pass; sentinel 0
         // distinguishes them from `CURRENT_PARSER_VERSION` rows so a future
         // re-derive sweep can find and reprocess them.
@@ -3325,10 +3366,20 @@ pub(crate) fn cmd_db_import(args: DbImportArgs, db: &Db) -> Result<()> {
         entry.raw_input = String::new();
         entry.alias_chain = None;
         entry.extra_metadata = extra_metadata;
+        // Recompute hash after overriding columns that participate in it.
+        entry.content_hash = entry.expected_content_hash();
 
-        match entry.entry_shape {
-            datum_core::entry::EntryShape::Block => blocks += 1,
-            _ => points += 1,
+        // Tally based on dur shape (matches user-facing summary semantics:
+        // dur=None or dur=zero → point, otherwise → block).
+        let is_block = match entry.dur.as_deref() {
+            None => false,
+            Some(d) if matches!(d, "PT0S" | "P0D" | "PT0M" | "PT0H") => false,
+            Some(_) => true,
+        };
+        if is_block {
+            blocks += 1;
+        } else {
+            points += 1;
         }
 
         if dry_run {
@@ -3394,26 +3445,28 @@ fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
     Some(DatumTime { utc, offset_minutes, timezone: tz })
 }
 
-/// Parse a datum doc's `data.dur` field into a `chrono::Duration`.
+/// Map a legacy datum `occurTime` block to a single ISO-8601 precision
+/// string for the new schema's `occur_time_precision` column.
 ///
-/// Datum stores durations as ISO-8601 strings (e.g. `"PT8H"`, `"PT1M30S"`).
-/// Older rows occasionally appear as numbers (interpreted as seconds) or
-/// as JSON null (an explicit "no duration" marker — distinguishable from
-/// a missing key). Returns `None` for null/missing/unparseable inputs.
-fn parse_datum_dur(v: &JsonValue) -> Option<chrono::Duration> {
-    if v.is_null() {
-        return None;
+/// Legacy datum stored precision as a `(precision, precisionUnit)` pair on
+/// the time block. The v=20 schema collapses that into one column. Per
+/// the da-5ns.6 canon table:
+///   year → P1Y, month → P1M, day → P1D, week → P1W,
+///   hour → PT1H, minute → PT1M, second → PT1S
+/// Anything else (including absent, "exact", or unrecognized units) →
+/// `None` (treated as exact-second).
+fn parse_datum_precision(occur_block: &JsonValue) -> Option<String> {
+    let unit = occur_block.get("precisionUnit")?.as_str()?;
+    match unit {
+        "year" => Some("P1Y".to_string()),
+        "month" => Some("P1M".to_string()),
+        "day" | "date" => Some("P1D".to_string()),
+        "week" => Some("P1W".to_string()),
+        "hour" => Some("PT1H".to_string()),
+        "minute" => Some("PT1M".to_string()),
+        "second" => Some("PT1S".to_string()),
+        _ => None,
     }
-    if let Some(s) = v.as_str() {
-        return parse_duration(s).ok();
-    }
-    if let Some(n) = v.as_i64() {
-        return Some(chrono::Duration::seconds(n));
-    }
-    if let Some(f) = v.as_f64() {
-        return Some(chrono::Duration::seconds(f as i64));
-    }
-    None
 }
 
 #[cfg(test)]
