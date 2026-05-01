@@ -19,6 +19,7 @@ use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
 use crate::entry::{Entry, Verb};
+use crate::time::DatumTime;
 
 /// A subfield is a named key within extra_data for a specific field.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -797,6 +798,18 @@ pub struct InterpolationContext<'a> {
     pub value: Option<&'a JsonValue>,
     pub extra_data: Option<&'a JsonValue>,
     pub uid: &'a str,
+    /// da-5ns.4: column-bound state. `%state%` resolves from this first,
+    /// falling back to `extra_data["state"]` for legacy entries that never
+    /// migrated to the column form.
+    pub state: Option<&'a JsonValue>,
+    /// da-5ns.4: column-bound `dur`. `%dur%` reads this directly.
+    pub dur: Option<&'a str>,
+    /// da-5ns.4: column-bound `following_state`. `%following_state%` reads
+    /// this directly.
+    pub following_state: Option<&'a JsonValue>,
+    /// da-5ns.4: column-bound `occur_time`. `%occur_time%` formats this as
+    /// `YYYY-MM-DDTHH:MM:SS.sssZ` (matching the default-slug builder).
+    pub occur_time: Option<&'a DatumTime>,
 }
 
 impl<'a> InterpolationContext<'a> {
@@ -810,6 +823,10 @@ impl<'a> InterpolationContext<'a> {
             value: entry.state.as_ref(),
             extra_data: entry.data.as_ref(),
             uid: uid_buf,
+            state: entry.state.as_ref(),
+            dur: entry.dur.as_deref(),
+            following_state: entry.following_state.as_ref(),
+            occur_time: entry.occur_time.as_ref(),
         }
     }
 }
@@ -855,6 +872,13 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
         "field" => ctx.field.to_string(),
         "uid" => ctx.uid.to_string(),
         "state" => {
+            // da-5ns.4: column-bound state wins. The column is canonical
+            // post-pivot; the data-blob and Switch-value paths are kept as
+            // fallbacks for legacy/in-flight entries that haven't been
+            // canonicalized yet.
+            if let Some(s) = ctx.state {
+                return json_to_plain_string(s);
+            }
             if let Some(s) = lookup_extra_data(ctx.extra_data, "state") {
                 return s;
             }
@@ -865,6 +889,15 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             }
             String::new()
         }
+        "dur" => ctx.dur.map(|s| s.to_string()).unwrap_or_default(),
+        "following_state" => ctx
+            .following_state
+            .map(json_to_plain_string)
+            .unwrap_or_default(),
+        "occur_time" => ctx
+            .occur_time
+            .map(|t| t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
+            .unwrap_or_default(),
         _ => lookup_extra_data(ctx.extra_data, key).unwrap_or_default(),
     }
 }
@@ -1538,6 +1571,10 @@ mod tests {
             value: None,
             extra_data: extra,
             uid,
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: None,
         }
     }
 
@@ -1564,6 +1601,10 @@ mod tests {
             value: Some(&value),
             extra_data: None,
             uid: "zz",
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: None,
         };
         let got = interpolate("%field%:%state%", &switch_ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "mood:focused");
@@ -1599,6 +1640,10 @@ mod tests {
             value: None,
             extra_data: Some(&extra),
             uid: "xx",
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: None,
         };
         let got = interpolate("%field%:%srcLang%:%pos%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "word:pt:verb");

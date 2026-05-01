@@ -1318,6 +1318,14 @@ fn json_to_raw_token(v: &JsonValue) -> String {
     v.to_string()
 }
 
+/// da-5ns.4: parse the reserved `occur_time=` payload from `dm update`. Same
+/// grammar as `start_time=` / `end_time=`: "now", `±N{m,h,s}` offsets, or
+/// RFC3339 timestamps. Exposed crate-private so [`update_core::apply_mutation`]
+/// can reuse the parser.
+pub(crate) fn parse_reserved_occur_time(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
+    parse_add_time_value(v, base)
+}
+
 /// Parse a `start_time=…` or `end_time=…` value token against a base time.
 /// Accepts:
 ///  * "now" → `base_time`

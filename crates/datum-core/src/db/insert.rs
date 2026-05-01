@@ -165,6 +165,18 @@ impl Db {
     /// `content_hash`, `data`) from the incoming payload. Records a
     /// `user_edit` history row for the pre-edit state in the same transaction.
     pub fn save_existing_entry(&self, entry: &Entry) -> Result<()> {
+        self.save_existing_entry_with_kind(entry, ChangeKind::UserEdit)
+    }
+
+    /// As [`Self::save_existing_entry`] but lets the caller stamp a
+    /// non-default [`ChangeKind`] on the pre-mutation history row. Used by
+    /// the retime path to preserve `ChangeKind::Retime` even when the
+    /// shared auto-reinterp helper is doing the persist.
+    pub fn save_existing_entry_with_kind(
+        &self,
+        entry: &Entry,
+        change_kind: ChangeKind,
+    ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let state: Option<Option<String>> = tx
             .query_row(
@@ -178,12 +190,90 @@ impl Db {
             Some(Some(_)) => return Err(DatumError::Tombstoned(entry.slug.to_string())),
             Some(None) => {
                 let pre = fetch_entry_any(&tx, &entry.slug)?;
-                history::record(&tx, &pre, ChangeKind::UserEdit)?;
+                history::record(&tx, &pre, change_kind)?;
                 raw_overwrite_mutables(&tx, &entry.slug, entry, None)?;
             }
         }
         tx.commit()?;
         Ok(())
+    }
+
+    /// Persist `updated` after re-interpolating its `field_structure` /
+    /// `id_structure` against the post-mutation state. If the interpolated
+    /// slug differs from the row's existing slug (matched by `existing_slug`),
+    /// the row is rekeyed in place via [`Self::save_existing_entry_with_rekey`];
+    /// otherwise it goes through [`Self::save_existing_entry`].
+    ///
+    /// Returns the freshly-loaded entry plus the old slug iff a rekey
+    /// happened. The caller is responsible for any user-facing rendering.
+    ///
+    /// da-5ns.4: extends the da-4ud auto-rekey trigger so column mutations
+    /// (`occur_time`, `state`, `dur`, `following_state`) cascade into the
+    /// templated slug just like data-blob mutations did. The mutator
+    /// (insert.rs's update path, time.rs's retime path, …) computes the new
+    /// column values on `updated`; this helper handles the re-interpolate +
+    /// persist + maybe-rekey work in one place so each mutator doesn't
+    /// reinvent the auto-rekey logic.
+    pub fn save_existing_entry_with_auto_reinterp(
+        &self,
+        existing_slug: &Slug,
+        updated: Entry,
+        slug_delimiter: &str,
+    ) -> Result<(Entry, Option<Slug>)> {
+        self.save_existing_entry_with_auto_reinterp_kind(
+            existing_slug,
+            updated,
+            slug_delimiter,
+            ChangeKind::UserEdit,
+        )
+    }
+
+    /// As [`Self::save_existing_entry_with_auto_reinterp`] but the caller
+    /// picks the [`ChangeKind`] stamped on the pre-mutation history row.
+    /// `retime` passes [`ChangeKind::Retime`] so a templated rekey driven by
+    /// an occur_time change is still surfaced as a retime in
+    /// `entry_history`.
+    pub fn save_existing_entry_with_auto_reinterp_kind(
+        &self,
+        existing_slug: &Slug,
+        mut updated: Entry,
+        slug_delimiter: &str,
+        change_kind: ChangeKind,
+    ) -> Result<(Entry, Option<Slug>)> {
+        use crate::field_spec::{self, InterpolationContext};
+        if let Some(tmpl) = updated.field_structure.clone() {
+            let uid = updated.short_uid();
+            let ctx = InterpolationContext::from_entry(&updated, &uid);
+            updated.field = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
+        }
+        let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
+            let uid = updated.short_uid();
+            let ctx = InterpolationContext::from_entry(&updated, &uid);
+            Some(Slug(field_spec::interpolate(
+                &tmpl, &ctx, slug_delimiter,
+            )))
+        } else {
+            None
+        };
+        updated.content_hash = updated.expected_content_hash();
+
+        let slug_changed = matches!(&new_slug, Some(s) if s != existing_slug);
+
+        if slug_changed {
+            let target = new_slug.unwrap();
+            updated.slug = target.clone();
+            self.save_existing_entry_with_rekey_kind(existing_slug, &updated, change_kind)?;
+            let fresh = self.get_entry(&target)?;
+            Ok((fresh, Some(existing_slug.clone())))
+        } else {
+            // updated.slug already equals existing_slug for the in-place
+            // path; save_existing_entry matches on entry.slug so make sure
+            // it isn't out of sync.
+            updated.slug = existing_slug.clone();
+            self.save_existing_entry_with_kind(&updated, change_kind)?;
+            let fresh = self.get_entry(existing_slug)?;
+            Ok((fresh, None))
+        }
     }
 
     /// Rekey an existing entry in place: rewrite mutable columns AND change
@@ -203,6 +293,17 @@ impl Db {
         old_slug: &Slug,
         entry: &Entry,
     ) -> Result<()> {
+        self.save_existing_entry_with_rekey_kind(old_slug, entry, ChangeKind::UserEdit)
+    }
+
+    /// As [`Self::save_existing_entry_with_rekey`] but lets the caller pick
+    /// the [`ChangeKind`] for the pre-rekey history row.
+    pub fn save_existing_entry_with_rekey_kind(
+        &self,
+        old_slug: &Slug,
+        entry: &Entry,
+        change_kind: ChangeKind,
+    ) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
         let pre = fetch_entry_any(&tx, old_slug)?;
         if pre.deleted_at.is_some() {
@@ -214,7 +315,7 @@ impl Db {
                 pre.hid, entry.hid,
             )));
         }
-        history::record(&tx, &pre, ChangeKind::UserEdit)?;
+        history::record(&tx, &pre, change_kind)?;
         match raw_overwrite_full_by_hid(&tx, entry) {
             Ok(()) => {}
             Err(DatumError::Db(e)) if collision_kind(&e) == Some(CollisionKind::Slug) => {

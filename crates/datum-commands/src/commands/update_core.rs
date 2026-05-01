@@ -6,12 +6,7 @@
 //! function rather than reimplementing per-strategy code.
 
 use anyhow::Result;
-use datum_core::{
-    db::Db,
-    entry::Entry,
-    field_spec::{self, InterpolationContext},
-    time::DatumTime,
-};
+use datum_core::{db::Db, entry::Entry, time::DatumTime};
 use serde_json::Value as JsonValue;
 
 use crate::{
@@ -368,7 +363,15 @@ fn apply_mutation(
     if let Some(fs) = reserved.following_state {
         updated.following_state = Some(fs);
     }
-    let _ = reserved.occur_time;
+    if let Some(t) = reserved.occur_time {
+        // Base any relative offset (`-5m`, `now`) against the existing
+        // occur_time when present, falling back to wall-clock now.
+        let base = updated
+            .occur_time
+            .clone()
+            .unwrap_or_else(DatumTime::now);
+        updated.occur_time = Some(crate::cmd::parse_reserved_occur_time(&t, &base)?);
+    }
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
 }
 
@@ -418,47 +421,20 @@ fn apply_data_key_rename(
 ///
 /// Mirrors original datum's `updateDoc.ts` flow: after combineData, call
 /// compileField then assembleId, and rekey the doc if `_id` changed.
+///
+/// da-5ns.4: implementation moved to
+/// [`Db::save_existing_entry_with_auto_reinterp`] so non-update mutators
+/// (e.g. `retime`) can reuse the same auto-rekey trigger when they mutate
+/// templated columns (`occur_time`, `state`, `dur`, …).
 fn persist_with_auto_reinterp(
     existing: Entry,
-    mut updated: Entry,
+    updated: Entry,
     slug_delimiter: &str,
     db: &Db,
 ) -> Result<UpdateOutcome> {
-    if let Some(tmpl) = updated.field_structure.clone() {
-        let uid = updated.short_uid();
-        let ctx = InterpolationContext::from_entry(&updated, &uid);
-        updated.field = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
-    }
-    let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
-        let uid = updated.short_uid();
-        let ctx = InterpolationContext::from_entry(&updated, &uid);
-        Some(datum_core::ids::Slug(field_spec::interpolate(
-            &tmpl, &ctx, slug_delimiter,
-        )))
-    } else {
-        None
-    };
-    updated.content_hash = updated.expected_content_hash();
-
-    let slug_changed = matches!(&new_slug, Some(s) if *s != existing.slug);
-
-    if slug_changed {
-        let target = new_slug.unwrap();
-        updated.slug = target.clone();
-        db.save_existing_entry_with_rekey(&existing.slug, &updated)?;
-        let fresh = db.get_entry(&target)?;
-        Ok(UpdateOutcome {
-            entry: fresh,
-            old_slug: Some(existing.slug),
-        })
-    } else {
-        db.save_existing_entry(&updated)?;
-        let fresh = db.get_entry(&updated.slug)?;
-        Ok(UpdateOutcome {
-            entry: fresh,
-            old_slug: None,
-        })
-    }
+    let (entry, old_slug) =
+        db.save_existing_entry_with_auto_reinterp(&existing.slug, updated, slug_delimiter)?;
+    Ok(UpdateOutcome { entry, old_slug })
 }
 
 fn combine_extra(
@@ -941,6 +917,146 @@ mod tests {
             rows.iter().filter(|(kind, _)| kind == "user_edit").count() >= 1,
             "expected user_edit row capturing pre-rekey state, got: {rows:?}"
         );
+    }
+
+    #[test]
+    fn update_dur_rekeys_when_template_references_dur() {
+        // da-5ns.4: %dur% resolves from the entry.dur column. Mutating
+        // dur= must cascade into a templated slug.
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "nap",
+            Verb::Occur,
+            None,
+            None,
+        );
+        e.dur = Some("PT1H".to_string());
+        e.id_structure = Some("%field%:%dur%".to_string());
+        e.slug = datum_core::ids::Slug("nap:PT1H".to_string());
+        db.save_existing_entry_with_rekey(&seed_slug_for("nap"), &e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"dur": "PT2H"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
+        assert_eq!(outcome.entry.slug, "nap:PT2H");
+        assert_eq!(outcome.entry.dur.as_deref(), Some("PT2H"));
+    }
+
+    #[test]
+    fn update_following_state_rekeys_when_template_references_it() {
+        // da-5ns.4: %following_state% resolves from
+        // entry.following_state. Mutating it cascades into a templated
+        // slug. Pair it with a state+dur so derive_verb accepts the
+        // (state, dur, following_state) triple as a Block shape.
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "block",
+            Verb::Switch,
+            Some(serde_json::json!("work")),
+            None,
+        );
+        e.dur = Some("PT1H".to_string());
+        e.following_state = Some(serde_json::json!("idle"));
+        e.id_structure = Some("%field%:%following_state%".to_string());
+        e.slug = datum_core::ids::Slug("block:idle".to_string());
+        db.save_existing_entry_with_rekey(&seed_slug_for("block"), &e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"following_state": "focused"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
+        assert_eq!(outcome.entry.slug, "block:focused");
+    }
+
+    #[test]
+    fn update_occur_time_rekeys_when_template_references_occur_time() {
+        // da-5ns.4: occur_time= on `dm update` mutates the column AND
+        // cascades into a templated slug.
+        use datum_core::time::DatumTime;
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "coffee",
+            Verb::Occur,
+            None,
+            None,
+        );
+        e.id_structure = Some("%field%:%occur_time%".to_string());
+        e.slug = datum_core::ids::Slug("coffee:2024-01-01T00:00:00.000Z".to_string());
+        db.save_existing_entry_with_rekey(&seed_slug_for("coffee"), &e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({
+                    "occur_time": "2026-05-01T10:00:00Z"
+                })),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
+        assert_eq!(outcome.entry.slug, "coffee:2026-05-01T10:00:00.000Z");
+        let want_utc: chrono::DateTime<chrono::Utc> =
+            "2026-05-01T10:00:00Z".parse().unwrap();
+        assert_eq!(
+            outcome.entry.occur_time.as_ref().unwrap().utc,
+            want_utc,
+        );
+        let _ = DatumTime::now;
+    }
+
+    #[test]
+    fn update_state_rekeys_for_non_switch_verb_via_column() {
+        // da-5ns.4: %state% now resolves from the entry.state column for
+        // any verb (not just Switch). Updating state= on a Verb::Occur
+        // entry must rekey.
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(&db, "task", Verb::Occur, None, None);
+        e.state = Some(serde_json::json!("todo"));
+        e.id_structure = Some("%field%:%state%".to_string());
+        e.slug = datum_core::ids::Slug("task:todo".to_string());
+        db.save_existing_entry_with_rekey(&seed_slug_for("task"), &e).unwrap();
+
+        let outcome = update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &e.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"state": "doing"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
+        assert_eq!(outcome.entry.slug, "task:doing");
     }
 
     #[test]
