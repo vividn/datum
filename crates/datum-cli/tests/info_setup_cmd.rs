@@ -15,8 +15,8 @@ fn setup_is_idempotent_on_current_db() {
         read_schema_version(db.conn()).unwrap(),
         Some(CURRENT_SCHEMA_VERSION)
     );
-    run_cli(&["setup"], &db).expect("first setup");
-    run_cli(&["setup"], &db).expect("second setup is a no-op");
+    run_cli(&["db", "setup"], &db).expect("first setup");
+    run_cli(&["db", "setup"], &db).expect("second setup is a no-op");
     // Schema version unchanged.
     assert_eq!(
         read_schema_version(db.conn()).unwrap(),
@@ -29,7 +29,7 @@ fn setup_rejects_newer_schema_version() {
     let db = fresh_db();
     // Stamp a version the binary cannot handle.
     set_schema_version(db.conn(), CURRENT_SCHEMA_VERSION + 1).unwrap();
-    let err = run_cli(&["setup"], &db).unwrap_err();
+    let err = run_cli(&["db", "setup"], &db).unwrap_err();
     let msg = format!("{err}");
     assert!(
         msg.to_lowercase().contains("newer"),
@@ -57,7 +57,7 @@ fn migrate_status_lists_registered_migrations() {
     // the shape check still proves the plumbing is wired.
     let db = fresh_db();
 
-    run_cli(&["migrate", "status"], &db).expect("migrate status dispatch");
+    run_cli(&["db", "migrate", "status"], &db).expect("migrate status dispatch");
 
     let (current, target, rows) = datum_core::migrations::migration_status(
         db.conn(),
@@ -81,7 +81,7 @@ fn migrate_run_is_idempotent_on_current_db() {
     // migrations and leaves schema_version unchanged.
     let db = fresh_db();
     let before = read_schema_version(db.conn()).unwrap();
-    run_cli(&["migrate", "run"], &db).expect("migrate run dispatch");
+    run_cli(&["db", "migrate", "run"], &db).expect("migrate run dispatch");
     let after = read_schema_version(db.conn()).unwrap();
     assert_eq!(before, after);
     assert_eq!(after, Some(CURRENT_SCHEMA_VERSION));

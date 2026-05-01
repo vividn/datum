@@ -7,7 +7,6 @@
 
 pub mod add;
 pub mod alias;
-pub mod backup;
 pub mod backup_restore;
 pub mod check;
 pub mod config;
@@ -28,14 +27,11 @@ pub mod info;
 pub mod kit;
 pub mod kit_command;
 pub mod merge;
-pub mod migrate;
 pub mod now;
 pub mod nowview;
 pub mod occur;
 pub mod rekey;
-pub mod restore;
 pub mod retime;
-pub mod setup;
 pub mod spec;
 pub mod start;
 pub mod switch;

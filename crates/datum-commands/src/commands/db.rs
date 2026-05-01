@@ -1,20 +1,26 @@
 //! `datum db <subcommand>` — DB-lifecycle group.
 //!
-//! Landing pad for the rest of the `db` group (migrate / backup / restore
-//! / setup) tracked in da-9u9.3. Current verbs: `db purge` (da-e16) and
-//! `db import` (da-fab — moved from `migrate import`). da-57t removed the
-//! deprecated `setup --force-recreate` alias.
+//! Houses every database administration verb: `setup`, `purge`, `backup`,
+//! `restore`, `migrate`, `import`. da-33g consolidated the standalone
+//! `setup` / `backup` / `restore` / `migrate` top-level verbs under here.
+//! da-57t removed the deprecated `setup --force-recreate` alias; `db purge`
+//! is its replacement.
 
 use std::io::{BufRead, IsTerminal, Write};
 
 use anyhow::Result;
 use datum_core::db::Db;
 
-use crate::args::{DbCommand, DbPurgeArgs};
+use crate::args::DbCommand;
+use crate::args::DbPurgeArgs;
 
 pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
     match cmd {
+        DbCommand::Setup(args) => crate::cmd::cmd_setup(args, db),
         DbCommand::Purge(args) => purge(args, db),
+        DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
+        DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
+        DbCommand::Migrate(sub) => crate::cmd::cmd_migrate(sub, db),
         DbCommand::Import(args) => crate::cmd::cmd_db_import(args, db),
     }
 }

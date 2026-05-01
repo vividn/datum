@@ -69,9 +69,6 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Kit(sub) => commands::kit::kit(sub, db),
         Command::Track(args) => commands::track::track(args, db),
         Command::Ignore(args) => commands::ignore::ignore(args, db),
-        Command::Migrate(sub) => commands::migrate::migrate(sub, db),
-        Command::Backup(args) => commands::backup::backup(args, db),
-        Command::Restore(args) => commands::restore::restore(args, db),
         Command::Grep(args) => commands::grep::grep(args, db),
         Command::Check(args) => commands::check::check(args, db),
         Command::Count(args) => commands::count::count(args, db),
@@ -80,7 +77,6 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Nowview(args) => commands::nowview::nowview(args, db),
         Command::View(args) => commands::view::view(args, db),
         Command::Info(args) => commands::info::info(args, cli.db.as_deref(), db),
-        Command::Setup(args) => commands::setup::setup(args, db),
         Command::Db(sub) => commands::db::dispatch(sub, db),
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
         Command::Sync(args) => commands::sync::dispatch(args, db),
@@ -304,7 +300,7 @@ fn print_info_block(
         Some(v) if v == current => ("✓", "current".to_string()),
         Some(v) if v < current => ("⚠", format!("older than current v{current}")),
         Some(_) => ("✗", format!("newer than binary (v{current})")),
-        None => ("⚠", "unversioned (run `datum setup`)".to_string()),
+        None => ("⚠", "unversioned (run `datum db setup`)".to_string()),
     };
     let version_str = stored.map(|v| format!("v{v}")).unwrap_or_else(|| "?".into());
     println!(

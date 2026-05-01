@@ -141,7 +141,7 @@ impl Db {
                 return Err(DatumError::IncompatibleSchema(
                     "legacy entries table with `id` column found; this version drops ULID \
                      and uses slug as PK. Delete the DB and recreate it, or migrate from a \
-                     backup with `datum migrate`."
+                     backup with `datum db import`."
                         .to_string(),
                 ));
             }
@@ -160,7 +160,7 @@ impl Db {
     }
 
     /// Borrow the underlying connection. Low-level — callers should prefer
-    /// the typed API; this is intended for `datum setup`, `datum info`,
+    /// the typed API; this is intended for `datum db setup`, `datum info`,
     /// and other schema-level tooling.
     pub fn conn(&self) -> &rusqlite::Connection {
         &self.conn

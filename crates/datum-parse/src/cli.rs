@@ -78,11 +78,6 @@ pub enum Command {
     Track(TrackArgs),
     Ignore(IgnoreArgs),
 
-    Migrate(MigrateCommand),
-
-    Backup(BackupArgs),
-    Restore(RestoreArgs),
-
     Grep(GrepArgs),
     Check(CheckArgs),
 
@@ -96,10 +91,9 @@ pub enum Command {
     View(ViewArgs),
 
     Info(InfoArgs),
-    Setup(SetupArgs),
-    /// `datum db <subcommand>` — DB-lifecycle group introduced in da-e16
-    /// alongside `db purge`. Future subcommands (migrate / backup / restore
-    /// / import / setup) follow in da-9u9.3.
+    /// `datum db <subcommand>` — DB-lifecycle group. Houses every database
+    /// administration verb: `setup`, `purge`, `backup`, `restore`,
+    /// `migrate`, `import` (da-33g consolidated the standalone verbs).
     Db(DbCommand),
 
     Config(ConfigCommand),
@@ -227,8 +221,16 @@ pub struct SetupArgs {}
 
 #[derive(Debug)]
 pub enum DbCommand {
+    /// `datum db setup` — initialize or migrate the active DB schema.
+    Setup(SetupArgs),
     /// `datum db purge` — drop every datum table and rebuild from scratch.
     Purge(DbPurgeArgs),
+    /// `datum db backup` — dump live entries to JSONL or tar.gz.
+    Backup(BackupArgs),
+    /// `datum db restore` — replay entries from a backup file.
+    Restore(RestoreArgs),
+    /// `datum db migrate` — schema migration runner (run/status/edit).
+    Migrate(MigrateCommand),
     /// `datum db import` — load a legacy datum CouchDB backup JSON.
     Import(DbImportArgs),
 }

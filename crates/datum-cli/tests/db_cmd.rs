@@ -132,7 +132,7 @@ fn db_purge_non_tty_without_yes_aborts() {
     assert_eq!(db.count_entries().unwrap(), 1);
 }
 
-/// `datum setup --force-recreate` was removed (da-57t); the flag must now
+/// `datum db setup --force-recreate` was removed (da-57t); the flag must now
 /// be rejected as unknown so users discover `datum db purge` instead.
 #[test]
 fn setup_force_recreate_flag_is_rejected() {
@@ -140,7 +140,7 @@ fn setup_force_recreate_flag_is_rejected() {
     entry_builder("coffee")
         .value(serde_json::json!(1))
         .insert(&db);
-    let err = run_cli(&["setup", "--force-recreate"], &db)
+    let err = run_cli(&["db", "setup", "--force-recreate"], &db)
         .expect_err("--force-recreate is no longer accepted");
     let msg = err.to_string();
     assert!(

@@ -114,8 +114,8 @@ fn migrate_run_is_idempotent_across_repeated_dispatches() {
     let db = fresh_db();
     // `fresh_db()` already stamps CURRENT_SCHEMA_VERSION; two migrate runs
     // back-to-back must both succeed and leave the version untouched.
-    run_cli(&["migrate", "run"], &db).expect("first migrate run");
-    run_cli(&["migrate", "run"], &db).expect("second migrate run (idempotent)");
+    run_cli(&["db", "migrate", "run"], &db).expect("first migrate run");
+    run_cli(&["db", "migrate", "run"], &db).expect("second migrate run (idempotent)");
     assert_eq!(
         read_schema_version(db.conn()).unwrap(),
         Some(CURRENT_SCHEMA_VERSION)
@@ -155,7 +155,7 @@ fn migrate_executes_only_pending_steps_from_partial_state() {
 fn migrate_run_errors_when_db_is_newer_than_binary() {
     let db = fresh_db();
     set_schema_version(db.conn(), CURRENT_SCHEMA_VERSION + 5).unwrap();
-    let err = run_cli(&["migrate", "run"], &db).unwrap_err();
+    let err = run_cli(&["db", "migrate", "run"], &db).unwrap_err();
     let msg = format!("{err}").to_lowercase();
     assert!(
         msg.contains("newer"),
@@ -184,7 +184,7 @@ fn migrate_status_lists_applied_and_pending() {
     // And the real CLI dispatch path also runs cleanly against the live
     // (empty) MIGRATIONS registry at any schema version ≤ CURRENT.
     set_schema_version(db.conn(), CURRENT_SCHEMA_VERSION).unwrap();
-    run_cli(&["migrate", "status"], &db).expect("migrate status dispatch");
+    run_cli(&["db", "migrate", "status"], &db).expect("migrate status dispatch");
 }
 
 // ─── Acceptance: legacy `db import --from backup.json` still works

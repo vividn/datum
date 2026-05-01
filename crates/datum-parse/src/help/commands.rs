@@ -366,13 +366,6 @@ const TRACK_BODY: &str =
 
 const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>\n";
 
-const MIGRATE_BODY: &str =
-    "USAGE:\n  datum migrate run\n  datum migrate status\n  datum migrate edit\n";
-
-const BACKUP_BODY: &str = "USAGE:\n  datum backup <PATH> [--overwrite]\n\nPath ending in .tar.gz / .tgz → tar.gz; otherwise JSONL.\n";
-
-const RESTORE_BODY: &str = "USAGE:\n  datum restore <PATH> [--force] [--dry-run] [--json]\n";
-
 const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD]\n";
 
 const CHECK_BODY: &str = "USAGE:\n  datum check [--json]\n";
@@ -387,9 +380,7 @@ const NOWVIEW_BODY: &str = "USAGE:\n  datum nowview [OPTIONS]\n\nOPTIONS:\n  --h
 
 const INFO_BODY: &str = "USAGE:\n  datum info [TARGET] [--all]\n";
 
-const SETUP_BODY: &str = "USAGE:\n  datum setup\n\nApplies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n";
-
-const DB_BODY: &str = "USAGE:\n  datum db purge [--yes | -y]\n  datum db import [FILE | --from FILE] [--dry-run]\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nImport ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`) into\nthe active database. Idempotent — re-importing the same backup is a no-op.\n";
+const DB_BODY: &str = "USAGE:\n  datum db setup\n  datum db purge [--yes | -y]\n  datum db backup <PATH> [--overwrite]\n  datum db restore <PATH> [--force] [--dry-run] [--json]\n  datum db migrate (run | status | edit)\n  datum db import [FILE | --from FILE] [--dry-run]\n\nSetup applies any pending schema migrations to the active database. Use\n`datum db purge` to drop and recreate the schema from scratch.\n\nPurge drops every datum table and rebuilds the schema from scratch. Without\n--yes, prompts for the database path as confirmation; aborts on mismatch.\nNon-TTY stdin without --yes is rejected.\n\nBackup dumps live entries to JSONL (default) or tar.gz when the path ends in\n.tar.gz / .tgz. Restore replays a backup file into the active database.\n\nMigrate is the schema-migration runner: `run` advances the DB to the binary's\ntarget version, `status` lists applied/pending steps, `edit` is reserved for\nper-entry data migrations (not yet implemented).\n\nImport ingests a legacy datum CouchDB backup JSON (`{ docs: [...] }`) into\nthe active database. Idempotent — re-importing the same backup is a no-op.\n";
 
 const CONFIG_BODY: &str = "USAGE:\n  datum config show [--json]\n";
 
@@ -880,55 +871,6 @@ pub const COMMANDS: &[CommandSpec] = &[
         display_input_name: false,
     },
     CommandSpec {
-        name: "migrate",
-        aliases: &[],
-        category: Category::Admin,
-        summary: "schema migrations",
-        top_summary: None,
-        long_description: None,
-        usage: &[
-            "datum migrate run",
-            "datum migrate status",
-            "datum migrate edit",
-        ],
-        args: NO_ARGS,
-        flags: NO_FLAGS,
-        examples: NO_EXAMPLES,
-        summary_col: 0,
-        body_override: Some(MIGRATE_BODY),
-        display_input_name: false,
-    },
-    CommandSpec {
-        name: "backup",
-        aliases: &[],
-        category: Category::Admin,
-        summary: "dump live entries",
-        top_summary: Some("Dump live entries to JSONL / tar.gz"),
-        long_description: None,
-        usage: &["datum backup <PATH> [--overwrite]"],
-        args: NO_ARGS,
-        flags: NO_FLAGS,
-        examples: NO_EXAMPLES,
-        summary_col: 0,
-        body_override: Some(BACKUP_BODY),
-        display_input_name: false,
-    },
-    CommandSpec {
-        name: "restore",
-        aliases: &[],
-        category: Category::Admin,
-        summary: "re-import entries from a backup",
-        top_summary: None,
-        long_description: None,
-        usage: &["datum restore <PATH> [--force] [--dry-run] [--json]"],
-        args: NO_ARGS,
-        flags: NO_FLAGS,
-        examples: NO_EXAMPLES,
-        summary_col: 0,
-        body_override: Some(RESTORE_BODY),
-        display_input_name: false,
-    },
-    CommandSpec {
         name: "check",
         aliases: &[],
         category: Category::Admin,
@@ -944,29 +886,18 @@ pub const COMMANDS: &[CommandSpec] = &[
         display_input_name: false,
     },
     CommandSpec {
-        name: "setup",
-        aliases: &[],
-        category: Category::Admin,
-        summary: "initialize or migrate the DB schema",
-        top_summary: None,
-        long_description: None,
-        usage: &["datum setup"],
-        args: NO_ARGS,
-        flags: NO_FLAGS,
-        examples: NO_EXAMPLES,
-        summary_col: 0,
-        body_override: Some(SETUP_BODY),
-        display_input_name: false,
-    },
-    CommandSpec {
         name: "db",
         aliases: &[],
         category: Category::Admin,
         summary: "DB-lifecycle subcommands",
-        top_summary: Some("DB-lifecycle subcommands (purge, import, …)"),
+        top_summary: Some("DB-lifecycle (setup, purge, backup, restore, migrate, import)"),
         long_description: None,
         usage: &[
+            "datum db setup",
             "datum db purge [--yes | -y]",
+            "datum db backup <PATH> [--overwrite]",
+            "datum db restore <PATH> [--force] [--dry-run] [--json]",
+            "datum db migrate (run | status | edit)",
             "datum db import [FILE | --from FILE] [--dry-run]",
         ],
         args: NO_ARGS,

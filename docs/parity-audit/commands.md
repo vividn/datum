@@ -246,11 +246,12 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Ideas / cleanup:** the uncertainty re-derivation (d2) is daydumb-
   specific and lives here — worth documenting in the command's `--help`.
 
-### backup
+### backup (datum db backup)
 
 - **Original datum:** `filename` positional, `--overwrite`. JSONL only.
-- **Daydumb today:** `BackupArgs` — `path`, `--overwrite`. Detects
-  `.tar.gz` / `.tgz` and emits a gzipped tar archive; otherwise JSONL.
+- **Daydumb today:** `BackupArgs` — `path`, `--overwrite`. Lives under
+  `datum db backup` (da-33g). Detects `.tar.gz` / `.tgz` and emits a
+  gzipped tar archive; otherwise JSONL.
 - **Missing in daydumb:** `backupTime` in JSONL header — daydumb emits
   raw JSONL lines, one per entry.
 - **Divergences:** archive support is daydumb-only. Restore detects
@@ -260,11 +261,12 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Ideas / cleanup:** add a JSON metadata header to the JSONL variant
   (matching datum's `backupTime`) so restore can detect schema version.
 
-### restore
+### restore (datum db restore)
 
 - **Original datum:** path positional, output args. JSONL only.
 - **Daydumb today:** `RestoreArgs` — `path`, `--force` (maps to
-  `--conflict update`). Auto-detects tar.gz.
+  `--conflict update`). Lives under `datum db restore` (da-33g).
+  Auto-detects tar.gz.
 - **Missing in daydumb:** nothing significant.
 - **Divergences:** `--force` is daydumb-only; datum relies on entry
   content-hash to dedupe.
@@ -348,20 +350,21 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   `conflicts auto-resolve` would close the gap without re-merging the
   detect/resolve paths.
 
-### migrate
+### migrate (datum db migrate)
 
 - **Original datum:** `run`, `status`, `edit`, `import` subcommands.
   import: `--from`, `--backup`, `--dry-run`.
 - **Daydumb today:** `MigrateCommand` with `run`, `status`, `edit` —
-  schema-migration only. The legacy `import` verb moved to
-  `datum db import` (da-fab); see the `db` section. `cmd_migrate_edit`
-  is a stub (open `$EDITOR` against the migration file).
+  schema-migration only, dispatched under `datum db migrate` (da-33g).
+  The legacy `import` verb moved to `datum db import` (da-fab); see the
+  `db` section. `cmd_migrate_edit` is a stub (open `$EDITOR` against the
+  migration file).
 - **Missing in daydumb:** interactive migration editing is just a
   `$EDITOR` launcher.
 - **Divergences:** schema version check during `run` refuses to proceed
   if the binary is older than the stored schema. `import` lives under
   `db` (DB-admin verbs), not `migrate` (schema migrations) — semantic
-  split tracked in da-33g.
+  split landed via da-33g.
 - **Tests in datum not in daydumb:** no dedicated file; the legacy
   `db import` path is exercised by `db_import.rs` /
   `db_import_regression.rs` and one acceptance check in
@@ -369,13 +372,13 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 - **Ideas / cleanup:** `status` could print the list of pending
   migrations with descriptions, not just a version range.
 
-### setup
+### setup (datum db setup)
 
 - **Original datum:** no flags; bare `datum setup` initialises PouchDB.
-- **Daydumb today:** bare `datum setup` — applies any pending schema
-  migrations and stamps the version. The destructive rebuild moved to
-  `datum db purge` (da-e16); the `--force-recreate` alias was removed
-  in da-57t.
+- **Daydumb today:** bare `datum db setup` (da-33g) — applies any
+  pending schema migrations and stamps the version. The destructive
+  rebuild moved to `datum db purge` (da-e16); the `--force-recreate`
+  alias was removed in da-57t.
 - **Missing in daydumb:** nothing.
 - **Divergences:** `db purge` is daydumb-only.
 - **Tests in datum not in daydumb:** none material; idempotency and

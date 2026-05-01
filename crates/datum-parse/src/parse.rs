@@ -232,11 +232,6 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "track" => Command::Track(parse_track_args(rest)?),
         "ignore" => Command::Ignore(parse_ignore_args(rest)?),
 
-        "migrate" => Command::Migrate(parse_migrate_cmd(rest)?),
-
-        "backup" => Command::Backup(parse_backup_args(rest)?),
-        "restore" => Command::Restore(parse_restore_args(rest)?),
-
         "grep" => Command::Grep(parse_grep_args(rest)?),
         "check" => Command::Check(parse_check_args(rest)?),
 
@@ -248,7 +243,6 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
         "view" => Command::View(parse_view_args(rest)?),
 
         "info" => Command::Info(parse_info_args(rest)?),
-        "setup" => Command::Setup(parse_setup_args(rest)?),
         "db" => Command::Db(parse_db_cmd(rest)?),
 
         "config" => Command::Config(parse_config_cmd(rest)?),
@@ -2063,12 +2057,16 @@ fn parse_setup_args(tail: &[&str]) -> Result<SetupArgs> {
 fn parse_db_cmd(tail: &[&str]) -> Result<DbCommand> {
     let Some(sub) = tail.first() else {
         return Err(ParseError::InvalidArg(
-            "missing db subcommand (purge|import)".into(),
+            "missing db subcommand (setup|purge|backup|restore|migrate|import)".into(),
         ));
     };
     let rest: &[&str] = &tail[1..];
     match *sub {
+        "setup" => Ok(DbCommand::Setup(parse_setup_args(rest)?)),
         "purge" => Ok(DbCommand::Purge(parse_db_purge_args(rest)?)),
+        "backup" => Ok(DbCommand::Backup(parse_backup_args(rest)?)),
+        "restore" => Ok(DbCommand::Restore(parse_restore_args(rest)?)),
+        "migrate" => Ok(DbCommand::Migrate(parse_migrate_cmd(rest)?)),
         "import" => Ok(DbCommand::Import(parse_db_import(rest)?)),
         other => Err(ParseError::InvalidArg(format!(
             "unknown db subcommand: '{other}'"

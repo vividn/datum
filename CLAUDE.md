@@ -97,7 +97,7 @@ The original datum uses CouchDB JSON documents. Backup format:
 { "backupTime": "...", "docs": [...CouchDB docs...] }
 ```
 Each doc has `data.field`, `data.occurTime`, `data.state`, `data.dur`, `meta.createTime`.
-Migration: `datum migrate --from backup.json`
+Migration: `datum db import --from backup.json`
 
 ## Running tests
 
@@ -120,7 +120,7 @@ All 22 Phase 1 tests must pass. Add tests for new behaviors.
 | datum-sync-client (library) | 🔄 in progress | da-t6t.4 (R4 split) |
 | datum-sync-agent (daemon) | stub | da-ndd.15 / C4d, depends on sync-client |
 | datum-android (Flutter) | not started | |
-| Migration tool (datum legacy) | stub in CLI | `datum migrate --from backup.json` |
+| Migration tool (datum legacy) | stub in CLI | `datum db import --from backup.json` |
 | datum-wear (Wear OS) | not started | |
 
 ## Building
