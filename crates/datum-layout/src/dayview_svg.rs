@@ -95,28 +95,6 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         my = layout.margin,
     );
 
-    // Hourly gridlines spanning the full data area perpendicular to time.
-    // Datum behavior: gridlines extend through every row down to the axis
-    // baseline. 40% opacity every 3rd hour, 10% otherwise.
-    for tick in &layout.axis_ticks {
-        let opacity = if tick.hour % 3 == 0 { 0.4 } else { 0.1 };
-        let (x1, y1, x2, y2) = match layout.orientation {
-            Orientation::Horizontal => {
-                let x = geom.data_x + tick.time_pos;
-                (x, geom.data_y, x, geom.data_y + geom.cross_total)
-            }
-            Orientation::Vertical => {
-                let y = geom.data_y + tick.time_pos;
-                (geom.data_x, y, geom.data_x + geom.cross_total, y)
-            }
-        };
-        let _ = write!(
-            &mut out,
-            r#"<line class="gridline" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="{op}"/>"#,
-            op = opacity,
-        );
-    }
-
     // Per-day rendering.
     for (i, day) in layout.days.iter().enumerate() {
         // Date label group — positioned at the start of this day's slot
@@ -269,8 +247,38 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
             out.push_str("</g>");
         }
         out.push_str("</g>");
+    }
 
-        // Per-day now-line. Drawn after the bands so it sits on top.
+    // Time axis — bottom strip in horizontal, left strip in vertical.
+    if layout.time_axis_height > 0.0 {
+        emit_time_axis(&mut out, layout, &geom);
+    }
+
+    // Hourly gridlines spanning the full data area perpendicular to time.
+    // Drawn AFTER per-day bands and the axis so the semi-transparent lines
+    // overlay the data (matches original datum z-order — see dayview.ts).
+    // 40% opacity every 3rd hour, 10% otherwise.
+    for tick in &layout.axis_ticks {
+        let opacity = if tick.hour % 3 == 0 { 0.4 } else { 0.1 };
+        let (x1, y1, x2, y2) = match layout.orientation {
+            Orientation::Horizontal => {
+                let x = geom.data_x + tick.time_pos;
+                (x, geom.data_y, x, geom.data_y + geom.cross_total)
+            }
+            Orientation::Vertical => {
+                let y = geom.data_y + tick.time_pos;
+                (geom.data_x, y, geom.data_x + geom.cross_total, y)
+            }
+        };
+        let _ = write!(
+            &mut out,
+            r#"<line class="gridline" x1="{x1}" x2="{x2}" y1="{y1}" y2="{y2}" stroke="white" stroke-opacity="{op}"/>"#,
+            op = opacity,
+        );
+    }
+
+    // Per-day now-lines. Emitted last so they sit above gridlines and data.
+    for day in &layout.days {
         if let Some(nt) = day.now_time_pos {
             let (x1, y1, x2, y2) = match layout.orientation {
                 Orientation::Horizontal => {
@@ -288,11 +296,6 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
                 c = NOW_LINE_COLOR,
             );
         }
-    }
-
-    // Time axis — bottom strip in horizontal, left strip in vertical.
-    if layout.time_axis_height > 0.0 {
-        emit_time_axis(&mut out, layout, &geom);
     }
 
     out.push_str("</g>");
@@ -615,6 +618,26 @@ mod tests {
         assert!(svg.contains("#0000ff"));
         assert!(svg.contains("multi-state"));
         assert!(svg.contains("url(#"));
+    }
+
+    #[test]
+    fn gridlines_rendered_over_data_and_under_now_line() {
+        // Gridlines must appear AFTER data blocks (so they overlay) and
+        // BEFORE the now line (so the now line stays on top). Mirrors
+        // original datum z-order (dayview.ts: data → axis → grid → now).
+        let layout = compute_dayview(&one_day_with_block(false, Orientation::Horizontal));
+        let svg = render_dayview_svg(&layout);
+        let block_idx = svg.find(r#"class="block""#).expect("block present");
+        let grid_idx = svg.find("gridline").expect("gridline present");
+        let now_idx = svg.find("current-time-line").expect("now line present");
+        assert!(
+            block_idx < grid_idx,
+            "gridlines must be emitted after data blocks (block@{block_idx}, grid@{grid_idx})",
+        );
+        assert!(
+            grid_idx < now_idx,
+            "now line must be emitted after gridlines (grid@{grid_idx}, now@{now_idx})",
+        );
     }
 
     #[test]
