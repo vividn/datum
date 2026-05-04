@@ -42,4 +42,5 @@ pub mod undo;
 pub mod update;
 pub mod update_core;
 pub mod view;
+pub mod watch;
 pub mod why;

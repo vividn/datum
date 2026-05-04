@@ -42,13 +42,14 @@ const DEFAULT_INTERDAY_MARGIN: f64 = 15.0;
 
 pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
     if args.watch {
-        // Datum's TS used a `db.changes` event stream + 5min timeout race;
-        // we approximate with a simple poll. DB-change events are a
-        // follow-up.
-        loop {
-            render_once(&args, db)?;
-            std::thread::sleep(std::time::Duration::from_secs(300));
-        }
+        // Re-render whenever an external `datum` write bumps the SQLite
+        // data_version (≈500ms latency), with a 60s periodic refresh
+        // so the now-line still advances on an idle DB.
+        crate::commands::watch::watch_loop(
+            db,
+            std::time::Duration::from_secs(60),
+            || render_once(&args, db),
+        )
     } else {
         render_once(&args, db)
     }

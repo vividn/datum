@@ -33,12 +33,14 @@ use crate::render::colors::{field_rgb, md5_rgb, state_value_rgb, Rgb};
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     if args.watch {
-        // Simple poll loop: redraw, sleep 60s, redraw. rusqlite update
-        // hooks are a follow-up (per the bead).
-        loop {
-            render_once(&args, db)?;
-            std::thread::sleep(std::time::Duration::from_secs(60));
-        }
+        // Re-render whenever an external `datum` write bumps the SQLite
+        // data_version (≈500ms latency), with a 60s periodic refresh so
+        // the clock label stays current on an idle DB.
+        crate::commands::watch::watch_loop(
+            db,
+            std::time::Duration::from_secs(60),
+            || render_once(&args, db),
+        )
     } else {
         render_once(&args, db)
     }
