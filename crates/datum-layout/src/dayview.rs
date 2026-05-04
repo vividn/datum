@@ -162,6 +162,12 @@ pub struct DayviewConfig {
     pub label_width: Option<f64>,
     /// Render orientation. Default [`Orientation::Horizontal`].
     pub orientation: Orientation,
+    /// Pre-computed axis ticks. When `None`, [`compute_dayview`] auto-fills
+    /// 25 hourly ticks across the data area (legacy 24h behavior). When
+    /// `Some`, the layout uses the supplied vector verbatim — this is how
+    /// `nowview` injects its sub-hour relative-minute ticks while reusing
+    /// the dayview render path (per bead da-6jy).
+    pub axis_ticks_override: Option<Vec<DayviewAxisTick>>,
 }
 
 impl Default for DayviewConfig {
@@ -177,6 +183,7 @@ impl Default for DayviewConfig {
             margin: 2.0,
             label_width: None,
             orientation: Orientation::default(),
+            axis_ticks_override: None,
         }
     }
 }
@@ -279,6 +286,11 @@ pub struct DayviewAxisTick {
     pub time_pos: f64,
     pub hour: u8,
     pub label: String,
+    /// Major ticks render with a brighter gridline / are eligible for axis
+    /// labels. The hourly default marks every 3rd hour as major; sub-hour
+    /// callers (e.g. nowview's relative-minute ticks) supply their own.
+    #[serde(default)]
+    pub is_major: bool,
 }
 
 /// Minimum font size below which we drop a label line.
@@ -362,9 +374,13 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         }
     };
 
-    // Axis ticks: hourly positions across `time_axis_extent`. Same
-    // positions for every day.
-    let axis_ticks = hourly_axis_ticks(time_axis_extent);
+    // Axis ticks: caller may supply pre-computed ticks (used by nowview
+    // for sub-hour relative-minute ticks). Otherwise hourly defaults across
+    // `time_axis_extent` — same positions for every day.
+    let axis_ticks = config
+        .axis_ticks_override
+        .clone()
+        .unwrap_or_else(|| hourly_axis_ticks(time_axis_extent));
 
     let mut days: Vec<RenderedDay> = Vec::with_capacity(config.days.len());
 
@@ -513,6 +529,7 @@ fn hourly_axis_ticks(time_axis_extent: f64) -> Vec<DayviewAxisTick> {
             time_pos,
             hour,
             label: format!("{:02}", hour),
+            is_major: hour.is_multiple_of(3),
         });
     }
     ticks

@@ -8,9 +8,10 @@ use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, fresh_db};
 
 #[test]
-fn nowview_no_history_writes_now_panel_only() {
-    // Even with empty data, nowview should produce a valid SVG with the
-    // black background and outer envelope.
+fn nowview_default_history_renders_envelope() {
+    // da-6jy: nowview shares dayview's render path scoped to the last
+    // `history_minutes` (default 30m); there's no separate "now panel"
+    // anymore. With empty data the envelope still renders.
     let db = fresh_db();
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
@@ -18,32 +19,37 @@ fn nowview_no_history_writes_now_panel_only() {
     run_cli(&["nowview", "--output-file", &path], &db).expect("nowview dispatch");
 
     let svg = std::fs::read_to_string(&path).expect("read svg");
-    // XML declaration + SVG envelope.
     assert!(svg.starts_with("<?xml"));
     assert!(svg.contains("<svg "));
     assert!(svg.ends_with("</svg>"));
-    // Default scale-from-no-history width (100) + default height (300).
-    assert!(svg.contains(r#"width="100""#));
+    // Default 30m history → default_width_for_history → 400 px.
+    assert!(svg.contains(r#"width="400""#));
     assert!(svg.contains(r#"height="300""#));
-    // Black background rect.
     assert!(svg.contains(r#"fill="black""#));
-    // No history panel → no current-time line classes.
-    assert!(!svg.contains("current-time-line-vertical"));
+    // Even on an empty DB the now-line marks the right edge of the data
+    // area (now_ms == day.end_ms).
+    assert!(svg.contains("current-time-line"));
+    assert!(svg.contains("#ffcc00"));
+    // Overlay clock label is always emitted (HH:MM never empty).
+    assert!(svg.contains("current-time-text"));
 }
 
 #[test]
-fn nowview_with_history_renders_two_panels_with_grid_and_now_line() {
+fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
+    // da-6jy: nowview reuses dayview's renderer (gridlines, axis, yellow
+    // now-line) plus a relative-minute axis override (`-15m`, `-30m`, …).
     let db = fresh_db();
     let now = Utc::now();
 
-    // An ongoing block that started 30 min ago should fill the now panel.
+    // An ongoing switch — its switch-region should extend to the right
+    // edge (now), filling the field band right up to the now-line.
     entry_builder("mood")
         .verb(Verb::Switch)
         .value(serde_json::json!("focused"))
         .time_start_utc(now - Duration::minutes(30))
         .insert(&db);
 
-    // A point 10 min ago — should appear inside the history panel.
+    // A point 10 min ago should land inside the data area as a circle.
     entry_builder("coffee")
         .verb(Verb::Occur)
         .value(serde_json::json!(1))
@@ -60,19 +66,32 @@ fn nowview_with_history_renders_two_panels_with_grid_and_now_line() {
     .expect("nowview dispatch");
 
     let svg = std::fs::read_to_string(&path).expect("read svg");
-    // Two-panel layout: yellow now-line + gridlines must appear.
-    assert!(svg.contains("current-time-line-vertical"));
-    assert!(svg.contains("current-time-line-horizontal"));
+
+    // Dayview-style now-line (single class, not the legacy *-vertical /
+    // *-horizontal split that the old standalone nowview emitted).
+    assert!(svg.contains("current-time-line"));
+    assert!(!svg.contains("current-time-line-vertical"));
     assert!(svg.contains("#ffcc00"));
-    assert!(svg.contains("gridline-major"));
-    // 60m history → 4 major ticks (15/30/45/60).
-    let major_count = svg.matches("gridline-major").count();
-    assert_eq!(major_count, 4, "expected 4 major gridlines, got {major_count}");
-    // Field bands present for both fields.
+
+    // Dayview-style gridline class (one per axis tick).
+    let gridline_count = svg.matches(r#"class="gridline""#).count();
+    // 60m history with `tick_config(60)` → minor=5 → ticks every 5m for
+    // 60m + a trailing "now" tick = 13 gridlines total.
+    assert_eq!(
+        gridline_count, 13,
+        "expected 13 gridlines for 60m history, got {gridline_count}"
+    );
+    // Major opacity 0.4 marks the every-15m positions (-15/-30/-45/-60)
+    // plus the trailing "now" edge → 5 majors.
+    let major_count = svg.matches(r#"stroke-opacity="0.4""#).count();
+    assert_eq!(major_count, 5, "expected 5 major gridlines, got {major_count}");
+
     assert!(svg.contains(r#"data-field="mood""#));
     assert!(svg.contains(r#"data-field="coffee""#));
-    // Default width for >10m history is 400.
     assert!(svg.contains(r#"width="400""#));
+
+    // Overlay clock label injected inside the plot group.
+    assert!(svg.contains("current-time-text"));
 }
 
 #[test]

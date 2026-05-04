@@ -1916,15 +1916,6 @@ fn parse_nowview_args(tail: &[&str]) -> Result<NowviewArgs> {
                 out.height = parse_f64(v, "--height")?;
                 i += 1;
             }
-            FlagSplit::Long("now-width") => {
-                let (v, ni) = take_value(tail, i, None, "--now-width")?;
-                out.now_width = Some(v.to_string());
-                i = ni;
-            }
-            FlagSplit::LongAttached("now-width", v) => {
-                out.now_width = Some(v.to_string());
-                i += 1;
-            }
             FlagSplit::Long("margin") => {
                 let (v, ni) = take_value(tail, i, None, "--margin")?;
                 out.margin = parse_f64(v, "--margin")?;

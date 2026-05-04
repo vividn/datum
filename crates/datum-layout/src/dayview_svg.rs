@@ -259,7 +259,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
     // overlay the data (matches original datum z-order — see dayview.ts).
     // 40% opacity every 3rd hour, 10% otherwise.
     for tick in &layout.axis_ticks {
-        let opacity = if tick.hour % 3 == 0 { 0.4 } else { 0.1 };
+        let opacity = if tick.is_major { 0.4 } else { 0.1 };
         let (x1, y1, x2, y2) = match layout.orientation {
             Orientation::Horizontal => {
                 let x = geom.data_x + tick.time_pos;
