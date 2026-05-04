@@ -41,7 +41,7 @@ libc = { workspace = true }
 # Pure-Rust SVG → PNG rasterization for `datum nowview --output foo.png`.
 # Pulled at the CLI boundary so `datum-layout` stays WASM-clean (browsers
 # render SVG natively; PNG is only a CLI-side convenience).
-resvg = { version = "0.47", default-features = false }
+resvg = { version = "0.47", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }

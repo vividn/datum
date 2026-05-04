@@ -252,7 +252,34 @@ fn write_payload(path: Option<&str>, body: &str, kind: OutputKind) -> Result<()>
 
 /// Pure-Rust SVG → PNG via resvg + tiny-skia. No system libs needed.
 fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
-    let opts = resvg::usvg::Options::default();
+    let mut opts = resvg::usvg::Options::default();
+    // resvg silently drops <text> nodes when its fontdb has no usable face
+    // for the requested font-family — that's why PNG labels disappeared.
+    // Load system fonts, then pin font_family + the generic family aliases
+    // to a face that actually exists so resolution succeeds even when the
+    // dayview SVG omits font-family (default "Times New Roman" is rarely
+    // present on Linux) and even when fontconfig has no serif/sans alias.
+    {
+        let fontdb = opts.fontdb_mut();
+        fontdb.load_system_fonts();
+        let fallback = fontdb.faces().next().and_then(|face| {
+            face.families
+                .iter()
+                .find(|(_, lang)| {
+                    *lang == resvg::usvg::fontdb::Language::English_UnitedStates
+                })
+                .or_else(|| face.families.first())
+                .map(|(name, _)| name.clone())
+        });
+        if let Some(name) = fallback {
+            fontdb.set_serif_family(name.clone());
+            fontdb.set_sans_serif_family(name.clone());
+            fontdb.set_monospace_family(name.clone());
+            fontdb.set_cursive_family(name.clone());
+            fontdb.set_fantasy_family(name.clone());
+            opts.font_family = name;
+        }
+    }
     let tree = resvg::usvg::Tree::from_str(svg_xml, &opts)
         .map_err(|e| anyhow::anyhow!("parse SVG: {e}"))?;
     let size = tree.size().to_int_size();
