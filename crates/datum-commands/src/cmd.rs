@@ -3382,19 +3382,32 @@ pub(crate) fn cmd_db_import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
         };
 
-        // ─── verb + canonical state ─────────────────────────────────
+        // ─── verb + state ───────────────────────────────────────────
         // following_state is always None for legacy entries (block-switch /
         // point-switch are daydumb-new shapes — they never appear in a
-        // CouchDB dump). derive_verb handles null→true promotion: when
-        // state_in is None it returns Some(JsonValue::Bool(true)).
-        let (verb, state) = match derive_verb(state_in.clone(), dur_in.as_deref(), None) {
-            Ok(pair) => pair,
-            Err(e) => {
-                eprintln!("warning: skipping {}: {}", field, e);
-                skipped += 1;
-                continue;
-            }
-        };
+        // CouchDB dump).
+        //
+        // We do NOT canonicalize state (the null→true promotion) here.
+        // Per the da-5ns.3 contract, `derive_verb_for_storage` owns verb
+        // derivation at insert time and runs the canonicalization itself.
+        // If we pre-canonicalized — turning a no-state, no-dur legacy doc
+        // into `state=true, dur=None` — storage would then re-derive the
+        // verb from `(state_set=true, DurKind::None, fs=None)` and write
+        // `verb='switch'` instead of the correct `verb='point'` (da-7sr).
+        //
+        // Run derive_verb purely for input validation (to skip malformed
+        // dur / illegal shape combinations mid-bulk rather than letting
+        // them fail at insert) and discard its outputs. `verb = Point` is
+        // a placeholder that won't trip the switch-style state→true
+        // promotion in `derive_verb_for_storage`; storage will compute
+        // the real verb from raw `(state_in, dur_in, None)`.
+        if let Err(e) = derive_verb(state_in.clone(), dur_in.as_deref(), None) {
+            eprintln!("warning: skipping {}: {}", field, e);
+            skipped += 1;
+            continue;
+        }
+        let state = state_in.clone();
+        let verb = Verb::Point;
 
         // ─── data blob ──────────────────────────────────────────────
         // Everything in `data` except first-class columns goes into the
