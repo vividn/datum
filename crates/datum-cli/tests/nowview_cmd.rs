@@ -22,8 +22,9 @@ fn nowview_default_history_renders_envelope() {
     assert!(svg.starts_with("<?xml"));
     assert!(svg.contains("<svg "));
     assert!(svg.ends_with("</svg>"));
-    // Default 30m history → default_width_for_history → 400 px.
-    assert!(svg.contains(r#"width="400""#));
+    // da-34w: default width = default_width_for_history(30m=400) +
+    // panel-bump (120) = 520 px.
+    assert!(svg.contains(r#"width="520""#));
     assert!(svg.contains(r#"height="300""#));
     assert!(svg.contains(r#"fill="black""#));
     // Even on an empty DB the now-line marks the right edge of the data
@@ -32,6 +33,8 @@ fn nowview_default_history_renders_envelope() {
     assert!(svg.contains("#ffcc00"));
     // Overlay clock label is always emitted (HH:MM never empty).
     assert!(svg.contains("current-time-text"));
+    // da-34w: date label dropped — no `<text class="date-label">` group.
+    assert!(!svg.contains("date-label"));
 }
 
 #[test]
@@ -88,10 +91,16 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
 
     assert!(svg.contains(r#"data-field="mood""#));
     assert!(svg.contains(r#"data-field="coffee""#));
-    assert!(svg.contains(r#"width="400""#));
+    // da-34w: 60m history bumps to 520 (400 + 120 panel).
+    assert!(svg.contains(r#"width="520""#));
 
     // Overlay clock label injected inside the plot group.
     assert!(svg.contains("current-time-text"));
+    // da-34w: state panel renders one swatch + label per band.
+    assert!(svg.contains(r#"class="nowview-state-panel""#));
+    assert!(svg.contains(r#"class="state-swatch" data-field="mood""#));
+    assert!(svg.contains(r#"class="state-swatch" data-field="coffee""#));
+    assert!(svg.contains("mood: focused"));
 }
 
 #[test]
@@ -218,6 +227,6 @@ fn nowview_no_field_data_still_renders_envelope() {
     // Envelope is always there even without data inside the window.
     assert!(svg.contains("<svg "));
     assert!(svg.ends_with("</svg>"));
-    // 30m history → default width 400.
-    assert!(svg.contains(r#"width="400""#));
+    // da-34w: 30m history → 400 base + 120 panel = 520.
+    assert!(svg.contains(r#"width="520""#));
 }

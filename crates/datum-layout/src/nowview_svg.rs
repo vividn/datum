@@ -13,20 +13,40 @@ use std::fmt::Write;
 
 use crate::dayview::{DayviewLayout, Orientation};
 use crate::dayview_svg::render_dayview_svg;
+use crate::nowview::NowviewPanelEntry;
 
 const TEXT_COLOR: &str = "white";
+/// Side margin (px) between the now-line and the first column of panel
+/// content (and between panel content and the SVG's right edge).
+const PANEL_PAD_PX: f64 = 6.0;
+/// Width (px) of the colored swatch that prefixes each panel row.
+const PANEL_SWATCH_W: f64 = 8.0;
+/// Minimum panel-row font size; rows below this won't render text.
+const PANEL_MIN_FONT: f64 = 7.0;
+/// Cap on panel-row font size so labels stay readable in tall single-day
+/// nowviews where the band height alone would otherwise pick a huge font.
+const PANEL_MAX_FONT: f64 = 14.0;
 
 /// Render `layout` (a dayview layout the CLI built for the nowview window)
 /// to an SVG document string and overlay the `current_time_label` near the
-/// now-line. When the label is empty no overlay is added — useful when the
-/// caller only wants the dayview portion.
-pub fn render_nowview_svg(layout: &DayviewLayout, current_time_label: &str) -> String {
+/// now-line plus, when non-empty, a current-state panel right of the
+/// now-line (per bead da-34w). An empty `current_time_label` skips the
+/// clock overlay; an empty `panel_entries` slice skips the panel.
+pub fn render_nowview_svg(
+    layout: &DayviewLayout,
+    current_time_label: &str,
+    panel_entries: &[NowviewPanelEntry],
+) -> String {
     let mut svg = render_dayview_svg(layout);
+    let mut overlay = String::new();
+    if !panel_entries.is_empty() {
+        overlay.push_str(&build_state_panel_overlay(layout, panel_entries));
+    }
     if !current_time_label.is_empty() {
-        let overlay = build_current_time_overlay(layout, current_time_label);
-        if !overlay.is_empty() {
-            inject_inside_plot_group(&mut svg, &overlay);
-        }
+        overlay.push_str(&build_current_time_overlay(layout, current_time_label));
+    }
+    if !overlay.is_empty() {
+        inject_inside_plot_group(&mut svg, &overlay);
     }
     svg
 }
@@ -104,6 +124,83 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
                 label = escape_xml(label),
             );
         }
+    }
+    out.push_str("</g>");
+    out
+}
+
+/// Build the right-of-now-line current-state panel. Each entry is matched
+/// to a rendered field band by name; rows whose field isn't in the layout
+/// are dropped (the dayview pipeline already skipped them). Vertical mode
+/// is unsupported — panel only renders in horizontal mode (the only mode
+/// nowview uses today).
+fn build_state_panel_overlay(
+    layout: &DayviewLayout,
+    entries: &[NowviewPanelEntry],
+) -> String {
+    if matches!(layout.orientation, Orientation::Vertical) {
+        return String::new();
+    }
+    if layout.right_panel_width <= 0.0 || layout.days.is_empty() {
+        return String::new();
+    }
+    let day = &layout.days[0];
+    if day.fields.is_empty() {
+        return String::new();
+    }
+
+    let panel_x = layout.label_width + layout.time_axis_extent;
+    let usable_w = (layout.right_panel_width - 2.0 * PANEL_PAD_PX).max(0.0);
+    if usable_w <= PANEL_SWATCH_W {
+        return String::new();
+    }
+
+    let mut out = String::new();
+    let _ = write!(&mut out, r#"<g class="nowview-state-panel">"#);
+    for entry in entries {
+        let Some(field) = day.fields.iter().find(|f| f.field == entry.field) else {
+            continue;
+        };
+        let row_top = day.day_offset + field.cross_offset;
+        let row_h = field.cross_extent.max(1.0);
+        let y_center = row_top + row_h / 2.0;
+
+        let font_size = (row_h - 4.0)
+            .min(PANEL_MAX_FONT)
+            .max(PANEL_MIN_FONT);
+        if font_size < PANEL_MIN_FONT {
+            continue;
+        }
+
+        let swatch_h = (row_h * 0.6).min(font_size).max(4.0);
+        let swatch_x = panel_x + PANEL_PAD_PX;
+        let swatch_y = y_center - swatch_h / 2.0;
+        let _ = write!(
+            &mut out,
+            r#"<rect class="state-swatch" data-field="{f}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
+            f = escape_xml(&entry.field),
+            x = swatch_x,
+            y = swatch_y,
+            w = PANEL_SWATCH_W,
+            h = swatch_h,
+            c = escape_xml(&entry.color),
+        );
+
+        let text_x = swatch_x + PANEL_SWATCH_W + 4.0;
+        let label = match &entry.state_label {
+            Some(s) => format!("{}: {}", entry.field, s),
+            None => entry.field.clone(),
+        };
+        let _ = write!(
+            &mut out,
+            r#"<text class="state-label" data-field="{f}" x="{x}" y="{y}" dominant-baseline="middle" fill="{c}" font-size="{fs}">{txt}</text>"#,
+            f = escape_xml(&entry.field),
+            x = text_x,
+            y = y_center,
+            c = TEXT_COLOR,
+            fs = font_size,
+            txt = escape_xml(&label),
+        );
     }
     out.push_str("</g>");
     out
@@ -205,6 +302,7 @@ mod tests {
                 // approximate — exact extent is recomputed by compute_dayview
                 500.0, 30.0,
             )),
+            right_panel_width: 0.0,
         };
         compute_dayview(&cfg)
     }
@@ -212,7 +310,7 @@ mod tests {
     #[test]
     fn renders_dayview_envelope_with_current_time() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "15:30");
+        let svg = render_nowview_svg(&layout, "15:30", &[]);
         // Dayview envelope intact.
         assert!(svg.starts_with("<svg "));
         assert!(svg.ends_with("</svg>"));
@@ -232,9 +330,142 @@ mod tests {
     #[test]
     fn no_current_time_label_means_no_overlay() {
         let layout = nowview_layout();
-        let svg = render_nowview_svg(&layout, "");
+        let svg = render_nowview_svg(&layout, "", &[]);
         assert!(!svg.contains("current-time-text"));
         assert!(!svg.contains("nowview-overlay"));
+    }
+
+    #[test]
+    fn state_panel_renders_swatch_and_label_per_field() {
+        // Build a layout with reserved right-panel width, then assert the
+        // overlay matches each entry to the field band by name.
+        let now_ms = 1_700_000_000_000_i64;
+        let history_ms = 30 * 60 * 1000;
+        let day = DayviewDayInput {
+            label_lines: vec![],
+            start_ms: now_ms - history_ms,
+            end_ms: now_ms,
+            has_error: false,
+            fields: vec![
+                DayviewFieldInput {
+                    field: "mood".into(),
+                    y_frac: 0.1,
+                    height_frac: 0.2,
+                    z_index: 0.1,
+                    blocks: vec![DayviewBlock {
+                        start_ms: now_ms - 10 * 60 * 1000,
+                        end_ms: now_ms,
+                        fill: BlockFill::Single("#abcdef".into()),
+                        state_label: Some("focused".into()),
+                    }],
+                    points: vec![],
+                },
+                DayviewFieldInput {
+                    field: "coffee".into(),
+                    y_frac: 0.5,
+                    height_frac: 0.2,
+                    z_index: 0.5,
+                    blocks: vec![],
+                    points: vec![DayviewPoint {
+                        time_ms: now_ms - 5 * 60 * 1000,
+                        fg_color: "#ff0000".into(),
+                        bg_color: "#000000".into(),
+                        state_label: None,
+                    }],
+                },
+            ],
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 600.0,
+            height: Some(300.0),
+            day_height: 250.0,
+            interday_margin: 0.0,
+            time_axis_height: 20.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation: Orientation::Horizontal,
+            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0)),
+            right_panel_width: 120.0,
+        };
+        let layout = compute_dayview(&cfg);
+        // Right panel reserved → time axis shrinks by 120 px.
+        assert!(
+            (layout.time_axis_extent - (596.0 - 120.0)).abs() < 1e-6,
+            "time_axis_extent = {}",
+            layout.time_axis_extent,
+        );
+        let entries = vec![
+            NowviewPanelEntry {
+                field: "mood".into(),
+                state_label: Some("focused".into()),
+                color: "#abcdef".into(),
+            },
+            NowviewPanelEntry {
+                field: "coffee".into(),
+                state_label: None,
+                color: "#ff0000".into(),
+            },
+        ];
+        let svg = render_nowview_svg(&layout, "12:00", &entries);
+        assert!(svg.contains(r#"class="nowview-state-panel""#));
+        assert!(svg.contains(r#"class="state-swatch" data-field="mood""#));
+        assert!(svg.contains(r#"class="state-swatch" data-field="coffee""#));
+        assert!(svg.contains("mood: focused"));
+        // Occur-only field with no state label should still show the field
+        // name as a glanceable presence cue.
+        assert!(svg.contains(">coffee<"));
+        // Both swatches use entry colors.
+        assert!(svg.contains("#abcdef"));
+        assert!(svg.contains("#ff0000"));
+    }
+
+    #[test]
+    fn state_panel_skips_when_field_not_in_layout() {
+        let now_ms = 1_700_000_000_000_i64;
+        let history_ms = 30 * 60 * 1000;
+        let day = DayviewDayInput {
+            label_lines: vec![],
+            start_ms: now_ms - history_ms,
+            end_ms: now_ms,
+            has_error: false,
+            fields: vec![DayviewFieldInput {
+                field: "mood".into(),
+                y_frac: 0.1,
+                height_frac: 0.2,
+                z_index: 0.1,
+                blocks: vec![DayviewBlock {
+                    start_ms: now_ms - 10 * 60 * 1000,
+                    end_ms: now_ms,
+                    fill: BlockFill::Single("#abcdef".into()),
+                    state_label: None,
+                }],
+                points: vec![],
+            }],
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 500.0,
+            height: Some(300.0),
+            day_height: 250.0,
+            time_axis_height: 20.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation: Orientation::Horizontal,
+            axis_ticks_override: Some(nowview_axis_ticks(300.0, 30.0)),
+            right_panel_width: 120.0,
+            ..Default::default()
+        };
+        let layout = compute_dayview(&cfg);
+        let entries = vec![NowviewPanelEntry {
+            field: "ghost".into(),
+            state_label: Some("nope".into()),
+            color: "#888888".into(),
+        }];
+        let svg = render_nowview_svg(&layout, "", &entries);
+        assert!(!svg.contains(r#"data-field="ghost""#));
     }
 
     #[test]

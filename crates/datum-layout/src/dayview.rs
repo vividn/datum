@@ -168,6 +168,13 @@ pub struct DayviewConfig {
     /// `nowview` injects its sub-hour relative-minute ticks while reusing
     /// the dayview render path (per bead da-6jy).
     pub axis_ticks_override: Option<Vec<DayviewAxisTick>>,
+    /// Pixel width reserved on the far side of the data area for an
+    /// orientation-specific overlay. Horizontal mode: shrinks
+    /// `time_axis_extent` so the overlay sits to the right of the now-line
+    /// without clipping data. Vertical mode is unused (set to 0). Per bead
+    /// da-34w nowview uses this to stack a current-state panel beside the
+    /// now-line.
+    pub right_panel_width: f64,
 }
 
 impl Default for DayviewConfig {
@@ -184,6 +191,7 @@ impl Default for DayviewConfig {
             label_width: None,
             orientation: Orientation::default(),
             axis_ticks_override: None,
+            right_panel_width: 0.0,
         }
     }
 }
@@ -216,6 +224,10 @@ pub struct DayviewLayout {
     /// Hourly axis ticks shared across every day, in time-axis pixels
     /// (relative to the plot's data-area origin on the time axis).
     pub axis_ticks: Vec<DayviewAxisTick>,
+    /// Pixel width reserved beside the data area for an orientation-specific
+    /// overlay. Carried through from [`DayviewConfig::right_panel_width`] so
+    /// nowview's overlay knows where its panel sits.
+    pub right_panel_width: f64,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
@@ -336,7 +348,8 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
     let (width, height, plot, time_axis_extent) = match config.orientation {
         Orientation::Horizontal => {
             let plot_width = (config.width - 2.0 * config.margin).max(0.0);
-            let time_axis_extent = (plot_width - label_width).max(0.0);
+            let time_axis_extent =
+                (plot_width - label_width - config.right_panel_width.max(0.0)).max(0.0);
             let plot_height = data_rows_extent + config.time_axis_height;
             let height = plot_height + 2.0 * config.margin;
             let plot = Rect {
@@ -512,6 +525,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         time_axis_extent,
         days,
         axis_ticks,
+        right_panel_width: config.right_panel_width.max(0.0),
     }
 }
 

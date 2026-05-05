@@ -873,7 +873,10 @@ impl NowviewArgs {
             width: None,
             height: 300.0,
             margin: 2.0,
-            time_axis_height: 15.0,
+            // da-34w: bumped from 15 → 22 so the time-axis label font
+            // (`time_axis_height - 6`, capped) lands at ~16pt instead of
+            // ~9pt. The previous default rendered too small to read.
+            time_axis_height: 22.0,
             output_file: None,
             watch: false,
         }

@@ -194,6 +194,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         label_width: None,
         orientation,
         axis_ticks_override: None,
+        right_panel_width: 0.0,
     };
 
     let layout = compute_dayview(&config);

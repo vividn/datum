@@ -27,7 +27,8 @@ use datum_layout::dayview::{
     DayviewFieldInput, DayviewPoint, Orientation,
 };
 use datum_layout::nowview::{
-    default_width_for_history, nowview_axis_ticks, NowviewBlock, NowviewField, NowviewPoint,
+    default_width_for_history, nowview_axis_ticks, NowviewBlock, NowviewField, NowviewPanelEntry,
+    NowviewPoint,
 };
 use datum_layout::nowview_svg::{render_nowview_svg, with_xml_declaration, wrap_svg_in_html};
 use datum_parse::time::parse_duration_str::parse_duration;
@@ -43,6 +44,13 @@ const DEFAULT_HISTORY_MINUTES: f64 = 30.0;
 /// than dayview's 100 px default since nowview shows only one day and gets
 /// the full vertical budget.
 const DEFAULT_DAY_HEIGHT: f64 = 250.0;
+/// Default reserved width (px) for the current-state panel rendered to the
+/// right of the now-line (per bead da-34w).
+const DEFAULT_PANEL_WIDTH: f64 = 120.0;
+/// Width contribution of the panel toward the auto-sized SVG width when the
+/// user omits `--width`. Added on top of [`default_width_for_history`] so
+/// the data area keeps datum's history-based sizing.
+const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
@@ -78,34 +86,36 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         anyhow::bail!("--history must be positive (got {history_minutes} minutes)");
     }
 
-    let width = args.width.unwrap_or_else(|| default_width_for_history(history_minutes));
+    let width = args.width.unwrap_or_else(|| {
+        default_width_for_history(history_minutes) + PANEL_DEFAULT_WIDTH_BUMP
+    });
     let end = Utc::now();
     let end_ms = end.timestamp_millis();
     let start_ms = end_ms - (history_minutes * 60_000.0) as i64;
 
     let fields = build_dayview_fields(db, end, history_minutes)?;
 
-    let label_lines = format_day_label(end);
-
+    // da-34w: nowview drops the date label — it's timestamp-focused, not
+    // date-focused. The HH:MM clock overlay near the now-line takes its
+    // place.
     let day = DayviewDayInput {
-        label_lines,
+        label_lines: Vec::new(),
         start_ms,
         end_ms,
         has_error: false,
         fields,
     };
 
+    let panel_width = DEFAULT_PANEL_WIDTH.min((width - 2.0 * args.margin) * 0.5).max(0.0);
+
     // Pre-compute the time-axis extent so the relative-minute tick
     // override resolves to the same pixel space dayview will use. Mirrors
-    // the math in `dayview::compute_dayview`.
+    // the math in `dayview::compute_dayview`. Date label is suppressed
+    // (label_width = 0) so the time axis only loses the panel reservation.
     let plot_width = (width - 2.0 * args.margin).max(0.0);
-    // Approximate label_width with the dayview default (font_size * 4) so
-    // the override extent matches; dayview will recompute the font_size on
-    // its own, but the time axis is robust to minor mismatch.
-    let approx_label_width = (args.height / 1.0).min(20.0_f64) * 4.0;
-    let approx_time_axis_extent = (plot_width - approx_label_width).max(0.0);
+    let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
     let axis_ticks_override =
-        Some(nowview_axis_ticks(approx_time_axis_extent, history_minutes));
+        Some(nowview_axis_ticks(time_axis_extent_for_ticks, history_minutes));
 
     let day_height = if args.height > 0.0 {
         // Use the requested height as the per-day band, leaving room for
@@ -125,13 +135,17 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         interday_margin: 0.0,
         time_axis_height: args.time_axis_height,
         margin: args.margin,
-        label_width: None,
+        // Date label suppressed — give all of the cross-perpendicular
+        // budget to the data area (and the panel reservation).
+        label_width: Some(0.0),
         orientation: Orientation::Horizontal,
         axis_ticks_override,
+        right_panel_width: panel_width,
     };
 
     let layout = compute_dayview(&config);
-    let svg = render_nowview_svg(&layout, &format_local_hh_mm(end));
+    let panel_entries = build_panel_entries(db, end, &layout);
+    let svg = render_nowview_svg(&layout, &format_local_hh_mm(end), &panel_entries);
 
     match args.output_file.as_deref() {
         None => {
@@ -386,6 +400,47 @@ pub(crate) fn build_fields(
         });
     }
     Ok(out)
+}
+
+/// Build the right-of-now-line panel entries (per bead da-34w). For each
+/// rendered field, looks up the active state at `end` and produces a
+/// (field, label, color) triple. Fields with no resolvable state still
+/// yield a row — the field name alone is a useful presence cue.
+fn build_panel_entries(
+    db: &Db,
+    end: DateTime<Utc>,
+    layout: &datum_layout::dayview::DayviewLayout,
+) -> Vec<NowviewPanelEntry> {
+    let day = match layout.days.first() {
+        Some(d) => d,
+        None => return Vec::new(),
+    };
+    let mut out: Vec<NowviewPanelEntry> = Vec::with_capacity(day.fields.len());
+    for f in &day.fields {
+        let spec = db.load_spec(&f.field).ok().flatten();
+        let state = db.state_at(&f.field, end).ok().flatten();
+        let (state_label, color) = match state.as_ref() {
+            None => (None, rgb_to_hex(field_rgb(&f.field, spec.as_ref()))),
+            Some(v) if is_unrendered_switch_value(Some(v)) => {
+                (None, rgb_to_hex(field_rgb(&f.field, spec.as_ref())))
+            }
+            Some(v) => {
+                let label = match v {
+                    JsonValue::String(s) => s.clone(),
+                    other => other.to_string(),
+                };
+                let rgb = state_value_rgb(v, &f.field, spec.as_ref())
+                    .unwrap_or_else(|| field_rgb(&f.field, spec.as_ref()));
+                (Some(label), rgb_to_hex(rgb))
+            }
+        };
+        out.push(NowviewPanelEntry {
+            field: f.field.clone(),
+            state_label,
+            color,
+        });
+    }
+    out
 }
 
 fn rgb_to_hex(rgb: Rgb) -> String {
@@ -805,32 +860,6 @@ fn state_label(v: Option<&JsonValue>) -> Option<String> {
         JsonValue::String(s) => s.clone(),
         other => other.to_string(),
     })
-}
-
-/// Format an instant as datum's 3-line label `[weekday, "MMM dd", yyyy]`.
-/// Mirrors `datum dayview`'s label format (per da-6jy field-spec parity).
-fn format_day_label(t: DateTime<Utc>) -> Vec<String> {
-    use chrono::Datelike;
-    let local = t.with_timezone(&Local).date_naive();
-    let weekday = match local.weekday() {
-        chrono::Weekday::Mon => "Mon",
-        chrono::Weekday::Tue => "Tue",
-        chrono::Weekday::Wed => "Wed",
-        chrono::Weekday::Thu => "Thu",
-        chrono::Weekday::Fri => "Fri",
-        chrono::Weekday::Sat => "Sat",
-        chrono::Weekday::Sun => "Sun",
-    };
-    let month = match local.month() {
-        1 => "Jan", 2 => "Feb", 3 => "Mar", 4 => "Apr",
-        5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Aug",
-        9 => "Sep", 10 => "Oct", 11 => "Nov", _ => "Dec",
-    };
-    vec![
-        weekday.to_string(),
-        format!("{} {:02}", month, local.day()),
-        format!("{}", local.year()),
-    ]
 }
 
 pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {

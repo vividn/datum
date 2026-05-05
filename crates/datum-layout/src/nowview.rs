@@ -59,6 +59,21 @@ pub struct NowviewField {
     pub points: Vec<NowviewPoint>,
 }
 
+/// One entry in the current-state panel rendered to the right of the
+/// now-line (per bead da-34w). The CLI resolves the active state per
+/// tracked field at "now" and passes the result as a list of these
+/// entries; the SVG overlay aligns each row to the matching field band.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NowviewPanelEntry {
+    pub field: String,
+    /// Active state value rendered as text. `None` means the field has no
+    /// state at "now" (e.g. an occur-only field with no recent dot); the
+    /// row still renders the field name as a glanceable presence cue.
+    pub state_label: Option<String>,
+    /// Hex fill color for the row's swatch and label.
+    pub color: String,
+}
+
 /// Pick the default SVG width when the user didn't pass `--width`. Mirrors
 /// datum's nowviewCmd.ts §"Scale default width based on history size":
 /// ≤0  → 100, ≤5m → 200, ≤10m → 300, else 400.
