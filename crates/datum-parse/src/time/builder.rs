@@ -7,7 +7,7 @@ use crate::time::datum_time::DatumTime;
 use crate::time::parse_date_str::DateArg;
 use crate::time::parse_duration_str::quick_precision_for_count;
 use crate::time::parse_time_str::TimeArg;
-use crate::time::uncertainty::Uncertainty;
+use crate::time::uncertainty::{Direction, Uncertainty};
 
 /// Build a `DatumTime` from the combination of -y stacks, -q stacks,
 /// -d arg, -t arg, and an optional base time (defaults to now).
@@ -35,6 +35,10 @@ pub struct TimeBuilder {
     /// Callers must resolve numeric/UTC±N forms via
     /// [`crate::time::resolve_timezone`] before passing the string in.
     pub timezone: Option<String>,
+    /// Direction hint for the time portion (trailing `+`/`-` on `-t`).
+    /// Only consumed when `time_override` is the resolution path —
+    /// pinned ISO inputs and relative `±N` offsets ignore it.
+    pub time_direction: Option<Direction>,
 }
 
 #[cfg(feature = "native")]
@@ -53,6 +57,7 @@ impl TimeBuilder {
             quick_precision: None,
             explicit_precision: None,
             timezone: None,
+            time_direction: None,
         }
     }
 }
@@ -100,6 +105,9 @@ impl TimeBuilder {
             self.iso_naive_override = Some(naive);
         } else if let Some(abs) = arg.absolute {
             self.time_override = Some(abs);
+            // Direction is only meaningful when we resolve a bare clock
+            // against "today" — that's the time_override path.
+            self.time_direction = arg.direction;
         } else if let Some(offset) = arg.minutes_offset {
             self.minutes_back += -offset; // -8 means 8 min ago → minutes_back += 8
         }
@@ -165,7 +173,20 @@ impl TimeBuilder {
                     dt = new_dt;
                 }
             } else if let Some(time) = self.time_override {
-                if let Some(new_dt) = dt.date_naive().and_time(time).and_local_timezone(tz).single() {
+                let mut local_dt = dt.date_naive().and_time(time);
+                if let Some(dir) = self.time_direction {
+                    let now_naive = dt.naive_local();
+                    match dir {
+                        Direction::Future if local_dt <= now_naive => {
+                            local_dt += chrono::Duration::days(1);
+                        }
+                        Direction::Past if local_dt >= now_naive => {
+                            local_dt -= chrono::Duration::days(1);
+                        }
+                        _ => {}
+                    }
+                }
+                if let Some(new_dt) = local_dt.and_local_timezone(tz).single() {
                     dt = new_dt;
                 }
             }
@@ -199,7 +220,20 @@ impl TimeBuilder {
                 dt = new_dt;
             }
         } else if let Some(time) = self.time_override {
-            if let Some(new_dt) = dt.date_naive().and_time(time).and_local_timezone(Local).single() {
+            let mut local_dt = dt.date_naive().and_time(time);
+            if let Some(dir) = self.time_direction {
+                let now_naive = dt.naive_local();
+                match dir {
+                    Direction::Future if local_dt <= now_naive => {
+                        local_dt += chrono::Duration::days(1);
+                    }
+                    Direction::Past if local_dt >= now_naive => {
+                        local_dt -= chrono::Duration::days(1);
+                    }
+                    _ => {}
+                }
+            }
+            if let Some(new_dt) = local_dt.and_local_timezone(Local).single() {
                 dt = new_dt;
             }
         }

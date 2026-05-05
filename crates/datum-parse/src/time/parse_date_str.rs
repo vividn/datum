@@ -8,21 +8,36 @@
 use chrono::{Datelike, NaiveDate};
 
 use crate::error::{ParseError, Result};
-use crate::time::uncertainty::{parse_uncertainty, split_uncertainty, Uncertainty};
+use crate::time::uncertainty::{
+    parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
+};
 
 /// Parsed result of a date argument (-d flag).
 pub struct DateArg {
     pub days_offset: i64,
     pub absolute: Option<NaiveDate>,
     pub uncertainty: Option<Uncertainty>,
+    /// Trailing `+` / `-` direction hint. Forces year resolution into the
+    /// next (`Future`) or most-recent-prior (`Past`) occurrence for
+    /// year-less inputs. Year-pinned ISO dates and relative `±N` offsets
+    /// ignore the hint.
+    pub direction: Option<Direction>,
 }
 
 /// Parse a -d / --date argument.
 /// Supports: "+1", "-1", "0", ISO date "2024-03-16", or compact
-/// `<mmm><day>[(-|@)YYYY]` (e.g. "apr29", "Jan5", "apr29-2025"),
-/// plus an optional `±N[unit]` uncertainty suffix.
+/// `<mmm><day>[(-|@)YYYY]` (e.g. "apr29", "Jan5", "apr29-2025"), plus
+/// an optional `±N[unit]` uncertainty suffix and optional trailing
+/// `+`/`-` direction marker.
+///
+/// The direction marker drives year inference for year-less compact
+/// dates: `apr29+` resolves to the next April 29 (this year if still
+/// upcoming, otherwise next year); `apr29-` resolves to the most recent
+/// April 29 in the past. Year-pinned forms (ISO dates, compact dates
+/// with explicit year) ignore the marker; relative offsets do too.
 pub fn parse_date_arg(s: &str) -> Result<DateArg> {
-    let (primary, uncert_body) = split_uncertainty(s);
+    let (s_no_dir, direction) = split_direction_suffix(s)?;
+    let (primary, uncert_body) = split_uncertainty(s_no_dir);
     let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
 
     // Relative integer offset
@@ -31,6 +46,7 @@ pub fn parse_date_arg(s: &str) -> Result<DateArg> {
             days_offset: n,
             absolute: None,
             uncertainty,
+            direction,
         });
     }
 
@@ -40,6 +56,7 @@ pub fn parse_date_arg(s: &str) -> Result<DateArg> {
             days_offset: 0,
             absolute: Some(d),
             uncertainty,
+            direction,
         });
     }
 
@@ -48,13 +65,14 @@ pub fn parse_date_arg(s: &str) -> Result<DateArg> {
         let absolute = match year {
             Some(y) => NaiveDate::from_ymd_opt(y, month, day)
                 .ok_or_else(|| ParseError::InvalidTime(format!("Invalid date: '{primary}'")))?,
-            None => infer_most_recent_past(month, day)
+            None => infer_year(month, day, direction)
                 .ok_or_else(|| ParseError::InvalidTime(format!("Invalid date: '{primary}'")))?,
         };
         return Ok(DateArg {
             days_offset: 0,
             absolute: Some(absolute),
             uncertainty,
+            direction,
         });
     }
 
@@ -122,30 +140,68 @@ fn month_from_abbr(s: &str) -> Option<u32> {
     }
 }
 
-/// Pick the most-recent occurrence of (month, day) on or before today.
-/// Walks back up to 8 years to skip past invalid Feb-29 in non-leap years.
+/// Resolve a year-less compact date against "today", honouring an
+/// optional direction marker. With no marker, behaviour matches the
+/// pre-existing default (most-recent-past). With `Future`, picks the
+/// next strictly-future occurrence; with `Past`, picks the strictly-past
+/// occurrence — at-tie cases push *with* the marker so `apr29+` on
+/// April 29 yields next year and `apr29-` yields last year, mirroring
+/// the time-side tie-break.
 #[cfg(feature = "native")]
-fn infer_most_recent_past(month: u32, day: u32) -> Option<NaiveDate> {
+fn infer_year(month: u32, day: u32, direction: Option<Direction>) -> Option<NaiveDate> {
     let today = crate::time::clock::now().local_time().date_naive();
-    most_recent_past(month, day, today)
+    resolve_year(month, day, today, direction)
 }
 
 #[cfg(not(feature = "native"))]
-fn infer_most_recent_past(_month: u32, _day: u32) -> Option<NaiveDate> {
+fn infer_year(_month: u32, _day: u32, _direction: Option<Direction>) -> Option<NaiveDate> {
     // Without a clock we can't decide a year. Callers on wasm must spell
     // out the year explicitly (e.g. `apr29-2025`).
     None
 }
 
-fn most_recent_past(month: u32, day: u32, today: NaiveDate) -> Option<NaiveDate> {
+fn resolve_year(
+    month: u32,
+    day: u32,
+    today: NaiveDate,
+    direction: Option<Direction>,
+) -> Option<NaiveDate> {
+    match direction {
+        None | Some(Direction::Past) => most_recent_past(month, day, today, direction.is_some()),
+        Some(Direction::Future) => next_future(month, day, today),
+    }
+}
+
+/// Pick the most-recent occurrence of (month, day) on or before today.
+/// When `strict` is true, the candidate must be *strictly* before today
+/// (the `-` direction marker pushes a tie to the prior year). Walks
+/// back up to 8 years to skip past invalid Feb-29 in non-leap years.
+fn most_recent_past(month: u32, day: u32, today: NaiveDate, strict: bool) -> Option<NaiveDate> {
     let mut y = today.year();
     for _ in 0..8 {
         if let Some(d) = NaiveDate::from_ymd_opt(y, month, day) {
-            if d <= today {
+            let ok = if strict { d < today } else { d <= today };
+            if ok {
                 return Some(d);
             }
         }
         y -= 1;
+    }
+    None
+}
+
+/// Pick the next strictly-future occurrence of (month, day). The `+`
+/// direction marker treats today as already-past, so `apr29+` on
+/// April 29 yields next year. Walks forward up to 8 years.
+fn next_future(month: u32, day: u32, today: NaiveDate) -> Option<NaiveDate> {
+    let mut y = today.year();
+    for _ in 0..8 {
+        if let Some(d) = NaiveDate::from_ymd_opt(y, month, day) {
+            if d > today {
+                return Some(d);
+            }
+        }
+        y += 1;
     }
     None
 }
@@ -158,7 +214,7 @@ mod tests {
     fn most_recent_past_uses_current_year_when_already_passed() {
         let today = NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
         assert_eq!(
-            most_recent_past(4, 29, today),
+            resolve_year(4, 29, today, None),
             Some(NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
         );
     }
@@ -167,7 +223,7 @@ mod tests {
     fn most_recent_past_rolls_back_when_future_in_current_year() {
         let today = NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
         assert_eq!(
-            most_recent_past(6, 7, today),
+            resolve_year(6, 7, today, None),
             Some(NaiveDate::from_ymd_opt(2025, 6, 7).unwrap())
         );
     }
@@ -177,8 +233,90 @@ mod tests {
         // Today 2026-03-01: Feb 29 doesn't exist in 2026; latest valid Feb 29 is 2024.
         let today = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
         assert_eq!(
-            most_recent_past(2, 29, today),
+            resolve_year(2, 29, today, None),
             Some(NaiveDate::from_ymd_opt(2024, 2, 29).unwrap())
+        );
+    }
+
+    // ── direction marker drives year inference ────────────────────────
+
+    #[test]
+    fn future_direction_picks_this_year_when_upcoming() {
+        // 2026-04-05: apr29 still ahead → this year.
+        let today = NaiveDate::from_ymd_opt(2026, 4, 5).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, Some(Direction::Future)),
+            Some(NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn future_direction_picks_next_year_when_passed() {
+        // 2026-05-05: apr29 already past → next year.
+        let today = NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, Some(Direction::Future)),
+            Some(NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn future_direction_at_tie_picks_next_year() {
+        // 2026-04-29: candidate equals today → push to next year.
+        let today = NaiveDate::from_ymd_opt(2026, 4, 29).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, Some(Direction::Future)),
+            Some(NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn past_direction_picks_this_year_when_already_passed() {
+        // 2026-05-05: apr29 already past → this year.
+        let today = NaiveDate::from_ymd_opt(2026, 5, 5).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, Some(Direction::Past)),
+            Some(NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn past_direction_picks_last_year_when_upcoming() {
+        // 2026-04-05: apr29 not yet → last year.
+        let today = NaiveDate::from_ymd_opt(2026, 4, 5).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, Some(Direction::Past)),
+            Some(NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn past_direction_at_tie_picks_last_year() {
+        // 2026-04-29: candidate equals today → push to last year.
+        let today = NaiveDate::from_ymd_opt(2026, 4, 29).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, Some(Direction::Past)),
+            Some(NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn future_direction_skips_non_leap_years_for_feb_29() {
+        // 2026-03-01 + apr29+: next valid Feb 29 forward is 2028.
+        let today = NaiveDate::from_ymd_opt(2026, 3, 1).unwrap();
+        assert_eq!(
+            resolve_year(2, 29, today, Some(Direction::Future)),
+            Some(NaiveDate::from_ymd_opt(2028, 2, 29).unwrap())
+        );
+    }
+
+    #[test]
+    fn no_direction_at_tie_picks_today() {
+        // Default behaviour (no marker): on April 29, "apr29" resolves to today.
+        let today = NaiveDate::from_ymd_opt(2026, 4, 29).unwrap();
+        assert_eq!(
+            resolve_year(4, 29, today, None),
+            Some(NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
         );
     }
 

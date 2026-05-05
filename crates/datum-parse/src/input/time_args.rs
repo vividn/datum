@@ -24,7 +24,7 @@ use chrono_tz::Tz;
 
 use crate::error::{ParseError, Result};
 use crate::input::flag_registry::{FlagAction, FlagSpec};
-use crate::time::{parse_date_arg, parse_time_arg, DatumTime, Uncertainty};
+use crate::time::{parse_date_arg, parse_time_arg, DatumTime, Direction, Uncertainty};
 
 /// Parsed shape of the timing flag group.
 #[derive(Debug, Clone, Default)]
@@ -311,20 +311,23 @@ fn apply_time_arg(cur: DatumTime, s: &str, uncertainty: &mut Option<Uncertainty>
         // ISO-8601 instant (`...Z` / `...+02:00`) — the wall clock and zone
         // are fully resolved by the literal. We keep the entry's `timezone`
         // field (so `-z` still drives the IANA name) but the UTC moment is
-        // the literal's instant.
+        // the literal's instant. Direction marker is meaningless on a
+        // pinned instant — silently ignored.
         if let Some(instant) = arg.iso_instant {
             return Ok(DatumTime { utc: instant, ..cur });
         }
         // ISO-8601 with no zone suffix (`2024-03-16T15:30:00`) — interpret
         // as local-in-the-current-effective-zone (i.e. `cur.timezone`,
-        // which already reflects any `-z` override).
+        // which already reflects any `-z` override). Direction ignored:
+        // the wall clock is fully specified.
         if let Some(naive) = arg.iso_naive {
             return set_naive_datetime(cur, naive);
         }
         if let Some(abs) = arg.absolute {
-            return set_clock(cur, abs);
+            return set_clock(cur, abs, arg.direction);
         }
         if let Some(mins) = arg.minutes_offset {
+            // Relative offsets are already directional — ignore suffix.
             return shift_minutes(cur, mins);
         }
     }
@@ -357,9 +360,15 @@ fn apply_date_arg(
         if let Some(u) = arg.uncertainty {
             *uncertainty = Some(u);
         }
+        // Direction marker on year-pinned ISO dates and on relative
+        // offsets has no effect — the moment is fully specified. The
+        // hint becomes load-bearing once the parser produces year-less
+        // forms (compact `apr29`, `jan5`, …).
         if let Some(abs) = arg.absolute {
+            let _ = arg.direction;
             return set_date(cur, abs, tz_name);
         }
+        let _ = arg.direction;
         return shift_days(cur, arg.days_offset, tz_name);
     }
 
@@ -416,13 +425,33 @@ fn set_naive_datetime(cur: DatumTime, naive: chrono::NaiveDateTime) -> Result<Da
     Ok(DatumTime { utc, ..cur })
 }
 
-fn set_clock(cur: DatumTime, abs: chrono::NaiveTime) -> Result<DatumTime> {
+fn set_clock(
+    cur: DatumTime,
+    abs: chrono::NaiveTime,
+    direction: Option<Direction>,
+) -> Result<DatumTime> {
     let tz: Tz = cur
         .timezone
         .parse()
         .map_err(|_| ParseError::InvalidArg(format!("Unknown timezone: {}", cur.timezone)))?;
-    let local = cur.utc.with_timezone(&tz).date_naive();
-    let local_dt = local.and_time(abs);
+    let now_local = cur.utc.with_timezone(&tz);
+    let mut local_dt = now_local.date_naive().and_time(abs);
+    // Direction-suffix disambiguation: shift by ±1 day when the candidate
+    // sits on the wrong side of "now". Tie-break (candidate == now) goes
+    // *with* the requested direction — `+` even at exact equality picks
+    // the future, `-` picks the past.
+    if let Some(dir) = direction {
+        let now_naive = now_local.naive_local();
+        match dir {
+            Direction::Future if local_dt <= now_naive => {
+                local_dt += chrono::Duration::days(1);
+            }
+            Direction::Past if local_dt >= now_naive => {
+                local_dt -= chrono::Duration::days(1);
+            }
+            _ => {}
+        }
+    }
     let utc = tz
         .from_local_datetime(&local_dt)
         .single()
@@ -857,6 +886,225 @@ mod tests {
 
         let mut a = TimeArgs::default();
         a.date = Some("the end of the universe".into());
+        assert!(matches!(
+            a.build(&reference_now()),
+            Err(ParseError::InvalidTime(_))
+        ));
+    }
+
+    // ── direction suffix `+` / `-` (frozen-clock harness) ──────────────
+    //
+    // Reference clock: 2020-05-10T15:25:30Z. Tests cover all three
+    // boundaries called out in the spec:
+    //   * candidate strictly before "now" (e.g. `3+` → tomorrow)
+    //   * candidate strictly after  "now" (e.g. `18-` → yesterday)
+    //   * candidate at exact tie         (use a tailored reference time)
+    // and verify that the hint is ignored for already-pinned forms.
+
+    fn build_at(args: TimeArgs, reference: &DatumTime) -> TimeFromArgs {
+        args.build(reference).expect("build")
+    }
+
+    #[test]
+    fn direction_future_past_now_picks_tomorrow() {
+        // `-t 3+` at 15:25 → today's 03:00 already passed → tomorrow 03:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("3+".into());
+        assert_utc(&build(a), "2020-05-11T03:00:00Z");
+    }
+
+    #[test]
+    fn direction_future_before_now_picks_today() {
+        // `-t 18+` at 15:25 → today's 18:00 still ahead → today 18:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("18+".into());
+        assert_utc(&build(a), "2020-05-10T18:00:00Z");
+    }
+
+    #[test]
+    fn direction_past_past_now_picks_today() {
+        // `-t 3-` at 15:25 → today's 03:00 already passed → today 03:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("3-".into());
+        assert_utc(&build(a), "2020-05-10T03:00:00Z");
+    }
+
+    #[test]
+    fn direction_past_before_now_picks_yesterday() {
+        // `-t 18-` at 15:25 → today's 18:00 still ahead → yesterday 18:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("18-".into());
+        assert_utc(&build(a), "2020-05-09T18:00:00Z");
+    }
+
+    #[test]
+    fn direction_future_at_tie_picks_tomorrow() {
+        // Reference at exactly 03:00:00 → `-t 3+` resolves into the future,
+        // i.e. tomorrow 03:00. Documented tie-break.
+        let utc: DateTime<Utc> = "2020-05-10T03:00:00Z".parse().unwrap();
+        let reference = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        let mut a = TimeArgs::default();
+        a.time = Some("3+".into());
+        assert_utc(&build_at(a, &reference), "2020-05-11T03:00:00Z");
+    }
+
+    #[test]
+    fn direction_past_at_tie_picks_yesterday() {
+        // Symmetric tie-break for `-`: at exactly 03:00:00, `-t 3-`
+        // resolves into the past (yesterday 03:00).
+        let utc: DateTime<Utc> = "2020-05-10T03:00:00Z".parse().unwrap();
+        let reference = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        let mut a = TimeArgs::default();
+        a.time = Some("3-".into());
+        assert_utc(&build_at(a, &reference), "2020-05-09T03:00:00Z");
+    }
+
+    #[test]
+    fn direction_one_second_before_candidate_treated_as_past() {
+        // 02:59:59 — candidate 03:00 is one second in the future.
+        // `-t 3+` keeps today; `-t 3-` rolls back to yesterday.
+        let utc: DateTime<Utc> = "2020-05-10T02:59:59Z".parse().unwrap();
+        let reference = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        let mut a = TimeArgs::default();
+        a.time = Some("3+".into());
+        assert_utc(&build_at(a, &reference), "2020-05-10T03:00:00Z");
+        let mut a = TimeArgs::default();
+        a.time = Some("3-".into());
+        assert_utc(&build_at(a, &reference), "2020-05-09T03:00:00Z");
+    }
+
+    #[test]
+    fn direction_one_second_after_candidate_treated_as_future() {
+        // 03:00:01 — candidate 03:00 is one second in the past.
+        // `-t 3+` rolls forward to tomorrow; `-t 3-` keeps today.
+        let utc: DateTime<Utc> = "2020-05-10T03:00:01Z".parse().unwrap();
+        let reference = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
+        let mut a = TimeArgs::default();
+        a.time = Some("3+".into());
+        assert_utc(&build_at(a, &reference), "2020-05-11T03:00:00Z");
+        let mut a = TimeArgs::default();
+        a.time = Some("3-".into());
+        assert_utc(&build_at(a, &reference), "2020-05-10T03:00:00Z");
+    }
+
+    #[test]
+    fn direction_meridian_form_resolves_correctly() {
+        // `-t 9pm-` at 15:25 → today's 21:00 is still ahead → yesterday 21:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("9pm-".into());
+        assert_utc(&build(a), "2020-05-09T21:00:00Z");
+        // `-t 9am+` at 15:25 → today's 09:00 already passed → tomorrow 09:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("9am+".into());
+        assert_utc(&build(a), "2020-05-11T09:00:00Z");
+    }
+
+    #[test]
+    fn direction_hh_mm_form_resolves_correctly() {
+        // `-t 18:30+` at 15:25 → today's 18:30 still ahead → today 18:30.
+        let mut a = TimeArgs::default();
+        a.time = Some("18:30+".into());
+        assert_utc(&build(a), "2020-05-10T18:30:00Z");
+        // `-t 14:00+` at 15:25 → 14:00 already passed → tomorrow 14:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("14:00+".into());
+        assert_utc(&build(a), "2020-05-11T14:00:00Z");
+    }
+
+    #[test]
+    fn direction_ignored_on_relative_offset() {
+        // `-t +5+` is `+5` (relative future) with redundant `+` hint —
+        // the hint is meaningless on a fully-resolved offset.
+        let mut a = TimeArgs::default();
+        a.time = Some("+5+".into());
+        assert_utc(&build(a), "2020-05-10T15:30:30Z");
+        let mut a = TimeArgs::default();
+        a.time = Some("-30-".into());
+        assert_utc(&build(a), "2020-05-10T14:55:30Z");
+    }
+
+    #[test]
+    fn direction_ignored_on_iso_instant() {
+        // ISO instant is fully pinned — direction hint cannot change it.
+        let mut a = TimeArgs::default();
+        a.time = Some("2024-03-16T15:30:00Z+".into());
+        assert_utc(&build(a), "2024-03-16T15:30:00Z");
+    }
+
+    #[test]
+    fn direction_ignored_on_iso_naive() {
+        // Naive ISO datetime is wall-clock-pinned — direction hint cannot
+        // change which day it lands on.
+        let mut a = TimeArgs::default();
+        a.time = Some("2024-03-16T15:30:00-".into());
+        assert_utc(&build(a), "2024-03-16T15:30:00Z");
+    }
+
+    #[test]
+    fn direction_with_uncertainty_carries_both() {
+        // `-t 3+5m+` → primary 3am with future direction, ±5m uncertainty.
+        // 03:00 already past at 15:25 → tomorrow 03:00.
+        let mut a = TimeArgs::default();
+        a.time = Some("3+-5m+".into());
+        let got = build(a);
+        assert_utc(&got, "2020-05-11T03:00:00Z");
+        let u = got.uncertainty.expect("uncertainty");
+        assert_eq!(u.seconds, 300);
+    }
+
+    #[test]
+    fn direction_double_marker_errors() {
+        let mut a = TimeArgs::default();
+        a.time = Some("3+-".into());
+        assert!(matches!(
+            a.build(&reference_now()),
+            Err(ParseError::InvalidTime(_))
+        ));
+        let mut a = TimeArgs::default();
+        a.time = Some("3-+".into());
+        assert!(matches!(
+            a.build(&reference_now()),
+            Err(ParseError::InvalidTime(_))
+        ));
+    }
+
+    #[test]
+    fn direction_in_iana_zone_uses_local_clock() {
+        // 15:25 UTC = 11:25 EDT. With `-z America/New_York -t 9am+`, the
+        // candidate 09:00 EDT has already passed → tomorrow's 09:00 EDT.
+        // 2020-05-11 09:00 EDT = 2020-05-11 13:00 UTC.
+        let mut a = TimeArgs::default();
+        a.timezone = Some("America/New_York".into());
+        a.time = Some("9am+".into());
+        assert_utc(&build(a), "2020-05-11T13:00:00Z");
+    }
+
+    #[test]
+    fn date_direction_suffix_on_iso_date_is_no_op() {
+        // Year-pinned ISO date: direction marker has nothing to disambiguate.
+        let mut a = TimeArgs::default();
+        a.date = Some("2018-06-30+".into());
+        assert_utc(&build(a), "2018-06-30T15:25:30Z");
+        let mut a = TimeArgs::default();
+        a.date = Some("2018-06-30-".into());
+        assert_utc(&build(a), "2018-06-30T15:25:30Z");
+    }
+
+    #[test]
+    fn date_direction_suffix_on_relative_offset_is_no_op() {
+        // Relative offsets are already directional.
+        let mut a = TimeArgs::default();
+        a.date = Some("+1+".into());
+        assert_utc(&build(a), "2020-05-11T15:25:30Z");
+        let mut a = TimeArgs::default();
+        a.date = Some("-1-".into());
+        assert_utc(&build(a), "2020-05-09T15:25:30Z");
+    }
+
+    #[test]
+    fn date_direction_double_marker_errors() {
+        let mut a = TimeArgs::default();
+        a.date = Some("2018-06-30+-".into());
         assert!(matches!(
             a.build(&reference_now()),
             Err(ParseError::InvalidTime(_))

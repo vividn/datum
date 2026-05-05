@@ -4,6 +4,54 @@ use crate::error::{ParseError, Result};
 use crate::time::parse_duration_str::{parse_iso_duration, split_unit};
 use crate::time::precision::PrecisionUnit;
 
+/// Direction hint from a trailing `+` / `-` suffix on a time or date arg.
+///
+/// `Future` forces resolution to the next occurrence; `Past` forces the most
+/// recent prior occurrence. Set by [`split_direction_suffix`]; consumed when
+/// composing the final instant. Already-pinned inputs (ISO instants, year-
+/// pinned dates, relative `±N` offsets) ignore the hint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Direction {
+    Future,
+    Past,
+}
+
+/// Peel off a trailing `+` or `-` direction marker from `s`.
+///
+/// Errors when both directions are stacked at the tail (`3+-`, `3-+`,
+/// `3++`, `3--`) — those are explicit conflicts. Otherwise returns the
+/// body without the suffix and the parsed direction (or `None` when no
+/// direction marker is present).
+///
+/// Run this *before* [`split_uncertainty`] so a direction marker that
+/// follows an uncertainty (`3±5m+`) is still recognised.
+pub fn split_direction_suffix(s: &str) -> Result<(&str, Option<Direction>)> {
+    let bytes = s.as_bytes();
+    let n = bytes.len();
+    if n == 0 {
+        return Ok((s, None));
+    }
+    let last = bytes[n - 1];
+    if last != b'+' && last != b'-' {
+        return Ok((s, None));
+    }
+    if n >= 2 {
+        let prev = bytes[n - 2];
+        if prev == b'+' || prev == b'-' {
+            return Err(ParseError::InvalidTime(format!(
+                "Conflicting direction suffix: '{s}'"
+            )));
+        }
+    } else {
+        // Bare `+` or `-` is not a valid input.
+        return Err(ParseError::InvalidTime(format!(
+            "Empty input before direction suffix: '{s}'"
+        )));
+    }
+    let dir = if last == b'+' { Direction::Future } else { Direction::Past };
+    Ok((&s[..n - 1], Some(dir)))
+}
+
 /// Uncertainty attached to a time reference — `±N[unit]` on the input.
 ///
 /// `seconds` is the absolute radius of the interval. `unit` names the

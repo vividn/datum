@@ -321,10 +321,276 @@ fn parse_date_arg_compact_with_uncertainty_suffix() {
     });
 }
 
+// ── compact dates + direction suffix (frozen-clock) ─────────────────────
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_future_picks_this_year_when_upcoming() {
+    // 2026-04-05: apr29+ still ahead → 2026-04-29.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 5).unwrap(), || {
+        let d = parse_date_arg("apr29+").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+        assert_eq!(d.direction, Some(Direction::Future));
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_future_picks_next_year_when_passed() {
+    // 2026-05-05: apr29+ already past → 2027-04-29.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("apr29+").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
+        );
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_future_at_tie_picks_next_year() {
+    // 2026-04-29 + apr29+ → push to 2027-04-29.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(), || {
+        let d = parse_date_arg("apr29+").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
+        );
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_past_picks_this_year_when_already_passed() {
+    // 2026-05-05: apr29- already past → 2026-04-29.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("apr29-").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+        assert_eq!(d.direction, Some(Direction::Past));
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_past_picks_last_year_when_upcoming() {
+    // 2026-04-05: apr29- not yet → 2025-04-29.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 5).unwrap(), || {
+        let d = parse_date_arg("apr29-").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+        );
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_past_at_tie_picks_last_year() {
+    // 2026-04-29 + apr29- → push to 2025-04-29.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(), || {
+        let d = parse_date_arg("apr29-").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+        );
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn compact_date_explicit_year_ignores_direction() {
+    // Year-pinned compact form: direction marker has nothing to disambiguate.
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("apr29-2025+").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+        );
+        assert_eq!(d.direction, Some(Direction::Future));
+    });
+}
+
 #[test]
 fn iso_datetime_malformed_errors() {
     // Looks like an ISO datetime (date prefix + T) but the time portion is
     // garbage — we surface a structured error instead of falling through to
     // the time-only branches and returning a confusing message.
     assert!(parse_time_arg("2024-03-16Tnotatime").is_err());
+}
+
+// ── direction suffix (`+` / `-`) ─────────────────────────────────────────
+//
+// Parser-level tests verify that the trailing direction marker is
+// recognised, surfaces on the parsed shape, and that already-pinned forms
+// (ISO instants, ISO naive datetimes) still carry the hint without altering
+// the underlying value (the *application* of the hint is exercised under
+// the frozen-clock harness in `input::time_args::tests`).
+
+#[test]
+fn time_direction_suffix_plus_on_bare_hour() {
+    let t = parse_time_arg("3+").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Future));
+}
+
+#[test]
+fn time_direction_suffix_minus_on_bare_hour() {
+    let t = parse_time_arg("3-").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Past));
+}
+
+#[test]
+fn time_direction_suffix_on_hh_mm() {
+    let t = parse_time_arg("18:30+").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(18, 30, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Future));
+}
+
+#[test]
+fn time_direction_suffix_on_hhmm_compact() {
+    let t = parse_time_arg("0830-").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(8, 30, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Past));
+}
+
+#[test]
+fn time_direction_suffix_on_meridian() {
+    let t = parse_time_arg("9am+").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(9, 0, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Future));
+    let t = parse_time_arg("9pm-").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(21, 0, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Past));
+}
+
+#[test]
+fn time_direction_suffix_on_relative_form() {
+    // A relative offset is already directional; the parser still surfaces
+    // the hint, but the apply layer ignores it.
+    let t = parse_time_arg("+5+").unwrap();
+    assert_eq!(t.minutes_offset, Some(5));
+    assert_eq!(t.direction, Some(Direction::Future));
+    let t = parse_time_arg("-30-").unwrap();
+    assert_eq!(t.minutes_offset, Some(-30));
+    assert_eq!(t.direction, Some(Direction::Past));
+}
+
+#[test]
+fn time_direction_suffix_after_uncertainty() {
+    // Direction marker must be the *very last* character — strip it before
+    // peeling the uncertainty body.
+    let t = parse_time_arg("3±5m+").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Future));
+    let u = t.uncertainty.expect("uncertainty");
+    assert_eq!(u.seconds, 300);
+
+    // ASCII `+-` form for uncertainty + trailing `-` direction.
+    let t = parse_time_arg("3+-5m-").unwrap();
+    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(3, 0, 0).unwrap()));
+    assert_eq!(t.direction, Some(Direction::Past));
+    let u = t.uncertainty.expect("uncertainty");
+    assert_eq!(u.seconds, 300);
+}
+
+#[test]
+fn time_direction_suffix_on_iso_instant() {
+    // Hint is parsed but the apply layer treats pinned instants as
+    // already-resolved. Verify it surfaces on the parse shape and the
+    // underlying instant is unchanged.
+    let t = parse_time_arg("2024-03-16T15:30:00Z+").unwrap();
+    assert!(t.iso_instant.is_some());
+    assert_eq!(t.direction, Some(Direction::Future));
+    let t = parse_time_arg("2024-03-16T15:30:00-").unwrap();
+    assert!(t.iso_naive.is_some());
+    assert_eq!(t.direction, Some(Direction::Past));
+}
+
+#[test]
+fn time_direction_suffix_double_marker_errors() {
+    // `+-` / `-+` at the tail are explicit conflicts.
+    assert!(parse_time_arg("3+-").is_err());
+    assert!(parse_time_arg("3-+").is_err());
+    assert!(parse_time_arg("3++").is_err());
+    assert!(parse_time_arg("3--").is_err());
+}
+
+#[test]
+fn time_direction_bare_marker_errors() {
+    assert!(parse_time_arg("+").is_err());
+    assert!(parse_time_arg("-").is_err());
+}
+
+#[test]
+fn time_no_direction_on_unsuffixed_input() {
+    let t = parse_time_arg("3").unwrap();
+    assert_eq!(t.direction, None);
+    let t = parse_time_arg("15:30").unwrap();
+    assert_eq!(t.direction, None);
+    let t = parse_time_arg("+5").unwrap();
+    assert_eq!(t.direction, None);
+    let t = parse_time_arg("2024-03-16T15:30:00Z").unwrap();
+    assert_eq!(t.direction, None);
+}
+
+#[test]
+fn date_direction_suffix_on_iso_date() {
+    let d = parse_date_arg("2024-03-16+").unwrap();
+    assert_eq!(
+        d.absolute,
+        Some(chrono::NaiveDate::from_ymd_opt(2024, 3, 16).unwrap())
+    );
+    assert_eq!(d.direction, Some(Direction::Future));
+
+    let d = parse_date_arg("2024-03-16-").unwrap();
+    assert_eq!(
+        d.absolute,
+        Some(chrono::NaiveDate::from_ymd_opt(2024, 3, 16).unwrap())
+    );
+    assert_eq!(d.direction, Some(Direction::Past));
+}
+
+#[test]
+fn date_direction_suffix_on_relative_offset() {
+    // Like time, a relative date offset is already directional; parser
+    // surfaces the hint, apply layer ignores it.
+    let d = parse_date_arg("+1+").unwrap();
+    assert_eq!(d.days_offset, 1);
+    assert_eq!(d.direction, Some(Direction::Future));
+    let d = parse_date_arg("-1-").unwrap();
+    assert_eq!(d.days_offset, -1);
+    assert_eq!(d.direction, Some(Direction::Past));
+}
+
+#[test]
+fn date_direction_suffix_after_uncertainty() {
+    let d = parse_date_arg("2024-03-16±1d+").unwrap();
+    assert_eq!(d.direction, Some(Direction::Future));
+    let u = d.uncertainty.expect("uncertainty");
+    assert_eq!(u.seconds, 86400);
+}
+
+#[test]
+fn date_direction_suffix_double_marker_errors() {
+    assert!(parse_date_arg("2024-03-16+-").is_err());
+    assert!(parse_date_arg("2024-03-16-+").is_err());
+    assert!(parse_date_arg("+1++").is_err());
+}
+
+#[test]
+fn date_no_direction_on_unsuffixed_input() {
+    let d = parse_date_arg("2024-03-16").unwrap();
+    assert_eq!(d.direction, None);
+    let d = parse_date_arg("+1").unwrap();
+    assert_eq!(d.direction, None);
+    let d = parse_date_arg("0").unwrap();
+    assert_eq!(d.direction, None);
 }

@@ -33,7 +33,9 @@ pub use parse_date_str::{parse_date_arg, DateArg};
 pub use parse_duration_str::{parse_duration, quick_precision_for_count};
 pub use parse_time_str::{count_stacked_flag, parse_time_arg, TimeArg};
 pub use precision::PrecisionUnit;
-pub use uncertainty::{parse_uncertainty, split_uncertainty, Uncertainty};
+pub use uncertainty::{
+    parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
+};
 
 pub use crate::input::time_args::resolve_timezone;
 

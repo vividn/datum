@@ -3,7 +3,9 @@
 use chrono::{DateTime, NaiveDateTime, NaiveTime, Utc};
 
 use crate::error::{ParseError, Result};
-use crate::time::uncertainty::{parse_uncertainty, split_uncertainty, Uncertainty};
+use crate::time::uncertainty::{
+    parse_uncertainty, split_direction_suffix, split_uncertainty, Direction, Uncertainty,
+};
 
 /// Parsed result of a time argument (-t flag).
 pub struct TimeArg {
@@ -18,6 +20,11 @@ pub struct TimeArg {
     /// in its current effective timezone.
     pub iso_naive: Option<NaiveDateTime>,
     pub uncertainty: Option<Uncertainty>,
+    /// Trailing `+` / `-` direction hint. Forces resolution into the next
+    /// (`Future`) or most-recent-prior (`Past`) occurrence. Already-pinned
+    /// inputs (ISO instants, ISO naive datetimes, relative `±N` offsets)
+    /// ignore the hint.
+    pub direction: Option<Direction>,
 }
 
 /// Count stackable short flags like -yyy (3) or -qqqq (4).
@@ -40,7 +47,10 @@ pub fn count_stacked_flag(s: &str, ch: char) -> Option<usize> {
 ///                                         (caller interprets in effective tz)
 /// plus an optional trailing uncertainty `±N[unit]` / `+-N[unit]`.
 pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
-    let (primary, uncert_body) = split_uncertainty(s);
+    // Direction suffix (`+` / `-`) sits at the very tail, after any
+    // uncertainty marker. Strip it first so `3±5m+` and `3+` both work.
+    let (s_no_dir, direction) = split_direction_suffix(s)?;
+    let (primary, uncert_body) = split_uncertainty(s_no_dir);
     let uncertainty = uncert_body.map(parse_uncertainty).transpose()?;
 
     // Literal "now" → current moment (minutes_offset = 0). Matches datum.
@@ -51,6 +61,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             iso_instant: None,
             iso_naive: None,
             uncertainty,
+            direction,
         });
     }
 
@@ -65,6 +76,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 iso_instant: Some(dt.with_timezone(&Utc)),
                 iso_naive: None,
                 uncertainty,
+                direction,
             });
         }
         for fmt in &[
@@ -79,6 +91,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                     iso_instant: None,
                     iso_naive: Some(naive),
                     uncertainty,
+                    direction,
                 });
             }
         }
@@ -96,6 +109,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 iso_instant: None,
                 iso_naive: None,
                 uncertainty,
+                direction,
             });
         }
         // Plain unsigned number → absolute time.
@@ -108,6 +122,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 iso_instant: None,
                 iso_naive: None,
                 uncertainty,
+                direction,
             });
         }
         // Fall back: relative minutes.
@@ -117,6 +132,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             iso_instant: None,
             iso_naive: None,
             uncertainty,
+            direction,
         });
     }
 
@@ -128,6 +144,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             iso_instant: None,
             iso_naive: None,
             uncertainty,
+            direction,
         });
     }
 
@@ -140,6 +157,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             iso_instant: None,
             iso_naive: None,
             uncertainty,
+            direction,
         });
     }
     for fmt in &["%H:%M:%S%.f", "%H:%M:%S", "%H:%M", "%I:%M%P", "%I:%M %p", "%I%P", "%I %p"] {
@@ -150,6 +168,7 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
                 iso_instant: None,
                 iso_naive: None,
                 uncertainty,
+                direction,
             });
         }
     }
