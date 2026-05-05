@@ -490,11 +490,12 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
         verb = Verb::Add;
     }
 
-    // For switch, walk the bare positionals and reject leading/trailing/
-    // double-commas before handle_data_args runs. Datum's `infer_type`
-    // turns a leading-comma string into an array (`,a,b` → `["a","b"]`),
-    // which would silently bypass the strict-comma validation that lives
-    // downstream in `parse_switch_state_token`.
+    // For switch, walk the bare positionals and reject interior `,,`
+    // empty segments before handle_data_args runs. Datum's `infer_type`
+    // turns a leading-comma string into an array (`,a,b` → `["a","b"]`)
+    // — that coercion is desired (da-lvvp / da-5z01) — but an interior
+    // `a,,b` inside an edge-comma token would silently become a `null`
+    // array element without this pre-check.
     if matches!(verb, Verb::Switch) {
         for token in &args.rest {
             if token.contains('=') {
@@ -1012,33 +1013,39 @@ fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
 }
 
 /// S12: parse a switch value token, splitting on `,` into an array of
-/// concurrent states. A single state (no comma) stays scalar. Rejects
-/// leading/trailing commas and empty segments so users don't silently
-/// lose a state they meant to type.
+/// concurrent states. A single state (no comma) stays scalar. Edge
+/// commas are stripped (da-lvvp / da-5z01: tolerate `,a,b`, `a,b,`,
+/// `,a,b,`); interior empty segments are still rejected so users
+/// don't silently lose a state they meant to type.
 fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
     validate_switch_state_token(s)?;
     if !s.contains(',') {
         return Ok(parse_value_token(s));
     }
-    let parts: Vec<JsonValue> = s.split(',').map(parse_value_token).collect();
+    let trimmed = s.trim_matches(',');
+    if trimmed.is_empty() {
+        return Ok(JsonValue::Array(vec![]));
+    }
+    if !trimmed.contains(',') {
+        return Ok(parse_value_token(trimmed));
+    }
+    let parts: Vec<JsonValue> = trimmed.split(',').map(parse_value_token).collect();
     Ok(JsonValue::Array(parts))
 }
 
-/// Reject leading/trailing/double-commas in a switch state-list token.
-/// Surfaced separately from [`parse_switch_state_token`] because
-/// `log_entry` runs the same validation against raw `args.rest` tokens
-/// before [`handle_data_args`] gets a chance to silently coerce a
-/// leading-comma string into an array via datum's `infer_type` shorthand.
+/// Reject interior empty segments (`a,,b`) in a switch state-list token.
+/// Leading/trailing edge commas are tolerated and stripped — matching
+/// `infer_type`'s edge-empty handling (da-lvvp). Surfaced separately
+/// from [`parse_switch_state_token`] because `log_entry` runs the same
+/// validation against raw `args.rest` tokens before [`handle_data_args`]
+/// has a chance to coerce them into arrays via `infer_type`; without
+/// this pre-check, an interior `,,` inside a leading-comma token would
+/// silently become a `null` array element.
 fn validate_switch_state_token(s: &str) -> Result<()> {
     if !s.contains(',') {
         return Ok(());
     }
-    if s.starts_with(',') || s.ends_with(',') {
-        anyhow::bail!(
-            "invalid state list '{s}': leading or trailing comma — use `state1,state2` (no trailing comma)"
-        );
-    }
-    if s.contains(",,") {
+    if s.trim_matches(',').contains(",,") {
         anyhow::bail!(
             "invalid state list '{s}': empty segment between commas"
         );

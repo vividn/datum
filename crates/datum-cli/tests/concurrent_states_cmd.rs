@@ -45,33 +45,67 @@ fn switch_single_state_stays_scalar() {
     assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
 }
 
-/// Acceptance: trailing comma rejected (original datum required one — drop
-/// the quirk).
+/// da-lvvp / da-5z01: edge commas on a switch state-list are tolerated
+/// — old datum aliases produced inputs like `,a,b` and `a,b,`, and the
+/// parser strips the empty edge so the input round-trips during the
+/// transitional period.
 #[test]
-fn switch_trailing_comma_rejected() {
+fn switch_trailing_comma_tolerated() {
     let db = fresh_db();
 
-    let err = run_cli(&["switch", "task", "reading,"], &db)
-        .expect_err("trailing comma must error")
-        .to_string();
-    assert!(
-        err.contains("leading or trailing comma"),
-        "error message should explain the rejection: {err}",
-    );
+    run_cli(&["switch", "task", "reading,writing,"], &db)
+        .expect("trailing comma should be tolerated");
+
+    let entries = db.entries_for_field("task", None).unwrap();
+    assert_eq!(entries.len(), 1);
     assert_eq!(
-        db.entries_for_field("task", None).unwrap().len(),
-        0,
-        "rejected parse must not persist any entry",
+        entries[0].state.as_ref(),
+        Some(&json!(["reading", "writing"])),
+        "trailing edge comma stripped, remaining states land as an array",
     );
 }
 
 #[test]
-fn switch_leading_comma_rejected() {
+fn switch_leading_comma_tolerated() {
     let db = fresh_db();
-    let err = run_cli(&["switch", "task", ",reading"], &db)
-        .expect_err("leading comma must error")
-        .to_string();
-    assert!(err.contains("leading or trailing comma"), "{err}");
+
+    run_cli(&["switch", "task", ",reading,writing"], &db)
+        .expect("leading comma should be tolerated");
+
+    let entries = db.entries_for_field("task", None).unwrap();
+    assert_eq!(
+        entries[0].state.as_ref(),
+        Some(&json!(["reading", "writing"])),
+        "leading edge comma stripped, remaining states land as an array",
+    );
+}
+
+/// da-5z01 regression: the original real-world failure case.
+/// `switch body ,vertical,ground` must parse as `["vertical","ground"]`.
+#[test]
+fn switch_leading_comma_two_states_da_5z01() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "body", ",vertical,ground"], &db)
+        .expect("da-5z01: `,vertical,ground` must round-trip to [vertical,ground]");
+
+    let entries = db.entries_for_field("body", None).unwrap();
+    assert_eq!(
+        entries[0].state.as_ref(),
+        Some(&json!(["vertical", "ground"])),
+    );
+}
+
+/// Single-state with edge commas degenerates to scalar — `,reading`
+/// and `reading,` are both equivalent to bare `reading`.
+#[test]
+fn switch_edge_comma_single_state_stays_scalar() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "task", ",reading"], &db).expect("leading-edge single state");
+
+    let entries = db.entries_for_field("task", None).unwrap();
+    assert_eq!(entries[0].state.as_ref(), Some(&json!("reading")));
 }
 
 #[test]
@@ -79,6 +113,22 @@ fn switch_empty_segment_rejected() {
     let db = fresh_db();
     let err = run_cli(&["switch", "task", "a,,b"], &db)
         .expect_err("empty segment must error")
+        .to_string();
+    assert!(err.contains("empty segment"), "{err}");
+    assert_eq!(
+        db.entries_for_field("task", None).unwrap().len(),
+        0,
+        "rejected parse must not persist any entry",
+    );
+}
+
+/// Edge-comma tolerance does not extend to interior `,,`: `,a,,b`
+/// still rejected to prevent silent `null` array elements.
+#[test]
+fn switch_edge_plus_interior_empty_still_rejected() {
+    let db = fresh_db();
+    let err = run_cli(&["switch", "task", ",a,,b"], &db)
+        .expect_err("interior empty must error even with edge comma")
         .to_string();
     assert!(err.contains("empty segment"), "{err}");
 }
