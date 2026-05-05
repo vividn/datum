@@ -52,7 +52,7 @@ pub fn parse_argv_string(s: &str) -> Result<Cli> {
 /// Minimal shell-style splitter: single and double quotes, backslash
 /// escapes. Not POSIX-complete — enough for the in-process test harness
 /// and WASM frontend which don't need env-var expansion.
-fn shell_split(s: &str) -> Vec<String> {
+pub fn shell_split(s: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut cur = String::new();
     let mut chars = s.chars().peekable();

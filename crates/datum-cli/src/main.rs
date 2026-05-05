@@ -1,12 +1,16 @@
 use anyhow::Result;
 use datum_cli::{
     args::{Cli, CliExt, Command, DbCommand, InfoArgs},
-    cmd, config,
+    cmd, config, repl,
 };
 use datum_commands::commands;
 use datum_parse::{help, ParseError};
 
 fn main() -> Result<()> {
+    if std::env::args_os().len() <= 1 {
+        return repl::run();
+    }
+
     let cli = match Cli::parse_with_alias_resolution() {
         Ok(cli) => cli,
         Err(e) => {

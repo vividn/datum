@@ -13,3 +13,5 @@ pub use datum_commands::commands::check;
 pub use datum_commands::commands::sync;
 pub use datum_commands::config;
 pub use datum_commands::render as output;
+
+pub mod repl;
