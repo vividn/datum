@@ -198,16 +198,18 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
         }
     }
 
-    // Convert each [[field]] entry into a stored FieldSpec, resolving
-    // colors at install time so the saved row carries hex.
+    // Convert each [[field]] entry into a stored FieldSpec, resolving any
+    // user-supplied color at install time so the saved row carries hex. A
+    // missing color stays `None` — the renderer derives one at paint time
+    // via the datum-compatible `md5_rgb` (first three bytes of md5(name)).
     let mut specs = Vec::with_capacity(kit.fields.len());
     for entry in kit.fields {
         let resolved = resolve_color(entry.color.as_deref(), &entry.name)?;
         let entry_with_resolved = FieldEntry {
-            color: Some(resolved.clone()),
+            color: resolved.clone(),
             ..entry
         };
-        specs.push(entry_with_resolved.into_spec(Some(resolved))?);
+        specs.push(entry_with_resolved.into_spec(resolved)?);
     }
 
     // Cycle detection on the kit's own anchor graph. Cycles abort install —
