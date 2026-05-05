@@ -297,6 +297,91 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
     assert_eq!(parsed["hid"], json!(entry.hid));
 }
 
+/// da-bop: `get` must render the LEAD/TRAIL state slots with the same
+/// resolved bg colours as the row's original on-entry render. The previous
+/// `cmd_get` path called `show_action` without a `RenderContext`, leaving
+/// `lead_state` / `trail_state` as `None` → both slots collapsed to the
+/// IGNORED grey regardless of the field's actual prior/continuing state.
+///
+/// Reproduction: switch `mood` to `sad` in the past, then switch `mood` to
+/// `happy` (point). The on-entry render correctly paints LEAD = `sad`-bg
+/// and TRAIL = `happy`-bg. A follow-up `get _LAST` must paint the slots
+/// the same way — not grey.
+#[test]
+fn get_renders_lead_trail_with_state_context() {
+    let db = tmp_db_path();
+    let _ = std::fs::remove_file(&db);
+
+    run_binary_color(&db, &["switch", "mood", "sad", "-yy"]);
+    run_binary_color(&db, &["switch", "mood", "happy"]);
+
+    let (stdout, _) = run_binary_color(&db, &["get", "_LAST"]);
+
+    let happy_bg = bg_escape("happy");
+    let sad_bg = bg_escape("sad");
+    // LEAD before the cell must carry the prior state's (`sad`) bg, and
+    // TRAIL after must carry the continuing state's (`happy`) bg. Failing
+    // either bg means we fell through to the no-context grey IGNORED path.
+    let happy_idx = stdout
+        .find(&happy_bg)
+        .unwrap_or_else(|| panic!("happy bg escape not found in:\n{stdout:?}"));
+    let before = &stdout[..happy_idx];
+    assert!(
+        before.contains(&sad_bg),
+        "expected LEAD bg {sad_bg:?} (sad) before the happy cell, got:\n{stdout:?}",
+    );
+    let after_cell_idx = stdout[happy_idx + happy_bg.len()..]
+        .find("happy")
+        .map(|i| happy_idx + happy_bg.len() + i + "happy".len())
+        .unwrap_or_else(|| panic!("happy body not found after its bg in:\n{stdout:?}"));
+    let after = &stdout[after_cell_idx..];
+    assert!(
+        after.contains(&happy_bg),
+        "expected TRAIL bg {happy_bg:?} (happy continues) after the cell, got:\n{stdout:?}",
+    );
+    // And specifically: the LEAD slot must NOT be the IGNORED grey, which
+    // is the failure mode the bug describes ("greyed-out before/following
+    // state").
+    let ignored_grey = "\x1b[48;2;136;136;136m";
+    let between = &stdout[..happy_idx];
+    assert!(
+        !between.contains(ignored_grey),
+        "LEAD slot rendered as IGNORED grey instead of {sad_bg:?}:\n{stdout:?}",
+    );
+
+    let _ = std::fs::remove_file(&db);
+}
+
+/// MD5-derived ANSI bg escape — mirrors the renderer's `md5_rgb` derivation
+/// so the test asserts on absolute byte values without depending on the
+/// renderer crate's internals. Duplicated from `render_state_group.rs`
+/// because tests files don't share a common util module.
+fn bg_escape(name: &str) -> String {
+    use md5::Digest;
+    let mut h = md5::Md5::new();
+    h.update(name.as_bytes());
+    let out = h.finalize();
+    format!("\x1b[48;2;{};{};{}m", out[0], out[1], out[2])
+}
+
+fn run_binary_color(db: &PathBuf, args: &[&str]) -> (String, String) {
+    let bin = env!("CARGO_BIN_EXE_datum");
+    let out = Command::new(bin)
+        .env("DATUM_DB", db)
+        .env("DATUM_COLOR", "1")
+        .env_remove("NO_COLOR")
+        .args(args)
+        .output()
+        .expect("run datum");
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(
+        out.status.success(),
+        "datum {args:?} failed: stderr={stderr}",
+    );
+    (stdout, stderr)
+}
+
 // ─── Binary harness (scoped to stdout-capture cases) ──────────────────────────
 
 fn tmp_db_path() -> PathBuf {

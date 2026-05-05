@@ -2084,14 +2084,16 @@ pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
 
     let registry = load_registry(db).ok();
     let output = args.output();
-    for entry in &entries {
+    let ctxs = build_render_contexts(&entries, db);
+    for (i, entry) in entries.iter().enumerate() {
         if args.pretty {
             print_entry_pretty(entry)?;
         } else {
-            crate::render::show_action(
+            crate::render::show_action_with_context(
                 entry,
                 crate::render::Action::Exists,
                 registry.as_ref(),
+                ctxs.get(i),
                 &output,
             );
         }
