@@ -538,7 +538,30 @@ pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
     } else {
         value
     };
-    let unit = args.unit.clone();
+
+    // `-u`/`--undo`: instead of inserting, locate the most recent live
+    // entry whose (field, state) matches what this command would have
+    // produced and soft-delete it. Restores original datum's `uu`-alias
+    // muscle memory (re-run the last command with `-u` appended → undo).
+    // `state=<v>` from reserved columns wins over the bare positional
+    // value, mirroring the precedence used at insert below.
+    if args.undo {
+        let undo_state = reserved.state.as_ref().or(value.as_ref());
+        let target = db.find_latest_for_undo(&field, undo_state)?.ok_or_else(|| {
+            anyhow::anyhow!("no matching entry to undo for field '{field}'")
+        })?;
+        let registry = load_registry(db).ok();
+        let output = args.output();
+        db.soft_delete_entry(&target.slug)?;
+        show_delete(&target, registry.as_ref(), &output);
+        let _ = datum_core::last_docs::set_last_docs(db, &[target.hid.clone()]);
+        return Ok(());
+    }
+
+    // `entry.unit` is no longer settable from the log path — `-u` is now
+    // the undo flag (handled above). The schema column survives for
+    // FieldSpec-derived defaults and import paths; pass `None` here.
+    let unit: Option<String> = None;
     let device = device_id()?;
 
     // Compute time_start, time_end, precision, and (for Verb::Add) a shape
@@ -3682,7 +3705,6 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::fresh("coffee");
         args.rest = vec!["2".to_string()];
-        args.unit = Some("cups".to_string());
         log_entry(Verb::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
@@ -3696,6 +3718,64 @@ mod tests {
         log_entry(Verb::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "work" && !f.ignored));
+    }
+
+    #[test]
+    fn test_undo_flag_deletes_last_matching_entry() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // First insert: `datum coffee 2`.
+        let mut args = LogArgs::fresh("coffee");
+        args.rest = vec!["2".to_string()];
+        log_entry(Verb::Occur, args, &db).unwrap();
+        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
+
+        // Undo via `-u`: same command form with `args.undo = true`. The
+        // matching entry is soft-deleted, so the live count drops to 0.
+        let mut undo_args = LogArgs::fresh("coffee");
+        undo_args.rest = vec!["2".to_string()];
+        undo_args.undo = true;
+        log_entry(Verb::Occur, undo_args, &db).unwrap();
+        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn test_undo_flag_state_specific() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        // Two entries with different states under the same field.
+        let mut a = LogArgs::fresh("coffee");
+        a.rest = vec!["1".to_string()];
+        log_entry(Verb::Occur, a, &db).unwrap();
+        let mut b = LogArgs::fresh("coffee");
+        b.rest = vec!["2".to_string()];
+        log_entry(Verb::Occur, b, &db).unwrap();
+        assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 2);
+
+        // Undo only `coffee 2` — the `coffee 1` entry stays put.
+        let mut undo = LogArgs::fresh("coffee");
+        undo.rest = vec!["2".to_string()];
+        undo.undo = true;
+        log_entry(Verb::Occur, undo, &db).unwrap();
+        let live = db.entries_for_field("coffee", None).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].state, Some(serde_json::json!(1)));
+    }
+
+    #[test]
+    fn test_undo_flag_errors_when_no_match() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let mut args = LogArgs::fresh("coffee");
+        args.rest = vec!["3".to_string()];
+        args.undo = true;
+        let err = log_entry(Verb::Occur, args, &db).unwrap_err();
+        assert!(
+            err.to_string().contains("no matching entry to undo"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]

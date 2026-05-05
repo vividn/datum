@@ -432,8 +432,8 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     // Command-scoped extras. We don't lift DataArgs's FLAG_SPECS for log
     // because log overwrites comment (last-wins) and tracks slug-keys
     // separately from keys.
-    r.push(local_value(Some('u'), Some("unit"), |p, v| {
-        p.unit = Some(v.to_string());
+    r.push(local_switch(Some('u'), Some("undo"), |p| {
+        p.undo = true;
         Ok(())
     }));
     r.push(local_value(Some('k'), Some("key"), |p, v| {

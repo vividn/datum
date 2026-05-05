@@ -219,6 +219,35 @@ impl Db {
         Ok(row)
     }
 
+    /// Find the most recent live entry for `field` whose stored `state`
+    /// matches `state_json`. Powers the `-u`/`--undo` log flag: the user
+    /// re-runs a command with `-u` appended and expects the previous
+    /// matching insert to be reversed.
+    ///
+    /// Match semantics: `None` matches NULL state; `Some(v)` matches by
+    /// exact JSON serialization (so `2` and `2.0` are distinct, just as
+    /// they are at insert). Ordering: `occur_time` DESC, `create_time`
+    /// DESC — newest match wins.
+    pub fn find_latest_for_undo(
+        &self,
+        field: &str,
+        state_json: Option<&JsonValue>,
+    ) -> Result<Option<Entry>> {
+        let state_text = state_json.map(|s| s.to_string());
+        let mut stmt = self.conn.prepare(
+            r#"SELECT * FROM entries
+               WHERE field = ?1
+                 AND deleted_at IS NULL
+                 AND ((?2 IS NULL AND state IS NULL) OR state = ?2)
+               ORDER BY occur_time DESC, create_time DESC
+               LIMIT 1"#,
+        )?;
+        let row = stmt
+            .query_row(params![field, state_text], row_to_entry)
+            .optional()?;
+        Ok(row)
+    }
+
     /// Latest non-Add, non-tombstoned entry for a field, for use in the now
     /// view. `add` is skipped because it represents free-form data with no
     /// state effect; the now view shows the most recent state-bearing entry.

@@ -268,7 +268,11 @@ pub struct LogArgs {
     pub duration: DurationArgs,
     /// `-A/--show-all` / `--show` / `-o/--format-string`.
     pub output: OutputArgs,
-    pub unit: Option<String>,
+    /// `-u/--undo` — delete the most recent live entry that matches this
+    /// command (same field + state). Re-creates original datum's undo
+    /// semantics so the user's `uu` muscle-memory alias (re-run last
+    /// command with `-u` appended) reverses the prior insert.
+    pub undo: bool,
     pub keys: Vec<String>,
     pub slug_keys: Vec<String>,
     /// `-c` / `--comment`. Repeatable per datum's argparse shape: a single
@@ -310,7 +314,7 @@ impl LogArgs {
             time: TimeArgs::default(),
             duration: DurationArgs::default(),
             output: OutputArgs::default(),
-            unit: None,
+            undo: false,
             keys: Vec::new(),
             slug_keys: Vec::new(),
             comment: Vec::new(),

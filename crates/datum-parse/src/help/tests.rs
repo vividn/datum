@@ -132,7 +132,7 @@ OPTIONS:
   -t, --time <VAL>      Time override (offset or HH:MM or 9:15am)
       --dur <VAL>       Duration (30m, 1:30, 2h, PT30M)
   -z, --timezone <TZ>   Timezone (IANA or UTC offset)
-  -u, --unit <UNIT>     Unit for the primary value
+  -u, --undo            Undo: delete most recent matching entry
   -k, --key <KEY_SPEC>  Data-only id-key slot (repeatable)
   -K, --slug-key <S>    Slug-contributing id-key (repeatable)
   -c, --comment <T>     Comment
