@@ -130,7 +130,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
             t >= day_start_ms && t < day_end_ms
         });
 
-        let fields = build_day_fields(db, day_start_ms, day_end_ms)?;
+        let fields = build_day_fields(db, day_start_ms, day_end_ms, now_ms)?;
 
         days_input.push(DayviewDayInput {
             label_lines,
@@ -345,10 +345,18 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
 }
 
 /// Build the per-field block/point list for a day window.
+///
+/// `now_ms` caps the open switch-region's right edge for the day that
+/// contains `now_ms` (per da-zxs: today's active state stops at the now-line,
+/// not at end-of-day). For days entirely before `now_ms` the cap is a no-op
+/// (`min(day_end_ms, now_ms) == day_end_ms`); for days entirely after
+/// `now_ms` the resulting region falls outside the day window and is
+/// dropped by `push_switch_region`.
 fn build_day_fields(
     db: &Db,
     day_start_ms: i64,
     day_end_ms: i64,
+    now_ms: i64,
 ) -> Result<Vec<DayviewFieldInput>> {
     let day_start_utc = Utc.timestamp_millis_opt(day_start_ms).single()
         .context("day_start_ms out of range")?;
@@ -392,8 +400,9 @@ fn build_day_fields(
         // Sort field entries by occur_time so the next-switch lookup can
         // walk the list in order.
         entries_for_field.sort_by_key(occur_time_ms);
+        let fallback_end_ms = day_end_ms.min(now_ms);
         let switch_region_ends =
-            switch_region_end_ms(&entries_for_field, day_end_ms);
+            switch_region_end_ms(&entries_for_field, fallback_end_ms);
 
         let (blocks, points) = render_field_visuals_dayview(
             &entries_for_field,
@@ -908,7 +917,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         assert_eq!(mood.field, "mood");
@@ -965,7 +974,7 @@ mod tests {
         let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
         let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         assert_eq!(fields.len(), 1);
         let mood = &fields[0];
         // Two regions: 8-12 (happy) and 16-day_end (focus). The false-switch
@@ -978,6 +987,82 @@ mod tests {
         assert_eq!(mood.blocks[0].end_ms, t12);
         assert_eq!(mood.blocks[1].start_ms, t16);
         assert_eq!(mood.blocks[1].end_ms, day_end);
+    }
+
+    /// da-zxs: on the day that contains `now_ms`, the open switch region
+    /// (no later switching event) caps at the now-line, not at end-of-day.
+    /// There is no data past now, so drawing the band into the future is
+    /// misleading.
+    #[test]
+    fn open_switch_region_caps_at_now_on_today() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        // One Switch at 08:00. No later switches → this is the active state.
+        let utc8 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc8, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(JsonValue::String("focus".into())),
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
+        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        // "now" lands inside the day window at 14:00.
+        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 14, 0, 0).unwrap().timestamp_millis();
+        let t8 = utc8.timestamp_millis();
+
+        let fields = build_day_fields(&db, day_start, day_end, now_ms).unwrap();
+        let mood = &fields[0];
+        assert_eq!(mood.blocks.len(), 1);
+        assert_eq!(mood.blocks[0].start_ms, t8);
+        assert_eq!(
+            mood.blocks[0].end_ms, now_ms,
+            "active state must terminate at now_ms, not at day_end_ms",
+        );
+    }
+
+    /// da-zxs: a day entirely before `now_ms` is unaffected — the open
+    /// switch region for that past day still extends to its own day_end.
+    #[test]
+    fn open_switch_region_unchanged_for_past_day() {
+        use chrono::TimeZone;
+        use datum_core::entry::Verb;
+        use datum_core::time::DatumTime;
+
+        let db = Db::open_in_memory().unwrap();
+        let utc8 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap();
+        let dt = DatumTime::from_utc_and_tz(utc8, "UTC").unwrap();
+        db.insert_entry(&Entry::new(
+            "mood",
+            Verb::Switch,
+            Some(JsonValue::String("focus".into())),
+            None,
+            None,
+            Some(dt),
+            None,
+            "test",
+        ))
+        .unwrap();
+
+        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
+        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        // "now" is days later — this day is entirely in the past.
+        let now_ms = Utc.with_ymd_and_hms(2026, 5, 5, 12, 0, 0).unwrap().timestamp_millis();
+
+        let fields = build_day_fields(&db, day_start, day_end, now_ms).unwrap();
+        let mood = &fields[0];
+        assert_eq!(mood.blocks.len(), 1);
+        assert_eq!(mood.blocks[0].end_ms, day_end);
     }
 
     /// da-2zd: a spec with `render = false` is dropped from dayview but
@@ -1036,7 +1121,7 @@ mod tests {
             .unwrap()
             .timestamp_millis();
 
-        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         let names: Vec<&str> = fields.iter().map(|f| f.field.as_str()).collect();
         assert!(names.contains(&"coffee"), "names = {names:?}");
         assert!(
@@ -1077,7 +1162,7 @@ mod tests {
 
         let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
         let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
-        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         assert!(
             fields.iter().all(|f| f.field != "stretch_routine"),
             "render.dayview=false must drop the band",
@@ -1121,7 +1206,7 @@ mod tests {
             .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
             .unwrap()
             .timestamp_millis();
-        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         let caffeine = fields
             .iter()
             .find(|f| f.field == "caffeine")
@@ -1156,7 +1241,7 @@ mod tests {
 
         let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
         let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
-        let fields = build_day_fields(&db, day_start, day_end).unwrap();
+        let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         let alarm = fields
             .iter()
             .find(|f| f.field == "alarm")
