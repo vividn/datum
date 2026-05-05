@@ -15,7 +15,10 @@ fn test_stacked_flags() {
 #[test]
 fn test_parse_time_arg_hhmm() {
     let t = parse_time_arg("1513").unwrap();
-    assert_eq!(t.absolute.unwrap(), NaiveTime::from_hms_opt(15, 13, 0).unwrap());
+    assert_eq!(
+        t.absolute.unwrap(),
+        NaiveTime::from_hms_opt(15, 13, 0).unwrap()
+    );
 }
 
 #[test]
@@ -48,7 +51,10 @@ fn test_parse_iso_duration() {
 #[test]
 fn parse_uncertainty_plus_minus_unicode() {
     let t = parse_time_arg("1513±5").unwrap();
-    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap()));
+    assert_eq!(
+        t.absolute,
+        Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap())
+    );
     let u = t.uncertainty.expect("uncertainty");
     // Bare number defaults to minutes.
     assert_eq!(u.seconds, 5 * 60);
@@ -58,7 +64,10 @@ fn parse_uncertainty_plus_minus_unicode() {
 #[test]
 fn parse_uncertainty_plus_hyphen_ascii() {
     let t = parse_time_arg("1513+-5").unwrap();
-    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap()));
+    assert_eq!(
+        t.absolute,
+        Some(NaiveTime::from_hms_opt(15, 13, 0).unwrap())
+    );
     let u = t.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 5 * 60);
     assert_eq!(u.unit, PrecisionUnit::Minute);
@@ -217,6 +226,99 @@ fn iso_datetime_with_uncertainty_suffix() {
     let u = t.uncertainty.expect("uncertainty");
     assert_eq!(u.seconds, 300);
     assert_eq!(u.unit, PrecisionUnit::Minute);
+}
+
+// ── Compact <mmm><day> shorthand ────────────────────────────────────────
+
+#[cfg(feature = "native")]
+fn with_mocked_today<F: FnOnce()>(today: chrono::NaiveDate, f: F) {
+    use crate::time::clock::{install, uninstall, MockClock};
+    use crate::time::DatumTime;
+    use chrono::TimeZone;
+    use std::sync::Arc;
+    let utc = chrono::Utc.from_utc_datetime(&today.and_hms_opt(12, 0, 0).unwrap());
+    let dt = DatumTime {
+        utc,
+        offset_minutes: 0,
+        timezone: "UTC".into(),
+    };
+    install(Arc::new(MockClock::new(dt)));
+    f();
+    uninstall();
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn parse_date_arg_compact_apr29_uses_current_year_when_passed() {
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("apr29").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn parse_date_arg_compact_case_insensitive() {
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("APR29").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+        let d = parse_date_arg("Jan5").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 1, 5).unwrap())
+        );
+    });
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn parse_date_arg_compact_jun7_rolls_back_year() {
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("jun7").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2025, 6, 7).unwrap())
+        );
+    });
+}
+
+#[test]
+fn parse_date_arg_compact_explicit_year() {
+    let d = parse_date_arg("apr29-2025").unwrap();
+    assert_eq!(
+        d.absolute,
+        Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+    );
+    let d = parse_date_arg("apr29@2025").unwrap();
+    assert_eq!(
+        d.absolute,
+        Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+    );
+}
+
+#[test]
+fn parse_date_arg_compact_unknown_month_errors() {
+    assert!(parse_date_arg("nope29").is_err());
+}
+
+#[test]
+#[cfg(feature = "native")]
+fn parse_date_arg_compact_with_uncertainty_suffix() {
+    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 5, 5).unwrap(), || {
+        let d = parse_date_arg("apr29±1d").unwrap();
+        assert_eq!(
+            d.absolute,
+            Some(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap())
+        );
+        let u = d.uncertainty.expect("uncertainty");
+        assert_eq!(u.seconds, 86400);
+    });
 }
 
 #[test]
