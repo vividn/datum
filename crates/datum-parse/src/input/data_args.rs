@@ -750,17 +750,20 @@ pub fn infer_type(value: &str) -> Option<Value> {
         return Some(Value::Array(vec![]));
     }
 
-    // `",a,b"` or `"a,b,"` → array with leading/trailing sentinel comma.
-    if let Some(rest) = value.strip_prefix(',') {
+    // Leading/trailing comma → array shorthand. Edge empties are tolerated
+    // (transitional compat with old datum aliases that wrote `,tag1,`,
+    // `,,`, etc.); interior empty splits keep their existing null behavior.
+    if value.starts_with(',') || value.ends_with(',') {
+        let parts: Vec<&str> = value.split(',').collect();
+        let start = parts.iter().position(|s| !s.is_empty()).unwrap_or(parts.len());
+        let end = parts
+            .iter()
+            .rposition(|s| !s.is_empty())
+            .map(|i| i + 1)
+            .unwrap_or(start);
         return Some(Value::Array(
-            rest.split(',')
-                .map(|v| infer_type(v).unwrap_or(Value::Null))
-                .collect(),
-        ));
-    }
-    if let Some(rest) = value.strip_suffix(',') {
-        return Some(Value::Array(
-            rest.split(',')
+            parts[start..end]
+                .iter()
                 .map(|v| infer_type(v).unwrap_or(Value::Null))
                 .collect(),
         ));
@@ -859,6 +862,17 @@ mod tests {
         assert_eq!(infer_type(","), Some(json!([])));
         assert_eq!(infer_type(",a,b"), Some(json!(["a", "b"])));
         assert_eq!(infer_type("a,b,"), Some(json!(["a", "b"])));
+    }
+
+    #[test]
+    fn infer_type_comma_edge_tolerance() {
+        // Leading + trailing edges may both be empty (da-lvvp).
+        assert_eq!(infer_type(",tag1,tag2"), Some(json!(["tag1", "tag2"])));
+        assert_eq!(infer_type("tag1,tag2,"), Some(json!(["tag1", "tag2"])));
+        assert_eq!(infer_type(",tag1,"), Some(json!(["tag1"])));
+        assert_eq!(infer_type(",,"), Some(json!([])));
+        // Interior empty splits keep their existing null behavior.
+        assert_eq!(infer_type(",tag1,,tag2,"), Some(json!(["tag1", null, "tag2"])));
     }
 
     #[test]
