@@ -339,8 +339,8 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 // ─── Timestamp (§3) ──────────────────────────────────────────────────────────
 
 /// Format a `DatumTime` per §3: `HH:MM:SS+TZ` with the TZ offset rendered
-/// dim and compressed (leading zeros dropped). The whole stamp is underlined
-/// when `t` is in the future at render time.
+/// in the gray slug-color and compressed (leading zeros dropped). The whole
+/// stamp is underlined when `t` is in the future at render time.
 ///
 /// When `t`'s local calendar day differs from `now`'s (per
 /// [`format_relative_day_prefix`]), a gray relative-day prefix (`-1d`,
@@ -357,7 +357,7 @@ pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime) -> String {
         local.second()
     );
     let offset = compress_tz_offset(&local.format("%z").to_string());
-    let tz = paint(DIM, &offset);
+    let tz = paint(GRAY_FG, &offset);
     let stamp = format!("{base}{tz}");
     let composed = match format_relative_day_prefix(t, now) {
         Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
