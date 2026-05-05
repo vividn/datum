@@ -34,7 +34,6 @@ use std::io::IsTerminal;
 
 const RESET: &str = "\x1b[0m";
 const DIM: &str = "\x1b[2m";
-const INVERSE: &str = "\x1b[7m";
 const GRAY_FG: &str = "\x1b[90m";
 
 // ─── Public API: Show / OutputArgs / Action ──────────────────────────────────
@@ -272,11 +271,10 @@ fn short_hid(hid: &str) -> String {
 
 fn paint_action(action: Action) -> String {
     if !color_enabled() {
-        return format!(" {} ", action.name());
+        return action.name().to_string();
     }
-    // Inverse + color: ` CREATE ` with green-inverse background.
     let code = action.ansi_color();
-    format!("{INVERSE}{code} {} {RESET}", action.name())
+    format!("{code}{}{RESET}", action.name())
 }
 
 
@@ -406,9 +404,9 @@ pub fn show_rename(before_id: &str, after_id: &str, args: &OutputArgs) {
     }
     let code = Action::Rename.ansi_color();
     let tag = if color_enabled() {
-        format!("{INVERSE}{code} {} {RESET}", Action::Rename.name())
+        format!("{code}{}{RESET}", Action::Rename.name())
     } else {
-        format!(" {} ", Action::Rename.name())
+        Action::Rename.name().to_string()
     };
     let before_colored = paint(code, before_id);
     let after_colored = paint("\x1b[32m", after_id); // green for new id
