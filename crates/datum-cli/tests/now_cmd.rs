@@ -184,6 +184,7 @@ fn render_separator_divides_active_from_stopped() {
         "workout".to_string(),
         entry_builder("workout")
             .verb(Verb::Switch)
+            .value(serde_json::json!(false))
             .time_start(DatumTime::now())
             .build(),
     );
