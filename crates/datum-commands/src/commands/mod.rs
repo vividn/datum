@@ -1,9 +1,8 @@
 //! One module per `datum` command.
 //!
-//! Every subcommand exposes a typed entry point (`<cmd>(args, db)`) and
-//! `*_from_argv` / `*_from_string` stubs that R2 will flesh out once the
-//! bespoke parser lands. For R1 the heavyweight handlers still live in
-//! `crate::cmd`; these files are the thin, permanent public surface.
+//! Each subcommand exposes a typed entry point (`<cmd>(args, db)`) that
+//! delegates to a heavyweight handler in `crate::cmd`. These files are the
+//! thin, permanent public surface.
 
 pub mod add;
 pub mod alias;

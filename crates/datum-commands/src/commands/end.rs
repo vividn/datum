@@ -15,11 +15,3 @@ pub fn end(args: LogArgs, db: &Db) -> Result<()> {
 pub fn stop(args: LogArgs, db: &Db) -> Result<()> {
     end(args, db)
 }
-
-pub fn end_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("end_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn end_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("end_from_string: stub — R2 extracts bespoke parser")
-}

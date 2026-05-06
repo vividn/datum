@@ -12,11 +12,3 @@ use crate::args::LogArgs;
 pub fn add(args: LogArgs, db: &Db) -> Result<()> {
     crate::cmd::log_entry(Verb::Add, args, db)
 }
-
-pub fn add_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("add_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn add_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("add_from_string: stub — R2 extracts bespoke parser")
-}

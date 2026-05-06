@@ -488,11 +488,3 @@ fn uninstall(args: KitUninstallArgs, db: &Db) -> Result<()> {
     }
     Ok(())
 }
-
-pub fn kit_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("kit_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn kit_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("kit_from_string: stub — R2 extracts bespoke parser")
-}
