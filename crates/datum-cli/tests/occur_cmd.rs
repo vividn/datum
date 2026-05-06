@@ -41,9 +41,11 @@ fn occur_creates_entry_with_time_start() {
 
     assert_count!(db, "field", 1);
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "occur");
+    // v3 (da-5ns): occur with no state, no dur → state canonicalized to true,
+    // dur=null → derive_verb returns Verb::Point.
+    assert_entry_matches!(entry, field: "field", verb: "point");
 
-    let ts = entry.occur_time.as_ref().expect("occur sets time_start").utc;
+    let ts = entry.occur_time.as_ref().expect("occur sets occur_time").utc;
     assert!(
         ts >= before - Duration::seconds(1) && ts <= after + Duration::seconds(1),
         "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
@@ -74,7 +76,7 @@ fn date_and_time_flags_set_absolute_time() {
         .expect("occur -d -t");
 
     let entry = &db.entries_for_field("event", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "event", verb: "occur");
+    assert_entry_matches!(entry, field: "event", verb: "point");
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
     let expected_local = chrono::NaiveDate::from_ymd_opt(2021, 8, 23)

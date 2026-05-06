@@ -21,9 +21,9 @@ use serde_json::json;
 
 /// TS #1: "creates an occur document with state: true"
 ///
-/// In daydumb, `start` records an open block: `time_start` set, `time_end`
-/// unset. The state at time_start compiles to `true` (see
-/// `state::compile_state` for the Start verb).
+/// In daydumb, `start` records an open block: `occur_time` set, `dur`
+/// unset, state implicitly `true`. Under v3 (da-5ns), this shape derives
+/// `Verb::Switch` (state=set, dur=null → switch).
 #[test]
 fn start_creates_open_block_with_no_time_end() {
     let db = fresh_db();
@@ -32,14 +32,14 @@ fn start_creates_open_block_with_no_time_end() {
 
     assert_count!(db, "dance", 1);
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "dance", verb: "start");
-    assert!(entry.occur_time.is_some(), "start must set time_start");
-    assert!(entry.dur.is_none(), "open block must not set time_end");
+    assert_entry_matches!(entry, field: "dance", verb: "switch");
+    assert!(entry.occur_time.is_some(), "start must set occur_time");
+    assert!(entry.dur.is_none(), "moment-shape must not set dur");
 
     let state = db
         .get_active_state("dance", entry.occur_time.as_ref().unwrap().utc)
         .unwrap();
-    assert_eq!(state, json!(true), "start compiles to state=true at time_start");
+    assert_eq!(state, json!(true), "start compiles to state=true at occur_time");
 }
 
 /// TS #2: "can start from a different state"
@@ -62,13 +62,22 @@ fn start_after_switch_preserves_prior_state() {
     let entries = db.entries_for_field("machine", None).unwrap();
     assert_eq!(entries.len(), 2, "switch + start produce two entries");
 
+    // Both entries are Verb::Switch under v3 (state=set, dur=null);
+    // distinguish by stored state: the explicit `switch ... preparing`
+    // carries state="preparing", `start machine` carries state=true.
     let start_entry = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Switch))
+        .find(|e| {
+            matches!(e.verb, Verb::Switch)
+                && e.state.as_ref() == Some(&json!(true))
+        })
         .expect("start entry present");
     let switch_entry = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Switch))
+        .find(|e| {
+            matches!(e.verb, Verb::Switch)
+                && e.state.as_ref() == Some(&json!("preparing"))
+        })
         .expect("switch entry present");
 
     let start_ts = start_entry.occur_time.as_ref().unwrap().utc;
@@ -111,31 +120,32 @@ fn dur_flag_sets_time_end_for_closed_block() {
 /// TS #4: "creates a hole of time where state was false when duration is
 /// negative".
 ///
-/// Datum's negative duration creates a backward block representing "state
-/// was false for N min *before* now". Daydumb mirrors this: `--dur=-5m`
-/// yields `time_end = time_start - 5min`, so `time_end < time_start`.
-/// (This produces a `time_end_before_start` consistency flag — that check
-/// is opt-in, not a hard constraint at insert time.)
+/// Datum's negative duration created a backward block. Under v3
+/// (da-5ns), the storage layer's `derive_verb` rejects negative
+/// durations, but the CLI insert path clamps the time-end delta to zero
+/// in `Entry::new_legacy` (entry.rs: `(e.utc - s.utc).num_seconds().max(0)`),
+/// which collapses to `dur="PT0S"`. With state=true (Action::Start
+/// canonicalization) and dur=Zero this derives `Verb::Point`.
 #[test]
-fn negative_dur_creates_backward_block() {
+fn negative_dur_collapses_to_point() {
     let db = fresh_db();
 
-    // An earlier `start` anchors the field so the hole sits inside real
-    // state history (matches the datum fixture's prelude).
+    // An earlier `start` anchors the field so the collapsed entry sits
+    // alongside real state history.
     run_cli(&["start", "dance", "-t=-20"], &db).expect("anchor start");
-    run_cli(&["start", "dance", "--dur=-5m"], &db).expect("hole start");
+    run_cli(&["start", "dance", "--dur=-5m"], &db).expect("collapsed start");
 
     let entries = db.entries_for_field("dance", None).unwrap();
     assert_eq!(entries.len(), 2);
 
-    let hole = entries
+    let collapsed = entries
         .iter()
-        .find(|e| e.duration_seconds().is_some())
-        .expect("negative-dur entry has both time bounds");
-    let dur = hole.duration_seconds().unwrap();
-    assert_eq!(dur, -5 * 60, "negative --dur preserves its sign");
-    // Start with a (negative) duration → shape=block, verb='block'.
-    assert!(matches!(hole.verb, Verb::Block));
+        .find(|e| e.duration_seconds() == Some(0))
+        .expect("negative-dur entry collapses to zero-second dur");
+    assert!(
+        matches!(collapsed.verb, Verb::Point),
+        "state=true + dur=Zero → Point",
+    );
 }
 
 /// TS #5: "when --moment is specified, dur is null and there is no duration
@@ -153,11 +163,11 @@ fn start_without_dur_is_moment_like() {
         .expect("start with -k");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "dance", verb: "start");
+    assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
     assert!(
         entry.dur.is_none(),
-        "no --dur ⇒ no time_end (moment semantics)",
+        "no --dur ⇒ no dur (moment semantics)",
     );
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
@@ -180,7 +190,7 @@ fn start_extras_do_not_imply_duration() {
     .expect("start with multiple -k");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "dance", verb: "start");
+    assert_entry_matches!(entry, field: "dance", verb: "switch");
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
     assert_eq!(extra["tempo"], json!("fast"));
@@ -202,10 +212,10 @@ fn positional_values_never_become_duration() {
     run_cli(&["start", "field", "reqVal1"], &db).expect("start with value");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "start", value: "reqVal1");
+    assert_entry_matches!(entry, field: "field", verb: "switch", value: "reqVal1");
     assert!(
         entry.dur.is_none(),
-        "positional values do not derive a time_end",
+        "positional values do not derive a dur",
     );
 }
 
@@ -271,7 +281,7 @@ fn yesterday_flag_does_not_consume_positional_as_duration() {
     let after = chrono::Utc::now();
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "start", value: 315);
+    assert_entry_matches!(entry, field: "field", verb: "switch", value: 315);
     assert!(
         entry.dur.is_none(),
         "`315` is a value, not a duration",

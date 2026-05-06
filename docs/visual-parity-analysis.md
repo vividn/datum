@@ -35,7 +35,7 @@ to the renderer must keep this doc and the fixture tests
 ## 3. Timestamp
 
 - Format: `HH:MM:SS+TZ` (e.g. `17:10:00+2`)
-- **Underlined** if `start_time` is in the FUTURE relative to now-at-render. Helps prevent entry errors.
+- **Underlined** if `occur_time` is in the FUTURE relative to now-at-render. Helps prevent entry errors.
 - **TZ offset** (`+0200` → compressed to `+2`; always drop leading zeros) rendered **dim** (ANSI 2) to de-emphasize.
 
 ## 4. Field badge

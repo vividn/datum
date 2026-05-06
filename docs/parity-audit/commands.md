@@ -57,12 +57,14 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
   `--id`, `--id-delimiter`, `--conflict`, `-u/--undo`, `-U/--force-undo`,
   `-x/--merge`); full timeArgs (`-d`, `-y`, `-t`, `-q`, `-z`, `-D`,
   `-T`); `-k key[=default]` for data keys.
-- **Daydumb today:** `log_entry(Verb::Add, ...)` with `LogArgs`. Infers
-  entry shape (point / block / ongoing) from presence of `start=`,
-  `end=`, `dur=`, `state=` keys (D3). `-K` slug-contributing keys and
-  `-k` data-only keys are split (daydumb enhancement). `-m/--moment`,
-  `--last-state`, `--conflict`, `--update`, `--merge`, `-M`, `-z`
-  timezone, `-u` unit, `-c` comment, `--id`, `--id-delimiter`.
+- **Daydumb today:** `log_entry(Action::Add, ...)` with `LogArgs`. Infers
+  the (state, dur, following_state) triple from `start_time=`, `end_time=`,
+  `dur=`, `state=` keys; `derive_verb` then classifies into the v3 storage
+  verb (`point` / `block` / `block-switch` / `point-switch` /
+  `switch`). `-K` slug-contributing keys and `-k` data-only keys are
+  split (daydumb enhancement). `-m/--moment`, `--last-state`,
+  `--conflict`, `--update`, `--merge`, `-M`, `-z` timezone, `-u` unit,
+  `-c` comment, `--id`, `--id-delimiter`.
 - **Missing in daydumb:** no `-u/--undo` / `-U/--force-undo` flag on the
   log verbs — `undo` is its own command.
 - **Divergences:** daydumb always records `alias_chain` + `raw_input`
@@ -82,9 +84,12 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Original datum:** time args (`-d/-y/-t/-q/-z/-D/-T`), data args,
   newDocArgs. Point-in-time entry (`occurTime` only).
-- **Daydumb today:** `log_entry(Verb::Occur, ...)` using `LogArgs`. Stores
-  `time_start` only (no `time_end`). `DatumTime { utc, offset, tz,
-  precision }` captures uncertainty (d2).
+- **Daydumb today:** `log_entry(Action::Occur, ...)` using `LogArgs`.
+  Stores `occur_time` only (no `dur`). State is left null; `derive_verb`
+  classifies (state=None, dur=None, fs=None) → `Verb::Point`. `DatumTime
+  { utc, offset, tz, precision }` captures uncertainty (d2). The v=20
+  schema's `occur_time_precision` column carries an ISO-8601 duration
+  (e.g. `PT5M` for ±5 minutes), replacing the v=19 (seconds, unit) pair.
 - **Missing in daydumb:** `--no-timestamp` (`-T`) flag has no surface
   equivalent — omitting a time always produces `now()` in daydumb.
 - **Divergences:** daydumb tracks **precision** (day / minute / second)
@@ -100,8 +105,12 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Original datum:** positional duration, or `-d/--dur`; inherits
   timeArgs + data args.
-- **Daydumb today:** `log_entry(Verb::Start, ...)` with `LogArgs`. `--dur`
-  on start sets `time_end = time_start + dur`. Implicit state = `true`.
+- **Daydumb today:** `log_entry(Action::Start, ...)` with `LogArgs`.
+  Action canonicalization sets state=true on entries that don't supply
+  one explicitly. `--dur` sets `dur = ISO 8601 duration` from
+  `time_start` forward; without `--dur` the row's storage verb derives
+  to `Verb::Switch` (state=set, dur=null). With `--dur` it derives to
+  `Verb::Block`.
 - **Missing in daydumb:** positional duration — daydumb requires the
   `--dur` flag.
 - **Divergences:** none of note.
@@ -113,10 +122,12 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 ### end / stop
 
 - **Original datum:** reuses `startArgs`; symmetrical closer.
-- **Daydumb today:** `log_entry(Verb::Stop, ...)` with `LogArgs`.
-  `--last-state` closes the most recent open block and records its
-  prior state; errors if no open block exists. `--dur` sets
-  `time_start = time_end - dur` (backward direction).
+- **Daydumb today:** `log_entry(Action::Stop, ...)` with `LogArgs`.
+  Action canonicalization sets state=false. `--last-state` closes the
+  most recent open block and records its prior state; errors if no
+  open block exists. `--dur` sets `time_start = time_end - dur`
+  (backward direction). Bare stop derives to `Verb::Switch`; stop with
+  `--dur` derives to `Verb::Block`.
 - **Missing in daydumb:** nothing significant.
 - **Divergences:** daydumb's `--last-state` error is explicit; datum
   silently skips or guesses when no open block.
@@ -130,10 +141,13 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 - **Original datum:** field positional, state positional, `-L/--last-state`,
   `--moment`, duration/time/data args.
-- **Daydumb today:** `log_entry(Verb::Switch, ...)`. `-m/--moment` makes
-  `time_start == time_end`. `--last-state` dedupes when new state ==
+- **Daydumb today:** `log_entry(Action::Switch, ...)`. `-m/--moment`
+  produces a zero-duration entry (`occur_time == computed_end_time`,
+  storage verb `Verb::Point`). `--last-state` dedupes when new state ==
   current (errors on redundant transitions). State normalization via
-  `datum_core::state::normalize_state`.
+  `datum_core::state::normalize_state`. Without `--dur` derives to
+  `Verb::Switch`; with `--dur` derives to `Verb::Block`; with `--dur`
+  + `following_state=` derives to `Verb::BlockSwitch`.
 - **Missing in daydumb:** explicit manual prior-state override (datum's
   `-L`).
 - **Divergences:** daydumb errors on no-op transitions; datum accepts

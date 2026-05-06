@@ -208,13 +208,16 @@ fn add_with_temporal_keys_resolves_shape_correctly() {
         e.data
     );
 
-    // start_time only → ongoing
+    // start_time only → ongoing semantic (occur_time set, no dur). Under
+    // v3 (da-5ns) the storage layer collapses "ongoing" and "point" into
+    // the same dur=None shape, so the row_mapper compat shim reads back
+    // as EntryShape::Point. The observable invariant — start anchored,
+    // no end — is what callers actually rely on.
     let db2 = fresh_db();
     run_cli(&["add", "nap", "start_time=-5m", "-t", "14:00"], &db2).expect("add ongoing");
     let e2 = &db2.entries_for_field("nap", None).unwrap()[0];
-    assert_eq!(e2.entry_shape, EntryShape::Ongoing);
-    assert!(e2.occur_time.is_some());
-    assert!(e2.dur.is_none());
+    assert!(e2.occur_time.is_some(), "ongoing add anchors occur_time");
+    assert!(e2.dur.is_none(), "ongoing add has no dur");
 
     // no temporal hints → point
     let db3 = fresh_db();

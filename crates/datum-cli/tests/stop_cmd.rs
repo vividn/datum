@@ -36,8 +36,8 @@ fn stop_records_false_state_at_time_start() {
 
     assert_count!(db, "dance", 1);
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "dance", verb: "stop");
-    let ts = entry.occur_time.as_ref().expect("stop anchors time_start");
+    assert_entry_matches!(entry, field: "dance", verb: "switch");
+    let ts = entry.occur_time.as_ref().expect("stop anchors occur_time");
     assert!(
         entry.dur.is_none(),
         "bare stop (no --dur) must not derive time_end",
@@ -107,13 +107,15 @@ fn stop_dur_produces_closed_backward_block() {
 
     let entries = db.entries_for_field("dance", None).unwrap();
     assert_eq!(entries.len(), 2);
+    // stop --dur 5m: state=false (action canonicalization) + dur=positive
+    // → Verb::Block; the anchor `start` (no dur) is Verb::Switch.
     let stop = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Switch))
+        .find(|e| matches!(e.verb, Verb::Block))
         .expect("stop entry present");
 
-    let ts = stop.occur_time.as_ref().expect("stop --dur anchors time_start").utc;
-    let te = stop.computed_end_time().expect("stop --dur derives time_end").utc;
+    let ts = stop.occur_time.as_ref().expect("stop --dur anchors occur_time").utc;
+    let te = stop.computed_end_time().expect("stop --dur derives end time").utc;
     assert_eq!(
         (te - ts).num_seconds(),
         5 * 60,
@@ -145,11 +147,11 @@ fn stop_without_dur_is_moment_like() {
         .expect("stop with -k");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "dance", verb: "stop");
+    assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
     assert!(
         entry.dur.is_none(),
-        "no --dur ⇒ no time_end (moment semantics)",
+        "no --dur ⇒ no dur (moment semantics)",
     );
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
@@ -172,7 +174,7 @@ fn stop_extras_do_not_imply_duration() {
     .expect("stop with multiple -k");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "dance", verb: "stop");
+    assert_entry_matches!(entry, field: "dance", verb: "switch");
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
     assert_eq!(extra["tempo"], json!("fast"));
@@ -199,7 +201,7 @@ fn stop_positional_values_never_become_duration() {
     .expect("stop with positional value");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "stop", value: 50);
+    assert_entry_matches!(entry, field: "field", verb: "switch", value: 50);
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["abc"], json!(123));
     assert!(
@@ -244,7 +246,7 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     .expect("stop --dur 30m -k ... dispatch");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "stop", value: "reqVal1");
+    assert_entry_matches!(entry, field: "field", verb: "block", value: "reqVal1");
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["req1"], json!("extra"));

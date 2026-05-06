@@ -277,6 +277,7 @@ impl FieldStateEvents {
                          AND deleted_at IS NULL
                          AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
                                       'point', 'block-switch', 'point-switch')
+                         AND slug NOT LIKE '%:unset'
                          AND occur_time <= ?2"#,
                 )?;
                 let mut rows = stmt.query(params![field, t.to_rfc3339()])?;
@@ -291,7 +292,8 @@ impl FieldStateEvents {
                        WHERE field = ?1
                          AND deleted_at IS NULL
                          AND verb IN ('switch', 'start', 'stop', 'occur', 'block',
-                                      'point', 'block-switch', 'point-switch')"#,
+                                      'point', 'block-switch', 'point-switch')
+                         AND slug NOT LIKE '%:unset'"#,
                 )?;
                 let mut rows = stmt.query(params![field])?;
                 while let Some(row) = rows.next()? {
@@ -379,6 +381,14 @@ fn collect_events(
     // da-5ns sub-bead 1 stub: see the comment on `collect_raw_events`.
     // Each state-affecting verb emits at most one event at occur_time;
     // sub-bead 5 expands this with following_state-aware tail events.
+    //
+    // Timeless rows (`-T` / `--no-timestamp`): the v=20 NOT NULL
+    // `occur_time` column carries a `create_time` stub, but the slug
+    // suffix `:unset` marks the row as deliberately timeless. State
+    // compilation skips these — they shouldn't emit on the timeline.
+    if entry.slug.as_str().ends_with(":unset") {
+        return;
+    }
     match entry.verb {
         Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {
             if let Some(ts) = &entry.occur_time {
