@@ -6,6 +6,7 @@
 use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::derive_verb;
+use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -14,11 +15,13 @@ use crate::args::CheckArgs;
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
 ///
-/// `--verbs` narrows the report to verb-drift detection only. `--fix`
-/// rewrites the stored `verb` column for any drifted live row to match
-/// `derive_verb`; rows in a "rejected" shape (per the truth table) are
-/// flagged but never auto-fixed because there is no derivable verb for
-/// them.
+/// `--verbs` narrows the report to verb-drift detection only.
+/// `--aliases` narrows to spec-vs-user alias divergence checks
+/// (state-name collisions, orphans, cycles).
+/// `--fix` rewrites the stored `verb` column for any drifted live row to
+/// match `derive_verb`; for `--aliases`, it adds an explicit
+/// first-saved-wins resolution annotation to each state collision (no DB
+/// mutation — the precedence is already deterministic).
 pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     let report = if args.verbs {
         let verb_report = collect_verb_drift(db)?;
@@ -34,6 +37,17 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
             },
         }
         .with_recomputed_summary()
+    } else if args.aliases {
+        let alias_report = collect_alias_drift(db, args.fix)?;
+        Report {
+            issues: alias_report.issues,
+            summary: Summary {
+                errors: 0,
+                warnings: 0,
+                clean: false,
+            },
+        }
+        .with_recomputed_summary()
     } else {
         let mut report = collect_issues(db)?;
         let verb_report = collect_verb_drift(db)?;
@@ -41,6 +55,8 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
             apply_verb_fixes(db, &verb_report.fixes)?;
         }
         report.issues.extend(verb_report.issues);
+        let alias_report = collect_alias_drift(db, args.fix)?;
+        report.issues.extend(alias_report.issues);
         report.with_recomputed_summary()
     };
 
@@ -236,6 +252,203 @@ fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<()> {
         db.set_entry_verb(&fix.slug, &fix.expected_verb)?;
     }
     Ok(())
+}
+
+#[derive(Debug, Default)]
+struct AliasReport {
+    issues: Vec<Issue>,
+}
+
+/// Walk every field spec and every user/kit alias to surface three
+/// divergence classes:
+///
+/// * `alias_state_collision` — two specs declare the same state name as a
+///   derived `State` alias. The [`SpecAliasIndex`] resolves these
+///   deterministically by `field_specs.rowid` (UPSERT preserves rowid, so
+///   "first-saved wins"); the loser's derived alias is shadowed and is
+///   reachable only via its owning spec's bare-field expansion. Pre-v21
+///   the loser's row was silently overwritten in the materialized aliases
+///   table, hence "first-saved-wins" was a silent collision (Appendix C
+///   jade + garnet retros).
+/// * `alias_orphan` — a user/kit alias's expansion chain ends in a name
+///   that is neither a known subcommand nor any other resolvable alias.
+///   Typical cause: a downstream alias's owning spec was deleted.
+/// * `alias_cycle` — expanding a user/kit alias revisits a name in the
+///   chain. The `expand_argv` pre-pass would bail at
+///   [`MAX_ALIAS_HOPS`], but the cycle would otherwise go undetected.
+///
+/// `--fix` (`fix_collisions = true`) annotates state-collision examples
+/// with the explicit first-saved-wins resolution. There is no DB
+/// mutation: the precedence is already deterministic and forcing a
+/// rebuild of the index would produce the same outcome. Orphans and
+/// cycles need user judgment per the bead direction and are report-only.
+fn collect_alias_drift(db: &Db, fix_collisions: bool) -> Result<AliasReport> {
+    let mut issues: Vec<Issue> = Vec::new();
+
+    // 1. Cross-spec state-name collisions (already tracked by the index).
+    let collisions: Vec<_> = {
+        let index = db.spec_alias_index()?;
+        index.collisions.clone()
+    };
+    if !collisions.is_empty() {
+        let first = &collisions[0];
+        let detail = if fix_collisions {
+            format!(
+                "alias '{name}' kept by '{winner}' (first-saved-wins); displaced from '{loser}'",
+                name = first.name,
+                winner = first.winner,
+                loser = first.loser,
+            )
+        } else {
+            format!(
+                "alias '{name}' owned by '{winner}'; '{loser}' displaced",
+                name = first.name,
+                winner = first.winner,
+                loser = first.loser,
+            )
+        };
+        issues.push(Issue {
+            severity: Severity::Warning,
+            category: "alias_state_collision",
+            message: format!(
+                "{n} cross-spec state-name collision{s} (first-saved precedence applied)",
+                n = collisions.len(),
+                s = if collisions.len() == 1 { "" } else { "s" },
+            ),
+            count: collisions.len(),
+            example: Some(IssueExample {
+                id: None,
+                field: Some(first.loser.clone()),
+                detail: Some(detail),
+            }),
+        });
+    }
+
+    // 2 + 3. Orphans and cycles in user/kit alias chains. Spec-derived
+    // aliases never need this walk — their `expands_to` always begins with
+    // a KNOWN_SUBCOMMAND.
+    let user_aliases = db.list_user_aliases()?;
+    let mut orphan_count: usize = 0;
+    let mut orphan_example: Option<IssueExample> = None;
+    let mut cycle_count: usize = 0;
+    let mut cycle_example: Option<IssueExample> = None;
+
+    for alias in &user_aliases {
+        match analyze_chain(db, &alias.name)? {
+            ChainOutcome::Resolved => {}
+            ChainOutcome::Orphan { broken_at, chain } => {
+                orphan_count += 1;
+                if orphan_example.is_none() {
+                    orphan_example = Some(IssueExample {
+                        id: None,
+                        field: Some(alias.name.clone()),
+                        detail: Some(format!(
+                            "{path} → '{broken_at}' (no known alias or subcommand)",
+                            path = chain.join(" → "),
+                        )),
+                    });
+                }
+            }
+            ChainOutcome::Cycle(path) => {
+                cycle_count += 1;
+                if cycle_example.is_none() {
+                    cycle_example = Some(IssueExample {
+                        id: None,
+                        field: Some(alias.name.clone()),
+                        detail: Some(format!("cycle: {}", path.join(" → "))),
+                    });
+                }
+            }
+        }
+    }
+
+    if orphan_count > 0 {
+        issues.push(Issue {
+            severity: Severity::Warning,
+            category: "alias_orphan",
+            message: format!(
+                "{n} user/kit alias{s} reference an unknown name (likely a deleted spec)",
+                n = orphan_count,
+                s = if orphan_count == 1 { "" } else { "es" },
+            ),
+            count: orphan_count,
+            example: orphan_example,
+        });
+    }
+    if cycle_count > 0 {
+        issues.push(Issue {
+            severity: Severity::Warning,
+            category: "alias_cycle",
+            message: format!(
+                "{n} user/kit alias chain{s} form a cycle",
+                n = cycle_count,
+                s = if cycle_count == 1 { "" } else { "s" },
+            ),
+            count: cycle_count,
+            example: cycle_example,
+        });
+    }
+
+    Ok(AliasReport { issues })
+}
+
+/// Outcome of walking a single alias's expansion chain.
+#[derive(Debug, Clone)]
+enum ChainOutcome {
+    /// Chain reaches a known subcommand or a positional placeholder.
+    Resolved,
+    /// Chain terminates at an unresolvable name partway through.
+    Orphan {
+        broken_at: String,
+        chain: Vec<String>,
+    },
+    /// Chain re-visits a name. `path` is the visited list with the
+    /// repeated name appended at the end.
+    Cycle(Vec<String>),
+}
+
+/// Walk an alias's chain by repeatedly looking up the head of each
+/// expansion. Stops on a known subcommand, a positional placeholder, an
+/// unresolved name, a revisited name, or after [`MAX_ALIAS_HOPS`] hops
+/// (which we treat as a cycle — a chain that long is unreachable in
+/// practice).
+fn analyze_chain(db: &Db, start: &str) -> Result<ChainOutcome> {
+    let mut visited: Vec<String> = vec![start.to_string()];
+    let mut current = start.to_string();
+    for _ in 0..MAX_ALIAS_HOPS {
+        let alias = match db.lookup_alias(&current)? {
+            Some(a) => a,
+            None => {
+                // The starting alias is guaranteed resolvable by its
+                // caller (we just enumerated it), so a None here means
+                // we hit an unresolved hop mid-walk.
+                return Ok(ChainOutcome::Orphan {
+                    broken_at: current,
+                    chain: visited,
+                });
+            }
+        };
+        let tokens = shell_split(&alias.expands_to);
+        let Some(head) = tokens.first() else {
+            return Ok(ChainOutcome::Resolved);
+        };
+        if KNOWN_SUBCOMMANDS.contains(&head.as_str()) {
+            return Ok(ChainOutcome::Resolved);
+        }
+        if head.starts_with('$') {
+            // Positional placeholder; substitution happens at expansion
+            // time, the chain is well-formed.
+            return Ok(ChainOutcome::Resolved);
+        }
+        if visited.iter().any(|v| v == head) {
+            visited.push(head.clone());
+            return Ok(ChainOutcome::Cycle(visited));
+        }
+        visited.push(head.clone());
+        current = head.clone();
+    }
+    // Hit the hop budget without resolving — treat as cycle.
+    Ok(ChainOutcome::Cycle(visited))
 }
 
 /// Run every consistency check and return a structured report.
@@ -785,5 +998,260 @@ mod tests {
             report.issues,
         );
         assert!(report.fixes.is_empty());
+    }
+
+    // ─── da-c706: alias divergence detection ────────────────────────────
+
+    use datum_core::field_spec::Alias;
+
+    fn switch_spec(field: &str, states: &[&str]) -> FieldSpec {
+        let mut spec = FieldSpec::new(field, Action::Switch);
+        spec.allowed_states = Some(states.iter().map(|s| s.to_string()).collect());
+        spec.regenerate_derived_aliases();
+        spec
+    }
+
+    /// Two specs both declare a state named `done`. The first-saved spec
+    /// wins by rowid; the loser appears in `SpecAliasIndex.collisions`,
+    /// and `dm check --aliases` surfaces it as `alias_state_collision`.
+    #[test]
+    fn alias_state_collision_detected_across_specs() {
+        let db = Db::open_in_memory().unwrap();
+        // mood is saved first → wins the `done` state alias.
+        db.save_field_spec(&switch_spec("mood", &["happy", "done"])).unwrap();
+        db.save_field_spec(&switch_spec("task", &["wip", "done"])).unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_state_collision")
+            .expect("state collision must be reported");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert_eq!(issue.count, 1);
+        let detail = issue.example.as_ref().unwrap().detail.as_deref().unwrap();
+        assert!(detail.contains("'done'"), "got: {detail}");
+        assert!(detail.contains("mood"), "got: {detail}");
+        assert!(detail.contains("task"), "got: {detail}");
+    }
+
+    /// `--fix` (fix_collisions=true) annotates collisions with the
+    /// explicit first-saved-wins resolution. No DB mutation occurs —
+    /// re-running the same check produces the same collision count.
+    #[test]
+    fn alias_state_collision_fix_annotates_resolution() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_field_spec(&switch_spec("mood", &["done"])).unwrap();
+        db.save_field_spec(&switch_spec("task", &["done"])).unwrap();
+
+        let report = collect_alias_drift(&db, true).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_state_collision")
+            .expect("state collision must be reported");
+        let detail = issue.example.as_ref().unwrap().detail.as_deref().unwrap();
+        assert!(
+            detail.contains("first-saved-wins"),
+            "fix-mode detail must mention the resolution: {detail}",
+        );
+
+        // Re-run is idempotent — collisions are not mutated away.
+        let report2 = collect_alias_drift(&db, true).unwrap();
+        let issue2 = report2
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_state_collision")
+            .expect("collision still present after --fix");
+        assert_eq!(issue2.count, 1);
+    }
+
+    /// A user alias whose chain ends in an unresolvable name (typically a
+    /// deleted spec's bare-field alias) is flagged as `alias_orphan`.
+    #[test]
+    fn alias_orphan_detected_when_chain_breaks() {
+        let db = Db::open_in_memory().unwrap();
+        // User alias 'm' → 'mood'. mood was a spec but is now gone, and
+        // there is no user alias by that name either.
+        db.save_alias(&Alias {
+            name: "m".to_string(),
+            expands_to: "mood".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_orphan")
+            .expect("orphan must be reported");
+        assert_eq!(issue.severity, Severity::Warning);
+        assert_eq!(issue.count, 1);
+        let example = issue.example.as_ref().unwrap();
+        assert_eq!(example.field.as_deref(), Some("m"));
+        let detail = example.detail.as_deref().unwrap();
+        assert!(detail.contains("mood"), "got: {detail}");
+    }
+
+    /// A user alias that resolves through another known alias to a
+    /// subcommand head is NOT an orphan. (`m` → `happy` → `switch mood
+    /// happy` is fine when `mood` spec exists with state `happy`.)
+    #[test]
+    fn alias_resolved_via_spec_alias_is_not_orphan() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_field_spec(&switch_spec("mood", &["happy"])).unwrap();
+        db.save_alias(&Alias {
+            name: "h".to_string(),
+            expands_to: "happy".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        assert!(
+            !report.issues.iter().any(|i| i.category == "alias_orphan"),
+            "no orphan expected, got: {:?}",
+            report.issues,
+        );
+    }
+
+    /// A self-referential alias (`a → a`) forms a one-step cycle and is
+    /// flagged as `alias_cycle`.
+    #[test]
+    fn alias_cycle_self_loop_detected() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_alias(&Alias {
+            name: "a".to_string(),
+            expands_to: "a".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_cycle")
+            .expect("cycle must be reported");
+        assert_eq!(issue.count, 1);
+        let detail = issue.example.as_ref().unwrap().detail.as_deref().unwrap();
+        assert!(detail.contains("a"), "got: {detail}");
+    }
+
+    /// A two-step cycle (`a → b → a`) is detected. Both aliases get
+    /// flagged because we walk every alias's chain independently.
+    #[test]
+    fn alias_cycle_two_step_detected() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_alias(&Alias {
+            name: "a".to_string(),
+            expands_to: "b".to_string(),
+            description: None,
+        })
+        .unwrap();
+        db.save_alias(&Alias {
+            name: "b".to_string(),
+            expands_to: "a".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "alias_cycle")
+            .expect("cycle must be reported");
+        // Both `a` and `b` walk into the cycle from their own start
+        // points, so the count is 2.
+        assert_eq!(issue.count, 2);
+    }
+
+    /// A clean DB with well-formed specs and aliases produces no
+    /// alias-related issues.
+    #[test]
+    fn alias_check_clean_db_emits_nothing() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_field_spec(&switch_spec("mood", &["happy", "sad"])).unwrap();
+        db.save_alias(&Alias {
+            name: "m".to_string(),
+            expands_to: "switch mood happy".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        assert!(
+            report.issues.is_empty(),
+            "clean db must yield no alias issues, got: {:?}",
+            report.issues,
+        );
+    }
+
+    /// `dm check --aliases` (`args.aliases = true`) narrows the report to
+    /// alias categories only — verb drift and other default-battery
+    /// categories are excluded.
+    #[test]
+    fn alias_check_args_narrows_to_alias_categories() {
+        let db = Db::open_in_memory().unwrap();
+        // Trigger an unknown_field warning (default battery) AND an
+        // alias_orphan warning. Only the latter should appear.
+        let entry = Entry::new_legacy(
+            "ghost",
+            Verb::Switch,
+            Some(serde_json::json!("x")),
+            None,
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+        db.save_alias(&Alias {
+            name: "m".to_string(),
+            expands_to: "mood".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        for issue in &report.issues {
+            assert!(
+                matches!(
+                    issue.category,
+                    "alias_state_collision" | "alias_orphan" | "alias_cycle",
+                ),
+                "unexpected category in --aliases run: {}",
+                issue.category,
+            );
+        }
+        assert!(
+            report
+                .issues
+                .iter()
+                .any(|i| i.category == "alias_orphan"),
+            "alias_orphan must be present"
+        );
+    }
+
+    /// Positional placeholders (`$1`) at the chain head are treated as
+    /// resolved — substitution happens at expansion time.
+    #[test]
+    fn alias_positional_placeholder_is_resolved() {
+        let db = Db::open_in_memory().unwrap();
+        db.save_alias(&Alias {
+            name: "p".to_string(),
+            expands_to: "$1 thing".to_string(),
+            description: None,
+        })
+        .unwrap();
+
+        let report = collect_alias_drift(&db, false).unwrap();
+        assert!(
+            !report.issues.iter().any(|i| i.category == "alias_orphan"),
+            "positional-headed alias must not be orphan: {:?}",
+            report.issues,
+        );
     }
 }
