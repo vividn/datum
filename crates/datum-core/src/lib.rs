@@ -17,6 +17,7 @@ pub mod migrations;
 pub mod history;
 pub mod conflicts;
 pub mod last_docs;
+pub mod shape;
 pub mod verb;
 
 pub use verb::derive_verb;
