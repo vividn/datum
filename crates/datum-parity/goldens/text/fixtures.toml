@@ -72,13 +72,13 @@ setup = [
 query = ["get", "caffeine:2024-01-15T09:00:00.000Z"]
 
 [[fixture]]
-name = "get_show_all"
-description = "`get -A` shows full document (data + meta) for one entry"
+name = "get_specced_state"
+description = "`get` on a `country=germany` entry — exercises mySpec state override"
 surface = "get"
 setup = [
-  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["switch", "country", "germany", "-d", "2024-01-15", "-t", "0800"],
 ]
-query = ["get", "coffee:2024-01-15T08:00:00.000Z", "-A"]
+query = ["get", "country:2024-01-15T07:00:00.000Z"]
 
 # ─── tail: multi-record reads ────────────────────────────────────────────────
 
@@ -160,52 +160,58 @@ setup = [
 ]
 query = ["tail", "sleep"]
 
-# ─── nowview: current-state visualization ────────────────────────────────────
+# ─── nowview: current-state SVG visualization ────────────────────────────────
+#
+# nowview/dayview render an SVG file rather than text on stdout. The
+# harness writes to a temp `<name>.svg`, reads the bytes back, and pins
+# the SVG XML as the golden. SVG is text and chalks correctly into a
+# byte-equality comparison once chalk's truecolor output is stable
+# (FORCE_COLOR=3 / COLORTERM=truecolor in the runtime env).
 
 [[fixture]]
-name = "nowview_single_field"
-description = "`nowview FIELD` — current state of one field"
+name = "nowview_default_svg"
+description = "`nowview` — default SVG snapshot of all tracked fields' current state"
 surface = "nowview"
 setup = [
   ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "1000"],
 ]
-query = ["nowview", "mood"]
+query = ["nowview"]
 
 [[fixture]]
-name = "nowview_after_state_chain"
-description = "`nowview` after multiple switches — final state is the visible one"
+name = "nowview_after_state_chain_svg"
+description = "`nowview` SVG after multiple switches — final state is the visible one"
 surface = "nowview"
 setup = [
   ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "0900"],
   ["switch", "mood", "sad",   "-d", "2024-01-15", "-t", "1200"],
   ["switch", "mood", "tired", "-d", "2024-01-15", "-t", "1800"],
 ]
-query = ["nowview", "mood"]
+query = ["nowview"]
 
 [[fixture]]
-name = "nowview_block_open"
-description = "`nowview` while a block is open — should reflect state=true"
+name = "nowview_open_block_svg"
+description = "`nowview` SVG while a block is open — should reflect state=true"
 surface = "nowview"
 setup = [
   ["start", "work", "-d", "2024-01-15", "-t", "0930"],
 ]
-query = ["nowview", "work"]
+query = ["nowview"]
 
 [[fixture]]
-name = "nowview_block_closed"
-description = "`nowview` after a closed block — should reflect state=false"
+name = "nowview_closed_block_svg"
+description = "`nowview` SVG after a closed block — should reflect state=false"
 surface = "nowview"
 setup = [
   ["start", "work", "-d", "2024-01-15", "-t", "0930"],
   ["end",   "work", "-d", "2024-01-15", "-t", "1230"],
 ]
-query = ["nowview", "work"]
+query = ["nowview"]
 
-# ─── dayview: timeline visualization ─────────────────────────────────────────
+# ─── dayview: timeline SVG visualization ─────────────────────────────────────
 
 [[fixture]]
-name = "dayview_single_day"
-description = "`dayview` for a single day with mixed entries"
+name = "dayview_single_day_svg"
+description = "`dayview` SVG for a single day with mixed entries"
 surface = "dayview"
 setup = [
   ["occur",  "coffee", "-d", "2024-01-15", "-t", "0900"],
@@ -216,19 +222,19 @@ setup = [
 query = ["dayview", "-d", "2024-01-15"]
 
 [[fixture]]
-name = "dayview_filtered_field"
-description = "`dayview` with field filter — only mood entries appear"
+name = "dayview_state_chain_svg"
+description = "`dayview` SVG over a chain of switches in one day"
 surface = "dayview"
 setup = [
-  ["occur",  "coffee", "-d", "2024-01-15", "-t", "0900"],
-  ["switch", "mood",   "happy", "-d", "2024-01-15", "-t", "1000"],
-  ["switch", "mood",   "sad",   "-d", "2024-01-15", "-t", "1500"],
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "0900"],
+  ["switch", "mood", "sad",   "-d", "2024-01-15", "-t", "1500"],
+  ["switch", "mood", "tired", "-d", "2024-01-15", "-t", "2200"],
 ]
-query = ["dayview", "-d", "2024-01-15", "mood"]
+query = ["dayview", "-d", "2024-01-15"]
 
 [[fixture]]
-name = "dayview_spec_color_field"
-description = "`dayview` exercises a mySpec-overridden field (sleep) → spec color"
+name = "dayview_spec_color_svg"
+description = "`dayview` SVG exercises a mySpec-overridden field (sleep) → spec color"
 surface = "dayview"
 setup = [
   ["start", "sleep", "-d", "2024-01-14", "-t", "2300"],
@@ -237,8 +243,8 @@ setup = [
 query = ["dayview", "-d", "2024-01-15"]
 
 [[fixture]]
-name = "dayview_empty_day"
-description = "`dayview` on a day with no entries — empty timeline"
+name = "dayview_empty_day_svg"
+description = "`dayview` SVG on a day with no entries — empty timeline"
 surface = "dayview"
 setup = [
   ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],

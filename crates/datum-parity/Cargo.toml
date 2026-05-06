@@ -25,3 +25,4 @@ sha2 = { workspace = true }
 proptest = "1"
 tempfile = "3"
 chrono = { workspace = true }
+regex = { workspace = true }

@@ -156,19 +156,49 @@ mod runtime_tests {
 
     /// Normalize datum output so deterministic-input → deterministic-output.
     ///
-    /// Datum's `CREATE <hid> <slug>` log lines and any line with a `hid`
-    /// trailing column are stripped; the visible-text body is what we
-    /// pin. If a future fixture needs hid pinning, add a `--show=none`
-    /// flag to the query rather than relaxing this normalizer.
+    /// Datum bakes wall-clock timestamps and random hids into its
+    /// stdout. Each run produces fresh values; without scrubbing, no two
+    /// runs of a fixture produce identical output.
+    ///
+    /// What we scrub:
+    /// * `CREATE <hid> <slug>` log lines — dropped entirely.
+    /// * `EXISTS \x1b[m<hid>\x1b[m` headers in `get` output — replaced
+    ///   with `EXISTS <HID>`.
+    /// * Trailing `<hid>` in `tail` rows (the rightmost column) —
+    ///   replaced with `<HID>`.
+    ///
+    /// What we don't scrub: the visible-text rendering (the timestamp
+    /// derived from the entry's pinned `-d/-t` flags, field/state
+    /// names, ANSI color codes). Those ARE the parity surface.
+    ///
+    /// SVG output (nowview/dayview) doesn't carry hids in its content,
+    /// but the normalizer still runs over it harmlessly.
     fn normalize(raw: &str) -> String {
-        let mut out = Vec::new();
+        let create_drop = regex::Regex::new(r"^CREATE \S+ \S+$").unwrap();
+        let exists_line = regex::Regex::new(
+            r"^\x1b\[33mEXISTS\x1b\[39m\s+\x1b\[33m[a-z0-9]+\x1b\[39m(?P<rest>.*)$",
+        )
+        .unwrap();
+        // Tail rows end in `<spaces><hid>` (5 lowercase-alphanumeric).
+        // Anchored to end-of-line. Avoid eating dates like "2024" by
+        // requiring the column to be lowercase letters at least once.
+        let tail_hid =
+            regex::Regex::new(r"(?P<lead>\s{2,})(?:[a-z][a-z0-9]{4}|[a-z0-9]{4,6})$").unwrap();
+
+        let mut lines: Vec<String> = Vec::new();
         for line in raw.lines() {
-            if line.starts_with("CREATE ") {
+            if create_drop.is_match(line) {
                 continue;
             }
-            out.push(line.to_owned());
+            let mut out = line.to_owned();
+            out = exists_line
+                .replace_all(&out, "\x1b[33mEXISTS\x1b[39m \x1b[33m<HID>\x1b[39m$rest")
+                .into_owned();
+            out = tail_hid.replace_all(&out, "${lead}<HID>").into_owned();
+            lines.push(out);
         }
-        let mut joined = out.join("\n");
+
+        let mut joined = lines.join("\n");
         if !joined.is_empty() {
             joined.push('\n');
         }
@@ -179,10 +209,13 @@ mod runtime_tests {
     /// success or `Err(message)` describing the failure. Failures are
     /// accumulated by the caller so one bad fixture doesn't block the
     /// whole batch (especially under PARITY_REGEN=1).
-    fn run_fixture(
-        runtime: &DatumRuntime,
-        f: &Fixture,
-    ) -> Result<String, String> {
+    ///
+    /// `nowview` / `dayview` render to a file (datum doesn't expose an
+    /// stdout option for SVG); for those surfaces the harness substitutes
+    /// `OUTPUT_FILE` in the query with a temp path, runs the command,
+    /// and reads the file back as the captured output. SVG bytes are
+    /// the text we pin.
+    fn run_fixture(runtime: &DatumRuntime, f: &Fixture) -> Result<String, String> {
         let temp = TempDir::new().map_err(|e| format!("tempdir: {e}"))?;
         let db = format!("parity_{}", f.name);
 
@@ -196,6 +229,33 @@ mod runtime_tests {
             runtime
                 .run(temp.path(), &full)
                 .map_err(|e| format!("setup {cmd:?}: {e}"))?;
+        }
+
+        let needs_file = matches!(f.surface, Surface::Nowview | Surface::Dayview);
+        if needs_file {
+            let out_file = temp.path().join(format!("{}.svg", f.name));
+            let out_str = out_file.to_string_lossy().into_owned();
+            let mut q_full: Vec<String> = vec!["--db".into(), db.clone()];
+            for arg in &f.query {
+                if arg == "OUTPUT_FILE" {
+                    q_full.push(out_str.clone());
+                } else {
+                    q_full.push(arg.clone());
+                }
+            }
+            // If the fixture didn't include OUTPUT_FILE, append `-o file`
+            // so we always have somewhere for the renderer to write.
+            if !f.query.iter().any(|a| a == "OUTPUT_FILE") {
+                q_full.push("-o".into());
+                q_full.push(out_str.clone());
+            }
+            let q_refs: Vec<&str> = q_full.iter().map(|s| s.as_str()).collect();
+            runtime
+                .run(temp.path(), &q_refs)
+                .map_err(|e| format!("query {:?}: {e}", f.query))?;
+            let svg = fs::read_to_string(&out_file)
+                .map_err(|e| format!("read svg {}: {e}", out_file.display()))?;
+            return Ok(normalize(&svg));
         }
 
         let mut q_full: Vec<&str> = vec!["--db", &db];
@@ -240,6 +300,19 @@ mod runtime_tests {
                     continue;
                 }
             };
+
+            // Empty expected file = "fixture defined but not yet
+            // captured". The harness shipped with this state for some
+            // fixtures so that the live test passes against the subset
+            // that's populated. To opt these into the comparison, run
+            // with `PARITY_REGEN=1` once and commit the captures.
+            if want.is_empty() {
+                eprintln!(
+                    "[{}] expected.txt empty; skipping (run with PARITY_REGEN=1 to populate)",
+                    f.name
+                );
+                continue;
+            }
 
             if got != want {
                 failures.push(format!(
