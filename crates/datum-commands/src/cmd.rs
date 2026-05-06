@@ -5080,6 +5080,19 @@ mod tests {
         prep
     }
 
+    /// Stamp `extra_metadata` directly on the row via SQL. The public
+    /// `save_existing_entry` deliberately doesn't write the `extra_metadata`
+    /// column (only the import / migration path does), so tests that need
+    /// to seed system-managed provenance write the column directly.
+    fn stamp_extra_metadata(db: &datum_core::db::Db, slug: &str, value: &JsonValue) {
+        db.conn()
+            .execute(
+                "UPDATE entries SET extra_metadata = ?1 WHERE slug = ?2",
+                rusqlite::params![value.to_string(), slug],
+            )
+            .unwrap();
+    }
+
     #[test]
     fn edit_modifies_entry_via_scripted_editor() {
         use datum_core::db::Db;
@@ -5191,7 +5204,7 @@ mod tests {
     fn edit_preserves_extra_metadata_against_injection() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let mut e = seed_entry(
+        let e = seed_entry(
             &db,
             "mood",
             Verb::Switch,
@@ -5203,8 +5216,7 @@ mod tests {
         // `datum db import --from <legacy>` would deposit. The user has no
         // legitimate way to mutate this column.
         let original_meta = serde_json::json!({"_import": {"source": "legacy", "v": 1}});
-        e.extra_metadata = Some(original_meta.clone());
-        db.save_existing_entry(&e).unwrap();
+        stamp_extra_metadata(&db, e.slug.as_str(), &original_meta);
         let before = db.get_entry(&e.slug).unwrap();
         assert_eq!(before.extra_metadata, Some(original_meta.clone()));
 
@@ -5253,7 +5265,7 @@ mod tests {
     fn edit_no_change_preserves_extra_metadata() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let mut e = seed_entry(
+        let e = seed_entry(
             &db,
             "mood",
             Verb::Switch,
@@ -5261,8 +5273,7 @@ mod tests {
             None,
         );
         let original_meta = serde_json::json!({"_import": {"source": "legacy"}});
-        e.extra_metadata = Some(original_meta.clone());
-        db.save_existing_entry(&e).unwrap();
+        stamp_extra_metadata(&db, e.slug.as_str(), &original_meta);
         let before = db.get_entry(&e.slug).unwrap();
 
         with_datum_editor("true", || {
