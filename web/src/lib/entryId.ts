@@ -18,13 +18,14 @@ export function buildSlug(field: string, time?: DatumTime): string {
 
 export async function contentHash(
 	field: string,
-	timeStart: DatumTime | undefined,
-	timeEnd: DatumTime | undefined,
-	value: unknown,
-	extraData: unknown
+	occurTime: DatumTime,
+	state: unknown,
+	dur: string | undefined,
+	followingState: unknown,
+	data: unknown
 ): Promise<string> {
-	const data = JSON.stringify({ field, timeStart, timeEnd, value, extraData });
-	const encoded = new TextEncoder().encode(data);
+	const payload = JSON.stringify({ field, occurTime, state, dur, followingState, data });
+	const encoded = new TextEncoder().encode(payload);
 	const hashBuffer = await crypto.subtle.digest('SHA-256', encoded);
 	const hashArray = Array.from(new Uint8Array(hashBuffer));
 	return hashArray.map((b) => b.toString(16).padStart(2, '0')).join('');

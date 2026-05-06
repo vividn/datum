@@ -3,6 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "generate:schema": "node scripts/generate-schema.mjs",
+    "predev": "node scripts/generate-schema.mjs",
+    "prebuild": "node scripts/generate-schema.mjs",
+    "precheck": "node scripts/generate-schema.mjs",
     "dev": "vite dev",
     "build": "vite build",
     "preview": "vite preview",

@@ -3,6 +3,7 @@
 	import { initDb, insertEntry, getRecentEntries } from '$lib/db.js';
 	import { parseInput } from '$lib/parse.js';
 	import { generateId, buildSlug, contentHash } from '$lib/entryId.js';
+	import { deriveStoredVerb } from '$lib/verb.js';
 	import type { Entry } from '$lib/types.js';
 
 	let inputValue = '';
@@ -49,35 +50,44 @@
 
 		const offsetMinutes = -now.getTimezoneOffset();
 		const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-		const timeStart = {
+		const occurTime = {
 			utc: entryTime.toISOString(),
 			offsetMinutes,
 			timezone
 		};
 
-		const hash = await contentHash(parsed.field, timeStart, undefined, parsed.value, parsed.extraData);
-		const id = generateId();
-		const slug = buildSlug(parsed.field, timeStart);
+		const hash = await contentHash(
+			parsed.field,
+			occurTime,
+			parsed.state,
+			undefined,
+			undefined,
+			parsed.data
+		);
+		const hid = generateId();
+		const slug = buildSlug(parsed.field, occurTime);
+		const verb = deriveStoredVerb(parsed.state, undefined, undefined);
 
 		const entry: Entry = {
-			id,
+			hid,
 			slug,
 			contentHash: hash,
 			field: parsed.field,
-			verb: parsed.verb,
-			value: parsed.value,
-			extraData: parsed.extraData,
+			state: parsed.state,
+			data: parsed.data,
 			unit: parsed.unit,
-			timeStart,
-			createdAt: now.toISOString(),
-			modifiedAt: now.toISOString(),
-			deviceId
+			verb,
+			occurTime,
+			createTime: now.toISOString(),
+			modifyTime: now.toISOString(),
+			deviceId,
+			rawInput: raw
 		};
 
 		try {
 			await insertEntry(entry);
 			inputValue = '';
-			status = `✓ ${entry.verb} ${entry.field}${entry.value !== undefined ? ' = ' + JSON.stringify(entry.value) : ''}`;
+			status = `✓ ${entry.verb} ${entry.field}${entry.state !== undefined ? ' = ' + JSON.stringify(entry.state) : ''}`;
 			statusType = 'ok';
 			entries = await getRecentEntries(20);
 		} catch (e) {
@@ -91,19 +101,18 @@
 	}
 
 	function formatTime(entry: Entry): string {
-		const t = entry.timeStart?.utc ?? entry.createdAt;
-		const d = new Date(t);
+		const d = new Date(entry.occurTime.utc);
 		return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 	}
 
 	function formatEntry(entry: Entry): string {
 		let s = `[${entry.verb}] ${entry.field}`;
-		if (entry.value !== undefined) {
-			s += ` = ${JSON.stringify(entry.value)}`;
+		if (entry.state !== undefined) {
+			s += ` = ${JSON.stringify(entry.state)}`;
 		}
 		if (entry.unit) s += ` ${entry.unit}`;
-		if (entry.extraData) {
-			const extras = Object.entries(entry.extraData as Record<string, unknown>)
+		if (entry.data) {
+			const extras = Object.entries(entry.data as Record<string, unknown>)
 				.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
 				.join(' ');
 			s += `  ${extras}`;
@@ -136,7 +145,7 @@
 		{#if entries.length === 0}
 			<div class="empty">No entries yet. Try: <code>switch mood happy</code></div>
 		{:else}
-			{#each entries as entry (entry.id)}
+			{#each entries as entry (entry.hid)}
 				<div class="row">
 					<span class="time">{formatTime(entry)}</span>
 					<span class="entry-text">{formatEntry(entry)}</span>
