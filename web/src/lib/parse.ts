@@ -1,8 +1,8 @@
-import type { ParsedInput, Verb } from './types.js';
+import type { ParsedInput, InputVerb } from './types.js';
 
-const VERBS: Verb[] = ['occur', 'start', 'stop', 'switch', 'note'];
+const VERBS: InputVerb[] = ['occur', 'switch', 'start', 'stop', 'add', 'note'];
 
-function isVerb(s: string): s is Verb {
+function isVerb(s: string): s is InputVerb {
 	return (VERBS as string[]).includes(s);
 }
 
@@ -31,10 +31,10 @@ export function parseInput(input: string): ParsedInput | null {
 	const tokens = raw.split(/\s+/);
 	if (tokens.length === 0) return null;
 
-	let verb: Verb = 'occur';
+	let verb: InputVerb = 'occur';
 	let field = '';
-	const extraData: Record<string, unknown> = {};
-	const valueTokens: string[] = [];
+	const data: Record<string, unknown> = {};
+	const stateTokens: string[] = [];
 	let unit: string | undefined;
 	let timeOffset: number | undefined;
 	let timeAbsolute: string | undefined;
@@ -95,38 +95,38 @@ export function parseInput(input: string): ParsedInput | null {
 		// key=value extra data
 		const kv = parseKV(tok);
 		if (kv) {
-			extraData[kv.key] = kv.val;
+			data[kv.key] = kv.val;
 			i++;
 			continue;
 		}
 
-		valueTokens.push(tok);
+		stateTokens.push(tok);
 		i++;
 	}
 
-	// Parse value and unit from valueTokens
-	let value: unknown;
-	if (valueTokens.length === 0) {
-		value = undefined;
-	} else if (valueTokens.length === 1) {
-		value = parseValue(valueTokens[0]);
+	// Parse state and unit from stateTokens
+	let state: unknown;
+	if (stateTokens.length === 0) {
+		state = undefined;
+	} else if (stateTokens.length === 1) {
+		state = parseValue(stateTokens[0]);
 	} else {
 		// Last token might be a unit if value is numeric
-		const maybeNum = parseValue(valueTokens[0]);
-		if (typeof maybeNum === 'number' && valueTokens.length === 2) {
-			value = maybeNum;
-			unit = valueTokens[1];
+		const maybeNum = parseValue(stateTokens[0]);
+		if (typeof maybeNum === 'number' && stateTokens.length === 2) {
+			state = maybeNum;
+			unit = stateTokens[1];
 		} else {
-			value = valueTokens.join(' ');
+			state = stateTokens.join(' ');
 		}
 	}
 
 	return {
 		verb,
 		field,
-		value,
+		state,
 		unit,
-		extraData: Object.keys(extraData).length > 0 ? extraData : undefined,
+		data: Object.keys(data).length > 0 ? data : undefined,
 		timeOffset,
 		timeAbsolute
 	};

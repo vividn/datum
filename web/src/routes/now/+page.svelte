@@ -13,8 +13,7 @@
 	});
 
 	function formatTime(entry: Entry): string {
-		const t = entry.timeStart?.utc ?? entry.createdAt;
-		const d = new Date(t);
+		const d = new Date(entry.occurTime.utc);
 		const now = new Date();
 		const diffMs = now.getTime() - d.getTime();
 		const diffMin = Math.floor(diffMs / 60000);
@@ -26,8 +25,8 @@
 	}
 
 	function formatValue(entry: Entry): string {
-		if (entry.value === undefined) return '';
-		let s = JSON.stringify(entry.value);
+		if (entry.state === undefined) return '';
+		let s = JSON.stringify(entry.state);
 		if (entry.unit) s += ` ${entry.unit}`;
 		return s;
 	}
@@ -46,7 +45,7 @@
 				<div class="field-card">
 					<div class="field-name">{entry.field}</div>
 					<div class="field-value">
-						{#if entry.value !== undefined}
+						{#if entry.state !== undefined}
 							<span class="value">{formatValue(entry)}</span>
 						{:else}
 							<span class="verb">{entry.verb}</span>
