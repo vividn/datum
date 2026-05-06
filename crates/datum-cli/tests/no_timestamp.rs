@@ -1,9 +1,11 @@
-//! Tests for `-T/--no-timestamp` unified semantics (S5 / da-u4k.5).
+//! Tests for `-T/--no-timestamp` semantics (S5 / da-u4k.5, da-5ns).
 //!
 //! Any log verb (`occur`, `start`, `stop`/`end`, `switch`, `add`) + `-T`
-//! produces a timeless, add-equivalent entry: `start_time` and `end_time`
-//! are both None, `verb` reads back as `add`. Time-specifying flags mixed
-//! with `-T` error out.
+//! produces a timeless entry: the slug carries `:unset`, no duration is
+//! recorded, and the verb is whatever derive_verb returns for the
+//! action's canonical (state, dur, fs) triple. The schema's NOT NULL
+//! `occur_time` column is filled with the entry's `create_time` as a
+//! stub at insert time. Time-specifying flags mixed with `-T` error out.
 
 mod common;
 
@@ -14,65 +16,70 @@ use datum_core::{assert_count, assert_entry_matches};
 // ─── Happy path: each log verb + -T yields a timeless add-shaped entry ───────
 
 #[test]
-fn occur_minus_t_is_timeless_add() {
+fn occur_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["occur", "coffee", "-T"], &db).expect("occur -T");
     assert_count!(db, "coffee", 1);
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_entry_matches!(e, field: "coffee", verb: "add");
-    assert!(e.occur_time.is_none(), "occur -T must not set start_time");
-    assert!(e.dur.is_none(), "occur -T must not set end_time");
+    // occur -T: state=None, dur=None → derive_verb returns Point.
+    assert_entry_matches!(e, field: "coffee", verb: "point");
+    assert!(e.slug.ends_with(":unset"), "timeless slug carries :unset (got: {})", e.slug);
+    assert!(e.dur.is_none(), "occur -T must not set dur");
 }
 
 #[test]
-fn start_minus_t_is_timeless_add() {
+fn start_minus_t_is_timeless_switch() {
     let db = fresh_db();
     run_cli(&["start", "sleep", "-T"], &db).expect("start -T");
     let e = &db.entries_for_field("sleep", None).unwrap()[0];
-    assert_entry_matches!(e, verb: "add");
-    assert!(e.occur_time.is_none());
+    // start -T: action canonicalizes state=true, dur=None → Switch.
+    assert_entry_matches!(e, verb: "switch");
+    assert!(e.slug.ends_with(":unset"));
     assert!(e.dur.is_none());
 }
 
 #[test]
-fn stop_minus_t_is_timeless_add() {
+fn stop_minus_t_is_timeless_switch() {
     let db = fresh_db();
     run_cli(&["stop", "task", "-T"], &db).expect("stop -T");
     let e = &db.entries_for_field("task", None).unwrap()[0];
-    assert_entry_matches!(e, verb: "add");
-    assert!(e.occur_time.is_none());
+    // stop -T: action canonicalizes state=false, dur=None → Switch.
+    assert_entry_matches!(e, verb: "switch");
+    assert!(e.slug.ends_with(":unset"));
     assert!(e.dur.is_none());
 }
 
 #[test]
-fn end_minus_t_is_timeless_add() {
+fn end_minus_t_is_timeless_switch() {
     let db = fresh_db();
     run_cli(&["end", "task", "-T"], &db).expect("end -T");
     let e = &db.entries_for_field("task", None).unwrap()[0];
-    assert_entry_matches!(e, verb: "add");
-    assert!(e.occur_time.is_none());
+    assert_entry_matches!(e, verb: "switch");
+    assert!(e.slug.ends_with(":unset"));
     assert!(e.dur.is_none());
 }
 
 #[test]
-fn switch_minus_t_is_timeless_add_preserves_value() {
+fn switch_minus_t_preserves_value() {
     let db = fresh_db();
     run_cli(&["switch", "mood", "happy", "-T"], &db).expect("switch -T");
     let e = &db.entries_for_field("mood", None).unwrap()[0];
-    // The primary value ("happy") must still land on the entry — `-T` only
-    // suppresses the timestamp, not the payload. Verb rides back as `add`.
-    assert_entry_matches!(e, field: "mood", verb: "add", value: "happy");
-    assert!(e.occur_time.is_none());
+    // The primary value ("happy") still lands on the entry — `-T` only
+    // suppresses the timestamp, not the payload. state="happy", dur=None
+    // → Switch.
+    assert_entry_matches!(e, field: "mood", verb: "switch", value: "happy");
+    assert!(e.slug.ends_with(":unset"));
     assert!(e.dur.is_none());
 }
 
 #[test]
-fn add_minus_t_is_timeless() {
+fn add_minus_t_is_timeless_point() {
     let db = fresh_db();
     run_cli(&["add", "note", "-T"], &db).expect("add -T");
     let e = &db.entries_for_field("note", None).unwrap()[0];
-    assert_entry_matches!(e, verb: "add");
-    assert!(e.occur_time.is_none());
+    // add -T: state=None (Add doesn't canonicalize), dur=None → Point.
+    assert_entry_matches!(e, verb: "point");
+    assert!(e.slug.ends_with(":unset"));
     assert!(e.dur.is_none());
 }
 
@@ -87,7 +94,7 @@ fn minus_t_keeps_extra_data_kv_pairs() {
     let data = e.data.as_ref().expect("kv pairs land in extra_data");
     assert_eq!(data.get("pos"), Some(&serde_json::json!("verb")));
     assert_eq!(data.get("srcLang"), Some(&serde_json::json!("pt")));
-    assert!(e.occur_time.is_none());
+    assert!(e.slug.ends_with(":unset"));
 }
 
 // ─── Rejection: -T plus any time flag is a hard error ────────────────────────

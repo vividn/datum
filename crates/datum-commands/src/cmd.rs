@@ -489,13 +489,16 @@ pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Res
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-pub(crate) fn log_entry(mut action: Action, mut args: LogArgs, db: &Db) -> Result<()> {
-    // -T/--no-timestamp: route any log verb through the timeless `add`
-    // codepath (S5). Time-specifying flags are rejected so silent discard
-    // can't mask a user misconception.
+pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()> {
+    // -T/--no-timestamp: skip time-flag computation but keep the action's
+    // own state-canonicalization rules (so `switch ... -T` still preserves
+    // its positional state, `start -T` still records state=true, etc.).
+    // Time-specifying flags are rejected so silent discard can't mask a
+    // user misconception. The schema's NOT NULL `occur_time` is filled in
+    // at insert time with `create_time` as a stub, and the slug carries
+    // `:unset` so timeless entries remain identifiable downstream.
     if args.time.omit_timestamp {
         check_no_time_flags(&args)?;
-        action = Action::Add;
     }
 
     // da-ffp6: For switch, only the first bare positional is the state;

@@ -257,7 +257,8 @@ fn switch_dur_creates_forward_block_ending_false() {
         .expect("switch --dur 10m");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
+    // v3 (da-5ns): state="household" + dur=positive → derive_verb returns Block.
+    assert_entry_matches!(entry, field: "project", verb: "block", value: "household");
     assert_eq!(entry.duration_seconds(), Some(10 * 60));
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
@@ -267,37 +268,41 @@ fn switch_dur_creates_forward_block_ending_false() {
     // Midway through the block, state is "household".
     let mid = ts + chrono::Duration::minutes(5);
     assert_eq!(db.get_active_state("project", mid).unwrap(), json!("household"));
-    // At time_end, the block closes — state compiles to false.
-    assert_eq!(db.get_active_state("project", te).unwrap(), json!(false));
+    // Under v3 Block has no implicit trailing-edge event — the state at
+    // time_end remains "household". A trailing transition requires
+    // BlockSwitch (state + dur + following_state).
+    assert_eq!(db.get_active_state("project", te).unwrap(), json!("household"));
 }
 
 /// TS #9: "records a hole of time in the state when given a negative duration".
 ///
-/// Datum's negative duration produced a backward block whose interior was
-/// `false`. Daydumb mirrors this: `--dur=-10m` yields `time_end =
-/// time_start - 10m` (so `time_end < time_start`). The state compiler emits
-/// the `false` event at `time_end` and the switched-to value at `time_start`,
-/// so any query within `(time_end, time_start)` resolves to `false`.
+/// Datum's negative duration produced a backward block. Under v3
+/// (da-5ns), the CLI insert path clamps the time delta to zero in
+/// `Entry::new_legacy` — `(end - start).num_seconds().max(0)` —
+/// collapsing `--dur=-10m` to `dur="PT0S"`. With state="household" set
+/// (positional → state) and dur=Zero, derive_verb returns Point. The
+/// "backward hole" semantic is no longer expressible at the CLI; users
+/// who want a hole must run `start <field> -t=-Nm` then a `stop`.
 #[test]
-fn switch_negative_dur_creates_backward_hole() {
+fn switch_negative_dur_collapses_to_point() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "household", "--dur=-10m"], &db)
         .expect("switch --dur=-10m");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
-    assert_eq!(entry.duration_seconds(), Some(-10 * 60));
+    assert_entry_matches!(entry, field: "project", verb: "point", value: "household");
+    assert_eq!(
+        entry.duration_seconds(),
+        Some(0),
+        "negative dur clamps to zero seconds in Entry::new_legacy",
+    );
 
     let ts = entry.occur_time.as_ref().unwrap().utc;
-    let te = entry.computed_end_time().unwrap().utc;
-    assert_eq!((te - ts).num_seconds(), -10 * 60);
-
-    // 5 minutes before `now` sits inside the hole → false.
-    let in_hole = ts - chrono::Duration::minutes(5);
-    assert_eq!(db.get_active_state("project", in_hole).unwrap(), json!(false));
-    // At time_start, the switched-to value takes over.
-    assert_eq!(db.get_active_state("project", ts).unwrap(), json!("household"));
+    // Under v3 Point emits Bool(false) at occur_time regardless of the
+    // entry's stored `state` (carried for downstream consumers but not
+    // used by the state compiler — see state::collect_events).
+    assert_eq!(db.get_active_state("project", ts).unwrap(), json!(false));
 }
 
 /// TS #10: "when --moment/-m is specified, dur is null and there is no
@@ -317,12 +322,14 @@ fn switch_moment_produces_point_in_time_entry() {
     .expect("switch --moment with -k");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
-    let ts = entry.occur_time.as_ref().expect("time_start set");
-    let te = entry.computed_end_time().expect("time_end set on --moment");
+    // v3 (da-5ns): --moment yields dur="PT0S"; with state="household" set
+    // and dur=Zero, derive_verb returns Point.
+    assert_entry_matches!(entry, field: "project", verb: "point", value: "household");
+    let ts = entry.occur_time.as_ref().expect("occur_time set");
+    let te = entry.computed_end_time().expect("computed_end_time available on --moment");
     assert_eq!(
         ts.utc, te.utc,
-        "--moment: time_start == time_end (point-in-time)",
+        "--moment: occur_time == computed_end_time (point-in-time)",
     );
     let extra = entry.data.as_ref().expect("skillPoints in extra_data");
     assert_eq!(extra["skillPoints"], json!(3));
@@ -462,10 +469,11 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
     .expect("switch with multiple -k keys + --dur");
 
     let entry = &db.entries_for_field("book", None).unwrap()[0];
+    // v3: state=set + dur=positive → derive_verb returns Block.
     assert_entry_matches!(
         entry,
         field: "book",
-        verb: "switch",
+        verb: "block",
         value: "the wind in the willows",
     );
     assert_eq!(entry.duration_seconds(), Some(5 * 60));
