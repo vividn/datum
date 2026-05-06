@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 20;
+pub const CURRENT_SCHEMA_VERSION: u32 = 21;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -175,6 +175,13 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m19_to_20_time_shape_pivot,
         down: down_20_to_19_time_shape_pivot,
     },
+    Migration {
+        from: 20,
+        to: 21,
+        summary: "aliases: drop materialized derived alias rows + the derived_from_field column. Derived aliases now live in spec_json and are computed lazily by SpecAliasIndex (da-8y2q.5)",
+        apply: m20_to_21_drop_derived_from_field,
+        down: down_21_to_20_drop_derived_from_field,
+    },
 ];
 
 /// da-5ns.1: time-shape pivot. Reverts daydumb's time model from
@@ -259,6 +266,62 @@ fn m19_to_20_time_shape_pivot(conn: &Connection) -> Result<()> {
              WHERE deleted_at IS NULL;",
     )?;
     Ok(())
+}
+
+/// da-8y2q.5: drop the materialized-derived-alias scheme. The
+/// `aliases.derived_from_field` column tagged rows that mirrored a
+/// FieldSpec's bare-field / terminal-end / per-state aliases, but the
+/// design wrote ~10 alias rows per spec save while reads always hit the
+/// same `aliases` table. Cross-spec state-name collisions (two specs
+/// both declaring state `done`) silently raced on save order.
+///
+/// Post-v21 the derived aliases live exclusively in
+/// `field_specs.spec_json` and are surfaced on read via
+/// [`crate::db::Db::spec_alias_index`]. The forward step deletes any
+/// derived-alias row (those whose `derived_from_field IS NOT NULL`)
+/// before rebuilding the table without the column.
+///
+/// **Pre-v1 hard-cut.** No production data exists; the rebuild matches
+/// the pattern used by other table-shape migrations in this file.
+fn m20_to_21_drop_derived_from_field(conn: &Connection) -> Result<()> {
+    // Synthetic test setups (and ancient pre-a0 DBs missing the table)
+    // can reach this step without an `aliases` table — the post-migration
+    // schema.sql pass will (re)create it in the v=21 shape, so a no-op is
+    // safe.
+    let table_exists: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master \
+             WHERE type = 'table' AND name = 'aliases'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !table_exists {
+        return Ok(());
+    }
+    let has_col: bool = conn
+        .query_row(
+            "SELECT COUNT(*) FROM pragma_table_info('aliases') \
+             WHERE name = 'derived_from_field'",
+            [],
+            |row| row.get::<_, i64>(0).map(|n| n > 0),
+        )
+        .unwrap_or(false);
+    if !has_col {
+        return Ok(());
+    }
+    conn.execute_batch("DELETE FROM aliases WHERE derived_from_field IS NOT NULL;")?;
+    rebuild_aliases(conn, /* with_derived_from_field = */ false)
+}
+
+/// Reverse v20→v21: re-add the `derived_from_field` column to
+/// `aliases` via table rebuild. Surviving rows have `derived_from_field
+/// = NULL` — the v21 forward step deleted derived-alias rows, so the
+/// information needed to re-populate the column does not exist on disk.
+/// Pre-v1 hard-cut: this down step exists for the chain-test harness
+/// only.
+fn down_21_to_20_drop_derived_from_field(conn: &Connection) -> Result<()> {
+    rebuild_aliases(conn, /* with_derived_from_field = */ true)
 }
 
 /// da-2zd: per-surface render visibility. `render_json` mirrors
@@ -1266,6 +1329,55 @@ fn rebuild_field_specs(
     Ok(())
 }
 
+/// Rebuild `aliases` to a specific (derived_from_field) shape, preserving
+/// all rows. The `kit_id` column is always present (added by m15→16, well
+/// before m20→21), so we don't condition on it.
+fn rebuild_aliases(conn: &Connection, with_derived_from_field: bool) -> Result<()> {
+    let mut cols = vec!["name TEXT NOT NULL PRIMARY KEY", "alias_json TEXT NOT NULL"];
+    if with_derived_from_field {
+        cols.push("derived_from_field TEXT");
+    }
+    cols.push("kit_id TEXT");
+    let create = format!("CREATE TABLE aliases__new ({});", cols.join(", "));
+
+    let mut select_cols = vec!["name", "alias_json"];
+    if with_derived_from_field {
+        // Forward (drop column) never takes this branch. The down branch
+        // re-adds the column populated with NULL — no rows preserve the
+        // tag because the forward step already deleted derived rows.
+        select_cols.push("NULL AS derived_from_field");
+    }
+    select_cols.push("kit_id");
+
+    let copy = format!(
+        "INSERT INTO aliases__new (name, alias_json{}, kit_id) \
+            SELECT {} FROM aliases;",
+        if with_derived_from_field {
+            ", derived_from_field"
+        } else {
+            ""
+        },
+        select_cols.join(", ")
+    );
+
+    let mut sql = String::new();
+    sql.push_str("DROP INDEX IF EXISTS idx_aliases_derived_from_field;\n");
+    sql.push_str("DROP INDEX IF EXISTS idx_aliases_kit_id;\n");
+    sql.push_str(&create);
+    sql.push_str(&copy);
+    sql.push_str("DROP TABLE aliases;\n");
+    sql.push_str("ALTER TABLE aliases__new RENAME TO aliases;\n");
+    sql.push_str("CREATE INDEX IF NOT EXISTS idx_aliases_kit_id ON aliases (kit_id);\n");
+    if with_derived_from_field {
+        sql.push_str(
+            "CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field \
+                ON aliases (derived_from_field);\n",
+        );
+    }
+    conn.execute_batch(&sql)?;
+    Ok(())
+}
+
 /// Rebuild `entries` to the v3 shape with optional v8 (`user_asserted_last_state`)
 /// and v12 (`extra_metadata`) columns. Generated columns (`verb`, `dur_seconds`)
 /// and the v3-era indexes are recreated. Late-binding indexes
@@ -1523,6 +1635,11 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
     // and the runner walks it forward through the rebuild.
     if has_column(conn, "entries", "start_time")? {
         return Ok(19);
+    }
+    // m20_to_21: aliases.derived_from_field was dropped at v=21. Its
+    // presence pins the DB at v=20.
+    if has_column(conn, "aliases", "derived_from_field")? {
+        return Ok(20);
     }
     // All column-add features present → DB is already at current shape.
     // Idempotent re-runs are CREATE/INDEX-IF-NOT-EXISTS and will no-op.

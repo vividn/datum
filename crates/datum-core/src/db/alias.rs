@@ -1,6 +1,11 @@
 //! User aliases: `lookup_alias`, `delete_alias`, `save_alias`.
-//! Derived aliases are managed through the `field_specs` save path — see
-//! [`super::Db::save_field_spec`].
+//!
+//! Spec-derived aliases are *not* stored as rows here. Each
+//! [`crate::field_spec::FieldSpec`] carries its own `derived_aliases`
+//! list inside `spec_json`; reads consult the lazy
+//! [`super::types::SpecAliasIndex`] (built by
+//! [`super::Db::spec_alias_index`]). User-declared and kit-installed
+//! aliases shadow spec-derived names — see [`Db::lookup_alias`] (da-8y2q.5).
 //!
 //! Kit-scoped aliases (slice 3, da-d4t.3) live alongside user-declared
 //! ones in the same `aliases` table. The `kit_id` column tags rows that
@@ -26,7 +31,7 @@ pub enum KitAliasOutcome {
     /// dropped silently; the existing row remains the source of truth.
     SkippedExisting {
         /// Name of the kit that currently owns the row, or `None` if it's
-        /// a user-declared / derived row.
+        /// a user-declared row.
         existing_kit: Option<String>,
     },
 }
@@ -52,7 +57,9 @@ impl InstallAliasesReport {
 }
 
 impl Db {
-    /// Look up a single alias by name. Returns None if not found.
+    /// Look up a single alias by name. User/kit aliases (rows in the
+    /// `aliases` table) shadow spec-derived aliases; on a miss, falls
+    /// back to the [`super::types::SpecAliasIndex`].
     pub fn lookup_alias(&self, name: &str) -> Result<Option<Alias>> {
         let result: Option<String> = self
             .conn
@@ -62,30 +69,30 @@ impl Db {
                 |row| row.get(0),
             )
             .optional()?;
-        match result {
-            Some(json) => Ok(Some(serde_json::from_str(&json)?)),
-            None => Ok(None),
+        if let Some(json) = result {
+            return Ok(Some(serde_json::from_str(&json)?));
         }
+        // Fall through to the spec-alias index (da-8y2q.5).
+        let index = self.spec_alias_index()?;
+        Ok(index.entries.get(name).cloned())
     }
 
-    /// Delete a user-created alias. Fails silently if it doesn't exist.
-    /// Does NOT delete derived aliases (those are managed by their owning spec).
+    /// Delete a user-created alias row. Fails silently if it doesn't
+    /// exist. Spec-derived aliases live in `field_specs.spec_json`, not
+    /// in this table, so they cannot be deleted via this entrypoint.
     pub fn delete_alias(&self, name: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM aliases WHERE name = ?1 AND derived_from_field IS NULL",
-            params![name],
-        )?;
+        self.conn
+            .execute("DELETE FROM aliases WHERE name = ?1", params![name])?;
         Ok(())
     }
 
-    /// Save a user-created alias (derived_from_field = NULL, kit_id = NULL).
+    /// Save a user-created alias (kit_id = NULL).
     pub fn save_alias(&self, alias: &Alias) -> Result<()> {
         let json = serde_json::to_string(alias)?;
         self.conn.execute(
-            "INSERT INTO aliases (name, alias_json, derived_from_field, kit_id)
-             VALUES (?1, ?2, NULL, NULL)
+            "INSERT INTO aliases (name, alias_json, kit_id)
+             VALUES (?1, ?2, NULL)
              ON CONFLICT(name) DO UPDATE SET alias_json = excluded.alias_json,
-                                             derived_from_field = NULL,
                                              kit_id = NULL",
             params![alias.name, json],
         )?;
@@ -97,13 +104,11 @@ impl Db {
     ///
     /// Conflict policy mirrors [`Db::install_kit`] / [`Db::install_kit_views`]:
     /// - `force = false` → leave any existing row, record `SkippedExisting`.
-    ///   This protects user-declared aliases (`kit_id IS NULL`,
-    ///   `derived_from_field IS NULL`), derived aliases from a field spec
-    ///   (`derived_from_field IS NOT NULL`), and aliases owned by another
-    ///   kit alike — all are reported as a skip carrying the existing owner.
+    ///   This protects user-declared aliases (`kit_id IS NULL`) and
+    ///   aliases owned by another kit alike — both are reported as a skip
+    ///   carrying the existing owner.
     /// - `force = true`  → overwrite the row's `alias_json` and re-tag its
-    ///   `kit_id` to the new owner; clears `derived_from_field` so the row
-    ///   becomes a kit-owned alias.
+    ///   `kit_id` to the new owner.
     pub fn install_kit_aliases(
         &self,
         kit_id: &str,
@@ -137,11 +142,10 @@ impl Db {
             let alias = entry.clone().into_alias();
             let json = serde_json::to_string(&alias)?;
             tx.execute(
-                "INSERT INTO aliases (name, alias_json, derived_from_field, kit_id)
-                 VALUES (?1, ?2, NULL, ?3)
-                 ON CONFLICT(name) DO UPDATE SET alias_json          = excluded.alias_json,
-                                                 derived_from_field  = NULL,
-                                                 kit_id              = excluded.kit_id",
+                "INSERT INTO aliases (name, alias_json, kit_id)
+                 VALUES (?1, ?2, ?3)
+                 ON CONFLICT(name) DO UPDATE SET alias_json = excluded.alias_json,
+                                                 kit_id     = excluded.kit_id",
                 params![alias.name, json, kit_id],
             )?;
 
@@ -154,8 +158,8 @@ impl Db {
         Ok(report)
     }
 
-    /// Drop every alias tagged with this `kit_id`. User-declared and
-    /// derived rows are untouched. Returns the names removed.
+    /// Drop every alias tagged with this `kit_id`. User-declared rows
+    /// (`kit_id IS NULL`) are untouched. Returns the names removed.
     pub fn uninstall_kit_aliases(&self, kit_id: &str) -> Result<Vec<String>> {
         let tx = self.conn.unchecked_transaction()?;
         let mut stmt = tx.prepare("SELECT name FROM aliases WHERE kit_id = ?1 ORDER BY name")?;

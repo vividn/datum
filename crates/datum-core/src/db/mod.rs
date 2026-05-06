@@ -28,11 +28,14 @@ mod lookup;
 mod query;
 mod row_mapper;
 mod spec;
+mod spec_alias_index;
 mod state;
 mod time;
 mod tombstone;
 mod types;
 mod view;
+
+use std::cell::RefCell;
 
 use rusqlite::{params, Connection};
 
@@ -46,7 +49,8 @@ pub use kit_command::{
 pub use row_mapper::row_to_entry_public;
 pub use types::{
     AliasConflict, AliasConflictReason, ConflictStrategy, GroupColumn, InsertOutcome, ListParams,
-    RetimeFilter, SaveSpecReport, TimeMetric, TimeOrderIssue, TrackedField, IGNORED_STATE_VALUE,
+    RetimeFilter, SaveSpecReport, SpecAliasCollision, SpecAliasIndex, TimeMetric, TimeOrderIssue,
+    TrackedField, IGNORED_STATE_VALUE,
 };
 pub use view::{InstallViewsReport, InstalledView, KitViewOutcome, ViewResult};
 
@@ -57,13 +61,20 @@ pub(crate) use insert::try_insert;
 
 pub struct Db {
     conn: Connection,
+    /// Lazy cache of the spec-derived alias index. Built on first access
+    /// after open or after invalidation. Mutating operations on
+    /// `field_specs` clear it via [`Db::invalidate_spec_alias_index`].
+    spec_alias_cache: RefCell<Option<SpecAliasIndex>>,
 }
 
 impl Db {
     /// Open (or create) the database at the given path.
     pub fn open(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
-        let db = Db { conn };
+        let db = Db {
+            conn,
+            spec_alias_cache: RefCell::new(None),
+        };
         db.migrate()?;
         Ok(db)
     }
@@ -75,25 +86,30 @@ impl Db {
     /// no escape hatch.
     pub fn open_unmigrated(path: &str) -> Result<Self> {
         let conn = Connection::open(path)?;
-        Ok(Db { conn })
+        Ok(Db {
+            conn,
+            spec_alias_cache: RefCell::new(None),
+        })
     }
 
     /// Open an in-memory database (for tests).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;
-        let db = Db { conn };
+        let db = Db {
+            conn,
+            spec_alias_cache: RefCell::new(None),
+        };
         db.migrate()?;
         Ok(db)
     }
 
     fn migrate(&self) -> Result<()> {
         // Pre-a0 aliases table only carried (name, alias_json); add the
-        // derived_from_field and kit_id columns before schema.sql tries to
-        // index them. Missing-table errors on a fresh DB are ignored, as are
-        // duplicate-column errors when one column already exists.
-        let _ = self
-            .conn
-            .execute("ALTER TABLE aliases ADD COLUMN derived_from_field TEXT", []);
+        // `kit_id` column before schema.sql tries to index it. Missing-table
+        // errors on a fresh DB are ignored, as are duplicate-column errors
+        // when the column already exists. (The historical companion ALTER
+        // for `derived_from_field` was removed at da-8y2q.5 / v=21 when the
+        // materialized derived-alias scheme was dropped.)
         let _ = self
             .conn
             .execute("ALTER TABLE aliases ADD COLUMN kit_id TEXT", []);

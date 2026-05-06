@@ -210,22 +210,17 @@ CREATE TABLE IF NOT EXISTS kit_commands (
 CREATE INDEX IF NOT EXISTS idx_kit_commands_kit_id ON kit_commands(kit_id);
 
 
--- Aliases: user-created and spec-derived. `derived_from_field` is non-NULL
--- when the alias was auto-generated from a FieldSpec state; such rows
--- cascade-delete when the owning spec is deleted or its states change.
--- `kit_id` is non-NULL for rows installed via `datum kit install` from a
--- `[[alias]]` block; uninstall removes only rows with the matching kit_id.
--- (`derived_from_field` and `kit_id` are mutually exclusive — derived rows
--- live on the FieldSpec save path and never carry a kit_id.)
+-- Aliases: user-created and kit-installed. Spec-derived aliases live in
+-- `field_specs.spec_json` and are surfaced lazily via the in-memory
+-- SpecAliasIndex (see `db::Db::spec_alias_index`); they never write rows
+-- to this table. `kit_id` is non-NULL for rows installed via
+-- `datum kit install` from a `[[alias]]` block; uninstall removes only
+-- rows with the matching kit_id.
 CREATE TABLE IF NOT EXISTS aliases (
     name                TEXT NOT NULL PRIMARY KEY,
     alias_json          TEXT NOT NULL,
-    derived_from_field  TEXT,
     kit_id              TEXT
 );
-
-CREATE INDEX IF NOT EXISTS idx_aliases_derived_from_field
-    ON aliases (derived_from_field);
 
 CREATE INDEX IF NOT EXISTS idx_aliases_kit_id
     ON aliases (kit_id);
@@ -233,11 +228,10 @@ CREATE INDEX IF NOT EXISTS idx_aliases_kit_id
 -- Seed alias: `note` routes to `add`. After D3 `note` is no longer a
 -- first-class verb; this alias preserves muscle memory. User can override
 -- or remove via `datum alias set note ...` or `datum alias remove note`.
-INSERT OR IGNORE INTO aliases (name, alias_json, derived_from_field)
+INSERT OR IGNORE INTO aliases (name, alias_json)
 VALUES (
     'note',
-    '{"name":"note","expands_to":"add","description":"compat: note → add (seeded)"}',
-    NULL
+    '{"name":"note","expands_to":"add","description":"compat: note → add (seeded)"}'
 );
 
 -- Sync state: per-DB bookkeeping for push/pull against a relay.

@@ -14,7 +14,7 @@
 use rusqlite::{params, OptionalExtension};
 
 use crate::error::{DatumError, Result};
-use crate::field_spec::{Alias, FieldSpec};
+use crate::field_spec::FieldSpec;
 use crate::kit::IndexEntry;
 
 use super::Db;
@@ -133,46 +133,10 @@ impl Db {
                 params![spec.field, json, kit_id, tags_json],
             )?;
 
-            // Replace derived aliases for this field. Mirrors save_field_spec's
-            // alias-sync but inline so the whole kit install lives in one tx.
-            tx.execute(
-                "DELETE FROM aliases WHERE derived_from_field = ?1",
-                params![spec.field],
-            )?;
-            for d in &spec.derived_aliases {
-                let already_owned: Option<Option<String>> = tx
-                    .query_row(
-                        "SELECT derived_from_field FROM aliases WHERE name = ?1",
-                        params![&d.state],
-                        |row| row.get::<_, Option<String>>(0),
-                    )
-                    .optional()?;
-                if let Some(Some(owner)) = already_owned {
-                    if owner != spec.field {
-                        // State alias collision with another spec — first
-                        // owner wins. Bare-field/terminal-end aliases were
-                        // already cleared by the DELETE above (or owned by
-                        // this same field; the same-field branch falls
-                        // through to the upsert below).
-                        continue;
-                    }
-                } else if let Some(None) = already_owned {
-                    // User-defined alias under this name — do not overwrite.
-                    continue;
-                }
-                let alias = Alias {
-                    name: d.state.clone(),
-                    expands_to: d.expands_to.clone(),
-                    description: Some(format!("Derived from {} spec", spec.field)),
-                };
-                let alias_json = serde_json::to_string(&alias)?;
-                tx.execute(
-                    "INSERT INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)
-                     ON CONFLICT(name) DO UPDATE SET alias_json = excluded.alias_json,
-                                                     derived_from_field = excluded.derived_from_field",
-                    params![alias.name, alias_json, spec.field],
-                )?;
-            }
+            // Derived aliases live in `spec_json` and are surfaced via
+            // the in-memory SpecAliasIndex (da-8y2q.5) — no row writes
+            // to `aliases` are needed here. The index is invalidated
+            // once at the end of the kit install along with `field_specs`.
 
             report
                 .outcomes
@@ -210,12 +174,15 @@ impl Db {
         }
 
         tx.commit()?;
+        self.invalidate_spec_alias_index();
         Ok(report)
     }
 
-    /// Remove every field spec (and its derived aliases) tagged with this
-    /// `kit_id`. User-declared rows (kit_id IS NULL) are untouched. Returns
-    /// the list of field names removed.
+    /// Remove every field spec tagged with this `kit_id`. User-declared
+    /// rows (`kit_id IS NULL`) are untouched. Derived aliases live in
+    /// the SpecAliasIndex and are evicted via cache invalidation —
+    /// removing the spec rows is sufficient. Returns the list of field
+    /// names removed.
     pub fn uninstall_kit(&self, kit_id: &str) -> Result<Vec<String>> {
         let tx = self.conn.unchecked_transaction()?;
         let mut stmt =
@@ -226,12 +193,6 @@ impl Db {
             .map_err(DatumError::Db)?;
         drop(stmt);
 
-        for f in &fields {
-            tx.execute(
-                "DELETE FROM aliases WHERE derived_from_field = ?1",
-                params![f],
-            )?;
-        }
         tx.execute("DELETE FROM field_specs WHERE kit_id = ?1", params![kit_id])?;
 
         // Drop installed indices owned by this kit. Index drops are
@@ -249,6 +210,7 @@ impl Db {
         tx.execute("DELETE FROM kit_indices WHERE kit_id = ?1", params![kit_id])?;
 
         tx.commit()?;
+        self.invalidate_spec_alias_index();
         Ok(fields)
     }
 

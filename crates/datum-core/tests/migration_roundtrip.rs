@@ -136,6 +136,7 @@ fn every_pair_has_a_roundtrip_test() {
         (17, 18),
         (18, 19),
         (19, 20),
+        (20, 21),
     ];
     assert_eq!(
         covered.len(),
@@ -617,7 +618,10 @@ fn roundtrip_v19_to_v20_time_shape_pivot() {
              '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'd', '\"x\"')",
         [],
     );
-    assert!(bad.is_err(), "CHECK must reject following_state without dur");
+    assert!(
+        bad.is_err(),
+        "CHECK must reject following_state without dur"
+    );
 
     // verb defaults to 'point' when not supplied.
     conn.execute(
@@ -653,6 +657,72 @@ fn roundtrip_v19_to_v20_time_shape_pivot() {
     assert!(index_exists(conn, "entries_live_field_start"));
     assert!(index_exists(conn, "entries_hybrid_time"));
     assert!(!index_exists(conn, "entries_field_occur"));
+}
+
+/// da-8y2q.5: v20→v21 drops `aliases.derived_from_field` and the
+/// derived-row scheme that wrote ~10 rows per spec save. The forward
+/// step deletes any rows whose `derived_from_field IS NOT NULL` and
+/// rebuilds the table without the column. The down step restores the
+/// column (NULL-filled — pre-v1 hard-cut, the original ownership data
+/// is gone).
+#[test]
+fn roundtrip_v20_to_v21_drop_derived_from_field() {
+    let db = fresh_at(20);
+    let conn = db.conn();
+
+    assert!(column_exists(conn, "aliases", "derived_from_field"));
+    assert!(index_exists(conn, "idx_aliases_derived_from_field"));
+
+    // Seed a user row and a fake derived row.
+    conn.execute(
+        "INSERT INTO aliases (name, alias_json, derived_from_field) \
+         VALUES ('user', '{\"name\":\"user\",\"expands_to\":\"add\"}', NULL)",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO aliases (name, alias_json, derived_from_field) \
+         VALUES ('happy', '{\"name\":\"happy\",\"expands_to\":\"switch mood happy\"}', 'mood')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 20);
+
+    // Column gone, index gone, derived row gone, user row preserved.
+    assert!(!column_exists(conn, "aliases", "derived_from_field"));
+    assert!(!index_exists(conn, "idx_aliases_derived_from_field"));
+    let derived_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM aliases WHERE name = 'happy'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(derived_count, 0, "derived row dropped");
+    let user_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM aliases WHERE name = 'user'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(user_count, 1, "user row preserved");
+
+    apply_one_down(conn, 21);
+
+    // Column back, index back. The user row survived the rebuild;
+    // derived rows do NOT come back (pre-v1 hard-cut).
+    assert!(column_exists(conn, "aliases", "derived_from_field"));
+    assert!(index_exists(conn, "idx_aliases_derived_from_field"));
+    let user_after: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM aliases WHERE name = 'user'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(user_after, 1);
 }
 
 #[test]

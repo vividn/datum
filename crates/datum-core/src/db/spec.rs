@@ -1,6 +1,10 @@
-//! `field_specs` table: load/save/delete specs and the spec → derived alias
-//! sync logic. Also `load_registry`, which materializes specs + aliases into
-//! the in-memory [`SpecRegistry`].
+//! `field_specs` table: load/save/delete specs and the read-side helpers
+//! that surface them. Also `load_registry`, which materializes specs +
+//! user/kit aliases + spec-derived aliases into the in-memory
+//! [`SpecRegistry`].
+//!
+//! Derived aliases are no longer written to the `aliases` table — see
+//! [`super::spec_alias_index`] (da-8y2q.5).
 
 use rusqlite::{params, OptionalExtension};
 
@@ -57,30 +61,19 @@ impl Db {
         Ok(out)
     }
 
-    /// Save a field spec and sync its derived aliases into the aliases table.
-    /// Any previously-derived aliases for this field are removed first (so
-    /// states that were dropped lose their alias).
-    ///
-    /// Conflict policy:
-    /// - **User aliases** (derived_from_field IS NULL) are never overwritten;
-    ///   an auto-derived alias for the same name is dropped silently so the
-    ///   user's override stands.
-    /// - **Another spec's derived state alias** (`<state>` → `switch foo …`
-    ///   from spec `foo`, where this spec is `bar`) stays with the original
-    ///   owner — the later spec's conflicting state alias is skipped.
-    /// - **Another spec's derived alias of non-State kind** (bare-field,
-    ///   terminal-end) is cleared first via the prefix delete above; it
-    ///   cannot collide with this spec's bare-field because field names are
-    ///   unique PKs in `field_specs`.
+    /// Save a field spec. Derived aliases are not written to the
+    /// `aliases` table — they live in `spec_json` and are surfaced
+    /// lazily via [`Db::spec_alias_index`].
     pub fn save_field_spec(&self, spec: &FieldSpec) -> Result<()> {
         let _ = self.save_field_spec_with_report(spec)?;
         Ok(())
     }
 
-    /// Variant of [`Db::save_field_spec`] that returns a structured report of
-    /// which derived aliases were saved and which were skipped due to
-    /// conflicts. The caller can surface skipped entries to the user as
-    /// warnings.
+    /// Variant of [`Db::save_field_spec`] that returns a structured
+    /// report of which derived aliases this spec contributed to the
+    /// effective alias namespace and which were shadowed by an existing
+    /// user/kit alias row or by another spec's earlier registration in
+    /// the [`super::types::SpecAliasIndex`].
     pub fn save_field_spec_with_report(&self, spec: &FieldSpec) -> Result<SaveSpecReport> {
         let json = serde_json::to_string(spec)?;
         let tags_json = serde_json::to_string(&spec.tags)?;
@@ -92,7 +85,6 @@ impl Db {
             Some(r) => Some(serde_json::to_string(r)?),
             None => None,
         };
-        let tx = self.conn.unchecked_transaction()?;
 
         // UPSERT preserves an existing `kit_id` on re-save. Kit installs go
         // through `Db::install_kit` (which sets kit_id explicitly); a
@@ -100,86 +92,70 @@ impl Db {
         // body in place without breaking the kit linkage. `tags` mirrors
         // `spec.tags` so SQL filters can avoid a JSON walk; `render_json`
         // mirrors `spec.render` for the same reason.
-        tx.execute(
+        self.conn.execute(
             "INSERT INTO field_specs (field, spec_json, tags, render_json) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(field) DO UPDATE SET spec_json   = excluded.spec_json,
                                               tags        = excluded.tags,
                                               render_json = excluded.render_json",
             params![spec.field, json, tags_json, render_json],
         )?;
+        self.invalidate_spec_alias_index();
 
-        // Replace the set of derived aliases for this field.
-        tx.execute(
-            "DELETE FROM aliases WHERE derived_from_field = ?1",
-            params![spec.field],
-        )?;
-
+        // Compute the report by inspecting the now-current state of the
+        // alias namespace. A derived alias is "saved" iff (a) no user/kit
+        // row in `aliases` shadows it and (b) the spec-alias index attributes
+        // the name to this field. Otherwise it is shadowed and we attach
+        // the cause.
         let mut saved: Vec<String> = Vec::new();
         let mut skipped: Vec<AliasConflict> = Vec::new();
-
+        let index = self.spec_alias_index()?;
         for d in &spec.derived_aliases {
-            // Look up any existing row with this alias name.
-            let existing: Option<(String, Option<String>)> = tx
+            // Shadowed by a user/kit alias row?
+            let existing_row: Option<i64> = self
+                .conn
                 .query_row(
-                    "SELECT alias_json, derived_from_field FROM aliases WHERE name = ?1",
+                    "SELECT 1 FROM aliases WHERE name = ?1",
                     params![&d.state],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                    |row| row.get(0),
                 )
                 .optional()?;
-
-            if let Some((_json, derived_from)) = existing {
-                let reason = match derived_from {
-                    None => AliasConflictReason::UserAlias,
-                    Some(owner) if owner == spec.field => {
-                        // Same-field re-save — safe to overwrite.
-                        let alias = Alias {
-                            name: d.state.clone(),
-                            expands_to: d.expands_to.clone(),
-                            description: Some(format!("Derived from {} spec", spec.field)),
-                        };
-                        let alias_json = serde_json::to_string(&alias)?;
-                        tx.execute(
-                            "INSERT OR REPLACE INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)",
-                            params![alias.name, alias_json, spec.field],
-                        )?;
-                        saved.push(d.state.clone());
-                        continue;
-                    }
-                    Some(other) => AliasConflictReason::OwnedByField(other),
-                };
+            if existing_row.is_some() {
                 skipped.push(AliasConflict {
                     name: d.state.clone(),
-                    reason,
+                    reason: AliasConflictReason::UserAlias,
                 });
                 continue;
             }
-
-            let alias = Alias {
-                name: d.state.clone(),
-                expands_to: d.expands_to.clone(),
-                description: Some(format!("Derived from {} spec", spec.field)),
-            };
-            let alias_json = serde_json::to_string(&alias)?;
-            tx.execute(
-                "INSERT INTO aliases (name, alias_json, derived_from_field) VALUES (?1, ?2, ?3)",
-                params![alias.name, alias_json, spec.field],
-            )?;
-            saved.push(d.state.clone());
+            // Cross-spec collision: index points the name at a different field.
+            match index.by_field.get(&spec.field) {
+                Some(names) if names.iter().any(|n| n == &d.state) => {
+                    saved.push(d.state.clone());
+                }
+                _ => {
+                    let owner = index
+                        .collisions
+                        .iter()
+                        .find(|c| c.name == d.state && c.loser == spec.field)
+                        .map(|c| c.winner.clone())
+                        .unwrap_or_else(|| spec.field.clone());
+                    skipped.push(AliasConflict {
+                        name: d.state.clone(),
+                        reason: AliasConflictReason::OwnedByField(owner),
+                    });
+                }
+            }
         }
-
-        tx.commit()?;
+        drop(index);
         Ok(SaveSpecReport { saved, skipped })
     }
 
-    /// Delete a field spec. Cascades to its derived aliases.
+    /// Delete a field spec. Derived aliases are not stored as rows, so
+    /// no alias-table cleanup is required — invalidating the spec-alias
+    /// index ensures subsequent reads no longer surface them.
     pub fn delete_field_spec(&self, field: &str) -> Result<()> {
-        let tx = self.conn.unchecked_transaction()?;
-        tx.execute(
-            "DELETE FROM aliases WHERE derived_from_field = ?1",
-            params![field],
-        )?;
-        tx.execute("DELETE FROM field_specs WHERE field = ?1", params![field])?;
-        tx.commit()?;
+        self.conn
+            .execute("DELETE FROM field_specs WHERE field = ?1", params![field])?;
+        self.invalidate_spec_alias_index();
         Ok(())
     }
 
@@ -213,6 +189,15 @@ impl Db {
             let spec: FieldSpec = serde_json::from_str(&spec_json?)?;
             registry.register_field(spec);
         }
+
+        // Spec-derived aliases come first so user/kit rows (registered
+        // below) can overwrite them — mirroring the runtime precedence
+        // applied by `lookup_alias`.
+        let index = self.spec_alias_index()?;
+        for alias in index.entries.values() {
+            registry.register_alias(alias.clone());
+        }
+        drop(index);
 
         let mut stmt = self.conn.prepare("SELECT alias_json FROM aliases")?;
         let aliases = stmt.query_map([], |row| row.get::<_, String>(0))?;

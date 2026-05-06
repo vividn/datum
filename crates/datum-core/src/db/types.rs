@@ -227,31 +227,72 @@ pub enum InsertOutcome {
 }
 
 /// Report returned from [`super::Db::save_field_spec_with_report`] describing
-/// which derived aliases from the spec were persisted vs skipped.
+/// which derived aliases from the spec were surfaced vs shadowed at the
+/// time of the save. The check is best-effort: derived aliases are now
+/// resolved through the in-memory [`SpecAliasIndex`] rather than written
+/// to the `aliases` table, so the "skipped" set is computed by inspecting
+/// the index after the spec is stored.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct SaveSpecReport {
-    /// Alias names that were inserted or overwritten for this spec.
+    /// Alias names from this spec that the index currently points at this
+    /// field (i.e. no shadowing user/kit alias and no earlier-field
+    /// collision).
     pub saved: Vec<String>,
-    /// Aliases that conflicted with an existing row and were skipped.
+    /// Aliases shadowed by an existing user-defined / kit alias row, or
+    /// claimed by another field's spec (cross-spec state collision).
     pub skipped: Vec<AliasConflict>,
 }
 
-/// A single alias-name collision surfaced by the spec save path.
+/// A single alias-name collision surfaced when saving a field spec.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AliasConflict {
-    /// The alias name that could not be inserted.
+    /// The alias name that could not be surfaced.
     pub name: String,
-    /// What row already owns that name.
+    /// What row / spec already owns that name.
     pub reason: AliasConflictReason,
 }
 
 /// Why a derived alias was skipped during a spec save.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AliasConflictReason {
-    /// A user-defined alias already exists under this name.
+    /// A user-defined or kit-installed alias row already exists under
+    /// this name (`aliases` table hit).
     UserAlias,
-    /// Another field's spec already derives an alias under this name.
+    /// Another field's spec already derives an alias under this name
+    /// (cross-spec state collision in the [`SpecAliasIndex`]).
     OwnedByField(String),
+}
+
+/// Lazy index of derived aliases pulled out of every stored
+/// [`crate::field_spec::FieldSpec`]. Populated on first access by
+/// [`super::Db::spec_alias_index`] and invalidated whenever the
+/// `field_specs` table is mutated. Replaces the materialized derived
+/// rows that lived in the `aliases` table pre-v21 (da-8y2q.5).
+#[derive(Debug, Clone, Default)]
+pub struct SpecAliasIndex {
+    /// Map from derived-alias name → resolved [`crate::field_spec::Alias`].
+    /// Cross-spec collisions are resolved deterministically: the spec
+    /// whose `field` name sorts first wins; later collisions are recorded
+    /// in [`SpecAliasIndex::collisions`].
+    pub entries: std::collections::HashMap<String, crate::field_spec::Alias>,
+    /// `field` name → derived-alias names this spec contributed (for
+    /// reverse lookup, e.g. so a spec save's report can ask "which of my
+    /// aliases survived?").
+    pub by_field: std::collections::HashMap<String, Vec<String>>,
+    /// Cross-spec collisions: a spec wanted to register a derived alias
+    /// under a name another spec already owns. The first registrant wins.
+    pub collisions: Vec<SpecAliasCollision>,
+}
+
+/// One cross-spec collision recorded by [`SpecAliasIndex`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpecAliasCollision {
+    /// Alias name that two specs both wanted.
+    pub name: String,
+    /// Field whose derived alias is currently surfaced for `name`.
+    pub winner: String,
+    /// Field whose derived alias was shadowed.
+    pub loser: String,
 }
 
 /// Max number of candidates returned in [`crate::error::DatumError::AmbiguousPrefix`].
@@ -273,4 +314,3 @@ pub(super) fn like_prefix_pattern(prefix: &str) -> String {
     out.push('%');
     out
 }
-
