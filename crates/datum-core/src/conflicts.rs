@@ -32,7 +32,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::entry::Entry;
+use crate::entry::{new_hid, Entry, Verb, SHORT_HID_LEN};
 use crate::error::{DatumError, Result};
 use crate::ids::Slug;
 
@@ -192,29 +192,201 @@ impl Conflict {
 /// Callers should run this after the triggering entry has been inserted
 /// (so queries that read the `entries` table see it).
 pub fn detect_for_entry(
-    _conn: &Connection,
-    _trigger: &Entry,
-    _detected_by: DetectedBy,
+    conn: &Connection,
+    trigger: &Entry,
+    detected_by: DetectedBy,
 ) -> Result<Vec<Conflict>> {
-    // da-5ns sub-bead 1 stub: detection is disabled until sub-bead 5
-    // (render) reimplements overlap/double-open/orphan-end semantics
-    // against the new (occur_time, dur, state, following_state, verb)
-    // shape. Returning Ok(vec![]) preserves the public contract: every
-    // insert lands, just nothing is filed in `sync_conflicts` until
-    // detection comes back. The sync_conflicts list/get/resolve paths
-    // still work; manual conflict resolution is not affected.
-    Ok(vec![])
+    // da-2d8: same-state-repeat / last-state-mismatch detection adapted to
+    // the new (occur_time, state, dur, following_state, verb) shape.
+    // Overlap / double-open / orphan-end remain on the to-do list — the
+    // pre-pivot SQL keyed on `entry_shape` and `end_time`, neither of which
+    // exists in the v20 entries table, and the current Verb set has no
+    // Start/Stop variants. Switch (and the trailing -L mismatch check) is
+    // what concurrent_states_cmd / last_state_and_moment exercises today.
+    let mut filed = Vec::new();
+
+    if matches!(trigger.verb, Verb::Switch) {
+        if let Some(hit) = detect_same_state_repeat(conn, trigger)? {
+            filed.push(file_conflict(
+                conn,
+                trigger,
+                Some(&hit),
+                detected_by,
+                ConflictKind::SameStateRepeat,
+            )?);
+        }
+    }
+
+    if let Some(mismatch) = detect_last_state_mismatch(conn, trigger)? {
+        filed.push(file_conflict(
+            conn,
+            trigger,
+            mismatch.as_ref(),
+            detected_by,
+            ConflictKind::LastStateMismatch,
+        )?);
+    }
+
+    Ok(filed)
 }
 
-// da-5ns sub-bead 1: removed `detect_same_state_repeat`,
-// `detect_last_state_mismatch`, `find_other_ongoing`,
-// `find_overlapping_block`, `find_ongoing_at_or_before`,
-// `file_conflict`, `states_share_element`, `states_equal_set_aware`,
-// `state_as_set`. All of these read `trigger.start_time` /
-// `trigger.end_time` / `trigger.value` / `trigger.entry_shape` and the
-// SQL fragments below all key on `start_time`/`end_time`/`entry_shape`.
-// Sub-bead 5 reintroduces conflict detection adapted to the new
-// (occur_time, dur, state, following_state, verb) shape.
+/// S6/S12: detect a switch whose normalized value shares at least one
+/// element with the field's computed active state immediately before the
+/// trigger. Scalar↔scalar, scalar↔array, array↔array overlap all count.
+/// Disjoint array→array transitions are clean. Returns the most recent
+/// state-defining counterpart entry for display.
+fn detect_same_state_repeat(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
+    let Some(ts) = &trigger.occur_time else {
+        return Ok(None);
+    };
+    let probe = ts.utc - chrono::Duration::microseconds(1);
+    let prior =
+        crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?;
+    let Some(prior_state) = prior else {
+        return Ok(None);
+    };
+    let new_norm = trigger
+        .state
+        .as_ref()
+        .map(crate::state::normalize_state)
+        .unwrap_or(serde_json::Value::Null);
+    if !states_share_element(&new_norm, &prior_state) {
+        return Ok(None);
+    }
+    let at_str = probe.to_rfc3339();
+    conn.query_row(
+        r#"SELECT * FROM entries
+           WHERE field = ?1
+             AND deleted_at IS NULL
+             AND verb IN ('switch', 'block-switch', 'point-switch')
+             AND occur_time IS NOT NULL
+             AND occur_time <= ?2
+             AND hid != ?3
+           ORDER BY occur_time DESC, create_time DESC
+           LIMIT 1"#,
+        params![trigger.field, at_str, trigger.hid.as_str()],
+        crate::db::row_to_entry_public,
+    )
+    .optional()
+    .map_err(DatumError::Db)
+}
+
+/// S12: true when two (normalized) states share at least one element. Scalar
+/// values are treated as one-element sets; arrays are treated as sets of
+/// their elements. Elements compare by canonical JSON serialization so that
+/// e.g. `"foo"` and `{"id":"foo"}` (after normalize) still match correctly.
+fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    let sa = state_as_set(a);
+    let sb = state_as_set(b);
+    sa.intersection(&sb).next().is_some()
+}
+
+/// S12: set-aware equality — arrays compare order-insensitive (same
+/// multiset of elements), everything else compares via `PartialEq`.
+fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a, b) {
+        (serde_json::Value::Array(xa), serde_json::Value::Array(xb)) if xa.len() == xb.len() => {
+            let mut sa: Vec<String> = xa.iter().map(|x| x.to_string()).collect();
+            let mut sb: Vec<String> = xb.iter().map(|x| x.to_string()).collect();
+            sa.sort();
+            sb.sort();
+            sa == sb
+        }
+        _ => a == b,
+    }
+}
+
+fn state_as_set(v: &serde_json::Value) -> std::collections::HashSet<String> {
+    match v {
+        serde_json::Value::Array(arr) => arr.iter().map(|x| x.to_string()).collect(),
+        other => std::iter::once(other.to_string()).collect(),
+    }
+}
+
+/// S6/S12: compare the user's explicit `-L` assertion against the computed
+/// last-state. `Ok(None)` when there's no assertion or the assertion
+/// matches; `Ok(Some(_))` on mismatch — the inner Option is a counterpart
+/// entry for display (may be None if no prior entry exists).
+fn detect_last_state_mismatch(conn: &Connection, trigger: &Entry) -> Result<Option<Option<Entry>>> {
+    let Some(asserted_raw) = trigger.user_asserted_last_state.as_ref() else {
+        return Ok(None);
+    };
+    let Some(ts) = &trigger.occur_time else {
+        return Ok(None);
+    };
+    let probe = ts.utc - chrono::Duration::microseconds(1);
+    let asserted = crate::state::normalize_state(asserted_raw);
+    let actual =
+        crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?
+            .unwrap_or(serde_json::Value::Null);
+    if states_equal_set_aware(&asserted, &actual) {
+        return Ok(None);
+    }
+    let at_str = probe.to_rfc3339();
+    let counterpart = conn
+        .query_row(
+            r#"SELECT * FROM entries
+               WHERE field = ?1
+                 AND deleted_at IS NULL
+                 AND verb IN ('switch', 'block', 'block-switch', 'point-switch')
+                 AND occur_time IS NOT NULL
+                 AND occur_time <= ?2
+                 AND hid != ?3
+               ORDER BY occur_time DESC, create_time DESC
+               LIMIT 1"#,
+            params![trigger.field, at_str, trigger.hid.as_str()],
+            crate::db::row_to_entry_public,
+        )
+        .optional()
+        .map_err(DatumError::Db)?;
+    Ok(Some(counterpart))
+}
+
+fn file_conflict(
+    conn: &Connection,
+    trigger: &Entry,
+    counterpart: Option<&Entry>,
+    detected_by: DetectedBy,
+    kind: ConflictKind,
+) -> Result<Conflict> {
+    let id: String = new_hid().into_string();
+    let hid: String = id.chars().take(SHORT_HID_LEN).collect();
+    let local_json = serde_json::to_string(trigger)?;
+    let remote_json = match counterpart {
+        Some(e) => Some(serde_json::to_string(e)?),
+        None => None,
+    };
+    let now = Utc::now();
+    let now_str = now.to_rfc3339();
+    conn.execute(
+        r#"INSERT INTO sync_conflicts (
+            id, hid, entry_slug, local_entry, remote_entry,
+            detected_at, resolution, resolved_at, detected_by, conflict_kind
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL, NULL, ?7, ?8)"#,
+        params![
+            id,
+            hid,
+            trigger.slug,
+            local_json,
+            remote_json,
+            now_str,
+            detected_by.as_str(),
+            kind.as_str(),
+        ],
+    )?;
+    Ok(Conflict {
+        id,
+        hid,
+        entry_slug: trigger.slug.clone(),
+        local_entry: trigger.clone(),
+        remote_entry: counterpart.cloned(),
+        detected_at: now,
+        resolution: None,
+        resolved_at: None,
+        detected_by,
+        conflict_kind: kind,
+    })
+}
 
 /// Filter for [`list`]. `None` matches any row of that axis.
 #[derive(Debug, Clone, Default)]
@@ -252,10 +424,8 @@ pub fn list(conn: &Connection, filter: &ListFilter) -> Result<Vec<Conflict>> {
     sql.push_str(" ORDER BY detected_at DESC, id DESC");
 
     let mut stmt = conn.prepare(&sql)?;
-    let params_slice: Vec<&dyn rusqlite::ToSql> = binds
-        .iter()
-        .map(|s| s as &dyn rusqlite::ToSql)
-        .collect();
+    let params_slice: Vec<&dyn rusqlite::ToSql> =
+        binds.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
     let rows = stmt.query_map(params_slice.as_slice(), row_to_conflict)?;
     rows.map(|r| r.map_err(DatumError::Db)).collect()
 }
@@ -308,18 +478,14 @@ fn row_to_conflict(row: &rusqlite::Row<'_>) -> rusqlite::Result<Conflict> {
         .map(|s| serde_json::from_str::<Entry>(&s))
         .transpose()
         .map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(
-                0,
-                rusqlite::types::Type::Text,
-                Box::new(e),
-            )
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
         })?;
-    let detected_at: DateTime<Utc> = row
-        .get::<_, String>("detected_at")?
-        .parse()
-        .map_err(|e: chrono::ParseError| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
-        })?;
+    let detected_at: DateTime<Utc> =
+        row.get::<_, String>("detected_at")?
+            .parse()
+            .map_err(|e: chrono::ParseError| {
+                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+            })?;
     let resolved_at: Option<DateTime<Utc>> = row
         .get::<_, Option<String>>("resolved_at")?
         .map(|s| s.parse::<DateTime<Utc>>())
