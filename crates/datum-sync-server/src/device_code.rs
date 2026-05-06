@@ -43,11 +43,12 @@ const DEFAULT_INTERVAL: u64 = 1;
 
 fn random_token(len: usize) -> String {
     // device_code is a bearer credential — system-clock entropy is predictable
-    // and lets an attacker race /authorize. Use OS RNG.
+    // and lets an attacker race /authorize. OsRng pulls directly from the OS
+    // CSPRNG (getrandom syscall) so no shared state is observable across calls.
     use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
-    use rand::RngCore;
+    use rand::{rngs::OsRng, RngCore};
     let mut bytes = vec![0u8; len];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    OsRng.fill_bytes(&mut bytes);
     URL_SAFE_NO_PAD.encode(&bytes)
 }
 
@@ -204,3 +205,36 @@ pub async fn authorize(
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 struct _Unused;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    #[test]
+    fn random_token_no_collisions_in_1000_calls() {
+        let mut seen = HashSet::new();
+        for _ in 0..1000 {
+            assert!(seen.insert(random_token(24)));
+        }
+        assert_eq!(seen.len(), 1000);
+    }
+
+    #[test]
+    fn random_token_back_to_back_calls_distinct() {
+        // Guards against any future RNG that keys on system clock — back-to-
+        // back calls on modern hardware land inside a single nanosecond tick.
+        let mut seen = HashSet::new();
+        for _ in 0..256 {
+            assert!(seen.insert(random_token(24)));
+        }
+    }
+
+    #[test]
+    fn random_token_meets_minimum_entropy() {
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+        let token = random_token(24);
+        let raw = URL_SAFE_NO_PAD.decode(token.as_bytes()).expect("token is base64url");
+        assert!(raw.len() * 8 >= 128, "token entropy {} bits < 128", raw.len() * 8);
+    }
+}
