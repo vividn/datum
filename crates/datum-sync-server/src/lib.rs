@@ -18,6 +18,7 @@ pub mod error;
 pub mod jwt;
 pub mod keys;
 pub mod models;
+pub mod refresh;
 pub mod sync;
 
 use axum::{
@@ -84,7 +85,12 @@ async fn auth_middleware(
         .and_then(|h| h.strip_prefix("Bearer "))
         .ok_or(AppError::Unauthorized)?;
 
-    let claims = jwt::verify_token(token, &state.jwt_secret)?;
+    // A malformed/expired JWT is "you're not authenticated", not a
+    // server-side fault; surface it as 401 so the client's refresh-on-
+    // 401 retry path (Session) actually fires. Pre-da-1i5x we leaked
+    // these as 500 which trapped clients in an opaque error loop.
+    let claims = jwt::verify_token(token, &state.jwt_secret)
+        .map_err(|_| AppError::Unauthorized)?;
     let user_id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
 
     req.extensions_mut().insert(AuthenticatedUser { user_id });
@@ -98,11 +104,14 @@ pub fn build_app(state: Arc<AppState>) -> Router {
         .allow_headers(Any);
 
     // Unauthenticated under /v1/auth/*: passkey ceremonies + RFC 8628 device-code.
+    // /v1/auth/refresh is unauthenticated by design — it accepts only the
+    // single-use refresh_token, not a (possibly-expired) bearer.
     let auth_routes = Router::new()
         .route("/register/begin", post(auth::register_begin))
         .route("/register/finish", post(auth::register_finish))
         .route("/login/begin", post(auth::login_begin))
         .route("/login/finish", post(auth::login_finish))
+        .route("/refresh", post(auth::refresh))
         .route("/device-code", post(device_code::start))
         .route("/device-code/poll", get(device_code::poll))
         .route("/device-code/authorize", post(device_code::authorize));
@@ -454,6 +463,18 @@ mod tests {
         let token = tok_json["token"].as_str().unwrap().to_string();
         assert!(!token.is_empty());
 
+        // The poll success branch must mint a refresh token alongside
+        // the JWT so the client can rotate credentials without re-running
+        // the device-code flow on first 401 (da-1i5x).
+        assert!(
+            tok_json["refresh_token"].is_string(),
+            "device-code/poll must include refresh_token on success: {tok_json}"
+        );
+        assert!(
+            !tok_json["refresh_token"].as_str().unwrap().is_empty(),
+            "refresh_token must not be empty"
+        );
+
         // 5. token works against /v1/pull
         let pull = build_app(state)
             .oneshot(
@@ -467,6 +488,179 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(pull.status(), StatusCode::OK);
+    }
+
+    /// `/v1/auth/refresh` happy path: trade the refresh token issued by
+    /// the device-code flow for a fresh `(token, refresh_token)` pair,
+    /// then exercise the new bearer against an authed endpoint.
+    #[tokio::test]
+    async fn test_refresh_token_roundtrip() {
+        let state = test_state();
+
+        // Drive a device-code flow to get an initial refresh token.
+        let start = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/device-code")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from("{}"))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let device_code = json_body(start).await["device_code"].as_str().unwrap().to_string();
+
+        let _ = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/device-code/authorize")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({
+                            "device_code": device_code,
+                            "username": "refresh-user"
+                        })
+                        .to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let poll = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri(format!("/v1/auth/device-code/poll?device_code={}", device_code))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let initial = json_body(poll).await;
+        let initial_refresh = initial["refresh_token"].as_str().unwrap().to_string();
+
+        // Refresh trades the single-use token for a fresh pair.
+        let refresh = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/refresh")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"refresh_token": initial_refresh.clone()}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(refresh.status(), StatusCode::OK);
+        let refreshed = json_body(refresh).await;
+        let new_bearer = refreshed["token"].as_str().unwrap().to_string();
+        let new_refresh = refreshed["refresh_token"].as_str().unwrap().to_string();
+        // The bearer is a JWT with second-resolution `exp`; the same
+        // user signed within the same second yields a byte-identical
+        // string, which is fine — what matters is that the refresh
+        // token rotates (random bytes, so collision-free) and that the
+        // new bearer authenticates.
+        assert!(!new_bearer.is_empty(), "refresh must yield a bearer");
+        assert_ne!(
+            new_refresh, initial_refresh,
+            "refresh must rotate the refresh token (single-use)"
+        );
+
+        // The new bearer authenticates an authed route.
+        let pull = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("GET")
+                    .uri("/v1/pull?since=0&device=refresh-test")
+                    .header("Authorization", format!("Bearer {}", new_bearer))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(pull.status(), StatusCode::OK);
+    }
+
+    /// `/v1/auth/refresh` rejects an unknown refresh token with 401 —
+    /// the same status the bearer endpoints use, so the client retry
+    /// path can match on status uniformly.
+    #[tokio::test]
+    async fn test_refresh_token_unknown_returns_401() {
+        let state = test_state();
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/refresh")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"refresh_token": "not-a-real-token"}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+    }
+
+    /// Single-use rotation: the same refresh token must not work twice.
+    /// First call rotates and succeeds; second call against the consumed
+    /// token returns 401.
+    #[tokio::test]
+    async fn test_refresh_token_single_use() {
+        let state = test_state();
+
+        // Mint a refresh manually so we don't depend on the full
+        // device-code flow plumbing in this test.
+        let user_id = {
+            let conn = state.db.lock().unwrap();
+            db::create_user(&conn, "single-use-user").unwrap()
+        };
+        let initial_refresh = {
+            let conn = state.db.lock().unwrap();
+            crate::refresh::mint_and_persist(&conn, &user_id).unwrap()
+        };
+
+        // First refresh succeeds.
+        let resp = build_app(state.clone())
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/refresh")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"refresh_token": initial_refresh.clone()}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+
+        // Second refresh with the same (now-consumed) token must 401.
+        let resp = build_app(state)
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/v1/auth/refresh")
+                    .header("Content-Type", "application/json")
+                    .body(Body::from(
+                        serde_json::json!({"refresh_token": initial_refresh}).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            resp.status(),
+            StatusCode::UNAUTHORIZED,
+            "consumed refresh token must not be reusable"
+        );
     }
 
     #[tokio::test]

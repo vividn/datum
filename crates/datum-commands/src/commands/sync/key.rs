@@ -70,7 +70,10 @@ pub fn init_with_client(
 
     let token = load_token(server)?
         .ok_or_else(|| anyhow!("not logged in — run `datum sync login` first"))?;
-    upload_wrapped(client, server, &token.token, &wrapped)?;
+    let session = crate::commands::sync::build_session(server, &token);
+    session.run(client, |bearer| {
+        upload_wrapped(client, server, bearer, &wrapped)
+    })?;
 
     write_key_file(&key_path, &master)?;
     prompter.status(&format!(
@@ -100,7 +103,9 @@ pub fn unlock_with_client(
     let key_path = master_key_path(&host)?;
     let token = load_token(server)?
         .ok_or_else(|| anyhow!("not logged in — run `datum sync login` first"))?;
-    let wrapped = fetch_wrapped(client, server, &token.token)?
+    let session = crate::commands::sync::build_session(server, &token);
+    let wrapped = session
+        .run(client, |bearer| fetch_wrapped(client, server, bearer))?
         .ok_or_else(|| anyhow!("no wrapped key found on server — run `datum sync key init`"))?;
     let passphrase = prompter.read_passphrase("Passphrase: ", false)?;
     let master = unwrap_master_key(&passphrase, &wrapped)
@@ -140,7 +145,10 @@ pub fn rotate_passphrase_with_client(
     let wrapped = wrap_master_key(&new_pass, &master)?;
     let token = load_token(server)?
         .ok_or_else(|| anyhow!("not logged in — run `datum sync login` first"))?;
-    upload_wrapped(client, server, &token.token, &wrapped)?;
+    let session = crate::commands::sync::build_session(server, &token);
+    session.run(client, |bearer| {
+        upload_wrapped(client, server, bearer, &wrapped)
+    })?;
     prompter.status("✓ Passphrase rotated — server copy re-wrapped");
     Ok(())
 }

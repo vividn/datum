@@ -15,12 +15,14 @@
 //! Gated by the `http` cargo feature because it depends on `reqwest`; the
 //! WASM surface reimplements the same wire format over its own fetch shim.
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use datum_sync_protocol::messages::sync::{
     Changeset as WireChangeset, PushRequest, PushResponse,
 };
 use reqwest::blocking::Client;
+
+use crate::http::error::HttpError;
 
 /// One row from `GET /v1/pull`, with the payload already base64-decoded to
 /// raw encrypted bytes. The wire shape itself is
@@ -55,7 +57,7 @@ pub fn push_blob(
     bearer: &str,
     device_id: &str,
     payload: &[u8],
-) -> Result<i64> {
+) -> Result<i64, HttpError> {
     let body = PushRequest {
         device_id: device_id.to_string(),
         payload_b64: URL_SAFE_NO_PAD.encode(payload),
@@ -65,13 +67,22 @@ pub fn push_blob(
         .bearer_auth(bearer)
         .json(&body)
         .send()
-        .context("POST /v1/push")?;
+        .context("POST /v1/push")
+        .map_err(HttpError::other)?;
     let status = resp.status();
+    if status.as_u16() == 401 {
+        return Err(HttpError::Unauthorized);
+    }
     if !status.is_success() {
         let text = resp.text().unwrap_or_default();
-        anyhow::bail!("push failed: {status} {text}");
+        return Err(HttpError::other(anyhow::anyhow!(
+            "push failed: {status} {text}"
+        )));
     }
-    let parsed: PushResponse = resp.json().context("parse push response")?;
+    let parsed: PushResponse = resp
+        .json()
+        .context("parse push response")
+        .map_err(HttpError::other)?;
     Ok(parsed.seq)
 }
 
@@ -84,7 +95,7 @@ pub fn pull_batch(
     bearer: &str,
     device_id: &str,
     since: i64,
-) -> Result<Vec<PulledChangeset>> {
+) -> Result<Vec<PulledChangeset>, HttpError> {
     let resp = client
         .get(format!("{server}/v1/pull"))
         .bearer_auth(bearer)
@@ -93,20 +104,30 @@ pub fn pull_batch(
             ("device", device_id.to_string()),
         ])
         .send()
-        .context("GET /v1/pull")?;
+        .context("GET /v1/pull")
+        .map_err(HttpError::other)?;
     let status = resp.status();
+    if status.as_u16() == 401 {
+        return Err(HttpError::Unauthorized);
+    }
     if !status.is_success() {
         let text = resp.text().unwrap_or_default();
-        anyhow::bail!("pull failed: {status} {text}");
+        return Err(HttpError::other(anyhow::anyhow!(
+            "pull failed: {status} {text}"
+        )));
     }
-    let rows: Vec<WireChangeset> = resp.json().context("parse pull response")?;
+    let rows: Vec<WireChangeset> = resp
+        .json()
+        .context("parse pull response")
+        .map_err(HttpError::other)?;
     let mut out = Vec::with_capacity(rows.len());
     for row in rows {
         let payload = URL_SAFE_NO_PAD
             .decode(row.payload_b64.as_bytes())
             .with_context(|| {
                 format!("decode payload_b64 for seq {} from {}", row.seq, row.device_id)
-            })?;
+            })
+            .map_err(HttpError::other)?;
         out.push(PulledChangeset {
             id: row.id,
             device_id: row.device_id,

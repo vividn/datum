@@ -39,6 +39,7 @@ url = "2"
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 rand = { workspace = true }
+sha2 = { workspace = true }
 
 # Logging
 tracing = "0.1"

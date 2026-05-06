@@ -27,7 +27,7 @@ pub mod version;
 pub use crypto::CryptoError;
 pub use messages::auth::{
     AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeRequest,
-    DeviceCodeResponse, PollResponse,
+    DeviceCodeResponse, PollResponse, RefreshTokenRequest,
 };
 pub use messages::sync::{
     Changeset, KdfParams, PushRequest, PushResponse, WrappedKey,

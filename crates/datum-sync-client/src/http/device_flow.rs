@@ -103,8 +103,10 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
         if status.is_success() {
             if let Some(tok) = payload.token {
                 let user_id = payload.user_id.clone();
+                let refresh_token = payload.refresh_token.clone();
                 let token = AuthToken {
                     token: tok,
+                    refresh_token,
                     refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
                     server: Some(server.to_string()),
                     user_id,

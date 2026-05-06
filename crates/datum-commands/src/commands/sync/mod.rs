@@ -157,9 +157,10 @@ pub fn run_sync_inner(
     use datum_sync_client::sync_once::{self, Direction as ClientDirection, SyncConfig};
 
     let preflight = preflight_checks(server)?;
+    let session = build_session(server, &preflight.token);
     let cfg = SyncConfig {
         server,
-        bearer: &preflight.token.token,
+        session: &session,
         device_id: &preflight.device_id,
         master_key: &preflight.master_key,
         direction: match direction {
@@ -176,6 +177,69 @@ pub fn run_sync_inner(
         conflicts_queued: report.pull.conflicts_queued,
         dry_run,
     })
+}
+
+/// Build a [`Session`](datum_sync_client::http::Session) wired to
+/// auto-persist rotated tokens back to `auth_token_path(host)` (mode
+/// 0600). Used by every sync entry point so a 401 mid-cycle is
+/// recovered transparently.
+pub fn build_session(server: &str, token: &AuthToken) -> datum_sync_client::http::Session {
+    use crate::config::{auth_token_path, server_host_from_url};
+    use datum_sync_client::http::session::OnRefresh;
+
+    let server_string = server.to_string();
+    let host = server_host_from_url(server);
+
+    let on_refresh: OnRefresh = Box::new(move |new: &AuthToken| -> anyhow::Result<()> {
+        // Re-derive the path on each rotation rather than capturing it —
+        // tests that swap DATUM_CONFIG_HOME between sync calls expect the
+        // current env var to win.
+        let path = auth_token_path(&host)?;
+        // Upgrade the partial response to the full on-disk shape: the
+        // server omits `server`/`refreshed_at`; the persisted file
+        // always carries them. We clone rather than mutate the input
+        // so the caller's view of the rotated token is not surprised.
+        let mut to_write = new.clone();
+        if to_write.server.is_none() {
+            to_write.server = Some(server_string.clone());
+        }
+        if to_write.refreshed_at.is_none() {
+            to_write.refreshed_at = Some(chrono::Utc::now().to_rfc3339());
+        }
+        let body = serde_json::to_vec_pretty(&to_write).context("serialize auth token")?;
+        write_private_file(&path, &body)?;
+        Ok(())
+    });
+
+    datum_sync_client::http::Session::new(server, token, Some(on_refresh))
+}
+
+#[cfg(unix)]
+fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()> {
+    use std::os::unix::fs::OpenOptionsExt;
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create {parent:?}"))?;
+    }
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path)
+        .with_context(|| format!("open {path:?}"))?;
+    std::io::Write::write_all(&mut f, body)?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("create {parent:?}"))?;
+    }
+    std::fs::write(path, body).with_context(|| format!("write {path:?}"))?;
+    Ok(())
 }
 
 /// Bundle of inputs every sync direction needs — token, key, device_id —

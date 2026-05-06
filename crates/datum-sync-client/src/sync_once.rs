@@ -33,6 +33,7 @@ use datum_core::entry::Entry;
 use reqwest::blocking::Client;
 
 use crate::crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
+use crate::http::session::Session;
 use crate::http::{pull_batch, push_blob, PulledChangeset};
 use crate::ops::{apply_changeset, pack_changeset};
 use crate::sync_state;
@@ -56,12 +57,12 @@ impl Direction {
     }
 }
 
-/// Inputs for a single sync cycle. Borrowed because the caller already
-/// owns the token bytes, master key, and device id from preflight.
-#[derive(Debug, Clone, Copy)]
+/// Inputs for a single sync cycle. The [`Session`] handles bearer +
+/// refresh-token rotation transparently — callers no longer pass the
+/// raw bearer; preflight builds a Session and threads it through here.
 pub struct SyncConfig<'a> {
     pub server: &'a str,
-    pub bearer: &'a str,
+    pub session: &'a Session,
     pub device_id: &'a str,
     pub master_key: &'a [u8; 32],
     pub direction: Direction,
@@ -102,7 +103,7 @@ pub fn sync_once(client: &Client, db: &Db, cfg: &SyncConfig<'_>) -> Result<SyncR
         report.pull = pull_once(
             cfg.server,
             client,
-            cfg.bearer,
+            cfg.session,
             cfg.device_id,
             cfg.master_key,
             db,
@@ -113,7 +114,7 @@ pub fn sync_once(client: &Client, db: &Db, cfg: &SyncConfig<'_>) -> Result<SyncR
         report.push = push_once(
             cfg.server,
             client,
-            cfg.bearer,
+            cfg.session,
             cfg.device_id,
             cfg.master_key,
             db,
@@ -131,7 +132,7 @@ pub fn sync_once(client: &Client, db: &Db, cfg: &SyncConfig<'_>) -> Result<SyncR
 pub fn push_once(
     server: &str,
     client: &Client,
-    bearer: &str,
+    session: &Session,
     device_id: &str,
     master_key: &[u8; 32],
     db: &Db,
@@ -157,7 +158,10 @@ pub fn push_once(
     // would otherwise fail to decrypt.
     let next_seq = sync_state::get_my_push_seq(db)?.saturating_add(1);
     let blob = encrypt_changeset(&changeset, master_key, device_id, next_seq)?;
-    let assigned_seq = push_blob(client, server, bearer, device_id, blob.as_bytes())?;
+    let assigned_seq = session
+        .run(client, |bearer| {
+            push_blob(client, server, bearer, device_id, blob.as_bytes())
+        })?;
 
     if assigned_seq as u64 != next_seq {
         anyhow::bail!(
@@ -185,14 +189,16 @@ pub fn push_once(
 pub fn pull_once(
     server: &str,
     client: &Client,
-    bearer: &str,
+    session: &Session,
     device_id: &str,
     master_key: &[u8; 32],
     db: &Db,
     dry_run: bool,
 ) -> Result<PullOutcome> {
     let since = sync_state::get_pull_seq(db)? as i64;
-    let rows = pull_batch(client, server, bearer, device_id, since)?;
+    let rows = session.run(client, |bearer| {
+        pull_batch(client, server, bearer, device_id, since)
+    })?;
     if rows.is_empty() {
         return Ok(PullOutcome::default());
     }
