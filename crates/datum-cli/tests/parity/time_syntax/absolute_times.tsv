@@ -1,0 +1,32 @@
+# Absolute time forms accepted by `parse_time_arg`.
+# Format: input <TAB> expected_HMS
+#
+# expected_HMS is the parsed `NaiveTime` formatted as `HH:MM:SS`.
+# Where datum represents `24` as next-midnight, daydumb returns 00:00:00
+# and leaves the day-roll to the composition layer (see comment in
+# `plain_number_to_time`).
+#
+# Reference: original datum's parseTimeStr regex covers
+# H[:MM[:SS[.ms]]][am|pm]; daydumb mirrors the matched cases below.
+#
+# Known gap (filed for follow-up): `H:MM:SS<am|pm>` (two-letter meridian
+# combined with seconds, e.g. `3:45:04pm`) is currently rejected — datum
+# accepts it. Single-letter meridian forms (`9:30a`/`9:30p`) and meridian
+# without seconds (`3:15pm`) are pinned below.
+input	expected
+1513	15:13:00
+9:15am	09:15:00
+3:15pm	15:15:00
+0	00:00:00
+24	00:00:00
+0315	03:15:00
+2315	23:15:00
+3:15	03:15:00
+15:15	15:15:00
+16:45:04	16:45:04
+9:30a	09:30:00
+9:30p	21:30:00
+12am	00:00:00
+12pm	12:00:00
+5am	05:00:00
+5pm	17:00:00

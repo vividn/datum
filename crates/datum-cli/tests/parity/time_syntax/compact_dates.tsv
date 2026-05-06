@@ -1,0 +1,24 @@
+# Compact <mmm><day> shorthand (daydumb extension to datum's parseDateStr).
+# Format: input <TAB> today_iso <TAB> expected_iso <TAB> direction_marker
+# Direction marker is one of: none, future, past — passed through the
+# trailing `+`/`-` suffix on the input.
+#
+# Goldens are deterministic — daydumb's parse_date_arg is given a mocked
+# `today` via MockClock per row, so year-inference is reproducible.
+#
+# Reference: original datum gets compact-date support via chrono-node;
+# daydumb uses an explicit parser. Both produce the same date for the
+# overlapping inputs (case-insensitive month abbr + 1-2 digit day +
+# optional `-YYYY`/`@YYYY` year tail).
+input	today	expected	direction
+apr29	2026-05-06	2026-04-29	none
+APR29	2026-05-06	2026-04-29	none
+Jan5	2026-05-06	2026-01-05	none
+jun7	2026-05-06	2025-06-07	none
+apr29-2025	2026-05-06	2025-04-29	none
+apr29@2025	2026-05-06	2025-04-29	none
+feb29	2026-03-01	2024-02-29	none
+apr29+	2026-04-05	2026-04-29	future
+apr29+	2026-05-05	2027-04-29	future
+apr29-	2026-04-05	2025-04-29	past
+apr29-	2026-05-05	2026-04-29	past
