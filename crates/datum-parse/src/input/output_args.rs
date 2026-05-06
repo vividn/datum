@@ -1,11 +1,11 @@
 //! `outputArgs` — `--show-all/-A`, `--show`, `--format-string/-o`. Port of
 //! datum's `src/input/outputArgs.ts`.
 //!
-//! Step 2b/N lifts the `Show` enum + `OutputFlags::resolve` algorithm out of
-//! `datum-commands` so that the bespoke parser (step 3/N) can own the
-//! resolution. `datum-commands` keeps its own wrapper to bridge
-//! `CommandIntent` into its command structs; this module is a pure,
-//! WASM-safe analogue that makes the same decisions.
+//! Step 2b/N lifted the `Show` enum + resolve algorithm out of
+//! `datum-commands` so that the bespoke parser (step 3/N) owns the
+//! resolution. `datum-commands` keeps a thin bridge from its render-time
+//! `OutputArgs` to the parse-crate one; this module is the pure,
+//! WASM-safe analogue.
 //!
 //! See `docs/parity-audit/parsing.md` ("`outputArgs.ts`") for the spec.
 
@@ -91,9 +91,7 @@ pub struct OutputArgs {
 }
 
 /// Resolved output configuration — the semantic form consumed by the
-/// render layer. Mirrors the decision in
-/// `datum_commands::args::OutputFlags::resolve` so a step-3 switch of
-/// owner is a rename, not a rewrite.
+/// render layer.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct OutputResolved {
     pub show: Show,

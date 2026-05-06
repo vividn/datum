@@ -12,31 +12,6 @@
 
 use crate::input::{DurationArgs, OutputArgs, TimeArgs};
 
-/// Legacy flat output-flags shape, kept as a transitional shim for the
-/// per-command Args structs that haven't yet adopted the composed
-/// [`OutputArgs`] field. Phase A (da-e2e) migrated `LogArgs`; Phase C
-/// (da-6qj) migrated the mutate commands (Update/Edit/Delete/Undo);
-/// Phase B (da-ngq) migrated the read commands (`TailArgs` / `GetArgs`
-/// / `GrepArgs`). Phase D retires this for the remaining spec/alias
-/// commands.
-#[derive(Debug, Clone, Default)]
-pub struct OutputFlags {
-    pub show: String,
-    pub show_all: bool,
-    pub format_string: Option<String>,
-}
-
-impl OutputFlags {
-    /// Build with defaults (show="default").
-    pub fn fresh() -> Self {
-        Self {
-            show: "default".to_string(),
-            show_all: false,
-            format_string: None,
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct Cli {
     pub db: Option<String>,

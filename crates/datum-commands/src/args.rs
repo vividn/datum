@@ -36,7 +36,7 @@ pub use pcli::{
     ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DbCommand, DbImportArgs,
     DbPurgeArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs,
     InfoArgs, KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand,
-    NowArgs, NowviewArgs, OutputFlags, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand,
+    NowArgs, NowviewArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand,
     SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
     SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat,
     WhyArgs,
@@ -238,34 +238,8 @@ impl<'a> Resolver for DbAliasResolver<'a> {
 // `args.conflict_strategy()`, `args.resolved_path()`) to every caller
 // that already imported `crate::args::*`.
 
-/// Resolve raw [`OutputFlags`] into the render-time [`OutputArgs`].
-///
-/// Delegates the show/format/show-all precedence rules to the canonical
-/// implementation in `datum_parse::input::OutputArgs::resolve`, then
-/// translates the parse-crate `Show` enum back to the render-crate one.
-/// The two `Show` enums have parallel variants; the conversion is a flat
-/// match. Centralising the logic in `datum-parse` is da-26e's "wire each
-/// module's build() so reconciliation is single-source-of-truth" pass —
-/// the legacy duplicated copy here is gone.
-pub fn resolve_output_flags(f: &OutputFlags) -> OutputArgs {
-    use datum_parse::input::output_args as parse_output;
-
-    let parse_args = parse_output::OutputArgs {
-        show_all: f.show_all,
-        // Pre-existing semantics treat the literal string `"default"` as
-        // "not explicitly set"; `OutputArgs::resolve` already handles that
-        // via `matches!(show.as_deref(), None | Some("default"))`, so the
-        // raw string passes through unchanged.
-        show: Some(f.show.clone()),
-        format_string: f.format_string.clone(),
-    };
-    resolve_parse_output_args(&parse_args)
-}
-
 /// Render-time resolution starting from the composed
-/// [`datum_parse::input::OutputArgs`] (Phase A+ shape on `LogArgs`).
-/// Per-command Args structs that still carry the legacy [`OutputFlags`]
-/// route through [`resolve_output_flags`] until their phase migrates.
+/// [`datum_parse::input::OutputArgs`].
 pub fn resolve_parse_output_args(o: &datum_parse::input::OutputArgs) -> OutputArgs {
     use datum_parse::input::output_args as parse_output;
 
@@ -305,8 +279,8 @@ impl LogArgsExt for LogArgs {
     }
 }
 
-/// Generic `.output()` bridge for intents that still carry the legacy
-/// flat [`OutputFlags`] bag (Phase D-pending spec/alias commands).
+/// Generic `.output()` bridge for intents whose composed [`OutputArgs`]
+/// field needs render-time resolution.
 pub trait OutputFlagsExt {
     fn output(&self) -> OutputArgs;
 }
