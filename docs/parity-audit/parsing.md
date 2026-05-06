@@ -332,10 +332,10 @@ Defines `DatumTime = { utc, o?, tz? }`; `toDatumTime(Luxon)` and
 
 Reads `data.occurTime` off a datum document and converts to Luxon.
 
-- **Daydumb today:** N/A — `occurTime` is the `start_time` column
-  directly on the Entry row. The `get_occur_time.rs` stub is redundant
-  with `TimeArgs::build()` and slated for removal (see follow-up bead
-  for stub cleanup).
+- **Daydumb today:** N/A — `occurTime` is the `occur_time` column
+  directly on the v=20 Entry row (see datum-core::entry). The
+  `get_occur_time.rs` stub is redundant with `TimeArgs::build()` and
+  slated for removal (see follow-up bead for stub cleanup).
 
 ### `getTimezone.ts` (25 LOC)
 

@@ -63,18 +63,26 @@ Every flag and every verb is documented in `datum --help`,
 The full conceptual model is documented in the ADRs; one-line summaries:
 
 - **Entry** — one row. Has an id (ULID), a slug (`field:time`), a field,
-  a verb, a value, optional structured `extra_data`, and a time range.
-  See `da-ylm`.
+  a verb (storage classifier), an `occur_time`, a `state` JSON value, an
+  optional ISO-8601 `dur`, an optional `following_state`, and arbitrarily
+  nested `extra_data`. See `da-ylm`, `da-5ns`.
 - **Field** — what is being tracked: `mood`, `coffee`, `weight`,
   `project`. Freeform by default; can be schema-constrained via
   `datum spec set`.
-- **Verb** — `add` (canonical universal verb), plus four sugar verbs:
-  `occur` (point), `start` / `stop` (duration), `switch` (state
-  transition). `block` is a fifth shape inferred from temporal keys.
-- **Shape** — `Point` | `Block` | `Ongoing`. Inferred at write-time from
-  which time fields you supplied.
-- **State** — derived from `switch` entries: at any past instant we can
-  reconstruct a field's value. `datum now` consults this.
+- **Action** — the user's command intent at the CLI: `add`, `occur`,
+  `start`, `stop`, `switch`. Action is parsed from argv, canonicalizes
+  the (state, dur, following_state) triple (`start` ⇒ state=true,
+  `stop` ⇒ state=false), and is then discarded — only the triple
+  reaches storage. See `da-8y2q.2`.
+- **Verb** — the storage classifier derived from (state, dur,
+  following_state) by `derive_verb` (datum-core::verb): `point`,
+  `switch`, `block`, `block-switch`, `point-switch`. The CLI verbs
+  `add`/`occur`/`start`/`stop`/`switch` map onto these via the truth
+  table in `crates/datum-core/src/verb.rs`.
+- **State** — derived from state-bearing entries (`Switch`,
+  `BlockSwitch`, `PointSwitch`, `Block` with state=set, `Point` as a
+  false-event marker): at any past instant we can reconstruct a
+  field's value. `datum now` consults this.
 - **Slug vs. hid** — `slug` is the human-readable id (`mood:2026-04-29T09:15Z`).
   `hid` is the short hash you see in `datum tail`; both resolve to the
   same entry.
