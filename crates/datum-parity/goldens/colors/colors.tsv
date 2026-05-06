@@ -1,0 +1,40 @@
+# Color goldens — datum-compatible.
+#
+# Columns:
+#   field         — field name, or empty for state-only resolution
+#   state         — state name, or `-` to look up the field color directly
+#   expected_hex  — `#RRGGBB`
+#   source        — `spec` if mySpec overrides, `md5` if md5 fallback
+#   contrast_fg   — `#000000` or `#ffffff` (YIQ contrast text color)
+#   note          — short reason this fixture exists
+#
+# The `expected_hex` column was captured by reading `mySpecs.ts` directly
+# (for `spec` rows) or by running md5 on the relevant string (for `md5`
+# rows; computed via `node -e "..."` against the npm `md5` package).
+# The `tests/colors.rs` test verifies daydumb produces the same.
+#
+# To add a new fixture: pick a (field, state) pair, compute expected_hex
+# (read mySpecs.ts for spec rows; for md5 rows use
+# `node -e "const c=require('crypto'); console.log('#'+c.createHash('md5').update('NAME').digest('hex').slice(0,6))"`),
+# compute YIQ-contrast against the bg, and document the rationale.
+
+field	state	expected_hex	source	contrast_fg	note
+sleep	-	#142878	spec	#ffffff	field-level override (mySpec sleep)
+poop	-	#422501	spec	#ffffff	field-level override
+pee	-	#bbaa00	spec	#000000	field-level override; bright yellow → black fg
+caffeine	-	#643200	spec	#ffffff	field-level override
+alarm	-	#ffff00	spec	#000000	pure yellow → bright contrast
+project	datum	#650e78	spec	#ffffff	state-level override (this project's own name)
+project	meeting	#000000	spec	#ffffff	state-level override = pure black
+body	run	#ff6e19	spec	#000000	state-level override that rebuts md5("run")
+country	germany	#303030	spec	#ffffff	would have caught da-438y (charcoal vs md5)
+environment	home	#141414	spec	#ffffff	near-black
+mood	-	#dc27c0	md5	#ffffff	field with no spec → md5 fallback
+coffee	-	#24eb05	md5	#000000	field with no spec → md5 fallback
+weight	-	#7edabf	md5	#000000	field with no spec → md5 fallback
+mood	happy	#56ab24	md5	#000000	state with no spec → md5 fallback
+mood	sad	#49f0ba	md5	#000000	state with no spec → md5 fallback
+true	-	#b326b5	md5	#ffffff	literal "true" hashes to magenta
+false	-	#68934a	md5	#ffffff	literal "false" hashes to a darker green
+null	-	#37a625	md5	#ffffff	literal "null" — NOT the IGNORED grey
+unknown_field	-	#0e22b3	md5	#ffffff	unknown field falls through to md5

@@ -4,6 +4,7 @@ members = [
     "crates/datum-cli",
     "crates/datum-commands",
     "crates/datum-layout",
+    "crates/datum-parity",
     "crates/datum-parse",
     "crates/datum-sync-agent",
     "crates/datum-sync-client",

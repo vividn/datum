@@ -1,0 +1,27 @@
+[package]
+name = "datum-parity"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "Cross-runtime parity tests: daydumb vs. original datum (vividn/datum)."
+
+[features]
+default = []
+# Enables tests that spawn the original datum (TS) binary. Requires node + a
+# clone of vividn/datum at `target/parity-cache/datum` (managed by
+# `scripts/setup_datum.sh`). Off by default so plain `cargo test` doesn't
+# pull a node toolchain into a Rust-only build.
+parity-runtime = []
+
+[dependencies]
+md-5 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+toml = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"
+chrono = { workspace = true }
