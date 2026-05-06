@@ -341,9 +341,10 @@ fn apply_mutation(
 ) -> Result<UpdateOutcome> {
     // da-5ns.3: peel reserved column-bound keys (`state=`, `dur=`,
     // `following_state=`, `occur_time=`) out of the payload and route
-    // them to the entry's columns instead of `data`. Rejects `value=`
-    // outright. The storage layer's `derive_verb` call recomputes the
-    // verb on the resulting (state, dur, fs) triple.
+    // them to the entry's columns instead of `data`. Unknown keys
+    // (including `value=`) stay in `data` (da-53rz). The storage layer's
+    // `derive_verb` call recomputes the verb on the resulting (state,
+    // dur, fs) triple.
     let mut payload_extra = payload_extra;
     let reserved = crate::cmd::extract_reserved_columns(&mut payload_extra)?;
 

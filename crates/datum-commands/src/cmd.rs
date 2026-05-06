@@ -534,8 +534,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     } = parsed;
 
     // da-5ns.3: route reserved column-bound keys (`state=`, `dur=`,
-    // `following_state=`, `occur_time=`) out of the data blob, and
-    // reject the unknown `value=` key.
+    // `following_state=`, `occur_time=`) out of the data blob.
+    // Unknown keys (including `value=`) stay in the data payload (da-53rz).
     let reserved = extract_reserved_columns(&mut extra_data)?;
 
     // da-5ns.3 strict positional gate (Action::Add only): the v=20 model
@@ -1338,8 +1338,9 @@ pub(crate) struct ReservedColumns {
 
 /// da-5ns.3: route the reserved column-bound keys (`state=`, `dur=`,
 /// `following_state=`, `occur_time=`) out of the user's `data` payload
-/// and reject the unknown `value=` key that callers might reach for out
-/// of muscle memory from the v=19 schema.
+/// onto entry columns. Unknown keys (including `value=`) fall through
+/// to the user-data payload — `value` is no longer a column post-da-5ns,
+/// so `value=X` lands as `data.value = X` like any other user key (da-53rz).
 ///
 /// `occur_time=` is captured but its value-shape grammar (RFC3339,
 /// signed offsets, `now`) is left to callers to interpret — the
@@ -1352,12 +1353,6 @@ pub(crate) fn extract_reserved_columns(
     let Some(JsonValue::Object(obj)) = extra_data.as_mut() else {
         return Ok(out);
     };
-    if obj.contains_key("value") {
-        anyhow::bail!(
-            "unknown key 'value=': the v=20 schema replaced `value` with `state`; \
-             use `state=<v>` instead"
-        );
-    }
     if let Some(v) = obj.remove("state") {
         out.state = Some(v);
     }
@@ -5550,8 +5545,9 @@ mod tests {
     //
     // CLI scenarios from the bead description: reserved keys land on
     // entry columns, the storage layer's `derive_verb` classifies the
-    // verb, `value=` is rejected, and an unbound positional on `add`
-    // errors instead of silently dropping the value.
+    // verb, and an unbound positional on `add` errors instead of silently
+    // dropping the value. Unknown keys (including `value=`) fall through
+    // to the user-data payload (da-53rz).
 
     fn make_add_args(field: &str, rest: Vec<&str>) -> LogArgs {
         let mut a = LogArgs::fresh(field);
@@ -5599,20 +5595,29 @@ mod tests {
         assert_eq!(e.following_state, Some(serde_json::json!(false)));
     }
 
+    /// da-53rz: post-da-5ns the `value` column is gone, so `value=X`
+    /// must fall through to the user-data payload like any other key
+    /// (lands as `data.value = X`) instead of erroring as a reserved
+    /// column-bound key. Hits real SQL via `log_entry` to catch any
+    /// column-routing regression.
     #[test]
-    fn add_rejects_unknown_value_key() {
+    fn datum_occur_with_user_value_key_lands_as_data_key() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = log_entry(
+        log_entry(
             Action::Occur,
-            make_add_args("focus", vec!["state=true", "value=80"]),
+            make_add_args("mood", vec!["value=1"]),
             &db,
         )
-        .unwrap_err();
-        let msg = err.to_string().to_lowercase();
-        assert!(
-            msg.contains("value"),
-            "expected 'value' rejection, got: {err}"
+        .unwrap();
+        let live = db.entries_for_field("mood", None).unwrap();
+        assert_eq!(live.len(), 1);
+        let e = &live[0];
+        assert_eq!(
+            e.data.as_ref().and_then(|d| d.get("value")),
+            Some(&serde_json::json!(1)),
+            "expected data.value=1, got data={:?}",
+            e.data,
         );
     }
 
