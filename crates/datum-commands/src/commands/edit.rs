@@ -171,11 +171,3 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
     show_update(&fresh, registry.as_ref(), &args.output());
     Ok(())
 }
-
-pub fn edit_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("edit_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn edit_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("edit_from_string: stub — R2 extracts bespoke parser")
-}

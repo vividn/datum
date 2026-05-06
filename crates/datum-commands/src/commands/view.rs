@@ -41,14 +41,6 @@ pub fn view(args: ViewArgs, db: &Db) -> Result<()> {
     }
 }
 
-pub fn view_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("view_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn view_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("view_from_string: stub — R2 extracts bespoke parser")
-}
-
 fn render_once(args: &ViewArgs, db: &Db) -> Result<()> {
     let row = db
         .get_view(&args.name)

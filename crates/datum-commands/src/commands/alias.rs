@@ -13,14 +13,6 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
     crate::cmd::cmd_alias(sub, db)
 }
 
-pub fn alias_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("alias_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn alias_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("alias_from_string: stub — R2 extracts bespoke parser")
-}
-
 /// If `name` is `Some`, record the current invocation's canonical
 /// argv form (with the alias-naming flags stripped) as a user alias.
 ///

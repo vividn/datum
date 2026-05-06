@@ -55,14 +55,6 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-pub fn check_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("check_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn check_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("check_from_string: stub — R2 extracts bespoke parser")
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {

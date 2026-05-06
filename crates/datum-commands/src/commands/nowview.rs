@@ -68,14 +68,6 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     }
 }
 
-pub fn nowview_from_argv(_argv: &[String], _db: &Db) -> Result<()> {
-    anyhow::bail!("nowview_from_argv: stub — R2 extracts bespoke parser")
-}
-
-pub fn nowview_from_string(_input: &str, _db: &Db) -> Result<()> {
-    anyhow::bail!("nowview_from_string: stub — R2 extracts bespoke parser")
-}
-
 fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let history_minutes = match &args.history {
         Some(s) => duration_minutes(s)
