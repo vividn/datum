@@ -612,6 +612,7 @@ dependencies = [
  "datum-sync-protocol",
  "http-body-util",
  "jsonwebtoken",
+ "rand 0.8.6",
  "rusqlite",
  "serde",
  "serde_json",

@@ -41,17 +41,13 @@ const DEFAULT_EXPIRES_IN: u64 = 600;
 const DEFAULT_INTERVAL: u64 = 1;
 
 fn random_token(len: usize) -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_nanos();
-    // Cheap unique-ish token without pulling rand into the dependency tree;
-    // real entropy isn't required because the device_code is single-use and
-    // short-lived, and the surrounding flow requires the user to also
-    // confirm via /authorize.
-    let raw = format!("{}-{}", nanos, len);
-    raw.chars().take(32).collect()
+    // device_code is a bearer credential — system-clock entropy is predictable
+    // and lets an attacker race /authorize. Use OS RNG.
+    use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
+    use rand::RngCore;
+    let mut bytes = vec![0u8; len];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(&bytes)
 }
 
 fn random_user_code() -> String {
