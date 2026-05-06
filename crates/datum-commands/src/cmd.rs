@@ -481,13 +481,22 @@ pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Res
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-pub(crate) fn log_entry(mut verb: Verb, args: LogArgs, db: &Db) -> Result<()> {
+pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()> {
     // -T/--no-timestamp: route any log verb through the timeless `add`
     // codepath (S5). Time-specifying flags are rejected so silent discard
     // can't mask a user misconception.
     if args.time.omit_timestamp {
         check_no_time_flags(&args)?;
         verb = Verb::Add;
+    }
+
+    // da-ffp6: For switch, only the first bare positional is the state;
+    // subsequent bare positionals are reserved tokens (currently: duration).
+    // Multi-state must be opt-in via comma-separated tokens (`a,b`), never
+    // whitespace. Pull any trailing duration positional into args.duration
+    // before handle_data_args sees it.
+    if matches!(verb, Verb::Switch) {
+        extract_switch_trailing_reserved(&mut args)?;
     }
 
     // For switch, walk the bare positionals and reject interior `,,`
@@ -1010,6 +1019,55 @@ fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
         Some(JsonValue::String(s)) => s.clone(),
         Some(other) => other.to_string(),
     }
+}
+
+/// da-ffp6: For `Verb::Switch`, partition `args.rest` so only the first
+/// bare (non-`KEY=VALUE`) positional contributes to the state value.
+/// Subsequent bare positionals are reserved tokens — currently any
+/// `parse_duration`-compatible string — and feed into `args.duration`
+/// rather than appending to the state list.
+///
+/// Multi-state remains opt-in via comma-separated tokens (`switch f a,b`);
+/// whitespace-separated trailing positionals never silently become array
+/// elements. A trailing bare positional that fails to parse as a duration
+/// is rejected with a hint pointing at the comma form.
+fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()> {
+    let mut state_consumed = false;
+    let mut new_rest: Vec<String> = Vec::with_capacity(args.rest.len());
+    let mut trailing_duration: Option<String> = None;
+    for token in args.rest.drain(..) {
+        if token.contains('=') {
+            new_rest.push(token);
+            continue;
+        }
+        if !state_consumed {
+            state_consumed = true;
+            new_rest.push(token);
+            continue;
+        }
+        if parse_duration(&token).is_err() {
+            anyhow::bail!(
+                "switch: trailing positional '{token}' is not a valid duration. \
+                 Use comma-separated states for multi-state switch (e.g. `a,b`)."
+            );
+        }
+        if trailing_duration.is_some() {
+            anyhow::bail!(
+                "switch: multiple trailing duration positionals; expected at most one"
+            );
+        }
+        trailing_duration = Some(token);
+    }
+    args.rest = new_rest;
+    if let Some(dur) = trailing_duration {
+        if args.duration.duration.is_some() {
+            anyhow::bail!(
+                "switch: trailing duration positional conflicts with --dur"
+            );
+        }
+        args.duration.duration = Some(dur);
+    }
+    Ok(())
 }
 
 /// S12: parse a switch value token, splitting on `,` into an array of

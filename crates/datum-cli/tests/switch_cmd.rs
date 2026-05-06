@@ -556,3 +556,160 @@ fn derived_alias_from_spec_routes_to_switch_with_extra_keys() {
         "alias expansion composes cleanly with -k flags in the CLI pre-pass",
     );
 }
+
+// ─── da-ffp6: trailing positional → duration, not extra state ────────────
+
+/// da-ffp6: `switch project ai 3` → state=ai, dur=3min. The trailing bare
+/// positional is interpreted as a duration (default unit: minutes), NOT
+/// silently appended to the state list as a second concurrent state.
+#[test]
+fn switch_trailing_bare_positional_becomes_duration_default_minutes() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "ai", "3"], &db)
+        .expect("trailing `3` should parse as 3-minute duration");
+
+    let entries = db.entries_for_field("project", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    let e = &entries[0];
+    assert_eq!(e.field, "project");
+    assert_eq!(e.state.as_ref(), Some(&json!("ai")));
+    assert_eq!(
+        e.duration_seconds(),
+        Some(3 * 60),
+        "trailing `3` is duration in minutes, not a second state",
+    );
+}
+
+/// da-ffp6: `switch project ai 30m` → state=ai, dur=30min. Suffixed
+/// duration form parses just like a `--dur` value.
+#[test]
+fn switch_trailing_positional_with_unit_suffix_becomes_duration() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "ai", "30m"], &db)
+        .expect("trailing `30m` should parse as duration");
+
+    let e = &db.entries_for_field("project", None).unwrap()[0];
+    assert_eq!(e.state.as_ref(), Some(&json!("ai")));
+    assert_eq!(e.duration_seconds(), Some(30 * 60));
+}
+
+/// da-ffp6: `switch project ai 1:30` → state=ai, dur=1h30m. Colon-separated
+/// HH:MM form parses just like `--dur 1:30`.
+#[test]
+fn switch_trailing_positional_colon_form_becomes_duration() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "ai", "1:30"], &db)
+        .expect("trailing `1:30` should parse as 90-minute duration");
+
+    let e = &db.entries_for_field("project", None).unwrap()[0];
+    assert_eq!(e.state.as_ref(), Some(&json!("ai")));
+    assert_eq!(e.duration_seconds(), Some(90 * 60));
+}
+
+/// da-ffp6: `switch project ai PT30M` — ISO 8601 duration form.
+#[test]
+fn switch_trailing_positional_iso_duration_form() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "ai", "PT30M"], &db)
+        .expect("trailing `PT30M` should parse as ISO duration");
+
+    let e = &db.entries_for_field("project", None).unwrap()[0];
+    assert_eq!(e.duration_seconds(), Some(30 * 60));
+}
+
+/// da-ffp6: `switch project ai,b 3` → state=[ai,b], dur=3min. Comma-array
+/// state still works alongside a trailing duration positional.
+#[test]
+fn switch_comma_array_with_trailing_duration_positional() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "ai,b", "3"], &db)
+        .expect("array state + trailing duration should both apply");
+
+    let e = &db.entries_for_field("project", None).unwrap()[0];
+    assert_eq!(
+        e.state.as_ref(),
+        Some(&json!(["ai", "b"])),
+        "comma form still produces an array state",
+    );
+    assert_eq!(
+        e.duration_seconds(),
+        Some(3 * 60),
+        "trailing positional applies as duration alongside the array state",
+    );
+}
+
+/// da-ffp6: a trailing bare positional that doesn't parse as a duration is
+/// rejected — this is the path that, before the fix, would silently
+/// produce a 2-element state array.
+#[test]
+fn switch_trailing_non_duration_positional_rejected() {
+    let db = fresh_db();
+
+    let err = run_cli(&["switch", "project", "ai", "b"], &db)
+        .expect_err("`b` is not a duration; whitespace-multi-state must error")
+        .to_string();
+    assert!(
+        err.contains("not a valid duration") && err.contains("comma"),
+        "error should hint at comma form: {err}",
+    );
+    assert_eq!(
+        db.entries_for_field("project", None).unwrap().len(),
+        0,
+        "rejected parse must not persist any entry",
+    );
+}
+
+/// da-ffp6: trailing duration positional + explicit `--dur` is a conflict
+/// (better to fail loudly than to silently pick a winner).
+#[test]
+fn switch_trailing_duration_conflicts_with_explicit_dur_flag() {
+    let db = fresh_db();
+
+    let err = run_cli(&["switch", "project", "ai", "3", "--dur", "5m"], &db)
+        .expect_err("trailing dur + --dur should conflict")
+        .to_string();
+    assert!(
+        err.contains("--dur") || err.contains("conflict"),
+        "error should mention the conflict: {err}",
+    );
+}
+
+/// da-ffp6: only one trailing duration positional permitted; two is an
+/// error rather than silently picking one.
+#[test]
+fn switch_two_trailing_duration_positionals_rejected() {
+    let db = fresh_db();
+
+    let err = run_cli(&["switch", "project", "ai", "3", "5m"], &db)
+        .expect_err("two trailing duration positionals should error")
+        .to_string();
+    assert!(
+        err.contains("multiple") || err.contains("at most one"),
+        "error should call out the multiplicity: {err}",
+    );
+}
+
+/// da-ffp6: KEY=VALUE positionals after the state still attach to
+/// extra_data; they don't count as the "trailing" duration slot, so a
+/// duration positional may appear before, between, or after them.
+#[test]
+fn switch_trailing_duration_with_kv_positionals() {
+    let db = fresh_db();
+
+    run_cli(
+        &["switch", "project", "ai", ".note=hi", "3"],
+        &db,
+    )
+    .expect("KV positional + trailing duration should both apply");
+
+    let e = &db.entries_for_field("project", None).unwrap()[0];
+    assert_eq!(e.state.as_ref(), Some(&json!("ai")));
+    assert_eq!(e.duration_seconds(), Some(3 * 60));
+    let extra = e.data.as_ref().unwrap();
+    assert_eq!(extra[".note"], json!("hi"));
+}
