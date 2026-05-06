@@ -12,6 +12,7 @@
 
 use anyhow::Result;
 use datum_core::db::Db;
+use datum_sync_client::http::Session;
 use datum_sync_client::sync_once;
 use reqwest::blocking::Client;
 
@@ -23,11 +24,11 @@ pub use datum_sync_client::sync_once::PushOutcome;
 pub fn run(
     server: &str,
     client: &Client,
-    bearer: &str,
+    session: &Session,
     device_id: &str,
     master_key: &[u8; 32],
     db: &Db,
     dry_run: bool,
 ) -> Result<PushOutcome> {
-    sync_once::push_once(server, client, bearer, device_id, master_key, db, dry_run)
+    sync_once::push_once(server, client, session, device_id, master_key, db, dry_run)
 }

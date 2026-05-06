@@ -84,6 +84,7 @@ fn write_token_for(server: &str, token: &str) {
     let path = auth_token_path(&host).unwrap();
     let t = AuthToken {
         token: token.to_string(),
+        refresh_token: None,
         refreshed_at: Some(Utc::now().to_rfc3339()),
         server: Some(server.to_string()),
         user_id: Some("vividn@vividn.dev".to_string()),
@@ -565,10 +566,21 @@ fn run_sync_inner_for_device(
     db: &Db,
     direction: Direction,
 ) -> SyncOutcome {
+    // Wrap the bare bearer in an AuthToken + Session so callers can keep
+    // their existing "give me a string" signature. No on-disk persistence
+    // here — the tests don't exercise refresh.
+    let token = AuthToken {
+        token: bearer.to_string(),
+        refresh_token: None,
+        refreshed_at: Some(Utc::now().to_rfc3339()),
+        server: Some(server.to_string()),
+        user_id: None,
+    };
+    let session = datum_sync_client::http::Session::new(server, &token, None);
     let mut outcome = SyncOutcome::default();
     if direction.does_pull() {
         let pulled = datum_cli::sync::pull::run(
-            server, client, bearer, device_id, master_key, db, false,
+            server, client, &session, device_id, master_key, db, false,
         )
         .unwrap();
         outcome.pulled = pulled.applied;
@@ -576,7 +588,7 @@ fn run_sync_inner_for_device(
     }
     if direction.does_push() {
         let pushed = datum_cli::sync::push::run(
-            server, client, bearer, device_id, master_key, db, false,
+            server, client, &session, device_id, master_key, db, false,
         )
         .unwrap();
         outcome.pushed = pushed.pushed;

@@ -40,9 +40,62 @@ pub fn init_db(conn: &Connection) -> Result<()> {
             blob TEXT NOT NULL,
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS refresh_tokens (
+            token_hash TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
     ",
     )
     .context("init_db")?;
+    Ok(())
+}
+
+/// Persist a refresh token by its SHA-256 hash. Storing the hash means
+/// a server-DB read does NOT yield bearer-equivalent material.
+/// `expires_at` is a unix timestamp in seconds.
+pub fn insert_refresh_token(
+    conn: &Connection,
+    token_hash: &str,
+    user_id: &Uuid,
+    expires_at: i64,
+) -> Result<()> {
+    conn.execute(
+        "INSERT INTO refresh_tokens (token_hash, user_id, expires_at) VALUES (?1, ?2, ?3)",
+        params![token_hash, user_id.to_string(), expires_at],
+    )
+    .context("insert_refresh_token")?;
+    Ok(())
+}
+
+/// Look up a refresh token by hash. Returns `(user_id, expires_at)` or
+/// `None` if the token has been rotated out (or never existed).
+pub fn lookup_refresh_token(
+    conn: &Connection,
+    token_hash: &str,
+) -> Result<Option<(Uuid, i64)>> {
+    let mut stmt = conn
+        .prepare("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?1")?;
+    let mut rows = stmt.query(params![token_hash])?;
+    if let Some(row) = rows.next()? {
+        let id_str: String = row.get(0)?;
+        let expires_at: i64 = row.get(1)?;
+        Ok(Some((Uuid::parse_str(&id_str)?, expires_at)))
+    } else {
+        Ok(None)
+    }
+}
+
+/// Delete a refresh token by its hash. Used to enforce single-use
+/// rotation on every successful refresh.
+pub fn delete_refresh_token(conn: &Connection, token_hash: &str) -> Result<()> {
+    conn.execute(
+        "DELETE FROM refresh_tokens WHERE token_hash = ?1",
+        params![token_hash],
+    )
+    .context("delete_refresh_token")?;
     Ok(())
 }
 

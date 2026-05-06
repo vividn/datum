@@ -314,12 +314,13 @@ fn spawn_watcher(
 /// preflight (token/key/device-id loading), which is local-state I/O,
 /// not CLI surface.
 fn do_push(target: &SyncTarget) -> Result<usize> {
-    use datum_commands::commands::sync::preflight_checks;
+    use datum_commands::commands::sync::{build_session, preflight_checks};
     use datum_core::db::Db;
     use datum_sync_client::sync_once;
     use std::time::Duration as StdDuration;
 
     let pre = preflight_checks(&target.server)?;
+    let session = build_session(&target.server, &pre.token);
     let client = reqwest::blocking::Client::builder()
         .timeout(StdDuration::from_secs(30))
         .build()
@@ -329,7 +330,7 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
     let out = sync_once::push_once(
         &target.server,
         &client,
-        &pre.token.token,
+        &session,
         &pre.device_id,
         &pre.master_key,
         &db,
@@ -343,12 +344,13 @@ fn do_push(target: &SyncTarget) -> Result<usize> {
 /// `applied` and decide whether to fire a desktop notification on
 /// `conflicts_queued > 0`.
 fn do_pull(target: &SyncTarget) -> Result<datum_sync_client::sync_once::PullOutcome> {
-    use datum_commands::commands::sync::preflight_checks;
+    use datum_commands::commands::sync::{build_session, preflight_checks};
     use datum_core::db::Db;
     use datum_sync_client::sync_once;
     use std::time::Duration as StdDuration;
 
     let pre = preflight_checks(&target.server)?;
+    let session = build_session(&target.server, &pre.token);
     let client = reqwest::blocking::Client::builder()
         .timeout(StdDuration::from_secs(30))
         .build()
@@ -358,7 +360,7 @@ fn do_pull(target: &SyncTarget) -> Result<datum_sync_client::sync_once::PullOutc
     let out = sync_once::pull_once(
         &target.server,
         &client,
-        &pre.token.token,
+        &session,
         &pre.device_id,
         &pre.master_key,
         &db,

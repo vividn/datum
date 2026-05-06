@@ -97,6 +97,7 @@ fn write_token_for(server: &str, token: &str) {
     let path = auth_token_path(&host).unwrap();
     let t = AuthToken {
         token: token.to_string(),
+        refresh_token: None,
         refreshed_at: Some(Utc::now().to_rfc3339()),
         server: Some(server.to_string()),
         user_id: Some("vividn@vividn.dev".to_string()),
@@ -108,6 +109,21 @@ fn write_master_key(server: &str, key_bytes: &[u8; 32]) {
     let host = server_host_from_url(server);
     let path = master_key_path(&host).unwrap();
     std::fs::write(path, key_bytes).unwrap();
+}
+
+/// Test helper: wrap a bare bearer string in a [`Session`] so existing
+/// tests keep their three-line setup. No on-disk persistence — these
+/// tests don't exercise the refresh path; the dedicated refresh tests
+/// (see below) construct their own sessions with full persistence.
+fn bearer_session(server: &str, bearer: &str) -> datum_sync_client::http::Session {
+    let token = AuthToken {
+        token: bearer.to_string(),
+        refresh_token: None,
+        refreshed_at: Some(Utc::now().to_rfc3339()),
+        server: Some(server.to_string()),
+        user_id: None,
+    };
+    datum_sync_client::http::Session::new(server, &token, None)
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -336,6 +352,7 @@ fn s2_second_instance_joins_via_passphrase_unwrap() {
     let master_a = key::init_with_client(&relay.base_url, &client, false, &mut prompter_a)
         .expect("device A key init");
 
+    let session = bearer_session(&relay.base_url, &relay.mint_token());
     let db_a = open_db("alpha");
     for i in 0..30 {
         db_a.insert_entry(&make_occur(
@@ -348,7 +365,7 @@ fn s2_second_instance_joins_via_passphrase_unwrap() {
     push::run(
         &relay.base_url,
         &client,
-        &relay.mint_token(),
+        &session,
         "dev-A",
         &master_a,
         &db_a,
@@ -372,7 +389,7 @@ fn s2_second_instance_joins_via_passphrase_unwrap() {
     pull::run(
         &relay.base_url,
         &client,
-        &relay.mint_token(),
+        &session,
         "dev-B",
         &master_b,
         &db_b,
@@ -399,6 +416,7 @@ fn s3_bidirectional_convergence() {
     write_master_key(&relay.base_url, &master_key);
     let client = Client::builder().build().unwrap();
     let bearer = relay.mint_token();
+    let session = bearer_session(&relay.base_url, &bearer);
 
     let db_a = open_db("alpha");
     let db_b = open_db("beta");
@@ -427,7 +445,7 @@ fn s3_bidirectional_convergence() {
     push::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db_a,
@@ -437,7 +455,7 @@ fn s3_bidirectional_convergence() {
     push::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-B",
         &master_key,
         &db_b,
@@ -449,7 +467,7 @@ fn s3_bidirectional_convergence() {
     pull::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db_a,
@@ -459,7 +477,7 @@ fn s3_bidirectional_convergence() {
     pull::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-B",
         &master_key,
         &db_b,
@@ -507,6 +525,7 @@ fn s4_three_device_cluster_converges() {
     write_master_key(&relay.base_url, &master_key);
     let client = Client::builder().build().unwrap();
     let bearer = relay.mint_token();
+    let session = bearer_session(&relay.base_url, &bearer);
 
     let db_a = open_db("alpha");
     let db_b = open_db("beta");
@@ -529,7 +548,7 @@ fn s4_three_device_cluster_converges() {
             pull::run(
                 &relay.base_url,
                 &client,
-                &bearer,
+                &session,
                 id,
                 &master_key,
                 db,
@@ -539,7 +558,7 @@ fn s4_three_device_cluster_converges() {
             push::run(
                 &relay.base_url,
                 &client,
-                &bearer,
+                &session,
                 id,
                 &master_key,
                 db,
@@ -575,6 +594,7 @@ fn s5_offline_edits_then_converge() {
         .build()
         .unwrap();
     let bearer = relay.mint_token();
+    let session = bearer_session(&relay.base_url, &bearer);
 
     let db_a = open_db("alpha");
     let db_b = open_db("beta");
@@ -587,7 +607,7 @@ fn s5_offline_edits_then_converge() {
     push::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db_a,
@@ -597,7 +617,7 @@ fn s5_offline_edits_then_converge() {
     push::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-B",
         &master_key,
         &db_b,
@@ -607,7 +627,7 @@ fn s5_offline_edits_then_converge() {
     pull::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db_a,
@@ -617,7 +637,7 @@ fn s5_offline_edits_then_converge() {
     pull::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-B",
         &master_key,
         &db_b,
@@ -655,7 +675,7 @@ fn s5_offline_edits_then_converge() {
     let err_a = push::run(
         &dead_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db_a,
@@ -669,10 +689,10 @@ fn s5_offline_edits_then_converge() {
 
     // Both devices push and pull. Final state on both sides matches.
     for (id, db) in [("dev-A", &db_a), ("dev-B", &db_b)] {
-        push::run(&live_url, &client, &bearer, id, &master_key, db, false).unwrap();
+        push::run(&live_url, &client, &session, id, &master_key, db, false).unwrap();
     }
     for (id, db) in [("dev-A", &db_a), ("dev-B", &db_b)] {
-        pull::run(&live_url, &client, &bearer, id, &master_key, db, false).unwrap();
+        pull::run(&live_url, &client, &session, id, &master_key, db, false).unwrap();
     }
 
     assert_eq!(entries_count(&db_a), 22, "2 baseline + 10 own + 10 peer");
@@ -699,6 +719,7 @@ fn s6_agent_kill_restart_resumes_without_data_loss() {
     let master_key = [0x66u8; 32];
     write_master_key(&relay.base_url, &master_key);
     let bearer = relay.mint_token();
+    let session = bearer_session(&relay.base_url, &bearer);
 
     let db = open_db("alpha");
 
@@ -712,7 +733,7 @@ fn s6_agent_kill_restart_resumes_without_data_loss() {
         let out = push::run(
             &relay.base_url,
             &client_v1,
-            &bearer,
+            &session,
             "dev-A",
             &master_key,
             &db,
@@ -738,7 +759,7 @@ fn s6_agent_kill_restart_resumes_without_data_loss() {
         let out = push::run(
             &relay.base_url,
             &client_v2,
-            &bearer,
+            &session,
             "dev-A",
             &master_key,
             &db,
@@ -758,7 +779,7 @@ fn s6_agent_kill_restart_resumes_without_data_loss() {
     pull::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-peer",
         &master_key,
         &peer_db,
@@ -789,6 +810,7 @@ fn s7_server_restart_mid_sync() {
         .build()
         .unwrap();
     let bearer = relay.mint_token();
+    let session = bearer_session(&relay.base_url, &bearer);
 
     let db = open_db("alpha");
     for i in 0..40 {
@@ -804,7 +826,7 @@ fn s7_server_restart_mid_sync() {
     let err = push::run(
         &dead_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db,
@@ -825,7 +847,7 @@ fn s7_server_restart_mid_sync() {
     let out = push::run(
         &live_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db,
@@ -844,7 +866,7 @@ fn s7_server_restart_mid_sync() {
     pull::run(
         &live_url,
         &client,
-        &bearer,
+        &session,
         "dev-peer",
         &master_key,
         &peer_db,
@@ -872,6 +894,7 @@ fn s8_conflict_surface_and_resolve() {
     write_master_key(&relay.base_url, &master_key);
     let client = Client::builder().build().unwrap();
     let bearer = relay.mint_token();
+    let session = bearer_session(&relay.base_url, &bearer);
 
     let db_a = open_db("alpha");
     let db_b = open_db("beta");
@@ -919,7 +942,7 @@ fn s8_conflict_surface_and_resolve() {
     push::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-A",
         &master_key,
         &db_a,
@@ -929,7 +952,7 @@ fn s8_conflict_surface_and_resolve() {
     let pulled = pull::run(
         &relay.base_url,
         &client,
-        &bearer,
+        &session,
         "dev-B",
         &master_key,
         &db_b,

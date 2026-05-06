@@ -47,7 +47,48 @@ Authorization: Bearer <token>
 
 Tokens are opaque strings (the current relay uses short-lived JWTs;
 clients MUST NOT depend on this). A 401 response means "reauthenticate";
-the client should kick off the device-code flow and retry once.
+the client SHOULD trade its persisted `refresh_token` via
+`POST /v1/auth/refresh` (see below) before falling back to the device-code
+flow. Retry the original request once with the rotated bearer.
+
+### Refresh token rotation
+
+Every fresh credential issuance — `/register/finish`, `/login/finish`,
+`/device-code/poll` (success branch), and `/auth/refresh` itself —
+returns the bearer alongside a single-use `refresh_token`:
+
+```json
+{
+  "token": "<bearer>",
+  "user_id": "<uuid>",
+  "refresh_token": "<32-byte URL-safe base64>"
+}
+```
+
+The relay stores only the SHA-256 hash of the refresh token, so a
+database leak does NOT yield reusable credentials.
+
+`POST /v1/auth/refresh`
+
+Request:
+
+```json
+{ "refresh_token": "<previously-issued value>" }
+```
+
+Response (200): a new `AuthToken` payload with the same shape as above —
+a fresh bearer AND a freshly-rotated `refresh_token`. The submitted
+refresh token is invalidated server-side as part of the rotation.
+
+Failure modes:
+- 401: the refresh token is unknown, expired, or already-rotated. The
+  client MUST surface a "session expired — run `datum sync login` again"
+  prompt; the device-code flow is the only recovery path.
+- non-2xx with body: transient — clients MAY retry with backoff.
+
+Clients that lose track of their refresh token (corrupted on-disk
+state, manual edit) MUST treat any 401 as terminal and fall back to
+device-code flow.
 
 ### OAuth device-code flow
 

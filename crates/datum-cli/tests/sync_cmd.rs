@@ -76,6 +76,7 @@ fn write_token_for(server: &str, token: &str) {
     let path = auth_token_path(&host).unwrap();
     let t = AuthToken {
         token: token.to_string(),
+        refresh_token: None,
         refreshed_at: Some(chrono::Utc::now().to_rfc3339()),
         server: Some(server.to_string()),
         user_id: Some("vividn@vividn.dev".to_string()),

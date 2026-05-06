@@ -13,7 +13,7 @@ use uuid::Uuid;
 // `datum_sync_protocol`.
 pub use datum_sync_protocol::messages::auth::{
     AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeRequest,
-    DeviceCodeResponse, PollResponse,
+    DeviceCodeResponse, PollResponse, RefreshTokenRequest,
 };
 pub use datum_sync_protocol::messages::sync::{
     Changeset, KdfParams, PushRequest, PushResponse, WrappedKey,

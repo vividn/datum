@@ -23,6 +23,7 @@ use crate::{
     error::AppError,
     jwt,
     models::{AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse},
+    refresh,
     AppState,
 };
 
@@ -138,6 +139,13 @@ pub async fn poll(
     }
 
     if let Some(user_id) = record.authorized_user_id {
+        let refresh_token = {
+            let conn = state.db.lock().unwrap();
+            match refresh::mint_and_persist(&conn, &user_id) {
+                Ok(t) => t,
+                Err(e) => return e.into_response(),
+            }
+        };
         match jwt::create_token(&user_id, &state.jwt_secret) {
             Ok(token) => {
                 // One-shot: drop the device_code so the same poll can't
@@ -147,6 +155,7 @@ pub async fn poll(
                 let body = AuthToken {
                     token,
                     user_id: Some(user_id.to_string()),
+                    refresh_token: Some(refresh_token),
                     refreshed_at: None,
                     server: None,
                 };
