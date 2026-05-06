@@ -305,7 +305,7 @@ pub(crate) fn build_dayview_fields(
 
         let resolved = match &spec {
             Some(s) => s.resolve_position(&field),
-            None => FieldSpec::new(field.clone(), datum_core::entry::Verb::Occur)
+            None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
                 .resolve_position(&field),
         };
 
@@ -506,7 +506,7 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
 fn is_switching_verb(verb: &Verb) -> bool {
     matches!(
         verb,
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch | Verb::Start | Verb::Stop
+        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch
     )
 }
 
@@ -624,7 +624,7 @@ fn render_field_visuals(
                     day_end_ms,
                 );
             }
-            Verb::Point | Verb::Occur => {
+            Verb::Point => {
                 if occur_ms < day_start_ms || occur_ms > day_end_ms {
                     continue;
                 }
@@ -640,7 +640,6 @@ fn render_field_visuals(
                     state_label: state_label(entry.state.as_ref()),
                 });
             }
-            Verb::Add | Verb::Start | Verb::Stop => {}
         }
     }
     (blocks, points)
@@ -771,7 +770,7 @@ fn render_field_visuals_terminal(
                     spec,
                 );
             }
-            Verb::Point | Verb::Occur => {
+            Verb::Point => {
                 let fg = state_value_rgb(
                     entry.state.as_ref().unwrap_or(&JsonValue::Null),
                     field,
@@ -789,7 +788,6 @@ fn render_field_visuals_terminal(
                     state_label: state_label(entry.state.as_ref()),
                 });
             }
-            Verb::Add | Verb::Start | Verb::Stop => {}
         }
     }
     (blocks, points)
@@ -862,6 +860,7 @@ pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datum_core::action::Action;
 
     #[test]
     fn duration_minutes_supports_common_forms() {
@@ -915,13 +914,13 @@ mod tests {
 
         let db = Db::open_in_memory().unwrap();
 
-        let mut muted = FieldSpec::new("muted", Verb::Occur);
+        let mut muted = FieldSpec::new("muted", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("nowview".to_string(), false);
         muted.render = Some(Render::PerSurface(map));
         db.save_field_spec(&muted).unwrap();
 
-        db.save_field_spec(&FieldSpec::new("visible", Verb::Occur))
+        db.save_field_spec(&FieldSpec::new("visible", Action::Occur))
             .unwrap();
 
         let now = Utc::now();
@@ -929,7 +928,7 @@ mod tests {
         for f in ["muted", "visible"] {
             db.insert_entry(&Entry::new(
                 f,
-                Verb::Occur,
+                Verb::Point,
                 None,
                 None,
                 None,
@@ -961,7 +960,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("focus", Verb::Switch);
+        let mut spec = FieldSpec::new("focus", Action::Switch);
         spec.y = Some(0.4);
         spec.height = Some(0.25);
         spec.z_index = Some(0.7);
@@ -999,7 +998,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("caffeine", Verb::Occur);
+        let mut spec = FieldSpec::new("caffeine", Action::Occur);
         spec.color = Some("#643200".into());
         db.save_field_spec(&spec).unwrap();
 
@@ -1007,7 +1006,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(now - chrono::Duration::minutes(10), "UTC").unwrap();
         db.insert_entry(&Entry::new(
             "caffeine",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -1033,7 +1032,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("background_telemetry", Verb::Occur);
+        let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
         spec.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
@@ -1041,7 +1040,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(now, "UTC").unwrap();
         db.insert_entry(&Entry::new(
             "background_telemetry",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,

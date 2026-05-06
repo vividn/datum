@@ -3,12 +3,12 @@
 //! `stop` is a synonym for `end` — same handler, different verb surface.
 
 use anyhow::Result;
-use datum_core::{db::Db, entry::Verb};
+use datum_core::{action::Action, db::Db};
 
 use crate::args::LogArgs;
 
 pub fn end(args: LogArgs, db: &Db) -> Result<()> {
-    crate::cmd::log_entry(Verb::Stop, args, db)
+    crate::cmd::log_entry(Action::Stop, args, db)
 }
 
 /// Alias for [`end`] — `stop` and `end` share the same handler.

@@ -51,7 +51,7 @@ fn insert(db: &Db, field: &str, verb: Verb, mins: i64) -> Entry {
 fn insert_with_extra(db: &Db, field: &str, mins: i64, extra: serde_json::Value) -> Entry {
     let e = Entry::new(
         field,
-        Verb::Occur,
+        Verb::Point,
         Some(json!(mins)),
         Some(extra),
         None,
@@ -74,19 +74,19 @@ fn sample_morning(db: &Db) -> Vec<Entry> {
     // All timestamps are unique to avoid ULID tie-breakers inside a single
     // millisecond (insertion order ≠ random-byte order).
     let script: &[(i64, &str, Verb)] = &[
-        (7 * 60, "caffeine", Verb::Occur),            // 07:00 [0] — dropped
-        (7 * 60 + 30, "stretch", Verb::Start),        // 07:30 [1] — dropped
-        (8 * 60, "stretch", Verb::Stop),              // 08:00 [2] — dropped
-        (10 * 60 + 7, "run", Verb::Stop),             // 10:07 [3] — first of last-10
-        (10 * 60 + 15, "stretch", Verb::Start),       // 10:15 [4]
+        (7 * 60, "caffeine", Verb::Point),            // 07:00 [0] — dropped
+        (7 * 60 + 30, "stretch", Verb::Switch),        // 07:30 [1] — dropped
+        (8 * 60, "stretch", Verb::Switch),              // 08:00 [2] — dropped
+        (10 * 60 + 7, "run", Verb::Switch),             // 10:07 [3] — first of last-10
+        (10 * 60 + 15, "stretch", Verb::Switch),       // 10:15 [4]
         (10 * 60 + 16, "environment", Verb::Switch),  // 10:16 [5]
-        (10 * 60 + 18, "pushup", Verb::Occur),        // 10:18 [6]
-        (10 * 60 + 30, "stretch", Verb::Stop),        // 10:30 [7]
+        (10 * 60 + 18, "pushup", Verb::Point),        // 10:18 [6]
+        (10 * 60 + 30, "stretch", Verb::Switch),        // 10:30 [7]
         (10 * 60 + 50, "environment", Verb::Switch),  // 10:50 [8]
-        (11 * 60, "caffeine", Verb::Occur),           // 11:00 [9]
+        (11 * 60, "caffeine", Verb::Point),           // 11:00 [9]
         (11 * 60 + 1, "project", Verb::Switch),       // 11:01 [10]
         (11 * 60 + 30, "project", Verb::Switch),      // 11:30 [11]
-        (11 * 60 + 45, "project", Verb::Stop),        // 11:45 [12] — last
+        (11 * 60 + 45, "project", Verb::Switch),        // 11:45 [12] — last
     ];
     script
         .iter()
@@ -106,7 +106,7 @@ fn tail_reverse_inverts_order() {
     // Explicit acceptance criterion.
     let db = fresh_db();
     for m in [10, 20, 30, 40] {
-        insert(&db, "mood", Verb::Occur, m);
+        insert(&db, "mood", Verb::Point, m);
     }
     let forward = db
         .list_entries(&ListParams {
@@ -135,7 +135,7 @@ fn tail_metric_occur_vs_modify() {
     // Entry with a time_start — shows up under both metrics.
     let with_time = Entry::new(
         "a",
-        Verb::Occur,
+        Verb::Point,
         Some(json!(1)),
         None,
         None,
@@ -144,7 +144,7 @@ fn tail_metric_occur_vs_modify() {
         "d1",
     );
     // Entry with no time_start (a note) — only `modify` / `hybrid` include it.
-    let no_time = Entry::new("b", Verb::Add, Some(json!("x")), None, None, None, None, "d1");
+    let no_time = Entry::new("b", Verb::Point, Some(json!("x")), None, None, None, None, "d1");
     db.insert_entry(&with_time).unwrap();
     db.insert_entry(&no_time).unwrap();
 
@@ -200,7 +200,7 @@ fn tail_time_filter_respects_bounds() {
     // newer rows; a lower bound trims older rows.
     let db = fresh_db();
     for m in [60, 120, 180, 240] {
-        insert(&db, "x", Verb::Occur, m);
+        insert(&db, "x", Verb::Point, m);
     }
     let upper = anchor() + Duration::minutes(150);
     let got_upper = db
@@ -240,16 +240,16 @@ fn t01_default_shows_last_10() {
     // last row = "project" at 11:45.
     assert_eq!(got.first().unwrap().field, "run");
     assert_eq!(got.last().unwrap().field, "project");
-    assert_eq!(got.last().unwrap().verb, Verb::Stop);
+    assert_eq!(got.last().unwrap().verb, Verb::Switch);
 }
 
 #[test]
 fn t02_all_when_fewer_than_10() {
     // Datum: will display all if there are less than 10 occurrences.
     let db = fresh_db();
-    insert(&db, "caffeine", Verb::Occur, 8 * 60);
+    insert(&db, "caffeine", Verb::Point, 8 * 60);
     insert(&db, "project", Verb::Switch, 10 * 60);
-    insert(&db, "project", Verb::Stop, 10 * 60 + 30);
+    insert(&db, "project", Verb::Switch, 10 * 60 + 30);
 
     let got = tail_entries(&tail_args(), &db).unwrap();
     assert_eq!(got.len(), 3);
@@ -270,9 +270,9 @@ fn t03_can_display_last_n() {
 fn t04_all_when_fewer_than_n() {
     // Datum: will display all if there are less than n occurrences (`-n 5`).
     let db = fresh_db();
-    insert(&db, "caffeine", Verb::Occur, 8 * 60);
+    insert(&db, "caffeine", Verb::Point, 8 * 60);
     insert(&db, "project", Verb::Switch, 10 * 60);
-    insert(&db, "project", Verb::Stop, 10 * 60 + 30);
+    insert(&db, "project", Verb::Switch, 10 * 60 + 30);
 
     let mut args = tail_args();
     args.count = Some(5);
@@ -293,10 +293,10 @@ fn t05_field_filter() {
 
     // Add a second morning's worth → 4 more stretch entries.
     for (m, f, v) in &[
-        (24 * 60 + 9 * 60 + 30, "stretch", Verb::Start),
-        (24 * 60 + 10 * 60, "stretch", Verb::Stop),
-        (24 * 60 + 10 * 60 + 15, "stretch", Verb::Start),
-        (24 * 60 + 10 * 60 + 30, "stretch", Verb::Stop),
+        (24 * 60 + 9 * 60 + 30, "stretch", Verb::Switch),
+        (24 * 60 + 10 * 60, "stretch", Verb::Switch),
+        (24 * 60 + 10 * 60 + 15, "stretch", Verb::Switch),
+        (24 * 60 + 10 * 60 + 30, "stretch", Verb::Switch),
     ] {
         insert(&db, f, v.clone(), *m);
     }
@@ -310,10 +310,10 @@ fn t06_defaults_to_hybrid() {
     // Datum: defaults to a hybrid display of occurTime and createTime.
     // Mix time-less (note) and timed rows; hybrid surfaces both.
     let db = fresh_db();
-    insert(&db, "alcohol", Verb::Occur, 19 * 60);
+    insert(&db, "alcohol", Verb::Point, 19 * 60);
     let noteless = Entry::new(
         "person",
-        Verb::Add,
+        Verb::Point,
         Some(json!({"name": "john", "age": 35})),
         None,
         None,
@@ -322,8 +322,8 @@ fn t06_defaults_to_hybrid() {
         "d1",
     );
     db.insert_entry(&noteless).unwrap();
-    insert(&db, "socialize", Verb::Stop, 21 * 60);
-    insert(&db, "socialize", Verb::Start, 19 * 60 + 30);
+    insert(&db, "socialize", Verb::Switch, 21 * 60);
+    insert(&db, "socialize", Verb::Switch, 19 * 60 + 30);
 
     let got = tail_entries(&tail_args(), &db).unwrap();
     assert_eq!(got.len(), 4);
@@ -341,10 +341,10 @@ fn t06_defaults_to_hybrid() {
 fn t07_metric_occur_only() {
     // Datum: can just display occurTime tail (`-m occur`) — the note row drops.
     let db = fresh_db();
-    insert(&db, "alcohol", Verb::Occur, 19 * 60);
+    insert(&db, "alcohol", Verb::Point, 19 * 60);
     let note = Entry::new(
         "person",
-        Verb::Add,
+        Verb::Point,
         Some(json!({"name": "john"})),
         None,
         None,
@@ -353,8 +353,8 @@ fn t07_metric_occur_only() {
         "d1",
     );
     db.insert_entry(&note).unwrap();
-    insert(&db, "socialize", Verb::Stop, 21 * 60);
-    insert(&db, "socialize", Verb::Start, 19 * 60 + 30);
+    insert(&db, "socialize", Verb::Switch, 21 * 60);
+    insert(&db, "socialize", Verb::Switch, 19 * 60 + 30);
 
     let mut args = tail_args();
     args.metric = "occur".to_string();
@@ -369,11 +369,11 @@ fn t08_metric_modify() {
     // All rows — even those without time_start — participate, ordered by
     // modified_at (creation order here, since we never updated them).
     let db = fresh_db();
-    let a = insert(&db, "alcohol", Verb::Occur, 19 * 60);
+    let a = insert(&db, "alcohol", Verb::Point, 19 * 60);
     std::thread::sleep(std::time::Duration::from_millis(5));
     let note = Entry::new(
         "person",
-        Verb::Add,
+        Verb::Point,
         Some(json!({"name": "john"})),
         None,
         None,
@@ -383,9 +383,9 @@ fn t08_metric_modify() {
     );
     db.insert_entry(&note).unwrap();
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let c = insert(&db, "socialize", Verb::Stop, 21 * 60);
+    let c = insert(&db, "socialize", Verb::Switch, 21 * 60);
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let d = insert(&db, "socialize", Verb::Start, 19 * 60 + 30);
+    let d = insert(&db, "socialize", Verb::Switch, 19 * 60 + 30);
 
     let mut args = tail_args();
     args.metric = "modify".to_string();
@@ -402,11 +402,11 @@ fn t08_metric_modify() {
 fn t09_metric_create() {
     // Datum: can display createTime tail (`-m create`).
     let db = fresh_db();
-    let a = insert(&db, "a", Verb::Occur, 60);
+    let a = insert(&db, "a", Verb::Point, 60);
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let b = insert(&db, "b", Verb::Occur, 120);
+    let b = insert(&db, "b", Verb::Point, 120);
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let c = insert(&db, "c", Verb::Occur, 180);
+    let c = insert(&db, "c", Verb::Point, 180);
 
     let mut args = tail_args();
     args.metric = "create".to_string();
@@ -447,8 +447,8 @@ fn t10_moment_in_time_upper_bound_and_absent_future() {
 fn t11_default_includes_future_entries() {
     // Datum: displays future entries if no specific time is given.
     let db = fresh_db();
-    let past = insert(&db, "sleep", Verb::Occur, -60);
-    let future = insert(&db, "sleep", Verb::Occur, 24 * 60 * 365); // ~1y ahead
+    let past = insert(&db, "sleep", Verb::Point, -60);
+    let future = insert(&db, "sleep", Verb::Point, 24 * 60 * 365); // ~1y ahead
     let got = tail_entries(&tail_args(), &db).unwrap();
     let ids: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
     assert!(ids.contains(&past.slug));
@@ -461,13 +461,13 @@ fn t12_t_now_excludes_future() {
     // Parsing "now" to `TimeArg(minutes_offset=0)` is exercised in time.rs.
     // Here we assert the `end_utc=now` path drops future rows.
     let db = fresh_db();
-    let _past = insert(&db, "sleep", Verb::Occur, -60);
+    let _past = insert(&db, "sleep", Verb::Point, -60);
     // Use wall-clock-relative time so the row is genuinely in the future at
     // test-run time, independent of the anchor.
     let future_utc = Utc::now() + Duration::days(365);
     let future_entry = Entry::new(
         "sleep",
-        Verb::Occur,
+        Verb::Point,
         Some(json!("future")),
         None,
         None,
@@ -500,7 +500,7 @@ fn t13_date_only_window_no_default_limit() {
     let db = fresh_db();
     // Pack 15 entries across one day.
     for i in 0..15 {
-        insert(&db, "mood", Verb::Occur, 60 + i * 10);
+        insert(&db, "mood", Verb::Point, 60 + i * 10);
     }
 
     let mut args = tail_args();
@@ -529,7 +529,7 @@ fn t14_timezone_aware_day_window() {
         offset_minutes: 13 * 60,
         timezone: "Pacific/Auckland".to_string(),
     };
-    let e = Entry::new("a", Verb::Occur, Some(json!(1)), None, None, Some(t), None, "d1");
+    let e = Entry::new("a", Verb::Point, Some(json!(1)), None, None, Some(t), None, "d1");
     db.insert_entry(&e).unwrap();
 
     let mut args = tail_args();
@@ -550,9 +550,9 @@ fn t15_future_date_entries_appear_on_that_date() {
     // that date is requested.
     let db = fresh_db();
     // Today window (baseline).
-    insert(&db, "x", Verb::Occur, 60);
+    insert(&db, "x", Verb::Point, 60);
     // Tomorrow window.
-    let tomorrow_entry = insert(&db, "x", Verb::Occur, 24 * 60 + 60);
+    let tomorrow_entry = insert(&db, "x", Verb::Point, 24 * 60 + 60);
 
     let mut args = tail_args();
     args.time.date = Some("2024-03-17".to_string());
@@ -565,7 +565,7 @@ fn t16_date_plus_n_takes_last_n_on_day() {
     // Datum: displays only n latest occurrences on a day if date and -n given.
     let db = fresh_db();
     for i in 0..12 {
-        insert(&db, "x", Verb::Occur, 60 + i * 15);
+        insert(&db, "x", Verb::Point, 60 + i * 15);
     }
 
     let mut args_all = tail_args();
@@ -610,8 +610,8 @@ fn t19_watch_live_updates() {
     let db = fresh_db();
 
     // Initial contents — these become the "already printed" set.
-    let _r1 = insert(&db, "run", Verb::Stop, 10 * 60);
-    let _r2 = insert(&db, "stretch", Verb::Start, 10 * 60 + 15);
+    let _r1 = insert(&db, "run", Verb::Switch, 10 * 60);
+    let _r2 = insert(&db, "stretch", Verb::Switch, 10 * 60 + 15);
     let initial = tail_entries(&tail_args(), &db).unwrap();
     assert_eq!(initial.len(), 2);
     let since = initial.iter().map(|e| e.create_time).max().unwrap();
@@ -623,9 +623,9 @@ fn t19_watch_live_updates() {
     // A new insert surfaces on the next tick; unrelated-field insert is
     // filtered out when a field filter is passed.
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let pushup = insert(&db, "pushup", Verb::Occur, 10 * 60 + 18);
+    let pushup = insert(&db, "pushup", Verb::Point, 10 * 60 + 18);
     std::thread::sleep(std::time::Duration::from_millis(5));
-    let caffeine = insert(&db, "caffeine", Verb::Occur, 11 * 60);
+    let caffeine = insert(&db, "caffeine", Verb::Point, 11 * 60);
 
     let tick_all = db.list_entries_created_after(None, since).unwrap();
     let new_ids: Vec<_> = tick_all.iter().map(|e| e.slug.clone()).collect();

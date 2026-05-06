@@ -5,10 +5,10 @@
 //! routes through the shared `log_entry` dispatcher.
 
 use anyhow::Result;
-use datum_core::{db::Db, entry::Verb};
+use datum_core::{action::Action, db::Db};
 
 use crate::args::LogArgs;
 
 pub fn add(args: LogArgs, db: &Db) -> Result<()> {
-    crate::cmd::log_entry(Verb::Add, args, db)
+    crate::cmd::log_entry(Action::Add, args, db)
 }

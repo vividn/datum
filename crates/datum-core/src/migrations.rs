@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 21;
+pub const CURRENT_SCHEMA_VERSION: u32 = 22;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -182,6 +182,13 @@ pub const MIGRATIONS: &[Migration] = &[
         apply: m20_to_21_drop_derived_from_field,
         down: down_21_to_20_drop_derived_from_field,
     },
+    Migration {
+        from: 21,
+        to: 22,
+        summary: "entries: rewrite legacy verb strings ('occur'/'add'→'point'; 'start'/'stop'→'switch' with state canonicalization). field_specs: legacy default_verb names already match Action's serde so no JSON rewrite needed (da-8y2q.2)",
+        apply: m21_to_22_verb_canonicalize,
+        down: down_22_to_21_verb_canonicalize,
+    },
 ];
 
 /// da-5ns.1: time-shape pivot. Reverts daydumb's time model from
@@ -322,6 +329,73 @@ fn m20_to_21_drop_derived_from_field(conn: &Connection) -> Result<()> {
 /// only.
 fn down_21_to_20_drop_derived_from_field(conn: &Connection) -> Result<()> {
     rebuild_aliases(conn, /* with_derived_from_field = */ true)
+}
+
+/// da-8y2q.2: rewrite legacy verb strings on stored rows.
+///
+/// The v=20 schema's `verb` column carries one of the canonical five
+/// storage verbs (Point/Switch/Block/BlockSwitch/PointSwitch), but the
+/// pre-da-8y2q `Verb` enum also accepted the legacy intent values
+/// (`occur`/`start`/`stop`/`add`) and earlier write paths could leak
+/// those into the column. After the legacy variants were dropped, any
+/// row still carrying one of those strings would fail to deserialize.
+///
+/// Rewrite map (preserving the storage truth table — see
+/// `crates/datum-core/src/verb.rs`):
+/// - `occur`/`add` → `point` (no state change, point shape).
+/// - `start` with NULL state → `switch` + `state='true'` (state=true,
+///   dur=NULL implies Switch by the truth table).
+/// - `start` with a non-NULL state → `switch` (state preserved).
+/// - `stop` with NULL state → `switch` + `state='false'`.
+/// - `stop` with a non-NULL state → `switch`.
+///
+/// `field_specs.spec_json` is unchanged: `Action`'s serde names match
+/// the legacy `default_verb` strings (`occur`/`start`/`switch`/`add`),
+/// so on-disk specs round-trip without rewriting.
+///
+/// **Render-layer side effect (Mayor decision, da-8y2q.2 escalation):**
+/// the legacy `Verb::Add` storage variant drove the `¢`/NON_OCCUR glyph
+/// in `render::action::format_state_group`. After the collapse into
+/// `Verb::Point`, time-stamped legacy `add` rows render as dots (matching
+/// the rest of the Point family); only timeless adds (no `occur_time`)
+/// still render as NON_OCCUR. This is an intentional pre-v1 visual
+/// regression accepted as the cost of dropping intent-as-storage; see
+/// the bead's escalation thread for the full rationale.
+fn m21_to_22_verb_canonicalize(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "UPDATE entries SET verb = 'point'
+            WHERE verb IN ('occur', 'add');
+         UPDATE entries SET verb = 'switch', state = 'true'
+            WHERE verb = 'start' AND state IS NULL;
+         UPDATE entries SET verb = 'switch'
+            WHERE verb = 'start';
+         UPDATE entries SET verb = 'switch', state = 'false'
+            WHERE verb = 'stop' AND state IS NULL;
+         UPDATE entries SET verb = 'switch'
+            WHERE verb = 'stop';",
+    )?;
+    Ok(())
+}
+
+/// Reverse of [`m21_to_22_verb_canonicalize`].
+///
+/// **Lossy.** The forward migration collapses two intent verbs into one
+/// storage verb (`switch`), so the reverse cannot recover the original
+/// `start`/`stop` distinction without re-deriving from `state`. We do a
+/// best-effort reconstruction from the canonicalized state value, but
+/// any `switch` row whose state is something other than the literal
+/// JSON `true`/`false` is left as `switch` (not legacy). Pre-v1 hard
+/// cut allows this asymmetry.
+fn down_22_to_21_verb_canonicalize(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "UPDATE entries SET verb = 'start', state = NULL
+            WHERE verb = 'switch' AND state = 'true' AND dur IS NULL AND following_state IS NULL;
+         UPDATE entries SET verb = 'stop', state = NULL
+            WHERE verb = 'switch' AND state = 'false' AND dur IS NULL AND following_state IS NULL;
+         UPDATE entries SET verb = 'occur'
+            WHERE verb = 'point';",
+    )?;
+    Ok(())
 }
 
 /// da-2zd: per-surface render visibility. `render_json` mirrors

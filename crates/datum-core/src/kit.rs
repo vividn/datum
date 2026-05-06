@@ -19,6 +19,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::action::Action;
 use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{Alias, FieldSpec, Render, DEFAULT_FIELD_HEIGHT};
@@ -336,11 +337,11 @@ impl FieldEntry {
     /// resolution. Per-state colors get the same treatment via
     /// [`StateEntry::resolve_color`].
     pub fn into_spec(self, color_resolved: Option<String>) -> Result<FieldSpec> {
-        let verb = match self.default_verb.as_deref().unwrap_or("occur") {
-            "occur" => Verb::Occur,
-            "start" => Verb::Start,
-            "switch" => Verb::Switch,
-            "add" => Verb::Add,
+        let action = match self.default_verb.as_deref().unwrap_or("occur") {
+            "occur" => Action::Occur,
+            "start" => Action::Start,
+            "switch" => Action::Switch,
+            "add" => Action::Add,
             other => {
                 return Err(DatumError::Other(format!(
                     "kit field '{}': invalid default_verb '{}' (must be occur|start|switch|add)",
@@ -349,7 +350,7 @@ impl FieldEntry {
             }
         };
 
-        let mut spec = FieldSpec::new(&self.name, verb);
+        let mut spec = FieldSpec::new(&self.name, action);
         spec.color = color_resolved;
         spec.z_index = self.z_index;
         spec.id_keys = self.id_keys;
@@ -411,10 +412,10 @@ impl FieldEntry {
         };
 
         let default_verb = match spec.default_verb {
-            Verb::Occur => Some("occur".to_string()),
-            Verb::Start => Some("start".to_string()),
-            Verb::Switch => Some("switch".to_string()),
-            Verb::Add => Some("add".to_string()),
+            Action::Occur => Some("occur".to_string()),
+            Action::Start => Some("start".to_string()),
+            Action::Switch => Some("switch".to_string()),
+            Action::Add => Some("add".to_string()),
             _ => None,
         };
 
@@ -838,11 +839,11 @@ size = 0.05
 
     #[test]
     fn anchored_round_trip_preserves_relative_to() {
-        let mut anchor = FieldSpec::new("body", Verb::Occur);
+        let mut anchor = FieldSpec::new("body", Action::Occur);
         anchor.y = Some(0.20);
         anchor.height = Some(0.40);
 
-        let mut dependent = FieldSpec::new("contacts", Verb::Occur);
+        let mut dependent = FieldSpec::new("contacts", Action::Occur);
         dependent.relative_to = Some("body".into());
         dependent.anchor_pos_ratio = Some(0.10);
         dependent.anchor_size_ratio = Some(0.05);
@@ -858,7 +859,7 @@ size = 0.05
 
     #[test]
     fn round_trip_preserves_field_shape() {
-        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        let mut spec = FieldSpec::new("sleep", Action::Start);
         spec.color = Some("#1a3d6e".into());
         spec.y = Some(0.10);
         spec.height = Some(0.30);
@@ -918,7 +919,7 @@ states.empty = {}
 
     #[test]
     fn empty_states_omitted_from_emitted_toml() {
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         let kit = KitToml::from_field_specs("k", None, &[spec], &[]);
         let toml = kit.to_toml().unwrap();
         // skip_serializing_if keeps empty state maps out of the emitted TOML.
@@ -948,7 +949,7 @@ tags = ["chore", "daily"]
 
     #[test]
     fn round_trip_preserves_field_tags() {
-        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        let mut spec = FieldSpec::new("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
         let kit = KitToml::from_field_specs("chores", None, &[spec.clone()], &[]);
         let toml = kit.to_toml().unwrap();
@@ -1007,7 +1008,7 @@ render.dayview = false
 
     #[test]
     fn round_trip_preserves_render_bool() {
-        let mut spec = FieldSpec::new("hidden", Verb::Occur);
+        let mut spec = FieldSpec::new("hidden", Action::Occur);
         spec.render = Some(Render::All(false));
         let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
         let toml = kit.to_toml().unwrap();
@@ -1017,7 +1018,7 @@ render.dayview = false
 
     #[test]
     fn round_trip_preserves_per_surface_render() {
-        let mut spec = FieldSpec::new("partial", Verb::Occur);
+        let mut spec = FieldSpec::new("partial", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.render = Some(Render::PerSurface(map.clone()));
@@ -1034,7 +1035,7 @@ render.dayview = false
 
     #[test]
     fn round_trip_omits_render_when_default() {
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         let kit = KitToml::from_field_specs("k", None, &[spec], &[]);
         let toml = kit.to_toml().unwrap();
         // skip_serializing_if = Option::is_none keeps the TOML diff-clean
@@ -1044,7 +1045,7 @@ render.dayview = false
 
     #[test]
     fn round_trip_omits_empty_tags() {
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         let kit = KitToml::from_field_specs("k", None, &[spec], &[]);
         let toml = kit.to_toml().unwrap();
         // skip_serializing_if keeps empty tag arrays out of the emitted TOML.

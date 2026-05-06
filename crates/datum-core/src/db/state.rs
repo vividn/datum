@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use rusqlite::{params, OptionalExtension};
 use serde_json::Value as JsonValue;
 
+use crate::action::Action;
 use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
@@ -18,7 +19,7 @@ impl Db {
     pub(super) fn load_or_new_spec(&self, field: &str) -> Result<FieldSpec> {
         match self.load_spec(field)? {
             Some(s) => Ok(s),
-            None => Ok(FieldSpec::new(field, Verb::Occur)),
+            None => Ok(FieldSpec::new(field, Action::Occur)),
         }
     }
 

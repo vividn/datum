@@ -21,13 +21,11 @@ use crate::time::DatumTime;
 /// constrain values; `dm check --verbs` (sub-bead 7) detects drift
 /// between stored and re-derived verbs).
 ///
-/// Sub-bead 2 (da-5ns.2) introduces the new five-verb set — Point,
-/// Switch, Block, BlockSwitch, PointSwitch — and the derivation
-/// function. Until then this enum carries both the new variants and
-/// the legacy v19 ones (Occur/Start/Stop/Add) so callers that haven't
-/// migrated still compile. The legacy variants serialize to their old
-/// strings.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+/// Storage-only — five canonical shapes derived from the truth table by
+/// [`crate::verb::derive_verb`]. Command intent (Occur/Start/Stop/Add) is
+/// expressed at the parse boundary via [`crate::action::Action`]; the
+/// legacy v19 variants were dropped in da-8y2q.2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Verb {
     /// Single point-in-time event with no state change (`dur is NULL,
@@ -44,18 +42,6 @@ pub enum Verb {
     /// Point + switch at the same instant (`dur is "PT0S",
     /// following_state is set`).
     PointSwitch,
-    // ─── Legacy v19 variants ─────────────────────────────────────────
-    // Kept so call sites that haven't migrated to the new five-verb
-    // set still compile. Sub-bead 8 sweeps these out alongside the
-    // test rewrite.
-    /// Legacy: single point-in-time event (e.g. "drank coffee").
-    Occur,
-    /// Legacy: begin a duration block (e.g. "started working out").
-    Start,
-    /// Legacy: end a duration block (e.g. "stopped working out").
-    Stop,
-    /// Legacy: canonical add — shape inferred from temporal keys.
-    Add,
 }
 
 impl Default for Verb {
@@ -72,10 +58,6 @@ impl std::fmt::Display for Verb {
             Verb::Block => write!(f, "block"),
             Verb::BlockSwitch => write!(f, "block-switch"),
             Verb::PointSwitch => write!(f, "point-switch"),
-            Verb::Occur => write!(f, "occur"),
-            Verb::Start => write!(f, "start"),
-            Verb::Stop => write!(f, "stop"),
-            Verb::Add => write!(f, "add"),
         }
     }
 }
@@ -89,10 +71,6 @@ impl std::str::FromStr for Verb {
             "block" => Ok(Verb::Block),
             "block-switch" => Ok(Verb::BlockSwitch),
             "point-switch" => Ok(Verb::PointSwitch),
-            "occur" => Ok(Verb::Occur),
-            "start" => Ok(Verb::Start),
-            "stop" | "end" => Ok(Verb::Stop),
-            "add" | "note" => Ok(Verb::Add),
             _ => Err(format!("Unknown verb: '{s}'")),
         }
     }
@@ -600,23 +578,25 @@ mod tests {
 
     #[test]
     fn test_verb_roundtrip() {
-        for v in [
-            "point",
-            "switch",
-            "block",
-            "block-switch",
-            "point-switch",
-            "occur",
-            "start",
-            "stop",
-            "add",
-        ] {
+        for v in ["point", "switch", "block", "block-switch", "point-switch"] {
             let parsed: Verb = v.parse().unwrap();
             let displayed = format!("{parsed}");
-            assert!(!displayed.is_empty());
+            assert_eq!(displayed, v);
         }
-        assert_eq!("note".parse::<Verb>().unwrap(), Verb::Add);
-        assert_eq!("end".parse::<Verb>().unwrap(), Verb::Stop);
+    }
+
+    #[test]
+    fn test_verb_legacy_strings_rejected() {
+        // da-8y2q.2: pre-v1 hard cut. The legacy verb names (`occur`,
+        // `start`, `stop`, `end`, `add`, `note`) are command intent
+        // (`Action`), not storage classification. They no longer parse
+        // into `Verb`.
+        for legacy in ["occur", "start", "stop", "end", "add", "note"] {
+            assert!(
+                legacy.parse::<Verb>().is_err(),
+                "legacy verb '{legacy}' must no longer parse"
+            );
+        }
     }
 
     #[test]

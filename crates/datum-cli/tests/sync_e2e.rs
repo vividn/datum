@@ -126,7 +126,7 @@ fn make_occur(field: &str, offset_secs: i64, device: &str) -> Entry {
     };
     let mut e = Entry::new_legacy(
         field,
-        Verb::Occur,
+        Verb::Point,
         Some(serde_json::json!(1)),
         None,
         None,
@@ -881,7 +881,7 @@ fn s8_conflict_surface_and_resolve() {
     let base = Utc.with_ymd_and_hms(2026, 4, 21, 12, 0, 0).unwrap();
     let mut a_start = Entry::new_legacy(
         "focus",
-        Verb::Start,
+        Verb::Switch,
         None,
         None,
         None,
@@ -900,7 +900,7 @@ fn s8_conflict_surface_and_resolve() {
     let b_at = base + Duration::minutes(30);
     let mut b_start = Entry::new_legacy(
         "focus",
-        Verb::Start,
+        Verb::Switch,
         None,
         None,
         None,

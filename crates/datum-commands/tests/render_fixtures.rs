@@ -129,18 +129,21 @@ fn ctx_with(
 #[test]
 fn fx01_add_new_occur() {
     let _g = no_color_scope();
-    let e = entry("new_occur", Verb::Add, None, Some(fixed_time(16, 58, 47)), None);
+    // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
+    // adds now render as dots (matching the rest of the Point family); the
+    // `¢`/NON_OCCUR glyph is reserved for timeless entries (no `occur_time`).
+    let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 47)), None);
     let ctx = ctx_with(None, None, true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" new_occur "), "field badge present: {out:?}");
-    assert!(out.contains("¢"), "add glyph present: {out:?}");
-    assert!(!out.contains("∅"), "add must not carry ∅: {out:?}");
+    assert!(out.contains("●"), "point dot: {out:?}");
+    assert!(!out.contains("¢"), "time-stamped Point renders as dot, not NON_OCCUR: {out:?}");
 }
 
 #[test]
 fn fx02_occur_first() {
     let _g = no_color_scope();
-    let e = entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 56)), None);
+    let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 56)), None);
     let ctx = ctx_with(None, None, true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("∅"), "first-tracked marker: {out:?}");
@@ -153,7 +156,7 @@ fn fx02_occur_first() {
 #[test]
 fn fx03_occur_again() {
     let _g = no_color_scope();
-    let e = entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 59)), None);
+    let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 59)), None);
     let ctx = ctx_with(None, None, false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(!out.contains("∅"), "repeat occur has no ∅: {out:?}");
@@ -163,7 +166,10 @@ fn fx03_occur_again() {
 #[test]
 fn fx04_start_first() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 40)), None);
+    // da-8y2q.2: legacy `Verb::Start` collapsed into `Verb::Switch` with
+    // canonicalized `state=true`. The "start" label flows from
+    // `render_switch_badge`'s `Bool(true)` arm, so the value must be set.
+    let e = entry("new_start", Verb::Switch, Some(json!(true)), Some(fixed_time(16, 59, 40)), None);
     // First-time start: no prior, trail = Bool(true).
     let ctx = ctx_with(None, Some(json!(true)), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -176,7 +182,9 @@ fn fx04_start_first() {
 #[test]
 fn fx05_end() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Stop, None, Some(fixed_time(16, 59, 46)), None);
+    // da-8y2q.2: legacy `Verb::Stop` collapsed into `Verb::Switch` with
+    // canonicalized `state=false`.
+    let e = entry("new_start", Verb::Switch, Some(json!(false)), Some(fixed_time(16, 59, 46)), None);
     // Prior state = true (active block); trail = false (stopped).
     let ctx = ctx_with(Some(json!(true)), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -188,7 +196,7 @@ fn fx05_end() {
 #[test]
 fn fx06_start_after_end() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 52)), None);
+    let e = entry("new_start", Verb::Switch, Some(json!(true)), Some(fixed_time(16, 59, 52)), None);
     // Prior = false (stopped); trail = true.
     let ctx = ctx_with(Some(json!(false)), Some(json!(true)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -286,7 +294,8 @@ fn fx11_switch_same_state_repeat() {
 #[test]
 fn fx12_end_switch() {
     let _g = no_color_scope();
-    let e = entry("new_switch", Verb::Stop, None, Some(fixed_time(17, 1, 13)), None);
+    // da-8y2q.2: legacy `Verb::Stop` collapsed into `Verb::Switch` + state=false.
+    let e = entry("new_switch", Verb::Switch, Some(json!(false)), Some(fixed_time(17, 1, 13)), None);
     let ctx = ctx_with(Some(json!("repeat")), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("end"));
@@ -298,7 +307,7 @@ fn fx13_start_already_active() {
     let _g = no_color_scope();
     let e = entry(
         "repeat_start",
-        Verb::Start,
+        Verb::Switch,
         None,
         Some(fixed_time(17, 2, 0)),
         None,
@@ -437,13 +446,16 @@ fn fx19_track_false_state() {
 #[test]
 fn fx20_add_with_keys() {
     let _g = no_color_scope();
-    let mut e = entry("thing", Verb::Add, None, Some(fixed_time(17, 40, 0)), None);
+    // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
+    // adds render as dots, not the NON_OCCUR (`¢`) glyph (which is now
+    // reserved for timeless entries — `occur_time = None`).
+    let mut e = entry("thing", Verb::Point, None, Some(fixed_time(17, 40, 0)), None);
     e.data = Some(json!({ "key": "value" }));
     let ctx = ctx_with(None, None, false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" thing "), "field badge: {out:?}");
-    assert!(out.contains("¢"), "add marker: {out:?}");
-    assert!(!out.contains("∅"), "add never carries ∅: {out:?}");
+    assert!(out.contains("●"), "point dot (time-stamped): {out:?}");
+    assert!(!out.contains("∅"), "repeat point has no ∅: {out:?}");
 }
 
 // ─── Cross-cutting: no arrow glyphs anywhere ─────────────────────────────────
@@ -455,17 +467,17 @@ fn no_directional_arrows_anywhere() {
     let cases: Vec<(Entry, RenderContext)> = vec![
         // start, first
         (
-            entry("a", Verb::Start, None, Some(fixed_time(9, 0, 0)), None),
+            entry("a", Verb::Switch, None, Some(fixed_time(9, 0, 0)), None),
             ctx_with(None, Some(json!(true)), true),
         ),
         // start, repeat
         (
-            entry("a", Verb::Start, None, Some(fixed_time(9, 1, 0)), None),
+            entry("a", Verb::Switch, None, Some(fixed_time(9, 1, 0)), None),
             ctx_with(Some(json!(true)), Some(json!(true)), false),
         ),
         // stop after running
         (
-            entry("a", Verb::Stop, None, Some(fixed_time(9, 2, 0)), None),
+            entry("a", Verb::Switch, None, Some(fixed_time(9, 2, 0)), None),
             ctx_with(Some(json!(true)), Some(json!(false)), false),
         ),
         // switch with prior
@@ -522,7 +534,7 @@ fn future_timestamp_is_underlined() {
     let _g = color_scope();
     let e = entry(
         "planahead",
-        Verb::Occur,
+        Verb::Point,
         None,
         Some(future_time(10, 0)),
         None,
@@ -546,32 +558,32 @@ fn visual_dump_all_fixtures() {
     let cases: Vec<(&str, Entry, RenderContext)> = vec![
         (
             "01 add new_occur",
-            entry("new_occur", Verb::Add, None, Some(fixed_time(16, 58, 47)), None),
+            entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 47)), None),
             ctx_with(None, None, true),
         ),
         (
             "02 occur new_occur (first)",
-            entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 56)), None),
+            entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 56)), None),
             ctx_with(None, None, true),
         ),
         (
             "03 occur new_occur (again)",
-            entry("new_occur", Verb::Occur, None, Some(fixed_time(16, 58, 59)), None),
+            entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 59)), None),
             ctx_with(None, None, false),
         ),
         (
             "04 start new_start (first)",
-            entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 40)), None),
+            entry("new_start", Verb::Switch, None, Some(fixed_time(16, 59, 40)), None),
             ctx_with(None, Some(json!(true)), true),
         ),
         (
             "05 end new_start",
-            entry("new_start", Verb::Stop, None, Some(fixed_time(16, 59, 46)), None),
+            entry("new_start", Verb::Switch, None, Some(fixed_time(16, 59, 46)), None),
             ctx_with(Some(json!(true)), Some(json!(false)), false),
         ),
         (
             "06 start new_start (after end)",
-            entry("new_start", Verb::Start, None, Some(fixed_time(16, 59, 52)), None),
+            entry("new_start", Verb::Switch, None, Some(fixed_time(16, 59, 52)), None),
             ctx_with(Some(json!(false)), Some(json!(true)), false),
         ),
         (
@@ -601,12 +613,12 @@ fn visual_dump_all_fixtures() {
         ),
         (
             "12 end new_switch",
-            entry("new_switch", Verb::Stop, None, Some(fixed_time(17, 1, 13)), None),
+            entry("new_switch", Verb::Switch, None, Some(fixed_time(17, 1, 13)), None),
             ctx_with(Some(json!("repeat")), Some(json!(false)), false),
         ),
         (
             "13 start repeat_start (already active)",
-            entry("repeat_start", Verb::Start, None, Some(fixed_time(17, 2, 0)), None),
+            entry("repeat_start", Verb::Switch, None, Some(fixed_time(17, 2, 0)), None),
             ctx_with(Some(json!(true)), Some(json!(true)), false),
         ),
         (
@@ -664,7 +676,7 @@ fn visual_dump_all_fixtures() {
         (
             "20 add thing key=value",
             {
-                let mut e = entry("thing", Verb::Add, None, Some(fixed_time(17, 40, 0)), None);
+                let mut e = entry("thing", Verb::Point, None, Some(fixed_time(17, 40, 0)), None);
                 e.data = Some(json!({ "key": "value" }));
                 e
             },
@@ -688,7 +700,7 @@ fn visual_dump_all_fixtures() {
 #[test]
 fn visible_width_matches_stripped_length() {
     let _g = color_scope();
-    let e = entry("ping", Verb::Occur, None, Some(fixed_time(1, 2, 3)), None);
+    let e = entry("ping", Verb::Point, None, Some(fixed_time(1, 2, 3)), None);
     let ctx = RenderContext::default();
     let out = format_info_line(&e, None, &ctx);
     assert_eq!(visible_width(&out), strip_ansi(&out).chars().count());

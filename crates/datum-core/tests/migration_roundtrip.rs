@@ -137,6 +137,7 @@ fn every_pair_has_a_roundtrip_test() {
         (18, 19),
         (19, 20),
         (20, 21),
+        (21, 22),
     ];
     assert_eq!(
         covered.len(),
@@ -723,6 +724,83 @@ fn roundtrip_v20_to_v21_drop_derived_from_field() {
         )
         .unwrap();
     assert_eq!(user_after, 1);
+}
+
+/// da-8y2q.2: rewrite legacy `verb` strings on stored entries.
+///
+/// Seeds rows at v=21 carrying every legacy verb (`occur`, `start`,
+/// `stop`, `add`) and asserts the v=21→v=22 step rewrites them to the
+/// canonical five-shape storage values (with state canonicalization for
+/// `start`/`stop` rows that came in without a state). The down step
+/// performs a best-effort reconstruction; the docstring on
+/// `down_22_to_21_verb_canonicalize` documents the lossy collapse.
+#[test]
+fn roundtrip_v21_to_v22_verb_canonicalize() {
+    let db = fresh_at(21);
+    let conn = db.conn();
+
+    // Seed one row per legacy verb. State is left NULL for start/stop
+    // so we can verify the canonicalization. occur/add carry no state.
+    let inserts: &[(&str, &str, Option<&str>)] = &[
+        ("hocc", "f:occ", None),  // verb='occur', state=NULL
+        ("hadd", "f:add", None),  // verb='add', state=NULL
+        ("hstart", "f:start", None), // verb='start', state=NULL → canonicalize to true
+        ("hstop", "f:stop", None),   // verb='stop', state=NULL → canonicalize to false
+        ("hstart_st", "f:start_st", Some("\"playing\"")), // verb='start' with state preserved
+        ("hpoint", "f:pt", None), // verb='point' (already canonical, untouched)
+    ];
+    let verbs = ["occur", "add", "start", "stop", "start", "point"];
+    for ((hid, slug, state), verb) in inserts.iter().zip(verbs) {
+        conn.execute(
+            "INSERT INTO entries
+                (hid, slug, content_hash, field, verb, state, occur_time,
+                 create_time, modify_time, device_id)
+             VALUES
+                (?1, ?2, ?1, 'f', ?3, ?4, '2026-05-01T00:00:00Z',
+                 '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z', 'd')",
+            rusqlite::params![hid, slug, verb, state],
+        )
+        .unwrap();
+    }
+
+    apply_one_up(conn, 21);
+
+    let read = |hid: &str| -> (String, Option<String>) {
+        conn.query_row(
+            "SELECT verb, state FROM entries WHERE hid = ?1",
+            rusqlite::params![hid],
+            |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+        )
+        .unwrap()
+    };
+
+    assert_eq!(read("hocc"), ("point".to_string(), None));
+    assert_eq!(read("hadd"), ("point".to_string(), None));
+    assert_eq!(read("hstart"), ("switch".to_string(), Some("true".to_string())));
+    assert_eq!(read("hstop"), ("switch".to_string(), Some("false".to_string())));
+    assert_eq!(
+        read("hstart_st"),
+        ("switch".to_string(), Some("\"playing\"".to_string())),
+        "state preserved when set",
+    );
+    assert_eq!(read("hpoint"), ("point".to_string(), None));
+
+    apply_one_down(conn, 22);
+
+    // After down: best-effort. Switch rows with literal true/false in the
+    // dur=NULL/fs=NULL slot reverse to start/stop; switch rows with other
+    // states stay as switch. point rows reverse to occur (legacy add is
+    // not recoverable — all collapse to occur).
+    assert_eq!(read("hocc"), ("occur".to_string(), None));
+    assert_eq!(read("hadd"), ("occur".to_string(), None));
+    assert_eq!(read("hstart"), ("start".to_string(), None));
+    assert_eq!(read("hstop"), ("stop".to_string(), None));
+    assert_eq!(
+        read("hstart_st"),
+        ("switch".to_string(), Some("\"playing\"".to_string())),
+        "non-bool state stays as switch (no legacy verb to map back to)",
+    );
+    assert_eq!(read("hpoint"), ("occur".to_string(), None));
 }
 
 #[test]

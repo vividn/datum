@@ -108,7 +108,7 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
     };
     let mut e = Entry::new(
         field,
-        Verb::Occur,
+        Verb::Point,
         Some(serde_json::json!(1)),
         None,
         None,
@@ -392,7 +392,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
     let base = Utc.with_ymd_and_hms(2026, 4, 21, 12, 0, 0).unwrap();
     let mut local_start = Entry::new(
         "focus",
-        Verb::Start,
+        Verb::Switch,
         None,
         None,
         None,
@@ -413,7 +413,7 @@ fn pull_with_conflict_queues_to_conflict_table() {
     let peer_at = base + Duration::minutes(30);
     let mut peer_start = Entry::new(
         "focus",
-        Verb::Start,
+        Verb::Switch,
         None,
         None,
         None,

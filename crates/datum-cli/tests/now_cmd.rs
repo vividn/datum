@@ -183,7 +183,8 @@ fn render_separator_divides_active_from_stopped() {
     latest.insert(
         "workout".to_string(),
         entry_builder("workout")
-            .verb(Verb::Stop)
+            .verb(Verb::Switch)
+            .value(serde_json::json!(false))
             .time_start(DatumTime::now())
             .build(),
     );
@@ -257,7 +258,7 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
     latest.insert(
         "nightlight".to_string(),
         entry_builder("nightlight")
-            .verb(Verb::Stop)
+            .verb(Verb::Switch)
             .time_start(stale)
             .build(),
     );

@@ -499,6 +499,7 @@ fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
 mod tests {
     use super::*;
     use crate::args::UpdateArgs;
+    use datum_core::action::Action;
     use datum_core::entry::Verb;
 
     fn update_args(id: &str, rest: Vec<&str>) -> UpdateArgs {
@@ -537,7 +538,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"reps": 10})),
         );
@@ -568,7 +569,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Add,
+            Verb::Point,
             None,
             Some(serde_json::json!({"nested": {"a": 1, "c": 3}})),
         );
@@ -598,7 +599,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"reps": 10, "set": 3})),
         );
@@ -652,7 +653,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"reps": 10})),
         );
@@ -686,7 +687,7 @@ mod tests {
         let mut e = seed_entry(
             &db,
             "task",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"oldKind": "chore"})),
         );
@@ -714,7 +715,7 @@ mod tests {
     #[test]
     fn strategy_override_ignore_rejected() {
         let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
+        let e = seed_entry(&db, "gym", Verb::Point, Some(serde_json::json!(1)), None);
 
         let mut args = update_args(&e.slug, vec!["note=x"]);
         args.strategy = Some(ConflictStrategyArg::Ignore);
@@ -731,7 +732,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(1)),
             Some(serde_json::json!({"reps": 10})),
         );
@@ -804,7 +805,7 @@ mod tests {
         let mut e = seed_entry(
             &db,
             "word_pt",
-            Verb::Add,
+            Verb::Point,
             None,
             Some(serde_json::json!({"srcLang": "pt"})),
         );
@@ -833,7 +834,7 @@ mod tests {
         let mut e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"reps": 10, "kind": "deadlift"})),
         );
@@ -927,7 +928,7 @@ mod tests {
         let mut e = seed_entry(
             &db,
             "nap",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
         );
@@ -998,7 +999,7 @@ mod tests {
         let mut e = seed_entry(
             &db,
             "coffee",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
         );
@@ -1034,10 +1035,10 @@ mod tests {
     #[test]
     fn update_state_rekeys_for_non_switch_verb_via_column() {
         // da-5ns.4: %state% now resolves from the entry.state column for
-        // any verb (not just Switch). Updating state= on a Verb::Occur
+        // any verb (not just Switch). Updating state= on a Verb::Point
         // entry must rekey.
         let db = Db::open_in_memory().unwrap();
-        let mut e = seed_entry(&db, "task", Verb::Occur, None, None);
+        let mut e = seed_entry(&db, "task", Verb::Point, None, None);
         e.state = Some(serde_json::json!("todo"));
         e.id_structure = Some("%field%:%state%".to_string());
         e.slug = datum_core::ids::Slug("task:todo".to_string());

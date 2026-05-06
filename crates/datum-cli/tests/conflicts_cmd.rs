@@ -75,7 +75,7 @@ fn orphan_end_does_not_error() {
     run_cli(&["stop", "workout"], &db).expect("orphan stop must not error");
     let entries = db.entries_for_field("workout", None).unwrap();
     assert_eq!(entries.len(), 1, "orphan stop entry lands");
-    assert_eq!(entries[0].verb, datum_core::entry::Verb::Stop);
+    assert_eq!(entries[0].verb, datum_core::entry::Verb::Switch);
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn auto_resolver_closes_older_open_after_delay() {
         "older's end_time should match newer's start_time"
     );
     // Newer remains ongoing.
-    assert_eq!(newer.verb, Verb::Start);
+    assert_eq!(newer.verb, Verb::Switch);
     assert_eq!(newer.entry_shape, EntryShape::Ongoing);
 
     // Pending set should be empty now.
@@ -412,7 +412,7 @@ fn conflicts_resolve_edit_uses_saved_content() {
     );
 
     // Sanity: the conflict's verb didn't drift through the round-trip.
-    assert_eq!(row.verb, Verb::Start);
+    assert_eq!(row.verb, Verb::Switch);
 }
 
 // ─── C4e: show ───────────────────────────────────────────────────────────────

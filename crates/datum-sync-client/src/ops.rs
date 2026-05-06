@@ -241,7 +241,7 @@ mod tests {
         };
         let mut e = Entry::new(
             field,
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(1)),
             None,
             None,

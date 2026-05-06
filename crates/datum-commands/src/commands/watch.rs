@@ -88,7 +88,7 @@ mod tests {
         writer
             .insert_entry(&Entry::new(
                 "watch_field",
-                Verb::Occur,
+                Verb::Point,
                 Some(JsonValue::String("x".into())),
                 None,
                 None,
@@ -114,7 +114,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
         db.insert_entry(&Entry::new(
             "self_write",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,

@@ -130,7 +130,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut e = Entry::new(
             "nap",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -168,7 +168,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut e = Entry::new(
             "coffee",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -206,7 +206,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let e = Entry::new(
             "nap",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,

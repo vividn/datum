@@ -7,7 +7,7 @@
 //!     are the default for stop (no `--dur` ⇒ no `time_end`).
 //!   * "Required keys" (`-k key`) is datum-specific; daydumb's `-k` always
 //!     takes `KEY=VALUE`.
-//!   * `end` is a CLI alias for `stop` — both produce `Verb::Stop`.
+//!   * `end` is a CLI alias for `stop` — both produce `Verb::Switch`.
 //!   * The "last state" recorded by datum's `endCmd` is mirrored by
 //!     daydumb's `stop --last-state` (A6 feature — verified at the command
 //!     layer here).
@@ -24,7 +24,7 @@ use serde_json::json;
 
 /// TS #1: "creates an occur document with state: false".
 ///
-/// daydumb records a `Verb::Stop` entry; state compilation emits a `false`
+/// daydumb records a `Verb::Switch` entry; state compilation emits a `false`
 /// event at `time_end` (or `time_start` when `time_end` is missing). A bare
 /// `stop` has no `--dur`, so `time_end` is `None` and the `false` event
 /// lands at `time_start`.
@@ -70,7 +70,7 @@ fn stop_last_state_captures_prior_switch_state() {
 
     let stop = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Stop))
+        .find(|e| matches!(e.verb, Verb::Switch))
         .expect("stop entry present");
     let extra = stop.data.as_ref().expect("extra_data with last_state");
     assert_eq!(
@@ -93,7 +93,7 @@ fn stop_last_state_captures_prior_switch_state() {
 /// backward "hole" spanning `[occurTime-5, occurTime]` during which state
 /// was false, with state returning to true afterwards. Daydumb's
 /// `stop --dur 5m` also emits a closed block with `time_start=base-dur`
-/// and `time_end=base`, but state compilation is simpler: `Verb::Stop`
+/// and `time_end=base`, but state compilation is simpler: `Verb::Switch`
 /// emits a single `false` event at `time_end`, so daydumb does NOT restore
 /// the prior state after the hole. The portable assertion is structural —
 /// the stop entry carries both time bounds and the correct duration sign.
@@ -109,7 +109,7 @@ fn stop_dur_produces_closed_backward_block() {
     assert_eq!(entries.len(), 2);
     let stop = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Stop))
+        .find(|e| matches!(e.verb, Verb::Switch))
         .expect("stop entry present");
 
     let ts = stop.occur_time.as_ref().expect("stop --dur anchors time_start").utc;
@@ -267,9 +267,9 @@ fn stop_end_alias_equivalence() {
     let e = &db_end.entries_for_field("dance", None).unwrap()[0];
 
     assert_eq!(s.field, e.field);
-    assert_eq!(s.verb, e.verb, "end must dispatch to Verb::Stop");
-    assert!(matches!(s.verb, Verb::Stop));
-    assert!(matches!(e.verb, Verb::Stop));
+    assert_eq!(s.verb, e.verb, "end must dispatch to Verb::Switch");
+    assert!(matches!(s.verb, Verb::Switch));
+    assert!(matches!(e.verb, Verb::Switch));
     // Neither form should derive a time_end (no --dur given).
     assert!(s.dur.is_none());
     assert!(e.dur.is_none());
@@ -289,7 +289,7 @@ fn stop_last_state_closes_open_start_block() {
     let entries = db.entries_for_field("working", None).unwrap();
     let stop = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Stop))
+        .find(|e| matches!(e.verb, Verb::Switch))
         .expect("stop entry present");
 
     let extra = stop.data.as_ref().expect("extra_data present");

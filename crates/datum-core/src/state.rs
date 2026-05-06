@@ -354,17 +354,11 @@ fn collect_raw_events(
                 out.push((ts, create_time, state, hid.to_string()));
             }
         }
-        Verb::Start => {
-            if let Some(ts) = start_time {
-                out.push((ts, create_time, Value::Bool(true), hid.to_string()));
-            }
-        }
-        Verb::Stop => {
-            if let Some(ts) = start_time {
-                out.push((ts, create_time, Value::Bool(false), hid.to_string()));
-            }
-        }
-        Verb::Occur | Verb::Point => {
+        Verb::Point => {
+            // Point: legacy `occur` (no state, no dur) → state=false event.
+            // Legacy `add` rows (state=null, no time) wrote nothing — they
+            // also classify as Point, but the missing `start_time` short-
+            // circuits before this match runs.
             if let Some(ts) = start_time {
                 out.push((ts, create_time, Value::Bool(false), hid.to_string()));
             }
@@ -375,7 +369,6 @@ fn collect_raw_events(
                 out.push((ts, create_time, state, hid.to_string()));
             }
         }
-        Verb::Add => {}
     }
 }
 
@@ -397,17 +390,7 @@ fn collect_events(
                 out.push((ts.utc, entry.create_time, state));
             }
         }
-        Verb::Start => {
-            if let Some(ts) = &entry.occur_time {
-                out.push((ts.utc, entry.create_time, Value::Bool(true)));
-            }
-        }
-        Verb::Stop => {
-            if let Some(ts) = &entry.occur_time {
-                out.push((ts.utc, entry.create_time, Value::Bool(false)));
-            }
-        }
-        Verb::Occur | Verb::Point => {
+        Verb::Point => {
             if let Some(ts) = &entry.occur_time {
                 out.push((ts.utc, entry.create_time, Value::Bool(false)));
             }
@@ -422,7 +405,6 @@ fn collect_events(
                 out.push((ts.utc, entry.create_time, state));
             }
         }
-        Verb::Add => {}
     }
 }
 

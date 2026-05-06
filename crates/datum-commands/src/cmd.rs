@@ -3,6 +3,7 @@
 use anyhow::{Context, Result};
 use chrono::{Local, TimeZone, Utc};
 use datum_core::{
+    action::Action,
     db::{
         ConflictStrategy, Db, GroupColumn, InsertOutcome, ListParams, RetimeFilter, TimeMetric,
         IGNORED_STATE_VALUE,
@@ -488,13 +489,13 @@ pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Res
 
 // ─── Logging ─────────────────────────────────────────────────────────────────
 
-pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()> {
+pub(crate) fn log_entry(mut action: Action, mut args: LogArgs, db: &Db) -> Result<()> {
     // -T/--no-timestamp: route any log verb through the timeless `add`
     // codepath (S5). Time-specifying flags are rejected so silent discard
     // can't mask a user misconception.
     if args.time.omit_timestamp {
         check_no_time_flags(&args)?;
-        verb = Verb::Add;
+        action = Action::Add;
     }
 
     // da-ffp6: For switch, only the first bare positional is the state;
@@ -502,7 +503,7 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
     // Multi-state must be opt-in via comma-separated tokens (`a,b`), never
     // whitespace. Pull any trailing duration positional into args.duration
     // before handle_data_args sees it.
-    if matches!(verb, Verb::Switch) {
+    if matches!(action, Action::Switch) {
         extract_switch_trailing_reserved(&mut args)?;
     }
 
@@ -512,7 +513,7 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
     // — that coercion is desired (da-lvvp / da-5z01) — but an interior
     // `a,,b` inside an edge-comma token would silently become a `null`
     // array element without this pre-check.
-    if matches!(verb, Verb::Switch) {
+    if matches!(action, Action::Switch) {
         for token in &args.rest {
             if token.contains('=') {
                 continue;
@@ -534,12 +535,12 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
     // reject the unknown `value=` key.
     let reserved = extract_reserved_columns(&mut extra_data)?;
 
-    // da-5ns.3 strict positional gate (Verb::Add only): the v=20 model
+    // da-5ns.3 strict positional gate (Action::Add only): the v=20 model
     // expects `state=<v>` for the primary state. A bare unkeyed
     // positional with no `-K` slot binding has nowhere to land — the
     // legacy primary-value column is gone. Reject so a stale `dm add
     // field 80` doesn't silently lose data.
-    if matches!(verb, Verb::Add) && value.is_some() && args.slug_keys.is_empty() {
+    if matches!(action, Action::Add) && value.is_some() && args.slug_keys.is_empty() {
         anyhow::bail!(
             "unbound positional value: `dm add` requires `state=<v>` (or a `-K` slot \
              binding) — the v=20 schema dropped the implicit `value` column"
@@ -550,7 +551,7 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
     // into a JSON array of concurrent states (e.g. `switch f a,b` →
     // `["a","b"]`). Single states stay scalar. Applied post-parse so the
     // slot/value handling in `parse_log_args` stays verb-agnostic.
-    let value = if matches!(verb, Verb::Switch) {
+    let value = if matches!(action, Action::Switch) {
         expand_array_states(value)?
     } else {
         value
@@ -581,7 +582,7 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
     let unit: Option<String> = None;
     let device = device_id()?;
 
-    // Compute time_start, time_end, precision, and (for Verb::Add) a shape
+    // Compute time_start, time_end, precision, and (for Action::Add) a shape
     // override. Skipped entirely for -T — a timeless entry carries no times
     // and no precision metadata.
     let (time_start, time_end, base_precision, add_override_shape) = if args.time.omit_timestamp {
@@ -589,11 +590,11 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
     } else {
         let (base_time, base_precision) = build_time_with_precision(&args)?;
 
-        // Verb::Add is the canonical shape-inferring verb. It peeks for
+        // Action::Add is the canonical shape-inferring verb. It peeks for
         // `start_time=` / `end_time=` / `dur=` tokens in extra_data, strips
         // them out, and derives the entry's shape + start/end from their
         // combination.
-        let add_override: Option<AddTimestampResult> = if matches!(verb, Verb::Add) {
+        let add_override: Option<AddTimestampResult> = if matches!(action, Action::Add) {
             let hints = extract_add_temporal_keys(&mut extra_data, &base_time)?;
             Some(hints.resolve(&base_time))
         } else {
@@ -606,7 +607,7 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
         // form triggers the close-most-recent behavior. A provided value is
         // carried onto the entry's `user_asserted_last_state` for the
         // post-write mismatch detector.
-        if args.last_state.is_some() && matches!(verb, Verb::Stop) {
+        if args.last_state.is_some() && matches!(action, Action::Stop) {
             match db.find_open_block(&field, base_time.utc)? {
                 None => anyhow::bail!(
                     "No open block for '{field}' to close with --last-state"
@@ -625,26 +626,26 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
 
         let (time_start, time_end) = if let Some(result) = &add_override {
             (result.start_time.clone(), result.end_time.clone())
-        } else if args.duration.moment && matches!(verb, Verb::Switch) {
+        } else if args.duration.moment && matches!(action, Action::Switch) {
             // --moment on switch: point-in-time change (time_start == time_end)
             (Some(base_time.clone()), Some(base_time))
         } else if let Some(dur_str) = &args.duration.duration {
             let dur = parse_duration(dur_str)?;
-            match verb {
-                Verb::Start => {
+            match action {
+                Action::Start => {
                     // start --dur: time_start=base, time_end=base+dur
                     let end_utc = base_time.utc + dur;
                     let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
                     (Some(base_time), Some(time_end))
                 }
-                Verb::Stop => {
+                Action::Stop => {
                     // stop --dur: time_end=base, time_start=base-dur
                     let start_utc = base_time.utc - dur;
                     let time_start = DatumTime { utc: start_utc, ..base_time.clone() };
                     (Some(time_start), Some(base_time))
                 }
                 _ => {
-                    // occur/switch/add with --dur: set time_end=time_start+dur
+                    // occur/switch/add/block with --dur: set time_end=time_start+dur
                     let end_utc = base_time.utc + dur;
                     let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
                     (Some(base_time), Some(time_end))
@@ -658,9 +659,14 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
         (time_start, time_end, Some(base_precision), override_shape)
     };
 
-    let mut entry = Entry::new_legacy(field, verb.clone(), value, extra_data, unit, time_start, time_end, device);
+    // da-8y2q.2: Entry::new_legacy takes a storage Verb but the value is
+    // immediately overwritten by `derive_verb_for_storage` at insert time.
+    // Pass `Verb::Point` as a neutral placeholder; the action-driven state
+    // canonicalization below seeds the (state, dur, fs) triple and the
+    // storage layer derives the canonical verb.
+    let mut entry = Entry::new_legacy(field, Verb::Point, value, extra_data, unit, time_start, time_end, device);
 
-    // For Verb::Add, the shape was inferred from temporal hints; override the
+    // For Action::Add, the shape was inferred from temporal hints; override the
     // shape-inference performed by `Entry::new` so `entry_shape` reflects the
     // add-specific classification (e.g. `ongoing` when only start_time is set).
     if let Some(shape) = add_override_shape {
@@ -683,6 +689,29 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
         entry.following_state = Some(fs);
     }
     let _ = reserved.occur_time;
+
+    // da-8y2q.2: Action-driven state canonicalization (moved out of
+    // `derive_verb_for_storage`). With no explicit `state=`: `Action::Stop`
+    // means "the field has ended" → false; `Action::Start` and
+    // `Action::Switch` mean "transition to active" → true. The storage
+    // layer (`derive_verb_for_storage`) keeps the Verb::Switch promotion as
+    // a backstop so that direct `EntryBuilder` writes hit the same rule
+    // when their verb is already set to Switch/BlockSwitch/PointSwitch.
+    if entry.state.is_none() {
+        match action {
+            Action::Stop => {
+                let v = JsonValue::Bool(false);
+                entry.state = Some(v.clone());
+                entry.value = Some(v);
+            }
+            Action::Start | Action::Switch => {
+                let v = JsonValue::Bool(true);
+                entry.state = Some(v.clone());
+                entry.value = Some(v);
+            }
+            _ => {}
+        }
+    }
 
     // S6: carry an explicit `-L/--last-state=<v>` assertion onto the entry.
     // Bare `-L` (no value) is a no-op assertion-wise; only a supplied value
@@ -744,6 +773,19 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
             entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter));
             entry.id_structure = Some(tmpl);
         }
+    }
+
+    // da-8y2q.2: derive the storage verb up-front so the lead/trail-state
+    // capture (which dispatches on `entry.verb`) sees the same shape the
+    // insert path will write. Without this, `capture_lead_state` would key
+    // off the `Verb::Point` placeholder set by `Entry::new_legacy` and
+    // skip state-bearing rows.
+    if let Ok((derived_verb, _)) = datum_core::derive_verb(
+        entry.state.clone(),
+        entry.dur.as_deref(),
+        entry.following_state.clone(),
+    ) {
+        entry.verb = derived_verb;
     }
 
     // Capture render hints *before* the insert:
@@ -825,7 +867,7 @@ pub(crate) fn log_entry(mut verb: Verb, mut args: LogArgs, db: &Db) -> Result<()
 fn capture_lead_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
     if !matches!(
         entry.verb,
-        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
     ) {
         return None;
     }
@@ -846,7 +888,7 @@ fn capture_lead_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
 fn capture_trail_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
     if !matches!(
         entry.verb,
-        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
     ) {
         return None;
     }
@@ -1612,7 +1654,7 @@ pub(crate) fn build_render_contexts(entries: &[Entry], db: &Db) -> Vec<RenderCon
 fn needs_state_probe(entry: &Entry) -> bool {
     matches!(
         entry.verb,
-        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block | Verb::Occur
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch | Verb::Point
     )
 }
 
@@ -1668,7 +1710,7 @@ fn capture_lead_state_cached(
 ) -> Option<JsonValue> {
     if !matches!(
         entry.verb,
-        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
     ) {
         return None;
     }
@@ -1683,7 +1725,7 @@ fn capture_trail_state_cached(
 ) -> Option<JsonValue> {
     if !matches!(
         entry.verb,
-        Verb::Switch | Verb::Start | Verb::Stop | Verb::Block
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch
     ) {
         return None;
     }
@@ -1698,7 +1740,7 @@ fn capture_ongoing_state_cached(
     events: Option<&datum_core::state::FieldStateEvents>,
     entry: &Entry,
 ) -> Option<JsonValue> {
-    if !matches!(entry.verb, Verb::Occur) {
+    if !matches!(entry.verb, Verb::Point) {
         return None;
     }
     let at = entry.start_time.as_ref()?.utc;
@@ -1710,7 +1752,7 @@ fn capture_ongoing_state_cached(
 /// "is this point happening inside an ongoing block?". Returns `None` for
 /// non-occur verbs and on any DB error (degrade to default-bg dot).
 fn capture_ongoing_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
-    if !matches!(entry.verb, Verb::Occur) {
+    if !matches!(entry.verb, Verb::Point) {
         return None;
     }
     let at = entry.start_time.as_ref()?.utc;
@@ -2062,7 +2104,7 @@ pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
     if args.color.is_some() || !args.state_colors.is_empty() || !args.tags.is_empty() {
         let mut spec = match db.load_spec(&args.field)? {
             Some(s) => s,
-            None => FieldSpec::new(&args.field, Verb::Occur),
+            None => FieldSpec::new(&args.field, Action::Occur),
         };
         if let Some(c) = &args.color {
             spec.color = Some(c.clone());
@@ -2956,12 +2998,12 @@ pub(crate) fn cmd_spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         s
     } else {
         db.load_spec(&args.field)?
-            .unwrap_or_else(|| FieldSpec::new(&args.field, Verb::Occur))
+            .unwrap_or_else(|| FieldSpec::new(&args.field, Action::Occur))
     };
 
     if let Some(dv) = &args.default_verb {
         spec.default_verb = dv
-            .parse::<Verb>()
+            .parse::<Action>()
             .map_err(|e| anyhow::anyhow!("Invalid --default-verb: {e}"))?;
     }
     if !args.states.is_empty() {
@@ -3677,7 +3719,7 @@ mod tests {
         let diff_secs = (end_utc - base.utc).num_seconds();
         assert_eq!(diff_secs, 8 * 3600);
         // Ensure dispatch doesn't error
-        log_entry(Verb::Start, args, &db).unwrap();
+        log_entry(Action::Start, args, &db).unwrap();
     }
 
     #[test]
@@ -3686,7 +3728,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::fresh("sleep");
         args.duration.duration = Some("8h".to_string());
-        log_entry(Verb::Stop, args, &db).unwrap();
+        log_entry(Action::Stop, args, &db).unwrap();
         let entries = db.entries_for_field("sleep", None).unwrap();
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
@@ -3699,7 +3741,7 @@ mod tests {
         use datum_core::{db::Db, entry::Entry, time::DatumTime};
         let db = Db::open_in_memory().unwrap();
         let t = DatumTime::now();
-        let entry = Entry::new_legacy("test", Verb::Occur, None, None, None, Some(t), None, "dev");
+        let entry = Entry::new_legacy("test", Verb::Point, None, None, None, Some(t), None, "dev");
         let slug = entry.slug.clone();
         db.insert_entry(&entry).unwrap();
 
@@ -3719,7 +3761,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::fresh("coffee");
         args.rest = vec!["2".to_string()];
-        log_entry(Verb::Occur, args, &db).unwrap();
+        log_entry(Action::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
     }
@@ -3729,7 +3771,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let args = LogArgs::fresh("work");
-        log_entry(Verb::Start, args, &db).unwrap();
+        log_entry(Action::Start, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "work" && !f.ignored));
     }
@@ -3742,7 +3784,7 @@ mod tests {
         // First insert: `datum coffee 2`.
         let mut args = LogArgs::fresh("coffee");
         args.rest = vec!["2".to_string()];
-        log_entry(Verb::Occur, args, &db).unwrap();
+        log_entry(Action::Occur, args, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
         // Undo via `-u`: same command form with `args.undo = true`. The
@@ -3750,7 +3792,7 @@ mod tests {
         let mut undo_args = LogArgs::fresh("coffee");
         undo_args.rest = vec!["2".to_string()];
         undo_args.undo = true;
-        log_entry(Verb::Occur, undo_args, &db).unwrap();
+        log_entry(Action::Occur, undo_args, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
     }
 
@@ -3762,17 +3804,17 @@ mod tests {
         // Two entries with different states under the same field.
         let mut a = LogArgs::fresh("coffee");
         a.rest = vec!["1".to_string()];
-        log_entry(Verb::Occur, a, &db).unwrap();
+        log_entry(Action::Occur, a, &db).unwrap();
         let mut b = LogArgs::fresh("coffee");
         b.rest = vec!["2".to_string()];
-        log_entry(Verb::Occur, b, &db).unwrap();
+        log_entry(Action::Occur, b, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 2);
 
         // Undo only `coffee 2` — the `coffee 1` entry stays put.
         let mut undo = LogArgs::fresh("coffee");
         undo.rest = vec!["2".to_string()];
         undo.undo = true;
-        log_entry(Verb::Occur, undo, &db).unwrap();
+        log_entry(Action::Occur, undo, &db).unwrap();
         let live = db.entries_for_field("coffee", None).unwrap();
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].state, Some(serde_json::json!(1)));
@@ -3785,7 +3827,7 @@ mod tests {
         let mut args = LogArgs::fresh("coffee");
         args.rest = vec!["3".to_string()];
         args.undo = true;
-        let err = log_entry(Verb::Occur, args, &db).unwrap_err();
+        let err = log_entry(Action::Occur, args, &db).unwrap_err();
         assert!(
             err.to_string().contains("no matching entry to undo"),
             "unexpected error: {err}"
@@ -3798,7 +3840,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::fresh("journal");
         args.rest = vec!["some text".to_string()];
-        log_entry(Verb::Add, args, &db).unwrap();
+        log_entry(Action::Add, args, &db).unwrap();
         // da-2sr: an add-only field has no state-bearing entry, so state_at
         // returns None — the projection labels it ignored (the "no entries"
         // default). It still appears in `get_tracked_fields` so callers
@@ -3951,7 +3993,7 @@ mod tests {
         // With some tracked fields and entries
         let mut args = LogArgs::fresh("mood");
         args.rest = vec!["happy".to_string()];
-        log_entry(Verb::Switch, args, &db).unwrap();
+        log_entry(Action::Switch, args, &db).unwrap();
         // da-2sr: writing the switch entry alone makes mood tracked; no
         // separate set_tracked / spec write is needed.
 
@@ -3975,11 +4017,11 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Spec defines id_template; caller does NOT pass --id.
-        let mut spec = FieldSpec::new("coffee", Verb::Occur);
+        let mut spec = FieldSpec::new("coffee", Action::Occur);
         spec.id_template = Some("%field%:%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
-        log_entry(Verb::Occur, log_args("coffee", vec![], None), &db).unwrap();
+        log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
 
         let entries = db.entries_for_field("coffee", None).unwrap();
         assert_eq!(entries.len(), 1);
@@ -4001,12 +4043,12 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Spec has one template; --id passes a different one → --id wins.
-        let mut spec = FieldSpec::new("coffee", Verb::Occur);
+        let mut spec = FieldSpec::new("coffee", Action::Occur);
         spec.id_template = Some("%field%:%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
         log_entry(
-            Verb::Occur,
+            Action::Occur,
             log_args("coffee", vec![], Some("%field%-override-%uid%".to_string())),
             &db,
         )
@@ -4025,7 +4067,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         log_entry(
-            Verb::Occur,
+            Action::Occur,
             log_args("coffee", vec![], Some("%field%:%uid%".to_string())),
             &db,
         )
@@ -4044,7 +4086,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
-        log_entry(Verb::Occur, log_args("coffee", vec![], None), &db).unwrap();
+        log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
 
         let entries = db.entries_for_field("coffee", None).unwrap();
         let e = &entries[0];
@@ -4060,7 +4102,7 @@ mod tests {
 
         // occur verb has no state → %state% empty → "::" collapses to ":"
         log_entry(
-            Verb::Occur,
+            Action::Occur,
             log_args(
                 "coffee",
                 vec![],
@@ -4087,7 +4129,7 @@ mod tests {
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
         Entry::new_legacy(
             field,
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(secs_offset)),
             None,
             None,
@@ -4196,7 +4238,7 @@ mod tests {
             "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new_legacy(field, Verb::Occur, Some(value), extra, None, Some(t), None, "d1")
+        Entry::new_legacy(field, Verb::Point, Some(value), extra, None, Some(t), None, "d1")
     }
 
     fn run_grep(db: &datum_core::db::Db, patterns: &[&str], field: Option<&str>) -> Vec<Entry> {
@@ -4378,7 +4420,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(1)),
             Some(serde_json::json!({
                 "weight": {"v": 70.0, "u": "kg"},
@@ -4417,7 +4459,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Add,
+            Verb::Point,
             None,
             Some(serde_json::json!({
                 "nested": {"a": 1, "b": 2},
@@ -4448,7 +4490,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Add,
+            Verb::Point,
             None,
             Some(serde_json::json!({"nested": {"a": 1, "c": 3}})),
         );
@@ -4486,7 +4528,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"foo": "bar", "baz": "qux"})),
         );
@@ -4513,7 +4555,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"reps": 10, "set": 3})),
         );
@@ -4554,7 +4596,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "gym",
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(1)),
             Some(serde_json::json!({"reps": 10})),
         );
@@ -4597,7 +4639,7 @@ mod tests {
         // leader makes the head of a single-row table unique.
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(&db, "gym", Verb::Occur, Some(serde_json::json!(1)), None);
+        let e = seed_entry(&db, "gym", Verb::Point, Some(serde_json::json!(1)), None);
         let prefix: String = e.slug.chars().take(5).collect();
         update_from_args(
             update_args(&prefix, vec!["note=fixed"]),
@@ -4624,7 +4666,7 @@ mod tests {
             let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
             let e = Entry::new_legacy(
                 "gym",
-                Verb::Occur,
+                Verb::Point,
                 Some(serde_json::json!(v)),
                 None,
                 None,
@@ -4664,7 +4706,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "notes",
-            Verb::Add,
+            Verb::Point,
             None,
             Some(serde_json::json!({"tag": {"color": "red", "size": "m"}})),
         );
@@ -4747,7 +4789,7 @@ mod tests {
         let mut e = seed_entry(
             &db,
             "task",
-            Verb::Occur,
+            Verb::Point,
             None,
             Some(serde_json::json!({"oldKind": "chore"})),
         );
@@ -4890,7 +4932,7 @@ mod tests {
         };
         Entry::new_legacy(
             field,
-            Verb::Start,
+            Verb::Switch,
             None,
             None,
             None,
@@ -4992,7 +5034,7 @@ mod tests {
     ) -> datum_core::entry::Entry {
         use datum_core::{entry::Entry, time::DatumTime};
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new_legacy(field, Verb::Occur, None, None, None, Some(t), None, device)
+        Entry::new_legacy(field, Verb::Point, None, None, None, Some(t), None, device)
     }
 
     #[test]
@@ -5135,7 +5177,7 @@ mod tests {
         let e = seed_entry(
             &db,
             "coffee",
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!(1)),
             None,
         );
@@ -5316,7 +5358,7 @@ mod tests {
     fn last_docs_bare_get_returns_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Verb::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(Action::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         let inserted = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
 
         cmd_get(GetArgs::fresh_default(), &db).unwrap();
@@ -5339,7 +5381,7 @@ mod tests {
     fn last_docs_bare_delete_force_removes_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Verb::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(Action::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
         cmd_delete(
@@ -5478,7 +5520,7 @@ mod tests {
         use crate::commands::update_core::{update_batch_from_args, UpdateStrategy};
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Verb::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(Action::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         let slug = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
 
         // Mutate via the explicit-id path; the batch should write the pointer.
@@ -5512,7 +5554,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         log_entry(
-            Verb::Add,
+            Action::Occur,
             make_add_args("focus", vec!["state=true", "dur=PT1H"]),
             &db,
         )
@@ -5530,7 +5572,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         log_entry(
-            Verb::Add,
+            Action::Occur,
             make_add_args(
                 "phase",
                 vec!["state=true", "dur=PT0S", "following_state=false"],
@@ -5552,7 +5594,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let err = log_entry(
-            Verb::Add,
+            Action::Occur,
             make_add_args("focus", vec!["state=true", "value=80"]),
             &db,
         )
@@ -5568,7 +5610,7 @@ mod tests {
     fn add_rejects_unbound_positional_value() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = log_entry(Verb::Add, make_add_args("focus", vec!["80"]), &db)
+        let err = log_entry(Action::Add, make_add_args("focus", vec!["80"]), &db)
             .unwrap_err();
         let msg = err.to_string().to_lowercase();
         assert!(

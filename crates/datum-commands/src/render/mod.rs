@@ -948,8 +948,10 @@ pub fn render_now_view(
                 });
             }
             Some(entry) => {
+                // da-8y2q.2: legacy `Verb::Switch` collapses into
+                // `Verb::Switch` with state=true; the Switch arm already
+                // covers it (Bool(true) ≠ Bool(false)).
                 let is_active = match &entry.verb {
-                    Verb::Start => true,
                     Verb::Switch => entry
                         .value
                         .as_ref()
@@ -1078,7 +1080,10 @@ fn format_now_time(
         let local = t.local_time();
         return format!("{prefix} {}", local.format("%H:%M"));
     }
-    if !is_active && *verb == Verb::Occur {
+    // da-8y2q.2: legacy `Verb::Point` rows are now `Verb::Point` with
+    // an `occur_time` set (timeless legacy `add` rows have no time and
+    // never reach here). Same display rule.
+    if !is_active && *verb == Verb::Point {
         t.local_time().format("@%H:%M").to_string()
     } else {
         format_ago((now_utc - t.utc).num_seconds())
@@ -1204,14 +1209,14 @@ mod tests {
 
     #[test]
     fn interpolate_expands_template_keys() {
-        let entry = sample_entry("coffee", Verb::Occur, Some(JsonValue::from(2)));
+        let entry = sample_entry("coffee", Verb::Point, Some(JsonValue::from(2)));
         let out = interpolate("%field%=%value%", &entry);
         assert_eq!(out, "coffee=2");
     }
 
     #[test]
     fn interpolate_resolves_extra_data_keys() {
-        let mut entry = sample_entry("coffee", Verb::Occur, None);
+        let mut entry = sample_entry("coffee", Verb::Point, None);
         entry.data = Some(serde_json::json!({"amount": 200}));
         let out = interpolate("%amount%ml", &entry);
         assert_eq!(out, "200ml");
@@ -1219,7 +1224,7 @@ mod tests {
 
     #[test]
     fn interpolate_renders_hid() {
-        let entry = sample_entry("coffee", Verb::Occur, None);
+        let entry = sample_entry("coffee", Verb::Point, None);
         let hid = interpolate("%hid%", &entry);
         assert_eq!(hid.len(), 5);
         assert_eq!(hid, hid.to_lowercase());
@@ -1227,7 +1232,7 @@ mod tests {
 
     #[test]
     fn extract_populates_all_primary_fields() {
-        let entry = sample_entry("coffee", Verb::Occur, Some(JsonValue::from(2)));
+        let entry = sample_entry("coffee", Verb::Point, Some(JsonValue::from(2)));
         let ex = extract(&entry, Some(Action::Create), None);
         assert!(ex.action.as_deref().unwrap().contains("CREATE"));
         assert!(ex.hid.is_some());
@@ -1267,7 +1272,7 @@ mod tests {
     fn state_cell_for_point_occur_emits_dot() {
         // `Occur` with no explicit value → padded DOT block via the canonical
         // §6 state-group renderer.
-        let entry = sample_entry("coffee", Verb::Occur, None);
+        let entry = sample_entry("coffee", Verb::Point, None);
         let ex = extract(&entry, None, None);
         let state = ex.state.expect("state cell");
         assert!(strip_ansi(&state).contains(super::characters::DOT));

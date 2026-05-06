@@ -54,7 +54,7 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
 
     // A point 10 min ago should land inside the data area as a circle.
     entry_builder("coffee")
-        .verb(Verb::Occur)
+        .verb(Verb::Point)
         .value(serde_json::json!(1))
         .time_start_utc(now - Duration::minutes(10))
         .insert(&db);
@@ -122,7 +122,7 @@ fn nowview_png_output_is_valid_png() {
     let db = fresh_db();
     let now = Utc::now();
     entry_builder("workout")
-        .verb(Verb::Start)
+        .verb(Verb::Switch)
         .time_start_utc(now - Duration::minutes(20))
         .insert(&db);
 
@@ -176,7 +176,7 @@ fn nowview_block_entry_renders_in_history_window() {
     let db = fresh_db();
     let now = Utc::now();
     entry_builder("workout")
-        .verb(Verb::Start)
+        .verb(Verb::Switch)
         .time_start_utc(now - Duration::minutes(45))
         .time_end_utc(now - Duration::minutes(30))
         .insert(&db);
@@ -212,7 +212,7 @@ fn nowview_no_field_data_still_renders_envelope() {
     let db = fresh_db();
     // Track a field but never log to it in the visible window.
     entry_builder("yesterday-only")
-        .verb(Verb::Occur)
+        .verb(Verb::Point)
         .time_start_utc(Utc::now() - Duration::hours(48))
         .insert(&db);
 

@@ -24,23 +24,19 @@ use super::Db;
 /// Derive the storage-layer verb string and canonical state JSON for an
 /// outgoing entry write. da-5ns.3: every insert/update path runs this so
 /// the `verb` column is sourced from `derive_verb(state, dur, fs)` rather
-/// than the legacy stub. The returned state is `entry.state` after the
-/// null→{true,false} promotion (a `None` from the caller is canonicalized
-/// based on the caller's `entry.verb`).
+/// than the legacy stub.
 ///
-/// The caller's `entry.verb` informs one promotion: when it names a
-/// switch-style verb (`switch`, `block-switch`, `point-switch`, or the
-/// legacy `start`) and `state` is `None`, the state is canonicalized to
-/// `true` *before* derive_verb runs so an unannotated `datum switch
-/// <field>` lands as `Verb::Switch` (not `Verb::Point`). The legacy
-/// `stop` verb canonicalizes a `None` state to `false` — `datum stop
-/// <field>` means "the field has ended". The (state, dur, fs) triple
-/// remains the source of truth — verb is a hint for how to read
-/// absence-of-state.
+/// One storage-verb-driven promotion remains: when the caller pre-stamps
+/// the entry with a switch-style storage verb (`Switch`, `BlockSwitch`,
+/// `PointSwitch`) and `state` is `None`, the state is canonicalized to
+/// `true` so that direct [`EntryBuilder`](crate::test_util::EntryBuilder)
+/// writes hit the same rule the live insert path uses. Action-driven
+/// canonicalization (`Action::Stop` → `false`, `Action::Start` → `true`)
+/// happens in `log_entry` before the entry reaches storage — see
+/// `da-8y2q.2`.
 fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
     let state_in = match (entry.state.clone(), &entry.verb) {
-        (None, Verb::Stop) => Some(serde_json::Value::Bool(false)),
-        (None, Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch | Verb::Start) => {
+        (None, Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch) => {
             Some(serde_json::Value::Bool(true))
         }
         (s, _) => s,
