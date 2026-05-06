@@ -1,0 +1,246 @@
+{
+  "axis_ticks": [
+    {
+      "hour": 0,
+      "is_major": true,
+      "label": "00",
+      "time_pos": 0.0
+    },
+    {
+      "hour": 1,
+      "is_major": false,
+      "label": "01",
+      "time_pos": 79.83333333333333
+    },
+    {
+      "hour": 2,
+      "is_major": false,
+      "label": "02",
+      "time_pos": 159.66666666666666
+    },
+    {
+      "hour": 3,
+      "is_major": true,
+      "label": "03",
+      "time_pos": 239.5
+    },
+    {
+      "hour": 4,
+      "is_major": false,
+      "label": "04",
+      "time_pos": 319.3333333333333
+    },
+    {
+      "hour": 5,
+      "is_major": false,
+      "label": "05",
+      "time_pos": 399.1666666666667
+    },
+    {
+      "hour": 6,
+      "is_major": true,
+      "label": "06",
+      "time_pos": 479.0
+    },
+    {
+      "hour": 7,
+      "is_major": false,
+      "label": "07",
+      "time_pos": 558.8333333333334
+    },
+    {
+      "hour": 8,
+      "is_major": false,
+      "label": "08",
+      "time_pos": 638.6666666666666
+    },
+    {
+      "hour": 9,
+      "is_major": true,
+      "label": "09",
+      "time_pos": 718.5
+    },
+    {
+      "hour": 10,
+      "is_major": false,
+      "label": "10",
+      "time_pos": 798.3333333333334
+    },
+    {
+      "hour": 11,
+      "is_major": false,
+      "label": "11",
+      "time_pos": 878.1666666666666
+    },
+    {
+      "hour": 12,
+      "is_major": true,
+      "label": "12",
+      "time_pos": 958.0
+    },
+    {
+      "hour": 13,
+      "is_major": false,
+      "label": "13",
+      "time_pos": 1037.8333333333333
+    },
+    {
+      "hour": 14,
+      "is_major": false,
+      "label": "14",
+      "time_pos": 1117.6666666666667
+    },
+    {
+      "hour": 15,
+      "is_major": true,
+      "label": "15",
+      "time_pos": 1197.5
+    },
+    {
+      "hour": 16,
+      "is_major": false,
+      "label": "16",
+      "time_pos": 1277.3333333333333
+    },
+    {
+      "hour": 17,
+      "is_major": false,
+      "label": "17",
+      "time_pos": 1357.1666666666667
+    },
+    {
+      "hour": 18,
+      "is_major": true,
+      "label": "18",
+      "time_pos": 1437.0
+    },
+    {
+      "hour": 19,
+      "is_major": false,
+      "label": "19",
+      "time_pos": 1516.8333333333333
+    },
+    {
+      "hour": 20,
+      "is_major": false,
+      "label": "20",
+      "time_pos": 1596.6666666666667
+    },
+    {
+      "hour": 21,
+      "is_major": true,
+      "label": "21",
+      "time_pos": 1676.5
+    },
+    {
+      "hour": 22,
+      "is_major": false,
+      "label": "22",
+      "time_pos": 1756.3333333333333
+    },
+    {
+      "hour": 23,
+      "is_major": false,
+      "label": "23",
+      "time_pos": 1836.1666666666667
+    },
+    {
+      "hour": 0,
+      "is_major": true,
+      "label": "00",
+      "time_pos": 1916.0
+    }
+  ],
+  "day_height": 100.0,
+  "days": [
+    {
+      "day_offset": 0.0,
+      "fields": [
+        {
+          "blocks": [
+            {
+              "fill": {
+                "Single": "#c4ca42"
+              },
+              "state_label": "1",
+              "time_extent": 1277.3333333333337,
+              "time_offset": 638.6666666666666
+            }
+          ],
+          "cross_extent": 12.0,
+          "cross_offset": 14.42111621145159,
+          "field": "coffee",
+          "points": [],
+          "z_index": 0.1442111621145159
+        },
+        {
+          "blocks": [
+            {
+              "fill": {
+                "Single": "#d48788"
+              },
+              "state_label": "meeting",
+              "time_extent": 159.66666666666674,
+              "time_offset": 638.6666666666666
+            },
+            {
+              "fill": {
+                "Single": "#af67ca"
+              },
+              "state_label": "emails",
+              "time_extent": 159.66666666666674,
+              "time_offset": 958.0
+            }
+          ],
+          "cross_extent": 12.0,
+          "cross_offset": 27.72283353842795,
+          "field": "project",
+          "points": [],
+          "z_index": 0.2772283353842795
+        },
+        {
+          "blocks": [
+            {
+              "fill": {
+                "Single": "#7b9adf"
+              },
+              "state_label": "true",
+              "time_extent": 79.83333333333337,
+              "time_offset": 638.6666666666666
+            }
+          ],
+          "cross_extent": 12.0,
+          "cross_offset": 48.28318995423615,
+          "field": "workout",
+          "points": [],
+          "z_index": 0.4828318995423615
+        }
+      ],
+      "has_error": false,
+      "label_lines": [
+        "Thu",
+        "Jan 15",
+        "2026"
+      ],
+      "now_extent_far": 115.0,
+      "now_time_pos": null
+    }
+  ],
+  "height": 119.0,
+  "interday_margin": 15.0,
+  "label_font_size": 20.0,
+  "label_lines_shown": 3,
+  "label_width": 80.0,
+  "margin": 2.0,
+  "orientation": "horizontal",
+  "plot": {
+    "height": 115.0,
+    "width": 1996.0,
+    "x": 2.0,
+    "y": 2.0
+  },
+  "right_panel_width": 0.0,
+  "time_axis_extent": 1916.0,
+  "time_axis_height": 15.0,
+  "width": 2000.0
+}

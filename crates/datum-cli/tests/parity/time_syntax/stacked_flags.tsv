@@ -1,0 +1,16 @@
+# Stackable short-flag counting (`-y` / `-yy` / `-q` / `-qq`).
+# Format: flag <TAB> letter <TAB> count
+#
+# datum-compat: `-yy` ≡ `-y -y` (2 days back), `-qqq` ≡ `-q -q -q` (15 min
+# back). The `count_stacked_flag` helper drives the pre-pass that expands
+# stacked forms to repeated singletons before the bespoke parser runs.
+flag	letter	count
+-y	y	1
+-yy	y	2
+-yyy	y	3
+-yyyy	y	4
+-q	q	1
+-qq	q	2
+-qqq	q	3
+-qqqq	q	4
+-qqqqqq	q	6

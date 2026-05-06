@@ -1,0 +1,18 @@
+# Full ISO-8601 datetime parsing via `parse_time_arg`.
+# Format: kind <TAB> input <TAB> expected
+#
+# kind=instant → `iso_instant` populated; expected is the UTC RFC3339 form.
+# kind=naive   → `iso_naive` populated; expected is `YYYY-MM-DDTHH:MM:SS`
+#                (caller interprets in current timezone).
+#
+# Datum's `DateTime.fromISO` (luxon) handles these forms; daydumb's parser
+# matches the structured prefix and routes to `chrono::DateTime::parse_from_rfc3339`
+# or `NaiveDateTime::parse_from_str`. Goldens lock the routing decision
+# (instant vs naive) so future drift doesn't silently swap them.
+kind	input	expected
+instant	2024-03-16T15:30:00Z	2024-03-16T15:30:00+00:00
+instant	2024-03-16T15:30:00+02:00	2024-03-16T13:30:00+00:00
+instant	2024-03-16T15:30:00.500Z	2024-03-16T15:30:00.500+00:00
+naive	2024-03-16T15:30:00	2024-03-16T15:30:00
+naive	2024-03-16T15:30	2024-03-16T15:30:00
+naive	2024-03-16T15:30:00.250	2024-03-16T15:30:00.250
