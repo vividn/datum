@@ -137,6 +137,7 @@ fn every_pair_has_a_roundtrip_test() {
         (18, 19),
         (19, 20),
         (20, 21),
+        (21, 22),
     ];
     assert_eq!(
         covered.len(),

@@ -691,11 +691,12 @@ pub(crate) fn log_entry(mut action: Action, mut args: LogArgs, db: &Db) -> Resul
     let _ = reserved.occur_time;
 
     // da-8y2q.2: Action-driven state canonicalization (moved out of
-    // `derive_verb_for_storage`). With no explicit `state=`, `Action::Stop`
-    // means "the field has ended" → false; `Action::Start` means "begin" →
-    // true. `Action::Switch` with no state still defers to the storage-
-    // layer canonicalization (Verb::Switch promotes None → true) so that
-    // direct `EntryBuilder` users hit the same rule.
+    // `derive_verb_for_storage`). With no explicit `state=`: `Action::Stop`
+    // means "the field has ended" → false; `Action::Start` and
+    // `Action::Switch` mean "transition to active" → true. The storage
+    // layer (`derive_verb_for_storage`) keeps the Verb::Switch promotion as
+    // a backstop so that direct `EntryBuilder` writes hit the same rule
+    // when their verb is already set to Switch/BlockSwitch/PointSwitch.
     if entry.state.is_none() {
         match action {
             Action::Stop => {
@@ -703,7 +704,7 @@ pub(crate) fn log_entry(mut action: Action, mut args: LogArgs, db: &Db) -> Resul
                 entry.state = Some(v.clone());
                 entry.value = Some(v);
             }
-            Action::Start => {
+            Action::Start | Action::Switch => {
                 let v = JsonValue::Bool(true);
                 entry.state = Some(v.clone());
                 entry.value = Some(v);
