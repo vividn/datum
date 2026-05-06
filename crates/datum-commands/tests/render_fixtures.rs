@@ -129,12 +129,15 @@ fn ctx_with(
 #[test]
 fn fx01_add_new_occur() {
     let _g = no_color_scope();
+    // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
+    // adds now render as dots (matching the rest of the Point family); the
+    // `¢`/NON_OCCUR glyph is reserved for timeless entries (no `occur_time`).
     let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 47)), None);
     let ctx = ctx_with(None, None, true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" new_occur "), "field badge present: {out:?}");
-    assert!(out.contains("¢"), "add glyph present: {out:?}");
-    assert!(!out.contains("∅"), "add must not carry ∅: {out:?}");
+    assert!(out.contains("●"), "point dot: {out:?}");
+    assert!(!out.contains("¢"), "time-stamped Point renders as dot, not NON_OCCUR: {out:?}");
 }
 
 #[test]
@@ -163,7 +166,10 @@ fn fx03_occur_again() {
 #[test]
 fn fx04_start_first() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Switch, None, Some(fixed_time(16, 59, 40)), None);
+    // da-8y2q.2: legacy `Verb::Start` collapsed into `Verb::Switch` with
+    // canonicalized `state=true`. The "start" label flows from
+    // `render_switch_badge`'s `Bool(true)` arm, so the value must be set.
+    let e = entry("new_start", Verb::Switch, Some(json!(true)), Some(fixed_time(16, 59, 40)), None);
     // First-time start: no prior, trail = Bool(true).
     let ctx = ctx_with(None, Some(json!(true)), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -176,7 +182,9 @@ fn fx04_start_first() {
 #[test]
 fn fx05_end() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Switch, None, Some(fixed_time(16, 59, 46)), None);
+    // da-8y2q.2: legacy `Verb::Stop` collapsed into `Verb::Switch` with
+    // canonicalized `state=false`.
+    let e = entry("new_start", Verb::Switch, Some(json!(false)), Some(fixed_time(16, 59, 46)), None);
     // Prior state = true (active block); trail = false (stopped).
     let ctx = ctx_with(Some(json!(true)), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -188,7 +196,7 @@ fn fx05_end() {
 #[test]
 fn fx06_start_after_end() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Switch, None, Some(fixed_time(16, 59, 52)), None);
+    let e = entry("new_start", Verb::Switch, Some(json!(true)), Some(fixed_time(16, 59, 52)), None);
     // Prior = false (stopped); trail = true.
     let ctx = ctx_with(Some(json!(false)), Some(json!(true)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -286,7 +294,8 @@ fn fx11_switch_same_state_repeat() {
 #[test]
 fn fx12_end_switch() {
     let _g = no_color_scope();
-    let e = entry("new_switch", Verb::Switch, None, Some(fixed_time(17, 1, 13)), None);
+    // da-8y2q.2: legacy `Verb::Stop` collapsed into `Verb::Switch` + state=false.
+    let e = entry("new_switch", Verb::Switch, Some(json!(false)), Some(fixed_time(17, 1, 13)), None);
     let ctx = ctx_with(Some(json!("repeat")), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("end"));
@@ -437,13 +446,16 @@ fn fx19_track_false_state() {
 #[test]
 fn fx20_add_with_keys() {
     let _g = no_color_scope();
+    // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
+    // adds render as dots, not the NON_OCCUR (`¢`) glyph (which is now
+    // reserved for timeless entries — `occur_time = None`).
     let mut e = entry("thing", Verb::Point, None, Some(fixed_time(17, 40, 0)), None);
     e.data = Some(json!({ "key": "value" }));
     let ctx = ctx_with(None, None, false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" thing "), "field badge: {out:?}");
-    assert!(out.contains("¢"), "add marker: {out:?}");
-    assert!(!out.contains("∅"), "add never carries ∅: {out:?}");
+    assert!(out.contains("●"), "point dot (time-stamped): {out:?}");
+    assert!(!out.contains("∅"), "repeat point has no ∅: {out:?}");
 }
 
 // ─── Cross-cutting: no arrow glyphs anywhere ─────────────────────────────────

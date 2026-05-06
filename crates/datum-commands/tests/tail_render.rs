@@ -140,10 +140,11 @@ fn tail_state_cell_uses_lead_state_trail_group() {
 
 #[test]
 fn tail_state_cell_for_start_uses_bg_slots() {
-    // `datum start` writes a Start row. The canonical group emits the
-    // `start` badge, with LEAD/TRAIL slots coloured by surrounding state.
+    // `datum start` writes a Switch row with state=true (legacy `Verb::Start`
+    // collapsed in da-8y2q.2). The canonical group emits the `start` badge,
+    // with LEAD/TRAIL slots coloured by surrounding state.
     let _g = no_color_scope();
-    let e = entry_at("workout", Verb::Switch, None, dt(2026, 4, 22, 9, 15));
+    let e = entry_at("workout", Verb::Switch, Some(serde_json::json!(true)), dt(2026, 4, 22, 9, 15));
     let ctx = RenderContext::default();
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);

@@ -774,6 +774,19 @@ pub(crate) fn log_entry(mut action: Action, mut args: LogArgs, db: &Db) -> Resul
         }
     }
 
+    // da-8y2q.2: derive the storage verb up-front so the lead/trail-state
+    // capture (which dispatches on `entry.verb`) sees the same shape the
+    // insert path will write. Without this, `capture_lead_state` would key
+    // off the `Verb::Point` placeholder set by `Entry::new_legacy` and
+    // skip state-bearing rows.
+    if let Ok((derived_verb, _)) = datum_core::derive_verb(
+        entry.state.clone(),
+        entry.dur.as_deref(),
+        entry.following_state.clone(),
+    ) {
+        entry.verb = derived_verb;
+    }
+
     // Capture render hints *before* the insert:
     //   1. first-time: no live entries exist for this field yet. Drives both
     //      the `∅` left-char and the field-badge sparkle in the renderer.

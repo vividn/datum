@@ -352,6 +352,15 @@ fn down_21_to_20_drop_derived_from_field(conn: &Connection) -> Result<()> {
 /// `field_specs.spec_json` is unchanged: `Action`'s serde names match
 /// the legacy `default_verb` strings (`occur`/`start`/`switch`/`add`),
 /// so on-disk specs round-trip without rewriting.
+///
+/// **Render-layer side effect (Mayor decision, da-8y2q.2 escalation):**
+/// the legacy `Verb::Add` storage variant drove the `¢`/NON_OCCUR glyph
+/// in `render::action::format_state_group`. After the collapse into
+/// `Verb::Point`, time-stamped legacy `add` rows render as dots (matching
+/// the rest of the Point family); only timeless adds (no `occur_time`)
+/// still render as NON_OCCUR. This is an intentional pre-v1 visual
+/// regression accepted as the cost of dropping intent-as-storage; see
+/// the bead's escalation thread for the full rationale.
 fn m21_to_22_verb_canonicalize(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "UPDATE entries SET verb = 'point'
