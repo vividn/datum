@@ -20,7 +20,7 @@ use crate::{
     args::{
         AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs, CountArgs, DbImportArgs, DbImportArgsExt, DeleteArgs, EditArgs, GetArgs,
+        ConflictsShowArgs, CountArgs, DbImportArgs, DbImportArgsExt, DeleteArgs, GetArgs,
         GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, InfoArgs, LogArgs, LogArgsExt, MigrateCommand,
         NowArgs, OutputFlagsExt, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs,
         TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
@@ -28,7 +28,7 @@ use crate::{
     config::{self, device_id},
     render::{
         print_entry, print_entry_pretty, print_now_view, print_table_with,
-        show_create, show_create_with_context, show_delete, show_exists, show_rename, show_update,
+        show_create, show_create_with_context, show_delete, show_exists, show_rename,
         show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
 };
@@ -110,6 +110,13 @@ fn run_log_with_alias(
 
 fn load_registry(db: &Db) -> Result<datum_core::field_spec::SpecRegistry> {
     Ok(db.load_registry()?)
+}
+
+/// Convenience wrapper that swallows registry-load errors (the renderer
+/// treats `None` as "no registry available"). Exposed for sibling modules
+/// in `commands/` that don't want to import the private `load_registry`.
+pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecRegistry> {
+    load_registry(db).ok()
 }
 
 // ─── Count / Ids ─────────────────────────────────────────────────────────────
@@ -2375,69 +2382,10 @@ pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
 /// Testing hook: `DATUM_EDITOR` takes precedence over `EDITOR`. Both are
 /// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
 /// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
-pub(crate) fn cmd_edit(args: EditArgs, db: &Db) -> Result<()> {
-    let existing = resolve_prefix_or_tombstone(db, &args.id_or_slug)?;
-    if existing.deleted_at.is_some() {
-        anyhow::bail!(
-            "Cannot edit tombstoned entry {} — restore it first with `datum undo`",
-            args.id_or_slug,
-        );
-    }
-
-    let original_json = serde_json::to_string_pretty(&existing)
-        .context("failed to serialize entry for editing")?;
-
-    let tmp = tempfile::Builder::new()
-        .prefix("datum-edit-")
-        .suffix(".json")
-        .tempfile()
-        .context("failed to create tempfile for editor")?;
-    std::fs::write(tmp.path(), &original_json)
-        .context("failed to write entry to tempfile")?;
-
-    let editor = std::env::var("DATUM_EDITOR")
-        .or_else(|_| std::env::var("EDITOR"))
-        .unwrap_or_else(|_| "vi".to_string());
-
-    let status = std::process::Command::new("sh")
-        .arg("-c")
-        .arg(format!("{editor} \"$1\""))
-        .arg("--")
-        .arg(tmp.path())
-        .status()
-        .with_context(|| format!("failed to invoke editor: {editor}"))?;
-    if !status.success() {
-        anyhow::bail!("editor exited with non-zero status: {status}");
-    }
-
-    let edited = std::fs::read_to_string(tmp.path())
-        .context("failed to read tempfile after editing")?;
-
-    if edited == original_json {
-        println!("No changes — entry {} unmodified", existing.slug);
-        return Ok(());
-    }
-
-    let mut updated: Entry = serde_json::from_str(&edited)
-        .map_err(|e| anyhow::anyhow!("edited content is not valid entry JSON: {e}"))?;
-
-    if updated.slug != existing.slug {
-        anyhow::bail!(
-            "edit cannot change slug ({} → {}); use `datum rekey` instead",
-            existing.slug, updated.slug,
-        );
-    }
-
-    updated.modify_time = chrono::Utc::now();
-    updated.content_hash = updated.expected_content_hash();
-
-    db.save_existing_entry(&updated)?;
-
-    let fresh = db.get_entry(&updated.slug)?;
-    let registry = load_registry(db).ok();
-    show_update(&fresh, registry.as_ref(), &args.output());
-    Ok(())
-}
+// `cmd_edit` was moved to `crate::commands::edit::edit` in da-4lov to
+// route the editor flow through `UserEditableEntry`, which makes
+// system-only fields (extra_metadata, hid, slug, content_hash, etc.)
+// physically unreachable from the editor tempfile.
 
 // ─── Update / Merge / Rekey ──────────────────────────────────────────────────
 // Underlying logic lives in `commands::update_core::update_with_strategy`.
@@ -3687,6 +3635,7 @@ fn parse_datum_precision(occur_block: &JsonValue) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::args::EditArgs;
     use crate::commands::update_core::{update_from_args, UpdateStrategy};
 
     #[test]
@@ -5078,9 +5027,9 @@ mod tests {
 
     // ─── edit command tests ─────────────────────────────────────────────────
     //
-    // cmd_edit spawns a subprocess under `sh -c` driven by the DATUM_EDITOR
-    // env var. Env vars are process-global, so these tests serialize against
-    // a shared mutex to avoid stepping on each other.
+    // The edit command spawns a subprocess under `sh -c` driven by the
+    // DATUM_EDITOR env var. Env vars are process-global, so these tests
+    // serialize against a shared mutex to avoid stepping on each other.
 
     use std::sync::Mutex;
     static EDIT_ENV_LOCK: Mutex<()> = Mutex::new(());
@@ -5097,6 +5046,40 @@ mod tests {
         }
     }
 
+    /// Build a minimal JSON payload for the editor tempfile that targets the
+    /// `UserEditableEntry` shape. `occur_time` is taken verbatim from `e` so
+    /// the round-trip preserves it (the deserializer lifts it back unchanged).
+    fn editor_payload(e: &Entry, mutate: impl FnOnce(&mut serde_json::Value)) -> String {
+        let mut doc = serde_json::json!({
+            "field": e.field,
+            "verb": e.verb.to_string(),
+            "state": e.state,
+            "dur": e.dur,
+            "following_state": e.following_state,
+            "data": e.data,
+            "unit": e.unit,
+            "occur_time": serde_json::to_value(&e.occur_time).unwrap(),
+            "occur_time_precision": e.occur_time_precision,
+            "lat": e.lat,
+            "lon": e.lon,
+            "location": e.location,
+            "id_structure": e.id_structure,
+            "field_structure": e.field_structure,
+        });
+        mutate(&mut doc);
+        serde_json::to_string_pretty(&doc).unwrap()
+    }
+
+    fn write_editor_payload(payload: &str) -> tempfile::NamedTempFile {
+        let prep = tempfile::Builder::new()
+            .prefix("datum-edit-prep-")
+            .suffix(".json")
+            .tempfile()
+            .unwrap();
+        std::fs::write(prep.path(), payload).unwrap();
+        prep
+    }
+
     #[test]
     fn edit_modifies_entry_via_scripted_editor() {
         use datum_core::db::Db;
@@ -5109,32 +5092,23 @@ mod tests {
             Some(serde_json::json!({"note": "sunny"})),
         );
 
-        // Build the edited JSON: same id/slug/etc., but a mutated value and
-        // data. We serialize the existing entry, mutate two fields,
-        // then hand the file back via `cp`.
-        let mut doc: serde_json::Value =
-            serde_json::from_str(&serde_json::to_string(&e).unwrap()).unwrap();
-        doc["value"] = serde_json::json!("focused");
-        doc["data"] = serde_json::json!({"note": "clearer"});
-
-        let prep = tempfile::Builder::new()
-            .prefix("datum-edit-prep-")
-            .suffix(".json")
-            .tempfile()
-            .unwrap();
-        std::fs::write(prep.path(), serde_json::to_string_pretty(&doc).unwrap()).unwrap();
+        let payload = editor_payload(&e, |doc| {
+            doc["state"] = serde_json::json!("focused");
+            doc["data"] = serde_json::json!({"note": "clearer"});
+        });
+        let prep = write_editor_payload(&payload);
 
         let editor_cmd = format!("cp {}", prep.path().display());
         with_datum_editor(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() }, &db).unwrap();
+            crate::commands::edit::edit(
+                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                &db,
+            ).unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
-        assert_eq!(after.value, Some(serde_json::json!("focused")));
-        assert_eq!(
-            after.data,
-            Some(serde_json::json!({"note": "clearer"}))
-        );
+        assert_eq!(after.state, Some(serde_json::json!("focused")));
+        assert_eq!(after.data, Some(serde_json::json!({"note": "clearer"})));
         // content_hash refreshed to match the new state.
         assert_eq!(after.content_hash, after.expected_content_hash());
         assert_ne!(after.content_hash, e.content_hash);
@@ -5156,13 +5130,16 @@ mod tests {
 
         // `true` ignores its args → tempfile is left untouched.
         with_datum_editor("true", || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() }, &db).unwrap();
+            crate::commands::edit::edit(
+                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                &db,
+            ).unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
         assert_eq!(after.content_hash, before.content_hash);
         assert_eq!(after.modify_time, before.modify_time);
-        assert_eq!(after.value, before.value);
+        assert_eq!(after.state, before.state);
     }
 
     #[test]
@@ -5187,7 +5164,10 @@ mod tests {
 
         let editor_cmd = format!("cp {}", prep.path().display());
         let result = with_datum_editor_result(&editor_cmd, || {
-            cmd_edit(EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() }, &db)
+            crate::commands::edit::edit(
+                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                &db,
+            )
         });
         let err = result.unwrap_err();
         assert!(
@@ -5197,6 +5177,103 @@ mod tests {
 
         // Row untouched.
         let after = db.get_entry(&e.slug).unwrap();
+        assert_eq!(after.content_hash, before.content_hash);
+        assert_eq!(after.modify_time, before.modify_time);
+    }
+
+    /// da-4lov: editing must not give the user a path to mutate `extra_metadata`.
+    /// Pre-populate the row with a non-empty extra_metadata, then hand the
+    /// editor a payload that (a) legitimately changes `state` and (b) attempts
+    /// to inject a malicious `extra_metadata`. The legitimate change applies;
+    /// the injection is silently dropped (UserEditableEntry has no slot for
+    /// it) and the original extra_metadata is preserved verbatim.
+    #[test]
+    fn edit_preserves_extra_metadata_against_injection() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+        );
+
+        // Stamp system-managed provenance directly on the row, mimicking what
+        // `datum db import --from <legacy>` would deposit. The user has no
+        // legitimate way to mutate this column.
+        let original_meta = serde_json::json!({"_import": {"source": "legacy", "v": 1}});
+        e.extra_metadata = Some(original_meta.clone());
+        db.save_existing_entry(&e).unwrap();
+        let before = db.get_entry(&e.slug).unwrap();
+        assert_eq!(before.extra_metadata, Some(original_meta.clone()));
+
+        let payload = editor_payload(&before, |doc| {
+            doc["state"] = serde_json::json!("focused");
+            // The attack: inject a key that lives outside UserEditableEntry.
+            doc["extra_metadata"] = serde_json::json!({"_evil": "hacked"});
+            // While we're at it, try to overwrite hid / slug / content_hash too.
+            doc["hid"] = serde_json::json!("ffffffffffff");
+            doc["slug"] = serde_json::json!("attacker:owned");
+            doc["content_hash"] = serde_json::json!("deadbeef");
+            doc["device_id"] = serde_json::json!("attacker-device");
+            doc["create_time"] = serde_json::json!("1970-01-01T00:00:00Z");
+        });
+        let prep = write_editor_payload(&payload);
+
+        let editor_cmd = format!("cp {}", prep.path().display());
+        with_datum_editor(&editor_cmd, || {
+            crate::commands::edit::edit(
+                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                &db,
+            ).unwrap();
+        });
+
+        let after = db.get_entry(&e.slug).unwrap();
+        // Legit change applied.
+        assert_eq!(after.state, Some(serde_json::json!("focused")));
+        // Security boundary holds: every injected system-only field is unchanged.
+        assert_eq!(after.extra_metadata, Some(original_meta));
+        assert_eq!(after.hid, before.hid);
+        assert_eq!(after.slug, before.slug);
+        assert_eq!(after.device_id, before.device_id);
+        assert_eq!(after.create_time, before.create_time);
+        // content_hash is recomputed from the new state, not taken from the payload.
+        assert_eq!(after.content_hash, after.expected_content_hash());
+        assert_ne!(after.content_hash, "deadbeef");
+    }
+
+    /// da-4lov complement: even when the user makes no semantic change,
+    /// `extra_metadata` survives the round-trip. The editor view never carries
+    /// it, so a save-without-changes still hits the "no-op" path or, if the
+    /// editor whitespace-reformats, the apply path that copies user-only
+    /// fields into a clone of the existing entry — extra_metadata stays put
+    /// either way.
+    #[test]
+    fn edit_no_change_preserves_extra_metadata() {
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+        let mut e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+        );
+        let original_meta = serde_json::json!({"_import": {"source": "legacy"}});
+        e.extra_metadata = Some(original_meta.clone());
+        db.save_existing_entry(&e).unwrap();
+        let before = db.get_entry(&e.slug).unwrap();
+
+        with_datum_editor("true", || {
+            crate::commands::edit::edit(
+                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                &db,
+            ).unwrap();
+        });
+
+        let after = db.get_entry(&e.slug).unwrap();
+        assert_eq!(after.extra_metadata, Some(original_meta));
         assert_eq!(after.content_hash, before.content_hash);
         assert_eq!(after.modify_time, before.modify_time);
     }
