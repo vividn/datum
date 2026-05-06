@@ -175,15 +175,14 @@ fn build_state_panel_overlay(
         let swatch_h = (row_h * 0.6).min(font_size).max(4.0);
         let swatch_x = panel_x + PANEL_PAD_PX;
         let swatch_y = y_center - swatch_h / 2.0;
-        let _ = write!(
+        push_state_swatch(
             &mut out,
-            r#"<rect class="state-swatch" data-field="{f}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
-            f = escape_xml(&entry.field),
-            x = swatch_x,
-            y = swatch_y,
-            w = PANEL_SWATCH_W,
-            h = swatch_h,
-            c = escape_xml(&entry.color),
+            &entry.field,
+            &entry.colors,
+            swatch_x,
+            swatch_y,
+            PANEL_SWATCH_W,
+            swatch_h,
         );
 
         let text_x = swatch_x + PANEL_SWATCH_W + 4.0;
@@ -204,6 +203,84 @@ fn build_state_panel_overlay(
     }
     out.push_str("</g>");
     out
+}
+
+/// Per da-9vop the swatch density (cells per side) for the parallel-state
+/// checkerboard. 8 → 8×8 cell grid for 2-state input; for N≥2 states the
+/// cells cycle by `(row + col) % N` so every state is visible and the
+/// pattern reads as a regular tiling.
+const PANEL_SWATCH_CHECKER_CELLS: usize = 8;
+
+/// Push the `<rect class="state-swatch">` element(s). Single-state entries
+/// emit one solid rect (the original behaviour); parallel-state entries
+/// (`switch body vertical,sit`) emit an N×N checkerboard of small rects so
+/// each state's colour is visible inside the swatch (per da-9vop).
+fn push_state_swatch(
+    out: &mut String,
+    field: &str,
+    colors: &[String],
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) {
+    let escaped_field = escape_xml(field);
+    match colors {
+        [] => {
+            // Defensive: no resolvable colour → no swatch (still emit the
+            // bounding rect transparently so DOM consumers see the slot).
+            let _ = write!(
+                out,
+                r#"<rect class="state-swatch" data-field="{f}" x="{x}" y="{y}" width="{w}" height="{h}" fill="none"/>"#,
+                f = escaped_field,
+                x = x,
+                y = y,
+                w = w,
+                h = h,
+            );
+        }
+        [single] => {
+            let _ = write!(
+                out,
+                r#"<rect class="state-swatch" data-field="{f}" x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
+                f = escaped_field,
+                x = x,
+                y = y,
+                w = w,
+                h = h,
+                c = escape_xml(single),
+            );
+        }
+        _ => {
+            let n = PANEL_SWATCH_CHECKER_CELLS;
+            // Wrap every cell in a single grouping rect so DOM consumers
+            // can still address the swatch as one element.
+            let _ = write!(
+                out,
+                r#"<g class="state-swatch state-swatch-checker" data-field="{f}">"#,
+                f = escaped_field,
+            );
+            let cell_w = w / n as f64;
+            let cell_h = h / n as f64;
+            for row in 0..n {
+                for col in 0..n {
+                    let idx = (row + col) % colors.len();
+                    let cx = x + col as f64 * cell_w;
+                    let cy = y + row as f64 * cell_h;
+                    let _ = write!(
+                        out,
+                        r#"<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{c}"/>"#,
+                        x = cx,
+                        y = cy,
+                        w = cell_w,
+                        h = cell_h,
+                        c = escape_xml(&colors[idx]),
+                    );
+                }
+            }
+            out.push_str("</g>");
+        }
+    }
 }
 
 /// Insert `overlay` inside the dayview's `<g class="plot">` group so the
@@ -400,12 +477,12 @@ mod tests {
             NowviewPanelEntry {
                 field: "mood".into(),
                 state_label: Some("focused".into()),
-                color: "#abcdef".into(),
+                colors: vec!["#abcdef".into()],
             },
             NowviewPanelEntry {
                 field: "coffee".into(),
                 state_label: None,
-                color: "#ff0000".into(),
+                colors: vec!["#ff0000".into()],
             },
         ];
         let svg = render_nowview_svg(&layout, "12:00", &entries);
@@ -462,7 +539,7 @@ mod tests {
         let entries = vec![NowviewPanelEntry {
             field: "ghost".into(),
             state_label: Some("nope".into()),
-            color: "#888888".into(),
+            colors: vec!["#888888".into()],
         }];
         let svg = render_nowview_svg(&layout, "", &entries);
         assert!(!svg.contains(r#"data-field="ghost""#));
@@ -480,5 +557,124 @@ mod tests {
         let html = wrap_svg_in_html("<svg></svg>");
         assert!(html.starts_with("<!DOCTYPE html>"));
         assert!(html.contains("<svg></svg>"));
+    }
+
+    /// Per da-9vop, the following-state swatch for a parallel state set
+    /// renders as an N×N checkerboard (one rect per cell, alternating
+    /// between the supplied colours) wrapped in a single `<g>` so DOM
+    /// consumers can still address it as one swatch.
+    #[test]
+    fn following_state_square_renders_checkerboard_for_parallel_set() {
+        let now_ms = 1_700_000_000_000_i64;
+        let history_ms = 30 * 60 * 1000;
+        let day = DayviewDayInput {
+            label_lines: vec![],
+            start_ms: now_ms - history_ms,
+            end_ms: now_ms,
+            has_error: false,
+            fields: vec![DayviewFieldInput {
+                field: "body".into(),
+                y_frac: 0.1,
+                height_frac: 0.2,
+                z_index: 0.1,
+                blocks: vec![DayviewBlock {
+                    start_ms: now_ms - 10 * 60 * 1000,
+                    end_ms: now_ms,
+                    fill: BlockFill::Single("#aa3333".into()),
+                    state_label: Some("vertical,sit".into()),
+                }],
+                points: vec![],
+            }],
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 600.0,
+            height: Some(300.0),
+            day_height: 250.0,
+            time_axis_height: 20.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation: Orientation::Horizontal,
+            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0)),
+            right_panel_width: 120.0,
+            ..Default::default()
+        };
+        let layout = compute_dayview(&cfg);
+        // Parallel state set: vertical + sit → two-colour swatch.
+        let entries = vec![NowviewPanelEntry {
+            field: "body".into(),
+            state_label: Some("vertical,sit".into()),
+            colors: vec!["#aa3333".into(), "#33aa33".into()],
+        }];
+        let svg = render_nowview_svg(&layout, "12:00", &entries);
+        // Single solid-fill swatch is replaced by a grouping <g> that
+        // contains the per-cell rects.
+        assert!(
+            svg.contains(r#"class="state-swatch state-swatch-checker" data-field="body""#),
+            "expected checker grouping element in: {svg}"
+        );
+        // Both state colours appear at least once each.
+        assert!(svg.contains(r##"fill="#aa3333""##));
+        assert!(svg.contains(r##"fill="#33aa33""##));
+        // 8×8 cell grid → 64 small rects, one per cell.
+        let cell_count = svg.matches("<rect x=\"").count();
+        assert!(
+            cell_count >= 64,
+            "expected ≥64 checker cells, got {cell_count} in: {svg}",
+        );
+    }
+
+    /// Single-state input continues to render as one solid-fill rect —
+    /// the parallel-state path must not regress the common case.
+    #[test]
+    fn following_state_square_single_state_still_solid() {
+        let now_ms = 1_700_000_000_000_i64;
+        let history_ms = 30 * 60 * 1000;
+        let day = DayviewDayInput {
+            label_lines: vec![],
+            start_ms: now_ms - history_ms,
+            end_ms: now_ms,
+            has_error: false,
+            fields: vec![DayviewFieldInput {
+                field: "mood".into(),
+                y_frac: 0.1,
+                height_frac: 0.2,
+                z_index: 0.1,
+                blocks: vec![DayviewBlock {
+                    start_ms: now_ms - 10 * 60 * 1000,
+                    end_ms: now_ms,
+                    fill: BlockFill::Single("#abcdef".into()),
+                    state_label: Some("focused".into()),
+                }],
+                points: vec![],
+            }],
+        };
+        let cfg = DayviewConfig {
+            days: vec![day],
+            now_ms,
+            width: 600.0,
+            height: Some(300.0),
+            day_height: 250.0,
+            time_axis_height: 20.0,
+            margin: 2.0,
+            label_width: Some(0.0),
+            orientation: Orientation::Horizontal,
+            axis_ticks_override: Some(nowview_axis_ticks(400.0, 30.0)),
+            right_panel_width: 120.0,
+            ..Default::default()
+        };
+        let layout = compute_dayview(&cfg);
+        let entries = vec![NowviewPanelEntry {
+            field: "mood".into(),
+            state_label: Some("focused".into()),
+            colors: vec!["#abcdef".into()],
+        }];
+        let svg = render_nowview_svg(&layout, "12:00", &entries);
+        assert!(
+            svg.contains(r#"<rect class="state-swatch" data-field="mood""#),
+            "single-state swatch must remain a solid rect: {svg}"
+        );
+        assert!(!svg.contains("state-swatch-checker"), "no checker grouping for single state");
     }
 }

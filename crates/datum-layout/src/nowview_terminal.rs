@@ -182,13 +182,13 @@ fn push_history_row(
 
         // Pick the "freshest" block covering this cell. Most recent
         // start_ms wins, matching nowview's draw order (later overwrites).
-        let mut color: Option<&str> = None;
+        // Track the full color list so a parallel-state block (`vertical,
+        // sit`) renders as a `▞` checkerboard glyph instead of borrowing
+        // only the first state's hue (per da-9vop).
+        let mut block_colors: Option<&[String]> = None;
         for b in &field.blocks {
             if b.start_ms < cell_end_ms && b.end_ms > cell_start_ms {
-                match color {
-                    None => color = Some(&b.color),
-                    Some(_) => color = Some(&b.color),
-                }
+                block_colors = Some(b.colors.as_slice());
             }
         }
 
@@ -199,9 +199,9 @@ fn push_history_row(
             .find(|p| p.time_ms >= cell_start_ms && p.time_ms < cell_end_ms)
             .map(|p| p.fg_color.as_str());
 
-        match (point_color, color) {
+        match (point_color, block_colors) {
             (Some(pc), _) => push_cell_point(out, pc, use_color),
-            (None, Some(c)) => push_cell_filled(out, c, use_color),
+            (None, Some(cs)) => push_block_cell(out, cs, use_color),
             (None, None) => push_cell_empty(out, use_color),
         }
 
@@ -214,12 +214,15 @@ fn push_history_row(
 /// Render the now-panel cells for one field. Paints all `cols` with the
 /// color of the block ongoing at `end_ms`, or a point at `end_ms` if any.
 fn push_now_row(out: &mut String, field: &NowviewField, end_ms: i64, cols: usize, use_color: bool) {
-    let active_color: Option<&str> = field
+    // Per da-9vop, parallel-state blocks must keep every member's colour
+    // so the cell can render as a `▞` checkerboard rather than borrowing
+    // only the first state's hue.
+    let active_colors: Option<&[String]> = field
         .blocks
         .iter()
         .filter(|b| b.start_ms <= end_ms && b.end_ms >= end_ms)
         .max_by_key(|b| b.start_ms)
-        .map(|b| b.color.as_str());
+        .map(|b| b.colors.as_slice());
 
     // A point in the very last second counts as "current".
     let recent_point: Option<&str> = field
@@ -230,14 +233,14 @@ fn push_now_row(out: &mut String, field: &NowviewField, end_ms: i64, cols: usize
         .map(|p| p.fg_color.as_str());
 
     for i in 0..cols {
-        match (recent_point, active_color) {
+        match (recent_point, active_colors) {
             // Paint the point as the right-most cell so it visually
             // aligns with "now"; rest is the active block fill.
-            (Some(pc), Some(bc)) => {
+            (Some(pc), Some(cs)) => {
                 if i + 1 == cols {
                     push_cell_point(out, pc, use_color);
                 } else {
-                    push_cell_filled(out, bc, use_color);
+                    push_block_cell(out, cs, use_color);
                 }
             }
             (Some(pc), None) => {
@@ -247,9 +250,20 @@ fn push_now_row(out: &mut String, field: &NowviewField, end_ms: i64, cols: usize
                     push_cell_empty(out, use_color);
                 }
             }
-            (None, Some(bc)) => push_cell_filled(out, bc, use_color),
+            (None, Some(cs)) => push_block_cell(out, cs, use_color),
             (None, None) => push_cell_empty(out, use_color),
         }
+    }
+}
+
+/// Block cell — paints either a solid colour (single-state) or a `▞`
+/// checkerboard glyph (parallel state, per da-9vop). Empty `colors`
+/// degrade to the empty-cell shading.
+fn push_block_cell(out: &mut String, colors: &[String], use_color: bool) {
+    match colors {
+        [] => push_cell_empty(out, use_color),
+        [hex] => push_cell_filled(out, hex, use_color),
+        _ => push_cell_parallel(out, &colors[0], &colors[1], use_color),
     }
 }
 
@@ -262,6 +276,22 @@ fn push_cell_filled(out: &mut String, hex: &str, use_color: bool) {
         }
     }
     out.push('█');
+}
+
+/// Parallel-state cell — `▞` glyph painted with bg=`hex_bg` + fg=`hex_fg`,
+/// matching the LEAD/TRAIL slot in `datum-commands::render::action`. With
+/// `use_color=false` we fall back to a plain `▞` so monochrome callers
+/// still see a "split cell" cue.
+fn push_cell_parallel(out: &mut String, hex_bg: &str, hex_fg: &str, use_color: bool) {
+    if use_color {
+        if let (Some((br, bg, bb)), Some((fr, fg, fb))) = (parse_hex(hex_bg), parse_hex(hex_fg)) {
+            out.push_str(&format!(
+                "\x1b[48;2;{br};{bg};{bb}m\x1b[38;2;{fr};{fg};{fb}m▞\x1b[0m",
+            ));
+            return;
+        }
+    }
+    out.push('▞');
 }
 
 /// Empty cell (no data).
@@ -416,7 +446,7 @@ mod tests {
             blocks: vec![NowviewBlock {
                 start_ms: now_ms - 30 * 60_000,
                 end_ms: now_ms, // ongoing
-                color: "#ff0000".into(),
+                colors: vec!["#ff0000".into()],
                 state_label: Some("happy".into()),
             }],
             points: vec![],
@@ -550,5 +580,56 @@ mod tests {
         let s = render_nowview_terminal(&[], &cfg(now));
         assert!(s.contains("(no fields)"));
         assert!(s.contains('└') && s.contains('┘'));
+    }
+
+    /// Per da-9vop, an ongoing parallel-state block (`vertical,sit`)
+    /// renders as `▞` checkerboard cells in the now-panel — proving each
+    /// member's colour is preserved instead of collapsing onto the first.
+    #[test]
+    fn parallel_state_block_renders_split_glyph() {
+        let now = 1_700_000_000_000_i64;
+        let fields = vec![NowviewField {
+            field: "body".into(),
+            blocks: vec![NowviewBlock {
+                start_ms: now - 30 * 60_000,
+                end_ms: now,
+                colors: vec!["#aa3333".into(), "#33aa33".into()],
+                state_label: Some("vertical,sit".into()),
+            }],
+            points: vec![],
+        }];
+        let s = render_nowview_terminal(&fields, &cfg(now));
+        assert!(
+            s.contains('▞'),
+            "expected parallel-state checker glyph in:\n{s}"
+        );
+        assert!(
+            !s.contains('█'),
+            "must not borrow single-state glyph for parallel block:\n{s}"
+        );
+    }
+
+    /// In ANSI mode, the parallel-state cell carries both colours (bg =
+    /// first state, fg = second state) so the `▞` glyph reads as a true
+    /// two-colour split rather than a monochrome cue.
+    #[test]
+    fn parallel_state_block_ansi_carries_both_colours() {
+        let now = 1_700_000_000_000_i64;
+        let mut c = cfg(now);
+        c.use_color = true;
+        let fields = vec![NowviewField {
+            field: "body".into(),
+            blocks: vec![NowviewBlock {
+                start_ms: now - 30 * 60_000,
+                end_ms: now,
+                colors: vec!["#ff0000".into(), "#00ff00".into()],
+                state_label: None,
+            }],
+            points: vec![],
+        }];
+        let s = render_nowview_terminal(&fields, &c);
+        assert!(s.contains("\x1b[48;2;255;0;0m"), "bg = first state: {s:?}");
+        assert!(s.contains("\x1b[38;2;0;255;0m"), "fg = second state: {s:?}");
+        assert!(s.contains('▞'), "checker glyph between bg+fg: {s:?}");
     }
 }

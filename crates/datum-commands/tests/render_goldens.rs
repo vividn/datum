@@ -790,7 +790,7 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
     let panel_entries = vec![NowviewPanelEntry {
         field: "mood".into(),
         state_label: Some("focused".into()),
-        color: "#4488cc".into(),
+        colors: vec!["#4488cc".into()],
     }];
     let svg = render_nowview_svg(&layout, "14:30", &panel_entries);
     DayviewLayoutResult { svg }

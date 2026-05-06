@@ -157,6 +157,31 @@ pub(crate) fn state_value_rgb(
     }
 }
 
+/// Resolve a JSON state value to one [`Rgb`] per parallel-state member.
+///
+/// Per da-9vop, a parallel state set (`switch body vertical,sit`) lands in
+/// the entry as a JSON array; each member must keep its own colour rather
+/// than the renderer borrowing only the first state's hue. Returns:
+///
+/// * Array → one `Rgb` per resolvable member (unresolvable members like
+///   `Bool(false)` are skipped, so a 2-element array with one bogus value
+///   degrades to a 1-element vec).
+/// * Scalar → 1-element vec, or empty when the scalar resolves to `None`
+///   (only `Bool(false)` does today).
+pub(crate) fn state_value_colors(
+    value: &JsonValue,
+    field: &str,
+    spec: Option<&FieldSpec>,
+) -> Vec<Rgb> {
+    match value {
+        JsonValue::Array(items) => items
+            .iter()
+            .filter_map(|v| state_value_rgb(v, field, spec))
+            .collect(),
+        _ => state_value_rgb(value, field, spec).into_iter().collect(),
+    }
+}
+
 // ─── TTY / color gating ──────────────────────────────────────────────────────
 
 /// ANSI colors are suppressed when stdout is not a TTY, when `NO_COLOR` is
@@ -289,5 +314,39 @@ mod tests {
     #[test]
     fn visible_width_ignores_escapes() {
         assert_eq!(visible_width("\x1b[32m●\x1b[0m"), 1);
+    }
+
+    /// Per da-9vop, a parallel state set (`["vertical","sit"]`) must yield
+    /// one [`Rgb`] per member so each state renders in its own colour
+    /// rather than collapsing onto the first state's hue.
+    #[test]
+    fn state_value_colors_returns_one_per_parallel_member() {
+        let value = JsonValue::Array(vec![
+            JsonValue::String("vertical".into()),
+            JsonValue::String("sit".into()),
+        ]);
+        let cs = state_value_colors(&value, "body", None);
+        assert_eq!(cs.len(), 2, "two-member array → two colours");
+        assert_eq!(cs[0], state_rgb("vertical", None), "first → vertical");
+        assert_eq!(cs[1], state_rgb("sit", None), "second → sit");
+        assert_ne!(cs[0], cs[1], "different states → different colours");
+    }
+
+    /// Single scalar input degrades to a one-element vec — the same
+    /// rendering surface as today's solid-block path.
+    #[test]
+    fn state_value_colors_for_scalar_returns_single_element() {
+        let value = JsonValue::String("happy".into());
+        let cs = state_value_colors(&value, "mood", None);
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0], state_rgb("happy", None));
+    }
+
+    /// `Bool(false)` (the "field has ended" sentinel) resolves to no
+    /// colour at all, matching `state_value_rgb`'s `None` return.
+    #[test]
+    fn state_value_colors_for_field_ended_is_empty() {
+        let cs = state_value_colors(&JsonValue::Bool(false), "f", None);
+        assert!(cs.is_empty(), "Bool(false) → no colour");
     }
 }

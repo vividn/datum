@@ -222,6 +222,10 @@ fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
 /// painted with the IGNORED grey rather than the old `∅`-glyph fallback.
 /// Only the explicit "field has ended" case (`Bool(false)` trail after a
 /// stop) renders as an uncoloured space.
+///
+/// Per da-9vop, a parallel state set (`["vertical","sit"]`) renders as a
+/// `▞` checkerboard glyph painted with the first state's bg + the second
+/// state's fg, so both colours are visible inside a single 1-cell slot.
 pub(crate) fn render_slot(
     state: Option<&JsonValue>,
     field: &str,
@@ -229,6 +233,7 @@ pub(crate) fn render_slot(
 ) -> String {
     match resolve_slot(state, field, spec) {
         SlotKind::State(rgb) => paint_bg(rgb, " "),
+        SlotKind::Parallel(bg, fg) => paint_bg_fg(bg, fg, SHADING),
         SlotKind::Ignored => paint_bg(Rgb::IGNORED, " "),
         SlotKind::FieldEnded => " ".to_string(),
     }
@@ -237,6 +242,9 @@ pub(crate) fn render_slot(
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SlotKind {
     State(Rgb),
+    /// Parallel state set — render as a checkerboard glyph with two
+    /// state colours (bg = first, fg = second).
+    Parallel(Rgb, Rgb),
     Ignored,
     FieldEnded,
 }
@@ -247,14 +255,23 @@ enum SlotKind {
 /// tracked state" as a regular prior state (IGNORED).
 /// `Some(Bool(false))` — the explicit "field has ended" sentinel — maps to
 /// [`SlotKind::FieldEnded`] so the trail renders as terminal-default
-/// whitespace rather than a coloured cell. Other values defer to
-/// [`state_value_rgb`].
+/// whitespace rather than a coloured cell. Array values with ≥2 resolvable
+/// member colours map to [`SlotKind::Parallel`]; arrays with 0–1
+/// distinguishable members fall back to single-state rendering.
 fn resolve_slot(state: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> SlotKind {
     match state {
         None => SlotKind::Ignored,
         Some(JsonValue::Null) => SlotKind::Ignored,
         Some(JsonValue::Bool(false)) => SlotKind::FieldEnded,
         Some(JsonValue::String(s)) if s == IGNORED_STATE => SlotKind::Ignored,
+        Some(JsonValue::Array(items)) if items.len() >= 2 => {
+            let mut iter = items.iter().filter_map(|v| state_value_rgb(v, field, spec));
+            match (iter.next(), iter.next()) {
+                (Some(c1), Some(c2)) => SlotKind::Parallel(c1, c2),
+                (Some(c1), None) => SlotKind::State(c1),
+                _ => SlotKind::Ignored,
+            }
+        }
         Some(v) => match state_value_rgb(v, field, spec) {
             Some(rgb) => SlotKind::State(rgb),
             None => SlotKind::Ignored,
@@ -283,7 +300,10 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
 }
 
 /// Render the switch state-badge body: scalar = solid coloured block; array
-/// = two adjacent blocks with a `state2`-coloured comma. See §7.
+/// = N adjacent blocks, each painted with its own state colour, separated
+/// by commas tinted with the next state's colour. Per da-9vop, every state
+/// in a parallel set must render in its own colour rather than borrowing
+/// the first state's hue.
 fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> String {
     match value {
         None => String::new(),
@@ -298,14 +318,16 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
         }
         Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), s),
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
-            let s1 = &items[0];
-            let s2 = &items[1];
-            let c1 = state_value_rgb(s1, field, spec).unwrap_or(Rgb::IGNORED);
-            let c2 = state_value_rgb(s2, field, spec).unwrap_or(Rgb::IGNORED);
             let mut out = String::new();
-            out.push_str(&paint_bg_fg(c1, c2, &scalar_text(s1)));
-            out.push_str(&paint(&c2.fg(), ","));
-            out.push_str(&paint_bg_fg(c1, c2, &scalar_text(s2)));
+            for (i, item) in items.iter().enumerate() {
+                let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
+                if i > 0 {
+                    // Comma separator tinted with the upcoming state's
+                    // colour, sitting between two bg-painted state cells.
+                    out.push_str(&paint(&color.fg(), ","));
+                }
+                out.push_str(&paint_bg(color, &scalar_text(item)));
+            }
             out
         }
         Some(JsonValue::Array(items)) if items.len() == 1 => {

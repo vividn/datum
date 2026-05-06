@@ -28,13 +28,19 @@ use crate::dayview::DayviewAxisTick;
 
 /// One block (closed or ongoing) inside a field row. Consumed by the
 /// terminal renderer in [`crate::nowview_terminal`].
+///
+/// Per da-9vop, parallel state sets (`switch body vertical,sit`) carry
+/// every member's colour: a 1-element `colors` is a regular single-state
+/// block; a 2+-element `colors` paints the cells as a checkerboard so
+/// each state is visible inside the terminal slot.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NowviewBlock {
     pub start_ms: i64,
     pub end_ms: i64,
-    /// Hex fill color (e.g. `#a1b2c3`). The caller resolves this from the
-    /// state via the project's color algorithm — the layout is color-blind.
-    pub color: String,
+    /// One or more hex fill colours (e.g. `#a1b2c3`) — one per active
+    /// state member. The caller resolves these from the value via the
+    /// project's colour algorithm; the layout is colour-blind.
+    pub colors: Vec<String>,
     /// Opaque label for hover / accessibility. Optional.
     pub state_label: Option<String>,
 }
@@ -63,6 +69,10 @@ pub struct NowviewField {
 /// now-line (per bead da-34w). The CLI resolves the active state per
 /// tracked field at "now" and passes the result as a list of these
 /// entries; the SVG overlay aligns each row to the matching field band.
+///
+/// Per da-9vop, parallel state sets carry every member's colour in
+/// `colors` so the swatch can render as a checkerboard combining each
+/// state's hue rather than borrowing only the first state's colour.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NowviewPanelEntry {
     pub field: String,
@@ -70,8 +80,10 @@ pub struct NowviewPanelEntry {
     /// state at "now" (e.g. an occur-only field with no recent dot); the
     /// row still renders the field name as a glanceable presence cue.
     pub state_label: Option<String>,
-    /// Hex fill color for the row's swatch and label.
-    pub color: String,
+    /// One or more hex fill colours — one per active state member. A
+    /// 1-element vector is a regular solid swatch; a 2+-element vector
+    /// renders as a checkerboard pattern in the SVG overlay.
+    pub colors: Vec<String>,
 }
 
 /// Pick the default SVG width when the user didn't pass `--width`. Mirrors

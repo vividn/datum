@@ -401,11 +401,14 @@ fn fx17_switch_scalar_with_array_prior_and_dur() {
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("momentary_single"));
     assert!(out.contains("1m"), "duration: {out:?}");
-    // Array prior/trail no longer emit a SHADING glyph in the slot — bg
-    // colour alone conveys the state. The state cell itself still uses
-    // SHADING for multi-state badges, but this fixture's state cell is
-    // scalar so no '▞' should appear.
-    assert!(!out.contains("▞"), "scalar state cell has no shading: {out:?}");
+    // Per da-9vop, parallel-state LEAD/TRAIL slots render as `▞`
+    // checkerboards so both member colours stay visible. The scalar state
+    // cell itself ("momentary_single") is still solid bg-painted text —
+    // verify by checking the slots wrap the badge directly with `▞`.
+    assert!(
+        out.contains("▞momentary_single▞"),
+        "parallel-state slots wrap scalar badge: {out:?}",
+    );
 }
 
 #[test]

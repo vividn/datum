@@ -36,7 +36,7 @@ use datum_parse::time::parse_duration_str::parse_duration;
 use serde_json::Value as JsonValue;
 
 use crate::args::NowviewArgs;
-use crate::render::colors::{field_rgb, md5_rgb, state_value_rgb, Rgb};
+use crate::render::colors::{field_rgb, md5_rgb, state_value_colors, state_value_rgb, Rgb};
 
 /// Default history window when the user omits `--history` (per bead da-6jy
 /// the user feedback was "scoped to last 30min").
@@ -412,25 +412,31 @@ fn build_panel_entries(
     for f in &day.fields {
         let spec = db.load_spec(&f.field).ok().flatten();
         let state = db.state_at(&f.field, end).ok().flatten();
-        let (state_label, color) = match state.as_ref() {
-            None => (None, rgb_to_hex(field_rgb(&f.field, spec.as_ref()))),
+        let (state_label, colors) = match state.as_ref() {
+            None => (None, vec![rgb_to_hex(field_rgb(&f.field, spec.as_ref()))]),
             Some(v) if is_unrendered_switch_value(Some(v)) => {
-                (None, rgb_to_hex(field_rgb(&f.field, spec.as_ref())))
+                (None, vec![rgb_to_hex(field_rgb(&f.field, spec.as_ref()))])
             }
             Some(v) => {
                 let label = match v {
                     JsonValue::String(s) => s.clone(),
                     other => other.to_string(),
                 };
-                let rgb = state_value_rgb(v, &f.field, spec.as_ref())
-                    .unwrap_or_else(|| field_rgb(&f.field, spec.as_ref()));
-                (Some(label), rgb_to_hex(rgb))
+                // Per da-9vop: parallel state sets keep every member's
+                // colour so the swatch can render as a checkerboard.
+                let rgbs = state_value_colors(v, &f.field, spec.as_ref());
+                let hex = if rgbs.is_empty() {
+                    vec![rgb_to_hex(field_rgb(&f.field, spec.as_ref()))]
+                } else {
+                    rgbs.into_iter().map(rgb_to_hex).collect()
+                };
+                (Some(label), hex)
             }
         };
         out.push(NowviewPanelEntry {
             field: f.field.clone(),
             state_label,
-            color,
+            colors,
         });
     }
     out
@@ -801,14 +807,21 @@ fn push_block_terminal(
         return;
     }
     let start_ms = occur_ms - dur_secs * 1000;
-    let color = match entry.state.as_ref() {
-        Some(v) => state_value_rgb(v, field, spec).unwrap_or_else(|| md5_rgb(field)),
-        None => md5_rgb(field),
+    let colors = match entry.state.as_ref() {
+        Some(v) => {
+            let rgbs = state_value_colors(v, field, spec);
+            if rgbs.is_empty() {
+                vec![rgb_to_hex(md5_rgb(field))]
+            } else {
+                rgbs.into_iter().map(rgb_to_hex).collect()
+            }
+        }
+        None => vec![rgb_to_hex(md5_rgb(field))],
     };
     blocks.push(NowviewBlock {
         start_ms,
         end_ms: occur_ms,
-        color: rgb_to_hex(color),
+        colors,
         state_label: state_label(entry.state.as_ref()),
     });
 }
@@ -827,14 +840,21 @@ fn push_switch_region_terminal(
     if region_end_ms <= start_ms {
         return;
     }
-    let color = match value {
-        Some(v) => state_value_rgb(v, field, spec).unwrap_or_else(|| md5_rgb(field)),
-        None => md5_rgb(field),
+    let colors = match value {
+        Some(v) => {
+            let rgbs = state_value_colors(v, field, spec);
+            if rgbs.is_empty() {
+                vec![rgb_to_hex(md5_rgb(field))]
+            } else {
+                rgbs.into_iter().map(rgb_to_hex).collect()
+            }
+        }
+        None => vec![rgb_to_hex(md5_rgb(field))],
     };
     blocks.push(NowviewBlock {
         start_ms,
         end_ms: region_end_ms,
-        color: rgb_to_hex(color),
+        colors,
         state_label: state_label(value),
     });
 }

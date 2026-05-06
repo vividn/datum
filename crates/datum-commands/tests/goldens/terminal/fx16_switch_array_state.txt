@@ -1,1 +1,1 @@
-17:12:13+0  field  multi1,multi2 
+17:12:13+0  field  multi1,multi2▞
