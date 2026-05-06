@@ -22,6 +22,7 @@ use chrono::{DateTime, Local, TimeZone, Timelike, Utc};
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
+use datum_core::shape::{is_switching_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_layout::dayview::{
     compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
     DayviewFieldInput, DayviewPoint, Orientation,
@@ -439,18 +440,6 @@ fn rgb_to_hex(rgb: Rgb) -> String {
     format!("#{:02x}{:02x}{:02x}", rgb.r, rgb.g, rgb.b)
 }
 
-/// Switch values that should not produce a colored region. Mirrors original
-/// datum's `simplifyState === null || false` short-circuit: a switch to
-/// null/false/IGNORED ends a state but does not start a new colored region.
-fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
-    match v {
-        None | Some(JsonValue::Null) => true,
-        Some(JsonValue::Bool(false)) => true,
-        Some(JsonValue::String(s)) if s == IGNORED_STATE_VALUE => true,
-        _ => false,
-    }
-}
-
 fn is_ignored_or_false(v: &JsonValue) -> bool {
     matches!(v, JsonValue::Bool(false))
         || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
@@ -493,7 +482,7 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
     let mut out = vec![fallback_end_ms; entries.len()];
     let mut next_occur_ms: Option<i64> = None;
     for (i, entry) in entries.iter().enumerate().rev() {
-        if is_switching_verb(&canonical_verb(entry)) {
+        if is_switching_verb(canonical_verb(entry)) {
             out[i] = next_occur_ms.unwrap_or(fallback_end_ms);
             if let Some(ms) = occur_time_ms_opt(entry) {
                 next_occur_ms = Some(ms);
@@ -501,13 +490,6 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
         }
     }
     out
-}
-
-fn is_switching_verb(verb: &Verb) -> bool {
-    matches!(
-        verb,
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch
-    )
 }
 
 fn canonical_verb(entry: &Entry) -> Verb {
@@ -549,7 +531,13 @@ fn render_field_visuals(
         };
         let occur_ms = occur_dt.utc.timestamp_millis();
 
-        match canonical_verb(entry) {
+        let verb = canonical_verb(entry);
+        // Centralized Hidden gate (datum_core::shape::render_shape).
+        if render_shape(verb, entry.entry_shape, &entry.state) == RenderShape::Hidden {
+            continue;
+        }
+
+        match verb {
             Verb::Block => {
                 push_block_window(
                     &mut blocks,
@@ -719,7 +707,13 @@ fn render_field_visuals_terminal(
         };
         let occur_ms = occur_dt.utc.timestamp_millis();
 
-        match canonical_verb(entry) {
+        let verb = canonical_verb(entry);
+        // Centralized Hidden gate (datum_core::shape::render_shape).
+        if render_shape(verb, entry.entry_shape, &entry.state) == RenderShape::Hidden {
+            continue;
+        }
+
+        match verb {
             Verb::Block => {
                 push_block_terminal(&mut blocks, entry, occur_ms, field, spec);
             }

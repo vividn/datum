@@ -21,6 +21,7 @@ use datum_core::conflicts::ListFilter;
 use datum_core::db::{Db, ListParams, TimeMetric, IGNORED_STATE_VALUE};
 use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
+use datum_core::shape::{is_switching_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_layout::dayview::{
     compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
     DayviewFieldInput, DayviewPoint, Orientation,
@@ -474,17 +475,6 @@ fn is_ignored_or_false(v: &JsonValue) -> bool {
         || matches!(v, JsonValue::String(s) if s == IGNORED_STATE_VALUE)
 }
 
-/// Switch values that should not produce a colored region. Mirrors original
-/// datum's `simplifyState === null || false` short-circuit in
-/// `fieldSvgBlocks.ts`: a switch to null / false / IGNORED ends a state but
-/// does not start a new one.
-fn is_unrendered_switch_value(v: Option<&JsonValue>) -> bool {
-    match v {
-        None | Some(JsonValue::Null) => true,
-        Some(v) => is_ignored_or_false(v),
-    }
-}
-
 /// For each entry, the UTC-ms end-time of its switch region (the occur_time
 /// of the next switching event on the same field, or `fallback_end_ms` if
 /// it's the last). Non-switching entries get `fallback_end_ms` (callers only
@@ -499,7 +489,7 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
     let mut out = vec![fallback_end_ms; entries.len()];
     let mut next_occur_ms: Option<i64> = None;
     for (i, entry) in entries.iter().enumerate().rev() {
-        if is_switching_verb(&canonical_verb(entry)) {
+        if is_switching_verb(canonical_verb(entry)) {
             out[i] = next_occur_ms.unwrap_or(fallback_end_ms);
             if let Some(ms) = occur_time_ms_opt(entry) {
                 next_occur_ms = Some(ms);
@@ -509,19 +499,11 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
     out
 }
 
-/// True for verbs whose `occur_time` updates the field's prevailing state.
-fn is_switching_verb(verb: &Verb) -> bool {
-    matches!(
-        verb,
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch
-    )
-}
-
 /// Canonical verb for an entry. da-5ns.3 wired `derive_verb` into the
 /// insert/update path so the stored `verb` column is authoritative; the
 /// render dispatches on it directly.
 fn canonical_verb(entry: &Entry) -> Verb {
-    entry.verb.clone()
+    entry.verb
 }
 
 /// Sort key for an entry's effective time. Falls back to i64::MIN so
@@ -574,7 +556,15 @@ fn render_field_visuals_dayview(
         };
         let occur_ms = occur_dt.utc.timestamp_millis();
 
-        match canonical_verb(entry) {
+        let verb = canonical_verb(entry);
+        // Centralized Hidden gate: a `Switch` to null/false/IGNORED
+        // terminates state without opening a region. Block-style and
+        // point-style verbs always reach the per-verb arms below.
+        if render_shape(verb, entry.entry_shape, &entry.state) == RenderShape::Hidden {
+            continue;
+        }
+
+        match verb {
             Verb::Block => {
                 push_block_window(
                     &mut blocks,
@@ -810,20 +800,6 @@ mod tests {
             BlockFill::Single(c) => assert_eq!(c, rgb_to_hex(md5_rgb("mood"))),
             _ => panic!("expected single fill"),
         }
-    }
-
-    #[test]
-    fn unrendered_switch_value_skips_null_false_ignored() {
-        assert!(is_unrendered_switch_value(None));
-        assert!(is_unrendered_switch_value(Some(&JsonValue::Null)));
-        assert!(is_unrendered_switch_value(Some(&JsonValue::Bool(false))));
-        assert!(is_unrendered_switch_value(Some(&JsonValue::String(
-            IGNORED_STATE_VALUE.into()
-        ))));
-        assert!(!is_unrendered_switch_value(Some(&JsonValue::String(
-            "happy".into()
-        ))));
-        assert!(!is_unrendered_switch_value(Some(&JsonValue::Bool(true))));
     }
 
     #[test]
