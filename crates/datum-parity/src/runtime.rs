@@ -124,7 +124,6 @@ impl DatumRuntime {
 
         let mut cmd = Command::new("pnpm");
         cmd.arg("dev")
-            .arg("--")
             .args(args)
             .current_dir(&self.repo)
             .env("DATUM_HOST", host_dir)

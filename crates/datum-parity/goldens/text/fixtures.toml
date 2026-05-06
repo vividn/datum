@@ -1,0 +1,246 @@
+# Text-output goldens for original-datum.
+#
+# Each `[[fixture]]` describes:
+#   * `name`        — stable id, used as `expected/<name>.txt` filename.
+#                     `[a-z0-9_]+`, unique within the bundle.
+#   * `description` — human-readable purpose, surfaced on test failure.
+#   * `surface`     — `get` | `tail` | `dayview` | `nowview` (the CLI
+#                     surface this fixture exercises).
+#   * `setup`       — array of arg vectors run before `query` to seed
+#                     state. Use `-d YYYY-MM-DD -t HHMM` flags for
+#                     deterministic time pinning.
+#   * `query`       — single arg vector whose stdout we pin.
+#
+# The committed `expected/<name>.txt` file is the captured stdout from
+# running this fixture under `parity-runtime`. To regenerate after
+# pinning a new datum SHA, run:
+#
+#   cargo test --features parity-runtime -p datum-parity \
+#     -- text_goldens_match_live_datum --nocapture
+#
+# with `PARITY_REGEN=1` set.
+#
+# Adding a fixture: pick a new `name`, write its setup + query, run with
+# PARITY_REGEN=1 to capture, audit the diff in `expected/<name>.txt`,
+# commit both files together.
+
+# ─── get: single-record reads ────────────────────────────────────────────────
+
+[[fixture]]
+name = "get_occur_default"
+description = "default `get` on a point-time occur entry"
+surface = "get"
+setup = [
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+]
+query = ["get", "coffee:2024-01-15T08:00:00.000Z"]
+
+[[fixture]]
+name = "get_switch_state"
+description = "default `get` on a switch entry with a state value"
+surface = "get"
+setup = [
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "1000"],
+]
+query = ["get", "mood:2024-01-15T09:00:00.000Z"]
+
+[[fixture]]
+name = "get_start_block"
+description = "`get` on a start (block) entry — captures `start` shape"
+surface = "get"
+setup = [
+  ["start", "work", "-d", "2024-01-15", "-t", "0930"],
+]
+query = ["get", "work:2024-01-15T08:30:00.000Z"]
+
+[[fixture]]
+name = "get_with_extra_data"
+description = "`get` on an occur entry with key=value extra data"
+surface = "get"
+setup = [
+  ["occur", "weight", "value=75.2", "-d", "2024-01-15", "-t", "0700"],
+]
+query = ["get", "weight:2024-01-15T06:00:00.000Z"]
+
+[[fixture]]
+name = "get_with_unit"
+description = "`get` with a unit annotation (TS-side parses `=NUM<unit>`)"
+surface = "get"
+setup = [
+  ["occur", "caffeine", "-d", "2024-01-15", "-t", "1000", "amount=200mg"],
+]
+query = ["get", "caffeine:2024-01-15T09:00:00.000Z"]
+
+[[fixture]]
+name = "get_show_all"
+description = "`get -A` shows full document (data + meta) for one entry"
+surface = "get"
+setup = [
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+]
+query = ["get", "coffee:2024-01-15T08:00:00.000Z", "-A"]
+
+# ─── tail: multi-record reads ────────────────────────────────────────────────
+
+[[fixture]]
+name = "tail_default_three_entries"
+description = "default `tail` shows the most recent N (datum default = 10)"
+surface = "tail"
+setup = [
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "1430"],
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "1000"],
+]
+query = ["tail"]
+
+[[fixture]]
+name = "tail_field_filter"
+description = "`tail FIELD` filters to a single field"
+surface = "tail"
+setup = [
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "1430"],
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "1000"],
+]
+query = ["tail", "coffee"]
+
+[[fixture]]
+name = "tail_n_2"
+description = "`tail -n 2` limits to the 2 most recent rows"
+surface = "tail"
+setup = [
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0700"],
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "1100"],
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "1300"],
+]
+query = ["tail", "-n", "2"]
+
+[[fixture]]
+name = "tail_state_transitions"
+description = "`tail` after switch chain — left-char arrow points to prior state"
+surface = "tail"
+setup = [
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "0900"],
+  ["switch", "mood", "sad",   "-d", "2024-01-15", "-t", "1500"],
+  ["switch", "mood", "tired", "-d", "2024-01-15", "-t", "2200"],
+]
+query = ["tail", "mood"]
+
+[[fixture]]
+name = "tail_block_pair"
+description = "`tail` after start/end — paired block, dur derived"
+surface = "tail"
+setup = [
+  ["start", "work", "-d", "2024-01-15", "-t", "0930"],
+  ["end",   "work", "-d", "2024-01-15", "-t", "1230"],
+]
+query = ["tail", "work"]
+
+[[fixture]]
+name = "tail_mixed_fields"
+description = "`tail` over multiple fields — coverage of mixed shapes"
+surface = "tail"
+setup = [
+  ["occur",  "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["start",  "work",   "-d", "2024-01-15", "-t", "0930"],
+  ["switch", "mood",   "happy", "-d", "2024-01-15", "-t", "1000"],
+  ["end",    "work",   "-d", "2024-01-15", "-t", "1230"],
+  ["occur",  "lunch",  "-d", "2024-01-15", "-t", "1300"],
+]
+query = ["tail"]
+
+[[fixture]]
+name = "tail_spec_field_color"
+description = "`tail` on a mySpec-overridden field (sleep) — locks color path"
+surface = "tail"
+setup = [
+  ["start", "sleep", "-d", "2024-01-14", "-t", "2300"],
+  ["end",   "sleep", "-d", "2024-01-15", "-t", "0700"],
+]
+query = ["tail", "sleep"]
+
+# ─── nowview: current-state visualization ────────────────────────────────────
+
+[[fixture]]
+name = "nowview_single_field"
+description = "`nowview FIELD` — current state of one field"
+surface = "nowview"
+setup = [
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "1000"],
+]
+query = ["nowview", "mood"]
+
+[[fixture]]
+name = "nowview_after_state_chain"
+description = "`nowview` after multiple switches — final state is the visible one"
+surface = "nowview"
+setup = [
+  ["switch", "mood", "happy", "-d", "2024-01-15", "-t", "0900"],
+  ["switch", "mood", "sad",   "-d", "2024-01-15", "-t", "1200"],
+  ["switch", "mood", "tired", "-d", "2024-01-15", "-t", "1800"],
+]
+query = ["nowview", "mood"]
+
+[[fixture]]
+name = "nowview_block_open"
+description = "`nowview` while a block is open — should reflect state=true"
+surface = "nowview"
+setup = [
+  ["start", "work", "-d", "2024-01-15", "-t", "0930"],
+]
+query = ["nowview", "work"]
+
+[[fixture]]
+name = "nowview_block_closed"
+description = "`nowview` after a closed block — should reflect state=false"
+surface = "nowview"
+setup = [
+  ["start", "work", "-d", "2024-01-15", "-t", "0930"],
+  ["end",   "work", "-d", "2024-01-15", "-t", "1230"],
+]
+query = ["nowview", "work"]
+
+# ─── dayview: timeline visualization ─────────────────────────────────────────
+
+[[fixture]]
+name = "dayview_single_day"
+description = "`dayview` for a single day with mixed entries"
+surface = "dayview"
+setup = [
+  ["occur",  "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["start",  "work",   "-d", "2024-01-15", "-t", "0930"],
+  ["switch", "mood",   "happy", "-d", "2024-01-15", "-t", "1000"],
+  ["end",    "work",   "-d", "2024-01-15", "-t", "1700"],
+]
+query = ["dayview", "-d", "2024-01-15"]
+
+[[fixture]]
+name = "dayview_filtered_field"
+description = "`dayview` with field filter — only mood entries appear"
+surface = "dayview"
+setup = [
+  ["occur",  "coffee", "-d", "2024-01-15", "-t", "0900"],
+  ["switch", "mood",   "happy", "-d", "2024-01-15", "-t", "1000"],
+  ["switch", "mood",   "sad",   "-d", "2024-01-15", "-t", "1500"],
+]
+query = ["dayview", "-d", "2024-01-15", "mood"]
+
+[[fixture]]
+name = "dayview_spec_color_field"
+description = "`dayview` exercises a mySpec-overridden field (sleep) → spec color"
+surface = "dayview"
+setup = [
+  ["start", "sleep", "-d", "2024-01-14", "-t", "2300"],
+  ["end",   "sleep", "-d", "2024-01-15", "-t", "0700"],
+]
+query = ["dayview", "-d", "2024-01-15"]
+
+[[fixture]]
+name = "dayview_empty_day"
+description = "`dayview` on a day with no entries — empty timeline"
+surface = "dayview"
+setup = [
+  ["occur", "coffee", "-d", "2024-01-15", "-t", "0900"],
+]
+query = ["dayview", "-d", "2024-01-20"]

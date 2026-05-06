@@ -1,0 +1,17 @@
+[33mEXISTS[39m [33mlu4d1[39m [90mcoffee:2024-01-15T08:00:00.000Z[39m
+2024-01-15 09:00:00[90m+1[39m [48;2;36;235;5m[38;2;0;0;0mcoffee[39m[49m [48;2;136;136;136m[38;2;102;102;102m[38;2;36;235;5m●[39m[39m[49m
+{ data: { occurTime: { utc: "2024-01-15T08:00:00.000Z",
+                         o:  1,
+                        tz: "Europe/Paris"              },
+              field:   "coffee",
+          lastState:    null                               },
+  meta: {     humanId:   "lu4d1nntbqfol73envd6e",
+           createTime: { utc: "2026-05-06T23:10:41.224Z",
+                           o:  2,
+                          tz: "Europe/Paris"              },
+           modifyTime: { utc: "2026-05-06T23:10:41.224Z",
+                           o:  2,
+                          tz: "Europe/Paris"              },
+          idStructure:   "%occurTime%"                       },
+   _id:   "coffee:2024-01-15T08:00:00.000Z",
+  _rev:   "1-49a2ec856376f18796c47215f222828a"                  }
