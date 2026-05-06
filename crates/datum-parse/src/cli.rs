@@ -736,8 +736,16 @@ pub struct CheckArgs {
     /// check still runs as part of the default battery; this flag narrows
     /// the report to that one category.
     pub verbs: bool,
+    /// `--aliases` — run only the alias checks: cross-spec state-name
+    /// collisions, orphaned user/kit aliases (chain ends in an unknown
+    /// name), and cycles in alias-chain expansion. When unset, these
+    /// checks still run as part of the default battery; this flag narrows
+    /// the report to alias categories only.
+    pub aliases: bool,
     /// `--fix` — rewrite drifted `verb` columns to match `derive_verb`.
-    /// Only meaningful in combination with verb-drift detection.
+    /// For `--aliases`, annotates state-name collisions with the explicit
+    /// first-saved-wins resolution (no DB mutation — the precedence is
+    /// already deterministic in [`SpecAliasIndex`]).
     pub fix: bool,
 }
 

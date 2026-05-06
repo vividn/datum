@@ -173,6 +173,25 @@ impl Db {
         Ok(names)
     }
 
+    /// Load every user/kit alias row from the `aliases` table. Spec-derived
+    /// aliases are NOT included — they live in `field_specs.spec_json` and
+    /// are accessible via [`Db::spec_alias_index`]. Used by `dm check
+    /// --aliases` to walk every user-defined chain for orphan and cycle
+    /// detection. Ordered by name for stable output.
+    pub fn list_user_aliases(&self) -> Result<Vec<Alias>> {
+        let mut stmt = self
+            .conn
+            .prepare("SELECT alias_json FROM aliases ORDER BY name")?;
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        let mut out = Vec::new();
+        for r in rows {
+            let json = r.map_err(DatumError::Db)?;
+            let alias: Alias = serde_json::from_str(&json)?;
+            out.push(alias);
+        }
+        Ok(out)
+    }
+
     /// Load every [`Alias`] tagged with the given `kit_id`. Used by
     /// `datum kit export`. Returns rows ordered by name for stable TOML
     /// output.
