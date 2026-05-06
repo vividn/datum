@@ -684,7 +684,13 @@ mod tests {
     #[test]
     fn check_reports_time_end_before_start() {
         let db = Db::open_in_memory().unwrap();
-        // Intentional: end precedes start.
+        // Under v3 (da-5ns) duration is captured by an ISO-string `dur`
+        // column and `Entry::new_legacy` clamps a negative time delta to
+        // zero before insert (`(end - start).num_seconds().max(0)`).
+        // Combined with `derive_verb`'s rejection of negative ISO
+        // durations, "end before start" can no longer reach the entries
+        // table — `find_time_end_before_start` returns empty. Locking
+        // in: the check pass succeeds without flagging this category.
         let start = t_at("2024-01-01T10:00:00+00:00");
         let end = t_at("2024-01-01T09:00:00+00:00");
         let entry = Entry::new_legacy(
@@ -700,16 +706,13 @@ mod tests {
         db.insert_entry(&entry).unwrap();
 
         let report = collect_issues(&db).unwrap();
-        assert!(report.has_errors(), "time_end<time_start must be an error");
-        let issue = report
-            .issues
-            .iter()
-            .find(|i| i.category == "time_end_before_start")
-            .expect("time_end_before_start issue must be reported");
-        assert_eq!(issue.severity, Severity::Error);
-        assert_eq!(issue.count, 1);
-        let example = issue.example.as_ref().unwrap();
-        assert_eq!(example.field.as_deref(), Some("work"));
+        assert!(
+            report
+                .issues
+                .iter()
+                .all(|i| i.category != "time_end_before_start"),
+            "time_end_before_start is unrepresentable under v3 — check should not flag it",
+        );
     }
 
     #[test]

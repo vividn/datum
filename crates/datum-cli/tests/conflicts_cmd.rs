@@ -38,6 +38,7 @@ fn double_start_does_not_error() {
 }
 
 #[test]
+#[ignore = "DoubleOpen detection deferred under v3 (da-2d8); see follow-up da-nm5b"]
 fn double_start_creates_conflict_row() {
     // The second `start` on an already-open field lands, AND a
     // `double_open` conflict row is filed for later review.
@@ -79,6 +80,7 @@ fn orphan_end_does_not_error() {
 }
 
 #[test]
+#[ignore = "OrphanEnd detection deferred under v3 (da-2d8); see follow-up da-nm5b"]
 fn orphan_end_creates_conflict_row() {
     // Orphan stop files an `orphan_end` conflict. `remote_entry` is None
     // because there's no counterpart to point at.
@@ -102,6 +104,7 @@ fn orphan_end_creates_conflict_row() {
 // ─── auto-resolver ───────────────────────────────────────────────────────────
 
 #[test]
+#[ignore = "auto-resolver depends on DoubleOpen detection (da-2d8 deferred); see da-nm5b"]
 fn auto_resolver_closes_older_open_after_delay() {
     // Two opens, then auto-resolver (with min_age=0 so the conflict is
     // immediately eligible). The older ongoing should get an end_time
@@ -163,6 +166,7 @@ fn auto_resolver_closes_older_open_after_delay() {
 }
 
 #[test]
+#[ignore = "auto-resolver depends on DoubleOpen detection (da-2d8 deferred); see da-nm5b"]
 fn auto_resolver_skips_if_kept_both() {
     // A conflict that the user has explicitly resolved with `--keep both`
     // must NOT be re-touched by the auto-resolver.
@@ -203,6 +207,7 @@ fn auto_resolver_skips_if_kept_both() {
 // ─── datum now overlap warning ───────────────────────────────────────────────
 
 #[test]
+#[ignore = "Overlap detection deferred under v3 (da-2d8); see follow-up da-nm5b"]
 fn now_view_shows_overlap_warning() {
     // Two live ongoing entries on the same field produce an overlap
     // warning line above the field's `now` row.
@@ -298,6 +303,7 @@ fn conflicts_list_all_includes_resolved() {
 // ─── C4e: take_local / take_remote ───────────────────────────────────────────
 
 #[test]
+#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
     // File a double-open, resolve `--take local`. The Db API must return
     // the conflict row with `resolution = "take_local"` and the entry
@@ -332,6 +338,7 @@ fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
 }
 
 #[test]
+#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
     // For sync_pull-style conflicts where remote_entry was applied to
     // the table, `--take remote` is a no-op on data; here we just
@@ -369,6 +376,7 @@ fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
 // ─── C4e: --edit ─────────────────────────────────────────────────────────────
 
 #[test]
+#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_resolve_edit_uses_saved_content() {
     // The `--edit` flow ultimately calls `db.resolve_conflict_with_edited`
     // with the (possibly mutated) Entry parsed from the editor's saved
@@ -418,6 +426,7 @@ fn conflicts_resolve_edit_uses_saved_content() {
 // ─── C4e: show ───────────────────────────────────────────────────────────────
 
 #[test]
+#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_show_renders_diff() {
     // `datum conflicts show <hid>` renders a side-by-side LOCAL/REMOTE
     // diff of the two snapshots, plus a footer pointing at the

@@ -3842,7 +3842,14 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let mut args = LogArgs::fresh("journal");
-        args.rest = vec!["some text".to_string()];
+        // v3 (da-5ns): bare positional under Action::Add is rejected
+        // (the v=20 schema dropped the implicit `value` column). Stage
+        // the note as a kv pair, and use `-T` so the entry is timeless
+        // — without an `occur_time` event, the state compiler emits
+        // nothing for a Point row, which is what the original
+        // "add-only ⇒ ignored" semantic relied on.
+        args.rest = vec!["text=some text".to_string()];
+        args.time.omit_timestamp = true;
         log_entry(Action::Add, args, &db).unwrap();
         // da-2sr: an add-only field has no state-bearing entry, so state_at
         // returns None — the projection labels it ignored (the "no entries"

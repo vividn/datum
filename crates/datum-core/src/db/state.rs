@@ -85,6 +85,11 @@ impl Db {
         let placeholders = std::iter::repeat_n("?", fields.len())
             .collect::<Vec<_>>()
             .join(",");
+        // v3 (da-5ns): the legacy `add` verb is gone — Action::Add now
+        // routes to Verb::Point. The "skip add-only entries when computing
+        // tracked-field state" rule survives via the slug `:unset` marker
+        // applied to timeless rows (see log_entry's -T path and build_slug
+        // in entry.rs).
         let sql = format!(
             "SELECT field, state FROM (
                 SELECT field, state,
@@ -94,7 +99,7 @@ impl Db {
                   ) AS rn
                 FROM entries
                 WHERE field IN ({placeholders})
-                  AND verb != 'add'
+                  AND slug NOT LIKE '%:unset'
                   AND deleted_at IS NULL
                   AND {endbound} <= ?
             ) WHERE rn = 1"

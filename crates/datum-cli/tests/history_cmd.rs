@@ -20,6 +20,10 @@ fn history_command_lists_versions_newest_first() {
 
     // Record a user_edit so history has at least two versions to list.
     let mut v2 = v1.clone();
+    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
+    // is a compat shim that the storage layer doesn't read. Update both
+    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
     db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
         .expect("v2 user_edit");
@@ -51,6 +55,10 @@ fn history_diff_between_versions() {
         .insert(&db);
 
     let mut v2 = v1.clone();
+    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
+    // is a compat shim that the storage layer doesn't read. Update both
+    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
     db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
         .expect("v2 user_edit");
@@ -67,8 +75,11 @@ fn history_diff_between_versions() {
     let snap_v2 = datum_core::history::state_at_version(db.conn(), &v1.hid, 2, Some(&current))
         .unwrap()
         .expect("v2 state");
-    assert_eq!(snap_v1.value, Some(serde_json::json!("happy")));
-    assert_eq!(snap_v2.value, Some(serde_json::json!("sad")));
+    // v3 (da-5ns): primary state lives in `entry.state`; the legacy
+    // `entry.value` shim is populated from state at construction but not
+    // reliably round-tripped through history snapshots.
+    assert_eq!(snap_v1.state, Some(serde_json::json!("happy")));
+    assert_eq!(snap_v2.state, Some(serde_json::json!("sad")));
 }
 
 #[test]
@@ -81,6 +92,10 @@ fn undo_restores_entry_state() {
 
     // Mutate the entry: v2 carries value="sad".
     let mut v2 = v1.clone();
+    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
+    // is a compat shim that the storage layer doesn't read. Update both
+    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
     db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
         .expect("v2 user_edit");
@@ -113,6 +128,10 @@ fn why_full_traces_through_history() {
 
     // Record a second version so --full has something to walk.
     let mut v2 = v1.clone();
+    // v3 (da-5ns): primary state lives in `entry.state`; `entry.value`
+    // is a compat shim that the storage layer doesn't read. Update both
+    // so direct EntryBuilder edits round-trip through the v=20 schema.
+    v2.state = Some(serde_json::json!("sad"));
     v2.value = Some(serde_json::json!("sad"));
     db.insert_entry_with_strategy(&v2, ConflictStrategy::Update)
         .expect("v2 user_edit");

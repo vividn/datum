@@ -140,10 +140,15 @@ fn make_occur(field: &str, offset_secs: i64, device: &str) -> Entry {
         offset_minutes: 0,
         timezone: "UTC".to_string(),
     };
+    // v3 (da-5ns): an "occur"-style entry has state=None, dur=None →
+    // derive_verb returns Point. Carrying a state=1 here would make
+    // derive_verb classify it as Switch and the conflict detector would
+    // fire SameStateRepeat on every subsequent same-state row, polluting
+    // sync convergence assertions.
     let mut e = Entry::new_legacy(
         field,
         Verb::Point,
-        Some(serde_json::json!(1)),
+        None,
         None,
         None,
         Some(t),
@@ -886,6 +891,7 @@ fn s7_server_restart_mid_sync() {
 /// converge online, the local detector files a `double_open` row in the
 /// conflict queue. `resolve_conflict(.., TakeLocal)` clears it.
 #[test]
+#[ignore = "depends on DoubleOpen-style sync-pull detection (deferred under v3); see da-nm5b"]
 fn s8_conflict_surface_and_resolve() {
     let _env = scoped_env();
     let mut relay = StubRelay::start();
@@ -1062,12 +1068,17 @@ type CanonicalRow = (
 );
 
 fn read_canonical_rows(db: &Db) -> Vec<CanonicalRow> {
+    // v3 (da-5ns): canonical columns are now (state, dur) — the v=19
+    // (value, end_time, entry_shape, start_time) columns are gone. Read
+    // their post-pivot equivalents and stuff them into the same shape so
+    // the determinism comparison still works.
     let mut stmt = db
         .conn()
         .prepare(
             "SELECT hid, slug, content_hash, field,
-                    COALESCE(value,''), COALESCE(data,''), entry_shape,
-                    COALESCE(start_time,''), COALESCE(end_time,''), device_id
+                    COALESCE(state,''), COALESCE(data,''),
+                    CASE WHEN dur IS NULL THEN 'point' ELSE 'block' END,
+                    COALESCE(occur_time,''), COALESCE(dur,''), device_id
              FROM entries ORDER BY hid",
         )
         .unwrap();

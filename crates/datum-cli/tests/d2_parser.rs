@@ -100,11 +100,17 @@ fn dash_k_affects_data_not_slug() {
 #[test]
 fn retime_overwrites_precision_from_new_input() {
     let db = fresh_db();
-    // Seed an entry with a well-known precision (exact / 0s).
+    // Seed an entry with a well-known precision (exact — `occur_time_precision`
+    // unset / NULL).
     run_cli(&["occur", "coffee", "-t", "12:00"], &db).expect("seed entry");
     let seeded = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_eq!(seeded.start_time_precision, 0);
-    assert_eq!(seeded.start_time_precision_unit, PrecisionUnit::Exact);
+    // v3 (da-5ns): `occur_time_precision` is a single ISO-8601 duration
+    // string (NULL == exact), replacing the v=19 (seconds, unit) pair.
+    assert!(
+        seeded.occur_time_precision.is_none(),
+        "exact precision is NULL on the v=20 column; got {:?}",
+        seeded.occur_time_precision,
+    );
     let slug = seeded.slug.clone();
 
     // Retime with a ±5m uncertainty on the fresh input — precision replaces,
@@ -112,8 +118,15 @@ fn retime_overwrites_precision_from_new_input() {
     run_cli(&["retime", &slug, "-t", "13:00±5m"], &db).expect("retime -t");
 
     let after = db.get_entry(&slug).unwrap();
-    assert_eq!(after.start_time_precision, 5 * 60);
-    assert_eq!(after.start_time_precision_unit, PrecisionUnit::Minute);
+    let _ = PrecisionUnit::Exact; // keep the import live for the legacy reference below.
+    let precision = after
+        .occur_time_precision
+        .as_deref()
+        .expect("retime sets occur_time_precision");
+    assert_eq!(
+        precision, "PT5M",
+        "5-minute uncertainty serializes as ISO-8601 PT5M",
+    );
 }
 
 /// Every new entry written through the parser carries the current

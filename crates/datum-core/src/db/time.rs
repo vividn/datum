@@ -32,11 +32,11 @@ impl Db {
         &self,
         filter: &RetimeFilter,
         new_start: &crate::time::DatumTime,
-        _precision_seconds: u32,
+        precision_seconds: u32,
         precision_unit: &str,
     ) -> Result<usize> {
         let entries = select_retime_targets(self, filter)?;
-        let precision_iso = precision_unit_to_iso(precision_unit);
+        let precision_iso = precision_to_iso(precision_seconds, precision_unit);
         let mut count = 0usize;
         for mut e in entries {
             let old_slug = e.slug.clone();
@@ -232,13 +232,29 @@ mod tests {
 /// Map a precision-unit name ("second", "minute", "hour", "day",
 /// "month", "year", "exact") to a single ISO-8601 duration string.
 /// Sub-bead 3 will replace this with a proper PrecisionUnit→ISO helper.
-fn precision_unit_to_iso(unit: &str) -> Option<String> {
+/// Encode a (seconds, unit) precision pair as a single ISO-8601 duration
+/// string for the v=20 `occur_time_precision` column. `unit` selects the
+/// component (PT…M / PT…H / P…D etc.) so a `(300, "minute")` precision
+/// renders as `"PT5M"` rather than collapsing to the bare unit. `exact`
+/// or unrecognized units return `None` (column stored as NULL).
+fn precision_to_iso(seconds: u32, unit: &str) -> Option<String> {
+    if seconds == 0 || matches!(unit, "exact" | "") {
+        return None;
+    }
     match unit {
-        "exact" | "" => None,
-        "second" => Some("PT1S".to_string()),
-        "minute" => Some("PT1M".to_string()),
-        "hour" => Some("PT1H".to_string()),
-        "date" | "day" => Some("P1D".to_string()),
+        "second" => Some(format!("PT{seconds}S")),
+        "minute" => {
+            let n = seconds / 60;
+            Some(format!("PT{}M", n.max(1)))
+        }
+        "hour" => {
+            let n = seconds / 3600;
+            Some(format!("PT{}H", n.max(1)))
+        }
+        "date" | "day" => {
+            let n = seconds / 86400;
+            Some(format!("P{}D", n.max(1)))
+        }
         "month" => Some("P1M".to_string()),
         "year" => Some("P1Y".to_string()),
         _ => None,

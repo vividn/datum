@@ -292,7 +292,9 @@ fn get_pretty_round_trips_entry_through_cmd_path() {
     let parsed: serde_json::Value = serde_json::from_str(&pretty).unwrap();
     assert_eq!(parsed["field"], json!("mood"));
     assert_eq!(parsed["verb"], json!("switch"));
-    assert_eq!(parsed["value"], json!("focused"));
+    // v3 (da-5ns): primary state serializes via `state`; legacy `value`
+    // is a #[serde(skip)] compat shim and never lands in the JSON.
+    assert_eq!(parsed["state"], json!("focused"));
     assert_eq!(parsed["slug"], json!(entry.slug));
     assert_eq!(parsed["hid"], json!(entry.hid));
 }

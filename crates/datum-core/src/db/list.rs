@@ -52,10 +52,13 @@ impl Db {
         let mut sql = String::from("SELECT * FROM entries WHERE deleted_at IS NULL");
         let mut bindings: Vec<String> = Vec::new();
 
-        // da-5ns: occur_time is NOT NULL post-pivot, so the
-        // explicit IS NOT NULL filter is no longer required.
+        // da-5ns: occur_time is NOT NULL post-pivot — but the CLI's
+        // `-T` / no-timestamp path stubs occur_time with create_time and
+        // marks the row by giving it a `:unset` slug suffix. The Occur
+        // metric (chronological "when did this happen") must skip those
+        // stub rows; Modify / Hybrid still see them.
         if params.metric == TimeMetric::Occur {
-            // No-op kept for symmetry with v=19.
+            sql.push_str(" AND slug NOT LIKE '%:unset'");
         }
         if let Some(field) = &params.field {
             sql.push_str(" AND field = ?");
