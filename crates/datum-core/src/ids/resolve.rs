@@ -544,4 +544,199 @@ mod tests {
             "_LAST should hit the no-last-docs-ref path, got: {err:?}"
         );
     }
+
+    // ─── Cold ports from the pre-v3 #[cfg(any())] module (da-gkmc) ──────
+    //
+    // These tests exercise exact / prefix / wildcard precedence against a
+    // real v3-schema SQLite store. They were gated off when the `entries`
+    // table pivoted to (occur_time, state, dur, following_state) and never
+    // re-enabled — exactly the gap that let the da-luc8 column-rename bug
+    // ship. Underscore-family ports (`_`, `<field>:_`, etc.) live above;
+    // those four were dropped here because da-luc8 already covers them.
+    //
+    // Strategy: use entry_builder for time stamping + content_hash
+    // distinctness, then mutate slug/hid to the controlled values the
+    // assertions reference.
+
+    /// Insert an entry with caller-controlled `slug` and `hid`. The
+    /// builder picks unique default times so back-to-back fixtures land
+    /// on distinct content_hashes and survive the live insert path.
+    fn controlled(db: &Db, slug: &str, hid: &str, field: &str) -> Entry {
+        use crate::entry::HID_LEN;
+        use crate::ids::{Hid, Slug};
+        assert_eq!(hid.len(), HID_LEN, "test hid must be {HID_LEN} chars");
+        let mut e = entry_builder(field).build();
+        e.slug = Slug::from(slug);
+        e.hid = Hid::from(hid);
+        db.insert_entry(&e).expect("controlled fixture insert failed");
+        e
+    }
+
+    // ── Exact id/slug ────────────────────────────────────────────────────
+
+    #[test]
+    fn exact_hid_resolves_to_its_entry() {
+        let db = fresh_db();
+        let e = controlled(&db, "coffee:0001", "abcdefghijkl", "coffee");
+        controlled(&db, "tea:xxxx", "mnopqrstuvwx", "tea");
+
+        let got = resolve_quickid_single(&db, e.hid.as_str()).unwrap();
+        assert_eq!(got.slug, e.slug);
+    }
+
+    #[test]
+    fn exact_slug_resolves_to_its_entry() {
+        let db = fresh_db();
+        let e = controlled(&db, "coffee:2024-06-01", "abcdefghijkl", "coffee");
+        controlled(&db, "tea:xxxx", "mnopqrstuvwx", "tea");
+
+        let got = resolve_quickid_single(&db, e.slug.as_str()).unwrap();
+        assert_eq!(got.hid, e.hid);
+    }
+
+    // ── Prefix matching ─────────────────────────────────────────────────
+
+    #[test]
+    fn unique_hid_prefix_resolves() {
+        let db = fresh_db();
+        let e = controlled(&db, "mood:1", "ab3d0000zzzz", "mood");
+        controlled(&db, "mood:2", "ffffffffffff", "mood");
+
+        let got = resolve_quickid_single(&db, "ab3d").unwrap();
+        assert_eq!(got.slug, e.slug);
+    }
+
+    #[test]
+    fn ambiguous_prefix_errors_with_candidates() {
+        let db = fresh_db();
+        let e1 = controlled(&db, "mood:1", "abcdaaaaaaaa", "mood");
+        let e2 = controlled(&db, "mood:2", "abceaaaaaaaa", "mood");
+
+        let err = resolve_quickid_single(&db, "abc").unwrap_err();
+        match err {
+            DatumError::AmbiguousPrefix { prefix, candidates } => {
+                assert_eq!(prefix, "abc");
+                let hids: std::collections::HashSet<_> =
+                    candidates.iter().map(|c| c.hid.clone()).collect();
+                assert!(hids.contains(&e1.hid));
+                assert!(hids.contains(&e2.hid));
+            }
+            other => panic!("expected AmbiguousPrefix, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn no_match_reports_not_found() {
+        let db = fresh_db();
+        controlled(&db, "coffee:1", "abcdefghijkl", "coffee");
+
+        let err = resolve_quickid_single(&db, "does-not-exist").unwrap_err();
+        assert!(matches!(err, DatumError::NotFound(ref s) if s == "does-not-exist"));
+    }
+
+    // ── Exact-match precedence ───────────────────────────────────────────
+
+    #[test]
+    fn exact_match_wins_over_longer_prefixes() {
+        // A slug that is itself a prefix of another slug — plain
+        // resolve_prefix would flag this as ambiguous, but exact has to
+        // win.
+        let db = fresh_db();
+        let e = controlled(&db, "coffee:ab", "aaaabbbbcccc", "coffee");
+        controlled(&db, "coffee:abc", "ddddeeeeffff", "coffee");
+        controlled(&db, "coffee:abcd", "gggghhhhiiii", "coffee");
+
+        let got = resolve_quickid_single(&db, "coffee:ab").unwrap();
+        assert_eq!(got.slug, e.slug);
+    }
+
+    #[test]
+    fn exact_hid_beats_slug_prefix() {
+        // A bare hid that also happens to prefix another row's slug:
+        // exact-hid match must win over the slug prefix candidate.
+        let db = fresh_db();
+        let target = controlled(&db, "mood:alpha", "abcdefghijkl", "mood");
+        controlled(&db, "abcdefghijklbeta", "mnopqrstuvwx", "mood");
+
+        let got = resolve_quickid_single(&db, "abcdefghijkl").unwrap();
+        assert_eq!(got.slug, target.slug);
+    }
+
+    // ── Wildcards ────────────────────────────────────────────────────────
+
+    #[test]
+    fn slug_wildcard_expands_for_batch_callers() {
+        let db = fresh_db();
+        controlled(&db, "book:golden", "aaaaaaaaaaaa", "book");
+        controlled(&db, "book:goldfish", "bbbbbbbbbbbb", "book");
+        controlled(&db, "book:silver", "cccccccccccc", "book");
+
+        let matches = resolve_quickid(&db, "book:gol*").unwrap();
+        let slugs: std::collections::HashSet<_> =
+            matches.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(
+            slugs,
+            std::collections::HashSet::from([
+                crate::ids::Slug::from("book:golden"),
+                crate::ids::Slug::from("book:goldfish"),
+            ]),
+        );
+    }
+
+    #[test]
+    fn slug_wildcard_on_single_target_errors_when_ambiguous() {
+        let db = fresh_db();
+        controlled(&db, "book:golden", "aaaaaaaaaaaa", "book");
+        controlled(&db, "book:goldfish", "bbbbbbbbbbbb", "book");
+
+        let err = resolve_quickid_single(&db, "book:gol*").unwrap_err();
+        assert!(matches!(err, DatumError::AmbiguousPrefix { .. }));
+    }
+
+    #[test]
+    fn single_char_wildcard_question_mark() {
+        let db = fresh_db();
+        let e = controlled(&db, "mood:a1", "aaaaaaaaaaaa", "mood");
+        controlled(&db, "mood:ab", "bbbbbbbbbbbb", "mood");
+
+        // `?` matches exactly one char, so `mood:a?` matches both
+        // 7-char tails. Just assert expansion happened across both.
+        let matches = resolve_quickid(&db, "mood:a?").unwrap();
+        let slugs: std::collections::HashSet<_> =
+            matches.iter().map(|e| e.slug.clone()).collect();
+        assert_eq!(
+            slugs,
+            std::collections::HashSet::from([
+                e.slug.clone(),
+                crate::ids::Slug::from("mood:ab"),
+            ]),
+        );
+    }
+
+    #[test]
+    fn wildcard_does_not_match_tombstones() {
+        let db = fresh_db();
+        controlled(&db, "book:golden", "aaaaaaaaaaaa", "book");
+        let ghost = controlled(&db, "book:goldfish", "bbbbbbbbbbbb", "book");
+        db.soft_delete_entry(ghost.slug.as_str())
+            .expect("soft_delete_entry");
+
+        let matches = resolve_quickid(&db, "book:gol*").unwrap();
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].slug, "book:golden");
+    }
+
+    #[test]
+    fn exact_slug_wins_over_wildcard() {
+        // A literal slug with no wildcard chars must short-circuit
+        // straight to exact_live_match — even when sibling rows would
+        // have been wildcard-eligible. Smoke test for the precedence
+        // rule in resolve_quickid.
+        let db = fresh_db();
+        let e = controlled(&db, "book:goldfish", "aaaaaaaaaaaa", "book");
+        controlled(&db, "book:goldfinger", "bbbbbbbbbbbb", "book");
+
+        let got = resolve_quickid_single(&db, "book:goldfish").unwrap();
+        assert_eq!(got.slug, e.slug);
+    }
 }
