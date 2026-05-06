@@ -201,46 +201,6 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
                 }
             }
         }
-        Verb::Start => {
-            if let Some(ts) = start {
-                out.push(PendingEvent {
-                    time: ts,
-                    created_at,
-                    new_state: JsonValue::Bool(true),
-                    entry_id: row.slug.clone(),
-                });
-                if let Some(te) = end {
-                    if te > ts {
-                        out.push(PendingEvent {
-                            time: te,
-                            created_at,
-                            new_state: JsonValue::Bool(false),
-                            entry_id: row.slug.clone(),
-                        });
-                    }
-                }
-            }
-        }
-        Verb::Stop => {
-            if let Some(t) = end.or(start) {
-                out.push(PendingEvent {
-                    time: t,
-                    created_at,
-                    new_state: JsonValue::Bool(false),
-                    entry_id: row.slug.clone(),
-                });
-            }
-        }
-        Verb::Occur => {
-            if let Some(ts) = start {
-                out.push(PendingEvent {
-                    time: ts,
-                    created_at,
-                    new_state: JsonValue::Bool(false),
-                    entry_id: row.slug.clone(),
-                });
-            }
-        }
         Verb::Block => {
             if let Some(ts) = start {
                 let state = value
@@ -265,7 +225,6 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
                 }
             }
         }
-        Verb::Add => {}
     }
     Ok(out)
 }

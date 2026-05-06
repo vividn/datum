@@ -447,6 +447,7 @@ pub fn render_json(report: &Report) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datum_core::action::Action;
     use datum_core::db::Db;
     use datum_core::entry::{Entry, Verb};
     use datum_core::field_spec::{FieldSpec, SubfieldSpec, SubfieldType};
@@ -475,7 +476,7 @@ mod tests {
         let end = t_at("2024-01-01T09:00:00+00:00");
         let entry = Entry::new_legacy(
             "work",
-            Verb::Stop,
+            Verb::Switch,
             None,
             None,
             None,
@@ -535,7 +536,7 @@ mod tests {
         // Populate one error-level and one warning-level issue.
         let bad = Entry::new_legacy(
             "work",
-            Verb::Stop,
+            Verb::Switch,
             None,
             None,
             None,
@@ -547,7 +548,7 @@ mod tests {
         // Unknown-field warning on another field.
         let unknown = Entry::new_legacy(
             "mystery",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -603,7 +604,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.subfields = subfields;
         db.save_field_spec(&spec).unwrap();
 

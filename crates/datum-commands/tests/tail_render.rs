@@ -68,7 +68,7 @@ fn entry_no_time(field: &str, verb: Verb, value: Option<serde_json::Value>) -> E
 fn tail_today_row_has_no_date_prefix() {
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let e = entry_at("coffee", Verb::Occur, None, dt(2026, 4, 22, 9, 15));
+    let e = entry_at("coffee", Verb::Point, None, dt(2026, 4, 22, 9, 15));
     let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
     assert!(line.starts_with("09:15:00"), "today entries omit the date prefix: {line:?}");
     assert!(!line.contains("-1d"));
@@ -79,7 +79,7 @@ fn tail_today_row_has_no_date_prefix() {
 fn tail_yesterday_row_has_minus_one_d_prefix() {
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let e = entry_at("coffee", Verb::Occur, None, dt(2026, 4, 21, 9, 15));
+    let e = entry_at("coffee", Verb::Point, None, dt(2026, 4, 21, 9, 15));
     let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
     assert!(line.starts_with("-1d "), "yesterday → '-1d ' prefix: {line:?}");
 }
@@ -88,7 +88,7 @@ fn tail_yesterday_row_has_minus_one_d_prefix() {
 fn tail_three_day_old_row_uses_relative_d_prefix() {
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let e = entry_at("coffee", Verb::Occur, None, dt(2026, 4, 19, 9, 15));
+    let e = entry_at("coffee", Verb::Point, None, dt(2026, 4, 19, 9, 15));
     let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
     assert!(line.starts_with("-3d "), "3 days back → '-3d ' prefix: {line:?}");
 }
@@ -97,7 +97,7 @@ fn tail_three_day_old_row_uses_relative_d_prefix() {
 fn tail_old_row_uses_iso_date_prefix() {
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let e = entry_at("coffee", Verb::Occur, None, dt(2024, 12, 13, 9, 15));
+    let e = entry_at("coffee", Verb::Point, None, dt(2024, 12, 13, 9, 15));
     let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
     assert!(
         line.starts_with("2024-12-13 "),
@@ -109,7 +109,7 @@ fn tail_old_row_uses_iso_date_prefix() {
 fn tail_future_row_uses_plus_d_prefix() {
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let e = entry_at("plan", Verb::Occur, None, dt(2026, 4, 24, 9, 15));
+    let e = entry_at("plan", Verb::Point, None, dt(2026, 4, 24, 9, 15));
     let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
     assert!(line.starts_with("+2d "), "2 days ahead → '+2d ' prefix: {line:?}");
 }
@@ -143,7 +143,7 @@ fn tail_state_cell_for_start_uses_bg_slots() {
     // `datum start` writes a Start row. The canonical group emits the
     // `start` badge, with LEAD/TRAIL slots coloured by surrounding state.
     let _g = no_color_scope();
-    let e = entry_at("workout", Verb::Start, None, dt(2026, 4, 22, 9, 15));
+    let e = entry_at("workout", Verb::Switch, None, dt(2026, 4, 22, 9, 15));
     let ctx = RenderContext::default();
     let group = format_state_group(&e, None, &ctx).expect("state group");
     let stripped = strip_ansi(&group);
@@ -165,7 +165,7 @@ fn tail_row_with_occur_time_has_no_c_prefix() {
     // bare, no creation prefix.
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let e = entry_at("coffee", Verb::Occur, None, dt(2026, 4, 22, 9, 15));
+    let e = entry_at("coffee", Verb::Point, None, dt(2026, 4, 22, 9, 15));
     let line = strip_ansi(&format_info_line_at(&e, None, &RenderContext::default(), &now));
     assert!(line.starts_with("09:15:00"), "occur row: bare time: {line:?}");
     assert!(!line.starts_with('c'), "occur row must not be prefixed with 'c': {line:?}");
@@ -179,7 +179,7 @@ fn tail_row_without_occur_time_uses_create_time_with_gray_c_prefix() {
     // `format_gray_prefix("c", ...)` path in render/mod.rs.
     let _g = no_color_scope();
     let now = dt(2026, 4, 22, 17, 0);
-    let mut e = entry_no_time("person", Verb::Add, Some(json!({"name": "john"})));
+    let mut e = entry_no_time("person", Verb::Point, Some(json!({"name": "john"})));
     // Pin create_time deterministically to today so the relative-day
     // prefix is suppressed and the row starts with the bare 'c' marker.
     e.create_time = Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 0).unwrap();

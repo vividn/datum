@@ -112,14 +112,17 @@ pub fn format_state_group(
     ctx: &RenderContext,
 ) -> Option<String> {
     match entry.verb {
-        Verb::Add => Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR)),
-        Verb::Occur | Verb::Point => Some(render_occur(entry, spec, ctx)),
-        Verb::Start
-        | Verb::Stop
-        | Verb::Switch
-        | Verb::Block
-        | Verb::BlockSwitch
-        | Verb::PointSwitch => Some(render_state_transition_group(entry, spec, ctx)),
+        // Timeless points (legacy `add` rows with no occur_time) keep the
+        // NON_OCCUR glyph; everything else with `Verb::Point` goes through
+        // the dot renderer. da-8y2q.2 collapsed the legacy `Add` storage
+        // verb into Point so we discriminate on `occur_time` instead.
+        Verb::Point if entry.occur_time.is_none() => {
+            Some(paint(&field_rgb(&entry.field, spec).fg(), NON_OCCUR))
+        }
+        Verb::Point => Some(render_occur(entry, spec, ctx)),
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
+            Some(render_state_transition_group(entry, spec, ctx))
+        }
     }
 }
 
@@ -200,12 +203,17 @@ fn render_state_transition_group(
 /// slots provide the visual separation around it.
 fn render_state_cell(entry: &Entry, spec: Option<&FieldSpec>) -> String {
     match entry.verb {
-        Verb::Start => paint_bg(field_rgb(&entry.field, spec), "start"),
-        Verb::Stop => "end".to_string(),
-        Verb::Switch | Verb::Block => render_switch_badge(entry.value.as_ref(), &entry.field, spec),
-        // Add / Occur are handled by other branches of `format_state_group`
-        // and never reach this function.
-        _ => String::new(),
+        // da-8y2q.2: legacy `Start`/`Stop` collapsed into `Switch` (with
+        // canonicalized `state=true`/`state=false`). `render_switch_badge`
+        // already maps `Bool(true)` → painted "start" and `Bool(false)` →
+        // "end", so the visual treatment is preserved without an explicit
+        // intent arm.
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
+            render_switch_badge(entry.value.as_ref(), &entry.field, spec)
+        }
+        // `Verb::Point` is handled by other branches of `format_state_group`
+        // and never reaches this function.
+        Verb::Point => String::new(),
     }
 }
 
@@ -263,12 +271,14 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
         return None;
     }
     match entry.verb {
+        // da-8y2q.2: legacy `Start`/`Stop` are now `Switch` rows with
+        // canonicalized `state=true`/`state=false`. `entry.value.clone()`
+        // returns the same `Some(Bool(true|false))` the legacy arms
+        // produced explicitly.
         Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
             entry.value.clone()
         }
-        Verb::Start => Some(JsonValue::Bool(true)),
-        Verb::Stop => Some(JsonValue::Bool(false)),
-        Verb::Add | Verb::Occur | Verb::Point => None,
+        Verb::Point => None,
     }
 }
 
@@ -687,7 +697,7 @@ mod tests {
         };
         Entry::new(
             field.to_string(),
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,

@@ -35,6 +35,7 @@
 mod common;
 
 use common::run_cli;
+use datum_core::action::Action;
 use datum_core::entry::Verb;
 use datum_core::test_util::{fresh_db, spec_builder};
 use datum_core::{assert_count, assert_entry_matches};
@@ -532,7 +533,7 @@ fn switch_dot_syntax_keys_remain_literal_extra_data_keys() {
 fn derived_alias_from_spec_routes_to_switch_with_extra_keys() {
     let db = fresh_db();
 
-    spec_builder("mood").default_verb(Verb::Switch).save(&db);
+    spec_builder("mood").default_verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
     spec.regenerate_derived_aliases();

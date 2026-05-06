@@ -526,7 +526,7 @@ mod tests {
             "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
         let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new(field, Verb::Occur, Some(value), extra, None, Some(t), None, "d1")
+        Entry::new(field, Verb::Point, Some(value), extra, None, Some(t), None, "d1")
     }
 
     fn seed_entries(db: &datum_core::db::Db) {
@@ -789,7 +789,7 @@ mod tests {
         };
         let dup = Entry::new(
             "mood",
-            Verb::Occur,
+            Verb::Point,
             Some(serde_json::json!("happy")),
             None,
             None,

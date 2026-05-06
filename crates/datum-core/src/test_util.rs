@@ -18,6 +18,7 @@ use serde_json::Value as JsonValue;
 use datum_parse::time::clock::{self, MockClock};
 use datum_parse::time::{parse_duration, parse_time_arg, TimeBuilder};
 
+use crate::action::Action;
 use crate::db::Db;
 use crate::entry::{Entry, Verb};
 use crate::field_spec::{Alias, FieldSpec, SubfieldSpec};
@@ -69,7 +70,7 @@ impl EntryBuilder {
     pub fn new(field: impl Into<String>) -> Self {
         Self {
             field: field.into(),
-            verb: Verb::Occur,
+            verb: Verb::Point,
             value: None,
             data: None,
             unit: None,
@@ -208,11 +209,11 @@ pub struct SpecBuilder {
 impl SpecBuilder {
     pub fn new(field: impl Into<String>) -> Self {
         Self {
-            spec: FieldSpec::new(field, Verb::Occur),
+            spec: FieldSpec::new(field, Action::Occur),
         }
     }
 
-    pub fn default_verb(mut self, v: Verb) -> Self {
+    pub fn default_verb(mut self, v: Action) -> Self {
         self.spec.default_verb = v;
         self
     }

@@ -419,7 +419,7 @@ fn build_day_fields(
         // handles it via a transient default-spec instance.
         let resolved = match &spec {
             Some(s) => s.resolve_position(&field),
-            None => FieldSpec::new(field.clone(), datum_core::entry::Verb::Occur)
+            None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
                 .resolve_position(&field),
         };
 
@@ -513,7 +513,7 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
 fn is_switching_verb(verb: &Verb) -> bool {
     matches!(
         verb,
-        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch | Verb::Start | Verb::Stop
+        Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch
     )
 }
 
@@ -649,7 +649,7 @@ fn render_field_visuals_dayview(
                     day_end_ms,
                 );
             }
-            Verb::Point | Verb::Occur => {
+            Verb::Point => {
                 if occur_ms < day_start_ms || occur_ms > day_end_ms {
                     continue;
                 }
@@ -667,10 +667,6 @@ fn render_field_visuals_dayview(
                     state_label: state_label(entry.state.as_ref()),
                 });
             }
-            // Legacy verbs from the v=19 model — Add never renders;
-            // Start/Stop have no first-class shape under the v=20 model
-            // (they collapse to switching events handled above).
-            Verb::Add | Verb::Start | Verb::Stop => {}
         }
     }
     (blocks, points)
@@ -750,6 +746,7 @@ fn state_label(v: Option<&JsonValue>) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use datum_core::action::Action;
 
     #[test]
     fn rgb_to_hex_lowercase_six_digit() {
@@ -1071,12 +1068,12 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // mood has render = false → must NOT appear in dayview output.
-        let mut hidden = FieldSpec::new("mood", Verb::Switch);
+        let mut hidden = FieldSpec::new("mood", Action::Switch);
         hidden.render = Some(Render::All(false));
         db.save_field_spec(&hidden).unwrap();
 
         // coffee has no render set → default visible.
-        db.save_field_spec(&FieldSpec::new("coffee", Verb::Occur))
+        db.save_field_spec(&FieldSpec::new("coffee", Action::Occur))
             .unwrap();
 
         // Log one entry on each field so neither is empty by accident.
@@ -1095,7 +1092,7 @@ mod tests {
         .unwrap();
         db.insert_entry(&Entry::new(
             "coffee",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -1133,7 +1130,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("stretch_routine", Verb::Occur);
+        let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.render = Some(Render::PerSurface(map));
@@ -1143,7 +1140,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
         db.insert_entry(&Entry::new(
             "stretch_routine",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -1173,7 +1170,7 @@ mod tests {
         use datum_core::time::DatumTime;
 
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("caffeine", Verb::Occur);
+        let mut spec = FieldSpec::new("caffeine", Action::Occur);
         spec.color = Some("#643200".into());
         db.save_field_spec(&spec).unwrap();
 
@@ -1181,7 +1178,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
         db.insert_entry(&Entry::new(
             "caffeine",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,
@@ -1222,7 +1219,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(utc, "UTC").unwrap();
         db.insert_entry(&Entry::new(
             "alarm",
-            Verb::Occur,
+            Verb::Point,
             None,
             None,
             None,

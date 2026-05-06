@@ -7,6 +7,8 @@
 use std::fs;
 
 use datum_commands::cmd::dispatch_argv;
+use datum_core::action::Action;
+use datum_core::field_spec::FieldSpec;
 use datum_core::test_util::fresh_db;
 
 #[test]
@@ -477,7 +479,7 @@ color = "#000000"
     let db = fresh_db();
 
     // Pre-existing user-declared row.
-    let mut existing = FieldSpec::new("sleep", Verb::Start);
+    let mut existing = FieldSpec::new("sleep", Action::Start);
     existing.color = Some("#aaaaaa".into());
     db.save_field_spec(&existing).unwrap();
 

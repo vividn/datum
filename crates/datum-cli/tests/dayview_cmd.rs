@@ -24,7 +24,7 @@ fn dayview_writes_svg_to_output() {
 
     let noon = local_noon_today_utc();
     entry_builder("workout")
-        .verb(Verb::Start)
+        .verb(Verb::Switch)
         .time_start_utc(noon)
         .time_end_utc(noon + chrono::Duration::hours(1))
         .insert(&db);
@@ -64,12 +64,12 @@ fn dayview_json_dumps_layout() {
 
     let noon = local_noon_today_utc();
     entry_builder("coffee")
-        .verb(Verb::Occur)
+        .verb(Verb::Point)
         .value(serde_json::json!(1))
         .time_start_utc(noon)
         .insert(&db);
     entry_builder("workout")
-        .verb(Verb::Start)
+        .verb(Verb::Switch)
         .time_start_utc(noon + chrono::Duration::hours(1))
         .time_end_utc(noon + chrono::Duration::hours(2))
         .insert(&db);
@@ -110,7 +110,7 @@ fn dayview_n_days_stacks_multiple_rows() {
     for day_offset in 0..3 {
         let t = noon - chrono::Duration::days(day_offset);
         entry_builder("workout")
-            .verb(Verb::Start)
+            .verb(Verb::Switch)
             .time_start_utc(t)
             .time_end_utc(t + chrono::Duration::hours(1))
             .insert(&db);
@@ -139,7 +139,7 @@ fn dayview_horizontal_orientation_round_trips_to_layout() {
 
     let noon = local_noon_today_utc();
     entry_builder("workout")
-        .verb(Verb::Start)
+        .verb(Verb::Switch)
         .time_start_utc(noon)
         .time_end_utc(noon + chrono::Duration::hours(1))
         .insert(&db);
@@ -194,7 +194,7 @@ fn dayview_html_output_wraps_svg() {
     let db = fresh_db();
     let noon = local_noon_today_utc();
     entry_builder("workout")
-        .verb(Verb::Start)
+        .verb(Verb::Switch)
         .time_start_utc(noon)
         .time_end_utc(noon + chrono::Duration::hours(1))
         .insert(&db);

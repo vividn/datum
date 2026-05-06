@@ -1,10 +1,10 @@
 //! `datum start <field>` — mark the beginning of a timed block.
 
 use anyhow::Result;
-use datum_core::{db::Db, entry::Verb};
+use datum_core::{action::Action, db::Db};
 
 use crate::args::LogArgs;
 
 pub fn start(args: LogArgs, db: &Db) -> Result<()> {
-    crate::cmd::log_entry(Verb::Start, args, db)
+    crate::cmd::log_entry(Action::Start, args, db)
 }

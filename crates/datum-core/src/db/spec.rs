@@ -213,14 +213,14 @@ impl Db {
 #[cfg(test)]
 mod tag_tests {
     use super::Db;
-    use crate::entry::Verb;
+    use crate::action::Action;
     use crate::field_spec::{FieldSpec, Render};
     use std::collections::HashMap;
 
     #[test]
     fn save_mirrors_tags_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        let mut spec = FieldSpec::new("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
         db.save_field_spec(&spec).unwrap();
 
@@ -252,14 +252,14 @@ mod tag_tests {
     #[test]
     fn list_specs_by_tag_filters_membership_not_substring() {
         let db = Db::open_in_memory().unwrap();
-        let mut dishes = FieldSpec::new("dishes", Verb::Occur);
+        let mut dishes = FieldSpec::new("dishes", Action::Occur);
         dishes.tags = vec!["chore".into()];
-        let mut laundry = FieldSpec::new("laundry", Verb::Occur);
+        let mut laundry = FieldSpec::new("laundry", Action::Occur);
         laundry.tags = vec!["chore".into(), "weekly".into()];
-        let mood = FieldSpec::new("mood", Verb::Switch);
+        let mood = FieldSpec::new("mood", Action::Switch);
         // `chores` (with trailing s) must NOT match a search for `chore` —
         // the LIKE prefilter would, but the Rust verifier rejects it.
-        let mut almost = FieldSpec::new("almost", Verb::Occur);
+        let mut almost = FieldSpec::new("almost", Action::Occur);
         almost.tags = vec!["chores".into()];
 
         db.save_field_spec(&dishes).unwrap();
@@ -281,7 +281,7 @@ mod tag_tests {
     #[test]
     fn save_leaves_render_json_null_when_render_is_none() {
         let db = Db::open_in_memory().unwrap();
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         db.save_field_spec(&spec).unwrap();
 
         let stored: Option<String> = db
@@ -305,7 +305,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_render_bool_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("background_telemetry", Verb::Occur);
+        let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
         spec.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
@@ -326,7 +326,7 @@ mod tag_tests {
     #[test]
     fn save_mirrors_per_surface_render_into_column() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("stretch_routine", Verb::Occur);
+        let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.render = Some(Render::PerSurface(map));
@@ -353,7 +353,7 @@ mod tag_tests {
     #[test]
     fn re_save_clears_render_json_when_spec_drops_render() {
         let db = Db::open_in_memory().unwrap();
-        let mut spec = FieldSpec::new("toggle", Verb::Occur);
+        let mut spec = FieldSpec::new("toggle", Action::Occur);
         spec.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 

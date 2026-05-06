@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use std::collections::HashMap;
 
+use crate::action::Action;
 use crate::entry::{Entry, Verb};
 use crate::time::DatumTime;
 
@@ -81,10 +82,14 @@ pub enum DerivedAliasKind {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FieldSpec {
     pub field: String,
-    /// Default verb when none is specified. Must be one of the canonical
-    /// verbs: `occur | start | switch | add`. `stop`/`end`/`note` are not
+    /// Default action when none is specified. Must be one of the canonical
+    /// actions: `occur | start | switch | add`. `stop`/`end`/`note` are not
     /// permitted (they're terminal/compat-only, not defaults).
-    pub default_verb: Verb,
+    ///
+    /// JSON key stays `default_verb` for wire-format compatibility with
+    /// stored field-spec rows; the type changed from [`Verb`] to [`Action`]
+    /// in da-8y2q.2 when intent was split out from storage classification.
+    pub default_verb: Action,
     /// Named subfields with their constraints.
     #[serde(default)]
     pub subfields: HashMap<String, SubfieldSpec>,
@@ -232,8 +237,8 @@ pub struct ResolvedPosition {
 /// datum's `DEFAULT_HEIGHT`.
 pub const DEFAULT_FIELD_HEIGHT: f64 = 0.12;
 
-/// The subset of verbs permitted as a field's `default_verb`.
-pub const DEFAULT_VERB_CHOICES: &[Verb] = &[Verb::Occur, Verb::Start, Verb::Switch, Verb::Add];
+/// The subset of actions permitted as a field's `default_verb` (intent slot).
+pub const DEFAULT_VERB_CHOICES: &[Action] = &[Action::Occur, Action::Start, Action::Switch, Action::Add];
 
 /// Deterministic-hash fallback for a field's `y` position. Stable across runs
 /// and platforms so unconfigured fields land at the same vertical position
@@ -249,8 +254,8 @@ fn hash_y(field: &str) -> f64 {
 }
 
 impl FieldSpec {
-    /// New bare spec with sensible defaults for the given field name and verb.
-    pub fn new(field: impl Into<String>, default_verb: Verb) -> Self {
+    /// New bare spec with sensible defaults for the given field name and action.
+    pub fn new(field: impl Into<String>, default_verb: Action) -> Self {
         Self {
             field: field.into(),
             default_verb,
@@ -391,7 +396,7 @@ impl FieldSpec {
         });
 
         // 2. Terminal-end alias: only for duration-capable default verbs.
-        if matches!(self.default_verb, Verb::Start | Verb::Switch) {
+        if matches!(self.default_verb, Action::Start | Action::Switch) {
             out.push(DerivedAlias {
                 state: format!("{}e", self.field),
                 expands_to: format!("end {}", self.field),
@@ -532,7 +537,7 @@ fn resolve_one(
 
     // Path 1: no spec at all → hash/default fallback.
     let Some(spec) = spec else {
-        let pos = FieldSpec::new(field, Verb::Occur).resolve_absolute(field);
+        let pos = FieldSpec::new(field, Action::Occur).resolve_absolute(field);
         memo.insert(field.to_string(), pos);
         return pos;
     };
@@ -981,7 +986,7 @@ mod tests {
                 unit: None,
             },
         );
-        let mut spec = FieldSpec::new("word", Verb::Add);
+        let mut spec = FieldSpec::new("word", Action::Add);
         spec.subfields = subfields;
         spec.description = Some("Vocabulary word in a foreign language".to_string());
         spec
@@ -1024,7 +1029,7 @@ mod tests {
 
     #[test]
     fn regenerate_derived_aliases_covers_bare_terminal_and_states() {
-        let mut spec = FieldSpec::new("mood", Verb::Switch);
+        let mut spec = FieldSpec::new("mood", Action::Switch);
         spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
         spec.regenerate_derived_aliases();
         // bare `mood` + terminal `moode` + two states
@@ -1057,7 +1062,7 @@ mod tests {
 
     #[test]
     fn regenerate_derived_aliases_emits_bare_but_no_terminal_for_occur() {
-        let mut spec = FieldSpec::new("coffee", Verb::Occur);
+        let mut spec = FieldSpec::new("coffee", Action::Occur);
         spec.regenerate_derived_aliases();
         // Only bare-field — Occur is not duration-capable, no terminal.
         assert_eq!(spec.derived_aliases.len(), 1);
@@ -1069,7 +1074,7 @@ mod tests {
 
     #[test]
     fn regenerate_derived_aliases_emits_terminal_for_start_default() {
-        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        let mut spec = FieldSpec::new("sleep", Action::Start);
         spec.regenerate_derived_aliases();
         // bare `sleep` + terminal `sleepe`
         assert_eq!(spec.derived_aliases.len(), 2);
@@ -1089,7 +1094,7 @@ mod tests {
 
     #[test]
     fn no_autoalias_suppresses_all_derived_aliases() {
-        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        let mut spec = FieldSpec::new("sleep", Action::Start);
         spec.no_autoalias = true;
         spec.regenerate_derived_aliases();
         assert!(spec.derived_aliases.is_empty());
@@ -1097,11 +1102,11 @@ mod tests {
 
     #[test]
     fn validate_default_verb_rejects_non_canonical() {
-        let mut spec = FieldSpec::new("mood", Verb::Stop);
+        let mut spec = FieldSpec::new("mood", Action::Stop);
         assert!(spec.validate_default_verb().is_err());
-        spec.default_verb = Verb::Block;
+        spec.default_verb = Action::Block;
         assert!(spec.validate_default_verb().is_err());
-        spec.default_verb = Verb::Switch;
+        spec.default_verb = Action::Switch;
         assert!(spec.validate_default_verb().is_ok());
     }
 
@@ -1109,7 +1114,7 @@ mod tests {
 
     #[test]
     fn resolve_position_uses_explicit_values_when_set() {
-        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        let mut spec = FieldSpec::new("sleep", Action::Start);
         spec.y = Some(0.05);
         spec.height = Some(0.20);
         spec.z_index = Some(7.0);
@@ -1122,7 +1127,7 @@ mod tests {
     #[test]
     fn resolve_position_falls_back_to_hash_y_and_default_height() {
         // None for every position field → all three come from defaults.
-        let spec = FieldSpec::new("coffee", Verb::Occur);
+        let spec = FieldSpec::new("coffee", Action::Occur);
         let r = spec.resolve_position("coffee");
         // hash fallback in [0.0, 1.0)
         assert!(r.y >= 0.0 && r.y < 1.0);
@@ -1133,7 +1138,7 @@ mod tests {
 
     #[test]
     fn resolve_position_z_index_defaults_to_y_when_y_is_explicit() {
-        let mut spec = FieldSpec::new("focus", Verb::Switch);
+        let mut spec = FieldSpec::new("focus", Action::Switch);
         spec.y = Some(0.42);
         // height + z_index unset
         let r = spec.resolve_position("focus");
@@ -1145,7 +1150,7 @@ mod tests {
     #[test]
     fn resolve_position_partial_overrides() {
         // Only height set; y and z_index come from defaults.
-        let mut spec = FieldSpec::new("dream", Verb::Switch);
+        let mut spec = FieldSpec::new("dream", Action::Switch);
         spec.height = Some(0.30);
         let r = spec.resolve_position("dream");
         assert_eq!(r.height, 0.30);
@@ -1153,7 +1158,7 @@ mod tests {
         assert_eq!(r.z_index, r.y);
 
         // Only z_index set; y comes from hash, height from default.
-        let mut spec = FieldSpec::new("dream", Verb::Switch);
+        let mut spec = FieldSpec::new("dream", Action::Switch);
         spec.z_index = Some(99.0);
         let r = spec.resolve_position("dream");
         assert_eq!(r.z_index, 99.0);
@@ -1189,7 +1194,7 @@ mod tests {
 
     #[test]
     fn position_fields_serde_roundtrip() {
-        let mut spec = FieldSpec::new("sleep", Verb::Start);
+        let mut spec = FieldSpec::new("sleep", Action::Start);
         spec.y = Some(0.05);
         spec.height = Some(0.20);
         spec.z_index = Some(1.0);
@@ -1205,12 +1210,12 @@ mod tests {
         // Two fields share y/height; the one with the higher z_index renders
         // on top. Resolver just exposes the z_index — the rendering layer
         // owns the actual stacking — but we can verify the resolved triple.
-        let mut sleep = FieldSpec::new("sleep", Verb::Start);
+        let mut sleep = FieldSpec::new("sleep", Action::Start);
         sleep.y = Some(0.05);
         sleep.height = Some(0.20);
         sleep.z_index = Some(1.0);
 
-        let mut focus = FieldSpec::new("focus", Verb::Switch);
+        let mut focus = FieldSpec::new("focus", Action::Switch);
         focus.y = Some(0.05);
         focus.height = Some(0.20);
         focus.z_index = Some(2.0);
@@ -1260,7 +1265,7 @@ mod tests {
 
     #[test]
     fn renders_on_defaults_to_true_when_render_is_none() {
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         assert!(spec.renders_on("dayview"));
         assert!(spec.renders_on("nowview"));
         assert!(spec.renders_on("future_surface"));
@@ -1268,7 +1273,7 @@ mod tests {
 
     #[test]
     fn render_all_false_hides_every_surface() {
-        let mut spec = FieldSpec::new("background_telemetry", Verb::Occur);
+        let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
         spec.render = Some(Render::All(false));
         assert!(!spec.renders_on("dayview"));
         assert!(!spec.renders_on("nowview"));
@@ -1277,7 +1282,7 @@ mod tests {
 
     #[test]
     fn render_all_true_shows_every_surface() {
-        let mut spec = FieldSpec::new("loud", Verb::Occur);
+        let mut spec = FieldSpec::new("loud", Action::Occur);
         spec.render = Some(Render::All(true));
         assert!(spec.renders_on("dayview"));
         assert!(spec.renders_on("nowview"));
@@ -1285,7 +1290,7 @@ mod tests {
 
     #[test]
     fn render_per_surface_hides_only_named_surface() {
-        let mut spec = FieldSpec::new("stretch_routine", Verb::Occur);
+        let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.render = Some(Render::PerSurface(map));
@@ -1298,7 +1303,7 @@ mod tests {
 
     #[test]
     fn render_per_surface_explicit_overrides() {
-        let mut spec = FieldSpec::new("experimental", Verb::Occur);
+        let mut spec = FieldSpec::new("experimental", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         map.insert("nowview".to_string(), false);
@@ -1309,7 +1314,7 @@ mod tests {
 
     #[test]
     fn render_serde_roundtrip_bool_form() {
-        let mut spec = FieldSpec::new("hidden", Verb::Occur);
+        let mut spec = FieldSpec::new("hidden", Action::Occur);
         spec.render = Some(Render::All(false));
         let json = serde_json::to_string(&spec).unwrap();
         // bool form serializes as a bare bool (untagged enum).
@@ -1320,7 +1325,7 @@ mod tests {
 
     #[test]
     fn render_serde_roundtrip_per_surface_form() {
-        let mut spec = FieldSpec::new("partial", Verb::Occur);
+        let mut spec = FieldSpec::new("partial", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
         spec.render = Some(Render::PerSurface(map));
@@ -1331,7 +1336,7 @@ mod tests {
 
     #[test]
     fn render_serde_omits_when_none() {
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         let json = serde_json::to_string(&spec).unwrap();
         // skip_serializing_if = Option::is_none keeps the JSON tidy.
         assert!(!json.contains("render"), "json = {json}");
@@ -1361,7 +1366,7 @@ mod tests {
 
     #[test]
     fn add_tag_is_idempotent_and_preserves_insertion_order() {
-        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        let mut spec = FieldSpec::new("dishes", Action::Occur);
         assert!(spec.add_tag("chore"));
         assert!(spec.add_tag("daily"));
         // Re-adding a known tag is a no-op and reports false.
@@ -1373,12 +1378,12 @@ mod tests {
 
     #[test]
     fn tags_serde_roundtrip_omits_empty() {
-        let spec = FieldSpec::new("plain", Verb::Occur);
+        let spec = FieldSpec::new("plain", Action::Occur);
         let json = serde_json::to_string(&spec).unwrap();
         // Empty tags are skipped to keep the on-disk shape small + diffable.
         assert!(!json.contains("\"tags\""), "json = {json}");
 
-        let mut spec = FieldSpec::new("dishes", Verb::Occur);
+        let mut spec = FieldSpec::new("dishes", Action::Occur);
         spec.tags = vec!["chore".into(), "daily".into()];
         let json = serde_json::to_string(&spec).unwrap();
         assert!(json.contains("\"tags\":[\"chore\",\"daily\"]"));
@@ -1389,7 +1394,7 @@ mod tests {
     // ─── Anchored layout tests (da-d4t.2) ────────────────────────────────────
 
     fn anchored_spec(name: &str, anchor: &str, pos_ratio: f64, size_ratio: f64) -> FieldSpec {
-        let mut spec = FieldSpec::new(name, Verb::Occur);
+        let mut spec = FieldSpec::new(name, Action::Occur);
         spec.relative_to = Some(anchor.into());
         spec.anchor_pos_ratio = Some(pos_ratio);
         spec.anchor_size_ratio = Some(size_ratio);
@@ -1397,7 +1402,7 @@ mod tests {
     }
 
     fn absolute_spec(name: &str, y: f64, h: f64) -> FieldSpec {
-        let mut spec = FieldSpec::new(name, Verb::Occur);
+        let mut spec = FieldSpec::new(name, Action::Occur);
         spec.y = Some(y);
         spec.height = Some(h);
         spec
@@ -1405,7 +1410,7 @@ mod tests {
 
     #[test]
     fn validate_anchor_triple_accepts_all_unset_or_all_set() {
-        let mut spec = FieldSpec::new("a", Verb::Occur);
+        let mut spec = FieldSpec::new("a", Action::Occur);
         assert!(spec.validate_anchor_triple().is_ok());
         spec.relative_to = Some("b".into());
         spec.anchor_pos_ratio = Some(0.5);
@@ -1533,7 +1538,7 @@ mod tests {
     #[test]
     fn resolve_positions_marks_malformed_triple_and_falls_back() {
         // anchor_pos_ratio set, anchor_size_ratio missing → malformed.
-        let mut spec = FieldSpec::new("bad", Verb::Occur);
+        let mut spec = FieldSpec::new("bad", Action::Occur);
         spec.relative_to = Some("body".into());
         spec.anchor_pos_ratio = Some(0.1);
         // Intentionally omit anchor_size_ratio.
@@ -1567,7 +1572,7 @@ mod tests {
     ) -> InterpolationContext<'a> {
         InterpolationContext {
             field,
-            verb: &Verb::Occur,
+            verb: &Verb::Point,
             value: None,
             extra_data: extra,
             uid,
@@ -1636,7 +1641,7 @@ mod tests {
         let extra = serde_json::json!({"srcLang": "pt", "pos": "verb"});
         let ctx = InterpolationContext {
             field: "word",
-            verb: &Verb::Add,
+            verb: &Verb::Point,
             value: None,
             extra_data: Some(&extra),
             uid: "xx",

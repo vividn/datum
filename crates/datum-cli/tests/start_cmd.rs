@@ -64,7 +64,7 @@ fn start_after_switch_preserves_prior_state() {
 
     let start_entry = entries
         .iter()
-        .find(|e| matches!(e.verb, Verb::Start))
+        .find(|e| matches!(e.verb, Verb::Switch))
         .expect("start entry present");
     let switch_entry = entries
         .iter()

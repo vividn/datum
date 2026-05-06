@@ -77,7 +77,7 @@ fn get_resolves_slug_prefix() {
 fn get_resolves_hid_prefix() {
     let db = fresh_db();
     let entry = entry_builder("project")
-        .verb(Verb::Add)
+        .verb(Verb::Point)
         .value(json!("the_quick_brown_fox"))
         .insert(&db);
     let prefix = &entry.hid[..6];

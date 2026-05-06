@@ -732,7 +732,7 @@ fn unresolved_doc_reference_does_not_block_write() {
 
 /// After D3, `note` is no longer a first-class subcommand — it's a seeded
 /// alias that routes to `add`. `datum note field …` and `datum add field …`
-/// must produce identical entries, both with `Verb::Add`.
+/// must produce identical entries, both with `Verb::Point`.
 #[test]
 fn note_verb_removed_but_alias_works() {
     let db_note = fresh_db();

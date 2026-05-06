@@ -3,6 +3,7 @@
 mod common;
 
 use common::run_cli;
+use datum_core::action::Action;
 use datum_core::db::Db;
 use datum_core::entry::Verb;
 use datum_core::test_util::{fresh_db, spec_builder};
@@ -22,7 +23,7 @@ fn stop_last_state_closes_most_recent_open_block() {
     // The stop entry records the prior active state under extra_data.last_state.
     let stop = entries
         .iter()
-        .find(|e| e.verb == Verb::Stop)
+        .find(|e| e.verb == Verb::Switch)
         .expect("stop entry exists");
     let extra = stop.data.as_ref().expect("extra_data present");
     assert_eq!(
@@ -206,7 +207,7 @@ fn derived_alias_from_spec_routes_to_switch() {
 
     // Define a spec with allowed states — regenerate_derived_aliases creates
     // one alias per state, each expanding to `switch <field> <state>`.
-    spec_builder("mood").default_verb(Verb::Switch).save(&db);
+    spec_builder("mood").default_verb(Action::Switch).save(&db);
     let mut spec = db.load_spec("mood").unwrap().unwrap();
     spec.allowed_states = Some(vec!["happy".into(), "sad".into()]);
     spec.regenerate_derived_aliases();

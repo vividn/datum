@@ -53,11 +53,11 @@ fn compound_merge_expands_wildcards_and_deep_merges() {
     let db = fresh_db();
     // Distinct slugs via different start times so wildcards can find both.
     let a = entry_builder("notes")
-        .verb(Verb::Add)
+        .verb(Verb::Point)
         .extra_data(json!({"nested": {"a": 1}}))
         .insert(&db);
     let b = entry_builder("notes")
-        .verb(Verb::Add)
+        .verb(Verb::Point)
         .extra_data(json!({"nested": {"b": 2}}))
         .value(json!("x"))
         .insert(&db);
