@@ -5241,14 +5241,12 @@ mod tests {
         assert_eq!(after.modify_time, before.modify_time);
     }
 
-    /// da-4lov: editing must not give the user a path to mutate `extra_metadata`.
-    /// Pre-populate the row with a non-empty extra_metadata, then hand the
-    /// editor a payload that (a) legitimately changes `state` and (b) attempts
-    /// to inject a malicious `extra_metadata`. The legitimate change applies;
-    /// the injection is silently dropped (UserEditableEntry has no slot for
-    /// it) and the original extra_metadata is preserved verbatim.
+    /// da-5mnz: writing a system-only key into the editor tempfile is a
+    /// hard error — the legitimate edits in the same payload do NOT apply,
+    /// and the row is fully unchanged. Replaces the da-4lov silent-drop
+    /// behavior with fail-loud feedback so the user sees the boundary.
     #[test]
-    fn edit_preserves_extra_metadata_against_injection() {
+    fn edit_rejects_extra_metadata_injection() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         let e = seed_entry(
@@ -5260,46 +5258,97 @@ mod tests {
         );
 
         // Stamp system-managed provenance directly on the row, mimicking what
-        // `datum db import --from <legacy>` would deposit. The user has no
-        // legitimate way to mutate this column.
+        // `datum db import --from <legacy>` would deposit.
         let original_meta = serde_json::json!({"_import": {"source": "legacy", "v": 1}});
         stamp_extra_metadata(&db, e.slug.as_str(), &original_meta);
         let before = db.get_entry(&e.slug).unwrap();
         assert_eq!(before.extra_metadata, Some(original_meta.clone()));
 
         let payload = editor_payload(&before, |doc| {
+            // A legitimate change…
             doc["state"] = serde_json::json!("focused");
-            // The attack: inject a key that lives outside UserEditableEntry.
+            // …paired with a system-key injection. The whole save must fail.
             doc["extra_metadata"] = serde_json::json!({"_evil": "hacked"});
-            // While we're at it, try to overwrite hid / slug / content_hash too.
-            doc["hid"] = serde_json::json!("ffffffffffff");
-            doc["slug"] = serde_json::json!("attacker:owned");
-            doc["content_hash"] = serde_json::json!("deadbeef");
-            doc["device_id"] = serde_json::json!("attacker-device");
-            doc["create_time"] = serde_json::json!("1970-01-01T00:00:00Z");
         });
         let prep = write_editor_payload(&payload);
 
         let editor_cmd = format!("cp {}", prep.path().display());
-        with_datum_editor(&editor_cmd, || {
+        let result = with_datum_editor_result(&editor_cmd, || {
             crate::commands::edit::edit(
                 EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
                 &db,
-            ).unwrap();
+            )
         });
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.contains("extra_metadata") && err.contains("system-owned"),
+            "expected system-owned rejection naming extra_metadata, got: {err}"
+        );
 
+        // Row fully unchanged: the legit `state` edit did NOT apply because
+        // the save was rejected wholesale.
         let after = db.get_entry(&e.slug).unwrap();
-        // Legit change applied.
-        assert_eq!(after.state, Some(serde_json::json!("focused")));
-        // Security boundary holds: every injected system-only field is unchanged.
+        assert_eq!(after.state, before.state);
         assert_eq!(after.extra_metadata, Some(original_meta));
-        assert_eq!(after.hid, before.hid);
-        assert_eq!(after.slug, before.slug);
-        assert_eq!(after.device_id, before.device_id);
-        assert_eq!(after.create_time, before.create_time);
-        // content_hash is recomputed from the new state, not taken from the payload.
-        assert_eq!(after.content_hash, after.expected_content_hash());
-        assert_ne!(after.content_hash, "deadbeef");
+        assert_eq!(after.content_hash, before.content_hash);
+        assert_eq!(after.modify_time, before.modify_time);
+    }
+
+    /// da-5mnz: every documented system-owned top-level key is rejected
+    /// individually with a message that names it. Guards against a future
+    /// refactor adding a new system column without updating the boundary.
+    #[test]
+    fn edit_rejects_each_system_owned_key() {
+        use datum_core::db::Db;
+        let cases: &[(&str, JsonValue)] = &[
+            ("extra_metadata", serde_json::json!({"_evil": "hacked"})),
+            ("hid", serde_json::json!("ffffffffffff")),
+            ("slug", serde_json::json!("attacker:owned")),
+            ("content_hash", serde_json::json!("deadbeef")),
+            ("create_time", serde_json::json!("1970-01-01T00:00:00Z")),
+            ("modify_time", serde_json::json!("1970-01-01T00:00:00Z")),
+            ("device_id", serde_json::json!("attacker-device")),
+            ("parser_version", serde_json::json!(999)),
+            ("raw_input", serde_json::json!("rm -rf /")),
+            ("alias_chain", serde_json::json!(["evil"])),
+            ("user_asserted_last_state", serde_json::json!("hacked")),
+            ("deleted_at", serde_json::json!("2099-01-01T00:00:00Z")),
+        ];
+
+        for (key, attack) in cases {
+            let db = Db::open_in_memory().unwrap();
+            let e = seed_entry(
+                &db,
+                "mood",
+                Verb::Switch,
+                Some(serde_json::json!("happy")),
+                None,
+            );
+            let before = db.get_entry(&e.slug).unwrap();
+
+            let payload = editor_payload(&before, |doc| {
+                doc[*key] = attack.clone();
+            });
+            let prep = write_editor_payload(&payload);
+
+            let editor_cmd = format!("cp {}", prep.path().display());
+            let result = with_datum_editor_result(&editor_cmd, || {
+                crate::commands::edit::edit(
+                    EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                    &db,
+                )
+            });
+            let err = result.unwrap_err().to_string();
+            assert!(
+                err.contains(*key) && err.contains("system-owned"),
+                "key {key}: expected system-owned rejection, got: {err}"
+            );
+
+            // Row untouched.
+            let after = db.get_entry(&e.slug).unwrap();
+            assert_eq!(after.content_hash, before.content_hash, "key {key}: row mutated");
+            assert_eq!(after.modify_time, before.modify_time, "key {key}: modify_time bumped");
+        }
     }
 
     /// da-4lov complement: even when the user makes no semantic change,

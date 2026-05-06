@@ -4,8 +4,13 @@
 //! tempfile. System-only state — `extra_metadata`, `hid`, `slug`,
 //! `content_hash`, `create_time`, `modify_time`, `device_id`, `parser_version`,
 //! `raw_input`, `alias_chain`, `user_asserted_last_state`, `deleted_at` —
-//! is never written to the buffer and never read back, so a user scribbling
-//! into system territory has no path into the saved entry.
+//! is never written to the buffer.
+//!
+//! da-5mnz: previously, a user who hand-typed a system-only key into the
+//! tempfile had it silently dropped (UserEditableEntry has no slot for it).
+//! That hides the boundary instead of enforcing it. Now we scan the parsed
+//! JSON top-level for any [`SYSTEM_OWNED_KEYS`] entry and fail loud with a
+//! clear "system-owned" message — better signal than a silent no-op.
 
 use anyhow::{Context, Result};
 use chrono::Utc;
@@ -16,6 +21,24 @@ use datum_core::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
+
+/// Top-level keys on `Entry` that are system-managed and may never be written
+/// via `datum edit`. Injecting any of these into the editor tempfile is a
+/// hard error — see the module docstring (da-5mnz).
+const SYSTEM_OWNED_KEYS: &[&str] = &[
+    "extra_metadata",
+    "hid",
+    "slug",
+    "content_hash",
+    "create_time",
+    "modify_time",
+    "device_id",
+    "parser_version",
+    "raw_input",
+    "alias_chain",
+    "user_asserted_last_state",
+    "deleted_at",
+];
 
 use crate::{
     args::{EditArgs, OutputFlagsExt},
@@ -149,7 +172,19 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    let edited_view: UserEditableEntry = serde_json::from_str(&edited)
+    let edited_value: JsonValue = serde_json::from_str(&edited)
+        .map_err(|e| anyhow::anyhow!("edited content is not valid entry JSON: {e}"))?;
+
+    if let JsonValue::Object(map) = &edited_value {
+        if let Some(sys_key) = SYSTEM_OWNED_KEYS.iter().find(|k| map.contains_key(**k)) {
+            anyhow::bail!(
+                "datum edit cannot write to `{sys_key}` — this field is system-owned. \
+                 Remove it from the edited JSON to save your other changes."
+            );
+        }
+    }
+
+    let edited_view: UserEditableEntry = serde_json::from_value(edited_value)
         .map_err(|e| anyhow::anyhow!("edited content is not valid entry JSON: {e}"))?;
 
     // Editor reflowed whitespace but no semantic change. Treat as no-op so
