@@ -146,10 +146,7 @@ impl EntryBuilder {
         // legacy times are set so block-shaped fixtures keep producing
         // verb-relevant rows. Sub-bead 8 rewrites these tests properly.
         let dur = match (self.start_time.as_ref(), self.end_time.as_ref()) {
-            (Some(s), Some(e)) => Some(format!(
-                "PT{}S",
-                (e.utc - s.utc).num_seconds().max(0)
-            )),
+            (Some(s), Some(e)) => Some(format!("PT{}S", (e.utc - s.utc).num_seconds().max(0))),
             _ => None,
         };
         Entry::new(
@@ -436,4 +433,77 @@ fn parse_test_time(s: &str) -> DatumTime {
     let arg =
         parse_time_arg(s).unwrap_or_else(|e| panic!("set_time: cannot parse time {s:?}: {e}"));
     TimeBuilder::now().with_time_arg(arg).build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::action::Action;
+
+    #[test]
+    fn fresh_db_is_isolated_between_tests() {
+        let db_a = fresh_db();
+        let db_b = fresh_db();
+
+        entry_builder("coffee")
+            .value(serde_json::json!(2))
+            .insert(&db_a);
+
+        // db_b must not see db_a's entry — each fresh_db() is independent.
+        let in_a = db_a.entries_for_field("coffee", None).unwrap();
+        let in_b = db_b.entries_for_field("coffee", None).unwrap();
+        assert_eq!(in_a.len(), 1);
+        assert_eq!(in_b.len(), 0);
+
+        // And inserts into db_b should not appear in db_a.
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(serde_json::json!("happy"))
+            .insert(&db_b);
+
+        assert_eq!(db_a.entries_for_field("mood", None).unwrap().len(), 0);
+        assert_eq!(db_b.entries_for_field("mood", None).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn entry_builder_round_trip() {
+        let db = fresh_db();
+        let built = entry_builder("coffee")
+            .value(serde_json::json!(2))
+            .unit("cups")
+            .insert(&db);
+
+        let fetched = db.get_entry(&built.slug).unwrap();
+        // v3 derives `verb` from (state, dur, following_state): state is set
+        // and dur is None, so the storage verb is Switch.
+        crate::assert_entry_matches!(fetched,
+            field: "coffee",
+            verb: "switch",
+            state: 2,
+            unit: "cups",
+            device_id: "test-device",
+        );
+        crate::assert_count!(db, "coffee", 1);
+    }
+
+    #[test]
+    fn spec_and_alias_builders_save_and_round_trip() {
+        let db = fresh_db();
+        spec_builder("word")
+            .default_verb(Action::Add)
+            .description("vocab")
+            .save(&db);
+        alias_builder("vbp", "note word srcLang=pt pos=verb").save(&db);
+
+        let registry = db.load_registry().unwrap();
+        assert!(registry.field_spec("word").is_some());
+        assert_eq!(
+            registry.field_spec("word").unwrap().description.as_deref(),
+            Some("vocab"),
+        );
+        assert_eq!(
+            registry.aliases.get("vbp").unwrap().expands_to,
+            "note word srcLang=pt pos=verb"
+        );
+    }
 }

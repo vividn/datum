@@ -66,17 +66,15 @@ impl View for TimingView {
                 DatumError::Other(format!("bad occur_time in entries row: {e}"))
             })?;
             let local_date = local_date_for(&start, start_offset.unwrap_or(0));
-            let (end_value, dur_value) = match dur_iso
-                .as_deref()
-                .and_then(crate::entry::compat_dur_secs)
-            {
-                Some(secs) => {
-                    let end = start + chrono::Duration::seconds(secs);
-                    let ms = secs.saturating_mul(1000);
-                    (json!(end.to_rfc3339()), json!(ms))
-                }
-                None => (JsonValue::Null, JsonValue::Null),
-            };
+            let (end_value, dur_value) =
+                match dur_iso.as_deref().and_then(crate::entry::compat_dur_secs) {
+                    Some(secs) => {
+                        let end = start + chrono::Duration::seconds(secs);
+                        let ms = secs.saturating_mul(1000);
+                        (json!(end.to_rfc3339()), json!(ms))
+                    }
+                    None => (JsonValue::Null, JsonValue::Null),
+                };
             rows.push(ViewRow {
                 key: json!([field, local_date]),
                 value: json!({
@@ -126,4 +124,127 @@ fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
             id: None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry::Verb;
+    use crate::test_util::{entry_builder, fresh_db};
+    use chrono::TimeZone;
+
+    #[test]
+    fn timing_view_emits_entries_with_durations() {
+        let db = fresh_db();
+
+        let start = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
+        let end = Utc.with_ymd_and_hms(2026, 4, 20, 9, 30, 0).unwrap();
+        let workout = entry_builder("workout")
+            .time_start_utc(start)
+            .time_end_utc(end)
+            .insert(&db);
+
+        let coffee_at = Utc.with_ymd_and_hms(2026, 4, 20, 8, 15, 0).unwrap();
+        let coffee = entry_builder("coffee")
+            .value(json!(1))
+            .time_start_utc(coffee_at)
+            .insert(&db);
+
+        // Tombstoned entry: skipped by SQL (deleted_at IS NULL).
+        let ghost = entry_builder("coffee")
+            .time_start_utc(Utc.with_ymd_and_hms(2026, 4, 20, 7, 0, 0).unwrap())
+            .insert(&db);
+        db.soft_delete_entry(&ghost.slug).unwrap();
+
+        let rows = TimingView.query(&db, &ViewParams::default()).unwrap();
+        assert_eq!(rows.len(), 2, "one row per live entry");
+
+        let by_id: std::collections::HashMap<_, _> =
+            rows.iter().map(|r| (r.id.clone().unwrap(), r)).collect();
+
+        let w = by_id
+            .get(workout.slug.as_str())
+            .expect("workout row present");
+        assert_eq!(w.key, json!(["workout", "2026-04-20"]));
+        assert_eq!(w.value["duration_ms"], json!(30 * 60 * 1000));
+        assert_eq!(w.value["start"], json!(start.to_rfc3339()));
+        assert_eq!(w.value["end"], json!(end.to_rfc3339()));
+
+        let c = by_id.get(coffee.slug.as_str()).expect("coffee row present");
+        assert_eq!(c.key, json!(["coffee", "2026-04-20"]));
+        assert_eq!(c.value["duration_ms"], JsonValue::Null);
+        assert_eq!(c.value["end"], JsonValue::Null);
+    }
+
+    #[test]
+    fn timing_view_reduce_counts_entries() {
+        let db = fresh_db();
+        let day = Utc.with_ymd_and_hms(2026, 4, 20, 8, 0, 0).unwrap();
+        for offset in 0..3 {
+            entry_builder("coffee")
+                .time_start_utc(day + chrono::Duration::minutes(offset as i64 * 30))
+                .insert(&db);
+        }
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!("good"))
+            .time_start_utc(day)
+            .insert(&db);
+
+        let reg = crate::views::builtins();
+        let params = ViewParams {
+            reduce: true,
+            group: true,
+            ..Default::default()
+        };
+        let rows = reg.query("datum_timing", &db, &params).unwrap();
+        assert_eq!(rows.len(), 2);
+        let coffee = rows
+            .iter()
+            .find(|r| r.key == json!(["coffee", "2026-04-20"]))
+            .unwrap();
+        assert_eq!(coffee.value, json!(3));
+        let mood = rows
+            .iter()
+            .find(|r| r.key == json!(["mood", "2026-04-20"]))
+            .unwrap();
+        assert_eq!(mood.value, json!(1));
+    }
+
+    #[test]
+    fn timing_view_pushes_field_filter_to_sql() {
+        let db = fresh_db();
+        let day = Utc.with_ymd_and_hms(2026, 4, 20, 8, 0, 0).unwrap();
+        entry_builder("coffee").time_start_utc(day).insert(&db);
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!("good"))
+            .time_start_utc(day)
+            .insert(&db);
+
+        let params = ViewParams {
+            key: Some(json!(["coffee"])),
+            ..Default::default()
+        };
+        let rows = TimingView.query(&db, &params).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].key[0], json!("coffee"));
+    }
+
+    #[test]
+    fn timing_view_respects_limit() {
+        let db = fresh_db();
+        let day = Utc.with_ymd_and_hms(2026, 4, 20, 8, 0, 0).unwrap();
+        for i in 0..5 {
+            entry_builder("coffee")
+                .time_start_utc(day + chrono::Duration::minutes(i as i64 * 5))
+                .insert(&db);
+        }
+        let params = ViewParams {
+            limit: Some(2),
+            ..Default::default()
+        };
+        let rows = TimingView.query(&db, &params).unwrap();
+        assert_eq!(rows.len(), 2);
+    }
 }

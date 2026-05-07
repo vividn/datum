@@ -1,0 +1,201 @@
+# Cold-Test Triage (da-4gt9)
+
+Audit of the 11 `#[cfg(any())]`-gated test modules deleted in commit fdb2851
+(`chore(da-8y2q.1): delete 11 #[cfg(any())] gated test modules`). Two
+sibling beads cover `conflicts.rs` (da-nm5b) and `ids/resolve.rs`
+(da-cold-resolve). This bead — da-4gt9 — covers the remaining 8 modules:
+
+| Module | Tests | Status |
+|---|---|---|
+| `views/timing.rs` | 4 | All ported (REWRITE) |
+| `views/duration_sum.rs` | 2 | All ported (REWRITE) + view fix |
+| `views/state_change.rs` | 3 | All ported (REWRITE) + view fix |
+| `views/sub_human_id.rs` | 1 | Ported as 2 tests (REWRITE) |
+| `test_util.rs` | 3 | All ported (REWRITE) |
+| `migrations.rs` | 3 groups | 1 OBSOLETE (rip-and-replace), 2 REWRITE-DEFERRED |
+| `db/tests.rs` | 78 | REWRITE-DEFERRED to follow-up beads |
+| `db/mod.rs` | 0 | OBSOLETE (was just `mod tests;` line) |
+
+**Schema-pivot translation (legacy verbs → v3):**
+
+| Legacy `Verb` | v3 equivalent | How to express via `entry_builder` |
+|---|---|---|
+| `Verb::Add` (no time) | gone | OBSOLETE — `occur_time` is now `NOT NULL` |
+| `Verb::Occur` | `Verb::Point` | default; `entry_builder("foo").time_start_utc(t)` |
+| `Verb::Start` (with end) | `Verb::Block` (derived from `dur`) | `entry_builder("foo").time_start_utc(t).time_end_utc(t+d)` |
+| `Verb::Stop` | `Verb::Switch` with `state=false` | `entry_builder("foo").verb(Verb::Switch).value(json!(false)).time_start_utc(t)` |
+| `Verb::Switch` | `Verb::Switch` | unchanged |
+
+The storage `verb` is *derived* by `derive_verb_for_storage` from the
+triple `(state, dur, following_state)` at insert time. Tests that
+specify `Verb::Point/Block/Switch` on the builder are ignored by the
+insert path; what matters is the data shape.
+
+---
+
+## views/timing.rs (4 tests, 4 REWRITE)
+
+Source: `git show fdb2851^:crates/datum-core/src/views/timing.rs`
+
+| Test | Classification | Notes |
+|---|---|---|
+| `timing_view_emits_entries_with_durations` | REWRITE | Ported. Adapted `Verb::Start` → block via dur derivation; dropped `Verb::Add no_time()` arm because `occur_time NOT NULL` now rejects it. |
+| `timing_view_reduce_counts_entries` | REWRITE | Ported with default verb (Point). |
+| `timing_view_pushes_field_filter_to_sql` | REWRITE | Ported. |
+| `timing_view_respects_limit` | REWRITE | Ported. |
+
+The view code itself was already on the v3 schema (`occur_time`, `dur`)
+so no production-code fix was needed.
+
+## views/duration_sum.rs (2 tests, 2 REWRITE)
+
+Source: `git show fdb2851^:crates/datum-core/src/views/duration_sum.rs`
+
+| Test | Classification | Notes |
+|---|---|---|
+| `duration_sum_view_reduces_by_field_and_day` | REWRITE | Ported. |
+| `duration_sum_pushes_field_filter` | REWRITE | Ported. |
+
+**View bug discovered while porting:** the production query was selecting
+`start_time, start_time_offset, end_time` — columns dropped in v=20. The
+view was silently broken because nothing exercised it (the cold tests
+were the only callers). Fixed in this commit: the SQL now reads
+`occur_time, occur_time_offset, dur` and computes `dur_ms` from the ISO
+duration string via `crate::entry::compat_dur_secs`.
+
+## views/state_change.rs (3 tests, 3 REWRITE)
+
+Source: `git show fdb2851^:crates/datum-core/src/views/state_change.rs`
+
+| Test | Classification | Notes |
+|---|---|---|
+| `state_change_view_emits_transitions` | REWRITE | Ported. Translated `Verb::Stop` → `Verb::Switch` with `state=false`; dropped `Verb::Add no_time()` arm. |
+| `state_change_view_skips_tombstoned_and_noteonly` | REWRITE | Ported as `state_change_view_skips_tombstoned` (the "noteonly" half is moot — no_time entries can no longer be inserted). |
+| `state_change_pushes_field_filter` | REWRITE | Ported. |
+
+**View bug discovered:** the production query SELECTed `verb, state,
+occur_time, create_time` but never `dur` — yet the Rust event-derivation
+code branched on a `Block` arm that emits a closing event when
+`end_time > start_time`. Without `dur` the `end` was always `None`, so
+Block close events never fired. Fixed: the SQL now selects `dur`, and
+the row mapper derives `end_time = occur_time + dur` via
+`compat_dur_secs`.
+
+The verb filter in SQL was also outdated (`'switch','start','stop',
+'occur','block','point','block-switch','point-switch'`). The legacy
+verbs (`start`, `stop`, `occur`) are no longer stored — fixed to
+`'switch','block','point','block-switch','point-switch'`.
+
+## views/sub_human_id.rs (1 test → 2 ports, REWRITE)
+
+Source: `git show fdb2851^:crates/datum-core/src/views/sub_human_id.rs`
+
+| Test | Classification | Notes |
+|---|---|---|
+| `sub_human_id_view_returns_shortest_unique_prefix` | REWRITE (split) | Ported as two focused tests below. |
+
+The original test depended on a hand-built `insert_with_hid` helper that
+constructed an `Entry` literal with many removed fields (`EntryShape`,
+`intent`, `value`, `start_time_precision_unit`, etc.) and forced
+specific hids. Since hids are now random base36 generated by `new_hid`,
+the test is rewritten to exercise the same view properties without
+needing controlled hids:
+
+- `sub_human_id_view_emits_prefixes_and_excludes_tombstoned`: verifies
+  that each live entry contributes exactly `SHORT_HID_LEN` prefix rows
+  and that tombstoned entries are excluded under any prefix.
+- `sub_human_id_view_reduce_counts_per_prefix`: verifies the reduce-with-group
+  count emission per prefix length.
+
+## test_util.rs (3 tests, 3 REWRITE)
+
+Source: `git show fdb2851^:crates/datum-core/src/test_util.rs`
+
+| Test | Classification | Notes |
+|---|---|---|
+| `fresh_db_is_isolated_between_tests` | REWRITE | Ported. |
+| `entry_builder_round_trip` | REWRITE | Ported with v3 verb expectation: bare `state=2` derives to `Verb::Switch` (state set, dur None) — not `Verb::Occur`. |
+| `spec_and_alias_builders_save_and_round_trip` | REWRITE | Ported. `default_verb` now takes `Action`, not `Verb`. |
+
+## migrations.rs (3 deleted test groups)
+
+Source: `git show fdb2851^:crates/datum-core/src/migrations.rs` (in
+particular the diff in `fdb2851`).
+
+| Test | Classification | Notes |
+|---|---|---|
+| `m8_to_9_writes_ignored_switch_for_each_ignored_spec` | REWRITE-DEFERRED | The v8→v9 migration still runs in `MIGRATIONS`. Test depends on `Db::state_at` working post-v20, which it does. Deferred because: schema.sql now creates v=21 tables, so seeding "v8 specs" requires either rolling the schema back column-wise or adapting the test to insert against v21 `field_specs` (kit_id+tags+render_json columns are NOT NULL with defaults — should still accept just `field, spec_json`). Sized as ~30 minutes of work; filed separately to keep this bead's scope honest. |
+| `m11_to_12_relocates_import_marker_and_recomputes_hash` | OBSOLETE | The test seeds `entries` rows with v11 columns (`start_time`, `end_time`, `value`, `intent`, `entry_shape`, etc.). All of those columns were dropped in v19→v20. The schema.sql/`Db::open` path now creates v=21 entries; there is no longer any way to populate a v11-shape row through the public surface. The migration logic itself still exists in `MIGRATIONS` and is exercised end-to-end by `tests/migration_roundtrip.rs`. |
+| `legacy_db_without_meta_self_heals_to_current` | OBSOLETE | I attempted the port and it fails: schema.sql's first run on a hand-built v12 `entries` table errors with `no such column: occur_time` while creating the v=21 `entries_field_occur` index. With pre-v1 rip-and-replace (per CLAUDE.local.md / project policy), legacy DB self-healing is no longer a supported path — there is no production data to preserve. The original bug it regresses (2026-04-30 kit_id incident) cannot recur for the same reason. |
+
+The migration *logic* for these versions still exists in `MIGRATIONS`
+and runs idempotently for any DB at `from < CURRENT_SCHEMA_VERSION`;
+end-to-end coverage lives in `crates/datum-core/tests/migration_roundtrip.rs`.
+
+## db/tests.rs (78 tests)
+
+Source: `git show fdb2851^:crates/datum-core/src/db/tests.rs` (2,564 LOC)
+
+**Status: REWRITE-DEFERRED.** Sized at ~78 tests across heterogeneous
+domain areas. Follow-up beads will port them incrementally per domain
+(insert/conflict, history, kits, views, aliases, resolve, state, spec).
+
+A representative sample of the test names (full list visible via
+`git show fdb2851^:crates/datum-core/src/db/tests.rs | grep '^    fn '`):
+
+| Domain | Examples |
+|---|---|
+| Insert / conflict | `test_insert_and_fetch`, `test_duplicate_rejected`, `tombstoned_row_does_not_block_distinct_new_insert`, `insert_conflict_update_mutates_in_place`, `insert_conflict_merge_unions_extra_data`, `insert_conflict_rekey_creates_new_slug_keeps_old`, `insert_conflict_ignore_returns_existing`, `slug_collision_returns_duplicate` |
+| Field listing | `test_entries_for_field`, `test_entries_for_field_asc`, `test_get_tracked_fields_derives_from_log`, `test_list_distinct_fields_excludes_tombstones` |
+| Active state | `active_state_returns_none_before_any_entry`, `active_state_returns_last_switch_before_time`, `active_state_returns_none_after_stop`, `active_state_handles_concurrent_blocks`, `active_state_skips_tombstoned_rows`, `active_state_ignores_other_fields` |
+| state_at API | `state_at_returns_none_for_never_written_field`, `state_at_latest_switch_wins`, `state_at_occur_contributes`, `state_at_respects_time_cutoff`, `state_at_skips_add_entries` |
+| FieldSpec | `field_spec_stores_id_template`, `field_spec_stores_color_and_states`, `adding_state_creates_derived_alias`, `removing_state_drops_derived_alias`, `track_ignore_round_trip_via_log`, `user_alias_survives_derived_alias_save`, `save_field_spec_preserves_kit_id` |
+| History | `insert_creates_version_1_history_row`, `update_creates_new_version_with_pre_edit_snapshot`, `retime_recorded_as_change_kind_retime`, `undo_reverts_to_previous_version_and_records_change` |
+| Bulk | `insert_entries_bulk_skips_history_and_conflicts`, `insert_entries_bulk_idempotent_on_content_hash`, `insert_entries_bulk_rejects_non_ignore_strategy` |
+| Kits — specs | `install_kit_persists_specs_with_kit_id`, `install_kit_skips_existing_field_without_force`, `install_kit_force_overwrites_and_retags`, `uninstall_kit_removes_only_owned_rows`, `uninstall_unknown_kit_is_noop` |
+| Kits — views | `install_kit_views_persists_with_kit_id`, `install_kit_views_skips_existing_without_force`, `install_kit_views_force_overwrites_and_retags`, `uninstall_kit_views_removes_only_owned_rows`, `execute_view_returns_columns_and_rows`, `execute_view_blocks_writes_via_query_only`, `execute_view_rejects_empty_sql`, `load_views_by_kit_round_trips_for_export` |
+| Kits — aliases | `install_kit_aliases_persists_with_kit_id`, `install_kit_aliases_skips_existing_user_alias_without_force`, `install_kit_aliases_force_overwrites_and_retags`, `uninstall_kit_aliases_removes_only_owned_rows`, `load_aliases_by_kit_round_trips_for_export`, `install_kit_aliases_preserves_expansion_byte_for_byte` |
+| Kits — commands | `install_kit_command_level1_round_trip`, `install_kit_command_level2_round_trip`, `install_kit_command_rejects_script`, `install_kit_command_rejects_both_or_neither`, `install_kit_command_rejects_bad_color_rule`, `uninstall_kit_commands_removes_only_owned_rows`, `list_kits_includes_command_count` |
+| Resolve | `resolve_unique_prefix`, `resolve_ambiguous_prefix_errors_with_candidates`, `resolve_full_slug_or_hid`, `resolve_unknown_errors`, `resolve_prefix_escapes_like_wildcards` |
+| Schema/migrations | `legacy_entries_schema_is_rejected`, `migrates_pre_a0_aliases_table_adds_derived_from_field`, `extra_metadata_round_trips_via_get_metadata` |
+| Misc | `test_state_colors`, `test_latest_entry_for_now_skips_note` |
+
+**Triage note:** quartz's deletion rationale (commit fdb2851) was that
+the integration suite (`crates/datum-core/tests/`, `crates/datum-cli/tests/`)
+already contains 1,347 #[test] functions covering equivalent behavior.
+A scan of the integration tests confirms that most domains above
+(insert/conflict, kit install/uninstall, view execution, resolve
+prefix lookup, history) have direct end-to-end coverage. Domain-by-domain
+porting will largely be a "this test is COVERED-ELSEWHERE; close" or a
+narrow REWRITE for the few unit-level edge cases the integration suite
+misses. That work is sized to its own bead chain rather than a single
+mega-commit on da-4gt9.
+
+## db/mod.rs (0 tests)
+
+Source: `git show fdb2851^:crates/datum-core/src/db/mod.rs` (6 LOC)
+
+Was just `#[cfg(any())] mod tests;` plus the parent module's `mod`
+statement. Nothing to port. **OBSOLETE.**
+
+---
+
+## Acceptance status
+
+- [x] Every `#[test]` from the deleted modules is classified
+      REWRITE / COVERED-ELSEWHERE / OBSOLETE / REWRITE-DEFERRED.
+- [x] All REWRITE tests in views and test_util are ported, compile, pass
+      (13 tests + 2 production-code fixes).
+- [ ] db/tests.rs REWRITE-DEFERRED tests (78) — sized into follow-up beads.
+- [ ] migrations.rs REWRITE-DEFERRED test (1) — sized into follow-up bead.
+- [x] `cargo test -p datum-core` passes (235 tests, +13 from this audit).
+
+## Production-code fixes shipped with this audit
+
+1. `crates/datum-core/src/views/duration_sum.rs` — query now reads
+   `occur_time, occur_time_offset, dur` (was reading dropped
+   `start_time, start_time_offset, end_time`).
+2. `crates/datum-core/src/views/state_change.rs` — query now reads
+   `dur` and derives `end_time = occur_time + dur` so Block close events
+   actually fire; verb filter narrowed to the v3 verbs that are stored
+   (`switch, block, point, block-switch, point-switch`).

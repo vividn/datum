@@ -138,3 +138,97 @@ fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry::{Entry, SHORT_HID_LEN};
+    use crate::test_util::{entry_builder, fresh_db};
+    use crate::views::{builtins, ViewParams};
+
+    fn short(e: &Entry) -> String {
+        e.short_uid()
+    }
+
+    #[test]
+    fn sub_human_id_view_emits_prefixes_and_excludes_tombstoned() {
+        let db = fresh_db();
+
+        // Insert three live entries; hids are random base36, so we exercise
+        // prefix emission without depending on specific hid values.
+        let e1 = entry_builder("word").insert(&db);
+        let e2 = entry_builder("word").insert(&db);
+        let e3 = entry_builder("word").insert(&db);
+
+        // Tombstone: must not appear in the prefix scan.
+        let ghost = entry_builder("word").insert(&db);
+        db.soft_delete_entry(&ghost.slug).unwrap();
+        let ghost_short = short(&ghost);
+
+        let reg = builtins();
+
+        // Each live entry contributes exactly SHORT_HID_LEN prefix rows.
+        let all = reg
+            .query("datum_sub_human_id", &db, &ViewParams::default())
+            .unwrap();
+        let live_slugs: std::collections::HashSet<_> =
+            [&e1, &e2, &e3].iter().map(|e| e.slug.to_string()).collect();
+        let emitted: std::collections::HashSet<_> =
+            all.iter().filter_map(|r| r.id.clone()).collect();
+        assert_eq!(emitted, live_slugs, "tombstoned ghost must be excluded");
+        assert_eq!(
+            all.len(),
+            SHORT_HID_LEN * 3,
+            "{} prefix rows per live entry × 3 entries",
+            SHORT_HID_LEN
+        );
+
+        // Querying by e1's short_uid yields exactly e1 (assumes random hids
+        // don't collide on all 5 chars — astronomically unlikely).
+        let params = ViewParams {
+            key: Some(JsonValue::String(short(&e1))),
+            ..Default::default()
+        };
+        let hits = reg.query("datum_sub_human_id", &db, &params).unwrap();
+        let slugs: std::collections::HashSet<_> = hits.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(
+            slugs,
+            std::collections::HashSet::from([Some(e1.slug.to_string())])
+        );
+
+        // The ghost's short_uid yields no rows pointing to the ghost.
+        let params = ViewParams {
+            key: Some(JsonValue::String(ghost_short)),
+            ..Default::default()
+        };
+        let hits = reg.query("datum_sub_human_id", &db, &params).unwrap();
+        assert!(
+            hits.iter()
+                .all(|r| r.id.as_deref() != Some(ghost.slug.as_str())),
+            "tombstoned entry must not appear under any prefix",
+        );
+    }
+
+    #[test]
+    fn sub_human_id_view_reduce_counts_per_prefix() {
+        let db = fresh_db();
+        let e1 = entry_builder("word").insert(&db);
+
+        let reg = builtins();
+        let params = ViewParams {
+            reduce: true,
+            group: true,
+            ..Default::default()
+        };
+        let rows = reg.query("datum_sub_human_id", &db, &params).unwrap();
+        let prefixes: std::collections::HashSet<_> = rows
+            .iter()
+            .map(|r| r.key.as_str().unwrap_or("").to_string())
+            .collect();
+        let one_short = short(&e1);
+        for n in 1..=SHORT_HID_LEN {
+            let p: String = one_short.chars().take(n).collect();
+            assert!(prefixes.contains(&p), "prefix {p} must be a key");
+        }
+    }
+}

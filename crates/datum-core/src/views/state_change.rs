@@ -34,13 +34,12 @@ impl View for StateChangeView {
     fn query(&self, db: &Db, params: &ViewParams) -> Result<Vec<ViewRow>> {
         let field_filter = field_filter_from_params(params);
 
-        // Only verbs that can mutate state surface here; `add` never does.
+        // Only verbs that can mutate state surface here.
         let mut sql = String::from(
-            "SELECT slug, field, verb, state, occur_time, create_time
+            "SELECT slug, field, verb, state, occur_time, dur, create_time
              FROM entries
              WHERE deleted_at IS NULL
-               AND verb IN ('switch','start','stop','occur','block',
-                            'point','block-switch','point-switch')",
+               AND verb IN ('switch','block','point','block-switch','point-switch')",
         );
         let mut args: Vec<String> = Vec::new();
         if let Some(f) = &field_filter {
@@ -58,13 +57,23 @@ impl View for StateChangeView {
         let mapped = stmt.query_map(
             params_from_iter(args.iter()),
             |row| -> rusqlite::Result<CandidateRow> {
+                let occur: Option<String> = row.get("occur_time")?;
+                let dur: Option<String> = row.get("dur")?;
+                let end = match (occur.as_deref(), dur.as_deref()) {
+                    (Some(o), Some(d)) => crate::entry::compat_dur_secs(d).and_then(|secs| {
+                        o.parse::<DateTime<Utc>>()
+                            .ok()
+                            .map(|t| (t + chrono::Duration::seconds(secs)).to_rfc3339())
+                    }),
+                    _ => None,
+                };
                 Ok(CandidateRow {
                     slug: row.get("slug")?,
                     field: row.get("field")?,
                     verb: row.get("verb")?,
                     value: row.get::<_, Option<String>>("state")?,
-                    start_time: row.get::<_, Option<String>>("occur_time")?,
-                    end_time: None,
+                    start_time: occur,
+                    end_time: end,
                     create_time: row.get("create_time")?,
                 })
             },
@@ -247,4 +256,105 @@ fn reduce_count(rows: Vec<ViewRow>, params: &ViewParams) -> Vec<ViewRow> {
             id: None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_util::{entry_builder, fresh_db};
+    use chrono::{Duration, TimeZone};
+
+    #[test]
+    fn state_change_view_emits_transitions() {
+        let db = fresh_db();
+
+        let t0 = Utc.with_ymd_and_hms(2026, 4, 20, 8, 0, 0).unwrap();
+        let t1 = t0 + Duration::minutes(30);
+        let t2 = t0 + Duration::hours(2);
+        let t3 = t0 + Duration::hours(3);
+
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!("focused"))
+            .time_start_utc(t0)
+            .insert(&db);
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!("tired"))
+            .time_start_utc(t2)
+            .insert(&db);
+        // v3: legacy Stop is expressed as Switch state=false.
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!(false))
+            .time_start_utc(t3)
+            .insert(&db);
+
+        // Block-shaped workout entry: occur_time + dur → open + close events.
+        entry_builder("workout")
+            .time_start_utc(t1)
+            .time_end_utc(t1 + Duration::minutes(45))
+            .insert(&db);
+
+        let rows = StateChangeView.query(&db, &ViewParams::default()).unwrap();
+
+        assert_eq!(rows.len(), 5);
+
+        let mood: Vec<_> = rows.iter().filter(|r| r.key[0] == json!("mood")).collect();
+        assert_eq!(mood.len(), 3);
+        assert_eq!(mood[0].value, json!({"from": null, "to": "focused"}));
+        assert_eq!(mood[1].value, json!({"from": "focused", "to": "tired"}));
+        assert_eq!(mood[2].value, json!({"from": "tired", "to": false}));
+        assert_eq!(mood[0].key[1], json!(t0.to_rfc3339()));
+        assert_eq!(mood[1].key[1], json!(t2.to_rfc3339()));
+        assert_eq!(mood[2].key[1], json!(t3.to_rfc3339()));
+
+        let workout: Vec<_> = rows
+            .iter()
+            .filter(|r| r.key[0] == json!("workout"))
+            .collect();
+        assert_eq!(workout.len(), 2);
+        assert_eq!(workout[0].value, json!({"from": null, "to": true}));
+        assert_eq!(workout[1].value, json!({"from": true, "to": false}));
+    }
+
+    #[test]
+    fn state_change_view_skips_tombstoned() {
+        let db = fresh_db();
+        let t0 = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
+
+        let ghost = entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!("ephemeral"))
+            .time_start_utc(t0)
+            .insert(&db);
+        db.soft_delete_entry(&ghost.slug).unwrap();
+
+        let rows = StateChangeView.query(&db, &ViewParams::default()).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn state_change_pushes_field_filter() {
+        let db = fresh_db();
+        let t0 = Utc.with_ymd_and_hms(2026, 4, 20, 9, 0, 0).unwrap();
+        entry_builder("mood")
+            .verb(Verb::Switch)
+            .value(json!("focused"))
+            .time_start_utc(t0)
+            .insert(&db);
+        entry_builder("workout")
+            .time_start_utc(t0)
+            .time_end_utc(t0 + Duration::minutes(30))
+            .insert(&db);
+
+        let params = ViewParams {
+            key: Some(json!(["workout"])),
+            ..Default::default()
+        };
+        let rows = StateChangeView.query(&db, &params).unwrap();
+        // Both transitions belong to workout (open + close).
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.key[0] == json!("workout")));
+    }
 }
