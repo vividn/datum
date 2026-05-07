@@ -38,7 +38,6 @@ fn double_start_does_not_error() {
 }
 
 #[test]
-#[ignore = "DoubleOpen detection deferred under v3 (da-2d8); see follow-up da-nm5b"]
 fn double_start_creates_conflict_row() {
     // The second `start` on an already-open field lands, AND a
     // `double_open` conflict row is filed for later review.
@@ -80,7 +79,6 @@ fn orphan_end_does_not_error() {
 }
 
 #[test]
-#[ignore = "OrphanEnd detection deferred under v3 (da-2d8); see follow-up da-nm5b"]
 fn orphan_end_creates_conflict_row() {
     // Orphan stop files an `orphan_end` conflict. `remote_entry` is None
     // because there's no counterpart to point at.
@@ -104,12 +102,16 @@ fn orphan_end_creates_conflict_row() {
 // ─── auto-resolver ───────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "auto-resolver depends on DoubleOpen detection (da-2d8 deferred); see da-nm5b"]
 fn auto_resolver_closes_older_open_after_delay() {
     // Two opens, then auto-resolver (with min_age=0 so the conflict is
-    // immediately eligible). The older ongoing should get an end_time
-    // equal to the newer one's start_time, and the conflict should be
+    // immediately eligible). The older ongoing should get a dur covering
+    // the gap up to the newer's occur_time, and the conflict should be
     // marked auto_close_older.
+    //
+    // Under v3 verbs (da-nm5b): older was Switch state=true; after close
+    // it becomes Block (state still true, dur set). Newer remains Switch
+    // — under v3 a "still open" event is just a Switch with no dur, so
+    // entry_shape = Point (the legacy `Ongoing` shape no longer exists).
     use datum_core::entry::{EntryShape, Verb};
 
     let db = fresh_db();
@@ -132,8 +134,8 @@ fn auto_resolver_closes_older_open_after_delay() {
     assert_eq!(applied.len(), 1, "auto-resolver applied once");
     assert_eq!(applied[0].conflict_kind, ConflictKind::DoubleOpen);
 
-    // The older ongoing is now a block (has end_time). The query order
-    // isn't guaranteed, so identify newer/older by start_time.
+    // The older ongoing is now a block (has dur). The query order
+    // isn't guaranteed, so identify newer/older by occur_time.
     let entries = db.entries_for_field("workout", None).unwrap();
     let mut sorted = entries.clone();
     sorted.sort_by_key(|e| e.occur_time.as_ref().unwrap().utc);
@@ -145,15 +147,24 @@ fn auto_resolver_closes_older_open_after_delay() {
         "older open should be closed into a block; got shape={:?}",
         older.entry_shape
     );
-    assert!(older.dur.is_some(), "older open must have end_time");
-    assert_eq!(
-        older.computed_end_time().unwrap().utc,
-        newer.occur_time.as_ref().unwrap().utc,
-        "older's end_time should match newer's start_time"
+    assert!(older.dur.is_some(), "older open must have dur");
+    assert_eq!(older.verb, Verb::Block, "older's verb re-derives to Block");
+    // dur is stored at second precision under v3 (parse_iso_duration_seconds
+    // returns i64 secs), so equality between computed_end and the sub-second
+    // newer.occur_time can be off by < 1s. The contract being tested is that
+    // the older block ends "at the newer's start moment" — verified by
+    // bounding the gap rather than exact equality.
+    let older_end = older.computed_end_time().unwrap().utc;
+    let newer_start = newer.occur_time.as_ref().unwrap().utc;
+    let delta_ms = (older_end - newer_start).num_milliseconds().abs();
+    assert!(
+        delta_ms < 1000,
+        "older's computed end ({older_end}) must be within 1s of newer's start ({newer_start}); got {delta_ms}ms"
     );
-    // Newer remains ongoing.
+    // Newer remains a Switch with no dur — under v3 that's entry_shape=Point.
     assert_eq!(newer.verb, Verb::Switch);
-    assert_eq!(newer.entry_shape, EntryShape::Ongoing);
+    assert!(newer.dur.is_none(), "newer must remain dur-less (still 'open')");
+    assert_eq!(newer.entry_shape, EntryShape::Point);
 
     // Pending set should be empty now.
     let pending = db
@@ -166,7 +177,6 @@ fn auto_resolver_closes_older_open_after_delay() {
 }
 
 #[test]
-#[ignore = "auto-resolver depends on DoubleOpen detection (da-2d8 deferred); see da-nm5b"]
 fn auto_resolver_skips_if_kept_both() {
     // A conflict that the user has explicitly resolved with `--keep both`
     // must NOT be re-touched by the auto-resolver.
@@ -207,7 +217,6 @@ fn auto_resolver_skips_if_kept_both() {
 // ─── datum now overlap warning ───────────────────────────────────────────────
 
 #[test]
-#[ignore = "Overlap detection deferred under v3 (da-2d8); see follow-up da-nm5b"]
 fn now_view_shows_overlap_warning() {
     // Two live ongoing entries on the same field produce an overlap
     // warning line above the field's `now` row.
@@ -303,7 +312,6 @@ fn conflicts_list_all_includes_resolved() {
 // ─── C4e: take_local / take_remote ───────────────────────────────────────────
 
 #[test]
-#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
     // File a double-open, resolve `--take local`. The Db API must return
     // the conflict row with `resolution = "take_local"` and the entry
@@ -338,7 +346,6 @@ fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
 }
 
 #[test]
-#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
     // For sync_pull-style conflicts where remote_entry was applied to
     // the table, `--take remote` is a no-op on data; here we just
@@ -376,7 +383,6 @@ fn conflicts_resolve_take_remote_updates_entry_and_marks_resolved() {
 // ─── C4e: --edit ─────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_resolve_edit_uses_saved_content() {
     // The `--edit` flow ultimately calls `db.resolve_conflict_with_edited`
     // with the (possibly mutated) Entry parsed from the editor's saved
@@ -426,7 +432,6 @@ fn conflicts_resolve_edit_uses_saved_content() {
 // ─── C4e: show ───────────────────────────────────────────────────────────────
 
 #[test]
-#[ignore = "depends on DoubleOpen detection (da-2d8 deferred); see follow-up da-nm5b"]
 fn conflicts_show_renders_diff() {
     // `datum conflicts show <hid>` renders a side-by-side LOCAL/REMOTE
     // diff of the two snapshots, plus a footer pointing at the

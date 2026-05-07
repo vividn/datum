@@ -32,7 +32,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::entry::{new_hid, Entry, Verb, SHORT_HID_LEN};
+use crate::entry::{compat_dur_secs, new_hid, Entry, Verb, SHORT_HID_LEN};
 use crate::error::{DatumError, Result};
 use crate::ids::Slug;
 
@@ -196,23 +196,76 @@ pub fn detect_for_entry(
     trigger: &Entry,
     detected_by: DetectedBy,
 ) -> Result<Vec<Conflict>> {
-    // da-2d8: same-state-repeat / last-state-mismatch detection adapted to
-    // the new (occur_time, state, dur, following_state, verb) shape.
-    // Overlap / double-open / orphan-end remain on the to-do list — the
-    // pre-pivot SQL keyed on `entry_shape` and `end_time`, neither of which
-    // exists in the v20 entries table, and the current Verb set has no
-    // Start/Stop variants. Switch (and the trailing -L mismatch check) is
-    // what concurrent_states_cmd / last_state_and_moment exercises today.
+    // da-nm5b: detection under v3 verbs.
+    // - Switch with state=Bool(true) on a field whose pre-trigger state is
+    //   also Bool(true) → DoubleOpen.
+    // - Switch with state=Bool(false) on a field with no prior history
+    //   → OrphanEnd (no counterpart).
+    // - Switch where (normalized) state shares an element with the prior
+    //   state but is not the open/open case → SameStateRepeat.
+    // - Block / BlockSwitch whose [occur, occur+dur] interval overlaps an
+    //   existing Block/BlockSwitch on the same field → Overlap.
+    // - LastStateMismatch (S6) is independent of the above.
     let mut filed = Vec::new();
 
     if matches!(trigger.verb, Verb::Switch) {
-        if let Some(hit) = detect_same_state_repeat(conn, trigger)? {
+        let new_norm = trigger
+            .state
+            .as_ref()
+            .map(crate::state::normalize_state)
+            .unwrap_or(serde_json::Value::Null);
+
+        let prior_at_probe = if let Some(ts) = trigger.occur_time.as_ref() {
+            let probe = ts.utc - chrono::Duration::microseconds(1);
+            crate::state::last_state_at(
+                conn,
+                &trigger.field,
+                probe,
+                Some(trigger.hid.as_str()),
+            )?
+        } else {
+            None
+        };
+
+        // OrphanEnd: a state=false transition arriving at a field that has
+        // never been opened. Mutually exclusive with SameStateRepeat —
+        // there's no prior state to share with.
+        if is_close_state(&new_norm) && prior_at_probe.is_none() {
             filed.push(file_conflict(
                 conn,
                 trigger,
-                Some(&hit),
+                None,
                 detected_by,
-                ConflictKind::SameStateRepeat,
+                ConflictKind::OrphanEnd,
+            )?);
+        } else if let Some(prior) = prior_at_probe.as_ref() {
+            if states_share_element(&new_norm, prior) {
+                let kind = if is_open_state(&new_norm) && is_open_state(prior) {
+                    ConflictKind::DoubleOpen
+                } else {
+                    ConflictKind::SameStateRepeat
+                };
+                if let Some(hit) = find_recent_state_setter(conn, trigger)? {
+                    filed.push(file_conflict(
+                        conn,
+                        trigger,
+                        Some(&hit),
+                        detected_by,
+                        kind,
+                    )?);
+                }
+            }
+        }
+    }
+
+    if matches!(trigger.verb, Verb::Block | Verb::BlockSwitch) {
+        if let Some(other) = find_overlapping_block(conn, trigger)? {
+            filed.push(file_conflict(
+                conn,
+                trigger,
+                Some(&other),
+                detected_by,
+                ConflictKind::Overlap,
             )?);
         }
     }
@@ -230,37 +283,34 @@ pub fn detect_for_entry(
     Ok(filed)
 }
 
-/// S6/S12: detect a switch whose normalized value shares at least one
-/// element with the field's computed active state immediately before the
-/// trigger. Scalar↔scalar, scalar↔array, array↔array overlap all count.
-/// Disjoint array→array transitions are clean. Returns the most recent
-/// state-defining counterpart entry for display.
-fn detect_same_state_repeat(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
+/// State value indicating "field is open" — the canonical shorthand
+/// produced by `datum start` after [`crate::verb::derive_verb`] runs.
+fn is_open_state(v: &serde_json::Value) -> bool {
+    matches!(v, serde_json::Value::Bool(true))
+}
+
+/// State value indicating "field is closed" — the canonical shorthand
+/// produced by `datum stop`.
+fn is_close_state(v: &serde_json::Value) -> bool {
+    matches!(v, serde_json::Value::Bool(false))
+}
+
+/// Look up the most recent state-setting entry strictly before the
+/// trigger's `occur_time`. Used as the `remote_entry` snapshot on
+/// DoubleOpen / SameStateRepeat conflicts so the resolver UI can show
+/// "this conflicts with that one over there".
+fn find_recent_state_setter(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
     let Some(ts) = &trigger.occur_time else {
         return Ok(None);
     };
-    let probe = ts.utc - chrono::Duration::microseconds(1);
-    let prior =
-        crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?;
-    let Some(prior_state) = prior else {
-        return Ok(None);
-    };
-    let new_norm = trigger
-        .state
-        .as_ref()
-        .map(crate::state::normalize_state)
-        .unwrap_or(serde_json::Value::Null);
-    if !states_share_element(&new_norm, &prior_state) {
-        return Ok(None);
-    }
-    let at_str = probe.to_rfc3339();
+    let at_str = ts.utc.to_rfc3339();
     conn.query_row(
         r#"SELECT * FROM entries
            WHERE field = ?1
              AND deleted_at IS NULL
              AND verb IN ('switch', 'block-switch', 'point-switch')
              AND occur_time IS NOT NULL
-             AND occur_time <= ?2
+             AND occur_time < ?2
              AND hid != ?3
            ORDER BY occur_time DESC, create_time DESC
            LIMIT 1"#,
@@ -269,6 +319,60 @@ fn detect_same_state_repeat(conn: &Connection, trigger: &Entry) -> Result<Option
     )
     .optional()
     .map_err(DatumError::Db)
+}
+
+/// Find a live Block / BlockSwitch on the same field whose
+/// `[occur, occur+dur]` interval overlaps the trigger's. Touching
+/// boundaries (one ends exactly when the other starts) do NOT overlap —
+/// a back-to-back schedule is legitimate. Returns the first hit; the
+/// caller files exactly one Overlap row per trigger.
+fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<Entry>> {
+    let Some(occur) = &trigger.occur_time else {
+        return Ok(None);
+    };
+    let Some(dur) = trigger.dur.as_deref() else {
+        return Ok(None);
+    };
+    let Some(secs) = compat_dur_secs(dur) else {
+        return Ok(None);
+    };
+    let trig_start = occur.utc;
+    let trig_end = occur.utc + chrono::Duration::seconds(secs);
+
+    let mut stmt = conn.prepare(
+        r#"SELECT * FROM entries
+           WHERE field = ?1
+             AND deleted_at IS NULL
+             AND verb IN ('block', 'block-switch')
+             AND occur_time IS NOT NULL
+             AND dur IS NOT NULL
+             AND hid != ?2
+           ORDER BY occur_time ASC, create_time ASC"#,
+    )?;
+    let rows = stmt.query_map(
+        params![trigger.field, trigger.hid.as_str()],
+        crate::db::row_to_entry_public,
+    )?;
+
+    for row in rows {
+        let other = row.map_err(DatumError::Db)?;
+        let Some(o_occur) = other.occur_time.as_ref() else {
+            continue;
+        };
+        let Some(o_dur) = other.dur.as_deref() else {
+            continue;
+        };
+        let Some(o_secs) = compat_dur_secs(o_dur) else {
+            continue;
+        };
+        let o_start = o_occur.utc;
+        let o_end = o_occur.utc + chrono::Duration::seconds(o_secs);
+        if trig_start < o_end && o_start < trig_end {
+            return Ok(Some(other));
+        }
+    }
+
+    Ok(None)
 }
 
 /// S12: true when two (normalized) states share at least one element. Scalar
@@ -525,43 +629,217 @@ pub const AUTO_RESOLVE_MIN_AGE_SECS: i64 = 60;
 ///
 /// Rules:
 /// - `DoubleOpen`: close the older ongoing entry at the newer one's
-///   start_time. Records a `user_edit` on the older entry and marks the
-///   conflict `auto_close_older`.
-/// - `OrphanEnd`: if there's a recent ongoing on the same field (within
-///   `ORPHAN_END_WINDOW_SECS`) from the same device, pair it off —
-///   close that ongoing at the orphan stop's start_time and resolve
-///   the conflict as `auto_close_older`.
-/// - `Overlap`: no auto-rule (both sides kept; user must resolve).
+///   `occur_time`. Records a `user_edit` on the older entry and marks
+///   the conflict `auto_close_older`.
+/// - `OrphanEnd` / `Overlap` / `SameStateRepeat` / `LastStateMismatch`:
+///   no auto-rule. The user must resolve manually — either of those
+///   patterns can be deliberate (e.g. logging a stop on a field tracked
+///   only via stops, or two adjacent gym sessions).
 pub fn auto_resolve_pending(
-    _conn: &Connection,
-    _now: DateTime<Utc>,
-    _min_age_secs: i64,
+    conn: &Connection,
+    now: DateTime<Utc>,
+    min_age_secs: i64,
 ) -> Result<Vec<Conflict>> {
-    // da-5ns sub-bead 1 stub: detection is disabled (see
-    // `detect_for_entry`), so there is nothing to auto-resolve. Sub-bead
-    // 5 reintroduces both detection and the matching auto-resolution
-    // rules under the new (occur_time, dur, state, following_state)
-    // shape.
-    Ok(vec![])
+    let cutoff = now - chrono::Duration::seconds(min_age_secs.max(0));
+    let pending = list(
+        conn,
+        &ListFilter {
+            kind: Some(ConflictKind::DoubleOpen),
+            pending: Some(true),
+        },
+    )?;
+
+    let mut applied = Vec::new();
+    for c in pending {
+        if c.detected_at > cutoff {
+            continue;
+        }
+        let Some(older) = c.remote_entry.as_ref() else {
+            continue;
+        };
+        close_older_at(conn, older, c.local_entry.occur_time.as_ref())?;
+        mark_resolved(conn, &c.id, Resolution::AutoCloseOlder, now)?;
+        applied.push(get_by_hid_or_id(conn, &c.id)?.expect("just-resolved row"));
+    }
+    Ok(applied)
 }
 
-/// Stub — see `auto_resolve_pending`. Kept on the public surface so
-/// `Db::resolve_conflict` keeps compiling; sub-bead 5 reimplements.
+/// Close `older` at `at` by setting its `dur` to `at − older.occur_time`
+/// (clamped non-negative) and re-deriving its verb to `Block`. Records
+/// the pre-update state in `entry_history` so the resolution is
+/// reversible. Silently no-ops when `at` or `older.occur_time` is
+/// missing — the caller's resolver still marks the conflict resolved.
 pub(crate) fn close_older_at(
-    _conn: &Connection,
-    _older: &Entry,
-    _at: Option<&crate::time::DatumTime>,
+    conn: &Connection,
+    older: &Entry,
+    at: Option<&crate::time::DatumTime>,
 ) -> Result<()> {
+    let Some(end) = at else {
+        return Ok(());
+    };
+    let Some(start) = older.occur_time.as_ref() else {
+        return Ok(());
+    };
+    let secs = (end.utc - start.utc).num_seconds().max(0);
+    let new_dur = format!("PT{secs}S");
+
+    let mut updated = older.clone();
+    updated.dur = Some(new_dur);
+    updated.verb = if secs == 0 { Verb::Point } else { Verb::Block };
+    updated.modify_time = Utc::now();
+    updated.content_hash = updated.expected_content_hash();
+
+    crate::history::record(conn, older, crate::history::ChangeKind::UserEdit)?;
+
+    conn.execute(
+        r#"UPDATE entries SET
+            verb = ?2,
+            dur = ?3,
+            content_hash = ?4,
+            modify_time = ?5
+           WHERE slug = ?1 AND deleted_at IS NULL"#,
+        params![
+            older.slug,
+            updated.verb.to_string(),
+            updated.dur,
+            updated.content_hash,
+            updated.modify_time.to_rfc3339(),
+        ],
+    )?;
     Ok(())
 }
 
-/// Count of live "open" entries for `field`. Pre-pivot this counted
-/// ongoing blocks (entry_shape='ongoing' AND end_time IS NULL); under
-/// the new shape an "open" event is a switch with no matching trailing
-/// switch — tracking that requires the state-compilation work that
-/// sub-bead 5 lands. Until then this returns 0; the only caller is the
-/// `datum now` overlap banner which will go silent until detection
-/// comes back.
-pub fn open_entries_for_field(_conn: &Connection, _field: &str) -> Result<u32> {
-    Ok(0)
+/// Count of live "open" entries on `field` — Switch state=Bool(true)
+/// transitions that haven't been balanced by a Switch state=Bool(false).
+/// The result is `max(0, opens − closes)`. The `datum now` view uses
+/// this to decide whether to print the overlap banner.
+pub fn open_entries_for_field(conn: &Connection, field: &str) -> Result<u32> {
+    let mut stmt = conn.prepare(
+        r#"SELECT state FROM entries
+           WHERE field = ?1
+             AND deleted_at IS NULL
+             AND verb = 'switch'
+             AND state IS NOT NULL"#,
+    )?;
+    let rows = stmt.query_map(params![field], |row| row.get::<_, String>(0))?;
+
+    let mut opens: i64 = 0;
+    let mut closes: i64 = 0;
+    for row in rows {
+        let raw = row.map_err(DatumError::Db)?;
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+            continue;
+        };
+        let normalized = crate::state::normalize_state(&value);
+        if is_open_state(&normalized) {
+            opens += 1;
+        } else if is_close_state(&normalized) {
+            closes += 1;
+        }
+    }
+    Ok((opens - closes).max(0) as u32)
+}
+
+#[cfg(test)]
+mod tests {
+    //! D5 invariants under v3 verbs (da-nm5b). Ported from the
+    //! `#[cfg(any())]` module deleted in fdb2851 — the legacy
+    //! `Verb::Start` / `Verb::Stop` / `Verb::Block` are gone, so the
+    //! "start" pattern is now `Switch` + `state=Bool(true)`, "stop" is
+    //! `Switch` + `state=Bool(false)`, and a closed block carries a
+    //! `dur` so `derive_verb` storage-canonicalizes it as `block`.
+    use super::*;
+    use crate::db::Db;
+    use crate::test_util::entry_builder;
+    use crate::time::DatumTime;
+    use chrono::{Duration, Utc};
+    use serde_json::json;
+
+    fn ts(seconds_ago: i64) -> DatumTime {
+        DatumTime {
+            utc: Utc::now() - Duration::seconds(seconds_ago),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        }
+    }
+
+    /// The invariant D5 protects: every insert lands, even patterns
+    /// that violate "normal" state consistency (double-open, orphan
+    /// stop, overlapping blocks). The post-write hook may file
+    /// conflict rows, but it MUST NOT refuse the insert.
+    #[test]
+    fn insert_always_succeeds_regardless_of_state_consistency() {
+        let db = Db::open_in_memory().unwrap();
+
+        // Double-open: two state=true switches on the same field.
+        entry_builder("workout")
+            .value(json!(true))
+            .time_start(ts(300))
+            .insert(&db);
+        entry_builder("workout")
+            .value(json!(true))
+            .time_start(ts(60))
+            .insert(&db);
+
+        // Orphan stop: a state=false switch on a never-opened field.
+        entry_builder("cooking")
+            .value(json!(false))
+            .time_start(ts(120))
+            .insert(&db);
+
+        // Overlapping blocks: two intervals on the same field that
+        // share time. Both must land regardless.
+        entry_builder("meeting")
+            .value(json!(true))
+            .time_start(ts(600))
+            .time_end(ts(300))
+            .insert(&db);
+        entry_builder("meeting")
+            .value(json!(true))
+            .time_start(ts(500))
+            .time_end(ts(200))
+            .insert(&db);
+
+        // All five entries should be present in the table.
+        let entries = db.all_entries().unwrap();
+        let workout = entries.iter().filter(|e| e.field == "workout").count();
+        let cooking = entries.iter().filter(|e| e.field == "cooking").count();
+        let meeting = entries.iter().filter(|e| e.field == "meeting").count();
+        assert_eq!(workout, 2, "both double-opens land");
+        assert_eq!(cooking, 1, "orphan stop lands");
+        assert_eq!(meeting, 2, "both overlapping blocks land");
+    }
+
+    /// Writing an overlapping block files exactly one `overlap`
+    /// conflict via the post-write hook. The original insert still
+    /// succeeds — only the conflict queue is touched.
+    #[test]
+    fn post_write_hook_detects_overlap() {
+        let db = Db::open_in_memory().unwrap();
+        entry_builder("meeting")
+            .value(json!(true))
+            .time_start(ts(600))
+            .time_end(ts(300))
+            .insert(&db);
+        entry_builder("meeting")
+            .value(json!(true))
+            .time_start(ts(500))
+            .time_end(ts(200))
+            .insert(&db);
+
+        let rows = db
+            .list_conflicts(&ListFilter {
+                kind: Some(ConflictKind::Overlap),
+                pending: Some(true),
+            })
+            .unwrap();
+        assert_eq!(rows.len(), 1, "exactly one overlap conflict filed");
+        let c = &rows[0];
+        assert_eq!(c.conflict_kind, ConflictKind::Overlap);
+        assert_eq!(c.detected_by, DetectedBy::LocalValidator);
+        assert!(
+            c.remote_entry.is_some(),
+            "overlap carries the older block as counterpart"
+        );
+    }
 }
