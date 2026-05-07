@@ -23,7 +23,6 @@ serde_json = { workspace = true }
 rusqlite = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
-chrono = { workspace = true }
 
 # HTTP middleware
 tower-http = { version = "0.5", features = ["cors", "trace"] }

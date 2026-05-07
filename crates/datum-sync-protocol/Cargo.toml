@@ -18,6 +18,4 @@ path = "src/lib.rs"
 # so the wire types that ARE duplicated live in exactly one place.
 [dependencies]
 serde = { workspace = true }
-serde_json = { workspace = true }
 thiserror = { workspace = true }
-uuid = { version = "1", features = ["v4", "serde"] }

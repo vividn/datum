@@ -495,7 +495,6 @@ name = "datum-commands"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "base64 0.22.1",
  "chrono",
  "datum-core",
  "datum-layout",
@@ -514,10 +513,8 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "sha2",
  "tar",
  "tempfile",
- "thiserror 2.0.18",
  "toml",
  "ulid",
  "url",
@@ -527,11 +524,8 @@ dependencies = [
 name = "datum-core"
 version = "0.1.0"
 dependencies = [
- "anyhow",
  "chrono",
- "chrono-tz",
  "datum-parse",
- "iana-time-zone",
  "md-5",
  "rand 0.8.6",
  "rusqlite",
@@ -541,7 +535,6 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.18",
  "toml",
- "ulid",
 ]
 
 [[package]]
@@ -549,7 +542,6 @@ name = "datum-layout"
 version = "0.1.0"
 dependencies = [
  "serde",
- "serde_json",
 ]
 
 [[package]]
@@ -591,8 +583,6 @@ dependencies = [
  "libc",
  "notify",
  "reqwest",
- "serde",
- "serde_json",
  "tempfile",
  "tokio",
  "tracing",
@@ -626,9 +616,7 @@ name = "datum-sync-protocol"
 version = "0.1.0"
 dependencies = [
  "serde",
- "serde_json",
  "thiserror 2.0.18",
- "uuid",
 ]
 
 [[package]]
@@ -638,7 +626,6 @@ dependencies = [
  "anyhow",
  "axum",
  "base64 0.22.1",
- "chrono",
  "datum-sync-protocol",
  "http-body-util",
  "jsonwebtoken",
