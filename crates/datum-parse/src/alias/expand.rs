@@ -164,17 +164,25 @@ pub fn apply_terminal_verb_override(mut argv: Vec<String>) -> Vec<String> {
 /// Resolve argv[1] as an alias from the resolver, recording each
 /// expansion step. Stops on a known subcommand or missing alias.
 /// Returns [`ParseError::InvalidArg`] if a positional placeholder
-/// references an argv slot that does not exist.
+/// references an argv slot that does not exist, or
+/// [`ParseError::AliasCycle`] if expansion revisits a previously
+/// expanded name (e.g. `set a 'b'; set b 'a'; datum a`).
 pub fn try_expand_alias(
     mut argv: Vec<String>,
     resolver: &dyn Resolver,
 ) -> crate::Result<(Vec<String>, Vec<AliasStep>)> {
     let mut chain: Vec<AliasStep> = Vec::new();
+    let mut visited: Vec<String> = Vec::new();
     for _ in 0..MAX_ALIAS_HOPS {
         if argv.len() < 2 || KNOWN_SUBCOMMANDS.contains(&argv[1].as_str()) {
             return Ok((argv, chain));
         }
         let name = argv[1].clone();
+        if visited.iter().any(|v| v == &name) {
+            let mut path = visited;
+            path.push(name);
+            return Err(crate::error::ParseError::AliasCycle(path));
+        }
         match resolver.lookup(&name) {
             Some(alias) => {
                 let trailing = &argv[2..];
@@ -201,6 +209,7 @@ pub fn try_expand_alias(
                     name: name.clone(),
                     expansion,
                 });
+                visited.push(name);
                 let mut result = vec![argv[0].clone()];
                 result.extend(substituted);
                 result.extend(remaining);
@@ -768,5 +777,104 @@ mod tests {
         aliases.insert("z".to_string(), alias("occur $0"));
         let (argv, _) = expand_argv(v(&["datum", "z"]), &MapResolver(&aliases)).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "$0"]));
+    }
+
+    #[test]
+    fn cycle_two_alias() {
+        // a → b, b → a — must error, not stack-overflow or silently
+        // truncate at MAX_ALIAS_HOPS.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("b"));
+        aliases.insert("b".to_string(), alias("a"));
+        let err = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap_err();
+        match err {
+            crate::error::ParseError::AliasCycle(path) => {
+                assert_eq!(path, v(&["a", "b", "a"]));
+            }
+            other => panic!("expected AliasCycle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cycle_self_reference() {
+        // a → a — degenerate self-cycle.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("a"));
+        let err = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap_err();
+        match err {
+            crate::error::ParseError::AliasCycle(path) => {
+                assert_eq!(path, v(&["a", "a"]));
+            }
+            other => panic!("expected AliasCycle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cycle_three_alias() {
+        // a → b → c → a.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("b"));
+        aliases.insert("b".to_string(), alias("c"));
+        aliases.insert("c".to_string(), alias("a"));
+        let err = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap_err();
+        match err {
+            crate::error::ParseError::AliasCycle(path) => {
+                assert_eq!(path, v(&["a", "b", "c", "a"]));
+            }
+            other => panic!("expected AliasCycle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cycle_mid_chain() {
+        // a → b → c → b — cycle that doesn't revisit the start.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("b"));
+        aliases.insert("b".to_string(), alias("c"));
+        aliases.insert("c".to_string(), alias("b"));
+        let err = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap_err();
+        match err {
+            crate::error::ParseError::AliasCycle(path) => {
+                assert_eq!(path, v(&["a", "b", "c", "b"]));
+            }
+            other => panic!("expected AliasCycle, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn cycle_error_message_renders_arrow_path() {
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("b"));
+        aliases.insert("b".to_string(), alias("a"));
+        let err = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("Alias cycle"), "msg should label the failure: {msg}");
+        assert!(msg.contains("a → b → a"), "msg should render the path: {msg}");
+    }
+
+    #[test]
+    fn no_cycle_when_chain_terminates_at_subcommand() {
+        // a → b → occur ... — legitimate two-step expansion, no cycle.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("b"));
+        aliases.insert("b".to_string(), alias("occur coffee"));
+        let (argv, chain) =
+            expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "coffee"]));
+        assert_eq!(chain.len(), 2);
+        assert_eq!(chain[0].name, "a");
+        assert_eq!(chain[1].name, "b");
+    }
+
+    #[test]
+    fn cycle_through_placeholder_substitution() {
+        // a → "b $1", b → "a $1" — placeholders consume positional args
+        // but argv[1] still cycles between a and b.
+        let mut aliases = std::collections::HashMap::new();
+        aliases.insert("a".to_string(), alias("b $1"));
+        aliases.insert("b".to_string(), alias("a $1"));
+        let err =
+            expand_argv(v(&["datum", "a", "x"]), &MapResolver(&aliases)).unwrap_err();
+        assert!(matches!(err, crate::error::ParseError::AliasCycle(_)));
     }
 }

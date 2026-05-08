@@ -24,6 +24,12 @@ pub enum ParseError {
     #[error("Extra data with no matching key: {0:?}")]
     ExtraData(Vec<String>),
 
+    /// Alias expansion revisited a name in the chain (e.g. `a → b → a`).
+    /// The payload is the visited path with the repeated name appended at
+    /// the end, so callers can render the full cycle.
+    #[error("Alias cycle: {}", .0.join(" → "))]
+    AliasCycle(Vec<String>),
+
     /// `--help` or `-h` was requested. Optional payload: the subcommand
     /// name (if `datum help <cmd>` or `datum <cmd> --help`). Callers
     /// render the help and exit with status 0.

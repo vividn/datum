@@ -100,6 +100,9 @@ impl From<datum_parse::ParseError> for DatumError {
             datum_parse::ParseError::ExtraData(rem) => {
                 DatumError::Other(format!("Extra data with no matching key: {rem:?}"))
             }
+            datum_parse::ParseError::AliasCycle(path) => {
+                DatumError::Other(format!("Alias cycle: {}", path.join(" → ")))
+            }
             datum_parse::ParseError::HelpRequested(Some(cmd)) => {
                 DatumError::Other(format!("help requested for '{cmd}'"))
             }
