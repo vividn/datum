@@ -39,7 +39,6 @@ reqwest = { workspace = true }
 rpassword = { workspace = true }
 url = { workspace = true }
 rand = { workspace = true }
-dirs-next = "2"
 libc = { workspace = true }
 # Pure-Rust SVG → PNG rasterization for `datum {dayview,nowview} --output
 # foo.png`. Optional via the `png` feature: ~50 transitive crates + ~1.5 MiB

@@ -197,6 +197,18 @@ pub fn device_id() -> Result<String> {
     Ok(id)
 }
 
+fn xdg_data_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".local").join("share")))
+}
+
+fn xdg_config_dir() -> Option<PathBuf> {
+    std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+}
+
 pub fn data_dir() -> Result<PathBuf> {
     if let Ok(home) = std::env::var("DATUM_HOME") {
         let dir = PathBuf::from(home);
@@ -204,9 +216,7 @@ pub fn data_dir() -> Result<PathBuf> {
             .with_context(|| format!("Creating DATUM_HOME directory {dir:?}"))?;
         return Ok(dir);
     }
-    let base = dirs_next::data_dir()
-        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
-        .context("Cannot determine data directory")?;
+    let base = xdg_data_dir().context("Cannot determine data directory")?;
     let dir = base.join("datum");
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("Creating data directory {dir:?}"))?;
@@ -220,9 +230,7 @@ pub fn config_dir() -> Result<PathBuf> {
             .with_context(|| format!("Creating DATUM_CONFIG_HOME directory {dir:?}"))?;
         return Ok(dir);
     }
-    let base = dirs_next::config_dir()
-        .or_else(|| std::env::var("HOME").ok().map(PathBuf::from))
-        .context("Cannot determine config directory")?;
+    let base = xdg_config_dir().context("Cannot determine config directory")?;
     let dir = base.join("datum");
     std::fs::create_dir_all(&dir)
         .with_context(|| format!("Creating config directory {dir:?}"))?;
