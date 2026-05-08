@@ -255,6 +255,18 @@ pub struct LogArgs {
     /// `extra_data.comment = [...]` (array). Joined into the entry by
     /// [`datum_parse::input::data_args::handle_data_args`].
     pub comment: Vec<String>,
+    /// `-R` / `--remainder`: route un-keyed positionals to `<field>` in
+    /// `extra_data` instead of the primary `value` column. Mirrors datum's
+    /// remainder-bucket override.
+    pub remainder: Option<String>,
+    /// `-S` / `--string-remainder`: join the remainder positionals into
+    /// one space-separated string instead of an array (or, when no `-R`
+    /// is supplied, into the primary value).
+    pub string_remainder: bool,
+    /// `-C` / `--comment-remainder`: shorthand for `-SR comment` —
+    /// remainder positionals join into a single string and land in
+    /// `extra_data.comment`.
+    pub comment_remainder: bool,
     pub id: Option<String>,
     pub id_delimiter: String,
     /// `-L`/`--last-state` user assertion.
@@ -293,6 +305,9 @@ impl LogArgs {
             keys: Vec::new(),
             slug_keys: Vec::new(),
             comment: Vec::new(),
+            remainder: None,
+            string_remainder: false,
+            comment_remainder: false,
             id: None,
             id_delimiter: ":".to_string(),
             last_state: None,

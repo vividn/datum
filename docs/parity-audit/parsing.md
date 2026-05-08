@@ -111,16 +111,21 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
    namespace yields the same result (used internally when a command
    change happens).
 
-- **Daydumb today:** all of the above is inlined into the log path in
-  `datum-commands/src/cmd.rs` (`log_entry` / `build_data_args` —
-  ~200 LOC). The implementation covers the common case but lacks:
-  - `-K` id-slug wiring (ID structure is ad-hoc — slug templates
-    handle it on write instead).
-  - Explicit `-R/-S/-C/-l/--strict` parity. Daydumb always treats
-    extras as `extraData` (implicit lenient).
-  - `-b/--base-data` JSON seeding.
-  - The command-change escape (`dur=5 start` → changes verb to
-    `start` mid-parse). Daydumb chose a static verb-first dispatch.
+- **Daydumb today:** the data-assembly logic lives in
+  `datum-parse::input::data_args::handle_data_args` and is invoked from
+  the log path in `datum-commands/src/cmd.rs::parse_log_args`. Daydumb
+  wires:
+  - `-K` id-slug declarations onto the slug template.
+  - `-R <field>` / `-S` / `-C` remainder routing (da-4t5f). `-R`
+    overrides the primary-value sentinel so un-keyed positionals land
+    in `extra_data.<field>`; `-S` joins them as a single space-separated
+    string; `-C` is the `-SR comment` shorthand.
+  - Implicit-lenient default: when no `-R`/`-C` is supplied, un-keyed
+    positionals fold into the primary `value` column via the
+    PRIMARY_VALUE_KEY sentinel (no `--strict` mode yet).
+  - Still missing: `-l/--lenient` / `--strict` toggles, `-b/--base-data`
+    JSON seeding, and the `dur=5 start` mid-parse command-change escape
+    (daydumb dispatches verb-first by design).
 - **Target (step 2/N):** `datum_parse::input::data_args` module with a
   `DataArgs` struct + `handle_data_args(&mut DataArgs) -> DatumData`
   returning `serde_json::Value` (matching the extra_data leaf layout
@@ -396,7 +401,8 @@ underline on future.
 | `-k key=` (optional, no default) | ✓ | ✓ (step 2/N) | ✓ |
 | `-k key=default` | ✓ | ✓ (step 2/N) | ✓ |
 | `-K key` (id-slug key) | ✓ | ✓ (step 2/N) | partial |
-| `-R`/`-S`/`-C`/`-l`/`--strict` remainder | ✓ | ✓ (step 2/N) | missing |
+| `-R`/`-S`/`-C` remainder | ✓ | ✓ (step 2/N) | ✓ (da-4t5f) |
+| `-l`/`--strict` remainder toggles | ✓ | ✓ (step 2/N) | missing |
 | `.` skip token | ✓ | ✓ (step 2/N) | missing |
 | Command-change escape mid-parse | ✓ | N/A (intentional) | intentional non-port |
 | `-d`/`-t`/`-y*`/`-q*` stackable | ✓ (`-q*` via count) | ✓ | ✓ |

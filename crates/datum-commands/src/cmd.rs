@@ -995,16 +995,32 @@ fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
     data_args.data.extend(injected_immediates);
     data_args.data.extend(args.rest.iter().cloned());
 
-    // Sentinel remainder so unconsumed positionals become the primary
+    // Remainder bucket: -R wins, then -C falls through to "comment", else
+    // the daydumb sentinel so unconsumed positionals become the primary
     // value rather than triggering datum's "extra data" error.
-    data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
+    let user_remainder = args.remainder.is_some() || args.comment_remainder;
+    data_args.remainder = if let Some(r) = &args.remainder {
+        Some(r.clone())
+    } else if args.comment_remainder {
+        Some("comment".to_string())
+    } else {
+        Some(PRIMARY_VALUE_KEY.to_string())
+    };
+    data_args.string_remainder = args.string_remainder;
+    data_args.comment_remainder = args.comment_remainder;
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
     // Extract the primary value placed at the sentinel remainder bucket.
     // handle_data_args appends each remainder positional, so a single token
     // becomes a scalar and 2+ become an array — matching legacy behaviour.
-    let value = datum_data.remove(PRIMARY_VALUE_KEY);
+    // When the user redirected the remainder via -R or -C, the primary
+    // value is intentionally empty.
+    let value = if user_remainder {
+        None
+    } else {
+        datum_data.remove(PRIMARY_VALUE_KEY)
+    };
 
     // Slug values: the resolved value at each `-K` slot path, in
     // declaration order. Slots that resolved to nothing (e.g. `-K key=`

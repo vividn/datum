@@ -71,27 +71,93 @@ fn unit_annotation_survives_handle_data_args() {
     assert_eq!(extra["src"], json!("morning"));
 }
 
-/// `-R/-S/-l/-C` audit (bead da-6iy scope #5): the LogArgs parser does
-/// not lift `data_args::FLAG_SPECS` (per `parse.rs::log_args_registry`,
-/// which tracks slug-keys / comments separately). Wiring `handle_data_args`
-/// in does not on its own promote `-R`/`-S`/`-l`/`-C` into log syntax —
-/// the LogArgs flag registry would need new entries for that. Today the
-/// daydumb default behaviour is fixed: un-keyed positionals fold into the
-/// primary `value` column via the sentinel remainder bucket, and any
-/// `-R` / `-S` / `-l` / `-C` token would be rejected as an unknown flag.
-/// Surfacing them is tracked separately; this test pins the current state.
+/// `-R <field>` (da-4t5f): un-keyed positionals route to `extra_data.<field>`
+/// instead of the primary `value` column. Without `-S` they accumulate as
+/// an array (handle_data_args's append semantics), matching datum's
+/// remainder-bucket behaviour. The entry's stored state is the Action's
+/// canonical default (Action::Occur with no positional → `state = true`,
+/// per derive_verb's null→true promotion).
 #[test]
-fn dash_r_remainder_flag_not_surfaced_on_log_args_today() {
+fn dash_r_routes_remainder_to_named_field() {
     let db = fresh_db();
-    let err = run_cli(
-        &["occur", "note", "-R", "extra", "tail"],
+    run_cli(&["occur", "note", "-R", "extra", "one", "two"], &db)
+        .expect("occur note -R extra one two");
+
+    let entry = &db.entries_for_field("note", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(extra["extra"], json!(["one", "two"]));
+}
+
+/// `-R <field> -S <words…>` (da-4t5f): joins remainder positionals into
+/// a single space-separated string at `extra_data.<field>`. This is the
+/// canonical datum-parity behaviour — the bead-spec example was
+/// `datum log -R notes -S this is a long note` → notes='this is a long note'.
+#[test]
+fn dash_r_dash_s_joins_remainder_into_string_at_field() {
+    let db = fresh_db();
+    run_cli(
+        &["occur", "log", "-R", "notes", "-S", "this", "is", "a", "long", "note"],
         &db,
     )
-    .expect_err("-R must error until LogArgs lifts data_args::FLAG_SPECS");
-    let s = err.to_string();
-    assert!(
-        s.contains("-R") || s.contains("Unknown") || s.contains("unknown"),
-        "expected an unknown-flag error for -R, got: {s}",
+    .expect("occur log -R notes -S this is a long note");
+
+    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(extra["notes"], json!("this is a long note"));
+}
+
+/// `-C <words…>` (da-4t5f): shorthand equivalent to `-SR comment` —
+/// remainder positionals join into a single string and land in
+/// `extra_data.comment`. Bead-spec example: `datum log -C ate too many tacos`
+/// → comment='ate too many tacos'.
+#[test]
+fn dash_c_joins_remainder_into_comment_string() {
+    let db = fresh_db();
+    run_cli(
+        &["occur", "log", "-C", "ate", "too", "many", "tacos"],
+        &db,
+    )
+    .expect("occur log -C ate too many tacos");
+
+    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(extra["comment"], json!("ate too many tacos"));
+}
+
+/// `-S` without `-R`/`-C` (da-4t5f): joins all un-keyed positionals into
+/// a single space-separated string at the primary value column. Falls out
+/// of routing the join through daydumb's PRIMARY_VALUE_KEY sentinel.
+#[test]
+fn dash_s_alone_joins_remainder_into_primary_value_string() {
+    let db = fresh_db();
+    run_cli(
+        &["occur", "log", "-S", "a", "long", "phrase"],
+        &db,
+    )
+    .expect("occur log -S a long phrase");
+
+    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    assert_eq!(entry.value, Some(json!("a long phrase")));
+}
+
+/// `-C` composes with prior `-c` flags: `-c` populates the comment first,
+/// then `-C`'s joined remainder appends, producing an array — the same
+/// shape datum's `comment_remainder_appends_to_existing_comments` test
+/// pins at the data_args layer.
+#[test]
+fn dash_c_appends_to_explicit_comment_flag() {
+    let db = fresh_db();
+    run_cli(
+        &["occur", "log", "-c", "explicit comment", "-C", "remainder", "words"],
+        &db,
+    )
+    .expect("occur log -c explicit -C remainder words");
+
+    let entry = &db.entries_for_field("log", None).unwrap()[0];
+    let extra = entry.data.as_ref().expect("extra_data populated");
+    assert_eq!(
+        extra["comment"],
+        json!(["explicit comment", "remainder words"])
     );
 }
 

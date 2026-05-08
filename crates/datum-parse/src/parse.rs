@@ -429,9 +429,10 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     for spec in input::output_args::FLAG_SPECS {
         r.push(lift(|p: &mut LogArgs| &mut p.output, spec));
     }
-    // Command-scoped extras. We don't lift DataArgs's FLAG_SPECS for log
-    // because log overwrites comment (last-wins) and tracks slug-keys
-    // separately from keys.
+    // Command-scoped extras. We don't lift DataArgs's FLAG_SPECS wholesale
+    // because log tracks slug-keys separately from keys; -R/-S/-C are
+    // surfaced individually below so daydumb's PRIMARY_VALUE_KEY sentinel
+    // can stay in charge when none of them are supplied.
     r.push(local_switch(Some('u'), Some("undo"), |p| {
         p.undo = true;
         Ok(())
@@ -446,6 +447,18 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     }));
     r.push(local_value(Some('c'), Some("comment"), |p, v| {
         p.comment.push(v.to_string());
+        Ok(())
+    }));
+    r.push(local_value(Some('R'), Some("remainder"), |p, v| {
+        p.remainder = Some(v.to_string());
+        Ok(())
+    }));
+    r.push(local_switch(Some('S'), Some("string-remainder"), |p| {
+        p.string_remainder = true;
+        Ok(())
+    }));
+    r.push(local_switch(Some('C'), Some("comment-remainder"), |p| {
+        p.comment_remainder = true;
         Ok(())
     }));
     r.push(local_value(None, Some("id"), |p, v| {

@@ -577,11 +577,12 @@ fn slug_template_interpolates_composite_keys() {
 
 // ─── TS #25: "can add a remainder comment easily" ─────────────────────────────
 
-/// Daydumb divergence: datum's `-C` flag promoted "all positionals after
-/// kv pairs" into a single `comment` string. Daydumb uses `-c`/`--comment`
-/// with an explicit value instead. The ported invariant: `-c` populates
-/// `extra_data.comment`, and subsequent positionals become the primary
-/// value (or extend it into an array, per `parse_log_args`).
+/// Lowercase `-c` / `--comment` takes an explicit value and populates
+/// `extra_data.comment` directly; trailing positionals become the primary
+/// value (or extend it into an array, per `parse_log_args`). Datum's
+/// uppercase `-C` flag — which promotes all positionals into a single
+/// `comment` string — is wired up separately (da-4t5f); see
+/// `data_args_coercion::dash_c_joins_remainder_into_comment_string`.
 #[test]
 fn comment_flag_populates_extra_data_comment() {
     let db = fresh_db();
