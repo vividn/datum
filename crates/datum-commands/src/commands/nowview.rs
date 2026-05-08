@@ -166,10 +166,19 @@ fn write_output(path: &str, svg: &str) -> Result<()> {
             std::fs::write(path, body).with_context(|| format!("write {path}"))?;
         }
         Some("png") => {
-            let body = with_xml_declaration(svg);
-            let png = rasterize_to_png(&body)
-                .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
-            std::fs::write(path, png).with_context(|| format!("write {path}"))?;
+            #[cfg(feature = "png")]
+            {
+                let body = with_xml_declaration(svg);
+                let png = rasterize_to_png(&body)
+                    .with_context(|| format!("rasterize SVG to PNG for {path}"))?;
+                std::fs::write(path, png).with_context(|| format!("write {path}"))?;
+            }
+            #[cfg(not(feature = "png"))]
+            anyhow::bail!(
+                "PNG output requires the `png` cargo feature; rebuild with \
+                 `--features png`, or pick a .svg / .html output path \
+                 instead (got: {path})"
+            );
         }
         _ => anyhow::bail!(
             "output file must end in .svg, .png, or .html: {path}"
@@ -182,6 +191,7 @@ fn write_output(path: &str, svg: &str) -> Result<()> {
 /// `dayview` uses (resvg silently drops `<text>` nodes when its fontdb
 /// has no usable face, which is exactly how labels disappeared from
 /// dayview PNGs in da-6mk).
+#[cfg(feature = "png")]
 fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
     let mut opts = resvg::usvg::Options::default();
     {
@@ -875,6 +885,18 @@ pub(crate) fn format_local_hh_mm(t: DateTime<Utc>) -> String {
 mod tests {
     use super::*;
     use datum_core::action::Action;
+
+    /// Without the `png` feature, requesting a `.png` output path must
+    /// return a friendly error pointing at the missing feature, not panic.
+    #[cfg(not(feature = "png"))]
+    #[test]
+    fn png_output_without_feature_returns_friendly_error() {
+        let err = write_output("/tmp/datum-feature-gate-check.png", "<svg/>")
+            .expect_err("expected friendly error when png feature is off");
+        let msg = err.to_string();
+        assert!(msg.contains("png"), "missing 'png' in error: {msg}");
+        assert!(msg.contains("feature"), "missing 'feature' in error: {msg}");
+    }
 
     #[test]
     fn duration_minutes_supports_common_forms() {

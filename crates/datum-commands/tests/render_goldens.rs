@@ -419,6 +419,7 @@ fn assert_text_golden(path: &Path, actual: &str) {
 
 /// Same as [`assert_text_golden`] but for raw bytes (PNG, etc.) with a
 /// caller-supplied comparator.
+#[cfg(feature = "png")]
 fn assert_bytes_golden(
     path: &Path,
     actual: &[u8],
@@ -440,6 +441,7 @@ fn assert_bytes_golden(
 
 /// Decode a PNG into a tiny-skia [`Pixmap`] (RGBA premul). Used by the PNG
 /// comparator.
+#[cfg(feature = "png")]
 fn decode_png(bytes: &[u8]) -> Result<resvg::tiny_skia::Pixmap, String> {
     resvg::tiny_skia::Pixmap::decode_png(bytes).map_err(|e| format!("decode PNG: {e}"))
 }
@@ -453,6 +455,7 @@ fn decode_png(bytes: &[u8]) -> Result<resvg::tiny_skia::Pixmap, String> {
 /// `avg_channel_tolerance = 1.0` means an average channel deviation of 1
 /// (out of 255) — comfortably absorbs sub-pixel rasterizer rounding while
 /// still flagging large color or layout shifts.
+#[cfg(feature = "png")]
 fn compare_png_with_tolerance(
     expected: &[u8],
     actual: &[u8],
@@ -521,6 +524,7 @@ fn compare_png_with_tolerance(
 /// and is stable across all PNG goldens in this file. Callers should keep
 /// SVG inputs free of fancy text content (or rely on the tolerance) so
 /// goldens survive cross-machine font variance.
+#[cfg(feature = "png")]
 fn rasterize_to_png(svg_xml: &str) -> Vec<u8> {
     let mut opts = resvg::usvg::Options::default();
     {
@@ -822,6 +826,7 @@ fn svg_goldens_per_scene() {
     }
 }
 
+#[cfg(feature = "png")]
 #[test]
 fn png_goldens_per_scene() {
     let dir = goldens_root().join("png");
@@ -844,6 +849,7 @@ fn png_goldens_per_scene() {
 
 // ─── Sanity: the comparator itself ───────────────────────────────────────────
 
+#[cfg(feature = "png")]
 #[test]
 fn png_comparator_accepts_identical_input() {
     let scene = dayview_scene_single_block();
@@ -853,6 +859,7 @@ fn png_comparator_accepts_identical_input() {
         "identical PNGs must compare equal under any tolerance");
 }
 
+#[cfg(feature = "png")]
 #[test]
 fn png_comparator_rejects_size_mismatch() {
     use resvg::tiny_skia::Pixmap;
@@ -869,6 +876,7 @@ fn png_comparator_rejects_size_mismatch() {
     assert!(matches!(result, Err(ref msg) if msg.contains("dimensions")));
 }
 
+#[cfg(feature = "png")]
 #[test]
 fn png_comparator_rejects_color_shift_above_tolerance() {
     use resvg::tiny_skia::{Color, Pixmap};

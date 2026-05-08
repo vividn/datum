@@ -8,9 +8,15 @@ name = "datum_cli"
 path = "src/lib.rs"
 
 [features]
-default = []
+default = ["png"]
 # Shared test fixtures (TestPrompter, etc.) for use by integration tests.
 test-util = []
+# Forwards to `datum-commands/png`. Default-on so distributed `datum`
+# binaries keep `dayview --output foo.png` and `nowview --output foo.png`
+# working out of the box. Drop with `--no-default-features` for size-
+# constrained builds (the dayview/nowview commands then reject `*.png` with
+# a friendly error and continue to support svg/html/json output).
+png = ["datum-commands/png"]
 
 [[bin]]
 name = "datum"

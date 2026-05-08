@@ -11,6 +11,12 @@ path = "src/lib.rs"
 default = []
 # Shared test fixtures (TestPrompter, etc.) — also consumed by datum-cli tests.
 test-util = []
+# Pulls in resvg + tiny-skia for SVG → PNG rasterization. The dayview/nowview
+# `--output *.png` paths require this; SVG/HTML/JSON output stays available
+# without it. ~50 transitive crates and ~1.5 MiB of `.text` come with this
+# feature, so size-conscious downstream builds (WASM, embedded CI) drop it
+# via `--no-default-features`.
+png = ["dep:resvg"]
 
 [dependencies]
 datum-core = { path = "../datum-core" }
@@ -35,10 +41,12 @@ url = { workspace = true }
 rand = { workspace = true }
 dirs-next = "2"
 libc = { workspace = true }
-# Pure-Rust SVG → PNG rasterization for `datum nowview --output foo.png`.
-# Pulled at the CLI boundary so `datum-layout` stays WASM-clean (browsers
-# render SVG natively; PNG is only a CLI-side convenience).
-resvg = { version = "0.47", default-features = false, features = ["text", "system-fonts", "memmap-fonts"] }
+# Pure-Rust SVG → PNG rasterization for `datum {dayview,nowview} --output
+# foo.png`. Optional via the `png` feature: ~50 transitive crates + ~1.5 MiB
+# of `.text` drop out under `--no-default-features`. Pulled at the CLI
+# boundary so `datum-layout` stays WASM-clean (browsers render SVG natively;
+# PNG is only a CLI-side convenience).
+resvg = { version = "0.47", default-features = false, features = ["text", "system-fonts", "memmap-fonts"], optional = true }
 
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }
