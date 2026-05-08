@@ -364,6 +364,11 @@ pub fn maybe_swap_field_verb(mut argv: Vec<String>) -> Vec<String> {
 /// stackable-prefix-plus-terminal forms (`-yyt`, `-qqqd`, `-yt`) both
 /// split into their constituent single-letter flags. The terminal char
 /// can be any short flag — the parser validates it downstream.
+///
+/// Also handles datum's `-t<t|q>+` recent-past shorthand: a leading
+/// `-t` followed by `t` (1 min) and/or `q` (5 min) characters sums the
+/// trailing contributions into a minutes-ago offset and rewrites to
+/// `-t -<minutes>`. Examples: `-tt` → `-t -1`, `-tqtt` → `-t -7`.
 pub fn expand_stacked_flags(argv: Vec<String>) -> Vec<String> {
     let mut out: Vec<String> = Vec::with_capacity(argv.len() + 4);
     for arg in argv {
@@ -382,6 +387,18 @@ fn expand_stacked(s: &str) -> Option<Vec<String>> {
     }
     let inner = &s[1..];
     let chars: Vec<char> = inner.chars().collect();
+
+    // `-t<t|q>+` recent-past shorthand: leading `-t` is the flag, each
+    // trailing `t` adds 1 min and each `q` adds 5 min. Sum of contributions
+    // becomes a negative minutes-offset value attached to `-t`.
+    if chars[0] == 't' && chars[1..].iter().all(|c| matches!(c, 't' | 'q')) {
+        let minutes: u32 = chars[1..]
+            .iter()
+            .map(|c| if *c == 'q' { 5 } else { 1 })
+            .sum();
+        return Some(vec!["-t".to_string(), format!("-{minutes}")]);
+    }
+
     let stackable = |c: char| matches!(c, 'y' | 'q');
     let prefix_len = chars.iter().take_while(|c| stackable(**c)).count();
 
@@ -576,6 +593,46 @@ mod tests {
         // Non-stackable cluster left alone (parser handles).
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tD"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "x", "-tD"]));
+    }
+
+    #[test]
+    fn t_flag_recent_past_shorthand() {
+        // `-tt` = 1 min ago → `-t -1`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tt"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-t", "-1"]));
+
+        // `-ttt` = 2 min ago → `-t -2`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-ttt"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-t", "-2"]));
+
+        // `-tttt` = 3 min ago → `-t -3`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tttt"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-t", "-3"]));
+
+        // `-tqtt` = q+t+t = 7 min ago → `-t -7`.
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-tqtt"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-t", "-7"]));
+
+        // Trailing args follow the rewritten pair untouched.
+        let (argv, _) =
+            expand_argv(v(&["datum", "occur", "x", "-tqtt", "-k", "n"]), &NoResolver).unwrap();
+        assert_eq!(
+            argv,
+            v(&["datum", "occur", "x", "-t", "-7", "-k", "n"])
+        );
+
+        // Bare `-t` is untouched (still consumes its positional value).
+        let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-t", "3"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "occur", "x", "-t", "3"]));
+
+        // `-qqqt` keeps the existing stackable+terminal split — leading `q`s
+        // make this a `-q*` cluster, not the `-t<t|q>+` form.
+        let (argv, _) =
+            expand_argv(v(&["datum", "occur", "x", "-qqqt", "3"]), &NoResolver).unwrap();
+        assert_eq!(
+            argv,
+            v(&["datum", "occur", "x", "-q", "-q", "-q", "-t", "3"])
+        );
     }
 
     #[test]

@@ -279,8 +279,11 @@ language fallback.
   ISO-8601 datetime (`2024-03-16T15:30:00Z`, `±HH:MM` offsets,
   fractional seconds, no-tz local form — shipped in da-nnr), plus
   `±N[unit]` uncertainty suffix (daydumb extension from D2).
+  Recent-past shorthand `-t<t|q>+` (e.g. `-tt` = 1 min ago,
+  `-tqtt` = 7 min ago) is rewritten to `-t -<minutes>` by the
+  argv pre-pass — present in original datum, restored in daydumb
+  (da-jp0b).
 - **Missing in daydumb:**
-  - Repeated-letter quick syntax (`qqqt` == `-3q -t`).
   - Chrono-node natural-language fallback ("yesterday at noon",
     "next Thursday 3pm").
 - **Added in daydumb:**
