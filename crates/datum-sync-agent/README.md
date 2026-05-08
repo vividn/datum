@@ -24,11 +24,11 @@ loop that asks it what to do next.
 | [`log`]      | tracing-subscriber bootstrap for the daemon.         |
 | [`notify`]   | Filesystem-watcher adapter.                          |
 | [`status`]   | Daemon-liveness readout for `datum sync status`.     |
-| [`targets`]  | Enumerate auto-sync DBs from `datumrc.yml`.          |
+| [`targets`]  | Enumerate auto-sync DBs from `datumrc.toml`.          |
 
 ## Configuration
 
-The agent reads its target list from the standard `datumrc.yml`
+The agent reads its target list from the standard `datumrc.toml`
 discovered through the same XDG path resolution as the CLI (see
 [`datum_commands::config`]). Each target enables/disables auto-sync;
 disabled targets stay manual-only.

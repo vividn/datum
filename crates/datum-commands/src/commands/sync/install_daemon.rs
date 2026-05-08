@@ -10,7 +10,7 @@
 //! | Other  | —         | bail with "unsupported platform; file a bead"                 |
 //!
 //! The unit is intentionally dumb: exec the binary on login, restart on
-//! failure. All configuration stays in `datumrc.yml`.
+//! failure. All configuration stays in `datumrc.toml`.
 
 use std::fs;
 use std::path::{Path, PathBuf};

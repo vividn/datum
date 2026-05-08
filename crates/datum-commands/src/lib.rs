@@ -5,7 +5,7 @@
 //!
 //! For R1 this crate holds:
 //! * `args` — typed argument structs (migrated wholesale from `datum-cli`)
-//! * `config` — XDG path resolution, db registry, datumrc.yml
+//! * `config` — XDG path resolution, db registry, datumrc.toml
 //! * `render` — entry/table output formatting (formerly `output.rs`)
 //! * `commands` — one module per command (check, sync, plus the legacy
 //!   `cmd` dispatcher while R1 is in-flight)

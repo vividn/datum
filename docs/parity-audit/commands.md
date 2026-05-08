@@ -38,7 +38,7 @@ Reference points:
 | alias | ✗ | ✓ | — | DB-backed CLI aliases |
 | track / ignore | ✗ | ✓ | — | tracked-fields registry |
 | info | ✗ | ✓ | — | multi-DB health view |
-| config | ✗ | ✓ | — | `datumrc.yml` introspection |
+| config | ✗ | ✓ | — | `datumrc.toml` introspection |
 | conflicts | ✗ | ✓ | — | D5 conflict queue (see `da-gnj.5`) |
 | history / undo / why | ✗ | ✓ | — | EntryHistory trail (see `da-gnj.4`) |
 | v1 | ✓ (legacy) | ✗ | — | not carried forward |
@@ -452,9 +452,9 @@ Most datum `Cmd.test.ts` suites have **not** been mechanically ported.
 
 ### config (daydumb only)
 
-- **Purpose:** introspect `datumrc.yml` + env + built-in defaults.
+- **Purpose:** introspect `datumrc.toml` + env + built-in defaults.
 - **Subcommands:** `show` (with `--json`).
-- **Notes:** rows include per-key source (default / yaml / env / flag).
+- **Notes:** rows include per-key source (default / toml / env / flag).
   No write path — the config file is hand-edited.
 
 ### conflicts (daydumb only, D5)

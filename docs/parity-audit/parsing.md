@@ -240,11 +240,11 @@ Optional positional `quickId` + `--on-ambiguous
 `--project-dir`, `--config`, `--create-db`.
 
 - **Daydumb today:** only `--db` is global (resolves through the
-  XDG/`datumrc.yml` registry in `datum-commands/src/config.rs`).
+  XDG/`datumrc.toml` registry in `datum-commands/src/config.rs`).
   `--host`/`--username`/`--password` do not apply — daydumb stores
   locally, not against CouchDB. `--env` / `--config` / `--create-db`
   map differently (daydumb auto-creates on first access and reads
-  `~/.config/datum/datumrc.yml` unconditionally).
+  `~/.config/datum/datumrc.toml` unconditionally).
 - **Target (step 2/N):** `datum_parse::input::main_args::MainArgs`
   carries just `db: Option<String>`. The CouchDB-specific flags are
   intentionally dropped as **non-ports** (see Non-ports below).
@@ -454,7 +454,7 @@ Deliberately *not* carried forward from datum:
 
 - **CouchDB-oriented `dbArgs`** (`--host`, `--adapter`, `--username`,
   `--password`, `--env`, `--create-db`, `--project-dir`). Daydumb is
-  SQLite-local with a `datumrc.yml` registry; these flags have no
+  SQLite-local with a `datumrc.toml` registry; these flags have no
   sensible analogue.
 - **`chrono-node` natural-language parse** (in `parseTimeStr.ts` /
   `parseDateStr.ts`). Keeps `datum-parse` free of a heavy English-

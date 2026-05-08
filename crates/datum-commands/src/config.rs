@@ -4,9 +4,9 @@
 //! to absolute paths. Names that aren't registered resolve to
 //! `<XDG_DATA_HOME>/datum/<name>.db` and are auto-added on first use.
 //!
-//! User preferences live in `$XDG_CONFIG_HOME/datum/datumrc.yml` (overridable
+//! User preferences live in `$XDG_CONFIG_HOME/datum/datumrc.toml` (overridable
 //! via `DATUM_CONFIG`). Loaded through `Config::load`, which layers
-//! CLI flag > env var (DATUM_*) > yaml > built-in default with per-key
+//! CLI flag > env var (DATUM_*) > toml > built-in default with per-key
 //! source tracking for `datum config show`.
 
 use anyhow::{Context, Result};
@@ -275,7 +275,7 @@ pub fn display_path(p: &Path) -> String {
     p.display().to_string()
 }
 
-// ─── Layered user config (datumrc.yml) ─────────────────────────────────────
+// ─── Layered user config (datumrc.toml) ────────────────────────────────────
 
 /// Where a config value came from. Shown by `datum config show`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -283,7 +283,7 @@ pub fn display_path(p: &Path) -> String {
 pub enum Source {
     Flag,
     Env,
-    Yaml,
+    Toml,
     Default,
 }
 
@@ -292,7 +292,7 @@ impl Source {
         match self {
             Source::Flag => "flag",
             Source::Env => "env",
-            Source::Yaml => "yaml",
+            Source::Toml => "toml",
             Source::Default => "default",
         }
     }
@@ -311,36 +311,36 @@ impl<T: Clone + Serialize> SourcedValue<T> {
     }
 }
 
-/// Shape of `datumrc.yml`. All fields optional; missing keys fall through
+/// Shape of `datumrc.toml`. All fields optional; missing keys fall through
 /// to the env layer or built-in defaults.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct RawConfig {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub db_path: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub device_id: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timezone: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_field: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
-    #[serde(default)]
-    pub sync: Option<SyncSection>,
-    #[serde(default)]
-    pub databases: BTreeMap<String, DbSection>,
     /// Desktop notifications when the daemon files a new conflict
     /// (C4e). `None` = use the platform default (`true`); explicit
     /// `false` disables them.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notifications: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sync: Option<SyncSection>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub databases: BTreeMap<String, DbSection>,
 }
 
-/// Global sync defaults. A per-DB entry under `databases:` may override the
+/// Global sync defaults. A per-DB entry under `[databases.*]` may override the
 /// `default_server` with its own `sync_server`.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct SyncSection {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_server: Option<String>,
 }
 
@@ -348,9 +348,9 @@ pub struct SyncSection {
 /// `"none"` to disable sync for this DB) and toggle `auto_sync`.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 pub struct DbSection {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sync_server: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_sync: Option<bool>,
 }
 
@@ -362,41 +362,41 @@ pub struct Config {
     pub timezone: SourcedValue<String>,
     pub default_field: SourcedValue<Option<String>>,
     pub editor: SourcedValue<String>,
-    /// Path of the yaml file that was loaded (or the path we looked at if
+    /// Path of the toml file that was loaded (or the path we looked at if
     /// missing). Useful for `config show` diagnostics.
-    pub yaml_path: PathBuf,
-    /// Whether the yaml file existed and was parsed.
-    pub yaml_loaded: bool,
+    pub toml_path: PathBuf,
+    /// Whether the toml file existed and was parsed.
+    pub toml_loaded: bool,
 }
 
-/// Location of the user's `datumrc.yml`:
+/// Location of the user's `datumrc.toml`:
 /// - `DATUM_CONFIG` env var wins (absolute or relative path).
-/// - Otherwise `config_dir()/datumrc.yml`.
-pub fn yaml_config_path() -> Result<PathBuf> {
+/// - Otherwise `config_dir()/datumrc.toml`.
+pub fn toml_config_path() -> Result<PathBuf> {
     if let Ok(p) = std::env::var("DATUM_CONFIG") {
         if !p.is_empty() {
             return Ok(PathBuf::from(p));
         }
     }
-    Ok(config_dir()?.join("datumrc.yml"))
+    Ok(config_dir()?.join("datumrc.toml"))
 }
 
-/// Load the yaml config as a mutable `RawConfig`. Missing/empty file returns
+/// Load the toml config as a mutable `RawConfig`. Missing/empty file returns
 /// `RawConfig::default()`.
 pub fn load_raw_config_or_default() -> Result<RawConfig> {
-    let path = yaml_config_path()?;
-    Ok(load_yaml_config(&path)?.unwrap_or_default())
+    let path = toml_config_path()?;
+    Ok(load_toml_config(&path)?.unwrap_or_default())
 }
 
-/// Persist the raw user config to `datumrc.yml`. Creates the parent
+/// Persist the raw user config to `datumrc.toml`. Creates the parent
 /// directory if needed. Overwrites atomically via `fs::write`.
 pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
-    let path = yaml_config_path()?;
+    let path = toml_config_path()?;
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Creating config directory {parent:?}"))?;
     }
-    let body = serde_yaml::to_string(cfg).context("Serializing datumrc.yml")?;
+    let body = toml::to_string_pretty(cfg).context("Serializing datumrc.toml")?;
     std::fs::write(&path, body)
         .with_context(|| format!("Writing config to {path:?}"))?;
     Ok(())
@@ -455,9 +455,9 @@ pub fn resolve_sync_server(cfg: &RawConfig, db_name: Option<&str>) -> Option<Str
         .filter(|v| !v.eq_ignore_ascii_case("none"))
 }
 
-/// Load and parse the yaml config. Missing file → `Ok(None)`. Parse errors
+/// Load and parse the toml config. Missing file → `Ok(None)`. Parse errors
 /// surface so users see what's wrong with their file.
-pub fn load_yaml_config(path: &Path) -> Result<Option<RawConfig>> {
+pub fn load_toml_config(path: &Path) -> Result<Option<RawConfig>> {
     if !path.exists() {
         return Ok(None);
     }
@@ -466,7 +466,7 @@ pub fn load_yaml_config(path: &Path) -> Result<Option<RawConfig>> {
     if contents.trim().is_empty() {
         return Ok(Some(RawConfig::default()));
     }
-    let cfg: RawConfig = serde_yaml::from_str(&contents)
+    let cfg: RawConfig = toml::from_str(&contents)
         .with_context(|| format!("Parsing config at {path:?}"))?;
     Ok(Some(cfg))
 }
@@ -487,29 +487,29 @@ fn editor_default() -> String {
 fn timezone_default() -> String {
     // Fall through to the IANA local zone if it resolves; otherwise UTC.
     // chrono doesn't expose a portable IANA name, so we accept "UTC" as a
-    // conservative default — users who care set `timezone:` in yaml or
+    // conservative default — users who care set `timezone =` in toml or
     // `DATUM_TIMEZONE` in env.
     "UTC".to_string()
 }
 
 impl Config {
-    /// Load the effective config by layering CLI flag > env > yaml > default.
+    /// Load the effective config by layering CLI flag > env > toml > default.
     ///
     /// `cli_db` is the value of `--db` from argv (if any). Other CLI flags
     /// aren't wired up for these keys yet — when they are, extend this
     /// function similarly.
     pub fn load(cli_db: Option<&str>) -> Result<Self> {
-        let yaml_path = yaml_config_path()?;
-        let parsed = load_yaml_config(&yaml_path)?;
-        let yaml_loaded = parsed.is_some();
-        let yaml = parsed.unwrap_or_default();
+        let toml_path = toml_config_path()?;
+        let parsed = load_toml_config(&toml_path)?;
+        let toml_loaded = parsed.is_some();
+        let raw = parsed.unwrap_or_default();
 
         let db_path = if let Some(v) = cli_db {
             SourcedValue::new(v.to_string(), Source::Flag)
         } else if let Some(v) = read_env("DATUM_DB") {
             SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = yaml.db_path.clone() {
-            SourcedValue::new(v, Source::Yaml)
+        } else if let Some(v) = raw.db_path.clone() {
+            SourcedValue::new(v, Source::Toml)
         } else {
             let default_path = data_dir()?.join("datum.db");
             SourcedValue::new(
@@ -520,32 +520,32 @@ impl Config {
 
         let device_id = if let Some(v) = read_env("DATUM_DEVICE_ID") {
             SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = yaml.device_id.clone() {
-            SourcedValue::new(v, Source::Yaml)
+        } else if let Some(v) = raw.device_id.clone() {
+            SourcedValue::new(v, Source::Toml)
         } else {
             SourcedValue::new(device_id()?, Source::Default)
         };
 
         let timezone = if let Some(v) = read_env("DATUM_TIMEZONE") {
             SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = yaml.timezone.clone() {
-            SourcedValue::new(v, Source::Yaml)
+        } else if let Some(v) = raw.timezone.clone() {
+            SourcedValue::new(v, Source::Toml)
         } else {
             SourcedValue::new(timezone_default(), Source::Default)
         };
 
         let default_field = if let Some(v) = read_env("DATUM_DEFAULT_FIELD") {
             SourcedValue::new(Some(v), Source::Env)
-        } else if let Some(v) = yaml.default_field.clone() {
-            SourcedValue::new(Some(v), Source::Yaml)
+        } else if let Some(v) = raw.default_field.clone() {
+            SourcedValue::new(Some(v), Source::Toml)
         } else {
             SourcedValue::new(None, Source::Default)
         };
 
         let editor = if let Some(v) = read_env("DATUM_EDITOR") {
             SourcedValue::new(v, Source::Env)
-        } else if let Some(v) = yaml.editor.clone() {
-            SourcedValue::new(v, Source::Yaml)
+        } else if let Some(v) = raw.editor.clone() {
+            SourcedValue::new(v, Source::Toml)
         } else {
             SourcedValue::new(editor_default(), Source::Default)
         };
@@ -556,8 +556,8 @@ impl Config {
             timezone,
             default_field,
             editor,
-            yaml_path,
-            yaml_loaded,
+            toml_path,
+            toml_loaded,
         })
     }
 

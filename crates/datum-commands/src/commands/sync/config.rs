@@ -1,7 +1,7 @@
-//! `datum sync config` — read/write the sync section of `datumrc.yml`.
+//! `datum sync config` — read/write the sync section of `datumrc.toml`.
 //!
-//! Per-DB overrides live under `databases.<name>.sync_server`; the global
-//! fallback lives under `sync.default_server`. `disable` sets the chosen
+//! Per-DB overrides live under `[databases.<name>].sync_server`; the global
+//! fallback lives under `[sync].default_server`. `disable` sets the chosen
 //! scope's value to the literal string `"none"`, which is treated as "sync
 //! off" by [`crate::config::resolve_sync_server`].
 

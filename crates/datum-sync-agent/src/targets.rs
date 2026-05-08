@@ -6,10 +6,10 @@
 //! 2. `auto_sync` is not explicitly set to `false` (default is on — the bead
 //!    says "Auto-sync is ON when `sync_server` is configured").
 //!
-//! The enumerator pulls from `datumrc.yml` via `datum-commands::config`;
+//! The enumerator pulls from `datumrc.toml` via `datum-commands::config`;
 //! it does NOT inspect the DB registry beyond what the CLI already
-//! exposes. A DB that exists on disk but has no `databases:` entry in
-//! the yaml is still picked up IF `sync.default_server` is set globally.
+//! exposes. A DB that exists on disk but has no `[databases.*]` entry in
+//! the toml is still picked up IF `[sync].default_server` is set globally.
 
 use std::path::PathBuf;
 

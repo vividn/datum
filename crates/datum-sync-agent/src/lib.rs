@@ -19,7 +19,7 @@
 //! | `liveness`   | PID-file + alive-check                               |
 //! | `install`    | systemd / launchd unit generation (install-daemon)   |
 //! | `log`        | tracing-subscriber bootstrap for the daemon          |
-//! | `targets`    | Enumerate auto-sync DBs from `datumrc.yml`           |
+//! | `targets`    | Enumerate auto-sync DBs from `datumrc.toml`          |
 //! | `status`     | Daemon-liveness readout for `datum sync status`      |
 
 pub mod backoff;

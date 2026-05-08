@@ -183,7 +183,7 @@ Per-crate READMEs land in **da-docs.3**.
 
 1. CLI flags (`--db`, `--show`, ...).
 2. Environment variables.
-3. `datumrc.yml` in `$DATUM_CONFIG_HOME` (or the OS default config dir).
+3. `datumrc.toml` in `$DATUM_CONFIG_HOME` (or the OS default config dir).
 
 Notable env vars:
 
@@ -191,8 +191,8 @@ Notable env vars:
 |-------------------------|--------------------------------------------------------|
 | `DATUM_DB`              | Path or registry name of the active database.          |
 | `DATUM_HOME`            | Override the data directory (default: OS data dir).    |
-| `DATUM_CONFIG`          | Path to a specific `datumrc.yml`.                      |
-| `DATUM_CONFIG_HOME`     | Override the directory `datumrc.yml` lives in.         |
+| `DATUM_CONFIG`          | Path to a specific `datumrc.toml`.                      |
+| `DATUM_CONFIG_HOME`     | Override the directory `datumrc.toml` lives in.         |
 | `DATUM_TIMEZONE`        | Default IANA timezone for new entries.                 |
 | `DATUM_DEFAULT_FIELD`   | Field used when one is omitted from the argv.          |
 | `DATUM_DEVICE_ID`       | Override the per-device id stamped on entries.         |

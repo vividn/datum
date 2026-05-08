@@ -36,7 +36,7 @@ fn two_instance_daemon_sync_converges_without_manual_command() {
     // extracted from `datum-sync-server/tests/`:
     //
     // 1. `let relay = TestRelay::spawn();`
-    // 2. Create two temp roots, each with datumrc pointing at `relay.url`.
+    // 2. Create two temp roots, each with datumrc.toml pointing at `relay.url`.
     // 3. Init a shared master key in both, login with the test token.
     // 4. Spawn two `datum-sync-agent` binaries, each scoped to one root.
     // 5. `datum --home A occur coffee` on device A.

@@ -445,8 +445,8 @@ pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Res
             .collect::<serde_json::Map<_, _>>();
         let out = serde_json::json!({
             "config": rows,
-            "yaml_path": cfg.yaml_path.to_string_lossy(),
-            "yaml_loaded": cfg.yaml_loaded,
+            "toml_path": cfg.toml_path.to_string_lossy(),
+            "toml_loaded": cfg.toml_loaded,
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
         return Ok(());
@@ -480,9 +480,9 @@ pub(crate) fn cmd_config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Res
     }
     println!();
     println!(
-        "yaml: {} ({})",
-        cfg.yaml_path.display(),
-        if cfg.yaml_loaded { "loaded" } else { "not found" }
+        "toml: {} ({})",
+        cfg.toml_path.display(),
+        if cfg.toml_loaded { "loaded" } else { "not found" }
     );
     Ok(())
 }
