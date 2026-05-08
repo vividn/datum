@@ -553,8 +553,6 @@ dependencies = [
  "proptest",
  "regex",
  "serde",
- "serde_json",
- "sha2",
  "tempfile",
  "toml",
 ]
