@@ -41,8 +41,8 @@ rand = { workspace = true }
 sha2 = { workspace = true }
 
 # Logging
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

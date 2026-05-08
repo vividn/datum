@@ -27,7 +27,7 @@ tokio = { workspace = true }
 reqwest = { workspace = true }
 notify = { workspace = true }
 tracing = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
 libc = { workspace = true }
 
 [dev-dependencies]
