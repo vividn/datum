@@ -174,8 +174,8 @@ mod runtime_tests {
     /// SVG output (nowview/dayview) doesn't carry hids in its content,
     /// but the normalizer still runs over it harmlessly.
     fn normalize(raw: &str) -> String {
-        let create_drop = regex::Regex::new(r"^CREATE \S+ \S+$").unwrap();
-        let exists_line = regex::Regex::new(
+        let create_drop = regex_lite::Regex::new(r"^CREATE \S+ \S+$").unwrap();
+        let exists_line = regex_lite::Regex::new(
             r"^\x1b\[33mEXISTS\x1b\[39m\s+\x1b\[33m[a-z0-9]+\x1b\[39m(?P<rest>.*)$",
         )
         .unwrap();
@@ -183,7 +183,7 @@ mod runtime_tests {
         // Anchored to end-of-line. Avoid eating dates like "2024" by
         // requiring the column to be lowercase letters at least once.
         let tail_hid =
-            regex::Regex::new(r"(?P<lead>\s{2,})(?:[a-z][a-z0-9]{4}|[a-z0-9]{4,6})$").unwrap();
+            regex_lite::Regex::new(r"(?P<lead>\s{2,})(?:[a-z][a-z0-9]{4}|[a-z0-9]{4,6})$").unwrap();
 
         let mut lines: Vec<String> = Vec::new();
         for line in raw.lines() {

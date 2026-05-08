@@ -58,7 +58,7 @@ reqwest = { version = "0.12", default-features = false, features = ["blocking", 
 base64 = "0.22"
 
 # Text
-regex = "1"
+regex-lite = "0.1"
 
 # Archive formats (used by backup/restore)
 flate2 = "1"

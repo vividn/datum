@@ -14,7 +14,7 @@ use datum_core::{
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
     time::{parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder},
 };
-use regex::Regex;
+use regex_lite::Regex;
 use serde_json::Value as JsonValue;
 
 use crate::{
