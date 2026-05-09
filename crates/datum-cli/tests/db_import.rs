@@ -191,11 +191,7 @@ fn explicit_dur_null_maps_to_zero_duration() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.dur.as_deref(), Some("PT0S"), "explicit null → PT0S");
-    assert_eq!(
-        e.state,
-        Some(serde_json::json!(true)),
-        "null→true promotion"
-    );
+    assert!(e.state.is_none(), "null state stays null (no promotion)");
     let extra = e.data.as_ref().unwrap();
     assert!(
         extra["dur"].is_null(),
@@ -204,10 +200,10 @@ fn explicit_dur_null_maps_to_zero_duration() {
 }
 
 // ─── 5. missing occurTime → Point with occur_time NULL ───────────────
-// state=undefined + dur=undefined → derive_verb: Verb::Point (state
-// promoted to true). occur_time stays NULL — the column is nominally NOT
-// NULL but the insert path falls back to create_time when missing
-// (datum-core/src/db/insert.rs).
+// state=undefined + dur=undefined → derive_verb: Verb::Point with
+// state=null (promotion dropped in da-ju71.2). occur_time stays NULL —
+// the column is nominally NOT NULL but the insert path falls back to
+// create_time when missing (datum-core/src/db/insert.rs).
 
 #[test]
 fn doc_without_occur_time_maps_to_point() {
@@ -229,13 +225,9 @@ fn doc_without_occur_time_maps_to_point() {
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
-    // Re-derive: state=Some(true) (promoted) + no dur → Switch.
-    assert_eq!(verb_of(e), Verb::Switch);
-    assert_eq!(
-        e.state,
-        Some(serde_json::json!(true)),
-        "null→true promotion"
-    );
+    // Re-derive: state=None + no dur + no fs → Point.
+    assert_eq!(verb_of(e), Verb::Point);
+    assert!(e.state.is_none(), "null state stays null (no promotion)");
     assert!(e.dur.is_none());
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra["note"], serde_json::json!("no time on this entry"));
@@ -743,13 +735,6 @@ fn import_3day_fixture_columns_are_well_formed() {
     run_cli(&["db", "import", fixture], &db).expect("import");
 
     for e in db.all_entries().unwrap() {
-        // Every imported row carries non-null state (null→true promotion
-        // means even bare-occur legacy rows have state=true).
-        assert!(
-            e.state.is_some(),
-            "row {} should have state set after promotion",
-            e.slug,
-        );
         // No legacy entry can produce a following_state — it's daydumb-new.
         assert!(
             e.following_state.is_none(),
