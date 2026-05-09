@@ -56,4 +56,3 @@ impl std::str::FromStr for PrecisionUnit {
         }
     }
 }
-

@@ -489,7 +489,7 @@ fn deep_merge(existing: JsonValue, incoming: JsonValue) -> JsonValue {
 mod tests {
     use super::*;
     use crate::args::UpdateArgs;
-    
+
     use datum_core::entry::Verb;
 
     fn update_args(id: &str, rest: Vec<&str>) -> UpdateArgs {

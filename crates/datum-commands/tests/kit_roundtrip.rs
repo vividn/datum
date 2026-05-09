@@ -457,7 +457,6 @@ expands_to = "kit_expansion"
 
 #[test]
 fn install_skips_existing_user_field_without_force() {
-    
     use datum_core::field_spec::FieldSpec;
 
     let dir = tempfile::tempdir().unwrap();

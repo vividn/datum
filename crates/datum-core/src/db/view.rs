@@ -45,11 +45,15 @@ impl InstallViewsReport {
     pub fn installed(&self) -> impl Iterator<Item = &str> {
         self.outcomes
             .iter()
-            .filter(|&(_name, o)| matches!(o, KitViewOutcome::Installed)).map(|(name, _o)| name.as_str())
+            .filter(|&(_name, o)| matches!(o, KitViewOutcome::Installed))
+            .map(|(name, _o)| name.as_str())
     }
 
     pub fn skipped(&self) -> impl Iterator<Item = &str> {
-        self.outcomes.iter().filter(|&(_name, o)| matches!(o, KitViewOutcome::SkippedExisting { .. })).map(|(name, _o)| name.as_str())
+        self.outcomes
+            .iter()
+            .filter(|&(_name, o)| matches!(o, KitViewOutcome::SkippedExisting { .. }))
+            .map(|(name, _o)| name.as_str())
     }
 }
 

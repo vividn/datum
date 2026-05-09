@@ -793,8 +793,7 @@ pub struct CheckArgs {
 /// Render orientation for `datum dayview`, named by time-axis direction.
 /// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a
 /// layout dep just to construct args.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DayviewOrientation {
     /// Time runs vertically (top→bottom); days stack horizontally — each
     /// day is a column.
@@ -804,7 +803,6 @@ pub enum DayviewOrientation {
     #[default]
     Horizontal,
 }
-
 
 /// `datum dayview` arguments — port of datum's `dayviewCmdArgs` (TS) plus
 /// the orientation knob from bead da-a7f.
@@ -911,8 +909,7 @@ impl NowviewArgs {
 /// Output format for `datum view <name>`. `Auto` resolves at dispatch
 /// time: pretty when stdout is a TTY, tsv when piped (matching the
 /// slice 4 bead's "pretty when tty, tsv when piped" rule).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ViewFormat {
     #[default]
     Auto,
@@ -921,7 +918,6 @@ pub enum ViewFormat {
     Csv,
     Json,
 }
-
 
 /// `datum view <name>` arguments.
 #[derive(Debug)]

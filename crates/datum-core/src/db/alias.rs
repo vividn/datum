@@ -46,11 +46,15 @@ impl InstallAliasesReport {
     pub fn installed(&self) -> impl Iterator<Item = &str> {
         self.outcomes
             .iter()
-            .filter(|&(_name, o)| matches!(o, KitAliasOutcome::Installed)).map(|(name, _o)| name.as_str())
+            .filter(|&(_name, o)| matches!(o, KitAliasOutcome::Installed))
+            .map(|(name, _o)| name.as_str())
     }
 
     pub fn skipped(&self) -> impl Iterator<Item = &str> {
-        self.outcomes.iter().filter(|&(_name, o)| matches!(o, KitAliasOutcome::SkippedExisting { .. })).map(|(name, _o)| name.as_str())
+        self.outcomes
+            .iter()
+            .filter(|&(_name, o)| matches!(o, KitAliasOutcome::SkippedExisting { .. }))
+            .map(|(name, _o)| name.as_str())
     }
 }
 

@@ -47,7 +47,6 @@ pub enum Verb {
     PointSwitch,
 }
 
-
 impl std::fmt::Display for Verb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -97,7 +96,6 @@ pub enum EntryShape {
     /// match arms still type-check.
     Ongoing,
 }
-
 
 impl std::fmt::Display for EntryShape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

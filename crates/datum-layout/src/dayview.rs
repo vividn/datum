@@ -49,7 +49,6 @@ pub enum Orientation {
     Horizontal,
 }
 
-
 /// One day's window + per-field input data. The caller (CLI) resolves the
 /// label strings, day boundaries (in UTC ms), and the field data —
 /// including state colors — before passing to [`compute_dayview`].
