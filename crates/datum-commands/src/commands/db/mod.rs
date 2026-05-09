@@ -14,6 +14,8 @@ use datum_core::db::Db;
 use crate::args::DbCommand;
 use crate::args::DbPurgeArgs;
 
+pub mod import;
+
 pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
     match cmd {
         DbCommand::Setup(args) => super::setup::setup(args, db),
@@ -21,7 +23,7 @@ pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
         DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
         DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
-        DbCommand::Import(args) => crate::cmd::cmd_db_import(args, db),
+        DbCommand::Import(args) => import::import(args, db),
     }
 }
 
