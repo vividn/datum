@@ -21,14 +21,14 @@ use crate::{
     args::{
         AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs, DbImportArgs, DbImportArgsExt, DeleteArgs, GetArgs,
+        ConflictsShowArgs, DbImportArgs, DbImportArgsExt, GetArgs,
         GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, LogArgs, LogArgsExt, MigrateCommand,
         NowArgs, OutputFlagsExt, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs,
         TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
     },
     config::{self, device_id},
     render::{
-        print_entry, print_entry_pretty, print_now_view, print_table_with,
+        print_entry_pretty, print_now_view, print_table_with,
         show_create, show_create_with_context, show_delete, show_exists, show_rename,
         show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
@@ -2138,113 +2138,6 @@ pub(crate) fn resolve_batch(
     (entries, errors)
 }
 
-pub(crate) fn cmd_delete(args: DeleteArgs, db: &Db) -> Result<()> {
-    let registry = load_registry(db).ok();
-    let output = args.output();
-    // Bare `datum delete` defaults to `_LAST_WITH_PROTECTION` —
-    // refuses if the last-accessed pointer is > 15 minutes stale.
-    let pattern = args
-        .id_or_slug
-        .as_deref()
-        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
-    let (entries, token_errors) = resolve_batch(db, pattern, BatchMode::Live);
-
-    // Nothing resolved — propagate the first token error verbatim so single-token
-    // NotFound / AmbiguousPrefix surfaces unchanged in the common case.
-    if entries.is_empty() {
-        if let Some((_, err)) = token_errors.into_iter().next() {
-            return Err(err);
-        }
-        anyhow::bail!("no entries specified");
-    }
-
-    // Strict: abort up-front on any resolution error so we don't half-apply
-    // against a partial resolution.
-    if args.strict {
-        if let Some((_, err)) = token_errors.first() {
-            return Err(anyhow::anyhow!("{err}"));
-        }
-    }
-
-    if args.dry_run {
-        let now = DatumTime::now();
-        let ctxs = build_render_contexts(&entries, db);
-        for (i, entry) in entries.iter().enumerate() {
-            print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
-        }
-        for (tok, err) in &token_errors {
-            eprintln!("[dry-run] resolve '{tok}': {err}");
-        }
-        eprintln!(
-            "[dry-run] would delete {} {}",
-            entries.len(),
-            if entries.len() == 1 { "entry" } else { "entries" },
-        );
-        return Ok(());
-    }
-
-    if !args.force {
-        let now = DatumTime::now();
-        let ctxs = build_render_contexts(&entries, db);
-        for (i, entry) in entries.iter().enumerate() {
-            print_entry(entry, ctxs.get(i), Some(&now), registry.as_ref());
-        }
-        let prompt = if entries.len() == 1 {
-            "Delete this entry?".to_string()
-        } else {
-            format!("Delete these {} entries?", entries.len())
-        };
-        eprint!("{prompt} [y/N] ");
-        use std::io::BufRead;
-        let stdin = std::io::stdin();
-        let line = stdin
-            .lock()
-            .lines()
-            .next()
-            .ok_or_else(|| anyhow::anyhow!("No input provided"))??;
-        if !matches!(line.to_lowercase().as_str(), "y" | "yes") {
-            println!("Aborted.");
-            return Ok(());
-        }
-    }
-
-    let mut first_err: Option<anyhow::Error> = None;
-    let mut deleted_hids: Vec<datum_core::ids::Hid> = Vec::new();
-    for entry in &entries {
-        match db.soft_delete_entry(&entry.slug) {
-            Ok(()) => {
-                show_delete(entry, registry.as_ref(), &output);
-                deleted_hids.push(entry.hid.clone());
-            }
-            Err(e) => {
-                let msg = format!("{}: {}", entry.slug, e);
-                if args.strict {
-                    return Err(anyhow::anyhow!(msg));
-                }
-                eprintln!("{msg}");
-                first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
-            }
-        }
-    }
-
-    for (tok, err) in token_errors {
-        let msg = format!("{tok}: {err}");
-        eprintln!("{msg}");
-        first_err.get_or_insert_with(|| anyhow::anyhow!(msg));
-    }
-
-    // Pointer keeps the deleted hids so `undo` (with no arg) can
-    // restore them. Skipped if nothing actually got deleted.
-    if !deleted_hids.is_empty() {
-        let _ = datum_core::last_docs::set_last_docs(db, &deleted_hids);
-    }
-
-    match first_err {
-        Some(e) => Err(e),
-        None => Ok(()),
-    }
-}
-
 // ─── Edit ────────────────────────────────────────────────────────────────────
 
 /// Open an entry in `$EDITOR` as pretty JSON; on save, re-parse and persist.
@@ -3505,7 +3398,7 @@ fn parse_datum_precision(occur_block: &JsonValue) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::args::EditArgs;
+    use crate::args::{DeleteArgs, EditArgs};
     use crate::commands::update_core::{update_from_args, UpdateStrategy};
 
     #[test]
@@ -4884,7 +4777,7 @@ mod tests {
         let original_hash = e.content_hash.clone();
         db.insert_entry(&e).unwrap();
 
-        cmd_delete(
+        crate::commands::del::del(
             DeleteArgs {
                 id_or_slug: Some(id.to_string()),
                 force: true,
@@ -5271,7 +5164,7 @@ mod tests {
         log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
-        cmd_delete(
+        crate::commands::del::del(
             DeleteArgs {
                 id_or_slug: None,
                 force: true,
@@ -5302,7 +5195,7 @@ mod tests {
             )
             .unwrap();
 
-        let err = cmd_delete(
+        let err = crate::commands::del::del(
             DeleteArgs {
                 id_or_slug: None,
                 force: true,
