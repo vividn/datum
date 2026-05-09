@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+#
+# Pre-push hook — runs scripts/check.sh before allowing a push, so the
+# same battery CI gates on (fmt, clippy, build, tests, doc tests) is
+# enforced locally. The repo is private (no remote branch protection),
+# so this hook is the polecat / contributor side of the gate.
+#
+# Activate per clone with:
+#
+#     git config core.hooksPath .githooks
+#
+# Escape hatch: `git push --no-verify` skips this hook. CI will still
+# run on PR/push to main, so a bad bypass surfaces there.
+
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+exec "$ROOT/scripts/check.sh"

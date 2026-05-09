@@ -245,6 +245,17 @@ tests — the same set the GitHub Actions workflow gates on. Run it
 locally first because the repo is private (no remote branch
 protection); a green script run is the contract that CI will be green.
 
+To run the same battery automatically on every `git push`, enable the
+tracked pre-push hook once per clone:
+
+```bash,no_run
+git config core.hooksPath .githooks
+```
+
+`.githooks/pre-push` invokes `scripts/check.sh`; a non-zero exit aborts
+the push. Use `git push --no-verify` as an escape hatch (CI will still
+gate the merge).
+
 ## Repository layout
 
 ```
