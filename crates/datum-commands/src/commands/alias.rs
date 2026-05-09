@@ -10,7 +10,35 @@ use datum_parse::alias::{shell_join, KNOWN_SUBCOMMANDS};
 use crate::args::AliasCommand;
 
 pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
-    crate::cmd::cmd_alias(sub, db)
+    match sub {
+        AliasCommand::Show { name } => {
+            let reg = db.load_registry()?;
+            match reg.aliases.get(&name) {
+                Some(alias) => println!("{name} → datum {}", alias.expands_to),
+                None => println!("No alias '{name}'"),
+            }
+        }
+        AliasCommand::Set { name, expansion } => {
+            let alias = Alias { name: name.clone(), expands_to: expansion, description: None };
+            db.save_alias(&alias)?;
+            println!("✓ Alias '{name}' saved.");
+        }
+        AliasCommand::List => {
+            let reg = db.load_registry()?;
+            if reg.aliases.is_empty() {
+                println!("No aliases defined.");
+            } else {
+                for (name, alias) in &reg.aliases {
+                    println!("  {name} → datum {}", alias.expands_to);
+                }
+            }
+        }
+        AliasCommand::Remove { name } => {
+            db.delete_alias(&name)?;
+            println!("✓ Alias '{name}' removed (if it was user-created)");
+        }
+    }
+    Ok(())
 }
 
 /// If `name` is `Some`, record the current invocation's canonical

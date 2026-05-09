@@ -10,7 +10,7 @@ use datum_core::{
     },
     derive_verb,
     entry::{Entry, Verb},
-    field_spec::{self, Alias, FieldSpec, InterpolationContext},
+    field_spec::{self, FieldSpec, InterpolationContext},
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
     time::{parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder},
 };
@@ -18,7 +18,7 @@ use serde_json::Value as JsonValue;
 
 use crate::{
     args::{
-        AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
+        Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
         ConflictsShowArgs, DbImportArgs, DbImportArgsExt,
         LogArgs, LogArgsExt, MigrateCommand,
@@ -2468,40 +2468,6 @@ pub(crate) fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db
             kind = c.conflict_kind.as_str(),
             slug = c.entry_slug,
         );
-    }
-    Ok(())
-}
-
-// ─── Alias management ────────────────────────────────────────────────────────
-
-pub(crate) fn cmd_alias(sub: AliasCommand, db: &Db) -> Result<()> {
-    match sub {
-        AliasCommand::Show { name } => {
-            let reg = db.load_registry()?;
-            match reg.aliases.get(&name) {
-                Some(alias) => println!("{name} → datum {}", alias.expands_to),
-                None => println!("No alias '{name}'"),
-            }
-        }
-        AliasCommand::Set { name, expansion } => {
-            let alias = Alias { name: name.clone(), expands_to: expansion, description: None };
-            db.save_alias(&alias)?;
-            println!("✓ Alias '{name}' saved.");
-        }
-        AliasCommand::List => {
-            let reg = db.load_registry()?;
-            if reg.aliases.is_empty() {
-                println!("No aliases defined.");
-            } else {
-                for (name, alias) in &reg.aliases {
-                    println!("  {name} → datum {}", alias.expands_to);
-                }
-            }
-        }
-        AliasCommand::Remove { name } => {
-            db.delete_alias(&name)?;
-            println!("✓ Alias '{name}' removed (if it was user-created)");
-        }
     }
     Ok(())
 }
