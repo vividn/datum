@@ -4,7 +4,7 @@ use anyhow::Result;
 use datum_core::db::{Db, GroupColumn};
 
 use crate::args::CountArgs;
-use crate::cmd::parse_since;
+use crate::commands::ids::parse_since;
 
 /// Structured result of `count` — either a single total or a grouped
 /// tally. Exposed so tests can assert on the data without parsing stdout.

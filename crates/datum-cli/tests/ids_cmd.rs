@@ -10,7 +10,7 @@ mod common;
 use chrono::{Duration, Utc};
 use common::run_cli;
 use datum_cli::args::IdsArgs;
-use datum_cli::cmd::compute_ids;
+use datum_commands::commands::ids::compute_ids;
 use datum_core::test_util::{entry_builder, fresh_db};
 use serde_json::json;
 
