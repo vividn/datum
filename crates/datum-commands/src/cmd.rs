@@ -21,14 +21,14 @@ use crate::{
     args::{
         AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs, DbImportArgs, DbImportArgsExt, GetArgs,
+        ConflictsShowArgs, DbImportArgs, DbImportArgsExt,
         GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, LogArgs, LogArgsExt, MigrateCommand,
         NowArgs, OutputFlagsExt, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs,
         TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
     },
     config::{self, device_id},
     render::{
-        print_entry_pretty, print_now_view, print_table_with,
+        print_now_view, print_table_with,
         show_create, show_create_with_context, show_delete, show_exists, show_rename,
         show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
     },
@@ -2030,48 +2030,6 @@ pub(crate) fn resolve_prefix_or_tombstone(db: &Db, input: &str) -> Result<Entry>
     }
 }
 
-pub(crate) fn cmd_get(args: GetArgs, db: &Db) -> Result<()> {
-    // Bare `datum get` (no positional) defaults to `_LAST` — resolve
-    // against the last-accessed pointer with no time guard. The pointer
-    // may name multiple hids when the previous command was a batch
-    // insert/update; expand to all of them.
-    let pattern = args
-        .id_or_slug
-        .as_deref()
-        .unwrap_or(datum_core::ids::resolve::LAST_TOKEN);
-
-    let entries = resolve_quickid(db, pattern).map_err(anyhow::Error::from)?;
-    if entries.is_empty() {
-        return Err(anyhow::Error::from(
-            datum_core::error::DatumError::NotFound(pattern.to_string()),
-        ));
-    }
-
-    let registry = load_registry(db).ok();
-    let output = args.output();
-    let ctxs = build_render_contexts(&entries, db);
-    for (i, entry) in entries.iter().enumerate() {
-        if args.pretty {
-            print_entry_pretty(entry)?;
-        } else {
-            crate::render::show_action_with_context(
-                entry,
-                crate::render::Action::Exists,
-                registry.as_ref(),
-                ctxs.get(i),
-                &output,
-            );
-        }
-    }
-
-    // Stamp the pointer at the resolved hids so a follow-up bare command
-    // sees the same set. Read-only browsing commands (tail, head, grep)
-    // do NOT touch the pointer.
-    let hids: Vec<datum_core::ids::Hid> = entries.iter().map(|e| e.hid.clone()).collect();
-    let _ = datum_core::last_docs::set_last_docs(db, &hids);
-    Ok(())
-}
-
 /// Batch-resolution surface for S3: how "only a tombstone matches" should
 /// be reported.
 #[derive(Clone, Copy)]
@@ -3398,7 +3356,7 @@ fn parse_datum_precision(occur_block: &JsonValue) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::args::{DeleteArgs, EditArgs};
+    use crate::args::{DeleteArgs, EditArgs, GetArgs};
     use crate::commands::update_core::{update_from_args, UpdateStrategy};
 
     #[test]
@@ -5141,7 +5099,7 @@ mod tests {
         log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         let inserted = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
 
-        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
@@ -5233,7 +5191,7 @@ mod tests {
             .unwrap();
 
         // get is non-destructive → defaults to _LAST → no protection check.
-        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
     }
 
     /// Bare `get` against a fresh DB (no pointer ever set) errors with a
@@ -5242,7 +5200,7 @@ mod tests {
     fn last_docs_bare_get_on_fresh_db_errors_clearly() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = cmd_get(GetArgs::fresh_default(), &db).unwrap_err();
+        let err = crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap_err();
         let msg = err.to_string();
         assert!(
             msg.contains("No previous documents") || msg.contains("touch a document"),
@@ -5283,7 +5241,7 @@ mod tests {
 
         // Bare `get` resolves _LAST → both entries are returned and
         // re-stamped onto the pointer (idempotent).
-        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         let got: std::collections::HashSet<datum_core::ids::Hid> = pointer.hids.into_iter().collect();
         assert_eq!(
@@ -5313,7 +5271,7 @@ mod tests {
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
-        cmd_get(GetArgs::fresh_default(), &db).unwrap();
+        crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
     }
 
     // ─── da-5ns.3: insert/update path wires the new schema ───────────────
