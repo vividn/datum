@@ -229,6 +229,22 @@ cargo xtask manpages /tmp/m    # custom output dir
 The roff is generated from the same `CommandSpec` table that drives
 `--help`, so it never drifts from the binary it ships with.
 
+## Pre-submit check
+
+Before opening a PR (or before a polecat submits to the merge queue),
+run the local mirror of the CI battery:
+
+```bash,no_run
+./scripts/check.sh
+```
+
+This runs `cargo fmt --check`, `cargo clippy -D warnings`,
+`cargo build --workspace --all-targets`, the test suite (via
+`cargo-nextest` when installed, otherwise `cargo test`), and the doc
+tests — the same set the GitHub Actions workflow gates on. Run it
+locally first because the repo is private (no remote branch
+protection); a green script run is the contract that CI will be green.
+
 ## Repository layout
 
 ```
