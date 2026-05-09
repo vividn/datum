@@ -139,8 +139,7 @@ fn switch_edge_plus_interior_empty_still_rejected() {
 fn array_state_is_queryable_over_timeline() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "datum,household"], &db)
-        .expect("switch to concurrent states");
+    run_cli(&["switch", "project", "datum,household"], &db).expect("switch to concurrent states");
 
     let entries = db.entries_for_field("project", None).unwrap();
     let ts = entries[0].occur_time.as_ref().unwrap().utc;
@@ -157,8 +156,7 @@ fn array_state_is_queryable_over_timeline() {
 fn array_to_scalar_with_overlap_flagged_as_same_state_repeat() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "datum,household", "-t=-1"], &db)
-        .expect("seed array state");
+    run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed array state");
     run_cli(&["switch", "project", "datum"], &db).expect("switch back to single member");
 
     let conflicts = db
@@ -198,8 +196,7 @@ fn scalar_to_array_with_overlap_flagged_as_same_state_repeat() {
 fn array_to_array_with_overlap_flagged_as_same_state_repeat() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "datum,household", "-t=-1"], &db)
-        .expect("seed first array");
+    run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed first array");
     run_cli(&["switch", "project", "datum,gastown"], &db).expect("switch to overlapping array");
 
     let conflicts = db
@@ -220,8 +217,7 @@ fn array_to_array_with_overlap_flagged_as_same_state_repeat() {
 fn array_to_array_disjoint_is_not_same_state_repeat() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "datum,household", "-t=-1"], &db)
-        .expect("seed first array");
+    run_cli(&["switch", "project", "datum,household", "-t=-1"], &db).expect("seed first array");
     run_cli(&["switch", "project", "gastown,beads"], &db).expect("switch to disjoint array");
 
     let conflicts = db
@@ -268,8 +264,7 @@ fn last_state_assertion_flags_element_mismatch() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "a,c", "-t=-1"], &db).expect("seed [a,c]");
-    run_cli(&["switch", "project", "d", "-L=a,b"], &db)
-        .expect("switch with wrong -L assertion");
+    run_cli(&["switch", "project", "d", "-L=a,b"], &db).expect("switch with wrong -L assertion");
 
     let mismatches = db
         .list_conflicts(&ListFilter {
@@ -286,8 +281,7 @@ fn last_state_assertion_flags_element_mismatch() {
 fn last_state_assertion_records_array_value() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "c", "-L=a,b"], &db)
-        .expect("switch with comma-separated -L");
+    run_cli(&["switch", "project", "c", "-L=a,b"], &db).expect("switch with comma-separated -L");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_eq!(

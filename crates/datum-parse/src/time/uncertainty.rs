@@ -48,7 +48,11 @@ pub fn split_direction_suffix(s: &str) -> Result<(&str, Option<Direction>)> {
             "Empty input before direction suffix: '{s}'"
         )));
     }
-    let dir = if last == b'+' { Direction::Future } else { Direction::Past };
+    let dir = if last == b'+' {
+        Direction::Future
+    } else {
+        Direction::Past
+    };
     Ok((&s[..n - 1], Some(dir)))
 }
 
@@ -64,7 +68,10 @@ pub struct Uncertainty {
 
 impl Uncertainty {
     pub fn exact() -> Self {
-        Uncertainty { seconds: 0, unit: PrecisionUnit::Exact }
+        Uncertainty {
+            seconds: 0,
+            unit: PrecisionUnit::Exact,
+        }
     }
 }
 
@@ -103,7 +110,10 @@ pub fn parse_uncertainty(body: &str) -> Result<Uncertainty> {
     if body.starts_with('P') {
         let d = parse_iso_duration(body)?;
         let secs = d.num_seconds().unsigned_abs() as u32;
-        return Ok(Uncertainty { seconds: secs, unit: PrecisionUnit::Second });
+        return Ok(Uncertainty {
+            seconds: secs,
+            unit: PrecisionUnit::Second,
+        });
     }
 
     let (num_str, unit_str) = split_unit(body);
@@ -122,5 +132,8 @@ pub fn parse_uncertainty(body: &str) -> Result<Uncertainty> {
             )))
         }
     };
-    Ok(Uncertainty { seconds: secs, unit })
+    Ok(Uncertainty {
+        seconds: secs,
+        unit,
+    })
 }

@@ -322,7 +322,10 @@ impl Entry {
 
         let hid = new_hid();
 
-        let occur_str = occur_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
+        let occur_str = occur_time
+            .as_ref()
+            .map(|t| t.utc.to_rfc3339())
+            .unwrap_or_default();
         let dur_str = dur.as_ref().map(Dur::to_storage_string).unwrap_or_default();
         let data_str = data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let state_str = state.as_ref().map(|v| v.to_string()).unwrap_or_default();
@@ -446,16 +449,22 @@ impl Entry {
             .as_ref()
             .map(|t| t.utc.to_rfc3339())
             .unwrap_or_default();
-        let dur_str = self.dur.as_ref().map(Dur::to_storage_string).unwrap_or_default();
-        let data_str = self.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
-        let state_str = self.state.as_ref().map(|v| v.to_string()).unwrap_or_default();
-        compute_hash(
-            &self.field,
-            &occur_str,
-            &dur_str,
-            &state_str,
-            &data_str,
-        )
+        let dur_str = self
+            .dur
+            .as_ref()
+            .map(Dur::to_storage_string)
+            .unwrap_or_default();
+        let data_str = self
+            .data
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        let state_str = self
+            .state
+            .as_ref()
+            .map(|v| v.to_string())
+            .unwrap_or_default();
+        compute_hash(&self.field, &occur_str, &dur_str, &state_str, &data_str)
     }
 }
 
@@ -575,7 +584,10 @@ mod tests {
         assert_eq!(e.field, "coffee");
         assert_eq!(e.verb, Verb::Point);
         assert_eq!(e.hid.len(), HID_LEN);
-        assert!(e.hid.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
+        assert!(e
+            .hid
+            .chars()
+            .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         assert!(e.slug.starts_with("coffee:"));
     }
 
@@ -642,7 +654,9 @@ mod tests {
         for _ in 0..100 {
             let h = new_hid();
             assert_eq!(h.len(), HID_LEN);
-            assert!(h.chars().all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
+            assert!(h
+                .chars()
+                .all(|c| c.is_ascii_digit() || c.is_ascii_lowercase()));
         }
     }
 }

@@ -23,8 +23,7 @@ use crate::{
     error::AppError,
     jwt,
     models::{AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeResponse},
-    refresh,
-    AppState,
+    refresh, AppState,
 };
 
 /// In-memory record of one pending device-code grant.
@@ -58,11 +57,7 @@ fn random_user_code() -> String {
         .unwrap()
         .as_nanos();
     let n = nanos as u32;
-    format!(
-        "{:04X}-{:04X}",
-        n & 0xFFFF,
-        (n >> 16) & 0xFFFF
-    )
+    format!("{:04X}-{:04X}", n & 0xFFFF, (n >> 16) & 0xFFFF)
 }
 
 pub async fn start(
@@ -129,14 +124,22 @@ pub async fn poll(
     };
 
     let Some(record) = record else {
-        return (StatusCode::BAD_REQUEST, Json(PollError { error: "expired" })).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(PollError { error: "expired" }),
+        )
+            .into_response();
     };
 
     if Instant::now() > record.expires_at {
         // Clean up the stale record so /authorize on the same code fails
         // immediately too.
         state.device_codes.lock().unwrap().remove(&q.device_code);
-        return (StatusCode::BAD_REQUEST, Json(PollError { error: "expired" })).into_response();
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(PollError { error: "expired" }),
+        )
+            .into_response();
     }
 
     if let Some(user_id) = record.authorized_user_id {
@@ -234,7 +237,13 @@ mod tests {
     fn random_token_meets_minimum_entropy() {
         use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
         let token = random_token(24);
-        let raw = URL_SAFE_NO_PAD.decode(token.as_bytes()).expect("token is base64url");
-        assert!(raw.len() * 8 >= 128, "token entropy {} bits < 128", raw.len() * 8);
+        let raw = URL_SAFE_NO_PAD
+            .decode(token.as_bytes())
+            .expect("token is base64url");
+        assert!(
+            raw.len() * 8 >= 128,
+            "token entropy {} bits < 128",
+            raw.len() * 8
+        );
     }
 }

@@ -29,10 +29,8 @@ fn migrate_run(db: &Db) -> Result<()> {
 }
 
 fn migrate_status(db: &Db) -> Result<()> {
-    let (current, target, rows) = datum_core::migrations::migration_status(
-        db.conn(),
-        datum_core::migrations::MIGRATIONS,
-    )?;
+    let (current, target, rows) =
+        datum_core::migrations::migration_status(db.conn(), datum_core::migrations::MIGRATIONS)?;
     println!("Current schema version: v{current}");
     println!("Binary target version:  v{target}");
     println!();

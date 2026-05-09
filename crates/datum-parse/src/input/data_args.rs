@@ -306,15 +306,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             )?;
         } else {
             for rem in &remainder_data {
-                alter_datum_data(
-                    &mut datum_data,
-                    rkey,
-                    Some(rem),
-                    None,
-                    true,
-                    false,
-                    compat,
-                )?;
+                alter_datum_data(&mut datum_data, rkey, Some(rem), None, true, false, compat)?;
             }
         }
     }
@@ -728,7 +720,10 @@ pub fn infer_type(value: &str) -> Option<Value> {
     // `,,`, etc.); interior empty splits keep their existing null behavior.
     if value.starts_with(',') || value.ends_with(',') {
         let parts: Vec<&str> = value.split(',').collect();
-        let start = parts.iter().position(|s| !s.is_empty()).unwrap_or(parts.len());
+        let start = parts
+            .iter()
+            .position(|s| !s.is_empty())
+            .unwrap_or(parts.len());
         let end = parts
             .iter()
             .rposition(|s| !s.is_empty())
@@ -845,7 +840,10 @@ mod tests {
         assert_eq!(infer_type(",tag1,"), Some(json!(["tag1"])));
         assert_eq!(infer_type(",,"), Some(json!([])));
         // Interior empty splits keep their existing null behavior.
-        assert_eq!(infer_type(",tag1,,tag2,"), Some(json!(["tag1", null, "tag2"])));
+        assert_eq!(
+            infer_type(",tag1,,tag2,"),
+            Some(json!(["tag1", null, "tag2"]))
+        );
     }
 
     #[test]
@@ -876,7 +874,9 @@ mod tests {
         a.data = vec!["first=arg".into(), "second=another".into()];
         assert_eq!(
             run(a),
-            *json!({"first": "arg", "second": "another"}).as_object().unwrap()
+            *json!({"first": "arg", "second": "another"})
+                .as_object()
+                .unwrap()
         );
 
         let mut a = args();
@@ -888,10 +888,7 @@ mod tests {
     fn extra_equals_in_value_are_preserved() {
         let mut a = args();
         a.data = vec!["equation=1+2=3".into()];
-        assert_eq!(
-            run(a),
-            *json!({"equation": "1+2=3"}).as_object().unwrap()
-        );
+        assert_eq!(run(a), *json!({"equation": "1+2=3"}).as_object().unwrap());
 
         let mut a = args();
         a.data = vec!["eqSep=====".into()];
@@ -1033,10 +1030,7 @@ mod tests {
 
         let mut a = args();
         a.keys = vec!["withDefault=3".into()];
-        assert_eq!(
-            run(a),
-            *json!({"withDefault": 3}).as_object().unwrap()
-        );
+        assert_eq!(run(a), *json!({"withDefault": 3}).as_object().unwrap());
 
         let mut a = args();
         a.keys = vec!["withBlankDefault=".into()];
@@ -1280,12 +1274,7 @@ mod tests {
             "opt1=".into(),
             "withDefaultFromOptional=noError".into(),
         ];
-        a.data = vec![
-            "one".into(),
-            "two".into(),
-            "three".into(),
-            "four".into(),
-        ];
+        a.data = vec!["one".into(), "two".into(), "three".into(), "four".into()];
         assert!(matches!(
             handle_data_args(&a),
             Err(ParseError::ExtraData(_))
@@ -1324,11 +1313,7 @@ mod tests {
             "opt2=dotDefault".into(),
             "opt3=notGivenDefault".into(),
         ];
-        a.data = vec![
-            "opt2=.".into(),
-            "twoValue".into(),
-            "threeValue".into(),
-        ];
+        a.data = vec!["opt2=.".into(), "twoValue".into(), "threeValue".into()];
         assert_eq!(
             run(a),
             *json!({
@@ -1345,15 +1330,8 @@ mod tests {
     #[test]
     fn key_equals_deletes_previously_set_value() {
         let mut a = args();
-        a.data = vec![
-            "key=value".into(),
-            "key2=value2".into(),
-            "key=".into(),
-        ];
-        assert_eq!(
-            run(a),
-            *json!({"key2": "value2"}).as_object().unwrap()
-        );
+        a.data = vec!["key=value".into(), "key2=value2".into(), "key=".into()];
+        assert_eq!(run(a), *json!({"key2": "value2"}).as_object().unwrap());
     }
 
     #[test]
@@ -1490,10 +1468,7 @@ mod tests {
     fn duration_default_value_uses_key_inference() {
         let mut a = args();
         a.keys = vec!["duration=5".into()];
-        assert_eq!(
-            run(a),
-            *json!({"duration": "PT5M"}).as_object().unwrap()
-        );
+        assert_eq!(run(a), *json!({"duration": "PT5M"}).as_object().unwrap());
     }
 
     #[test]

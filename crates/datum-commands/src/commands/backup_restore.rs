@@ -139,10 +139,7 @@ fn backup_targz(path: &std::path::Path, db: &Db, header: &BackupHeader) -> Resul
     // header without buffering the whole dataset in memory. The metadata
     // header line goes first, followed by one JSON entry per line — same
     // layout as plain .jsonl backups.
-    let temp_path = std::env::temp_dir().join(format!(
-        "datum-backup-{}.jsonl",
-        new_hid()
-    ));
+    let temp_path = std::env::temp_dir().join(format!("datum-backup-{}.jsonl", new_hid()));
     let guard = TempFileGuard(temp_path.clone());
 
     let mut count = 0usize;
@@ -273,12 +270,12 @@ pub(crate) fn cmd_restore(args: RestoreArgs, db: &Db) -> Result<()> {
         eprintln!("⚠ {w}");
     }
     if dry_run {
-        println!("Dry run: {} entries scanned (no DB changes)", report.total_processed());
-        println!("  Would insert: {}", report.inserted);
         println!(
-            "  Would skip (content_hash dedupe): {}",
-            report.skipped
+            "Dry run: {} entries scanned (no DB changes)",
+            report.total_processed()
         );
+        println!("  Would insert: {}", report.inserted);
+        println!("  Would skip (content_hash dedupe): {}", report.skipped);
         if force {
             println!("  Would update (--force): {}", report.updated);
         }
@@ -313,8 +310,7 @@ fn restore_jsonl(
     strategy: ConflictStrategy,
     dry_run: bool,
 ) -> Result<RestoreReport> {
-    let file = std::fs::File::open(path)
-        .with_context(|| format!("Opening backup: {path}"))?;
+    let file = std::fs::File::open(path).with_context(|| format!("Opening backup: {path}"))?;
     let reader = std::io::BufReader::new(file);
     restore_from_reader(reader, db, strategy, dry_run)
 }
@@ -325,8 +321,7 @@ fn restore_targz(
     strategy: ConflictStrategy,
     dry_run: bool,
 ) -> Result<RestoreReport> {
-    let file = std::fs::File::open(path)
-        .with_context(|| format!("Opening backup: {path}"))?;
+    let file = std::fs::File::open(path).with_context(|| format!("Opening backup: {path}"))?;
     let gz = flate2::read::GzDecoder::new(std::io::BufReader::new(file));
     let mut archive = tar::Archive::new(gz);
     for entry_res in archive.entries().context("Reading tar archive")? {
@@ -365,7 +360,11 @@ fn read_header_line<R: std::io::BufRead>(
         // without us running a full Entry deserialize twice.
         let is_header = serde_json::from_str::<serde_json::Value>(&trimmed)
             .ok()
-            .and_then(|v| v.get("type").and_then(|t| t.as_str()).map(|s| s.to_string()))
+            .and_then(|v| {
+                v.get("type")
+                    .and_then(|t| t.as_str())
+                    .map(|s| s.to_string())
+            })
             .map(|s| s == BACKUP_HEADER_TYPE)
             .unwrap_or(false);
         if is_header {
@@ -383,11 +382,7 @@ fn read_header_line<R: std::io::BufRead>(
 /// production data, so no intermediate JSON transforms are needed — the
 /// function is an identity pass. Future schema bumps that change Entry
 /// serialization should add a match arm here (keyed by `from`).
-fn migrate_entry_json(
-    _raw: &mut serde_json::Value,
-    from: u32,
-    to: u32,
-) -> Result<()> {
+fn migrate_entry_json(_raw: &mut serde_json::Value, from: u32, to: u32) -> Result<()> {
     if from == to {
         return Ok(());
     }
@@ -437,9 +432,9 @@ fn restore_from_reader<R: std::io::BufRead>(
         None => {
             // Empty file → no-op. Non-empty with no header → legacy.
             if legacy_first.is_some() {
-                report.warnings.push(
-                    "Legacy backup without metadata; assuming schema v1".to_string(),
-                );
+                report
+                    .warnings
+                    .push("Legacy backup without metadata; assuming schema v1".to_string());
             }
             1
         }
@@ -461,13 +456,13 @@ fn restore_from_reader<R: std::io::BufRead>(
         if line.trim().is_empty() {
             continue;
         }
-        let mut raw: serde_json::Value = serde_json::from_str(&line)
-            .with_context(|| format!("Parsing entry JSON: {line}"))?;
+        let mut raw: serde_json::Value =
+            serde_json::from_str(&line).with_context(|| format!("Parsing entry JSON: {line}"))?;
         if backup_version < current {
             migrate_entry_json(&mut raw, backup_version, current)?;
         }
-        let entry: Entry = serde_json::from_value(raw)
-            .with_context(|| format!("Deserializing entry: {line}"))?;
+        let entry: Entry =
+            serde_json::from_value(raw).with_context(|| format!("Deserializing entry: {line}"))?;
 
         if dry_run {
             // Read-only: predict the outcome from a content_hash lookup
@@ -476,8 +471,9 @@ fn restore_from_reader<R: std::io::BufRead>(
             match (exists, strategy) {
                 (false, _) => report.inserted += 1,
                 (true, ConflictStrategy::Ignore) => report.skipped += 1,
-                (true, ConflictStrategy::Update)
-                | (true, ConflictStrategy::Merge) => report.updated += 1,
+                (true, ConflictStrategy::Update) | (true, ConflictStrategy::Merge) => {
+                    report.updated += 1
+                }
                 // Rekey would insert a second row sharing content_hash.
                 (true, ConflictStrategy::Rekey) => report.inserted += 1,
             }
@@ -486,12 +482,8 @@ fn restore_from_reader<R: std::io::BufRead>(
 
         let outcome = db.insert_entry_with_strategy(&entry, strategy)?;
         match outcome {
-            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => {
-                report.inserted += 1
-            }
-            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => {
-                report.updated += 1
-            }
+            InsertOutcome::Inserted { .. } | InsertOutcome::Rekeyed { .. } => report.inserted += 1,
+            InsertOutcome::Updated { .. } | InsertOutcome::Merged { .. } => report.updated += 1,
             InsertOutcome::Ignored { .. } => report.skipped += 1,
         }
     }
@@ -522,33 +514,43 @@ mod tests {
         value: serde_json::Value,
         extra: Option<serde_json::Value>,
     ) -> datum_core::entry::Entry {
-        let base: chrono::DateTime<chrono::Utc> =
-            "2024-01-01T00:00:00Z".parse().unwrap();
+        let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
-        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new(field, Verb::Point, Some(value), extra, None, Some(t), None, "d1")
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        Entry::new(
+            field,
+            Verb::Point,
+            Some(value),
+            extra,
+            None,
+            Some(t),
+            None,
+            "d1",
+        )
     }
 
     fn seed_entries(db: &datum_core::db::Db) {
         // Mix of fields, verbs, and extra_data shapes to exercise round-trip.
-        db.insert_entry(&make_entry(
-            "mood",
-            100,
-            serde_json::json!("happy"),
-            None,
-        )).unwrap();
+        db.insert_entry(&make_entry("mood", 100, serde_json::json!("happy"), None))
+            .unwrap();
         db.insert_entry(&make_entry(
             "coffee",
             200,
             serde_json::json!(2),
             Some(serde_json::json!({"unit": "cups"})),
-        )).unwrap();
+        ))
+        .unwrap();
         db.insert_entry(&make_entry(
             "notes",
             300,
             serde_json::json!("hello world"),
             Some(serde_json::json!({"tag": "foo", "nested": {"k": 1}})),
-        )).unwrap();
+        ))
+        .unwrap();
     }
 
     fn unique_tmp_path(ext: &str) -> std::path::PathBuf {
@@ -588,17 +590,17 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
 
         // File is a metadata header line followed by line-per-entry JSONL.
         let contents = std::fs::read_to_string(&path).unwrap();
-        let non_empty: Vec<&str> = contents
-            .lines()
-            .filter(|l| !l.trim().is_empty())
-            .collect();
+        let non_empty: Vec<&str> = contents.lines().filter(|l| !l.trim().is_empty()).collect();
         assert_eq!(
             non_empty.len(),
             original.len() + 1,
@@ -606,17 +608,14 @@ mod tests {
         );
 
         // Header: type == daydumb_backup and schema_version tracks the binary.
-        let header: serde_json::Value = serde_json::from_str(non_empty[0])
-            .expect("first line parses as JSON");
+        let header: serde_json::Value =
+            serde_json::from_str(non_empty[0]).expect("first line parses as JSON");
         assert_eq!(header["type"], serde_json::json!("daydumb_backup"));
         assert_eq!(
             header["schema_version"],
             serde_json::json!(datum_core::migrations::CURRENT_SCHEMA_VERSION)
         );
-        assert_eq!(
-            header["entry_count"].as_u64(),
-            Some(original.len() as u64)
-        );
+        assert_eq!(header["entry_count"].as_u64(), Some(original.len() as u64));
         assert!(header["backup_time"].as_str().is_some());
 
         // Remaining lines must parse as full Entries.
@@ -628,7 +627,12 @@ mod tests {
         // Restore into a fresh db and verify equivalence.
         let dst = Db::open_in_memory().unwrap();
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -647,7 +651,10 @@ mod tests {
 
         let path = unique_tmp_path(".tar.gz");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -692,9 +699,12 @@ mod tests {
             "manifest has a timestamp"
         );
 
-        let first_line = entries_body.lines().next().expect("entries.jsonl non-empty");
-        let header: serde_json::Value = serde_json::from_str(first_line)
-            .expect("entries.jsonl first line is JSON");
+        let first_line = entries_body
+            .lines()
+            .next()
+            .expect("entries.jsonl non-empty");
+        let header: serde_json::Value =
+            serde_json::from_str(first_line).expect("entries.jsonl first line is JSON");
         assert_eq!(header["type"], serde_json::json!("daydumb_backup"));
         assert_eq!(
             header["schema_version"],
@@ -703,7 +713,12 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -722,7 +737,10 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -730,7 +748,12 @@ mod tests {
         // First restore: every row inserted.
         let dst = Db::open_in_memory().unwrap();
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -744,7 +767,12 @@ mod tests {
         // Second restore with the same backup: content_hash dedup kicks in,
         // nothing changes.
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -754,7 +782,10 @@ mod tests {
             .into_iter()
             .map(|e| (e.slug.clone(), e.modify_time))
             .collect();
-        assert_eq!(before, after, "idempotent restore must not bump modified_at");
+        assert_eq!(
+            before, after,
+            "idempotent restore must not bump modified_at"
+        );
 
         std::fs::remove_file(&path).ok();
     }
@@ -763,16 +794,15 @@ mod tests {
     fn restore_force_overwrites_conflicting_rows() {
         use datum_core::db::Db;
         let src = Db::open_in_memory().unwrap();
-        src.insert_entry(&make_entry(
-            "mood",
-            100,
-            serde_json::json!("happy"),
-            None,
-        )).unwrap();
+        src.insert_entry(&make_entry("mood", 100, serde_json::json!("happy"), None))
+            .unwrap();
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -780,8 +810,7 @@ mod tests {
         // Pre-populate dst with the SAME logical row from a different device.
         // Same content_hash, different device_id.
         let dst = Db::open_in_memory().unwrap();
-        let base: chrono::DateTime<chrono::Utc> =
-            "2024-01-01T00:00:00Z".parse().unwrap();
+        let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let t = DatumTime {
             utc: base + chrono::Duration::seconds(100),
             offset_minutes: 0,
@@ -802,13 +831,21 @@ mod tests {
 
         // --force → ConflictStrategy::Update overwrites device_id from "d1" in backup.
         cmd_restore(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: true, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: true,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
 
         let overwritten = dst.get_entry(&dup.slug).unwrap();
-        assert_eq!(overwritten.device_id, "d1", "force must overwrite device_id");
+        assert_eq!(
+            overwritten.device_id, "d1",
+            "force must overwrite device_id"
+        );
         assert!(
             overwritten.modify_time >= old_modified,
             "force must bump modified_at"
@@ -825,14 +862,20 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &db,
         )
         .unwrap();
 
         // Second call without --overwrite must error.
         let err = cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &db,
         )
         .unwrap_err();
@@ -843,7 +886,10 @@ mod tests {
 
         // With --overwrite, it succeeds.
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: true },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: true,
+            },
             &db,
         )
         .unwrap();
@@ -881,14 +927,22 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -919,7 +973,9 @@ mod tests {
         // Forge a backup with schema_version set one below current. The
         // entries themselves are serialized from today's binary — the
         // identity migrate_entry_json lets them round-trip cleanly.
-        let older = datum_core::migrations::CURRENT_SCHEMA_VERSION.saturating_sub(1).max(1);
+        let older = datum_core::migrations::CURRENT_SCHEMA_VERSION
+            .saturating_sub(1)
+            .max(1);
         let header = serde_json::json!({
             "type": "daydumb_backup",
             "schema_version": older,
@@ -932,7 +988,12 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -969,7 +1030,12 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let err = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap_err();
@@ -997,7 +1063,12 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -1038,7 +1109,12 @@ mod tests {
 
         let dst = Db::open_in_memory().unwrap();
         let report = cmd_restore_with_report(
-            RestoreArgs { path: path.to_string_lossy().into_owned(), force: false, dry_run: false, json: false },
+            RestoreArgs {
+                path: path.to_string_lossy().into_owned(),
+                force: false,
+                dry_run: false,
+                json: false,
+            },
             &dst,
         )
         .unwrap();
@@ -1068,7 +1144,10 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -1109,7 +1188,10 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -1145,7 +1227,10 @@ mod tests {
         .unwrap();
 
         assert!(report.dry_run);
-        assert_eq!(report.skipped, pre_count, "every row collides by content_hash");
+        assert_eq!(
+            report.skipped, pre_count,
+            "every row collides by content_hash"
+        );
         assert_eq!(report.inserted, 0);
         assert_eq!(report.updated, 0);
 
@@ -1167,7 +1252,10 @@ mod tests {
 
         let path = unique_tmp_path(".jsonl");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -1197,7 +1285,10 @@ mod tests {
         .unwrap();
 
         assert!(report.dry_run);
-        assert_eq!(report.updated, pre_count, "--force flips dedupes into updates");
+        assert_eq!(
+            report.updated, pre_count,
+            "--force flips dedupes into updates"
+        );
         assert_eq!(report.skipped, 0);
         assert_eq!(report.inserted, 0);
 
@@ -1213,7 +1304,10 @@ mod tests {
 
         let path = unique_tmp_path(".tar.gz");
         cmd_backup(
-            BackupArgs { path: path.to_string_lossy().into_owned(), overwrite: false },
+            BackupArgs {
+                path: path.to_string_lossy().into_owned(),
+                overwrite: false,
+            },
             &src,
         )
         .unwrap();
@@ -1232,7 +1326,11 @@ mod tests {
 
         assert!(report.dry_run);
         assert_eq!(report.inserted, original.len());
-        assert_eq!(dst.count_entries().unwrap(), 0, "dry-run leaves DB untouched");
+        assert_eq!(
+            dst.count_entries().unwrap(),
+            0,
+            "dry-run leaves DB untouched"
+        );
 
         std::fs::remove_file(&path).ok();
     }

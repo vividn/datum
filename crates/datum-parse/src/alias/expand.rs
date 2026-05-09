@@ -625,10 +625,7 @@ mod tests {
         // Trailing args follow the rewritten pair untouched.
         let (argv, _) =
             expand_argv(v(&["datum", "occur", "x", "-tqtt", "-k", "n"]), &NoResolver).unwrap();
-        assert_eq!(
-            argv,
-            v(&["datum", "occur", "x", "-t", "-7", "-k", "n"])
-        );
+        assert_eq!(argv, v(&["datum", "occur", "x", "-t", "-7", "-k", "n"]));
 
         // Bare `-t` is untouched (still consumes its positional value).
         let (argv, _) = expand_argv(v(&["datum", "occur", "x", "-t", "3"]), &NoResolver).unwrap();
@@ -848,8 +845,14 @@ mod tests {
         aliases.insert("b".to_string(), alias("a"));
         let err = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap_err();
         let msg = format!("{err}");
-        assert!(msg.contains("Alias cycle"), "msg should label the failure: {msg}");
-        assert!(msg.contains("a → b → a"), "msg should render the path: {msg}");
+        assert!(
+            msg.contains("Alias cycle"),
+            "msg should label the failure: {msg}"
+        );
+        assert!(
+            msg.contains("a → b → a"),
+            "msg should render the path: {msg}"
+        );
     }
 
     #[test]
@@ -858,8 +861,7 @@ mod tests {
         let mut aliases = std::collections::HashMap::new();
         aliases.insert("a".to_string(), alias("b"));
         aliases.insert("b".to_string(), alias("occur coffee"));
-        let (argv, chain) =
-            expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap();
+        let (argv, chain) = expand_argv(v(&["datum", "a"]), &MapResolver(&aliases)).unwrap();
         assert_eq!(argv, v(&["datum", "occur", "coffee"]));
         assert_eq!(chain.len(), 2);
         assert_eq!(chain[0].name, "a");
@@ -873,8 +875,7 @@ mod tests {
         let mut aliases = std::collections::HashMap::new();
         aliases.insert("a".to_string(), alias("b $1"));
         aliases.insert("b".to_string(), alias("a $1"));
-        let err =
-            expand_argv(v(&["datum", "a", "x"]), &MapResolver(&aliases)).unwrap_err();
+        let err = expand_argv(v(&["datum", "a", "x"]), &MapResolver(&aliases)).unwrap_err();
         assert!(matches!(err, crate::error::ParseError::AliasCycle(_)));
     }
 }

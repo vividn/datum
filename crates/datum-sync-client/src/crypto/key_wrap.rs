@@ -19,8 +19,8 @@ use crate::crypto::CryptoError;
 // `KdfParams` and `WrappedKey` wire types live in `datum-sync-protocol`
 // so client and server can never drift; this module owns the actual
 // crypto (Argon2id + AES-256-GCM) that operates on those types.
-pub use datum_sync_protocol::messages::sync::{KdfParams, WrappedKey};
 pub use datum_sync_protocol::crypto::constants::NONCE_LEN;
+pub use datum_sync_protocol::messages::sync::{KdfParams, WrappedKey};
 
 /// Recommended defaults: 64 MiB × 3 passes × p=1 with a fresh 16-byte salt.
 /// Free function (rather than an inherent impl on `KdfParams`) because the
@@ -39,10 +39,7 @@ pub fn default_kdf_params_with_fresh_salt() -> KdfParams {
 
 /// Wrap a 32-byte master key with a passphrase. The returned blob is safe to
 /// hand to the relay — decryption requires the passphrase.
-pub fn wrap_master_key(
-    passphrase: &str,
-    master_key: &[u8; 32],
-) -> Result<WrappedKey, CryptoError> {
+pub fn wrap_master_key(passphrase: &str, master_key: &[u8; 32]) -> Result<WrappedKey, CryptoError> {
     let params = default_kdf_params_with_fresh_salt();
     wrap_master_key_with_params(passphrase, master_key, params)
 }
@@ -76,15 +73,9 @@ pub fn wrap_master_key_with_params(
 /// Unwrap a passphrase-wrapped master key. Returns a single [`CryptoError`]
 /// on a wrong passphrase, tampered ciphertext, or malformed base64 — all
 /// failure modes surface identically (no oracle).
-pub fn unwrap_master_key(
-    passphrase: &str,
-    wrapped: &WrappedKey,
-) -> Result<[u8; 32], CryptoError> {
+pub fn unwrap_master_key(passphrase: &str, wrapped: &WrappedKey) -> Result<[u8; 32], CryptoError> {
     if wrapped.kdf != "argon2id" {
-        return Err(CryptoError(format!(
-            "unsupported kdf: {}",
-            wrapped.kdf
-        )));
+        return Err(CryptoError(format!("unsupported kdf: {}", wrapped.kdf)));
     }
     if wrapped.wrap_alg != "aes-256-gcm" {
         return Err(CryptoError(format!(
@@ -131,15 +122,10 @@ pub fn key_fingerprint(master_key: &[u8; 32]) -> String {
 }
 
 fn derive_kek(passphrase: &str, params: &KdfParams) -> Result<[u8; 32], CryptoError> {
-    let salt = b64_decode(&params.salt_b64)
-        .map_err(|e| CryptoError(format!("decode salt_b64: {e}")))?;
-    let argon_params = argon2::Params::new(
-        params.m_cost,
-        params.t_cost,
-        params.p_cost,
-        Some(32),
-    )
-    .map_err(|e| CryptoError(format!("argon2 params: {e}")))?;
+    let salt =
+        b64_decode(&params.salt_b64).map_err(|e| CryptoError(format!("decode salt_b64: {e}")))?;
+    let argon_params = argon2::Params::new(params.m_cost, params.t_cost, params.p_cost, Some(32))
+        .map_err(|e| CryptoError(format!("argon2 params: {e}")))?;
     let argon = argon2::Argon2::new(
         argon2::Algorithm::Argon2id,
         argon2::Version::V0x13,

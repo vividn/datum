@@ -9,9 +9,7 @@
 mod sync_support;
 
 use chrono::{Duration as ChronoDuration, Utc};
-use datum_cli::config::{
-    auth_token_path, master_key_path, server_host_from_url,
-};
+use datum_cli::config::{auth_token_path, master_key_path, server_host_from_url};
 use datum_cli::sync::{run_sync_with_client, AuthToken, Direction, SyncOutcome};
 use datum_core::db::Db;
 use datum_core::entry::{Entry, Verb};
@@ -146,13 +144,8 @@ fn sync_push_uploads_new_changes_since_last_seq() {
     db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
     db.insert_entry(&make_entry("mood", 60, "dev-1")).unwrap();
 
-    let outcome = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    let outcome =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
 
     assert_eq!(outcome.pushed, 2);
     assert_eq!(outcome.pulled, 0);
@@ -162,13 +155,8 @@ fn sync_push_uploads_new_changes_since_last_seq() {
     assert_eq!(sync_state::get_my_push_seq(&db).unwrap(), 1);
 
     // A second push with no new rows sends nothing.
-    let again = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    let again =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
     assert_eq!(again.pushed, 0);
     // Counter didn't tick because nothing was uploaded.
     assert_eq!(sync_state::get_my_push_seq(&db).unwrap(), 1);
@@ -201,13 +189,8 @@ fn sync_pull_applies_changes_and_advances_seq() {
     // Our local DB starts empty.
     let db = fresh_db(&env);
 
-    let outcome = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PullOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    let outcome =
+        run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db).unwrap();
 
     assert_eq!(outcome.pushed, 0);
     assert_eq!(outcome.pulled, 1);
@@ -241,26 +224,17 @@ fn sync_bidirectional_pulls_first() {
         .insert_entry(&make_entry("peer-field", 0, "dev-peer"))
         .unwrap();
     let cs = datum_sync_client::ops::pack_changeset(&peer_db, 0).unwrap();
-    let blob = datum_sync_client::crypto::changeset::encrypt_changeset(
-        &cs,
-        &master_key,
-        "dev-peer",
-        1,
-    )
-    .unwrap();
+    let blob =
+        datum_sync_client::crypto::changeset::encrypt_changeset(&cs, &master_key, "dev-peer", 1)
+            .unwrap();
     relay.inject_changeset("dev-peer", 1, blob.as_bytes());
 
     // Local has its own entry.
     let db = fresh_db(&env);
-    db.insert_entry(&make_entry("local-field", 0, "dev-1")).unwrap();
+    db.insert_entry(&make_entry("local-field", 0, "dev-1"))
+        .unwrap();
 
-    let outcome = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::Both,
-        false,
-        &db,
-    )
-    .unwrap();
+    let outcome = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db).unwrap();
 
     assert_eq!(outcome.pulled, 1, "should pull 1 peer change");
     // After pulling the peer entry, a fresh pack sees both rows in the DB.
@@ -311,13 +285,7 @@ fn sync_status_reports_per_db() {
     write_master_key(&relay.base_url, &[0x55u8; 32]);
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
-    run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
 
     // `datum sync status` prints human output; we invoke it for side
     // effects (no panics / errors) and check that watermarks are what the
@@ -328,7 +296,10 @@ fn sync_status_reports_per_db() {
     .unwrap();
 
     let last_push = sync_state::get_last_push_at(&db).unwrap();
-    assert!(last_push.is_some(), "status should have a real last_push_at");
+    assert!(
+        last_push.is_some(),
+        "status should have a real last_push_at"
+    );
 }
 
 #[test]
@@ -339,13 +310,7 @@ fn sync_without_login_errors_cleanly() {
     write_master_key(&relay.base_url, &[0x66u8; 32]);
     let db = fresh_db(&env);
 
-    let err = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::Both,
-        false,
-        &db,
-    )
-    .unwrap_err();
+    let err = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db).unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("not logged in"),
@@ -361,16 +326,12 @@ fn sync_without_unlocked_key_errors_cleanly() {
     // Deliberately skip writing a master key.
     let db = fresh_db(&env);
 
-    let err = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::Both,
-        false,
-        &db,
-    )
-    .unwrap_err();
+    let err = run_sync_with_client(Some(&relay.base_url), Direction::Both, false, &db).unwrap_err();
     let msg = err.to_string();
     assert!(
-        msg.contains("master key not unlocked") || msg.contains("key init") || msg.contains("key unlock"),
+        msg.contains("master key not unlocked")
+            || msg.contains("key init")
+            || msg.contains("key unlock"),
         "expected key-not-unlocked error, got: {msg}"
     );
 }
@@ -431,22 +392,13 @@ fn pull_with_conflict_queues_to_conflict_table() {
     peer_db.insert_entry(&peer_start).unwrap();
 
     let cs = datum_sync_client::ops::pack_changeset(&peer_db, 0).unwrap();
-    let blob = datum_sync_client::crypto::changeset::encrypt_changeset(
-        &cs,
-        &master_key,
-        "dev-peer",
-        1,
-    )
-    .unwrap();
+    let blob =
+        datum_sync_client::crypto::changeset::encrypt_changeset(&cs, &master_key, "dev-peer", 1)
+            .unwrap();
     relay.inject_changeset("dev-peer", 1, blob.as_bytes());
 
-    let outcome = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PullOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    let outcome =
+        run_sync_with_client(Some(&relay.base_url), Direction::PullOnly, false, &db).unwrap();
 
     assert_eq!(outcome.pulled, 1);
     assert!(
@@ -488,11 +440,14 @@ fn two_instance_sync_converges() {
     let db_b = Db::open(&path_b).unwrap();
 
     // Device A writes two rows.
-    db_a.insert_entry(&make_entry("a-field-1", 0, "dev-A")).unwrap();
-    db_a.insert_entry(&make_entry("a-field-2", 60, "dev-A")).unwrap();
+    db_a.insert_entry(&make_entry("a-field-1", 0, "dev-A"))
+        .unwrap();
+    db_a.insert_entry(&make_entry("a-field-2", 60, "dev-A"))
+        .unwrap();
 
     // Device B writes a different row.
-    db_b.insert_entry(&make_entry("b-field-1", 30, "dev-B")).unwrap();
+    db_b.insert_entry(&make_entry("b-field-1", 30, "dev-B"))
+        .unwrap();
 
     // Each device needs its own device_id — write a device_id file under
     // a per-device DATUM_HOME. Because this test shares a single
@@ -579,18 +534,16 @@ fn run_sync_inner_for_device(
     let session = datum_sync_client::http::Session::new(server, &token, None);
     let mut outcome = SyncOutcome::default();
     if direction.does_pull() {
-        let pulled = datum_cli::sync::pull::run(
-            server, client, &session, device_id, master_key, db, false,
-        )
-        .unwrap();
+        let pulled =
+            datum_cli::sync::pull::run(server, client, &session, device_id, master_key, db, false)
+                .unwrap();
         outcome.pulled = pulled.applied;
         outcome.conflicts_queued = pulled.conflicts_queued;
     }
     if direction.does_push() {
-        let pushed = datum_cli::sync::push::run(
-            server, client, &session, device_id, master_key, db, false,
-        )
-        .unwrap();
+        let pushed =
+            datum_cli::sync::push::run(server, client, &session, device_id, master_key, db, false)
+                .unwrap();
         outcome.pushed = pushed.pushed;
     }
     outcome
@@ -613,24 +566,14 @@ fn push_idempotent_on_replay() {
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("coffee", 0, "dev-1")).unwrap();
 
-    let first = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    let first =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
     assert_eq!(first.pushed, 1);
     assert_eq!(relay.changeset_count(), 1);
 
     // Replay: no new local writes → nothing to upload.
-    let second = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .unwrap();
+    let second =
+        run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db).unwrap();
     assert_eq!(second.pushed, 0);
     assert_eq!(relay.changeset_count(), 1, "replay must not double-push");
 

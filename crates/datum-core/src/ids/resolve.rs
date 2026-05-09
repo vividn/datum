@@ -41,9 +41,7 @@ use rusqlite::{params, OptionalExtension};
 use crate::db::{row_to_entry_public, Db};
 use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
-use crate::last_docs::{
-    get_last_docs, within_protection_window, PROTECTION_WINDOW_MINUTES,
-};
+use crate::last_docs::{get_last_docs, within_protection_window, PROTECTION_WINDOW_MINUTES};
 
 /// `_LAST` — resolves to whatever hids the last-accessed pointer holds,
 /// no time guard.
@@ -218,11 +216,7 @@ fn nth_live_entry(db: &Db, ordinal: usize) -> Result<Option<Entry>> {
         .map_err(DatumError::Db)
 }
 
-fn nth_live_entry_for_field(
-    db: &Db,
-    field: &str,
-    ordinal: usize,
-) -> Result<Option<Entry>> {
+fn nth_live_entry_for_field(db: &Db, field: &str, ordinal: usize) -> Result<Option<Entry>> {
     let offset = ordinal.saturating_sub(1) as i64;
     db.conn()
         .query_row(
@@ -292,7 +286,8 @@ mod tests {
     use chrono::{DateTime, TimeZone, Utc};
 
     fn at(year: i32, month: u32, day: u32, hour: u32, min: u32) -> DateTime<Utc> {
-        Utc.with_ymd_and_hms(year, month, day, hour, min, 0).unwrap()
+        Utc.with_ymd_and_hms(year, month, day, hour, min, 0)
+            .unwrap()
     }
 
     /// Seed `n` entries on `field` at strictly-increasing `occur_time`s
@@ -568,7 +563,8 @@ mod tests {
         let mut e = entry_builder(field).build();
         e.slug = Slug::from(slug);
         e.hid = Hid::from(hid);
-        db.insert_entry(&e).expect("controlled fixture insert failed");
+        db.insert_entry(&e)
+            .expect("controlled fixture insert failed");
         e
     }
 
@@ -672,8 +668,7 @@ mod tests {
         controlled(&db, "book:silver", "cccccccccccc", "book");
 
         let matches = resolve_quickid(&db, "book:gol*").unwrap();
-        let slugs: std::collections::HashSet<_> =
-            matches.iter().map(|e| e.slug.clone()).collect();
+        let slugs: std::collections::HashSet<_> = matches.iter().map(|e| e.slug.clone()).collect();
         assert_eq!(
             slugs,
             std::collections::HashSet::from([
@@ -702,14 +697,10 @@ mod tests {
         // `?` matches exactly one char, so `mood:a?` matches both
         // 7-char tails. Just assert expansion happened across both.
         let matches = resolve_quickid(&db, "mood:a?").unwrap();
-        let slugs: std::collections::HashSet<_> =
-            matches.iter().map(|e| e.slug.clone()).collect();
+        let slugs: std::collections::HashSet<_> = matches.iter().map(|e| e.slug.clone()).collect();
         assert_eq!(
             slugs,
-            std::collections::HashSet::from([
-                e.slug.clone(),
-                crate::ids::Slug::from("mood:ab"),
-            ]),
+            std::collections::HashSet::from([e.slug.clone(), crate::ids::Slug::from("mood:ab"),]),
         );
     }
 

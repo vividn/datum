@@ -4,27 +4,22 @@ use anyhow::Result;
 use chrono::{Local, TimeZone, Utc};
 use datum_core::{
     action::Action,
-    db::{
-        Db, InsertOutcome, ListParams, TimeMetric,
-    },
+    db::{Db, InsertOutcome, ListParams, TimeMetric},
     entry::{Entry, Verb},
     field_spec::{self, InterpolationContext},
     ids::{contains_wildcard, resolve_quickid, resolve_quickid_single},
-    time::{parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder},
+    time::{
+        parse_date_arg, parse_duration, parse_time_arg, resolve_timezone, DatumTime, TimeBuilder,
+    },
 };
 use serde_json::Value as JsonValue;
 
 use crate::{
-    args::{
-        Cli, Command,
-        LogArgs, LogArgsExt,
-        TailArgs,
-        UpdateArgs,
-    },
+    args::{Cli, Command, LogArgs, LogArgsExt, TailArgs, UpdateArgs},
     config::device_id,
     render::{
-        show_create_with_context, show_delete, show_exists, show_rename,
-        show_update_with_context, RenderContext,
+        show_create_with_context, show_delete, show_exists, show_rename, show_update_with_context,
+        RenderContext,
     },
 };
 
@@ -89,11 +84,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
 /// The raw pre-expansion argv must be captured *before* `inner` runs,
 /// because `log_entry` consumes the [`crate::args::IntentContext`] off
 /// the thread-local slot when stamping provenance onto the entry.
-fn run_log_with_alias(
-    args: LogArgs,
-    db: &Db,
-    inner: fn(LogArgs, &Db) -> Result<()>,
-) -> Result<()> {
+fn run_log_with_alias(args: LogArgs, db: &Db, inner: fn(LogArgs, &Db) -> Result<()>) -> Result<()> {
     let alias_name = args.alias_name.clone();
     let alias_overwrite = args.alias_overwrite;
     let raw_argv = crate::args::peek_intent_context()
@@ -208,9 +199,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // value, mirroring the precedence used at insert below.
     if args.undo {
         let undo_state = reserved.state.as_ref().or(value.as_ref());
-        let target = db.find_latest_for_undo(&field, undo_state)?.ok_or_else(|| {
-            anyhow::anyhow!("no matching entry to undo for field '{field}'")
-        })?;
+        let target = db
+            .find_latest_for_undo(&field, undo_state)?
+            .ok_or_else(|| anyhow::anyhow!("no matching entry to undo for field '{field}'"))?;
         let registry = load_registry(db).ok();
         let output = args.output();
         db.soft_delete_entry(&target.slug)?;
@@ -252,9 +243,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         // post-write mismatch detector.
         if args.last_state.is_some() && matches!(action, Action::Stop) {
             match db.find_open_block(&field, base_time.utc)? {
-                None => anyhow::bail!(
-                    "No open block for '{field}' to close with --last-state"
-                ),
+                None => anyhow::bail!("No open block for '{field}' to close with --last-state"),
                 Some(block) => {
                     let last_state = block.value.clone().unwrap_or(JsonValue::Bool(true));
                     let mut obj = match extra_data.take() {
@@ -278,19 +267,28 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
                 Action::Start => {
                     // start --dur: time_start=base, time_end=base+dur
                     let end_utc = base_time.utc + dur;
-                    let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
+                    let time_end = DatumTime {
+                        utc: end_utc,
+                        ..base_time.clone()
+                    };
                     (Some(base_time), Some(time_end))
                 }
                 Action::Stop => {
                     // stop --dur: time_end=base, time_start=base-dur
                     let start_utc = base_time.utc - dur;
-                    let time_start = DatumTime { utc: start_utc, ..base_time.clone() };
+                    let time_start = DatumTime {
+                        utc: start_utc,
+                        ..base_time.clone()
+                    };
                     (Some(time_start), Some(base_time))
                 }
                 _ => {
                     // occur/switch/add/block with --dur: set time_end=time_start+dur
                     let end_utc = base_time.utc + dur;
-                    let time_end = DatumTime { utc: end_utc, ..base_time.clone() };
+                    let time_end = DatumTime {
+                        utc: end_utc,
+                        ..base_time.clone()
+                    };
                     (Some(base_time), Some(time_end))
                 }
             }
@@ -307,7 +305,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // Pass `Verb::Point` as a neutral placeholder; the action-driven state
     // canonicalization below seeds the (state, dur, fs) triple and the
     // storage layer derives the canonical verb.
-    let mut entry = Entry::new_legacy(field, Verb::Point, value, extra_data, unit, time_start, time_end, device);
+    let mut entry = Entry::new_legacy(
+        field,
+        Verb::Point,
+        value,
+        extra_data,
+        unit,
+        time_start,
+        time_end,
+        device,
+    );
 
     // For Action::Add, the shape was inferred from temporal hints; override the
     // shape-inference performed by `Entry::new` so `entry_shape` reflects the
@@ -415,14 +422,13 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             entry.start_time.as_ref().or(entry.end_time.as_ref()),
         );
     } else {
-        let spec_template = db
-            .load_spec(&entry.field)?
-            .and_then(|s| s.id_template);
+        let spec_template = db.load_spec(&entry.field)?.and_then(|s| s.id_template);
         let template = args.id.clone().or(spec_template);
         if let Some(tmpl) = template {
             let uid = entry.short_uid();
             let ctx = InterpolationContext::from_entry(&entry, &uid);
-            entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter));
+            entry.slug =
+                datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter));
             entry.id_structure = Some(tmpl);
         }
     }
@@ -475,7 +481,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             let fresh = db.get_entry(slug).unwrap_or_else(|_| entry.clone());
             show_update_with_context(&fresh, registry.as_ref(), &ctx, &output);
         }
-        InsertOutcome::Rekeyed { new_slug, old_slug, .. } => {
+        InsertOutcome::Rekeyed {
+            new_slug, old_slug, ..
+        } => {
             show_rename(old_slug, new_slug, &output);
             if let Ok(fresh) = db.get_entry(new_slug) {
                 show_create_with_context(&fresh, registry.as_ref(), &ctx, &output);
@@ -544,10 +552,7 @@ fn capture_trail_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
     ) {
         return None;
     }
-    if matches!(
-        entry.entry_shape,
-        datum_core::entry::EntryShape::Block
-    ) {
+    if matches!(entry.entry_shape, datum_core::entry::EntryShape::Block) {
         let end = entry.end_time.as_ref()?.utc;
         return datum_core::state::last_state_at(db.conn(), &entry.field, end, Some(&entry.hid))
             .ok()
@@ -595,7 +600,10 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     data_args.preserve_null_strings = true;
     let mut slug_paths: Vec<String> = Vec::new();
     for spec in &args.slug_keys {
-        let (name, _) = spec.split_once('=').map(|(n, v)| (n, Some(v))).unwrap_or((spec.as_str(), None));
+        let (name, _) = spec
+            .split_once('=')
+            .map(|(n, v)| (n, Some(v)))
+            .unwrap_or((spec.as_str(), None));
         if name.is_empty() {
             anyhow::bail!("empty id-key name in spec '{spec}'");
         }
@@ -612,7 +620,10 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     // into the primary-value remainder, which then leaked into `state`
     // for non-state-bearing verbs like `occur`.
     for spec in &args.keys {
-        let (name, _) = spec.split_once('=').map(|(n, v)| (n, Some(v))).unwrap_or((spec.as_str(), None));
+        let (name, _) = spec
+            .split_once('=')
+            .map(|(n, v)| (n, Some(v)))
+            .unwrap_or((spec.as_str(), None));
         if name.is_empty() {
             anyhow::bail!("empty id-key name in spec '{spec}'");
         }
@@ -632,10 +643,7 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     //
     // `KEY=VALUE` positionals are not state candidates; they go through
     // handle_data_args as explicit assignments regardless of action.
-    let state_bearing = matches!(
-        action,
-        Action::Switch | Action::Start | Action::Stop
-    );
+    let state_bearing = matches!(action, Action::Switch | Action::Start | Action::Stop);
     let mut state_positional: Option<String> = None;
     for pos in &args.rest {
         if state_bearing && state_positional.is_none() && !pos.contains('=') {
@@ -717,7 +725,10 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     // `slug_values.push(... .unwrap_or_default())`.
     let mut slug_values: Vec<String> = Vec::with_capacity(slug_paths.len());
     for path in &slug_paths {
-        slug_values.push(datum_value_to_slug_string(get_path_value(&datum_data, path)));
+        slug_values.push(datum_value_to_slug_string(get_path_value(
+            &datum_data,
+            path,
+        )));
     }
 
     // `id=<name>` shorthand: when no `-K` slug-keys were declared, a
@@ -736,7 +747,12 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
         Some(JsonValue::Object(datum_data))
     };
 
-    Ok(ParsedLogArgs { field, value, extra_data, slug_values })
+    Ok(ParsedLogArgs {
+        field,
+        value,
+        extra_data,
+        slug_values,
+    })
 }
 
 /// Translate a `-K`/`-k` raw key name to the path `handle_data_args`
@@ -816,18 +832,14 @@ fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()> {
             );
         }
         if trailing_duration.is_some() {
-            anyhow::bail!(
-                "switch: multiple trailing duration positionals; expected at most one"
-            );
+            anyhow::bail!("switch: multiple trailing duration positionals; expected at most one");
         }
         trailing_duration = Some(token);
     }
     args.rest = new_rest;
     if let Some(dur) = trailing_duration {
         if args.duration.duration.is_some() {
-            anyhow::bail!(
-                "switch: trailing duration positional conflicts with --dur"
-            );
+            anyhow::bail!("switch: trailing duration positional conflicts with --dur");
         }
         args.duration.duration = Some(dur);
     }
@@ -868,9 +880,7 @@ fn validate_switch_state_token(s: &str) -> Result<()> {
         return Ok(());
     }
     if s.trim_matches(',').contains(",,") {
-        anyhow::bail!(
-            "invalid state list '{s}': empty segment between commas"
-        );
+        anyhow::bail!("invalid state list '{s}': empty segment between commas");
     }
     Ok(())
 }
@@ -882,7 +892,9 @@ fn validate_switch_state_token(s: &str) -> Result<()> {
 ///     comma-containing string elements into their components
 ///   * all other value shapes → passthrough
 fn expand_array_states(value: Option<JsonValue>) -> Result<Option<JsonValue>> {
-    let Some(v) = value else { return Ok(None); };
+    let Some(v) = value else {
+        return Ok(None);
+    };
     match v {
         JsonValue::String(s) if s.contains(',') => Ok(Some(parse_switch_state_token(&s)?)),
         JsonValue::Array(items) => {
@@ -922,8 +934,12 @@ fn parse_value_token(s: &str) -> JsonValue {
     if let Ok(n) = s.parse::<f64>() {
         return serde_json::json!(n);
     }
-    if s == "true" { return JsonValue::Bool(true); }
-    if s == "false" { return JsonValue::Bool(false); }
+    if s == "true" {
+        return JsonValue::Bool(true);
+    }
+    if s == "false" {
+        return JsonValue::Bool(false);
+    }
     JsonValue::String(s.to_string())
 }
 
@@ -978,7 +994,10 @@ impl AddTemporalHints {
     /// - end + dur                          → block | end-dur          | end
     fn resolve(&self, base_time: &DatumTime) -> AddTimestampResult {
         use datum_core::entry::EntryShape;
-        let mk = |utc: chrono::DateTime<chrono::Utc>| DatumTime { utc, ..base_time.clone() };
+        let mk = |utc: chrono::DateTime<chrono::Utc>| DatumTime {
+            utc,
+            ..base_time.clone()
+        };
 
         if self.dur_is_null {
             return AddTimestampResult {
@@ -1076,9 +1095,10 @@ pub(crate) fn extract_reserved_columns(
             // intentionally drop — None signals point shape.
         } else {
             let s = json_to_dur_string(&v)?;
-            out.dur = Some(datum_core::dur::Dur::parse(&s).ok_or_else(|| {
-                anyhow::anyhow!("invalid dur value: {s:?}")
-            })?);
+            out.dur = Some(
+                datum_core::dur::Dur::parse(&s)
+                    .ok_or_else(|| anyhow::anyhow!("invalid dur value: {s:?}"))?,
+            );
         }
     }
     if let Some(v) = obj.remove("following_state") {
@@ -1205,7 +1225,10 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
     let dur = parse_duration(body)?;
     let delta = if sign < 0 { -dur } else { dur };
     let utc = base.utc + delta;
-    Ok(DatumTime { utc, ..base.clone() })
+    Ok(DatumTime {
+        utc,
+        ..base.clone()
+    })
 }
 
 /// Build the log entry's base time together with its effective precision
@@ -1216,12 +1239,24 @@ fn parse_add_time_value(v: &JsonValue, base: &DatumTime) -> Result<DatumTime> {
 /// of the offending flags.
 fn check_no_time_flags(args: &LogArgs) -> Result<()> {
     let mut bad: Vec<&str> = Vec::new();
-    if args.time.time.is_some() { bad.push("-t/--time"); }
-    if args.time.date.is_some() { bad.push("-d/--date"); }
-    if args.duration.duration.is_some() { bad.push("--dur"); }
-    if args.time.timezone.is_some() { bad.push("-z/--timezone"); }
-    if args.time.yesterday > 0 { bad.push("-y"); }
-    if args.time.quick > 0 { bad.push("-q"); }
+    if args.time.time.is_some() {
+        bad.push("-t/--time");
+    }
+    if args.time.date.is_some() {
+        bad.push("-d/--date");
+    }
+    if args.duration.duration.is_some() {
+        bad.push("--dur");
+    }
+    if args.time.timezone.is_some() {
+        bad.push("-z/--timezone");
+    }
+    if args.time.yesterday > 0 {
+        bad.push("-y");
+    }
+    if args.time.quick > 0 {
+        bad.push("-q");
+    }
     if !bad.is_empty() {
         anyhow::bail!(
             "-T/--no-timestamp cannot be combined with time flags: {}",
@@ -1345,10 +1380,7 @@ fn build_render_context_cached(
         .as_ref()
         .map(|t| t.utc)
         .unwrap_or(entry.create_time);
-    let is_first_occurrence = db
-        .count_entries_before(&entry.field, probe)
-        .unwrap_or(1)
-        == 0;
+    let is_first_occurrence = db.count_entries_before(&entry.field, probe).unwrap_or(1) == 0;
     let ongoing_state = capture_ongoing_state_cached(events, entry);
     RenderContext {
         lead_state,
@@ -1498,11 +1530,19 @@ fn build_window(args: &TailArgs) -> Result<TailWindow> {
     let local = point.utc.with_timezone(&Local);
     let day = local.date_naive();
     let day_start = Local
-        .from_local_datetime(&(day - chrono::Duration::days(1)).and_hms_opt(0, 0, 0).unwrap())
+        .from_local_datetime(
+            &(day - chrono::Duration::days(1))
+                .and_hms_opt(0, 0, 0)
+                .unwrap(),
+        )
         .single()
         .unwrap();
     let day_end = Local
-        .from_local_datetime(&(day + chrono::Duration::days(1)).and_hms_opt(23, 59, 59).unwrap())
+        .from_local_datetime(
+            &(day + chrono::Duration::days(1))
+                .and_hms_opt(23, 59, 59)
+                .unwrap(),
+        )
         .single()
         .unwrap();
     Ok(TailWindow {
@@ -1592,7 +1632,8 @@ pub(crate) fn resolve_batch(
     mode: BatchMode,
 ) -> (Vec<Entry>, Vec<(String, anyhow::Error)>) {
     let mut entries: Vec<Entry> = Vec::new();
-    let mut seen: std::collections::HashSet<datum_core::ids::Slug> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<datum_core::ids::Slug> =
+        std::collections::HashSet::new();
     let mut errors: Vec<(String, anyhow::Error)> = Vec::new();
     for raw in input.split(',') {
         let token = raw.trim();
@@ -1614,9 +1655,7 @@ pub(crate) fn resolve_batch(
                 }
                 errors.push((
                     token.to_string(),
-                    anyhow::Error::from(datum_core::error::DatumError::NotFound(
-                        token.to_string(),
-                    )),
+                    anyhow::Error::from(datum_core::error::DatumError::NotFound(token.to_string())),
                 ));
             }
             Ok(matches) => {
@@ -1683,7 +1722,9 @@ pub(crate) fn parse_update_payload(
         data_args.comment.push(c.clone());
     }
 
-    data_args.data.reserve(injected_immediates.len() + args.rest.len());
+    data_args
+        .data
+        .reserve(injected_immediates.len() + args.rest.len());
     data_args.data.extend(injected_immediates);
     data_args.data.extend(args.rest.iter().cloned());
     data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
@@ -1746,7 +1787,10 @@ mod tests {
 
     #[test]
     fn test_parse_value_token_string() {
-        assert_eq!(parse_value_token("happy"), JsonValue::String("happy".to_string()));
+        assert_eq!(
+            parse_value_token("happy"),
+            JsonValue::String("happy".to_string())
+        );
     }
 
     #[test]
@@ -1803,7 +1847,10 @@ mod tests {
         // delete
         db.delete_entry(&slug).unwrap();
         let err = db.get_entry(&slug);
-        assert!(matches!(err, Err(datum_core::error::DatumError::NotFound(_))));
+        assert!(matches!(
+            err,
+            Err(datum_core::error::DatumError::NotFound(_))
+        ));
     }
 
     #[test]
@@ -1909,7 +1956,10 @@ mod tests {
         let tracked = db.get_tracked_fields().unwrap();
         let journal = tracked.iter().find(|f| f.field == "journal");
         assert!(journal.is_some(), "field should be present after any write");
-        assert!(journal.unwrap().ignored, "add-only field defaults to ignored");
+        assert!(
+            journal.unwrap().ignored,
+            "add-only field defaults to ignored"
+        );
     }
 
     #[test]
@@ -1943,14 +1993,22 @@ mod tests {
 
         let state_colors = db.get_all_state_colors().unwrap();
         assert_eq!(
-            state_colors.get(&("mood".to_string(), "happy".to_string())).map(|s| s.as_str()),
+            state_colors
+                .get(&("mood".to_string(), "happy".to_string()))
+                .map(|s| s.as_str()),
             Some("00ff00")
         );
 
         advance_time("1m");
         // Ignore writes a switch IGNORED entry — supersedes the prior
         // track switch — and leaves the spec (and its color) alone.
-        crate::commands::ignore::ignore(IgnoreArgs { field: "mood".to_string() }, &db).unwrap();
+        crate::commands::ignore::ignore(
+            IgnoreArgs {
+                field: "mood".to_string(),
+            },
+            &db,
+        )
+        .unwrap();
         let tracked2 = db.get_tracked_fields().unwrap();
         let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
         assert!(mood2.ignored);
@@ -1959,12 +2017,16 @@ mod tests {
 
         advance_time("1m");
         // Re-track flips it back to tracked (most recent switch wins).
-        crate::commands::track::track(TrackArgs {
-            field: "mood".to_string(),
-            color: None,
-            state_colors: vec![],
-            tags: vec![],
-        }, &db).unwrap();
+        crate::commands::track::track(
+            TrackArgs {
+                field: "mood".to_string(),
+                color: None,
+                state_colors: vec![],
+                tags: vec![],
+            },
+            &db,
+        )
+        .unwrap();
         let tracked3 = db.get_tracked_fields().unwrap();
         assert!(!tracked3.iter().find(|f| f.field == "mood").unwrap().ignored);
     }
@@ -1976,7 +2038,15 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         // Empty db
-        crate::commands::now::now(NowArgs { show_all: false, bare: true, ..NowArgs::default() }, &db).unwrap();
+        crate::commands::now::now(
+            NowArgs {
+                show_all: false,
+                bare: true,
+                ..NowArgs::default()
+            },
+            &db,
+        )
+        .unwrap();
 
         // With some tracked fields and entries
         let mut args = LogArgs::fresh("mood");
@@ -1985,8 +2055,24 @@ mod tests {
         // da-2sr: writing the switch entry alone makes mood tracked; no
         // separate set_tracked / spec write is needed.
 
-        crate::commands::now::now(NowArgs { show_all: false, bare: true, ..NowArgs::default() }, &db).unwrap();
-        crate::commands::now::now(NowArgs { show_all: true, bare: true, ..NowArgs::default() }, &db).unwrap();
+        crate::commands::now::now(
+            NowArgs {
+                show_all: false,
+                bare: true,
+                ..NowArgs::default()
+            },
+            &db,
+        )
+        .unwrap();
+        crate::commands::now::now(
+            NowArgs {
+                show_all: true,
+                bare: true,
+                ..NowArgs::default()
+            },
+            &db,
+        )
+        .unwrap();
     }
 
     // ─── id-template tests (A1 acceptance) ──────────────────────────────────
@@ -2091,11 +2177,7 @@ mod tests {
         // occur verb has no state → %state% empty → "::" collapses to ":"
         log_entry(
             Action::Occur,
-            log_args(
-                "coffee",
-                vec![],
-                Some("%field%:%state%:%uid%".to_string()),
-            ),
+            log_args("coffee", vec![], Some("%field%:%state%:%uid%".to_string())),
             &db,
         )
         .unwrap();
@@ -2111,10 +2193,13 @@ mod tests {
     fn make_entry_at(field: &str, secs_offset: i64, device: &str) -> datum_core::entry::Entry {
         use datum_core::{entry::Entry, time::DatumTime};
         // Fixed base time + offset keeps ids/slugs distinct and orderable.
-        let base: chrono::DateTime<chrono::Utc> =
-            "2024-01-01T00:00:00Z".parse().unwrap();
+        let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
-        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         Entry::new_legacy(
             field,
             Verb::Point,
@@ -2163,7 +2248,8 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         for i in 0..20 {
-            db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
+            db.insert_entry(&make_entry_at("mood", i * 60, "d1"))
+                .unwrap();
         }
 
         crate::commands::tail::tail(head_args(Some("mood"), Some(5)), &db).unwrap();
@@ -2181,9 +2267,11 @@ mod tests {
     fn head_filters_by_field() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        db.insert_entry(&make_entry_at("coffee", 100, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("coffee", 100, "d1"))
+            .unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
-        db.insert_entry(&make_entry_at("coffee", 300, "d1")).unwrap();
+        db.insert_entry(&make_entry_at("coffee", 300, "d1"))
+            .unwrap();
         db.insert_entry(&make_entry_at("mood", 400, "d1")).unwrap();
 
         crate::commands::tail::tail(head_args(Some("coffee"), Some(10)), &db).unwrap();
@@ -2203,7 +2291,8 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         for i in 0..15 {
-            db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
+            db.insert_entry(&make_entry_at("mood", i * 60, "d1"))
+                .unwrap();
         }
         // tail_params defaults count to 10 when no date window is set — same
         // default the old head command hardcoded.
@@ -2252,7 +2341,11 @@ mod tests {
     ) -> datum_core::entry::Entry {
         use datum_core::{entry::Entry, time::DatumTime};
         let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
-        let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+        let dt = DatumTime {
+            utc: t,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         let e = Entry::new_legacy(field, verb, value, extra, None, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
         e
@@ -2417,10 +2510,16 @@ mod tests {
     fn rekey_without_mapping_errors() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(&db, "mood", Verb::Switch, Some(serde_json::json!("x")), None);
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("x")),
+            None,
+        );
 
-        let err = update_from_args(update_args(&e.slug, vec![]), UpdateStrategy::Rekey, &db)
-            .unwrap_err();
+        let err =
+            update_from_args(update_args(&e.slug, vec![]), UpdateStrategy::Rekey, &db).unwrap_err();
         assert!(
             err.to_string().to_lowercase().contains("rekey"),
             "expected rekey-mapping error, got: {err}"
@@ -2486,10 +2585,7 @@ mod tests {
         )
         .unwrap();
         let fresh = db.get_entry(&e.slug).unwrap();
-        assert_eq!(
-            fresh.data.unwrap()["note"],
-            serde_json::json!("fixed"),
-        );
+        assert_eq!(fresh.data.unwrap()["note"], serde_json::json!("fixed"),);
     }
 
     #[test]
@@ -2501,7 +2597,11 @@ mod tests {
         let t0: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00.000Z".parse().unwrap();
         let t1: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00.001Z".parse().unwrap();
         for (t, v) in [(t0, 1), (t1, 2)] {
-            let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+            let dt = DatumTime {
+                utc: t,
+                offset_minutes: 0,
+                timezone: "UTC".to_string(),
+            };
             let e = Entry::new_legacy(
                 "gym",
                 Verb::Point,
@@ -2735,7 +2835,11 @@ mod tests {
         let live: Vec<_> = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].slug, a_id);
-        assert!(db.get_entry_including_deleted(&b_id).unwrap().deleted_at.is_some());
+        assert!(db
+            .get_entry_including_deleted(&b_id)
+            .unwrap()
+            .deleted_at
+            .is_some());
     }
 
     // ─── B3: retime ─────────────────────────────────────────────────────────
@@ -2837,15 +2941,21 @@ mod tests {
         let early_after = db.get_entry(&early.slug).unwrap();
         let late_after = db.get_entry(&late.slug).unwrap();
         let other_after = db.get_entry(&other.slug).unwrap();
-        assert_eq!(early_after.start_time.as_ref().unwrap().utc, early_start,
-            "pre-cutoff row must not shift");
+        assert_eq!(
+            early_after.start_time.as_ref().unwrap().utc,
+            early_start,
+            "pre-cutoff row must not shift"
+        );
         assert_eq!(
             late_after.start_time.as_ref().unwrap().utc,
             late_start + chrono::Duration::hours(1),
             "post-cutoff row shifts +1h"
         );
-        assert_eq!(other_after.start_time.as_ref().unwrap().utc, other_start,
-            "other field must not shift");
+        assert_eq!(
+            other_after.start_time.as_ref().unwrap().utc,
+            other_start,
+            "other field must not shift"
+        );
     }
 
     #[test]
@@ -2872,7 +2982,11 @@ mod tests {
         device: &str,
     ) -> datum_core::entry::Entry {
         use datum_core::{entry::Entry, time::DatumTime};
-        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         Entry::new_legacy(field, Verb::Point, None, None, None, Some(t), None, device)
     }
 
@@ -2995,9 +3109,13 @@ mod tests {
         let editor_cmd = format!("cp {}", prep.path().display());
         with_datum_editor(&editor_cmd, || {
             crate::commands::edit::edit(
-                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                EditArgs {
+                    id_or_slug: e.slug.to_string(),
+                    output: Default::default(),
+                },
                 &db,
-            ).unwrap();
+            )
+            .unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -3013,21 +3131,19 @@ mod tests {
     fn edit_no_change_is_noop() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(
-            &db,
-            "coffee",
-            Verb::Point,
-            Some(serde_json::json!(1)),
-            None,
-        );
+        let e = seed_entry(&db, "coffee", Verb::Point, Some(serde_json::json!(1)), None);
         let before = db.get_entry(&e.slug).unwrap();
 
         // `true` ignores its args → tempfile is left untouched.
         with_datum_editor("true", || {
             crate::commands::edit::edit(
-                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                EditArgs {
+                    id_or_slug: e.slug.to_string(),
+                    output: Default::default(),
+                },
                 &db,
-            ).unwrap();
+            )
+            .unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -3059,7 +3175,10 @@ mod tests {
         let editor_cmd = format!("cp {}", prep.path().display());
         let result = with_datum_editor_result(&editor_cmd, || {
             crate::commands::edit::edit(
-                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                EditArgs {
+                    id_or_slug: e.slug.to_string(),
+                    output: Default::default(),
+                },
                 &db,
             )
         });
@@ -3109,7 +3228,10 @@ mod tests {
         let editor_cmd = format!("cp {}", prep.path().display());
         let result = with_datum_editor_result(&editor_cmd, || {
             crate::commands::edit::edit(
-                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                EditArgs {
+                    id_or_slug: e.slug.to_string(),
+                    output: Default::default(),
+                },
                 &db,
             )
         });
@@ -3168,7 +3290,10 @@ mod tests {
             let editor_cmd = format!("cp {}", prep.path().display());
             let result = with_datum_editor_result(&editor_cmd, || {
                 crate::commands::edit::edit(
-                    EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                    EditArgs {
+                        id_or_slug: e.slug.to_string(),
+                        output: Default::default(),
+                    },
                     &db,
                 )
             });
@@ -3180,8 +3305,14 @@ mod tests {
 
             // Row untouched.
             let after = db.get_entry(&e.slug).unwrap();
-            assert_eq!(after.content_hash, before.content_hash, "key {key}: row mutated");
-            assert_eq!(after.modify_time, before.modify_time, "key {key}: modify_time bumped");
+            assert_eq!(
+                after.content_hash, before.content_hash,
+                "key {key}: row mutated"
+            );
+            assert_eq!(
+                after.modify_time, before.modify_time,
+                "key {key}: modify_time bumped"
+            );
         }
     }
 
@@ -3208,9 +3339,13 @@ mod tests {
 
         with_datum_editor("true", || {
             crate::commands::edit::edit(
-                EditArgs { id_or_slug: e.slug.to_string(), output: Default::default() },
+                EditArgs {
+                    id_or_slug: e.slug.to_string(),
+                    output: Default::default(),
+                },
                 &db,
-            ).unwrap();
+            )
+            .unwrap();
         });
 
         let after = db.get_entry(&e.slug).unwrap();
@@ -3232,7 +3367,6 @@ mod tests {
         out
     }
 
-
     // ─── da-e65: _LAST / _LAST_WITH_PROTECTION default targeting ─────────────
     //
     // Acceptance from the bead: bare get/delete/update/undo target the last
@@ -3246,19 +3380,22 @@ mod tests {
     fn last_docs_bare_get_returns_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
-        let inserted = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
+        log_entry(
+            Action::Switch,
+            log_args("coffee", vec!["2".to_string()], None),
+            &db,
+        )
+        .unwrap();
+        let inserted = db.entries_for_field("coffee", None).unwrap()[0]
+            .slug
+            .clone();
 
         crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
         // Pointer hid resolves to the same entry the get rendered.
-        let resolved = datum_core::ids::resolve_quickid_single(
-            &db,
-            &pointer.hids[0],
-        )
-        .unwrap();
+        let resolved = datum_core::ids::resolve_quickid_single(&db, &pointer.hids[0]).unwrap();
         assert_eq!(resolved.slug, inserted);
     }
 
@@ -3269,7 +3406,12 @@ mod tests {
     fn last_docs_bare_delete_force_removes_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(
+            Action::Switch,
+            log_args("coffee", vec!["2".to_string()], None),
+            &db,
+        )
+        .unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
         crate::commands::del::del(
@@ -3393,7 +3535,8 @@ mod tests {
         // re-stamped onto the pointer (idempotent).
         crate::commands::get::get(GetArgs::fresh_default(), &db).unwrap();
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
-        let got: std::collections::HashSet<datum_core::ids::Hid> = pointer.hids.into_iter().collect();
+        let got: std::collections::HashSet<datum_core::ids::Hid> =
+            pointer.hids.into_iter().collect();
         assert_eq!(
             got,
             std::collections::HashSet::from([a_hid, b_hid]),
@@ -3408,16 +3551,19 @@ mod tests {
         use crate::commands::update_core::{update_batch_from_args, UpdateStrategy};
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
-        let slug = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
-
-        // Mutate via the explicit-id path; the batch should write the pointer.
-        update_batch_from_args(
-            update_args(&slug, vec!["3"]),
-            UpdateStrategy::Replace,
+        log_entry(
+            Action::Switch,
+            log_args("coffee", vec!["2".to_string()], None),
             &db,
         )
         .unwrap();
+        let slug = db.entries_for_field("coffee", None).unwrap()[0]
+            .slug
+            .clone();
+
+        // Mutate via the explicit-id path; the batch should write the pointer.
+        update_batch_from_args(update_args(&slug, vec!["3"]), UpdateStrategy::Replace, &db)
+            .unwrap();
 
         let pointer = datum_core::last_docs::get_last_docs(&db).unwrap().unwrap();
         assert_eq!(pointer.hids.len(), 1);
@@ -3457,7 +3603,13 @@ mod tests {
         let e = &live[0];
         assert_eq!(e.verb, Verb::Block);
         assert_eq!(e.state, Some(serde_json::json!(true)));
-        assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT1H"));
+        assert_eq!(
+            e.dur
+                .as_ref()
+                .map(datum_core::dur::Dur::to_storage_string)
+                .as_deref(),
+            Some("PT1H")
+        );
     }
 
     #[test]
@@ -3478,7 +3630,13 @@ mod tests {
         let e = &live[0];
         assert_eq!(e.verb, Verb::PointSwitch);
         assert_eq!(e.state, Some(serde_json::json!(true)));
-        assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT0S"));
+        assert_eq!(
+            e.dur
+                .as_ref()
+                .map(datum_core::dur::Dur::to_storage_string)
+                .as_deref(),
+            Some("PT0S")
+        );
         assert_eq!(e.following_state, Some(serde_json::json!(false)));
     }
 
@@ -3491,12 +3649,7 @@ mod tests {
     fn datum_occur_with_user_value_key_lands_as_data_key() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(
-            Action::Occur,
-            make_add_args("mood", vec!["value=1"]),
-            &db,
-        )
-        .unwrap();
+        log_entry(Action::Occur, make_add_args("mood", vec!["value=1"]), &db).unwrap();
         let live = db.entries_for_field("mood", None).unwrap();
         assert_eq!(live.len(), 1);
         let e = &live[0];
@@ -3512,8 +3665,7 @@ mod tests {
     fn add_rejects_unbound_positional_value() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let err = log_entry(Action::Add, make_add_args("focus", vec!["80"]), &db)
-            .unwrap_err();
+        let err = log_entry(Action::Add, make_add_args("focus", vec!["80"]), &db).unwrap_err();
         let msg = err.to_string().to_lowercase();
         assert!(
             msg.contains("unbound") || msg.contains("positional"),
@@ -3526,7 +3678,11 @@ mod tests {
         use datum_core::{db::Db, time::DatumTime};
         let db = Db::open_in_memory().unwrap();
         let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
-        let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+        let dt = DatumTime {
+            utc: t,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         let e = Entry::new(
             "mood",
             Verb::Switch,
@@ -3550,7 +3706,14 @@ mod tests {
         .unwrap();
         let after_update = db.get_entry(&e.slug).unwrap();
         assert_eq!(after_update.verb, Verb::Block);
-        assert_eq!(after_update.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT30M"));
+        assert_eq!(
+            after_update
+                .dur
+                .as_ref()
+                .map(datum_core::dur::Dur::to_storage_string)
+                .as_deref(),
+            Some("PT30M")
+        );
         assert_eq!(after_update.state, Some(serde_json::json!("happy")));
     }
 
@@ -3559,7 +3722,11 @@ mod tests {
         use datum_core::{db::Db, time::DatumTime};
         let db = Db::open_in_memory().unwrap();
         let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
-        let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+        let dt = DatumTime {
+            utc: t,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         let e = Entry::new(
             "focus",
             Verb::Switch,

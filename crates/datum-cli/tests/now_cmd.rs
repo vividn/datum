@@ -56,7 +56,13 @@ fn switch_entry(field: &str, state: &str) -> Entry {
 fn render_empty_tracked_shows_sentinel() {
     // No tracked fields at all (e.g. brand-new db) → the view prints its
     // terminal sentinel rather than silently producing nothing.
-    let out = render_now_view(&[], &HashMap::new(), &HashMap::new(), &HashMap::new(), false);
+    let out = render_now_view(
+        &[],
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        false,
+    );
     let plain = strip_ansi(&out);
     assert!(
         plain.contains("No tracked (non-ignored) fields"),
@@ -70,7 +76,13 @@ fn render_tracked_field_with_no_entries_shows_no_entries_marker() {
     // still appear so the user sees the field exists — with a "(no entries)"
     // marker in the time column — rather than being silently hidden.
     let tf = [tracked("mood")];
-    let out = render_now_view(&tf, &HashMap::new(), &HashMap::new(), &HashMap::new(), false);
+    let out = render_now_view(
+        &tf,
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        false,
+    );
     let plain = strip_ansi(&out);
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
     assert!(
@@ -89,7 +101,10 @@ fn render_switch_entry_appears_as_active_row_with_bullet_and_state() {
 
     let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
-    assert!(plain.contains("●"), "active row must have ● bullet:\n{plain}");
+    assert!(
+        plain.contains("●"),
+        "active row must have ● bullet:\n{plain}"
+    );
     assert!(plain.contains("mood"), "field must appear:\n{plain}");
     assert!(plain.contains("happy"), "state must appear:\n{plain}");
 }
@@ -113,7 +128,10 @@ fn render_array_state_shows_comma_joined_members() {
     let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
     let plain = strip_ansi(&out);
     assert!(plain.contains("datum"), "first state must appear:\n{plain}");
-    assert!(plain.contains("household"), "second state must appear:\n{plain}");
+    assert!(
+        plain.contains("household"),
+        "second state must appear:\n{plain}"
+    );
     assert!(
         plain.contains("datum,household"),
         "array renders as comma-joined states:\n{plain}"
@@ -130,7 +148,13 @@ fn render_ignored_field_hidden_by_default() {
     // `ignored=true` specs must NOT appear when `show_ignored=false`, and the
     // "no (non-ignored)" sentinel should fire because nothing else is tracked.
     let tf = [ignored("youtube")];
-    let out = render_now_view(&tf, &HashMap::new(), &HashMap::new(), &HashMap::new(), false);
+    let out = render_now_view(
+        &tf,
+        &HashMap::new(),
+        &HashMap::new(),
+        &HashMap::new(),
+        false,
+    );
     let plain = strip_ansi(&out);
     assert!(
         !plain.contains("youtube"),
@@ -153,7 +177,10 @@ fn render_ignored_field_shown_dim_after_separator_with_show_all() {
     let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), true);
     let plain = strip_ansi(&out);
 
-    assert!(plain.contains("youtube"), "show_all must include ignored:\n{plain}");
+    assert!(
+        plain.contains("youtube"),
+        "show_all must include ignored:\n{plain}"
+    );
     assert!(plain.contains("─"), "separator must appear:\n{plain}");
 
     // The ignored row is emitted with the DIM ANSI code (\x1b[2m).
@@ -227,8 +254,7 @@ fn now_dispatches_end_to_end_via_run_cli() {
     // even when stdout isn't a TTY (the band still emits, just without
     // ANSI color).
     run_cli(&["now", "--bare"], &db).expect("now --bare dispatch");
-    run_cli(&["now", "--no-color", "--cols", "60"], &db)
-        .expect("now --no-color --cols dispatch");
+    run_cli(&["now", "--no-color", "--cols", "60"], &db).expect("now --no-color --cols dispatch");
 
     // Sanity: both writes landed. da-2sr: `track` now writes a switch with
     // value=NULL, and the `switch happy` is a second switch entry.

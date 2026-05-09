@@ -102,31 +102,46 @@ mod tests {
     fn moment_flag_yields_moment_even_with_positional() {
         // Matches datum's `-m` override: "Removes positional duration
         // argument. Sets dur to be null."
-        let a = DurationArgs { duration: Some("5".into()), moment: true };
+        let a = DurationArgs {
+            duration: Some("5".into()),
+            moment: true,
+        };
         assert_eq!(a.build(), DurationIntent::Moment);
     }
 
     #[test]
     fn dot_positional_is_absent() {
-        let a = DurationArgs { duration: Some(".".into()), moment: false };
+        let a = DurationArgs {
+            duration: Some(".".into()),
+            moment: false,
+        };
         assert_eq!(a.build(), DurationIntent::Absent);
     }
 
     #[test]
     fn empty_positional_is_absent() {
-        let a = DurationArgs { duration: Some(String::new()), moment: false };
+        let a = DurationArgs {
+            duration: Some(String::new()),
+            moment: false,
+        };
         assert_eq!(a.build(), DurationIntent::Absent);
     }
 
     #[test]
     fn concrete_positional_passes_through_unparsed() {
-        let a = DurationArgs { duration: Some("1:30".into()), moment: false };
+        let a = DurationArgs {
+            duration: Some("1:30".into()),
+            moment: false,
+        };
         assert_eq!(a.build(), DurationIntent::Value("1:30".to_string()));
     }
 
     #[test]
     fn iso_duration_passes_through_unparsed() {
-        let a = DurationArgs { duration: Some("PT5M".into()), moment: false };
+        let a = DurationArgs {
+            duration: Some("PT5M".into()),
+            moment: false,
+        };
         assert_eq!(a.build(), DurationIntent::Value("PT5M".to_string()));
     }
 }

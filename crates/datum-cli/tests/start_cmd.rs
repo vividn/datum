@@ -39,7 +39,11 @@ fn start_creates_open_block_with_no_time_end() {
     let state = db
         .get_active_state("dance", entry.occur_time.as_ref().unwrap().utc)
         .unwrap();
-    assert_eq!(state, json!(true), "start compiles to state=true at occur_time");
+    assert_eq!(
+        state,
+        json!(true),
+        "start compiles to state=true at occur_time"
+    );
 }
 
 /// TS #2: "can start from a different state"
@@ -55,8 +59,7 @@ fn start_after_switch_preserves_prior_state() {
     // Switch one minute ago so its time_start is strictly earlier.
     // `-t=-1` attaches the negative value to avoid `-1` being treated as a
     // standalone unknown-argument.
-    run_cli(&["switch", "machine", "preparing", "-t=-1"], &db)
-        .expect("switch dispatch");
+    run_cli(&["switch", "machine", "preparing", "-t=-1"], &db).expect("switch dispatch");
     run_cli(&["start", "machine"], &db).expect("start dispatch");
 
     let entries = db.entries_for_field("machine", None).unwrap();
@@ -67,17 +70,11 @@ fn start_after_switch_preserves_prior_state() {
     // carries state="preparing", `start machine` carries state=true.
     let start_entry = entries
         .iter()
-        .find(|e| {
-            matches!(e.verb, Verb::Switch)
-                && e.state.as_ref() == Some(&json!(true))
-        })
+        .find(|e| matches!(e.verb, Verb::Switch) && e.state.as_ref() == Some(&json!(true)))
         .expect("start entry present");
     let switch_entry = entries
         .iter()
-        .find(|e| {
-            matches!(e.verb, Verb::Switch)
-                && e.state.as_ref() == Some(&json!("preparing"))
-        })
+        .find(|e| matches!(e.verb, Verb::Switch) && e.state.as_ref() == Some(&json!("preparing")))
         .expect("switch entry present");
 
     let start_ts = start_entry.occur_time.as_ref().unwrap().utc;
@@ -159,16 +156,12 @@ fn negative_dur_collapses_to_point() {
 fn start_without_dur_is_moment_like() {
     let db = fresh_db();
 
-    run_cli(&["start", "dance", "-k", "skillPoints=3"], &db)
-        .expect("start with -k");
+    run_cli(&["start", "dance", "-k", "skillPoints=3"], &db).expect("start with -k");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
-    assert!(
-        entry.dur.is_none(),
-        "no --dur ⇒ no dur (moment semantics)",
-    );
+    assert!(entry.dur.is_none(), "no --dur ⇒ no dur (moment semantics)",);
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
 }
@@ -194,10 +187,7 @@ fn start_extras_do_not_imply_duration() {
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["skillPoints"], json!(3));
     assert_eq!(extra["tempo"], json!("fast"));
-    assert!(
-        entry.dur.is_none(),
-        "keys alone never derive a duration",
-    );
+    assert!(entry.dur.is_none(), "keys alone never derive a duration",);
 }
 
 /// TS #7: "can skip the duration if the duration is given as . or ''".
@@ -213,10 +203,7 @@ fn positional_values_never_become_duration() {
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", value: "reqVal1");
-    assert!(
-        entry.dur.is_none(),
-        "positional values do not derive a dur",
-    );
+    assert!(entry.dur.is_none(), "positional values do not derive a dur",);
 }
 
 /// TS #8: "throws an error if the duration supplied is invalid".
@@ -282,10 +269,7 @@ fn yesterday_flag_does_not_consume_positional_as_duration() {
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", value: 315);
-    assert!(
-        entry.dur.is_none(),
-        "`315` is a value, not a duration",
-    );
+    assert!(entry.dur.is_none(), "`315` is a value, not a duration",);
 
     // Anchored roughly one day back (within the test's wall-clock window).
     let ts = entry.occur_time.as_ref().unwrap().utc;

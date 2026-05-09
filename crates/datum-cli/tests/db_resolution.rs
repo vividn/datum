@@ -59,10 +59,7 @@ fn name_resolves_via_registry_when_present() {
     std::fs::create_dir_all(&registry_dir).unwrap();
     let custom = tmp.path().join("elsewhere").join("body.db");
     std::fs::create_dir_all(custom.parent().unwrap()).unwrap();
-    let body = format!(
-        "[db.body]\npath = \"{}\"\n",
-        custom.display()
-    );
+    let body = format!("[db.body]\npath = \"{}\"\n", custom.display());
     std::fs::write(registry_dir.join("dbs.toml"), body).unwrap();
 
     let resolved = config::resolve_db(Some("body")).unwrap();

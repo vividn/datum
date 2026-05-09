@@ -49,12 +49,7 @@ fn run(db: &PathBuf, args: &[&str]) -> String {
 /// info line, then optional extras. Line 1 (zero-indexed 1) is the info
 /// line we care about.
 fn info_line_of(stdout: &str) -> String {
-    stdout
-        .lines()
-        .nth(1)
-        .unwrap_or_default()
-        .trim()
-        .to_string()
+    stdout.lines().nth(1).unwrap_or_default().trim().to_string()
 }
 
 /// Strip the timestamp prefix so goldens don't depend on wall-clock. The
@@ -119,7 +114,10 @@ fn switch_switch_tail_reproducer_matches_spec() {
         assert!(row.contains("myfield"), "row missing field:\n{row:?}");
     }
     assert!(data[0].contains("abc"), "first row state missing:\n{tail}");
-    assert!(data[1].contains("abcdefg"), "second row state missing:\n{tail}");
+    assert!(
+        data[1].contains("abcdefg"),
+        "second row state missing:\n{tail}"
+    );
 
     let _ = std::fs::remove_file(&db);
 }
@@ -140,7 +138,10 @@ fn tail_table_flag_preserves_legacy_columnar_view() {
     // Header tokens drop to any column that has at least one non-empty
     // cell — at minimum "time", "field", "state", "hid" must appear.
     for tok in ["time", "field", "state", "hid"] {
-        assert!(first.contains(tok), "table header missing {tok:?}:\n{stdout}");
+        assert!(
+            first.contains(tok),
+            "table header missing {tok:?}:\n{stdout}"
+        );
     }
     // Data rows retain the field value.
     assert!(stdout.contains("myfield"), "{stdout}");

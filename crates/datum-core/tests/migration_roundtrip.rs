@@ -742,12 +742,12 @@ fn roundtrip_v21_to_v22_verb_canonicalize() {
     // Seed one row per legacy verb. State is left NULL for start/stop
     // so we can verify the canonicalization. occur/add carry no state.
     let inserts: &[(&str, &str, Option<&str>)] = &[
-        ("hocc", "f:occ", None),  // verb='occur', state=NULL
-        ("hadd", "f:add", None),  // verb='add', state=NULL
+        ("hocc", "f:occ", None),                          // verb='occur', state=NULL
+        ("hadd", "f:add", None),                          // verb='add', state=NULL
         ("hstart", "f:start", None), // verb='start', state=NULL → canonicalize to true
         ("hstop", "f:stop", None),   // verb='stop', state=NULL → canonicalize to false
         ("hstart_st", "f:start_st", Some("\"playing\"")), // verb='start' with state preserved
-        ("hpoint", "f:pt", None), // verb='point' (already canonical, untouched)
+        ("hpoint", "f:pt", None),    // verb='point' (already canonical, untouched)
     ];
     let verbs = ["occur", "add", "start", "stop", "start", "point"];
     for ((hid, slug, state), verb) in inserts.iter().zip(verbs) {
@@ -776,8 +776,14 @@ fn roundtrip_v21_to_v22_verb_canonicalize() {
 
     assert_eq!(read("hocc"), ("point".to_string(), None));
     assert_eq!(read("hadd"), ("point".to_string(), None));
-    assert_eq!(read("hstart"), ("switch".to_string(), Some("true".to_string())));
-    assert_eq!(read("hstop"), ("switch".to_string(), Some("false".to_string())));
+    assert_eq!(
+        read("hstart"),
+        ("switch".to_string(), Some("true".to_string()))
+    );
+    assert_eq!(
+        read("hstop"),
+        ("switch".to_string(), Some("false".to_string()))
+    );
     assert_eq!(
         read("hstart_st"),
         ("switch".to_string(), Some("\"playing\"".to_string())),

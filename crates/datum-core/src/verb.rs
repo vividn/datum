@@ -230,13 +230,9 @@ mod tests {
         // boundary (CLI / row_mapper) is responsible for surfacing it as
         // a parse error.
         for bad in [
-            "", "P", "PT", "PXX", "PT5", "5", "P1D2H", "T5S",
-            "PMT", "PT.S", "P-",
+            "", "P", "PT", "PXX", "PT5", "5", "P1D2H", "T5S", "PMT", "PT.S", "P-",
         ] {
-            assert!(
-                Dur::parse(bad).is_none(),
-                "expected None for dur={bad:?}",
-            );
+            assert!(Dur::parse(bad).is_none(), "expected None for dur={bad:?}",);
         }
     }
 

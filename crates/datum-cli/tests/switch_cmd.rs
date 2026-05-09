@@ -55,7 +55,11 @@ fn switch_creates_entry_with_state() {
     assert_count!(db, "field", 1);
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", value: "newState");
-    let ts = entry.occur_time.as_ref().expect("switch anchors time_start").utc;
+    let ts = entry
+        .occur_time
+        .as_ref()
+        .expect("switch anchors time_start")
+        .utc;
     assert!(
         entry.dur.is_none(),
         "bare switch (no --dur, no --moment) does not derive time_end",
@@ -78,8 +82,7 @@ fn switch_prior_state_queryable_via_compilation() {
     let db = fresh_db();
 
     // First switch, 1 min ago so it strictly precedes the second.
-    run_cli(&["switch", "environment", "outside", "-t=-1"], &db)
-        .expect("first switch");
+    run_cli(&["switch", "environment", "outside", "-t=-1"], &db).expect("first switch");
     run_cli(&["switch", "environment", "inside"], &db).expect("second switch");
 
     let entries = db.entries_for_field("environment", None).unwrap();
@@ -93,7 +96,8 @@ fn switch_prior_state_queryable_via_compilation() {
     let just_before_inside = inside_ts - chrono::Duration::seconds(1);
 
     assert_eq!(
-        db.get_active_state("environment", just_before_inside).unwrap(),
+        db.get_active_state("environment", just_before_inside)
+            .unwrap(),
         json!("outside"),
         "prior switch value governs strictly before the new switch",
     );
@@ -116,8 +120,7 @@ fn switch_last_state_records_assertion_on_entry() {
     let db = fresh_db();
 
     run_cli(&["switch", "project", "datum", "-t=-1"], &db).expect("seed switch");
-    run_cli(&["switch", "project", "household", "-L=datum"], &db)
-        .expect("-L=<value> assertion");
+    run_cli(&["switch", "project", "household", "-L=datum"], &db).expect("-L=<value> assertion");
 
     let entries = db.entries_for_field("project", None).unwrap();
     assert_eq!(entries.len(), 2);
@@ -212,7 +215,10 @@ fn switch_state_null_normalizes_to_null_at_query_time() {
 
     let vacuum_ts = vacuum.occur_time.as_ref().unwrap().utc;
     let luft_ts = luft.occur_time.as_ref().unwrap().utc;
-    assert_eq!(db.get_active_state("vacuum", vacuum_ts).unwrap(), json!(null));
+    assert_eq!(
+        db.get_active_state("vacuum", vacuum_ts).unwrap(),
+        json!(null)
+    );
     assert_eq!(db.get_active_state("luft", luft_ts).unwrap(), json!(null));
 }
 
@@ -253,8 +259,7 @@ fn switch_without_state_promotes_to_true() {
 fn switch_dur_creates_forward_block_ending_false() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "household", "--dur", "10m"], &db)
-        .expect("switch --dur 10m");
+    run_cli(&["switch", "project", "household", "--dur", "10m"], &db).expect("switch --dur 10m");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     // v3 (da-5ns): state="household" + dur=positive → derive_verb returns Block.
@@ -267,11 +272,17 @@ fn switch_dur_creates_forward_block_ending_false() {
 
     // Midway through the block, state is "household".
     let mid = ts + chrono::Duration::minutes(5);
-    assert_eq!(db.get_active_state("project", mid).unwrap(), json!("household"));
+    assert_eq!(
+        db.get_active_state("project", mid).unwrap(),
+        json!("household")
+    );
     // Under v3 Block has no implicit trailing-edge event — the state at
     // time_end remains "household". A trailing transition requires
     // BlockSwitch (state + dur + following_state).
-    assert_eq!(db.get_active_state("project", te).unwrap(), json!("household"));
+    assert_eq!(
+        db.get_active_state("project", te).unwrap(),
+        json!("household")
+    );
 }
 
 /// TS #9: "records a hole of time in the state when given a negative duration".
@@ -287,8 +298,7 @@ fn switch_dur_creates_forward_block_ending_false() {
 fn switch_negative_dur_collapses_to_point() {
     let db = fresh_db();
 
-    run_cli(&["switch", "project", "household", "--dur=-10m"], &db)
-        .expect("switch --dur=-10m");
+    run_cli(&["switch", "project", "household", "--dur=-10m"], &db).expect("switch --dur=-10m");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_entry_matches!(entry, field: "project", verb: "point", value: "household");
@@ -316,7 +326,14 @@ fn switch_moment_produces_point_in_time_entry() {
     let db = fresh_db();
 
     run_cli(
-        &["switch", "project", "household", "-m", "-k", "skillPoints=3"],
+        &[
+            "switch",
+            "project",
+            "household",
+            "-m",
+            "-k",
+            "skillPoints=3",
+        ],
         &db,
     )
     .expect("switch --moment with -k");
@@ -326,7 +343,9 @@ fn switch_moment_produces_point_in_time_entry() {
     // and dur=Zero, derive_verb returns Point.
     assert_entry_matches!(entry, field: "project", verb: "point", value: "household");
     let ts = entry.occur_time.as_ref().expect("occur_time set");
-    let te = entry.computed_end_time().expect("computed_end_time available on --moment");
+    let te = entry
+        .computed_end_time()
+        .expect("computed_end_time available on --moment");
     assert_eq!(
         ts.utc, te.utc,
         "--moment: occur_time == computed_end_time (point-in-time)",
@@ -397,11 +416,8 @@ fn switch_extras_never_produce_implicit_duration() {
 fn switch_dot_prefixed_keys_fold_into_structured_state() {
     let db = fresh_db();
 
-    run_cli(
-        &["switch", "project", "household", ".subtask=mop"],
-        &db,
-    )
-    .expect("switch with .subtask=mop");
+    run_cli(&["switch", "project", "household", ".subtask=mop"], &db)
+        .expect("switch with .subtask=mop");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
     assert_eq!(entry.field, "project");
@@ -409,7 +425,11 @@ fn switch_dot_prefixed_keys_fold_into_structured_state() {
     assert_eq!(state["id"], json!("household"));
     assert_eq!(state["subtask"], json!("mop"));
     assert!(
-        entry.data.as_ref().and_then(|d| d.get(".subtask")).is_none(),
+        entry
+            .data
+            .as_ref()
+            .and_then(|d| d.get(".subtask"))
+            .is_none(),
         "leading-dot keys no longer leak into extra_data",
     );
 }
@@ -551,8 +571,7 @@ fn derived_alias_from_spec_routes_to_switch_with_extra_keys() {
     let alias = db.lookup_alias("happy").unwrap().expect("happy alias");
     assert_eq!(alias.expands_to, "switch mood happy");
 
-    run_cli(&["happy", "-k", "intensity=7"], &db)
-        .expect("derived alias + extra key");
+    run_cli(&["happy", "-k", "intensity=7"], &db).expect("derived alias + extra key");
 
     let entries = db.entries_for_field("mood", None).unwrap();
     assert_eq!(entries.len(), 1);
@@ -712,11 +731,8 @@ fn switch_two_trailing_duration_positionals_rejected() {
 fn switch_trailing_duration_with_kv_positionals() {
     let db = fresh_db();
 
-    run_cli(
-        &["switch", "project", "ai", ".note=hi", "3"],
-        &db,
-    )
-    .expect("KV positional + trailing duration should both apply");
+    run_cli(&["switch", "project", "ai", ".note=hi", "3"], &db)
+        .expect("KV positional + trailing duration should both apply");
 
     let e = &db.entries_for_field("project", None).unwrap()[0];
     let state = e.state.as_ref().expect("state set");

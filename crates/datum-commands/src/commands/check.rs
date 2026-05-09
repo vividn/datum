@@ -190,9 +190,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
                         drift_example = Some(IssueExample {
                             id: Some(e.slug.to_string()),
                             field: Some(e.field.clone()),
-                            detail: Some(format!(
-                                "stored={stored}  expected={expected_str}"
-                            )),
+                            detail: Some(format!("stored={stored}  expected={expected_str}")),
                         });
                     }
                     fixes.push(VerbFix {
@@ -605,11 +603,21 @@ pub fn collect_issues(db: &Db) -> Result<Report> {
         });
     }
 
-    let errors = issues.iter().filter(|i| i.severity == Severity::Error).count();
-    let warnings = issues.iter().filter(|i| i.severity == Severity::Warning).count();
+    let errors = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Error)
+        .count();
+    let warnings = issues
+        .iter()
+        .filter(|i| i.severity == Severity::Warning)
+        .count();
     Ok(Report {
         issues,
-        summary: Summary { errors, warnings, clean: errors == 0 && warnings == 0 },
+        summary: Summary {
+            errors,
+            warnings,
+            clean: errors == 0 && warnings == 0,
+        },
     })
 }
 
@@ -647,7 +655,11 @@ pub fn render_human(report: &Report) -> String {
         report.summary.errors,
         if report.summary.errors == 1 { "" } else { "s" },
         report.summary.warnings,
-        if report.summary.warnings == 1 { "" } else { "s" },
+        if report.summary.warnings == 1 {
+            ""
+        } else {
+            "s"
+        },
     ));
     out
 }
@@ -669,7 +681,11 @@ mod tests {
 
     fn t_at(iso: &str) -> DatumTime {
         let utc: chrono::DateTime<chrono::Utc> = iso.parse().unwrap();
-        DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+        DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        }
     }
 
     #[test]
@@ -732,7 +748,10 @@ mod tests {
         db.insert_entry(&entry).unwrap();
 
         let report = collect_issues(&db).unwrap();
-        assert!(!report.has_errors(), "unknown fields are warnings, not errors");
+        assert!(
+            !report.has_errors(),
+            "unknown fields are warnings, not errors"
+        );
         let issue = report
             .issues
             .iter()
@@ -781,7 +800,10 @@ mod tests {
         // Top-level shape
         assert!(parsed.is_object());
         assert!(parsed.get("issues").is_some(), "report must have 'issues'");
-        assert!(parsed.get("summary").is_some(), "report must have 'summary'");
+        assert!(
+            parsed.get("summary").is_some(),
+            "report must have 'summary'"
+        );
 
         // Summary shape
         let summary = parsed.get("summary").unwrap();
@@ -838,7 +860,10 @@ mod tests {
         db.insert_entry(&entry).unwrap();
 
         let report = collect_issues(&db).unwrap();
-        assert!(!report.has_errors(), "orphaned keys are warnings, not errors");
+        assert!(
+            !report.has_errors(),
+            "orphaned keys are warnings, not errors"
+        );
         let issue = report
             .issues
             .iter()
@@ -1021,8 +1046,10 @@ mod tests {
     fn alias_state_collision_detected_across_specs() {
         let db = Db::open_in_memory().unwrap();
         // mood is saved first → wins the `done` state alias.
-        db.save_field_spec(&switch_spec("mood", &["happy", "done"])).unwrap();
-        db.save_field_spec(&switch_spec("task", &["wip", "done"])).unwrap();
+        db.save_field_spec(&switch_spec("mood", &["happy", "done"]))
+            .unwrap();
+        db.save_field_spec(&switch_spec("task", &["wip", "done"]))
+            .unwrap();
 
         let report = collect_alias_drift(&db, false).unwrap();
         let issue = report
@@ -1103,7 +1130,8 @@ mod tests {
     #[test]
     fn alias_resolved_via_spec_alias_is_not_orphan() {
         let db = Db::open_in_memory().unwrap();
-        db.save_field_spec(&switch_spec("mood", &["happy"])).unwrap();
+        db.save_field_spec(&switch_spec("mood", &["happy"]))
+            .unwrap();
         db.save_alias(&Alias {
             name: "h".to_string(),
             expands_to: "happy".to_string(),
@@ -1176,7 +1204,8 @@ mod tests {
     #[test]
     fn alias_check_clean_db_emits_nothing() {
         let db = Db::open_in_memory().unwrap();
-        db.save_field_spec(&switch_spec("mood", &["happy", "sad"])).unwrap();
+        db.save_field_spec(&switch_spec("mood", &["happy", "sad"]))
+            .unwrap();
         db.save_alias(&Alias {
             name: "m".to_string(),
             expands_to: "switch mood happy".to_string(),
@@ -1230,10 +1259,7 @@ mod tests {
             );
         }
         assert!(
-            report
-                .issues
-                .iter()
-                .any(|i| i.category == "alias_orphan"),
+            report.issues.iter().any(|i| i.category == "alias_orphan"),
             "alias_orphan must be present"
         );
     }

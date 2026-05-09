@@ -42,10 +42,9 @@ pub fn run(name: &str, extra_args: &[String], db: &Db) -> Result<()> {
         );
     }
 
-    let view_name = cmd
-        .view_name
-        .as_deref()
-        .ok_or_else(|| anyhow::anyhow!("kit command '{}' has neither expands_to nor view", cmd.name))?;
+    let view_name = cmd.view_name.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("kit command '{}' has neither expands_to nor view", cmd.name)
+    })?;
 
     let watch_flag_allowed = cmd.flags.iter().any(|f| f == "watch");
     let want_watch = extra_args.iter().any(|a| a == "--watch");
@@ -71,7 +70,12 @@ fn render_once(cmd: &InstalledKitCommand, view_name: &str, db: &Db) -> Result<()
     let view_row = db
         .get_view(view_name)
         .with_context(|| format!("look up view '{view_name}'"))?
-        .ok_or_else(|| anyhow::anyhow!("kit command '{}' references missing view '{view_name}'", cmd.name))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "kit command '{}' references missing view '{view_name}'",
+                cmd.name
+            )
+        })?;
     let result = db
         .execute_view(&view_row.sql_text)
         .with_context(|| format!("execute view '{view_name}'"))?;
@@ -82,7 +86,13 @@ fn render_once(cmd: &InstalledKitCommand, view_name: &str, db: &Db) -> Result<()
     let headers = header_labels(&projected.columns, &cmd.labels);
     let formatted = format_cells(&projected, &cmd.formats);
 
-    render_pretty(&headers, &projected.columns, &formatted, &rules, projected.rows.iter().collect());
+    render_pretty(
+        &headers,
+        &projected.columns,
+        &formatted,
+        &rules,
+        projected.rows.iter().collect(),
+    );
     Ok(())
 }
 
@@ -102,11 +112,10 @@ fn project(view: &ViewResult, cols: &[String]) -> Result<ViewResult> {
     }
     let mut indices: Vec<usize> = Vec::with_capacity(cols.len());
     for c in cols {
-        let idx = view
-            .columns
-            .iter()
-            .position(|n| n == c)
-            .ok_or_else(|| anyhow::anyhow!("kit command: view does not produce column '{c}'"))?;
+        let idx =
+            view.columns.iter().position(|n| n == c).ok_or_else(|| {
+                anyhow::anyhow!("kit command: view does not produce column '{c}'")
+            })?;
         indices.push(idx);
     }
     let columns = cols.to_vec();

@@ -18,8 +18,7 @@ use tracing_subscriber::{fmt, EnvFilter};
 /// Install the global tracing subscriber. Safe to call exactly once.
 pub fn init(verbose: bool) {
     let default = if verbose { "debug" } else { "info" };
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new(default));
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default));
 
     fmt()
         .with_env_filter(filter)

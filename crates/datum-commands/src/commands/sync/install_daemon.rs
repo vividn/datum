@@ -111,8 +111,7 @@ pub fn unit_path(platform: Platform) -> Result<PathBuf> {
         }
         Platform::LaunchdUser => {
             let home = std::env::var("HOME").context("HOME not set")?;
-            Ok(PathBuf::from(home)
-                .join("Library/LaunchAgents/com.datum.sync-agent.plist"))
+            Ok(PathBuf::from(home).join("Library/LaunchAgents/com.datum.sync-agent.plist"))
         }
     }
 }
@@ -151,7 +150,11 @@ pub fn run(show: bool, uninstall: bool) -> Result<()> {
     }
 
     if show {
-        println!("# {} — {}", path_label(platform), unit_path(platform)?.display());
+        println!(
+            "# {} — {}",
+            path_label(platform),
+            unit_path(platform)?.display()
+        );
         print!("{}", render_unit(platform, &binary));
         return Ok(());
     }
@@ -175,12 +178,10 @@ fn path_label(platform: Platform) -> &'static str {
 fn do_install(platform: Platform, binary: &Path) -> Result<PathBuf> {
     let path = unit_path(platform)?;
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("create unit dir {parent:?}"))?;
+        fs::create_dir_all(parent).with_context(|| format!("create unit dir {parent:?}"))?;
     }
     let body = render_unit(platform, binary);
-    fs::write(&path, body)
-        .with_context(|| format!("write unit {path:?}"))?;
+    fs::write(&path, body).with_context(|| format!("write unit {path:?}"))?;
     enable_unit(platform)?;
     Ok(path)
 }
@@ -189,8 +190,7 @@ fn do_uninstall(platform: Platform) -> Result<PathBuf> {
     let path = unit_path(platform)?;
     let _ = disable_unit(platform);
     if path.exists() {
-        fs::remove_file(&path)
-            .with_context(|| format!("remove unit {path:?}"))?;
+        fs::remove_file(&path).with_context(|| format!("remove unit {path:?}"))?;
     }
     Ok(path)
 }
@@ -269,9 +269,7 @@ mod tests {
         let p = unit_path(Platform::SystemdUser).unwrap();
         assert_eq!(
             p,
-            PathBuf::from(
-                "/tmp/xdg-cfg-install-test/systemd/user/datum-sync-agent.service"
-            )
+            PathBuf::from("/tmp/xdg-cfg-install-test/systemd/user/datum-sync-agent.service")
         );
         match prev {
             Some(v) => std::env::set_var("XDG_CONFIG_HOME", v),

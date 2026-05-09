@@ -41,7 +41,12 @@ fn config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
     }
 
     let rows = cfg.rows();
-    let key_w = rows.iter().map(|(k, _, _)| k.len()).max().unwrap_or(0).max(3);
+    let key_w = rows
+        .iter()
+        .map(|(k, _, _)| k.len())
+        .max()
+        .unwrap_or(0)
+        .max(3);
     let val_w = rows
         .iter()
         .map(|(_, v, _)| v.len())
@@ -70,7 +75,11 @@ fn config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
     println!(
         "toml: {} ({})",
         cfg.toml_path.display(),
-        if cfg.toml_loaded { "loaded" } else { "not found" }
+        if cfg.toml_loaded {
+            "loaded"
+        } else {
+            "not found"
+        }
     );
     Ok(())
 }

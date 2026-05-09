@@ -50,10 +50,7 @@ fn note_sets_field_and_collects_extra_kv() {
     // da-5ns: verb is derived from (state, dur, following_state). `add field`
     // with no time-shape inputs derives to `point` under the v3 model.
     assert_entry_matches!(e1, field: "field", verb: "point");
-    assert!(
-        e1.data.is_none(),
-        "no kv pairs ⇒ extra_data stays None",
-    );
+    assert!(e1.data.is_none(), "no kv pairs ⇒ extra_data stays None",);
 
     run_cli(&["add", "field2", "foo=bar"], &db).expect("note field2 foo=bar");
     let e2 = &db.entries_for_field("field2", None).unwrap()[0];
@@ -80,8 +77,7 @@ fn field_promotion_from_positional_skipped_no_analog() {
     // Confirm the daydumb contract: the first positional is always treated
     // as the field, not promoted by scanning for the first bare token.
     let db = fresh_db();
-    run_cli(&["add", "foo=bar", "dataField"], &db)
-        .expect("note foo=bar dataField");
+    run_cli(&["add", "foo=bar", "dataField"], &db).expect("note foo=bar dataField");
     // `foo=bar` is argv[1], so it becomes field_or_verb="foo=bar"
     // — and the `=` means it lands in extra_data parsing as a kv pair... no,
     // field_or_verb is a *positional*, not a kv token. The field literally
@@ -102,8 +98,7 @@ fn required_keys_positional_absorption_skipped_no_analog() {
     // In daydumb, `-k abc` (no `=`) is still consumed as the -k
     // value but `parse_log_args` only splits on `=`; it is silently dropped.
     // The positional `value` becomes the primary value.
-    run_cli(&["add", "field", "-k", "abc=value"], &db)
-        .expect("note field -k abc=value");
+    run_cli(&["add", "field", "-k", "abc=value"], &db).expect("note field -k abc=value");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     let extra = e.data.as_ref().expect("-k lands in extra_data");
     assert_eq!(extra.get("abc"), Some(&json!("value")));
@@ -136,8 +131,7 @@ fn fieldless_field_kv_skipped_no_analog() {
     // value="fromData". The entry.field stays "fromField"; the kv pair
     // coexists on a different axis.
     let db = fresh_db();
-    run_cli(&["add", "fromField", "field=fromData"], &db)
-        .expect("note fromField field=fromData");
+    run_cli(&["add", "fromField", "field=fromData"], &db).expect("note fromField field=fromData");
     let e = &db.entries_for_field("fromField", None).unwrap()[0];
     assert_eq!(e.field, "fromField", "positional field wins");
     let extra = e.data.as_ref().unwrap();
@@ -232,10 +226,7 @@ fn internal_insert_spy_skipped_structural_only() {
     let e = &db.entries_for_field("field", None).unwrap()[0];
     // Observable proxy for "the insert happened with these args":
     assert_eq!(e.slug, "abc", "template interpolated against extra_data");
-    assert_eq!(
-        e.data.as_ref().unwrap().get("foo"),
-        Some(&json!("abc")),
-    );
+    assert_eq!(e.data.as_ref().unwrap().get("foo"), Some(&json!("abc")),);
     assert_eq!(e.id_structure.as_deref(), Some("%foo%"));
 }
 
@@ -258,8 +249,7 @@ fn no_metadata_suppresses_timestamps() {
         "default path sets created_at to now()",
     );
 
-    run_cli(&["add", "noMetadata", "--id", "noMetadata", "-M"], &db)
-        .expect("note noMetadata -M");
+    run_cli(&["add", "noMetadata", "--id", "noMetadata", "-M"], &db).expect("note noMetadata -M");
     let none = db.get_entry("noMetadata").unwrap();
     assert_eq!(none.device_id, "", "-M clears device_id");
     assert_eq!(
@@ -322,8 +312,7 @@ fn identical_content_triggers_exists_outcome() {
 #[test]
 fn same_id_different_data_errors_on_second() {
     let db = fresh_db();
-    run_cli(&["add", "field", "--id", "doug", "foo=bar"], &db)
-        .expect("first note");
+    run_cli(&["add", "field", "--id", "doug", "foo=bar"], &db).expect("first note");
     let err = run_cli(&["add", "field", "--id", "doug", "different=data"], &db)
         .expect_err("second note at same --id must fail");
     let msg = format!("{err:#}");
@@ -347,13 +336,7 @@ fn same_id_different_data_errors_on_second() {
 fn id_template_recorded_in_id_structure() {
     let db = fresh_db();
     run_cli(
-        &[
-            "add",
-            "field",
-            "--id",
-            "rawString__%foo%!!",
-            "foo=abc",
-        ],
+        &["add", "field", "--id", "rawString__%foo%!!", "foo=abc"],
         &db,
     )
     .expect("add --id rawString__%foo%!!");
@@ -375,8 +358,7 @@ fn id_template_recorded_in_id_structure() {
 fn base_data_flag_skipped_no_analog() {
     // Structural placeholder. No-op test asserting the flag is rejected.
     let db = fresh_db();
-    let err = run_cli(&["add", "field", "-b", "{a:1}"], &db)
-        .expect_err("-b is not a daydumb flag");
+    let err = run_cli(&["add", "field", "-b", "{a:1}"], &db).expect_err("-b is not a daydumb flag");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("unexpected") || msg.contains("-b"),
@@ -408,8 +390,7 @@ fn malformed_base_data_skipped_no_analog() {}
 fn payload_id_precedence_skipped_no_analog() {
     // Lock-in: `--id` is the single source for daydumb slug templating.
     let db = fresh_db();
-    run_cli(&["add", "field", "--id", "explicit-slug"], &db)
-        .expect("note --id explicit-slug");
+    run_cli(&["add", "field", "--id", "explicit-slug"], &db).expect("note --id explicit-slug");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(e.slug, "explicit-slug");
 }
@@ -423,8 +404,7 @@ fn payload_id_precedence_skipped_no_analog() {
 #[test]
 fn id_structure_always_set_when_id_given() {
     let db = fresh_db();
-    run_cli(&["add", "field", "--id", "rawString"], &db)
-        .expect("note --id rawString");
+    run_cli(&["add", "field", "--id", "rawString"], &db).expect("note --id rawString");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     assert_eq!(e.slug, "rawString");
     assert_eq!(
@@ -450,8 +430,7 @@ fn id_structure_always_set_when_id_given() {
 #[test]
 fn show_all_flag_wired_through() {
     let db = fresh_db();
-    run_cli(&["add", "field", "--id", "that-id", "--show", "all"], &db)
-        .expect("--show all");
+    run_cli(&["add", "field", "--id", "that-id", "--show", "all"], &db).expect("--show all");
     let e = db.get_entry("that-id").unwrap();
     assert_eq!(e.field, "field");
 
@@ -472,11 +451,7 @@ fn show_all_flag_wired_through() {
 #[test]
 fn merge_flag_routes_to_merge_strategy() {
     let db = fresh_db();
-    run_cli(
-        &["add", "field", "-t", "09:00", "-k", "foo=abc"],
-        &db,
-    )
-    .expect("seed note");
+    run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db).expect("seed note");
     assert_count!(db, "field", 1);
     let before = db.entries_for_field("field", None).unwrap()[0].clone();
 
@@ -485,9 +460,7 @@ fn merge_flag_routes_to_merge_strategy() {
     // Same content → same content_hash. `--merge` dispatches to Merge
     // strategy, which bumps modified_at but leaves the row count at 1.
     run_cli(
-        &[
-            "add", "field", "-t", "09:00", "-k", "foo=abc", "--merge",
-        ],
+        &["add", "field", "-t", "09:00", "-k", "foo=abc", "--merge"],
         &db,
     )
     .expect("merge dispatch");
@@ -509,8 +482,7 @@ fn merge_flag_routes_to_merge_strategy() {
 #[test]
 fn conflict_update_flag_routes_to_update_strategy() {
     let db = fresh_db();
-    run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db)
-        .expect("seed note");
+    run_cli(&["add", "field", "-t", "09:00", "-k", "foo=abc"], &db).expect("seed note");
     assert_count!(db, "field", 1);
     let before = db.entries_for_field("field", None).unwrap()[0].clone();
 
@@ -586,11 +558,8 @@ fn slug_template_interpolates_composite_keys() {
 #[test]
 fn comment_flag_populates_extra_data_comment() {
     let db = fresh_db();
-    run_cli(
-        &["add", "field", "foo=bar", "-c", "comment remainder"],
-        &db,
-    )
-    .expect("note -c 'comment remainder'");
+    run_cli(&["add", "field", "foo=bar", "-c", "comment remainder"], &db)
+        .expect("note -c 'comment remainder'");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra.get("foo"), Some(&json!("bar")));
@@ -613,11 +582,20 @@ fn comment_flag_populates_extra_data_comment() {
 fn id_positional_promotes_to_slug() {
     let db = fresh_db();
     run_cli(
-        &["add", "book", "title=goldmund und narziß", "author=herman hesse", "lang=de", "id=goldmund"],
+        &[
+            "add",
+            "book",
+            "title=goldmund und narziß",
+            "author=herman hesse",
+            "lang=de",
+            "id=goldmund",
+        ],
         &db,
     )
     .expect("datum add book …  id=goldmund");
-    let e = db.get_entry("book:goldmund").expect("slug book:goldmund exists");
+    let e = db
+        .get_entry("book:goldmund")
+        .expect("slug book:goldmund exists");
     assert_eq!(e.slug, "book:goldmund");
     let extra = e.data.as_ref().unwrap();
     assert_eq!(extra.get("title"), Some(&json!("goldmund und narziß")));
@@ -634,7 +612,9 @@ fn id_positional_promotes_to_slug() {
 fn id_positional_alone_produces_field_colon_id_slug() {
     let db = fresh_db();
     run_cli(&["add", "person", "id=vividn"], &db).expect("add person id=vividn");
-    let e = db.get_entry("person:vividn").expect("slug person:vividn exists");
+    let e = db
+        .get_entry("person:vividn")
+        .expect("slug person:vividn exists");
     assert_eq!(e.slug, "person:vividn");
     // Only `id` was supplied; it's consumed by the slug, so extra_data stays None.
     assert!(
@@ -673,11 +653,20 @@ fn no_id_falls_back_to_timestamp_slug() {
 fn explicit_dash_k_wins_over_id_positional() {
     let db = fresh_db();
     run_cli(
-        &["add", "book", "-K", "custom", "primary-slug", "id=secondary"],
+        &[
+            "add",
+            "book",
+            "-K",
+            "custom",
+            "primary-slug",
+            "id=secondary",
+        ],
         &db,
     )
     .expect("add book -K custom primary-slug id=secondary");
-    let e = db.get_entry("book:primary-slug").expect("slug book:primary-slug exists");
+    let e = db
+        .get_entry("book:primary-slug")
+        .expect("slug book:primary-slug exists");
     assert_eq!(e.slug, "book:primary-slug");
     let extra = e.data.as_ref().unwrap();
     assert_eq!(
@@ -700,11 +689,9 @@ fn explicit_dash_k_wins_over_id_positional() {
 fn colon_pattern_value_stored_as_plain_string() {
     let db = fresh_db();
     // Create the document.
-    run_cli(&["add", "book", "title=Goldmund", "id=goldmund"], &db)
-        .expect("add book id=goldmund");
+    run_cli(&["add", "book", "title=Goldmund", "id=goldmund"], &db).expect("add book id=goldmund");
     // Create a switch that references it.
-    run_cli(&["switch", "consume", "book:goldmund"], &db)
-        .expect("switch consume book:goldmund");
+    run_cli(&["switch", "consume", "book:goldmund"], &db).expect("switch consume book:goldmund");
     let switch_entry = &db.entries_for_field("consume", None).unwrap()[0];
     assert_eq!(
         switch_entry.value,
@@ -741,8 +728,7 @@ fn note_verb_removed_but_alias_works() {
 
     run_cli(&["note", "field", "foo=bar", "-t", "09:00"], &db_note)
         .expect("note → add via seeded alias");
-    run_cli(&["add", "field", "foo=bar", "-t", "09:00"], &db_add)
-        .expect("add dispatch");
+    run_cli(&["add", "field", "foo=bar", "-t", "09:00"], &db_add).expect("add dispatch");
 
     let n = &db_note.entries_for_field("field", None).unwrap()[0];
     let a = &db_add.entries_for_field("field", None).unwrap()[0];
@@ -751,7 +737,11 @@ fn note_verb_removed_but_alias_works() {
     // da-5ns: `add` derives the verb from data shape — `add field foo=bar`
     // (no state, no dur) ⇒ `point`. The `note` seeded alias still routes to
     // `add`, so both dispatches must produce identical rows.
-    assert_eq!(n.verb, Verb::Point, "note alias dispatches to add → derives Point");
+    assert_eq!(
+        n.verb,
+        Verb::Point,
+        "note alias dispatches to add → derives Point"
+    );
     assert_eq!(a.verb, Verb::Point);
     assert_eq!(n.verb.to_string(), "point");
     assert_eq!(n.state, a.state);

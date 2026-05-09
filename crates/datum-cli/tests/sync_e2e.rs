@@ -145,16 +145,7 @@ fn make_occur(field: &str, offset_secs: i64, device: &str) -> Entry {
     // derive_verb classify it as Switch and the conflict detector would
     // fire SameStateRepeat on every subsequent same-state row, polluting
     // sync convergence assertions.
-    let mut e = Entry::new_legacy(
-        field,
-        Verb::Point,
-        None,
-        None,
-        None,
-        Some(t),
-        None,
-        device,
-    );
+    let mut e = Entry::new_legacy(field, Verb::Point, None, None, None, Some(t), None, device);
     e.create_time = at;
     e.modify_time = at;
     e

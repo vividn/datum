@@ -134,9 +134,7 @@ pub fn announce_new_conflicts(notifier: &dyn Notifier, db_name: &str, queued: us
     }
     let title = "Daydumb conflict";
     let noun = if queued == 1 { "conflict" } else { "conflicts" };
-    let body = format!(
-        "{queued} new {noun} on {db_name}: run 'datum conflicts list'"
-    );
+    let body = format!("{queued} new {noun} on {db_name}: run 'datum conflicts list'");
     notifier.notify(title, &body);
 }
 

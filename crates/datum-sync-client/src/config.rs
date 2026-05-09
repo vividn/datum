@@ -25,7 +25,10 @@ mod tests {
 
     #[test]
     fn host_only() {
-        assert_eq!(server_host_from_url("https://sync.example.com"), "sync.example.com");
+        assert_eq!(
+            server_host_from_url("https://sync.example.com"),
+            "sync.example.com"
+        );
     }
 
     #[test]

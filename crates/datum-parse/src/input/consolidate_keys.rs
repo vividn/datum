@@ -27,7 +27,10 @@ pub fn consolidate_keys(keys: &[String]) -> Vec<String> {
     for spec in keys {
         let name = spec.split_once('=').map(|(n, _)| n).unwrap_or(spec);
         let existing = acc.iter().position(|existing| {
-            let existing_name = existing.split_once('=').map(|(n, _)| n).unwrap_or(existing.as_str());
+            let existing_name = existing
+                .split_once('=')
+                .map(|(n, _)| n)
+                .unwrap_or(existing.as_str());
             existing_name == name
         });
         match existing {
@@ -85,11 +88,7 @@ mod tests {
 
     #[test]
     fn distinct_names_preserved_in_order() {
-        let out = consolidate_keys(&[
-            "zebra".into(),
-            "apple".into(),
-            "mango".into(),
-        ]);
+        let out = consolidate_keys(&["zebra".into(), "apple".into(), "mango".into()]);
         assert_eq!(out, vec!["zebra", "apple", "mango"]);
     }
 }

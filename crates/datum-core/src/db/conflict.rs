@@ -20,10 +20,7 @@ impl Db {
     }
 
     /// Fetch one conflict row by its short hid or full id.
-    pub fn get_conflict(
-        &self,
-        token: &str,
-    ) -> Result<Option<crate::conflicts::Conflict>> {
+    pub fn get_conflict(&self, token: &str) -> Result<Option<crate::conflicts::Conflict>> {
         crate::conflicts::get_by_hid_or_id(&self.conn, token)
     }
 
@@ -162,4 +159,3 @@ impl Db {
         crate::conflicts::open_entries_for_field(&self.conn, field)
     }
 }
-

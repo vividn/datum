@@ -156,11 +156,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
 
         // Per-field bands — emitted in plot coords (no per-day transform);
         // helpers map (time, cross) → (x, y) per orientation.
-        let _ = write!(
-            &mut out,
-            r#"<g class="day-data" data-day="{i}">"#,
-            i = i,
-        );
+        let _ = write!(&mut out, r#"<g class="day-data" data-day="{i}">"#, i = i,);
         for field in &day.fields {
             let _ = write!(
                 &mut out,
@@ -205,12 +201,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
                 }
             }
             for p in &field.points {
-                let (cx, cy) = to_xy(
-                    layout,
-                    &geom,
-                    p.time_pos,
-                    day.day_offset + p.cross_pos,
-                );
+                let (cx, cy) = to_xy(layout, &geom, p.time_pos, day.day_offset + p.cross_pos);
                 let outer_r = p.r;
                 let inner_r = (p.r * 0.6).max(0.5);
                 let _ = write!(
@@ -269,11 +260,21 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
             let (x1, y1, x2, y2) = match layout.orientation {
                 Orientation::Horizontal => {
                     let x = geom.data_x + nt;
-                    (x, geom.data_y + day.day_offset, x, geom.data_y + day.now_extent_far)
+                    (
+                        x,
+                        geom.data_y + day.day_offset,
+                        x,
+                        geom.data_y + day.now_extent_far,
+                    )
                 }
                 Orientation::Vertical => {
                     let y = geom.data_y + nt;
-                    (geom.data_x + day.day_offset, y, geom.data_x + day.now_extent_far, y)
+                    (
+                        geom.data_x + day.day_offset,
+                        y,
+                        geom.data_x + day.now_extent_far,
+                        y,
+                    )
                 }
             };
             let _ = write!(
@@ -592,11 +593,8 @@ mod tests {
         // proportional rect segments side-by-side along the time axis,
         // each in its own state color. No diagonal-stripe `<pattern>`.
         let mut cfg = one_day_with_block(false, Orientation::Horizontal);
-        cfg.days[0].fields[0].blocks[0].fill = BlockFill::MultiState(vec![
-            "#ff0000".into(),
-            "#00ff00".into(),
-            "#0000ff".into(),
-        ]);
+        cfg.days[0].fields[0].blocks[0].fill =
+            BlockFill::MultiState(vec!["#ff0000".into(), "#00ff00".into(), "#0000ff".into()]);
         let layout = compute_dayview(&cfg);
         let svg = render_dayview_svg(&layout);
         assert!(!svg.contains("<defs>"), "no pattern defs needed: {svg}");
@@ -622,8 +620,12 @@ mod tests {
         let layout = compute_dayview(&cfg);
         let svg = render_dayview_svg(&layout);
         // First (left) segment uses state[0]'s color, second uses state[1]'s.
-        let first = svg.find(r##"fill="#aa3333""##).expect("first segment color");
-        let second = svg.find(r##"fill="#33aa33""##).expect("second segment color");
+        let first = svg
+            .find(r##"fill="#aa3333""##)
+            .expect("first segment color");
+        let second = svg
+            .find(r##"fill="#33aa33""##)
+            .expect("second segment color");
         assert!(
             first < second,
             "first state must render to the left of the second (horizontal split)",

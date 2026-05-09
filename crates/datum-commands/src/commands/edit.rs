@@ -146,8 +146,7 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         .suffix(".json")
         .tempfile()
         .context("failed to create tempfile for editor")?;
-    std::fs::write(tmp.path(), &original_json)
-        .context("failed to write entry to tempfile")?;
+    std::fs::write(tmp.path(), &original_json).context("failed to write entry to tempfile")?;
 
     let editor = std::env::var("DATUM_EDITOR")
         .or_else(|_| std::env::var("EDITOR"))
@@ -164,8 +163,8 @@ pub fn edit(args: EditArgs, db: &Db) -> Result<()> {
         anyhow::bail!("editor exited with non-zero status: {status}");
     }
 
-    let edited = std::fs::read_to_string(tmp.path())
-        .context("failed to read tempfile after editing")?;
+    let edited =
+        std::fs::read_to_string(tmp.path()).context("failed to read tempfile after editing")?;
 
     if edited == original_json {
         println!("No changes — entry {} unmodified", existing.slug);

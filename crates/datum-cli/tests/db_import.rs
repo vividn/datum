@@ -105,7 +105,14 @@ fn occur_with_dur_maps_to_block() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(verb_of(e), Verb::Block);
-    assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT30M"), "dur stored verbatim");
+    assert_eq!(
+        e.dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .as_deref(),
+        Some("PT30M"),
+        "dur stored verbatim"
+    );
     assert!(e.state.is_none(), "null state stays null (no promotion)");
     assert!(e.following_state.is_none());
     // dur literal also survives as user-visible intent in `data`.
@@ -190,7 +197,14 @@ fn explicit_dur_null_maps_to_zero_duration() {
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
-    assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT0S"), "explicit null → PT0S");
+    assert_eq!(
+        e.dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .as_deref(),
+        Some("PT0S"),
+        "explicit null → PT0S"
+    );
     assert!(e.state.is_none(), "null state stays null (no promotion)");
     let extra = e.data.as_ref().unwrap();
     assert!(
@@ -332,9 +346,9 @@ fn import_3day_fixture_produces_blocks_and_points() {
     let blocks: Vec<_> = entries
         .iter()
         .filter(|e| {
-            e.dur
-                .as_ref()
-                .map_or(false, |d| !d.is_zero_span() && !d.is_moment() && !d.is_unknown())
+            e.dur.as_ref().map_or(false, |d| {
+                !d.is_zero_span() && !d.is_moment() && !d.is_unknown()
+            })
         })
         .collect();
     assert!(

@@ -95,7 +95,11 @@ fn color_scope() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
 /// `render_fixtures.rs`. Fixed so the relative-day prefix is deterministic.
 fn fixed_time(h: u32, m: u32, s: u32) -> DatumTime {
     let utc: DateTime<Utc> = Utc.with_ymd_and_hms(2026, 4, 22, h, m, s).unwrap();
-    DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+    DatumTime {
+        utc,
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    }
 }
 
 /// Pinned future timestamp (always 2099) — drives the "future-time
@@ -103,7 +107,11 @@ fn fixed_time(h: u32, m: u32, s: u32) -> DatumTime {
 /// `Utc::now()`.
 fn future_time(h: u32, m: u32) -> DatumTime {
     let utc: DateTime<Utc> = Utc.with_ymd_and_hms(2099, 1, 1, h, m, 0).unwrap();
-    DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+    DatumTime {
+        utc,
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    }
 }
 
 /// Pinned "now" reference for the terminal fixtures. Same calendar day as
@@ -111,7 +119,11 @@ fn future_time(h: u32, m: u32) -> DatumTime {
 /// past-day fixtures and `future_time` reliably triggers the future branch.
 fn fixed_now() -> DatumTime {
     let utc: DateTime<Utc> = Utc.with_ymd_and_hms(2026, 4, 22, 23, 0, 0).unwrap();
-    DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+    DatumTime {
+        utc,
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    }
 }
 
 fn entry(
@@ -162,17 +174,35 @@ fn all_fixtures() -> Vec<TerminalFixture> {
 
     push(
         "fx01_add_new_occur",
-        entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 47)), None),
+        entry(
+            "new_occur",
+            Verb::Point,
+            None,
+            Some(fixed_time(16, 58, 47)),
+            None,
+        ),
         ctx_with(None, None, true),
     );
     push(
         "fx02_occur_first",
-        entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 56)), None),
+        entry(
+            "new_occur",
+            Verb::Point,
+            None,
+            Some(fixed_time(16, 58, 56)),
+            None,
+        ),
         ctx_with(None, None, true),
     );
     push(
         "fx03_occur_again",
-        entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 59)), None),
+        entry(
+            "new_occur",
+            Verb::Point,
+            None,
+            Some(fixed_time(16, 58, 59)),
+            None,
+        ),
         ctx_with(None, None, false),
     );
     push(
@@ -359,13 +389,15 @@ fn all_fixtures() -> Vec<TerminalFixture> {
         ),
         ctx_with(None, Some(json!(false)), true),
     );
-    let mut e_thing = entry("thing", Verb::Point, None, Some(fixed_time(17, 40, 0)), None);
-    e_thing.data = Some(json!({ "key": "value" }));
-    push(
-        "fx20_add_with_keys",
-        e_thing,
-        ctx_with(None, None, false),
+    let mut e_thing = entry(
+        "thing",
+        Verb::Point,
+        None,
+        Some(fixed_time(17, 40, 0)),
+        None,
     );
+    e_thing.data = Some(json!({ "key": "value" }));
+    push("fx20_add_with_keys", e_thing, ctx_with(None, None, false));
 
     v
 }
@@ -401,9 +433,7 @@ fn assert_text_golden(path: &Path, actual: &str) {
         return;
     }
     let expected = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!(
-            "missing golden {path:?}: {e}. Run with DATUM_UPDATE_GOLDENS=1 to regenerate."
-        )
+        panic!("missing golden {path:?}: {e}. Run with DATUM_UPDATE_GOLDENS=1 to regenerate.")
     });
     if expected != actual {
         // Show a brief diff context so failures are actionable.
@@ -430,12 +460,12 @@ fn assert_bytes_golden(
         return;
     }
     let expected = std::fs::read(path).unwrap_or_else(|e| {
-        panic!(
-            "missing golden {path:?}: {e}. Run with DATUM_UPDATE_GOLDENS=1 to regenerate."
-        )
+        panic!("missing golden {path:?}: {e}. Run with DATUM_UPDATE_GOLDENS=1 to regenerate.")
     });
     if let Err(msg) = compare(&expected, actual) {
-        panic!("golden mismatch at {path:?}: {msg}\n\nRun with DATUM_UPDATE_GOLDENS=1 to regenerate.");
+        panic!(
+            "golden mismatch at {path:?}: {msg}\n\nRun with DATUM_UPDATE_GOLDENS=1 to regenerate."
+        );
     }
 }
 
@@ -533,9 +563,7 @@ fn rasterize_to_png(svg_xml: &str) -> Vec<u8> {
         let fallback = fontdb.faces().next().and_then(|face| {
             face.families
                 .iter()
-                .find(|(_, lang)| {
-                    *lang == resvg::usvg::fontdb::Language::English_UnitedStates
-                })
+                .find(|(_, lang)| *lang == resvg::usvg::fontdb::Language::English_UnitedStates)
                 .or_else(|| face.families.first())
                 .map(|(name, _)| name.clone())
         });
@@ -550,9 +578,13 @@ fn rasterize_to_png(svg_xml: &str) -> Vec<u8> {
     }
     let tree = resvg::usvg::Tree::from_str(svg_xml, &opts).expect("parse SVG");
     let size = tree.size().to_int_size();
-    let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
-        .expect("allocate pixmap");
-    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    let mut pixmap =
+        resvg::tiny_skia::Pixmap::new(size.width(), size.height()).expect("allocate pixmap");
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
     pixmap.encode_png().expect("encode PNG")
 }
 
@@ -612,7 +644,9 @@ fn dayview_scene_empty() -> DayviewLayoutResult {
         ..DayviewConfig::default()
     };
     let layout = compute_dayview(&cfg);
-    DayviewLayoutResult { svg: render_dayview_svg(&layout) }
+    DayviewLayoutResult {
+        svg: render_dayview_svg(&layout),
+    }
 }
 
 fn dayview_scene_single_block() -> DayviewLayoutResult {
@@ -652,7 +686,9 @@ fn dayview_scene_single_block() -> DayviewLayoutResult {
         ..DayviewConfig::default()
     };
     let layout = compute_dayview(&cfg);
-    DayviewLayoutResult { svg: render_dayview_svg(&layout) }
+    DayviewLayoutResult {
+        svg: render_dayview_svg(&layout),
+    }
 }
 
 fn dayview_scene_multi_state() -> DayviewLayoutResult {
@@ -695,7 +731,9 @@ fn dayview_scene_multi_state() -> DayviewLayoutResult {
         ..DayviewConfig::default()
     };
     let layout = compute_dayview(&cfg);
-    DayviewLayoutResult { svg: render_dayview_svg(&layout) }
+    DayviewLayoutResult {
+        svg: render_dayview_svg(&layout),
+    }
 }
 
 fn dayview_scene_today_now_line() -> DayviewLayoutResult {
@@ -734,7 +772,9 @@ fn dayview_scene_today_now_line() -> DayviewLayoutResult {
         ..DayviewConfig::default()
     };
     let layout = compute_dayview(&cfg);
-    DayviewLayoutResult { svg: render_dayview_svg(&layout) }
+    DayviewLayoutResult {
+        svg: render_dayview_svg(&layout),
+    }
 }
 
 fn nowview_scene_30min() -> DayviewLayoutResult {
@@ -749,8 +789,10 @@ fn nowview_scene_30min() -> DayviewLayoutResult {
     let width: f64 = 520.0;
     let plot_width: f64 = (width - 4.0).max(0.0);
     let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
-    let axis_ticks_override =
-        Some(nowview_axis_ticks(time_axis_extent_for_ticks, history_minutes));
+    let axis_ticks_override = Some(nowview_axis_ticks(
+        time_axis_extent_for_ticks,
+        history_minutes,
+    ));
 
     let day = DayviewDayInput {
         label_lines: vec![],
@@ -855,8 +897,10 @@ fn png_comparator_accepts_identical_input() {
     let scene = dayview_scene_single_block();
     let a = rasterize_to_png(&scene.svg);
     let b = rasterize_to_png(&scene.svg);
-    assert!(compare_png_with_tolerance(&a, &b, 0.0, 0).is_ok(),
-        "identical PNGs must compare equal under any tolerance");
+    assert!(
+        compare_png_with_tolerance(&a, &b, 0.0, 0).is_ok(),
+        "identical PNGs must compare equal under any tolerance"
+    );
 }
 
 #[cfg(feature = "png")]
@@ -886,11 +930,7 @@ fn png_comparator_rejects_color_shift_above_tolerance() {
     // Solid 100/100/100 vs 0/0/0 → average channel diff = 75 (only RGB; A
     // matches) — well above tolerance 1.0.
     b.fill(Color::from_rgba8(100, 100, 100, 255));
-    let result = compare_png_with_tolerance(
-        &a.encode_png().unwrap(),
-        &b.encode_png().unwrap(),
-        1.0,
-        128,
-    );
+    let result =
+        compare_png_with_tolerance(&a.encode_png().unwrap(), &b.encode_png().unwrap(), 1.0, 128);
     assert!(result.is_err(), "100-unit color shift must fail tolerance");
 }

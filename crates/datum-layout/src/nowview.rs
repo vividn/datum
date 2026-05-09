@@ -112,13 +112,25 @@ pub struct TickConfig {
 
 pub fn tick_config(history_minutes: f64) -> TickConfig {
     if history_minutes <= 15.0 {
-        TickConfig { major_minutes: 5.0, minor_minutes: None }
+        TickConfig {
+            major_minutes: 5.0,
+            minor_minutes: None,
+        }
     } else if history_minutes <= 60.0 {
-        TickConfig { major_minutes: 15.0, minor_minutes: Some(5.0) }
+        TickConfig {
+            major_minutes: 15.0,
+            minor_minutes: Some(5.0),
+        }
     } else if history_minutes <= 180.0 {
-        TickConfig { major_minutes: 30.0, minor_minutes: Some(10.0) }
+        TickConfig {
+            major_minutes: 30.0,
+            minor_minutes: Some(10.0),
+        }
     } else {
-        TickConfig { major_minutes: 60.0, minor_minutes: Some(15.0) }
+        TickConfig {
+            major_minutes: 60.0,
+            minor_minutes: Some(15.0),
+        }
     }
 }
 
@@ -132,10 +144,7 @@ pub fn tick_config(history_minutes: f64) -> TickConfig {
 /// The "now" instant maps to `time_axis_extent`; "history_minutes ago" maps
 /// to 0. The `now` tick is included so callers (and dayview's gridlines)
 /// see the right edge marked.
-pub fn nowview_axis_ticks(
-    time_axis_extent: f64,
-    history_minutes: f64,
-) -> Vec<DayviewAxisTick> {
+pub fn nowview_axis_ticks(time_axis_extent: f64, history_minutes: f64) -> Vec<DayviewAxisTick> {
     if history_minutes <= 0.0 || time_axis_extent <= 0.0 {
         return Vec::new();
     }
@@ -169,7 +178,11 @@ pub fn nowview_axis_ticks(
     // Sort ascending by time_pos so the renderer's "skip last" logic in
     // emit_time_axis (which omits the trailing tick label) drops the now
     // tick rather than a meaningful one.
-    ticks.sort_by(|a, b| a.time_pos.partial_cmp(&b.time_pos).unwrap_or(std::cmp::Ordering::Equal));
+    ticks.sort_by(|a, b| {
+        a.time_pos
+            .partial_cmp(&b.time_pos)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     ticks
 }
 
@@ -188,10 +201,34 @@ mod tests {
 
     #[test]
     fn tick_config_picks_intervals_from_history() {
-        assert_eq!(tick_config(15.0), TickConfig { major_minutes: 5.0, minor_minutes: None });
-        assert_eq!(tick_config(60.0), TickConfig { major_minutes: 15.0, minor_minutes: Some(5.0) });
-        assert_eq!(tick_config(180.0), TickConfig { major_minutes: 30.0, minor_minutes: Some(10.0) });
-        assert_eq!(tick_config(360.0), TickConfig { major_minutes: 60.0, minor_minutes: Some(15.0) });
+        assert_eq!(
+            tick_config(15.0),
+            TickConfig {
+                major_minutes: 5.0,
+                minor_minutes: None
+            }
+        );
+        assert_eq!(
+            tick_config(60.0),
+            TickConfig {
+                major_minutes: 15.0,
+                minor_minutes: Some(5.0)
+            }
+        );
+        assert_eq!(
+            tick_config(180.0),
+            TickConfig {
+                major_minutes: 30.0,
+                minor_minutes: Some(10.0)
+            }
+        );
+        assert_eq!(
+            tick_config(360.0),
+            TickConfig {
+                major_minutes: 60.0,
+                minor_minutes: Some(15.0)
+            }
+        );
     }
 
     #[test]

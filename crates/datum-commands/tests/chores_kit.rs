@@ -186,7 +186,12 @@ fn entries_without_next_due_are_excluded_from_chores_due() {
     // contract the verb is the first token, so dispatch the switch
     // directly. Either way: no `nextDate=` key → not a chore.
     dispatch_argv(
-        vec!["datum".into(), "switch".into(), "mood".into(), "happy".into()],
+        vec![
+            "datum".into(),
+            "switch".into(),
+            "mood".into(),
+            "happy".into(),
+        ],
         &db,
     )
     .unwrap();

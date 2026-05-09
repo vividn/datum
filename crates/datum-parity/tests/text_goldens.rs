@@ -68,8 +68,7 @@ fn fixtures_root() -> PathBuf {
 
 fn load_bundle() -> FixtureBundle {
     let path = fixtures_root().join(FIXTURES_FILE);
-    let body = fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+    let body = fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
     toml::from_str::<FixtureBundle>(&body)
         .unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
@@ -107,8 +106,17 @@ fn text_fixtures_have_unique_names() {
 #[test]
 fn text_fixtures_cover_each_surface() {
     let bundle = load_bundle();
-    for required in [Surface::Get, Surface::Tail, Surface::Dayview, Surface::Nowview] {
-        let count = bundle.fixture.iter().filter(|f| f.surface == required).count();
+    for required in [
+        Surface::Get,
+        Surface::Tail,
+        Surface::Dayview,
+        Surface::Nowview,
+    ] {
+        let count = bundle
+            .fixture
+            .iter()
+            .filter(|f| f.surface == required)
+            .count();
         assert!(
             count >= 1,
             "must have ≥1 fixture for surface {:?}; got {}",
@@ -142,7 +150,11 @@ fn text_fixtures_have_descriptions() {
             "fixture {}: description must be non-empty",
             f.name,
         );
-        assert!(!f.query.is_empty(), "fixture {}: query must be non-empty", f.name);
+        assert!(
+            !f.query.is_empty(),
+            "fixture {}: query must be non-empty",
+            f.name
+        );
     }
 }
 
@@ -268,8 +280,7 @@ mod runtime_tests {
 
     #[test]
     fn text_goldens_match_live_datum() {
-        let runtime = DatumRuntime::new()
-            .unwrap_or_else(|e| panic!("DatumRuntime::new: {e}"));
+        let runtime = DatumRuntime::new().unwrap_or_else(|e| panic!("DatumRuntime::new: {e}"));
         let bundle = load_bundle();
         let regen = std::env::var("PARITY_REGEN").is_ok();
 

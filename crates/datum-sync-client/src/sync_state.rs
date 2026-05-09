@@ -74,9 +74,7 @@ pub fn advance_my_push_seq(db: &Db, new_seq: u64) -> Result<()> {
 }
 
 fn read_seq_column(db: &Db, col: &str) -> Result<u64> {
-    let sql = format!(
-        "SELECT {col} FROM sync_state WHERE db_id = ?1",
-    );
+    let sql = format!("SELECT {col} FROM sync_state WHERE db_id = ?1",);
     let got: Option<i64> = db
         .conn()
         .query_row(&sql, params![DEFAULT_DB_ID], |row| row.get(0))
@@ -115,9 +113,7 @@ pub fn get_last_pull_at(db: &Db) -> Result<Option<DateTime<Utc>>> {
 }
 
 fn read_at_column(db: &Db, col: &str) -> Result<Option<DateTime<Utc>>> {
-    let sql = format!(
-        "SELECT {col} FROM sync_state WHERE db_id = ?1",
-    );
+    let sql = format!("SELECT {col} FROM sync_state WHERE db_id = ?1",);
     let got: Option<Option<i64>> = db
         .conn()
         .query_row(&sql, params![DEFAULT_DB_ID], |row| row.get(0))

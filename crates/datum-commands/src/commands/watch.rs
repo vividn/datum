@@ -62,9 +62,9 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Utc;
     use datum_core::entry::{Entry, Verb};
     use datum_core::time::DatumTime;
-    use chrono::Utc;
     use serde_json::Value as JsonValue;
     use tempfile::TempDir;
 

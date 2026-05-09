@@ -35,10 +35,13 @@ fn dayview_writes_svg_to_output() {
     run_cli(
         &[
             "dayview",
-            "-o", &path,
+            "-o",
+            &path,
             "--horizontal",
-            "--width", "1200",
-            "--day-height", "120",
+            "--width",
+            "1200",
+            "--day-height",
+            "120",
         ],
         &db,
     )
@@ -77,8 +80,7 @@ fn dayview_json_dumps_layout() {
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
 
-    run_cli(&["dayview", "--json", "-o", &path], &db)
-        .expect("dayview --json dispatch");
+    run_cli(&["dayview", "--json", "-o", &path], &db).expect("dayview --json dispatch");
 
     let raw = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
@@ -93,7 +95,10 @@ fn dayview_json_dumps_layout() {
     let days = json["days"].as_array().expect("days is array");
     assert_eq!(days.len(), 1, "default one-day window");
     let fields = days[0]["fields"].as_array().expect("day fields is array");
-    let names: Vec<&str> = fields.iter().map(|f| f["field"].as_str().unwrap()).collect();
+    let names: Vec<&str> = fields
+        .iter()
+        .map(|f| f["field"].as_str().unwrap())
+        .collect();
     assert!(names.contains(&"coffee"));
     assert!(names.contains(&"workout"));
 
@@ -128,7 +133,10 @@ fn dayview_n_days_stacks_multiple_rows() {
     assert_eq!(days.len(), 3);
 
     // Only the most recent day (today) should have the now-line.
-    assert!(days[0]["now_time_pos"].is_null(), "day 0 (oldest) has no now");
+    assert!(
+        days[0]["now_time_pos"].is_null(),
+        "day 0 (oldest) has no now"
+    );
     assert!(days[1]["now_time_pos"].is_null(), "day 1 has no now");
     assert!(days[2]["now_time_pos"].is_number(), "day 2 (today) has now");
 }
@@ -147,11 +155,8 @@ fn dayview_horizontal_orientation_round_trips_to_layout() {
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
 
-    run_cli(
-        &["dayview", "--horizontal", "--json", "-o", &path],
-        &db,
-    )
-    .expect("dayview --horizontal dispatch");
+    run_cli(&["dayview", "--horizontal", "--json", "-o", &path], &db)
+        .expect("dayview --horizontal dispatch");
 
     let raw = std::fs::read_to_string(&path).unwrap();
     let json: serde_json::Value = serde_json::from_str(&raw).expect("valid JSON");
@@ -164,7 +169,14 @@ fn dayview_vertical_orientation_explicit_flag() {
     let tmp = tempfile::NamedTempFile::with_suffix(".json").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
     run_cli(
-        &["dayview", "--orientation", "vertical", "--json", "-o", &path],
+        &[
+            "dayview",
+            "--orientation",
+            "vertical",
+            "--json",
+            "-o",
+            &path,
+        ],
         &db,
     )
     .expect("dayview --orientation vertical dispatch");
@@ -186,7 +198,10 @@ fn dayview_skips_empty_fields() {
     let json: serde_json::Value = serde_json::from_str(&raw).unwrap();
     let days = json["days"].as_array().unwrap();
     assert_eq!(days.len(), 1);
-    assert!(days[0]["fields"].as_array().unwrap().is_empty(), "no empty fields injected");
+    assert!(
+        days[0]["fields"].as_array().unwrap().is_empty(),
+        "no empty fields injected"
+    );
 }
 
 #[test]

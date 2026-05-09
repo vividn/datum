@@ -65,11 +65,7 @@ impl Scheduler {
         Self::with_params(start, DEFAULT_DEBOUNCE, DEFAULT_PULL_INTERVAL)
     }
 
-    pub fn with_params(
-        start: Instant,
-        debounce_window: Duration,
-        pull_interval: Duration,
-    ) -> Self {
+    pub fn with_params(start: Instant, debounce_window: Duration, pull_interval: Duration) -> Self {
         Self {
             pull_interval,
             last_pull: start,
@@ -107,10 +103,8 @@ impl Scheduler {
     /// safe to call repeatedly. After executing the returned action,
     /// call the appropriate `note_*_success` / `note_*_failure`.
     pub fn poll(&self, now: Instant) -> Action {
-        let push_ready =
-            self.debouncer.is_due(now) && !self.push_backoff.is_blocked(now);
-        let pull_ready = now.saturating_duration_since(self.last_pull)
-            >= self.pull_interval
+        let push_ready = self.debouncer.is_due(now) && !self.push_backoff.is_blocked(now);
+        let pull_ready = now.saturating_duration_since(self.last_pull) >= self.pull_interval
             && !self.pull_backoff.is_blocked(now);
 
         if push_ready {
@@ -168,11 +162,8 @@ mod tests {
     #[test]
     fn scheduler_pushes_on_write() {
         let base = Instant::now();
-        let mut s = Scheduler::with_params(
-            base,
-            Duration::from_millis(1500),
-            Duration::from_secs(30),
-        );
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(30));
 
         // Idle: no pending write → sleep.
         assert!(matches!(s.poll(base), Action::Sleep(_)));
@@ -194,11 +185,8 @@ mod tests {
     #[test]
     fn scheduler_pulls_on_interval() {
         let base = Instant::now();
-        let mut s = Scheduler::with_params(
-            base,
-            Duration::from_millis(1500),
-            Duration::from_secs(30),
-        );
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(30));
 
         // Not yet 30s elapsed.
         assert!(matches!(s.poll(t(base, 29)), Action::Sleep(_)));
@@ -218,11 +206,8 @@ mod tests {
     #[test]
     fn push_wins_over_pull_in_same_tick() {
         let base = Instant::now();
-        let mut s = Scheduler::with_params(
-            base,
-            Duration::from_millis(1500),
-            Duration::from_secs(30),
-        );
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(30));
         s.note_write(base);
         // Advance enough that BOTH pull (30s) and push (1.5s) are ready.
         assert_eq!(s.poll(t(base, 30)), Action::Push);
@@ -233,11 +218,8 @@ mod tests {
     #[test]
     fn push_failure_suppresses_pushes_until_backoff_clears() {
         let base = Instant::now();
-        let mut s = Scheduler::with_params(
-            base,
-            Duration::from_millis(1500),
-            Duration::from_secs(30),
-        );
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(30));
         s.note_write(base);
         assert_eq!(s.poll(tms(base, 1500)), Action::Push);
 
@@ -260,11 +242,8 @@ mod tests {
     #[test]
     fn pull_and_push_backoffs_are_independent() {
         let base = Instant::now();
-        let mut s = Scheduler::with_params(
-            base,
-            Duration::from_millis(1500),
-            Duration::from_secs(30),
-        );
+        let mut s =
+            Scheduler::with_params(base, Duration::from_millis(1500), Duration::from_secs(30));
         s.note_push_failure(base);
         // Push is backed off, but no pull failures → pull should still
         // fire at its normal interval.

@@ -89,8 +89,7 @@ async fn auth_middleware(
     // server-side fault; surface it as 401 so the client's refresh-on-
     // 401 retry path (Session) actually fires. Pre-da-1i5x we leaked
     // these as 500 which trapped clients in an opaque error loop.
-    let claims = jwt::verify_token(token, &state.jwt_secret)
-        .map_err(|_| AppError::Unauthorized)?;
+    let claims = jwt::verify_token(token, &state.jwt_secret).map_err(|_| AppError::Unauthorized)?;
     let user_id = Uuid::parse_str(&claims.sub).map_err(|_| AppError::Unauthorized)?;
 
     req.extensions_mut().insert(AuthenticatedUser { user_id });
@@ -193,7 +192,12 @@ mod tests {
     async fn test_health_check() {
         let app = build_app(test_state());
         let response = app
-            .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/health")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
@@ -318,7 +322,11 @@ mod tests {
         let self_view: Vec<serde_json::Value> =
             serde_json::from_slice(&pull_resp2.into_body().collect().await.unwrap().to_bytes())
                 .unwrap();
-        assert_eq!(self_view.len(), 0, "device-1 should not see its own changesets");
+        assert_eq!(
+            self_view.len(),
+            0,
+            "device-1 should not see its own changesets"
+        );
     }
 
     #[tokio::test]
@@ -417,7 +425,10 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/v1/auth/device-code/poll?device_code={}", device_code))
+                    .uri(format!(
+                        "/v1/auth/device-code/poll?device_code={}",
+                        device_code
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -452,7 +463,10 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/v1/auth/device-code/poll?device_code={}", device_code))
+                    .uri(format!(
+                        "/v1/auth/device-code/poll?device_code={}",
+                        device_code
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )
@@ -509,7 +523,10 @@ mod tests {
             )
             .await
             .unwrap();
-        let device_code = json_body(start).await["device_code"].as_str().unwrap().to_string();
+        let device_code = json_body(start).await["device_code"]
+            .as_str()
+            .unwrap()
+            .to_string();
 
         let _ = build_app(state.clone())
             .oneshot(
@@ -533,7 +550,10 @@ mod tests {
             .oneshot(
                 Request::builder()
                     .method("GET")
-                    .uri(format!("/v1/auth/device-code/poll?device_code={}", device_code))
+                    .uri(format!(
+                        "/v1/auth/device-code/poll?device_code={}",
+                        device_code
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )

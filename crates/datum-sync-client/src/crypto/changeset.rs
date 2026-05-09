@@ -120,13 +120,7 @@ pub fn decrypt_changeset(
     let nonce = Nonce::from_slice(nonce_bytes);
     let aad = build_aad(device_id, seq);
     let pt = cipher
-        .decrypt(
-            nonce,
-            Payload {
-                msg: ct,
-                aad: &aad,
-            },
-        )
+        .decrypt(nonce, Payload { msg: ct, aad: &aad })
         .map_err(|e| CryptoError(format!("decrypt: {e}")))?;
     Ok(Changeset { bytes: pt })
 }
@@ -175,12 +169,8 @@ mod tests {
         let mut tampered = blob.into_bytes();
         let last = tampered.len() - 1;
         tampered[last] ^= 0x01;
-        assert!(decrypt_changeset(
-            &EncryptedBlob::from_bytes(tampered),
-            &key,
-            "dev-alpha",
-            1,
-        )
-        .is_err());
+        assert!(
+            decrypt_changeset(&EncryptedBlob::from_bytes(tampered), &key, "dev-alpha", 1,).is_err()
+        );
     }
 }

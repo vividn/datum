@@ -335,9 +335,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         }
     }
 
-    let label_width = config
-        .label_width
-        .unwrap_or_else(|| label_font_size * 4.0);
+    let label_width = config.label_width.unwrap_or_else(|| label_font_size * 4.0);
 
     let data_rows_extent =
         n_days as f64 * config.day_height + (n_days - 1) as f64 * config.interday_margin;
@@ -416,7 +414,11 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
 
         // Sort fields by z_index ascending (low first → renders below).
         let mut field_order: Vec<&DayviewFieldInput> = day.fields.iter().collect();
-        field_order.sort_by(|a, b| a.z_index.partial_cmp(&b.z_index).unwrap_or(std::cmp::Ordering::Equal));
+        field_order.sort_by(|a, b| {
+            a.z_index
+                .partial_cmp(&b.z_index)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let mut fields: Vec<RenderedField> = Vec::with_capacity(field_order.len());
 
@@ -570,7 +572,10 @@ mod tests {
     /// layout: time runs L→R, days stack top-to-bottom) for the legacy
     /// tests.
     fn horizontal(cfg: DayviewConfig) -> DayviewConfig {
-        DayviewConfig { orientation: Orientation::Horizontal, ..cfg }
+        DayviewConfig {
+            orientation: Orientation::Horizontal,
+            ..cfg
+        }
     }
 
     #[test]
@@ -640,7 +645,11 @@ mod tests {
         });
         let layout = compute_dayview(&cfg);
         // 3*100 + 2*10 + 15 + 2*2 = 300 + 20 + 15 + 4 = 339.
-        assert!((layout.height - 339.0).abs() < 1e-6, "height was {}", layout.height);
+        assert!(
+            (layout.height - 339.0).abs() < 1e-6,
+            "height was {}",
+            layout.height
+        );
         assert_eq!(layout.days.len(), 3);
         assert!((layout.days[0].day_offset - 0.0).abs() < 1e-6);
         assert!((layout.days[1].day_offset - 110.0).abs() < 1e-6);
@@ -672,8 +681,14 @@ mod tests {
             ..Default::default()
         });
         let layout = compute_dayview(&cfg);
-        assert!(layout.days[0].now_time_pos.is_none(), "day 1 should NOT have now");
-        assert!(layout.days[1].now_time_pos.is_some(), "day 2 should have now");
+        assert!(
+            layout.days[0].now_time_pos.is_none(),
+            "day 1 should NOT have now"
+        );
+        assert!(
+            layout.days[1].now_time_pos.is_some(),
+            "day 2 should have now"
+        );
     }
 
     #[test]
@@ -704,7 +719,11 @@ mod tests {
         let layout = compute_dayview(&cfg);
         // Last day: now_extent_far = 115 + 100 + 15 = 230.
         let last = &layout.days[1];
-        assert!((last.now_extent_far - 230.0).abs() < 1e-6, "got {}", last.now_extent_far);
+        assert!(
+            (last.now_extent_far - 230.0).abs() < 1e-6,
+            "got {}",
+            last.now_extent_far
+        );
     }
 
     #[test]
@@ -825,9 +844,17 @@ mod tests {
         let layout = compute_dayview(&cfg);
         let block = &layout.days[0].fields[0].blocks[0];
         // Should start at time_offset=0 (clipped to day start).
-        assert!(block.time_offset.abs() < 1e-6, "time_offset was {}", block.time_offset);
+        assert!(
+            block.time_offset.abs() < 1e-6,
+            "time_offset was {}",
+            block.time_offset
+        );
         // And span the full data width (800 since label_width=0, margin=0).
-        assert!((block.time_extent - 800.0).abs() < 1.0, "time_extent was {}", block.time_extent);
+        assert!(
+            (block.time_extent - 800.0).abs() < 1.0,
+            "time_extent was {}",
+            block.time_extent
+        );
     }
 
     #[test]
@@ -886,11 +913,14 @@ mod tests {
         let block = &layout.days[0].fields[0].blocks[0];
         match &block.fill {
             BlockFill::MultiState(colors) => {
-                assert_eq!(colors, &vec![
-                    "#ff0000".to_string(),
-                    "#00ff00".to_string(),
-                    "#0000ff".to_string(),
-                ]);
+                assert_eq!(
+                    colors,
+                    &vec![
+                        "#ff0000".to_string(),
+                        "#00ff00".to_string(),
+                        "#0000ff".to_string(),
+                    ]
+                );
             }
             _ => panic!("expected MultiState fill"),
         }
@@ -941,9 +971,17 @@ mod tests {
             ..Default::default()
         };
         let layout = compute_dayview(&cfg);
-        assert!((layout.width - 349.0).abs() < 1e-6, "width was {}", layout.width);
+        assert!(
+            (layout.width - 349.0).abs() < 1e-6,
+            "width was {}",
+            layout.width
+        );
         // Total height is the explicit `height` config.
-        assert!((layout.height - 800.0).abs() < 1e-6, "height was {}", layout.height);
+        assert!(
+            (layout.height - 800.0).abs() < 1e-6,
+            "height was {}",
+            layout.height
+        );
         // Days stack on the cross axis in 100+15 increments.
         assert!((layout.days[0].day_offset - 0.0).abs() < 1e-6);
         assert!((layout.days[1].day_offset - 115.0).abs() < 1e-6);
@@ -967,7 +1005,8 @@ mod tests {
         assert!(
             (layout.time_axis_extent - expected).abs() < 1e-6,
             "time_axis_extent was {}, expected {}",
-            layout.time_axis_extent, expected
+            layout.time_axis_extent,
+            expected
         );
         // Axis ticks: 12:00 → time_pos = expected * 0.5.
         assert!((layout.axis_ticks[12].time_pos - expected / 2.0).abs() < 1e-6);
@@ -1007,7 +1046,15 @@ mod tests {
         };
         let layout = compute_dayview(&cfg);
         let block = &layout.days[0].fields[0].blocks[0];
-        assert!(block.time_offset.abs() < 1e-6, "time_offset was {}", block.time_offset);
-        assert!((block.time_extent - 800.0).abs() < 1.0, "time_extent was {}", block.time_extent);
+        assert!(
+            block.time_offset.abs() < 1e-6,
+            "time_offset was {}",
+            block.time_offset
+        );
+        assert!(
+            (block.time_extent - 800.0).abs() < 1.0,
+            "time_extent was {}",
+            block.time_extent
+        );
     }
 }

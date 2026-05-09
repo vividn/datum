@@ -22,8 +22,8 @@ pub fn why(args: WhyArgs, db: &Db) -> Result<()> {
         return Ok(());
     }
 
-    let versions = datum_core::history::list(db.conn(), &current.hid, true)
-        .map_err(anyhow::Error::from)?;
+    let versions =
+        datum_core::history::list(db.conn(), &current.hid, true).map_err(anyhow::Error::from)?;
     println!();
     println!("history (newest first):");
     if versions.is_empty() {

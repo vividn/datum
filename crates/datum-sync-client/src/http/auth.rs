@@ -21,11 +21,7 @@ use datum_sync_protocol::messages::auth::RefreshTokenRequest;
 /// POST `/v1/auth/refresh` with the supplied single-use refresh token.
 /// Returns the new [`AuthToken`] (which itself carries a fresh
 /// `refresh_token` for the next rotation).
-pub fn refresh(
-    client: &Client,
-    server: &str,
-    refresh_token: &str,
-) -> Result<AuthToken, HttpError> {
+pub fn refresh(client: &Client, server: &str, refresh_token: &str) -> Result<AuthToken, HttpError> {
     let body = RefreshTokenRequest {
         refresh_token: refresh_token.to_string(),
     };

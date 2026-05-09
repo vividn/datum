@@ -54,8 +54,8 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
 fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     // --json replaces the entire spec; individual flags merge into existing.
     let mut spec = if let Some(json) = &args.json {
-        let mut s: FieldSpec = serde_json::from_str(json)
-            .with_context(|| "Invalid field spec JSON")?;
+        let mut s: FieldSpec =
+            serde_json::from_str(json).with_context(|| "Invalid field spec JSON")?;
         s.field = args.field.clone();
         s
     } else {
@@ -86,11 +86,10 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
     for sc in &args.state_colors {
         match sc.split_once('=') {
             Some((state, color)) => {
-                spec.state_colors.insert(state.to_string(), color.to_string());
+                spec.state_colors
+                    .insert(state.to_string(), color.to_string());
             }
-            None => anyhow::bail!(
-                "Invalid --state-color format: expected STATE=COLOR, got '{sc}'"
-            ),
+            None => anyhow::bail!("Invalid --state-color format: expected STATE=COLOR, got '{sc}'"),
         }
     }
     // da-2sr: --track / --ignore on `spec set` write switch entries rather

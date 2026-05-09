@@ -22,18 +22,14 @@ use crate::input::flag_registry::{FlagAction, FlagSpec};
 ///
 /// The positional `quick_id` is captured by the parser's positional path
 /// (not a flag); this only declares `--on-ambiguous`.
-pub static FLAG_SPECS: &[FlagSpec<QuickIdArg>] = &[
-    FlagSpec {
-        short: None,
-        long: Some("on-ambiguous"),
-        action: FlagAction::Value(|a, v| {
-            a.on_ambiguous = v
-                .parse::<OnAmbiguous>()
-                .map_err(ParseError::InvalidArg)?;
-            Ok(())
-        }),
-    },
-];
+pub static FLAG_SPECS: &[FlagSpec<QuickIdArg>] = &[FlagSpec {
+    short: None,
+    long: Some("on-ambiguous"),
+    action: FlagAction::Value(|a, v| {
+        a.on_ambiguous = v.parse::<OnAmbiguous>().map_err(ParseError::InvalidArg)?;
+        Ok(())
+    }),
+}];
 
 /// What to do when a quickId resolves to more than one live entry.
 /// Mirrors datum's `ON_AMBIGUOUS_QUICK_ID` tuple, default `Fail`.

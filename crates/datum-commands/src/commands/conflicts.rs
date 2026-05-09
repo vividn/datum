@@ -22,10 +22,7 @@ fn list(args: ConflictsListArgs, db: &Db) -> Result<()> {
     use datum_core::conflicts::{ConflictKind, ListFilter};
     let kind = match args.kind.as_deref() {
         None => None,
-        Some(s) => Some(
-            s.parse::<ConflictKind>()
-                .map_err(|e| anyhow::anyhow!(e))?,
-        ),
+        Some(s) => Some(s.parse::<ConflictKind>().map_err(|e| anyhow::anyhow!(e))?),
     };
     let filter = ListFilter {
         kind,
@@ -92,9 +89,7 @@ fn resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
     let resolution = match args.take.as_deref() {
         Some("local") => Resolution::TakeLocal,
         Some("remote") => Resolution::TakeRemote,
-        Some(other) => anyhow::bail!(
-            "--take only accepts 'local' or 'remote' (got '{other}')"
-        ),
+        Some(other) => anyhow::bail!("--take only accepts 'local' or 'remote' (got '{other}')"),
         None => {
             if args.close_older {
                 Resolution::CloseOlder
@@ -168,7 +163,10 @@ fn run_conflict_edit(token: &str, db: &Db) -> Result<datum_core::conflicts::Conf
 fn auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result<()> {
     let applied = db.auto_resolve_conflicts(Utc::now(), args.min_age)?;
     if applied.is_empty() {
-        println!("No conflicts eligible for auto-resolution (min_age={}s).", args.min_age);
+        println!(
+            "No conflicts eligible for auto-resolution (min_age={}s).",
+            args.min_age
+        );
         return Ok(());
     }
     for c in &applied {

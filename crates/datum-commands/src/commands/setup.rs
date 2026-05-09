@@ -7,8 +7,7 @@ use crate::args::SetupArgs;
 
 pub fn setup(_args: SetupArgs, db: &Db) -> Result<()> {
     let target = datum_core::migrations::CURRENT_SCHEMA_VERSION;
-    let current = datum_core::migrations::read_schema_version(db.conn())?
-        .unwrap_or(target);
+    let current = datum_core::migrations::read_schema_version(db.conn())?.unwrap_or(target);
     if current > target {
         anyhow::bail!(
             "setup: database schema v{current} is newer than this binary (v{target}). \

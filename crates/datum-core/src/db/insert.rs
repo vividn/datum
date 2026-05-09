@@ -41,11 +41,8 @@ fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
         }
         (s, _) => s,
     };
-    let (verb, canonical_state) = derive_verb(
-        state_in,
-        entry.dur.as_ref(),
-        entry.following_state.clone(),
-    )?;
+    let (verb, canonical_state) =
+        derive_verb(state_in, entry.dur.as_ref(), entry.following_state.clone())?;
     let verb_str = verb.to_string();
     let state_str = canonical_state.as_ref().map(|v| v.to_string());
     Ok((verb_str, state_str))
@@ -261,9 +258,7 @@ impl Db {
         let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
             let uid = updated.short_uid();
             let ctx = InterpolationContext::from_entry(&updated, &uid);
-            Some(Slug(field_spec::interpolate(
-                &tmpl, &ctx, slug_delimiter,
-            )))
+            Some(Slug(field_spec::interpolate(&tmpl, &ctx, slug_delimiter)))
         } else {
             None
         };
@@ -300,11 +295,7 @@ impl Db {
     /// pre-rekey state in the same transaction. Returns
     /// [`DatumError::Duplicate`] if the new slug collides with another live
     /// row.
-    pub fn save_existing_entry_with_rekey(
-        &self,
-        old_slug: &Slug,
-        entry: &Entry,
-    ) -> Result<()> {
+    pub fn save_existing_entry_with_rekey(&self, old_slug: &Slug, entry: &Entry) -> Result<()> {
         self.save_existing_entry_with_rekey_kind(old_slug, entry, ChangeKind::UserEdit)
     }
 
@@ -689,7 +680,10 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.raw_input,
         entry.alias_chain.as_ref().map(|v| v.to_string()),
         entry.parser_version,
-        entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+        entry
+            .user_asserted_last_state
+            .as_ref()
+            .map(|v| v.to_string()),
         entry.extra_metadata.as_ref().map(|v| v.to_string()),
     ])?;
     Ok(())
@@ -798,7 +792,10 @@ fn raw_overwrite_mutables(
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
-            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+            entry
+                .user_asserted_last_state
+                .as_ref()
+                .map(|v| v.to_string()),
             entry.id_structure.as_deref(),
             entry.field_structure.as_deref(),
         ],
@@ -881,7 +878,10 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         entry.raw_input,
         entry.alias_chain.as_ref().map(|v| v.to_string()),
         entry.parser_version,
-        entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+        entry
+            .user_asserted_last_state
+            .as_ref()
+            .map(|v| v.to_string()),
     ])?;
     if affected == 0 {
         return Err(DatumError::NotFound(entry.hid.to_string()));
@@ -961,7 +961,10 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.raw_input,
             entry.alias_chain.as_ref().map(|v| v.to_string()),
             entry.parser_version,
-            entry.user_asserted_last_state.as_ref().map(|v| v.to_string()),
+            entry
+                .user_asserted_last_state
+                .as_ref()
+                .map(|v| v.to_string()),
             entry.extra_metadata.as_ref().map(|v| v.to_string()),
         ],
     )?;

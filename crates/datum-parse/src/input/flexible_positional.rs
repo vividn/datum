@@ -59,8 +59,12 @@ mod tests {
     }
 
     impl FlexibleTarget for TestArgs {
-        fn data(&mut self) -> &mut Vec<String> { &mut self.data }
-        fn keys(&mut self) -> &mut Vec<String> { &mut self.keys }
+        fn data(&mut self) -> &mut Vec<String> {
+            &mut self.data
+        }
+        fn keys(&mut self) -> &mut Vec<String> {
+            &mut self.keys
+        }
     }
 
     fn args(data: &[&str], keys: &[&str]) -> TestArgs {
@@ -76,14 +80,29 @@ mod tests {
         // spec "extraKey=default", then "field" injected with spec "field".
         let mut a = args(&["arg1", "arg2"], &["key1", "key2"]);
 
-        flexible_positional(&mut a, Some("extraArg".into()), "extraKey=default", false, false);
-        assert_eq!(a, args(&["extraArg", "arg1", "arg2"], &["extraKey=default", "key1", "key2"]));
+        flexible_positional(
+            &mut a,
+            Some("extraArg".into()),
+            "extraKey=default",
+            false,
+            false,
+        );
+        assert_eq!(
+            a,
+            args(
+                &["extraArg", "arg1", "arg2"],
+                &["extraKey=default", "key1", "key2"]
+            )
+        );
 
         flexible_positional(&mut a, Some("fieldArg".into()), "field", false, false);
-        assert_eq!(a, args(
-            &["fieldArg", "extraArg", "arg1", "arg2"],
-            &["field", "extraKey=default", "key1", "key2"],
-        ));
+        assert_eq!(
+            a,
+            args(
+                &["fieldArg", "extraArg", "arg1", "arg2"],
+                &["field", "extraKey=default", "key1", "key2"],
+            )
+        );
     }
 
     #[test]
@@ -91,7 +110,10 @@ mod tests {
         // --fieldless path: positional still captured but not bound to a key.
         let mut a = args(&["arg2", "arg3"], &["key1", "key2", "key3"]);
         flexible_positional(&mut a, Some("arg1".into()), "field", true, false);
-        assert_eq!(a, args(&["arg1", "arg2", "arg3"], &["key1", "key2", "key3"]));
+        assert_eq!(
+            a,
+            args(&["arg1", "arg2", "arg3"], &["key1", "key2", "key3"])
+        );
     }
 
     #[test]
@@ -105,10 +127,10 @@ mod tests {
     fn after_other_args_appends_key_at_end() {
         let mut a = args(&["arg1", "arg2"], &["key1", "key2"]);
         flexible_positional(&mut a, Some("fieldArg".into()), "field", false, true);
-        assert_eq!(a, args(
-            &["fieldArg", "arg1", "arg2"],
-            &["key1", "key2", "field"],
-        ));
+        assert_eq!(
+            a,
+            args(&["fieldArg", "arg1", "arg2"], &["key1", "key2", "field"],)
+        );
     }
 
     #[test]

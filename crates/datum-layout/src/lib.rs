@@ -167,7 +167,12 @@ pub fn layout_day(entries: &[LayoutEntry], config: &LayoutConfig) -> Layout {
         })
         .collect();
 
-    let axis_ticks = axis_ticks_hourly(config.day_start_ms, config.day_end_ms, plot_x_start, plot_x_end);
+    let axis_ticks = axis_ticks_hourly(
+        config.day_start_ms,
+        config.day_end_ms,
+        plot_x_start,
+        plot_x_end,
+    );
 
     Layout {
         width: config.width,
@@ -250,7 +255,11 @@ mod tests {
         let block = &row.blocks[0];
 
         assert!((block.x - 600.0).abs() < 1e-6, "x was {}", block.x);
-        assert!((block.width - 100.0).abs() < 1e-6, "width was {}", block.width);
+        assert!(
+            (block.width - 100.0).abs() < 1e-6,
+            "width was {}",
+            block.width
+        );
     }
 
     #[test]

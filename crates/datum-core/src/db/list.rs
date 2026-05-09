@@ -86,12 +86,10 @@ impl Db {
         }
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            row_to_entry,
-        )?;
-        let mut results: Vec<Entry> =
-            rows.map(|r| r.map_err(DatumError::Db)).collect::<Result<_>>()?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), row_to_entry)?;
+        let mut results: Vec<Entry> = rows
+            .map(|r| r.map_err(DatumError::Db))
+            .collect::<Result<_>>()?;
 
         // Normalize to oldest-first; then honour the caller's reverse.
         if !params.head {
@@ -111,9 +109,8 @@ impl Db {
         field: Option<&str>,
         since: DateTime<Utc>,
     ) -> Result<Vec<Entry>> {
-        let mut sql = String::from(
-            "SELECT * FROM entries WHERE deleted_at IS NULL AND create_time > ?",
-        );
+        let mut sql =
+            String::from("SELECT * FROM entries WHERE deleted_at IS NULL AND create_time > ?");
         let mut bindings: Vec<String> = vec![since.to_rfc3339()];
         if let Some(f) = field {
             sql.push_str(" AND field = ?");
@@ -122,19 +119,12 @@ impl Db {
         sql.push_str(" ORDER BY create_time ASC, slug ASC");
 
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            row_to_entry,
-        )?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
     /// Get all live entries within a UTC time range (inclusive).
-    pub fn entries_in_range(
-        &self,
-        start: DateTime<Utc>,
-        end: DateTime<Utc>,
-    ) -> Result<Vec<Entry>> {
+    pub fn entries_in_range(&self, start: DateTime<Utc>, end: DateTime<Utc>) -> Result<Vec<Entry>> {
         let expr = time_expr_endbound();
         let sql = format!(
             "SELECT * FROM entries
@@ -144,10 +134,7 @@ impl Db {
              ORDER BY {expr} ASC",
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            params![start.to_rfc3339(), end.to_rfc3339()],
-            row_to_entry,
-        )?;
+        let rows = stmt.query_map(params![start.to_rfc3339(), end.to_rfc3339()], row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
@@ -178,7 +165,9 @@ impl Db {
     /// Every entry in the store, **including tombstoned rows**. Undo uses this
     /// to locate deleted entries by slug/hid before restoring them.
     pub fn list_including_deleted(&self) -> Result<Vec<Entry>> {
-        let mut stmt = self.conn.prepare("SELECT * FROM entries ORDER BY slug ASC")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM entries ORDER BY slug ASC")?;
         let rows = stmt.query_map([], row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
@@ -213,16 +202,18 @@ impl Db {
 
     /// All entries (including tombstoned), for bulk checks.
     pub fn all_entries(&self) -> Result<Vec<Entry>> {
-        let mut stmt = self.conn.prepare("SELECT * FROM entries ORDER BY slug ASC")?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT * FROM entries ORDER BY slug ASC")?;
         let rows = stmt.query_map([], row_to_entry)?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
     /// Slugs of rows with `deleted_at` set (tombstones).
     pub fn tombstone_ids(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT slug FROM entries WHERE deleted_at IS NOT NULL ORDER BY slug ASC",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare("SELECT slug FROM entries WHERE deleted_at IS NOT NULL ORDER BY slug ASC")?;
         let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }

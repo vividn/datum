@@ -72,12 +72,9 @@ pub fn insert_refresh_token(
 
 /// Look up a refresh token by hash. Returns `(user_id, expires_at)` or
 /// `None` if the token has been rotated out (or never existed).
-pub fn lookup_refresh_token(
-    conn: &Connection,
-    token_hash: &str,
-) -> Result<Option<(Uuid, i64)>> {
-    let mut stmt = conn
-        .prepare("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?1")?;
+pub fn lookup_refresh_token(conn: &Connection, token_hash: &str) -> Result<Option<(Uuid, i64)>> {
+    let mut stmt =
+        conn.prepare("SELECT user_id, expires_at FROM refresh_tokens WHERE token_hash = ?1")?;
     let mut rows = stmt.query(params![token_hash])?;
     if let Some(row) = rows.next()? {
         let id_str: String = row.get(0)?;
@@ -132,11 +129,8 @@ pub fn save_credential(conn: &Connection, user_id: &Uuid, passkey: &Passkey) -> 
 }
 
 pub fn get_passkeys(conn: &Connection, user_id: &Uuid) -> Result<Vec<Passkey>> {
-    let mut stmt =
-        conn.prepare("SELECT cred_data FROM credentials WHERE user_id = ?1")?;
-    let rows = stmt.query_map(params![user_id.to_string()], |row| {
-        row.get::<_, String>(0)
-    })?;
+    let mut stmt = conn.prepare("SELECT cred_data FROM credentials WHERE user_id = ?1")?;
+    let rows = stmt.query_map(params![user_id.to_string()], |row| row.get::<_, String>(0))?;
 
     let mut passkeys = Vec::new();
     for row in rows {

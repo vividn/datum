@@ -24,11 +24,7 @@ impl Db {
     /// `start_time`, falling back to `create_time`). Used by the renderer to
     /// decide whether a given entry is the first-ever write for its field
     /// (triggers the `∅` / sparkle first-tracked markers).
-    pub fn count_entries_before(
-        &self,
-        field: &str,
-        t: DateTime<Utc>,
-    ) -> Result<usize> {
+    pub fn count_entries_before(&self, field: &str, t: DateTime<Utc>) -> Result<usize> {
         let sql = format!(
             "SELECT COUNT(*) FROM entries
              WHERE field = ?1
@@ -36,11 +32,9 @@ impl Db {
                AND {} < ?2",
             time_expr_endbound(),
         );
-        let n: i64 = self.conn.query_row(
-            &sql,
-            params![field, t.to_rfc3339()],
-            |row| row.get(0),
-        )?;
+        let n: i64 = self
+            .conn
+            .query_row(&sql, params![field, t.to_rfc3339()], |row| row.get(0))?;
         Ok(n as usize)
     }
 
@@ -53,11 +47,11 @@ impl Db {
     ) -> Result<usize> {
         let (where_clause, bindings) = filtered_where(field, since);
         let sql = format!("SELECT COUNT(*) FROM entries WHERE {where_clause}");
-        let n: i64 = self.conn.query_row(
-            &sql,
-            rusqlite::params_from_iter(bindings.iter()),
-            |row| row.get(0),
-        )?;
+        let n: i64 =
+            self.conn
+                .query_row(&sql, rusqlite::params_from_iter(bindings.iter()), |row| {
+                    row.get(0)
+                })?;
         Ok(n as usize)
     }
 
@@ -77,14 +71,11 @@ impl Db {
              WHERE {where_clause} GROUP BY {col} ORDER BY n DESC, g ASC"
         );
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            |row| {
-                let key: Option<String> = row.get(0)?;
-                let n: i64 = row.get(1)?;
-                Ok((key.unwrap_or_else(|| "null".to_string()), n as usize))
-            },
-        )?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
+            let key: Option<String> = row.get(0)?;
+            let n: i64 = row.get(1)?;
+            Ok((key.unwrap_or_else(|| "null".to_string()), n as usize))
+        })?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 
@@ -111,10 +102,9 @@ impl Db {
             sql.push_str(&format!(" LIMIT {n}"));
         }
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            |row| row.get::<_, String>(0),
-        )?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
+            row.get::<_, String>(0)
+        })?;
         rows.map(|r| r.map_err(DatumError::Db)).collect()
     }
 

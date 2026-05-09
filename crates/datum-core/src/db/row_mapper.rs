@@ -51,18 +51,18 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     );
     let occur_time_precision: Option<String> = row.get("occur_time_precision")?;
 
-    let create_time: DateTime<Utc> = row
-        .get::<_, String>("create_time")?
-        .parse()
-        .map_err(|e: chrono::ParseError| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
-        })?;
-    let modify_time: DateTime<Utc> = row
-        .get::<_, String>("modify_time")?
-        .parse()
-        .map_err(|e: chrono::ParseError| {
-            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
-        })?;
+    let create_time: DateTime<Utc> =
+        row.get::<_, String>("create_time")?
+            .parse()
+            .map_err(|e: chrono::ParseError| {
+                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+            })?;
+    let modify_time: DateTime<Utc> =
+        row.get::<_, String>("modify_time")?
+            .parse()
+            .map_err(|e: chrono::ParseError| {
+                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+            })?;
     let deleted_at: Option<DateTime<Utc>> = row
         .get::<_, Option<String>>("deleted_at")?
         .and_then(|s| s.parse().ok());

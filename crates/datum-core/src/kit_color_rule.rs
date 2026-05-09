@@ -229,8 +229,7 @@ fn tokenise(src: &str) -> Result<Vec<Token>> {
             }
             c if c.is_ascii_digit() => {
                 let start = i;
-                while i < bytes.len()
-                    && (bytes[i] as char).is_ascii_digit()
+                while i < bytes.len() && (bytes[i] as char).is_ascii_digit()
                     || (i < bytes.len() && bytes[i] as char == '.')
                 {
                     i += 1;
@@ -302,8 +301,7 @@ impl Parser {
         let left = self.parse_atom()?;
         let op = match self.bump() {
             Some(Token {
-                kind: Tok::Cmp(op),
-                ..
+                kind: Tok::Cmp(op), ..
             }) => op,
             other => {
                 return Err(DatumError::Other(format!(

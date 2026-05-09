@@ -140,10 +140,8 @@ editor = "nvim"
     let cfg = Config::load(Some("/flag/path.db")).unwrap();
 
     let rows = cfg.rows();
-    let by_key: std::collections::HashMap<_, _> = rows
-        .iter()
-        .map(|(k, v, s)| (*k, (v.clone(), *s)))
-        .collect();
+    let by_key: std::collections::HashMap<_, _> =
+        rows.iter().map(|(k, v, s)| (*k, (v.clone(), *s))).collect();
 
     assert_eq!(by_key["db_path"].1, Source::Flag);
     assert_eq!(by_key["db_path"].0, "/flag/path.db");
@@ -207,7 +205,9 @@ fn toml_parse_error_surfaces() {
     let err = config::load_toml_config(&bad).unwrap_err();
     assert!(
         err.to_string().contains("Parsing config")
-            || err.chain().any(|e| e.to_string().to_lowercase().contains("toml")),
+            || err
+                .chain()
+                .any(|e| e.to_string().to_lowercase().contains("toml")),
         "expected a parse-context error, got: {err:#}"
     );
 }

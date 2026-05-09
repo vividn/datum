@@ -1,16 +1,17 @@
+use crate::{
+    db,
+    error::AppError,
+    jwt,
+    models::{
+        AuthToken, LoginBeginRequest, LoginBeginResponse, LoginFinishRequest, RefreshTokenRequest,
+        RegisterBeginRequest, RegisterBeginResponse, RegisterFinishRequest,
+    },
+    refresh, AppState,
+};
 use axum::{extract::State, Json};
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
-use crate::{
-    db, error::AppError, jwt, refresh,
-    models::{
-        AuthToken, LoginBeginRequest, LoginBeginResponse, LoginFinishRequest,
-        RefreshTokenRequest, RegisterBeginRequest, RegisterBeginResponse,
-        RegisterFinishRequest,
-    },
-    AppState,
-};
 
 pub async fn register_begin(
     State(state): State<Arc<AppState>>,
@@ -26,9 +27,12 @@ pub async fn register_begin(
 
         let display_name = req.display_name.as_deref().unwrap_or(&req.username);
 
-        let (ccr, reg_state) = state
-            .webauthn
-            .start_passkey_registration(user_id, &req.username, display_name, None)?;
+        let (ccr, reg_state) = state.webauthn.start_passkey_registration(
+            user_id,
+            &req.username,
+            display_name,
+            None,
+        )?;
 
         state
             .reg_states
@@ -49,8 +53,7 @@ pub async fn register_finish(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RegisterFinishRequest>,
 ) -> Result<Json<AuthToken>, AppError> {
-    let user_id = Uuid::parse_str(&req.user_id)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let user_id = Uuid::parse_str(&req.user_id).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let reg_state = state
         .reg_states
@@ -86,8 +89,7 @@ pub async fn login_begin(
     let (user_id, rcr) = {
         let conn = state.db.lock().unwrap();
 
-        let user_id = db::get_user_by_username(&conn, &req.username)?
-            .ok_or(AppError::NotFound)?;
+        let user_id = db::get_user_by_username(&conn, &req.username)?.ok_or(AppError::NotFound)?;
 
         let passkeys = db::get_passkeys(&conn, &user_id)?;
         if passkeys.is_empty() {
@@ -96,9 +98,7 @@ pub async fn login_begin(
             ));
         }
 
-        let (rcr, auth_state) = state
-            .webauthn
-            .start_passkey_authentication(&passkeys)?;
+        let (rcr, auth_state) = state.webauthn.start_passkey_authentication(&passkeys)?;
 
         state
             .auth_states
@@ -119,8 +119,7 @@ pub async fn login_finish(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginFinishRequest>,
 ) -> Result<Json<AuthToken>, AppError> {
-    let user_id = Uuid::parse_str(&req.user_id)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let user_id = Uuid::parse_str(&req.user_id).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let auth_state = state
         .auth_states

@@ -28,7 +28,8 @@ pub fn derive(field: &str, id_values: &[String], fallback_time: Option<&DatumTim
         .collect();
 
     if !joined.is_empty() {
-        let mut out = String::with_capacity(field.len() + joined.iter().map(|s| s.len() + 2).sum::<usize>());
+        let mut out =
+            String::with_capacity(field.len() + joined.iter().map(|s| s.len() + 2).sum::<usize>());
         out.push_str(field);
         out.push(':');
         out.push_str(&joined.join("__"));
@@ -50,7 +51,11 @@ mod tests {
 
     fn fixed_time() -> DatumTime {
         let utc = Utc.with_ymd_and_hms(2024, 3, 16, 9, 15, 0).unwrap();
-        DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+        DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        }
     }
 
     #[test]

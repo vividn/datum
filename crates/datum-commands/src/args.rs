@@ -36,10 +36,9 @@ pub use pcli::{
     ConflictsResolveArgs, ConflictsShowArgs, CountArgs, DayviewArgs, DbCommand, DbImportArgs,
     DbPurgeArgs, DeleteArgs, EditArgs, GetArgs, GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs,
     InfoArgs, KitCommand, KitExportArgs, KitInstallArgs, KitUninstallArgs, LogArgs, MigrateCommand,
-    NowArgs, NowviewArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand,
-    SpecSetArgs, SyncArgs, SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand,
-    SyncLoginArgs, SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat,
-    WhyArgs,
+    NowArgs, NowviewArgs, RestoreArgs, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, SyncArgs,
+    SyncCommand, SyncConfigCommand, SyncInstallDaemonArgs, SyncKeyCommand, SyncLoginArgs,
+    SyncStatusArgs, TailArgs, TrackArgs, UndoArgs, UpdateArgs, ViewArgs, ViewFormat, WhyArgs,
 };
 
 // ─── Intent context (provenance for the current invocation) ──────────────

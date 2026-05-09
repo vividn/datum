@@ -52,11 +52,7 @@ fn print_info_all() -> Result<()> {
 
 fn print_info_for_path(name: Option<&str>, path: &std::path::Path) -> Result<()> {
     if !path.exists() {
-        println!(
-            "{}  {}",
-            name.unwrap_or(""),
-            config::display_path(path)
-        );
+        println!("{}  {}", name.unwrap_or(""), config::display_path(path));
         println!("  schema:   ✗ (missing)");
         return Ok(());
     }
@@ -64,11 +60,7 @@ fn print_info_for_path(name: Option<&str>, path: &std::path::Path) -> Result<()>
     let db = match datum_core::db::Db::open(&path_str) {
         Ok(db) => db,
         Err(e) => {
-            println!(
-                "{}  {}",
-                name.unwrap_or(""),
-                config::display_path(path)
-            );
+            println!("{}  {}", name.unwrap_or(""), config::display_path(path));
             println!("  schema:   ✗ ({e})");
             return Ok(());
         }
@@ -76,16 +68,8 @@ fn print_info_for_path(name: Option<&str>, path: &std::path::Path) -> Result<()>
     print_info_block(name, path, Some(&db))
 }
 
-fn print_info_block(
-    name: Option<&str>,
-    path: &std::path::Path,
-    db: Option<&Db>,
-) -> Result<()> {
-    println!(
-        "{}  {}",
-        name.unwrap_or(""),
-        config::display_path(path)
-    );
+fn print_info_block(name: Option<&str>, path: &std::path::Path, db: Option<&Db>) -> Result<()> {
+    println!("{}  {}", name.unwrap_or(""), config::display_path(path));
     let Some(db) = db else {
         println!("  schema:   ? (not opened)");
         return Ok(());
@@ -99,10 +83,10 @@ fn print_info_block(
         Some(_) => ("✗", format!("newer than binary (v{current})")),
         None => ("⚠", "unversioned (run `datum db setup`)".to_string()),
     };
-    let version_str = stored.map(|v| format!("v{v}")).unwrap_or_else(|| "?".into());
-    println!(
-        "  schema:   {version_str} {schema_glyph} ({schema_note})"
-    );
+    let version_str = stored
+        .map(|v| format!("v{v}"))
+        .unwrap_or_else(|| "?".into());
+    println!("  schema:   {version_str} {schema_glyph} ({schema_note})");
 
     let live = db.count_entries().unwrap_or(0);
     let deleted = count_tombstones(db).unwrap_or(0);
@@ -110,7 +94,11 @@ fn print_info_block(
 
     let tracked = db.get_tracked_fields().unwrap_or_default();
     let (t_count, i_count) = tracked.iter().fold((0usize, 0usize), |(t, i), f| {
-        if f.ignored { (t, i + 1) } else { (t + 1, i) }
+        if f.ignored {
+            (t, i + 1)
+        } else {
+            (t + 1, i)
+        }
     });
     println!("  fields:   {t_count} tracked, {i_count} ignored");
 

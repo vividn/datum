@@ -249,7 +249,11 @@ pub fn resolve_timezone(spec: &str) -> Result<String> {
         let name = if hours == 0 {
             "UTC".to_string()
         } else {
-            format!("Etc/GMT{}{}", if hours > 0 { '-' } else { '+' }, hours.abs())
+            format!(
+                "Etc/GMT{}{}",
+                if hours > 0 { '-' } else { '+' },
+                hours.abs()
+            )
         };
         return validate_tz_name(&name);
     }
@@ -263,7 +267,11 @@ pub fn resolve_timezone(spec: &str) -> Result<String> {
             let name = if hours == 0 {
                 "UTC".to_string()
             } else {
-                format!("Etc/GMT{}{}", if hours > 0 { '-' } else { '+' }, hours.abs())
+                format!(
+                    "Etc/GMT{}{}",
+                    if hours > 0 { '-' } else { '+' },
+                    hours.abs()
+                )
             };
             return validate_tz_name(&name);
         }
@@ -302,7 +310,11 @@ fn rebase_to_timezone(mut t: DatumTime, tz_name: &str) -> Result<DatumTime> {
 
 // ─── time/date application ──────────────────────────────────────────────
 
-fn apply_time_arg(cur: DatumTime, s: &str, uncertainty: &mut Option<Uncertainty>) -> Result<DatumTime> {
+fn apply_time_arg(
+    cur: DatumTime,
+    s: &str,
+    uncertainty: &mut Option<Uncertainty>,
+) -> Result<DatumTime> {
     // Try daydumb's structured parser first.
     if let Ok(arg) = parse_time_arg(s) {
         if let Some(u) = arg.uncertainty {
@@ -314,7 +326,10 @@ fn apply_time_arg(cur: DatumTime, s: &str, uncertainty: &mut Option<Uncertainty>
         // the literal's instant. Direction marker is meaningless on a
         // pinned instant — silently ignored.
         if let Some(instant) = arg.iso_instant {
-            return Ok(DatumTime { utc: instant, ..cur });
+            return Ok(DatumTime {
+                utc: instant,
+                ..cur
+            });
         }
         // ISO-8601 with no zone suffix (`2024-03-16T15:30:00`) — interpret
         // as local-in-the-current-effective-zone (i.e. `cur.timezone`,

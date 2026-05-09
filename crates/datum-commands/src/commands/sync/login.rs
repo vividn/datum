@@ -114,9 +114,7 @@ pub fn load_token(server: &str) -> Result<Option<AuthToken>> {
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = std::fs::read(&path)
-        .with_context(|| format!("read token at {path:?}"))?;
-    let token: AuthToken =
-        serde_json::from_slice(&bytes).context("parse stored auth token")?;
+    let bytes = std::fs::read(&path).with_context(|| format!("read token at {path:?}"))?;
+    let token: AuthToken = serde_json::from_slice(&bytes).context("parse stored auth token")?;
     Ok(Some(token))
 }

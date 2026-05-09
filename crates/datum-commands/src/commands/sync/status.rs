@@ -23,9 +23,7 @@ use datum_sync_client::sync_state;
 use crate::args::SyncStatusArgs;
 use crate::commands::sync::daemon_status;
 use crate::commands::sync::key::load_token;
-use crate::config::{
-    db_path, load_raw_config_or_default, resolve_db, resolve_sync_server,
-};
+use crate::config::{db_path, load_raw_config_or_default, resolve_db, resolve_sync_server};
 
 pub fn run(args: SyncStatusArgs) -> Result<()> {
     let cfg = load_raw_config_or_default()?;
@@ -80,9 +78,9 @@ fn daemon_line() -> String {
 }
 
 fn active_db_name() -> Option<String> {
-    std::env::var("DATUM_DB").ok().filter(|v| {
-        !v.is_empty() && !crate::config::looks_like_path(v)
-    })
+    std::env::var("DATUM_DB")
+        .ok()
+        .filter(|v| !v.is_empty() && !crate::config::looks_like_path(v))
 }
 
 /// Compose the `<name>  ↑ <ts>  ↓ <ts>  <flag>` line for a single DB.

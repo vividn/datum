@@ -17,9 +17,7 @@
 
 use anyhow::Context;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use datum_sync_protocol::messages::sync::{
-    Changeset as WireChangeset, PushRequest, PushResponse,
-};
+use datum_sync_protocol::messages::sync::{Changeset as WireChangeset, PushRequest, PushResponse};
 use reqwest::blocking::Client;
 
 use crate::http::error::HttpError;
@@ -125,7 +123,10 @@ pub fn pull_batch(
         let payload = URL_SAFE_NO_PAD
             .decode(row.payload_b64.as_bytes())
             .with_context(|| {
-                format!("decode payload_b64 for seq {} from {}", row.seq, row.device_id)
+                format!(
+                    "decode payload_b64 for seq {} from {}",
+                    row.seq, row.device_id
+                )
             })
             .map_err(HttpError::other)?;
         out.push(PulledChangeset {

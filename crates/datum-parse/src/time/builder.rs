@@ -192,7 +192,11 @@ impl TimeBuilder {
             }
             let utc = dt.with_timezone(&Utc);
             let offset_minutes = dt.offset().fix().local_minus_utc() / 60;
-            return DatumTime { utc, offset_minutes, timezone: tz_name.to_string() };
+            return DatumTime {
+                utc,
+                offset_minutes,
+                timezone: tz_name.to_string(),
+            };
         }
 
         // Local-zone path: same precedence — ISO overrides win over "now".
@@ -241,7 +245,11 @@ impl TimeBuilder {
         let utc = dt.with_timezone(&Utc);
         let offset_minutes = dt.offset().local_minus_utc() / 60;
         let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
-        DatumTime { utc, offset_minutes, timezone }
+        DatumTime {
+            utc,
+            offset_minutes,
+            timezone,
+        }
     }
 }
 
@@ -253,16 +261,13 @@ impl TimeBuilder {
 /// — they're rare, and silently shifting the user's input by an hour is
 /// worse than failing loudly.
 #[cfg(feature = "native")]
-fn resolve_naive_in_tz(
-    naive: NaiveDateTime,
-    tz: chrono_tz::Tz,
-) -> chrono::DateTime<chrono_tz::Tz> {
+fn resolve_naive_in_tz(naive: NaiveDateTime, tz: chrono_tz::Tz) -> chrono::DateTime<chrono_tz::Tz> {
     use chrono::offset::LocalResult;
     match naive.and_local_timezone(tz) {
         LocalResult::Single(dt) => dt,
         LocalResult::Ambiguous(earlier, _later) => earlier,
-        LocalResult::None => panic!(
-            "TimeBuilder: ISO-8601 wall clock {naive} does not exist in {tz} (DST gap)"
-        ),
+        LocalResult::None => {
+            panic!("TimeBuilder: ISO-8601 wall clock {naive} does not exist in {tz} (DST gap)")
+        }
     }
 }

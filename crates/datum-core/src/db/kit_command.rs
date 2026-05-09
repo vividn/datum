@@ -52,9 +52,9 @@ pub struct InstallCommandsReport {
 
 impl InstallCommandsReport {
     pub fn installed(&self) -> impl Iterator<Item = &str> {
-        self.outcomes
-            .iter()
-            .filter_map(|(name, o)| matches!(o, KitCommandOutcome::Installed).then(|| name.as_str()))
+        self.outcomes.iter().filter_map(|(name, o)| {
+            matches!(o, KitCommandOutcome::Installed).then(|| name.as_str())
+        })
     }
 
     pub fn skipped(&self) -> impl Iterator<Item = &str> {
@@ -239,7 +239,10 @@ impl Db {
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(DatumError::Db)?;
         drop(stmt);
-        tx.execute("DELETE FROM kit_commands WHERE kit_id = ?1", params![kit_id])?;
+        tx.execute(
+            "DELETE FROM kit_commands WHERE kit_id = ?1",
+            params![kit_id],
+        )?;
         tx.commit()?;
         Ok(names)
     }

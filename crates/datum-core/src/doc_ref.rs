@@ -44,7 +44,9 @@ pub fn parse_ref(s: &str) -> Option<(&str, &str)> {
 /// `[A-Za-z0-9_-]`.
 fn is_field_ident(s: &str) -> bool {
     let mut chars = s.chars();
-    let Some(first) = chars.next() else { return false };
+    let Some(first) = chars.next() else {
+        return false;
+    };
     if !(first.is_ascii_alphabetic() || first == '_') {
         return false;
     }
@@ -114,9 +116,6 @@ mod tests {
     #[test]
     fn id_with_colons_permitted() {
         // Namespaced-id case — everything after the first ':' is the id.
-        assert_eq!(
-            parse_ref("book:series:dune"),
-            Some(("book", "series:dune")),
-        );
+        assert_eq!(parse_ref("book:series:dune"), Some(("book", "series:dune")),);
     }
 }

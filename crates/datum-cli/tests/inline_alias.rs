@@ -57,7 +57,10 @@ fn alias_flag_collides_without_overwrite() {
     );
 
     // The original alias body is still in place — overwrite did not happen.
-    let alias = db.lookup_alias("cof").unwrap().expect("alias still present");
+    let alias = db
+        .lookup_alias("cof")
+        .unwrap()
+        .expect("alias still present");
     assert_eq!(alias.expands_to, "occur coffee");
 }
 

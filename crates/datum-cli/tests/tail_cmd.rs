@@ -74,19 +74,19 @@ fn sample_morning(db: &Db) -> Vec<Entry> {
     // All timestamps are unique to avoid ULID tie-breakers inside a single
     // millisecond (insertion order ≠ random-byte order).
     let script: &[(i64, &str, Verb)] = &[
-        (7 * 60, "caffeine", Verb::Point),            // 07:00 [0] — dropped
-        (7 * 60 + 30, "stretch", Verb::Switch),        // 07:30 [1] — dropped
-        (8 * 60, "stretch", Verb::Switch),              // 08:00 [2] — dropped
-        (10 * 60 + 7, "run", Verb::Switch),             // 10:07 [3] — first of last-10
-        (10 * 60 + 15, "stretch", Verb::Switch),       // 10:15 [4]
-        (10 * 60 + 16, "environment", Verb::Switch),  // 10:16 [5]
-        (10 * 60 + 18, "pushup", Verb::Point),        // 10:18 [6]
-        (10 * 60 + 30, "stretch", Verb::Switch),        // 10:30 [7]
-        (10 * 60 + 50, "environment", Verb::Switch),  // 10:50 [8]
-        (11 * 60, "caffeine", Verb::Point),           // 11:00 [9]
-        (11 * 60 + 1, "project", Verb::Switch),       // 11:01 [10]
-        (11 * 60 + 30, "project", Verb::Switch),      // 11:30 [11]
-        (11 * 60 + 45, "project", Verb::Switch),        // 11:45 [12] — last
+        (7 * 60, "caffeine", Verb::Point),           // 07:00 [0] — dropped
+        (7 * 60 + 30, "stretch", Verb::Switch),      // 07:30 [1] — dropped
+        (8 * 60, "stretch", Verb::Switch),           // 08:00 [2] — dropped
+        (10 * 60 + 7, "run", Verb::Switch),          // 10:07 [3] — first of last-10
+        (10 * 60 + 15, "stretch", Verb::Switch),     // 10:15 [4]
+        (10 * 60 + 16, "environment", Verb::Switch), // 10:16 [5]
+        (10 * 60 + 18, "pushup", Verb::Point),       // 10:18 [6]
+        (10 * 60 + 30, "stretch", Verb::Switch),     // 10:30 [7]
+        (10 * 60 + 50, "environment", Verb::Switch), // 10:50 [8]
+        (11 * 60, "caffeine", Verb::Point),          // 11:00 [9]
+        (11 * 60 + 1, "project", Verb::Switch),      // 11:01 [10]
+        (11 * 60 + 30, "project", Verb::Switch),     // 11:30 [11]
+        (11 * 60 + 45, "project", Verb::Switch),     // 11:45 [12] — last
     ];
     script
         .iter()
@@ -144,7 +144,16 @@ fn tail_metric_occur_vs_modify() {
         "d1",
     );
     // Entry with no time_start (a note) — only `modify` / `hybrid` include it.
-    let no_time = Entry::new("b", Verb::Point, Some(json!("x")), None, None, None, None, "d1");
+    let no_time = Entry::new(
+        "b",
+        Verb::Point,
+        Some(json!("x")),
+        None,
+        None,
+        None,
+        None,
+        "d1",
+    );
     db.insert_entry(&with_time).unwrap();
     db.insert_entry(&no_time).unwrap();
 
@@ -452,7 +461,10 @@ fn t11_default_includes_future_entries() {
     let got = tail_entries(&tail_args(), &db).unwrap();
     let ids: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
     assert!(ids.contains(&past.slug));
-    assert!(ids.contains(&future.slug), "default tail should include future");
+    assert!(
+        ids.contains(&future.slug),
+        "default tail should include future"
+    );
 }
 
 #[test]
@@ -489,7 +501,10 @@ fn t12_t_now_excludes_future() {
         })
         .unwrap();
     let ids: Vec<_> = got.iter().map(|e| e.slug.clone()).collect();
-    assert!(!ids.contains(&future_entry.slug), "`-t now` must exclude future");
+    assert!(
+        !ids.contains(&future_entry.slug),
+        "`-t now` must exclude future"
+    );
 }
 
 #[test]
@@ -529,7 +544,16 @@ fn t14_timezone_aware_day_window() {
         offset_minutes: 13 * 60,
         timezone: "Pacific/Auckland".to_string(),
     };
-    let e = Entry::new("a", Verb::Point, Some(json!(1)), None, None, Some(t), None, "d1");
+    let e = Entry::new(
+        "a",
+        Verb::Point,
+        Some(json!(1)),
+        None,
+        None,
+        Some(t),
+        None,
+        "d1",
+    );
     db.insert_entry(&e).unwrap();
 
     let mut args = tail_args();
@@ -579,7 +603,13 @@ fn t16_date_plus_n_takes_last_n_on_day() {
     let limited = tail_entries(&args_n, &db).unwrap();
     assert_eq!(limited.len(), 5);
     // Last 5 from the full list, preserving oldest-first order.
-    let expected_tail: Vec<_> = all.iter().rev().take(5).rev().map(|e| e.slug.clone()).collect();
+    let expected_tail: Vec<_> = all
+        .iter()
+        .rev()
+        .take(5)
+        .rev()
+        .map(|e| e.slug.clone())
+        .collect();
     let got_ids: Vec<_> = limited.iter().map(|e| e.slug.clone()).collect();
     assert_eq!(got_ids, expected_tail);
 }
@@ -682,5 +712,8 @@ fn tail_watch_flag_parses_with_and_without_interval() {
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn v_as_i64(e: &Entry) -> i64 {
-    e.state.as_ref().and_then(|v| v.as_i64()).expect("int value")
+    e.state
+        .as_ref()
+        .and_then(|v| v.as_i64())
+        .expect("int value")
 }

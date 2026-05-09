@@ -47,13 +47,9 @@ pub enum RefreshOutcome {
 /// refresh 401 can be recovered.
 #[derive(Debug, thiserror::Error)]
 pub enum SessionError {
-    #[error(
-        "session expired — run `datum sync login` again (refresh token rejected)"
-    )]
+    #[error("session expired — run `datum sync login` again (refresh token rejected)")]
     SessionExpired,
-    #[error(
-        "session expired — run `datum sync login` again (no refresh token persisted)"
-    )]
+    #[error("session expired — run `datum sync login` again (no refresh token persisted)")]
     NoRefreshToken,
     #[error(transparent)]
     Other(#[from] anyhow::Error),

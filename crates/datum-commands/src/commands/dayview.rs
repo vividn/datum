@@ -23,8 +23,8 @@ use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{is_switching_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_layout::dayview::{
-    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
-    DayviewFieldInput, DayviewPoint, Orientation,
+    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput,
+    DayviewPoint, Orientation,
 };
 use datum_layout::dayview_svg::{render_dayview_svg, wrap_dayview_svg_in_html};
 use datum_parse::cli::DayviewOrientation;
@@ -46,11 +46,9 @@ pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
         // Re-render whenever an external `datum` write bumps the SQLite
         // data_version (≈500ms latency), with a 60s periodic refresh
         // so the now-line still advances on an idle DB.
-        crate::commands::watch::watch_loop(
-            db,
-            std::time::Duration::from_secs(60),
-            || render_once(&args, db),
-        )
+        crate::commands::watch::watch_loop(db, std::time::Duration::from_secs(60), || {
+            render_once(&args, db)
+        })
     } else {
         render_once(&args, db)
     }
@@ -60,8 +58,9 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     // 1. Resolve the visible day window.
     let today = Local::now().date_naive();
     let end_date = match args.end_date.as_deref() {
-        Some(s) => resolve_date_arg(s, today)
-            .with_context(|| format!("invalid --end-date: '{s}'"))?,
+        Some(s) => {
+            resolve_date_arg(s, today).with_context(|| format!("invalid --end-date: '{s}'"))?
+        }
         None => today,
     };
 
@@ -73,10 +72,7 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
                 .with_context(|| format!("invalid --start-date: '{start_str}'"))?;
             let diff = (end_date - start).num_days() + 1;
             if diff < 1 {
-                anyhow::bail!(
-                    "--start-date {} is after --end-date {}",
-                    start, end_date
-                );
+                anyhow::bail!("--start-date {} is after --end-date {}", start, end_date);
             }
             let derived = diff as u32;
             if let Some(n) = explicit_n {
@@ -151,7 +147,9 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
     let day_height = match orientation {
         Orientation::Horizontal => match (args.height, args.day_height) {
             (Some(total), None) => {
-                let usable = total - 2.0 * args.margin - args.time_axis_height
+                let usable = total
+                    - 2.0 * args.margin
+                    - args.time_axis_height
                     - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
                 if usable <= 0.0 || n_days == 0 {
                     day_height_default
@@ -163,7 +161,9 @@ fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
         },
         Orientation::Vertical => match (args.width, args.day_height) {
             (Some(total), None) => {
-                let usable = total - 2.0 * args.margin - args.time_axis_height
+                let usable = total
+                    - 2.0 * args.margin
+                    - args.time_axis_height
                     - (n_days - 1) as f64 * DEFAULT_INTERDAY_MARGIN;
                 if usable <= 0.0 || n_days == 0 {
                     day_height_default
@@ -247,9 +247,7 @@ fn write_payload(path: Option<&str>, body: &str, kind: OutputKind) -> Result<()>
                  path instead (got: {path})"
             );
         }
-        _ => anyhow::bail!(
-            "output file must end in .svg, .png, .html, or .json: {path}"
-        ),
+        _ => anyhow::bail!("output file must end in .svg, .png, .html, or .json: {path}"),
     }
     Ok(())
 }
@@ -270,9 +268,7 @@ fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
         let fallback = fontdb.faces().next().and_then(|face| {
             face.families
                 .iter()
-                .find(|(_, lang)| {
-                    *lang == resvg::usvg::fontdb::Language::English_UnitedStates
-                })
+                .find(|(_, lang)| *lang == resvg::usvg::fontdb::Language::English_UnitedStates)
                 .or_else(|| face.families.first())
                 .map(|(name, _)| name.clone())
         });
@@ -290,7 +286,11 @@ fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
     let size = tree.size().to_int_size();
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
         .ok_or_else(|| anyhow::anyhow!("allocate pixmap {}x{}", size.width(), size.height()))?;
-    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
     pixmap
         .encode_png()
         .map_err(|e| anyhow::anyhow!("encode PNG: {e}"))
@@ -337,9 +337,18 @@ fn format_day_label(date: NaiveDate) -> Vec<String> {
         chrono::Weekday::Sun => "Sun",
     };
     let month = match date.month() {
-        1 => "Jan", 2 => "Feb", 3 => "Mar", 4 => "Apr",
-        5 => "May", 6 => "Jun", 7 => "Jul", 8 => "Aug",
-        9 => "Sep", 10 => "Oct", 11 => "Nov", _ => "Dec",
+        1 => "Jan",
+        2 => "Feb",
+        3 => "Mar",
+        4 => "Apr",
+        5 => "May",
+        6 => "Jun",
+        7 => "Jul",
+        8 => "Aug",
+        9 => "Sep",
+        10 => "Oct",
+        11 => "Nov",
+        _ => "Dec",
     };
     vec![
         weekday.to_string(),
@@ -362,9 +371,13 @@ fn build_day_fields(
     day_end_ms: i64,
     now_ms: i64,
 ) -> Result<Vec<DayviewFieldInput>> {
-    let day_start_utc = Utc.timestamp_millis_opt(day_start_ms).single()
+    let day_start_utc = Utc
+        .timestamp_millis_opt(day_start_ms)
+        .single()
         .context("day_start_ms out of range")?;
-    let day_end_utc = Utc.timestamp_millis_opt(day_end_ms).single()
+    let day_end_utc = Utc
+        .timestamp_millis_opt(day_end_ms)
+        .single()
         .context("day_end_ms out of range")?;
 
     // Pull every entry whose hybrid time intersects this day. We include
@@ -405,8 +418,7 @@ fn build_day_fields(
         // walk the list in order.
         entries_for_field.sort_by_key(occur_time_ms);
         let fallback_end_ms = day_end_ms.min(now_ms);
-        let switch_region_ends =
-            switch_region_end_ms(&entries_for_field, fallback_end_ms);
+        let switch_region_ends = switch_region_end_ms(&entries_for_field, fallback_end_ms);
 
         let (blocks, points) = render_field_visuals_dayview(
             &entries_for_field,
@@ -655,9 +667,7 @@ fn render_field_visuals_dayview(
                 }
                 let fg = field_rgb(field, spec);
                 let bg = match db.state_at(field, occur_dt.utc).unwrap_or(None) {
-                    Some(v) => {
-                        state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK)
-                    }
+                    Some(v) => state_value_rgb(&v, field, spec).unwrap_or(Rgb::BLACK),
                     None => Rgb::BLACK,
                 };
                 points.push(DayviewPoint {
@@ -754,8 +764,12 @@ mod tests {
     #[cfg(not(feature = "png"))]
     #[test]
     fn png_output_without_feature_returns_friendly_error() {
-        let err = write_payload(Some("/tmp/datum-feature-gate-check.png"), "<svg/>", OutputKind::Svg)
-            .expect_err("expected friendly error when png feature is off");
+        let err = write_payload(
+            Some("/tmp/datum-feature-gate-check.png"),
+            "<svg/>",
+            OutputKind::Svg,
+        )
+        .expect_err("expected friendly error when png feature is off");
         let msg = err.to_string();
         assert!(msg.contains("png"), "missing 'png' in error: {msg}");
         assert!(msg.contains("feature"), "missing 'feature' in error: {msg}");
@@ -763,7 +777,14 @@ mod tests {
 
     #[test]
     fn rgb_to_hex_lowercase_six_digit() {
-        assert_eq!(rgb_to_hex(Rgb { r: 0xab, g: 0x12, b: 0xcd }), "#ab12cd");
+        assert_eq!(
+            rgb_to_hex(Rgb {
+                r: 0xab,
+                g: 0x12,
+                b: 0xcd
+            }),
+            "#ab12cd"
+        );
         assert_eq!(rgb_to_hex(Rgb { r: 0, g: 0, b: 0 }), "#000000");
     }
 
@@ -918,9 +939,18 @@ mod tests {
         );
         // Three regions, end-to-end.
         assert_eq!(mood.blocks.len(), 3);
-        let t8 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap().timestamp_millis();
-        let t12 = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
-        let t16 = Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0).unwrap().timestamp_millis();
+        let t8 = Utc
+            .with_ymd_and_hms(2026, 4, 27, 8, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let t12 = Utc
+            .with_ymd_and_hms(2026, 4, 27, 12, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let t16 = Utc
+            .with_ymd_and_hms(2026, 4, 27, 16, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         assert_eq!(mood.blocks[0].start_ms, t8);
         assert_eq!(mood.blocks[0].end_ms, t12);
         assert_eq!(mood.blocks[1].start_ms, t12);
@@ -960,8 +990,14 @@ mod tests {
         ] {
             db.insert_entry(&e).unwrap();
         }
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
 
         let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         assert_eq!(fields.len(), 1);
@@ -969,9 +1005,18 @@ mod tests {
         // Two regions: 8-12 (happy) and 16-day_end (focus). The false-switch
         // at 12 produces no region, just terminates the previous one.
         assert_eq!(mood.blocks.len(), 2);
-        let t8 = Utc.with_ymd_and_hms(2026, 4, 27, 8, 0, 0).unwrap().timestamp_millis();
-        let t12 = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
-        let t16 = Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0).unwrap().timestamp_millis();
+        let t8 = Utc
+            .with_ymd_and_hms(2026, 4, 27, 8, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let t12 = Utc
+            .with_ymd_and_hms(2026, 4, 27, 12, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let t16 = Utc
+            .with_ymd_and_hms(2026, 4, 27, 16, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         assert_eq!(mood.blocks[0].start_ms, t8);
         assert_eq!(mood.blocks[0].end_ms, t12);
         assert_eq!(mood.blocks[1].start_ms, t16);
@@ -1004,10 +1049,19 @@ mod tests {
         ))
         .unwrap();
 
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         // "now" lands inside the day window at 14:00.
-        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 14, 0, 0).unwrap().timestamp_millis();
+        let now_ms = Utc
+            .with_ymd_and_hms(2026, 4, 27, 14, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let t8 = utc8.timestamp_millis();
 
         let fields = build_day_fields(&db, day_start, day_end, now_ms).unwrap();
@@ -1043,10 +1097,19 @@ mod tests {
         ))
         .unwrap();
 
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         // "now" is days later — this day is entirely in the past.
-        let now_ms = Utc.with_ymd_and_hms(2026, 5, 5, 12, 0, 0).unwrap().timestamp_millis();
+        let now_ms = Utc
+            .with_ymd_and_hms(2026, 5, 5, 12, 0, 0)
+            .unwrap()
+            .timestamp_millis();
 
         let fields = build_day_fields(&db, day_start, day_end, now_ms).unwrap();
         let mood = &fields[0];
@@ -1149,8 +1212,14 @@ mod tests {
         ))
         .unwrap();
 
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         assert!(
             fields.iter().all(|f| f.field != "stretch_routine"),
@@ -1228,8 +1297,14 @@ mod tests {
         ))
         .unwrap();
 
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let fields = build_day_fields(&db, day_start, day_end, day_end).unwrap();
         let alarm = fields
             .iter()
@@ -1290,14 +1365,23 @@ mod tests {
             Some(JsonValue::String("eating".into())),
             None,
         )];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
             render_field_visuals_dayview(&entries, "lunch", None, day_start, day_end, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].start_ms, occur.timestamp_millis() - 30 * 60 * 1000);
+        assert_eq!(
+            blocks[0].start_ms,
+            occur.timestamp_millis() - 30 * 60 * 1000
+        );
         assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
         assert_eq!(blocks[0].state_label.as_deref(), Some("eating"));
     }
@@ -1319,8 +1403,14 @@ mod tests {
             Some(JsonValue::String("dozing".into())),
             None,
         )];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 29, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 29, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, _points) =
             render_field_visuals_dayview(&entries, "sleep", None, day_start, day_end, &ends, &db);
@@ -1349,15 +1439,24 @@ mod tests {
             Some(JsonValue::String("groggy".into())),
             Some(JsonValue::String("focused".into())),
         )];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
             render_field_visuals_dayview(&entries, "mood", None, day_start, day_end, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 2);
         // Block: [occur - 1h, occur] colored "groggy".
-        assert_eq!(blocks[0].start_ms, occur.timestamp_millis() - 60 * 60 * 1000);
+        assert_eq!(
+            blocks[0].start_ms,
+            occur.timestamp_millis() - 60 * 60 * 1000
+        );
         assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
         assert_eq!(blocks[0].state_label.as_deref(), Some("groggy"));
         // Following region: [occur, day_end] colored "focused".
@@ -1387,8 +1486,14 @@ mod tests {
             Some(JsonValue::String("commit".into())),
             Some(JsonValue::String("review".into())),
         )];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
             render_field_visuals_dayview(&entries, "task", None, day_start, day_end, &ends, &db);
@@ -1430,8 +1535,14 @@ mod tests {
                 None,
             ),
         ];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, _points) =
             render_field_visuals_dayview(&entries, "mood", None, day_start, day_end, &ends, &db);
@@ -1462,8 +1573,14 @@ mod tests {
             Some(JsonValue::String("hungry".into())),
             Some(JsonValue::Bool(false)),
         )];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
             render_field_visuals_dayview(&entries, "mood", None, day_start, day_end, &ends, &db);
@@ -1482,7 +1599,14 @@ mod tests {
         let t2 = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap();
         let t3 = Utc.with_ymd_and_hms(2026, 4, 27, 16, 0, 0).unwrap();
         let entries = vec![
-            stub_entry("f", Verb::Switch, t1, None, Some(JsonValue::String("a".into())), None),
+            stub_entry(
+                "f",
+                Verb::Switch,
+                t1,
+                None,
+                Some(JsonValue::String("a".into())),
+                None,
+            ),
             stub_entry(
                 "f",
                 Verb::BlockSwitch,
@@ -1500,7 +1624,10 @@ mod tests {
                 Some(JsonValue::String("c".into())),
             ),
         ];
-        let fallback = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let fallback = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, fallback);
         assert_eq!(ends[0], t2.timestamp_millis());
         assert_eq!(ends[1], t3.timestamp_millis());

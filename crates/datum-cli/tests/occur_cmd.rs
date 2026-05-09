@@ -45,13 +45,21 @@ fn occur_creates_entry_with_time_start() {
     // the verb to Point regardless of state shape.
     assert_entry_matches!(entry, field: "field", verb: "point");
 
-    let ts = entry.occur_time.as_ref().expect("occur sets occur_time").utc;
+    let ts = entry
+        .occur_time
+        .as_ref()
+        .expect("occur sets occur_time")
+        .utc;
     assert!(
         ts >= before - Duration::seconds(1) && ts <= after + Duration::seconds(1),
         "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
     );
     assert_eq!(
-        entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(),
+        entry
+            .dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .as_deref(),
         Some("MOMENT"),
         "occur is point-in-time: dur=Moment marks the shape",
     );
@@ -73,8 +81,7 @@ fn occur_creates_entry_with_time_start() {
 fn date_and_time_flags_set_absolute_time() {
     let db = fresh_db();
 
-    run_cli(&["occur", "event", "-d", "2021-08-23", "-t", "1200"], &db)
-        .expect("occur -d -t");
+    run_cli(&["occur", "event", "-d", "2021-08-23", "-t", "1200"], &db).expect("occur -d -t");
 
     let entry = &db.entries_for_field("event", None).unwrap()[0];
     assert_entry_matches!(entry, field: "event", verb: "point");
@@ -145,7 +152,16 @@ fn numeric_offset_flag_applies() {
     let db = fresh_db();
 
     run_cli(
-        &["occur", "event", "-d", "2021-08-23", "-t", "1200", "-z", "+3"],
+        &[
+            "occur",
+            "event",
+            "-d",
+            "2021-08-23",
+            "-t",
+            "1200",
+            "-z",
+            "+3",
+        ],
         &db,
     )
     .expect("occur -z+3");
@@ -157,7 +173,10 @@ fn numeric_offset_flag_applies() {
         .and_hms_opt(9, 0, 0)
         .unwrap()
         .and_utc();
-    assert_eq!(start.utc, expected_utc, "`-z +3`: 12:00 in UTC+3 = 09:00 UTC");
+    assert_eq!(
+        start.utc, expected_utc,
+        "`-z +3`: 12:00 in UTC+3 = 09:00 UTC"
+    );
     assert_eq!(start.timezone, "Etc/GMT-3", "POSIX-sign IANA name");
     assert_eq!(start.offset_minutes, 180, "UTC+3 offset in minutes");
 }
@@ -191,7 +210,10 @@ fn iana_timezone_flag_applies() {
         .and_hms_opt(11, 0, 0)
         .unwrap()
         .and_utc();
-    assert_eq!(start.utc, expected_utc, "12:00 CET (winter, UTC+1) = 11:00 UTC");
+    assert_eq!(
+        start.utc, expected_utc,
+        "12:00 CET (winter, UTC+1) = 11:00 UTC"
+    );
     assert_eq!(start.timezone, "Europe/Berlin");
     assert_eq!(start.offset_minutes, 60, "CET winter offset");
 }
@@ -252,8 +274,7 @@ fn stacked_negative_offsets_subtract_correctly() {
     let db = fresh_db();
 
     let before = Utc::now();
-    run_cli(&["occur", "event", "-d=-1", "-t=-60"], &db)
-        .expect("occur -d=-1 -t=-60");
+    run_cli(&["occur", "event", "-d=-1", "-t=-60"], &db).expect("occur -d=-1 -t=-60");
     let after = Utc::now();
 
     let e1 = &db.entries_for_field("event", None).unwrap()[0];
@@ -343,11 +364,7 @@ fn id_template_interpolates_extra_data_on_occur() {
     let db = fresh_db();
 
     // Single-key template.
-    run_cli(
-        &["occur", "event", "task=Testing", "--id", "%task%"],
-        &db,
-    )
-    .expect("occur --id %task%");
+    run_cli(&["occur", "event", "task=Testing", "--id", "%task%"], &db).expect("occur --id %task%");
     let e1 = &db.entries_for_field("event", None).unwrap()[0];
     assert_eq!(e1.slug, "Testing", "slug = interpolated %task%");
     assert_eq!(
@@ -418,8 +435,7 @@ fn id_template_interpolates_extra_data_on_occur() {
 fn occur_k_key_default_is_overridden_by_positional() {
     let db = fresh_db();
 
-    run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db)
-        .expect("occur with -k slot fill");
+    run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db).expect("occur with -k slot fill");
 
     let entry = &db.entries_for_field("pushup", None).unwrap()[0];
     assert_eq!(entry.field, "pushup");
@@ -449,8 +465,7 @@ fn occur_k_key_default_is_overridden_by_positional() {
 fn occur_k_key_default_applied_when_no_positional() {
     let db = fresh_db();
 
-    run_cli(&["occur", "pushup", "-k", "n=1"], &db)
-        .expect("occur with -k default only");
+    run_cli(&["occur", "pushup", "-k", "n=1"], &db).expect("occur with -k default only");
 
     let entry = &db.entries_for_field("pushup", None).unwrap()[0];
     let data = entry.data.as_ref().expect("expected data with n=1");
@@ -512,14 +527,10 @@ fn occur_explicit_state_key_is_rejected() {
 
     let msg = format!("{err:#}");
     assert!(
-        msg.to_lowercase().contains("doesn't carry state")
-            || msg.to_lowercase().contains("state"),
+        msg.to_lowercase().contains("doesn't carry state") || msg.to_lowercase().contains("state"),
         "expected an occur-stateless error, got: {msg}",
     );
-    assert_eq!(
-        db.entries_for_field("pushup", None).unwrap().len(),
-        0,
-    );
+    assert_eq!(db.entries_for_field("pushup", None).unwrap().len(), 0,);
 }
 
 /// da-ju71.2 acceptance: `occur pushup -k n=1 10` lands as a point-in-time
@@ -530,8 +541,7 @@ fn occur_explicit_state_key_is_rejected() {
 fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
     let db = fresh_db();
 
-    run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db)
-        .expect("occur pushup -k n=1 10 dispatch");
+    run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db).expect("occur pushup -k n=1 10 dispatch");
 
     assert_count!(db, "pushup", 1);
     let entry = &db.entries_for_field("pushup", None).unwrap()[0];
@@ -542,7 +552,11 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
         entry.state,
     );
     assert_eq!(
-        entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(),
+        entry
+            .dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .as_deref(),
         Some("MOMENT"),
         "occur with no explicit --dur emits Dur::Moment",
     );

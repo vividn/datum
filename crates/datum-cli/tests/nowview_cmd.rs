@@ -62,11 +62,8 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
 
-    run_cli(
-        &["nowview", "--history", "1h", "--output-file", &path],
-        &db,
-    )
-    .expect("nowview dispatch");
+    run_cli(&["nowview", "--history", "1h", "--output-file", &path], &db)
+        .expect("nowview dispatch");
 
     let svg = std::fs::read_to_string(&path).expect("read svg");
 
@@ -87,7 +84,10 @@ fn nowview_with_history_renders_dayview_style_grid_and_now_line() {
     // Major opacity 0.4 marks the every-15m positions (-15/-30/-45/-60)
     // plus the trailing "now" edge → 5 majors.
     let major_count = svg.matches(r#"stroke-opacity="0.4""#).count();
-    assert_eq!(major_count, 5, "expected 5 major gridlines, got {major_count}");
+    assert_eq!(
+        major_count, 5,
+        "expected 5 major gridlines, got {major_count}"
+    );
 
     assert!(svg.contains(r#"data-field="mood""#));
     assert!(svg.contains(r#"data-field="coffee""#));
@@ -183,11 +183,8 @@ fn nowview_block_entry_renders_in_history_window() {
 
     let tmp = tempfile::NamedTempFile::with_suffix(".svg").unwrap();
     let path = tmp.path().to_str().unwrap().to_string();
-    run_cli(
-        &["nowview", "--history", "1h", "--output-file", &path],
-        &db,
-    )
-    .expect("nowview dispatch");
+    run_cli(&["nowview", "--history", "1h", "--output-file", &path], &db)
+        .expect("nowview dispatch");
     let svg = std::fs::read_to_string(&path).expect("read svg");
     assert!(svg.contains(r#"data-field="workout""#));
     assert!(svg.contains(r#"class="block""#));

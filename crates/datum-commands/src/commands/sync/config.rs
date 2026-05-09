@@ -7,9 +7,7 @@
 
 use anyhow::{Context, Result};
 
-use crate::config::{
-    self, load_raw_config_or_default, resolve_sync_server, save_raw_config,
-};
+use crate::config::{self, load_raw_config_or_default, resolve_sync_server, save_raw_config};
 
 /// `datum sync config set-server <url> [--global]`. The per-DB path reads
 /// the active DB name from `--db` or the `DATUM_DB` env var; bare paths
@@ -75,7 +73,10 @@ pub fn show() -> Result<()> {
         .and_then(|d| d.auto_sync)
         .map(|b| b.to_string())
         .unwrap_or_else(|| "(unset)".to_string());
-    println!("active db:         {}", db.as_deref().unwrap_or("(default)"));
+    println!(
+        "active db:         {}",
+        db.as_deref().unwrap_or("(default)")
+    );
     println!("global server:     {global}");
     println!("per-db server:     {per_db}");
     println!("per-db auto_sync:  {auto_sync}");

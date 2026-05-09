@@ -21,7 +21,11 @@ fn run_cli_harness_dispatches_to_occur() {
     assert_count!(db, "coffee", 1);
     let entry = &db.entries_for_field("coffee", None).unwrap()[0];
     assert_entry_matches!(entry, field: "coffee", verb: "point");
-    assert!(entry.state.is_none(), "occur with no state stays null, got {:?}", entry.state);
+    assert!(
+        entry.state.is_none(),
+        "occur with no state stays null, got {:?}",
+        entry.state
+    );
     let data = entry.data.as_ref().expect("data payload from -k amount=2");
     assert_eq!(
         data.get("amount"),
@@ -97,9 +101,13 @@ fn log_with_update_flag_routes_to_update_strategy() {
     // Fix the time so both logs produce the same content_hash.
     run_cli(
         &[
-            "switch", "mood", "happy",
-            "-t", "09:00",
-            "-k", "source=morning",
+            "switch",
+            "mood",
+            "happy",
+            "-t",
+            "09:00",
+            "-k",
+            "source=morning",
         ],
         &db,
     )
@@ -113,9 +121,13 @@ fn log_with_update_flag_routes_to_update_strategy() {
     // Same field/time/value/extra → same content_hash. `--update` must mutate.
     run_cli(
         &[
-            "switch", "mood", "happy",
-            "-t", "09:00",
-            "-k", "source=morning",
+            "switch",
+            "mood",
+            "happy",
+            "-t",
+            "09:00",
+            "-k",
+            "source=morning",
             "--update",
         ],
         &db,

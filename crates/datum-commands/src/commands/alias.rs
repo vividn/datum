@@ -19,7 +19,11 @@ pub fn alias(sub: AliasCommand, db: &Db) -> Result<()> {
             }
         }
         AliasCommand::Set { name, expansion } => {
-            let alias = Alias { name: name.clone(), expands_to: expansion, description: None };
+            let alias = Alias {
+                name: name.clone(),
+                expands_to: expansion,
+                description: None,
+            };
             db.save_alias(&alias)?;
             println!("✓ Alias '{name}' saved.");
         }
@@ -165,9 +169,7 @@ mod tests {
 
     #[test]
     fn canonical_strips_overwrite_switch() {
-        let argv = v(&[
-            "start", "sleep", "--alias", "bedtime", "--alias-overwrite",
-        ]);
+        let argv = v(&["start", "sleep", "--alias", "bedtime", "--alias-overwrite"]);
         assert_eq!(canonical_form(&argv), "start sleep");
     }
 

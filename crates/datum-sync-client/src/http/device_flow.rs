@@ -54,9 +54,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
         let body = resp.text().unwrap_or_default();
         anyhow::bail!("device-code request failed: {status} {body}");
     }
-    let device: DeviceCodeResponse = resp
-        .json()
-        .context("parse /v1/auth/device-code response")?;
+    let device: DeviceCodeResponse = resp.json().context("parse /v1/auth/device-code response")?;
 
     prompter.show_login_instructions(&device.verification_uri, &device.user_code);
 
@@ -77,9 +75,7 @@ pub fn run_device_flow<P: DeviceFlowPrompter + ?Sized>(
             .context("GET /v1/auth/device-code/poll")?;
 
         let status = resp.status();
-        let payload: PollResponse = resp
-            .json()
-            .context("parse device-code/poll response")?;
+        let payload: PollResponse = resp.json().context("parse device-code/poll response")?;
 
         // Slow-down hint — the relay asks us to back off. Per RFC 8628 §3.5,
         // we double the interval and keep polling.

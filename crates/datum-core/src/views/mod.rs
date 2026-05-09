@@ -99,12 +99,7 @@ impl Registry {
     }
 
     /// Run a view by name.
-    pub fn query(
-        &self,
-        name: &str,
-        db: &Db,
-        params: &ViewParams,
-    ) -> Result<Vec<ViewRow>> {
+    pub fn query(&self, name: &str, db: &Db, params: &ViewParams) -> Result<Vec<ViewRow>> {
         let view = self
             .get(name)
             .ok_or_else(|| DatumError::NotFound(format!("view: {name}")))?;
@@ -304,9 +299,15 @@ mod tests {
     #[test]
     fn key_matches_array_prefix() {
         use serde_json::json;
-        assert!(key_matches(&json!(["workout", "2026-04-20"]), &json!(["workout"])));
+        assert!(key_matches(
+            &json!(["workout", "2026-04-20"]),
+            &json!(["workout"])
+        ));
         assert!(key_matches(&json!(["workout"]), &json!(["workout"])));
         assert!(!key_matches(&json!(["mood"]), &json!(["workout"])));
-        assert!(!key_matches(&json!(["workout"]), &json!(["workout", "2026-04-20"])));
+        assert!(!key_matches(
+            &json!(["workout"]),
+            &json!(["workout", "2026-04-20"])
+        ));
     }
 }

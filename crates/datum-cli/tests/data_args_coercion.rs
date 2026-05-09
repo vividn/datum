@@ -98,7 +98,9 @@ fn dash_r_routes_remainder_to_named_field() {
 fn dash_r_dash_s_joins_remainder_into_string_at_field() {
     let db = fresh_db();
     run_cli(
-        &["occur", "log", "-R", "notes", "-S", "this", "is", "a", "long", "note"],
+        &[
+            "occur", "log", "-R", "notes", "-S", "this", "is", "a", "long", "note",
+        ],
         &db,
     )
     .expect("occur log -R notes -S this is a long note");
@@ -115,11 +117,8 @@ fn dash_r_dash_s_joins_remainder_into_string_at_field() {
 #[test]
 fn dash_c_joins_remainder_into_comment_string() {
     let db = fresh_db();
-    run_cli(
-        &["occur", "log", "-C", "ate", "too", "many", "tacos"],
-        &db,
-    )
-    .expect("occur log -C ate too many tacos");
+    run_cli(&["occur", "log", "-C", "ate", "too", "many", "tacos"], &db)
+        .expect("occur log -C ate too many tacos");
 
     let entry = &db.entries_for_field("log", None).unwrap()[0];
     let extra = entry.data.as_ref().expect("extra_data populated");
@@ -138,11 +137,8 @@ fn dash_c_joins_remainder_into_comment_string() {
 #[test]
 fn dash_s_alone_on_occur_rejects_unbound_positionals() {
     let db = fresh_db();
-    let err = run_cli(
-        &["occur", "log", "-S", "a", "long", "phrase"],
-        &db,
-    )
-    .expect_err("occur should reject bare positionals even with -S");
+    let err = run_cli(&["occur", "log", "-S", "a", "long", "phrase"], &db)
+        .expect_err("occur should reject bare positionals even with -S");
 
     let msg = format!("{err:#}");
     assert!(
@@ -159,7 +155,15 @@ fn dash_s_alone_on_occur_rejects_unbound_positionals() {
 fn dash_c_appends_to_explicit_comment_flag() {
     let db = fresh_db();
     run_cli(
-        &["occur", "log", "-c", "explicit comment", "-C", "remainder", "words"],
+        &[
+            "occur",
+            "log",
+            "-c",
+            "explicit comment",
+            "-C",
+            "remainder",
+            "words",
+        ],
         &db,
     )
     .expect("occur log -c explicit -C remainder words");
@@ -179,7 +183,14 @@ fn dash_c_appends_to_explicit_comment_flag() {
 fn multiple_comments_become_array() {
     let db = fresh_db();
     run_cli(
-        &["occur", "log", "-c", "first comment", "-c", "second comment"],
+        &[
+            "occur",
+            "log",
+            "-c",
+            "first comment",
+            "-c",
+            "second comment",
+        ],
         &db,
     )
     .expect("occur with two -c flags");

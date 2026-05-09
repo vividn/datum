@@ -4,9 +4,7 @@
 //! The relay is content-blind about the inner shape; it just round-trips
 //! the JSON body keyed by authenticated user.
 
-use axum::{
-    extract::State, http::StatusCode, response::IntoResponse, Extension, Json,
-};
+use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
 use std::sync::Arc;
 
 use crate::{db, error::AppError, models::AuthenticatedUser, AppState};

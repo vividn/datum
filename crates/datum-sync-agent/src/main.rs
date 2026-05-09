@@ -14,14 +14,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use ::notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use anyhow::{bail, Context, Result};
 use datum_sync_agent::liveness::{default_pid_path, PidFile};
+use datum_sync_agent::log as agent_log;
 use datum_sync_agent::notify as agent_notify;
 use datum_sync_agent::notify::Notifier;
 use datum_sync_agent::scheduler::{Action, Scheduler};
 use datum_sync_agent::targets::{self, SyncTarget};
-use datum_sync_agent::{log as agent_log};
-use ::notify::{Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinSet;
 use tracing::{info, warn};

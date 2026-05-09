@@ -98,7 +98,10 @@ fn tail_default_emits_table_with_header_and_hid_column() {
 
     let header = stdout.lines().next().unwrap_or("");
     for tok in ["time", "field", "hid"] {
-        assert!(header.contains(tok), "default tail header missing {tok:?}:\n{stdout}");
+        assert!(
+            header.contains(tok),
+            "default tail header missing {tok:?}:\n{stdout}"
+        );
     }
     // Data rows retain the field names in plain text.
     assert!(stdout.contains("coffee"), "{stdout}");
@@ -151,7 +154,11 @@ fn show_minimal_emits_header_only() {
     let _ = std::fs::remove_file(&db);
     let (stdout, _) = run(&db, &["occur", "coffee", "amount=1", "--show", "minimal"]);
     let lines: Vec<&str> = stdout.lines().collect();
-    assert_eq!(lines.len(), 1, "minimal should emit 1 line, got: {stdout:?}");
+    assert_eq!(
+        lines.len(),
+        1,
+        "minimal should emit 1 line, got: {stdout:?}"
+    );
     assert!(lines[0].contains("CREATE"));
 
     let _ = std::fs::remove_file(&db);
@@ -164,7 +171,10 @@ fn update_emits_update_action_tag() {
     run(&db, &["occur", "coffee", "amount=1", "--id", "%field%:pin"]);
     let (stdout, _) = run(&db, &["update", "coffee:pin", "amount=5"]);
     assert!(stdout.contains("UPDATE"), "expected UPDATE: {stdout:?}");
-    assert!(stdout.contains("amount=5"), "expected new value: {stdout:?}");
+    assert!(
+        stdout.contains("amount=5"),
+        "expected new value: {stdout:?}"
+    );
     let _ = std::fs::remove_file(&db);
 }
 
@@ -210,8 +220,14 @@ fn header_has_action_hid_and_slug_not_ulid() {
     assert_eq!(hid, hid.to_lowercase(), "hid should be lowercase: {hid:?}");
 
     let slug = toks[2];
-    assert!(slug.starts_with("coffee:"), "expected slug starting with field: {slug:?}");
+    assert!(
+        slug.starts_with("coffee:"),
+        "expected slug starting with field: {slug:?}"
+    );
     // Internal ULID (26-char Crockford base32 starting "01") must NOT appear as the id.
-    assert!(!(slug.len() == 26 && slug.starts_with("01")), "slug looks like a ULID: {slug:?}");
+    assert!(
+        !(slug.len() == 26 && slug.starts_with("01")),
+        "slug looks like a ULID: {slug:?}"
+    );
     let _ = std::fs::remove_file(&db);
 }

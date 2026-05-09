@@ -170,13 +170,8 @@ fn sync_auto_refreshes_on_401_and_persists_new_token() {
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("coffee", 0, "dev-X")).unwrap();
 
-    let outcome = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .expect("sync recovers via refresh");
+    let outcome = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
+        .expect("sync recovers via refresh");
     assert_eq!(outcome.pushed, 1, "push must land after refresh");
 
     // The refreshed bearer + a NEW refresh token must have been
@@ -217,13 +212,8 @@ fn sync_with_bogus_refresh_fails_with_actionable_error() {
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("mood", 0, "dev-X")).unwrap();
 
-    let err = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .expect_err("sync must fail when both bearer and refresh are rejected");
+    let err = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
+        .expect_err("sync must fail when both bearer and refresh are rejected");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("session expired"),
@@ -259,13 +249,8 @@ fn sync_without_refresh_token_fails_gracefully_on_401() {
     let db = fresh_db(&env);
     db.insert_entry(&make_entry("focus", 0, "dev-X")).unwrap();
 
-    let err = run_sync_with_client(
-        Some(&relay.base_url),
-        Direction::PushOnly,
-        false,
-        &db,
-    )
-    .expect_err("sync with no refresh_token must fail on 401");
+    let err = run_sync_with_client(Some(&relay.base_url), Direction::PushOnly, false, &db)
+        .expect_err("sync with no refresh_token must fail on 401");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("session expired"),

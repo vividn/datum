@@ -218,12 +218,7 @@ pub fn detect_for_entry(
 
         let prior_at_probe = if let Some(ts) = trigger.occur_time.as_ref() {
             let probe = ts.utc - chrono::Duration::microseconds(1);
-            crate::state::last_state_at(
-                conn,
-                &trigger.field,
-                probe,
-                Some(trigger.hid.as_str()),
-            )?
+            crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?
         } else {
             None
         };
@@ -247,13 +242,7 @@ pub fn detect_for_entry(
                     ConflictKind::SameStateRepeat
                 };
                 if let Some(hit) = find_recent_state_setter(conn, trigger)? {
-                    filed.push(file_conflict(
-                        conn,
-                        trigger,
-                        Some(&hit),
-                        detected_by,
-                        kind,
-                    )?);
+                    filed.push(file_conflict(conn, trigger, Some(&hit), detected_by, kind)?);
                 }
             }
         }
@@ -391,8 +380,12 @@ fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
 /// values compare order-insensitive (same multiset of elements), everything
 /// else compares structurally.
 fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
-    let Ok(sva) = StateValue::from_json(a) else { return false };
-    let Ok(svb) = StateValue::from_json(b) else { return false };
+    let Ok(sva) = StateValue::from_json(a) else {
+        return false;
+    };
+    let Ok(svb) = StateValue::from_json(b) else {
+        return false;
+    };
     match (&sva, &svb) {
         (StateValue::Parallel(va), StateValue::Parallel(vb)) => state_multiset_eq(va, vb),
         _ => sva == svb,
@@ -922,8 +915,14 @@ mod tests {
     /// strict — `[a, b]` equals `[b, a]` but not `[a, c]`.
     #[test]
     fn parallel_equal_set_aware_is_order_insensitive() {
-        assert!(states_equal_set_aware(&json!(["a", "b"]), &json!(["b", "a"])));
-        assert!(!states_equal_set_aware(&json!(["a", "b"]), &json!(["a", "c"])));
+        assert!(states_equal_set_aware(
+            &json!(["a", "b"]),
+            &json!(["b", "a"])
+        ));
+        assert!(!states_equal_set_aware(
+            &json!(["a", "b"]),
+            &json!(["a", "c"])
+        ));
     }
 
     /// A Structured element inside a Parallel still requires full structural

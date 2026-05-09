@@ -59,7 +59,11 @@ impl<T: 'static> FlagSpec<T> {
         long: Option<&'static str>,
         action: FlagAction<T>,
     ) -> Self {
-        Self { short, long, action }
+        Self {
+            short,
+            long,
+            action,
+        }
     }
 }
 

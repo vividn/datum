@@ -149,10 +149,7 @@ mod tests {
         let mut b = Backoff::default_schedule();
         assert_eq!(b.time_until_ready(base), None);
         b.note_failure(base);
-        assert_eq!(
-            b.time_until_ready(t(base, 2)),
-            Some(Duration::from_secs(3))
-        );
+        assert_eq!(b.time_until_ready(t(base, 2)), Some(Duration::from_secs(3)));
         // Past the cool-down window: report None.
         assert_eq!(b.time_until_ready(t(base, 10)), None);
     }

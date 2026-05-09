@@ -9,8 +9,10 @@ use crate::args::IdsArgs;
 pub fn ids(args: IdsArgs, db: &Db) -> Result<()> {
     let ids = compute_ids(&args, db)?;
     if args.json {
-        let arr: Vec<serde_json::Value> =
-            ids.iter().map(|s| serde_json::Value::String(s.clone())).collect();
+        let arr: Vec<serde_json::Value> = ids
+            .iter()
+            .map(|s| serde_json::Value::String(s.clone()))
+            .collect();
         println!("{}", serde_json::Value::Array(arr));
     } else {
         for id in ids {
@@ -48,7 +50,6 @@ pub(crate) fn parse_since(s: &str) -> Result<chrono::DateTime<Utc>> {
             .context("ambiguous local midnight")?;
         return Ok(local_midnight.with_timezone(&Utc));
     }
-    let dur = parse_duration(s)
-        .map_err(|e| anyhow::anyhow!("invalid --since '{s}': {e}"))?;
+    let dur = parse_duration(s).map_err(|e| anyhow::anyhow!("invalid --since '{s}': {e}"))?;
     Ok(chrono::Utc::now() - dur)
 }

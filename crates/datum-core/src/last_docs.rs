@@ -113,18 +113,12 @@ mod tests {
     fn protection_window_recent_pointer_is_inside() {
         let now = Utc::now();
         assert!(within_protection_window(now, now));
-        assert!(within_protection_window(
-            now - Duration::minutes(10),
-            now
-        ));
+        assert!(within_protection_window(now - Duration::minutes(10), now));
     }
 
     #[test]
     fn protection_window_old_pointer_is_outside() {
         let now = Utc::now();
-        assert!(!within_protection_window(
-            now - Duration::minutes(20),
-            now
-        ));
+        assert!(!within_protection_window(now - Duration::minutes(20), now));
     }
 }

@@ -59,11 +59,9 @@ fn migrate_status_lists_registered_migrations() {
 
     run_cli(&["db", "migrate", "status"], &db).expect("migrate status dispatch");
 
-    let (current, target, rows) = datum_core::migrations::migration_status(
-        db.conn(),
-        datum_core::migrations::MIGRATIONS,
-    )
-    .unwrap();
+    let (current, target, rows) =
+        datum_core::migrations::migration_status(db.conn(), datum_core::migrations::MIGRATIONS)
+            .unwrap();
     assert_eq!(current, CURRENT_SCHEMA_VERSION);
     assert_eq!(target, CURRENT_SCHEMA_VERSION);
     assert_eq!(rows.len(), MIGRATIONS.len());

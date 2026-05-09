@@ -40,6 +40,4 @@ pub use cli::{Cli, Command};
 pub use error::{ParseError, Result};
 pub use input::{consolidate_keys, flexible_positional, FlexibleTarget};
 pub use parse::{parse_argv, parse_argv_string, shell_split};
-pub use time::{
-    DatumTime, DateArg, PrecisionUnit, TimeArg, TimeBuilder, Uncertainty,
-};
+pub use time::{DateArg, DatumTime, PrecisionUnit, TimeArg, TimeBuilder, Uncertainty};

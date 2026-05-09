@@ -27,21 +27,39 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
         let parts: Vec<&str> = s.split(':').collect();
         return match parts.len() {
             2 => {
-                let h: i64 = parts[0].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let m: i64 = parts[1].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let h: i64 = parts[0]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let m: i64 = parts[1]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
                 Ok(Duration::minutes(h * 60 + m))
             }
             3 => {
-                let h: i64 = parts[0].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let m: i64 = parts[1].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let sec: i64 = parts[2].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let h: i64 = parts[0]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let m: i64 = parts[1]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let sec: i64 = parts[2]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
                 Ok(Duration::seconds(h * 3600 + m * 60 + sec))
             }
             4 => {
-                let d: i64 = parts[0].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let h: i64 = parts[1].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let m: i64 = parts[2].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-                let sec: i64 = parts[3].parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let d: i64 = parts[0]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let h: i64 = parts[1]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let m: i64 = parts[2]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+                let sec: i64 = parts[3]
+                    .parse()
+                    .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
                 Ok(Duration::seconds(d * 86400 + h * 3600 + m * 60 + sec))
             }
             _ => Err(ParseError::InvalidTime(s.to_string())),
@@ -50,14 +68,20 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
 
     // Named unit suffixes
     let (num_str, unit) = split_unit(s);
-    let n: f64 = num_str.parse().map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+    let n: f64 = num_str
+        .parse()
+        .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
     let secs = match unit {
         "s" | "sec" | "second" | "seconds" => (n) as i64,
         "m" | "min" | "minute" | "minutes" => (n * 60.0) as i64,
         "h" | "hr" | "hour" | "hours" => (n * 3600.0) as i64,
         "d" | "day" | "days" => (n * 86400.0) as i64,
         "" => (n * 60.0) as i64, // default: minutes
-        _ => return Err(ParseError::InvalidTime(format!("Unknown duration unit: '{unit}'"))),
+        _ => {
+            return Err(ParseError::InvalidTime(format!(
+                "Unknown duration unit: '{unit}'"
+            )))
+        }
     };
     Ok(Duration::seconds(secs))
 }
@@ -72,7 +96,10 @@ pub fn quick_precision_for_count(n: u32) -> Uncertainty {
         return Uncertainty::exact();
     }
     let seconds = if n >= 5 { 300 } else { 150 };
-    Uncertainty { seconds, unit: PrecisionUnit::Minute }
+    Uncertainty {
+        seconds,
+        unit: PrecisionUnit::Minute,
+    }
 }
 
 pub(crate) fn split_unit(s: &str) -> (&str, &str) {
@@ -97,7 +124,15 @@ pub(crate) fn parse_iso_duration(s: &str) -> Result<Duration> {
     };
 
     for (part, multiplier) in [
-        (date_part, vec![('Y', 365 * 86400), ('M', 30 * 86400), ('W', 7 * 86400), ('D', 86400)]),
+        (
+            date_part,
+            vec![
+                ('Y', 365 * 86400),
+                ('M', 30 * 86400),
+                ('W', 7 * 86400),
+                ('D', 86400),
+            ],
+        ),
         (time_part, vec![('H', 3600), ('M', 60), ('S', 1)]),
     ] {
         let mut cur = part;

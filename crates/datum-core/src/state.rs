@@ -338,7 +338,10 @@ pub fn last_state_at(
              AND occur_time <= ?2
            ORDER BY occur_time ASC"#,
     )?;
-    let rows = stmt.query_map(params![field, at_str, exclude], crate::db::row_to_entry_public)?;
+    let rows = stmt.query_map(
+        params![field, at_str, exclude],
+        crate::db::row_to_entry_public,
+    )?;
     let entries: Vec<Entry> = rows
         .map(|r| r.map_err(DatumError::Db))
         .collect::<Result<Vec<_>>>()?;
@@ -401,18 +404,24 @@ impl FieldStateEvents {
             let occur_time: Option<DateTime<Utc>> = row
                 .get::<_, Option<String>>("occur_time")?
                 .and_then(|s| s.parse().ok());
-            let create_time: DateTime<Utc> = row
-                .get::<_, String>("create_time")?
-                .parse()
-                .map_err(|e: chrono::ParseError| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        0,
-                        rusqlite::types::Type::Text,
-                        e.into(),
-                    )
-                })?;
+            let create_time: DateTime<Utc> =
+                row.get::<_, String>("create_time")?
+                    .parse()
+                    .map_err(|e: chrono::ParseError| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            0,
+                            rusqlite::types::Type::Text,
+                            e.into(),
+                        )
+                    })?;
             collect_raw_events(
-                &hid, verb, state.as_ref(), occur_time, None, create_time, out,
+                &hid,
+                verb,
+                state.as_ref(),
+                occur_time,
+                None,
+                create_time,
+                out,
             );
             Ok(())
         };
@@ -527,10 +536,7 @@ fn collect_raw_events(
     }
 }
 
-fn collect_events(
-    entry: &Entry,
-    out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>,
-) {
+fn collect_events(entry: &Entry, out: &mut Vec<(DateTime<Utc>, DateTime<Utc>, Value)>) {
     // da-5ns sub-bead 1 stub: see the comment on `collect_raw_events`.
     // Each state-affecting verb emits at most one event at occur_time;
     // sub-bead 5 expands this with following_state-aware tail events.
@@ -597,7 +603,10 @@ mod tests {
 
         // Unfold {id: x} to x
         assert_eq!(normalize_state(&json!({"id": true})).to_json(), json!(true));
-        assert_eq!(normalize_state(&json!({"id": false})).to_json(), json!(false));
+        assert_eq!(
+            normalize_state(&json!({"id": false})).to_json(),
+            json!(false)
+        );
         assert_eq!(normalize_state(&json!({"id": 123})).to_json(), json!("123"));
 
         // Preserve object with id + other keys
@@ -758,7 +767,10 @@ mod tests {
         assert_eq!(StateValue::Ignored.to_string(), "IGNORED");
         assert_eq!(StateValue::Bool(true).to_string(), "true");
         assert_eq!(StateValue::Bool(false).to_string(), "false");
-        assert_eq!(StateValue::Simple("vertical".into()).to_string(), "vertical");
+        assert_eq!(
+            StateValue::Simple("vertical".into()).to_string(),
+            "vertical"
+        );
 
         // Structured-with-only-id renders as the id alone.
         let only_id = StateValue::Structured({

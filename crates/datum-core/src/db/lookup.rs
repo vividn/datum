@@ -10,9 +10,7 @@ use crate::entry::Entry;
 use crate::error::{DatumError, PrefixCandidate, Result};
 
 use super::row_mapper::row_to_entry;
-use super::types::{
-    like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP,
-};
+use super::types::{like_prefix_pattern, time_expr_endbound, AMBIGUOUS_PREFIX_CANDIDATE_CAP};
 use super::Db;
 
 impl Db {
@@ -31,20 +29,14 @@ impl Db {
                 |row| row.get::<_, Option<String>>(0),
             )
             .optional()?;
-        Ok(raw
-            .flatten()
-            .and_then(|s| serde_json::from_str(&s).ok()))
+        Ok(raw.flatten().and_then(|s| serde_json::from_str(&s).ok()))
     }
 
     /// Overwrite `extra_metadata` for a row. Pass `None` to clear it.
     /// Errors [`DatumError::NotFound`] if no live row matches. Does NOT
     /// touch `data`, `modify_time`, or `content_hash` — provenance is
     /// orthogonal to identity and to user-edit semantics.
-    pub fn set_metadata(
-        &self,
-        slug_or_hid: &str,
-        metadata: Option<&JsonValue>,
-    ) -> Result<()> {
+    pub fn set_metadata(&self, slug_or_hid: &str, metadata: Option<&JsonValue>) -> Result<()> {
         let stored = metadata.map(|v| v.to_string());
         let affected = self.conn.execute(
             "UPDATE entries SET extra_metadata = ?2
@@ -164,11 +156,7 @@ impl Db {
     ///
     /// SQL fetches just the candidate rows (field match, verb ∈ {switch, start,
     /// stop, occur}, and time_start or time_end ≤ at); compilation runs in Rust.
-    pub fn get_active_state(
-        &self,
-        field: &str,
-        at: DateTime<Utc>,
-    ) -> Result<JsonValue> {
+    pub fn get_active_state(&self, field: &str, at: DateTime<Utc>) -> Result<JsonValue> {
         let at_str = at.to_rfc3339();
         let sql = format!(
             "SELECT * FROM entries
@@ -194,11 +182,7 @@ impl Db {
     ///
     /// Returns `None` if the field's active state at `at` is `null` or `false`
     /// (i.e. there is nothing to close).
-    pub fn find_open_block(
-        &self,
-        field: &str,
-        at: DateTime<Utc>,
-    ) -> Result<Option<Entry>> {
+    pub fn find_open_block(&self, field: &str, at: DateTime<Utc>) -> Result<Option<Entry>> {
         let active = self.get_active_state(field, at)?;
         if matches!(active, JsonValue::Null | JsonValue::Bool(false)) {
             return Ok(None);

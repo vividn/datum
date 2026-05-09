@@ -36,13 +36,25 @@ pub(crate) struct Rgb {
 
 impl Rgb {
     pub const BLACK: Rgb = Rgb { r: 0, g: 0, b: 0 };
-    pub const WHITE: Rgb = Rgb { r: 255, g: 255, b: 255 };
+    pub const WHITE: Rgb = Rgb {
+        r: 255,
+        g: 255,
+        b: 255,
+    };
     /// `#888888` — the shared "ignored / null" grey per §8. Doubles as the
     /// fg of the empty LEAD/TRAIL slot rendered when there's no prior or
     /// continuing state.
-    pub const IGNORED: Rgb = Rgb { r: 0x88, g: 0x88, b: 0x88 };
+    pub const IGNORED: Rgb = Rgb {
+        r: 0x88,
+        g: 0x88,
+        b: 0x88,
+    };
     /// `#666666` — foreground over IGNORED bg per §5.
-    pub const IGNORED_FG: Rgb = Rgb { r: 0x66, g: 0x66, b: 0x66 };
+    pub const IGNORED_FG: Rgb = Rgb {
+        r: 0x66,
+        g: 0x66,
+        b: 0x66,
+    };
 
     pub fn fg(self) -> String {
         format!("\x1b[38;2;{};{};{}m", self.r, self.g, self.b)
@@ -60,7 +72,11 @@ fn brightness(rgb: Rgb) -> u32 {
 /// Pick black or white to contrast against `bg`, matching datum's
 /// `getContrastTextColor` default path.
 pub(crate) fn contrast_fg(bg: Rgb) -> Rgb {
-    if brightness(bg) > 128 { Rgb::BLACK } else { Rgb::WHITE }
+    if brightness(bg) > 128 {
+        Rgb::BLACK
+    } else {
+        Rgb::WHITE
+    }
 }
 
 pub(crate) fn parse_hex(s: &str) -> Option<Rgb> {
@@ -79,14 +95,22 @@ pub(crate) fn parse_hex(s: &str) -> Option<Rgb> {
 /// output is a valid background.
 pub(crate) fn md5_rgb(name: &str) -> Rgb {
     let hash = Md5::digest(name.as_bytes());
-    Rgb { r: hash[0], g: hash[1], b: hash[2] }
+    Rgb {
+        r: hash[0],
+        g: hash[1],
+        b: hash[2],
+    }
 }
 
 /// ANSI-256 cube index → approximate RGB. Used when a spec's `color` was
 /// stored as a legacy ANSI-256 number instead of a hex string.
 fn ansi256_rgb(n: u8) -> Rgb {
     if n < 16 {
-        return Rgb { r: 128, g: 128, b: 128 };
+        return Rgb {
+            r: 128,
+            g: 128,
+            b: 128,
+        };
     }
     if n >= 232 {
         let v = 8 + (n - 232) * 10;
@@ -96,8 +120,18 @@ fn ansi256_rgb(n: u8) -> Rgb {
     let r = idx / 36;
     let g = (idx % 36) / 6;
     let b = idx % 6;
-    let q = |c: u8| -> u8 { if c == 0 { 0 } else { 55 + 40 * c } };
-    Rgb { r: q(r), g: q(g), b: q(b) }
+    let q = |c: u8| -> u8 {
+        if c == 0 {
+            0
+        } else {
+            55 + 40 * c
+        }
+    };
+    Rgb {
+        r: q(r),
+        g: q(g),
+        b: q(b),
+    }
 }
 
 /// Resolve a stored color string (hex / ANSI-256 number) or fall back to
@@ -290,7 +324,14 @@ mod tests {
     fn md5_rgb_matches_first_three_hash_bytes() {
         // md5("") = d41d8cd98f00b204e9800998ecf8427e → r=0xd4, g=0x1d, b=0x8c
         let rgb = md5_rgb("");
-        assert_eq!(rgb, Rgb { r: 0xd4, g: 0x1d, b: 0x8c });
+        assert_eq!(
+            rgb,
+            Rgb {
+                r: 0xd4,
+                g: 0x1d,
+                b: 0x8c
+            }
+        );
     }
 
     #[test]
@@ -301,8 +342,22 @@ mod tests {
 
     #[test]
     fn parse_hex_accepts_prefix() {
-        assert_eq!(parse_hex("#ff6600"), Some(Rgb { r: 0xff, g: 0x66, b: 0x00 }));
-        assert_eq!(parse_hex("ff6600"), Some(Rgb { r: 0xff, g: 0x66, b: 0x00 }));
+        assert_eq!(
+            parse_hex("#ff6600"),
+            Some(Rgb {
+                r: 0xff,
+                g: 0x66,
+                b: 0x00
+            })
+        );
+        assert_eq!(
+            parse_hex("ff6600"),
+            Some(Rgb {
+                r: 0xff,
+                g: 0x66,
+                b: 0x00
+            })
+        );
         assert_eq!(parse_hex("xxx"), None);
     }
 

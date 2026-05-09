@@ -43,11 +43,9 @@ pub mod sync_once;
 // Convenience top-level re-exports of the most commonly used types so
 // downstream crates don't need to chase module paths. Keeping the list
 // narrow on purpose — anything deeper should import explicitly.
-pub use crypto::changeset::{
-    decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob,
-};
+pub use crypto::changeset::{decrypt_changeset, encrypt_changeset, Changeset, EncryptedBlob};
 pub use crypto::key_wrap::{
-    key_fingerprint, unwrap_master_key, wrap_master_key, wrap_master_key_with_params,
-    KdfParams, WrappedKey,
+    key_fingerprint, unwrap_master_key, wrap_master_key, wrap_master_key_with_params, KdfParams,
+    WrappedKey,
 };
 pub use protocol::messages::AuthToken;

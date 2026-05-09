@@ -90,9 +90,8 @@ pub fn resolve_db(cli_db: Option<&str>) -> Result<ResolvedDb> {
         let created_new = !path.exists();
         if let Some(parent) = path.parent() {
             if !parent.as_os_str().is_empty() {
-                std::fs::create_dir_all(parent).with_context(|| {
-                    format!("Creating directory for DB path: {parent:?}")
-                })?;
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("Creating directory for DB path: {parent:?}"))?;
             }
         }
         return Ok(ResolvedDb {
@@ -137,8 +136,8 @@ pub fn load_registry() -> Result<Registry> {
     }
     let contents = std::fs::read_to_string(&path)
         .with_context(|| format!("Reading DB registry at {path:?}"))?;
-    let registry: Registry = toml::from_str(&contents)
-        .with_context(|| format!("Parsing DB registry at {path:?}"))?;
+    let registry: Registry =
+        toml::from_str(&contents).with_context(|| format!("Parsing DB registry at {path:?}"))?;
     Ok(registry)
 }
 
@@ -149,10 +148,8 @@ pub fn save_registry(registry: &Registry) -> Result<()> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Creating config directory {parent:?}"))?;
     }
-    let body = toml::to_string_pretty(registry)
-        .context("Serializing DB registry")?;
-    std::fs::write(&path, body)
-        .with_context(|| format!("Writing DB registry to {path:?}"))?;
+    let body = toml::to_string_pretty(registry).context("Serializing DB registry")?;
+    std::fs::write(&path, body).with_context(|| format!("Writing DB registry to {path:?}"))?;
     Ok(())
 }
 
@@ -192,8 +189,7 @@ pub fn device_id() -> Result<String> {
         return Ok(id.trim().to_string());
     }
     let id = ulid::Ulid::new().to_string();
-    std::fs::write(&path, &id)
-        .with_context(|| format!("Writing device_id to {path:?}"))?;
+    std::fs::write(&path, &id).with_context(|| format!("Writing device_id to {path:?}"))?;
     Ok(id)
 }
 
@@ -218,8 +214,7 @@ pub fn data_dir() -> Result<PathBuf> {
     }
     let base = xdg_data_dir().context("Cannot determine data directory")?;
     let dir = base.join("datum");
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Creating data directory {dir:?}"))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("Creating data directory {dir:?}"))?;
     Ok(dir)
 }
 
@@ -232,8 +227,7 @@ pub fn config_dir() -> Result<PathBuf> {
     }
     let base = xdg_config_dir().context("Cannot determine config directory")?;
     let dir = base.join("datum");
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Creating config directory {dir:?}"))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("Creating config directory {dir:?}"))?;
     Ok(dir)
 }
 
@@ -397,8 +391,7 @@ pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
             .with_context(|| format!("Creating config directory {parent:?}"))?;
     }
     let body = toml::to_string_pretty(cfg).context("Serializing datumrc.toml")?;
-    std::fs::write(&path, body)
-        .with_context(|| format!("Writing config to {path:?}"))?;
+    std::fs::write(&path, body).with_context(|| format!("Writing config to {path:?}"))?;
     Ok(())
 }
 
@@ -406,8 +399,7 @@ pub fn save_raw_config(cfg: &RawConfig) -> Result<()> {
 /// `$XDG_DATA_HOME/datum/keys/<server-host>.key`, file mode 0600.
 pub fn master_key_path(server_host: &str) -> Result<PathBuf> {
     let dir = data_dir()?.join("keys");
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Creating key directory {dir:?}"))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("Creating key directory {dir:?}"))?;
     Ok(dir.join(format!("{server_host}.key")))
 }
 
@@ -415,8 +407,7 @@ pub fn master_key_path(server_host: &str) -> Result<PathBuf> {
 /// `$XDG_CONFIG_HOME/datum/auth/<server-host>.json`.
 pub fn auth_token_path(server_host: &str) -> Result<PathBuf> {
     let dir = config_dir()?.join("auth");
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Creating auth directory {dir:?}"))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("Creating auth directory {dir:?}"))?;
     Ok(dir.join(format!("{server_host}.json")))
 }
 
@@ -461,13 +452,13 @@ pub fn load_toml_config(path: &Path) -> Result<Option<RawConfig>> {
     if !path.exists() {
         return Ok(None);
     }
-    let contents = std::fs::read_to_string(path)
-        .with_context(|| format!("Reading config from {path:?}"))?;
+    let contents =
+        std::fs::read_to_string(path).with_context(|| format!("Reading config from {path:?}"))?;
     if contents.trim().is_empty() {
         return Ok(Some(RawConfig::default()));
     }
-    let cfg: RawConfig = toml::from_str(&contents)
-        .with_context(|| format!("Parsing config at {path:?}"))?;
+    let cfg: RawConfig =
+        toml::from_str(&contents).with_context(|| format!("Parsing config at {path:?}"))?;
     Ok(Some(cfg))
 }
 
@@ -512,10 +503,7 @@ impl Config {
             SourcedValue::new(v, Source::Toml)
         } else {
             let default_path = data_dir()?.join("datum.db");
-            SourcedValue::new(
-                default_path.to_string_lossy().into_owned(),
-                Source::Default,
-            )
+            SourcedValue::new(default_path.to_string_lossy().into_owned(), Source::Default)
         };
 
         let device_id = if let Some(v) = read_env("DATUM_DEVICE_ID") {

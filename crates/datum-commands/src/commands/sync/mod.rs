@@ -218,8 +218,7 @@ pub fn build_session(server: &str, token: &AuthToken) -> datum_sync_client::http
 fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()> {
     use std::os::unix::fs::OpenOptionsExt;
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create {parent:?}"))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
     }
     let mut f = std::fs::OpenOptions::new()
         .write(true)
@@ -235,8 +234,7 @@ fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()>
 #[cfg(not(unix))]
 fn write_private_file(path: &std::path::Path, body: &[u8]) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create {parent:?}"))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
     }
     std::fs::write(path, body).with_context(|| format!("write {path:?}"))?;
     Ok(())
@@ -254,9 +252,8 @@ pub fn preflight_checks(server: &str) -> Result<Preflight> {
     use crate::commands::sync::key::load_token;
     use crate::config::{device_id, master_key_path, server_host_from_url};
 
-    let token = load_token(server)?.ok_or_else(|| {
-        anyhow::anyhow!("not logged in — run `datum sync login` first")
-    })?;
+    let token = load_token(server)?
+        .ok_or_else(|| anyhow::anyhow!("not logged in — run `datum sync login` first"))?;
 
     let host = server_host_from_url(server);
     let key_path = master_key_path(&host)?;
@@ -290,9 +287,9 @@ pub(crate) fn resolve_server(cli_server: Option<&str>) -> Result<String> {
         return Ok(s.to_string());
     }
     let cfg = crate::config::load_raw_config_or_default()?;
-    let db_name = std::env::var("DATUM_DB").ok().filter(|v| {
-        !v.is_empty() && !crate::config::looks_like_path(v)
-    });
+    let db_name = std::env::var("DATUM_DB")
+        .ok()
+        .filter(|v| !v.is_empty() && !crate::config::looks_like_path(v));
     crate::config::resolve_sync_server(&cfg, db_name.as_deref()).ok_or_else(|| {
         anyhow::anyhow!(
             "no sync server configured; pass --server <url> or run \

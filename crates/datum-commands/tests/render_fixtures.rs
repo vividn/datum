@@ -82,12 +82,20 @@ fn color_scope() -> (std::sync::MutexGuard<'static, ()>, ScopedEnv, ScopedEnv) {
 /// ordering and never the wall clock, so hard-coding keeps output stable.
 fn fixed_time(h: u32, m: u32, s: u32) -> DatumTime {
     let utc: DateTime<Utc> = Utc.with_ymd_and_hms(2026, 4, 22, h, m, s).unwrap();
-    DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+    DatumTime {
+        utc,
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    }
 }
 
 fn future_time(h: u32, m: u32) -> DatumTime {
     let utc: DateTime<Utc> = Utc.with_ymd_and_hms(2099, 1, 1, h, m, 0).unwrap();
-    DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() }
+    DatumTime {
+        utc,
+        offset_minutes: 0,
+        timezone: "UTC".to_string(),
+    }
 }
 
 fn entry(
@@ -132,18 +140,33 @@ fn fx01_add_new_occur() {
     // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
     // adds now render as dots (matching the rest of the Point family); the
     // `¢`/NON_OCCUR glyph is reserved for timeless entries (no `occur_time`).
-    let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 47)), None);
+    let e = entry(
+        "new_occur",
+        Verb::Point,
+        None,
+        Some(fixed_time(16, 58, 47)),
+        None,
+    );
     let ctx = ctx_with(None, None, true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains(" new_occur "), "field badge present: {out:?}");
     assert!(out.contains("●"), "point dot: {out:?}");
-    assert!(!out.contains("¢"), "time-stamped Point renders as dot, not NON_OCCUR: {out:?}");
+    assert!(
+        !out.contains("¢"),
+        "time-stamped Point renders as dot, not NON_OCCUR: {out:?}"
+    );
 }
 
 #[test]
 fn fx02_occur_first() {
     let _g = no_color_scope();
-    let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 56)), None);
+    let e = entry(
+        "new_occur",
+        Verb::Point,
+        None,
+        Some(fixed_time(16, 58, 56)),
+        None,
+    );
     let ctx = ctx_with(None, None, true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("∅"), "first-tracked marker: {out:?}");
@@ -156,7 +179,13 @@ fn fx02_occur_first() {
 #[test]
 fn fx03_occur_again() {
     let _g = no_color_scope();
-    let e = entry("new_occur", Verb::Point, None, Some(fixed_time(16, 58, 59)), None);
+    let e = entry(
+        "new_occur",
+        Verb::Point,
+        None,
+        Some(fixed_time(16, 58, 59)),
+        None,
+    );
     let ctx = ctx_with(None, None, false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(!out.contains("∅"), "repeat occur has no ∅: {out:?}");
@@ -169,11 +198,20 @@ fn fx04_start_first() {
     // da-8y2q.2: legacy `Verb::Start` collapsed into `Verb::Switch` with
     // canonicalized `state=true`. The "start" label flows from
     // `render_switch_badge`'s `Bool(true)` arm, so the value must be set.
-    let e = entry("new_start", Verb::Switch, Some(json!(true)), Some(fixed_time(16, 59, 40)), None);
+    let e = entry(
+        "new_start",
+        Verb::Switch,
+        Some(json!(true)),
+        Some(fixed_time(16, 59, 40)),
+        None,
+    );
     // First-time start: no prior, trail = Bool(true).
     let ctx = ctx_with(None, Some(json!(true)), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(!out.contains("∅"), "no ∅ glyph in LEAD slot post-da-25l: {out:?}");
+    assert!(
+        !out.contains("∅"),
+        "no ∅ glyph in LEAD slot post-da-25l: {out:?}"
+    );
     assert!(out.contains("start"), "state label 'start': {out:?}");
     assert!(!out.contains("→"), "no right-arrow: {out:?}");
     assert!(!out.contains("←"), "no left-arrow: {out:?}");
@@ -184,7 +222,13 @@ fn fx05_end() {
     let _g = no_color_scope();
     // da-8y2q.2: legacy `Verb::Stop` collapsed into `Verb::Switch` with
     // canonicalized `state=false`.
-    let e = entry("new_start", Verb::Switch, Some(json!(false)), Some(fixed_time(16, 59, 46)), None);
+    let e = entry(
+        "new_start",
+        Verb::Switch,
+        Some(json!(false)),
+        Some(fixed_time(16, 59, 46)),
+        None,
+    );
     // Prior state = true (active block); trail = false (stopped).
     let ctx = ctx_with(Some(json!(true)), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -196,11 +240,20 @@ fn fx05_end() {
 #[test]
 fn fx06_start_after_end() {
     let _g = no_color_scope();
-    let e = entry("new_start", Verb::Switch, Some(json!(true)), Some(fixed_time(16, 59, 52)), None);
+    let e = entry(
+        "new_start",
+        Verb::Switch,
+        Some(json!(true)),
+        Some(fixed_time(16, 59, 52)),
+        None,
+    );
     // Prior = false (stopped); trail = true.
     let ctx = ctx_with(Some(json!(false)), Some(json!(true)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(!out.contains("∅"), "no first-marker (Bool(false) is a state): {out:?}");
+    assert!(
+        !out.contains("∅"),
+        "no first-marker (Bool(false) is a state): {out:?}"
+    );
     assert!(!out.contains("!"), "no warning glyph: {out:?}");
     assert!(out.contains("start"), "'start' label: {out:?}");
     assert!(!out.contains("→"), "no arrows: {out:?}");
@@ -218,7 +271,10 @@ fn fx07_switch_first() {
     );
     let ctx = ctx_with(None, Some(json!("state1")), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(!out.contains("∅"), "no ∅ glyph in LEAD slot post-da-25l: {out:?}");
+    assert!(
+        !out.contains("∅"),
+        "no ∅ glyph in LEAD slot post-da-25l: {out:?}"
+    );
     assert!(out.contains("state1"), "new state label: {out:?}");
     assert!(!out.contains("→"), "no arrows: {out:?}");
 }
@@ -287,7 +343,10 @@ fn fx11_switch_same_state_repeat() {
     // continuous bg-coloured strip; no '!' glyph.
     let ctx = ctx_with(Some(json!("repeat")), Some(json!("repeat")), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(!out.contains("!"), "no warning glyph in new layout: {out:?}");
+    assert!(
+        !out.contains("!"),
+        "no warning glyph in new layout: {out:?}"
+    );
     assert!(out.contains("repeat"));
 }
 
@@ -295,7 +354,13 @@ fn fx11_switch_same_state_repeat() {
 fn fx12_end_switch() {
     let _g = no_color_scope();
     // da-8y2q.2: legacy `Verb::Stop` collapsed into `Verb::Switch` + state=false.
-    let e = entry("new_switch", Verb::Switch, Some(json!(false)), Some(fixed_time(17, 1, 13)), None);
+    let e = entry(
+        "new_switch",
+        Verb::Switch,
+        Some(json!(false)),
+        Some(fixed_time(17, 1, 13)),
+        None,
+    );
     let ctx = ctx_with(Some(json!("repeat")), Some(json!(false)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("end"));
@@ -315,7 +380,10 @@ fn fx13_start_already_active() {
     // Prior already true; new layout has no '!' glyph.
     let ctx = ctx_with(Some(json!(true)), Some(json!(true)), false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(!out.contains("!"), "no warning glyph in new layout: {out:?}");
+    assert!(
+        !out.contains("!"),
+        "no warning glyph in new layout: {out:?}"
+    );
     assert!(out.contains("start"));
 }
 
@@ -331,7 +399,10 @@ fn fx14_switch_with_dur_first() {
     );
     let ctx = ctx_with(None, Some(json!("state1")), true);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
-    assert!(!out.contains("∅"), "no ∅ glyph in LEAD slot post-da-25l: {out:?}");
+    assert!(
+        !out.contains("∅"),
+        "no ∅ glyph in LEAD slot post-da-25l: {out:?}"
+    );
     assert!(out.contains("state1"));
 }
 
@@ -426,7 +497,10 @@ fn fx18_ignore_renders_grey() {
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
     assert!(out.contains("IGNORED"), "state label present: {out:?}");
     assert!(out.contains(" foo "), "field badge: {out:?}");
-    assert!(!out.contains("∅"), "no ∅ glyph in slots post-da-25l: {out:?}");
+    assert!(
+        !out.contains("∅"),
+        "no ∅ glyph in slots post-da-25l: {out:?}"
+    );
 }
 
 #[test]
@@ -452,7 +526,13 @@ fn fx20_add_with_keys() {
     // da-8y2q.2: legacy `Verb::Add` collapsed into `Verb::Point`. Time-stamped
     // adds render as dots, not the NON_OCCUR (`¢`) glyph (which is now
     // reserved for timeless entries — `occur_time = None`).
-    let mut e = entry("thing", Verb::Point, None, Some(fixed_time(17, 40, 0)), None);
+    let mut e = entry(
+        "thing",
+        Verb::Point,
+        None,
+        Some(fixed_time(17, 40, 0)),
+        None,
+    );
     e.data = Some(json!({ "key": "value" }));
     let ctx = ctx_with(None, None, false);
     let out = strip_ansi(&format_info_line(&e, None, &ctx));
@@ -485,7 +565,13 @@ fn no_directional_arrows_anywhere() {
         ),
         // switch with prior
         (
-            entry("a", Verb::Switch, Some(json!("on")), Some(fixed_time(9, 3, 0)), None),
+            entry(
+                "a",
+                Verb::Switch,
+                Some(json!("on")),
+                Some(fixed_time(9, 3, 0)),
+                None,
+            ),
             ctx_with(Some(json!("off")), Some(json!("on")), false),
         ),
         // switch block (4m duration), prior resumes
@@ -527,8 +613,14 @@ fn color_mode_emits_truecolor_backgrounds() {
     );
     let ctx = ctx_with(None, Some(json!("espresso")), true);
     let out = format_info_line(&e, None, &ctx);
-    assert!(out.contains("\x1b[48;2;"), "expected truecolor bg escape: {out:?}");
-    assert!(out.contains("\x1b[38;2;"), "expected truecolor fg escape: {out:?}");
+    assert!(
+        out.contains("\x1b[48;2;"),
+        "expected truecolor bg escape: {out:?}"
+    );
+    assert!(
+        out.contains("\x1b[38;2;"),
+        "expected truecolor fg escape: {out:?}"
+    );
 }
 
 /// Future timestamps get the ANSI underline escape per §3.
@@ -544,7 +636,10 @@ fn future_timestamp_is_underlined() {
     );
     let ctx = ctx_with(None, None, true);
     let out = format_info_line(&e, None, &ctx);
-    assert!(out.contains("\x1b[4m"), "expected underline escape: {out:?}");
+    assert!(
+        out.contains("\x1b[4m"),
+        "expected underline escape: {out:?}"
+    );
 }
 
 // Manual visual inspection: see `tests/goldens/terminal/fxNN_*.ansi` —

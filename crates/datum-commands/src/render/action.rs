@@ -292,9 +292,7 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
         // canonicalized `state=true`/`state=false`. `entry.value.clone()`
         // returns the same `Some(Bool(true|false))` the legacy arms
         // produced explicitly.
-        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => {
-            entry.value.clone()
-        }
+        Verb::Switch | Verb::Block | Verb::BlockSwitch | Verb::PointSwitch => entry.value.clone(),
         Verb::Point => None,
     }
 }
@@ -474,7 +472,11 @@ pub fn format_info_line_at(
         // applies via `format_gray_prefix("c", ...)` in the
         // `time_hybrid` extractor (render/mod.rs).
         let synth = synthesize_local_datumtime(entry.create_time);
-        parts.push(format!("{}{}", paint(GRAY_FG, "c"), format_timestamp(&synth, now)));
+        parts.push(format!(
+            "{}{}",
+            paint(GRAY_FG, "c"),
+            format_timestamp(&synth, now)
+        ));
     }
     parts.push(format_field_badge(&entry.field, spec));
     if let Some(group) = format_state_group(entry, spec, ctx) {

@@ -17,9 +17,7 @@
 //!   devices can eyeball-verify parity.
 
 use anyhow::{anyhow, Context, Result};
-use datum_sync_client::crypto::key_wrap::{
-    key_fingerprint, unwrap_master_key, wrap_master_key,
-};
+use datum_sync_client::crypto::key_wrap::{key_fingerprint, unwrap_master_key, wrap_master_key};
 use datum_sync_client::http::{fetch_wrapped, upload_wrapped};
 use rand::RngCore;
 use reqwest::blocking::Client;
@@ -84,10 +82,7 @@ pub fn init_with_client(
 }
 
 /// `datum sync key unlock`
-pub fn unlock(
-    server_override: Option<String>,
-    prompter: &mut impl Prompter,
-) -> Result<()> {
+pub fn unlock(server_override: Option<String>, prompter: &mut impl Prompter) -> Result<()> {
     let server = resolve_server(server_override.as_deref())?;
     let client = default_client()?;
     unlock_with_client(&server, &client, prompter)?;
@@ -197,17 +192,14 @@ pub fn load_token(server: &str) -> Result<Option<AuthToken>> {
     if !path.exists() {
         return Ok(None);
     }
-    let bytes = std::fs::read(&path)
-        .with_context(|| format!("read token at {path:?}"))?;
-    let token: AuthToken =
-        serde_json::from_slice(&bytes).context("parse stored auth token")?;
+    let bytes = std::fs::read(&path).with_context(|| format!("read token at {path:?}"))?;
+    let token: AuthToken = serde_json::from_slice(&bytes).context("parse stored auth token")?;
     Ok(Some(token))
 }
 
 fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> Result<()> {
     if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)
-            .with_context(|| format!("create {parent:?}"))?;
+        std::fs::create_dir_all(parent).with_context(|| format!("create {parent:?}"))?;
     }
     #[cfg(unix)]
     {
@@ -231,10 +223,12 @@ fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> Result<()> {
 }
 
 fn read_key_file(path: &std::path::Path) -> Result<[u8; 32]> {
-    let bytes = std::fs::read(path)
-        .with_context(|| format!("read key at {path:?}"))?;
+    let bytes = std::fs::read(path).with_context(|| format!("read key at {path:?}"))?;
     if bytes.len() != 32 {
-        anyhow::bail!("master key at {path:?} must be 32 bytes, got {}", bytes.len());
+        anyhow::bail!(
+            "master key at {path:?} must be 32 bytes, got {}",
+            bytes.len()
+        );
     }
     let mut out = [0u8; 32];
     out.copy_from_slice(&bytes);

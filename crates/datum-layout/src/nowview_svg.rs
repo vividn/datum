@@ -82,10 +82,7 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
     };
 
     let mut out = String::new();
-    let _ = write!(
-        &mut out,
-        r#"<g class="nowview-overlay">"#,
-    );
+    let _ = write!(&mut out, r#"<g class="nowview-overlay">"#,);
     match layout.orientation {
         Orientation::Horizontal => {
             // Centered just under the right edge of the data area, at the
@@ -134,10 +131,7 @@ fn build_current_time_overlay(layout: &DayviewLayout, label: &str) -> String {
 /// are dropped (the dayview pipeline already skipped them). Vertical mode
 /// is unsupported — panel only renders in horizontal mode (the only mode
 /// nowview uses today).
-fn build_state_panel_overlay(
-    layout: &DayviewLayout,
-    entries: &[NowviewPanelEntry],
-) -> String {
+fn build_state_panel_overlay(layout: &DayviewLayout, entries: &[NowviewPanelEntry]) -> String {
     if matches!(layout.orientation, Orientation::Vertical) {
         return String::new();
     }
@@ -165,9 +159,7 @@ fn build_state_panel_overlay(
         let row_h = field.cross_extent.max(1.0);
         let y_center = row_top + row_h / 2.0;
 
-        let font_size = (row_h - 4.0)
-            .min(PANEL_MAX_FONT)
-            .max(PANEL_MIN_FONT);
+        let font_size = (row_h - 4.0).min(PANEL_MAX_FONT).max(PANEL_MIN_FONT);
         if font_size < PANEL_MIN_FONT {
             continue;
         }
@@ -675,6 +667,9 @@ mod tests {
             svg.contains(r#"<rect class="state-swatch" data-field="mood""#),
             "single-state swatch must remain a solid rect: {svg}"
         );
-        assert!(!svg.contains("state-swatch-checker"), "no checker grouping for single state");
+        assert!(
+            !svg.contains("state-swatch-checker"),
+            "no checker grouping for single state"
+        );
     }
 }

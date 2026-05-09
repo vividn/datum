@@ -126,9 +126,6 @@ mod tests {
             Some(Duration::from_millis(1000))
         );
         // Past the deadline: saturate at zero.
-        assert_eq!(
-            d.time_until_due(t(base, 5000)),
-            Some(Duration::ZERO)
-        );
+        assert_eq!(d.time_until_due(t(base, 5000)), Some(Duration::ZERO));
     }
 }

@@ -160,7 +160,15 @@ pub fn parse_time_arg(s: &str) -> Result<TimeArg> {
             direction,
         });
     }
-    for fmt in &["%H:%M:%S%.f", "%H:%M:%S", "%H:%M", "%I:%M%P", "%I:%M %p", "%I%P", "%I %p"] {
+    for fmt in &[
+        "%H:%M:%S%.f",
+        "%H:%M:%S",
+        "%H:%M",
+        "%I:%M%P",
+        "%I:%M %p",
+        "%I%P",
+        "%I %p",
+    ] {
         if let Ok(t) = NaiveTime::parse_from_str(primary, fmt) {
             return Ok(TimeArg {
                 minutes_offset: None,

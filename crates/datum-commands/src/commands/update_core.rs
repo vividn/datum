@@ -103,12 +103,9 @@ pub fn update_with_strategy(req: UpdateRequest<'_>, db: &Db) -> Result<UpdateOut
             req.slug_delimiter,
             db,
         ),
-        UpdateStrategy::Rekey => apply_data_key_rename(
-            existing,
-            req.payload_extra,
-            req.slug_delimiter,
-            db,
-        ),
+        UpdateStrategy::Rekey => {
+            apply_data_key_rename(existing, req.payload_extra, req.slug_delimiter, db)
+        }
     }
 }
 
@@ -178,11 +175,8 @@ pub fn update_batch_from_args(
         .id_or_slug
         .as_deref()
         .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
-    let (entries, token_errors) = crate::cmd::resolve_batch(
-        db,
-        pattern,
-        crate::cmd::BatchMode::LiveOrTombstone,
-    );
+    let (entries, token_errors) =
+        crate::cmd::resolve_batch(db, pattern, crate::cmd::BatchMode::LiveOrTombstone);
 
     if entries.is_empty() {
         if let Some((_, err)) = token_errors.into_iter().next() {
@@ -317,9 +311,9 @@ fn strategy_from_arg(a: ConflictStrategyArg) -> Result<UpdateStrategy> {
         ConflictStrategyArg::Update => Ok(UpdateStrategy::Replace),
         ConflictStrategyArg::Merge => Ok(UpdateStrategy::Merge),
         ConflictStrategyArg::Rekey => Ok(UpdateStrategy::Rekey),
-        ConflictStrategyArg::Ignore => anyhow::bail!(
-            "`ignore` is not a meaningful strategy for update/merge/rekey"
-        ),
+        ConflictStrategyArg::Ignore => {
+            anyhow::bail!("`ignore` is not a meaningful strategy for update/merge/rekey")
+        }
     }
 }
 
@@ -367,10 +361,7 @@ fn apply_mutation(
     if let Some(t) = reserved.occur_time {
         // Base any relative offset (`-5m`, `now`) against the existing
         // occur_time when present, falling back to wall-clock now.
-        let base = updated
-            .occur_time
-            .clone()
-            .unwrap_or_else(DatumTime::now);
+        let base = updated.occur_time.clone().unwrap_or_else(DatumTime::now);
         updated.occur_time = Some(crate::cmd::parse_reserved_occur_time(&t, &base)?);
     }
     persist_with_auto_reinterp(existing, updated, slug_delimiter, db)
@@ -388,18 +379,16 @@ fn apply_data_key_rename(
 ) -> Result<UpdateOutcome> {
     let mapping = match payload_extra {
         Some(JsonValue::Object(m)) if !m.is_empty() => m,
-        _ => anyhow::bail!(
-            "rekey requires a key-rename mapping like 'oldKey=newKey'"
-        ),
+        _ => anyhow::bail!("rekey requires a key-rename mapping like 'oldKey=newKey'"),
     };
     let mut updated = existing.clone();
     if let Some(JsonValue::Object(mut data_map)) = updated.data.take() {
         for (old_key, new_key_v) in mapping {
             let new_key = match new_key_v {
                 JsonValue::String(s) if !s.is_empty() => s,
-                _ => anyhow::bail!(
-                    "rekey mapping value for '{old_key}' must be a non-empty string"
-                ),
+                _ => {
+                    anyhow::bail!("rekey mapping value for '{old_key}' must be a non-empty string")
+                }
             };
             if let Some(value) = data_map.remove(&old_key) {
                 data_map.insert(new_key, value);
@@ -527,7 +516,11 @@ mod tests {
     ) -> Entry {
         use datum_core::time::DatumTime;
         let t: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
-        let dt = DatumTime { utc: t, offset_minutes: 0, timezone: "UTC".to_string() };
+        let dt = DatumTime {
+            utc: t,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
         let e = Entry::new(field, verb, value, extra, None, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
         e
@@ -619,7 +612,11 @@ mod tests {
         .unwrap();
 
         let data = outcome.entry.data.as_ref().unwrap();
-        assert_eq!(data["repetitions"], serde_json::json!(10), "value preserved under new key");
+        assert_eq!(
+            data["repetitions"],
+            serde_json::json!(10),
+            "value preserved under new key"
+        );
         assert!(data.get("reps").is_none(), "old key removed");
         assert_eq!(data["set"], serde_json::json!(3), "untouched key preserved");
         // No id_structure → slug shouldn't move.
@@ -629,7 +626,13 @@ mod tests {
     #[test]
     fn rekey_without_mapping_errors() {
         let db = Db::open_in_memory().unwrap();
-        let e = seed_entry(&db, "mood", Verb::Switch, Some(serde_json::json!("x")), None);
+        let e = seed_entry(
+            &db,
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("x")),
+            None,
+        );
 
         let err = update_with_strategy(
             UpdateRequest {
@@ -739,7 +742,11 @@ mod tests {
         );
         db.soft_delete_entry(&e.slug).unwrap();
 
-        for strategy in [UpdateStrategy::Replace, UpdateStrategy::Merge, UpdateStrategy::Rekey] {
+        for strategy in [
+            UpdateStrategy::Replace,
+            UpdateStrategy::Merge,
+            UpdateStrategy::Rekey,
+        ] {
             // Tombstone check fires before strategy dispatch, so any payload
             // is fine here — the call never reaches apply_*.
             let err = update_with_strategy(
@@ -843,7 +850,8 @@ mod tests {
         // Stamp the slug to match the template so we're starting from the
         // canonical form (otherwise a stale slug would 'jump' on first edit).
         e.slug = datum_core::ids::Slug("gym:deadlift".to_string());
-        db.save_existing_entry_with_rekey(&seed_slug_for("gym"), &e).unwrap();
+        db.save_existing_entry_with_rekey(&seed_slug_for("gym"), &e)
+            .unwrap();
 
         let outcome = update_with_strategy(
             UpdateRequest {
@@ -926,17 +934,12 @@ mod tests {
         // da-5ns.4: %dur% resolves from the entry.dur column. Mutating
         // dur= must cascade into a templated slug.
         let db = Db::open_in_memory().unwrap();
-        let mut e = seed_entry(
-            &db,
-            "nap",
-            Verb::Point,
-            None,
-            None,
-        );
+        let mut e = seed_entry(&db, "nap", Verb::Point, None, None);
         e.dur = Some(datum_core::dur::Dur::parse("PT1H").unwrap());
         e.id_structure = Some("%field%:%dur%".to_string());
         e.slug = datum_core::ids::Slug("nap:PT1H".to_string());
-        db.save_existing_entry_with_rekey(&seed_slug_for("nap"), &e).unwrap();
+        db.save_existing_entry_with_rekey(&seed_slug_for("nap"), &e)
+            .unwrap();
 
         let outcome = update_with_strategy(
             UpdateRequest {
@@ -952,7 +955,15 @@ mod tests {
 
         assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
         assert_eq!(outcome.entry.slug, "nap:PT2H");
-        assert_eq!(outcome.entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT2H"));
+        assert_eq!(
+            outcome
+                .entry
+                .dur
+                .as_ref()
+                .map(datum_core::dur::Dur::to_storage_string)
+                .as_deref(),
+            Some("PT2H")
+        );
     }
 
     #[test]
@@ -973,7 +984,8 @@ mod tests {
         e.following_state = Some(serde_json::json!("idle"));
         e.id_structure = Some("%field%:%following_state%".to_string());
         e.slug = datum_core::ids::Slug("block:idle".to_string());
-        db.save_existing_entry_with_rekey(&seed_slug_for("block"), &e).unwrap();
+        db.save_existing_entry_with_rekey(&seed_slug_for("block"), &e)
+            .unwrap();
 
         let outcome = update_with_strategy(
             UpdateRequest {
@@ -997,16 +1009,11 @@ mod tests {
         // cascades into a templated slug.
         use datum_core::time::DatumTime;
         let db = Db::open_in_memory().unwrap();
-        let mut e = seed_entry(
-            &db,
-            "coffee",
-            Verb::Point,
-            None,
-            None,
-        );
+        let mut e = seed_entry(&db, "coffee", Verb::Point, None, None);
         e.id_structure = Some("%field%:%occur_time%".to_string());
         e.slug = datum_core::ids::Slug("coffee:2024-01-01T00:00:00.000Z".to_string());
-        db.save_existing_entry_with_rekey(&seed_slug_for("coffee"), &e).unwrap();
+        db.save_existing_entry_with_rekey(&seed_slug_for("coffee"), &e)
+            .unwrap();
 
         let outcome = update_with_strategy(
             UpdateRequest {
@@ -1024,12 +1031,8 @@ mod tests {
 
         assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
         assert_eq!(outcome.entry.slug, "coffee:2026-05-01T10:00:00.000Z");
-        let want_utc: chrono::DateTime<chrono::Utc> =
-            "2026-05-01T10:00:00Z".parse().unwrap();
-        assert_eq!(
-            outcome.entry.occur_time.as_ref().unwrap().utc,
-            want_utc,
-        );
+        let want_utc: chrono::DateTime<chrono::Utc> = "2026-05-01T10:00:00Z".parse().unwrap();
+        assert_eq!(outcome.entry.occur_time.as_ref().unwrap().utc, want_utc,);
         let _ = DatumTime::now;
     }
 
@@ -1043,7 +1046,8 @@ mod tests {
         e.state = Some(serde_json::json!("todo"));
         e.id_structure = Some("%field%:%state%".to_string());
         e.slug = datum_core::ids::Slug("task:todo".to_string());
-        db.save_existing_entry_with_rekey(&seed_slug_for("task"), &e).unwrap();
+        db.save_existing_entry_with_rekey(&seed_slug_for("task"), &e)
+            .unwrap();
 
         let outcome = update_with_strategy(
             UpdateRequest {

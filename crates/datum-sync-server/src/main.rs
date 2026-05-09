@@ -13,14 +13,13 @@ async fn main() -> anyhow::Result<()> {
         .unwrap_or_else(|_| "3000".to_string())
         .parse()?;
 
-    let db_path = std::env::var("DATUM_SYNC_DB")
-        .unwrap_or_else(|_| "./datum-sync-server.db".to_string());
+    let db_path =
+        std::env::var("DATUM_SYNC_DB").unwrap_or_else(|_| "./datum-sync-server.db".to_string());
 
-    let origin = std::env::var("DATUM_SYNC_ORIGIN")
-        .unwrap_or_else(|_| format!("http://localhost:{}", port));
+    let origin =
+        std::env::var("DATUM_SYNC_ORIGIN").unwrap_or_else(|_| format!("http://localhost:{}", port));
 
-    let rp_name = std::env::var("DATUM_SYNC_RP_NAME")
-        .unwrap_or_else(|_| "datum sync".to_string());
+    let rp_name = std::env::var("DATUM_SYNC_RP_NAME").unwrap_or_else(|_| "datum sync".to_string());
 
     let jwt_secret = std::env::var("DATUM_SYNC_JWT_SECRET")
         .unwrap_or_else(|_| "changeme-not-for-production".to_string());

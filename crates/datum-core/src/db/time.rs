@@ -147,7 +147,8 @@ mod tests {
         let stamped_slug = Slug("nap:2024-01-01T10:00:00.000Z".to_string());
         let mut stamped = e.clone();
         stamped.slug = stamped_slug.clone();
-        db.save_existing_entry_with_rekey(&e.slug, &stamped).unwrap();
+        db.save_existing_entry_with_rekey(&e.slug, &stamped)
+            .unwrap();
 
         let filter = RetimeFilter {
             slug_or_hid: Some(stamped_slug.as_str()),
@@ -182,7 +183,8 @@ mod tests {
         let stamped_slug = Slug("coffee:2024-01-01T10:00:00.000Z".to_string());
         let mut stamped = e.clone();
         stamped.slug = stamped_slug.clone();
-        db.save_existing_entry_with_rekey(&e.slug, &stamped).unwrap();
+        db.save_existing_entry_with_rekey(&e.slug, &stamped)
+            .unwrap();
 
         let new_start = seed_dt("2026-05-01T10:00:00Z");
         let filter = RetimeFilter {

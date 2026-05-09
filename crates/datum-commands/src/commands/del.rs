@@ -49,7 +49,11 @@ pub fn del(args: DeleteArgs, db: &Db) -> Result<()> {
         eprintln!(
             "[dry-run] would delete {} {}",
             entries.len(),
-            if entries.len() == 1 { "entry" } else { "entries" },
+            if entries.len() == 1 {
+                "entry"
+            } else {
+                "entries"
+            },
         );
         return Ok(());
     }

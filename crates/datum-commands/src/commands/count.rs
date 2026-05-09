@@ -19,9 +19,7 @@ pub fn compute_count(args: &CountArgs, db: &Db) -> Result<CountResult> {
     let field = args.field.as_deref();
 
     if let Some(raw) = &args.group_by {
-        let col: GroupColumn = raw
-            .parse()
-            .map_err(|e: String| anyhow::anyhow!(e))?;
+        let col: GroupColumn = raw.parse().map_err(|e: String| anyhow::anyhow!(e))?;
         let rows = db.count_entries_grouped(field, col, since_utc)?;
         return Ok(CountResult::Grouped(rows));
     }

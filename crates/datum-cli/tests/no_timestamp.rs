@@ -24,8 +24,19 @@ fn occur_minus_t_is_timeless_point() {
     // occur -T: state=None, dur="MOMENT" (da-ju71.2) → Point. `-T`
     // suppresses the timestamp, not the occur-shape intent.
     assert_entry_matches!(e, field: "coffee", verb: "point");
-    assert!(e.slug.ends_with(":unset"), "timeless slug carries :unset (got: {})", e.slug);
-    assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("MOMENT"), "occur emits Dur::Moment");
+    assert!(
+        e.slug.ends_with(":unset"),
+        "timeless slug carries :unset (got: {})",
+        e.slug
+    );
+    assert_eq!(
+        e.dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .as_deref(),
+        Some("MOMENT"),
+        "occur emits Dur::Moment"
+    );
 }
 
 #[test]
@@ -103,8 +114,8 @@ fn minus_t_keeps_extra_data_kv_pairs() {
 #[test]
 fn minus_t_with_t_flag_errors() {
     let db = fresh_db();
-    let err = run_cli(&["occur", "coffee", "-T", "-t", "15:00"], &db)
-        .expect_err("-T + -t must reject");
+    let err =
+        run_cli(&["occur", "coffee", "-T", "-t", "15:00"], &db).expect_err("-T + -t must reject");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("no-timestamp") && msg.contains("-t"),
@@ -116,8 +127,7 @@ fn minus_t_with_t_flag_errors() {
 fn minus_t_with_d_flag_errors() {
     let db = fresh_db();
     // Use `-d=-1` form to dodge `-1`-as-value-for-other-arg parsing.
-    let err = run_cli(&["occur", "coffee", "-T", "-d=-1"], &db)
-        .expect_err("-T + -d must reject");
+    let err = run_cli(&["occur", "coffee", "-T", "-d=-1"], &db).expect_err("-T + -d must reject");
     assert!(format!("{err:#}").contains("-d"), "got: {err:#}");
 }
 
@@ -132,24 +142,22 @@ fn minus_t_with_dur_errors() {
 #[test]
 fn minus_t_with_y_flag_errors() {
     let db = fresh_db();
-    let err = run_cli(&["occur", "coffee", "-T", "-y"], &db)
-        .expect_err("-T + -y must reject");
+    let err = run_cli(&["occur", "coffee", "-T", "-y"], &db).expect_err("-T + -y must reject");
     assert!(format!("{err:#}").contains("-y"));
 }
 
 #[test]
 fn minus_t_with_q_flag_errors() {
     let db = fresh_db();
-    let err = run_cli(&["occur", "coffee", "-T", "-q"], &db)
-        .expect_err("-T + -q must reject");
+    let err = run_cli(&["occur", "coffee", "-T", "-q"], &db).expect_err("-T + -q must reject");
     assert!(format!("{err:#}").contains("-q"));
 }
 
 #[test]
 fn minus_t_with_z_flag_errors() {
     let db = fresh_db();
-    let err = run_cli(&["occur", "coffee", "-T", "-z", "UTC"], &db)
-        .expect_err("-T + -z must reject");
+    let err =
+        run_cli(&["occur", "coffee", "-T", "-z", "UTC"], &db).expect_err("-T + -z must reject");
     assert!(format!("{err:#}").contains("-z"));
 }
 

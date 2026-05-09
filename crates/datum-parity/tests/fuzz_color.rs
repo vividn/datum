@@ -6,7 +6,9 @@
 //!
 //! ≥200 cases per property satisfies the bead's CI fuzz floor.
 
-use datum_parity::colors::{contrast_text_color, field_color, md5_color, parse_hex_rgb, state_color};
+use datum_parity::colors::{
+    contrast_text_color, field_color, md5_color, parse_hex_rgb, state_color,
+};
 use proptest::prelude::*;
 
 proptest! {

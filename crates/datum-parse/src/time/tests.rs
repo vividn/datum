@@ -354,13 +354,16 @@ fn compact_date_future_picks_next_year_when_passed() {
 #[cfg(feature = "native")]
 fn compact_date_future_at_tie_picks_next_year() {
     // 2026-04-29 + apr29+ → push to 2027-04-29.
-    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(), || {
-        let d = parse_date_arg("apr29+").unwrap();
-        assert_eq!(
-            d.absolute,
-            Some(chrono::NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
-        );
-    });
+    with_mocked_today(
+        chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(),
+        || {
+            let d = parse_date_arg("apr29+").unwrap();
+            assert_eq!(
+                d.absolute,
+                Some(chrono::NaiveDate::from_ymd_opt(2027, 4, 29).unwrap())
+            );
+        },
+    );
 }
 
 #[test]
@@ -394,13 +397,16 @@ fn compact_date_past_picks_last_year_when_upcoming() {
 #[cfg(feature = "native")]
 fn compact_date_past_at_tie_picks_last_year() {
     // 2026-04-29 + apr29- → push to 2025-04-29.
-    with_mocked_today(chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(), || {
-        let d = parse_date_arg("apr29-").unwrap();
-        assert_eq!(
-            d.absolute,
-            Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
-        );
-    });
+    with_mocked_today(
+        chrono::NaiveDate::from_ymd_opt(2026, 4, 29).unwrap(),
+        || {
+            let d = parse_date_arg("apr29-").unwrap();
+            assert_eq!(
+                d.absolute,
+                Some(chrono::NaiveDate::from_ymd_opt(2025, 4, 29).unwrap())
+            );
+        },
+    );
 }
 
 #[test]
@@ -450,7 +456,10 @@ fn time_direction_suffix_minus_on_bare_hour() {
 #[test]
 fn time_direction_suffix_on_hh_mm() {
     let t = parse_time_arg("18:30+").unwrap();
-    assert_eq!(t.absolute, Some(NaiveTime::from_hms_opt(18, 30, 0).unwrap()));
+    assert_eq!(
+        t.absolute,
+        Some(NaiveTime::from_hms_opt(18, 30, 0).unwrap())
+    );
     assert_eq!(t.direction, Some(Direction::Future));
 }
 

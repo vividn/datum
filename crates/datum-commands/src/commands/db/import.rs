@@ -27,10 +27,11 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
 
     let content = std::fs::read_to_string(&backup_path)
         .with_context(|| format!("Reading backup file: {}", backup_path))?;
-    let backup: serde_json::Value = serde_json::from_str(&content)
-        .with_context(|| "Parsing backup JSON")?;
+    let backup: serde_json::Value =
+        serde_json::from_str(&content).with_context(|| "Parsing backup JSON")?;
 
-    let docs = backup["docs"].as_array()
+    let docs = backup["docs"]
+        .as_array()
         .context("Backup JSON missing 'docs' array")?;
 
     let device = device_id()?;
@@ -52,7 +53,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
 
         let field = match data["field"].as_str() {
             Some(f) => f.to_string(),
-            None => { skipped += 1; continue; }
+            None => {
+                skipped += 1;
+                continue;
+            }
         };
 
         // ─── state ──────────────────────────────────────────────────
@@ -100,7 +104,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
                 if let Some(secs) = v.as_i64() {
                     Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(secs)))
                 } else if let Some(secs) = v.as_f64() {
-                    Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(secs as i64)))
+                    Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(
+                        secs as i64,
+                    )))
                 } else {
                     eprintln!(
                         "warning: could not parse dur {} for {}; keeping literal in extra_data",
@@ -298,7 +304,11 @@ fn parse_datum_time(v: &JsonValue) -> Option<DatumTime> {
     let utc: chrono::DateTime<chrono::Utc> = utc_str.parse().ok()?;
     let tz = v["tz"].as_str().unwrap_or("UTC").to_string();
     let offset_minutes = v["o"].as_f64().map(|o| (o * 60.0) as i32).unwrap_or(0);
-    Some(DatumTime { utc, offset_minutes, timezone: tz })
+    Some(DatumTime {
+        utc,
+        offset_minutes,
+        timezone: tz,
+    })
 }
 
 /// Map a legacy datum `occurTime` block to a single ISO-8601 precision

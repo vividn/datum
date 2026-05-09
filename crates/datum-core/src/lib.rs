@@ -1,25 +1,25 @@
 #![doc = include_str!("../README.md")]
 
 pub mod action;
+pub mod conflicts;
+pub mod db;
 pub mod doc_ref;
+pub mod dur;
 pub mod entry;
+pub mod error;
 pub mod field_spec;
+pub mod history;
+pub mod ids;
 pub mod kit;
 pub mod kit_color;
 pub mod kit_color_rule;
-pub mod db;
-pub mod error;
-pub mod ids;
+pub mod last_docs;
+pub mod migrations;
+pub mod shape;
 pub mod slug;
 pub mod state;
-pub mod views;
-pub mod migrations;
-pub mod history;
-pub mod conflicts;
-pub mod last_docs;
-pub mod dur;
-pub mod shape;
 pub mod verb;
+pub mod views;
 
 pub use verb::derive_verb;
 

@@ -144,7 +144,9 @@ mod tests {
             Some("#1a3d6e")
         );
         assert_eq!(
-            resolve_color(Some("#1a3d6eFF"), "sleep").unwrap().as_deref(),
+            resolve_color(Some("#1a3d6eFF"), "sleep")
+                .unwrap()
+                .as_deref(),
             Some("#1a3d6eff")
         );
     }

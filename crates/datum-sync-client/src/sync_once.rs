@@ -158,10 +158,9 @@ pub fn push_once(
     // would otherwise fail to decrypt.
     let next_seq = sync_state::get_my_push_seq(db)?.saturating_add(1);
     let blob = encrypt_changeset(&changeset, master_key, device_id, next_seq)?;
-    let assigned_seq = session
-        .run(client, |bearer| {
-            push_blob(client, server, bearer, device_id, blob.as_bytes())
-        })?;
+    let assigned_seq = session.run(client, |bearer| {
+        push_blob(client, server, bearer, device_id, blob.as_bytes())
+    })?;
 
     if assigned_seq as u64 != next_seq {
         anyhow::bail!(
@@ -205,7 +204,10 @@ pub fn pull_once(
 
     if dry_run {
         return Ok(PullOutcome {
-            applied: rows.iter().map(|r| incoming_entry_count(r, master_key)).sum(),
+            applied: rows
+                .iter()
+                .map(|r| incoming_entry_count(r, master_key))
+                .sum(),
             conflicts_queued: 0,
         });
     }
@@ -216,8 +218,8 @@ pub fn pull_once(
     for row in rows {
         let blob = EncryptedBlob::from_bytes(row.payload.clone());
         // Per the spec, every decrypt failure must look alike — no oracle.
-        let cs = decrypt_changeset(&blob, master_key, &row.device_id, row.seq as u64)
-            .map_err(|_| {
+        let cs =
+            decrypt_changeset(&blob, master_key, &row.device_id, row.seq as u64).map_err(|_| {
                 anyhow::anyhow!(
                     "failed to decrypt changeset from {} seq {} — wrong key or tampered blob",
                     row.device_id,
@@ -283,10 +285,7 @@ fn entries_array(cs: &Changeset) -> Option<Vec<serde_json::Value>> {
     }
     let (_magic, json) = bytes.split_at(4);
     let value: serde_json::Value = serde_json::from_slice(json).ok()?;
-    value
-        .get("entries")
-        .and_then(|v| v.as_array())
-        .cloned()
+    value.get("entries").and_then(|v| v.as_array()).cloned()
 }
 
 /// After applying incoming entries via LWW, run the same non-blocking

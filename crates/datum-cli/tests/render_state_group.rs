@@ -95,7 +95,9 @@ fn assert_lead_then_state_then_trail_bg(
     let body_idx = rendered[lead_idx..]
         .find(state_body)
         .map(|i| lead_idx + i)
-        .unwrap_or_else(|| panic!("state body {state_body:?} not found after LEAD in:\n{rendered:?}"));
+        .unwrap_or_else(|| {
+            panic!("state body {state_body:?} not found after LEAD in:\n{rendered:?}")
+        });
     // The state-cell bg escape sits between LEAD and the body.
     let between = &rendered[lead_idx..body_idx];
     assert!(

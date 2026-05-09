@@ -1277,7 +1277,10 @@ color = "yellow"
         );
         assert_eq!(kit.commands[1].name, "chorelist");
         assert_eq!(kit.commands[1].view.as_deref(), Some("chores_due"));
-        assert_eq!(kit.commands[1].columns, vec!["field", "next_due_raw", "iti"]);
+        assert_eq!(
+            kit.commands[1].columns,
+            vec!["field", "next_due_raw", "iti"]
+        );
         assert_eq!(kit.commands[1].sort.as_deref(), Some("next_due_raw"));
         assert_eq!(kit.commands[1].flags, vec!["watch".to_string()]);
         assert_eq!(kit.commands[1].color_rules.len(), 2);

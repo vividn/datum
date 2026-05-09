@@ -12,7 +12,7 @@
 mod common;
 
 use common::run_cli;
-use datum_core::entry::{CURRENT_PARSER_VERSION, PrecisionUnit};
+use datum_core::entry::{PrecisionUnit, CURRENT_PARSER_VERSION};
 use datum_core::test_util::fresh_db;
 
 /// `-K KEY -K KEY jake berlin` → slug `person:jake__berlin`.
@@ -20,7 +20,9 @@ use datum_core::test_util::fresh_db;
 fn dash_K_builds_slug_in_order() {
     let db = fresh_db();
     run_cli(
-        &["add", "person", "-K", "name", "-K", "city", "jake", "berlin"],
+        &[
+            "add", "person", "-K", "name", "-K", "city", "jake", "berlin",
+        ],
         &db,
     )
     .expect("add with -K slug keys");
@@ -39,8 +41,7 @@ fn dash_K_builds_slug_in_order() {
 #[test]
 fn dash_K_with_defaults() {
     let db = fresh_db();
-    run_cli(&["add", "book", "-K", "title=untitled"], &db)
-        .expect("add with -K default only");
+    run_cli(&["add", "book", "-K", "title=untitled"], &db).expect("add with -K default only");
 
     let entries = db.entries_for_field("book", None).unwrap();
     assert_eq!(entries.len(), 1);
@@ -55,7 +56,15 @@ fn dash_K_with_defaults() {
 fn dash_K_optional_absent_drops_segment() {
     let db = fresh_db();
     run_cli(
-        &["add", "book", "-K", "title=untitled", "-K", "year=", "Goldmund"],
+        &[
+            "add",
+            "book",
+            "-K",
+            "title=untitled",
+            "-K",
+            "year=",
+            "Goldmund",
+        ],
         &db,
     )
     .expect("add with trailing optional-no-default -K");
@@ -68,7 +77,10 @@ fn dash_K_optional_absent_drops_segment() {
     assert_eq!(e.slug, "book:Goldmund");
     let data = e.data.as_ref().expect("data populated");
     assert_eq!(data["title"], serde_json::json!("Goldmund"));
-    assert!(data.get("year").is_none(), "optional-absent key not in data");
+    assert!(
+        data.get("year").is_none(),
+        "optional-absent key not in data"
+    );
 }
 
 /// `-k KEY` (no `=`) fills from positional and lands in data only — slug
@@ -76,8 +88,7 @@ fn dash_K_optional_absent_drops_segment() {
 #[test]
 fn dash_k_affects_data_not_slug() {
     let db = fresh_db();
-    run_cli(&["note", "journal", "-k", "topic", "dreams"], &db)
-        .expect("note with -k slot");
+    run_cli(&["note", "journal", "-k", "topic", "dreams"], &db).expect("note with -k slot");
 
     let entries = db.entries_for_field("journal", None).unwrap();
     assert_eq!(entries.len(), 1);

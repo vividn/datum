@@ -15,8 +15,7 @@ use std::path::PathBuf;
 
 use anyhow::Result;
 use datum_commands::config::{
-    data_dir, load_raw_config_or_default, load_registry, RawConfig,
-    resolve_sync_server,
+    data_dir, load_raw_config_or_default, load_registry, resolve_sync_server, RawConfig,
 };
 
 /// A DB the agent should watch and sync.
@@ -65,9 +64,7 @@ pub fn targets_from(cfg: &RawConfig) -> Result<Vec<SyncTarget>> {
     //    watcher for a nonexistent file.
     if let Some(server) = resolve_sync_server(cfg, None) {
         let path = data_dir()?.join("datum.db");
-        if path.exists()
-            && !out.iter().any(|t| t.path == path)
-        {
+        if path.exists() && !out.iter().any(|t| t.path == path) {
             out.push(SyncTarget {
                 name: DEFAULT_DB_LABEL.to_string(),
                 path,

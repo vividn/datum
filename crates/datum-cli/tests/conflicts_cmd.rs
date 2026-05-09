@@ -61,7 +61,10 @@ fn double_start_creates_conflict_row() {
     );
     let c = &conflicts[0];
     assert_eq!(c.conflict_kind, ConflictKind::DoubleOpen);
-    assert!(c.remote_entry.is_some(), "double_open carries the older counterpart");
+    assert!(
+        c.remote_entry.is_some(),
+        "double_open carries the older counterpart"
+    );
     assert_eq!(c.local_entry.field, "workout");
 }
 
@@ -128,9 +131,7 @@ fn auto_resolver_closes_older_open_after_delay() {
     assert_eq!(pending.len(), 1, "pre-resolve: one pending conflict");
 
     // min_age_secs = 0 — conflict is eligible immediately.
-    let applied = db
-        .auto_resolve_conflicts(chrono::Utc::now(), 0)
-        .unwrap();
+    let applied = db.auto_resolve_conflicts(chrono::Utc::now(), 0).unwrap();
     assert_eq!(applied.len(), 1, "auto-resolver applied once");
     assert_eq!(applied[0].conflict_kind, ConflictKind::DoubleOpen);
 
@@ -163,7 +164,10 @@ fn auto_resolver_closes_older_open_after_delay() {
     );
     // Newer remains a Switch with no dur — under v3 that's entry_shape=Point.
     assert_eq!(newer.verb, Verb::Switch);
-    assert!(newer.dur.is_none(), "newer must remain dur-less (still 'open')");
+    assert!(
+        newer.dur.is_none(),
+        "newer must remain dur-less (still 'open')"
+    );
     assert_eq!(newer.entry_shape, EntryShape::Point);
 
     // Pending set should be empty now.
@@ -173,7 +177,10 @@ fn auto_resolver_closes_older_open_after_delay() {
             pending: Some(true),
         })
         .unwrap();
-    assert!(pending.is_empty(), "pending queue drained after auto-resolve");
+    assert!(
+        pending.is_empty(),
+        "pending queue drained after auto-resolve"
+    );
 }
 
 #[test]
@@ -198,9 +205,7 @@ fn auto_resolver_skips_if_kept_both() {
 
     // Auto-resolver runs — should find nothing eligible (resolution is
     // no longer NULL).
-    let applied = db
-        .auto_resolve_conflicts(chrono::Utc::now(), 0)
-        .unwrap();
+    let applied = db.auto_resolve_conflicts(chrono::Utc::now(), 0).unwrap();
     assert!(applied.is_empty(), "resolved conflict must not be reopened");
 
     // And the older entry should STILL be ongoing (no end_time was
@@ -231,7 +236,10 @@ fn now_view_shows_overlap_warning() {
     let entry = db.latest_entry_for_now("workout").unwrap().unwrap();
     latest.insert("workout".to_string(), entry);
     let mut overlap = HashMap::new();
-    overlap.insert("workout".to_string(), db.open_count_for_field("workout").unwrap());
+    overlap.insert(
+        "workout".to_string(),
+        db.open_count_for_field("workout").unwrap(),
+    );
 
     let out = render_now_view(&tf, &latest, &HashMap::new(), &overlap, false);
     let plain = strip_ansi(&out);
@@ -258,7 +266,10 @@ fn conflicts_list_shows_only_unresolved_by_default() {
     run_cli(&["start", "shower"], &db).expect("shower newer");
 
     let all = db
-        .list_conflicts(&ListFilter { kind: None, pending: None })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: None,
+        })
         .unwrap();
     assert_eq!(all.len(), 2, "two conflicts filed pre-resolution");
 
@@ -272,13 +283,12 @@ fn conflicts_list_shows_only_unresolved_by_default() {
         .unwrap();
 
     let pending = db
-        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
         .unwrap();
-    assert_eq!(
-        pending.len(),
-        1,
-        "default list should only show pending"
-    );
+    assert_eq!(pending.len(), 1, "default list should only show pending");
     assert_eq!(pending[0].local_entry.field, "shower");
 }
 
@@ -293,14 +303,20 @@ fn conflicts_list_all_includes_resolved() {
     run_cli(&["start", "shower"], &db).expect("shower newer");
 
     let all = db
-        .list_conflicts(&ListFilter { kind: None, pending: None })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: None,
+        })
         .unwrap();
     let target = all[0].clone();
     db.resolve_conflict(&target.hid, Resolution::KeepBoth)
         .unwrap();
 
     let after = db
-        .list_conflicts(&ListFilter { kind: None, pending: None })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: None,
+        })
         .unwrap();
     assert_eq!(after.len(), 2, "--all list returns both rows");
     let resolved_count = after.iter().filter(|c| c.resolution.is_some()).count();
@@ -334,7 +350,10 @@ fn conflicts_resolve_take_local_updates_entry_and_marks_resolved() {
 
     let resolved = db.resolve_conflict(&hid, Resolution::TakeLocal).unwrap();
     assert_eq!(resolved.resolution.as_deref(), Some("take_local"));
-    assert!(resolved.resolved_at.is_some(), "resolved_at must be stamped");
+    assert!(
+        resolved.resolved_at.is_some(),
+        "resolved_at must be stamped"
+    );
 
     // The entry referenced by local_entry.slug is still in the table
     // (rewrite_entry_to_snapshot is idempotent here).
@@ -449,8 +468,14 @@ fn conflicts_show_renders_diff() {
     let conflict = pending[0].clone();
 
     let out = render_conflict_show(&conflict);
-    assert!(out.contains("LOCAL"), "header must label LOCAL column:\n{out}");
-    assert!(out.contains("REMOTE"), "header must label REMOTE column:\n{out}");
+    assert!(
+        out.contains("LOCAL"),
+        "header must label LOCAL column:\n{out}"
+    );
+    assert!(
+        out.contains("REMOTE"),
+        "header must label REMOTE column:\n{out}"
+    );
     assert!(out.contains("workout"), "field name must appear:\n{out}");
     assert!(
         out.contains("--take local|remote"),
@@ -503,7 +528,10 @@ fn pending_conflict_count_excludes_resolved() {
 
     // Resolve it; count drops to 0.
     let pending = db
-        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
         .unwrap();
     db.resolve_conflict(&pending[0].hid, Resolution::KeepBoth)
         .unwrap();
@@ -523,7 +551,10 @@ fn conflicts_show_subcommand_dispatches_via_cli() {
     run_cli(&["start", "workout"], &db).expect("newer");
 
     let pending = db
-        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
         .unwrap();
     let hid = pending[0].hid.clone();
     run_cli(&["conflicts", "show", &hid], &db).expect("show dispatch");
@@ -538,7 +569,10 @@ fn conflicts_resolve_take_flag_dispatches_via_cli() {
     run_cli(&["start", "workout"], &db).expect("newer");
 
     let pending = db
-        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
         .unwrap();
     let hid = pending[0].hid.clone();
     run_cli(&["conflicts", "resolve", &hid, "--take", "local"], &db)
@@ -557,11 +591,13 @@ fn conflicts_resolve_skip_leaves_pending() {
     run_cli(&["start", "workout"], &db).expect("newer");
 
     let pending = db
-        .list_conflicts(&ListFilter { kind: None, pending: Some(true) })
+        .list_conflicts(&ListFilter {
+            kind: None,
+            pending: Some(true),
+        })
         .unwrap();
     let hid = pending[0].hid.clone();
-    run_cli(&["conflicts", "resolve", &hid, "--skip"], &db)
-        .expect("resolve --skip dispatch");
+    run_cli(&["conflicts", "resolve", &hid, "--skip"], &db).expect("resolve --skip dispatch");
 
     let after = db.get_conflict(&hid).unwrap().expect("hid still queryable");
     assert!(

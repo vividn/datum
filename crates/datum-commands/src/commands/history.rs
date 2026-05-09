@@ -38,8 +38,7 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
     }
 
     // Default: list every version, newest first.
-    let versions = datum_core::history::list(db.conn(), &hid, true)
-        .map_err(anyhow::Error::from)?;
+    let versions = datum_core::history::list(db.conn(), &hid, true).map_err(anyhow::Error::from)?;
 
     if args.json {
         let payload: Vec<_> = versions
@@ -84,11 +83,7 @@ pub fn history(args: HistoryArgs, db: &Db) -> Result<()> {
 /// Resolve "state at version N" for display or diff. Uses
 /// [`datum_core::history::state_at_version`] so the call site doesn't need
 /// to re-encode the v1-is-special rule.
-fn resolve_version_snapshot(
-    db: &Db,
-    current: &Entry,
-    version: u32,
-) -> Result<Entry> {
+fn resolve_version_snapshot(db: &Db, current: &Entry, version: u32) -> Result<Entry> {
     datum_core::history::state_at_version(db.conn(), &current.hid, version, Some(current))
         .map_err(anyhow::Error::from)?
         .ok_or_else(|| anyhow::anyhow!("version {version} not found for entry {}", current.hid))

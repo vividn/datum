@@ -116,12 +116,12 @@ impl Action {
     /// Foreground ANSI color for the action tag.
     fn ansi_color(self) -> &'static str {
         match self {
-            Action::Create => "\x1b[32m", // green
+            Action::Create => "\x1b[32m",                  // green
             Action::Delete | Action::Failed => "\x1b[31m", // red
-            Action::Exists => "\x1b[33m", // yellow
+            Action::Exists => "\x1b[33m",                  // yellow
             Action::Update | Action::Rename => "\x1b[36m", // cyan
-            Action::OWrite => "\x1b[34m", // blue
-            Action::NoDiff => "\x1b[38;2;255;165;0m", // orange
+            Action::OWrite => "\x1b[34m",                  // blue
+            Action::NoDiff => "\x1b[38;2;255;165;0m",      // orange
         }
     }
 }
@@ -276,7 +276,6 @@ fn paint_action(action: Action) -> String {
     let code = action.ansi_color();
     format!("{code}{}{RESET}", action.name())
 }
-
 
 // ─── Time rendering ──────────────────────────────────────────────────────────
 
@@ -522,8 +521,14 @@ pub fn print_table_with(
         let (time, prefix) = match args.metric {
             TimeMetricCol::Hybrid => (ex.time_hybrid.clone().unwrap_or_default(), ""),
             TimeMetricCol::Occur => (ex.time_occur.clone().unwrap_or_default(), ""),
-            TimeMetricCol::Create => (ex.time_create.clone().unwrap_or_default(), metric_prefix(TimeMetricCol::Create)),
-            TimeMetricCol::Modify => (ex.time_modify.clone().unwrap_or_default(), metric_prefix(TimeMetricCol::Modify)),
+            TimeMetricCol::Create => (
+                ex.time_create.clone().unwrap_or_default(),
+                metric_prefix(TimeMetricCol::Create),
+            ),
+            TimeMetricCol::Modify => (
+                ex.time_modify.clone().unwrap_or_default(),
+                metric_prefix(TimeMetricCol::Modify),
+            ),
             TimeMetricCol::None => (String::new(), ""),
         };
         let extras = args
@@ -553,13 +558,28 @@ pub fn print_table_with(
     // Column widths (visual, ANSI-aware).
     let vw = colors::visible_width;
     let time_header = "time";
-    let field_header = if rows.iter().any(|r| vw(&r.field) >= 5) { "field" } else { "f" };
-    let state_header = if rows.iter().any(|r| vw(&r.state) >= 5) { "state" } else { "s" };
+    let field_header = if rows.iter().any(|r| vw(&r.field) >= 5) {
+        "field"
+    } else {
+        "f"
+    };
+    let state_header = if rows.iter().any(|r| vw(&r.state) >= 5) {
+        "state"
+    } else {
+        "s"
+    };
     let dur_header = "dur";
     let hid_header = "hid";
 
     let time_w = std::iter::once(time_header.len())
-        .chain(rows.iter().map(|r| vw(&r.time) + if r.time_metric_prefix.is_empty() { 0 } else { 1 }))
+        .chain(rows.iter().map(|r| {
+            vw(&r.time)
+                + if r.time_metric_prefix.is_empty() {
+                    0
+                } else {
+                    1
+                }
+        }))
         .max()
         .unwrap_or(0);
     let field_w = std::iter::once(field_header.len())
@@ -593,11 +613,21 @@ pub fn print_table_with(
     // Header row.
     if !args.suppress_header {
         let mut header = String::new();
-        if show_time { push_cell(&mut header, time_header, time_w, true); }
-        if show_field { push_cell(&mut header, field_header, field_w, false); }
-        if show_state { push_cell(&mut header, state_header, state_w, false); }
-        if show_dur { push_cell(&mut header, dur_header, dur_w, false); }
-        if show_hid { push_cell(&mut header, hid_header, hid_w, false); }
+        if show_time {
+            push_cell(&mut header, time_header, time_w, true);
+        }
+        if show_field {
+            push_cell(&mut header, field_header, field_w, false);
+        }
+        if show_state {
+            push_cell(&mut header, state_header, state_w, false);
+        }
+        if show_dur {
+            push_cell(&mut header, dur_header, dur_w, false);
+        }
+        if show_hid {
+            push_cell(&mut header, hid_header, hid_w, false);
+        }
         for (i, col) in args.columns.iter().enumerate() {
             push_cell(&mut header, col, extras_w[i], false);
         }
@@ -613,16 +643,28 @@ pub fn print_table_with(
             } else {
                 format!("{}{}", paint(GRAY_FG, r.time_metric_prefix), r.time)
             };
-            let extra_pad = if r.time_metric_prefix.is_empty() { 0 } else { 1 };
+            let extra_pad = if r.time_metric_prefix.is_empty() {
+                0
+            } else {
+                1
+            };
             let pad = time_w.saturating_sub(vw(&r.time) + extra_pad);
             line.push_str(&" ".repeat(pad));
             line.push_str(&body);
             line.push_str("  ");
         }
-        if show_field { push_cell(&mut line, &r.field, field_w, false); }
-        if show_state { push_cell(&mut line, &r.state, state_w, false); }
-        if show_dur { push_cell(&mut line, &r.dur, dur_w, false); }
-        if show_hid { push_cell(&mut line, &r.hid, hid_w, false); }
+        if show_field {
+            push_cell(&mut line, &r.field, field_w, false);
+        }
+        if show_state {
+            push_cell(&mut line, &r.state, state_w, false);
+        }
+        if show_dur {
+            push_cell(&mut line, &r.dur, dur_w, false);
+        }
+        if show_hid {
+            push_cell(&mut line, &r.hid, hid_w, false);
+        }
         for (i, extra) in r.extras.iter().enumerate() {
             push_cell(&mut line, extra, extras_w[i], false);
         }
@@ -672,13 +714,7 @@ pub fn print_entry(
         suppress_header: false,
     };
     let ctx_slice = ctx.map(std::slice::from_ref);
-    print_table_with(
-        std::slice::from_ref(entry),
-        ctx_slice,
-        now,
-        registry,
-        &args,
-    );
+    print_table_with(std::slice::from_ref(entry), ctx_slice, now, registry, &args);
 }
 
 /// Back-compat shim: old callers used `print_logged(&entry)`. Maps to
@@ -833,7 +869,9 @@ fn render_now_state(
     field_stored_color: &Option<String>,
     state_colors: &HashMap<(String, String), String>,
 ) -> (String, usize) {
-    let Some(v) = value else { return (String::new(), 0); };
+    let Some(v) = value else {
+        return (String::new(), 0);
+    };
     match v {
         JsonValue::Array(items) if items.len() > 1 => {
             let parts: Vec<String> = items
@@ -960,12 +998,8 @@ pub fn render_now_view(
                     _ => false,
                 };
 
-                let (state_rendered, state_vw) = render_now_state(
-                    entry.value.as_ref(),
-                    &tf.field,
-                    &tf.color,
-                    state_colors,
-                );
+                let (state_rendered, state_vw) =
+                    render_now_state(entry.value.as_ref(), &tf.field, &tf.color, state_colors);
 
                 let entry_time = entry.start_time.as_ref().or(entry.end_time.as_ref());
                 let time_str = match entry_time {
@@ -983,7 +1017,11 @@ pub fn render_now_view(
                     is_dim: false,
                 };
 
-                if is_active { active.push(row); } else { stopped.push(row); }
+                if is_active {
+                    active.push(row);
+                } else {
+                    stopped.push(row);
+                }
             }
         }
     }
@@ -993,7 +1031,12 @@ pub fn render_now_view(
     ignored_rows.sort_by(|a, b| a.field.cmp(&b.field));
 
     let all_visible = active.iter().chain(stopped.iter());
-    let field_w = all_visible.clone().map(|r| r.field.len()).max().unwrap_or(0).max(1);
+    let field_w = all_visible
+        .clone()
+        .map(|r| r.field.len())
+        .max()
+        .unwrap_or(0)
+        .max(1);
     let state_w = all_visible.map(|r| r.state_vw).max().unwrap_or(0);
 
     let sep_len = 1 + 1 + field_w + 2 + state_w.max(1) + 2 + 10;
@@ -1030,20 +1073,30 @@ pub fn render_now_view(
         out.push('\n');
     };
 
-    for row in &active { write_row(&mut out, row); }
+    for row in &active {
+        write_row(&mut out, row);
+    }
     if !active.is_empty() && !stopped.is_empty() {
         writeln!(out, "{sep}").unwrap();
     }
-    for row in &stopped { write_row(&mut out, row); }
+    for row in &stopped {
+        write_row(&mut out, row);
+    }
     if show_ignored && !ignored_rows.is_empty() {
         if !active.is_empty() || !stopped.is_empty() {
             writeln!(out, "{sep}").unwrap();
         }
-        for row in &ignored_rows { write_row(&mut out, row); }
+        for row in &ignored_rows {
+            write_row(&mut out, row);
+        }
     }
 
     if active.is_empty() && stopped.is_empty() && !(show_ignored && !ignored_rows.is_empty()) {
-        writeln!(out, "No tracked (non-ignored) fields. Use `datum track <field>`.").unwrap();
+        writeln!(
+            out,
+            "No tracked (non-ignored) fields. Use `datum track <field>`."
+        )
+        .unwrap();
     }
     out
 }
@@ -1061,7 +1114,11 @@ fn format_ago(secs: i64) -> String {
     } else {
         let h = secs / 3600;
         let m = (secs % 3600) / 60;
-        if m == 0 { format!("{h}h ago") } else { format!("{h}h{m}m ago") }
+        if m == 0 {
+            format!("{h}h ago")
+        } else {
+            format!("{h}h{m}m ago")
+        }
     }
 }
 
@@ -1134,7 +1191,12 @@ pub fn render_conflict_show(c: &datum_core::conflicts::Conflict) -> String {
         None => vec!["(no counterpart)".to_string()],
     };
 
-    let lwidth = local_lines.iter().map(|s| s.len()).max().unwrap_or(0).max(5);
+    let lwidth = local_lines
+        .iter()
+        .map(|s| s.len())
+        .max()
+        .unwrap_or(0)
+        .max(5);
     let _ = writeln!(out, "  {:<lw$}    {}", "LOCAL", "REMOTE", lw = lwidth);
     let _ = writeln!(
         out,
@@ -1189,13 +1251,16 @@ fn entry_summary_lines(e: &Entry) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::colors::strip_ansi;
+    use super::*;
     use datum_core::time::DatumTime;
 
     #[test]
     fn show_none_propagates_as_silent() {
-        let args = OutputArgs { show: Show::None, format_string: None };
+        let args = OutputArgs {
+            show: Show::None,
+            format_string: None,
+        };
         assert!(args.silent());
     }
 
@@ -1299,7 +1364,10 @@ mod tests {
     #[test]
     fn table_with_no_entries_is_noop_when_silent() {
         let args = TableArgs {
-            output: OutputArgs { show: Show::None, format_string: None },
+            output: OutputArgs {
+                show: Show::None,
+                format_string: None,
+            },
             ..Default::default()
         };
         // Smoke: does not panic, produces no output.

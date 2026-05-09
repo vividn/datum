@@ -431,12 +431,7 @@ fn list(db: &Db) -> Result<()> {
     for k in kits {
         println!(
             "{:<24} {:>6}  {:>5}  {:>7}  {:>7}  {:>5}",
-            k.kit_id,
-            k.field_count,
-            k.view_count,
-            k.alias_count,
-            k.index_count,
-            k.command_count
+            k.kit_id, k.field_count, k.view_count, k.alias_count, k.index_count, k.command_count
         );
     }
     Ok(())

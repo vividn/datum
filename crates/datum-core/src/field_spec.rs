@@ -238,7 +238,8 @@ pub struct ResolvedPosition {
 pub const DEFAULT_FIELD_HEIGHT: f64 = 0.12;
 
 /// The subset of actions permitted as a field's `default_verb` (intent slot).
-pub const DEFAULT_VERB_CHOICES: &[Action] = &[Action::Occur, Action::Start, Action::Switch, Action::Add];
+pub const DEFAULT_VERB_CHOICES: &[Action] =
+    &[Action::Occur, Action::Start, Action::Switch, Action::Add];
 
 /// Deterministic-hash fallback for a field's `y` position. Stable across runs
 /// and platforms so unconfigured fields land at the same vertical position
@@ -1355,7 +1356,8 @@ mod tests {
 
     #[test]
     fn render_deserializes_from_object_json() {
-        let json = r#"{"field":"x","default_verb":"occur","subfields":{},"render":{"dayview":false}}"#;
+        let json =
+            r#"{"field":"x","default_verb":"occur","subfields":{},"render":{"dayview":false}}"#;
         let spec: FieldSpec = serde_json::from_str(json).unwrap();
         match spec.render {
             Some(Render::PerSurface(m)) => {

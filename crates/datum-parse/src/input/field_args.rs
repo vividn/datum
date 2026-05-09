@@ -15,16 +15,14 @@ use crate::input::flag_registry::{FlagAction, FlagSpec};
 /// captured by the parser's positional path (not a flag), so this only
 /// declares `-F/--fieldless`. Commands that don't accept fieldless mode
 /// (logging verbs today) skip this spec when assembling their registry.
-pub static FLAG_SPECS: &[FlagSpec<FieldArgs>] = &[
-    FlagSpec {
-        short: Some('F'),
-        long: Some("fieldless"),
-        action: FlagAction::Switch(|a| {
-            a.fieldless = true;
-            Ok(())
-        }),
-    },
-];
+pub static FLAG_SPECS: &[FlagSpec<FieldArgs>] = &[FlagSpec {
+    short: Some('F'),
+    long: Some("fieldless"),
+    action: FlagAction::Switch(|a| {
+        a.fieldless = true;
+        Ok(())
+    }),
+}];
 
 /// Parsed shape of the `field` / `--fieldless` flag pair.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -61,19 +59,28 @@ mod tests {
 
     #[test]
     fn plain_field_passes_through() {
-        let a = FieldArgs { field: Some("coffee".into()), fieldless: false };
+        let a = FieldArgs {
+            field: Some("coffee".into()),
+            fieldless: false,
+        };
         assert_eq!(a.resolved(), Some("coffee"));
     }
 
     #[test]
     fn fieldless_flag_suppresses_positional() {
-        let a = FieldArgs { field: Some("coffee".into()), fieldless: true };
+        let a = FieldArgs {
+            field: Some("coffee".into()),
+            fieldless: true,
+        };
         assert_eq!(a.resolved(), None);
     }
 
     #[test]
     fn fieldless_flag_without_value_still_returns_none() {
-        let a = FieldArgs { field: None, fieldless: true };
+        let a = FieldArgs {
+            field: None,
+            fieldless: true,
+        };
         assert_eq!(a.resolved(), None);
     }
 }

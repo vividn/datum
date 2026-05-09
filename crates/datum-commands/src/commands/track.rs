@@ -42,7 +42,8 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         for sc in &args.state_colors {
             match sc.split_once('=') {
                 Some((state, color)) => {
-                    spec.state_colors.insert(state.to_string(), color.to_string());
+                    spec.state_colors
+                        .insert(state.to_string(), color.to_string());
                 }
                 None => anyhow::bail!("Invalid --state format: expected STATE=COLOR, got '{sc}'"),
             }

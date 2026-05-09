@@ -29,7 +29,5 @@ pub use messages::auth::{
     AuthToken, DeviceCodeAuthorizeRequest, DeviceCodePollQuery, DeviceCodeRequest,
     DeviceCodeResponse, PollResponse, RefreshTokenRequest,
 };
-pub use messages::sync::{
-    Changeset, KdfParams, PushRequest, PushResponse, WrappedKey,
-};
+pub use messages::sync::{Changeset, KdfParams, PushRequest, PushResponse, WrappedKey};
 pub use version::PROTOCOL_VERSION;

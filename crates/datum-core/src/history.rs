@@ -107,17 +107,10 @@ pub fn next_version(conn: &Connection, entry_hid: &str) -> Result<u32> {
 /// Returns the stored version. The `executor` parameter lets this run inside
 /// a caller-owned transaction (recommended — the companion `entries` mutation
 /// should live in the same transaction to keep the trail in lockstep).
-pub fn record(
-    executor: &Connection,
-    snapshot: &Entry,
-    change_kind: ChangeKind,
-) -> Result<u32> {
+pub fn record(executor: &Connection, snapshot: &Entry, change_kind: ChangeKind) -> Result<u32> {
     let version = next_version(executor, &snapshot.hid)?;
     let snapshot_json = serde_json::to_string(snapshot)?;
-    let alias_chain_json = snapshot
-        .alias_chain
-        .as_ref()
-        .map(|v| v.to_string());
+    let alias_chain_json = snapshot.alias_chain.as_ref().map(|v| v.to_string());
     executor.execute(
         r#"INSERT INTO entry_history (
             entry_hid, version, snapshot, modify_time,
@@ -140,11 +133,7 @@ pub fn record(
 /// List every history row for `entry_hid`. When `newest_first` is true the
 /// highest version comes first (natural `datum history` ordering); otherwise
 /// rows are returned in chronological / version-ascending order.
-pub fn list(
-    conn: &Connection,
-    entry_hid: &str,
-    newest_first: bool,
-) -> Result<Vec<HistoryVersion>> {
+pub fn list(conn: &Connection, entry_hid: &str, newest_first: bool) -> Result<Vec<HistoryVersion>> {
     let sql = if newest_first {
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
                 alias_chain, device_id, change_kind
@@ -164,11 +153,7 @@ pub fn list(
 }
 
 /// Fetch the row for a specific (entry_hid, version) tuple, if present.
-pub fn get(
-    conn: &Connection,
-    entry_hid: &str,
-    version: u32,
-) -> Result<Option<HistoryVersion>> {
+pub fn get(conn: &Connection, entry_hid: &str, version: u32) -> Result<Option<HistoryVersion>> {
     conn.query_row(
         "SELECT entry_hid, version, snapshot, modify_time, raw_input,
                 alias_chain, device_id, change_kind
@@ -226,22 +211,14 @@ pub fn state_at_version(
 fn row_to_version(row: &rusqlite::Row<'_>) -> rusqlite::Result<HistoryVersion> {
     let snapshot_json: String = row.get("snapshot")?;
     let snapshot: Entry = serde_json::from_str(&snapshot_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Text,
-            Box::new(e),
-        )
+        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
     })?;
-    let modify_time: DateTime<Utc> = row
-        .get::<_, String>("modify_time")?
-        .parse()
-        .map_err(|e: chrono::ParseError| {
-            rusqlite::Error::FromSqlConversionFailure(
-                0,
-                rusqlite::types::Type::Text,
-                e.into(),
-            )
-        })?;
+    let modify_time: DateTime<Utc> =
+        row.get::<_, String>("modify_time")?
+            .parse()
+            .map_err(|e: chrono::ParseError| {
+                rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, e.into())
+            })?;
     let alias_chain: Option<JsonValue> = row
         .get::<_, Option<String>>("alias_chain")?
         .and_then(|s| serde_json::from_str(&s).ok());

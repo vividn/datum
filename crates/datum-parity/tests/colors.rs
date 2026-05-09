@@ -34,7 +34,14 @@ fn parse_rows(body: &str) -> Vec<Row<'_>> {
         if !header_seen {
             assert_eq!(
                 cols,
-                vec!["field", "state", "expected_hex", "source", "contrast_fg", "note"],
+                vec![
+                    "field",
+                    "state",
+                    "expected_hex",
+                    "source",
+                    "contrast_fg",
+                    "note"
+                ],
                 "header on line {lineno}"
             );
             header_seen = true;
@@ -92,10 +99,8 @@ fn color_goldens_match_datum_algorithm() {
     let rows = parse_rows(FIXTURE);
     for row in &rows {
         // Look up spec overrides for this fixture.
-        let field_spec_color: Option<&str> = row
-            .field
-            .and_then(myspec::field_spec)
-            .and_then(|s| s.color);
+        let field_spec_color: Option<&str> =
+            row.field.and_then(myspec::field_spec).and_then(|s| s.color);
         let state_spec_color: Option<&str> = match (row.field, row.state) {
             (Some(f), Some(s)) => myspec::state_spec(f, s).and_then(|ss| ss.color),
             _ => None,
@@ -103,12 +108,9 @@ fn color_goldens_match_datum_algorithm() {
 
         let computed = match row.state {
             None => colors::field_color(row.field, field_spec_color),
-            Some(state) => colors::state_color(
-                Some(state),
-                row.field,
-                field_spec_color,
-                state_spec_color,
-            ),
+            Some(state) => {
+                colors::state_color(Some(state), row.field, field_spec_color, state_spec_color)
+            }
         };
 
         assert_eq!(

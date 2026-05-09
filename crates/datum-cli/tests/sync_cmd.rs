@@ -95,14 +95,17 @@ fn sync_login_polls_until_authorized() {
     let client = Client::builder().build().unwrap();
     let mut prompter = TestPrompter::new::<Vec<String>, String>(vec![]);
 
-    let token = login::run_with_client(&relay.base_url, &client, &mut prompter)
-        .expect("login succeeds");
+    let token =
+        login::run_with_client(&relay.base_url, &client, &mut prompter).expect("login succeeds");
 
     assert!(!token.token.is_empty(), "non-empty bearer token");
     // Per spec, /v1/auth/device-code/poll echoes the canonical UUID as
     // user_id; the username only matters for the verification UX which
     // is out of scope for v1.
-    assert_eq!(token.user_id.as_deref(), Some(relay.user_id.to_string().as_str()));
+    assert_eq!(
+        token.user_id.as_deref(),
+        Some(relay.user_id.to_string().as_str())
+    );
     assert_eq!(token.server.as_deref(), Some(relay.base_url.as_str()));
 
     // Prompter captured the verification URL + user code (exact values are
@@ -112,9 +115,7 @@ fn sync_login_polls_until_authorized() {
         prompter
             .events
             .iter()
-            .any(|e| e.starts_with("login:")
-                && e.matches(':').count() >= 2
-                && !e.ends_with(':')),
+            .any(|e| e.starts_with("login:") && e.matches(':').count() >= 2 && !e.ends_with(':')),
         "expected login instructions, got: {:?}",
         prompter.events
     );
@@ -158,8 +159,7 @@ fn sync_login_stores_token_at_xdg_path() {
     let client = Client::builder().build().unwrap();
     let mut prompter = TestPrompter::new::<Vec<String>, String>(vec![]);
 
-    login::run_with_client(&relay.base_url, &client, &mut prompter)
-        .expect("login succeeds");
+    login::run_with_client(&relay.base_url, &client, &mut prompter).expect("login succeeds");
 
     // The token must be persisted under $XDG_CONFIG_HOME/datum/auth/<host>.json.
     let host = server_host_from_url(&relay.base_url);
@@ -193,10 +193,17 @@ fn sync_config_set_server_per_db() {
 
     let cfg = load_raw_config_or_default().unwrap();
     let section = cfg.databases.get("fitness").expect("db section present");
-    assert_eq!(section.sync_server.as_deref(), Some("https://sync.example.com"));
+    assert_eq!(
+        section.sync_server.as_deref(),
+        Some("https://sync.example.com")
+    );
 
     // Global default stays unset.
-    assert!(cfg.sync.as_ref().and_then(|s| s.default_server.as_ref()).is_none());
+    assert!(cfg
+        .sync
+        .as_ref()
+        .and_then(|s| s.default_server.as_ref())
+        .is_none());
 
     // And resolve_sync_server picks up the per-db value.
     assert_eq!(
@@ -267,13 +274,9 @@ fn sync_key_init_creates_wrapped_upload() {
     let client = Client::builder().build().unwrap();
     let mut prompter = TestPrompter::new(["secret-passphrase", "secret-passphrase"]);
 
-    let master = datum_cli::sync::key::init_with_client(
-        &relay.base_url,
-        &client,
-        false,
-        &mut prompter,
-    )
-    .expect("init ok");
+    let master =
+        datum_cli::sync::key::init_with_client(&relay.base_url, &client, false, &mut prompter)
+            .expect("init ok");
 
     // Local plaintext key written (mode 0600).
     let host = server_host_from_url(&relay.base_url);
@@ -297,13 +300,9 @@ fn sync_key_init_creates_wrapped_upload() {
 
     // Existing key without --force must error.
     let mut prompter2 = TestPrompter::new::<Vec<String>, String>(vec![]);
-    let err = datum_cli::sync::key::init_with_client(
-        &relay.base_url,
-        &client,
-        false,
-        &mut prompter2,
-    )
-    .unwrap_err();
+    let err =
+        datum_cli::sync::key::init_with_client(&relay.base_url, &client, false, &mut prompter2)
+            .unwrap_err();
     assert!(
         err.to_string().contains("already exists"),
         "expected already-exists error, got: {err}"
@@ -319,13 +318,9 @@ fn sync_key_unlock_downloads_and_unwraps() {
 
     // Init on one device (simulating a prior session on the same host).
     let mut prompter = TestPrompter::new(["pass1", "pass1"]);
-    let master = datum_cli::sync::key::init_with_client(
-        &relay.base_url,
-        &client,
-        false,
-        &mut prompter,
-    )
-    .expect("init ok");
+    let master =
+        datum_cli::sync::key::init_with_client(&relay.base_url, &client, false, &mut prompter)
+            .expect("init ok");
 
     // Delete the local key file — simulating a fresh device.
     let host = server_host_from_url(&relay.base_url);
@@ -334,12 +329,9 @@ fn sync_key_unlock_downloads_and_unwraps() {
 
     // Unlock with the right passphrase recovers the same key.
     let mut prompter2 = TestPrompter::new(["pass1"]);
-    let recovered = datum_cli::sync::key::unlock_with_client(
-        &relay.base_url,
-        &client,
-        &mut prompter2,
-    )
-    .expect("unlock ok");
+    let recovered =
+        datum_cli::sync::key::unlock_with_client(&relay.base_url, &client, &mut prompter2)
+            .expect("unlock ok");
     assert_eq!(recovered, master);
     assert!(key_path.exists());
 }
@@ -361,12 +353,8 @@ fn sync_key_wrong_passphrase_fails() {
     std::fs::remove_file(&key_path).unwrap();
 
     let mut bad_prompter = TestPrompter::new(["wrong-pass"]);
-    let err = datum_cli::sync::key::unlock_with_client(
-        &relay.base_url,
-        &client,
-        &mut bad_prompter,
-    )
-    .unwrap_err();
+    let err = datum_cli::sync::key::unlock_with_client(&relay.base_url, &client, &mut bad_prompter)
+        .unwrap_err();
     let msg = err.to_string();
     assert!(
         msg.contains("unlock failed"),
@@ -388,26 +376,21 @@ fn end_to_end_login_and_key_init() {
 
     // 1. Login
     let mut login_prompter = TestPrompter::new::<Vec<String>, String>(vec![]);
-    let token = login::run_with_client(&relay.base_url, &client, &mut login_prompter)
-        .expect("login");
+    let token =
+        login::run_with_client(&relay.base_url, &client, &mut login_prompter).expect("login");
     assert!(!token.token.is_empty());
 
     // 2. Key init using the newly stored token
     let mut key_prompter = TestPrompter::new(["the-pass", "the-pass"]);
-    let master = datum_cli::sync::key::init_with_client(
-        &relay.base_url,
-        &client,
-        false,
-        &mut key_prompter,
-    )
-    .expect("key init");
+    let master =
+        datum_cli::sync::key::init_with_client(&relay.base_url, &client, false, &mut key_prompter)
+            .expect("key init");
 
     // 3. Wrapped key lives on the relay and unwraps back to `master`.
     let wrapped_json = relay.wrapped_key().expect("relay has wrapped key");
     let wrapped: datum_sync_client::crypto::key_wrap::WrappedKey =
         serde_json::from_value(wrapped_json).expect("parse wrapped");
-    let recovered =
-        datum_sync_client::crypto::key_wrap::unwrap_master_key("the-pass", &wrapped)
-            .expect("unwrap");
+    let recovered = datum_sync_client::crypto::key_wrap::unwrap_master_key("the-pass", &wrapped)
+        .expect("unwrap");
     assert_eq!(recovered, master);
 }

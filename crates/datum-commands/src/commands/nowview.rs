@@ -24,8 +24,8 @@ use datum_core::entry::{Entry, Verb};
 use datum_core::field_spec::FieldSpec;
 use datum_core::shape::{is_switching_verb, is_unrendered_switch_value, render_shape, RenderShape};
 use datum_layout::dayview::{
-    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput,
-    DayviewFieldInput, DayviewPoint, Orientation,
+    compute_dayview, BlockFill, DayviewBlock, DayviewConfig, DayviewDayInput, DayviewFieldInput,
+    DayviewPoint, Orientation,
 };
 use datum_layout::nowview::{
     default_width_for_history, nowview_axis_ticks, NowviewBlock, NowviewField, NowviewPanelEntry,
@@ -59,11 +59,9 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
         // Re-render whenever an external `datum` write bumps the SQLite
         // data_version (≈500ms latency), with a 60s periodic refresh so
         // the clock label stays current on an idle DB.
-        crate::commands::watch::watch_loop(
-            db,
-            std::time::Duration::from_secs(60),
-            || render_once(&args, db),
-        )
+        crate::commands::watch::watch_loop(db, std::time::Duration::from_secs(60), || {
+            render_once(&args, db)
+        })
     } else {
         render_once(&args, db)
     }
@@ -71,17 +69,16 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
 
 fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     let history_minutes = match &args.history {
-        Some(s) => duration_minutes(s)
-            .with_context(|| format!("invalid --history: '{s}'"))?,
+        Some(s) => duration_minutes(s).with_context(|| format!("invalid --history: '{s}'"))?,
         None => DEFAULT_HISTORY_MINUTES,
     };
     if history_minutes <= 0.0 {
         anyhow::bail!("--history must be positive (got {history_minutes} minutes)");
     }
 
-    let width = args.width.unwrap_or_else(|| {
-        default_width_for_history(history_minutes) + PANEL_DEFAULT_WIDTH_BUMP
-    });
+    let width = args
+        .width
+        .unwrap_or_else(|| default_width_for_history(history_minutes) + PANEL_DEFAULT_WIDTH_BUMP);
     let end = Utc::now();
     let end_ms = end.timestamp_millis();
     let start_ms = end_ms - (history_minutes * 60_000.0) as i64;
@@ -99,7 +96,9 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
         fields,
     };
 
-    let panel_width = DEFAULT_PANEL_WIDTH.min((width - 2.0 * args.margin) * 0.5).max(0.0);
+    let panel_width = DEFAULT_PANEL_WIDTH
+        .min((width - 2.0 * args.margin) * 0.5)
+        .max(0.0);
 
     // Pre-compute the time-axis extent so the relative-minute tick
     // override resolves to the same pixel space dayview will use. Mirrors
@@ -107,8 +106,10 @@ fn render_once(args: &NowviewArgs, db: &Db) -> Result<()> {
     // (label_width = 0) so the time axis only loses the panel reservation.
     let plot_width = (width - 2.0 * args.margin).max(0.0);
     let time_axis_extent_for_ticks = (plot_width - panel_width).max(0.0);
-    let axis_ticks_override =
-        Some(nowview_axis_ticks(time_axis_extent_for_ticks, history_minutes));
+    let axis_ticks_override = Some(nowview_axis_ticks(
+        time_axis_extent_for_ticks,
+        history_minutes,
+    ));
 
     let day_height = if args.height > 0.0 {
         // Use the requested height as the per-day band, leaving room for
@@ -180,9 +181,7 @@ fn write_output(path: &str, svg: &str) -> Result<()> {
                  instead (got: {path})"
             );
         }
-        _ => anyhow::bail!(
-            "output file must end in .svg, .png, or .html: {path}"
-        ),
+        _ => anyhow::bail!("output file must end in .svg, .png, or .html: {path}"),
     }
     Ok(())
 }
@@ -200,9 +199,7 @@ fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
         let fallback = fontdb.faces().next().and_then(|face| {
             face.families
                 .iter()
-                .find(|(_, lang)| {
-                    *lang == resvg::usvg::fontdb::Language::English_UnitedStates
-                })
+                .find(|(_, lang)| *lang == resvg::usvg::fontdb::Language::English_UnitedStates)
                 .or_else(|| face.families.first())
                 .map(|(name, _)| name.clone())
         });
@@ -220,7 +217,11 @@ fn rasterize_to_png(svg_xml: &str) -> Result<Vec<u8>> {
     let size = tree.size().to_int_size();
     let mut pixmap = resvg::tiny_skia::Pixmap::new(size.width(), size.height())
         .ok_or_else(|| anyhow::anyhow!("allocate pixmap {}x{}", size.width(), size.height()))?;
-    resvg::render(&tree, resvg::tiny_skia::Transform::default(), &mut pixmap.as_mut());
+    resvg::render(
+        &tree,
+        resvg::tiny_skia::Transform::default(),
+        &mut pixmap.as_mut(),
+    );
     pixmap
         .encode_png()
         .map_err(|e| anyhow::anyhow!("encode PNG: {e}"))
@@ -345,8 +346,8 @@ pub(crate) fn build_fields(
 ) -> Result<Vec<NowviewField>> {
     let day_end_ms = end.timestamp_millis();
 
-    let window_start = end
-        - chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
+    let window_start =
+        end - chrono::Duration::seconds((history_minutes.max(1.0) * 60.0 * 4.0) as i64);
     let params = ListParams {
         field: None,
         metric: TimeMetric::Hybrid,
@@ -913,7 +914,14 @@ mod tests {
 
     #[test]
     fn rgb_to_hex_emits_six_digit_lowercase() {
-        assert_eq!(rgb_to_hex(Rgb { r: 0xab, g: 0x12, b: 0xcd }), "#ab12cd");
+        assert_eq!(
+            rgb_to_hex(Rgb {
+                r: 0xab,
+                g: 0x12,
+                b: 0xcd
+            }),
+            "#ab12cd"
+        );
         assert_eq!(rgb_to_hex(Rgb { r: 0, g: 0, b: 0 }), "#000000");
     }
 
@@ -1130,13 +1138,18 @@ mod tests {
             Some(JsonValue::String("eating".into())),
             None,
         )];
-        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 13, 0, 0).unwrap().timestamp_millis();
+        let now_ms = Utc
+            .with_ymd_and_hms(2026, 4, 27, 13, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, now_ms);
-        let (blocks, points) =
-            render_field_visuals_terminal(&entries, "lunch", None, &ends, &db);
+        let (blocks, points) = render_field_visuals_terminal(&entries, "lunch", None, &ends, &db);
         assert!(points.is_empty());
         assert_eq!(blocks.len(), 1);
-        assert_eq!(blocks[0].start_ms, occur.timestamp_millis() - 30 * 60 * 1000);
+        assert_eq!(
+            blocks[0].start_ms,
+            occur.timestamp_millis() - 30 * 60 * 1000
+        );
         assert_eq!(blocks[0].end_ms, occur.timestamp_millis());
     }
 
@@ -1154,10 +1167,12 @@ mod tests {
             Some(JsonValue::String("commit".into())),
             Some(JsonValue::String("review".into())),
         )];
-        let now_ms = Utc.with_ymd_and_hms(2026, 4, 27, 12, 0, 0).unwrap().timestamp_millis();
+        let now_ms = Utc
+            .with_ymd_and_hms(2026, 4, 27, 12, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, now_ms);
-        let (blocks, points) =
-            render_field_visuals_terminal(&entries, "task", None, &ends, &db);
+        let (blocks, points) = render_field_visuals_terminal(&entries, "task", None, &ends, &db);
         assert_eq!(points.len(), 1);
         assert_ne!(points[0].fg_color, points[0].bg_color);
         assert_eq!(blocks.len(), 1);
@@ -1180,8 +1195,14 @@ mod tests {
             Some(JsonValue::String("groggy".into())),
             Some(JsonValue::String("focused".into())),
         )];
-        let day_start = Utc.with_ymd_and_hms(2026, 4, 27, 0, 0, 0).unwrap().timestamp_millis();
-        let day_end = Utc.with_ymd_and_hms(2026, 4, 28, 0, 0, 0).unwrap().timestamp_millis();
+        let day_start = Utc
+            .with_ymd_and_hms(2026, 4, 27, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
+        let day_end = Utc
+            .with_ymd_and_hms(2026, 4, 28, 0, 0, 0)
+            .unwrap()
+            .timestamp_millis();
         let ends = switch_region_end_ms(&entries, day_end);
         let (blocks, points) =
             render_field_visuals(&entries, "mood", None, day_start, day_end, &ends, &db);

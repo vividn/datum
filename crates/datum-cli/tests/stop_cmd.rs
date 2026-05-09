@@ -60,10 +60,8 @@ fn stop_last_state_captures_prior_switch_state() {
     let db = fresh_db();
 
     // Switch 1 minute ago so it strictly precedes the stop.
-    run_cli(&["switch", "activity", "cello", "-t=-1"], &db)
-        .expect("switch dispatch");
-    run_cli(&["stop", "activity", "--last-state"], &db)
-        .expect("stop --last-state dispatch");
+    run_cli(&["switch", "activity", "cello", "-t=-1"], &db).expect("switch dispatch");
+    run_cli(&["stop", "activity", "--last-state"], &db).expect("stop --last-state dispatch");
 
     let entries = db.entries_for_field("activity", None).unwrap();
     assert_eq!(entries.len(), 2, "switch + stop produce two entries");
@@ -114,8 +112,15 @@ fn stop_dur_produces_closed_backward_block() {
         .find(|e| matches!(e.verb, Verb::Block))
         .expect("stop entry present");
 
-    let ts = stop.occur_time.as_ref().expect("stop --dur anchors occur_time").utc;
-    let te = stop.computed_end_time().expect("stop --dur derives end time").utc;
+    let ts = stop
+        .occur_time
+        .as_ref()
+        .expect("stop --dur anchors occur_time")
+        .utc;
+    let te = stop
+        .computed_end_time()
+        .expect("stop --dur derives end time")
+        .utc;
     assert_eq!(
         (te - ts).num_seconds(),
         5 * 60,
@@ -128,7 +133,9 @@ fn stop_dur_produces_closed_backward_block() {
     assert_eq!(at_end, json!(false));
     // Strictly before the stop block started, the anchoring `start` still
     // governs → state=true.
-    let before_hole = db.get_active_state("dance", ts - chrono::Duration::seconds(1)).unwrap();
+    let before_hole = db
+        .get_active_state("dance", ts - chrono::Duration::seconds(1))
+        .unwrap();
     assert_eq!(before_hole, json!(true));
 }
 
@@ -143,16 +150,12 @@ fn stop_dur_produces_closed_backward_block() {
 fn stop_without_dur_is_moment_like() {
     let db = fresh_db();
 
-    run_cli(&["stop", "dance", "-k", "skillPoints=3"], &db)
-        .expect("stop with -k");
+    run_cli(&["stop", "dance", "-k", "skillPoints=3"], &db).expect("stop with -k");
 
     let entry = &db.entries_for_field("dance", None).unwrap()[0];
     assert_entry_matches!(entry, field: "dance", verb: "switch");
     assert!(entry.occur_time.is_some());
-    assert!(
-        entry.dur.is_none(),
-        "no --dur ⇒ no dur (moment semantics)",
-    );
+    assert!(entry.dur.is_none(), "no --dur ⇒ no dur (moment semantics)",);
     let extra = entry.data.as_ref().expect("extra_data with skillPoints");
     assert_eq!(extra["skillPoints"], json!(3));
 }
@@ -194,11 +197,7 @@ fn stop_extras_do_not_imply_duration() {
 fn stop_positional_values_never_become_duration() {
     let db = fresh_db();
 
-    run_cli(
-        &["stop", "field", "50", "-k", "abc=123"],
-        &db,
-    )
-    .expect("stop with positional value");
+    run_cli(&["stop", "field", "50", "-k", "abc=123"], &db).expect("stop with positional value");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", value: 50);
@@ -240,7 +239,15 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     let db = fresh_db();
 
     run_cli(
-        &["stop", "field", "reqVal1", "--dur", "30m", "-k", "req1=extra"],
+        &[
+            "stop",
+            "field",
+            "reqVal1",
+            "--dur",
+            "30m",
+            "-k",
+            "req1=extra",
+        ],
         &db,
     )
     .expect("stop --dur 30m -k ... dispatch");
@@ -285,8 +292,7 @@ fn stop_last_state_closes_open_start_block() {
     let db = fresh_db();
 
     run_cli(&["start", "working", "-t=-1"], &db).expect("start dispatch");
-    run_cli(&["stop", "working", "--last-state"], &db)
-        .expect("stop --last-state dispatch");
+    run_cli(&["stop", "working", "--last-state"], &db).expect("stop --last-state dispatch");
 
     let entries = db.entries_for_field("working", None).unwrap();
     let stop = entries

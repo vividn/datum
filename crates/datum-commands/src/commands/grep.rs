@@ -63,11 +63,23 @@ mod tests {
         value: serde_json::Value,
         extra: Option<serde_json::Value>,
     ) -> Entry {
-        let base: chrono::DateTime<chrono::Utc> =
-            "2024-01-01T00:00:00Z".parse().unwrap();
+        let base: chrono::DateTime<chrono::Utc> = "2024-01-01T00:00:00Z".parse().unwrap();
         let utc = base + chrono::Duration::seconds(secs_offset);
-        let t = DatumTime { utc, offset_minutes: 0, timezone: "UTC".to_string() };
-        Entry::new_legacy(field, Verb::Point, Some(value), extra, None, Some(t), None, "d1")
+        let t = DatumTime {
+            utc,
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        Entry::new_legacy(
+            field,
+            Verb::Point,
+            Some(value),
+            extra,
+            None,
+            Some(t),
+            None,
+            "d1",
+        )
     }
 
     fn run_grep(db: &datum_core::db::Db, patterns: &[&str], field: Option<&str>) -> Vec<Entry> {
@@ -92,9 +104,22 @@ mod tests {
     fn grep_single_pattern_regex() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        db.insert_entry(&make_grep_entry("mood", 100, serde_json::json!("happy"), None)).unwrap();
-        db.insert_entry(&make_grep_entry("mood", 200, serde_json::json!("tired"), None)).unwrap();
-        db.insert_entry(&make_grep_entry("coffee", 300, serde_json::json!(2), None)).unwrap();
+        db.insert_entry(&make_grep_entry(
+            "mood",
+            100,
+            serde_json::json!("happy"),
+            None,
+        ))
+        .unwrap();
+        db.insert_entry(&make_grep_entry(
+            "mood",
+            200,
+            serde_json::json!("tired"),
+            None,
+        ))
+        .unwrap();
+        db.insert_entry(&make_grep_entry("coffee", 300, serde_json::json!(2), None))
+            .unwrap();
 
         // Literal string match
         let got = run_grep(&db, &["happy"], None);
@@ -111,7 +136,11 @@ mod tests {
 
         // Exercise the command dispatch path for completeness
         grep(
-            GrepArgs { patterns: vec!["happy".to_string()], field: None, output: Default::default() },
+            GrepArgs {
+                patterns: vec!["happy".to_string()],
+                field: None,
+                output: Default::default(),
+            },
             &db,
         )
         .unwrap();
@@ -127,21 +156,24 @@ mod tests {
             100,
             serde_json::json!("hello"),
             Some(serde_json::json!({"tag": "foo", "project": "bar"})),
-        )).unwrap();
+        ))
+        .unwrap();
         // Entry with only "foo"
         db.insert_entry(&make_grep_entry(
             "notes",
             200,
             serde_json::json!("world"),
             Some(serde_json::json!({"tag": "foo"})),
-        )).unwrap();
+        ))
+        .unwrap();
         // Entry with only "bar"
         db.insert_entry(&make_grep_entry(
             "notes",
             300,
             serde_json::json!("world"),
             Some(serde_json::json!({"project": "bar"})),
-        )).unwrap();
+        ))
+        .unwrap();
 
         let got = run_grep(&db, &["foo", "bar"], None);
         assert_eq!(got.len(), 1);
@@ -163,9 +195,27 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         // "rust" appears in both a mood entry and a project entry
-        db.insert_entry(&make_grep_entry("mood", 100, serde_json::json!("excited about rust"), None)).unwrap();
-        db.insert_entry(&make_grep_entry("project", 200, serde_json::json!("learn rust"), None)).unwrap();
-        db.insert_entry(&make_grep_entry("mood", 300, serde_json::json!("calm"), None)).unwrap();
+        db.insert_entry(&make_grep_entry(
+            "mood",
+            100,
+            serde_json::json!("excited about rust"),
+            None,
+        ))
+        .unwrap();
+        db.insert_entry(&make_grep_entry(
+            "project",
+            200,
+            serde_json::json!("learn rust"),
+            None,
+        ))
+        .unwrap();
+        db.insert_entry(&make_grep_entry(
+            "mood",
+            300,
+            serde_json::json!("calm"),
+            None,
+        ))
+        .unwrap();
 
         // No field filter → both "rust" entries match
         let got = run_grep(&db, &["rust"], None);

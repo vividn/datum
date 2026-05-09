@@ -138,7 +138,10 @@ mod tests {
     #[test]
     fn state_color_branches_match_datum() {
         // No spec → md5 fallback.
-        assert_eq!(state_color(Some("happy"), None, None, None), md5_color("happy"));
+        assert_eq!(
+            state_color(Some("happy"), None, None, None),
+            md5_color("happy")
+        );
         assert_eq!(state_color(Some("false"), None, None, None), "#000000");
         assert_eq!(state_color(Some("null"), None, None, None), "#888888");
         // Spec override wins over md5.
@@ -151,6 +154,9 @@ mod tests {
             state_color(Some("true"), Some("mood"), None, None),
             md5_color("mood")
         );
-        assert_eq!(state_color(None, Some("mood"), None, None), md5_color("mood"));
+        assert_eq!(
+            state_color(None, Some("mood"), None, None),
+            md5_color("mood")
+        );
     }
 }

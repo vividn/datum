@@ -86,9 +86,9 @@ fn select_entries_since(db: &Db, since_ms: u64) -> Result<Vec<Entry>> {
     // cast-and-parse dance that's more fragile than a one-pass filter.
     // Use `SELECT *` so the generated `verb` / `dur_seconds` columns are
     // included without listing them explicitly.
-    let mut stmt = db.conn().prepare(
-        "SELECT * FROM entries ORDER BY modify_time",
-    )?;
+    let mut stmt = db
+        .conn()
+        .prepare("SELECT * FROM entries ORDER BY modify_time")?;
     let rows = stmt.query_map([], datum_core::db::row_to_entry_public)?;
     let mut out = Vec::new();
     for row in rows {
@@ -194,7 +194,10 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             entry.field,
             verb_str,
             entry.state.as_ref().map(|v| v.to_string()),
-            entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string),
+            entry
+                .dur
+                .as_ref()
+                .map(datum_core::dur::Dur::to_storage_string),
             entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),
             entry.unit,

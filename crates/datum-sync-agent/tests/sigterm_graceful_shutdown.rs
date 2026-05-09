@@ -17,10 +17,7 @@ use tokio::sync::watch;
 /// The pattern the real worker uses: select over shutdown + idle-sleep.
 /// When the shutdown channel is flipped, the future resolves immediately
 /// rather than waiting out the sleep.
-async fn shutdown_or_sleep(
-    shutdown: &mut watch::Receiver<bool>,
-    idle: Duration,
-) -> &'static str {
+async fn shutdown_or_sleep(shutdown: &mut watch::Receiver<bool>, idle: Duration) -> &'static str {
     tokio::select! {
         _ = shutdown.changed() => {
             if *shutdown.borrow() { "shutdown" } else { "spurious" }

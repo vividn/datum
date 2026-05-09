@@ -95,11 +95,7 @@ impl Db {
     ///
     /// Returns the restored [`Entry`]. Errors [`DatumError::NotFound`] if
     /// the entry or the target version doesn't exist.
-    pub fn revert_entry_to(
-        &self,
-        hid_or_slug: &str,
-        target_version: u32,
-    ) -> Result<Entry> {
+    pub fn revert_entry_to(&self, hid_or_slug: &str, target_version: u32) -> Result<Entry> {
         let tx = self.conn.unchecked_transaction()?;
 
         // Resolve the current row (live or tombstoned) to pin down the hid.
@@ -115,18 +111,14 @@ impl Db {
         // Resolve the target state. State at version 1 = v1.snapshot;
         // state at version N>1 = v(N+1).snapshot if recorded, else the
         // current live row when N is the latest version.
-        let target_state = history::state_at_version(
-            &tx,
-            &current.hid,
-            target_version,
-            Some(&current),
-        )?
-        .ok_or_else(|| {
-            DatumError::NotFound(format!(
-                "version {target_version} for entry {}",
-                current.hid
-            ))
-        })?;
+        let target_state =
+            history::state_at_version(&tx, &current.hid, target_version, Some(&current))?
+                .ok_or_else(|| {
+                    DatumError::NotFound(format!(
+                        "version {target_version} for entry {}",
+                        current.hid
+                    ))
+                })?;
 
         // Record the pre-undo state as the new history row, tagged as Undo.
         history::record(&tx, &current, ChangeKind::Undo)?;

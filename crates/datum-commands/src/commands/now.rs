@@ -80,9 +80,8 @@ fn print_now_band(args: &NowArgs, db: &Db) {
         Err(_) => return, // never block the state list on a band-render error
     };
     let cols = args.cols.unwrap_or_else(detect_terminal_cols);
-    let use_color = !args.no_color
-        && std::env::var_os("NO_COLOR").is_none()
-        && std::io::stdout().is_terminal();
+    let use_color =
+        !args.no_color && std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
     let cfg = TerminalConfig {
         end_ms: end.timestamp_millis(),
         history_minutes: HISTORY_MINUTES,
@@ -120,9 +119,9 @@ fn emit_stale_sync_warning(db: &Db) {
     let threshold = chrono::Duration::hours(1);
 
     // Active DB name for per-db config lookup. Bare paths have no name.
-    let db_name = std::env::var("DATUM_DB").ok().filter(|v| {
-        !v.is_empty() && !config::looks_like_path(v)
-    });
+    let db_name = std::env::var("DATUM_DB")
+        .ok()
+        .filter(|v| !v.is_empty() && !config::looks_like_path(v));
     let cfg = match config::load_raw_config_or_default() {
         Ok(c) => c,
         Err(_) => return,
@@ -131,10 +130,10 @@ fn emit_stale_sync_warning(db: &Db) {
         return;
     }
 
-    let daemon_running =
-        crate::commands::sync::daemon_status::read().is_running();
-    let last_pull =
-        datum_sync_client::sync_state::get_last_pull_at(db).ok().flatten();
+    let daemon_running = crate::commands::sync::daemon_status::read().is_running();
+    let last_pull = datum_sync_client::sync_state::get_last_pull_at(db)
+        .ok()
+        .flatten();
     let label = db_name.as_deref().unwrap_or("main");
 
     match (daemon_running, last_pull) {
@@ -151,9 +150,7 @@ fn emit_stale_sync_warning(db: &Db) {
             );
         }
         (true, None) => {
-            println!(
-                "⚠ sync stale: {label} has never pulled (daemon running)"
-            );
+            println!("⚠ sync stale: {label} has never pulled (daemon running)");
         }
 
         // Daemon down: user needs to install or start it.

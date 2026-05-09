@@ -143,10 +143,7 @@ mod tests {
         // Our own pid IS alive → second acquire must bail.
         let err = PidFile::acquire(&path).expect_err("expected double-start bail");
         let msg = format!("{err:#}");
-        assert!(
-            msg.contains("already running"),
-            "unexpected error: {msg}",
-        );
+        assert!(msg.contains("already running"), "unexpected error: {msg}",);
     }
 
     /// A pid-file left behind by a crashed daemon (PID no longer alive)

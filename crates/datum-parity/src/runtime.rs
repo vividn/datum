@@ -60,10 +60,7 @@ impl std::fmt::Display for RuntimeError {
                 args,
                 status,
                 stderr,
-            } => write!(
-                f,
-                "datum {args:?} failed ({status}):\n{stderr}",
-            ),
+            } => write!(f, "datum {args:?} failed ({status}):\n{stderr}",),
             Self::SpawnFailed(e) => write!(f, "spawn pnpm: {e}"),
         }
     }
@@ -115,11 +112,7 @@ impl DatumRuntime {
     /// (callers typically use `tempfile::TempDir`). The `--db` flag is
     /// NOT injected — pass it explicitly in `args` so callers control
     /// the db namespace.
-    pub fn run(
-        &self,
-        host_dir: &Path,
-        args: &[&str],
-    ) -> Result<Output, RuntimeError> {
+    pub fn run(&self, host_dir: &Path, args: &[&str]) -> Result<Output, RuntimeError> {
         let owned_args: Vec<String> = args.iter().map(|s| (*s).to_owned()).collect();
 
         let mut cmd = Command::new("pnpm");
@@ -154,11 +147,7 @@ impl DatumRuntime {
     /// preamble lines (the `> @vividn/datum@... dev` and
     /// `> NODE_ENV=development ts-node ...` headers that pnpm adds before
     /// the actual datum output).
-    pub fn run_stdout(
-        &self,
-        host_dir: &Path,
-        args: &[&str],
-    ) -> Result<String, RuntimeError> {
+    pub fn run_stdout(&self, host_dir: &Path, args: &[&str]) -> Result<String, RuntimeError> {
         let out = self.run(host_dir, args)?;
         let raw = String::from_utf8_lossy(&out.stdout);
         Ok(strip_pnpm_preamble(&raw))

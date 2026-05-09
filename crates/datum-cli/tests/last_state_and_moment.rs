@@ -42,8 +42,7 @@ fn stop_last_state_closes_most_recent_open_block() {
 #[test]
 fn stop_last_state_errors_when_no_open_block() {
     let db = fresh_db();
-    let err = run_cli(&["stop", "mood", "--last-state"], &db)
-        .expect_err("no open block → error");
+    let err = run_cli(&["stop", "mood", "--last-state"], &db).expect_err("no open block → error");
     assert!(
         err.to_string().contains("No open block"),
         "error should mention missing open block, got: {err}"

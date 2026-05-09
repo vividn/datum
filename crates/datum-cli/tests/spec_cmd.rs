@@ -12,11 +12,17 @@ fn spec_set_persists_position_flags() {
     let db = fresh_db();
     run_cli(
         &[
-            "spec", "set", "sleep",
-            "--default-verb", "start",
-            "--y", "0.05",
-            "--height", "0.20",
-            "--z-index", "1",
+            "spec",
+            "set",
+            "sleep",
+            "--default-verb",
+            "start",
+            "--y",
+            "0.05",
+            "--height",
+            "0.20",
+            "--z-index",
+            "1",
         ],
         &db,
     )
@@ -38,11 +44,7 @@ fn spec_set_position_flags_merge_into_existing_spec() {
     let db = fresh_db();
 
     // First call: set default-verb only. Position fields stay None.
-    run_cli(
-        &["spec", "set", "focus", "--default-verb", "switch"],
-        &db,
-    )
-    .expect("first spec set");
+    run_cli(&["spec", "set", "focus", "--default-verb", "switch"], &db).expect("first spec set");
     let spec = db.load_spec("focus").unwrap().unwrap();
     assert!(spec.y.is_none());
     assert!(spec.height.is_none());
@@ -70,22 +72,34 @@ fn spec_set_overlap_two_fields_share_y_with_distinct_z_index() {
 
     run_cli(
         &[
-            "spec", "set", "sleep",
-            "--default-verb", "start",
-            "--y", "0.05",
-            "--height", "0.20",
-            "--z-index", "1",
+            "spec",
+            "set",
+            "sleep",
+            "--default-verb",
+            "start",
+            "--y",
+            "0.05",
+            "--height",
+            "0.20",
+            "--z-index",
+            "1",
         ],
         &db,
     )
     .unwrap();
     run_cli(
         &[
-            "spec", "set", "focus",
-            "--default-verb", "switch",
-            "--y", "0.05",
-            "--height", "0.20",
-            "--z-index", "2",
+            "spec",
+            "set",
+            "focus",
+            "--default-verb",
+            "switch",
+            "--y",
+            "0.05",
+            "--height",
+            "0.20",
+            "--z-index",
+            "2",
         ],
         &db,
     )
@@ -107,8 +121,11 @@ fn spec_set_attached_value_form_works_for_position_flags() {
     let db = fresh_db();
     run_cli(
         &[
-            "spec", "set", "energy",
-            "--default-verb", "switch",
+            "spec",
+            "set",
+            "energy",
+            "--default-verb",
+            "switch",
             "--y=0.30",
             "--height=0.10",
             "--z-index=3",

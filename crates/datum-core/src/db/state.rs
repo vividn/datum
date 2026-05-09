@@ -31,11 +31,7 @@ impl Db {
     /// fields). `Ok(Some(JsonValue::String("IGNORED")))` is the explicit
     /// ignore sentinel; any other value (including `Null` from a "track,
     /// no current state" entry) means the field is tracked.
-    pub fn state_at(
-        &self,
-        field: &str,
-        t: DateTime<Utc>,
-    ) -> Result<Option<JsonValue>> {
+    pub fn state_at(&self, field: &str, t: DateTime<Utc>) -> Result<Option<JsonValue>> {
         let cutoff = t.to_rfc3339();
         let sql = format!(
             "SELECT state FROM entries
@@ -49,11 +45,9 @@ impl Db {
         );
         let row: Option<Option<String>> = self
             .conn
-            .query_row(
-                &sql,
-                params![field, cutoff],
-                |row| row.get::<_, Option<String>>(0),
-            )
+            .query_row(&sql, params![field, cutoff], |row| {
+                row.get::<_, Option<String>>(0)
+            })
             .optional()?;
         match row {
             None => Ok(None),
@@ -103,18 +97,14 @@ impl Db {
                   AND {endbound} <= ?
             ) WHERE rn = 1"
         );
-        let mut bindings: Vec<String> =
-            fields.iter().map(|s| s.to_string()).collect();
+        let mut bindings: Vec<String> = fields.iter().map(|s| s.to_string()).collect();
         bindings.push(cutoff);
         let mut stmt = self.conn.prepare(&sql)?;
-        let rows = stmt.query_map(
-            rusqlite::params_from_iter(bindings.iter()),
-            |row| {
-                let field: String = row.get(0)?;
-                let value: Option<String> = row.get(1)?;
-                Ok((field, value))
-            },
-        )?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(bindings.iter()), |row| {
+            let field: String = row.get(0)?;
+            let value: Option<String> = row.get(1)?;
+            Ok((field, value))
+        })?;
         for r in rows {
             let (field, value) = r.map_err(DatumError::Db)?;
             let json = match value {
@@ -145,7 +135,11 @@ impl Db {
                 _ => false,
             };
             let color = specs.get(&field).and_then(|s| s.color.clone());
-            out.push(TrackedField { field, ignored, color });
+            out.push(TrackedField {
+                field,
+                ignored,
+                color,
+            });
         }
         Ok(out)
     }

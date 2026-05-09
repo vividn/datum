@@ -48,11 +48,8 @@ use std::process::Command;
 #[test]
 fn get_resolves_slug_prefix() {
     let db = fresh_db();
-    run_cli(
-        &["occur", "coffee", "--id", "%field%:a44quickid"],
-        &db,
-    )
-    .expect("seed coffee:a44quickid");
+    run_cli(&["occur", "coffee", "--id", "%field%:a44quickid"], &db)
+        .expect("seed coffee:a44quickid");
     let seeded = &db.entries_for_field("coffee", None).unwrap()[0];
     assert_eq!(seeded.slug, "coffee:a44quickid");
 
@@ -197,8 +194,8 @@ fn compound_ids_require_one_invocation_each() {
 
     // Compound form is a literal → no prefix matches → NotFound.
     let compound = format!("{},{},", e1.slug, e2.slug);
-    let err = run_cli(&["get", &compound], &db)
-        .expect_err("compound form must not resolve in daydumb");
+    let err =
+        run_cli(&["get", &compound], &db).expect_err("compound form must not resolve in daydumb");
     let msg = format!("{err:#}");
     assert!(
         msg.contains("not found") || msg.contains("NotFound"),
@@ -209,8 +206,7 @@ fn compound_ids_require_one_invocation_each() {
     // meant to achieve: both rows are individually resolvable via their
     // slug (distinct field names make the slug prefixes unambiguous).
     for e in [&e1, &e2] {
-        run_cli(&["get", &e.slug], &db)
-            .unwrap_or_else(|err| panic!("get {}: {err:#}", e.slug));
+        run_cli(&["get", &e.slug], &db).unwrap_or_else(|err| panic!("get {}: {err:#}", e.slug));
     }
 
     // And the underlying rows are still present (get is read-only).
