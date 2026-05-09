@@ -160,7 +160,7 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
             if let Some(ts) = start {
                 let state = value
                     .as_ref()
-                    .map(crate::state::normalize_state)
+                    .map(|v| crate::state::normalize_state(v).to_json())
                     .unwrap_or(JsonValue::Null);
                 out.push(PendingEvent {
                     time: ts,
@@ -176,7 +176,7 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
             if let Some(ts) = start {
                 let state = value
                     .as_ref()
-                    .map(crate::state::normalize_state)
+                    .map(|v| crate::state::normalize_state(v).to_json())
                     .unwrap_or(JsonValue::Null);
                 out.push(PendingEvent {
                     time: ts,
@@ -190,7 +190,7 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
             if let Some(ts) = start {
                 let state = value
                     .as_ref()
-                    .map(crate::state::normalize_state)
+                    .map(|v| crate::state::normalize_state(v).to_json())
                     .unwrap_or(JsonValue::Null);
                 out.push(PendingEvent {
                     time: ts,
@@ -214,7 +214,7 @@ fn events_for_row(row: &CandidateRow) -> Result<Vec<PendingEvent>> {
             if let Some(ts) = start {
                 let state = value
                     .as_ref()
-                    .map(crate::state::normalize_state)
+                    .map(|v| crate::state::normalize_state(v).to_json())
                     .unwrap_or(JsonValue::Bool(true));
                 out.push(PendingEvent {
                     time: ts,

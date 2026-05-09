@@ -212,7 +212,7 @@ pub fn detect_for_entry(
         let new_norm = trigger
             .state
             .as_ref()
-            .map(crate::state::normalize_state)
+            .map(|v| crate::state::normalize_state(v).to_json())
             .unwrap_or(serde_json::Value::Null);
 
         let prior_at_probe = if let Some(ts) = trigger.occur_time.as_ref() {
@@ -419,7 +419,7 @@ fn detect_last_state_mismatch(conn: &Connection, trigger: &Entry) -> Result<Opti
         return Ok(None);
     };
     let probe = ts.utc - chrono::Duration::microseconds(1);
-    let asserted = crate::state::normalize_state(asserted_raw);
+    let asserted = crate::state::normalize_state(asserted_raw).to_json();
     let actual =
         crate::state::last_state_at(conn, &trigger.field, probe, Some(trigger.hid.as_str()))?
             .unwrap_or(serde_json::Value::Null);
@@ -730,7 +730,7 @@ pub fn open_entries_for_field(conn: &Connection, field: &str) -> Result<u32> {
         let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
             continue;
         };
-        let normalized = crate::state::normalize_state(&value);
+        let normalized = crate::state::normalize_state(&value).to_json();
         if is_open_state(&normalized) {
             opens += 1;
         } else if is_close_state(&normalized) {

@@ -15,17 +15,160 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};
 use serde_json::{Map, Value};
+use std::fmt;
 
+use crate::db::IGNORED_STATE_VALUE;
 use crate::entry::{Entry, Verb};
 use crate::error::{DatumError, Result};
 
 /// Active state type. `Value::Null` represents the "untracked" state.
 pub type ActiveState = Value;
 
-/// Normalize a raw JSON state value into its canonical form, matching
-/// datum's `normalizeState` behavior.
+/// Typed representation of a `state` value. Mirrors the JSON shapes
+/// `state` can take on disk:
 ///
-/// Rules (in order):
+/// - `Null` — undefined; entry exists but state is genuinely unknown.
+/// - `Ignored` — explicit untrack (round-trips to/from the magic-string
+///   `"IGNORED"` so existing rows deserialize cleanly).
+/// - `Bool(b)` — start (`true`) / end (`false`) shorthand.
+/// - `Simple(s)` — bare named state, e.g. `"vertical"`, `"sit"`, `"car"`.
+/// - `Structured(o)` — object with an `id` plus arbitrary extras,
+///   e.g. `{id: "car", role: "driver"}`.
+/// - `Parallel(v)` — multiple simultaneous states.
+///
+/// Storage stays JSON via [`StateValue::from_json`] / [`StateValue::to_json`];
+/// the on-disk shape is unchanged. `PartialEq` is structural so callers can
+/// compare two states for full equality (e.g. for repeated-state checks).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StateValue {
+    Null,
+    Ignored,
+    Bool(bool),
+    Simple(String),
+    Structured(Map<String, Value>),
+    Parallel(Vec<StateValue>),
+}
+
+impl StateValue {
+    /// Map a raw JSON value into a `StateValue` without applying any
+    /// of the `normalize_state` rewrite rules (no `"start"` → `true`
+    /// translation, no number-to-string promotion). The string sentinel
+    /// `"IGNORED"` is the only special-case — it maps to
+    /// [`StateValue::Ignored`] so the on-disk magic-string keeps its
+    /// meaning. Numbers stringify into `Simple` so the converter is
+    /// total over `Value`.
+    pub fn from_json(v: &Value) -> Result<Self> {
+        Ok(match v {
+            Value::Null => StateValue::Null,
+            Value::String(s) if s == IGNORED_STATE_VALUE => StateValue::Ignored,
+            Value::String(s) => StateValue::Simple(s.clone()),
+            Value::Bool(b) => StateValue::Bool(*b),
+            Value::Number(n) => StateValue::Simple(n.to_string()),
+            Value::Array(arr) => StateValue::Parallel(
+                arr.iter()
+                    .map(StateValue::from_json)
+                    .collect::<Result<Vec<_>>>()?,
+            ),
+            Value::Object(obj) => StateValue::Structured(obj.clone()),
+        })
+    }
+
+    /// Serialize back to JSON. Round-trip with [`StateValue::from_json`]
+    /// preserves shape (modulo the explicit normalizations done by
+    /// [`normalize_state`]).
+    pub fn to_json(&self) -> Value {
+        match self {
+            StateValue::Null => Value::Null,
+            StateValue::Ignored => Value::String(IGNORED_STATE_VALUE.to_string()),
+            StateValue::Bool(b) => Value::Bool(*b),
+            StateValue::Simple(s) => Value::String(s.clone()),
+            StateValue::Structured(obj) => Value::Object(obj.clone()),
+            StateValue::Parallel(items) => {
+                Value::Array(items.iter().map(StateValue::to_json).collect())
+            }
+        }
+    }
+
+    /// The "name" of this state, when one exists. `Simple` returns its
+    /// string; `Structured` returns its `id` field if it's a string.
+    /// Everything else returns `None`.
+    pub fn id(&self) -> Option<&str> {
+        match self {
+            StateValue::Simple(s) => Some(s.as_str()),
+            StateValue::Structured(obj) => obj.get("id").and_then(Value::as_str),
+            _ => None,
+        }
+    }
+
+    /// Returns the bare-string state if this is [`StateValue::Simple`],
+    /// otherwise `None`. Distinct from [`Self::id`] which also peels
+    /// `Structured.id`.
+    pub fn as_simple(&self) -> Option<&str> {
+        match self {
+            StateValue::Simple(s) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    pub fn is_structured(&self) -> bool {
+        matches!(self, StateValue::Structured(_))
+    }
+
+    pub fn is_parallel(&self) -> bool {
+        matches!(self, StateValue::Parallel(_))
+    }
+}
+
+/// Render a `StateValue` for human display. Peels back common shapes:
+/// `Null` → `""`; `Ignored` → `"IGNORED"`; `Bool` → `"true"` / `"false"`;
+/// `Simple("v")` → `"v"`; `Structured({id: "car"})` → `"car"`;
+/// `Structured({id: "car", role: "driver"})` → `"car {role: driver}"`;
+/// `Parallel([a, b])` → `"a, b"`.
+impl fmt::Display for StateValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StateValue::Null => Ok(()),
+            StateValue::Ignored => f.write_str(IGNORED_STATE_VALUE),
+            StateValue::Bool(b) => write!(f, "{}", b),
+            StateValue::Simple(s) => f.write_str(s),
+            StateValue::Structured(obj) => {
+                let id_str = obj.get("id").and_then(Value::as_str);
+                let extras: Vec<(&String, &Value)> =
+                    obj.iter().filter(|(k, _)| k.as_str() != "id").collect();
+                if extras.is_empty() {
+                    match id_str {
+                        Some(id) => f.write_str(id),
+                        None => f.write_str("{}"),
+                    }
+                } else {
+                    let mut parts: Vec<String> = Vec::with_capacity(extras.len());
+                    for (k, v) in &extras {
+                        let rendered = match v {
+                            Value::String(s) => s.clone(),
+                            other => other.to_string(),
+                        };
+                        parts.push(format!("{}: {}", k, rendered));
+                    }
+                    let body = parts.join(", ");
+                    match id_str {
+                        Some(id) => write!(f, "{} {{{}}}", id, body),
+                        None => write!(f, "{{{}}}", body),
+                    }
+                }
+            }
+            StateValue::Parallel(items) => {
+                let parts: Vec<String> = items.iter().map(|v| v.to_string()).collect();
+                f.write_str(&parts.join(", "))
+            }
+        }
+    }
+}
+
+/// Normalize a raw JSON state value into its canonical form, matching
+/// datum's `normalizeState` behavior, then classify it as a typed
+/// [`StateValue`].
+///
+/// Rules (in order, applied in JSON space before classification):
 /// - `null` or `"null"` → `Null`
 /// - numbers → stringified (e.g. `123` → `"123"`)
 /// - `"start"` → `true`; `"end"` → `false`
@@ -36,7 +179,13 @@ pub type ActiveState = Value;
 /// - objects with only an `id` → unfold to the normalized id
 /// - objects without `id` → treated as `{id: true, ...}`
 /// - objects with id+other → id is normalized; other fields merged in
-pub fn normalize_state(value: &Value) -> Value {
+pub fn normalize_state(value: &Value) -> StateValue {
+    let normalized = normalize_to_value(value);
+    // `from_json` is total over the values produced by `normalize_to_value`.
+    StateValue::from_json(&normalized).expect("normalize_to_value output is always convertible")
+}
+
+fn normalize_to_value(value: &Value) -> Value {
     match value {
         Value::Null => Value::Null,
         Value::String(s) if s == "null" => Value::Null,
@@ -54,11 +203,11 @@ fn normalize_array(arr: &[Value]) -> Value {
         return Value::Bool(false);
     }
     if arr.len() == 1 {
-        return normalize_state(&arr[0]);
+        return normalize_to_value(&arr[0]);
     }
     let mut out: Vec<Value> = Vec::with_capacity(arr.len());
     for item in arr {
-        let normed = normalize_state(item);
+        let normed = normalize_to_value(item);
         flatten_into(normed, &mut out);
     }
     Value::Array(out)
@@ -84,10 +233,10 @@ fn normalize_object(obj: &Map<String, Value>) -> Value {
 
     // If only `id` is present (or no keys at all), unfold to the normalized id.
     if other_keys.is_empty() {
-        return normalize_state(&id_value);
+        return normalize_to_value(&id_value);
     }
 
-    let normalized_id = normalize_state(&id_value);
+    let normalized_id = normalize_to_value(&id_value);
 
     match normalized_id {
         Value::Null => Value::Null,
@@ -352,7 +501,9 @@ fn collect_raw_events(
     match verb {
         Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {
             if let Some(ts) = start_time {
-                let state = value.map(normalize_state).unwrap_or(Value::Null);
+                let state = value
+                    .map(|v| normalize_state(v).to_json())
+                    .unwrap_or(Value::Null);
                 out.push((ts, create_time, state, hid.to_string()));
             }
         }
@@ -367,7 +518,9 @@ fn collect_raw_events(
         }
         Verb::Block => {
             if let Some(ts) = start_time {
-                let state = value.map(normalize_state).unwrap_or(Value::Bool(true));
+                let state = value
+                    .map(|v| normalize_state(v).to_json())
+                    .unwrap_or(Value::Bool(true));
                 out.push((ts, create_time, state, hid.to_string()));
             }
         }
@@ -395,7 +548,7 @@ fn collect_events(
                 let state = entry
                     .state
                     .as_ref()
-                    .map(normalize_state)
+                    .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Null);
                 out.push((ts.utc, entry.create_time, state));
             }
@@ -410,7 +563,7 @@ fn collect_events(
                 let state = entry
                     .state
                     .as_ref()
-                    .map(normalize_state)
+                    .map(|v| normalize_state(v).to_json())
                     .unwrap_or(Value::Bool(true));
                 out.push((ts.utc, entry.create_time, state));
             }
@@ -426,63 +579,63 @@ mod tests {
     #[test]
     fn normalize_state_matches_datum_behavior() {
         // null / "null" → null
-        assert_eq!(normalize_state(&Value::Null), Value::Null);
-        assert_eq!(normalize_state(&json!("null")), Value::Null);
-        assert_eq!(normalize_state(&json!({"id": null})), Value::Null);
+        assert_eq!(normalize_state(&Value::Null).to_json(), Value::Null);
+        assert_eq!(normalize_state(&json!("null")).to_json(), Value::Null);
+        assert_eq!(normalize_state(&json!({"id": null})).to_json(), Value::Null);
 
         // Plain values pass through
-        assert_eq!(normalize_state(&json!("abcd")), json!("abcd"));
-        assert_eq!(normalize_state(&json!(true)), json!(true));
-        assert_eq!(normalize_state(&json!(false)), json!(false));
+        assert_eq!(normalize_state(&json!("abcd")).to_json(), json!("abcd"));
+        assert_eq!(normalize_state(&json!(true)).to_json(), json!(true));
+        assert_eq!(normalize_state(&json!(false)).to_json(), json!(false));
 
         // Numbers stringified
-        assert_eq!(normalize_state(&json!(123)), json!("123"));
+        assert_eq!(normalize_state(&json!(123)).to_json(), json!("123"));
 
         // "start" → true, "end" → false
-        assert_eq!(normalize_state(&json!("start")), json!(true));
-        assert_eq!(normalize_state(&json!("end")), json!(false));
+        assert_eq!(normalize_state(&json!("start")).to_json(), json!(true));
+        assert_eq!(normalize_state(&json!("end")).to_json(), json!(false));
 
         // Unfold {id: x} to x
-        assert_eq!(normalize_state(&json!({"id": true})), json!(true));
-        assert_eq!(normalize_state(&json!({"id": false})), json!(false));
-        assert_eq!(normalize_state(&json!({"id": 123})), json!("123"));
+        assert_eq!(normalize_state(&json!({"id": true})).to_json(), json!(true));
+        assert_eq!(normalize_state(&json!({"id": false})).to_json(), json!(false));
+        assert_eq!(normalize_state(&json!({"id": 123})).to_json(), json!("123"));
 
         // Preserve object with id + other keys
         assert_eq!(
-            normalize_state(&json!({"id": "id", "abc": 123, "key": "value"})),
+            normalize_state(&json!({"id": "id", "abc": 123, "key": "value"})).to_json(),
             json!({"id": "id", "abc": 123, "key": "value"}),
         );
 
         // Default id to true when absent
         assert_eq!(
-            normalize_state(&json!({"abc": 123, "key": "value"})),
+            normalize_state(&json!({"abc": 123, "key": "value"})).to_json(),
             json!({"id": true, "abc": 123, "key": "value"}),
         );
-        assert_eq!(normalize_state(&json!({})), json!(true));
+        assert_eq!(normalize_state(&json!({})).to_json(), json!(true));
 
         // Empty array → false
-        assert_eq!(normalize_state(&json!([])), json!(false));
-        assert_eq!(normalize_state(&json!({"id": []})), json!(false));
+        assert_eq!(normalize_state(&json!([])).to_json(), json!(false));
+        assert_eq!(normalize_state(&json!({"id": []})).to_json(), json!(false));
 
         // Single-element array unfolds
-        assert_eq!(normalize_state(&json!(["abcd"])), json!("abcd"));
-        assert_eq!(normalize_state(&json!([null])), Value::Null);
+        assert_eq!(normalize_state(&json!(["abcd"])).to_json(), json!("abcd"));
+        assert_eq!(normalize_state(&json!([null])).to_json(), Value::Null);
 
         // Longer array, normalized per-element, string-like pass through
         assert_eq!(
-            normalize_state(&json!(["a", "start", "end"])),
+            normalize_state(&json!(["a", "start", "end"])).to_json(),
             json!(["a", true, false]),
         );
 
         // "start" inside {id: ...} becomes true
         assert_eq!(
-            normalize_state(&json!({"id": "start", "extra": "key"})),
+            normalize_state(&json!({"id": "start", "extra": "key"})).to_json(),
             json!({"id": true, "extra": "key"}),
         );
 
         // Unfold id-as-object into outer object
         assert_eq!(
-            normalize_state(&json!({"id": {"id": "abc"}})),
+            normalize_state(&json!({"id": {"id": "abc"}})).to_json(),
             json!("abc"),
         );
     }
@@ -491,16 +644,169 @@ mod tests {
     fn normalize_state_handles_arrays_of_ids() {
         // {id: [a, b, c]} → [a, b, c]
         assert_eq!(
-            normalize_state(&json!({"id": ["s1", "s2", "s3"]})),
+            normalize_state(&json!({"id": ["s1", "s2", "s3"]})).to_json(),
             json!(["s1", "s2", "s3"]),
         );
         // {id: [a, b], name: "x"} → [{id:a,name:x}, {id:b,name:x}]
         assert_eq!(
-            normalize_state(&json!({"id": ["s1", true], "name": "n"})),
+            normalize_state(&json!({"id": ["s1", true], "name": "n"})).to_json(),
             json!([
                 {"id": "s1", "name": "n"},
                 {"id": true, "name": "n"},
             ]),
         );
+    }
+
+    #[test]
+    fn state_value_round_trips_through_json() {
+        // Each shape: from_json(to_json(sv)) == sv.
+        let cases = vec![
+            StateValue::Null,
+            StateValue::Ignored,
+            StateValue::Bool(true),
+            StateValue::Bool(false),
+            StateValue::Simple("vertical".into()),
+            StateValue::Simple("car".into()),
+            StateValue::Structured({
+                let mut m = Map::new();
+                m.insert("id".into(), json!("car"));
+                m.insert("role".into(), json!("driver"));
+                m
+            }),
+            StateValue::Structured({
+                // No `id` field — round-trips as a plain object. Note the
+                // normalize_state pipeline would inject `id: true`, but
+                // `from_json` is the raw mapping.
+                let mut m = Map::new();
+                m.insert("type".into(), json!("vehicle"));
+                m
+            }),
+            StateValue::Parallel(vec![
+                StateValue::Simple("vertical".into()),
+                StateValue::Simple("sit".into()),
+            ]),
+            StateValue::Parallel(vec![
+                StateValue::Bool(true),
+                StateValue::Structured({
+                    let mut m = Map::new();
+                    m.insert("id".into(), json!("car"));
+                    m.insert("role".into(), json!("driver"));
+                    m
+                }),
+            ]),
+        ];
+        for sv in cases {
+            let json = sv.to_json();
+            let back = StateValue::from_json(&json).expect("from_json should succeed");
+            assert_eq!(back, sv, "round-trip failed for {:?}", json);
+        }
+    }
+
+    #[test]
+    fn state_value_ignored_round_trips_via_string_sentinel() {
+        let sv = StateValue::Ignored;
+        let json = sv.to_json();
+        assert_eq!(json, json!("IGNORED"));
+        assert_eq!(StateValue::from_json(&json).unwrap(), StateValue::Ignored);
+    }
+
+    #[test]
+    fn state_value_helpers() {
+        // .id() — Simple returns its string; Structured returns id when present.
+        assert_eq!(StateValue::Simple("car".into()).id(), Some("car"));
+        let structured = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("id".into(), json!("car"));
+            m.insert("role".into(), json!("driver"));
+            m
+        });
+        assert_eq!(structured.id(), Some("car"));
+        // No id field: None.
+        let no_id = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("role".into(), json!("driver"));
+            m
+        });
+        assert_eq!(no_id.id(), None);
+        // Non-string id: None (per spec — only strings count).
+        let bool_id = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("id".into(), json!(true));
+            m
+        });
+        assert_eq!(bool_id.id(), None);
+        assert_eq!(StateValue::Bool(true).id(), None);
+        assert_eq!(StateValue::Null.id(), None);
+        assert_eq!(StateValue::Ignored.id(), None);
+
+        // .as_simple() — only Simple.
+        assert_eq!(StateValue::Simple("x".into()).as_simple(), Some("x"));
+        assert_eq!(structured.as_simple(), None);
+
+        // .is_structured() / .is_parallel().
+        assert!(structured.is_structured());
+        assert!(!structured.is_parallel());
+        let parallel = StateValue::Parallel(vec![StateValue::Bool(true)]);
+        assert!(parallel.is_parallel());
+        assert!(!parallel.is_structured());
+        assert!(!StateValue::Simple("x".into()).is_structured());
+    }
+
+    #[test]
+    fn state_value_display_peels_back() {
+        assert_eq!(StateValue::Null.to_string(), "");
+        assert_eq!(StateValue::Ignored.to_string(), "IGNORED");
+        assert_eq!(StateValue::Bool(true).to_string(), "true");
+        assert_eq!(StateValue::Bool(false).to_string(), "false");
+        assert_eq!(StateValue::Simple("vertical".into()).to_string(), "vertical");
+
+        // Structured-with-only-id renders as the id alone.
+        let only_id = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("id".into(), json!("car"));
+            m
+        });
+        assert_eq!(only_id.to_string(), "car");
+
+        // Structured-with-extras renders id followed by {k: v, ...}.
+        let mut obj = Map::new();
+        obj.insert("id".into(), json!("car"));
+        obj.insert("role".into(), json!("driver"));
+        let with_extras = StateValue::Structured(obj);
+        // Map iteration is insertion-order; `role` is the only extra here.
+        assert_eq!(with_extras.to_string(), "car {role: driver}");
+
+        // Parallel renders as comma-separated peeled children.
+        let parallel = StateValue::Parallel(vec![
+            StateValue::Simple("vertical".into()),
+            StateValue::Simple("sit".into()),
+        ]);
+        assert_eq!(parallel.to_string(), "vertical, sit");
+    }
+
+    #[test]
+    fn state_value_partial_eq_is_structural() {
+        // Repeated-state check semantics: drive car == drive car, but
+        // {id:"car",role:"driver"} != {id:"car",role:"passenger"}.
+        let drive_car = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("id".into(), json!("car"));
+            m.insert("role".into(), json!("driver"));
+            m
+        });
+        let drive_car_again = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("id".into(), json!("car"));
+            m.insert("role".into(), json!("driver"));
+            m
+        });
+        let ride_car = StateValue::Structured({
+            let mut m = Map::new();
+            m.insert("id".into(), json!("car"));
+            m.insert("role".into(), json!("passenger"));
+            m
+        });
+        assert_eq!(drive_car, drive_car_again);
+        assert_ne!(drive_car, ride_car);
     }
 }
