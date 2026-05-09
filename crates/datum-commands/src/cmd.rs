@@ -491,6 +491,15 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     }
     let _ = reserved.occur_time;
 
+    // da-ju71.2: emit `Dur::Moment` ("MOMENT") for Action::Occur when no
+    // explicit dur was supplied. This locks the entry to Verb::Point in
+    // `derive_verb` regardless of state shape, so an occur with
+    // structured state (e.g. `occur drive .id=car .role=driver`) stays a
+    // point-in-time event instead of being classified as Switch.
+    if matches!(action, Action::Occur) && entry.dur.is_none() {
+        entry.dur = Some(datum_core::dur::Dur::Moment.to_storage_string());
+    }
+
     // da-8y2q.2: Action-driven state canonicalization (moved out of
     // `derive_verb_for_storage`). With no explicit `state=`: `Action::Stop`
     // means "the field has ended" → false; `Action::Start` and

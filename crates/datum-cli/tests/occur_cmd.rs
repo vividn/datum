@@ -520,3 +520,54 @@ fn occur_explicit_state_key_is_rejected() {
         0,
     );
 }
+
+/// da-ju71.2 acceptance: `occur pushup -k n=1 10` lands as a point-in-time
+/// event with `state=null`, `verb=point`, and `dur="MOMENT"`. The Moment
+/// marker locks `derive_verb` to Point regardless of any state-data the
+/// user attached via `-k`, so the entry stays an occur and not a Switch.
+#[test]
+fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
+    let db = fresh_db();
+
+    run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db)
+        .expect("occur pushup -k n=1 10 dispatch");
+
+    assert_count!(db, "pushup", 1);
+    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+
+    assert!(
+        entry.state.is_none(),
+        "occur stays state=null (no null→true promotion); got {:?}",
+        entry.state,
+    );
+    assert_eq!(
+        entry.dur.as_deref(),
+        Some("MOMENT"),
+        "occur with no explicit --dur emits Dur::Moment",
+    );
+    assert_eq!(
+        entry.verb,
+        datum_core::entry::Verb::Point,
+        "Moment locks the verb to Point",
+    );
+
+    // Re-derive from the persisted columns: the Moment rule must agree
+    // with the stored verb. Otherwise the column would drift.
+    let (rederived, _) = datum_core::derive_verb(
+        entry.state.clone(),
+        entry.dur.as_deref(),
+        entry.following_state.clone(),
+    )
+    .expect("re-derive from persisted columns");
+    assert_eq!(rederived, datum_core::entry::Verb::Point);
+
+    // The structured payload survives in `data`. Slot-fill semantics
+    // route `-k n=1` and the bare `10` into the `n` slot; we don't pin
+    // the exact value here — the Moment lock holds regardless of how
+    // the data is shaped.
+    let data = entry.data.as_ref().expect("data payload from -k n");
+    assert!(
+        data.get("n").is_some(),
+        "expected `n` slot in data, got {data:?}",
+    );
+}
