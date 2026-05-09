@@ -35,6 +35,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use crate::entry::{compat_dur_secs, new_hid, Entry, Verb, SHORT_HID_LEN};
 use crate::error::{DatumError, Result};
 use crate::ids::Slug;
+use crate::state::StateValue;
 
 /// Source that filed a conflict row.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,35 +377,59 @@ fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<E
 }
 
 /// S12: true when two (normalized) states share at least one element. Scalar
-/// values are treated as one-element sets; arrays are treated as sets of
-/// their elements. Elements compare by canonical JSON serialization so that
-/// e.g. `"foo"` and `{"id":"foo"}` (after normalize) still match correctly.
+/// values are treated as one-element sets; `Parallel` values are treated as
+/// sets of their elements. Elements compare via [`StateValue`] structural
+/// equality, so a `Structured({id: "car", role: "driver"})` matches another
+/// `Structured` only when every field agrees — `.id` alone is not enough.
 fn states_share_element(a: &serde_json::Value, b: &serde_json::Value) -> bool {
     let sa = state_as_set(a);
     let sb = state_as_set(b);
-    sa.intersection(&sb).next().is_some()
+    sa.iter().any(|x| sb.iter().any(|y| x == y))
 }
 
-/// S12: set-aware equality — arrays compare order-insensitive (same
-/// multiset of elements), everything else compares via `PartialEq`.
+/// S12: set-aware equality on top of [`StateValue`] PartialEq — `Parallel`
+/// values compare order-insensitive (same multiset of elements), everything
+/// else compares structurally.
 fn states_equal_set_aware(a: &serde_json::Value, b: &serde_json::Value) -> bool {
-    match (a, b) {
-        (serde_json::Value::Array(xa), serde_json::Value::Array(xb)) if xa.len() == xb.len() => {
-            let mut sa: Vec<String> = xa.iter().map(|x| x.to_string()).collect();
-            let mut sb: Vec<String> = xb.iter().map(|x| x.to_string()).collect();
-            sa.sort();
-            sb.sort();
-            sa == sb
-        }
-        _ => a == b,
+    let Ok(sva) = StateValue::from_json(a) else { return false };
+    let Ok(svb) = StateValue::from_json(b) else { return false };
+    match (&sva, &svb) {
+        (StateValue::Parallel(va), StateValue::Parallel(vb)) => state_multiset_eq(va, vb),
+        _ => sva == svb,
     }
 }
 
-fn state_as_set(v: &serde_json::Value) -> std::collections::HashSet<String> {
-    match v {
-        serde_json::Value::Array(arr) => arr.iter().map(|x| x.to_string()).collect(),
-        other => std::iter::once(other.to_string()).collect(),
+/// Decompose a state into its element multiset for set-aware comparisons.
+/// `Parallel` flattens to its members; everything else is a one-element set.
+/// On a malformed value (none should reach here in practice — the upstream
+/// shape is already a valid JSON state) the fallback is an empty set so the
+/// element-share / equality predicates short-circuit to "no match".
+fn state_as_set(v: &serde_json::Value) -> Vec<StateValue> {
+    match StateValue::from_json(v) {
+        Ok(StateValue::Parallel(items)) => items,
+        Ok(other) => vec![other],
+        Err(_) => Vec::new(),
     }
+}
+
+/// Multiset equality for two `Parallel` element vectors. Ours are tiny
+/// (a handful of states), so the O(n²) match-and-mark walk is fine and
+/// avoids needing `Hash` on `StateValue`.
+fn state_multiset_eq(va: &[StateValue], vb: &[StateValue]) -> bool {
+    if va.len() != vb.len() {
+        return false;
+    }
+    let mut used = vec![false; vb.len()];
+    'outer: for x in va {
+        for (i, y) in vb.iter().enumerate() {
+            if !used[i] && x == y {
+                used[i] = true;
+                continue 'outer;
+            }
+        }
+        return false;
+    }
+    true
 }
 
 /// S6/S12: compare the user's explicit `-L` assertion against the computed
@@ -841,5 +866,74 @@ mod tests {
             c.remote_entry.is_some(),
             "overlap carries the older block as counterpart"
         );
+    }
+
+    // ── da-ju71.5: full-StateValue equality for repeated-state checks ─────
+
+    /// Two `Structured` states that share `.id` but differ on extras must
+    /// NOT count as the same state — `drive car` and `ride car` are
+    /// different things even though both name `car`.
+    #[test]
+    fn structured_states_with_same_id_different_extras_dont_share() {
+        let drive = json!({"id": "car", "role": "driver"});
+        let ride = json!({"id": "car", "role": "passenger"});
+        assert!(
+            !states_share_element(&drive, &ride),
+            "structured states with same .id but different extras must not share",
+        );
+        assert!(
+            !states_equal_set_aware(&drive, &ride),
+            "structured states with same .id but different extras must not be equal",
+        );
+    }
+
+    /// The mirror case: identical Structured states ARE the same state.
+    #[test]
+    fn identical_structured_states_share_and_are_equal() {
+        let a = json!({"id": "car", "role": "driver"});
+        let b = json!({"id": "car", "role": "driver"});
+        assert!(states_share_element(&a, &b));
+        assert!(states_equal_set_aware(&a, &b));
+    }
+
+    /// Scalar `Simple` vs `Structured` whose only field is the same id
+    /// should *not* match — they're different shapes carrying different
+    /// information (the structured form may carry extras down the line).
+    #[test]
+    fn simple_vs_structured_with_only_id_dont_share() {
+        let simple = json!("car");
+        let structured = json!({"id": "car"});
+        assert!(!states_share_element(&simple, &structured));
+        assert!(!states_equal_set_aware(&simple, &structured));
+    }
+
+    /// `Parallel` set semantics survive the StateValue rewrite: two arrays
+    /// with overlapping elements share, disjoint arrays don't.
+    #[test]
+    fn parallel_sets_share_on_overlap_not_disjoint() {
+        let ab = json!(["a", "b"]);
+        let bc = json!(["b", "c"]);
+        let de = json!(["d", "e"]);
+        assert!(states_share_element(&ab, &bc), "overlap on 'b'");
+        assert!(!states_share_element(&ab, &de), "disjoint sets");
+    }
+
+    /// Multiset equality on `Parallel` is order-insensitive but element-
+    /// strict — `[a, b]` equals `[b, a]` but not `[a, c]`.
+    #[test]
+    fn parallel_equal_set_aware_is_order_insensitive() {
+        assert!(states_equal_set_aware(&json!(["a", "b"]), &json!(["b", "a"])));
+        assert!(!states_equal_set_aware(&json!(["a", "b"]), &json!(["a", "c"])));
+    }
+
+    /// A Structured element inside a Parallel still requires full structural
+    /// equality. `[drive_car]` and `[ride_car]` don't share even though both
+    /// elements have `id=car`.
+    #[test]
+    fn parallel_of_structured_uses_full_equality() {
+        let drive_set = json!([{"id": "car", "role": "driver"}]);
+        let ride_set = json!([{"id": "car", "role": "passenger"}]);
+        assert!(!states_share_element(&drive_set, &ride_set));
+        assert!(!states_equal_set_aware(&drive_set, &ride_set));
     }
 }
