@@ -12,7 +12,7 @@ use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome},
     derive_verb,
     entry::{Entry, Verb},
-    time::{parse_duration, DatumTime},
+    time::DatumTime,
 };
 use serde_json::Value as JsonValue;
 

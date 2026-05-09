@@ -20,7 +20,6 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 
 use crate::action::Action;
-use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::{Alias, FieldSpec, Render, DEFAULT_FIELD_HEIGHT};
 

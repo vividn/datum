@@ -6,7 +6,6 @@ use rusqlite::{params, OptionalExtension};
 use serde_json::Value as JsonValue;
 
 use crate::action::Action;
-use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 use crate::field_spec::FieldSpec;
 
