@@ -41,8 +41,8 @@ fn occur_creates_entry_with_time_start() {
 
     assert_count!(db, "field", 1);
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    // v3 (da-5ns): occur with no state, no dur → state canonicalized to true,
-    // dur=null → derive_verb returns Verb::Point.
+    // da-ju71.2: occur with no explicit dur emits Dur::Moment, locking
+    // the verb to Point regardless of state shape.
     assert_entry_matches!(entry, field: "field", verb: "point");
 
     let ts = entry.occur_time.as_ref().expect("occur sets occur_time").utc;
@@ -50,9 +50,10 @@ fn occur_creates_entry_with_time_start() {
         ts >= before - Duration::seconds(1) && ts <= after + Duration::seconds(1),
         "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
     );
-    assert!(
-        entry.dur.is_none(),
-        "occur is point-in-time: no time_end",
+    assert_eq!(
+        entry.dur.as_deref(),
+        Some("MOMENT"),
+        "occur is point-in-time: dur=Moment marks the shape",
     );
     assert!(entry.slug.starts_with("field:"));
 

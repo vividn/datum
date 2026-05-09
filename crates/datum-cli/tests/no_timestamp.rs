@@ -21,10 +21,11 @@ fn occur_minus_t_is_timeless_point() {
     run_cli(&["occur", "coffee", "-T"], &db).expect("occur -T");
     assert_count!(db, "coffee", 1);
     let e = &db.entries_for_field("coffee", None).unwrap()[0];
-    // occur -T: state=None, dur=None → derive_verb returns Point.
+    // occur -T: state=None, dur="MOMENT" (da-ju71.2) → Point. `-T`
+    // suppresses the timestamp, not the occur-shape intent.
     assert_entry_matches!(e, field: "coffee", verb: "point");
     assert!(e.slug.ends_with(":unset"), "timeless slug carries :unset (got: {})", e.slug);
-    assert!(e.dur.is_none(), "occur -T must not set dur");
+    assert_eq!(e.dur.as_deref(), Some("MOMENT"), "occur emits Dur::Moment");
 }
 
 #[test]

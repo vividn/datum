@@ -17,22 +17,21 @@
 //!   from the **raw** `(state_in, dur_in, fs)` triple at insert time. This
 //!   is the authoritative classifier the renderer reads.
 //! - "Verb re-derived" — what `derive_verb(state, dur, fs)` returns when
-//!   called on the columns **read back** from the row. The state column is
-//!   stored after null→true canonicalization, so a "no state" doc reads
-//!   back as `state=true` and re-derives to Switch even though it stored
-//!   as `verb='point'`. This asymmetry is intentional; the renderer treats
-//!   a Switch-to-true the same as a no-state Point.
+//!   called on the columns **read back** from the row. After da-ju71.2
+//!   dropped the null→true promotion, an absent legacy state stays
+//!   `state=null`, so re-deriving a "no state, no dur" doc gives Point —
+//!   the stored verb and the re-derived verb agree on Point.
 //!
 //! | Doc # | Field          | dur in   | dur out | state in        | state out      | Verb stored | Verb re-derived |
 //! | ----- | -------------- | -------- | ------- | --------------- | -------------- | ----------- | --------------- |
 //! | 1     | mood           | absent   | NULL    | "happy"         | "happy"        | Switch      | Switch          |
-//! | 2     | sleep          | "PT8H"   | "PT8H"  | absent          | true           | Block       | Block           |
+//! | 2     | sleep          | "PT8H"   | "PT8H"  | absent          | null           | Block       | Block           |
 //! | 3     | work           | "PT3M"   | "PT3M"  | "focus"         | "focus"        | Block       | Block           |
-//! | 4     | brushteeth     | absent   | NULL    | absent          | true           | Point       | Switch          |
+//! | 4     | brushteeth     | absent   | NULL    | absent          | null           | Point       | Point           |
 //! | 5     | tracking       | absent   | NULL    | true            | true           | Switch      | Switch          |
-//! | 6     | test           | "PT1M"   | "PT1M"  | absent          | true           | Block       | Block           |
-//! | 7     | consume        | absent   | NULL    | absent          | true           | Point       | Switch          |
-//! | 8     | malformed_dur  | bad str  | NULL    | absent          | true           | Point       | Switch          |
+//! | 6     | test           | "PT1M"   | "PT1M"  | absent          | null           | Block       | Block           |
+//! | 7     | consume        | absent   | NULL    | absent          | null           | Point       | Point           |
+//! | 8     | malformed_dur  | bad str  | NULL    | absent          | null           | Point       | Point           |
 //! | 9     | feeling        | absent   | NULL    | {prim, int}     | {prim, int}    | Switch      | Switch          |
 //! | 10    | tags           | absent   | NULL    | [arr]           | [arr]          | Switch      | Switch          |
 //! | 11    | thinking       | null     | "PT0S"  | "idea"          | "idea"         | Point       | Point           |
@@ -153,17 +152,14 @@ fn db_import_synthetic_locks_db_shape() {
     assert_eq!(mood.verb, Verb::Switch, "doc 1: stored verb");
     assert_eq!(verb_of(mood), Verb::Switch);
 
-    // Doc 2 (sleep / PT8H): no state → state=true (promoted), dur="PT8H" → Block.
+    // Doc 2 (sleep / PT8H): no state → state stays null (promotion dropped),
+    // dur="PT8H" → Block.
     let sleep = entries
         .iter()
         .find(|e| e.field == "sleep")
         .expect("doc 2: sleep");
     assert_eq!(sleep.dur.as_deref(), Some("PT8H"), "sleep dur verbatim");
-    assert_eq!(
-        sleep.state,
-        Some(serde_json::json!(true)),
-        "null→true promotion"
-    );
+    assert!(sleep.state.is_none(), "null state stays null (no promotion)");
     assert_eq!(sleep.verb, Verb::Block, "doc 2: stored verb");
     assert_eq!(verb_of(sleep), Verb::Block);
     assert_eq!(
@@ -183,19 +179,20 @@ fn db_import_synthetic_locks_db_shape() {
     assert_eq!(verb_of(work), Verb::Block);
 
     // Doc 4 (brushteeth, no state, no dur): da-7sr — must store verb='point'.
-    // The state column is canonicalized to true at storage, so re-derive
-    // gives Switch even though the stored verb is Point.
+    // After da-ju71.2 the state column stays null (no promotion), so the
+    // stored verb and the re-derived verb both agree on Point.
     let brushteeth = entries
         .iter()
         .find(|e| e.field == "brushteeth")
         .expect("doc 4: brushteeth");
     assert!(brushteeth.dur.is_none());
-    assert_eq!(brushteeth.state, Some(serde_json::json!(true)));
+    assert!(brushteeth.state.is_none(), "null state stays null (no promotion)");
     assert_eq!(
         brushteeth.verb,
         Verb::Point,
         "doc 4: da-7sr — no-state-no-dur legacy doc must store verb='point', not 'switch'",
     );
+    assert_eq!(verb_of(brushteeth), Verb::Point);
 
     // Doc 5 (tracking, boolean state): Switch with state=true.
     let tracking = entries
@@ -223,11 +220,14 @@ fn db_import_synthetic_locks_db_shape() {
         .iter()
         .find(|e| e.field == "consume")
         .expect("doc 7: consume");
+    assert!(consume.dur.is_none());
+    assert!(consume.state.is_none(), "null state stays null (no promotion)");
     assert_eq!(
         consume.verb,
         Verb::Point,
         "doc 7: da-7sr — no-state-no-dur (with extras) must store verb='point'",
     );
+    assert_eq!(verb_of(consume), Verb::Point);
     let consume_extra = consume.data.as_ref().unwrap();
     assert_eq!(consume_extra["id"], serde_json::json!("song-42"));
     assert_eq!(consume_extra["medium"], serde_json::json!("audio"));
@@ -237,26 +237,20 @@ fn db_import_synthetic_locks_db_shape() {
     );
 
     // Doc 8 (malformed dur): warn-not-fail, dur=NULL, literal preserved
-    // in `data`. State absent → state column canonicalized to true at
-    // storage; re-derive of (state=true, dur=NULL, fs=None) → Switch.
-    // Stored verb, however, is computed from the raw input (None, None,
-    // None) → Point per da-7sr.
+    // in `data`. State absent → state column stays null (promotion
+    // dropped in da-ju71.2). Stored and re-derived verb both Point.
     let malformed = entries
         .iter()
         .find(|e| e.field == "malformed_dur")
         .expect("doc 8: malformed_dur");
     assert!(malformed.dur.is_none(), "unparseable dur → dur column NULL");
-    assert_eq!(
-        malformed.state,
-        Some(serde_json::json!(true)),
-        "null→true promotion"
-    );
+    assert!(malformed.state.is_none(), "null state stays null (no promotion)");
     assert_eq!(
         malformed.verb,
         Verb::Point,
         "doc 8: da-7sr — malformed dur degrades to no-dur and must store verb='point'",
     );
-    assert_eq!(verb_of(malformed), Verb::Switch);
+    assert_eq!(verb_of(malformed), Verb::Point);
     assert_eq!(
         malformed.data.as_ref().unwrap()["dur"],
         serde_json::json!("not-a-duration"),
