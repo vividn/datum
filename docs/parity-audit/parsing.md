@@ -132,6 +132,19 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
       as the entry's state BEFORE `handle_data_args` runs, so that state
       doesn't compete with `-k`/`-K` slot-fill. (`switch project household
       -k optional=50` ⇒ state=`household`, optional defaults to `50`.)
+      Post-da-ju71.4: when leading-dot keys are present alongside the
+      bare positional, the parser folds them into a Structured state,
+      with the positional landing at `state.id` and dot keys becoming
+      siblings (`switch field name .type=x .role=y` ⇒
+      `state = {id: name, type: x, role: y}`). Without a positional,
+      `state` stays Structured but has no `.id` (option (b) in the
+      da-ju71 Q/A).
+  - **`datum_path` translation** (post-da-ju71.4, no `flat_paths`
+    compat): `state` keys map to `state.id`, leading-dot `.x` keys map
+    to `state.x`, and any other dotted path is set/get/remove with
+    real nested-object semantics. The pre-v1 `flat_paths=true` shim
+    that preserved `.subtask` / `state` as literal extra_data keys is
+    gone.
   - **`-k KEY=VALUE` is slot-with-default**, per original datum's
     `parseDataArgs` — NOT an immediate write into the data queue. The
     declared key gets a default of `VALUE`; if the caller passes a

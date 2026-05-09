@@ -590,10 +590,10 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     let field = args.field_or_verb.clone();
 
     let mut data_args = DataArgs::default();
-    // Daydumb compat: flat paths (no `state.id` synthesis from `state` /
-    // `.x` keys) and literal `"null"` / `"undefined"` switch values. See
-    // the `DataArgs` field docs for why we diverge from datum's TS port.
-    data_args.flat_paths = true;
+    // da-ju71.4: state-aware path translation is on (no `flat_paths`
+    // compat shim) — `state=<v>` lands at `state.id` and leading-dot
+    // `.x=<v>` keys fold into `state.x`. The bare positional state for
+    // state-bearing verbs is handled below.
     data_args.preserve_null_strings = true;
     let mut slug_paths: Vec<String> = Vec::new();
     for spec in &args.slug_keys {
@@ -670,6 +670,19 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
+    // da-ju71.4: collapse the trivial `state: {id: x}` Object back to a
+    // scalar when no other `state.*` keys are present, so a user's bare
+    // `state=true` round-trips to `entry.state = true` instead of getting
+    // gratuitously nested as `{id: true}`. The Structured state shape is
+    // still produced when dot-prefixed siblings are present.
+    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
+        if state_obj.len() == 1 {
+            if let Some(id) = state_obj.remove("id") {
+                datum_data.insert("state".to_string(), id);
+            }
+        }
+    }
+
     // Value extraction: state positional wins for state-bearing verbs;
     // otherwise pull from the PRIMARY_VALUE_KEY remainder. When the user
     // redirected the remainder via -R/-C, value is intentionally empty.
@@ -681,7 +694,19 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
         // preserve_null_strings policy and unit-annotated numbers like
         // "75.2kg" round-trip the same way as keyed values.
         datum_data.remove(PRIMARY_VALUE_KEY);
-        Some(parse_value_token(&sp))
+        let parsed_state = parse_value_token(&sp);
+        // da-ju71.4: when leading-dot keys produced a `state.*` subtree,
+        // fold the bare positional into `state.id` so
+        // `switch field name .type=x` lands as a Structured state
+        // {id: name, type: x}. `extract_reserved_columns` will then pull
+        // it onto entry.state. If the user already supplied `state.id=`
+        // (or `state=`) explicitly, preserve their value.
+        if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
+            state_obj.entry("id".to_string()).or_insert(parsed_state);
+            None
+        } else {
+            Some(parsed_state)
+        }
     } else if user_remainder {
         None
     } else {
@@ -717,10 +742,17 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
 }
 
 /// Translate a `-K`/`-k` raw key name to the path `handle_data_args`
-/// writes to. With daydumb's `flat_paths` compat (set in `parse_log_args`),
-/// the path is taken verbatim — no `state` / leading-dot synthesis.
+/// writes to. Post-da-ju71.4 the parser does state-aware translation, so
+/// `state` → `state.id` and leading-dot `.x` → `state.x`; this helper
+/// must mirror that for slot-fill lookup parity.
 fn canonical_data_path(raw: &str) -> String {
-    raw.to_string()
+    if raw == "state" {
+        "state.id".to_string()
+    } else if let Some(rest) = raw.strip_prefix('.') {
+        format!("state.{rest}")
+    } else {
+        raw.to_string()
+    }
 }
 
 /// Resolve a slot path within `datum_data` for slug derivation. Daydumb's
@@ -1627,8 +1659,9 @@ pub(crate) fn parse_update_payload(
     // the data queue. `-k KEY` (no `=`) and `-k KEY=` stay as declared
     // slots so positionals can fill them.
     let mut data_args = DataArgs::default();
-    // Same daydumb compat flags as the log path — see `parse_log_args`.
-    data_args.flat_paths = true;
+    // Same daydumb compat as the log path — see `parse_log_args`. The
+    // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
+    // now fold into `state.*`.
     data_args.preserve_null_strings = true;
     let mut injected_immediates: Vec<String> = Vec::new();
     for spec in &args.keys {
@@ -1655,6 +1688,17 @@ pub(crate) fn parse_update_payload(
     data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
+
+    // da-ju71.4: same trivial-state collapse as `parse_log_args` — a bare
+    // `state=v` should round-trip as a scalar, not as `{id: v}`.
+    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
+        if state_obj.len() == 1 {
+            if let Some(id) = state_obj.remove("id") {
+                datum_data.insert("state".to_string(), id);
+            }
+        }
+    }
+
     let value = datum_data.remove(PRIMARY_VALUE_KEY);
 
     // Preserve update's empty-string drop sentinel: `KEY=` (or `-k KEY=`)
@@ -2472,25 +2516,18 @@ mod tests {
 
         let mut args = update_args(&e.slug, vec![]);
         args.keys = vec!["nested.b=2".to_string()];
-        // We use a single positional key=value with dot-notation-style to test
-        // the deep-merge path. But our parser splits at first `=` so the key
-        // becomes literal "nested.b" — that's fine for this test: we're
-        // verifying the deep-merge code path runs without clobbering existing
-        // keys. For true nested merge we'd need nested JSON — test below.
+        // da-ju71.4: dotted paths are real paths now (the old flat_paths
+        // compat shim is gone), so `nested.b=2` deep-sets into the
+        // existing `nested` object. Original keys must survive the merge.
         update_from_args(args, UpdateStrategy::Merge, &db).unwrap();
 
-        // Now overlay nested JSON via a second merge with -k syntax replaced
-        // by direct extra_data manipulation through another merge call.
-        // We'll exercise nested merging by passing a nested object through
-        // parse_value_token's fallback (string): instead rely on the unit
-        // test of `deep_merge` in update_core for that path.
         let after = db.get_entry(&e.slug).unwrap();
         let ex = after.data.as_ref().unwrap();
-        // Original scalar keys intact
+        // Original scalar keys intact (deep-merge preserved them)
         assert_eq!(ex["nested"]["a"], serde_json::json!(1));
         assert_eq!(ex["nested"]["c"], serde_json::json!(3));
-        // Flat "nested.b" added
-        assert_eq!(ex["nested.b"], serde_json::json!(2));
+        // Newly-set dotted path lands inside the nested object
+        assert_eq!(ex["nested"]["b"], serde_json::json!(2));
     }
 
     // `deep_merge_recurses_into_objects` lives in update_core.rs where the
@@ -2697,8 +2734,9 @@ mod tests {
         let ex = after.data.as_ref().unwrap();
         assert_eq!(ex["tag"]["color"], serde_json::json!("red"));
         assert_eq!(ex["tag"]["size"], serde_json::json!("m"));
-        // Our split-on-first-'=' parser treats "tag.priority" as a literal key.
-        assert_eq!(ex["tag.priority"], serde_json::json!(1));
+        // da-ju71.4: dotted paths deep-set, so `tag.priority=1` lands as
+        // `tag.priority` *inside* the existing nested `tag` object.
+        assert_eq!(ex["tag"]["priority"], serde_json::json!(1));
     }
 
     #[test]

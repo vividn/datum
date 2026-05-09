@@ -389,12 +389,12 @@ fn switch_extras_never_produce_implicit_duration() {
 
 /// TS #13: "can make complex states by using dot syntax".
 ///
-/// Divergence: daydumb does not interpret `.key=value` as complex-state
-/// dot syntax. Leading-dot keys pass through to `extra_data` verbatim; the
-/// switch value remains the first positional. Structured states in daydumb
-/// are produced by explicit JSON values, not by parser-side synthesis.
+/// Post-da-ju71.4: leading-dot keys fold into a structured `state.*`
+/// subtree. With a bare positional state present, the positional becomes
+/// `state.id` and dot keys are siblings under `state`. The entry's
+/// `state` is the resulting Object, not the bare scalar.
 #[test]
-fn switch_dot_prefixed_keys_pass_through_to_extra_data() {
+fn switch_dot_prefixed_keys_fold_into_structured_state() {
     let db = fresh_db();
 
     run_cli(
@@ -404,12 +404,13 @@ fn switch_dot_prefixed_keys_pass_through_to_extra_data() {
     .expect("switch with .subtask=mop");
 
     let entry = &db.entries_for_field("project", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "project", verb: "switch", value: "household");
-    let extra = entry.data.as_ref().unwrap();
-    assert_eq!(
-        extra[".subtask"],
-        json!("mop"),
-        "daydumb stores `.subtask` as a literal extra_data key — no complex-state synthesis",
+    assert_eq!(entry.field, "project");
+    let state = entry.state.as_ref().expect("state set");
+    assert_eq!(state["id"], json!("household"));
+    assert_eq!(state["subtask"], json!("mop"));
+    assert!(
+        entry.data.as_ref().and_then(|d| d.get(".subtask")).is_none(),
+        "leading-dot keys no longer leak into extra_data",
     );
 }
 
@@ -491,11 +492,10 @@ fn switch_multiple_keys_attach_without_complex_state_synthesis() {
 
 /// TS #16: "handles dot syntax required and optional keys correctly".
 ///
-/// Divergence: `.medium=text`, `.title=title`, `.author=author` are stored
-/// verbatim as extra_data keys (leading dots and all); they are not merged
-/// into the state value. Again: daydumb has no dot-syntax promotion.
+/// Post-da-ju71.4: dot-prefixed keys fold into a structured `state.*`
+/// subtree alongside the bare positional, which becomes `state.id`.
 #[test]
-fn switch_dot_syntax_keys_remain_literal_extra_data_keys() {
+fn switch_dot_syntax_keys_fold_into_structured_state() {
     let db = fresh_db();
 
     run_cli(
@@ -512,18 +512,19 @@ fn switch_dot_syntax_keys_remain_literal_extra_data_keys() {
     .expect("switch with dot-prefixed keys");
 
     let entry = &db.entries_for_field("consume", None).unwrap()[0];
-    assert_entry_matches!(
-        entry,
-        field: "consume",
-        verb: "switch",
-        value: "book_fiction",
-    );
-    let extra = entry.data.as_ref().unwrap();
-    assert_eq!(extra[".medium"], json!("text"));
-    assert_eq!(extra[".title"], json!("title"));
-    assert_eq!(extra[".author"], json!("author"));
-    // The value is unchanged — no synthesis of {id, medium, title, author}.
-    assert_eq!(entry.state.as_ref().unwrap(), &json!("book_fiction"));
+    assert_eq!(entry.field, "consume");
+    let state = entry.state.as_ref().expect("state set");
+    assert_eq!(state["id"], json!("book_fiction"));
+    assert_eq!(state["medium"], json!("text"));
+    assert_eq!(state["title"], json!("title"));
+    assert_eq!(state["author"], json!("author"));
+    // Leading-dot keys no longer surface as literal extra_data keys.
+    if let Some(extra) = entry.data.as_ref() {
+        let obj = extra.as_object().expect("data is an object");
+        assert!(!obj.contains_key(".medium"));
+        assert!(!obj.contains_key(".title"));
+        assert!(!obj.contains_key(".author"));
+    }
 }
 
 // ─── Extra parity checks (scope #4: derived-alias routing) ──────────────────
@@ -703,9 +704,10 @@ fn switch_two_trailing_duration_positionals_rejected() {
     );
 }
 
-/// da-ffp6: KEY=VALUE positionals after the state still attach to
-/// extra_data; they don't count as the "trailing" duration slot, so a
-/// duration positional may appear before, between, or after them.
+/// da-ffp6: KEY=VALUE positionals after the state still attach (as
+/// state.* members post-da-ju71.4); they don't count as the "trailing"
+/// duration slot, so a duration positional may appear before, between,
+/// or after them.
 #[test]
 fn switch_trailing_duration_with_kv_positionals() {
     let db = fresh_db();
@@ -717,8 +719,9 @@ fn switch_trailing_duration_with_kv_positionals() {
     .expect("KV positional + trailing duration should both apply");
 
     let e = &db.entries_for_field("project", None).unwrap()[0];
-    assert_eq!(e.state.as_ref(), Some(&json!("ai")));
+    let state = e.state.as_ref().expect("state set");
+    // .note folds into structured state alongside the positional `ai`.
+    assert_eq!(state["id"], json!("ai"));
+    assert_eq!(state["note"], json!("hi"));
     assert_eq!(e.duration_seconds(), Some(3 * 60));
-    let extra = e.data.as_ref().unwrap();
-    assert_eq!(extra[".note"], json!("hi"));
 }
