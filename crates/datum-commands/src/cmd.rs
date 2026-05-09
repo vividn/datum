@@ -22,7 +22,7 @@ use crate::{
         AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
         ConflictsShowArgs, DbImportArgs, DbImportArgsExt,
-        GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, LogArgs, LogArgsExt, MigrateCommand,
+        GrepArgs, HistoryArgs, IdsArgs, LogArgs, LogArgsExt, MigrateCommand,
         NowArgs, OutputFlagsExt, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs,
         TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
     },
@@ -1956,26 +1956,6 @@ pub(crate) fn cmd_track(args: TrackArgs, db: &Db) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn cmd_ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
-    // da-2sr: writing a switch entry with the IGNORED sentinel is the only
-    // way to mark a field ignored. No spec writes — the spec keeps its
-    // schema-only role.
-    let device = device_id()?;
-    let entry = Entry::new_legacy(
-        &args.field,
-        Verb::Switch,
-        Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
-        None,
-        None,
-        Some(DatumTime::now()),
-        None,
-        device,
-    );
-    db.insert_entry(&entry)?;
-    println!("✓ Ignoring '{}'", args.field);
-    Ok(())
-}
-
 // ─── Get / Delete ─────────────────────────────────────────────────────────────
 
 /// Resolve `input` to an entry via quickId matching, preserving the
@@ -3578,7 +3558,7 @@ mod tests {
         advance_time("1m");
         // Ignore writes a switch IGNORED entry — supersedes the prior
         // track switch — and leaves the spec (and its color) alone.
-        cmd_ignore(IgnoreArgs { field: "mood".to_string() }, &db).unwrap();
+        crate::commands::ignore::ignore(IgnoreArgs { field: "mood".to_string() }, &db).unwrap();
         let tracked2 = db.get_tracked_fields().unwrap();
         let mood2 = tracked2.iter().find(|f| f.field == "mood").unwrap();
         assert!(mood2.ignored);
