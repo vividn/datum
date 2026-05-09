@@ -1,5 +1,6 @@
-//! `dm reparse` — replay each entry's stored `raw_input` through the
-//! current parser, diffing the result against the persisted columns.
+//! `datum reparse <hid>...` — replay named entries' stored `raw_input`
+//! through the current parser, diffing the result against the
+//! persisted columns.
 //!
 //! Closes the persisted-intent loop (da-g5uk): the insert path stamps
 //! `raw_input`, `alias_chain`, and `parser_version` on every row; this
@@ -8,12 +9,15 @@
 //! time — `alias_chain` is rehydrated as the resolver, never the live
 //! `aliases` table.
 //!
-//! MVP scope: walks live entries, replays the parser-derivable shape
-//! (`field`, `state`, `dur`, `following_state`, `data`) for the log
-//! verbs (Occur/Start/Stop/Switch/Add). Other verbs don't write rows.
-//! Filters: `--field`. Modes: dry-run (default) or `--fix`. Migration
-//! imports (`parser_version = 0`) are skipped unless `--include-imports`
-//! since they have no real argv to replay.
+//! Per da-bkak: reparse operates ONLY on entries the user explicitly
+//! names by hid (or quickId / slug — anything `resolve_quickid_single`
+//! accepts). Walking all entries is out of scope: long-standing data
+//! validated by the user is sacrosanct and is never bulk-rewritten.
+//!
+//! Replay covers the parser-derivable shape (`field`, `state`, `dur`,
+//! `following_state`, `data`) for the log verbs (Occur/Start/Stop/
+//! Switch/Add). Other verbs don't write rows, so they have nothing to
+//! diff against.
 
 use std::collections::HashMap;
 
@@ -23,6 +27,7 @@ use datum_core::{
     db::Db,
     dur::Dur,
     entry::{Entry, CURRENT_PARSER_VERSION},
+    ids::resolve_quickid_single,
 };
 use datum_parse::alias::{expand_argv, ResolvedAlias, Resolver};
 use datum_parse::parse_argv;
@@ -259,69 +264,51 @@ fn apply_fix(entry: &Entry, shape: &ReparsedShape, db: &Db) -> Result<()> {
 }
 
 pub fn reparse(args: ReparseArgs, db: &Db) -> Result<()> {
-    let entries = db.all_entries()?;
+    if args.hids.is_empty() {
+        anyhow::bail!(
+            "reparse requires at least one <hid> (or slug / quickId). \
+             Walking all entries is intentionally not supported — reparse \
+             is opt-in per row. See `datum reparse --help`."
+        );
+    }
+
     let mut scanned = 0usize;
-    let mut skipped_imports = 0usize;
     let mut drifted = 0usize;
     let mut fixed = 0usize;
 
-    for entry in &entries {
-        if entry.deleted_at.is_some() {
-            continue;
-        }
-        if let Some(filter_field) = &args.field {
-            if &entry.field != filter_field {
-                continue;
-            }
-        }
-        if entry.parser_version == 0 && !args.include_imports {
-            skipped_imports += 1;
-            continue;
-        }
+    for token in &args.hids {
+        let entry = resolve_quickid_single(db, token)?;
 
         scanned += 1;
 
-        let shape = match replay_shape(entry) {
-            Ok(Some(s)) => s,
-            Ok(None) => continue,
-            Err(e) => {
-                eprintln!("warn: replay failed for {}: {}", entry.slug, e);
+        let shape = match replay_shape(&entry)? {
+            Some(s) => s,
+            // Non-log verb or no provenance — nothing to compare.
+            None => {
+                println!("{}: no replayable raw_input — skipped", entry.slug);
                 continue;
             }
         };
 
-        let deltas = diff_shape(&shape, entry);
+        let deltas = diff_shape(&shape, &entry);
         if deltas.is_empty() {
+            println!("{}: clean", entry.slug);
             continue;
         }
 
         drifted += 1;
-        print_drift(entry, &deltas);
+        print_drift(&entry, &deltas);
 
         if args.fix {
-            apply_fix(entry, &shape, db)?;
+            apply_fix(&entry, &shape, db)?;
             fixed += 1;
         }
     }
 
     if args.fix {
-        println!(
-            "\nreparse: {scanned} scanned, {drifted} drifted, {fixed} fixed{}.",
-            if skipped_imports > 0 {
-                format!(" ({skipped_imports} migration imports skipped — pass --include-imports to include)")
-            } else {
-                String::new()
-            }
-        );
+        println!("\nreparse: {scanned} scanned, {drifted} drifted, {fixed} fixed.");
     } else {
-        println!(
-            "\nreparse: {scanned} scanned, {drifted} would change{}.",
-            if skipped_imports > 0 {
-                format!(" ({skipped_imports} migration imports skipped — pass --include-imports to include)")
-            } else {
-                String::new()
-            }
-        );
+        println!("\nreparse: {scanned} scanned, {drifted} would change.");
     }
 
     Ok(())

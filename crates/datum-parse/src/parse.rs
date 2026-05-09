@@ -1960,21 +1960,12 @@ fn parse_reparse_args(tail: &[&str]) -> Result<ReparseArgs> {
     let mut i = 0;
     while i < tail.len() {
         match split_flag(tail[i]) {
-            FlagSplit::LongAttached("field", v) => {
-                out.field = Some(v.to_string());
-                i += 1;
-            }
-            FlagSplit::Long("field") => {
-                let (v, ni) = take_value(tail, i, None, "--field")?;
-                out.field = Some(v.to_string());
-                i = ni;
-            }
             FlagSplit::Long("fix") => {
                 out.fix = true;
                 i += 1;
             }
-            FlagSplit::Long("include-imports") => {
-                out.include_imports = true;
+            FlagSplit::Positional(tok) => {
+                out.hids.push(tok.to_string());
                 i += 1;
             }
             f => return Err(unknown_flag(f)),

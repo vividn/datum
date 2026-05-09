@@ -1,9 +1,9 @@
-//! Tests for `dm reparse` (da-g5uk).
+//! Tests for `datum reparse <hid>...` (da-bkak, persisted-intent loop
+//! producer is da-g5uk).
 //!
-//! Closes the persisted-intent loop: producer (insert path stamps
-//! `raw_input` + `alias_chain` + `parser_version`) + consumer (this
-//! command replays the parser against the stored argv and reports /
-//! repairs drift).
+//! Per da-bkak: reparse operates ONLY on entries explicitly named by
+//! hid. Walking all entries is intentionally out of scope — long-
+//! standing user-validated data is sacrosanct.
 
 mod common;
 
@@ -11,57 +11,59 @@ use common::run_cli;
 use datum_core::test_util::fresh_db;
 use rusqlite::params;
 
-/// Golden invariant: a freshly populated DB has no parser drift. After
-/// inserting a handful of representative log-verb entries through the
-/// CLI, `dm reparse` (dry-run) must report zero would-change rows. If
-/// this ever fails it means the insert path and the replay path
-/// disagree about how to interpret `raw_input` — the contract is broken.
+/// Bare `reparse` (no hids) must error rather than walk all entries.
+/// This is the load-bearing design constraint of da-bkak: opt-in only.
 #[test]
-fn reparse_dryrun_reports_zero_drift_on_clean_db() {
+fn reparse_with_no_hids_errors_does_not_walk() {
     let db = fresh_db();
-
     run_cli(&["occur", "coffee"], &db).expect("occur");
-    run_cli(&["switch", "mood", "happy"], &db).expect("switch");
-    run_cli(&["start", "sleep"], &db).expect("start");
-    run_cli(&["stop", "sleep"], &db).expect("stop");
 
-    // Bare reparse (no --fix). Must not error and must touch nothing.
-    run_cli(&["reparse"], &db).expect("reparse dry-run");
-
-    // Sanity: the entries are still where we left them, with their
-    // original parser_version stamped (i.e. CURRENT_PARSER_VERSION).
-    let cur = datum_core::entry::CURRENT_PARSER_VERSION;
-    let entries = db.all_entries().unwrap();
-    assert_eq!(entries.len(), 4);
-    for e in &entries {
-        assert_eq!(
-            e.parser_version, cur,
-            "fresh write must stamp CURRENT_PARSER_VERSION"
-        );
-    }
+    let err = run_cli(&["reparse"], &db).expect_err("bare reparse must error");
+    let msg = format!("{err:?}");
+    assert!(
+        msg.contains("requires at least one"),
+        "error must mention the missing hid argument; got: {msg}"
+    );
 }
 
-/// Drift detection: hand-mutate a stored row's `state` column out from
-/// under the entry, then run `dm reparse`. A subsequent pass with
-/// `--fix` must repair the row, and a third pass must report zero
-/// drift again. This is the parser-bug-fix retroactive-repair flow the
-/// command exists to power.
+/// Golden invariant: a freshly-written entry has no parser drift.
+/// Naming it explicitly to `reparse` (dry-run) must touch nothing.
+#[test]
+fn reparse_dryrun_clean_row_reports_zero_drift() {
+    let db = fresh_db();
+    run_cli(&["switch", "mood", "happy"], &db).expect("switch");
+
+    let hid = {
+        let entries = db.all_entries().unwrap();
+        assert_eq!(entries.len(), 1);
+        entries[0].hid.0.clone()
+    };
+
+    run_cli(&["reparse", &hid], &db).expect("reparse dry-run on clean row");
+
+    let cur = datum_core::entry::CURRENT_PARSER_VERSION;
+    let after = db.get_entry(&hid).unwrap();
+    assert_eq!(
+        after.parser_version, cur,
+        "fresh write must stamp CURRENT_PARSER_VERSION"
+    );
+}
+
+/// Drift detection: hand-mutate a stored row's `state` column out
+/// from under the entry, then run `reparse <hid> --fix`. The repair
+/// must restore the parser-derived state, and a second pass must be
+/// a no-op.
 #[test]
 fn reparse_fix_repairs_a_hand_mutated_row() {
     let db = fresh_db();
     run_cli(&["switch", "mood", "happy"], &db).expect("switch");
 
-    let slug = {
+    let (slug, hid) = {
         let entries = db.all_entries().unwrap();
         assert_eq!(entries.len(), 1);
-        entries[0].slug.clone()
+        (entries[0].slug.clone(), entries[0].hid.0.clone())
     };
 
-    // Simulate the parser having produced a different state value at
-    // some past write. We rewrite the state column directly via SQL —
-    // this stands in for a parser-bug-fix world where re-parsing
-    // `raw_input` today yields something different from what was
-    // persisted. The replay path should detect the divergence.
     db.conn()
         .execute(
             "UPDATE entries SET state = ?2 WHERE slug = ?1",
@@ -76,9 +78,7 @@ fn reparse_fix_repairs_a_hand_mutated_row() {
         "row must be in the mutated 'sad' state before --fix"
     );
 
-    // --fix repairs the row — the replay says state should be
-    // "happy" (the literal positional from raw_input).
-    run_cli(&["reparse", "--fix"], &db).expect("reparse --fix");
+    run_cli(&["reparse", &hid, "--fix"], &db).expect("reparse --fix");
 
     let repaired = db.get_entry(&slug).unwrap();
     assert_eq!(
@@ -87,9 +87,9 @@ fn reparse_fix_repairs_a_hand_mutated_row() {
         "--fix must restore the parser-derived state"
     );
 
-    // Idempotence: a second --fix is a no-op (no drift remaining).
+    // Idempotence: a second --fix is a no-op.
     let pre_modify = repaired.modify_time;
-    run_cli(&["reparse", "--fix"], &db).expect("reparse --fix idempotent");
+    run_cli(&["reparse", &hid, "--fix"], &db).expect("reparse --fix idempotent");
     let after = db.get_entry(&slug).unwrap();
     assert_eq!(
         after.state, repaired.state,
@@ -101,31 +101,29 @@ fn reparse_fix_repairs_a_hand_mutated_row() {
     );
 }
 
-/// `--field` filter narrows the walk to one field's rows. Other rows'
-/// drift is ignored.
+/// Naming multiple hids in one invocation reparses each independently:
+/// the named one repairs, the unnamed one is left alone (proving we
+/// never walk).
 #[test]
-fn reparse_field_filter_ignores_other_fields() {
+fn reparse_only_touches_named_rows() {
     let db = fresh_db();
     run_cli(&["switch", "mood", "happy"], &db).expect("switch mood");
     run_cli(&["switch", "energy", "high"], &db).expect("switch energy");
 
-    let mood_slug = db
+    let mood_entry = db
         .entries_for_field("mood", None)
         .unwrap()
         .first()
         .unwrap()
-        .slug
         .clone();
-    let energy_slug = db
+    let energy_entry = db
         .entries_for_field("energy", None)
         .unwrap()
         .first()
         .unwrap()
-        .slug
         .clone();
 
-    // Mutate both rows.
-    for slug in [&mood_slug, &energy_slug] {
+    for slug in [&mood_entry.slug, &energy_entry.slug] {
         db.conn()
             .execute(
                 "UPDATE entries SET state = ?2 WHERE slug = ?1",
@@ -134,19 +132,19 @@ fn reparse_field_filter_ignores_other_fields() {
             .unwrap();
     }
 
-    // --field=mood --fix must only repair mood; energy stays drifted.
-    run_cli(&["reparse", "--field", "mood", "--fix"], &db).expect("reparse mood");
+    // Name only the mood row; energy must stay drifted.
+    run_cli(&["reparse", &mood_entry.hid.0, "--fix"], &db).expect("reparse mood by hid");
 
-    let mood = db.get_entry(&mood_slug).unwrap();
-    let energy = db.get_entry(&energy_slug).unwrap();
+    let mood = db.get_entry(&mood_entry.slug).unwrap();
+    let energy = db.get_entry(&energy_entry.slug).unwrap();
     assert_eq!(
         mood.state.as_ref().and_then(|v| v.as_str()),
         Some("happy"),
-        "mood must be repaired"
+        "named mood row must be repaired"
     );
     assert_eq!(
         energy.state.as_ref().and_then(|v| v.as_str()),
         Some("DRIFTED"),
-        "energy must be left alone (filter excluded it)"
+        "unnamed energy row must be left alone (reparse never walks)"
     );
 }

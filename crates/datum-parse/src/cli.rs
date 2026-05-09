@@ -197,8 +197,9 @@ pub struct InfoArgs {
 #[derive(Debug, Default)]
 pub struct SetupArgs {}
 
-/// `dm reparse` — replay each entry's stored `raw_input` through the
-/// current parser, diffing the result against the stored columns.
+/// `datum reparse <hid>...` — replay one or more named entries' stored
+/// `raw_input` through the current parser, diffing the result against
+/// the stored columns.
 ///
 /// Closes the persisted-intent loop (da-g5uk): the insert path stamps
 /// `raw_input` + `alias_chain` + `parser_version` on every row; this
@@ -206,16 +207,18 @@ pub struct SetupArgs {}
 /// correct already-stored rows. Replay is hermetic to the alias state
 /// at write time — `alias_chain` is rehydrated as the resolver, never
 /// the live `aliases` table.
+///
+/// Per da-bkak: reparse operates ONLY on entries the user explicitly
+/// names by hid. Walking all entries is out of scope — long-standing
+/// data validated by the user is sacrosanct, never bulk-rewritten.
 #[derive(Debug, Default)]
 pub struct ReparseArgs {
-    /// Only walk entries whose `field` matches this string exactly.
-    pub field: Option<String>,
+    /// Hids (or slugs / quickIds) of the entries to re-parse. At least
+    /// one is required; reparse never walks the entry log implicitly.
+    pub hids: Vec<String>,
     /// UPDATE rows where the parser produced a different shape; bumps
     /// `parser_version` and recomputes `content_hash`. Default is dry-run.
     pub fix: bool,
-    /// Include rows with `parser_version = 0` (migration imports). They
-    /// have no real argv to replay, so we skip them by default.
-    pub include_imports: bool,
 }
 
 // ─── Db (subcommand group) ────────────────────────────────────────────────
