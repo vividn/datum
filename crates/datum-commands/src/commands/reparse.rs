@@ -70,15 +70,20 @@ fn build_resolver_from_chain(chain: Option<&JsonValue>) -> ChainResolver {
         return ChainResolver { map };
     };
     for step in steps {
-        let Some(name) = step.get("name").and_then(|v| v.as_str()) else { continue };
-        let Some(expansion) = step.get("expansion").and_then(|v| v.as_str()) else { continue };
+        let Some(name) = step.get("name").and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(expansion) = step.get("expansion").and_then(|v| v.as_str()) else {
+            continue;
+        };
         // First-write-wins: a chain may record the same name twice if
         // the user re-ran a command, but the shape is identical (same
         // expansion text), so collisions are benign.
-        map.entry(name.to_string()).or_insert_with(|| ResolvedAlias {
-            expands_to: expansion.to_string(),
-            tokens: shell_split(expansion),
-        });
+        map.entry(name.to_string())
+            .or_insert_with(|| ResolvedAlias {
+                expands_to: expansion.to_string(),
+                tokens: shell_split(expansion),
+            });
     }
     ChainResolver { map }
 }
@@ -99,10 +104,9 @@ fn replay_shape(entry: &Entry) -> Result<Option<ReparsedShape>> {
     argv.extend(shell_split(&entry.raw_input));
 
     let resolver = build_resolver_from_chain(entry.alias_chain.as_ref());
-    let (expanded, _chain) = expand_argv(argv, &resolver)
-        .map_err(|e| anyhow::anyhow!("expand_argv failed: {e}"))?;
-    let cli = parse_argv(&expanded)
-        .map_err(|e| anyhow::anyhow!("parse_argv failed: {e}"))?;
+    let (expanded, _chain) =
+        expand_argv(argv, &resolver).map_err(|e| anyhow::anyhow!("expand_argv failed: {e}"))?;
+    let cli = parse_argv(&expanded).map_err(|e| anyhow::anyhow!("parse_argv failed: {e}"))?;
 
     let (action, mut log_args) = match cli.command {
         Command::Occur(a) => (Action::Occur, a),
@@ -228,7 +232,12 @@ fn diff_shape(shape: &ReparsedShape, entry: &Entry) -> Vec<Delta> {
 }
 
 fn print_drift(entry: &Entry, deltas: &[Delta]) {
-    println!("{}  ({} delta{})", entry.slug, deltas.len(), if deltas.len() == 1 { "" } else { "s" });
+    println!(
+        "{}  ({} delta{})",
+        entry.slug,
+        deltas.len(),
+        if deltas.len() == 1 { "" } else { "s" }
+    );
     for d in deltas {
         println!("  {}: {} → {}", d.field_name, d.old, d.new);
     }
