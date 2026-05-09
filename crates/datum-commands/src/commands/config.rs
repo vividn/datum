@@ -54,10 +54,9 @@ fn config_show(args: ConfigShowArgs, cli_db: Option<&str>) -> Result<()> {
         .unwrap_or(0)
         .max(5);
     println!(
-        "{:<key_w$}  {:<val_w$}  {}",
+        "{:<key_w$}  {:<val_w$}  SOURCE",
         "KEY",
         "VALUE",
-        "SOURCE",
         key_w = key_w,
         val_w = val_w,
     );

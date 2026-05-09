@@ -80,8 +80,8 @@ pub fn field_color(field: Option<&str>, spec_color: Option<&str>) -> String {
 /// * `Some("true")`     → field color
 /// * `Some("false")`    → `#000000`
 /// * `Some("null")`     → `#888888`  (datum's `null` branch — daydumb
-///                                   renames this to `IGNORED`, see
-///                                   `docs/visual-parity-analysis.md` §5)
+///   renames this to `IGNORED`, see
+///   `docs/visual-parity-analysis.md` §5)
 /// * named state        → spec override OR md5(state)
 ///
 /// Array-valued states aren't covered here — the renderer's checkerboard

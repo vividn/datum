@@ -51,13 +51,11 @@ impl InstallReport {
     pub fn installed(&self) -> impl Iterator<Item = &str> {
         self.outcomes
             .iter()
-            .filter_map(|(name, o)| matches!(o, KitFieldOutcome::Installed).then(|| name.as_str()))
+            .filter(|&(_name, o)| matches!(o, KitFieldOutcome::Installed)).map(|(name, _o)| name.as_str())
     }
 
     pub fn skipped(&self) -> impl Iterator<Item = &str> {
-        self.outcomes.iter().filter_map(|(name, o)| {
-            matches!(o, KitFieldOutcome::SkippedExisting { .. }).then(|| name.as_str())
-        })
+        self.outcomes.iter().filter(|&(_name, o)| matches!(o, KitFieldOutcome::SkippedExisting { .. })).map(|(name, _o)| name.as_str())
     }
 }
 

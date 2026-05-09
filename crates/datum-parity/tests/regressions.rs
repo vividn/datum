@@ -55,11 +55,11 @@ fn da_438y_state_without_field_uses_md5() {
 
 /// **da-luc8** — fixed in commit `ca7d373` (port full _N quickId family
 /// + fix v3 column-rename bug). The `_N` quickId is parsed by
-/// `datum-parse`, not the renderer, so this regression's parity surface
-/// is the **slug** the entry receives. The expected slug for a `_3`
-/// quickId on field `coffee` at midnight 2024-01-15 is
-/// `coffee:2024-01-15T08:00:00.000Z` shifted by N occurrences of that
-/// field on that day.
+///   `datum-parse`, not the renderer, so this regression's parity surface
+///   is the **slug** the entry receives. The expected slug for a `_3`
+///   quickId on field `coffee` at midnight 2024-01-15 is
+///   `coffee:2024-01-15T08:00:00.000Z` shifted by N occurrences of that
+///   field on that day.
 ///
 /// Our parity slice doesn't yet exercise daydumb's parser end-to-end,
 /// but we lock the **field/state color** for `coffee` (which the renderer

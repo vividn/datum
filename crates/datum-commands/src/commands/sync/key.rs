@@ -213,7 +213,7 @@ fn write_key_file(path: &std::path::Path, key: &[u8; 32]) -> Result<()> {
             .open(path)
             .with_context(|| format!("open {path:?}"))?;
         f.write_all(key)?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(unix))]
     {

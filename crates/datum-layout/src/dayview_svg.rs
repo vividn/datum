@@ -132,7 +132,7 @@ pub fn render_dayview_svg(layout: &DayviewLayout) -> String {
         }
         // Warning icon for conflicts — placed next to the date label.
         if day.has_error {
-            let icon_size = (layout.day_height * 0.4).min(20.0).max(8.0);
+            let icon_size = (layout.day_height * 0.4).clamp(8.0, 20.0);
             let (icon_x, icon_y) = match layout.orientation {
                 Orientation::Horizontal => (
                     layout.label_width - 2.0,

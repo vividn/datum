@@ -515,6 +515,11 @@ fn shift_days(cur: DatumTime, days: i64, tz_name: &str) -> Result<DatumTime> {
 // ─── tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+// Test setups in this module use `let mut a = TimeArgs::default(); a.x = ...;`
+// per-field assignment for readability — the rows mirror datum's CLI flag
+// layout. Struct-literal form would require enumerating every field of
+// TimeArgs at every call site, which obscures what each test is exercising.
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use chrono::DateTime;

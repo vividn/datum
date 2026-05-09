@@ -115,7 +115,7 @@ pub(crate) fn split_unit(s: &str) -> (&str, &str) {
 
 pub(crate) fn parse_iso_duration(s: &str) -> Result<Duration> {
     // Minimal ISO 8601 duration parser: PT5M, PT1H30M, P1DT5H, etc.
-    let s = if s.starts_with('P') { &s[1..] } else { s };
+    let s = s.strip_prefix('P').unwrap_or(s);
     let mut secs: i64 = 0;
     let (date_part, time_part) = if let Some(idx) = s.find('T') {
         (&s[..idx], &s[idx + 1..])

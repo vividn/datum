@@ -159,7 +159,7 @@ fn build_state_panel_overlay(layout: &DayviewLayout, entries: &[NowviewPanelEntr
         let row_h = field.cross_extent.max(1.0);
         let y_center = row_top + row_h / 2.0;
 
-        let font_size = (row_h - 4.0).min(PANEL_MAX_FONT).max(PANEL_MIN_FONT);
+        let font_size = (row_h - 4.0).clamp(PANEL_MIN_FONT, PANEL_MAX_FONT);
         if font_size < PANEL_MIN_FONT {
             continue;
         }

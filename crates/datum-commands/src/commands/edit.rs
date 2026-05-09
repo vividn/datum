@@ -84,7 +84,7 @@ impl UserEditableEntry {
     fn from_entry(e: &Entry) -> Self {
         Self {
             field: e.field.clone(),
-            verb: e.verb.clone(),
+            verb: e.verb,
             state: e.state.clone(),
             dur: e.dur.clone(),
             following_state: e.following_state.clone(),

@@ -27,7 +27,7 @@
 //! - `resolution`: NULL while pending; filled on resolve (auto or manual).
 //! - `detected_by`: `local_validator` | `sync_pull`.
 //! - `conflict_kind`: `double_open` | `orphan_end` | `overlap`
-//!                    | `same_state_repeat` | `last_state_mismatch`.
+//!   | `same_state_repeat` | `last_state_mismatch`.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};

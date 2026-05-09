@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 /// discussion (2026-04-30).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum Orientation {
     /// Time runs vertically (Y axis, top→bottom); days stack horizontally
     /// (X axis). Date labels on top of each column, time-axis ticks on
@@ -44,14 +45,10 @@ pub enum Orientation {
     /// Time runs horizontally (X axis, left→right); days stack vertically
     /// (Y axis). Date labels on the left, time-axis ticks at the bottom.
     /// This is datum's original layout.
+    #[default]
     Horizontal,
 }
 
-impl Default for Orientation {
-    fn default() -> Self {
-        Orientation::Horizontal
-    }
-}
 
 /// One day's window + per-field input data. The caller (CLI) resolves the
 /// label strings, day boundaries (in UTC ms), and the field data —
@@ -335,7 +332,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
         }
     }
 
-    let label_width = config.label_width.unwrap_or_else(|| label_font_size * 4.0);
+    let label_width = config.label_width.unwrap_or(label_font_size * 4.0);
 
     let data_rows_extent =
         n_days as f64 * config.day_height + (n_days - 1) as f64 * config.interday_margin;
@@ -458,8 +455,7 @@ pub fn compute_dayview(config: &DayviewConfig) -> DayviewLayout {
             let r = five_min_px
                 .min(cross_extent / 2.0)
                 .min(time_axis_extent / 4.0)
-                .min(10.0)
-                .max(1.0);
+                .clamp(1.0, 10.0);
 
             for p in &f.points {
                 if p.time_ms < day.start_ms || p.time_ms > day.end_ms {
@@ -781,7 +777,7 @@ mod tests {
             height_frac: 0.1,
             z_index: z,
             blocks: vec![DayviewBlock {
-                start_ms: DAY_START + 1 * HOUR,
+                start_ms: DAY_START + HOUR,
                 end_ms: DAY_START + 2 * HOUR,
                 fill: BlockFill::Single("#abcdef".into()),
                 state_label: None,

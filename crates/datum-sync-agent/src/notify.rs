@@ -127,7 +127,7 @@ pub fn from_config(enabled_default: bool) -> Arc<dyn Notifier> {
 /// daemon after a successful pull whose `PullOutcome.conflicts_queued
 /// > 0`. The per-conflict detail (which entry, which kind) is left to
 /// the user to inspect via `datum conflicts list`; the notification
-/// just nudges them to look.
+/// > just nudges them to look.
 pub fn announce_new_conflicts(notifier: &dyn Notifier, db_name: &str, queued: usize) {
     if queued == 0 {
         return;

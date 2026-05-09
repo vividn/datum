@@ -90,7 +90,7 @@ fn sample_morning(db: &Db) -> Vec<Entry> {
     ];
     script
         .iter()
-        .map(|(m, f, v)| insert(db, f, v.clone(), *m))
+        .map(|(m, f, v)| insert(db, f, *v, *m))
         .collect()
 }
 
@@ -307,7 +307,7 @@ fn t05_field_filter() {
         (24 * 60 + 10 * 60 + 15, "stretch", Verb::Switch),
         (24 * 60 + 10 * 60 + 30, "stretch", Verb::Switch),
     ] {
-        insert(&db, f, v.clone(), *m);
+        insert(&db, f, *v, *m);
     }
     let got2 = tail_entries(&args, &db).unwrap();
     assert_eq!(got2.len(), 8);

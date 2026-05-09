@@ -8,7 +8,6 @@ use std::fs;
 
 use datum_commands::cmd::dispatch_argv;
 use datum_core::action::Action;
-use datum_core::field_spec::FieldSpec;
 use datum_core::test_util::fresh_db;
 
 #[test]
@@ -458,7 +457,7 @@ expands_to = "kit_expansion"
 
 #[test]
 fn install_skips_existing_user_field_without_force() {
-    use datum_core::entry::Verb;
+    
     use datum_core::field_spec::FieldSpec;
 
     let dir = tempfile::tempdir().unwrap();

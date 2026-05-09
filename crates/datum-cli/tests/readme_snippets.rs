@@ -135,8 +135,8 @@ fn split_commands(body: &str) -> Vec<String> {
     let mut acc = String::new();
     for raw in body.lines() {
         let trimmed_end = raw.trim_end();
-        if trimmed_end.ends_with('\\') {
-            acc.push_str(&trimmed_end[..trimmed_end.len() - 1]);
+        if let Some(stripped) = trimmed_end.strip_suffix('\\') {
+            acc.push_str(stripped);
             acc.push(' ');
             continue;
         }

@@ -346,7 +346,7 @@ fn import_3day_fixture_produces_blocks_and_points() {
     let blocks: Vec<_> = entries
         .iter()
         .filter(|e| {
-            e.dur.as_ref().map_or(false, |d| {
+            e.dur.as_ref().is_some_and(|d| {
                 !d.is_zero_span() && !d.is_moment() && !d.is_unknown()
             })
         })

@@ -18,8 +18,10 @@ use serde::{Deserialize, Serialize};
 /// Command intent surfaced from the CLI / programmatic API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum Action {
     /// `datum occur <field>` — single point-in-time event with no state.
+    #[default]
     Occur,
     /// `datum start <field>` — begin a state (canonicalizes a missing
     /// `state` to `true`).
@@ -36,11 +38,6 @@ pub enum Action {
     Add,
 }
 
-impl Default for Action {
-    fn default() -> Self {
-        Action::Occur
-    }
-}
 
 impl std::fmt::Display for Action {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

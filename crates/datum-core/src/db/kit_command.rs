@@ -52,15 +52,11 @@ pub struct InstallCommandsReport {
 
 impl InstallCommandsReport {
     pub fn installed(&self) -> impl Iterator<Item = &str> {
-        self.outcomes.iter().filter_map(|(name, o)| {
-            matches!(o, KitCommandOutcome::Installed).then(|| name.as_str())
-        })
+        self.outcomes.iter().filter(|&(_name, o)| matches!(o, KitCommandOutcome::Installed)).map(|(name, _o)| name.as_str())
     }
 
     pub fn skipped(&self) -> impl Iterator<Item = &str> {
-        self.outcomes.iter().filter_map(|(name, o)| {
-            matches!(o, KitCommandOutcome::SkippedExisting { .. }).then(|| name.as_str())
-        })
+        self.outcomes.iter().filter(|&(_name, o)| matches!(o, KitCommandOutcome::SkippedExisting { .. })).map(|(name, _o)| name.as_str())
     }
 }
 

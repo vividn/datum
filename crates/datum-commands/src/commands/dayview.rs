@@ -1338,7 +1338,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(occur_utc, "UTC").unwrap();
         let mut e = Entry::new(
             field,
-            verb.clone(),
+            verb,
             state.clone(),
             None,
             None,

@@ -204,19 +204,19 @@ pub const MIGRATIONS: &[Migration] = &[
 ///
 /// Schema delta (entries table):
 /// - DROP: start_time, start_time_offset, start_time_tz,
-///         start_time_precision, start_time_precision_unit,
-///         end_time, end_time_offset, end_time_tz,
-///         end_time_precision, end_time_precision_unit,
-///         entry_shape, intent, value, dur_seconds (generated),
-///         and the existing GENERATED `verb` column.
+///   start_time_precision, start_time_precision_unit,
+///   end_time, end_time_offset, end_time_tz,
+///   end_time_precision, end_time_precision_unit,
+///   entry_shape, intent, value, dur_seconds (generated),
+///   and the existing GENERATED `verb` column.
 /// - ADD: occur_time TEXT NOT NULL, occur_time_offset INTEGER,
-///        occur_time_tz TEXT, occur_time_precision TEXT
-///        (single ISO-8601 duration string),
-///        state TEXT (any JSON value; null == undefined),
-///        dur TEXT (ISO-8601 duration string; NULL = no duration,
-///                  "PT0S" = zero),
-///        following_state TEXT,
-///        verb TEXT NOT NULL DEFAULT 'point' (stored, indexable).
+///   occur_time_tz TEXT, occur_time_precision TEXT
+///   (single ISO-8601 duration string),
+///   state TEXT (any JSON value; null == undefined),
+///   dur TEXT (ISO-8601 duration string; NULL = no duration,
+///   "PT0S" = zero),
+///   following_state TEXT,
+///   verb TEXT NOT NULL DEFAULT 'point' (stored, indexable).
 /// - CHECK: following_state IS NULL OR dur IS NOT NULL.
 /// - Indexes that referenced start_time are reseated on occur_time.
 fn m19_to_20_time_shape_pivot(conn: &Connection) -> Result<()> {

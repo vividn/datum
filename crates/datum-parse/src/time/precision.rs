@@ -15,7 +15,9 @@ use serde::{Deserialize, Serialize};
 /// the user-visible unit rather than collapsing to seconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum PrecisionUnit {
+    #[default]
     Exact,
     Second,
     Minute,
@@ -55,8 +57,3 @@ impl std::str::FromStr for PrecisionUnit {
     }
 }
 
-impl Default for PrecisionUnit {
-    fn default() -> Self {
-        PrecisionUnit::Exact
-    }
-}

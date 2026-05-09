@@ -1247,7 +1247,7 @@ fn parse_spec_set(tail: &[&str]) -> Result<SpecSetArgs> {
             f => return Err(unknown_flag(f)),
         }
     }
-    out.field = require_first_pos(&pos.iter().copied().collect::<Vec<_>>(), "<FIELD>")?;
+    out.field = require_first_pos(&pos.to_vec(), "<FIELD>")?;
     Ok(out)
 }
 

@@ -165,8 +165,8 @@ impl TimeBuilder {
             } else {
                 Utc::now().with_timezone(&tz)
             };
-            dt = dt - chrono::Duration::minutes(self.minutes_back);
-            dt = dt - chrono::Duration::days(self.days_back);
+            dt -= chrono::Duration::minutes(self.minutes_back);
+            dt -= chrono::Duration::days(self.days_back);
             if let Some(date) = self.date_override {
                 let time = self.time_override.unwrap_or_else(|| dt.time());
                 if let Some(new_dt) = date.and_time(time).and_local_timezone(tz).single() {
@@ -212,10 +212,10 @@ impl TimeBuilder {
         };
 
         // Apply minute offsets first
-        dt = dt - chrono::Duration::minutes(self.minutes_back);
+        dt -= chrono::Duration::minutes(self.minutes_back);
 
         // Apply day offsets
-        dt = dt - chrono::Duration::days(self.days_back);
+        dt -= chrono::Duration::days(self.days_back);
 
         // Override date if specified
         if let Some(date) = self.date_override {

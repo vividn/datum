@@ -295,8 +295,8 @@ fn sync_key_init_creates_wrapped_upload() {
     let payload = relay.wrapped_key().expect("wrapped key uploaded");
     assert_eq!(payload["kdf"], "argon2id");
     assert_eq!(payload["wrap_alg"], "aes-256-gcm");
-    assert!(payload["wrapped_key_b64"].as_str().unwrap().len() > 0);
-    assert!(payload["nonce_b64"].as_str().unwrap().len() > 0);
+    assert!(!payload["wrapped_key_b64"].as_str().unwrap().is_empty());
+    assert!(!payload["nonce_b64"].as_str().unwrap().is_empty());
 
     // Existing key without --force must error.
     let mut prompter2 = TestPrompter::new::<Vec<String>, String>(vec![]);

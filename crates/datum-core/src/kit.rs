@@ -48,8 +48,8 @@ pub struct KitToml {
     /// `[[command]]` declarations. Two flavours:
     /// - Level 1 (`expands_to`): alias-style splice before the parser runs.
     /// - Level 2 (`view` + `columns`/...): dispatch to a structured renderer.
-    /// Level 3 (`script`) is parsed and reserved for forward-compat but the
-    /// renderer errors at execution time. Slice 6 (da-d4t.6).
+    ///   Level 3 (`script`) is parsed and reserved for forward-compat but the
+    ///   renderer errors at execution time. Slice 6 (da-d4t.6).
     #[serde(default, rename = "command")]
     pub commands: Vec<CommandEntry>,
 }

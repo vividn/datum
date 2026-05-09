@@ -510,7 +510,7 @@ fn switch_region_end_ms(entries: &[Entry], fallback_end_ms: i64) -> Vec<i64> {
 }
 
 fn canonical_verb(entry: &Entry) -> Verb {
-    entry.verb.clone()
+    entry.verb
 }
 
 fn occur_time_ms(entry: &Entry) -> i64 {
@@ -1111,7 +1111,7 @@ mod tests {
         let dt = DatumTime::from_utc_and_tz(occur_utc, "UTC").unwrap();
         let mut e = Entry::new(
             field,
-            verb.clone(),
+            verb,
             state.clone(),
             None,
             None,

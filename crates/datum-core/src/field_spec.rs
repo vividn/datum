@@ -1175,7 +1175,7 @@ mod tests {
         let a = hash_y("sleep");
         let b = hash_y("sleep");
         assert_eq!(a, b);
-        assert!(a >= 0.0 && a < 1.0);
+        assert!((0.0..1.0).contains(&a));
 
         // Different fields hash to different positions (probabilistically;
         // a collision on these specific names would be a regression).

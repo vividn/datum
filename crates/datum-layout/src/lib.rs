@@ -268,7 +268,7 @@ mod tests {
         let entries = vec![
             LayoutEntry {
                 field: "mood".into(),
-                start_ms: DAY_START + 1 * HOUR,
+                start_ms: DAY_START + HOUR,
                 end_ms: None,
                 state: Some("happy".into()),
             },

@@ -28,9 +28,11 @@ use crate::time::DatumTime;
 /// legacy v19 variants were dropped in da-8y2q.2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum Verb {
     /// Single point-in-time event with no state change (`dur is NULL,
     /// state is null/true, following_state is NULL`).
+    #[default]
     Point,
     /// Transition to a new state (`dur is NULL, state is set,
     /// following_state is NULL`).
@@ -45,11 +47,6 @@ pub enum Verb {
     PointSwitch,
 }
 
-impl Default for Verb {
-    fn default() -> Self {
-        Verb::Point
-    }
-}
 
 impl std::fmt::Display for Verb {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -89,8 +86,10 @@ pub use datum_parse::PrecisionUnit;
 /// switches with the verb-based truth table.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum EntryShape {
     /// `dur is NULL`.
+    #[default]
     Point,
     /// `dur is set` (non-NULL, non-zero).
     Block,
@@ -99,11 +98,6 @@ pub enum EntryShape {
     Ongoing,
 }
 
-impl Default for EntryShape {
-    fn default() -> Self {
-        EntryShape::Point
-    }
-}
 
 impl std::fmt::Display for EntryShape {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

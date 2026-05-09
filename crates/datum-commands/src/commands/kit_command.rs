@@ -323,8 +323,8 @@ fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) {
     println!("{line}");
 }
 
-fn row_color<'a>(
-    rules: &'a [ColorRule],
+fn row_color(
+    rules: &[ColorRule],
     columns: &[String],
     raw: &Vec<JsonValue>,
     now: chrono::DateTime<Utc>,

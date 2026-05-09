@@ -1019,7 +1019,7 @@ pub fn find_command(query: &str) -> Option<(&'static CommandSpec, bool)> {
         if cmd.name == query {
             return Some((cmd, false));
         }
-        if cmd.aliases.iter().any(|a| *a == query) {
+        if cmd.aliases.contains(&query) {
             return Some((cmd, true));
         }
     }

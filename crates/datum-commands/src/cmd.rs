@@ -207,7 +207,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         let output = args.output();
         db.soft_delete_entry(&target.slug)?;
         show_delete(&target, registry.as_ref(), &output);
-        let _ = datum_core::last_docs::set_last_docs(db, &[target.hid.clone()]);
+        let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&target.hid));
         return Ok(());
     }
 
@@ -593,12 +593,14 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
 
     let field = args.field_or_verb.clone();
 
-    let mut data_args = DataArgs::default();
     // da-ju71.4: state-aware path translation is on (no `flat_paths`
     // compat shim) — `state=<v>` lands at `state.id` and leading-dot
     // `.x=<v>` keys fold into `state.x`. The bare positional state for
     // state-bearing verbs is handled below.
-    data_args.preserve_null_strings = true;
+    let mut data_args = DataArgs {
+        preserve_null_strings: true,
+        ..DataArgs::default()
+    };
     let mut slug_paths: Vec<String> = Vec::new();
     for spec in &args.slug_keys {
         let (name, _) = spec
@@ -1674,11 +1676,12 @@ pub(crate) fn resolve_batch(
 
 // ─── Edit ────────────────────────────────────────────────────────────────────
 
-/// Open an entry in `$EDITOR` as pretty JSON; on save, re-parse and persist.
-///
-/// Testing hook: `DATUM_EDITOR` takes precedence over `EDITOR`. Both are
-/// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
-/// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
+// Open an entry in `$EDITOR` as pretty JSON; on save, re-parse and persist.
+//
+// Testing hook: `DATUM_EDITOR` takes precedence over `EDITOR`. Both are
+// invoked as `sh -c "$editor \"$1\"" -- <tmpfile>`, so tests can set
+// `DATUM_EDITOR="cp /path/to/prepared.json"` to simulate a scripted edit.
+//
 // `cmd_edit` was moved to `crate::commands::edit::edit` in da-4lov to
 // route the editor flow through `UserEditableEntry`, which makes
 // system-only fields (extra_metadata, hid, slug, content_hash, etc.)
@@ -1699,11 +1702,13 @@ pub(crate) fn parse_update_payload(
     // slot fill, so every `-k KEY=VALUE` is an immediate that bypasses
     // the data queue. `-k KEY` (no `=`) and `-k KEY=` stay as declared
     // slots so positionals can fill them.
-    let mut data_args = DataArgs::default();
     // Same daydumb compat as the log path — see `parse_log_args`. The
     // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
     // now fold into `state.*`.
-    data_args.preserve_null_strings = true;
+    let mut data_args = DataArgs {
+        preserve_null_strings: true,
+        ..DataArgs::default()
+    };
     let mut injected_immediates: Vec<String> = Vec::new();
     for spec in &args.keys {
         let (name, rhs) = spec

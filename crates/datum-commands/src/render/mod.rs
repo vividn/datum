@@ -1091,7 +1091,7 @@ pub fn render_now_view(
         }
     }
 
-    if active.is_empty() && stopped.is_empty() && !(show_ignored && !ignored_rows.is_empty()) {
+    if active.is_empty() && stopped.is_empty() && (!show_ignored || ignored_rows.is_empty()) {
         writeln!(
             out,
             "No tracked (non-ignored) fields. Use `datum track <field>`."
@@ -1197,7 +1197,7 @@ pub fn render_conflict_show(c: &datum_core::conflicts::Conflict) -> String {
         .max()
         .unwrap_or(0)
         .max(5);
-    let _ = writeln!(out, "  {:<lw$}    {}", "LOCAL", "REMOTE", lw = lwidth);
+    let _ = writeln!(out, "  {:<lw$}    REMOTE", "LOCAL", lw = lwidth);
     let _ = writeln!(
         out,
         "  {:<lw$}    {}",

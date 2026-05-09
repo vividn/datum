@@ -105,6 +105,38 @@ fn select_retime_targets(db: &Db, filter: &RetimeFilter) -> Result<Vec<Entry>> {
         .collect::<Result<_>>()
 }
 
+/// Map a precision-unit name ("second", "minute", "hour", "day",
+/// "month", "year", "exact") to a single ISO-8601 duration string.
+/// Sub-bead 3 will replace this with a proper PrecisionUnit→ISO helper.
+/// Encode a (seconds, unit) precision pair as a single ISO-8601 duration
+/// string for the v=20 `occur_time_precision` column. `unit` selects the
+/// component (PT…M / PT…H / P…D etc.) so a `(300, "minute")` precision
+/// renders as `"PT5M"` rather than collapsing to the bare unit. `exact`
+/// or unrecognized units return `None` (column stored as NULL).
+fn precision_to_iso(seconds: u32, unit: &str) -> Option<String> {
+    if seconds == 0 || matches!(unit, "exact" | "") {
+        return None;
+    }
+    match unit {
+        "second" => Some(format!("PT{seconds}S")),
+        "minute" => {
+            let n = seconds / 60;
+            Some(format!("PT{}M", n.max(1)))
+        }
+        "hour" => {
+            let n = seconds / 3600;
+            Some(format!("PT{}H", n.max(1)))
+        }
+        "date" | "day" => {
+            let n = seconds / 86400;
+            Some(format!("P{}D", n.max(1)))
+        }
+        "month" => Some("P1M".to_string()),
+        "year" => Some("P1Y".to_string()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -228,37 +260,5 @@ mod tests {
 
         let after = db.get_entry(slug.as_str()).unwrap();
         assert_eq!(after.hid, hid);
-    }
-}
-
-/// Map a precision-unit name ("second", "minute", "hour", "day",
-/// "month", "year", "exact") to a single ISO-8601 duration string.
-/// Sub-bead 3 will replace this with a proper PrecisionUnit→ISO helper.
-/// Encode a (seconds, unit) precision pair as a single ISO-8601 duration
-/// string for the v=20 `occur_time_precision` column. `unit` selects the
-/// component (PT…M / PT…H / P…D etc.) so a `(300, "minute")` precision
-/// renders as `"PT5M"` rather than collapsing to the bare unit. `exact`
-/// or unrecognized units return `None` (column stored as NULL).
-fn precision_to_iso(seconds: u32, unit: &str) -> Option<String> {
-    if seconds == 0 || matches!(unit, "exact" | "") {
-        return None;
-    }
-    match unit {
-        "second" => Some(format!("PT{seconds}S")),
-        "minute" => {
-            let n = seconds / 60;
-            Some(format!("PT{}M", n.max(1)))
-        }
-        "hour" => {
-            let n = seconds / 3600;
-            Some(format!("PT{}H", n.max(1)))
-        }
-        "date" | "day" => {
-            let n = seconds / 86400;
-            Some(format!("P{}D", n.max(1)))
-        }
-        "month" => Some("P1M".to_string()),
-        "year" => Some("P1Y".to_string()),
-        _ => None,
     }
 }

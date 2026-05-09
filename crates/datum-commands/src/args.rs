@@ -129,7 +129,7 @@ impl CliExt for Cli {
     fn parse_with_alias_resolution() -> anyhow::Result<Self> {
         let raw: Vec<String> = std::env::args().collect();
         let expanded = expand_argv(raw)?;
-        Ok(datum_parse::parse_argv(&expanded).map_err(anyhow::Error::from)?)
+        datum_parse::parse_argv(&expanded).map_err(anyhow::Error::from)
     }
 
     fn try_parse_argv<I, S>(argv: I) -> datum_parse::Result<Self>

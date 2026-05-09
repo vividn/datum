@@ -97,7 +97,7 @@ fn write_private_file(path: &std::path::Path, body: &[u8]) -> Result<()> {
             .open(path)
             .with_context(|| format!("open {path:?}"))?;
         std::io::Write::write_all(&mut f, body)?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(not(unix))]
     {
