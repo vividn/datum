@@ -405,6 +405,54 @@ fn spec_label<P: 'static>(spec: &LiftedSpec<P>) -> String {
     }
 }
 
+/// Standard subcommand-parser fold: walk `tail` once, feeding flags into
+/// `registry` (via [`walk_registry`]) and collecting bare positionals.
+/// An unrecognised flag is a hard error. Returns the positional vec.
+///
+/// da-jflh.2: extracted from the dozen `parse_X_args` functions that all
+/// share this exact loop. Parsers with bespoke prefix logic (a multi-arg
+/// flag like `--diff A B`, a peek-ahead like `-w` on tail) use
+/// [`fold_args_with_pre`] instead.
+fn fold_args<'a, P: 'static>(
+    tail: &'a [&'a str],
+    composed: &mut P,
+    registry: &[LiftedSpec<P>],
+) -> Result<Vec<&'a str>> {
+    fold_args_with_pre(tail, composed, registry, |_, _, _| Ok(None))
+}
+
+/// Same as [`fold_args`] but threads a `pre_hook` that runs before the
+/// registry walker on each token. If the hook returns `Some(ni)`, the
+/// loop jumps to `ni` and skips the registry/positional branches; `None`
+/// falls through to the standard handling.
+fn fold_args_with_pre<'a, P: 'static>(
+    tail: &'a [&'a str],
+    composed: &mut P,
+    registry: &[LiftedSpec<P>],
+    mut pre_hook: impl FnMut(&'a [&'a str], usize, &mut P) -> Result<Option<usize>>,
+) -> Result<Vec<&'a str>> {
+    let mut pos: Vec<&str> = Vec::new();
+    let mut i = 0;
+    while i < tail.len() {
+        if let Some(ni) = pre_hook(tail, i, composed)? {
+            i = ni;
+            continue;
+        }
+        if let Some(ni) = walk_registry(tail, i, composed, registry)? {
+            i = ni;
+            continue;
+        }
+        match split_flag(tail[i]) {
+            FlagSplit::Positional(s) => {
+                pos.push(s);
+                i += 1;
+            }
+            f => return Err(unknown_flag(f)),
+        }
+    }
+    Ok(pos)
+}
+
 // ─── Subcommand parsers ──────────────────────────────────────────────────
 
 /// Build the per-command flag registry for logging verbs (occur, start,
@@ -520,21 +568,7 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
 fn parse_log_args(tail: &[&str]) -> Result<LogArgs> {
     let registry = log_args_registry();
     let mut out = LogArgs::fresh(String::new());
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut out, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut out, &registry)?;
     let mut it = pos.into_iter();
     out.field_or_verb = it
         .next()
@@ -632,34 +666,21 @@ fn tail_args_registry() -> Vec<LiftedSpec<TailParsing>> {
 fn parse_tail_args(tail: &[&str]) -> Result<TailArgs> {
     let registry = tail_args_registry();
     let mut composed = TailParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        // `-w/--watch <N>` (detached value form): when the bare flag is
-        // followed by a non-flag token, consume it as the watch interval.
-        // The OptionalAttached registry entry handles bare and `=value`.
+    // `-w/--watch <N>` (detached value form): when the bare flag is
+    // followed by a non-flag token, consume it as the watch interval.
+    // The OptionalAttached registry entry handles bare and `=value`.
+    let pos = fold_args_with_pre(tail, &mut composed, &registry, |tail, i, p| {
         if matches!(
             split_flag(tail[i]),
             FlagSplit::Short('w') | FlagSplit::Long("watch")
         ) {
             if let Some(next) = tail.get(i + 1).copied().filter(|s| !looks_like_flag(s)) {
-                composed.extras.watch = Some(parse_f64(next, "-w/--watch")?);
-                i += 2;
-                continue;
+                p.extras.watch = Some(parse_f64(next, "-w/--watch")?);
+                return Ok(Some(i + 2));
             }
         }
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+        Ok(None)
+    })?;
     Ok(TailArgs {
         field: pos.first().map(|s| s.to_string()),
         count: composed.extras.count,
@@ -681,52 +702,41 @@ fn parse_now_args(tail: &[&str]) -> Result<NowArgs> {
     // `now` consumes `-A/--show-all` (via OutputArgs registry, kept
     // canonical) plus its own band-rendering flags: `--bare`, `--no-color`,
     // `--cols`.
-    let mut composed = OutputArgs::default();
-    let registry: Vec<LiftedSpec<OutputArgs>> = input::output_args::FLAG_SPECS
+    #[derive(Default)]
+    struct NowParsing {
+        output: OutputArgs,
+        bare: bool,
+        no_color: bool,
+        cols: Option<u16>,
+    }
+    let mut registry: Vec<LiftedSpec<NowParsing>> = input::output_args::FLAG_SPECS
         .iter()
         .filter(|s| s.short == Some('A'))
-        .map(|s| lift(|p: &mut OutputArgs| p, s))
+        .map(|s| lift(|p: &mut NowParsing| &mut p.output, s))
         .collect();
-    let mut bare = false;
-    let mut no_color = false;
-    let mut cols: Option<u16> = None;
-    let mut i = 0;
-    while i < tail.len() {
-        match split_flag(tail[i]) {
-            FlagSplit::Long("bare") => {
-                bare = true;
-                i += 1;
-                continue;
-            }
-            FlagSplit::Long("no-color") => {
-                no_color = true;
-                i += 1;
-                continue;
-            }
-            FlagSplit::Long("cols") => {
-                let (v, ni) = take_value(tail, i, None, "--cols")?;
-                cols = Some(parse_f64(v, "--cols")? as u16);
-                i = ni;
-                continue;
-            }
-            FlagSplit::LongAttached("cols", v) => {
-                cols = Some(parse_f64(v, "--cols")? as u16);
-                i += 1;
-                continue;
-            }
-            _ => {}
-        }
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        return Err(unknown_flag(split_flag(tail[i])));
+    registry.push(local_switch(None, Some("bare"), |p| {
+        p.bare = true;
+        Ok(())
+    }));
+    registry.push(local_switch(None, Some("no-color"), |p| {
+        p.no_color = true;
+        Ok(())
+    }));
+    registry.push(local_value(None, Some("cols"), |p, v| {
+        p.cols = Some(parse_f64(v, "--cols")? as u16);
+        Ok(())
+    }));
+
+    let mut composed = NowParsing::default();
+    let pos = fold_args(tail, &mut composed, &registry)?;
+    if let Some(extra) = pos.first() {
+        return Err(unknown_flag(FlagSplit::Positional(extra)));
     }
     Ok(NowArgs {
-        show_all: composed.show_all,
-        bare,
-        no_color,
-        cols,
+        show_all: composed.output.show_all,
+        bare: composed.bare,
+        no_color: composed.no_color,
+        cols: composed.cols,
     })
 }
 
@@ -752,21 +762,7 @@ fn get_args_registry() -> Vec<LiftedSpec<GetParsing>> {
 fn parse_get_args(tail: &[&str]) -> Result<GetArgs> {
     let registry = get_args_registry();
     let mut composed = GetParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(GetArgs {
         id_or_slug: pos.first().map(|s| s.to_string()),
         pretty: composed.pretty,
@@ -805,21 +801,7 @@ fn delete_args_registry() -> Vec<LiftedSpec<DeleteParsing>> {
 fn parse_delete_args(tail: &[&str]) -> Result<DeleteArgs> {
     let registry = delete_args_registry();
     let mut composed = DeleteParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(DeleteArgs {
         id_or_slug: pos.first().map(|s| s.to_string()),
         force: composed.force,
@@ -860,21 +842,7 @@ fn undo_args_registry() -> Vec<LiftedSpec<UndoParsing>> {
 fn parse_undo_args(tail: &[&str]) -> Result<UndoArgs> {
     let registry = undo_args_registry();
     let mut composed = UndoParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     Ok(UndoArgs {
         id_or_slug: pos.first().map(|s| s.to_string()),
         to_version: composed.to_version,
@@ -909,10 +877,8 @@ fn history_args_registry() -> Vec<LiftedSpec<HistoryParsing>> {
 fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
     let registry = history_args_registry();
     let mut composed = HistoryParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        // `--diff A B` — two-arg form, no central-registry support today.
+    // `--diff A B` — two-arg form, no central-registry support today.
+    let pos = fold_args_with_pre(tail, &mut composed, &registry, |tail, i, p| {
         if matches!(split_flag(tail[i]), FlagSplit::Long("diff")) {
             let a = tail
                 .get(i + 1)
@@ -920,22 +886,11 @@ fn parse_history_args(tail: &[&str]) -> Result<HistoryArgs> {
             let b = tail
                 .get(i + 2)
                 .ok_or_else(|| ParseError::InvalidArg("--diff requires two values".into()))?;
-            composed.diff = Some(vec![parse_u32(a, "--diff")?, parse_u32(b, "--diff")?]);
-            i += 3;
-            continue;
+            p.diff = Some(vec![parse_u32(a, "--diff")?, parse_u32(b, "--diff")?]);
+            return Ok(Some(i + 3));
         }
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+        Ok(None)
+    })?;
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(HistoryArgs {
         id_or_slug,
@@ -955,21 +910,7 @@ fn parse_why_args(tail: &[&str]) -> Result<WhyArgs> {
         Ok(())
     })];
     let mut composed = WhyParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(WhyArgs {
         id_or_slug,
@@ -983,21 +924,7 @@ fn parse_edit_args(tail: &[&str]) -> Result<EditArgs> {
         .iter()
         .map(|s| lift(|p: &mut OutputArgs| p, s))
         .collect();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     let id_or_slug = require_pos(&pos, "<ID_OR_SLUG>")?;
     Ok(EditArgs {
         id_or_slug,
@@ -1056,21 +983,7 @@ fn update_args_registry() -> Vec<LiftedSpec<UpdateParsing>> {
 fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
     let registry = update_args_registry();
     let mut composed = UpdateParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     let mut it = pos.into_iter();
     Ok(UpdateArgs {
         id_or_slug: it.next().map(|s| s.to_string()),
@@ -1118,21 +1031,7 @@ fn parse_retime_args(tail: &[&str]) -> Result<RetimeArgs> {
     }));
 
     let mut composed = RetimeParsing::default();
-    let mut pos: Vec<&str> = Vec::new();
-    let mut i = 0;
-    while i < tail.len() {
-        if let Some(ni) = walk_registry(tail, i, &mut composed, &registry)? {
-            i = ni;
-            continue;
-        }
-        match split_flag(tail[i]) {
-            FlagSplit::Positional(s) => {
-                pos.push(s);
-                i += 1;
-            }
-            f => return Err(unknown_flag(f)),
-        }
-    }
+    let pos = fold_args(tail, &mut composed, &registry)?;
     if composed.offset.is_some() && composed.time.is_some() {
         return Err(ParseError::InvalidArg(
             "--offset and --time are mutually exclusive".into(),
