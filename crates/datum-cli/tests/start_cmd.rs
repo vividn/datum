@@ -192,18 +192,22 @@ fn start_extras_do_not_imply_duration() {
 
 /// TS #7: "can skip the duration if the duration is given as . or ''".
 ///
-/// Datum treated bare `.` / `''` as "skip duration"; daydumb has no
-/// positional duration to skip. The equivalent: positionals after the field
-/// become the primary value, never an implicit duration.
+/// Datum treated bare `.` / `''` as "skip duration". Per da-l3f3, daydumb
+/// peels a *parsable* trailing duration positional into `dur`; a positional
+/// that does not parse as a duration falls through to state. So
+/// `start field reqVal1` lands as state=`reqVal1`, dur=null.
 #[test]
-fn positional_values_never_become_duration() {
+fn non_duration_positional_lands_as_state() {
     let db = fresh_db();
 
     run_cli(&["start", "field", "reqVal1"], &db).expect("start with value");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "switch", value: "reqVal1");
-    assert!(entry.dur.is_none(), "positional values do not derive a dur",);
+    assert!(
+        entry.dur.is_none(),
+        "non-duration positional does not derive a dur",
+    );
 }
 
 /// TS #8: "throws an error if the duration supplied is invalid".
@@ -252,15 +256,13 @@ fn dur_plus_extra_still_marks_verb_start() {
 
 /// TS #10: "fails when using a full day and a duration".
 ///
-/// Datum's `-y` (yesterday) plus a trailing positional "315" triggered an
-/// `ExtraDataError` because the positional couldn't be coerced into a
-/// duration. Daydumb eliminates that ambiguity entirely: `-y` is a pure
-/// counter flag, `--dur` is the sole duration source, and any trailing
-/// positional becomes the primary value. This test locks in the
-/// non-ambiguity: `start field -y 315` yields `value=315` anchored to
-/// yesterday — no error, no duration inference.
+/// Per da-l3f3, daydumb restored original-datum positional duration on
+/// `start`/`stop`: a trailing bare positional that parses as a duration
+/// is consumed as the duration, not as state. So `start field -y 315`
+/// anchors to yesterday with `dur = 315 minutes` and the default
+/// `state = true` (Start canonicalization).
 #[test]
-fn yesterday_flag_does_not_consume_positional_as_duration() {
+fn yesterday_flag_consumes_trailing_numeric_as_duration() {
     let db = fresh_db();
 
     let before = chrono::Utc::now();
@@ -268,8 +270,13 @@ fn yesterday_flag_does_not_consume_positional_as_duration() {
     let after = chrono::Utc::now();
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "switch", value: 315);
-    assert!(entry.dur.is_none(), "`315` is a value, not a duration",);
+    assert_entry_matches!(entry, field: "field", verb: "block");
+    assert_eq!(
+        entry.duration_seconds(),
+        Some(315 * 60),
+        "`315` parses as a 315-minute duration",
+    );
+    assert_eq!(entry.state.as_ref(), Some(&json!(true)));
 
     // Anchored roughly one day back (within the test's wall-clock window).
     let ts = entry.occur_time.as_ref().unwrap().utc;
@@ -280,4 +287,75 @@ fn yesterday_flag_does_not_consume_positional_as_duration() {
         ts >= lower && ts <= upper,
         "time_start must be ~1 day ago (lo={lower} hi={upper} got={ts})",
     );
+}
+
+// ─── da-l3f3: positional duration on start/stop ──────────────────────────
+
+/// `dm start abc 3` → field=abc, dur=3 minutes, default state=true.
+/// Bare numeric positional with no explicit state is the duration.
+#[test]
+fn start_bare_numeric_positional_is_duration() {
+    let db = fresh_db();
+
+    run_cli(&["start", "abc", "3"], &db).expect("start abc 3");
+
+    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    assert_eq!(entry.field, "abc");
+    assert_eq!(entry.duration_seconds(), Some(3 * 60));
+    assert_eq!(entry.state.as_ref(), Some(&json!(true)));
+}
+
+/// `dm start abc sit` → state="sit", dur=null. A non-duration positional
+/// stays as state.
+#[test]
+fn start_non_duration_positional_is_state() {
+    let db = fresh_db();
+
+    run_cli(&["start", "abc", "sit"], &db).expect("start abc sit");
+
+    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    assert_eq!(entry.state.as_ref(), Some(&json!("sit")));
+    assert!(entry.dur.is_none());
+}
+
+/// `dm start abc sit 3` → state="sit", dur=3 minutes. Two positionals:
+/// the trailing duration-parsable one is dur, the earlier one is state.
+#[test]
+fn start_state_then_duration_positional() {
+    let db = fresh_db();
+
+    run_cli(&["start", "abc", "sit", "3"], &db).expect("start abc sit 3");
+
+    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    assert_eq!(entry.state.as_ref(), Some(&json!("sit")));
+    assert_eq!(entry.duration_seconds(), Some(3 * 60));
+}
+
+/// `dm stop abc 3` mirrors start: trailing numeric is duration. For stop,
+/// `--dur` interprets the entry as `time_start = base - dur`, so the bare
+/// `3` must take the same code path.
+#[test]
+fn stop_bare_numeric_positional_is_duration() {
+    let db = fresh_db();
+
+    run_cli(&["stop", "abc", "3"], &db).expect("stop abc 3");
+
+    let entry = &db.entries_for_field("abc", None).unwrap()[0];
+    assert_eq!(entry.duration_seconds(), Some(3 * 60));
+}
+
+/// Trailing duration positional + explicit `--dur` is a conflict — better
+/// to fail loudly than to silently pick a winner. Mirrors switch's rule.
+#[test]
+fn start_trailing_duration_conflicts_with_dur_flag() {
+    let db = fresh_db();
+
+    let err = run_cli(&["start", "abc", "3", "--dur", "5m"], &db)
+        .expect_err("trailing dur + --dur should conflict");
+    let msg = err.to_string();
+    assert!(
+        msg.contains("--dur") || msg.contains("conflict"),
+        "error should mention conflict: {msg}",
+    );
+    assert_count!(db, "abc", 0);
 }

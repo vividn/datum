@@ -129,6 +129,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         extract_switch_trailing_reserved(&mut args)?;
     }
 
+    // da-l3f3: For start/stop, state is optional (defaults to `true`), so a
+    // lone bare-numeric positional is the duration, not the state. Restore
+    // original-datum positional-duration: peel a trailing bare positional
+    // that parses as a duration into args.duration. With two positionals,
+    // the last (if duration-parsable) is dur and the earlier is state:
+    // `dm start abc sit 3` → state="sit", dur=PT3M.
+    if matches!(action, Action::Start | Action::Stop) {
+        extract_start_stop_trailing_duration(&mut args, action)?;
+    }
+
     // For switch, walk the bare positionals and reject interior `,,`
     // empty segments before handle_data_args runs. Datum's `infer_type`
     // turns a leading-comma string into an array (`,a,b` → `["a","b"]`)
@@ -846,6 +856,38 @@ pub(crate) fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()>
         }
         args.duration.duration = Some(dur);
     }
+    Ok(())
+}
+
+/// da-l3f3: For Start/Stop, peel a trailing bare positional that parses as
+/// a duration into args.duration. Differs from
+/// [`extract_switch_trailing_reserved`] in that state is optional for
+/// start/stop (defaults to `true`), so a single bare-numeric positional
+/// is interpreted as a duration rather than as state. The peel walks from
+/// the right and takes the last bare positional iff it parses as a
+/// duration; any earlier bare positional is left for parse_log_args to
+/// consume as the state value.
+pub(crate) fn extract_start_stop_trailing_duration(
+    args: &mut LogArgs,
+    action: Action,
+) -> Result<()> {
+    let last_bare_idx = args.rest.iter().rposition(|t| !t.contains('='));
+    let Some(idx) = last_bare_idx else {
+        return Ok(());
+    };
+    if parse_duration(&args.rest[idx]).is_err() {
+        return Ok(());
+    }
+    let action_name = match action {
+        Action::Start => "start",
+        Action::Stop => "stop",
+        _ => unreachable!("extract_start_stop_trailing_duration called for {action:?}"),
+    };
+    if args.duration.duration.is_some() {
+        anyhow::bail!("{action_name}: trailing duration positional conflicts with --dur");
+    }
+    let dur = args.rest.remove(idx);
+    args.duration.duration = Some(dur);
     Ok(())
 }
 

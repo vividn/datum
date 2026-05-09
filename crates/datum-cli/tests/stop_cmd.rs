@@ -189,24 +189,21 @@ fn stop_extras_do_not_imply_duration() {
 
 /// TS #6: "can skip the duration if the duration is given as . or ''".
 ///
-/// Datum treated bare `.` / `''` as "skip duration"; daydumb has no
-/// positional duration to skip. The equivalent guarantee: a stray
-/// positional after the field becomes the primary value, never an
-/// implicit duration.
+/// Per da-l3f3, daydumb routes a trailing duration-parsable bare positional
+/// into `dur` on stop. So `stop field 50 -k abc=123` interprets `50` as a
+/// 50-minute backward duration (stop's `--dur` semantics:
+/// `time_start = base - dur`); `-k abc=123` still lands as data.
 #[test]
-fn stop_positional_values_never_become_duration() {
+fn stop_trailing_numeric_positional_lands_as_duration() {
     let db = fresh_db();
 
     run_cli(&["stop", "field", "50", "-k", "abc=123"], &db).expect("stop with positional value");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "switch", value: 50);
+    assert_eq!(entry.field, "field");
+    assert_eq!(entry.duration_seconds(), Some(50 * 60));
     let extra = entry.data.as_ref().unwrap();
     assert_eq!(extra["abc"], json!(123));
-    assert!(
-        entry.dur.is_none(),
-        "positional values on stop never derive a time_end",
-    );
 }
 
 /// TS #7: "throws an error if the duration supplied is invalid".
