@@ -5,7 +5,7 @@ use chrono::{Local, TimeZone, Utc};
 use datum_core::{
     action::Action,
     db::{
-        ConflictStrategy, Db, GroupColumn, InsertOutcome, ListParams, RetimeFilter, TimeMetric,
+        ConflictStrategy, Db, InsertOutcome, ListParams, RetimeFilter, TimeMetric,
         IGNORED_STATE_VALUE,
     },
     derive_verb,
@@ -21,7 +21,7 @@ use crate::{
     args::{
         AliasCommand, Cli, Command, ConfigCommand, ConfigShowArgs,
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs, CountArgs, DbImportArgs, DbImportArgsExt, DeleteArgs, GetArgs,
+        ConflictsShowArgs, DbImportArgs, DbImportArgsExt, DeleteArgs, GetArgs,
         GrepArgs, HistoryArgs, IdsArgs, IgnoreArgs, LogArgs, LogArgsExt, MigrateCommand,
         NowArgs, OutputFlagsExt, RetimeArgs, SetupArgs, SpecCommand, SpecSetArgs, TailArgs,
         TrackArgs, UndoArgs, UpdateArgs, WhyArgs,
@@ -120,7 +120,7 @@ pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecR
     load_registry(db).ok()
 }
 
-// ─── Count / Ids ─────────────────────────────────────────────────────────────
+// ─── Ids ─────────────────────────────────────────────────────────────────────
 
 /// Parse `--since` into a UTC lower bound.
 ///
@@ -128,7 +128,7 @@ pub(crate) fn load_registry_opt(db: &Db) -> Option<datum_core::field_spec::SpecR
 ///   1. RFC3339 datetime, e.g. `2024-03-16T00:00:00Z`
 ///   2. `YYYY-MM-DD` — interpreted as local midnight
 ///   3. Duration offset (`1d`, `30m`, `2h`, `PT5M`) — treated as "N ago"
-fn parse_since(s: &str) -> Result<chrono::DateTime<Utc>> {
+pub(crate) fn parse_since(s: &str) -> Result<chrono::DateTime<Utc>> {
     if let Ok(dt) = chrono::DateTime::parse_from_rfc3339(s) {
         return Ok(dt.with_timezone(&Utc));
     }
@@ -142,53 +142,6 @@ fn parse_since(s: &str) -> Result<chrono::DateTime<Utc>> {
     let dur = parse_duration(s)
         .map_err(|e| anyhow::anyhow!("invalid --since '{s}': {e}"))?;
     Ok(chrono::Utc::now() - dur)
-}
-
-/// Structured result of `cmd_count` — either a single total or a grouped
-/// tally. Exposed so tests can assert on the data without parsing stdout.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CountResult {
-    Total(usize),
-    Grouped(Vec<(String, usize)>),
-}
-
-pub fn compute_count(args: &CountArgs, db: &Db) -> Result<CountResult> {
-    let since_utc = args.since.as_deref().map(parse_since).transpose()?;
-    let field = args.field.as_deref();
-
-    if let Some(raw) = &args.group_by {
-        let col: GroupColumn = raw
-            .parse()
-            .map_err(|e: String| anyhow::anyhow!(e))?;
-        let rows = db.count_entries_grouped(field, col, since_utc)?;
-        return Ok(CountResult::Grouped(rows));
-    }
-
-    let n = db.count_entries_filtered(field, since_utc)?;
-    Ok(CountResult::Total(n))
-}
-
-pub(crate) fn cmd_count(args: CountArgs, db: &Db) -> Result<()> {
-    let result = compute_count(&args, db)?;
-    match (&result, args.json) {
-        (CountResult::Total(n), false) => println!("{n}"),
-        (CountResult::Total(n), true) => {
-            println!("{}", serde_json::json!({ "count": n }));
-        }
-        (CountResult::Grouped(rows), false) => {
-            for (k, n) in rows {
-                println!("{n}\t{k}");
-            }
-        }
-        (CountResult::Grouped(rows), true) => {
-            let arr: Vec<_> = rows
-                .iter()
-                .map(|(k, n)| serde_json::json!({ "key": k, "count": n }))
-                .collect();
-            println!("{}", serde_json::Value::Array(arr));
-        }
-    }
-    Ok(())
 }
 
 pub fn compute_ids(args: &IdsArgs, db: &Db) -> Result<Vec<String>> {

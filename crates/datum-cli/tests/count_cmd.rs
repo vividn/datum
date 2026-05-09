@@ -9,7 +9,7 @@ mod common;
 use chrono::{Duration, Utc};
 use common::run_cli;
 use datum_cli::args::CountArgs;
-use datum_cli::cmd::{compute_count, CountResult};
+use datum_commands::commands::count::{compute_count, CountResult};
 use datum_core::entry::Verb;
 use datum_core::test_util::{entry_builder, fresh_db};
 use serde_json::json;
