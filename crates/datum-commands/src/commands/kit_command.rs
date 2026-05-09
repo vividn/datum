@@ -326,7 +326,7 @@ fn print_row(cells: &[String], widths: &[usize], color: Option<&str>) {
 fn row_color(
     rules: &[ColorRule],
     columns: &[String],
-    raw: &Vec<JsonValue>,
+    raw: &[JsonValue],
     now: chrono::DateTime<Utc>,
 ) -> Option<&'static str> {
     let mut map: HashMap<&str, &JsonValue> = HashMap::new();

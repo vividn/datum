@@ -161,13 +161,17 @@ pub fn insert_changeset(conn: &Connection, device_id: &str, payload: &str) -> Re
     Ok((id, seq))
 }
 
+/// One row from the changesets table as returned by [`pull_changesets`].
+/// Tuple positions: `(global_id, device_id, seq, payload_b64, uploaded_at)`.
+pub type ChangesetRow = (i64, String, i64, String, String);
+
 /// Pull changesets with global id > since, from all devices except excluding_device.
-/// Returns (id, device_id, seq, payload_b64, uploaded_at) tuples in ascending id order.
+/// Returns rows in ascending id order.
 pub fn pull_changesets(
     conn: &Connection,
     since: i64,
     excluding_device: &str,
-) -> Result<Vec<(i64, String, i64, String, String)>> {
+) -> Result<Vec<ChangesetRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, device_id, seq, payload, uploaded_at
          FROM changesets

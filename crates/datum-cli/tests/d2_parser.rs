@@ -144,7 +144,7 @@ fn retime_overwrites_precision_from_new_input() {
 /// `parser_version` so a future parser-bugfix replay can reprocess them.
 #[test]
 fn parser_version_increments_in_stored_entries() {
-    assert!(
+    const _: () = assert!(
         CURRENT_PARSER_VERSION >= 2,
         "D2 must bump the parser version above v1"
     );

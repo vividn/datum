@@ -46,6 +46,10 @@ struct Fixture {
     surface: Surface,
     /// Commands to run before `query`. Each is a single arg vector
     /// passed straight to `datum`. Use these to seed entries.
+    // The current parity harness doesn't replay setup yet — but the field
+    // round-trips through deserialization so fixtures can declare it
+    // upfront. Once setup replay lands, this `allow` goes away.
+    #[allow(dead_code)]
     setup: Vec<Vec<String>>,
     /// The read command whose output we're pinning.
     query: Vec<String>,

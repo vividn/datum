@@ -1061,7 +1061,7 @@ fn parse_spec_cmd(tail: &[&str]) -> Result<SpecCommand> {
             let field = require_first_pos(rest, "<FIELD>")?;
             Ok(SpecCommand::Show { field })
         }
-        "set" => Ok(SpecCommand::Set(parse_spec_set(rest)?)),
+        "set" => Ok(SpecCommand::Set(Box::new(parse_spec_set(rest)?))),
         "list" => Ok(SpecCommand::List {
             tag: parse_spec_list_tag(rest)?,
         }),

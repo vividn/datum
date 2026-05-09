@@ -300,6 +300,10 @@ impl Entry {
     /// by the insert path which writes a literal `"point"` until
     /// sub-bead 3 wires `derive_verb`. Callers that pass a meaningful
     /// verb still see it round-tripped through the struct itself.
+    // Entry construction is a hot path with eight load-bearing inputs;
+    // grouping them into a builder hurts call-site readability without
+    // shrinking the contract. Revisit if `Entry::new` itself grows.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         field: impl Into<String>,
         verb: Verb,

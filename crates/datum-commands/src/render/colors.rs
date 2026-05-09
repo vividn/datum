@@ -20,7 +20,6 @@ use super::characters::IGNORED_STATE;
 // ─── ANSI primitives ─────────────────────────────────────────────────────────
 
 pub(crate) const RESET: &str = "\x1b[0m";
-pub(crate) const DIM: &str = "\x1b[2m";
 pub(crate) const UNDERLINE: &str = "\x1b[4m";
 pub(crate) const GRAY_FG: &str = "\x1b[90m";
 

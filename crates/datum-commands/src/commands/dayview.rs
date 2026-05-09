@@ -717,6 +717,10 @@ fn push_block_window(
 /// Emit a switch-region block from `start_ms` to `region_end_ms`, colored by
 /// `value`. No-op when the value is the "ended" sentinel (null/false/IGNORED)
 /// or the region falls outside the day window.
+// Internal helper — eight params group three independently varying axes
+// (block bounds, day window, field/spec). Folding them into a struct
+// here would just rename the locals at the only call site.
+#[allow(clippy::too_many_arguments)]
 fn push_switch_region(
     blocks: &mut Vec<DayviewBlock>,
     value: Option<&JsonValue>,

@@ -679,6 +679,8 @@ fn push_block_window(
     });
 }
 
+// Mirrors dayview's helper of the same shape — same trade-off applies.
+#[allow(clippy::too_many_arguments)]
 fn push_switch_region(
     blocks: &mut Vec<DayviewBlock>,
     value: Option<&JsonValue>,

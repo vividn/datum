@@ -19,7 +19,7 @@ pub fn spec(sub: SpecCommand, db: &Db) -> Result<()> {
             Some(spec) => println!("{}", serde_json::to_string_pretty(&spec)?),
             None => println!("No spec defined for field '{field}'"),
         },
-        SpecCommand::Set(args) => spec_set(args, db)?,
+        SpecCommand::Set(args) => spec_set(*args, db)?,
         SpecCommand::List { tag } => {
             if let Some(tag) = tag {
                 let specs = db.list_specs_by_tag(&tag)?;

@@ -256,6 +256,10 @@ pub struct StateSpec {
 impl KitToml {
     /// Parse TOML text into a [`KitToml`]. Surface parse errors as
     /// `DatumError::Other` so the dispatcher can render them with a path.
+    // Inherent method (rather than `impl FromStr`) so callers don't have
+    // to bring `std::str::FromStr` into scope. The `Err` type is
+    // `DatumError`, which the dispatcher prefixes with the kit path.
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Result<Self> {
         toml::from_str(s).map_err(|e| DatumError::Other(format!("kit TOML parse: {e}")))
     }

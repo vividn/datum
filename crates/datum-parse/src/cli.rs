@@ -578,7 +578,7 @@ pub struct WhyArgs {
 #[derive(Debug)]
 pub enum SpecCommand {
     Show { field: String },
-    Set(SpecSetArgs),
+    Set(Box<SpecSetArgs>),
     List { tag: Option<String> },
     Remove { field: String },
 }
