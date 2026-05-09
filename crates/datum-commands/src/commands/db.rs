@@ -16,7 +16,7 @@ use crate::args::DbPurgeArgs;
 
 pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
     match cmd {
-        DbCommand::Setup(args) => crate::cmd::cmd_setup(args, db),
+        DbCommand::Setup(args) => super::setup::setup(args, db),
         DbCommand::Purge(args) => purge(args, db),
         DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),

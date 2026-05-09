@@ -32,6 +32,7 @@ pub mod nowview;
 pub mod occur;
 pub mod rekey;
 pub mod retime;
+pub mod setup;
 pub mod spec;
 pub mod start;
 pub mod switch;
