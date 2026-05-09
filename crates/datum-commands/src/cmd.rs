@@ -705,7 +705,13 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
     // Value extraction: state positional wins for state-bearing verbs;
     // otherwise pull from the PRIMARY_VALUE_KEY remainder. When the user
     // redirected the remainder via -R/-C, value is intentionally empty.
-    let value = if let Some(sp) = state_positional {
+    //
+    // da-1n61: a bare `.` in the state slot is the use-default-or-skip
+    // sentinel — fall through as if no state positional was supplied so
+    // the action's default state (true/false) takes effect downstream.
+    // `\.` escapes back to the literal `"."` string.
+    let state_skipped = matches!(state_positional.as_deref(), Some("."));
+    let value = if let Some(sp) = state_positional.filter(|_| !state_skipped) {
         // Discard any extra unbound positionals that landed in the
         // primary-value bucket; the state already came from `sp`.
         // Use the same token-coercion path that powers switch state
@@ -713,7 +719,8 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
         // preserve_null_strings policy and unit-annotated numbers like
         // "75.2kg" round-trip the same way as keyed values.
         datum_data.remove(PRIMARY_VALUE_KEY);
-        let parsed_state = parse_value_token(&sp);
+        let raw = if sp == r"\." { "." } else { sp.as_str() };
+        let parsed_state = parse_value_token(raw);
         // da-ju71.4: when leading-dot keys produced a `state.*` subtree,
         // fold the bare positional into `state.id` so
         // `switch field name .type=x` lands as a Structured state
@@ -836,6 +843,11 @@ pub(crate) fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()>
         if !state_consumed {
             state_consumed = true;
             new_rest.push(token);
+            continue;
+        }
+        // da-1n61: `.` in the dur slot is the use-default-or-skip
+        // sentinel — drop it without recording a duration.
+        if token == "." {
             continue;
         }
         if parse_duration(&token).is_err() {
