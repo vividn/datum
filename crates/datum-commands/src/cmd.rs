@@ -72,6 +72,7 @@ pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
         Command::Config(sub) => commands::config::config(sub, cli.db.as_deref()),
         Command::Sync(args) => commands::sync::dispatch(args, db),
         Command::Conflicts(sub) => commands::conflicts::conflicts(sub, db),
+        Command::Reparse(args) => commands::reparse::reparse(args, db),
     }
 }
 
@@ -564,13 +565,13 @@ fn capture_trail_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
 /// Parsed LogArgs — distinguishes the slug-contributing id-key values from
 /// the rest of the extra_data payload so callers can build the slug from
 /// `-K` slots without re-walking the argv.
-struct ParsedLogArgs {
-    field: String,
-    value: Option<JsonValue>,
-    extra_data: Option<JsonValue>,
+pub(crate) struct ParsedLogArgs {
+    pub(crate) field: String,
+    pub(crate) value: Option<JsonValue>,
+    pub(crate) extra_data: Option<JsonValue>,
     /// Values captured from `-K` slots, in declaration order. Empty when
     /// no slug-contributing slot was filled.
-    slug_values: Vec<String>,
+    pub(crate) slug_values: Vec<String>,
 }
 
 /// Sentinel remainder-bucket key. Holds positionals that don't fill a
@@ -587,7 +588,7 @@ const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 /// here owns the daydumb-specific concerns: peeling the state positional
 /// for state-bearing verbs (Switch/Start/Stop) so it doesn't compete with
 /// `-k` slots, and pulling slug values out of the resolved [`DatumData`].
-fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
+pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
     let field = args.field_or_verb.clone();
@@ -811,7 +812,7 @@ fn datum_value_to_slug_string(v: Option<&JsonValue>) -> String {
 /// whitespace-separated trailing positionals never silently become array
 /// elements. A trailing bare positional that fails to parse as a duration
 /// is rejected with a hint pointing at the comma form.
-fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()> {
+pub(crate) fn extract_switch_trailing_reserved(args: &mut LogArgs) -> Result<()> {
     let mut state_consumed = false;
     let mut new_rest: Vec<String> = Vec::with_capacity(args.rest.len());
     let mut trailing_duration: Option<String> = None;
@@ -875,7 +876,7 @@ fn parse_switch_state_token(s: &str) -> Result<JsonValue> {
 /// has a chance to coerce them into arrays via `infer_type`; without
 /// this pre-check, an interior `,,` inside a leading-comma token would
 /// silently become a `null` array element.
-fn validate_switch_state_token(s: &str) -> Result<()> {
+pub(crate) fn validate_switch_state_token(s: &str) -> Result<()> {
     if !s.contains(',') {
         return Ok(());
     }
@@ -891,7 +892,7 @@ fn validate_switch_state_token(s: &str) -> Result<()> {
 ///   * array (from legacy multi-positional switch) → flatten any
 ///     comma-containing string elements into their components
 ///   * all other value shapes → passthrough
-fn expand_array_states(value: Option<JsonValue>) -> Result<Option<JsonValue>> {
+pub(crate) fn expand_array_states(value: Option<JsonValue>) -> Result<Option<JsonValue>> {
     let Some(v) = value else {
         return Ok(None);
     };

@@ -76,6 +76,11 @@ pub enum Command {
     Sync(SyncArgs),
 
     Conflicts(ConflictsCommand),
+
+    /// `dm reparse` — replay each entry's stored `raw_input` through the
+    /// current parser, reporting (or fixing with `--fix`) drift between
+    /// what the parser produces today vs. the persisted columns.
+    Reparse(ReparseArgs),
 }
 
 // ─── Conflicts ────────────────────────────────────────────────────────────
@@ -191,6 +196,27 @@ pub struct InfoArgs {
 
 #[derive(Debug, Default)]
 pub struct SetupArgs {}
+
+/// `dm reparse` — replay each entry's stored `raw_input` through the
+/// current parser, diffing the result against the stored columns.
+///
+/// Closes the persisted-intent loop (da-g5uk): the insert path stamps
+/// `raw_input` + `alias_chain` + `parser_version` on every row; this
+/// command is the consumer that lets a parser-bug fix retroactively
+/// correct already-stored rows. Replay is hermetic to the alias state
+/// at write time — `alias_chain` is rehydrated as the resolver, never
+/// the live `aliases` table.
+#[derive(Debug, Default)]
+pub struct ReparseArgs {
+    /// Only walk entries whose `field` matches this string exactly.
+    pub field: Option<String>,
+    /// UPDATE rows where the parser produced a different shape; bumps
+    /// `parser_version` and recomputes `content_hash`. Default is dry-run.
+    pub fix: bool,
+    /// Include rows with `parser_version = 0` (migration imports). They
+    /// have no real argv to replay, so we skip them by default.
+    pub include_imports: bool,
+}
 
 // ─── Db (subcommand group) ────────────────────────────────────────────────
 
