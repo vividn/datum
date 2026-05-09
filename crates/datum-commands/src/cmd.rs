@@ -17,8 +17,6 @@ use serde_json::Value as JsonValue;
 use crate::{
     args::{
         Cli, Command,
-        ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
-        ConflictsShowArgs,
         LogArgs, LogArgsExt,
         TailArgs,
         UpdateArgs,
@@ -590,10 +588,10 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     let field = args.field_or_verb.clone();
 
     let mut data_args = DataArgs::default();
-    // da-ju71.4: state-aware path translation is on (no `flat_paths`
-    // compat shim) — `state=<v>` lands at `state.id` and leading-dot
-    // `.x=<v>` keys fold into `state.x`. The bare positional state for
-    // state-bearing verbs is handled below.
+    // Daydumb compat: flat paths (no `state.id` synthesis from `state` /
+    // `.x` keys) and literal `"null"` / `"undefined"` switch values. See
+    // the `DataArgs` field docs for why we diverge from datum's TS port.
+    data_args.flat_paths = true;
     data_args.preserve_null_strings = true;
     let mut slug_paths: Vec<String> = Vec::new();
     for spec in &args.slug_keys {
@@ -670,19 +668,6 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
-    // da-ju71.4: collapse the trivial `state: {id: x}` Object back to a
-    // scalar when no other `state.*` keys are present, so a user's bare
-    // `state=true` round-trips to `entry.state = true` instead of getting
-    // gratuitously nested as `{id: true}`. The Structured state shape is
-    // still produced when dot-prefixed siblings are present.
-    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
-        if state_obj.len() == 1 {
-            if let Some(id) = state_obj.remove("id") {
-                datum_data.insert("state".to_string(), id);
-            }
-        }
-    }
-
     // Value extraction: state positional wins for state-bearing verbs;
     // otherwise pull from the PRIMARY_VALUE_KEY remainder. When the user
     // redirected the remainder via -R/-C, value is intentionally empty.
@@ -694,19 +679,7 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
         // preserve_null_strings policy and unit-annotated numbers like
         // "75.2kg" round-trip the same way as keyed values.
         datum_data.remove(PRIMARY_VALUE_KEY);
-        let parsed_state = parse_value_token(&sp);
-        // da-ju71.4: when leading-dot keys produced a `state.*` subtree,
-        // fold the bare positional into `state.id` so
-        // `switch field name .type=x` lands as a Structured state
-        // {id: name, type: x}. `extract_reserved_columns` will then pull
-        // it onto entry.state. If the user already supplied `state.id=`
-        // (or `state=`) explicitly, preserve their value.
-        if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
-            state_obj.entry("id".to_string()).or_insert(parsed_state);
-            None
-        } else {
-            Some(parsed_state)
-        }
+        Some(parse_value_token(&sp))
     } else if user_remainder {
         None
     } else {
@@ -742,17 +715,10 @@ fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
 }
 
 /// Translate a `-K`/`-k` raw key name to the path `handle_data_args`
-/// writes to. Post-da-ju71.4 the parser does state-aware translation, so
-/// `state` → `state.id` and leading-dot `.x` → `state.x`; this helper
-/// must mirror that for slot-fill lookup parity.
+/// writes to. With daydumb's `flat_paths` compat (set in `parse_log_args`),
+/// the path is taken verbatim — no `state` / leading-dot synthesis.
 fn canonical_data_path(raw: &str) -> String {
-    if raw == "state" {
-        "state.id".to_string()
-    } else if let Some(rest) = raw.strip_prefix('.') {
-        format!("state.{rest}")
-    } else {
-        raw.to_string()
-    }
+    raw.to_string()
 }
 
 /// Resolve a slot path within `datum_data` for slug derivation. Daydumb's
@@ -1659,9 +1625,8 @@ pub(crate) fn parse_update_payload(
     // the data queue. `-k KEY` (no `=`) and `-k KEY=` stay as declared
     // slots so positionals can fill them.
     let mut data_args = DataArgs::default();
-    // Same daydumb compat as the log path — see `parse_log_args`. The
-    // `flat_paths` compat shim is gone (da-ju71.4); leading-dot keys
-    // now fold into `state.*`.
+    // Same daydumb compat flags as the log path — see `parse_log_args`.
+    data_args.flat_paths = true;
     data_args.preserve_null_strings = true;
     let mut injected_immediates: Vec<String> = Vec::new();
     for spec in &args.keys {
@@ -1688,17 +1653,6 @@ pub(crate) fn parse_update_payload(
     data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
-
-    // da-ju71.4: same trivial-state collapse as `parse_log_args` — a bare
-    // `state=v` should round-trip as a scalar, not as `{id: v}`.
-    if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
-        if state_obj.len() == 1 {
-            if let Some(id) = state_obj.remove("id") {
-                datum_data.insert("state".to_string(), id);
-            }
-        }
-    }
-
     let value = datum_data.remove(PRIMARY_VALUE_KEY);
 
     // Preserve update's empty-string drop sentinel: `KEY=` (or `-k KEY=`)
@@ -1723,181 +1677,6 @@ pub(crate) fn parse_update_payload(
 }
 
 // ─── Why ─────────────────────────────────────────────────────────────────────
-
-// ─── Conflicts (D5) ──────────────────────────────────────────────────────────
-
-pub(crate) fn cmd_conflicts(sub: ConflictsCommand, db: &Db) -> Result<()> {
-    match sub {
-        ConflictsCommand::List(args) => cmd_conflicts_list(args, db),
-        ConflictsCommand::Show(args) => cmd_conflicts_show(args, db),
-        ConflictsCommand::Resolve(args) => cmd_conflicts_resolve(args, db),
-        ConflictsCommand::AutoResolve(args) => cmd_conflicts_auto_resolve(args, db),
-    }
-}
-
-pub(crate) fn cmd_conflicts_list(args: ConflictsListArgs, db: &Db) -> Result<()> {
-    use datum_core::conflicts::{ConflictKind, ListFilter};
-    let kind = match args.kind.as_deref() {
-        None => None,
-        Some(s) => Some(
-            s.parse::<ConflictKind>()
-                .map_err(|e| anyhow::anyhow!(e))?,
-        ),
-    };
-    let filter = ListFilter {
-        kind,
-        pending: if args.all { None } else { Some(true) },
-    };
-    let rows = db.list_conflicts(&filter)?;
-    if rows.is_empty() {
-        println!("No conflicts.");
-        return Ok(());
-    }
-    for c in &rows {
-        let status = match &c.resolution {
-            None => "pending".to_string(),
-            Some(r) => format!("resolved:{r}"),
-        };
-        println!(
-            "{hid}  {kind:<12}  {slug}  [{status}]  detected={detected}",
-            hid = c.hid,
-            kind = c.conflict_kind.as_str(),
-            slug = c.entry_slug,
-            status = status,
-            detected = c.detected_at.to_rfc3339(),
-        );
-    }
-    Ok(())
-}
-
-pub(crate) fn cmd_conflicts_show(args: ConflictsShowArgs, db: &Db) -> Result<()> {
-    let conflict = db
-        .get_conflict(&args.hid)?
-        .ok_or_else(|| anyhow::anyhow!("conflict '{}' not found", args.hid))?;
-    print!("{}", crate::render::render_conflict_show(&conflict));
-    Ok(())
-}
-
-pub(crate) fn cmd_conflicts_resolve(args: ConflictsResolveArgs, db: &Db) -> Result<()> {
-    use datum_core::conflicts::Resolution;
-
-    if args.skip {
-        // `--skip` is an explicit no-op: leave the conflict pending.
-        // We still acknowledge so scripts get a stable signal.
-        let conflict = db
-            .get_conflict(&args.hid)?
-            .ok_or_else(|| anyhow::anyhow!("conflict '{}' not found", args.hid))?;
-        println!(
-            "↷ skipped {hid}  {kind}  (still pending)",
-            hid = conflict.hid,
-            kind = conflict.conflict_kind.as_str(),
-        );
-        return Ok(());
-    }
-
-    if args.edit {
-        let resolved = run_conflict_edit(&args.hid, db)?;
-        println!(
-            "✓ resolved {hid}  {kind}  {resolution}",
-            hid = resolved.hid,
-            kind = resolved.conflict_kind.as_str(),
-            resolution = resolved.resolution.as_deref().unwrap_or("?"),
-        );
-        return Ok(());
-    }
-
-    let resolution = match args.take.as_deref() {
-        Some("local") => Resolution::TakeLocal,
-        Some("remote") => Resolution::TakeRemote,
-        Some(other) => anyhow::bail!(
-            "--take only accepts 'local' or 'remote' (got '{other}')"
-        ),
-        None => {
-            if args.close_older {
-                Resolution::CloseOlder
-            } else {
-                // `--keep both` records the user's explicit keep-both decision;
-                // any other string is a usage error (we only support "both" today).
-                match args.keep.as_deref() {
-                    Some("both") => Resolution::KeepBoth,
-                    Some(other) => anyhow::bail!(
-                        "--keep only supports 'both' (got '{other}'); use --close-older for auto-close"
-                    ),
-                    None => anyhow::bail!(
-                        "specify a resolution: --keep both | --close-older | --take local|remote | --edit | --skip"
-                    ),
-                }
-            }
-        }
-    };
-    let resolved = db.resolve_conflict(&args.hid, resolution)?;
-    println!(
-        "✓ resolved {hid}  {kind}  {resolution}",
-        hid = resolved.hid,
-        kind = resolved.conflict_kind.as_str(),
-        resolution = resolved.resolution.as_deref().unwrap_or("?"),
-    );
-    Ok(())
-}
-
-/// `--edit` flow: dump the local snapshot to a temp file as JSON, open
-/// `$EDITOR` (or `$VISUAL`, falling back to `vi`), parse the edited
-/// result back into an `Entry`, and apply it as the merged version.
-///
-/// The temp file is prefixed with the conflict hid so editors that show
-/// the buffer name surface it. We only support JSON for now; the user
-/// is expected to keep the structure intact. A blank save aborts the
-/// resolution (the conflict stays pending).
-fn run_conflict_edit(token: &str, db: &Db) -> Result<datum_core::conflicts::Conflict> {
-    use std::io::Write;
-
-    let conflict = db
-        .get_conflict(token)?
-        .ok_or_else(|| anyhow::anyhow!("conflict '{}' not found", token))?;
-    let initial = serde_json::to_string_pretty(&conflict.local_entry)?;
-
-    let mut tmp = std::env::temp_dir();
-    tmp.push(format!("datum-conflict-{}.json", conflict.hid));
-    {
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(initial.as_bytes())?;
-    }
-
-    let editor = std::env::var("EDITOR")
-        .or_else(|_| std::env::var("VISUAL"))
-        .unwrap_or_else(|_| "vi".to_string());
-    let status = std::process::Command::new(&editor).arg(&tmp).status()?;
-    if !status.success() {
-        anyhow::bail!("editor '{editor}' exited with {status}; conflict left pending");
-    }
-
-    let edited_raw = std::fs::read_to_string(&tmp)?;
-    let _ = std::fs::remove_file(&tmp);
-    if edited_raw.trim().is_empty() {
-        anyhow::bail!("editor saved an empty file; conflict left pending");
-    }
-    let edited: datum_core::entry::Entry = serde_json::from_str(&edited_raw)
-        .map_err(|e| anyhow::anyhow!("could not parse edited entry as JSON Entry: {e}"))?;
-    db.resolve_conflict_with_edited(&conflict.id, &edited)
-        .map_err(Into::into)
-}
-
-pub(crate) fn cmd_conflicts_auto_resolve(args: ConflictsAutoResolveArgs, db: &Db) -> Result<()> {
-    let applied = db.auto_resolve_conflicts(Utc::now(), args.min_age)?;
-    if applied.is_empty() {
-        println!("No conflicts eligible for auto-resolution (min_age={}s).", args.min_age);
-        return Ok(());
-    }
-    for c in &applied {
-        println!(
-            "✓ auto-resolved {hid}  {kind}  ({slug})",
-            hid = c.hid,
-            kind = c.conflict_kind.as_str(),
-            slug = c.entry_slug,
-        );
-    }
-    Ok(())
-}
 
 #[cfg(test)]
 mod tests {
@@ -2516,18 +2295,25 @@ mod tests {
 
         let mut args = update_args(&e.slug, vec![]);
         args.keys = vec!["nested.b=2".to_string()];
-        // da-ju71.4: dotted paths are real paths now (the old flat_paths
-        // compat shim is gone), so `nested.b=2` deep-sets into the
-        // existing `nested` object. Original keys must survive the merge.
+        // We use a single positional key=value with dot-notation-style to test
+        // the deep-merge path. But our parser splits at first `=` so the key
+        // becomes literal "nested.b" — that's fine for this test: we're
+        // verifying the deep-merge code path runs without clobbering existing
+        // keys. For true nested merge we'd need nested JSON — test below.
         update_from_args(args, UpdateStrategy::Merge, &db).unwrap();
 
+        // Now overlay nested JSON via a second merge with -k syntax replaced
+        // by direct extra_data manipulation through another merge call.
+        // We'll exercise nested merging by passing a nested object through
+        // parse_value_token's fallback (string): instead rely on the unit
+        // test of `deep_merge` in update_core for that path.
         let after = db.get_entry(&e.slug).unwrap();
         let ex = after.data.as_ref().unwrap();
-        // Original scalar keys intact (deep-merge preserved them)
+        // Original scalar keys intact
         assert_eq!(ex["nested"]["a"], serde_json::json!(1));
         assert_eq!(ex["nested"]["c"], serde_json::json!(3));
-        // Newly-set dotted path lands inside the nested object
-        assert_eq!(ex["nested"]["b"], serde_json::json!(2));
+        // Flat "nested.b" added
+        assert_eq!(ex["nested.b"], serde_json::json!(2));
     }
 
     // `deep_merge_recurses_into_objects` lives in update_core.rs where the
@@ -2734,9 +2520,8 @@ mod tests {
         let ex = after.data.as_ref().unwrap();
         assert_eq!(ex["tag"]["color"], serde_json::json!("red"));
         assert_eq!(ex["tag"]["size"], serde_json::json!("m"));
-        // da-ju71.4: dotted paths deep-set, so `tag.priority=1` lands as
-        // `tag.priority` *inside* the existing nested `tag` object.
-        assert_eq!(ex["tag"]["priority"], serde_json::json!(1));
+        // Our split-on-first-'=' parser treats "tag.priority" as a literal key.
+        assert_eq!(ex["tag.priority"], serde_json::json!(1));
     }
 
     #[test]
