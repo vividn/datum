@@ -525,7 +525,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         }
     }
 
-    let parsed = parse_log_args(&args)?;
+    let parsed = parse_log_args(&args, action)?;
     let ParsedLogArgs {
         field,
         value,
@@ -547,6 +547,19 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         anyhow::bail!(
             "unbound positional value: `dm add` requires `state=<v>` (or a `-K` slot \
              binding) — the v=20 schema dropped the implicit `value` column"
+        );
+    }
+
+    // Occur is a point-in-time event with no state. parse_log_args returns
+    // value=None for occur (its remainder bucket is disabled), so any
+    // positional that didn't fill a `-k`/`-K` slot already errored out of
+    // handle_data_args via ExtraData. This guard catches the residual
+    // case where a `state=<v>` reserved-column key was set on occur — a
+    // command-level mistake we want to surface, not silently insert.
+    if matches!(action, Action::Occur) && reserved.state.is_some() {
+        anyhow::bail!(
+            "`dm occur` doesn't carry state — drop the `state=<v>` key and \
+             use `dm switch` (or `start`/`stop`) for state-changing entries"
         );
     }
 
@@ -930,24 +943,14 @@ const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 /// Delegates the data-assembly work (slot fill, `KEY=VALUE` positionals,
 /// suffix coercion for `_time`/`_date`/`_dur` keys, comment-list shaping)
 /// to [`datum_parse::input::data_args::handle_data_args`]. The wrapper
-/// here only owns the daydumb-specific concerns: extracting the primary
-/// `value` column from the un-keyed positionals, and pulling slug values
-/// out of the resolved [`DatumData`] for slug derivation.
-fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
+/// here owns the daydumb-specific concerns: peeling the state positional
+/// for state-bearing verbs (Switch/Start/Stop) so it doesn't compete with
+/// `-k` slots, and pulling slug values out of the resolved [`DatumData`].
+fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
 
     let field = args.field_or_verb.clone();
 
-    // Compose DataArgs from LogArgs. -K slug-keys come first in the slot
-    // list so they consume positionals ahead of plain -k slots, matching
-    // pre-da-26e ordering.
-    //
-    // `-k KEY=VALUE` (with non-empty VALUE) is a legacy immediate
-    // assignment from Phase-1 recipes — it must NOT consume a positional.
-    // handle_data_args treats `KEY=VALUE` declared keys as slot-with-default
-    // (the positional, if present, overrides the default). We translate
-    // immediates into a positional `KEY=VALUE` token prepended to the data
-    // queue so they write directly into datum_data without slot fill.
     let mut data_args = DataArgs::default();
     // Daydumb compat: flat paths (no `state.id` synthesis from `state` /
     // `.x` keys) and literal `"null"` / `"undefined"` switch values. See
@@ -964,45 +967,63 @@ fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
         data_args.push_id_key(spec.clone());
     }
 
-    let mut injected_immediates: Vec<String> = Vec::new();
+    // `-k <SPEC>` becomes a slot-with-default declaration to handle_data_args.
+    // `-k KEY` is a required slot, `-k KEY=` an omit-if-absent slot, and
+    // `-k KEY=VALUE` a slot whose default is `VALUE` — overridable by the
+    // next positional. This mirrors original datum's `parseDataArgs`; the
+    // earlier "immediate" hack (route `-k KEY=VALUE` straight into the
+    // data queue, never consume a positional) silently dropped positionals
+    // into the primary-value remainder, which then leaked into `state`
+    // for non-state-bearing verbs like `occur`.
     for spec in &args.keys {
-        let (name, rhs) = spec
-            .split_once('=')
-            .map(|(n, v)| (n, Some(v)))
-            .unwrap_or((spec.as_str(), None));
+        let (name, _) = spec.split_once('=').map(|(n, v)| (n, Some(v))).unwrap_or((spec.as_str(), None));
         if name.is_empty() {
             anyhow::bail!("empty id-key name in spec '{spec}'");
         }
-        match rhs {
-            // `-k KEY=VALUE` (non-empty VALUE) → legacy immediate. Inject
-            // as positional KV so handle_data_args writes it directly.
-            Some(v) if !v.is_empty() => {
-                injected_immediates.push(format!("{name}={v}"));
-            }
-            // `-k KEY` (required slot) and `-k KEY=` (omit-if-absent slot):
-            // declare to handle_data_args as a key.
-            _ => data_args.keys.push(spec.clone()),
-        }
+        data_args.keys.push(spec.clone());
     }
 
     for c in &args.comment {
         data_args.comment.push(c.clone());
     }
 
-    // Data queue: immediates first (so they don't compete with slot fill),
-    // then user positionals in order.
-    data_args.data.reserve(injected_immediates.len() + args.rest.len());
-    data_args.data.extend(injected_immediates);
-    data_args.data.extend(args.rest.iter().cloned());
+    // For state-bearing verbs (Switch/Start/Stop), peel the FIRST bare
+    // positional out of the data queue and remember it as the state value.
+    // This keeps the state from competing with `-k` slot-fill — a switch
+    // user writing `switch project household -k optional=50` wants the
+    // state to be `household` and `optional` to default to `50`, not for
+    // `household` to consume the optional slot.
+    //
+    // `KEY=VALUE` positionals are not state candidates; they go through
+    // handle_data_args as explicit assignments regardless of action.
+    let state_bearing = matches!(
+        action,
+        Action::Switch | Action::Start | Action::Stop
+    );
+    let mut state_positional: Option<String> = None;
+    for pos in &args.rest {
+        if state_bearing && state_positional.is_none() && !pos.contains('=') {
+            state_positional = Some(pos.clone());
+        } else {
+            data_args.data.push(pos.clone());
+        }
+    }
 
-    // Remainder bucket: -R wins, then -C falls through to "comment", else
-    // the daydumb sentinel so unconsumed positionals become the primary
-    // value rather than triggering datum's "extra data" error.
+    // Remainder bucket policy:
+    //   * `-R`/`--remainder` → user-named bucket.
+    //   * `-C`/`--comment-remainder` → "comment" bucket.
+    //   * Action::Occur → no remainder; an unbound positional is an error
+    //     (occur doesn't carry state, has no `value` column to absorb it,
+    //     and silently routing to extra_data would mask user mistakes).
+    //   * Otherwise → PRIMARY_VALUE_KEY sentinel; for state-bearing verbs
+    //     this only catches *extra* positionals after the state was peeled.
     let user_remainder = args.remainder.is_some() || args.comment_remainder;
     data_args.remainder = if let Some(r) = &args.remainder {
         Some(r.clone())
     } else if args.comment_remainder {
         Some("comment".to_string())
+    } else if matches!(action, Action::Occur) {
+        None
     } else {
         Some(PRIMARY_VALUE_KEY.to_string())
     };
@@ -1011,12 +1032,19 @@ fn parse_log_args(args: &LogArgs) -> Result<ParsedLogArgs> {
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
 
-    // Extract the primary value placed at the sentinel remainder bucket.
-    // handle_data_args appends each remainder positional, so a single token
-    // becomes a scalar and 2+ become an array — matching legacy behaviour.
-    // When the user redirected the remainder via -R or -C, the primary
-    // value is intentionally empty.
-    let value = if user_remainder {
+    // Value extraction: state positional wins for state-bearing verbs;
+    // otherwise pull from the PRIMARY_VALUE_KEY remainder. When the user
+    // redirected the remainder via -R/-C, value is intentionally empty.
+    let value = if let Some(sp) = state_positional {
+        // Discard any extra unbound positionals that landed in the
+        // primary-value bucket; the state already came from `sp`.
+        // Use the same token-coercion path that powers switch state
+        // assertions (-L) so "null" stays a string per daydumb's
+        // preserve_null_strings policy and unit-annotated numbers like
+        // "75.2kg" round-trip the same way as keyed values.
+        datum_data.remove(PRIMARY_VALUE_KEY);
+        Some(parse_value_token(&sp))
+    } else if user_remainder {
         None
     } else {
         datum_data.remove(PRIMARY_VALUE_KEY)
@@ -3773,8 +3801,10 @@ mod tests {
     fn test_auto_track_on_occur() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        let mut args = LogArgs::fresh("coffee");
-        args.rest = vec!["2".to_string()];
+        // Bare `occur coffee` — occur is stateless under da-k5o6 and rejects
+        // bare positionals; the per-occurrence quantity, if any, would land
+        // via `-k amount=2`. Auto-track depends on the verb, not the data.
+        let args = LogArgs::fresh("coffee");
         log_entry(Action::Occur, args, &db).unwrap();
         let tracked = db.get_tracked_fields().unwrap();
         assert!(tracked.iter().any(|f| f.field == "coffee" && !f.ignored));
@@ -3795,10 +3825,11 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
-        // First insert: `datum coffee 2`.
+        // First insert: `datum switch coffee 2` (switch is the state-bearing
+        // verb; `occur` carries no state under da-k5o6).
         let mut args = LogArgs::fresh("coffee");
         args.rest = vec!["2".to_string()];
-        log_entry(Action::Occur, args, &db).unwrap();
+        log_entry(Action::Switch, args, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
         // Undo via `-u`: same command form with `args.undo = true`. The
@@ -3806,7 +3837,7 @@ mod tests {
         let mut undo_args = LogArgs::fresh("coffee");
         undo_args.rest = vec!["2".to_string()];
         undo_args.undo = true;
-        log_entry(Action::Occur, undo_args, &db).unwrap();
+        log_entry(Action::Switch, undo_args, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 0);
     }
 
@@ -3818,17 +3849,17 @@ mod tests {
         // Two entries with different states under the same field.
         let mut a = LogArgs::fresh("coffee");
         a.rest = vec!["1".to_string()];
-        log_entry(Action::Occur, a, &db).unwrap();
+        log_entry(Action::Switch, a, &db).unwrap();
         let mut b = LogArgs::fresh("coffee");
         b.rest = vec!["2".to_string()];
-        log_entry(Action::Occur, b, &db).unwrap();
+        log_entry(Action::Switch, b, &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 2);
 
-        // Undo only `coffee 2` — the `coffee 1` entry stays put.
+        // Undo only `switch coffee 2` — the `switch coffee 1` entry stays put.
         let mut undo = LogArgs::fresh("coffee");
         undo.rest = vec!["2".to_string()];
         undo.undo = true;
-        log_entry(Action::Occur, undo, &db).unwrap();
+        log_entry(Action::Switch, undo, &db).unwrap();
         let live = db.entries_for_field("coffee", None).unwrap();
         assert_eq!(live.len(), 1);
         assert_eq!(live[0].state, Some(serde_json::json!(1)));
@@ -3841,7 +3872,7 @@ mod tests {
         let mut args = LogArgs::fresh("coffee");
         args.rest = vec!["3".to_string()];
         args.undo = true;
-        let err = log_entry(Action::Occur, args, &db).unwrap_err();
+        let err = log_entry(Action::Switch, args, &db).unwrap_err();
         assert!(
             err.to_string().contains("no matching entry to undo"),
             "unexpected error: {err}"
@@ -5428,7 +5459,7 @@ mod tests {
     fn last_docs_bare_get_returns_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Action::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         let inserted = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
 
         cmd_get(GetArgs::fresh_default(), &db).unwrap();
@@ -5451,7 +5482,7 @@ mod tests {
     fn last_docs_bare_delete_force_removes_most_recent_insert() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Action::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         assert_eq!(db.entries_for_field("coffee", None).unwrap().len(), 1);
 
         cmd_delete(
@@ -5590,7 +5621,7 @@ mod tests {
         use crate::commands::update_core::{update_batch_from_args, UpdateStrategy};
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
-        log_entry(Action::Occur, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
+        log_entry(Action::Switch, log_args("coffee", vec!["2".to_string()], None), &db).unwrap();
         let slug = db.entries_for_field("coffee", None).unwrap()[0].slug.clone();
 
         // Mutate via the explicit-id path; the batch should write the pointer.
@@ -5624,8 +5655,12 @@ mod tests {
     fn add_with_state_and_dur_lands_block_verb() {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
+        // `dm add` is the shape-inferring verb that lets reserved keys
+        // drive the truth-table classification. `Action::Occur` rejects
+        // explicit `state=` under da-k5o6, so the prior use of Occur here
+        // was incidental — the truth-table contract belongs to Add.
         log_entry(
-            Action::Occur,
+            Action::Add,
             make_add_args("focus", vec!["state=true", "dur=PT1H"]),
             &db,
         )
@@ -5643,7 +5678,7 @@ mod tests {
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
         log_entry(
-            Action::Occur,
+            Action::Add,
             make_add_args(
                 "phase",
                 vec!["state=true", "dur=PT0S", "following_state=false"],

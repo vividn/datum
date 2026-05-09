@@ -54,12 +54,14 @@ fn time_suffix_handles_hhmm_input() {
 
 /// `weight=75.2kg` — unit-annotation form lands as `{"v": 75.2, "u": "kg"}`
 /// even when routed through `handle_data_args`. The unit-annot detector
-/// is a daydumb extension over datum's `inferType`.
+/// is a daydumb extension over datum's `inferType`. Uses `switch` so the
+/// bare `75.2kg` positional is peeled into `state` (occur is stateless
+/// per da-k5o6 and rejects bare positionals).
 #[test]
 fn unit_annotation_survives_handle_data_args() {
     let db = fresh_db();
-    run_cli(&["occur", "weight", "75.2kg", "src=morning"], &db)
-        .expect("occur weight 75.2kg src=morning");
+    run_cli(&["switch", "weight", "75.2kg", "src=morning"], &db)
+        .expect("switch weight 75.2kg src=morning");
 
     let entry = &db.entries_for_field("weight", None).unwrap()[0];
     assert_eq!(
@@ -124,20 +126,29 @@ fn dash_c_joins_remainder_into_comment_string() {
     assert_eq!(extra["comment"], json!("ate too many tacos"));
 }
 
-/// `-S` without `-R`/`-C` (da-4t5f): joins all un-keyed positionals into
-/// a single space-separated string at the primary value column. Falls out
-/// of routing the join through daydumb's PRIMARY_VALUE_KEY sentinel.
+/// `-S` without `-R`/`-C` (da-k5o6): the historical "join remainder into
+/// the primary value column" behaviour was a side-effect of the buggy
+/// PRIMARY_VALUE_KEY remainder leak. Under the v=20 contract no verb has
+/// an implicit primary-value bucket for un-keyed positionals: `occur`
+/// rejects them, `add` requires `state=<v>` or a `-K` slot, and
+/// state-bearing verbs (`switch`/`start`/`stop`) peel the first positional
+/// as state. The legitimate `-S` use is with `-R <field>` or `-C` to
+/// shape an explicit bucket — covered by the surrounding tests. So this
+/// test now pins the rejection: `occur` with bare positionals must error.
 #[test]
-fn dash_s_alone_joins_remainder_into_primary_value_string() {
+fn dash_s_alone_on_occur_rejects_unbound_positionals() {
     let db = fresh_db();
-    run_cli(
+    let err = run_cli(
         &["occur", "log", "-S", "a", "long", "phrase"],
         &db,
     )
-    .expect("occur log -S a long phrase");
+    .expect_err("occur should reject bare positionals even with -S");
 
-    let entry = &db.entries_for_field("log", None).unwrap()[0];
-    assert_eq!(entry.value, Some(json!("a long phrase")));
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("Extra data"),
+        "expected ExtraData error, got: {msg}"
+    );
 }
 
 /// `-C` composes with prior `-c` flags: `-c` populates the comment first,

@@ -10,14 +10,24 @@ use datum_core::{assert_count, assert_entry_matches};
 fn run_cli_harness_dispatches_to_occur() {
     let db = fresh_db();
 
-    // Verb-first form: `datum occur coffee 2`
-    run_cli(&["occur", "coffee", "2"], &db).expect("occur dispatch");
+    // Verb-first form: `datum occur coffee` — occur is stateless and
+    // takes no bare positional value (da-k5o6 contract). Per-entry data
+    // attaches via `-k`, e.g. `occur coffee -k amount=2`.
+    run_cli(&["occur", "coffee", "-k", "amount=2"], &db).expect("occur dispatch");
 
-    // Exactly one coffee entry. Under v3 (da-5ns), `occur coffee 2` derives
-    // a `switch` verb because state=2 lands without a duration.
+    // Exactly one coffee entry. With no state set and no duration, the
+    // truth table promotes to `Verb::Point`; null→true canonicalization
+    // lands `state = true` at the storage layer.
     assert_count!(db, "coffee", 1);
     let entry = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "coffee", verb: "switch", state: 2);
+    assert_entry_matches!(entry, field: "coffee", verb: "point", state: true);
+    let data = entry.data.as_ref().expect("data payload from -k amount=2");
+    assert_eq!(
+        data.get("amount"),
+        Some(&serde_json::json!(2)),
+        "expected -k amount=2 to land in data, got {:?}",
+        data.get("amount")
+    );
 }
 
 #[test]

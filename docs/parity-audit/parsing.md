@@ -122,7 +122,24 @@ The workhorse: turns the raw `data` positional list + `-k/-K/-R/-S/-C/-c
     string; `-C` is the `-SR comment` shorthand.
   - Implicit-lenient default: when no `-R`/`-C` is supplied, un-keyed
     positionals fold into the primary `value` column via the
-    PRIMARY_VALUE_KEY sentinel (no `--strict` mode yet).
+    PRIMARY_VALUE_KEY sentinel (no `--strict` mode yet). Two action-level
+    overrides apply (da-k5o6):
+    - `Action::Occur` disables the PRIMARY_VALUE_KEY remainder entirely;
+      occur is stateless, has no `value` column to absorb a positional,
+      and silently routing to extra_data would mask user mistakes — so
+      an unbound positional is rejected with an `ExtraData` error.
+    - `Action::{Switch,Start,Stop}` peels the FIRST bare positional out
+      as the entry's state BEFORE `handle_data_args` runs, so that state
+      doesn't compete with `-k`/`-K` slot-fill. (`switch project household
+      -k optional=50` ⇒ state=`household`, optional defaults to `50`.)
+  - **`-k KEY=VALUE` is slot-with-default**, per original datum's
+    `parseDataArgs` — NOT an immediate write into the data queue. The
+    declared key gets a default of `VALUE`; if the caller passes a
+    matching positional, the positional overrides the default. The
+    pre-da-k5o6 "immediate" hack bypassed slot fill, which made trailing
+    positionals fall through to PRIMARY_VALUE_KEY → leaked into `state`
+    on stateless verbs (the da-k5o6 regression: `occur pushup -k n=1 10`
+    ended up `n=1, state=10` instead of `n=10`).
   - Still missing: `-l/--lenient` / `--strict` toggles, `-b/--base-data`
     JSON seeding, and the `dur=5 start` mid-parse command-change escape
     (daydumb dispatches verb-first by design).

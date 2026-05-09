@@ -181,7 +181,15 @@ fn entries_without_next_due_are_excluded_from_chores_due() {
     install_chores(&db);
 
     occur(&db, &["coffee"]);
-    occur(&db, &["mood", "switch", "happy"]);
+    // `occur mood switch happy` was a side-effect of the pre-da-k5o6 leak —
+    // the trailing positionals fell through to state. Under the v=20
+    // contract the verb is the first token, so dispatch the switch
+    // directly. Either way: no `nextDate=` key → not a chore.
+    dispatch_argv(
+        vec!["datum".into(), "switch".into(), "mood".into(), "happy".into()],
+        &db,
+    )
+    .unwrap();
 
     let view = db.get_view("chores_due").unwrap().unwrap();
     let result = db.execute_view(&view.sql_text).unwrap();

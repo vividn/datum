@@ -42,8 +42,9 @@ datum switch mood happy
 # Log a point-in-time event
 datum occur coffee
 
-# Log an event with structured data
-datum occur weight 75.2kg
+# Log an event with structured data (use `switch` for stateful values;
+# `occur` is reserved for stateless points-in-time)
+datum switch weight 75.2kg
 
 # Time something — start a block now, stop it later
 datum start work project=daydumb

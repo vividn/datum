@@ -377,3 +377,146 @@ fn id_template_interpolates_extra_data_on_occur() {
     assert_eq!(e2.slug, "Output-Interpolation");
     assert_eq!(e2.id_structure.as_deref(), Some("%project%-%task%"));
 }
+
+// ─── Regression: data slot fill + occur-never-sets-state ─────────────────
+//
+// Pre-fix bug: `datum occur pushup -k n=1 10` silently put `state=10` on
+// the entry instead of setting `data.n = 10`. Two distinct issues fed
+// the symptom:
+//
+// 1. parse_log_args (cmd.rs) routed `-k KEY=VALUE` through a side channel
+//    ("immediates") that wrote KEY=VALUE directly into the data queue and
+//    *did not declare* a slot — so the trailing positional `10` had no
+//    slot to consume it and fell through to the PRIMARY_VALUE_KEY
+//    remainder, becoming "primary value".
+//
+// 2. The primary value flowed into Entry::new_legacy's `state` parameter
+//    via the (field, verb, value, ...) signature. Action::Occur has no
+//    state column override, so the value landed verbatim in `entry.state`
+//    despite occur being a stateless point-in-time event.
+//
+// The fix (cmd.rs): `-k KEY=VALUE` now declares a slot-with-default per
+// original datum's `parseDataArgs` semantics, so positionals fill slots
+// in order. For Action::Occur, the remainder bucket is disabled — any
+// truly unbound positional surfaces as an error rather than silently
+// flowing to state. For state-bearing verbs (Switch/Start/Stop) the
+// first bare positional is peeled out as the state value before slot
+// fill so it doesn't compete for `-k` slots.
+
+/// `-k KEY=VALUE` is a slot-with-default declaration; the next positional
+/// fills it. So `occur pushup -k n=1 10` writes `data.n = 10`, not
+/// `data.n = 1` with `10` leaking elsewhere.
+///
+/// The state-side guarantee here is narrow: state must NOT be the
+/// positional value (10). Whether state lands as NULL or as the canonical
+/// `true` from `derive_verb`'s null→true promotion is a separate schema
+/// question tracked by the follow-up "occur shouldn't have state=true"
+/// bead. The original bug was the user-visible *value* leak, not the
+/// canonicalization.
+#[test]
+fn occur_k_key_default_is_overridden_by_positional() {
+    let db = fresh_db();
+
+    run_cli(&["occur", "pushup", "-k", "n=1", "10"], &db)
+        .expect("occur with -k slot fill");
+
+    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    assert_eq!(entry.field, "pushup");
+    assert_ne!(
+        entry.state,
+        Some(json!(10)),
+        "regression guard: positional `10` must NOT leak into state",
+    );
+    assert_ne!(
+        entry.state,
+        Some(json!("10")),
+        "regression guard: positional `10` (string form) must NOT leak into state",
+    );
+    let data = entry
+        .data
+        .as_ref()
+        .expect("expected data payload with n=10");
+    assert_eq!(
+        data.get("n"),
+        Some(&json!(10)),
+        "positional `10` must override the `-k n=1` default and land at data.n",
+    );
+}
+
+/// With no positional, the `-k KEY=VALUE` default applies on its own.
+#[test]
+fn occur_k_key_default_applied_when_no_positional() {
+    let db = fresh_db();
+
+    run_cli(&["occur", "pushup", "-k", "n=1"], &db)
+        .expect("occur with -k default only");
+
+    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    let data = entry.data.as_ref().expect("expected data with n=1");
+    assert_eq!(data.get("n"), Some(&json!(1)));
+}
+
+/// Multiple `-k` slots fill in declaration order from the positional queue.
+#[test]
+fn occur_multiple_k_slots_fill_in_order() {
+    let db = fresh_db();
+
+    run_cli(
+        &["occur", "pushup", "-k", "n=1", "-k", "set=2", "10", "3"],
+        &db,
+    )
+    .expect("occur with two -k slots filled by positionals");
+
+    let entry = &db.entries_for_field("pushup", None).unwrap()[0];
+    let data = entry.data.as_ref().expect("expected data");
+    assert_eq!(data.get("n"), Some(&json!(10)));
+    assert_eq!(data.get("set"), Some(&json!(3)));
+    // Regression guard: neither positional must have leaked into state.
+    assert_ne!(entry.state, Some(json!(10)));
+    assert_ne!(entry.state, Some(json!(3)));
+}
+
+/// `occur` with an unbound positional (no `-k` slot, no `-K` slug-key, no
+/// explicit `KEY=VALUE` token) must error rather than silently routing
+/// the value into `entry.state`.
+#[test]
+fn occur_unbound_positional_is_rejected() {
+    let db = fresh_db();
+
+    let err = run_cli(&["occur", "pushup", "10"], &db)
+        .expect_err("occur with bare positional should bail");
+
+    let msg = format!("{err:#}");
+    assert!(
+        msg.to_lowercase().contains("extra")
+            || msg.to_lowercase().contains("unbound")
+            || msg.to_lowercase().contains("doesn't carry state"),
+        "expected an unbound-positional / extra-data error, got: {msg}",
+    );
+    assert_eq!(
+        db.entries_for_field("pushup", None).unwrap().len(),
+        0,
+        "no entry should have been written when the positional was rejected",
+    );
+}
+
+/// Explicit `state=<v>` on `occur` is also rejected — occur is stateless
+/// by definition; the user wants `switch`/`start`/`stop` for state changes.
+#[test]
+fn occur_explicit_state_key_is_rejected() {
+    let db = fresh_db();
+
+    let err = run_cli(&["occur", "pushup", "state=10"], &db)
+        .expect_err("occur with state=<v> should bail");
+
+    let msg = format!("{err:#}");
+    assert!(
+        msg.to_lowercase().contains("doesn't carry state")
+            || msg.to_lowercase().contains("state"),
+        "expected an occur-stateless error, got: {msg}",
+    );
+    assert_eq!(
+        db.entries_for_field("pushup", None).unwrap().len(),
+        0,
+    );
+}
