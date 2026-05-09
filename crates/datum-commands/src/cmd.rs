@@ -22,14 +22,13 @@ use crate::{
         ConflictsAutoResolveArgs, ConflictsCommand, ConflictsListArgs, ConflictsResolveArgs,
         ConflictsShowArgs, DbImportArgs, DbImportArgsExt,
         LogArgs, LogArgsExt,
-        OutputFlagsExt, SpecCommand, SpecSetArgs, TailArgs,
+        SpecCommand, SpecSetArgs, TailArgs,
         UpdateArgs,
     },
     config::{self, device_id},
     render::{
-        print_table_with,
         show_create_with_context, show_delete, show_exists, show_rename,
-        show_update_with_context, RenderContext, TableArgs, TimeMetricCol,
+        show_update_with_context, RenderContext,
     },
 };
 
@@ -1299,65 +1298,6 @@ fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::t
 
 // ─── Tail / Now ──────────────────────────────────────────────────────────────
 
-pub(crate) fn cmd_tail(args: TailArgs, db: &Db) -> Result<()> {
-    let columns = split_columns(&args.columns);
-    let metric: TimeMetricCol = args
-        .metric
-        .parse()
-        .map_err(|e: String| anyhow::anyhow!(e))?;
-    let entries = tail_entries(&args, db)?;
-    let registry = load_registry(db).ok();
-    let output = args.output();
-
-    // Per da-6t0: tail/head always render through the tabular path so the
-    // header row, column alignment, and `hid` column are on by default. The
-    // legacy info-line branch is gone; `--table` is now a no-op flag kept
-    // only for backward CLI compatibility.
-    let tbl = TableArgs {
-        output: output.clone(),
-        metric,
-        columns,
-        suppress_header: false,
-    };
-    let now = DatumTime::now();
-    let ctxs = build_render_contexts(&entries, db);
-    print_table_with(&entries, Some(&ctxs), Some(&now), registry.as_ref(), &tbl);
-
-    if let Some(secs) = args.watch {
-        let interval = watch_interval(secs);
-        let mut since = entries
-            .iter()
-            .map(|e| e.create_time)
-            .max()
-            .unwrap_or_else(chrono::Utc::now);
-        let field = args.field.as_deref();
-        let tick_tbl = TableArgs {
-            suppress_header: true,
-            ..tbl.clone()
-        };
-        loop {
-            std::thread::sleep(interval);
-            let new_rows = db.list_entries_created_after(field, since)?;
-            if let Some(latest) = new_rows.iter().map(|e| e.create_time).max() {
-                since = latest;
-            }
-            if !new_rows.is_empty() {
-                let now = DatumTime::now();
-                let tick_ctxs = build_render_contexts(&new_rows, db);
-                print_table_with(
-                    &new_rows,
-                    Some(&tick_ctxs),
-                    Some(&now),
-                    registry.as_ref(),
-                    &tick_tbl,
-                );
-            }
-        }
-    }
-
-    Ok(())
-}
-
 /// Vector form of `build_render_context_cached` — one context per entry, in
 /// the same order. Used by the table path so the canonical state-cell
 /// renderer can emit transition arrows for tail rows.
@@ -1513,18 +1453,7 @@ fn capture_ongoing_state(db: &Db, entry: &Entry) -> Option<JsonValue> {
         .flatten()
 }
 
-/// Clamp a user-supplied `--watch` interval into a sane poll cadence.
-/// Non-finite, zero, or negative values collapse to 1 s; anything positive
-/// is honoured at millisecond granularity (so `--watch 0.25` → 250 ms).
-fn watch_interval(secs: f64) -> std::time::Duration {
-    if !secs.is_finite() || secs <= 0.0 {
-        return std::time::Duration::from_secs(1);
-    }
-    let millis = (secs * 1000.0).round() as u64;
-    std::time::Duration::from_millis(millis.max(1))
-}
-
-/// Run the tail query as `cmd_tail` does, but return the entries instead of
+/// Run the tail query as the verb does, but return the entries instead of
 /// printing. Used by integration tests and by `head` when it routes through
 /// the shared tail path.
 pub fn tail_entries(args: &TailArgs, db: &Db) -> Result<Vec<Entry>> {
@@ -2958,7 +2887,7 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_tail(head_args(None, Some(10)), &db).unwrap();
+        crate::commands::tail::tail(head_args(None, Some(10)), &db).unwrap();
 
         // Verify via tail_entries that ordering is ASC by time_start (head mode).
         let entries = tail_entries(&head_args(None, Some(10)), &db).unwrap();
@@ -2977,7 +2906,7 @@ mod tests {
             db.insert_entry(&make_entry_at("mood", i * 60, "d1")).unwrap();
         }
 
-        cmd_tail(head_args(Some("mood"), Some(5)), &db).unwrap();
+        crate::commands::tail::tail(head_args(Some("mood"), Some(5)), &db).unwrap();
 
         let got = tail_entries(&head_args(Some("mood"), Some(5)), &db).unwrap();
         assert_eq!(got.len(), 5);
@@ -2997,7 +2926,7 @@ mod tests {
         db.insert_entry(&make_entry_at("coffee", 300, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 400, "d1")).unwrap();
 
-        cmd_tail(head_args(Some("coffee"), Some(10)), &db).unwrap();
+        crate::commands::tail::tail(head_args(Some("coffee"), Some(10)), &db).unwrap();
 
         let got = tail_entries(&head_args(Some("coffee"), Some(10)), &db).unwrap();
         assert_eq!(got.len(), 2);
@@ -3031,7 +2960,7 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_tail(head_args(None, Some(10)), &db).unwrap();
+        crate::commands::tail::tail(head_args(None, Some(10)), &db).unwrap();
 
         let got = tail_entries(&head_args(None, Some(10)), &db).unwrap();
         assert_eq!(got.len(), 2);
@@ -4184,7 +4113,7 @@ mod tests {
         db.insert_entry(&make_entry_at("mood", 100, "d1")).unwrap();
         db.insert_entry(&make_entry_at("mood", 200, "d1")).unwrap();
 
-        cmd_tail(head_args(Some("mood"), Some(10)), &db).unwrap();
+        crate::commands::tail::tail(head_args(Some("mood"), Some(10)), &db).unwrap();
 
         // Pointer must still be untouched after a pure browse.
         assert!(datum_core::last_docs::get_last_docs(&db).unwrap().is_none());
