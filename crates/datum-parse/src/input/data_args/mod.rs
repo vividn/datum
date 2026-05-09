@@ -5,6 +5,19 @@
 //! remainder disposition, leniency) this module produces the final
 //! [`DatumData`] object the command layer writes to an entry.
 //!
+//! # Module split
+//!
+//! Single fold loop, three orthogonal phases:
+//!
+//! - [`classify`] — token kind / path normalization / suffix predicates
+//! - [`coerce`]   — `&str` → JSON [`Value`] (numbers, durations, units…)
+//! - [`accumulate`] — write the coerced value into the growing payload at
+//!   a dotted path; handle append fan-out and `.` defaults
+//!
+//! The orchestrator below ([`handle_data_args`]) walks the positional
+//! queue, dispatches `key=value` / positional / remainder routes, and
+//! delegates everything else to those modules.
+//!
 //! # Non-ports
 //!
 //! * `-b`/`--base-data` (JSON seed). Low demand, explicitly dropped by the
@@ -19,13 +32,23 @@
 //!
 //! See `docs/parity-audit/parsing.md` ("`dataArgs.ts`") for the spec.
 
+mod accumulate;
+mod classify;
+mod coerce;
+
 use serde_json::{Map, Value};
 
 use crate::error::{ParseError, Result};
 use crate::input::consolidate_keys::consolidate_keys;
 use crate::input::flag_registry::{FlagAction, FlagSpec};
 use crate::input::flexible_positional::FlexibleTarget;
-use crate::time::{parse_date_arg, parse_duration, parse_time_arg};
+
+use accumulate::alter_datum_data;
+use classify::{
+    datum_path, find_default_for_path, inferred_value_for_default, is_dot_scalar, split_first_eq,
+};
+
+pub use coerce::{infer_type, infer_value, unit_annotated_value};
 
 /// Canonical flag set for the data concern.
 ///
@@ -160,9 +183,9 @@ impl DataArgs {
 /// helpers in this module. Built once by [`handle_data_args`] from the
 /// caller's [`DataArgs`].
 #[derive(Clone, Copy, Default)]
-struct Compat {
+pub(crate) struct Compat {
     /// See [`DataArgs::preserve_null_strings`].
-    preserve_null_strings: bool,
+    pub(crate) preserve_null_strings: bool,
 }
 
 /// Resolve `DataArgs` into the final `DatumData` object.
@@ -201,7 +224,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
         if let Some(value) = after_eq {
             // Explicit key=value in the positional stream.
             let path = datum_path(before_eq);
-            let existing = get_path(&datum_data, &path).cloned();
+            let existing = accumulate::get_path(&datum_data, &path).cloned();
             // Find the first declared key matching this path so an
             // explicit `key=.` can fall back to its default.
             let default_value = if let Some(v) = existing {
@@ -230,7 +253,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
             let is_required = default_value.is_none();
             let path = datum_path(raw_path);
 
-            if get_path(&datum_data, &path).is_some() {
+            if accumulate::get_path(&datum_data, &path).is_some() {
                 // Already filled manually — skip to the next declared key.
                 continue;
             }
@@ -259,7 +282,7 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
         let path = datum_path(raw_path);
         let is_required = default_value.is_none();
 
-        match get_path(&datum_data, &path) {
+        match accumulate::get_path(&datum_data, &path) {
             Some(existing) if !is_dot_scalar(existing) => continue,
             _ => {}
         }
@@ -314,475 +337,6 @@ pub fn handle_data_args(args: &DataArgs) -> Result<DatumData> {
     Ok(datum_data)
 }
 
-// ─── path primitives ─────────────────────────────────────────────────────
-
-/// Port of datum's `datumPath`. Maps `state` → `state.id` and any
-/// leading-dot path (e.g. `.title`) → `state.title`.
-fn datum_path(path: &str) -> String {
-    if path == "state" {
-        "state.id".to_string()
-    } else if let Some(rest) = path.strip_prefix('.') {
-        format!("state.{rest}")
-    } else {
-        path.to_string()
-    }
-}
-
-/// Split a string at the first `=`; the tail is `Some("")` for `k=` and
-/// `None` when no `=` appears. Mirrors the TS helper `splitFirst("=", s)`.
-fn split_first_eq(s: &str) -> (&str, Option<&str>) {
-    match s.split_once('=') {
-        Some((h, t)) => (h, Some(t)),
-        None => (s, None),
-    }
-}
-
-/// Split a path into dotted segments.
-fn path_segs(path: &str) -> Vec<&str> {
-    path.split('.').collect()
-}
-
-/// Walk a dotted path through a `Map` and return a reference to the leaf.
-fn get_path<'a>(obj: &'a Map<String, Value>, path: &str) -> Option<&'a Value> {
-    let segs: Vec<&str> = path_segs(path);
-    if segs.is_empty() {
-        return None;
-    }
-    let mut cur = obj.get(segs[0])?;
-    for seg in &segs[1..] {
-        match cur {
-            Value::Object(m) => {
-                cur = m.get(*seg)?;
-            }
-            _ => return None,
-        }
-    }
-    Some(cur)
-}
-
-/// Remove a dotted path from `obj`. No-op if the path doesn't exist.
-fn remove_path(obj: &mut Map<String, Value>, path: &str) {
-    let segs: Vec<&str> = path_segs(path);
-    if segs.is_empty() {
-        return;
-    }
-    if segs.len() == 1 {
-        obj.remove(segs[0]);
-        return;
-    }
-    let (last, parents) = segs.split_last().unwrap();
-    let mut cur: &mut Map<String, Value> = obj;
-    for seg in parents {
-        match cur.get_mut(*seg) {
-            Some(Value::Object(m)) => {
-                cur = m;
-            }
-            _ => return,
-        }
-    }
-    cur.remove(*last);
-}
-
-/// Set a dotted path to `value`. Scalars in the path are overwritten
-/// with fresh objects to match lodash.set's semantics.
-fn set_path(obj: &mut Map<String, Value>, path: &str, value: Value) {
-    let segs: Vec<&str> = path_segs(path);
-    if segs.is_empty() {
-        return;
-    }
-    if segs.len() == 1 {
-        obj.insert(segs[0].to_string(), value);
-        return;
-    }
-    let (last, parents) = segs.split_last().unwrap();
-    let mut cur: &mut Map<String, Value> = obj;
-    for seg in parents {
-        let entry = cur
-            .entry((*seg).to_string())
-            .or_insert_with(|| Value::Object(Map::new()));
-        if !entry.is_object() {
-            *entry = Value::Object(Map::new());
-        }
-        cur = entry.as_object_mut().unwrap();
-    }
-    cur.insert(last.to_string(), value);
-}
-
-/// Does the value at `existing` equal the literal string `"."`? Used to
-/// treat a user-placed `"."` as "hasn't filled this key yet" when the
-/// trailing key-default loop runs.
-fn is_dot_scalar(v: &Value) -> bool {
-    matches!(v, Value::String(s) if s == ".")
-}
-
-/// A default-from-existing-value: when an explicit `path=.` happens and
-/// the value already exists in `datumData`, the TS code treats the
-/// existing value as the default so `"."` round-trips to it.
-fn inferred_value_for_default(v: &Value) -> Option<String> {
-    match v {
-        Value::String(s) => Some(s.clone()),
-        Value::Null => None,
-        other => Some(other.to_string()),
-    }
-}
-
-/// Find the default value declared for `path` in a keys list.
-fn find_default_for_path(keys: &[String], path: &str) -> Option<String> {
-    keys.iter().find_map(|spec| {
-        let (raw, default) = split_first_eq(spec);
-        if datum_path(raw) == path {
-            default.map(|s| s.to_string())
-        } else {
-            None
-        }
-    })
-}
-
-// ─── alter_datum_data ────────────────────────────────────────────────────
-
-/// Port of datum's `alterDatumData`: infer the right JSON shape for
-/// `value` (delegating to [`infer_type`] or the key-triggered time/date/
-/// duration parsers) and set or append it at `path` inside `obj`.
-fn alter_datum_data(
-    obj: &mut Map<String, Value>,
-    path: &str,
-    value: Option<&str>,
-    default_value: Option<&str>,
-    append: bool,
-    is_required: bool,
-    compat: Compat,
-) -> Result<()> {
-    let state_aware = datum_path(path);
-
-    // `.` → recurse with the default.
-    if matches!(value, Some(".")) {
-        return alter_datum_data(obj, path, default_value, None, append, is_required, compat);
-    }
-
-    let inferred = match value {
-        Some(v) => infer_typed_value(&state_aware, v, is_required, compat)?,
-        None => {
-            if is_required {
-                return Err(ParseError::MissingRequiredKey(state_aware.clone()));
-            }
-            None
-        }
-    };
-
-    if append {
-        let Some(new_val) = inferred else {
-            return Ok(());
-        };
-        let existing = get_path(obj, &state_aware).cloned();
-        let combined = create_or_append(existing, new_val);
-        set_path(obj, &state_aware, combined);
-    } else {
-        match inferred {
-            Some(v) => set_path(obj, &state_aware, v),
-            None => remove_path(obj, &state_aware),
-        }
-    }
-    Ok(())
-}
-
-/// Infer the JSON shape for a value, applying the time/date/duration
-/// key-pattern rules before falling back to the generic `infer_type`.
-///
-/// Returns `Ok(None)` for values the TS code would turn into `undefined`
-/// (empty string, literal `"undefined"`). Returns `Err(MissingRequiredKey)`
-/// when the slot is required and nothing was supplied.
-fn infer_typed_value(
-    path: &str,
-    value: &str,
-    is_required: bool,
-    compat: Compat,
-) -> Result<Option<Value>> {
-    // Daydumb compat: keep the literal strings `"null"` / `"undefined"` as
-    // string values regardless of path. Path-suffix coercion (below) is
-    // bypassed too — daydumb's `extract_add_temporal_keys` already accepts
-    // a string `"null"` for `dur=null`, so no signal is lost.
-    if compat.preserve_null_strings
-        && (value.eq_ignore_ascii_case("null") || value.eq_ignore_ascii_case("undefined"))
-    {
-        return Ok(Some(Value::String(value.to_string())));
-    }
-
-    // `undefined` / empty → undefined; error if required.
-    if value.is_empty() || value.eq_ignore_ascii_case("undefined") {
-        if is_required {
-            return Err(ParseError::MissingRequiredKey(path.to_string()));
-        }
-        return Ok(None);
-    }
-
-    // Literal null pass-through.
-    if value.eq_ignore_ascii_case("null") {
-        return Ok(Some(Value::Null));
-    }
-
-    // Time-like key → parse as time.
-    if path_is_time(path) {
-        if let Ok(t) = parse_time_arg(value) {
-            if let Some(abs) = t.absolute {
-                return Ok(Some(Value::String(abs.format("%H:%M:%S").to_string())));
-            }
-        }
-        // Fallthrough: if we couldn't parse as time, leave as inferType's
-        // usual handling. Datum would have errored; we accept the value
-        // so users can still record free-form time fields.
-    }
-
-    // Date-like key → parse as date.
-    if path_is_date(path) {
-        if let Ok(d) = parse_date_arg(value) {
-            if let Some(abs) = d.absolute {
-                return Ok(Some(Value::String(abs.format("%Y-%m-%d").to_string())));
-            }
-        }
-    }
-
-    // Duration-like key → parse and emit ISO 8601.
-    if path_is_duration(path) {
-        if let Ok(dur) = parse_duration(value) {
-            return Ok(Some(Value::String(format_iso_duration(dur))));
-        }
-    }
-
-    // Unit-annotated number — daydumb extension over datum's `inferType`.
-    // `75.2kg` / `500ml` → `{"v": <num>, "u": "<unit>"}`. Time/date/dur
-    // suffix coercions above already won where they applied (e.g. `dur=5m`
-    // → ISO duration, not unit-annotation).
-    if let Some(v) = unit_annotated_value(value) {
-        return Ok(Some(v));
-    }
-
-    Ok(infer_type(value))
-}
-
-/// daydumb extension: detect `75.2kg` / `500ml` style tokens and emit
-/// `{"v": <num>, "u": "<unit>"}`. Returns `None` when the token isn't of
-/// `<number><alpha-unit>` form. Public so the verb-specific switch-state
-/// parser in `datum-commands` can apply the same coercion.
-pub fn unit_annotated_value(value: &str) -> Option<Value> {
-    let (num, unit) = split_numeric_unit(value)?;
-    let n: f64 = num.parse().ok()?;
-    let n_value = serde_json::Number::from_f64(n).map(Value::Number)?;
-    let mut obj = Map::new();
-    obj.insert("v".to_string(), n_value);
-    obj.insert("u".to_string(), Value::String(unit.to_string()));
-    Some(Value::Object(obj))
-}
-
-/// Split `"75.2kg"` → `Some(("75.2", "kg"))`, `"hello"` → `None`. The
-/// numeric prefix may include digits, `.`, and a leading `-`; the unit
-/// suffix must be all-alphabetic.
-fn split_numeric_unit(s: &str) -> Option<(&str, &str)> {
-    let idx = s
-        .char_indices()
-        .take_while(|(_, c)| c.is_ascii_digit() || *c == '.' || *c == '-')
-        .last()
-        .map(|(i, _)| i + 1)?;
-    if idx == 0 || idx == s.len() {
-        return None;
-    }
-    let (num, unit) = s.split_at(idx);
-    if unit.chars().all(|c| c.is_alphabetic()) {
-        Some((num, unit))
-    } else {
-        None
-    }
-}
-
-/// Resolve a free-form value with no path context — applies the
-/// daydumb unit-annotation extension first, then datum's `infer_type`.
-/// Used by call sites (switch-state list expansion) that have a single
-/// scalar token with no key path to dispatch on.
-pub fn infer_value(value: &str) -> Option<Value> {
-    if let Some(v) = unit_annotated_value(value) {
-        return Some(v);
-    }
-    infer_type(value)
-}
-
-fn path_is_time(path: &str) -> bool {
-    matches_suffix(path, "time")
-}
-
-fn path_is_date(path: &str) -> bool {
-    matches_suffix(path, "date")
-}
-
-fn path_is_duration(path: &str) -> bool {
-    matches_suffix(path, "dur") || matches_suffix(path, "duration")
-}
-
-/// Case-insensitive suffix match following datum's TS regex semantics:
-///
-/// * `/(?:\b|_)<suffix>\d*$/i` — word boundary or underscore before
-///   the suffix, optional trailing digits;
-/// * `/[a-z0-9]<suffix-camel>\d*$/` — or a lowercase-letter/digit
-///   immediately before a capitalised form.
-///
-/// We fold `path` to lowercase and strip trailing digits, then check the
-/// boundary against `_` or the first char of the chunk.
-fn matches_suffix(path: &str, suffix: &str) -> bool {
-    let lower = path.to_ascii_lowercase();
-    let trimmed = lower.trim_end_matches(|c: char| c.is_ascii_digit());
-    if !trimmed.ends_with(suffix) {
-        return false;
-    }
-    let head_len = trimmed.len() - suffix.len();
-    if head_len == 0 {
-        return true;
-    }
-    // The char just before the suffix must be (a) a word boundary
-    // (underscore/non-alnum), (b) uppercase in the original (camelCase),
-    // or (c) a digit — matching the union of the two JS regexes.
-    let orig_chars: Vec<char> = path.chars().collect();
-    let lower_chars: Vec<char> = lower.chars().collect();
-    let boundary = lower_chars[head_len - 1];
-    let orig_at = orig_chars.get(head_len).copied().unwrap_or('\0');
-    if boundary == '_' {
-        return true;
-    }
-    if orig_at.is_ascii_uppercase() {
-        return true;
-    }
-    // Word-boundary split at non-alnum: digits count, letters don't.
-    !boundary.is_ascii_alphabetic()
-}
-
-/// Format a `chrono::Duration` as an ISO 8601 string (`PT5M`, `PT1H30M`,
-/// `P1DT5H`, etc.). Round-trips with [`crate::time::parse_duration`].
-fn format_iso_duration(d: chrono::Duration) -> String {
-    let total_secs = d.num_seconds();
-    let (sign, mut secs) = if total_secs < 0 {
-        ("-", -total_secs)
-    } else {
-        ("", total_secs)
-    };
-    let days = secs / 86400;
-    secs %= 86400;
-    let hours = secs / 3600;
-    secs %= 3600;
-    let minutes = secs / 60;
-    secs %= 60;
-
-    let mut out = String::new();
-    if !sign.is_empty() {
-        out.push('-');
-    }
-    out.push('P');
-    let had_date = days > 0;
-    if had_date {
-        out.push_str(&format!("{days}D"));
-    }
-    let had_time = hours > 0 || minutes > 0 || secs > 0;
-    if had_time || !had_date {
-        out.push('T');
-        if hours > 0 {
-            out.push_str(&format!("{hours}H"));
-        }
-        if minutes > 0 {
-            out.push_str(&format!("{minutes}M"));
-        }
-        if secs > 0 || (!had_date && hours == 0 && minutes == 0) {
-            out.push_str(&format!("{secs}S"));
-        }
-    }
-    out
-}
-
-// ─── infer_type ───────────────────────────────────────────────────────────
-
-/// Port of datum's `inferType`: turn a raw string into the most specific
-/// JSON shape we can. Unlike datum we don't carry relaxed-JSON parsing
-/// (that would pull in a fat dep for a rare branch); values that aren't
-/// strict JSON or one of the recognised literals fall through unchanged.
-pub fn infer_type(value: &str) -> Option<Value> {
-    if value.is_empty() {
-        return None;
-    }
-
-    // The `\.` escape hatch: two literal characters `\` + `.` resolve to
-    // the single-char string ".". Matches the TS regex `/^\\.$/`.
-    if value == r"\." {
-        return Some(Value::String(".".to_string()));
-    }
-
-    // `","` alone → empty array.
-    if value == "," {
-        return Some(Value::Array(vec![]));
-    }
-
-    // Leading/trailing comma → array shorthand. Edge empties are tolerated
-    // (transitional compat with old datum aliases that wrote `,tag1,`,
-    // `,,`, etc.); interior empty splits keep their existing null behavior.
-    if value.starts_with(',') || value.ends_with(',') {
-        let parts: Vec<&str> = value.split(',').collect();
-        let start = parts
-            .iter()
-            .position(|s| !s.is_empty())
-            .unwrap_or(parts.len());
-        let end = parts
-            .iter()
-            .rposition(|s| !s.is_empty())
-            .map(|i| i + 1)
-            .unwrap_or(start);
-        return Some(Value::Array(
-            parts[start..end]
-                .iter()
-                .map(|v| infer_type(v).unwrap_or(Value::Null))
-                .collect(),
-        ));
-    }
-
-    if value.eq_ignore_ascii_case("true") {
-        return Some(Value::Bool(true));
-    }
-    if value.eq_ignore_ascii_case("false") {
-        return Some(Value::Bool(false));
-    }
-    if value == "''" || value == "\"\"" {
-        return Some(Value::String(String::new()));
-    }
-    if value.eq_ignore_ascii_case("undefined") {
-        return None;
-    }
-    if value.eq_ignore_ascii_case("null") {
-        return Some(Value::Null);
-    }
-    if value.eq_ignore_ascii_case("nan") {
-        return Some(Value::String("NaN".to_string()));
-    }
-    if value.eq_ignore_ascii_case("infinity") || value.eq_ignore_ascii_case("inf") {
-        return Some(Value::String("Infinity".to_string()));
-    }
-    if value.eq_ignore_ascii_case("-infinity") || value.eq_ignore_ascii_case("-inf") {
-        return Some(Value::String("-Infinity".to_string()));
-    }
-
-    // Strict JSON — numbers, arrays, objects, quoted strings.
-    if let Ok(v) = serde_json::from_str::<Value>(value) {
-        return Some(v);
-    }
-
-    Some(Value::String(value.to_string()))
-}
-
-fn create_or_append(existing: Option<Value>, to_append: Value) -> Value {
-    match existing {
-        None => to_append,
-        Some(Value::Array(mut arr)) => {
-            arr.push(to_append);
-            Value::Array(arr)
-        }
-        Some(other) => Value::Array(vec![other, to_append]),
-    }
-}
-
-// ─── tests ────────────────────────────────────────────────────────────────
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -794,67 +348,6 @@ mod tests {
 
     fn run(a: DataArgs) -> DatumData {
         handle_data_args(&a).expect("handle_data_args")
-    }
-
-    // ── infer_type ──────────────────────────────────────────────────────
-    #[test]
-    fn infer_type_empty_is_undefined() {
-        assert_eq!(infer_type(""), None);
-    }
-
-    #[test]
-    fn infer_type_dot_escape_returns_dot_string() {
-        assert_eq!(infer_type(r"\."), Some(Value::String(".".to_string())));
-    }
-
-    #[test]
-    fn infer_type_booleans() {
-        assert_eq!(infer_type("true"), Some(Value::Bool(true)));
-        assert_eq!(infer_type("False"), Some(Value::Bool(false)));
-    }
-
-    #[test]
-    fn infer_type_number() {
-        assert_eq!(infer_type("42"), Some(json!(42)));
-        assert_eq!(infer_type("3.5"), Some(json!(3.5)));
-    }
-
-    #[test]
-    fn infer_type_arrays_and_objects() {
-        assert_eq!(infer_type("[1,2,3]"), Some(json!([1, 2, 3])));
-        assert_eq!(infer_type(r#"{"a":1}"#), Some(json!({"a": 1})));
-    }
-
-    #[test]
-    fn infer_type_comma_shorthands() {
-        assert_eq!(infer_type(","), Some(json!([])));
-        assert_eq!(infer_type(",a,b"), Some(json!(["a", "b"])));
-        assert_eq!(infer_type("a,b,"), Some(json!(["a", "b"])));
-    }
-
-    #[test]
-    fn infer_type_comma_edge_tolerance() {
-        // Leading + trailing edges may both be empty (da-lvvp).
-        assert_eq!(infer_type(",tag1,tag2"), Some(json!(["tag1", "tag2"])));
-        assert_eq!(infer_type("tag1,tag2,"), Some(json!(["tag1", "tag2"])));
-        assert_eq!(infer_type(",tag1,"), Some(json!(["tag1"])));
-        assert_eq!(infer_type(",,"), Some(json!([])));
-        // Interior empty splits keep their existing null behavior.
-        assert_eq!(
-            infer_type(",tag1,,tag2,"),
-            Some(json!(["tag1", null, "tag2"]))
-        );
-    }
-
-    #[test]
-    fn infer_type_falls_back_to_string() {
-        assert_eq!(infer_type("hello"), Some(Value::String("hello".into())));
-    }
-
-    #[test]
-    fn infer_type_quoted_empty_string() {
-        assert_eq!(infer_type("''"), Some(Value::String(String::new())));
-        assert_eq!(infer_type("\"\""), Some(Value::String(String::new())));
     }
 
     // ── direct ports of TS handleDataArgs tests ─────────────────────────
@@ -1495,60 +988,6 @@ mod tests {
         a.push_id_key("field2=default".to_string());
         assert_eq!(a.keys, vec!["field1", "field2=default"]);
         assert_eq!(a.id_parts, vec!["%field1", "%field2"]);
-    }
-
-    // ── path helpers ────────────────────────────────────────────────────
-
-    #[test]
-    fn datum_path_rewrites() {
-        assert_eq!(datum_path("plain"), "plain");
-        assert_eq!(datum_path("state"), "state.id");
-        assert_eq!(datum_path(".key"), "state.key");
-        assert_eq!(datum_path(".deep.sub"), "state.deep.sub");
-    }
-
-    #[test]
-    fn matches_suffix_handles_word_boundary_and_camel_case() {
-        assert!(matches_suffix("time", "time"));
-        assert!(matches_suffix("startTime", "time"));
-        assert!(matches_suffix("start_time", "time"));
-        assert!(matches_suffix("taskDuration", "duration"));
-        assert!(matches_suffix("duration3", "duration"));
-        assert!(matches_suffix("start_time2", "time"));
-        // No word boundary inside "sometime" — the TS regex wouldn't match
-        // either. Added to guard against an over-eager port.
-        assert!(!matches_suffix("sometime", "time"));
-        assert!(!matches_suffix("datetime", "time"));
-        assert!(!matches_suffix("sometime", "date"));
-    }
-
-    // ── path traversal primitives ───────────────────────────────────────
-
-    #[test]
-    fn set_and_get_paths_round_trip() {
-        let mut m = Map::new();
-        set_path(&mut m, "a.b.c", json!(1));
-        assert_eq!(get_path(&m, "a.b.c"), Some(&json!(1)));
-        set_path(&mut m, "a.b.c", json!(2));
-        assert_eq!(get_path(&m, "a.b.c"), Some(&json!(2)));
-        set_path(&mut m, "a.b.d", json!("x"));
-        assert_eq!(get_path(&m, "a.b.d"), Some(&json!("x")));
-    }
-
-    #[test]
-    fn set_path_overwrites_scalar_with_object() {
-        let mut m = Map::new();
-        set_path(&mut m, "top", json!("primitive"));
-        set_path(&mut m, "top.nested", json!("abc"));
-        assert_eq!(get_path(&m, "top.nested"), Some(&json!("abc")));
-    }
-
-    #[test]
-    fn remove_path_removes_leaf() {
-        let mut m = Map::new();
-        set_path(&mut m, "a.b.c", json!(1));
-        remove_path(&mut m, "a.b.c");
-        assert_eq!(get_path(&m, "a.b.c"), None);
     }
 
     #[test]
