@@ -339,7 +339,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // structured state (e.g. `occur drive .id=car .role=driver`) stays a
     // point-in-time event instead of being classified as Switch.
     if matches!(action, Action::Occur) && entry.dur.is_none() {
-        entry.dur = Some(datum_core::dur::Dur::Moment.to_storage_string());
+        entry.dur = Some(datum_core::dur::Dur::Moment);
     }
 
     // da-8y2q.2: Action-driven state canonicalization (moved out of
@@ -434,7 +434,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // skip state-bearing rows.
     if let Ok((derived_verb, _)) = datum_core::derive_verb(
         entry.state.clone(),
-        entry.dur.as_deref(),
+        entry.dur.as_ref(),
         entry.following_state.clone(),
     ) {
         entry.verb = derived_verb;
@@ -1011,7 +1011,7 @@ impl AddTemporalHints {
 #[derive(Debug, Default)]
 pub(crate) struct ReservedColumns {
     pub(crate) state: Option<JsonValue>,
-    pub(crate) dur: Option<String>,
+    pub(crate) dur: Option<datum_core::dur::Dur>,
     pub(crate) following_state: Option<JsonValue>,
     pub(crate) occur_time: Option<JsonValue>,
 }
@@ -1043,7 +1043,10 @@ pub(crate) fn extract_reserved_columns(
         if v.is_null() || matches!(v.as_str(), Some("null")) {
             // intentionally drop — None signals point shape.
         } else {
-            out.dur = Some(json_to_dur_string(&v)?);
+            let s = json_to_dur_string(&v)?;
+            out.dur = Some(datum_core::dur::Dur::parse(&s).ok_or_else(|| {
+                anyhow::anyhow!("invalid dur value: {s:?}")
+            })?);
         }
     }
     if let Some(v) = obj.remove("following_state") {
@@ -3416,7 +3419,7 @@ mod tests {
         let e = &live[0];
         assert_eq!(e.verb, Verb::Block);
         assert_eq!(e.state, Some(serde_json::json!(true)));
-        assert_eq!(e.dur.as_deref(), Some("PT1H"));
+        assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT1H"));
     }
 
     #[test]
@@ -3437,7 +3440,7 @@ mod tests {
         let e = &live[0];
         assert_eq!(e.verb, Verb::PointSwitch);
         assert_eq!(e.state, Some(serde_json::json!(true)));
-        assert_eq!(e.dur.as_deref(), Some("PT0S"));
+        assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT0S"));
         assert_eq!(e.following_state, Some(serde_json::json!(false)));
     }
 
@@ -3509,7 +3512,7 @@ mod tests {
         .unwrap();
         let after_update = db.get_entry(&e.slug).unwrap();
         assert_eq!(after_update.verb, Verb::Block);
-        assert_eq!(after_update.dur.as_deref(), Some("PT30M"));
+        assert_eq!(after_update.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT30M"));
         assert_eq!(after_update.state, Some(serde_json::json!("happy")));
     }
 

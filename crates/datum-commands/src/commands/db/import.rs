@@ -81,12 +81,12 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         //                                          literal in `data` blob
         //   legacy `dur` numeric (rare)          → dur="PT<n>S" (seconds)
         let raw_dur = data.get("dur");
-        let dur_in: Option<String> = match raw_dur {
+        let dur_in: Option<datum_core::dur::Dur> = match raw_dur {
             None => None,
-            Some(v) if v.is_null() => Some("PT0S".to_string()),
+            Some(v) if v.is_null() => Some(datum_core::dur::Dur::Of(chrono::Duration::zero())),
             Some(JsonValue::String(s)) => {
-                if parse_duration(s).is_ok() {
-                    Some(s.clone())
+                if let Some(d) = datum_core::dur::Dur::parse(s) {
+                    Some(d)
                 } else {
                     eprintln!(
                         "warning: could not parse dur \"{}\" for {}; keeping literal in extra_data",
@@ -98,9 +98,9 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             }
             Some(v) => {
                 if let Some(secs) = v.as_i64() {
-                    Some(format!("PT{}S", secs))
+                    Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(secs)))
                 } else if let Some(secs) = v.as_f64() {
-                    Some(format!("PT{}S", secs as i64))
+                    Some(datum_core::dur::Dur::Of(chrono::Duration::seconds(secs as i64)))
                 } else {
                     eprintln!(
                         "warning: could not parse dur {} for {}; keeping literal in extra_data",
@@ -131,7 +131,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // a placeholder that won't trip the switch-style state→true
         // promotion in `derive_verb_for_storage`; storage will compute
         // the real verb from raw `(state_in, dur_in, None)`.
-        if let Err(e) = derive_verb(state_in.clone(), dur_in.as_deref(), None) {
+        if let Err(e) = derive_verb(state_in.clone(), dur_in.as_ref(), None) {
             eprintln!("warning: skipping {}: {}", field, e);
             skipped += 1;
             continue;
@@ -226,9 +226,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
 
         // Tally based on dur shape (matches user-facing summary semantics:
         // dur=None or dur=zero → point, otherwise → block).
-        let is_block = match entry.dur.as_deref() {
+        let is_block = match entry.dur.as_ref() {
             None => false,
-            Some(d) if matches!(d, "PT0S" | "P0D" | "PT0M" | "PT0H") => false,
+            Some(d) if d.is_zero_span() => false,
+            Some(datum_core::dur::Dur::Moment) | Some(datum_core::dur::Dur::Unknown) => false,
             Some(_) => true,
         };
         if is_block {

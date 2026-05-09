@@ -25,7 +25,7 @@ fn occur_minus_t_is_timeless_point() {
     // suppresses the timestamp, not the occur-shape intent.
     assert_entry_matches!(e, field: "coffee", verb: "point");
     assert!(e.slug.ends_with(":unset"), "timeless slug carries :unset (got: {})", e.slug);
-    assert_eq!(e.dur.as_deref(), Some("MOMENT"), "occur emits Dur::Moment");
+    assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("MOMENT"), "occur emits Dur::Moment");
 }
 
 #[test]

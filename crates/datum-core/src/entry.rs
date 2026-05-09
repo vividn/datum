@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use sha2::{Digest, Sha256};
 
+use crate::dur::Dur;
 use crate::ids::{Hid, Slug};
 use crate::time::DatumTime;
 
@@ -179,11 +180,14 @@ pub struct Entry {
     /// `true` (sub-bead 3).
     #[serde(default)]
     pub state: Option<JsonValue>,
-    /// ISO-8601 duration string (e.g. "PT30M"). `None` = no duration
-    /// (point/switch). `"PT0S"` = explicit zero (point-with-state or
-    /// point-switch).
+    /// Duration intent (da-ju71.3). `None` = column NULL (legacy point /
+    /// no-duration shape; new writes default to `Some(Dur::Moment)` for
+    /// occur). `Some(Dur::Of(PT0S))` = explicit zero span.
+    /// Serializes/deserializes as the storage string (`"MOMENT"`,
+    /// `"UNKNOWN"`, or an ISO-8601 duration like `"PT30M"`) so the JSON
+    /// wire format and SQL TEXT column round-trip unchanged.
     #[serde(default)]
-    pub dur: Option<String>,
+    pub dur: Option<Dur>,
     /// Trailing-edge state for switch-style verbs. Only meaningful when
     /// `dur` is set (the SQL CHECK enforces this).
     #[serde(default)]
@@ -309,7 +313,7 @@ impl Entry {
         data: Option<JsonValue>,
         unit: Option<String>,
         occur_time: Option<DatumTime>,
-        dur: Option<String>,
+        dur: Option<Dur>,
         device_id: impl Into<String>,
     ) -> Self {
         let field = field.into();
@@ -319,7 +323,7 @@ impl Entry {
         let hid = new_hid();
 
         let occur_str = occur_time.as_ref().map(|t| t.utc.to_rfc3339()).unwrap_or_default();
-        let dur_str = dur.clone().unwrap_or_default();
+        let dur_str = dur.as_ref().map(Dur::to_storage_string).unwrap_or_default();
         let data_str = data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let state_str = state.as_ref().map(|v| v.to_string()).unwrap_or_default();
 
@@ -331,13 +335,14 @@ impl Entry {
         // entry.start_time / entry.value / entry.entry_shape see the
         // same data they did pre-pivot. See the comment on the field
         // block.
-        let entry_shape = match dur.as_deref() {
+        let entry_shape = match dur.as_ref() {
             None => EntryShape::Point,
-            Some(d) if matches!(d, "PT0S" | "P0D" | "PT0M" | "PT0H") => EntryShape::Point,
+            Some(d) if d.is_zero_span() => EntryShape::Point,
+            Some(Dur::Moment) | Some(Dur::Unknown) => EntryShape::Point,
             Some(_) => EntryShape::Block,
         };
-        let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_deref()) {
-            (Some(t), Some(d)) => parse_iso_duration_seconds(d).map(|secs| {
+        let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_ref()) {
+            (Some(t), Some(d)) => d.as_seconds().map(|secs| {
                 let mut e = t.clone();
                 e.utc += chrono::Duration::seconds(secs);
                 e
@@ -405,7 +410,7 @@ impl Entry {
         let dur = match (start_time.as_ref(), end_time.as_ref()) {
             (Some(s), Some(e)) => {
                 let secs = (e.utc - s.utc).num_seconds().max(0);
-                Some(format!("PT{}S", secs))
+                Some(Dur::Of(chrono::Duration::seconds(secs)))
             }
             _ => None,
         };
@@ -417,13 +422,10 @@ impl Entry {
         self.hid.chars().take(SHORT_HID_LEN).collect()
     }
 
-    /// Duration in seconds, parsed from the ISO-8601 `dur` string.
-    /// Returns `None` for entries without a duration or with a malformed
-    /// duration string. Sub-bead 2 lands a proper ISO-duration helper;
-    /// for the sub-bead 1 stub this only handles "PT*S" / "PT*M" /
-    /// "PT*H" / "P*D" — enough to keep callers compiling.
+    /// Duration in seconds. Returns `None` for entries without a span
+    /// (`None`, `Dur::Moment`, `Dur::Unknown`).
     pub fn duration_seconds(&self) -> Option<i64> {
-        parse_iso_duration_seconds(self.dur.as_deref()?)
+        self.dur.as_ref()?.as_seconds()
     }
 
     /// Trailing-edge timestamp derived from `occur_time + dur`. `None`
@@ -431,7 +433,7 @@ impl Entry {
     /// the v=19 `end_time` column-as-field access in tests / render code.
     pub fn computed_end_time(&self) -> Option<DatumTime> {
         let occur = self.occur_time.as_ref()?;
-        let secs = parse_iso_duration_seconds(self.dur.as_deref()?)?;
+        let secs = self.dur.as_ref()?.as_seconds()?;
         let mut e = occur.clone();
         e.utc += chrono::Duration::seconds(secs);
         Some(e)
@@ -444,7 +446,7 @@ impl Entry {
             .as_ref()
             .map(|t| t.utc.to_rfc3339())
             .unwrap_or_default();
-        let dur_str = self.dur.clone().unwrap_or_default();
+        let dur_str = self.dur.as_ref().map(Dur::to_storage_string).unwrap_or_default();
         let data_str = self.data.as_ref().map(|v| v.to_string()).unwrap_or_default();
         let state_str = self.state.as_ref().map(|v| v.to_string()).unwrap_or_default();
         compute_hash(
@@ -471,16 +473,17 @@ fn compute_hash(field: &str, occur: &str, dur: &str, state: &str, extra: &str) -
     format!("{:x}", h.finalize())
 }
 
-/// ISO-8601 duration → seconds. Handles composite forms (`P1DT2H30M`,
-/// `PT1M30S`) and week-form (`P3W`). Years and months are approximated
-/// (365d / 30d) — only used by callers that need an approximate seconds
-/// count (the compat `end_time` shim, render-layer span calculations);
-/// the canonical `dur` string is stored verbatim, never recomputed from
-/// this number.
+/// Stored `dur` text → seconds. Handles ISO-8601 spans (`PT5M`, `P1D`,
+/// `P3W`) and the sentinel forms `MOMENT` / `UNKNOWN` (both → `None`,
+/// they have no measurable duration). Used by callers that read raw
+/// dur strings from SQL projections that bypass [`Entry`]'s typed
+/// `Option<Dur>` (e.g. `views/duration_sum.rs`); for typed callers
+/// prefer [`Dur::as_seconds`] directly.
 pub(crate) fn compat_dur_secs(s: &str) -> Option<i64> {
-    parse_iso_duration_seconds(s)
+    crate::dur::Dur::parse(s).and_then(|d| d.as_seconds())
 }
 
+#[allow(dead_code)]
 fn parse_iso_duration_seconds(input: &str) -> Option<i64> {
     let (sign, body) = match input.strip_prefix('-') {
         Some(rest) => (-1f64, rest),

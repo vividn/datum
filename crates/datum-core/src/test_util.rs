@@ -146,7 +146,9 @@ impl EntryBuilder {
         // legacy times are set so block-shaped fixtures keep producing
         // verb-relevant rows. Sub-bead 8 rewrites these tests properly.
         let dur = match (self.start_time.as_ref(), self.end_time.as_ref()) {
-            (Some(s), Some(e)) => Some(format!("PT{}S", (e.utc - s.utc).num_seconds().max(0))),
+            (Some(s), Some(e)) => Some(crate::dur::Dur::Of(chrono::Duration::seconds(
+                (e.utc - s.utc).num_seconds().max(0),
+            ))),
             _ => None,
         };
         Entry::new(

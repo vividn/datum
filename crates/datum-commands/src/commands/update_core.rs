@@ -933,7 +933,7 @@ mod tests {
             None,
             None,
         );
-        e.dur = Some("PT1H".to_string());
+        e.dur = Some(datum_core::dur::Dur::parse("PT1H").unwrap());
         e.id_structure = Some("%field%:%dur%".to_string());
         e.slug = datum_core::ids::Slug("nap:PT1H".to_string());
         db.save_existing_entry_with_rekey(&seed_slug_for("nap"), &e).unwrap();
@@ -952,7 +952,7 @@ mod tests {
 
         assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
         assert_eq!(outcome.entry.slug, "nap:PT2H");
-        assert_eq!(outcome.entry.dur.as_deref(), Some("PT2H"));
+        assert_eq!(outcome.entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT2H"));
     }
 
     #[test]
@@ -969,7 +969,7 @@ mod tests {
             Some(serde_json::json!("work")),
             None,
         );
-        e.dur = Some("PT1H".to_string());
+        e.dur = Some(datum_core::dur::Dur::parse("PT1H").unwrap());
         e.following_state = Some(serde_json::json!("idle"));
         e.id_structure = Some("%field%:%following_state%".to_string());
         e.slug = datum_core::ids::Slug("block:idle".to_string());

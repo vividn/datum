@@ -1268,7 +1268,7 @@ mod tests {
             None,
             None,
             Some(dt),
-            dur.map(|s| s.to_string()),
+            dur.and_then(datum_core::dur::Dur::parse),
             "test",
         );
         e.verb = verb;

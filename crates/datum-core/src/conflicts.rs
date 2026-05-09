@@ -32,7 +32,7 @@
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection, OptionalExtension};
 
-use crate::entry::{compat_dur_secs, new_hid, Entry, Verb, SHORT_HID_LEN};
+use crate::entry::{new_hid, Entry, Verb, SHORT_HID_LEN};
 use crate::error::{DatumError, Result};
 use crate::ids::Slug;
 use crate::state::StateValue;
@@ -331,10 +331,10 @@ fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<E
     let Some(occur) = &trigger.occur_time else {
         return Ok(None);
     };
-    let Some(dur) = trigger.dur.as_deref() else {
+    let Some(dur) = trigger.dur.as_ref() else {
         return Ok(None);
     };
-    let Some(secs) = compat_dur_secs(dur) else {
+    let Some(secs) = dur.as_seconds() else {
         return Ok(None);
     };
     let trig_start = occur.utc;
@@ -360,10 +360,10 @@ fn find_overlapping_block(conn: &Connection, trigger: &Entry) -> Result<Option<E
         let Some(o_occur) = other.occur_time.as_ref() else {
             continue;
         };
-        let Some(o_dur) = other.dur.as_deref() else {
+        let Some(o_dur) = other.dur.as_ref() else {
             continue;
         };
-        let Some(o_secs) = compat_dur_secs(o_dur) else {
+        let Some(o_secs) = o_dur.as_seconds() else {
             continue;
         };
         let o_start = o_occur.utc;
@@ -706,7 +706,7 @@ pub(crate) fn close_older_at(
         return Ok(());
     };
     let secs = (end.utc - start.utc).num_seconds().max(0);
-    let new_dur = format!("PT{secs}S");
+    let new_dur = crate::dur::Dur::Of(chrono::Duration::seconds(secs));
 
     let mut updated = older.clone();
     updated.dur = Some(new_dur);
@@ -726,7 +726,7 @@ pub(crate) fn close_older_at(
         params![
             older.slug,
             updated.verb.to_string(),
-            updated.dur,
+            updated.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             updated.content_hash,
             updated.modify_time.to_rfc3339(),
         ],

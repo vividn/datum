@@ -17,6 +17,7 @@
 //! string as `Unknown`.
 
 use chrono::Duration;
+use serde::{de::Error as _, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Dur {
@@ -44,6 +45,47 @@ impl Dur {
             Dur::Unknown => "UNKNOWN".to_string(),
             Dur::Of(d) => format_iso_duration(*d),
         }
+    }
+
+    /// Span as integer seconds. `Moment` and `Unknown` return `None` —
+    /// they have no measurable duration. `Of(d)` returns the chrono
+    /// span, including zero-spans like `PT0S`.
+    pub fn as_seconds(&self) -> Option<i64> {
+        match self {
+            Dur::Of(d) => Some(d.num_seconds()),
+            Dur::Moment | Dur::Unknown => None,
+        }
+    }
+
+    /// True for `Dur::Moment`. Replaces the legacy `dur == "MOMENT"`
+    /// string compare from the pre-da-ju71.3 era.
+    pub fn is_moment(&self) -> bool {
+        matches!(self, Dur::Moment)
+    }
+
+    /// True for `Dur::Unknown`.
+    pub fn is_unknown(&self) -> bool {
+        matches!(self, Dur::Unknown)
+    }
+
+    /// True for `Dur::Of(d)` where the chrono span is exactly zero.
+    /// Replaces compares against `"PT0S"` / `"P0D"` etc. — semantically
+    /// they all collapse to a zero span after parse.
+    pub fn is_zero_span(&self) -> bool {
+        matches!(self, Dur::Of(d) if d.is_zero())
+    }
+}
+
+impl Serialize for Dur {
+    fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&self.to_storage_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for Dur {
+    fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
+        let s = String::deserialize(d)?;
+        Dur::parse(&s).ok_or_else(|| D::Error::custom(format!("invalid dur value: {s:?}")))
     }
 }
 

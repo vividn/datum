@@ -51,7 +51,7 @@ fn occur_creates_entry_with_time_start() {
         "time_start must be within the wall-clock window (before={before} ts={ts} after={after})",
     );
     assert_eq!(
-        entry.dur.as_deref(),
+        entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(),
         Some("MOMENT"),
         "occur is point-in-time: dur=Moment marks the shape",
     );
@@ -542,7 +542,7 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
         entry.state,
     );
     assert_eq!(
-        entry.dur.as_deref(),
+        entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(),
         Some("MOMENT"),
         "occur with no explicit --dur emits Dur::Moment",
     );
@@ -556,7 +556,7 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
     // with the stored verb. Otherwise the column would drift.
     let (rederived, _) = datum_core::derive_verb(
         entry.state.clone(),
-        entry.dur.as_deref(),
+        entry.dur.as_ref(),
         entry.following_state.clone(),
     )
     .expect("re-derive from persisted columns");

@@ -12,6 +12,7 @@
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
+use crate::dur::Dur;
 use crate::entry::{Entry, EntryShape, PrecisionUnit, Verb};
 use crate::time::DatumTime;
 
@@ -32,7 +33,9 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         .get::<_, Option<String>>("state")?
         .and_then(|s| serde_json::from_str(&s).ok());
 
-    let dur: Option<String> = row.get("dur")?;
+    let dur: Option<Dur> = row
+        .get::<_, Option<String>>("dur")?
+        .and_then(|s| Dur::parse(&s));
     let following_state: Option<JsonValue> = row
         .get::<_, Option<String>>("following_state")?
         .and_then(|s| serde_json::from_str(&s).ok());
@@ -78,13 +81,14 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
     // da-5ns sub-bead 1 compat shims: see entry.rs for rationale.
     // Populate the v=19 fields from the v=20 column data so legacy
     // call sites still see meaningful values during the transition.
-    let entry_shape = match dur.as_deref() {
+    let entry_shape = match dur.as_ref() {
         None => EntryShape::Point,
-        Some(d) if matches!(d, "PT0S" | "P0D" | "PT0M" | "PT0H") => EntryShape::Point,
+        Some(d) if d.is_zero_span() => EntryShape::Point,
+        Some(Dur::Moment) | Some(Dur::Unknown) => EntryShape::Point,
         Some(_) => EntryShape::Block,
     };
-    let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_deref()) {
-        (Some(t), Some(d)) => crate::entry::compat_dur_secs(d).map(|secs| {
+    let end_time_compat: Option<DatumTime> = match (occur_time.as_ref(), dur.as_ref()) {
+        (Some(t), Some(d)) => d.as_seconds().map(|secs| {
             let mut e = t.clone();
             e.utc += chrono::Duration::seconds(secs);
             e

@@ -23,7 +23,7 @@ use std::io::Write;
 /// Re-derive the verb from the three columns that legitimately encode it.
 /// Callers compare against the expected legacy classification.
 fn verb_of(e: &datum_core::entry::Entry) -> Verb {
-    derive_verb(e.state.clone(), e.dur.as_deref(), e.following_state.clone())
+    derive_verb(e.state.clone(), e.dur.as_ref(), e.following_state.clone())
         .expect("derive_verb on imported entry")
         .0
 }
@@ -105,7 +105,7 @@ fn occur_with_dur_maps_to_block() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(verb_of(e), Verb::Block);
-    assert_eq!(e.dur.as_deref(), Some("PT30M"), "dur stored verbatim");
+    assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT30M"), "dur stored verbatim");
     assert!(e.state.is_none(), "null state stays null (no promotion)");
     assert!(e.following_state.is_none());
     // dur literal also survives as user-visible intent in `data`.
@@ -190,7 +190,7 @@ fn explicit_dur_null_maps_to_zero_duration() {
     let entries = db.all_entries().unwrap();
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
-    assert_eq!(e.dur.as_deref(), Some("PT0S"), "explicit null → PT0S");
+    assert_eq!(e.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT0S"), "explicit null → PT0S");
     assert!(e.state.is_none(), "null state stays null (no promotion)");
     let extra = e.data.as_ref().unwrap();
     assert!(
@@ -333,8 +333,8 @@ fn import_3day_fixture_produces_blocks_and_points() {
         .iter()
         .filter(|e| {
             e.dur
-                .as_deref()
-                .map_or(false, |d| !matches!(d, "PT0S" | "P0D" | "PT0M" | "PT0H"))
+                .as_ref()
+                .map_or(false, |d| !d.is_zero_span() && !d.is_moment() && !d.is_unknown())
         })
         .collect();
     assert!(
@@ -346,7 +346,11 @@ fn import_3day_fixture_produces_blocks_and_points() {
     // both the `dur` column and the `data` blob (intent layer).
     for e in &blocks {
         assert!(e.occur_time.is_some(), "block missing occur_time");
-        let dur_str = e.dur.as_deref().expect("block has dur set");
+        let dur_str = e
+            .dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .expect("block has dur set");
         let dur_lit = &e.data.as_ref().unwrap()["dur"];
         assert!(
             dur_lit.is_string() || dur_lit.is_number(),
@@ -745,7 +749,7 @@ fn import_3day_fixture_columns_are_well_formed() {
         // triple. derive_verb errors on malformed dur strings — none of
         // our stored durs are malformed (we either keep the legacy ISO
         // or store NULL/PT0S).
-        let _ = derive_verb(e.state.clone(), e.dur.as_deref(), e.following_state.clone())
+        let _ = derive_verb(e.state.clone(), e.dur.as_ref(), e.following_state.clone())
             .unwrap_or_else(|err| {
                 panic!("row {} derive_verb failed: {}", e.slug, err);
             });

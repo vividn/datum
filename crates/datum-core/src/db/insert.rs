@@ -43,7 +43,7 @@ fn derive_verb_for_storage(entry: &Entry) -> Result<(String, Option<String>)> {
     };
     let (verb, canonical_state) = derive_verb(
         state_in,
-        entry.dur.as_deref(),
+        entry.dur.as_ref(),
         entry.following_state.clone(),
     )?;
     let verb_str = verb.to_string();
@@ -669,7 +669,7 @@ pub(crate) fn try_insert(conn: &Connection, slug: &Slug, hid: &Hid, entry: &Entr
         entry.field,
         verb_str,
         state_str,
-        entry.dur,
+        entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
         entry.following_state.as_ref().map(|v| v.to_string()),
         entry.data.as_ref().map(|v| v.to_string()),
         entry.unit,
@@ -782,7 +782,7 @@ fn raw_overwrite_mutables(
             entry.field,
             verb_str,
             state_str,
-            entry.dur,
+            entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             entry.following_state.as_ref().map(|v| v.to_string()),
             data_json,
             entry.unit,
@@ -863,7 +863,7 @@ fn raw_overwrite_full_by_hid(conn: &Connection, entry: &Entry) -> Result<()> {
         entry.field,
         verb_str,
         state_str,
-        entry.dur,
+        entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
         entry.following_state.as_ref().map(|v| v.to_string()),
         entry.data.as_ref().map(|v| v.to_string()),
         entry.unit,
@@ -942,7 +942,7 @@ pub(super) fn apply_entry_state(conn: &Connection, entry: &Entry) -> Result<()> 
             entry.field,
             verb_str,
             state_str,
-            entry.dur,
+            entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),
             entry.unit,

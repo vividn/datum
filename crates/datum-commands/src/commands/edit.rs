@@ -57,7 +57,7 @@ struct UserEditableEntry {
     #[serde(default)]
     state: Option<JsonValue>,
     #[serde(default)]
-    dur: Option<String>,
+    dur: Option<datum_core::dur::Dur>,
     #[serde(default)]
     following_state: Option<JsonValue>,
     #[serde(default)]

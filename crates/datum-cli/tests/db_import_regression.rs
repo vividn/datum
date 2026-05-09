@@ -47,15 +47,15 @@ use datum_core::test_util::fresh_db;
 use std::collections::HashSet;
 
 fn verb_of(e: &datum_core::entry::Entry) -> Verb {
-    derive_verb(e.state.clone(), e.dur.as_deref(), e.following_state.clone())
+    derive_verb(e.state.clone(), e.dur.as_ref(), e.following_state.clone())
         .expect("derive_verb on imported entry")
         .0
 }
 
-fn is_block_dur(d: &Option<String>) -> bool {
-    match d.as_deref() {
+fn is_block_dur(d: &Option<datum_core::dur::Dur>) -> bool {
+    match d.as_ref() {
         None => false,
-        Some(s) if matches!(s, "PT0S" | "P0D" | "PT0M" | "PT0H") => false,
+        Some(d) if d.is_zero_span() || d.is_moment() || d.is_unknown() => false,
         Some(_) => true,
     }
 }
@@ -91,7 +91,11 @@ fn db_import_synthetic_locks_db_shape() {
             "block {} missing occur_time",
             e.slug
         );
-        let dur_str = e.dur.as_deref().expect("block has dur set");
+        let dur_str = e
+            .dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .expect("block has dur set");
         let extra = e.data.as_ref().expect("block must have data blob");
         assert!(
             extra["dur"].is_string(),
@@ -158,7 +162,7 @@ fn db_import_synthetic_locks_db_shape() {
         .iter()
         .find(|e| e.field == "sleep")
         .expect("doc 2: sleep");
-    assert_eq!(sleep.dur.as_deref(), Some("PT8H"), "sleep dur verbatim");
+    assert_eq!(sleep.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT8H"), "sleep dur verbatim");
     assert!(sleep.state.is_none(), "null state stays null (no promotion)");
     assert_eq!(sleep.verb, Verb::Block, "doc 2: stored verb");
     assert_eq!(verb_of(sleep), Verb::Block);
@@ -173,7 +177,7 @@ fn db_import_synthetic_locks_db_shape() {
         .iter()
         .find(|e| e.field == "work")
         .expect("doc 3: work");
-    assert_eq!(work.dur.as_deref(), Some("PT3M"));
+    assert_eq!(work.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT3M"));
     assert_eq!(work.state, Some(serde_json::json!("focus")));
     assert_eq!(work.verb, Verb::Block, "doc 3: stored verb");
     assert_eq!(verb_of(work), Verb::Block);
@@ -209,7 +213,7 @@ fn db_import_synthetic_locks_db_shape() {
         .iter()
         .find(|e| e.field == "test")
         .expect("doc 6: test");
-    assert_eq!(test.dur.as_deref(), Some("PT1M"));
+    assert_eq!(test.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT1M"));
     assert_eq!(test.verb, Verb::Block, "doc 6: stored verb");
     assert_eq!(test.occur_time.as_ref().unwrap().offset_minutes, 0);
     assert_eq!(test.occur_time.as_ref().unwrap().timezone, "UTC");
@@ -287,7 +291,7 @@ fn db_import_synthetic_locks_db_shape() {
         .iter()
         .find(|e| e.field == "thinking")
         .expect("doc 11: thinking");
-    assert_eq!(thinking.dur.as_deref(), Some("PT0S"), "null dur → PT0S");
+    assert_eq!(thinking.dur.as_ref().map(datum_core::dur::Dur::to_storage_string).as_deref(), Some("PT0S"), "null dur → PT0S");
     assert_eq!(thinking.state, Some(serde_json::json!("idea")));
     assert_eq!(thinking.verb, Verb::Point, "doc 11: stored verb");
     assert_eq!(verb_of(thinking), Verb::Point);

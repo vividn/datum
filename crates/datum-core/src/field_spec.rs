@@ -808,7 +808,10 @@ pub struct InterpolationContext<'a> {
     /// migrated to the column form.
     pub state: Option<&'a JsonValue>,
     /// da-5ns.4: column-bound `dur`. `%dur%` reads this directly.
-    pub dur: Option<&'a str>,
+    /// Owned `String` because the source `Entry::dur` is now
+    /// `Option<Dur>` (da-ju71.3); we render the storage form
+    /// (`"PT5M"`, `"MOMENT"`, `"UNKNOWN"`) on the way in.
+    pub dur: Option<String>,
     /// da-5ns.4: column-bound `following_state`. `%following_state%` reads
     /// this directly.
     pub following_state: Option<&'a JsonValue>,
@@ -829,7 +832,7 @@ impl<'a> InterpolationContext<'a> {
             extra_data: entry.data.as_ref(),
             uid: uid_buf,
             state: entry.state.as_ref(),
-            dur: entry.dur.as_deref(),
+            dur: entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             following_state: entry.following_state.as_ref(),
             occur_time: entry.occur_time.as_ref(),
         }
@@ -894,7 +897,7 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             }
             String::new()
         }
-        "dur" => ctx.dur.map(|s| s.to_string()).unwrap_or_default(),
+        "dur" => ctx.dur.clone().unwrap_or_default(),
         "following_state" => ctx
             .following_state
             .map(json_to_plain_string)

@@ -180,7 +180,7 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
         if e.deleted_at.is_some() {
             continue;
         }
-        match derive_verb(e.state.clone(), e.dur.as_deref(), e.following_state.clone()) {
+        match derive_verb(e.state.clone(), e.dur.as_ref(), e.following_state.clone()) {
             Ok((expected, _canonical_state)) => {
                 let stored = e.verb.to_string();
                 let expected_str = expected.to_string();

@@ -30,18 +30,16 @@ use crate::error::{DatumError, Result};
 /// - negative duration.
 pub fn derive_verb(
     state: Option<JsonValue>,
-    dur: Option<&str>,
+    dur: Option<&Dur>,
     following_state: Option<JsonValue>,
 ) -> Result<(Verb, Option<JsonValue>)> {
-    if let Some(s) = dur {
-        if matches!(Dur::parse(s), Some(Dur::Moment)) {
-            return Ok((Verb::Point, state));
-        }
+    if matches!(dur, Some(Dur::Moment)) {
+        return Ok((Verb::Point, state));
     }
 
     let dur_kind = match dur {
-        None => DurKind::None,
-        Some(s) => classify_dur(s)?,
+        None | Some(Dur::Unknown) => DurKind::None,
+        Some(d) => classify_dur(d)?,
     };
 
     let state_set = state.is_some();
@@ -82,12 +80,15 @@ enum DurKind {
     Positive,
 }
 
-fn classify_dur(s: &str) -> Result<DurKind> {
-    let secs = parse_iso_duration_secs(s)
-        .ok_or_else(|| DatumError::Other(format!("malformed ISO-8601 duration: {s}")))?;
+fn classify_dur(d: &Dur) -> Result<DurKind> {
+    let secs = match d {
+        Dur::Moment | Dur::Unknown => return Ok(DurKind::None),
+        Dur::Of(span) => span.num_seconds(),
+    };
     if secs < 0 {
         return Err(DatumError::Other(format!(
-            "negative duration not allowed: {s}"
+            "negative duration not allowed: {}",
+            d.to_storage_string()
         )));
     }
     Ok(if secs == 0 {
@@ -95,89 +96,6 @@ fn classify_dur(s: &str) -> Result<DurKind> {
     } else {
         DurKind::Positive
     })
-}
-
-/// Parse an ISO-8601 duration to total seconds. Years and months are
-/// approximated (365d / 30d) — fine here because this helper is only
-/// used for zero/positive/negative classification; the canonical `dur`
-/// string is stored verbatim, never recomputed from this number.
-///
-/// Returns `None` for malformed input. Negative results (leading `-`)
-/// flow through; the caller decides whether to reject.
-fn parse_iso_duration_secs(input: &str) -> Option<i64> {
-    let (sign, body) = match input.strip_prefix('-') {
-        Some(rest) => (-1f64, rest),
-        None => (1.0, input),
-    };
-    let rest = body.strip_prefix('P')?;
-    if rest.is_empty() {
-        return None;
-    }
-
-    // Week form (PnW) is mutually exclusive with the rest of the grammar.
-    if rest.ends_with('W') && !rest.contains('T') {
-        let n_str = &rest[..rest.len() - 1];
-        if n_str.is_empty() {
-            return None;
-        }
-        let n: f64 = parse_decimal(n_str)?;
-        return Some((sign * n * 7.0 * 86400.0) as i64);
-    }
-
-    let mut total: f64 = 0.0;
-    let mut buf = String::new();
-    let mut seen_t = false;
-    let mut had_any = false;
-
-    for c in rest.chars() {
-        if c == 'T' {
-            if seen_t || !buf.is_empty() {
-                return None;
-            }
-            seen_t = true;
-        } else if c.is_ascii_digit() || c == '.' || c == ',' {
-            buf.push(if c == ',' { '.' } else { c });
-        } else {
-            if buf.is_empty() {
-                return None;
-            }
-            let n: f64 = parse_decimal(&buf)?;
-            buf.clear();
-            let secs = match (seen_t, c) {
-                (false, 'Y') => n * 365.0 * 86400.0,
-                (false, 'M') => n * 30.0 * 86400.0,
-                (false, 'D') => n * 86400.0,
-                (true, 'H') => n * 3600.0,
-                (true, 'M') => n * 60.0,
-                (true, 'S') => n,
-                _ => return None,
-            };
-            total += secs;
-            had_any = true;
-        }
-    }
-
-    if !buf.is_empty() {
-        return None;
-    }
-    if !had_any {
-        return None;
-    }
-
-    Some((sign * total) as i64)
-}
-
-/// Parse a decimal that must contain at least one digit. Rejects the
-/// empty string, a lone `.`, and trailing-only decimals like `1.`.
-fn parse_decimal(s: &str) -> Option<f64> {
-    if s.is_empty() {
-        return None;
-    }
-    let digit_count = s.chars().filter(|c| c.is_ascii_digit()).count();
-    if digit_count == 0 {
-        return None;
-    }
-    s.parse::<f64>().ok()
 }
 
 #[cfg(test)]
@@ -190,11 +108,22 @@ mod tests {
         dur: Option<&str>,
         fs: Option<JsonValue>,
     ) -> (Verb, Option<JsonValue>) {
-        derive_verb(state, dur, fs).expect("derive_verb should succeed")
+        let parsed = dur.map(|s| Dur::parse(s).expect("test dur must parse"));
+        derive_verb(state, parsed.as_ref(), fs).expect("derive_verb should succeed")
     }
 
+    /// Either the dur string is malformed (Dur::parse returns None — no
+    /// `Dur` value to feed in) or `derive_verb` itself rejects the
+    /// (state, dur, fs) shape. Both are "rejected" from the test's POV.
     fn assert_err(state: Option<JsonValue>, dur: Option<&str>, fs: Option<JsonValue>) {
-        derive_verb(state, dur, fs).expect_err("derive_verb should reject");
+        let parsed = match dur {
+            Some(s) => match Dur::parse(s) {
+                Some(d) => Some(d),
+                None => return, // malformed at the Dur boundary — already rejected.
+            },
+            None => None,
+        };
+        derive_verb(state, parsed.as_ref(), fs).expect_err("derive_verb should reject");
     }
 
     // ─── Truth table (one test per row) ──────────────────────────────
@@ -286,22 +215,27 @@ mod tests {
     #[test]
     fn negative_duration_rejected() {
         for d in ["-PT5M", "-PT1S", "-P1D"] {
+            let parsed = Dur::parse(d).expect("negative dur must parse");
             assert!(
-                derive_verb(Some(json!("on")), Some(d), None).is_err(),
+                derive_verb(Some(json!("on")), Some(&parsed), None).is_err(),
                 "expected reject for dur={d}",
             );
         }
     }
 
     #[test]
-    fn malformed_durations_rejected() {
+    fn malformed_durations_reject_at_dur_boundary() {
+        // After da-ju71.3, malformed strings are rejected by `Dur::parse`
+        // before reaching `derive_verb`. The parser returns `None`; the
+        // boundary (CLI / row_mapper) is responsible for surfacing it as
+        // a parse error.
         for bad in [
             "", "P", "PT", "PXX", "PT5", "5", "P1D2H", "T5S",
             "PMT", "PT.S", "P-",
         ] {
             assert!(
-                derive_verb(Some(json!(1)), Some(bad), None).is_err(),
-                "expected reject for dur={bad:?}",
+                Dur::parse(bad).is_none(),
+                "expected None for dur={bad:?}",
             );
         }
     }

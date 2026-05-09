@@ -194,7 +194,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             entry.field,
             verb_str,
             entry.state.as_ref().map(|v| v.to_string()),
-            entry.dur,
+            entry.dur.as_ref().map(datum_core::dur::Dur::to_storage_string),
             entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),
             entry.unit,
