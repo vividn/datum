@@ -42,15 +42,15 @@ fn write_backup(docs: serde_json::Value) -> tempfile::NamedTempFile {
     f
 }
 
-// ─── 1. occur-only (no dur, no state) → state=true, dur=NULL ─────────
-// state=undefined + dur=undefined + fs=None → derive_verb on import
-// returns (Verb::Point, Some(true)). After null→true promotion the
-// row is indistinguishable from a "state=true" Switch (the canonical
-// state is destructive). The renderer's canonical_verb treats them
-// the same, so this is fine.
+// ─── 1. occur-only (no dur, no state) → state=null, verb=Point ───────
+// state=undefined + dur=undefined + fs=None → derive_verb returns
+// (Verb::Point, None). The null→true promotion was dropped in
+// da-ju71.2; an occur with no state stays state=null. (Import-side
+// emission of `Dur::Moment` for point entries is da-ju71.5, separate
+// bead — until that lands, dur stays NULL here.)
 
 #[test]
-fn occur_only_doc_maps_to_promoted_state_true() {
+fn occur_only_doc_maps_to_state_null() {
     let db = fresh_db();
     let f = write_backup(serde_json::json!([{
         "_id": "brushteeth:2025-01-08T23:53:08.259Z",
@@ -70,21 +70,18 @@ fn occur_only_doc_maps_to_promoted_state_true() {
     assert_eq!(entries.len(), 1);
     let e = &entries[0];
     assert_eq!(e.field, "brushteeth");
-    assert_eq!(
-        e.state,
-        Some(serde_json::json!(true)),
-        "null→true promotion"
-    );
+    assert!(e.state.is_none(), "no state in source → state stays null");
     assert!(e.dur.is_none(), "no legacy dur key → dur column NULL");
     assert!(e.following_state.is_none());
     assert!(e.occur_time.is_some());
-    // Re-derived verb after promotion: state=Some(true) + no dur → Switch.
-    assert_eq!(verb_of(e), Verb::Switch);
+    // Re-derived verb: state=None + dur=None + fs=None → Point.
+    assert_eq!(verb_of(e), Verb::Point);
 }
 
 // ─── 2. occur+dur → Block, dur preserved verbatim ───────────────────
 // state=undefined + dur="PT30M" + fs=None → derive_verb:
-//   None state + DurKind::Positive → Verb::Block with state promoted to true.
+//   None state + DurKind::Positive → Verb::Block with state=None.
+//   (Null→true promotion dropped in da-ju71.2.)
 
 #[test]
 fn occur_with_dur_maps_to_block() {
@@ -109,11 +106,7 @@ fn occur_with_dur_maps_to_block() {
     let e = &entries[0];
     assert_eq!(verb_of(e), Verb::Block);
     assert_eq!(e.dur.as_deref(), Some("PT30M"), "dur stored verbatim");
-    assert_eq!(
-        e.state,
-        Some(serde_json::json!(true)),
-        "null→true promotion"
-    );
+    assert!(e.state.is_none(), "null state stays null (no promotion)");
     assert!(e.following_state.is_none());
     // dur literal also survives as user-visible intent in `data`.
     let extra = e.data.as_ref().unwrap();

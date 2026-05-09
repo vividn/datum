@@ -6,16 +6,21 @@
 
 use serde_json::Value as JsonValue;
 
+use crate::dur::Dur;
 use crate::entry::Verb;
 use crate::error::{DatumError, Result};
 
-/// Classify (state, dur, following_state) and return the canonicalized
-/// state.
+/// Classify (state, dur, following_state) and return the input state
+/// unchanged.
 ///
-/// The return tuple is `(verb, state)` where `state` is the input state
-/// after null→true promotion: when the caller passed `None`, the
-/// returned state is `Some(JsonValue::Bool(true))`; otherwise the input
-/// is returned unchanged.
+/// The return tuple is `(verb, state)`. The state is passed through
+/// verbatim — there is no longer a null→true promotion. Verb::Point
+/// entries with `state=None` are valid (the canonical "occur with no
+/// state" shape, locked in by `dur == "MOMENT"`).
+///
+/// Moment rule (da-ju71.2): when `dur` parses as `Dur::Moment`, the
+/// verb is `Verb::Point` regardless of state shape. This locks occur
+/// entries to Point even when they carry structured state data.
 ///
 /// Rejects:
 /// - `state = None` + `following_state = Some` — fs implies a leading state.
@@ -28,6 +33,12 @@ pub fn derive_verb(
     dur: Option<&str>,
     following_state: Option<JsonValue>,
 ) -> Result<(Verb, Option<JsonValue>)> {
+    if let Some(s) = dur {
+        if matches!(Dur::parse(s), Some(Dur::Moment)) {
+            return Ok((Verb::Point, state));
+        }
+    }
+
     let dur_kind = match dur {
         None => DurKind::None,
         Some(s) => classify_dur(s)?,
@@ -61,13 +72,7 @@ pub fn derive_verb(
         (true, DurKind::Positive, true) => Verb::BlockSwitch,
     };
 
-    let canonical_state = if state_set {
-        state
-    } else {
-        Some(JsonValue::Bool(true))
-    };
-
-    Ok((verb, canonical_state))
+    Ok((verb, state))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -195,10 +200,10 @@ mod tests {
     // ─── Truth table (one test per row) ──────────────────────────────
 
     #[test]
-    fn row_null_null_null_is_point_state_true() {
+    fn row_null_null_null_is_point_state_null() {
         let (v, s) = ok(None, None, None);
         assert_eq!(v, Verb::Point);
-        assert_eq!(s, Some(json!(true)));
+        assert_eq!(s, None);
     }
 
     #[test]
@@ -207,17 +212,17 @@ mod tests {
     }
 
     #[test]
-    fn row_null_set_null_is_block_state_true() {
+    fn row_null_set_null_is_block_state_null() {
         let (v, s) = ok(None, Some("PT30M"), None);
         assert_eq!(v, Verb::Block);
-        assert_eq!(s, Some(json!(true)));
+        assert_eq!(s, None);
     }
 
     #[test]
-    fn row_null_set_set_is_block_switch_state_true() {
+    fn row_null_set_set_is_block_switch_state_null() {
         let (v, s) = ok(None, Some("PT30M"), Some(json!("done")));
         assert_eq!(v, Verb::BlockSwitch);
-        assert_eq!(s, Some(json!(true)));
+        assert_eq!(s, None);
     }
 
     #[test]
@@ -327,5 +332,32 @@ mod tests {
         let (v, s) = ok(Some(JsonValue::Null), None, None);
         assert_eq!(v, Verb::Switch);
         assert_eq!(s, Some(JsonValue::Null));
+    }
+
+    // ─── Dur::Moment locks Verb::Point (da-ju71.2) ───────────────────
+    // `dur == "MOMENT"` overrides every state-driven path: a Moment
+    // entry is always Point, whether state is null, a bare value, or a
+    // structured object. State passes through verbatim — no promotion.
+
+    #[test]
+    fn moment_with_null_state_is_point() {
+        let (v, s) = ok(None, Some("MOMENT"), None);
+        assert_eq!(v, Verb::Point);
+        assert_eq!(s, None);
+    }
+
+    #[test]
+    fn moment_with_bare_state_is_point() {
+        let (v, s) = ok(Some(json!("happy")), Some("MOMENT"), None);
+        assert_eq!(v, Verb::Point);
+        assert_eq!(s, Some(json!("happy")));
+    }
+
+    #[test]
+    fn moment_with_structured_state_is_point() {
+        let state = json!({"id": "car", "role": "driver"});
+        let (v, s) = ok(Some(state.clone()), Some("MOMENT"), None);
+        assert_eq!(v, Verb::Point);
+        assert_eq!(s, Some(state));
     }
 }

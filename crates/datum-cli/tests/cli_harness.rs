@@ -16,11 +16,12 @@ fn run_cli_harness_dispatches_to_occur() {
     run_cli(&["occur", "coffee", "-k", "amount=2"], &db).expect("occur dispatch");
 
     // Exactly one coffee entry. With no state set and no duration, the
-    // truth table promotes to `Verb::Point`; null→true canonicalization
-    // lands `state = true` at the storage layer.
+    // truth table classifies as `Verb::Point` and (post-da-ju71.2) the
+    // state stays null — the null→true promotion was dropped.
     assert_count!(db, "coffee", 1);
     let entry = &db.entries_for_field("coffee", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "coffee", verb: "point", state: true);
+    assert_entry_matches!(entry, field: "coffee", verb: "point");
+    assert!(entry.state.is_none(), "occur with no state stays null, got {:?}", entry.state);
     let data = entry.data.as_ref().expect("data payload from -k amount=2");
     assert_eq!(
         data.get("amount"),
