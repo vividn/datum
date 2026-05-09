@@ -20,7 +20,7 @@ pub fn dispatch(cmd: DbCommand, db: &Db) -> Result<()> {
         DbCommand::Purge(args) => purge(args, db),
         DbCommand::Backup(args) => super::backup_restore::cmd_backup(args, db),
         DbCommand::Restore(args) => super::backup_restore::cmd_restore(args, db),
-        DbCommand::Migrate(sub) => crate::cmd::cmd_migrate(sub, db),
+        DbCommand::Migrate(sub) => super::migrate::migrate(sub, db),
         DbCommand::Import(args) => crate::cmd::cmd_db_import(args, db),
     }
 }
