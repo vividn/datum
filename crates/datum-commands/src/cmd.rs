@@ -169,25 +169,19 @@ fn normalize_shared_occur_time(
     let Some(shared) = entries.first().and_then(|e| e.occur_time.clone()) else {
         return entries;
     };
-    let shared_str = shared.utc.to_rfc3339();
     for entry in entries.iter_mut().skip(1) {
-        let current = entry
-            .occur_time
-            .as_ref()
-            .map(|t| t.utc.to_rfc3339())
-            .unwrap_or_default();
-        if current == shared_str {
+        if entry.occur_time.as_ref().map(|t| &t.utc) == Some(&shared.utc) {
             continue;
         }
         entry.occur_time = Some(shared.clone());
         // Rebuild slug. If a template is in play, re-interpolate;
-        // otherwise default to `<field>:<rfc3339>`.
+        // otherwise use the canonical `build_slug` (millisecond-Z format).
         if let Some(tmpl) = entry.id_structure.clone() {
             let uid = entry.short_uid();
             let ctx = InterpolationContext::from_entry(entry, &uid);
             entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, ":"));
         } else {
-            entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, shared_str));
+            entry.slug = datum_core::entry::build_slug(&entry.field, Some(&shared));
         }
         entry.content_hash = entry.expected_content_hash();
     }

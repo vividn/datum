@@ -551,7 +551,7 @@ fn parse_iso_duration_seconds(input: &str) -> Option<i64> {
 /// Default slug: `<field>:<timestamp>` — millisecond precision keeps
 /// same-field same-second inserts on distinct slugs. Entries without a time
 /// fall back to `<field>:unset`.
-fn build_slug(field: &str, time: Option<&DatumTime>) -> Slug {
+pub fn build_slug(field: &str, time: Option<&DatumTime>) -> Slug {
     let s = match time {
         Some(t) => format!("{}:{}", field, t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ")),
         None => format!("{}:unset", field),

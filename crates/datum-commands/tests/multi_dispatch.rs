@@ -196,6 +196,59 @@ fn empty_leading_side_errors_via_dispatch() {
     assert_eq!(live_rows(&db).len(), 0, "rollback should leave no rows");
 }
 
+/// Regression for da-nj20: every side of a multi-write must use the
+/// canonical millisecond-Z slug-time format, not the nanosecond+offset
+/// rfc3339 that the rebuild path used to emit.
+#[test]
+fn multi_write_slugs_share_canonical_time_format() {
+    let db = fresh_db();
+    let argv: Vec<String> = vec![
+        "datum",
+        "switch",
+        "environment",
+        "outside",
+        ",",
+        "switch",
+        "body",
+        "sit",
+        ",",
+        "occur",
+        "alcohol",
+    ]
+    .into_iter()
+    .map(String::from)
+    .collect();
+    dispatch_argv(argv, &db).unwrap();
+
+    let mut stmt = db
+        .conn()
+        .prepare("SELECT slug FROM entries WHERE deleted_at IS NULL ORDER BY rowid")
+        .unwrap();
+    let slugs: Vec<String> = stmt
+        .query_map([], |r| r.get::<_, String>(0))
+        .unwrap()
+        .map(|r| r.unwrap())
+        .collect();
+    assert_eq!(slugs.len(), 3, "expected three rows from comma-split multi");
+
+    // Each slug must end with `Z` and contain exactly millisecond precision
+    // (three digits after `.`, then `Z`). None may carry a `+00:00` offset
+    // or nanosecond precision.
+    let canon =
+        regex_lite::Regex::new(r"^[^:]+:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$").unwrap();
+    for s in &slugs {
+        assert!(canon.is_match(s), "slug {s:?} not in canonical ms-Z format");
+        assert!(!s.contains("+00:00"), "slug {s:?} carries rfc3339 offset");
+    }
+
+    // All three sides share the same time component.
+    let time_of = |s: &str| s.split_once(':').unwrap().1.to_string();
+    let t0 = time_of(&slugs[0]);
+    for s in &slugs[1..] {
+        assert_eq!(time_of(s), t0, "side time mismatch: {s} vs {}", slugs[0]);
+    }
+}
+
 /// Section I — distinct fields with the same data key name remain
 /// independent (no Section H merge).
 #[test]
