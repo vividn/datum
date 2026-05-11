@@ -635,20 +635,29 @@ mod tests {
     #[test]
     #[cfg(feature = "native")]
     fn z_system_resolves_to_os_local_zone() {
-        let Ok(expected) = iana_time_zone::get_timezone() else {
-            eprintln!(
-                "skipping z_system_resolves_to_os_local_zone: \
-                 system has no IANA timezone configured (no /etc/localtime, /etc/timezone, or TZ env var). \
-                 Install tzdata or set TZ to enable this test."
-            );
-            return;
-        };
+        // `resolve_timezone("system")` is a thin wrapper around
+        // `iana_time_zone::get_timezone()`, so the two must agree in lockstep:
+        // both succeed with the same value, or both fail. This makes the test
+        // deterministic on every host — including stripped sandboxes with no
+        // `/etc/localtime` — without skipping or env manipulation.
+        let expected = iana_time_zone::get_timezone();
         for spec in ["system", "SYSTEM", "System", "sYsTeM"] {
-            let resolved = resolve_timezone(spec).expect("resolve");
-            assert_eq!(
-                resolved, expected,
-                "spec {spec:?} should resolve to OS local zone"
-            );
+            let resolved = resolve_timezone(spec);
+            match (&expected, &resolved) {
+                (Ok(e), Ok(r)) => assert_eq!(
+                    r, e,
+                    "spec {spec:?} should resolve to the OS local zone"
+                ),
+                (Err(_), Err(_)) => {
+                    // Host has no configured IANA zone; resolver correctly errors.
+                }
+                (Ok(e), Err(r)) => panic!(
+                    "spec {spec:?}: iana_time_zone returned Ok({e:?}) but resolver returned Err({r:?})"
+                ),
+                (Err(e), Ok(r)) => panic!(
+                    "spec {spec:?}: iana_time_zone returned Err({e:?}) but resolver returned Ok({r:?})"
+                ),
+            }
         }
     }
 
