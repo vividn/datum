@@ -11,6 +11,11 @@ path = "src/lib.rs"
 default = []
 # Shared test fixtures (TestPrompter, etc.) — also consumed by datum-cli tests.
 test-util = []
+# Marker for the full E2E case cohort (da-1wat). Cases tagged
+# `e2e_case!(full, ...)` are `#[ignore]` by default and only run when
+# this feature is enabled. Polecat pre-submit / refinery skip the full
+# cohort; CI runs it in a dedicated job.
+e2e-full = []
 # Pulls in resvg + tiny-skia for SVG → PNG rasterization. The dayview/nowview
 # `--output *.png` paths require this; SVG/HTML/JSON output stays available
 # without it. ~50 transitive crates and ~1.5 MiB of `.text` come with this
@@ -49,3 +54,5 @@ resvg = { version = "0.47", default-features = false, features = ["text", "syste
 [dev-dependencies]
 datum-core = { path = "../datum-core", features = ["test-util"] }
 rusqlite = { workspace = true }
+# Re-exported via `datum_parse::alias::shell_split` for the e2e harness;
+# datum-parse is already a runtime dep, so no extra crate needed.

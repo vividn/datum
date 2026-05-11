@@ -40,6 +40,31 @@ jobs:
       - name: cargo test --workspace --doc
         run: cargo test --workspace --doc
 
+  e2e-full:
+    name: E2E full cohort (da-1wat)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry + target
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest
+
+      # The fast cohort is already covered by `build-and-test`. This job
+      # extends coverage to the full E2E matrix which is gated behind
+      # `--features e2e-full` on `datum-commands` so polecat / refinery
+      # sessions don't pay the cost on every push. Add new full-cohort
+      # cases here (via `e2e_case!(full, ...)`), not in the main job.
+      - name: cargo nextest run --features e2e-full
+        run: cargo nextest run -p datum-commands --test e2e --features e2e-full --no-fail-fast
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

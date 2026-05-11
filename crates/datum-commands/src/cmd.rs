@@ -146,7 +146,7 @@ fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: 
     let contexts = build_render_contexts(&entries, db);
     for (idx, entry) in entries.iter().enumerate() {
         let output = group_outputs.get(idx).cloned().unwrap_or_default();
-        let ctx = contexts.get(idx).cloned().unwrap_or_else(|| RenderContext {
+        let ctx = contexts.get(idx).cloned().unwrap_or(RenderContext {
             lead_state: None,
             trail_state: None,
             is_first_occurrence: false,

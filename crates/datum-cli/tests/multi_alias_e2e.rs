@@ -75,7 +75,10 @@ fn binary_same_field_two_switches_merges_to_parallel_state() {
         &db,
         &["switch", "body", "vertical", ",", "switch", "body", "sit"],
     );
-    assert!(ok, "binary must succeed on comma-split argv; stderr={stderr}");
+    assert!(
+        ok,
+        "binary must succeed on comma-split argv; stderr={stderr}"
+    );
 
     let rows = live_rows(&db);
     assert_eq!(

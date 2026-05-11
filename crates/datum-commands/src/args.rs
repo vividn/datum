@@ -162,6 +162,9 @@ pub fn push_to_multi_collector(entry: datum_core::entry::Entry, output: OutputAr
 /// [`parse_invocation_with_db`] and branch on this result. There is no
 /// other comma-aware seam in the pipeline — the only way to produce a
 /// multi-row write is via this enum's [`Self::Multi`] variant.
+#[allow(clippy::large_enum_variant)] // Cli is large; boxing would
+                                     // ripple into every match arm
+                                     // for marginal stack savings.
 pub enum Invocation {
     /// Single-row invocation — `cli` is the fully parsed intent.
     Single(Cli),
@@ -293,13 +296,13 @@ fn parse_invocation_inner(
     })
 }
 
-/// Legacy flat-argv expansion: terminal-verb override + alias expansion
-/// + field/verb swap + stacked-flag expansion, returning a single
-/// argv. Retained only for the Level-2 kit-command post-parse-error
-/// recovery path in `datum-cli/src/main.rs`, which needs the
-/// re-expanded argv to look up the verb after `parse_argv` rejects it.
-/// Do not use for new dispatch paths — they MUST go through
-/// [`parse_invocation`] so the comma-split seam stays canonical.
+/// Legacy flat-argv expansion: terminal-verb override + alias
+/// expansion + field/verb swap + stacked-flag expansion, returning a
+/// single argv. Retained only for the Level-2 kit-command
+/// post-parse-error recovery path in `datum-cli/src/main.rs`, which
+/// needs the re-expanded argv to look up the verb after `parse_argv`
+/// rejects it. Do not use for new dispatch paths — they MUST go
+/// through [`parse_invocation`] so the comma-split seam stays canonical.
 pub fn expand_argv_with_db(
     argv: Vec<String>,
     db: &datum_core::db::Db,
