@@ -89,3 +89,12 @@ regions") and da-uuu (obsidian, state.rs perf rework). Polecats
 touching `state.rs`, switch rendering, or color-mode handling should
 run this test early so a regen lands in the same diff.
 
+## z_system_resolves_to_os_local_zone
+
+**Test:** `crates/datum-parse/src/input/time_args.rs::tests::z_system_resolves_to_os_local_zone`
+**Type:** ENV_DEPENDENT
+**Symptom:** Panics with `IoError(NotFound)` on hosts without a configured local IANA timezone (no `/etc/localtime`, `/etc/timezone`, or `TZ` env var).
+**Recommended action:** After da-dqcn landed, the test skips gracefully on such hosts. To exercise the assertion, install tzdata or set `TZ=America/New_York` before running.
+**Last seen:** 2026-05-11
+**Notes:** Affects minimal Linux installs, some containers, stripped dev sandboxes. Production `resolve_timezone("system")` correctly errors in this state — only the test was over-strict.
+
