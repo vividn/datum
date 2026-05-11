@@ -425,6 +425,17 @@ fn merge_json(existing: JsonValue, incoming: JsonValue) -> JsonValue {
 // wrap them with `unchecked_transaction` to keep the entries mutation and the
 // history row atomic.
 
+/// Sibling-visible re-export of [`insert_entry_in_tx`] so other db
+/// submodules (notably [`super::multi`]) can compose it inside a
+/// caller-owned transaction.
+pub(super) fn insert_entry_in_tx_pub(
+    conn: &Connection,
+    entry: &Entry,
+    strategy: ConflictStrategy,
+) -> Result<InsertOutcome> {
+    insert_entry_in_tx(conn, entry, strategy)
+}
+
 /// Per-entry insert logic shared by `insert_entry_with_strategy` (one tx per
 /// call) and `insert_entries_batch` (one tx for the whole batch).
 fn insert_entry_in_tx(

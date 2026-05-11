@@ -94,6 +94,15 @@ impl IntentContext {
 
 thread_local! {
     static INTENT_CTX: RefCell<Option<IntentContext>> = const { RefCell::new(None) };
+    /// da-gh0.C: when `Some`, the log path pushes its prepared
+    /// [`datum_core::entry::Entry`] onto this buffer *instead* of
+    /// inserting it. The multi-dispatch driver enables the buffer
+    /// around each side, collects all N entries, then runs them
+    /// through [`datum_core::db::Db::insert_entries_atomic`] so the
+    /// whole batch lands in a single transaction with same-field
+    /// merge applied at write time.
+    static MULTI_COLLECTOR: RefCell<Option<Vec<datum_core::entry::Entry>>> =
+        const { RefCell::new(None) };
 }
 
 pub fn set_intent_context(ctx: IntentContext) {
@@ -106,6 +115,34 @@ pub fn take_intent_context() -> Option<IntentContext> {
 
 pub fn peek_intent_context() -> Option<IntentContext> {
     INTENT_CTX.with(|slot| slot.borrow().clone())
+}
+
+/// Begin a multi-entry write window: subsequent calls to `log_entry`
+/// push their prepared entries into the returned collector rather than
+/// inserting them. Pair with [`end_multi_collector`] to drain the
+/// buffer and atomically write at the end of the multi dispatch.
+pub fn begin_multi_collector() {
+    MULTI_COLLECTOR.with(|slot| *slot.borrow_mut() = Some(Vec::new()));
+}
+
+/// Drain the multi-collector buffer, leaving the thread-local empty.
+/// Returns `None` if no window is currently open.
+pub fn end_multi_collector() -> Option<Vec<datum_core::entry::Entry>> {
+    MULTI_COLLECTOR.with(|slot| slot.borrow_mut().take())
+}
+
+/// Push an entry into the active multi-collector. Returns `true` when
+/// a collector is in scope (the caller should skip the normal insert
+/// path); returns `false` when there is no active window.
+pub fn push_to_multi_collector(entry: datum_core::entry::Entry) -> bool {
+    MULTI_COLLECTOR.with(|slot| {
+        if let Some(buf) = slot.borrow_mut().as_mut() {
+            buf.push(entry);
+            true
+        } else {
+            false
+        }
+    })
 }
 
 // ─── Cli — convenience parser entry points ───────────────────────────────

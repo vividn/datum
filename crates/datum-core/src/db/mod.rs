@@ -25,6 +25,7 @@ mod kit;
 mod kit_command;
 mod list;
 mod lookup;
+mod multi;
 mod query;
 mod row_mapper;
 mod spec;

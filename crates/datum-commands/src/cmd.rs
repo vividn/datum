@@ -30,8 +30,133 @@ use crate::{
 /// directly.
 pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
     let expanded = crate::args::expand_argv_with_db(argv, db)?;
+    if expanded
+        .iter()
+        .any(|t| t == datum_parse::alias::MULTI_COMMA)
+    {
+        return dispatch_multi(expanded, db);
+    }
     let cli = datum_parse::parse_argv(&expanded)?;
     dispatch(cli, db)
+}
+
+/// da-gh0.C dispatch path for comma-split argvs. Splits `expanded` at
+/// standalone-`,` tokens, runs each side through the standard
+/// parse+dispatch flow with the multi-collector active so prepared
+/// entries are buffered instead of inserted, then normalizes
+/// `occur_time` across sides to the leftmost side's value, runs
+/// same-field merge, and writes the batch atomically via
+/// [`Db::insert_entries_atomic`]. Finally stamps `_LAST` with every
+/// resulting hid so a follow-up `_LAST`-targeted command addresses
+/// every row of the multi.
+///
+/// Failure path: if any side fails during parse or entry prep, the
+/// multi-collector is dropped and the error propagates — the atomic
+/// commit never runs, so nothing is written.
+fn dispatch_multi(expanded: Vec<String>, db: &Db) -> Result<()> {
+    // Carve argv[0] off the front. `split_argv_at_commas` is a
+    // tail-token splitter — it doesn't know which slot the program
+    // name lives in, so we strip it here and re-prepend it to each
+    // resulting side. The resulting first side starts with the first
+    // real subcommand token.
+    let mut tokens = expanded;
+    let argv0 = if tokens.is_empty() {
+        String::new()
+    } else {
+        tokens.remove(0)
+    };
+    let sides = datum_parse::alias::split_argv_at_commas(tokens)?;
+    if sides.len() < 2 {
+        // Splitter returns 1-side passthrough for argvs that look
+        // multi but actually don't contain a standalone `,`. Defer to
+        // single-row dispatch in that case.
+        let mut flat: Vec<String> = vec![argv0];
+        for side in sides {
+            flat.extend(side);
+        }
+        let cli = datum_parse::parse_argv(&flat)?;
+        return dispatch(cli, db);
+    }
+
+    crate::args::begin_multi_collector();
+
+    let run_sides = || -> Result<()> {
+        for side in sides {
+            // Each side parses as if it were the whole argv: re-prepend
+            // argv[0] so datum-parse's `parse_argv` sees a complete
+            // invocation. Alias expansion was already applied to the
+            // full argv before splitting (per the spec — Rule 7 says
+            // multi-of-multi flattens, so by the time we land here the
+            // tokens are post-alias-expansion).
+            let mut side_argv = Vec::with_capacity(side.len() + 1);
+            side_argv.push(argv0.clone());
+            side_argv.extend(side);
+            let cli = datum_parse::parse_argv(&side_argv)?;
+            dispatch(cli, db)?;
+        }
+        Ok(())
+    };
+
+    let result = run_sides();
+    let collected = crate::args::end_multi_collector().unwrap_or_default();
+    result?;
+
+    if collected.is_empty() {
+        // No side produced a write-able entry (e.g. all sides were
+        // non-logging verbs like `tail`). Nothing to do.
+        return Ok(());
+    }
+
+    // Per spec: all sides share one occur_time. Time-flag side-scoping
+    // (da-gh0.D) will revisit this — for now the leftmost side's time
+    // wins and propagates to every other side. We rebuild slug and
+    // content_hash for any side whose occur_time changed so the
+    // identity columns reflect the canonical time.
+    let normalized = normalize_shared_occur_time(collected);
+
+    let hids = db.insert_entries_atomic(normalized)?;
+    if !hids.is_empty() {
+        let _ = datum_core::last_docs::set_last_docs(db, &hids);
+    }
+    Ok(())
+}
+
+/// Force every entry in `entries` to share the leftmost entry's
+/// `occur_time` (Section B: "multi_all_sides_share_one_occur_time").
+/// Slug and content_hash both depend on occur_time, so they are
+/// rebuilt whenever we change the time. Entries with a non-templated
+/// slug get the default `<field>:<timestamp>` rebuild; entries
+/// carrying an `id_structure` template are re-interpolated against
+/// the post-mutation state via [`datum_core::field_spec::interpolate`].
+fn normalize_shared_occur_time(
+    mut entries: Vec<datum_core::entry::Entry>,
+) -> Vec<datum_core::entry::Entry> {
+    let Some(shared) = entries.first().and_then(|e| e.occur_time.clone()) else {
+        return entries;
+    };
+    let shared_str = shared.utc.to_rfc3339();
+    for entry in entries.iter_mut().skip(1) {
+        let current = entry
+            .occur_time
+            .as_ref()
+            .map(|t| t.utc.to_rfc3339())
+            .unwrap_or_default();
+        if current == shared_str {
+            continue;
+        }
+        entry.occur_time = Some(shared.clone());
+        // Rebuild slug. If a template is in play, re-interpolate;
+        // otherwise default to `<field>:<rfc3339>`.
+        if let Some(tmpl) = entry.id_structure.clone() {
+            let uid = entry.short_uid();
+            let ctx = InterpolationContext::from_entry(entry, &uid);
+            entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, ":"));
+        } else {
+            entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, shared_str));
+        }
+        entry.content_hash = entry.expected_content_hash();
+    }
+    entries
 }
 
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
@@ -455,6 +580,16 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.following_state.clone(),
     ) {
         entry.verb = derived_verb;
+    }
+
+    // da-gh0.C: when a multi-entry write window is active, hand the
+    // fully prepared entry off to the dispatch-layer collector and
+    // return. The multi driver normalizes occur_time across sides,
+    // applies same-field merge, and writes the batch atomically; it
+    // also owns the post-write display + `_LAST` stamp. None of the
+    // per-side render/insert work below applies in that case.
+    if crate::args::push_to_multi_collector(entry.clone()) {
+        return Ok(());
     }
 
     // Capture render hints *before* the insert:
