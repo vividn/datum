@@ -72,26 +72,31 @@ fn run_line(line: &str, db: &Db) -> Result<()> {
     let mut argv = vec!["datum".to_string()];
     argv.extend(shell_split(line));
 
-    let expanded = datum_commands::args::expand_argv_with_db(argv, db)?;
-
-    match datum_parse::parse_argv(&expanded) {
-        Ok(cli) => cmd::dispatch(cli, db),
-        Err(ParseError::HelpRequested(cmd)) => {
-            let text = match cmd.as_deref() {
-                Some(c) => help::command_help(c),
-                None => help::top_level_help(),
-            };
-            print!("{text}");
-            Ok(())
+    match datum_commands::args::parse_invocation_with_db(argv, db) {
+        Ok(invocation) => cmd::dispatch_invocation(invocation, db),
+        Err(e) => {
+            if let Some(pe) = e.downcast_ref::<ParseError>() {
+                match pe {
+                    ParseError::HelpRequested(cmd) => {
+                        let text = match cmd.as_deref() {
+                            Some(c) => help::command_help(c),
+                            None => help::top_level_help(),
+                        };
+                        print!("{text}");
+                        return Ok(());
+                    }
+                    ParseError::VersionRequested => {
+                        println!("{}", help::version_banner());
+                        return Ok(());
+                    }
+                    ParseError::ManRequested(cmd) => {
+                        print!("{}", help::render_roff(cmd.as_deref()));
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            Err(e)
         }
-        Err(ParseError::VersionRequested) => {
-            println!("{}", help::version_banner());
-            Ok(())
-        }
-        Err(ParseError::ManRequested(cmd)) => {
-            print!("{}", help::render_roff(cmd.as_deref()));
-            Ok(())
-        }
-        Err(e) => Err(e.into()),
     }
 }

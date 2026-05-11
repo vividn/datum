@@ -1,6 +1,6 @@
 use anyhow::Result;
 use datum_cli::{
-    args::{Cli, CliExt, Command, DbCommand, InfoArgs},
+    args::{Cli, CliExt, Command, DbCommand, InfoArgs, Invocation},
     cmd, config, repl,
 };
 use datum_commands::commands;
@@ -11,8 +11,8 @@ fn main() -> Result<()> {
         return repl::run();
     }
 
-    let cli = match Cli::parse_with_alias_resolution() {
-        Ok(cli) => cli,
+    let invocation = match Cli::parse_invocation() {
+        Ok(inv) => inv,
         Err(e) => {
             // Propagate `--help` / `--version` as a clean stdout print.
             if let Some(pe) = e.downcast_ref::<ParseError>() {
@@ -51,6 +51,16 @@ fn main() -> Result<()> {
         }
     };
 
+    match invocation {
+        Invocation::Single(cli) => dispatch_single(cli),
+        Invocation::Multi { .. } => dispatch_multi(invocation),
+    }
+}
+
+/// Single-row path: parsed `cli` may carve out an in-memory DB
+/// placeholder (for `config`/`sync`/`info`-other-db) or resolve and
+/// open the configured DB before handing off to `cmd::dispatch`.
+fn dispatch_single(cli: Cli) -> Result<()> {
     // `config` and `sync` don't touch any DB — skip resolution entirely.
     if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
@@ -99,6 +109,33 @@ fn main() -> Result<()> {
     }
 
     cmd::dispatch(cli, &db)
+}
+
+/// Multi-row path: every side is a write-side verb, so DB resolution
+/// uses the leftmost side's `--db` flag (or the default) and goes
+/// through the standard migrated open. Multi-row invocations of
+/// non-writing commands (`config`, `sync`, `db purge`) are not a
+/// thing — the comma is a multi-collector trigger which those verbs
+/// don't participate in.
+fn dispatch_multi(invocation: Invocation) -> Result<()> {
+    let db_hint = match &invocation {
+        Invocation::Multi { sides, .. } => sides.first().and_then(|c| c.db.clone()),
+        _ => None,
+    };
+    let resolved = config::resolve_db(db_hint.as_deref())?;
+    if resolved.created_new {
+        if let Some(name) = resolved.name.as_deref() {
+            eprintln!(
+                "note: created new database '{name}' at {}",
+                resolved.path.display()
+            );
+        }
+    }
+    let db = datum_core::db::Db::open(&resolved.path.to_string_lossy())?;
+    if resolved.name.is_some() {
+        let _ = config::ensure_registered(&resolved);
+    }
+    cmd::dispatch_invocation(invocation, &db)
 }
 
 /// Best-effort Level-2 kit command dispatch invoked when `parse_argv`

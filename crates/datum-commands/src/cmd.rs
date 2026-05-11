@@ -23,75 +23,37 @@ use crate::{
     },
 };
 
-/// Parse an argv vector through the full pre-pass → parser → dispatch
-/// path against `db`. Used by integration tests to exercise the CLI
-/// without going through the binary. Hides the bespoke parser behind
-/// `datum-commands`'s module boundary so consumers don't pull it in
-/// directly.
+/// Drive a raw argv through the unified comma-split-first pipeline
+/// against `db`. Goes through the same
+/// [`crate::args::parse_invocation_with_db`] entry point as the binary,
+/// so test coverage at this layer exercises the same call graph that
+/// `main.rs` runs at runtime — no parallel "tests-only" path.
 pub fn dispatch_argv(argv: Vec<String>, db: &Db) -> Result<()> {
-    let expanded = crate::args::expand_argv_with_db(argv, db)?;
-    if expanded
-        .iter()
-        .any(|t| t == datum_parse::alias::MULTI_COMMA)
-    {
-        return dispatch_multi(expanded, db);
-    }
-    let cli = datum_parse::parse_argv(&expanded)?;
-    dispatch(cli, db)
+    let invocation = crate::args::parse_invocation_with_db(argv, db)?;
+    dispatch_invocation(invocation, db)
 }
 
-/// da-gh0.C dispatch path for comma-split argvs. Splits `expanded` at
-/// standalone-`,` tokens, runs each side through the standard
-/// parse+dispatch flow with the multi-collector active so prepared
-/// entries are buffered instead of inserted, then normalizes
-/// `occur_time` across sides to the leftmost side's value, runs
-/// same-field merge, and writes the batch atomically via
-/// [`Db::insert_entries_atomic`]. Finally stamps `_LAST` with every
-/// resulting hid so a follow-up `_LAST`-targeted command addresses
-/// every row of the multi.
+/// Dispatch a parsed [`crate::args::Invocation`]. Single-row invocations
+/// route through [`dispatch`]; multi-row invocations open the
+/// multi-collector window, run each pre-parsed side, then atomically
+/// commit the buffered entries with shared-occur-time normalization
+/// and same-field merge.
 ///
-/// Failure path: if any side fails during parse or entry prep, the
-/// multi-collector is dropped and the error propagates — the atomic
-/// commit never runs, so nothing is written.
-fn dispatch_multi(expanded: Vec<String>, db: &Db) -> Result<()> {
-    // Carve argv[0] off the front. `split_argv_at_commas` is a
-    // tail-token splitter — it doesn't know which slot the program
-    // name lives in, so we strip it here and re-prepend it to each
-    // resulting side. The resulting first side starts with the first
-    // real subcommand token.
-    let mut tokens = expanded;
-    let argv0 = if tokens.is_empty() {
-        String::new()
-    } else {
-        tokens.remove(0)
-    };
-    let sides = datum_parse::alias::split_argv_at_commas(tokens)?;
-    if sides.len() < 2 {
-        // Splitter returns 1-side passthrough for argvs that look
-        // multi but actually don't contain a standalone `,`. Defer to
-        // single-row dispatch in that case.
-        let mut flat: Vec<String> = vec![argv0];
-        for side in sides {
-            flat.extend(side);
-        }
-        let cli = datum_parse::parse_argv(&flat)?;
-        return dispatch(cli, db);
+/// Failure path: if any side fails during dispatch, the multi-collector
+/// is drained and the error propagates — the atomic commit never runs,
+/// so nothing is written.
+pub fn dispatch_invocation(invocation: crate::args::Invocation, db: &Db) -> Result<()> {
+    match invocation {
+        crate::args::Invocation::Single(cli) => dispatch(cli, db),
+        crate::args::Invocation::Multi { sides, .. } => dispatch_multi_sides(sides, db),
     }
+}
 
+fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     crate::args::begin_multi_collector();
 
     let run_sides = || -> Result<()> {
-        for side in sides {
-            // Each side parses as if it were the whole argv: re-prepend
-            // argv[0] so datum-parse's `parse_argv` sees a complete
-            // invocation. Alias expansion was already applied to the
-            // full argv before splitting (per the spec — Rule 7 says
-            // multi-of-multi flattens, so by the time we land here the
-            // tokens are post-alias-expansion).
-            let mut side_argv = Vec::with_capacity(side.len() + 1);
-            side_argv.push(argv0.clone());
-            side_argv.extend(side);
-            let cli = datum_parse::parse_argv(&side_argv)?;
+        for cli in sides {
             dispatch(cli, db)?;
         }
         Ok(())

@@ -147,13 +147,37 @@ pub fn push_to_multi_collector(entry: datum_core::entry::Entry) -> bool {
 
 // ─── Cli — convenience parser entry points ───────────────────────────────
 
+/// Top-level outcome of the unified pre-pass: either a single parsed
+/// [`Cli`] (the common case) or an N-sided multi-entry plan ready for
+/// per-side dispatch through the multi-collector.
+///
+/// Both binary (`main.rs`) and the test/REPL entry points (`dispatch_argv`,
+/// `repl::run_line`) route through [`parse_invocation`] /
+/// [`parse_invocation_with_db`] and branch on this result. There is no
+/// other comma-aware seam in the pipeline — the only way to produce a
+/// multi-row write is via this enum's [`Self::Multi`] variant.
+pub enum Invocation {
+    /// Single-row invocation — `cli` is the fully parsed intent.
+    Single(Cli),
+    /// Multi-row invocation — one parsed [`Cli`] per side, in side
+    /// order. `argv0` is the binary name for diagnostic / argv-rebuild
+    /// purposes. The shared multi-collector + atomic insert happens
+    /// after dispatch of every side.
+    Multi {
+        sides: Vec<Cli>,
+        side_argvs: Vec<Vec<String>>,
+        argv0: String,
+    },
+}
+
 /// Convenience methods that mirror the pre-R2 surface. The actual
 /// parsing goes through `datum_parse::parse_argv`; this trait exposes
 /// the top-level entry points used by `datum-cli/src/main.rs` and the
 /// integration test harness.
 pub trait CliExt: Sized {
-    /// Capture argv, run the full pre-pass, then parse.
-    fn parse_with_alias_resolution() -> anyhow::Result<Self>;
+    /// Capture argv, run the full pre-pass (including comma-split), then
+    /// parse. Returns [`Invocation::Single`] or [`Invocation::Multi`].
+    fn parse_invocation() -> anyhow::Result<Invocation>;
 
     /// Parse a raw argv without alias resolution / pre-passes. Test-only.
     fn try_parse_argv<I, S>(argv: I) -> datum_parse::Result<Self>
@@ -163,10 +187,9 @@ pub trait CliExt: Sized {
 }
 
 impl CliExt for Cli {
-    fn parse_with_alias_resolution() -> anyhow::Result<Self> {
+    fn parse_invocation() -> anyhow::Result<Invocation> {
         let raw: Vec<String> = std::env::args().collect();
-        let expanded = expand_argv(raw)?;
-        datum_parse::parse_argv(&expanded).map_err(anyhow::Error::from)
+        parse_invocation(raw)
     }
 
     fn try_parse_argv<I, S>(argv: I) -> datum_parse::Result<Self>
@@ -179,20 +202,21 @@ impl CliExt for Cli {
     }
 }
 
-// ─── expand_argv — pre-pass wrapper ──────────────────────────────────────
+// ─── parse_invocation — unified pre-pass + parse pipeline ────────────────
 
-/// Full pre-pass: terminal-verb override → alias expansion → field/verb
-/// swap → stacked short-flag expansion. Also publishes the
-/// [`IntentContext`] on the thread-local slot so `log_entry` can stamp it.
-pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
-    let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
-    let raw_input = raw_argv.join(" ");
-    let mut ctx = IntentContext {
-        raw_input,
-        raw_argv,
-        alias_chain: Vec::new(),
-    };
-
+/// Capture argv from `std::env::args`, open the configured DB
+/// best-effort for alias lookup, then run the unified
+/// comma-split-first pre-pass and parse each resulting side. The
+/// returned [`Invocation`] is `Single` when no top-level standalone
+/// comma is present and no multi-alias body fires, or `Multi` when N
+/// sides were produced.
+///
+/// This is the canonical binary entry point: both `main.rs` and the
+/// test/REPL harnesses route through it (via the env-args wrapper or
+/// the explicit-DB variant below). There is no parallel path that
+/// skips the comma-split — the multi-row feature can't be bypassed
+/// at the binary level.
+pub fn parse_invocation(argv: Vec<String>) -> anyhow::Result<Invocation> {
     let maybe_db = (|| -> Option<datum_core::db::Db> {
         let db_path = crate::config::db_path().ok()?;
         if !std::path::Path::new(&db_path).exists() {
@@ -201,20 +225,75 @@ pub fn expand_argv(argv: Vec<String>) -> anyhow::Result<Vec<String>> {
         datum_core::db::Db::open(&db_path).ok()
     })();
 
-    let (expanded, chain) = match maybe_db {
-        Some(db) => {
-            let resolver = DbAliasResolver::new(&db);
-            palias::expand_argv(argv, &resolver)?
-        }
-        None => (palias::expand_argv_no_alias(argv), Vec::new()),
-    };
-
-    ctx.alias_chain = chain.into_iter().map(Into::into).collect();
-    set_intent_context(ctx);
-    Ok(expanded)
+    match maybe_db {
+        Some(db) => parse_invocation_inner(argv, &DbAliasResolver::new(&db)),
+        None => parse_invocation_inner(argv, &palias::NoResolver),
+    }
 }
 
-/// Like [`expand_argv`] but uses the provided `db` for alias lookup.
+/// Like [`parse_invocation`] but uses the provided `db` for alias
+/// lookup. Used by integration tests, REPL, and the WASM frontend.
+pub fn parse_invocation_with_db(
+    argv: Vec<String>,
+    db: &datum_core::db::Db,
+) -> anyhow::Result<Invocation> {
+    parse_invocation_inner(argv, &DbAliasResolver::new(db))
+}
+
+fn parse_invocation_inner(
+    argv: Vec<String>,
+    resolver: &dyn Resolver,
+) -> anyhow::Result<Invocation> {
+    let raw_argv: Vec<String> = argv.iter().skip(1).cloned().collect();
+    let raw_input = raw_argv.join(" ");
+    let argv0 = argv.first().cloned().unwrap_or_default();
+
+    let expanded = palias::expand_into_sides(argv, resolver)?;
+
+    set_intent_context(IntentContext {
+        raw_input,
+        raw_argv,
+        alias_chain: expanded.chain.into_iter().map(Into::into).collect(),
+    });
+
+    if expanded.sides.is_empty() {
+        // Shouldn't happen — split_argv_at_commas always returns >=1
+        // side or errors. Treat as a malformed invocation.
+        return Err(anyhow::anyhow!("empty argv after expansion"));
+    }
+
+    if expanded.sides.len() == 1 {
+        let mut side_argv = Vec::with_capacity(expanded.sides[0].len() + 1);
+        side_argv.push(argv0);
+        side_argv.extend(expanded.sides.into_iter().next().unwrap());
+        let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
+        return Ok(Invocation::Single(cli));
+    }
+
+    let mut sides: Vec<Cli> = Vec::with_capacity(expanded.sides.len());
+    let mut side_argvs: Vec<Vec<String>> = Vec::with_capacity(expanded.sides.len());
+    for side in expanded.sides {
+        let mut side_argv = Vec::with_capacity(side.len() + 1);
+        side_argv.push(argv0.clone());
+        side_argv.extend(side);
+        let cli = datum_parse::parse_argv(&side_argv).map_err(anyhow::Error::from)?;
+        sides.push(cli);
+        side_argvs.push(side_argv);
+    }
+    Ok(Invocation::Multi {
+        sides,
+        side_argvs,
+        argv0,
+    })
+}
+
+/// Legacy flat-argv expansion: terminal-verb override + alias expansion
+/// + field/verb swap + stacked-flag expansion, returning a single
+/// argv. Retained only for the Level-2 kit-command post-parse-error
+/// recovery path in `datum-cli/src/main.rs`, which needs the
+/// re-expanded argv to look up the verb after `parse_argv` rejects it.
+/// Do not use for new dispatch paths — they MUST go through
+/// [`parse_invocation`] so the comma-split seam stays canonical.
 pub fn expand_argv_with_db(
     argv: Vec<String>,
     db: &datum_core::db::Db,
