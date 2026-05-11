@@ -19,7 +19,7 @@ use crate::{
     config::device_id,
     render::{
         show_create_with_context, show_delete, show_exists, show_rename, show_update_with_context,
-        RenderContext,
+        OutputArgs, RenderContext,
     },
 };
 
@@ -74,13 +74,86 @@ fn dispatch_multi_sides(sides: Vec<Cli>, db: &Db) -> Result<()> {
     // wins and propagates to every other side. We rebuild slug and
     // content_hash for any side whose occur_time changed so the
     // identity columns reflect the canonical time.
-    let normalized = normalize_shared_occur_time(collected);
+    let (entries, outputs): (Vec<_>, Vec<_>) = collected.into_iter().unzip();
+    let normalized = normalize_shared_occur_time(entries);
+
+    // da-dayk: bucket per-side `OutputArgs` by `(field, occur_time)`
+    // in first-appearance order — exactly how `merge_same_field_groups`
+    // groups entries before insert. The leftmost contributing side's
+    // flags drive the resulting merged row's render. The hid order
+    // returned by `insert_entries_atomic` matches this group order
+    // 1:1, so we can pair them up directly when rendering.
+    let group_outputs = leftmost_output_per_group(&normalized, &outputs);
 
     let hids = db.insert_entries_atomic(normalized)?;
     if !hids.is_empty() {
         let _ = datum_core::last_docs::set_last_docs(db, &hids);
     }
+
+    // da-dayk: render every persisted row through the same
+    // `show_create_with_context` path single-row dispatch uses, with
+    // the per-group `OutputArgs` so `--show none` (and friends) still
+    // silence as expected. `build_render_contexts` batches the
+    // state-history probes across rows.
+    render_multi_inserted(db, &hids, &group_outputs);
+
     Ok(())
+}
+
+/// Walk `entries` in order, returning the [`OutputArgs`] of the first
+/// entry seen for each unique `(field, occur_time)` key. The output
+/// vector aligns with `merge_same_field_groups`' group-order output,
+/// which matches the `hids` returned by
+/// [`datum_core::db::Db::insert_entries_atomic`].
+fn leftmost_output_per_group(
+    entries: &[datum_core::entry::Entry],
+    outputs: &[OutputArgs],
+) -> Vec<OutputArgs> {
+    use std::collections::HashSet;
+    let mut seen: HashSet<(String, String)> = HashSet::new();
+    let mut group_outputs: Vec<OutputArgs> = Vec::new();
+    for (entry, out) in entries.iter().zip(outputs.iter()) {
+        let occur = entry
+            .occur_time
+            .as_ref()
+            .map(|t| t.utc.to_rfc3339())
+            .unwrap_or_default();
+        let key = (entry.field.clone(), occur);
+        if seen.insert(key) {
+            group_outputs.push(out.clone());
+        }
+    }
+    group_outputs
+}
+
+/// da-dayk: render every freshly-inserted multi row to stdout. Mirrors
+/// the post-insert render block in [`log_entry`] but driven from the
+/// hid list returned by [`datum_core::db::Db::insert_entries_atomic`].
+/// `RenderContext`s are batch-built so we share one state-history probe
+/// per field instead of N point probes.
+fn render_multi_inserted(db: &Db, hids: &[datum_core::ids::Hid], group_outputs: &[OutputArgs]) {
+    if hids.is_empty() {
+        return;
+    }
+    let registry = load_registry(db).ok();
+    let entries: Vec<Entry> = hids
+        .iter()
+        .filter_map(|hid| db.get_entry(hid.as_str()).ok())
+        .collect();
+    if entries.is_empty() {
+        return;
+    }
+    let contexts = build_render_contexts(&entries, db);
+    for (idx, entry) in entries.iter().enumerate() {
+        let output = group_outputs.get(idx).cloned().unwrap_or_default();
+        let ctx = contexts.get(idx).cloned().unwrap_or_else(|| RenderContext {
+            lead_state: None,
+            trail_state: None,
+            is_first_occurrence: false,
+            ongoing_state: None,
+        });
+        show_create_with_context(entry, registry.as_ref(), &ctx, &output);
+    }
 }
 
 /// Force every entry in `entries` to share the leftmost entry's
@@ -549,8 +622,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // return. The multi driver normalizes occur_time across sides,
     // applies same-field merge, and writes the batch atomically; it
     // also owns the post-write display + `_LAST` stamp. None of the
-    // per-side render/insert work below applies in that case.
-    if crate::args::push_to_multi_collector(entry.clone()) {
+    // per-side render/insert work below applies in that case. The
+    // side's `OutputArgs` rides along so the multi driver can honour
+    // per-side flags (`--show none`, format strings) when rendering
+    // the resulting merged row (da-dayk).
+    if crate::args::push_to_multi_collector(entry.clone(), args.output()) {
         return Ok(());
     }
 

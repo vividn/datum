@@ -95,13 +95,16 @@ impl IntentContext {
 thread_local! {
     static INTENT_CTX: RefCell<Option<IntentContext>> = const { RefCell::new(None) };
     /// da-gh0.C: when `Some`, the log path pushes its prepared
-    /// [`datum_core::entry::Entry`] onto this buffer *instead* of
-    /// inserting it. The multi-dispatch driver enables the buffer
-    /// around each side, collects all N entries, then runs them
-    /// through [`datum_core::db::Db::insert_entries_atomic`] so the
-    /// whole batch lands in a single transaction with same-field
-    /// merge applied at write time.
-    static MULTI_COLLECTOR: RefCell<Option<Vec<datum_core::entry::Entry>>> =
+    /// [`datum_core::entry::Entry`] (paired with the side's
+    /// [`OutputArgs`]) onto this buffer *instead* of inserting it.
+    /// The multi-dispatch driver enables the buffer around each side,
+    /// collects all N entries, then runs them through
+    /// [`datum_core::db::Db::insert_entries_atomic`] so the whole batch
+    /// lands in a single transaction with same-field merge applied at
+    /// write time. The retained `OutputArgs` lets the post-insert
+    /// render path (da-dayk) honour per-side flags (`--show none`,
+    /// `--format`, etc.) for the corresponding merged row.
+    static MULTI_COLLECTOR: RefCell<Option<Vec<(datum_core::entry::Entry, OutputArgs)>>> =
         const { RefCell::new(None) };
 }
 
@@ -126,18 +129,21 @@ pub fn begin_multi_collector() {
 }
 
 /// Drain the multi-collector buffer, leaving the thread-local empty.
-/// Returns `None` if no window is currently open.
-pub fn end_multi_collector() -> Option<Vec<datum_core::entry::Entry>> {
+/// Returns `None` if no window is currently open. Each element pairs
+/// the prepared entry with the originating side's [`OutputArgs`] so
+/// downstream render code can honour per-side display flags.
+pub fn end_multi_collector() -> Option<Vec<(datum_core::entry::Entry, OutputArgs)>> {
     MULTI_COLLECTOR.with(|slot| slot.borrow_mut().take())
 }
 
-/// Push an entry into the active multi-collector. Returns `true` when
-/// a collector is in scope (the caller should skip the normal insert
-/// path); returns `false` when there is no active window.
-pub fn push_to_multi_collector(entry: datum_core::entry::Entry) -> bool {
+/// Push an entry (with its side's [`OutputArgs`]) into the active
+/// multi-collector. Returns `true` when a collector is in scope (the
+/// caller should skip the normal insert path); returns `false` when
+/// there is no active window.
+pub fn push_to_multi_collector(entry: datum_core::entry::Entry, output: OutputArgs) -> bool {
     MULTI_COLLECTOR.with(|slot| {
         if let Some(buf) = slot.borrow_mut().as_mut() {
-            buf.push(entry);
+            buf.push((entry, output));
             true
         } else {
             false
