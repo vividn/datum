@@ -133,8 +133,8 @@ OPTIONS:
       --dur <VAL>       Duration (30m, 1:30, 2h, PT30M)
   -z, --timezone <TZ>   Timezone (IANA or UTC offset)
   -u, --undo            Undo: delete most recent matching entry
-  -k, --key <KEY_SPEC>  Data-only id-key slot (repeatable)
-  -K, --slug-key <S>    Slug-contributing id-key (repeatable)
+  -k, --key <KEY_SPEC>  Data-only id-key (forms: K req, K= opt, K=val default)
+  -K, --slug-key <S>    Slug-contributing id-key (same K / K= / K=val forms)
   -c, --comment <T>     Comment
       --id <TEMPLATE>   Slug template (e.g. %field%:%uid%)
       --id-delimiter <S>  Delimiter to collapse empty segments
@@ -231,6 +231,80 @@ fn unknown_command_falls_back_to_top_level() {
 // ---------------------------------------------------------------------------
 // Markdown render — sanity check, not byte-identity.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Multi-entry alias documentation — surfaces in --help, markdown, and roff.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn alias_help_documents_comma_trigger() {
+    let s = command_help("alias");
+    assert!(
+        s.contains("ATOMIC MULTI-ENTRY ALIASES"),
+        "alias --help should document multi-entry aliases"
+    );
+    assert!(
+        s.contains("whitespace-bounded `,`"),
+        "alias --help should explain the whitespace-bounded comma trigger"
+    );
+}
+
+#[test]
+fn alias_help_documents_k_trichotomy() {
+    let s = command_help("alias");
+    assert!(s.contains("-k key       required"));
+    assert!(s.contains("-k key=      optional"));
+    assert!(s.contains("-k key=val   defaulted"));
+}
+
+#[test]
+fn alias_help_documents_double_dash_semantics() {
+    let s = command_help("alias");
+    assert!(
+        s.contains("`--` SEMANTICS"),
+        "alias --help should have a `--` semantics section"
+    );
+    assert!(s.contains("implicit at the end of every"));
+    assert!(s.contains("does not propagate past the alias boundary"));
+}
+
+#[test]
+fn alias_help_documents_last_after_multi() {
+    let s = command_help("alias");
+    assert!(s.contains("`_LAST`"));
+    assert!(s.contains("every row of an atomic group"));
+}
+
+#[test]
+fn log_flag_summaries_document_k_trichotomy() {
+    // Surfaces the three -k forms in any logging verb's --help table.
+    let s = command_help("add");
+    assert!(
+        s.contains("K req, K= opt, K=val default"),
+        "log verb --help should expose the -k trichotomy in the flag summary"
+    );
+    assert!(
+        s.contains("Slug-contributing id-key (same K / K= / K=val forms)"),
+        "log verb --help should expose the -K trichotomy in the flag summary"
+    );
+}
+
+#[test]
+fn markdown_alias_includes_multi_entry_description() {
+    let md = super::render::render_markdown(Some("alias"));
+    assert!(md.contains("multi-of-multi flattens"));
+    assert!(md.contains("`-k key`"));
+    assert!(md.contains("`_LAST`"));
+}
+
+#[test]
+fn roff_alias_includes_multi_entry_description() {
+    let r = super::render::render_roff(Some("alias"));
+    assert!(r.contains(".SH DESCRIPTION\n"));
+    assert!(r.contains("multi\\-of\\-multi flattens"));
+    // Hyphens in `-k`/`-K` must render as escaped roff hyphens.
+    assert!(r.contains("\\-k key"));
+}
 
 #[test]
 fn markdown_top_level_has_headings() {

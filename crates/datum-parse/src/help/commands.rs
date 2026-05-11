@@ -90,7 +90,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("KEY_SPEC"),
         value_optional: false,
-        summary: "Data-only id-key slot (repeatable)",
+        summary: "Data-only id-key (forms: K req, K= opt, K=val default)",
         long_description: None,
         left_override: None,
     },
@@ -100,7 +100,7 @@ const LOG_FLAGS: &[FlagSpec] = &[
         takes_value: true,
         value_hint: Some("S"),
         value_optional: false,
-        summary: "Slug-contributing id-key (repeatable)",
+        summary: "Slug-contributing id-key (same K / K= / K=val forms)",
         long_description: None,
         left_override: None,
     },
@@ -359,7 +359,9 @@ const RETIME_BODY: &str = "USAGE:\n  datum retime [SLUG] (--offset DUR | --time 
 
 const SPEC_BODY: &str = "USAGE:\n  datum spec show <FIELD>\n  datum spec set <FIELD> [--json JSON] [--default-verb V] [--state S]... [--tag T]... ...\n  datum spec list [--tag T]\n  datum spec remove <FIELD>\n";
 
-const ALIAS_BODY: &str = "USAGE:\n  datum alias show <NAME>\n  datum alias set <NAME> <EXPANSION>\n  datum alias list\n  datum alias remove <NAME>\n";
+const ALIAS_LONG_DESCRIPTION: &str = "Aliases expand argv before the parser sees it, so an alias can stand in for any prefix of a `datum` invocation — verb, field, flags, or all three.\n\nA standalone, whitespace-bounded `,` token splits one invocation into N sides that write atomically with the same occur_time. The trigger works at the top-level CLI, inside alias bodies, and through chains of alias-of-alias (multi-of-multi flattens to N flat sides). The comma must be its own token: `vertical , sit` triggers a multi, while `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values with embedded commas (`key=a,b`) pass through unchanged.\n\nKey slot forms (`-k` and `-K` accept the same three shapes): `-k key` is required and errors at call time if unfilled, `-k key=` is optional with no default (silently skipped), `-k key=val` defaults to `val` when no value is supplied. A `-k` or `-K` name declared on multiple sides becomes a shared slot — one call-site value propagates to every declaring side. The `.` token skips a slot on its side; for a shared slot it skips on all sides.\n\n`--` semantics in multi-entry contexts: inside an alias body, flags before `--` scope to their side and flags after `--` apply to all sides. `--` is implicit at the end of every alias body, so call-site flags apply to all sides by default. A `--` inside an alias body does not propagate past the alias boundary. Call-site time flags compose with alias-bound times rather than overriding them.\n\nAfter a multi-entry write, `_LAST` refers to every entry written by the most recent invocation, so `rekey _LAST oldkey=newkey` affects every row of the atomic group. A subsequent single-entry write resets `_LAST` to that one row.";
+
+const ALIAS_BODY: &str = "USAGE:\n  datum alias show <NAME>\n  datum alias set <NAME> <EXPANSION>\n  datum alias list\n  datum alias remove <NAME>\n\nATOMIC MULTI-ENTRY ALIASES:\n  A standalone, whitespace-bounded `,` token splits one invocation\n  into N sides that all write atomically with the same occur_time.\n  Works at the top-level CLI, inside alias bodies, and through chains\n  of alias-of-alias (multi-of-multi flattens to N flat sides).\n\n  The comma must be its own token. `vertical , sit` triggers a multi;\n  `vertical,sit`, `vertical ,sit`, and `vertical, sit` do not. Values\n  with embedded commas (`key=a,b`) pass through unchanged.\n\n  Examples:\n    datum switch body vertical , switch body sit\n        Two same-field switches at one occur_time merge into one\n        body row with state=Parallel([vertical, sit]).\n    datum alias set oov \\\n        \"switch environment outside , switch body vertical\"\n        Define a multi-entry alias. `datum oov` writes both rows.\n    datum alias set vvcaf \\\n        \"switch body vertical , occur caffeine -t +5\"\n    datum vvcaf -t +10\n        Call-site time flags compose with alias-bound times (not\n        override): vertical at +10min, caffeine at +15min.\n\nKEY SLOT FORMS (-k / -K):\n  -k key       required (errors at call site if unfilled)\n  -k key=      optional, no default (silently skipped if unfilled)\n  -k key=val   defaulted (auto-filled with `val` when unfilled)\n\n  A `-k` (or `-K`) name declared on multiple sides becomes a shared\n  slot — one call-site value propagates to every declaring side. `.`\n  skips a slot on its side; `.` for a shared slot skips on all sides.\n\n`--` SEMANTICS IN MULTI-ENTRY CONTEXTS:\n  Inside an alias body, flags before `--` scope to their side; flags\n  after `--` apply to all sides. `--` is implicit at the end of every\n  alias body, so call-site flags apply to all sides by default. A `--`\n  inside an alias body does not propagate past the alias boundary.\n\n`_LAST` AFTER A MULTI-WRITE:\n  `_LAST` refers to every entry written by the most recent invocation,\n  so `rekey _LAST oldkey=newkey` affects every row of an atomic group.\n  A subsequent single-entry write resets `_LAST` to that one row.\n";
 
 const TRACK_BODY: &str =
     "USAGE:\n  datum track <FIELD> [--color C] [--state S=C]... [--tag T]...\n";
@@ -829,7 +831,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Admin,
         summary: "manage aliases",
         top_summary: None,
-        long_description: None,
+        long_description: Some(ALIAS_LONG_DESCRIPTION),
         usage: &[
             "datum alias show <NAME>",
             "datum alias set <NAME> <EXPANSION>",

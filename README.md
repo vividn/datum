@@ -166,6 +166,86 @@ datum [--db NAME_OR_PATH] <command> [args]
 - `-V, --version` — Show version
 <!-- END AUTOGEN: COMMANDS -->
 
+## Atomic multi-entry aliases
+
+A standalone, whitespace-bounded `,` token splits one invocation into
+N sides that all write atomically with the same `occur_time`. The
+trigger works at the top-level CLI, inside alias bodies, and through
+chains of alias-of-alias (multi-of-multi flattens to N flat sides).
+
+### Comma trigger
+
+The comma must be its own token — whitespace on both sides:
+
+```bash,no_run
+datum vertical , sit     # multi (whitespace-bounded)
+datum vertical, sit      # NOT a multi — `vertical,` is one token
+datum vertical ,sit      # NOT a multi — `,sit` is one token
+datum vertical,sit       # NOT a multi — single token
+datum occur k=a,b        # commas inside values pass through unchanged
+```
+
+There is no escape syntax; whitespace is the trigger. If you want a
+literal `,` in a value, embed it (`key=a,b`) and the parser leaves it alone.
+
+### Example 1: bare comma at the CLI
+
+```bash,no_run
+datum switch body vertical , switch body sit
+```
+
+Both sides share one `occur_time`. Because they target the same field
+(`body`), they collapse into a single row with
+`state=Parallel([vertical, sit])` — the surprise to know about: two
+switches to the same field at the same instant don't overwrite each
+other, they merge into a parallel state. Different-field sides write
+separate rows (still atomic).
+
+### Example 2: defining a multi-entry alias
+
+```bash,no_run
+datum alias set oov   "switch environment outside , switch body vertical"
+datum alias set scaff "switch body sit , occur caffeine -k doseMg="
+datum oov                # writes both rows atomically
+datum scaff 100          # positional fills caffeine's doseMg slot
+```
+
+Positional args fill alias slots left-to-right across sides. The
+trichotomy of `-k` (and `-K`) declaration forms governs each slot:
+
+| Form         | Meaning                                                |
+|--------------|--------------------------------------------------------|
+| `-k key`     | required — errors at call time if no value is supplied |
+| `-k key=`    | optional, no default — silently skipped if unfilled    |
+| `-k key=val` | defaulted — auto-filled with `val` when unfilled       |
+
+A `-k` (or `-K`) name declared on multiple sides becomes a *shared* slot
+— one call-site value propagates to every declaring side. The `.` token
+skips a slot on its side; `.` for a shared slot skips on all sides.
+
+### Example 3: call-site time flags compose with alias-bound time
+
+```bash,no_run
+datum alias set vvcaf "switch body vertical , occur caffeine -t +5"
+datum vvcaf -t +10       # vertical at +10min, caffeine at +15min
+```
+
+Call-site time flags *compose* with alias-bound times (they do not
+override). Inside an alias body, flags before a `,` scope to their
+side. `--` is implicit at the end of every alias body, so call-site
+flags apply to all sides by default. A `--` inside an alias body
+behaves the same way locally but its scope ends at the alias boundary.
+
+### `_LAST` after a multi-write
+
+After a multi-entry write, `_LAST` refers to **every** entry written by
+that invocation. Follow-up commands like `rekey _LAST oldkey=newkey`
+therefore affect every row of the atomic group. A subsequent
+single-entry write resets `_LAST` to that one row.
+
+For the condensed in-app reference, run `datum alias --help`; the
+full behavioural contract lives in `da-gh0`.
+
 ## Sync
 
 Sync is opt-in and end-to-end encrypted. The relay server stores opaque
