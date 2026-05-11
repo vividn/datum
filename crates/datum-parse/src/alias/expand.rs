@@ -541,6 +541,63 @@ pub fn shell_split(s: &str) -> Vec<String> {
     out
 }
 
+/// The standalone-comma token that triggers a multi-entry split.
+/// Whitespace-bounded `,` arrives from [`shell_split`] (or its `parse.rs`
+/// twin) as its own argv entry. Non-bounded commas — `vertical,sit`,
+/// `vertical ,sit`, `key=a,b` — stay glued to their neighbouring chars
+/// and do not trigger.
+pub const MULTI_COMMA: &str = ",";
+
+/// Split an argv (or any token slice) at standalone-comma tokens into N
+/// sides. Implements the parser side of Rules 6, 7, 14 from `da-gh0`:
+///
+/// * **Rule 6** — only a token equal to [`MULTI_COMMA`] triggers a
+///   split. Commas glued to surrounding chars stay inside their token.
+/// * **Rule 7** — repeated invocation flattens multi-of-multi (callers
+///   that re-expand alias bodies just call this again on the spliced
+///   result; the splitter has no notion of nesting).
+/// * **Rule 14** — the splitter is a top-level parser feature, not
+///   alias-specific. Callers wire it in at every argv-rewrite seam.
+///
+/// Returns the per-side token vectors in order. Returns
+/// [`ParseError::InvalidArg`] when any side is empty (leading, trailing,
+/// or middle `,` with no tokens on one side), matching the
+/// `empty_*_side_errors` cases in section M of the bead's test corpus.
+///
+/// **Single-side passthrough:** when argv contains no standalone-comma
+/// token the result is `Ok(vec![argv])` — the original argv wrapped in a
+/// one-element outer vec. Callers can branch on `sides.len() == 1` to
+/// take the existing single-entry code path.
+pub fn split_argv_at_commas(argv: Vec<String>) -> crate::Result<Vec<Vec<String>>> {
+    let has_comma = argv.iter().any(|t| t == MULTI_COMMA);
+    if !has_comma {
+        return Ok(vec![argv]);
+    }
+    let mut sides: Vec<Vec<String>> = Vec::new();
+    let mut cur: Vec<String> = Vec::new();
+    for tok in argv {
+        if tok == MULTI_COMMA {
+            if cur.is_empty() {
+                return Err(crate::error::ParseError::InvalidArg(
+                    "empty side in multi-entry invocation (standalone `,` with no tokens on \
+                     one side)"
+                        .into(),
+                ));
+            }
+            sides.push(std::mem::take(&mut cur));
+        } else {
+            cur.push(tok);
+        }
+    }
+    if cur.is_empty() {
+        return Err(crate::error::ParseError::InvalidArg(
+            "empty trailing side in multi-entry invocation (argv ends with standalone `,`)".into(),
+        ));
+    }
+    sides.push(cur);
+    Ok(sides)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -548,6 +605,92 @@ mod tests {
     fn v(s: &[&str]) -> Vec<String> {
         s.iter().map(|x| x.to_string()).collect()
     }
+
+    // ─── da-gh0 comma trigger (Rules 6, 7, 14; Section A; Section M-empty) ──
+
+    #[test]
+    fn comma_whitespace_bounded_triggers_multi() {
+        // After shell_split, "vertical , sit" → ["vertical", ",", "sit"].
+        let sides = split_argv_at_commas(v(&["vertical", ",", "sit"])).unwrap();
+        assert_eq!(sides, vec![v(&["vertical"]), v(&["sit"])]);
+    }
+
+    #[test]
+    fn comma_no_whitespace_does_not_trigger() {
+        // "vertical,sit" → single token; no split.
+        let sides = split_argv_at_commas(v(&["vertical,sit"])).unwrap();
+        assert_eq!(sides, vec![v(&["vertical,sit"])]);
+    }
+
+    #[test]
+    fn comma_one_sided_whitespace_does_not_trigger() {
+        // "vertical ,sit" → ["vertical", ",sit"]; "vertical, sit" → ["vertical,", "sit"].
+        // Neither token equals "," so no split.
+        let sides = split_argv_at_commas(v(&["vertical", ",sit"])).unwrap();
+        assert_eq!(sides, vec![v(&["vertical", ",sit"])]);
+        let sides = split_argv_at_commas(v(&["vertical,", "sit"])).unwrap();
+        assert_eq!(sides, vec![v(&["vertical,", "sit"])]);
+    }
+
+    #[test]
+    fn comma_three_sides_parses_as_three() {
+        let sides = split_argv_at_commas(v(&["vertical", ",", "sit", ",", "supine"])).unwrap();
+        assert_eq!(sides, vec![v(&["vertical"]), v(&["sit"]), v(&["supine"])]);
+    }
+
+    #[test]
+    fn comma_top_level_cli_no_alias_required() {
+        // Rule 14: direct invocation `dm vertical , sit` splits without any
+        // alias defined — the splitter is alias-agnostic.
+        let sides = split_argv_at_commas(v(&["vertical", ",", "sit"])).unwrap();
+        assert_eq!(sides.len(), 2);
+    }
+
+    #[test]
+    fn comma_inside_value_does_not_trigger_multi() {
+        // `key=a,b` is a single shell token; embedded comma is not standalone.
+        let sides = split_argv_at_commas(v(&["occur", "field", "key=a,b"])).unwrap();
+        assert_eq!(sides, vec![v(&["occur", "field", "key=a,b"])]);
+    }
+
+    #[test]
+    fn comma_no_commas_passes_through_as_single_side() {
+        let sides = split_argv_at_commas(v(&["occur", "coffee"])).unwrap();
+        assert_eq!(sides, vec![v(&["occur", "coffee"])]);
+    }
+
+    #[test]
+    fn empty_leading_side_errors() {
+        // `, sit` → ["", ",", "sit"] is impossible from shell_split; the
+        // realistic form is argv = [",", "sit"] (leading standalone comma).
+        let err = split_argv_at_commas(v(&[",", "sit"])).unwrap_err();
+        assert!(format!("{err:?}").contains("empty side"));
+    }
+
+    #[test]
+    fn empty_trailing_side_errors() {
+        let err = split_argv_at_commas(v(&["sit", ","])).unwrap_err();
+        assert!(format!("{err:?}").contains("empty trailing side"));
+    }
+
+    #[test]
+    fn empty_middle_side_errors() {
+        let err = split_argv_at_commas(v(&["a", ",", ",", "b"])).unwrap_err();
+        assert!(format!("{err:?}").contains("empty side"));
+    }
+
+    #[test]
+    fn multi_of_multi_flattens_when_callers_reapply() {
+        // Rule 7 / Section K: callers that re-splice alias bodies just
+        // re-invoke the splitter on the new argv. The splitter itself
+        // has no nesting — flattening falls out of running it twice.
+        // Simulate: alias `y = x , c` where `x = a , b` expands to
+        // argv = ["a", ",", "b", ",", "c"] after substitution.
+        let sides = split_argv_at_commas(v(&["a", ",", "b", ",", "c"])).unwrap();
+        assert_eq!(sides, vec![v(&["a"]), v(&["b"]), v(&["c"])]);
+    }
+
+    // ─── existing alias pre-pass tests ──────────────────────────────────────
 
     #[test]
     fn no_alias_with_known_subcommand() {
