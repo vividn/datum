@@ -297,11 +297,17 @@ pub fn entry_self_trail_state(entry: &Entry) -> Option<JsonValue> {
     }
 }
 
-/// Render the switch state-badge body: scalar = solid coloured block; array
-/// = N adjacent blocks, each painted with its own state colour, separated
-/// by commas tinted with the next state's colour. Per da-9vop, every state
-/// in a parallel set must render in its own colour rather than borrowing
-/// the first state's hue.
+/// Render the switch state-badge body. Per da-gvj1:
+///
+/// * Scalar string → solid bg chip with the state text.
+/// * Structured (`{id: …, …}`) → bg chip whose text is `{id}` and whose bg
+///   color is hashed by `.id` alone (rules 1–2). Sub-fields (`.title`,
+///   `.format`, …) move to the doc-only state second line.
+/// * Parallel array → adjacent chips for each member, separated by commas
+///   tinted with the upcoming state's colour. Per da-9vop, every state in
+///   a parallel set renders in its own colour rather than borrowing the
+///   first state's hue. Comma carries **no** trailing space here (rule 6:
+///   tail / chip-line uses `,`; doc inline lists use `, `).
 fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&FieldSpec>) -> String {
     match value {
         None => String::new(),
@@ -315,16 +321,15 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
             paint_bg_fg(Rgb::IGNORED, Rgb::IGNORED_FG, s)
         }
         Some(JsonValue::String(s)) => paint_bg(state_rgb(s, spec), s),
+        Some(JsonValue::Object(obj)) => render_structured_chip(obj, spec),
         Some(JsonValue::Array(items)) if items.len() >= 2 => {
             let mut out = String::new();
             for (i, item) in items.iter().enumerate() {
-                let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
                 if i > 0 {
-                    // Comma separator tinted with the upcoming state's
-                    // colour, sitting between two bg-painted state cells.
+                    let color = state_value_rgb(item, field, spec).unwrap_or(Rgb::IGNORED);
                     out.push_str(&paint(&color.fg(), ","));
                 }
-                out.push_str(&paint_bg(color, &scalar_text(item)));
+                out.push_str(&render_switch_badge(Some(item), field, spec));
             }
             out
         }
@@ -335,11 +340,20 @@ fn render_switch_badge(value: Option<&JsonValue>, field: &str, spec: Option<&Fie
     }
 }
 
-fn scalar_text(v: &JsonValue) -> String {
-    match v {
-        JsonValue::String(s) => s.clone(),
-        other => other.to_string(),
-    }
+/// Render a structured-state chip — the `{id}` form used on the main info
+/// line (rule 1). Background hashed by `.id` alone via
+/// [`colors::structured_state_rgb`] so sub-field differences don't change
+/// the colour.
+fn render_structured_chip(
+    obj: &serde_json::Map<String, JsonValue>,
+    spec: Option<&FieldSpec>,
+) -> String {
+    let rgb = structured_state_rgb(obj, spec);
+    let body = match obj.get("id").and_then(JsonValue::as_str) {
+        Some(id) => format!("{{{id}}}"),
+        None => "{}".to_string(),
+    };
+    paint_bg(rgb, &body)
 }
 
 // ─── Field badge (§4) ────────────────────────────────────────────────────────

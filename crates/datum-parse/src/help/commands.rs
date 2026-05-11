@@ -336,7 +336,7 @@ const HEAD_BODY: &str = "USAGE:\n  datum head [FIELD]\n\nOPTIONS:\n  -n, --limit
 
 const NOW_BODY: &str = "USAGE:\n  datum now [-A] [--bare] [--no-color] [--cols N]\n\n  -A           Show ignored fields too (dim)\n      --bare   Suppress the terminal nowview band; only show the state list\n      --no-color   Disable ANSI color in the nowview band\n      --cols N Override terminal width in cells (auto-detected from $COLUMNS)\n";
 
-const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n";
+const GET_BODY: &str = "USAGE:\n  datum get <ID_OR_SLUG> [--pretty]\n\nStructured states (objects with `id` and other fields) render as an `{id}`\nchip on the main info line, with sub-fields broken out on a state second\nline below. Parallel states wrap in `[ … ]` with one inner state per line.\nThe per-entry data block follows the same alignment convention — keys are\nright-aligned so their trailing `:` shares a column when the block goes\nmultiline.\n";
 
 const DELETE_BODY: &str = "USAGE:\n  datum delete <ID_OR_SLUG> [--force] [--dry-run] [--strict]\n";
 
@@ -556,7 +556,10 @@ pub const COMMANDS: &[CommandSpec] = &[
         category: Category::Read,
         summary: "show recent entries",
         top_summary: None,
-        long_description: None,
+        long_description: Some(
+            "Structured-state entries show their id only on the chip line \
+             (`{id}`); use `datum get` for the full structure.",
+        ),
         usage: &["datum tail [FIELD]"],
         args: NO_ARGS,
         flags: TAIL_FLAGS,

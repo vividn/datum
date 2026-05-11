@@ -171,6 +171,12 @@ pub(crate) fn state_rgb(state: &str, spec: Option<&FieldSpec>) -> Rgb {
 /// LEAD/TRAIL slots can render terminal-default whitespace instead of a
 /// solid black bg cell. See `action::render_slot` for how the `None` case
 /// flows into [`SlotKind::FieldEnded`].
+///
+/// For [`StateValue::Structured`] objects (da-ju71), the chip background
+/// color is hashed by the object's `.id` field only — so `{id: "bob",
+/// format: "audio"}` and `{id: "bob", format: "video"}` share a color
+/// (rule 2 of da-gvj1). Objects without an `.id` fall back to hashing the
+/// full serialized form so behaviour stays deterministic.
 pub(crate) fn state_value_rgb(
     value: &JsonValue,
     field: &str,
@@ -186,7 +192,26 @@ pub(crate) fn state_value_rgb(
             // Array → first element recursive; §5.
             items.first().and_then(|v| state_value_rgb(v, field, spec))
         }
+        JsonValue::Object(obj) => Some(structured_state_rgb(obj, spec)),
         _ => Some(state_rgb(&value.to_string(), spec)),
+    }
+}
+
+/// Resolve a structured (`{id, …}`) state to its chip background color.
+/// Hashing the `.id` field alone — independent of `.title`, `.format`,
+/// etc. — gives the visual stability rule 2 of da-gvj1 requires. When the
+/// object has no string `.id`, fall back to hashing the full serialized
+/// form so the color stays deterministic for that degenerate shape.
+pub(crate) fn structured_state_rgb(
+    obj: &serde_json::Map<String, JsonValue>,
+    spec: Option<&FieldSpec>,
+) -> Rgb {
+    match obj.get("id").and_then(JsonValue::as_str) {
+        Some(id) => state_rgb(id, spec),
+        None => {
+            let ser = JsonValue::Object(obj.clone()).to_string();
+            state_rgb(&ser, spec)
+        }
     }
 }
 

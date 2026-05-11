@@ -56,9 +56,10 @@ fn occur_emits_two_line_create_with_hid_and_extra() {
     // Info line: time + field
     assert!(lines[1].contains("coffee"), "line 1: {:?}", lines[1]);
 
-    // Extra data
+    // Extra data — per da-gvj1 the user-data block renders `key: value`
+    // (numbers bare per rule 11), replacing the legacy `key=value` form.
     assert!(
-        stdout.contains("amount=200"),
+        stdout.contains("amount: 200"),
         "expected amount in extra data: {stdout:?}",
     );
 
@@ -172,7 +173,7 @@ fn update_emits_update_action_tag() {
     let (stdout, _) = run(&db, &["update", "coffee:pin", "amount=5"]);
     assert!(stdout.contains("UPDATE"), "expected UPDATE: {stdout:?}");
     assert!(
-        stdout.contains("amount=5"),
+        stdout.contains("amount: 5"),
         "expected new value: {stdout:?}"
     );
     let _ = std::fs::remove_file(&db);

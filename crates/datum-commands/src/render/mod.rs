@@ -11,6 +11,7 @@
 //! / extract plumbing and glues the write-action path to `action::`.
 
 pub mod action;
+pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
 
@@ -339,10 +340,21 @@ pub fn show_action_with_context(
         println!("{info}");
     }
 
-    // Extra data
+    // State second line (da-gvj1 rule 3): doc-style renderers expose
+    // structured-state internals on a line below the chip. Tail never
+    // takes this path (see `print_table_with`).
     if matches!(args.show, Show::Default | Show::Standard | Show::All) {
-        if let Some(extra) = format_extra_data(entry) {
-            println!("  {extra}");
+        if let Some(v) = entry.value.as_ref() {
+            if let Some(line) = self::blocks::format_state_doc_line(v, &entry.field, spec) {
+                println!("  {line}");
+            }
+        }
+    }
+
+    // User-data block
+    if matches!(args.show, Show::Default | Show::Standard | Show::All) {
+        if let Some(extra) = self::blocks::format_data_block(entry) {
+            println!("{extra}");
         }
     }
     if args.show == Show::All {
@@ -725,21 +737,12 @@ pub fn print_logged(entry: &Entry) {
 
 // ─── Extra data rendering ────────────────────────────────────────────────────
 
-/// Format extra_data, flattened with 1 space of leading padding per line.
-/// Returns None if there's nothing to show.
-fn format_extra_data(entry: &Entry) -> Option<String> {
-    let extra = entry.data.as_ref()?;
-    let map = extra.as_object()?;
-    if map.is_empty() {
-        return None;
-    }
-    let parts: Vec<String> = map
-        .iter()
-        .map(|(k, v)| format!("{k}={}", render_extra_value(v)))
-        .collect();
-    Some(parts.join(" "))
-}
-
+/// Render a value for non-block consumers — format-string interpolation
+/// (`%amount%`) and the `tail --columns` extractor. These callers want a
+/// bare, copy-paste-friendly form (no quotes around strings, unit-annotated
+/// `{v,u}` concatenated as `<v><u>`), distinct from the user-data block
+/// renderer in [`blocks::format_data_block`] which follows the rule-11
+/// quoting convention.
 fn render_extra_value(v: &JsonValue) -> String {
     match v {
         JsonValue::String(s) => s.clone(),
@@ -1428,6 +1431,131 @@ mod tests {
         let _no = ScopedEnv::set("NO_COLOR", Some("1"));
         let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
         assert!(color_enabled());
+    }
+
+    // ─── da-gvj1 corpus: state-cell rendering ─────────────────────────────
+    //
+    // The bead's locked corpus sections A, B, and F live here — these
+    // assertions exercise the **main-line chip** path (`format_state_group`
+    // / `render_switch_badge`). The state-second-line corpus (C–N) lives
+    // in `blocks::tests`.
+
+    // A — structured renders `{id}` chip in main line
+    #[test]
+    fn structured_state_renders_id_in_curly_braces_in_main_line() {
+        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let entry = sample_entry(
+            "call",
+            Verb::Switch,
+            Some(serde_json::json!({"id": "joe", "title": "Meeting"})),
+        );
+        let state = strip_ansi(&extract(&entry, None, None).state.unwrap());
+        assert!(
+            state.contains("{joe}"),
+            "expected `{{joe}}` chip: {state:?}"
+        );
+        assert!(
+            !state.contains("Meeting"),
+            "main line must not include sub-fields: {state:?}"
+        );
+    }
+
+    // A — simple-string state unchanged
+    #[test]
+    fn simple_string_state_unchanged_in_main_line() {
+        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let entry = sample_entry("mood", Verb::Switch, Some(JsonValue::from("happy")));
+        let state = strip_ansi(&extract(&entry, None, None).state.unwrap());
+        assert!(state.contains("happy"), "{state:?}");
+        assert!(
+            !state.contains("{"),
+            "no curly braces for simple state: {state:?}"
+        );
+    }
+
+    // B — same id → same chip background color (color stability)
+    #[test]
+    fn same_structured_state_id_gets_same_color_across_entries() {
+        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
+        let _no = ScopedEnv::set("NO_COLOR", None);
+        let a = sample_entry(
+            "call",
+            Verb::Switch,
+            Some(serde_json::json!({"id": "bob", "format": "audio"})),
+        );
+        let b = sample_entry(
+            "call",
+            Verb::Switch,
+            Some(serde_json::json!({"id": "bob", "format": "video"})),
+        );
+        let sa = extract(&a, None, None).state.unwrap();
+        let sb = extract(&b, None, None).state.unwrap();
+        let bg = |s: &str| -> String {
+            let start = s.find("\x1b[48").unwrap_or(0);
+            let end = s[start..]
+                .find('m')
+                .map(|e| start + e + 1)
+                .unwrap_or(s.len());
+            s[start..end].to_string()
+        };
+        assert_eq!(
+            bg(&sa),
+            bg(&sb),
+            "same .id must hash to same chip bg regardless of other fields: a={sa:?} b={sb:?}"
+        );
+    }
+
+    // B — different id → different chip background color
+    #[test]
+    fn different_id_gets_different_color() {
+        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
+        let _no = ScopedEnv::set("NO_COLOR", None);
+        let a = sample_entry("call", Verb::Switch, Some(serde_json::json!({"id": "joe"})));
+        let b = sample_entry("call", Verb::Switch, Some(serde_json::json!({"id": "bob"})));
+        let sa = extract(&a, None, None).state.unwrap();
+        let sb = extract(&b, None, None).state.unwrap();
+        assert_ne!(sa, sb, "different ids must paint with different bg");
+    }
+
+    // F — tail parallel states use `,` with NO space (rule 6)
+    #[test]
+    fn tail_parallel_states_separated_by_comma_no_space() {
+        let _no = ScopedEnv::set("NO_COLOR", Some("1"));
+        let entry = sample_entry(
+            "body",
+            Verb::Switch,
+            Some(serde_json::json!(["vertical", "sit"])),
+        );
+        let state = strip_ansi(&extract(&entry, None, None).state.unwrap());
+        // Match the chip-line shape: `vertical,sit` (no space around comma).
+        assert!(
+            state.contains("vertical,sit"),
+            "expected no-space comma: {state:?}"
+        );
+        assert!(
+            !state.contains(", "),
+            "tail line must not use `, `: {state:?}"
+        );
+    }
+
+    // A — parallel of simple states: each member chipped separately
+    #[test]
+    fn parallel_simple_states_chipped_separately_in_main_line() {
+        let _dc = ScopedEnv::set("DATUM_COLOR", Some("1"));
+        let _no = ScopedEnv::set("NO_COLOR", None);
+        let entry = sample_entry(
+            "body",
+            Verb::Switch,
+            Some(serde_json::json!(["vertical", "sit"])),
+        );
+        let state = extract(&entry, None, None).state.unwrap();
+        // Two distinct bg-painted regions → two `\x1b[48;2;…m` escape
+        // openers in the rendered cell.
+        let bg_count = state.matches("\x1b[48;2;").count();
+        assert!(
+            bg_count >= 2,
+            "expected ≥2 bg escapes for two chips: {state:?}"
+        );
     }
 
     // ─── Test helpers ────────────────────────────────────────────────────────
