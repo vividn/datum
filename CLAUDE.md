@@ -109,6 +109,16 @@ cargo test -p datum-cli
 
 All 22 Phase 1 tests must pass. Add tests for new behaviors.
 
+## Pre-submit gate (polecats)
+
+Polecat sessions should run `scripts/check-changed.sh` instead of
+`scripts/check.sh` for pre-submit. Same battery (fmt/clippy/build/test/doc),
+but scoped to workspace crates the diff touches plus their transitive
+workspace dependents — falls back to the full `scripts/check.sh` battery
+on workspace-root config changes, empty-crate diffs, or when the closure
+covers ≥75% of the workspace. CI and the refinery always run the full
+battery as the safety net.
+
 ## Build status (as of 2026-04-16)
 
 | Phase | Status | Notes |

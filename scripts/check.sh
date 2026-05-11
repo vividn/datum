@@ -5,6 +5,11 @@
 # to the merge queue (replaces unavailable branch protection on a private
 # repo); contributors should run it before opening a PR.
 #
+# For fast iteration on small changes, see `scripts/check-changed.sh`
+# (same battery, scoped to changed crates + their workspace dependents,
+# with fallback to this full battery). CI + refinery always run the full
+# battery here regardless.
+#
 # Mirrors CI exactly:
 #   * build-and-test job: cargo build, nextest run, doc tests
 #   * lint job:           cargo fmt --check, cargo clippy -D warnings

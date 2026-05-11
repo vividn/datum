@@ -325,6 +325,17 @@ tests — the same set the GitHub Actions workflow gates on. Run it
 locally first because the repo is private (no remote branch
 protection); a green script run is the contract that CI will be green.
 
+For fast iteration on small, localised changes there is also
+`scripts/check-changed.sh`: the same battery, but scoped to the
+workspace crates the diff touches plus their transitive workspace
+dependents (so a one-line change in `datum-cli` does not rebuild and
+retest `datum-sync-*`). The script falls back to the full battery
+above when a workspace-root config file changes, when nothing
+crate-shaped is touched, or when the dependent closure already covers
+≥75% of the workspace. Polecats use `check-changed.sh` for pre-submit;
+CI and the refinery always run the full `check.sh` battery as the
+safety net.
+
 To run the same battery automatically on every `git push`, enable the
 tracked pre-push hook once per clone:
 
