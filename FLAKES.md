@@ -89,21 +89,3 @@ regions") and da-uuu (obsidian, state.rs perf rework). Polecats
 touching `state.rs`, switch rendering, or color-mode handling should
 run this test early so a regen lands in the same diff.
 
-## png_goldens_per_scene
-
-**Test:** `crates/datum-commands/tests/render_goldens.rs::png_goldens_per_scene`
-**Type:** ENV_DEPENDENT
-**Symptom:** Consistently fails outside the canonical CI environment
-due to system-font + resvg rasterization variance exceeding the
-per-channel tolerance (`avg_tol=1.0`, `max_pixel_tol=128`).
-**Recommended action:** Opt-in only. The test is gated behind the
-`DATUM_PNG_GOLDENS=1` env var (da-ky99) and skips with a visible
-message otherwise. CI sets the var; local `cargo test` runs do not
-need to do anything. To exercise it locally, run
-`DATUM_PNG_GOLDENS=1 cargo test -p datum-commands --test render_goldens`.
-**Last seen:** 2026-05-11
-**Notes:** SVG-to-PNG via resvg + tiny-skia; tolerance is set assuming
-pinned fonts. Other render-golden tests (`svg_goldens_per_scene`,
-terminal ANSI goldens, png comparator sanity tests) are byte- or
-env-deterministic and remain enabled by default. CI is the source of
-truth for png coverage.

@@ -546,35 +546,50 @@ fn compare_png_with_tolerance(
     Ok(())
 }
 
-// ─── Pure-Rust SVG → PNG (mirrors commands/{dayview,nowview}::rasterize_to_png) ───
+// ─── Pure-Rust SVG → PNG (deterministic, bundled-font flavor) ────────────────
+
+/// Bundled font asset used for **all** PNG goldens in this file.
+///
+/// The production renderer (`commands/{dayview,nowview}::rasterize_to_png`)
+/// still loads the host's system fonts — users get whatever ships on their
+/// machine. The test harness deliberately diverges: it uses an empty fontdb
+/// populated only with this single .ttf so `<text>` rasterization is
+/// byte-stable across any machine on the same crate versions.
+///
+/// **Swapping the font is a one-line change.** Drop a new .ttf next to this
+/// constant, update the path and family name, run
+/// `DATUM_UPDATE_GOLDENS=1 cargo test -p datum-commands --test render_goldens`,
+/// eyeball the diff, commit.
+#[cfg(feature = "png")]
+const BUNDLED_FONT_TTF: &[u8] = include_bytes!("fixtures/fonts/HackNerdFont-Regular.ttf");
+
+#[cfg(feature = "png")]
+const BUNDLED_FONT_FAMILY: &str = "Hack Nerd Font";
 
 /// Rasterize an SVG string to a deterministic PNG byte buffer.
 ///
-/// Tests run in a single binary, so font fallback resolution happens once
-/// and is stable across all PNG goldens in this file. Callers should keep
-/// SVG inputs free of fancy text content (or rely on the tolerance) so
-/// goldens survive cross-machine font variance.
+/// Builds a fresh `fontdb::Database` populated with **only** the bundled
+/// font — `load_system_fonts()` is deliberately not called, since system
+/// font drift was the entire source of pre-bundle PNG-golden flakiness
+/// (da-ky99 → da-c6hk).
 #[cfg(feature = "png")]
 fn rasterize_to_png(svg_xml: &str) -> Vec<u8> {
-    let mut opts = resvg::usvg::Options::default();
+    let mut opts = resvg::usvg::Options {
+        font_family: BUNDLED_FONT_FAMILY.to_string(),
+        ..Default::default()
+    };
     {
         let fontdb = opts.fontdb_mut();
-        fontdb.load_system_fonts();
-        let fallback = fontdb.faces().next().and_then(|face| {
-            face.families
-                .iter()
-                .find(|(_, lang)| *lang == resvg::usvg::fontdb::Language::English_UnitedStates)
-                .or_else(|| face.families.first())
-                .map(|(name, _)| name.clone())
-        });
-        if let Some(name) = fallback {
-            fontdb.set_serif_family(name.clone());
-            fontdb.set_sans_serif_family(name.clone());
-            fontdb.set_monospace_family(name.clone());
-            fontdb.set_cursive_family(name.clone());
-            fontdb.set_fantasy_family(name.clone());
-            opts.font_family = name;
-        }
+        fontdb.load_font_data(BUNDLED_FONT_TTF.to_vec());
+        fontdb.set_serif_family(BUNDLED_FONT_FAMILY);
+        fontdb.set_sans_serif_family(BUNDLED_FONT_FAMILY);
+        fontdb.set_monospace_family(BUNDLED_FONT_FAMILY);
+        fontdb.set_cursive_family(BUNDLED_FONT_FAMILY);
+        fontdb.set_fantasy_family(BUNDLED_FONT_FAMILY);
+        assert!(
+            fontdb.faces().next().is_some(),
+            "bundled font {BUNDLED_FONT_FAMILY} failed to load",
+        );
     }
     let tree = resvg::usvg::Tree::from_str(svg_xml, &opts).expect("parse SVG");
     let size = tree.size().to_int_size();
@@ -871,19 +886,9 @@ fn svg_goldens_per_scene() {
 #[cfg(feature = "png")]
 #[test]
 fn png_goldens_per_scene() {
-    // ENV_DEPENDENT (da-ky99): resvg + tiny-skia rasterization of text-bearing
-    // SVG scenes depends on the host's installed font set and `fontdb`
-    // resolution order. The per-channel tolerance is set assuming pinned CI
-    // fonts; on other machines it consistently exceeds the budget. Opt in via
-    // `DATUM_PNG_GOLDENS=1` (CI sets this). Local `cargo test` skips with a
-    // visible message rather than failing.
-    if std::env::var("DATUM_PNG_GOLDENS").as_deref() != Ok("1") {
-        eprintln!(
-            "skipping png_goldens_per_scene: env-dependent rasterization; \
-             set DATUM_PNG_GOLDENS=1 to enable (CI sets this). See FLAKES.md."
-        );
-        return;
-    }
+    // Deterministic: rasterizes against the bundled Hack Nerd Font with an
+    // empty fontdb (no system fonts). Anti-aliasing tolerance below still
+    // absorbs sub-pixel rounding variance between resvg releases.
     let dir = goldens_root().join("png");
     // Anti-aliasing tolerance: average channel difference per RGBA channel.
     // 1.0/255 = ~0.4% per channel — generous enough for resvg's sub-pixel
