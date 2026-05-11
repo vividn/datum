@@ -741,3 +741,81 @@ fn switch_trailing_duration_with_kv_positionals() {
     assert_eq!(state["note"], json!("hi"));
     assert_eq!(e.duration_seconds(), Some(3 * 60));
 }
+
+/// da-z8o4: `switch <field> end` promotes to the `end` verb instead of
+/// recording a literal state "end". Verifies the rewrite produces an
+/// entry identical (modulo timing) to `end <field>`.
+#[test]
+fn switch_field_end_routes_through_end_verb() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "end"], &db).expect("switch <field> end dispatch");
+
+    let entries = db.entries_for_field("project", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    let e = &entries[0];
+    // `end` is a CLI alias for `stop`; both produce Verb::Switch with state=false.
+    assert_entry_matches!(e, field: "project", verb: "switch");
+    assert_eq!(e.state.as_ref(), Some(&json!(false)));
+}
+
+/// da-z8o4: `switch <field> stop` is equivalent to `switch <field> end`.
+#[test]
+fn switch_field_stop_routes_through_end_verb() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "stop"], &db).expect("switch <field> stop dispatch");
+
+    let entries = db.entries_for_field("project", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    let e = &entries[0];
+    assert_entry_matches!(e, field: "project", verb: "switch");
+    assert_eq!(e.state.as_ref(), Some(&json!(false)));
+}
+
+/// da-z8o4: `switch <field> start` promotes to the `start` verb
+/// (state=true / block open).
+#[test]
+fn switch_field_start_routes_through_start_verb() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "start"], &db).expect("switch <field> start dispatch");
+
+    let entries = db.entries_for_field("project", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    let e = &entries[0];
+    assert_entry_matches!(e, field: "project", verb: "switch");
+    assert_eq!(e.state.as_ref(), Some(&json!(true)));
+}
+
+/// da-z8o4: `switch <field> end` and `end <field>` produce structurally
+/// identical entries (modulo timing).
+#[test]
+fn switch_field_end_equivalent_to_end_field() {
+    let db_a = fresh_db();
+    let db_b = fresh_db();
+
+    run_cli(&["switch", "project", "end"], &db_a).expect("switch end dispatch");
+    run_cli(&["end", "project"], &db_b).expect("end dispatch");
+
+    let a = &db_a.entries_for_field("project", None).unwrap()[0];
+    let b = &db_b.entries_for_field("project", None).unwrap()[0];
+    assert_eq!(a.field, b.field);
+    assert_eq!(a.verb, b.verb);
+    assert_eq!(a.state, b.state);
+    assert_eq!(a.value, b.value);
+}
+
+/// da-z8o4: a non-reserved state value after `switch <field>` still
+/// writes a literal-state entry (no regression on the common path).
+#[test]
+fn switch_field_non_reserved_state_remains_literal() {
+    let db = fresh_db();
+
+    run_cli(&["switch", "project", "ai"], &db).expect("switch <field> <state> dispatch");
+
+    let entries = db.entries_for_field("project", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    let e = &entries[0];
+    assert_entry_matches!(e, field: "project", verb: "switch", value: "ai");
+}

@@ -113,6 +113,13 @@ pub const KNOWN_SUBCOMMANDS: &[&str] = &[
 /// `end <field>`.
 pub const TERMINAL_VERBS: &[&str] = &["end", "stop"];
 
+/// Verbs that, when supplied as the state argument to `switch`, promote
+/// the entire entry to that verb instead of being recorded as a literal
+/// state string. `switch <field> end|stop|start` is rewritten to
+/// `end|stop|start <field>` so the user's intent ("end the switch
+/// block") routes through the correct verb body.
+pub const SWITCH_PROMOTE_VERBS: &[&str] = &["end", "stop", "start"];
+
 /// A single alias-expansion event. Rendered onto the entry's
 /// `alias_chain` column at write time.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -138,6 +145,7 @@ pub fn expand_argv(
     let argv = apply_terminal_verb_override(argv);
     let (argv, chain) = try_expand_alias(argv, resolver)?;
     let argv = maybe_swap_field_verb(argv);
+    let argv = apply_switch_promote_override(argv);
     let argv = expand_stacked_flags(argv);
     Ok((argv, chain))
 }
@@ -146,6 +154,7 @@ pub fn expand_argv(
 pub fn expand_argv_no_alias(argv: Vec<String>) -> Vec<String> {
     let argv = apply_terminal_verb_override(argv);
     let argv = maybe_swap_field_verb(argv);
+    let argv = apply_switch_promote_override(argv);
     expand_stacked_flags(argv)
 }
 
@@ -160,6 +169,37 @@ pub fn apply_terminal_verb_override(mut argv: Vec<String>) -> Vec<String> {
         argv.swap(1, 2);
     }
     argv
+}
+
+/// Rewrite `datum switch <field> <verb> [args...]` → `datum <verb> <field>
+/// [args...]` where `<verb>` ∈ [`SWITCH_PROMOTE_VERBS`] (currently
+/// `end`/`stop`/`start`) and `<field>` is not itself a known subcommand.
+/// Without this rewrite, the switch parser would seal `end`/`stop`/`start`
+/// as a literal state string rather than routing through the verb body.
+pub fn apply_switch_promote_override(argv: Vec<String>) -> Vec<String> {
+    if argv.len() < 4 {
+        return argv;
+    }
+    if argv[1] != "switch" {
+        return argv;
+    }
+    if KNOWN_SUBCOMMANDS.contains(&argv[2].as_str()) {
+        return argv;
+    }
+    if !SWITCH_PROMOTE_VERBS.contains(&argv[3].as_str()) {
+        return argv;
+    }
+    let mut iter = argv.into_iter();
+    let bin = iter.next().expect("argv[0]");
+    let _switch = iter.next();
+    let field = iter.next().expect("argv[2]");
+    let verb = iter.next().expect("argv[3]");
+    let mut out = Vec::with_capacity(iter.size_hint().0 + 3);
+    out.push(bin);
+    out.push(verb);
+    out.push(field);
+    out.extend(iter);
+    out
 }
 
 /// Resolve argv[1] as an alias from the resolver, recording each
@@ -803,6 +843,52 @@ mod tests {
     fn terminal_verb_override() {
         let (argv, _) = expand_argv(v(&["datum", "work", "end"]), &NoResolver).unwrap();
         assert_eq!(argv, v(&["datum", "end", "work"]));
+    }
+
+    #[test]
+    fn switch_promote_end() {
+        let (argv, _) =
+            expand_argv(v(&["datum", "switch", "project", "end"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "end", "project"]));
+    }
+
+    #[test]
+    fn switch_promote_stop() {
+        let (argv, _) =
+            expand_argv(v(&["datum", "switch", "project", "stop"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "stop", "project"]));
+    }
+
+    #[test]
+    fn switch_promote_start() {
+        let (argv, _) =
+            expand_argv(v(&["datum", "switch", "project", "start"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "start", "project"]));
+    }
+
+    #[test]
+    fn switch_promote_preserves_trailing_args() {
+        let (argv, _) = expand_argv(
+            v(&["datum", "switch", "project", "end", "-k", "score=10"]),
+            &NoResolver,
+        )
+        .unwrap();
+        assert_eq!(argv, v(&["datum", "end", "project", "-k", "score=10"]));
+    }
+
+    #[test]
+    fn switch_promote_skips_non_reserved_state() {
+        // `switch project happy` — `happy` is not reserved, so no rewrite.
+        let (argv, _) =
+            expand_argv(v(&["datum", "switch", "project", "happy"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "switch", "project", "happy"]));
+    }
+
+    #[test]
+    fn switch_promote_via_field_verb_swap() {
+        // `mood switch end` → swap → `switch mood end` → promote → `end mood`.
+        let (argv, _) = expand_argv(v(&["datum", "mood", "switch", "end"]), &NoResolver).unwrap();
+        assert_eq!(argv, v(&["datum", "end", "mood"]));
     }
 
     #[test]

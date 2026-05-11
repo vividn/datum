@@ -25,9 +25,9 @@
 use crate::error::{ParseError, Result};
 
 use super::expand::{
-    apply_terminal_verb_override, expand_stacked_flags, maybe_swap_field_verb,
-    split_argv_at_commas, try_expand_alias, AliasStep, Resolver, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS,
-    MULTI_COMMA,
+    apply_switch_promote_override, apply_terminal_verb_override, expand_stacked_flags,
+    maybe_swap_field_verb, split_argv_at_commas, try_expand_alias, AliasStep, Resolver,
+    KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS, MULTI_COMMA,
 };
 
 /// Result of [`expand_into_sides`]: N per-side argvs (each without the
@@ -122,14 +122,15 @@ pub fn expand_into_sides(argv: Vec<String>, resolver: &dyn Resolver) -> Result<E
         }
     }
 
-    // Step 7: per-side maybe_swap_field_verb + stacked-flag expansion,
-    // with the call-site-promoted tokens appended.
+    // Step 7: per-side maybe_swap_field_verb + switch-promote override +
+    // stacked-flag expansion, with the call-site-promoted tokens appended.
     let mut final_sides: Vec<Vec<String>> = Vec::with_capacity(local_sides.len());
     for mut side in local_sides {
         side.extend(promoted.iter().cloned());
         let mut side_argv = vec![bin.clone()];
         side_argv.extend(side);
         let side_argv = maybe_swap_field_verb(side_argv);
+        let side_argv = apply_switch_promote_override(side_argv);
         let side_argv = expand_stacked_flags(side_argv);
         final_sides.push(side_argv.into_iter().skip(1).collect());
     }
@@ -701,6 +702,28 @@ mod tests {
         for side in &r.sides {
             assert!(side.iter().any(|t| t == "unknown=val"));
         }
+    }
+
+    #[test]
+    fn switch_promote_in_multi_comma_per_side() {
+        // `dm switch body sit , switch project end` — second side must
+        // promote its `end` from literal state to the `end` verb.
+        let r = expand(&[
+            "datum", "switch", "body", "sit", ",", "switch", "project", "end",
+        ]);
+        assert_eq!(r.sides.len(), 2);
+        assert_eq!(r.sides[0], v(&["switch", "body", "sit"]));
+        assert_eq!(r.sides[1], v(&["end", "project"]));
+    }
+
+    #[test]
+    fn switch_promote_in_multi_comma_left_side() {
+        let r = expand(&[
+            "datum", "switch", "project", "end", ",", "switch", "body", "sit",
+        ]);
+        assert_eq!(r.sides.len(), 2);
+        assert_eq!(r.sides[0], v(&["end", "project"]));
+        assert_eq!(r.sides[1], v(&["switch", "body", "sit"]));
     }
 
     #[test]
