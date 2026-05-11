@@ -35,6 +35,11 @@ jobs:
         run: cargo build --workspace --all-targets
 
       - name: cargo nextest run --workspace
+        env:
+          # Opt-in for env-dependent png_goldens_per_scene (da-ky99). CI runs
+          # in the canonical font environment the goldens were generated in;
+          # local `cargo test` skips it with a visible message.
+          DATUM_PNG_GOLDENS: "1"
         run: cargo nextest run --workspace --no-fail-fast
 
       - name: cargo test --workspace --doc

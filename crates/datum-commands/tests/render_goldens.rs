@@ -871,6 +871,19 @@ fn svg_goldens_per_scene() {
 #[cfg(feature = "png")]
 #[test]
 fn png_goldens_per_scene() {
+    // ENV_DEPENDENT (da-ky99): resvg + tiny-skia rasterization of text-bearing
+    // SVG scenes depends on the host's installed font set and `fontdb`
+    // resolution order. The per-channel tolerance is set assuming pinned CI
+    // fonts; on other machines it consistently exceeds the budget. Opt in via
+    // `DATUM_PNG_GOLDENS=1` (CI sets this). Local `cargo test` skips with a
+    // visible message rather than failing.
+    if std::env::var("DATUM_PNG_GOLDENS").as_deref() != Ok("1") {
+        eprintln!(
+            "skipping png_goldens_per_scene: env-dependent rasterization; \
+             set DATUM_PNG_GOLDENS=1 to enable (CI sets this). See FLAKES.md."
+        );
+        return;
+    }
     let dir = goldens_root().join("png");
     // Anti-aliasing tolerance: average channel difference per RGBA channel.
     // 1.0/255 = ~0.4% per channel — generous enough for resvg's sub-pixel
