@@ -81,7 +81,7 @@ impl Db {
         // everywhere), otherwise the canonical JSON form of the Render
         // enum. The column shape lets us add a SQL-side visibility filter
         // later without re-parsing spec_json.
-        let render_json: Option<String> = match &spec.render {
+        let render_json: Option<String> = match &spec.presentation.render {
             Some(r) => Some(serde_json::to_string(r)?),
             None => None,
         };
@@ -91,7 +91,7 @@ impl Db {
         // user-driven `datum spec set` on a kit-owned field updates the JSON
         // body in place without breaking the kit linkage. `tags` mirrors
         // `spec.tags` so SQL filters can avoid a JSON walk; `render_json`
-        // mirrors `spec.render` for the same reason.
+        // mirrors `spec.presentation.render` for the same reason.
         self.conn.execute(
             "INSERT INTO field_specs (field, spec_json, tags, render_json) VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(field) DO UPDATE SET spec_json   = excluded.spec_json,
@@ -299,14 +299,14 @@ mod tag_tests {
 
         // Round-trip: load_spec returns a None render.
         let back = db.load_spec("plain").unwrap().unwrap();
-        assert!(back.render.is_none());
+        assert!(back.presentation.render.is_none());
     }
 
     #[test]
     fn save_mirrors_render_bool_into_column() {
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
-        spec.render = Some(Render::All(false));
+        spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
         let stored: Option<String> = db
@@ -320,7 +320,7 @@ mod tag_tests {
         assert_eq!(stored.as_deref(), Some("false"));
 
         let back = db.load_spec("background_telemetry").unwrap().unwrap();
-        assert_eq!(back.render, Some(Render::All(false)));
+        assert_eq!(back.presentation.render, Some(Render::All(false)));
     }
 
     #[test]
@@ -329,7 +329,7 @@ mod tag_tests {
         let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = HashMap::new();
         map.insert("dayview".to_string(), false);
-        spec.render = Some(Render::PerSurface(map));
+        spec.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&spec).unwrap();
 
         let stored: Option<String> = db
@@ -346,19 +346,19 @@ mod tag_tests {
         assert!(stored.contains("\"dayview\":false"), "stored = {stored}");
 
         let back = db.load_spec("stretch_routine").unwrap().unwrap();
-        assert!(!back.renders_on("dayview"));
-        assert!(back.renders_on("nowview"));
+        assert!(!back.presentation.renders_on("dayview"));
+        assert!(back.presentation.renders_on("nowview"));
     }
 
     #[test]
     fn re_save_clears_render_json_when_spec_drops_render() {
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("toggle", Action::Occur);
-        spec.render = Some(Render::All(false));
+        spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
         // Drop render and re-save — column must reset to NULL.
-        spec.render = None;
+        spec.presentation.render = None;
         db.save_field_spec(&spec).unwrap();
 
         let stored: Option<String> = db

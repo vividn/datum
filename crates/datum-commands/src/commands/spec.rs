@@ -133,13 +133,13 @@ fn spec_set(args: SpecSetArgs, db: &Db) -> Result<()> {
         spec.no_autoalias = true;
     }
     if args.y.is_some() {
-        spec.y = args.y;
+        spec.presentation.y = args.y;
     }
     if args.height.is_some() {
-        spec.height = args.height;
+        spec.presentation.height = args.height;
     }
     if args.z_index.is_some() {
-        spec.z_index = args.z_index;
+        spec.presentation.z_index = args.z_index;
     }
     // da-a7g: `--tag <name>` repeats replace the spec's full tag set
     // (mirrors how `--state <name>` replaces `allowed_states`). To clear

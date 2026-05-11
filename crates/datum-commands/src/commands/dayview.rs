@@ -410,7 +410,7 @@ fn build_day_fields(
         // data still flows through tail/get/grep/view, only the visual
         // band is suppressed.
         if let Some(s) = spec.as_ref() {
-            if !s.renders_on("dayview") {
+            if !s.presentation.renders_on("dayview") {
                 continue;
             }
         }
@@ -438,11 +438,12 @@ fn build_day_fields(
         }
 
         // Resolve (y, height, z_index). Without a spec we still want the
-        // deterministic-hash y fallback — `FieldSpec::resolve_position`
+        // deterministic-hash y fallback — `PresentationSpec::resolve_position`
         // handles it via a transient default-spec instance.
         let resolved = match &spec {
-            Some(s) => s.resolve_position(&field),
+            Some(s) => s.presentation.resolve_position(&field),
             None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
+                .presentation
                 .resolve_position(&field),
         };
 
@@ -1135,7 +1136,7 @@ mod tests {
 
         // mood has render = false → must NOT appear in dayview output.
         let mut hidden = FieldSpec::new("mood", Action::Switch);
-        hidden.render = Some(Render::All(false));
+        hidden.presentation.render = Some(Render::All(false));
         db.save_field_spec(&hidden).unwrap();
 
         // coffee has no render set → default visible.
@@ -1199,7 +1200,7 @@ mod tests {
         let mut spec = FieldSpec::new("stretch_routine", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("dayview".to_string(), false);
-        spec.render = Some(Render::PerSurface(map));
+        spec.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&spec).unwrap();
 
         let utc = Utc.with_ymd_and_hms(2026, 4, 27, 9, 0, 0).unwrap();

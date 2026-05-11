@@ -3,6 +3,11 @@
 //! A [`FieldSpec`] is the source of truth for a field's schema: default verb,
 //! subfields, id template, color, allowed states with per-state color
 //! overrides, and derived aliases (auto-created from allowed states).
+//! Renderer-only knobs (`y`/`height`/`z_index`, anchored layout, per-surface
+//! visibility) live in a sibling [`PresentationSpec`] held as
+//! `FieldSpec.presentation`. The split is structural: both halves still
+//! serialize into a single flat JSON blob (`#[serde(flatten)]`) and persist
+//! in one `field_specs` row.
 //!
 //! Tracking state (tracked / ignored) is NOT stored on the spec — it's
 //! derived from the entry log via [`Db::state_at`](crate::db::Db::state_at).
@@ -16,8 +21,10 @@
 //!
 //! ## Module layout
 //!
-//! - [`spec`] — the [`FieldSpec`] struct, [`SubfieldSpec`], [`Render`],
-//!   [`ResolvedPosition`], and the inherent methods/regenerators.
+//! - [`spec`] — the [`FieldSpec`] struct, [`SubfieldSpec`], and the
+//!   shape/alias regeneration logic.
+//! - [`presentation`] — [`PresentationSpec`], [`Render`], [`ResolvedPosition`],
+//!   and the position/visibility helpers consumed by the render layer.
 //! - [`alias`] — user [`Alias`], [`DerivedAlias`] / [`DerivedAliasKind`],
 //!   and the in-memory [`SpecRegistry`].
 //! - [`position`] — anchored layout (`relative_to` chains, cycle detection,
@@ -27,12 +34,11 @@
 mod alias;
 mod interpolation;
 mod position;
+mod presentation;
 mod spec;
 
 pub use alias::{Alias, DerivedAlias, DerivedAliasKind, SpecRegistry};
 pub use interpolation::{interpolate, InterpolationContext, DEFAULT_ID_DELIMITER};
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
-pub use spec::{
-    FieldSpec, Render, ResolvedPosition, SubfieldSpec, SubfieldType, DEFAULT_FIELD_HEIGHT,
-    DEFAULT_VERB_CHOICES,
-};
+pub use presentation::{PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};
+pub use spec::{FieldSpec, SubfieldSpec, SubfieldType, DEFAULT_VERB_CHOICES};

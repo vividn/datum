@@ -186,11 +186,11 @@ size = 0.05
     .unwrap();
 
     let contacts = db.load_spec("contacts").unwrap().unwrap();
-    assert_eq!(contacts.relative_to.as_deref(), Some("body"));
-    assert_eq!(contacts.anchor_pos_ratio, Some(0.10));
-    assert_eq!(contacts.anchor_size_ratio, Some(0.05));
-    assert!(contacts.y.is_none());
-    assert!(contacts.height.is_none());
+    assert_eq!(contacts.presentation.relative_to.as_deref(), Some("body"));
+    assert_eq!(contacts.presentation.anchor_pos_ratio, Some(0.10));
+    assert_eq!(contacts.presentation.anchor_size_ratio, Some(0.05));
+    assert!(contacts.presentation.y.is_none());
+    assert!(contacts.presentation.height.is_none());
 
     dispatch_argv(
         vec![

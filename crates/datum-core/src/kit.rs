@@ -355,7 +355,7 @@ impl FieldEntry {
 
         let mut spec = FieldSpec::new(&self.name, action);
         spec.color = color_resolved;
-        spec.z_index = self.z_index;
+        spec.presentation.z_index = self.z_index;
         spec.id_keys = self.id_keys;
         spec.data_keys = self.data_keys;
 
@@ -367,12 +367,12 @@ impl FieldEntry {
         // for an anchored field that omits one ratio (covers the user who
         // writes `relative_to = "body"` and forgets `pos`).
         if let Some(anchor) = self.relative_to {
-            spec.relative_to = Some(anchor);
-            spec.anchor_pos_ratio = Some(self.pos.unwrap_or(0.0));
-            spec.anchor_size_ratio = Some(self.size.unwrap_or(1.0));
+            spec.presentation.relative_to = Some(anchor);
+            spec.presentation.anchor_pos_ratio = Some(self.pos.unwrap_or(0.0));
+            spec.presentation.anchor_size_ratio = Some(self.size.unwrap_or(1.0));
         } else {
-            spec.y = self.pos;
-            spec.height = self.size;
+            spec.presentation.y = self.pos;
+            spec.presentation.height = self.size;
         }
 
         if !self.states.is_empty() {
@@ -386,7 +386,7 @@ impl FieldEntry {
         }
 
         spec.tags = self.tags;
-        spec.render = self.render;
+        spec.presentation.render = self.render;
 
         spec.regenerate_derived_aliases();
         Ok(spec)
@@ -426,14 +426,14 @@ impl FieldEntry {
         // back into TOML's `relative_to`/`pos`/`size` shape. Absolute specs
         // emit y/height as `pos`/`size`. An anchored spec never carries a
         // standalone y/height, so the projection is unambiguous.
-        let (pos, size, relative_to) = if let Some(anchor) = &spec.relative_to {
+        let (pos, size, relative_to) = if let Some(anchor) = &spec.presentation.relative_to {
             (
-                spec.anchor_pos_ratio,
-                spec.anchor_size_ratio,
+                spec.presentation.anchor_pos_ratio,
+                spec.presentation.anchor_size_ratio,
                 Some(anchor.clone()),
             )
         } else {
-            (spec.y, spec.height, None)
+            (spec.presentation.y, spec.presentation.height, None)
         };
 
         Self {
@@ -446,13 +446,13 @@ impl FieldEntry {
             hidden: false,
             state_pos: None,
             state_size: None,
-            z_index: spec.z_index,
+            z_index: spec.presentation.z_index,
             relative_to,
             id_keys: spec.id_keys.clone(),
             data_keys: spec.data_keys.clone(),
             states,
             tags: spec.tags.clone(),
-            render: spec.render.clone(),
+            render: spec.presentation.render.clone(),
         }
     }
 }
@@ -833,23 +833,23 @@ size = 0.05
         // Into-spec maps the ratios into the FieldSpec anchor triple and
         // leaves y/height unset (resolution happens at render time).
         let spec = contacts.clone().into_spec(None).unwrap();
-        assert_eq!(spec.relative_to.as_deref(), Some("body"));
-        assert_eq!(spec.anchor_pos_ratio, Some(0.10));
-        assert_eq!(spec.anchor_size_ratio, Some(0.05));
-        assert!(spec.y.is_none());
-        assert!(spec.height.is_none());
+        assert_eq!(spec.presentation.relative_to.as_deref(), Some("body"));
+        assert_eq!(spec.presentation.anchor_pos_ratio, Some(0.10));
+        assert_eq!(spec.presentation.anchor_size_ratio, Some(0.05));
+        assert!(spec.presentation.y.is_none());
+        assert!(spec.presentation.height.is_none());
     }
 
     #[test]
     fn anchored_round_trip_preserves_relative_to() {
         let mut anchor = FieldSpec::new("body", Action::Occur);
-        anchor.y = Some(0.20);
-        anchor.height = Some(0.40);
+        anchor.presentation.y = Some(0.20);
+        anchor.presentation.height = Some(0.40);
 
         let mut dependent = FieldSpec::new("contacts", Action::Occur);
-        dependent.relative_to = Some("body".into());
-        dependent.anchor_pos_ratio = Some(0.10);
-        dependent.anchor_size_ratio = Some(0.05);
+        dependent.presentation.relative_to = Some("body".into());
+        dependent.presentation.anchor_pos_ratio = Some(0.10);
+        dependent.presentation.anchor_size_ratio = Some(0.05);
 
         let kit = KitToml::from_field_specs("anchored", None, &[anchor, dependent], &[]);
         let toml = kit.to_toml().unwrap();
@@ -864,9 +864,9 @@ size = 0.05
     fn round_trip_preserves_field_shape() {
         let mut spec = FieldSpec::new("sleep", Action::Start);
         spec.color = Some("#1a3d6e".into());
-        spec.y = Some(0.10);
-        spec.height = Some(0.30);
-        spec.z_index = Some(0.0);
+        spec.presentation.y = Some(0.10);
+        spec.presentation.height = Some(0.30);
+        spec.presentation.z_index = Some(0.0);
         spec.allowed_states = Some(vec!["asleep".into()]);
         spec.state_colors.insert("asleep".into(), "#000000".into());
 
@@ -978,8 +978,8 @@ render = false
         assert_eq!(f.render, Some(Render::All(false)));
 
         let spec = f.clone().into_spec(None).unwrap();
-        assert!(!spec.renders_on("dayview"));
-        assert!(!spec.renders_on("nowview"));
+        assert!(!spec.presentation.renders_on("dayview"));
+        assert!(!spec.presentation.renders_on("nowview"));
     }
 
     #[test]
@@ -1005,14 +1005,14 @@ render.dayview = false
 
         let spec = f.clone().into_spec(None).unwrap();
         // dayview hidden, nowview defaults to visible.
-        assert!(!spec.renders_on("dayview"));
-        assert!(spec.renders_on("nowview"));
+        assert!(!spec.presentation.renders_on("dayview"));
+        assert!(spec.presentation.renders_on("nowview"));
     }
 
     #[test]
     fn round_trip_preserves_render_bool() {
         let mut spec = FieldSpec::new("hidden", Action::Occur);
-        spec.render = Some(Render::All(false));
+        spec.presentation.render = Some(Render::All(false));
         let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();
@@ -1024,7 +1024,7 @@ render.dayview = false
         let mut spec = FieldSpec::new("partial", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("dayview".to_string(), false);
-        spec.render = Some(Render::PerSurface(map.clone()));
+        spec.presentation.render = Some(Render::PerSurface(map.clone()));
         let kit = KitToml::from_field_specs("k", None, &[spec.clone()], &[]);
         let toml = kit.to_toml().unwrap();
         let back = KitToml::from_str(&toml).unwrap();

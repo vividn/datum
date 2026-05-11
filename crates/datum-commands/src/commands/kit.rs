@@ -231,7 +231,7 @@ pub fn install(args: KitInstallArgs, db: &Db, trust: &mut impl TrustGate) -> Res
     // fall back to absolute positioning at render time.
     let mut missing: Vec<(String, String)> = Vec::new();
     for spec in &specs {
-        if let Some(anchor) = spec.relative_to.as_deref() {
+        if let Some(anchor) = spec.presentation.relative_to.as_deref() {
             if !spec_map.contains_key(anchor) && db.load_spec(anchor)?.is_none() {
                 missing.push((spec.field.clone(), anchor.to_string()));
             }

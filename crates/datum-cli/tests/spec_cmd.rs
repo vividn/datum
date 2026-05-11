@@ -29,11 +29,11 @@ fn spec_set_persists_position_flags() {
     .expect("spec set with position flags");
 
     let spec = db.load_spec("sleep").unwrap().expect("spec persisted");
-    assert_eq!(spec.y, Some(0.05));
-    assert_eq!(spec.height, Some(0.20));
-    assert_eq!(spec.z_index, Some(1.0));
+    assert_eq!(spec.presentation.y, Some(0.05));
+    assert_eq!(spec.presentation.height, Some(0.20));
+    assert_eq!(spec.presentation.z_index, Some(1.0));
 
-    let pos = spec.resolve_position("sleep");
+    let pos = spec.presentation.resolve_position("sleep");
     assert_eq!(pos.y, 0.05);
     assert_eq!(pos.height, 0.20);
     assert_eq!(pos.z_index, 1.0);
@@ -46,21 +46,21 @@ fn spec_set_position_flags_merge_into_existing_spec() {
     // First call: set default-verb only. Position fields stay None.
     run_cli(&["spec", "set", "focus", "--default-verb", "switch"], &db).expect("first spec set");
     let spec = db.load_spec("focus").unwrap().unwrap();
-    assert!(spec.y.is_none());
-    assert!(spec.height.is_none());
-    assert!(spec.z_index.is_none());
+    assert!(spec.presentation.y.is_none());
+    assert!(spec.presentation.height.is_none());
+    assert!(spec.presentation.z_index.is_none());
 
     // Second call: only --y. Existing default_verb must survive; the other
     // position fields must remain None (so the resolver continues to apply
     // defaults).
     run_cli(&["spec", "set", "focus", "--y", "0.42"], &db).expect("merge --y");
     let spec = db.load_spec("focus").unwrap().unwrap();
-    assert_eq!(spec.y, Some(0.42));
-    assert!(spec.height.is_none());
-    assert!(spec.z_index.is_none());
+    assert_eq!(spec.presentation.y, Some(0.42));
+    assert!(spec.presentation.height.is_none());
+    assert!(spec.presentation.z_index.is_none());
 
     // Resolver applies defaults for the missing fields.
-    let pos = spec.resolve_position("focus");
+    let pos = spec.presentation.resolve_position("focus");
     assert_eq!(pos.y, 0.42);
     assert_eq!(pos.height, DEFAULT_FIELD_HEIGHT);
     assert_eq!(pos.z_index, 0.42);
@@ -107,8 +107,8 @@ fn spec_set_overlap_two_fields_share_y_with_distinct_z_index() {
 
     let sleep = db.load_spec("sleep").unwrap().unwrap();
     let focus = db.load_spec("focus").unwrap().unwrap();
-    let s = sleep.resolve_position("sleep");
-    let f = focus.resolve_position("focus");
+    let s = sleep.presentation.resolve_position("sleep");
+    let f = focus.presentation.resolve_position("focus");
     // Both fields occupy the same vertical region (intentional, artistic).
     assert_eq!(s.y, f.y);
     assert_eq!(s.height, f.height);
@@ -135,7 +135,7 @@ fn spec_set_attached_value_form_works_for_position_flags() {
     .expect("attached-value form");
 
     let spec = db.load_spec("energy").unwrap().unwrap();
-    assert_eq!(spec.y, Some(0.30));
-    assert_eq!(spec.height, Some(0.10));
-    assert_eq!(spec.z_index, Some(3.0));
+    assert_eq!(spec.presentation.y, Some(0.30));
+    assert_eq!(spec.presentation.height, Some(0.10));
+    assert_eq!(spec.presentation.z_index, Some(3.0));
 }

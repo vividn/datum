@@ -8,7 +8,8 @@ use std::collections::HashMap;
 
 use crate::action::Action;
 
-use super::spec::{FieldSpec, ResolvedPosition};
+use super::presentation::ResolvedPosition;
+use super::spec::FieldSpec;
 
 /// Outcome of [`resolve_positions`]: per-field resolved triples plus
 /// diagnostics surfaced for the caller (renderer / install command) to log.
@@ -68,7 +69,8 @@ pub fn resolve_positions(
     // Detect malformed anchor triples once across the full spec set.
     let mut malformed: std::collections::HashSet<String> = std::collections::HashSet::new();
     for (name, spec) in specs {
-        if spec.has_anchor() && spec.validate_anchor_triple().is_err() {
+        if spec.presentation.has_anchor() && spec.presentation.validate_anchor_triple(name).is_err()
+        {
             malformed.insert(name.clone());
             report.malformed.push(name.clone());
         }
@@ -124,7 +126,9 @@ fn resolve_one(
 
     // Path 1: no spec at all → hash/default fallback.
     let Some(spec) = spec else {
-        let pos = FieldSpec::new(field, Action::Occur).resolve_position(field);
+        let pos = FieldSpec::new(field, Action::Occur)
+            .presentation
+            .resolve_position(field);
         memo.insert(field.to_string(), pos);
         return pos;
     };
@@ -132,7 +136,7 @@ fn resolve_one(
     // Path 2: in a cycle or malformed → absolute fallback. Cycles are
     // already collected in `report.cycles`; malformed is in `report.malformed`.
     if in_cycle.contains(field) || malformed.contains(field) {
-        let pos = spec.resolve_position(field);
+        let pos = spec.presentation.resolve_position(field);
         memo.insert(field.to_string(), pos);
         return pos;
     }
@@ -140,17 +144,17 @@ fn resolve_one(
     // Path 3: not anchored → absolute resolution. The triple invariant is
     // already enforced (we'd be in `malformed` otherwise); has_anchor()
     // covers the well-formed-anchored case below.
-    if spec.relative_to.is_none() {
-        let pos = spec.resolve_position(field);
+    if spec.presentation.relative_to.is_none() {
+        let pos = spec.presentation.resolve_position(field);
         memo.insert(field.to_string(), pos);
         return pos;
     }
 
     // Path 4: well-formed anchor. Look up the anchor; missing → warn + fall
     // back to absolute. Triple invariant guarantees both ratios are Some.
-    let anchor_name = spec.relative_to.as_deref().unwrap();
-    let pos_ratio = spec.anchor_pos_ratio.unwrap();
-    let size_ratio = spec.anchor_size_ratio.unwrap();
+    let anchor_name = spec.presentation.relative_to.as_deref().unwrap();
+    let pos_ratio = spec.presentation.anchor_pos_ratio.unwrap();
+    let size_ratio = spec.presentation.anchor_size_ratio.unwrap();
 
     if !specs.contains_key(anchor_name) {
         // First time we've seen this missing anchor for this dependent —
@@ -161,7 +165,7 @@ fn resolve_one(
                 .missing_anchors
                 .push((field.to_string(), anchor_name.to_string()));
         }
-        let pos = spec.resolve_position(field);
+        let pos = spec.presentation.resolve_position(field);
         memo.insert(field.to_string(), pos);
         return pos;
     }
@@ -180,7 +184,7 @@ fn resolve_one(
 
     let y = anchor_pos.y + anchor_pos.height * pos_ratio;
     let height = anchor_pos.height * size_ratio;
-    let z_index = spec.z_index.unwrap_or(y);
+    let z_index = spec.presentation.z_index.unwrap_or(y);
     let resolved = ResolvedPosition { y, height, z_index };
     memo.insert(field.to_string(), resolved);
     resolved
@@ -242,7 +246,7 @@ fn dfs_anchor(
     path.push(node.to_string());
 
     if let Some(spec) = specs.get(node) {
-        if let Some(anchor) = spec.relative_to.as_deref() {
+        if let Some(anchor) = spec.presentation.relative_to.as_deref() {
             // Edge skipped if the anchor is missing — that's a missing-anchor
             // diagnostic, not a cycle.
             if let Some(c) = color.get(anchor).copied() {
@@ -306,21 +310,21 @@ pub fn format_cycle(cycle: &[String]) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::super::spec::{hash_y, DEFAULT_FIELD_HEIGHT};
+    use super::super::presentation::{hash_y, DEFAULT_FIELD_HEIGHT};
     use super::*;
 
     fn anchored_spec(name: &str, anchor: &str, pos_ratio: f64, size_ratio: f64) -> FieldSpec {
         let mut spec = FieldSpec::new(name, Action::Occur);
-        spec.relative_to = Some(anchor.into());
-        spec.anchor_pos_ratio = Some(pos_ratio);
-        spec.anchor_size_ratio = Some(size_ratio);
+        spec.presentation.relative_to = Some(anchor.into());
+        spec.presentation.anchor_pos_ratio = Some(pos_ratio);
+        spec.presentation.anchor_size_ratio = Some(size_ratio);
         spec
     }
 
     fn absolute_spec(name: &str, y: f64, h: f64) -> FieldSpec {
         let mut spec = FieldSpec::new(name, Action::Occur);
-        spec.y = Some(y);
-        spec.height = Some(h);
+        spec.presentation.y = Some(y);
+        spec.presentation.height = Some(h);
         spec
     }
 
@@ -442,8 +446,8 @@ mod tests {
     fn resolve_positions_marks_malformed_triple_and_falls_back() {
         // anchor_pos_ratio set, anchor_size_ratio missing → malformed.
         let mut spec = FieldSpec::new("bad", Action::Occur);
-        spec.relative_to = Some("body".into());
-        spec.anchor_pos_ratio = Some(0.1);
+        spec.presentation.relative_to = Some("body".into());
+        spec.presentation.anchor_pos_ratio = Some(0.1);
         // Intentionally omit anchor_size_ratio.
 
         let mut specs: HashMap<String, FieldSpec> = HashMap::new();

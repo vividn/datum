@@ -294,7 +294,7 @@ pub(crate) fn build_dayview_fields(
         // out before per-entry work — data still flows through tail/get/
         // grep/view; only the visual band is suppressed.
         if let Some(s) = spec.as_ref() {
-            if !s.renders_on("nowview") {
+            if !s.presentation.renders_on("nowview") {
                 continue;
             }
         }
@@ -316,8 +316,9 @@ pub(crate) fn build_dayview_fields(
         }
 
         let resolved = match &spec {
-            Some(s) => s.resolve_position(&field),
+            Some(s) => s.presentation.resolve_position(&field),
             None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
+                .presentation
                 .resolve_position(&field),
         };
 
@@ -377,7 +378,7 @@ pub(crate) fn build_fields(
     for field in all_fields {
         let spec = db.load_spec(&field).ok().flatten();
         if let Some(s) = spec.as_ref() {
-            if !s.renders_on("nowview") {
+            if !s.presentation.renders_on("nowview") {
                 continue;
             }
         }
@@ -963,7 +964,7 @@ mod tests {
         let mut muted = FieldSpec::new("muted", Action::Occur);
         let mut map = std::collections::HashMap::new();
         map.insert("nowview".to_string(), false);
-        muted.render = Some(Render::PerSurface(map));
+        muted.presentation.render = Some(Render::PerSurface(map));
         db.save_field_spec(&muted).unwrap();
 
         db.save_field_spec(&FieldSpec::new("visible", Action::Occur))
@@ -1007,9 +1008,9 @@ mod tests {
 
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("focus", Action::Switch);
-        spec.y = Some(0.4);
-        spec.height = Some(0.25);
-        spec.z_index = Some(0.7);
+        spec.presentation.y = Some(0.4);
+        spec.presentation.height = Some(0.25);
+        spec.presentation.z_index = Some(0.7);
         db.save_field_spec(&spec).unwrap();
 
         let now = Utc::now();
@@ -1079,7 +1080,7 @@ mod tests {
 
         let db = Db::open_in_memory().unwrap();
         let mut spec = FieldSpec::new("background_telemetry", Action::Occur);
-        spec.render = Some(Render::All(false));
+        spec.presentation.render = Some(Render::All(false));
         db.save_field_spec(&spec).unwrap();
 
         let now = Utc::now();
