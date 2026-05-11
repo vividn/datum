@@ -336,6 +336,11 @@ git config core.hooksPath .githooks
 the push. Use `git push --no-verify` as an escape hatch (CI will still
 gate the merge).
 
+If a known-noisy test trips the pre-submit gate, consult
+[`FLAKES.md`](FLAKES.md) — the registry of known-flaky and
+brittle-golden tests, with retry / regen guidance and an append
+protocol so the catalogue grows when new noise is observed.
+
 ## Repository layout
 
 ```

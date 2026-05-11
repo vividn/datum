@@ -11,6 +11,10 @@
 #
 # Falls back to `cargo test` when cargo-nextest isn't installed so the
 # script stays usable on a fresh checkout. CI itself always uses nextest.
+#
+# If something fails here that you suspect is noise, consult FLAKES.md
+# at the repo root — known flakes and brittle goldens are catalogued
+# there with retry / regen guidance and an append protocol.
 
 set -euo pipefail
 
