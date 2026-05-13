@@ -7,6 +7,8 @@ use crate::time::datum_time::DatumTime;
 use crate::time::parse_date_str::DateArg;
 use crate::time::parse_duration_str::quick_precision_for_count;
 use crate::time::parse_time_str::TimeArg;
+#[cfg(feature = "native")]
+use crate::time::precision::PrecisionUnit;
 use crate::time::uncertainty::{Direction, Uncertainty};
 
 /// Build a `DatumTime` from the combination of -y stacks, -q stacks,
@@ -39,6 +41,11 @@ pub struct TimeBuilder {
     /// Only consumed when `time_override` is the resolution path —
     /// pinned ISO inputs and relative `±N` offsets ignore it.
     pub time_direction: Option<Direction>,
+    /// `-D/--full-day`: collapse the entry to a date-only event. When true
+    /// (or when a date is supplied without any time/quick input),
+    /// `build_with_precision` strips the time-of-day to 00:00:00 in the
+    /// effective zone and emits a `P1D` precision.
+    pub full_day: bool,
 }
 
 #[cfg(feature = "native")]
@@ -58,6 +65,7 @@ impl TimeBuilder {
             explicit_precision: None,
             timezone: None,
             time_direction: None,
+            full_day: false,
         }
     }
 }
@@ -117,6 +125,13 @@ impl TimeBuilder {
         self
     }
 
+    /// Collapse the entry to a date-only event. Mirrors `-D/--full-day` on
+    /// the CLI. Stays inert until `build_with_precision` reads it.
+    pub fn with_full_day(mut self, full_day: bool) -> Self {
+        self.full_day = full_day;
+        self
+    }
+
     /// Anchor all date/time math in a specific IANA timezone. The string
     /// must already be a valid IANA name (`America/New_York`, `Etc/GMT-5`,
     /// `UTC`, …); resolve numeric/`UTC±N` forms via
@@ -138,10 +153,43 @@ impl TimeBuilder {
 
     /// Build the DatumTime together with the effective precision. Most
     /// callers route through this so precision fields land on the entry.
+    ///
+    /// When the input describes a date-only event (`full_day` set, or a
+    /// date/`-y` with no time/quick input), the returned precision is
+    /// `P1D` and the time-of-day is stripped to 00:00:00 in the effective
+    /// zone — mirroring datum's `toDatumTime(_, true)`.
     #[cfg(feature = "native")]
     pub fn build_with_precision(self) -> (DatumTime, Uncertainty) {
-        let precision = self.precision();
-        (self.build(), precision)
+        let only_date = self.is_only_date();
+        let base_precision = self.precision();
+        let precision = if only_date {
+            Uncertainty {
+                seconds: 86_400,
+                unit: PrecisionUnit::Date,
+            }
+        } else {
+            base_precision
+        };
+        let dt = self.build();
+        let dt = if only_date {
+            strip_to_start_of_day(dt)
+        } else {
+            dt
+        };
+        (dt, precision)
+    }
+
+    /// True when the inputs describe a date-only event: explicit `full_day`,
+    /// or a date/`-y` shift with no time-of-day input. Mirrors the
+    /// `only_date` flag computed in `TimeArgs::apply_to`.
+    fn is_only_date(&self) -> bool {
+        let date_or_yesterday = self.date_override.is_some() || self.days_back != 0;
+        let time_or_quick = self.time_override.is_some()
+            || self.iso_instant_override.is_some()
+            || self.iso_naive_override.is_some()
+            || self.minutes_back != 0
+            || self.quick_precision.is_some();
+        self.full_day || (date_or_yesterday && !time_or_quick)
     }
 
     #[cfg(feature = "native")]
@@ -253,6 +301,39 @@ impl TimeBuilder {
     }
 }
 
+/// Rewind a built `DatumTime` to 00:00:00 of the same calendar day in its
+/// own zone. Preserves the IANA name and refreshes `offset_minutes` because
+/// midnight may sit on the far side of a DST transition from the original
+/// time. Ambiguous midnights (DST fall-back) pick the earlier instant; the
+/// spring-forward gap at midnight is essentially nonexistent in real zones
+/// but is panicked on for surface area parity with `resolve_naive_in_tz`.
+#[cfg(feature = "native")]
+fn strip_to_start_of_day(dt: DatumTime) -> DatumTime {
+    use chrono::offset::LocalResult;
+    use chrono::Offset;
+    let tz: chrono_tz::Tz = dt
+        .timezone
+        .parse()
+        .expect("strip_to_start_of_day: DatumTime.timezone must be a validated IANA name");
+    let local = dt.utc.with_timezone(&tz);
+    let midnight = local
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .expect("00:00:00 is always a valid time");
+    let local_midnight = match midnight.and_local_timezone(tz) {
+        LocalResult::Single(t) => t,
+        LocalResult::Ambiguous(earlier, _later) => earlier,
+        LocalResult::None => {
+            panic!("strip_to_start_of_day: midnight {midnight} does not exist in {tz} (DST gap)")
+        }
+    };
+    DatumTime {
+        utc: local_midnight.with_timezone(&Utc),
+        offset_minutes: local_midnight.offset().fix().local_minus_utc() / 60,
+        timezone: dt.timezone,
+    }
+}
+
 /// Resolve a no-zone ISO-8601 datetime into a concrete moment by reading
 /// it as wall-clock in the supplied IANA zone. Picks the earliest valid
 /// instant when the local time falls in a DST overlap, which matches what
@@ -269,5 +350,131 @@ fn resolve_naive_in_tz(naive: NaiveDateTime, tz: chrono_tz::Tz) -> chrono::DateT
         LocalResult::None => {
             panic!("TimeBuilder: ISO-8601 wall clock {naive} does not exist in {tz} (DST gap)")
         }
+    }
+}
+
+#[cfg(all(test, feature = "native"))]
+mod tests {
+    use super::*;
+    use crate::time::parse_date_str::DateArg;
+    use crate::time::parse_time_str::TimeArg;
+    use chrono::{NaiveDate, NaiveTime};
+
+    fn p1d() -> Uncertainty {
+        Uncertainty {
+            seconds: 86_400,
+            unit: PrecisionUnit::Date,
+        }
+    }
+
+    /// `with_full_day(true)` collapses the base instant to midnight in the
+    /// configured zone and reports `P1D` precision. No anchor is set so the
+    /// builder falls through to "now" — the assertions only depend on the
+    /// stripping, not on the wall clock at test time.
+    #[test]
+    fn full_day_strips_time_and_emits_p1d() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_full_day(true);
+
+        let (dt, precision) = b.build_with_precision();
+        assert_eq!(precision, p1d());
+        let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
+        assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        assert_eq!(dt.timezone, "America/Chicago");
+    }
+
+    /// An absolute `-d` with no `-t`/`-q` is a date-only event.
+    #[test]
+    fn date_alone_strips_time_and_emits_p1d() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_date_arg(DateArg {
+                days_offset: 0,
+                absolute: Some(NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()),
+                uncertainty: None,
+                direction: None,
+            });
+        let (dt, precision) = b.build_with_precision();
+        assert_eq!(precision, p1d());
+        let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
+        assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        assert_eq!(
+            local.date_naive(),
+            NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()
+        );
+    }
+
+    /// `-y` (yesterday) alone is also a date-only event. Uses an implicit
+    /// "now" anchor so we assert only the stripping + precision, not the
+    /// resulting calendar date.
+    #[test]
+    fn yesterday_alone_strips_time_and_emits_p1d() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_yesterday_count(1);
+
+        let (dt, precision) = b.build_with_precision();
+        assert_eq!(precision, p1d());
+        let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
+        assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+    }
+
+    /// `--full-day` overrides any explicit clock input — the time is still
+    /// stripped and precision is still `P1D`.
+    #[test]
+    fn full_day_wins_over_clock() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_date_arg(DateArg {
+                days_offset: 0,
+                absolute: Some(NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()),
+                uncertainty: None,
+                direction: None,
+            })
+            .with_time_arg(TimeArg {
+                absolute: Some(NaiveTime::from_hms_opt(5, 0, 0).unwrap()),
+                iso_instant: None,
+                iso_naive: None,
+                minutes_offset: None,
+                uncertainty: None,
+                direction: None,
+            })
+            .with_full_day(true);
+
+        let (dt, precision) = b.build_with_precision();
+        assert_eq!(precision, p1d());
+        let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
+        assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+        assert_eq!(
+            local.date_naive(),
+            NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()
+        );
+    }
+
+    /// `-d` paired with `-t` is NOT a date-only event — the explicit time
+    /// must be preserved and the precision falls back to exact.
+    #[test]
+    fn date_plus_time_keeps_clock_and_exact_precision() {
+        let b = TimeBuilder::now()
+            .with_timezone(Some("America/Chicago".into()))
+            .with_date_arg(DateArg {
+                days_offset: 0,
+                absolute: Some(NaiveDate::from_ymd_opt(2024, 3, 16).unwrap()),
+                uncertainty: None,
+                direction: None,
+            })
+            .with_time_arg(TimeArg {
+                absolute: Some(NaiveTime::from_hms_opt(14, 37, 0).unwrap()),
+                iso_instant: None,
+                iso_naive: None,
+                minutes_offset: None,
+                uncertainty: None,
+                direction: None,
+            });
+        let (dt, precision) = b.build_with_precision();
+        assert_eq!(precision, Uncertainty::exact());
+        let local = dt.utc.with_timezone(&chrono_tz::America::Chicago);
+        assert_eq!(local.time(), NaiveTime::from_hms_opt(14, 37, 0).unwrap());
     }
 }

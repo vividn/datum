@@ -261,13 +261,17 @@ fn dur_plus_extra_still_marks_verb_start() {
 /// is consumed as the duration, not as state. So `start field -y 315`
 /// anchors to yesterday with `dur = 315 minutes` and the default
 /// `state = true` (Start canonicalization).
+///
+/// Per da-aaa1, `-y` alone is a date-only event: `time_start` lands at
+/// 00:00:00 of yesterday in the entry's timezone (not "wall-clock minus
+/// one day"). The duration assertion is what this test actually exists
+/// for; the time-anchor assertion exists to catch regressions in the day
+/// shift, which is now expressed as "yesterday's midnight."
 #[test]
 fn yesterday_flag_consumes_trailing_numeric_as_duration() {
     let db = fresh_db();
 
-    let before = chrono::Utc::now();
     run_cli(&["start", "field", "-y", "315"], &db).expect("start -y 315");
-    let after = chrono::Utc::now();
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
     assert_entry_matches!(entry, field: "field", verb: "block");
@@ -278,14 +282,22 @@ fn yesterday_flag_consumes_trailing_numeric_as_duration() {
     );
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
 
-    // Anchored roughly one day back (within the test's wall-clock window).
-    let ts = entry.occur_time.as_ref().unwrap().utc;
-    let day = chrono::Duration::days(1);
-    let lower = before - day - chrono::Duration::seconds(1);
-    let upper = after - day + chrono::Duration::seconds(1);
-    assert!(
-        ts >= lower && ts <= upper,
-        "time_start must be ~1 day ago (lo={lower} hi={upper} got={ts})",
+    let occur = entry.occur_time.as_ref().unwrap();
+    let tz: chrono_tz::Tz = occur
+        .timezone
+        .parse()
+        .expect("entry must carry a valid IANA timezone");
+    let local = occur.utc.with_timezone(&tz);
+    assert_eq!(
+        local.time(),
+        chrono::NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        "yesterday-alone strips to midnight (got {local})",
+    );
+    let today_local = chrono::Utc::now().with_timezone(&tz).date_naive();
+    assert_eq!(
+        local.date_naive(),
+        today_local - chrono::Duration::days(1),
+        "occur_time must be yesterday's date in the entry's tz",
     );
 }
 

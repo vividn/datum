@@ -472,6 +472,7 @@ dependencies = [
  "axum",
  "base64 0.22.1",
  "chrono",
+ "chrono-tz",
  "datum-cli",
  "datum-commands",
  "datum-core",
