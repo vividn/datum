@@ -18,10 +18,10 @@
 //!     header + info line + extra-data shape as a fresh log, prefixed with
 //!     the EXISTS action tag. Case #3 pins the EXISTS marker.
 //!   * datum accepted a compound quickId (`"abc,def,"` → multi-doc return).
-//!     daydumb's `GetArgs::id_or_slug` is a single string, so the compound
-//!     form resolves as one literal prefix that doesn't match. Case #4
-//!     locks in the divergence (compound → NotFound) and asserts the
-//!     per-id analog (N independent `get` calls) works.
+//!     daydumb matches this (da-zmpu): the get command splits on commas
+//!     and resolves each piece through the standard quickId precedence,
+//!     so a single `get a,b,c` call returns all three rows. Case #4 pins
+//!     the parity and the trailing-comma tolerance.
 //!
 //! Layering note: the P0 harness (`common::run_cli`) dispatches in-process
 //! and cannot capture stdout. Cases that assert on user-visible output
@@ -179,39 +179,43 @@ fn get_show_all_long_form_works() {
     let _ = std::fs::remove_file(&db);
 }
 
-/// TS #4: "can get multiple documents with a compound quickId"
+/// TS #4 (da-zmpu): "can get multiple documents with a compound quickId"
 ///
 /// Datum accepted `"abc,def,"` and split on commas to return N docs.
-/// daydumb's `GetArgs::id_or_slug` is a single `String`; the compound
-/// form is passed to `resolve_prefix` as a literal and doesn't match.
-/// This case pins down the divergence (compound → NotFound) and
-/// asserts the N-invocation analog that reaches the same end state.
+/// daydumb now matches: the get command splits the positional on commas
+/// (slugs/hids never contain commas) and resolves each piece via the
+/// normal quickId precedence. A trailing comma is tolerated. Both the
+/// pointer and the side-effect surface (no rows mutated) are asserted.
 #[test]
-fn compound_ids_require_one_invocation_each() {
+fn compound_quickids_resolve_in_one_call() {
     let db = fresh_db();
     let e1 = entry_builder("alpha").value(json!("abc")).insert(&db);
     let e2 = entry_builder("beta").value(json!("def")).insert(&db);
 
-    // Compound form is a literal → no prefix matches → NotFound.
+    // Compound form with a trailing comma must succeed and stamp the
+    // pointer with every resolved hid, in argument order.
     let compound = format!("{},{},", e1.slug, e2.slug);
-    let err =
-        run_cli(&["get", &compound], &db).expect_err("compound form must not resolve in daydumb");
-    let msg = format!("{err:#}");
-    assert!(
-        msg.contains("not found") || msg.contains("NotFound"),
-        "expected NotFound on compound input, got: {msg}",
-    );
+    run_cli(&["get", &compound], &db)
+        .unwrap_or_else(|err| panic!("compound get must resolve in daydumb: {err:#}"));
 
-    // Per-id invocations reach the end state datum's compound form was
-    // meant to achieve: both rows are individually resolvable via their
-    // slug (distinct field names make the slug prefixes unambiguous).
-    for e in [&e1, &e2] {
-        run_cli(&["get", &e.slug], &db).unwrap_or_else(|err| panic!("get {}: {err:#}", e.slug));
-    }
+    let pointer = datum_core::last_docs::get_last_docs(&db)
+        .unwrap()
+        .expect("compound get must stamp the last-docs pointer");
+    assert_eq!(pointer.hids, vec![e1.hid.clone(), e2.hid.clone()]);
 
-    // And the underlying rows are still present (get is read-only).
+    // get is read-only — both source rows still present.
     assert_count!(db, "alpha", 1);
     assert_count!(db, "beta", 1);
+
+    // A bogus piece anywhere in the compound surfaces NotFound and names
+    // the offending piece, so the user knows which id to fix.
+    let bad = format!("{},zzzz", e1.slug);
+    let err = run_cli(&["get", &bad], &db).expect_err("bogus piece must error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("zzzz") || msg.to_lowercase().contains("not found"),
+        "expected NotFound naming the bad piece, got: {msg}",
+    );
 }
 
 /// Bead scope #4: "Verify 'not found' exits non-zero with a clean error."
