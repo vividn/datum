@@ -71,6 +71,28 @@ impl<'a> InterpolationContext<'a> {
     }
 }
 
+/// True iff `s` contains at least one unescaped `%key%` placeholder. `\%`
+/// counts as a literal percent and is ignored. Used to distinguish a
+/// templated string (e.g. `"word__%srcLang%"`) from a literal one before
+/// committing to the template-storage path.
+pub fn contains_template(s: &str) -> bool {
+    let mut chars = s.chars().peekable();
+    let mut unescaped_percents = 0;
+    while let Some(c) = chars.next() {
+        if c == '\\' && chars.peek() == Some(&'%') {
+            chars.next();
+            continue;
+        }
+        if c == '%' {
+            unescaped_percents += 1;
+            if unescaped_percents >= 2 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Interpolate a template like `"%field%:%uid%"` into a string using the
 /// lookup context. Unknown keys resolve to the empty string; runs of
 /// `delimiter` produced by empty substitutions collapse to a single delimiter
@@ -475,6 +497,23 @@ mod tests {
         let ctx = ctx_with_times(None, None);
         let got = interpolate("%field%:%?create_time%:%uid%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "f:u");
+    }
+
+    #[test]
+    fn contains_template_detects_unescaped_pair() {
+        assert!(contains_template("word__%srcLang%"));
+        assert!(contains_template("%a%__%b%"));
+    }
+
+    #[test]
+    fn contains_template_ignores_literal_percents() {
+        assert!(!contains_template("plain_field"));
+        assert!(!contains_template(""));
+        // A single unescaped `%` (no closing pair) is not a template.
+        assert!(!contains_template("100%"));
+        // Escaped pairs are literal `%` chars; not a template.
+        assert!(!contains_template(r"100\% off"));
+        assert!(!contains_template(r"\%not_a_key\%"));
     }
 
     #[test]

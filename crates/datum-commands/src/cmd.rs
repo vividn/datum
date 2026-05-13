@@ -603,6 +603,22 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.alias_chain = ctx.alias_chain_json();
     }
 
+    // da-qjrc: field templates. If the field arg carries `%key%`
+    // placeholders (e.g. `word__%srcLang%`), store the literal arg as
+    // `field_structure` and interpolate it against the entry's current
+    // state to produce the concrete `field`. The update path's
+    // `save_existing_entry_with_auto_reinterp` already re-interpolates
+    // `field_structure` on every mutation, so a later `dm update
+    // <hid> srcLang=es` cascades into both `field` and `slug`.
+    let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
+    if field_spec::contains_template(&entry.field) {
+        let template = entry.field.clone();
+        let uid = entry.short_uid();
+        let ctx = InterpolationContext::from_entry(&entry, &uid);
+        entry.field = field_spec::interpolate(&template, &ctx, &delim);
+        entry.field_structure = Some(template);
+    }
+
     // da-ivld: id_structure is the single source of truth for slug.
     // Every entry now carries an id_structure on insert; slug is always
     // `<field>:<body>` where body = interpolate(id_structure, ctx, delim).
@@ -618,7 +634,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     //   5. Default → `%occur_time%` if the entry has an occur_time, else
     //      the literal sentinel `unset` (preserves the
     //      `slug LIKE '%:unset'` filter used for add-only timeless entries).
-    let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
     let id_structure: String = if !args.slug_keys.is_empty() {
         args.slug_keys
             .iter()
@@ -2651,6 +2666,99 @@ mod tests {
         let e = &entries[0];
         let uid = e.short_uid();
         assert_eq!(e.slug, format!("coffee:{uid}"));
+    }
+
+    // ─── field-template (da-qjrc) tests ─────────────────────────────────────
+
+    #[test]
+    fn field_template_writes_field_structure_and_interpolates() {
+        // Mirrors the bead's worked example: `dm add word__%srcLang% \
+        //   -k srcLang -K pos -K source -R en pt noun fundo fund bottom`
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        let mut args = LogArgs::fresh("word__%srcLang%");
+        args.keys = vec!["srcLang".to_string()];
+        args.slug_keys = vec!["pos".to_string(), "source".to_string()];
+        args.remainder = Some("en".to_string());
+        args.rest = vec![
+            "pt".to_string(),
+            "noun".to_string(),
+            "fundo".to_string(),
+            "fund".to_string(),
+            "bottom".to_string(),
+        ];
+
+        log_entry(Action::Add, args, &db).unwrap();
+
+        // Field "word__pt" — the literal field after one entry insert.
+        let entries = db.entries_for_field("word__pt", None).unwrap();
+        assert_eq!(entries.len(), 1);
+        let e = &entries[0];
+        assert_eq!(e.field, "word__pt");
+        assert_eq!(e.field_structure.as_deref(), Some("word__%srcLang%"));
+        assert_eq!(e.id_structure.as_deref(), Some("%pos%__%source%"));
+        assert_eq!(e.slug, "word__pt:noun__fundo");
+        let data = e.data.as_ref().expect("data populated");
+        assert_eq!(data["srcLang"], serde_json::json!("pt"));
+        assert_eq!(data["pos"], serde_json::json!("noun"));
+        assert_eq!(data["source"], serde_json::json!("fundo"));
+        assert_eq!(data["en"], serde_json::json!(["fund", "bottom"]));
+    }
+
+    #[test]
+    fn field_template_update_cascades_to_field_and_slug() {
+        // Re-interpolating field_structure on update must move the field
+        // (and therefore the slug). Acceptance criterion from the bead.
+        use datum_core::db::Db;
+        use crate::commands::update_core::{
+            update_with_strategy, UpdateRequest, UpdateStrategy,
+        };
+        let db = Db::open_in_memory().unwrap();
+
+        let mut args = LogArgs::fresh("word__%srcLang%");
+        args.keys = vec!["srcLang".to_string()];
+        args.slug_keys = vec!["pos".to_string(), "source".to_string()];
+        args.rest = vec!["pt".to_string(), "noun".to_string(), "fundo".to_string()];
+        log_entry(Action::Add, args, &db).unwrap();
+
+        let original = db
+            .entries_for_field("word__pt", None)
+            .unwrap()
+            .pop()
+            .unwrap();
+
+        update_with_strategy(
+            UpdateRequest {
+                id_or_slug: &original.slug,
+                payload_value: None,
+                payload_extra: Some(serde_json::json!({"srcLang": "es"})),
+                strategy: UpdateStrategy::Replace,
+                slug_delimiter: ":",
+            },
+            &db,
+        )
+        .unwrap();
+
+        let live = db.entries_for_field("word__es", None).unwrap();
+        assert_eq!(live.len(), 1);
+        assert_eq!(live[0].field, "word__es");
+        assert_eq!(live[0].field_structure.as_deref(), Some("word__%srcLang%"));
+        assert_eq!(live[0].slug, "word__es:noun__fundo");
+    }
+
+    #[test]
+    fn no_field_template_leaves_field_structure_none() {
+        // Bare field (no `%key%`) ⇒ field_structure stays None.
+        use datum_core::db::Db;
+        let db = Db::open_in_memory().unwrap();
+
+        log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
+
+        let entries = db.entries_for_field("coffee", None).unwrap();
+        let e = &entries[0];
+        assert_eq!(e.field, "coffee");
+        assert_eq!(e.field_structure, None);
     }
 
     // ─── head command tests ─────────────────────────────────────────────────

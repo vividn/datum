@@ -38,7 +38,7 @@ mod presentation;
 mod spec;
 
 pub use alias::{Alias, DerivedAlias, DerivedAliasKind, SpecRegistry};
-pub use interpolation::{interpolate, InterpolationContext, DEFAULT_ID_DELIMITER};
+pub use interpolation::{contains_template, interpolate, InterpolationContext, DEFAULT_ID_DELIMITER};
 pub use position::{detect_anchor_cycles, format_cycle, resolve_positions, PositionResolution};
 pub use presentation::{PresentationSpec, Render, ResolvedPosition, DEFAULT_FIELD_HEIGHT};
 pub use spec::{FieldSpec, SubfieldSpec, SubfieldType, DEFAULT_VERB_CHOICES};
