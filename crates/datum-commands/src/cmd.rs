@@ -332,7 +332,7 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // da-5ns.3: route reserved column-bound keys (`state=`, `dur=`,
     // `following_state=`, `occur_time=`) out of the data blob.
     // Unknown keys (including `value=`) stay in the data payload (da-53rz).
-    let reserved = extract_reserved_columns(&mut extra_data)?;
+    let mut reserved = extract_reserved_columns(&mut extra_data)?;
 
     // da-5ns.3 strict positional gate (Action::Add only): the v=20 model
     // expects `state=<v>` for the primary state. A bare unkeyed
@@ -362,12 +362,17 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     // S12 (da-u4k.12): for `switch`, a comma-separated value string is split
     // into a JSON array of concurrent states (e.g. `switch f a,b` →
     // `["a","b"]`). Single states stay scalar. Applied post-parse so the
-    // slot/value handling in `parse_log_args` stays verb-agnostic.
+    // slot/value handling in `parse_log_args` stays verb-agnostic. Under
+    // da-r6ds the state for Switch flows through `reserved.state` (via
+    // the `state=true` slot), so the expansion applies there as well.
     let value = if matches!(action, Action::Switch) {
         expand_array_states(value)?
     } else {
         value
     };
+    if matches!(action, Action::Switch) {
+        reserved.state = expand_array_states(reserved.state)?;
+    }
 
     // `-u`/`--undo`: instead of inserting, locate the most recent live
     // entry whose (field, state) matches what this command would have
@@ -788,12 +793,16 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
     use datum_parse::input::flexible_positional::flexible_positional;
 
-    // For non-flex-field actions, the first positional IS the field —
-    // verbatim, no slot indirection. Flex-field actions (Add/Occur)
-    // route the field through the data-slot machinery so positional
-    // `abc` and key=value `field=abc` are interchangeable; the resolved
-    // field is pulled out of `datum_data` after handle_data_args runs.
-    let flex_field = matches!(action, Action::Add | Action::Occur);
+    // All data-taking actions route the field through the data-slot
+    // machinery so positional `abc` and key=value `field=abc` are
+    // interchangeable; the resolved field is pulled out of `datum_data`
+    // after handle_data_args runs. da-r6ds extends this to
+    // Switch/Start/Stop, matching the original datum's
+    // flexiblePositional pattern across the verb family.
+    let flex_field = matches!(
+        action,
+        Action::Add | Action::Occur | Action::Switch | Action::Start | Action::Stop
+    );
     let mut field = if flex_field {
         String::new()
     } else {
@@ -844,22 +853,54 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
         data_args.comment.push(c.clone());
     }
 
-    // For state-bearing verbs (Switch/Start/Stop), peel the FIRST bare
-    // positional out of the data queue and remember it as the state value.
-    // This keeps the state from competing with `-k` slot-fill — a switch
-    // user writing `switch project household -k optional=50` wants the
-    // state to be `household` and `optional` to default to `50`, not for
-    // `household` to consume the optional slot.
+    // da-r6ds: For `Switch`, peel the FIRST bare positional out of the
+    // data queue and inject it as the value for the `state=true` slot
+    // via `flexible_positional`. This keeps the state from competing with
+    // `-k` slot-fill — a switch user writing `switch project household -k
+    // optional=50` wants the state to be `household` and `optional` to
+    // default to `50`, not for `household` to consume the optional slot.
     //
-    // `KEY=VALUE` positionals are not state candidates; they go through
+    // For `Start`/`Stop`, state is HARD-SET by the action canonicalization
+    // downstream (see the `entry.state.is_none()` block in `log_entry`);
+    // a bare positional must NEVER coerce into state. `extract_start_*_*`
+    // helpers already peeled any duration positional, and the strict
+    // helper rejects non-duration positionals on start. Stop is permissive:
+    // residual non-duration positionals fall through to slot-fill / the
+    // remainder bucket, but never to state.
+    //
+    // `KEY=VALUE` positionals are never state candidates; they go through
     // handle_data_args as explicit assignments regardless of action.
-    let state_bearing = matches!(action, Action::Switch | Action::Start | Action::Stop);
-    let mut state_positional: Option<String> = None;
+    let mut switch_state_positional: Option<String> = None;
     for pos in &args.rest {
-        if state_bearing && state_positional.is_none() && !pos.contains('=') {
-            state_positional = Some(pos.clone());
+        if matches!(action, Action::Switch)
+            && switch_state_positional.is_none()
+            && !pos.contains('=')
+        {
+            switch_state_positional = Some(pos.clone());
         } else {
             data_args.data.push(pos.clone());
+        }
+    }
+
+    // da-r6ds: For Switch, the state slot is `state=true` (default `true`
+    // when no positional supplies a value, matching TS #7 / da-5ns).
+    // `flexible_positional` prepends the key+value at the front of both
+    // lists; calls are made in reverse-order so field ends up first.
+    //
+    // `.` is the use-default-or-skip sentinel (da-1n61): drop the value
+    // but keep the `state=true` slot so the default still fires.
+    // `\.` escapes back to the literal `"."` string and is injected
+    // normally.
+    if matches!(action, Action::Switch) {
+        let state_skipped = matches!(switch_state_positional.as_deref(), Some("."));
+        let inject_value = switch_state_positional.filter(|_| !state_skipped);
+        if inject_value.is_some() {
+            flexible_positional(&mut data_args, inject_value, "state=true", false, false);
+        } else {
+            // Value None (no positional, or `.` sentinel): inject just the
+            // slot declaration so the unfilled-keys phase applies the
+            // `true` default.
+            data_args.keys.insert(0, "state=true".to_string());
         }
     }
 
@@ -885,14 +926,20 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
     //   * Action::Occur → no remainder; an unbound positional is an error
     //     (occur doesn't carry state, has no `value` column to absorb it,
     //     and silently routing to extra_data would mask user mistakes).
-    //   * Otherwise → PRIMARY_VALUE_KEY sentinel; for state-bearing verbs
-    //     this only catches *extra* positionals after the state was peeled.
+    //   * Action::Start | Action::Stop → no remainder (da-r6ds): state is
+    //     hard-set by action canonicalization, so an unbound positional
+    //     has nowhere to land. Erroring out matches Start's pre-existing
+    //     strictness (extract_start_strict_duration) and prevents Stop
+    //     from silently coercing typos into state.
+    //   * Otherwise → PRIMARY_VALUE_KEY sentinel; Switch's state slot
+    //     already consumed the leading bare positional above, so the
+    //     remainder only catches *extra* positionals after state.
     let user_remainder = args.remainder.is_some() || args.comment_remainder;
     data_args.remainder = if let Some(r) = &args.remainder {
         Some(r.clone())
     } else if args.comment_remainder {
         Some("comment".to_string())
-    } else if matches!(action, Action::Occur) {
+    } else if matches!(action, Action::Occur | Action::Start | Action::Stop) {
         None
     } else {
         Some(PRIMARY_VALUE_KEY.to_string())
@@ -928,38 +975,15 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
         }
     }
 
-    // Value extraction: state positional wins for state-bearing verbs;
-    // otherwise pull from the PRIMARY_VALUE_KEY remainder. When the user
-    // redirected the remainder via -R/-C, value is intentionally empty.
-    //
-    // da-1n61: a bare `.` in the state slot is the use-default-or-skip
-    // sentinel — fall through as if no state positional was supplied so
-    // the action's default state (true/false) takes effect downstream.
-    // `\.` escapes back to the literal `"."` string.
-    let state_skipped = matches!(state_positional.as_deref(), Some("."));
-    let value = if let Some(sp) = state_positional.filter(|_| !state_skipped) {
-        // Discard any extra unbound positionals that landed in the
-        // primary-value bucket; the state already came from `sp`.
-        // Use the same token-coercion path that powers switch state
-        // assertions (-L) so "null" stays a string per daydumb's
-        // preserve_null_strings policy and unit-annotated numbers like
-        // "75.2kg" round-trip the same way as keyed values.
-        datum_data.remove(PRIMARY_VALUE_KEY);
-        let raw = if sp == r"\." { "." } else { sp.as_str() };
-        let parsed_state = parse_value_token(raw);
-        // da-ju71.4: when leading-dot keys produced a `state.*` subtree,
-        // fold the bare positional into `state.id` so
-        // `switch field name .type=x` lands as a Structured state
-        // {id: name, type: x}. `extract_reserved_columns` will then pull
-        // it onto entry.state. If the user already supplied `state.id=`
-        // (or `state=`) explicitly, preserve their value.
-        if let Some(JsonValue::Object(state_obj)) = datum_data.get_mut("state") {
-            state_obj.entry("id".to_string()).or_insert(parsed_state);
-            None
-        } else {
-            Some(parsed_state)
-        }
-    } else if user_remainder {
+    // Value extraction: pull from the PRIMARY_VALUE_KEY remainder bucket.
+    // When the user redirected the remainder via -R/-C, value is
+    // intentionally empty. State for Switch now flows through
+    // `datum_data["state"]` via the `state=true` slot above, and is
+    // extracted onto `entry.state` by `extract_reserved_columns`
+    // downstream; Start/Stop hard-set state in action canonicalization,
+    // so they never reach this remainder either way.
+    let _ = switch_state_positional; // consumed above; retained for clarity
+    let value = if user_remainder {
         None
     } else {
         datum_data.remove(PRIMARY_VALUE_KEY)
@@ -1109,6 +1133,12 @@ pub(crate) fn extract_start_stop_trailing_duration(
     args: &mut LogArgs,
     action: Action,
 ) -> Result<()> {
+    // da-r6ds: strip `.` / `\.` skip sentinels — after the bead, stop's
+    // state is hard-set by action canonicalization, so there's no
+    // positional state slot to "use default" for. Removing them here
+    // keeps the data queue clean for handle_data_args downstream.
+    args.rest.retain(|t| t != "." && t != r"\.");
+
     let last_bare_idx = args.rest.iter().rposition(|t| !t.contains('='));
     let Some(idx) = last_bare_idx else {
         return Ok(());
@@ -1133,16 +1163,19 @@ pub(crate) fn extract_start_stop_trailing_duration(
 /// is always `true` (or the explicit `state=<v>` reserved column); a bare
 /// positional may never become state. The only bare positionals accepted
 /// after `field` are a duration (peeled into `args.duration.duration`) or
-/// the `.` / `\.` skip sentinel (left in place for downstream handling).
-/// Anything else is rejected so typos like `start work sit` don't silently
-/// land an unintended state.
+/// the `.` / `\.` skip sentinel (removed in place, no-op). Anything else
+/// is rejected so typos like `start work sit` don't silently land an
+/// unintended state.
 pub(crate) fn extract_start_strict_duration(args: &mut LogArgs) -> Result<()> {
+    // da-r6ds: strip `.` / `\.` skip sentinels — state is hard-set to
+    // `true` by action canonicalization, so there's no positional state
+    // slot to "use default" for. Stripping here keeps the data queue
+    // clean for handle_data_args downstream.
+    args.rest.retain(|t| t != "." && t != r"\.");
+
     let mut duration_idx: Option<usize> = None;
     for (i, token) in args.rest.iter().enumerate() {
         if token.contains('=') {
-            continue;
-        }
-        if token == "." || token == r"\." {
             continue;
         }
         if parse_duration(token).is_ok() {

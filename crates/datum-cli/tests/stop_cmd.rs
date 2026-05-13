@@ -230,7 +230,11 @@ fn stop_invalid_dur_is_rejected() {
 ///
 /// Daydumb has no "required keys" concept, but the test's essence — that
 /// `--dur` + `-k` together still produce `verb=stop` with both the
-/// derived time block and the extra key present — ports cleanly.
+/// derived time block and the extra key present — ports cleanly. Under
+/// da-r6ds, `stop` hard-sets `state=false` and never coerces a bare
+/// positional into state, so `reqVal1` slot-fills the `-k req1=extra`
+/// declaration (overriding its default) rather than landing as the
+/// state value.
 #[test]
 fn stop_dur_plus_extra_still_marks_verb_stop() {
     let db = fresh_db();
@@ -250,10 +254,15 @@ fn stop_dur_plus_extra_still_marks_verb_stop() {
     .expect("stop --dur 30m -k ... dispatch");
 
     let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "block", value: "reqVal1");
+    assert_entry_matches!(entry, field: "field", verb: "block", value: false);
+    assert_eq!(entry.state.as_ref(), Some(&json!(false)));
     assert_eq!(entry.duration_seconds(), Some(30 * 60));
     let extra = entry.data.as_ref().unwrap();
-    assert_eq!(extra["req1"], json!("extra"));
+    assert_eq!(
+        extra["req1"],
+        json!("reqVal1"),
+        "bare positional slot-fills the -k declaration; default `extra` is overridden",
+    );
 }
 
 // ─── Extra parity checks (from bead acceptance criteria) ─────────────────────
