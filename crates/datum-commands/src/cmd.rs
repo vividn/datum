@@ -174,12 +174,13 @@ fn normalize_shared_occur_time(
             continue;
         }
         entry.occur_time = Some(shared.clone());
-        // Rebuild slug. If a template is in play, re-interpolate;
-        // otherwise use the canonical `build_slug` (millisecond-Z format).
+        // da-ivld: every entry now carries an id_structure; rebuild the
+        // slug as `<field>:<body>` where body = interpolate(id_structure).
         if let Some(tmpl) = entry.id_structure.clone() {
             let uid = entry.short_uid();
             let ctx = InterpolationContext::from_entry(entry, &uid);
-            entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, ":"));
+            let body = field_spec::interpolate(&tmpl, &ctx, ":");
+            entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
         } else {
             entry.slug = datum_core::entry::build_slug(&entry.field, Some(&shared));
         }
@@ -602,27 +603,51 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.alias_chain = ctx.alias_chain_json();
     }
 
-    // Slug precedence:
-    //   1. `-K` slug-keys (explicit per-invocation id chain)
-    //   2. `--id` template
-    //   3. spec's `id_template`
-    //   4. default `<field>:<timestamp>` from Entry::new
-    if !slug_values.is_empty() {
-        entry.slug = datum_core::slug::derive(
-            &entry.field,
-            &slug_values,
-            entry.start_time.as_ref().or(entry.end_time.as_ref()),
-        );
+    // da-ivld: id_structure is the single source of truth for slug.
+    // Every entry now carries an id_structure on insert; slug is always
+    // `<field>:<body>` where body = interpolate(id_structure, ctx, delim).
+    // The `<field>:` prefix is implicit and never lives in the template.
+    //
+    // Precedence for the body template:
+    //   1. `-K` slug-keys → `%key1%__%key2%` (one `%key%` per -K, joined
+    //      by the canonical slug separator `__`)
+    //   2. `id=<value>` positional shorthand (no `-K`, no `--id`) →
+    //      literal `<value>` (joined by `__` if multiple promoted)
+    //   3. `--id` template
+    //   4. spec's `id_template`
+    //   5. Default → `%occur_time%` if the entry has an occur_time, else
+    //      the literal sentinel `unset` (preserves the
+    //      `slug LIKE '%:unset'` filter used for add-only timeless entries).
+    let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
+    let id_structure: String = if !args.slug_keys.is_empty() {
+        args.slug_keys
+            .iter()
+            .map(|spec| {
+                let name = spec.split_once('=').map(|(n, _)| n).unwrap_or(spec);
+                format!("%{name}%")
+            })
+            .collect::<Vec<_>>()
+            .join("__")
+    } else if !slug_values.is_empty() {
+        // `id=<value>` positional promotion (parse_log_args populates
+        // slug_values from data["id"] only when no `-K` was declared).
+        // Stored as a literal — later updates don't re-key the slug.
+        slug_values.join("__")
+    } else if let Some(tmpl) = args.id.clone() {
+        tmpl
+    } else if let Some(tmpl) = db.load_spec(&entry.field)?.and_then(|s| s.id_template) {
+        tmpl
+    } else if entry.occur_time.is_some() {
+        "%occur_time%".to_string()
     } else {
-        let spec_template = db.load_spec(&entry.field)?.and_then(|s| s.id_template);
-        let template = args.id.clone().or(spec_template);
-        if let Some(tmpl) = template {
-            let uid = entry.short_uid();
-            let ctx = InterpolationContext::from_entry(&entry, &uid);
-            let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
-            entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &delim));
-            entry.id_structure = Some(tmpl);
-        }
+        "unset".to_string()
+    };
+    {
+        let uid = entry.short_uid();
+        let ctx = InterpolationContext::from_entry(&entry, &uid);
+        let body = field_spec::interpolate(&id_structure, &ctx, &delim);
+        entry.slug = datum_core::ids::Slug(format!("{}:{}", entry.field, body));
+        entry.id_structure = Some(id_structure);
     }
 
     // da-8y2q.2: derive the storage verb up-front so the lead/trail-state
@@ -2529,9 +2554,9 @@ mod tests {
         use datum_core::field_spec::FieldSpec;
         let db = Db::open_in_memory().unwrap();
 
-        // Spec defines id_template; caller does NOT pass --id.
+        // da-ivld: id_structure is body-only; the `<field>:` prefix is implicit.
         let mut spec = FieldSpec::new("coffee", Action::Occur);
-        spec.id_template = Some("%field%:%uid%".to_string());
+        spec.id_template = Some("%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
         log_entry(Action::Occur, log_args("coffee", vec![], None), &db).unwrap();
@@ -2541,7 +2566,7 @@ mod tests {
         let e = &entries[0];
         assert_eq!(
             e.id_structure.as_deref(),
-            Some("%field%:%uid%"),
+            Some("%uid%"),
             "spec template must be persisted as id_structure"
         );
         // slug = field ":" short_uid → must start with "coffee:" and end with 5-char uid
@@ -2557,21 +2582,21 @@ mod tests {
 
         // Spec has one template; --id passes a different one → --id wins.
         let mut spec = FieldSpec::new("coffee", Action::Occur);
-        spec.id_template = Some("%field%:%uid%".to_string());
+        spec.id_template = Some("%uid%".to_string());
         db.save_field_spec(&spec).unwrap();
 
         log_entry(
             Action::Occur,
-            log_args("coffee", vec![], Some("%field%-override-%uid%".to_string())),
+            log_args("coffee", vec![], Some("override-%uid%".to_string())),
             &db,
         )
         .unwrap();
 
         let entries = db.entries_for_field("coffee", None).unwrap();
         let e = &entries[0];
-        assert_eq!(e.id_structure.as_deref(), Some("%field%-override-%uid%"));
+        assert_eq!(e.id_structure.as_deref(), Some("override-%uid%"));
         let uid = e.short_uid();
-        assert_eq!(e.slug, format!("coffee-override-{uid}"));
+        assert_eq!(e.slug, format!("coffee:override-{uid}"));
     }
 
     #[test]
@@ -2581,7 +2606,7 @@ mod tests {
 
         log_entry(
             Action::Occur,
-            log_args("coffee", vec![], Some("%field%:%uid%".to_string())),
+            log_args("coffee", vec![], Some("%uid%".to_string())),
             &db,
         )
         .unwrap();
@@ -2590,7 +2615,7 @@ mod tests {
         let entries = db.entries_for_field("coffee", None).unwrap();
         let e = &entries[0];
         let fetched = db.get_entry(&e.slug).unwrap();
-        assert_eq!(fetched.id_structure.as_deref(), Some("%field%:%uid%"));
+        assert_eq!(fetched.id_structure.as_deref(), Some("%uid%"));
         assert_eq!(fetched.slug, e.slug);
     }
 
@@ -2603,8 +2628,9 @@ mod tests {
 
         let entries = db.entries_for_field("coffee", None).unwrap();
         let e = &entries[0];
-        // No spec, no --id → id_structure remains None; slug follows field:time rule
-        assert!(e.id_structure.is_none());
+        // da-ivld: no --id and no spec template ⇒ default-populate id_structure
+        // from the entry's occur_time. Slug stays `<field>:<formatted occur_time>`.
+        assert_eq!(e.id_structure.as_deref(), Some("%occur_time%"));
         assert!(e.slug.starts_with("coffee:"));
     }
 
@@ -2616,7 +2642,7 @@ mod tests {
         // occur verb has no state → %state% empty → "::" collapses to ":"
         log_entry(
             Action::Occur,
-            log_args("coffee", vec![], Some("%field%:%state%:%uid%".to_string())),
+            log_args("coffee", vec![], Some("%state%:%uid%".to_string())),
             &db,
         )
         .unwrap();
@@ -3140,7 +3166,8 @@ mod tests {
             Some(serde_json::json!("happy")),
             None,
         );
-        e.id_structure = Some("%field%:%state%".to_string());
+        // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
+        e.id_structure = Some("%state%".to_string());
         db.save_existing_entry(&e).unwrap();
 
         update_from_args(
@@ -3169,7 +3196,8 @@ mod tests {
             None,
             Some(serde_json::json!({"oldKind": "chore"})),
         );
-        e.id_structure = Some("%field%:%kind%".to_string());
+        // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
+        e.id_structure = Some("%kind%".to_string());
         db.save_existing_entry(&e).unwrap();
 
         update_from_args(

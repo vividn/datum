@@ -172,7 +172,8 @@ fn empty_id_template_produces_empty_slug() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", ""], &db).expect("note --id ''");
     let e = &db.entries_for_field("field", None).unwrap()[0];
-    assert_eq!(e.slug, "", "empty template ⇒ empty slug (current contract)");
+    // da-ivld: slug = `<field>:<body>` always; empty template ⇒ empty body.
+    assert_eq!(e.slug, "field:", "empty template ⇒ `<field>:` slug");
     assert_eq!(
         e.id_structure.as_deref(),
         Some(""),
@@ -209,7 +210,11 @@ fn completely_blank_with_id_skipped_no_analog() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "test"], &db).expect("note field --id test");
     let e = &db.entries_for_field("field", None).unwrap()[0];
-    assert_eq!(e.slug, "test", "explicit --id wins over default field:time");
+    // da-ivld: --id supplies the body; slug is `<field>:<body>`.
+    assert_eq!(
+        e.slug, "field:test",
+        "explicit --id wins over default occur_time",
+    );
 }
 
 // ─── TS #11: "calls addDoc" ───────────────────────────────────────────────────
@@ -225,7 +230,10 @@ fn internal_insert_spy_skipped_structural_only() {
         .expect("note field foo=abc --id %foo%");
     let e = &db.entries_for_field("field", None).unwrap()[0];
     // Observable proxy for "the insert happened with these args":
-    assert_eq!(e.slug, "abc", "template interpolated against extra_data");
+    assert_eq!(
+        e.slug, "field:abc",
+        "template interpolated against extra_data",
+    );
     assert_eq!(e.data.as_ref().unwrap().get("foo"), Some(&json!("abc")),);
     assert_eq!(e.id_structure.as_deref(), Some("%foo%"));
 }
@@ -241,7 +249,8 @@ fn no_metadata_suppresses_timestamps() {
 
     run_cli(&["add", "hasMetadata", "--id", "hasMetadata"], &db)
         .expect("note hasMetadata --id hasMetadata");
-    let has = db.get_entry("hasMetadata").unwrap();
+    // da-ivld: slug is now `<field>:<body>`.
+    let has = db.get_entry("hasMetadata:hasMetadata").unwrap();
     assert!(!has.device_id.is_empty(), "default path keeps device_id");
     assert_ne!(
         has.create_time,
@@ -250,7 +259,7 @@ fn no_metadata_suppresses_timestamps() {
     );
 
     run_cli(&["add", "noMetadata", "--id", "noMetadata", "-M"], &db).expect("note noMetadata -M");
-    let none = db.get_entry("noMetadata").unwrap();
+    let none = db.get_entry("noMetadata:noMetadata").unwrap();
     assert_eq!(none.device_id, "", "-M clears device_id");
     assert_eq!(
         none.create_time,
@@ -269,7 +278,7 @@ fn no_metadata_suppresses_timestamps() {
         &db,
     )
     .expect("note --no-metadata");
-    let long = db.get_entry("noMetaLong").unwrap();
+    let long = db.get_entry("noMetaLong:noMetaLong").unwrap();
     assert_eq!(long.device_id, "");
     assert_eq!(long.create_time, chrono::DateTime::UNIX_EPOCH);
 }
@@ -323,7 +332,8 @@ fn same_id_different_data_errors_on_second() {
 
     let entries = db.entries_for_field("field", None).unwrap();
     assert_eq!(entries.len(), 1, "second insert rejected");
-    assert_eq!(entries[0].slug, "doug");
+    // da-ivld: slug is `<field>:<body>`.
+    assert_eq!(entries[0].slug, "field:doug");
     assert_eq!(entries[0].id_structure.as_deref(), Some("doug"));
 }
 
@@ -346,7 +356,7 @@ fn id_template_recorded_in_id_structure() {
         Some("rawString__%foo%!!"),
         "id_structure preserves the raw template",
     );
-    assert_eq!(e.slug, "rawString__abc!!", "interpolates %foo% → abc");
+    assert_eq!(e.slug, "field:rawString__abc!!", "interpolates %foo% → abc",);
 }
 
 // ─── TS #16: "can use custom base data" ──────────────────────────────────────
@@ -392,7 +402,7 @@ fn payload_id_precedence_skipped_no_analog() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "explicit-slug"], &db).expect("note --id explicit-slug");
     let e = &db.entries_for_field("field", None).unwrap()[0];
-    assert_eq!(e.slug, "explicit-slug");
+    assert_eq!(e.slug, "field:explicit-slug");
 }
 
 // ─── TS #20: "does not contain idStructure in the metadata if id does not depend on values from data" ─
@@ -406,19 +416,22 @@ fn id_structure_always_set_when_id_given() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "rawString"], &db).expect("note --id rawString");
     let e = &db.entries_for_field("field", None).unwrap()[0];
-    assert_eq!(e.slug, "rawString");
+    assert_eq!(e.slug, "field:rawString");
     assert_eq!(
         e.id_structure.as_deref(),
         Some("rawString"),
         "daydumb always persists the id template, unlike datum",
     );
 
-    // Without `--id` at all, id_structure stays None (built-in slug rule).
+    // da-ivld: every entry now carries an id_structure. With no `--id`,
+    // the default body template is `%occur_time%` (or the literal `unset`
+    // if no occur_time is set).
     run_cli(&["add", "other"], &db).expect("note other");
     let other = &db.entries_for_field("other", None).unwrap()[0];
-    assert!(
-        other.id_structure.is_none(),
-        "no --id ⇒ no id_structure (default field:time slug)",
+    assert_eq!(
+        other.id_structure.as_deref(),
+        Some("%occur_time%"),
+        "default ⇒ id_structure = `%occur_time%`",
     );
 }
 
@@ -431,12 +444,12 @@ fn id_structure_always_set_when_id_given() {
 fn show_all_flag_wired_through() {
     let db = fresh_db();
     run_cli(&["add", "field", "--id", "that-id", "--show", "all"], &db).expect("--show all");
-    let e = db.get_entry("that-id").unwrap();
+    let e = db.get_entry("field:that-id").unwrap();
     assert_eq!(e.field, "field");
 
     run_cli(&["add", "field", "--id", "short-show-all", "-A"], &db)
         .expect("-A (show-all shorthand)");
-    let e2 = db.get_entry("short-show-all").unwrap();
+    let e2 = db.get_entry("field:short-show-all").unwrap();
     assert_eq!(e2.field, "field");
 }
 
@@ -529,7 +542,7 @@ fn slug_template_interpolates_composite_keys() {
     )
     .expect("note composite template");
     let e1 = &db.entries_for_field("field", None).unwrap()[0];
-    assert_eq!(e1.slug, "Testing_Fields");
+    assert_eq!(e1.slug, "field:Testing_Fields");
 
     run_cli(
         &[
@@ -544,7 +557,7 @@ fn slug_template_interpolates_composite_keys() {
     )
     .expect("note hyphen template");
     let e2 = &db.entries_for_field("other", None).unwrap()[0];
-    assert_eq!(e2.slug, "Composite-Test");
+    assert_eq!(e2.slug, "other:Composite-Test");
 }
 
 // ─── TS #25: "can add a remainder comment easily" ─────────────────────────────

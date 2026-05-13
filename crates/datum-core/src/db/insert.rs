@@ -255,10 +255,15 @@ impl Db {
             let ctx = InterpolationContext::from_entry(&updated, &uid);
             updated.field = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
         }
+        // da-ivld: slug = `<field>:<body>` where body is
+        // interpolate(id_structure). The `<field>:` prefix is implicit
+        // and never lives in id_structure; see cmd.rs's slug-precedence
+        // block for write-time derivation.
         let new_slug = if let Some(tmpl) = updated.id_structure.clone() {
             let uid = updated.short_uid();
             let ctx = InterpolationContext::from_entry(&updated, &uid);
-            Some(Slug(field_spec::interpolate(&tmpl, &ctx, slug_delimiter)))
+            let body = field_spec::interpolate(&tmpl, &ctx, slug_delimiter);
+            Some(Slug(format!("{}:{}", updated.field, body)))
         } else {
             None
         };

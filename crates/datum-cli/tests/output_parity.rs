@@ -169,7 +169,7 @@ fn show_minimal_emits_header_only() {
 fn update_emits_update_action_tag() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
-    run(&db, &["occur", "coffee", "amount=1", "--id", "%field%:pin"]);
+    run(&db, &["occur", "coffee", "amount=1", "--id", "pin"]);
     let (stdout, _) = run(&db, &["update", "coffee:pin", "amount=5"]);
     assert!(stdout.contains("UPDATE"), "expected UPDATE: {stdout:?}");
     assert!(
@@ -183,7 +183,7 @@ fn update_emits_update_action_tag() {
 fn delete_emits_delete_action_tag() {
     let db = tmp_db();
     let _ = std::fs::remove_file(&db);
-    run(&db, &["occur", "coffee", "--id", "%field%:pin"]);
+    run(&db, &["occur", "coffee", "--id", "pin"]);
     let (stdout, _) = run(&db, &["del", "coffee:pin", "--force"]);
     assert!(stdout.contains("DELETE"), "expected DELETE: {stdout:?}");
     let _ = std::fs::remove_file(&db);

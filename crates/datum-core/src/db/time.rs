@@ -169,7 +169,7 @@ mod tests {
             None,
             "d1",
         );
-        e.id_structure = Some("%field%:%occur_time%".to_string());
+        e.id_structure = Some("%occur_time%".to_string());
         let hid = e.hid.clone();
         db.insert_entry(&e).unwrap();
         // Stamp the templated slug post-insert so we start from the
@@ -207,7 +207,7 @@ mod tests {
             None,
             "d1",
         );
-        e.id_structure = Some("%field%:%occur_time%".to_string());
+        e.id_structure = Some("%occur_time%".to_string());
         let hid = e.hid.clone();
         db.insert_entry(&e).unwrap();
         let stamped_slug = Slug("coffee:2024-01-01T10:00:00.000Z".to_string());

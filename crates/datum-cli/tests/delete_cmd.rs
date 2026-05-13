@@ -79,10 +79,11 @@ fn delete_by_exact_id_tombstones_entry() {
 fn delete_by_slug_tombstones_entry() {
     let db = fresh_db();
 
-    // `--id %field%:fixed` pins a deterministic slug so we can reference it
+    // `--id fixed` pins a deterministic slug body so we can reference it
     // without depending on wall-clock time. This exercises the template
     // interpolation path from A1, which the slug-lookup case relies on.
-    run_cli(&["occur", "event", "--id", "%field%:fixed"], &db).expect("seed event");
+    // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
+    run_cli(&["occur", "event", "--id", "fixed"], &db).expect("seed event");
     let seeded = &db.entries_for_field("event", None).unwrap()[0];
     let slug = seeded.slug.clone();
     assert_eq!(slug, "event:fixed", "slug interpolation must resolve");
@@ -183,7 +184,8 @@ fn delete_emits_delete_tag_on_standard_show() {
     let _ = std::fs::remove_file(&db);
 
     // Pinned slug so the subsequent delete can reference it deterministically.
-    run_binary(&db, &["occur", "coffee", "--id", "%field%:pin"]);
+    // da-ivld: id_structure is body-only; `<field>:` prefix is implicit.
+    run_binary(&db, &["occur", "coffee", "--id", "pin"]);
     let (stdout, _) = run_binary(&db, &["delete", "coffee:pin", "--force"]);
     assert!(
         stdout.contains("DELETE"),
@@ -191,7 +193,7 @@ fn delete_emits_delete_tag_on_standard_show() {
     );
 
     // Second seed + delete with `--show none`: no tag, no noise.
-    run_binary(&db, &["occur", "coffee", "--id", "%field%:pin2"]);
+    run_binary(&db, &["occur", "coffee", "--id", "pin2"]);
     let (silent, _) = run_binary(&db, &["delete", "coffee:pin2", "--force", "--show", "none"]);
     assert_eq!(
         silent, "",

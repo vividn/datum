@@ -123,12 +123,14 @@ fn retime_overwrites_precision_from_new_input() {
         seeded.occur_time_precision,
     );
     let slug = seeded.slug.clone();
+    let hid = seeded.hid.clone();
 
     // Retime with a ±5m uncertainty on the fresh input — precision replaces,
-    // not merges.
+    // not merges. da-ivld: id_structure defaults to `%occur_time%`, so the
+    // retime auto-rekeys the slug; look the row back up by stable hid.
     run_cli(&["retime", &slug, "-t", "13:00±5m"], &db).expect("retime -t");
 
-    let after = db.get_entry(&slug).unwrap();
+    let after = db.get_entry(&hid).unwrap();
     let _ = PrecisionUnit::Exact; // keep the import live for the legacy reference below.
     let precision = after
         .occur_time_precision

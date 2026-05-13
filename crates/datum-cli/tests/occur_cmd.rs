@@ -426,7 +426,11 @@ fn id_template_interpolates_extra_data_on_occur() {
     // Single-key template.
     run_cli(&["occur", "event", "task=Testing", "--id", "%task%"], &db).expect("occur --id %task%");
     let e1 = &db.entries_for_field("event", None).unwrap()[0];
-    assert_eq!(e1.slug, "Testing", "slug = interpolated %task%");
+    // da-ivld: slug = `<field>:<body>`.
+    assert_eq!(
+        e1.slug, "event:Testing",
+        "slug = field:interpolated(%task%)"
+    );
     assert_eq!(
         e1.id_structure.as_deref(),
         Some("%task%"),
@@ -452,7 +456,7 @@ fn id_template_interpolates_extra_data_on_occur() {
     )
     .expect("occur --id %project%-%task%");
     let e2 = &db2.entries_for_field("event", None).unwrap()[0];
-    assert_eq!(e2.slug, "Output-Interpolation");
+    assert_eq!(e2.slug, "event:Output-Interpolation");
     assert_eq!(e2.id_structure.as_deref(), Some("%project%-%task%"));
 }
 

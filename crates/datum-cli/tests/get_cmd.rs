@@ -48,8 +48,7 @@ use std::process::Command;
 #[test]
 fn get_resolves_slug_prefix() {
     let db = fresh_db();
-    run_cli(&["occur", "coffee", "--id", "%field%:a44quickid"], &db)
-        .expect("seed coffee:a44quickid");
+    run_cli(&["occur", "coffee", "--id", "a44quickid"], &db).expect("seed coffee:a44quickid");
     let seeded = &db.entries_for_field("coffee", None).unwrap()[0];
     assert_eq!(seeded.slug, "coffee:a44quickid");
 
@@ -100,7 +99,7 @@ fn get_standard_show_emits_exists_marker() {
     let db = tmp_db_path();
     let _ = std::fs::remove_file(&db);
 
-    run_binary(&db, &["occur", "mood", "--id", "%field%:somethingElse"]);
+    run_binary(&db, &["occur", "mood", "--id", "somethingElse"]);
     let (stdout, _) = run_binary(&db, &["get", "mood:some"]);
 
     assert!(
@@ -129,7 +128,7 @@ fn get_show_all_dumps_full_metadata() {
     let db = tmp_db_path();
     let _ = std::fs::remove_file(&db);
 
-    run_binary(&db, &["occur", "mood", "--id", "%field%:fullDump"]);
+    run_binary(&db, &["occur", "mood", "--id", "fullDump"]);
     let (stdout, _) = run_binary(&db, &["get", "-A", "mood:fullDump"]);
 
     // -A still surfaces the EXISTS header (Show::All extends Default).
@@ -171,7 +170,7 @@ fn get_show_all_long_form_works() {
     let db = tmp_db_path();
     let _ = std::fs::remove_file(&db);
 
-    run_binary(&db, &["occur", "mood", "--id", "%field%:longForm"]);
+    run_binary(&db, &["occur", "mood", "--id", "longForm"]);
     let (stdout, _) = run_binary(&db, &["get", "--show-all", "mood:longForm"]);
 
     assert!(

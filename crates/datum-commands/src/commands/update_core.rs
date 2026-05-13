@@ -693,7 +693,7 @@ mod tests {
         );
         // Stamp id_structure post-insert via an UPDATE; in production this
         // comes from `--id` at create time.
-        e.id_structure = Some("%field%:%kind%".to_string());
+        e.id_structure = Some("%kind%".to_string());
         db.save_existing_entry(&e).unwrap();
 
         let outcome = update_with_strategy(
@@ -776,7 +776,7 @@ mod tests {
             Some(serde_json::json!("happy")),
             None,
         );
-        e.id_structure = Some("%field%:%state%".to_string());
+        e.id_structure = Some("%state%".to_string());
         db.save_existing_entry(&e).unwrap();
         let original_hid = e.hid.clone();
 
@@ -842,7 +842,7 @@ mod tests {
             None,
             Some(serde_json::json!({"reps": 10, "kind": "deadlift"})),
         );
-        e.id_structure = Some("%field%:%kind%".to_string());
+        e.id_structure = Some("%kind%".to_string());
         // Stamp the slug to match the template so we're starting from the
         // canonical form (otherwise a stale slug would 'jump' on first edit).
         e.slug = datum_core::ids::Slug("gym:deadlift".to_string());
@@ -886,7 +886,7 @@ mod tests {
             Some(serde_json::json!("happy")),
             Some(serde_json::json!({"state": "happy"})),
         );
-        e.id_structure = Some("%field%:%state%".to_string());
+        e.id_structure = Some("%state%".to_string());
         db.save_existing_entry(&e).unwrap();
 
         update_with_strategy(
@@ -932,7 +932,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut e = seed_entry(&db, "nap", Verb::Point, None, None);
         e.dur = Some(datum_core::dur::Dur::parse("PT1H").unwrap());
-        e.id_structure = Some("%field%:%dur%".to_string());
+        e.id_structure = Some("%dur%".to_string());
         e.slug = datum_core::ids::Slug("nap:PT1H".to_string());
         db.save_existing_entry_with_rekey(&seed_slug_for("nap"), &e)
             .unwrap();
@@ -978,7 +978,7 @@ mod tests {
         );
         e.dur = Some(datum_core::dur::Dur::parse("PT1H").unwrap());
         e.following_state = Some(serde_json::json!("idle"));
-        e.id_structure = Some("%field%:%following_state%".to_string());
+        e.id_structure = Some("%following_state%".to_string());
         e.slug = datum_core::ids::Slug("block:idle".to_string());
         db.save_existing_entry_with_rekey(&seed_slug_for("block"), &e)
             .unwrap();
@@ -1006,7 +1006,7 @@ mod tests {
         use datum_core::time::DatumTime;
         let db = Db::open_in_memory().unwrap();
         let mut e = seed_entry(&db, "coffee", Verb::Point, None, None);
-        e.id_structure = Some("%field%:%occur_time%".to_string());
+        e.id_structure = Some("%occur_time%".to_string());
         e.slug = datum_core::ids::Slug("coffee:2024-01-01T00:00:00.000Z".to_string());
         db.save_existing_entry_with_rekey(&seed_slug_for("coffee"), &e)
             .unwrap();
@@ -1040,7 +1040,7 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
         let mut e = seed_entry(&db, "task", Verb::Point, None, None);
         e.state = Some(serde_json::json!("todo"));
-        e.id_structure = Some("%field%:%state%".to_string());
+        e.id_structure = Some("%state%".to_string());
         e.slug = datum_core::ids::Slug("task:todo".to_string());
         db.save_existing_entry_with_rekey(&seed_slug_for("task"), &e)
             .unwrap();

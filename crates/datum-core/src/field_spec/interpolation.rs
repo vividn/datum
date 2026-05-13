@@ -194,11 +194,27 @@ fn json_to_plain_string(v: &JsonValue) -> String {
 }
 
 fn collapse_delimiters(s: &str, delim: &str) -> String {
-    if delim.is_empty() {
-        return s.to_string();
+    let mut result = s.to_string();
+    // da-ivld: `__` is the canonical slug-key separator emitted by the
+    // `-K`-derived id_structure (`%key1%__%key2%`). Collapse it
+    // unconditionally so an absent slot drops cleanly without leaving
+    // stranded `__` runs or a trailing/leading tail — independent of
+    // whatever `delim` was passed in.
+    const SLUG_SEP: &str = "__";
+    let slug_sep_double = format!("{SLUG_SEP}{SLUG_SEP}");
+    while result.contains(&slug_sep_double) {
+        result = result.replace(&slug_sep_double, SLUG_SEP);
+    }
+    if let Some(stripped) = result.strip_prefix(SLUG_SEP) {
+        result = stripped.to_string();
+    }
+    if let Some(stripped) = result.strip_suffix(SLUG_SEP) {
+        result = stripped.to_string();
+    }
+    if delim.is_empty() || delim == SLUG_SEP {
+        return result;
     }
     let double = format!("{delim}{delim}");
-    let mut result = s.to_string();
     while result.contains(&double) {
         result = result.replace(&double, delim);
     }
