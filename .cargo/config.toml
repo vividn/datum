@@ -1,2 +1,23 @@
 [alias]
 xtask = "run --quiet --package xtask --"
+
+# Limit cargo parallelism for sandboxed polecat use.
+#
+# Polecats run `cargo build`/`cargo test` concurrently in separate
+# worktrees on the same host. With max_polecats=3 on an 8-core box,
+# the default parallelism (jobs=nproc, test_threads=nproc) oversubscribes
+# CPU ~3×, slowing every sandbox and leaving no headroom for mayor /
+# witness / refinery. gt sandboxes do not propagate env vars, so the
+# caps live here in the repo.
+#
+# Single-user override: the `[env]` table below is non-forcing, and
+# `CARGO_BUILD_JOBS` overrides `[build] jobs`. To restore full parallelism
+# for local dev, export in your shell:
+#     export CARGO_BUILD_JOBS=$(nproc)
+#     export RUST_TEST_THREADS=$(nproc)
+
+[build]
+jobs = 3
+
+[env]
+RUST_TEST_THREADS = "3"
