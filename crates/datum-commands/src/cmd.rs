@@ -2712,10 +2712,8 @@ mod tests {
     fn field_template_update_cascades_to_field_and_slug() {
         // Re-interpolating field_structure on update must move the field
         // (and therefore the slug). Acceptance criterion from the bead.
+        use crate::commands::update_core::{update_with_strategy, UpdateRequest, UpdateStrategy};
         use datum_core::db::Db;
-        use crate::commands::update_core::{
-            update_with_strategy, UpdateRequest, UpdateStrategy,
-        };
         let db = Db::open_in_memory().unwrap();
 
         let mut args = LogArgs::fresh("word__%srcLang%");
