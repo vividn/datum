@@ -12,8 +12,32 @@ use std::cell::RefCell;
 use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
+use chrono_tz::Tz;
 
 use crate::time::datum_time::DatumTime;
+
+/// Resolve the host's effective IANA timezone name.
+///
+/// Honors `TZ` first (so per-invocation overrides like
+/// `TZ=America/Los_Angeles dm occur sleep` produce a matching
+/// `occur_time_tz`, paralleling chrono::Local's offset behavior), then
+/// falls back to [`iana_time_zone::get_timezone`], then to `"UTC"` as a
+/// last resort when the host exposes no IANA name.
+///
+/// `TZ` values that aren't valid IANA names (POSIX forms like `PST8PDT`,
+/// `EST5EDT`) are ignored — we only emit names that round-trip through
+/// `chrono_tz`, since the storage column documents an IANA zone.
+pub fn host_iana_tz_name() -> String {
+    if let Ok(raw) = std::env::var("TZ") {
+        // POSIX permits a leading ':' to hint "use the file" — strip it
+        // so `TZ=:America/Los_Angeles` resolves the same as the bare form.
+        let candidate = raw.strip_prefix(':').unwrap_or(&raw);
+        if !candidate.is_empty() && candidate.parse::<Tz>().is_ok() {
+            return candidate.to_string();
+        }
+    }
+    iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string())
+}
 
 /// A source of "now" for [`DatumTime::now`].
 pub trait Clock: Send + Sync + 'static {
@@ -28,7 +52,7 @@ impl Clock for SystemClock {
         let local = chrono::Local::now();
         let utc = local.with_timezone(&Utc);
         let offset_minutes = local.offset().local_minus_utc() / 60;
-        let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
+        let timezone = host_iana_tz_name();
         DatumTime {
             utc,
             offset_minutes,
@@ -92,5 +116,97 @@ pub fn now() -> DatumTime {
     match current() {
         Some(c) => c.now(),
         None => SystemClock.now(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Mutex;
+
+    // TZ is process-wide state. Tests that touch it must serialize so
+    // parallel runners don't observe each other's mutations.
+    static TZ_LOCK: Mutex<()> = Mutex::new(());
+
+    struct TzGuard {
+        prior: Option<std::ffi::OsString>,
+        _lock: std::sync::MutexGuard<'static, ()>,
+    }
+
+    impl TzGuard {
+        fn set(value: Option<&str>) -> Self {
+            let lock = TZ_LOCK.lock().unwrap_or_else(|p| p.into_inner());
+            let prior = std::env::var_os("TZ");
+            match value {
+                Some(v) => std::env::set_var("TZ", v),
+                None => std::env::remove_var("TZ"),
+            }
+            TzGuard { prior, _lock: lock }
+        }
+    }
+
+    impl Drop for TzGuard {
+        fn drop(&mut self) {
+            match self.prior.take() {
+                Some(v) => std::env::set_var("TZ", v),
+                None => std::env::remove_var("TZ"),
+            }
+        }
+    }
+
+    #[test]
+    fn tz_env_iana_name_overrides_host_zone() {
+        let _g = TzGuard::set(Some("America/Los_Angeles"));
+        assert_eq!(host_iana_tz_name(), "America/Los_Angeles");
+    }
+
+    #[test]
+    fn tz_env_leading_colon_is_stripped() {
+        // POSIX permits `TZ=:America/Los_Angeles`; we honor the same name.
+        let _g = TzGuard::set(Some(":America/Los_Angeles"));
+        assert_eq!(host_iana_tz_name(), "America/Los_Angeles");
+    }
+
+    #[test]
+    fn tz_env_unknown_form_falls_through() {
+        // POSIX `TZ` permits inline DST rules (`EST5EDT,M3.2.0/2,M11.1.0/2`)
+        // that chrono_tz cannot interpret — those must not leak into the
+        // storage column. The fallback may be the OS zone (when present) or
+        // "UTC" (stripped sandbox); either is acceptable as long as it's
+        // a valid IANA name, not the raw POSIX rule string.
+        let _g = TzGuard::set(Some("EST5EDT,M3.2.0/2,M11.1.0/2"));
+        let got = host_iana_tz_name();
+        assert_ne!(got, "EST5EDT,M3.2.0/2,M11.1.0/2");
+        assert!(
+            got.parse::<Tz>().is_ok(),
+            "fallback must be valid IANA: {got}"
+        );
+    }
+
+    #[test]
+    fn tz_env_iana_legacy_alias_is_accepted() {
+        // `PST8PDT`, `US/Pacific`, etc. are deprecated but still recognized
+        // IANA zones — chrono_tz parses them, so we honor them as written.
+        let _g = TzGuard::set(Some("PST8PDT"));
+        assert_eq!(host_iana_tz_name(), "PST8PDT");
+    }
+
+    #[test]
+    fn tz_env_unset_uses_iana_or_utc() {
+        let _g = TzGuard::set(None);
+        let got = host_iana_tz_name();
+        // Either resolves to a real IANA name or the documented "UTC" fallback.
+        assert!(
+            got.parse::<Tz>().is_ok(),
+            "fallback must be valid IANA: {got}"
+        );
+    }
+
+    #[test]
+    fn tz_env_sync_with_systemclock() {
+        // Regression for da-flbu: SystemClock.now() must report the same
+        // timezone name as host_iana_tz_name() — they're meant to agree.
+        let _g = TzGuard::set(Some("America/New_York"));
+        assert_eq!(SystemClock.now().timezone, "America/New_York");
     }
 }

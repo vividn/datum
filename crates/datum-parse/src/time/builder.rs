@@ -244,7 +244,7 @@ impl TimeBuilder {
 
         let utc = dt.with_timezone(&Utc);
         let offset_minutes = dt.offset().local_minus_utc() / 60;
-        let timezone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".to_string());
+        let timezone = crate::time::clock::host_iana_tz_name();
         DatumTime {
             utc,
             offset_minutes,
