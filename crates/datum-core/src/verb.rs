@@ -2,7 +2,7 @@
 //!
 //! da-5ns sub-bead 2. Truth table is normative — see the bead description
 //! for the matrix. Insert/update wiring lives in sub-bead 3; the
-//! `dm check --verbs` drift detector lives in sub-bead 7.
+//! `dm check verbs` drift detector lives in sub-bead 7.
 
 use serde_json::Value as JsonValue;
 

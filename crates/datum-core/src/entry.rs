@@ -19,7 +19,7 @@ use crate::time::DatumTime;
 
 /// The verb classifies an entry's (state, dur, following_state) shape.
 /// Stored as plain text in the `verb` column (the SQL CHECK does not
-/// constrain values; `dm check --verbs` (sub-bead 7) detects drift
+/// constrain values; `dm check verbs` (sub-bead 7) detects drift
 /// between stored and re-derived verbs).
 ///
 /// Storage-only — five canonical shapes derived from the truth table by

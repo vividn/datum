@@ -68,7 +68,7 @@ impl Db {
     }
 
     /// Rewrite just the `verb` column of the row identified by `slug`.
-    /// `dm check --verbs --fix` (da-5ns sub-bead 7) uses this to repair
+    /// `dm check verbs --fix` (da-5ns sub-bead 7) uses this to repair
     /// drift between the stored verb and `derive_verb`. Touches no other
     /// columns and does not write a history row — verb is a derived
     /// classifier, so a repair is not a user-visible edit. Errors

@@ -128,7 +128,7 @@ impl Db {
     /// string. A negative duration is rejected at parse time
     /// (sub-bead 3), so the legacy "end before start" anomaly cannot
     /// be expressed in the v=20 schema. Returns an empty vec; sub-bead
-    /// 7 (`dm check --verbs`) covers the analogous drift category.
+    /// 7 (`dm check verbs`) covers the analogous drift category.
     pub fn find_time_end_before_start(&self) -> Result<Vec<TimeOrderIssue>> {
         Ok(Vec::new())
     }

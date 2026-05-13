@@ -783,23 +783,24 @@ pub struct RestoreArgs {
 #[derive(Debug, Default)]
 pub struct CheckArgs {
     pub json: bool,
-    /// `--verbs` — run only the verb-drift check (state/dur/following_state
-    /// → derive_verb vs the stored `verb` column). When unset, the verb
-    /// check still runs as part of the default battery; this flag narrows
-    /// the report to that one category.
-    pub verbs: bool,
-    /// `--aliases` — run only the alias checks: cross-spec state-name
-    /// collisions, orphaned user/kit aliases (chain ends in an unknown
-    /// name), and cycles in alias-chain expansion. When unset, these
-    /// checks still run as part of the default battery; this flag narrows
-    /// the report to alias categories only.
-    pub aliases: bool,
+    /// Positional list of checker names to run. When empty, the default
+    /// battery runs (every known checker). When non-empty, only the named
+    /// checkers run. Known names: see [`KNOWN_CHECKERS`].
+    pub checkers: Vec<String>,
     /// `--fix` — rewrite drifted `verb` columns to match `derive_verb`.
-    /// For `--aliases`, annotates state-name collisions with the explicit
-    /// first-saved-wins resolution (no DB mutation — the precedence is
-    /// already deterministic in [`SpecAliasIndex`]).
+    /// For the `aliases` checker, annotates state-name collisions with the
+    /// explicit first-saved-wins resolution (no DB mutation — the
+    /// precedence is already deterministic in [`SpecAliasIndex`]).
     pub fix: bool,
+    /// `--list` — print the set of known checker names and exit without
+    /// running any checks.
+    pub list: bool,
 }
+
+/// Checker names accepted as `dm check <NAME>...` positionals. Kept in the
+/// parse crate so both the parser (typo validation) and the command
+/// dispatcher (which-categories-to-run) read from the same source.
+pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases"];
 
 /// Render orientation for `datum dayview`, named by time-axis direction.
 /// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a

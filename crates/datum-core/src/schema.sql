@@ -5,7 +5,7 @@
 -- model — `occur_time` (when), `state` (what), `dur` (how long, ISO
 -- duration string), `following_state` (what changed to). The verb is
 -- derived from the (state, dur, following_state) triple but stored as
--- a plain column so it can be indexed and `dm check --verbs` can detect
+-- a plain column so it can be indexed and `dm check verbs` can detect
 -- drift.
 --
 -- Timestamps are stored as ISO 8601 UTC strings. CRDT-friendliness: entries
@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS entries (
     following_state TEXT,
     -- `verb`: stored-not-derived classifier. One of point | switch |
     -- block | block-switch | point-switch. Derived from the (state, dur,
-    -- following_state) triple at insert/update time; `dm check --verbs`
+    -- following_state) triple at insert/update time; `dm check verbs`
     -- detects drift between stored and re-derived values.
     verb            TEXT NOT NULL DEFAULT 'point',
     data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)

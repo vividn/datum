@@ -370,7 +370,7 @@ const IGNORE_BODY: &str = "USAGE:\n  datum ignore <FIELD>\n";
 
 const GREP_BODY: &str = "USAGE:\n  datum grep <PATTERN>... [-f FIELD]\n";
 
-const CHECK_BODY: &str = "USAGE:\n  datum check [--json]\n";
+const CHECK_BODY: &str = "USAGE:\n  datum check [CHECKER]... [--fix] [--json]\n  datum check --list [--json]\n\nARGS:\n  [CHECKER]...   Run only the named checker(s). Known: verbs, aliases.\n                 With no positionals, the full default battery runs.\n\nOPTIONS:\n  --fix          Rewrite drifted `verb` columns to match derive_verb;\n                 annotate alias state collisions with the explicit\n                 first-saved-wins resolution.\n  --list         Print the set of known checker names and exit.\n  --json         Machine-readable output.\n\nEXAMPLES:\n  datum check                  # full default battery\n  datum check verbs            # only verb-drift\n  datum check aliases --fix    # only alias divergence, annotate collisions\n  datum check verbs aliases    # both, no other categories\n";
 
 const COUNT_BODY: &str = "USAGE:\n  datum count [FIELD] [--group-by KEY] [--since TIME] [--json]\n\nOPTIONS:\n  --group-by <KEY>   state|value|verb|field\n  --since <TIME>     RFC3339 / YYYY-MM-DD / duration offset (1d, 30m, 2h)\n  --json             Machine-readable output\n";
 
@@ -882,7 +882,7 @@ pub const COMMANDS: &[CommandSpec] = &[
         summary: "run DB consistency checks",
         top_summary: Some("Run database consistency checks"),
         long_description: None,
-        usage: &["datum check [--json]"],
+        usage: &["datum check [CHECKER]... [--fix] [--json]"],
         args: NO_ARGS,
         flags: NO_FLAGS,
         examples: NO_EXAMPLES,

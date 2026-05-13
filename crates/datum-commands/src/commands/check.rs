@@ -7,6 +7,7 @@ use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::derive_verb;
 use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
+use datum_parse::cli::KNOWN_CHECKERS;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -15,50 +16,54 @@ use crate::args::CheckArgs;
 /// Typed API for `datum check`. Exits the process with status 1 when the
 /// report contains any [`Severity::Error`] items.
 ///
-/// `--verbs` narrows the report to verb-drift detection only.
-/// `--aliases` narrows to spec-vs-user alias divergence checks
-/// (state-name collisions, orphans, cycles).
-/// `--fix` rewrites the stored `verb` column for any drifted live row to
-/// match `derive_verb`; for `--aliases`, it adds an explicit
-/// first-saved-wins resolution annotation to each state collision (no DB
-/// mutation — the precedence is already deterministic).
+/// Positional checker names narrow the report: `dm check verbs` runs only
+/// verb-drift detection; `dm check aliases` runs only spec-vs-user alias
+/// divergence checks (state-name collisions, orphans, cycles). With no
+/// positionals, the full default battery runs. `--fix` rewrites the
+/// stored `verb` column for any drifted live row to match `derive_verb`
+/// and, for the `aliases` checker, annotates each state collision with
+/// the explicit first-saved-wins resolution (no DB mutation — precedence
+/// is already deterministic).
 pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
-    let report = if args.verbs {
+    if args.list {
+        if args.json {
+            println!("{}", serde_json::to_string(KNOWN_CHECKERS)?);
+        } else {
+            for name in KNOWN_CHECKERS {
+                println!("{name}");
+            }
+        }
+        return Ok(());
+    }
+
+    let run_verbs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "verbs");
+    let run_aliases = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "aliases");
+    let run_default_battery = args.checkers.is_empty();
+
+    let mut issues: Vec<Issue> = Vec::new();
+    if run_default_battery {
+        issues.extend(collect_issues(db)?.issues);
+    }
+    if run_verbs {
         let verb_report = collect_verb_drift(db)?;
         if args.fix {
             apply_verb_fixes(db, &verb_report.fixes)?;
         }
-        Report {
-            issues: verb_report.issues,
-            summary: Summary {
-                errors: 0, // recomputed below
-                warnings: 0,
-                clean: false,
-            },
-        }
-        .with_recomputed_summary()
-    } else if args.aliases {
+        issues.extend(verb_report.issues);
+    }
+    if run_aliases {
         let alias_report = collect_alias_drift(db, args.fix)?;
-        Report {
-            issues: alias_report.issues,
-            summary: Summary {
-                errors: 0,
-                warnings: 0,
-                clean: false,
-            },
-        }
-        .with_recomputed_summary()
-    } else {
-        let mut report = collect_issues(db)?;
-        let verb_report = collect_verb_drift(db)?;
-        if args.fix {
-            apply_verb_fixes(db, &verb_report.fixes)?;
-        }
-        report.issues.extend(verb_report.issues);
-        let alias_report = collect_alias_drift(db, args.fix)?;
-        report.issues.extend(alias_report.issues);
-        report.with_recomputed_summary()
-    };
+        issues.extend(alias_report.issues);
+    }
+    let report = Report {
+        issues,
+        summary: Summary {
+            errors: 0,
+            warnings: 0,
+            clean: false,
+        },
+    }
+    .with_recomputed_summary();
 
     if args.json {
         println!("{}", render_json(&report)?);
@@ -957,7 +962,7 @@ mod tests {
         assert_eq!(row.verb, Verb::Block);
     }
 
-    /// `check --verbs` (typed API) narrows the report to the verb-drift
+    /// `dm check verbs` (typed API) narrows the report to the verb-drift
     /// category — other categories (e.g. `unknown_field`) are excluded.
     #[test]
     fn check_verbs_only_narrows_to_verb_category() {
@@ -981,7 +986,7 @@ mod tests {
         for issue in &report.issues {
             assert!(
                 issue.category == "verb_drift" || issue.category == "verb_corruption",
-                "unexpected category in --verbs run: {}",
+                "unexpected category in `check verbs` run: {}",
                 issue.category,
             );
         }
@@ -1032,7 +1037,7 @@ mod tests {
 
     /// Two specs both declare a state named `done`. The first-saved spec
     /// wins by rowid; the loser appears in `SpecAliasIndex.collisions`,
-    /// and `dm check --aliases` surfaces it as `alias_state_collision`.
+    /// and `dm check aliases` surfaces it as `alias_state_collision`.
     #[test]
     fn alias_state_collision_detected_across_specs() {
         let db = Db::open_in_memory().unwrap();
@@ -1212,9 +1217,8 @@ mod tests {
         );
     }
 
-    /// `dm check --aliases` (`args.aliases = true`) narrows the report to
-    /// alias categories only — verb drift and other default-battery
-    /// categories are excluded.
+    /// `dm check aliases` narrows the report to alias categories only —
+    /// verb drift and other default-battery categories are excluded.
     #[test]
     fn alias_check_args_narrows_to_alias_categories() {
         let db = Db::open_in_memory().unwrap();
@@ -1244,7 +1248,7 @@ mod tests {
                     issue.category,
                     "alias_state_collision" | "alias_orphan" | "alias_cycle",
                 ),
-                "unexpected category in --aliases run: {}",
+                "unexpected category in `check aliases` run: {}",
                 issue.category,
             );
         }

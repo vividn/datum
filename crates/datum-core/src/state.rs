@@ -505,7 +505,7 @@ fn collect_raw_events(
     // matching following_state column to decide what the trailing edge
     // looks like under the new shape. The legacy verb arms (Switch /
     // Start / Stop / Occur / Block / Add) remain for rows whose stored
-    // verb wasn't rewritten by sub-bead 7's `dm check --verbs --fix`.
+    // verb wasn't rewritten by sub-bead 7's `dm check verbs --fix`.
     let _ = end_time;
     match verb {
         Verb::Switch | Verb::BlockSwitch | Verb::PointSwitch => {

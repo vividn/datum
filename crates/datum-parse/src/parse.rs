@@ -1546,9 +1546,17 @@ fn parse_check_args(tail: &[&str]) -> Result<CheckArgs> {
     for tok in tail {
         match split_flag(tok) {
             FlagSplit::Long("json") => out.json = true,
-            FlagSplit::Long("verbs") => out.verbs = true,
-            FlagSplit::Long("aliases") => out.aliases = true,
             FlagSplit::Long("fix") => out.fix = true,
+            FlagSplit::Long("list") => out.list = true,
+            FlagSplit::Positional(name) => {
+                if !crate::cli::KNOWN_CHECKERS.contains(&name) {
+                    return Err(ParseError::InvalidArg(format!(
+                        "unknown checker '{name}'. Known: {known}. Run `datum check --list` to see options.",
+                        known = crate::cli::KNOWN_CHECKERS.join(", "),
+                    )));
+                }
+                out.checkers.push(name.to_string());
+            }
             f => return Err(unknown_flag(f)),
         }
     }
@@ -2612,5 +2620,59 @@ mod tests {
             msg.contains("missing required") || msg.contains("FIELD"),
             "expected required-field error, got: {msg}"
         );
+    }
+
+    // ─── da-sd96: `dm check` positional checker UX ──────────────────────
+
+    #[test]
+    fn check_bare_runs_full_battery() {
+        let cli = parse_argv(&argv(&["check"])).unwrap();
+        match cli.command {
+            Command::Check(a) => {
+                assert!(a.checkers.is_empty());
+                assert!(!a.fix);
+                assert!(!a.list);
+            }
+            _ => panic!("expected Check"),
+        }
+    }
+
+    #[test]
+    fn check_positional_verbs_only() {
+        let cli = parse_argv(&argv(&["check", "verbs"])).unwrap();
+        match cli.command {
+            Command::Check(a) => assert_eq!(a.checkers, vec!["verbs".to_string()]),
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn check_positional_multiple_with_fix() {
+        let cli = parse_argv(&argv(&["check", "aliases", "verbs", "--fix"])).unwrap();
+        match cli.command {
+            Command::Check(a) => {
+                assert_eq!(a.checkers, vec!["aliases".to_string(), "verbs".to_string()]);
+                assert!(a.fix);
+            }
+            _ => panic!(),
+        }
+    }
+
+    #[test]
+    fn check_unknown_checker_errors_with_hint() {
+        let err = parse_argv(&argv(&["check", "vrebs"])).unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("unknown checker"), "got: {msg}");
+        assert!(msg.contains("verbs"), "hint must list known names: {msg}");
+        assert!(msg.contains("aliases"), "hint must list known names: {msg}");
+    }
+
+    #[test]
+    fn check_list_flag() {
+        let cli = parse_argv(&argv(&["check", "--list"])).unwrap();
+        match cli.command {
+            Command::Check(a) => assert!(a.list),
+            _ => panic!(),
+        }
     }
 }
