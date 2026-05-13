@@ -57,13 +57,34 @@ const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     if args.watch {
         // Re-render whenever an external `datum` write bumps the SQLite
-        // data_version (≈500ms latency), with a 60s periodic refresh so
-        // the clock label stays current on an idle DB.
-        crate::commands::watch::watch_loop(db, std::time::Duration::from_secs(60), || {
-            render_once(&args, db)
-        })
+        // data_version (≈500ms latency). nowview always shows "now", so the
+        // clock label stays fresh via a 60s periodic refresh — except when
+        // we'd be dumping SVG to a terminal, where time-tick refreshes just
+        // scroll noise. There, only DB-change wakes the renderer.
+        let periodic = nowview_periodic_refresh(args.output_file.is_some(), stdout_is_tty());
+        crate::commands::watch::watch_loop(db, periodic, || render_once(&args, db))
     } else {
         render_once(&args, db)
+    }
+}
+
+fn stdout_is_tty() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal()
+}
+
+/// Decide nowview's periodic-refresh: 60s when we're writing somewhere a
+/// viewer can poll the file (any `--output-file`, or any non-terminal
+/// stdout sink like a pipe). None when we'd be re-emitting SVG to a TTY,
+/// where the user only wants updates on real changes.
+fn nowview_periodic_refresh(
+    has_output_file: bool,
+    stdout_is_tty: bool,
+) -> Option<std::time::Duration> {
+    if has_output_file || !stdout_is_tty {
+        Some(std::time::Duration::from_secs(60))
+    } else {
+        None
     }
 }
 
@@ -900,6 +921,25 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("png"), "missing 'png' in error: {msg}");
         assert!(msg.contains("feature"), "missing 'feature' in error: {msg}");
+    }
+
+    #[test]
+    fn periodic_refresh_ticks_when_output_file_set_even_on_tty() {
+        // A file viewer is the consumer; the host TTY is incidental.
+        assert!(nowview_periodic_refresh(true, true).is_some());
+        assert!(nowview_periodic_refresh(true, false).is_some());
+    }
+
+    #[test]
+    fn periodic_refresh_ticks_when_stdout_is_piped() {
+        // Non-TTY stdout = piped to another tool that wants updates.
+        assert!(nowview_periodic_refresh(false, false).is_some());
+    }
+
+    #[test]
+    fn periodic_refresh_disabled_when_dumping_to_terminal() {
+        // SVG-to-terminal: time-tick refresh just floods the screen.
+        assert!(nowview_periodic_refresh(false, true).is_none());
     }
 
     #[test]

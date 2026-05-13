@@ -6,9 +6,10 @@
 //! runs `datum occur …` in a second shell, the watching renderer sees
 //! the change within one poll interval (~500ms).
 //!
-//! The same loop also re-renders on a periodic-refresh tick so views
+//! The same loop optionally re-renders on a periodic-refresh tick so views
 //! that show a "now" indicator (nowview's clock, dayview's now-line)
-//! still advance even when the database is idle.
+//! still advance even when the database is idle. Callers that visualize a
+//! purely historical window pass `None` to skip the tick.
 
 use std::time::{Duration, Instant};
 
@@ -31,13 +32,15 @@ pub fn data_version(db: &Db) -> Result<i64> {
 }
 
 /// Run `render` immediately, then loop: re-render on every external DB
-/// write (detected via `data_version`) or every `periodic_refresh`,
-/// whichever comes first.
+/// write (detected via `data_version`) and — if `periodic_refresh` is
+/// `Some` — at most once per that duration so a "now" indicator keeps
+/// advancing on an idle DB. `None` disables the time tick; the loop only
+/// wakes on a real data change.
 ///
 /// Returns `Err` if `render` returns `Err`. The default Ctrl-C handler
 /// (process exit) terminates the loop cleanly — no signal handler is
 /// installed so the user gets the usual instant SIGINT teardown.
-pub fn watch_loop<F>(db: &Db, periodic_refresh: Duration, mut render: F) -> Result<()>
+pub fn watch_loop<F>(db: &Db, periodic_refresh: Option<Duration>, mut render: F) -> Result<()>
 where
     F: FnMut() -> Result<()>,
 {
@@ -50,7 +53,7 @@ where
         // periodic-refresh tick rather than aborting the watch session.
         let version = data_version(db).unwrap_or(last_version);
         let changed = version != last_version;
-        let stale = last_render.elapsed() >= periodic_refresh;
+        let stale = periodic_refresh.is_some_and(|d| last_render.elapsed() >= d);
         if changed || stale {
             render()?;
             last_version = version;
@@ -135,9 +138,20 @@ mod tests {
         let tmp = TempDir::new().unwrap();
         let path = tmp.path().join("watch_err.db");
         let db = Db::open(path.to_str().unwrap()).unwrap();
-        let res: Result<()> = watch_loop(&db, Duration::from_secs(60), || {
+        let res: Result<()> = watch_loop(&db, Some(Duration::from_secs(60)), || {
             anyhow::bail!("render exploded")
         });
+        assert!(res.is_err());
+    }
+
+    /// `periodic_refresh = None` still propagates the first render's error
+    /// — disabling the time tick must not change error semantics.
+    #[test]
+    fn watch_loop_propagates_render_error_with_no_periodic_refresh() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("watch_err_none.db");
+        let db = Db::open(path.to_str().unwrap()).unwrap();
+        let res: Result<()> = watch_loop(&db, None, || anyhow::bail!("render exploded"));
         assert!(res.is_err());
     }
 }

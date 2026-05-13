@@ -44,14 +44,75 @@ const DEFAULT_INTERDAY_MARGIN: f64 = 15.0;
 pub fn dayview(args: DayviewArgs, db: &Db) -> Result<()> {
     if args.watch {
         // Re-render whenever an external `datum` write bumps the SQLite
-        // data_version (≈500ms latency), with a 60s periodic refresh
-        // so the now-line still advances on an idle DB.
-        crate::commands::watch::watch_loop(db, std::time::Duration::from_secs(60), || {
-            render_once(&args, db)
-        })
+        // data_version (≈500ms latency). Time-tick refresh is conditional:
+        // only when the visible window actually contains "now" (otherwise
+        // the now-line isn't visible and there's nothing to advance), and
+        // suppressed when we'd be dumping SVG into a terminal.
+        let today = Local::now().date_naive();
+        let end_date = resolved_end_date(&args, today)?;
+        let contains_now = window_contains_today(&args, today, end_date)?;
+        let periodic =
+            dayview_periodic_refresh(contains_now, args.output_file.is_some(), stdout_is_tty());
+        crate::commands::watch::watch_loop(db, periodic, || render_once(&args, db))
     } else {
         render_once(&args, db)
     }
+}
+
+fn stdout_is_tty() -> bool {
+    use std::io::IsTerminal;
+    std::io::stdout().is_terminal()
+}
+
+/// Resolve `--end-date` against `today`, defaulting to `today` when absent.
+/// Shared with `render_once` so the watch-mode pre-pass mirrors the actual
+/// render's window math.
+fn resolved_end_date(args: &DayviewArgs, today: NaiveDate) -> Result<NaiveDate> {
+    match args.end_date.as_deref() {
+        Some(s) => resolve_date_arg(s, today).with_context(|| format!("invalid --end-date: '{s}'")),
+        None => Ok(today),
+    }
+}
+
+/// True when the visible date window includes `today`. For the default
+/// `--n-days=1` case the window is just `end_date`; with `--start-date`
+/// it spans `[start, end]`; with only `--n-days` it spans `[end - n + 1,
+/// end]`. `--end-date` defaults to today, so the common case is `true`.
+fn window_contains_today(
+    args: &DayviewArgs,
+    today: NaiveDate,
+    end_date: NaiveDate,
+) -> Result<bool> {
+    if end_date < today {
+        return Ok(false);
+    }
+    let start_date = if let Some(s) = args.start_date.as_deref() {
+        resolve_date_arg(s, today).with_context(|| format!("invalid --start-date: '{s}'"))?
+    } else if let Some(n) = args.n_days {
+        let span = n.max(1) as i64;
+        end_date - chrono::Duration::days(span - 1)
+    } else {
+        end_date
+    };
+    Ok(start_date <= today && today <= end_date)
+}
+
+/// Pick the periodic-refresh duration for dayview's watch loop. None means
+/// "wake only on a real DB change":
+/// - past-only window → nothing on the canvas advances with time.
+/// - SVG to a TTY → time-tick refreshes would just scroll noise.
+fn dayview_periodic_refresh(
+    contains_now: bool,
+    has_output_file: bool,
+    stdout_is_tty: bool,
+) -> Option<std::time::Duration> {
+    if !contains_now {
+        return None;
+    }
+    if !has_output_file && stdout_is_tty {
+        return None;
+    }
+    Some(std::time::Duration::from_secs(60))
 }
 
 fn render_once(args: &DayviewArgs, db: &Db) -> Result<()> {
@@ -762,6 +823,85 @@ fn state_label(v: Option<&JsonValue>) -> Option<String> {
 mod tests {
     use super::*;
     use datum_core::action::Action;
+    use datum_parse::cli::DayviewOrientation;
+
+    fn args_with(
+        end_date: Option<&str>,
+        start_date: Option<&str>,
+        n_days: Option<u32>,
+    ) -> DayviewArgs {
+        DayviewArgs {
+            start_date: start_date.map(str::to_string),
+            end_date: end_date.map(str::to_string),
+            n_days,
+            width: None,
+            height: None,
+            day_height: None,
+            time_axis_height: 15.0,
+            margin: 2.0,
+            output_file: None,
+            json: false,
+            watch: true,
+            orientation: DayviewOrientation::default(),
+        }
+    }
+
+    #[test]
+    fn window_contains_today_default_is_today() {
+        let today = NaiveDate::from_ymd_opt(2026, 5, 13).unwrap();
+        let args = args_with(None, None, None);
+        let end = resolved_end_date(&args, today).unwrap();
+        assert_eq!(end, today);
+        assert!(window_contains_today(&args, today, end).unwrap());
+    }
+
+    #[test]
+    fn window_contains_today_past_end_date_is_false() {
+        let today = NaiveDate::from_ymd_opt(2026, 5, 13).unwrap();
+        let args = args_with(Some("-3"), None, None);
+        let end = resolved_end_date(&args, today).unwrap();
+        assert!(end < today);
+        assert!(!window_contains_today(&args, today, end).unwrap());
+    }
+
+    #[test]
+    fn window_contains_today_multi_day_window_straddling_today() {
+        let today = NaiveDate::from_ymd_opt(2026, 5, 13).unwrap();
+        // 7-day window ending today.
+        let args = args_with(None, None, Some(7));
+        let end = resolved_end_date(&args, today).unwrap();
+        assert!(window_contains_today(&args, today, end).unwrap());
+    }
+
+    #[test]
+    fn window_contains_today_future_window_includes_today() {
+        let today = NaiveDate::from_ymd_opt(2026, 5, 13).unwrap();
+        // start = today, end = today+5 → today is in [start, end].
+        let args = args_with(Some("+5"), Some("0"), None);
+        let end = resolved_end_date(&args, today).unwrap();
+        assert!(window_contains_today(&args, today, end).unwrap());
+    }
+
+    #[test]
+    fn periodic_refresh_off_for_past_only_window() {
+        // No live now-line to advance → no time tick regardless of output.
+        assert!(dayview_periodic_refresh(false, true, false).is_none());
+        assert!(dayview_periodic_refresh(false, false, false).is_none());
+        assert!(dayview_periodic_refresh(false, false, true).is_none());
+    }
+
+    #[test]
+    fn periodic_refresh_off_when_dumping_to_terminal() {
+        assert!(dayview_periodic_refresh(true, false, true).is_none());
+    }
+
+    #[test]
+    fn periodic_refresh_on_when_window_live_and_output_is_pollable() {
+        // File: viewer reloads on change.
+        assert!(dayview_periodic_refresh(true, true, true).is_some());
+        // Pipe: downstream tool wants the updates.
+        assert!(dayview_periodic_refresh(true, false, false).is_some());
+    }
 
     /// Without the `png` feature, requesting a `.png` output path must
     /// return a friendly error pointing at the missing feature, not panic
