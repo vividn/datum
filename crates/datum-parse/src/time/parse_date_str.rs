@@ -2,8 +2,8 @@
 //!
 //! Supports relative day offsets (`+1`, `-1`, `0`), absolute ISO dates
 //! (`2024-03-16`), and compact `<mmm><day>` shorthand (`apr29`, `Jan5`,
-//! optionally suffixed `-YYYY` / `@YYYY`), with an optional `±N[unit]`
-//! uncertainty suffix.
+//! optionally suffixed `-YYYY` / `@YYYY` / `,YYYY`), with an optional
+//! `±N[unit]` uncertainty suffix.
 
 use chrono::{Datelike, NaiveDate};
 
@@ -26,9 +26,9 @@ pub struct DateArg {
 
 /// Parse a -d / --date argument.
 /// Supports: "+1", "-1", "0", ISO date "2024-03-16", or compact
-/// `<mmm><day>[(-|@)YYYY]` (e.g. "apr29", "Jan5", "apr29-2025"), plus
-/// an optional `±N[unit]` uncertainty suffix and optional trailing
-/// `+`/`-` direction marker.
+/// `<mmm><day>[(-|@|,)YYYY]` (e.g. "apr29", "Jan5", "apr29-2025",
+/// "oct10,2022"), plus an optional `±N[unit]` uncertainty suffix and
+/// optional trailing `+`/`-` direction marker.
 ///
 /// The direction marker drives year inference for year-less compact
 /// dates: `apr29+` resolves to the next April 29 (this year if still
@@ -109,7 +109,7 @@ fn parse_compact_month_day(s: &str) -> Option<(u32, u32, Option<i32>)> {
         None
     } else {
         let sep = tail.as_bytes()[0];
-        if sep != b'-' && sep != b'@' {
+        if sep != b'-' && sep != b'@' && sep != b',' {
             return None;
         }
         let ystr = &tail[1..];
@@ -337,6 +337,20 @@ mod tests {
             parse_compact_month_day("apr29@2025"),
             Some((4, 29, Some(2025)))
         );
+        assert_eq!(
+            parse_compact_month_day("oct10,2022"),
+            Some((10, 10, Some(2022)))
+        );
+    }
+
+    #[test]
+    fn parse_date_arg_compact_comma_year() {
+        // Regression for da-3405: `-d oct10,2022` should resolve to 2022-10-10.
+        let arg = parse_date_arg("oct10,2022").expect("parse oct10,2022");
+        assert_eq!(arg.days_offset, 0);
+        assert_eq!(arg.absolute, NaiveDate::from_ymd_opt(2022, 10, 10));
+        assert!(arg.uncertainty.is_none());
+        assert!(arg.direction.is_none());
     }
 
     #[test]
