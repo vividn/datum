@@ -305,7 +305,10 @@ pub struct LogArgs {
     /// `extra_data.comment`.
     pub comment_remainder: bool,
     pub id: Option<String>,
-    pub id_delimiter: String,
+    /// `--id-delimiter` raw CLI value. `None` means "fall through to env /
+    /// `datumrc.toml` / built-in default" at the slug-interpolation site;
+    /// `Some(_)` is the user's per-invocation override.
+    pub id_delimiter: Option<String>,
     /// `-L`/`--last-state` user assertion.
     ///
     /// * `None` — flag not supplied.
@@ -346,7 +349,7 @@ impl LogArgs {
             string_remainder: false,
             comment_remainder: false,
             id: None,
-            id_delimiter: ":".to_string(),
+            id_delimiter: None,
             last_state: None,
             conflict: None,
             update: false,
@@ -452,7 +455,9 @@ pub struct UpdateArgs {
     pub rest: Vec<String>,
     pub strategy: Option<ConflictStrategyArg>,
     pub id: Option<String>,
-    pub id_delimiter: String,
+    /// `--id-delimiter` raw CLI value. `None` falls through to env /
+    /// `datumrc.toml` / built-in default at the slug-interpolation site.
+    pub id_delimiter: Option<String>,
     pub keys: Vec<String>,
     /// `-c` / `--comment`. Repeatable: a single flag yields a string, two
     /// or more yield an array — see [`LogArgs::comment`].
@@ -470,7 +475,7 @@ impl UpdateArgs {
             rest: Vec::new(),
             strategy: None,
             id: None,
-            id_delimiter: ":".to_string(),
+            id_delimiter: None,
             keys: Vec::new(),
             comment: Vec::new(),
             dry_run: false,
@@ -486,7 +491,7 @@ impl UpdateArgs {
             rest: Vec::new(),
             strategy: None,
             id: None,
-            id_delimiter: ":".to_string(),
+            id_delimiter: None,
             keys: Vec::new(),
             comment: Vec::new(),
             dry_run: false,

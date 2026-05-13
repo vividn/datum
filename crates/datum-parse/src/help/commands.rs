@@ -131,7 +131,9 @@ const LOG_FLAGS: &[FlagSpec] = &[
         value_hint: Some("S"),
         value_optional: false,
         summary: "Delimiter to collapse empty segments",
-        long_description: None,
+        long_description: Some(
+            "Resolution: this flag > DATUM_ID_DELIMITER env > datumrc.toml id_delimiter > \":\".",
+        ),
         left_override: None,
     },
     FlagSpec {

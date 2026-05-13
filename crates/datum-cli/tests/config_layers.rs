@@ -17,6 +17,7 @@ const KEYS_TO_CLEAR: &[&str] = &[
     "DATUM_TIMEZONE",
     "DATUM_DEFAULT_FIELD",
     "DATUM_EDITOR",
+    "DATUM_ID_DELIMITER",
     "VISUAL",
     "EDITOR",
 ];
@@ -210,6 +211,39 @@ fn toml_parse_error_surfaces() {
                 .any(|e| e.to_string().to_lowercase().contains("toml")),
         "expected a parse-context error, got: {err:#}"
     );
+}
+
+#[test]
+fn id_delimiter_default_is_colon() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox(tmp.path());
+
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.id_delimiter.value, ":");
+    assert_eq!(cfg.id_delimiter.source, Source::Default);
+}
+
+#[test]
+fn id_delimiter_toml_then_env_then_resolve() {
+    let tmp = tempfile::tempdir().unwrap();
+    let _g = sandbox(tmp.path());
+
+    write_toml(tmp.path(), "id_delimiter = \"/\"\n");
+
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.id_delimiter.value, "/");
+    assert_eq!(cfg.id_delimiter.source, Source::Toml);
+    // resolve_id_delimiter (CLI-less) agrees with the Config layer.
+    assert_eq!(config::resolve_id_delimiter(None), "/");
+
+    std::env::set_var("DATUM_ID_DELIMITER", "-");
+    let cfg = Config::load(None).unwrap();
+    assert_eq!(cfg.id_delimiter.value, "-");
+    assert_eq!(cfg.id_delimiter.source, Source::Env);
+    assert_eq!(config::resolve_id_delimiter(None), "-");
+
+    // CLI flag (passed via resolve_id_delimiter) trumps env.
+    assert_eq!(config::resolve_id_delimiter(Some("__")), "__");
 }
 
 #[test]

@@ -127,6 +127,7 @@ pub fn update_from_args(
 
     let (pattern, payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
     let output = args.output();
+    let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
     let outcome = update_with_strategy(
         UpdateRequest {
@@ -134,7 +135,7 @@ pub fn update_from_args(
             payload_value,
             payload_extra,
             strategy,
-            slug_delimiter: &args.id_delimiter,
+            slug_delimiter: &delim,
         },
         db,
     )?;
@@ -195,6 +196,7 @@ pub fn update_batch_from_args(
     }
 
     let output = args.output();
+    let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
 
     if args.dry_run {
         let registry = db.load_registry().ok();
@@ -246,7 +248,7 @@ pub fn update_batch_from_args(
                 payload_value: payload_value.clone(),
                 payload_extra: payload_extra.clone(),
                 strategy,
-                slug_delimiter: &args.id_delimiter,
+                slug_delimiter: &delim,
             },
             db,
         );
@@ -489,7 +491,7 @@ mod tests {
             rest: rest.into_iter().map(String::from).collect(),
             strategy: None,
             id: None,
-            id_delimiter: ":".to_string(),
+            id_delimiter: None,
             keys: vec![],
             comment: Vec::new(),
             dry_run: false,

@@ -516,7 +516,7 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         Ok(())
     }));
     r.push(local_value(None, Some("id-delimiter"), |p, v| {
-        p.id_delimiter = v.to_string();
+        p.id_delimiter = Some(v.to_string());
         Ok(())
     }));
     r.push(local_optional(Some('L'), Some("last-state"), |p, v| {
@@ -992,7 +992,7 @@ fn parse_update_args(tail: &[&str]) -> Result<UpdateArgs> {
         rest: it.map(|s| s.to_string()).collect(),
         strategy: composed.strategy,
         id: composed.id,
-        id_delimiter: composed.id_delimiter.unwrap_or_else(|| ":".to_string()),
+        id_delimiter: composed.id_delimiter,
         keys: composed.keys,
         comment: composed.comment,
         dry_run: composed.dry_run,

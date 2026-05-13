@@ -319,6 +319,11 @@ pub struct RawConfig {
     pub default_field: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub editor: Option<String>,
+    /// Delimiter inserted between empty/collapsed `%key%` segments in
+    /// slug templates. CLI `--id-delimiter` and `DATUM_ID_DELIMITER` env
+    /// var override this. Built-in default is `":"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id_delimiter: Option<String>,
     /// Desktop notifications when the daemon files a new conflict
     /// (C4e). `None` = use the platform default (`true`); explicit
     /// `false` disables them.
@@ -356,6 +361,7 @@ pub struct Config {
     pub timezone: SourcedValue<String>,
     pub default_field: SourcedValue<Option<String>>,
     pub editor: SourcedValue<String>,
+    pub id_delimiter: SourcedValue<String>,
     /// Path of the toml file that was loaded (or the path we looked at if
     /// missing). Useful for `config show` diagnostics.
     pub toml_path: PathBuf,
@@ -475,6 +481,13 @@ fn editor_default() -> String {
         .unwrap_or_else(|| "vi".to_string())
 }
 
+/// Built-in default delimiter for slug-template interpolation. Used when
+/// no CLI flag, env var, or `datumrc.toml` value is supplied. Matches the
+/// historical hardcoded constant the parser used before R6 layering.
+pub fn id_delimiter_default() -> String {
+    ":".to_string()
+}
+
 fn timezone_default() -> String {
     // Fall through to the IANA local zone if it resolves; otherwise UTC.
     // chrono doesn't expose a portable IANA name, so we accept "UTC" as a
@@ -538,12 +551,21 @@ impl Config {
             SourcedValue::new(editor_default(), Source::Default)
         };
 
+        let id_delimiter = if let Some(v) = read_env("DATUM_ID_DELIMITER") {
+            SourcedValue::new(v, Source::Env)
+        } else if let Some(v) = raw.id_delimiter.clone() {
+            SourcedValue::new(v, Source::Toml)
+        } else {
+            SourcedValue::new(id_delimiter_default(), Source::Default)
+        };
+
         Ok(Config {
             db_path,
             device_id,
             timezone,
             default_field,
             editor,
+            id_delimiter,
             toml_path,
             toml_loaded,
         })
@@ -574,8 +596,33 @@ impl Config {
                 self.default_field.source,
             ),
             ("editor", self.editor.value.clone(), self.editor.source),
+            (
+                "id_delimiter",
+                self.id_delimiter.value.clone(),
+                self.id_delimiter.source,
+            ),
         ]
     }
+}
+
+/// Resolve the effective slug `id_delimiter` for a single invocation,
+/// layering CLI flag > `DATUM_ID_DELIMITER` env > `datumrc.toml` >
+/// built-in default. Standalone helper so per-entry slug-interpolation
+/// sites don't have to materialize a full [`Config`] (which would also
+/// trigger `device_id()` lazy generation as a side effect).
+pub fn resolve_id_delimiter(cli_value: Option<&str>) -> String {
+    if let Some(v) = cli_value {
+        return v.to_string();
+    }
+    if let Some(v) = read_env("DATUM_ID_DELIMITER") {
+        return v;
+    }
+    if let Ok(raw) = load_raw_config_or_default() {
+        if let Some(v) = raw.id_delimiter {
+            return v;
+        }
+    }
+    id_delimiter_default()
 }
 
 #[cfg(test)]

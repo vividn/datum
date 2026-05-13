@@ -611,8 +611,8 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         if let Some(tmpl) = template {
             let uid = entry.short_uid();
             let ctx = InterpolationContext::from_entry(&entry, &uid);
-            entry.slug =
-                datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &args.id_delimiter));
+            let delim = crate::config::resolve_id_delimiter(args.id_delimiter.as_deref());
+            entry.slug = datum_core::ids::Slug(field_spec::interpolate(&tmpl, &ctx, &delim));
             entry.id_structure = Some(tmpl);
         }
     }
@@ -2719,7 +2719,7 @@ mod tests {
             rest: rest.into_iter().map(String::from).collect(),
             strategy: None,
             id: None,
-            id_delimiter: ":".to_string(),
+            id_delimiter: None,
             keys: vec![],
             comment: Vec::new(),
             dry_run: false,
