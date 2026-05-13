@@ -780,8 +780,19 @@ const PRIMARY_VALUE_KEY: &str = "__datum_primary_value";
 /// `-k` slots, and pulling slug values out of the resolved [`DatumData`].
 pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLogArgs> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
+    use datum_parse::input::flexible_positional::flexible_positional;
 
-    let field = args.field_or_verb.clone();
+    // For non-flex-field actions, the first positional IS the field —
+    // verbatim, no slot indirection. Flex-field actions (Add/Occur)
+    // route the field through the data-slot machinery so positional
+    // `abc` and key=value `field=abc` are interchangeable; the resolved
+    // field is pulled out of `datum_data` after handle_data_args runs.
+    let flex_field = matches!(action, Action::Add | Action::Occur);
+    let mut field = if flex_field {
+        String::new()
+    } else {
+        args.field_or_verb.clone()
+    };
 
     // da-ju71.4: state-aware path translation is on (no `flat_paths`
     // compat shim) — `state=<v>` lands at `state.id` and leading-dot
@@ -846,6 +857,22 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
         }
     }
 
+    // Flex-field actions: inject the captured `field_or_verb` positional
+    // into the data stream as if the user had supplied it with `field=`
+    // syntax, so `dm occur field=abc` and `dm occur abc` are
+    // interchangeable. The bare positional fills the slot via slot-fill;
+    // an explicit `field=<x>` later in argv overrides via the standard
+    // last-write-wins in handle_data_args.
+    if flex_field {
+        flexible_positional(
+            &mut data_args,
+            Some(args.field_or_verb.clone()),
+            "field",
+            false,
+            false,
+        );
+    }
+
     // Remainder bucket policy:
     //   * `-R`/`--remainder` → user-named bucket.
     //   * `-C`/`--comment-remainder` → "comment" bucket.
@@ -868,6 +895,19 @@ pub(crate) fn parse_log_args(args: &LogArgs, action: Action) -> Result<ParsedLog
     data_args.comment_remainder = args.comment_remainder;
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
+
+    // Flex-field actions: pull the resolved field out of `datum_data` so
+    // it lands on entry.field rather than leaking into extra_data. The
+    // slot was injected via flexible_positional above; slot-fill (or an
+    // explicit `field=<x>` later in argv) puts the value at the "field"
+    // path, and last-write-wins gives the latter precedence.
+    if flex_field {
+        match datum_data.remove("field") {
+            Some(JsonValue::String(s)) => field = s,
+            Some(other) => field = datum_value_to_slug_string(Some(&other)),
+            None => {}
+        }
+    }
 
     // da-ju71.4: collapse the trivial `state: {id: x}` Object back to a
     // scalar when no other `state.*` keys are present, so a user's bare

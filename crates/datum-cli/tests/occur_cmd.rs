@@ -579,3 +579,109 @@ fn occur_with_keyed_data_emits_moment_dur_and_null_state() {
         "expected `n` slot in data, got {data:?}",
     );
 }
+
+// ─── da-ywmz: flexible_positional for `field` on `add`/`occur` ────────────
+
+/// Acceptance: `dm occur abc` and `dm occur field=abc` produce equivalent
+/// entries — `entry.field = "abc"` in both forms, with no leftover `field`
+/// key in extra_data. The positional and the keyed assignment route through
+/// the same flex-slot machinery introduced in da-ywmz.
+#[test]
+fn occur_field_positional_and_field_kv_are_equivalent() {
+    let db_pos = fresh_db();
+    run_cli(&["occur", "abc"], &db_pos).expect("occur abc");
+    let pos_entries = db_pos.entries_for_field("abc", None).unwrap();
+    assert_eq!(pos_entries.len(), 1, "occur abc → 1 entry on field=abc");
+    assert_eq!(pos_entries[0].field, "abc");
+    assert!(
+        pos_entries[0].data.is_none(),
+        "no leftover `field` key in extra_data",
+    );
+
+    let db_kv = fresh_db();
+    run_cli(&["occur", "field=abc"], &db_kv).expect("occur field=abc");
+    let kv_entries = db_kv.entries_for_field("abc", None).unwrap();
+    assert_eq!(
+        kv_entries.len(),
+        1,
+        "occur field=abc → 1 entry on field=abc"
+    );
+    assert_eq!(kv_entries[0].field, "abc");
+    assert!(
+        kv_entries[0].data.is_none(),
+        "no leftover `field` key in extra_data",
+    );
+}
+
+/// Acceptance: `-k field=ghi abc` lets the positional override the
+/// `-k`-declared default. The user's bare positional binds to the
+/// `field` slot via slot-fill, beating the `ghi` default.
+#[test]
+fn occur_positional_overrides_dash_k_field_default() {
+    let db = fresh_db();
+    run_cli(&["occur", "-k", "field=ghi", "abc"], &db).expect("occur -k field=ghi abc");
+    let entries = db.entries_for_field("abc", None).unwrap();
+    assert_eq!(
+        entries.len(),
+        1,
+        "positional `abc` wins over -k default `ghi`"
+    );
+    assert_eq!(entries[0].field, "abc");
+    // The default `ghi` never lands anywhere — it was overridden, not stored.
+    assert!(db.entries_for_field("ghi", None).unwrap().is_empty());
+    assert!(
+        entries[0].data.is_none(),
+        "no leftover `field` key in extra_data after override",
+    );
+}
+
+/// Acceptance: an alias body that bakes `field=abc` is satisfied when the
+/// user adds extra positionals to fill downstream slots. The alias-baked
+/// `field=` injects via the same flex-slot path, so the user doesn't need
+/// to repeat the field on the command line.
+#[test]
+fn occur_alias_baked_field_kv() {
+    let db = fresh_db();
+    run_cli(&["alias", "set", "abc", "occur field=abc"], &db).expect("alias set abc");
+    run_cli(&["abc"], &db).expect("alias abc expands to occur field=abc");
+    let entries = db.entries_for_field("abc", None).unwrap();
+    assert_eq!(entries.len(), 1, "alias-baked field= sets entry.field");
+    assert_eq!(entries[0].field, "abc");
+    assert!(
+        entries[0].data.is_none(),
+        "alias-baked `field=abc` consumed onto the column, not extra_data",
+    );
+}
+
+/// `add field=abc` (with no other positional) is the keyed form of the
+/// field; entry.field = "abc" and the `field` key is consumed off the
+/// payload onto the column.
+#[test]
+fn add_field_kv_consumed_onto_column() {
+    let db = fresh_db();
+    run_cli(&["add", "field=abc"], &db).expect("add field=abc");
+    let entries = db.entries_for_field("abc", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].field, "abc");
+    assert!(
+        entries[0].data.is_none(),
+        "no leftover `field` key in extra_data",
+    );
+}
+
+/// `add -k field=ghi abc kv=v` — positional `abc` overrides the `field`
+/// default; subsequent `kv=v` lands in extra_data as normal.
+#[test]
+fn add_positional_overrides_field_default_extras_preserved() {
+    let db = fresh_db();
+    run_cli(&["add", "-k", "field=ghi", "abc", "kv=v"], &db).expect("add -k field=ghi abc kv=v");
+    let entries = db.entries_for_field("abc", None).unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].field, "abc");
+    let extra = entries[0].data.as_ref().expect("kv=v lands in extra_data");
+    assert_eq!(extra.get("kv"), Some(&json!("v")));
+    assert!(
+        extra.get("field").is_none(),
+        "field slot consumed onto column, not leaked into extra_data",
+    );
+}

@@ -123,22 +123,22 @@ fn fieldless_mode_skipped_no_analog() {
 
 // ─── TS #6: "uses the field prop to populate the field key, but can also be specified again in the data" ─
 
-/// Skipped: `-F field=manual` is a fieldless mode variant. No daydumb analog.
+/// Per da-ywmz, `field` is now a flexible-positional slot for `add`/`occur`:
+/// a bare positional and `field=<x>` are interchangeable, and a later
+/// occurrence overrides an earlier one. So `add fromField field=fromData`
+/// resolves to `entry.field = "fromData"` (last-write wins) — and the
+/// `field` key is consumed onto the column, not leaked into extra_data.
 #[test]
-fn fieldless_field_kv_skipped_no_analog() {
-    // Daydumb: `datum note fromField field=fromData` — `fromField` is the
-    // field, `field=fromData` drops into extra_data as key="field",
-    // value="fromData". The entry.field stays "fromField"; the kv pair
-    // coexists on a different axis.
+fn field_kv_overrides_positional_via_flex_slot() {
     let db = fresh_db();
     run_cli(&["add", "fromField", "field=fromData"], &db).expect("note fromField field=fromData");
-    let e = &db.entries_for_field("fromField", None).unwrap()[0];
-    assert_eq!(e.field, "fromField", "positional field wins");
-    let extra = e.data.as_ref().unwrap();
-    assert_eq!(
-        extra.get("field"),
-        Some(&json!("fromData")),
-        "field=... kv still lands in extra_data under the 'field' key",
+    let entries = db.entries_for_field("fromData", None).unwrap();
+    assert_eq!(entries.len(), 1, "field=... overrides the positional");
+    let e = &entries[0];
+    assert_eq!(e.field, "fromData", "later `field=...` wins");
+    assert!(
+        e.data.is_none(),
+        "no leftover `field` key in extra_data (consumed onto the column)",
     );
 }
 
