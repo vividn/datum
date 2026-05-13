@@ -752,3 +752,34 @@ fn add_positional_overrides_field_default_extras_preserved() {
         "field slot consumed onto column, not leaked into extra_data",
     );
 }
+
+// ─── --dry-run / --dryrun ─────────────────────────────────────────────────
+
+/// `dm occur coffee --dry-run` previews the would-be entry without inserting.
+/// Acceptance criterion for da-wc2h: dry-run prints the slug, field, and data
+/// and exits 0; a follow-up `entries_for_field` query must show nothing.
+#[test]
+fn occur_dry_run_does_not_insert() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "--dry-run"], &db).expect("dry-run must succeed");
+    assert_count!(db, "coffee", 0);
+}
+
+/// `dm occur coffee --dryrun` (no hyphen) is accepted as an alias for
+/// `--dry-run` to match the user-facing feature name in da-wc2h.
+#[test]
+fn occur_dryrun_alias_does_not_insert() {
+    let db = fresh_db();
+    run_cli(&["occur", "coffee", "--dryrun"], &db).expect("dryrun must succeed");
+    assert_count!(db, "coffee", 0);
+}
+
+/// `dm switch project money --dry-run` previews the switch (state routing
+/// included) without writing. Acceptance criterion for da-wc2h.
+#[test]
+fn switch_dry_run_does_not_insert() {
+    let db = fresh_db();
+    run_cli(&["switch", "project", "money", "--dry-run"], &db)
+        .expect("switch dry-run must succeed");
+    assert_count!(db, "project", 0);
+}

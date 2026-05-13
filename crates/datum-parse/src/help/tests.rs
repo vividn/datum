@@ -147,6 +147,7 @@ OPTIONS:
   -T, --no-timestamp    Route through timeless `add`
       --alias <NAME>    On success, save current invocation as alias <NAME>
       --alias-overwrite Allow --alias to replace an existing alias
+      --dry-run         Preview the would-be entry without writing
 ";
 
 #[test]

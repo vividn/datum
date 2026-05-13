@@ -387,6 +387,11 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             .ok_or_else(|| anyhow::anyhow!("no matching entry to undo for field '{field}'"))?;
         let registry = load_registry(db).ok();
         let output = args.output();
+        if args.dry_run {
+            crate::render::print_entry(&target, None, None, registry.as_ref());
+            eprintln!("[dry-run] would undo (soft-delete) {}", target.slug);
+            return Ok(());
+        }
         db.soft_delete_entry(&target.slug)?;
         show_delete(&target, registry.as_ref(), &output);
         let _ = datum_core::last_docs::set_last_docs(db, std::slice::from_ref(&target.hid));
@@ -628,6 +633,31 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         entry.following_state.clone(),
     ) {
         entry.verb = derived_verb;
+    }
+
+    // --dry-run: preview the would-be entry — including slug derivation,
+    // reserved-column routing, and state canonicalization — without
+    // touching the DB or the multi-collector. Skips `_LAST` pointer
+    // updates so a dry-run never moves the last-accessed cursor. Exits 0
+    // so `dm <verb> --dry-run` is safe to chain.
+    if args.dry_run {
+        let registry = load_registry(db).ok();
+        let lead_state = capture_lead_state(db, &entry);
+        let ongoing_state = capture_ongoing_state(db, &entry);
+        let trail_state = capture_trail_state(db, &entry);
+        let is_first_occurrence = db.count_entries_filtered(Some(&entry.field), None)? == 0;
+        let ctx = RenderContext {
+            lead_state,
+            trail_state,
+            is_first_occurrence,
+            ongoing_state,
+        };
+        let output = args.output();
+        crate::render::print_entry(&entry, Some(&ctx), None, registry.as_ref());
+        if !output.silent() {
+            eprintln!("[dry-run] would {action} {}", entry.slug);
+        }
+        return Ok(());
     }
 
     // da-gh0.C: when a multi-entry write window is active, hand the

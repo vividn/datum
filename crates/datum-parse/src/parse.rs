@@ -564,6 +564,14 @@ fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
         p.alias_overwrite = true;
         Ok(())
     }));
+    r.push(local_switch(None, Some("dry-run"), |p| {
+        p.dry_run = true;
+        Ok(())
+    }));
+    r.push(local_switch(None, Some("dryrun"), |p| {
+        p.dry_run = true;
+        Ok(())
+    }));
     r
 }
 

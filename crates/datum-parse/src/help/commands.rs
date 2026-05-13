@@ -226,6 +226,16 @@ const LOG_FLAGS: &[FlagSpec] = &[
         long_description: None,
         left_override: None,
     },
+    FlagSpec {
+        short: None,
+        long: "dry-run",
+        takes_value: false,
+        value_hint: None,
+        value_optional: false,
+        summary: "Preview the would-be entry without writing",
+        long_description: None,
+        left_override: None,
+    },
 ];
 
 // Shared body for all log verbs — parameterized by the verb at lookup time.

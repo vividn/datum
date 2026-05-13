@@ -331,6 +331,11 @@ pub struct LogArgs {
     /// existing alias of the same name; without it, a name collision is
     /// an error.
     pub alias_overwrite: bool,
+    /// `--dry-run` / `--dryrun` — compute the full effect of the write
+    /// (build the would-be Entry, including slug derivation, field
+    /// interpolation, conflict detection) and print a preview without
+    /// touching the database.
+    pub dry_run: bool,
 }
 
 impl LogArgs {
@@ -357,6 +362,7 @@ impl LogArgs {
             no_metadata: false,
             alias_name: None,
             alias_overwrite: false,
+            dry_run: false,
         }
     }
 }
