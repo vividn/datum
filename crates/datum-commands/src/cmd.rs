@@ -572,6 +572,12 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
             entry.end_time_precision = precision.seconds;
             entry.end_time_precision_unit = precision.unit;
         }
+        // v=20 storage: the only precision column on the row is
+        // `occur_time_precision` (ISO-8601). Stamp it from the builder
+        // result so date-only events (`-D`, bare `-d`/`-y*`) and
+        // explicit `±N` uncertainties survive the live insert path —
+        // previously only retime + import wrote this column.
+        entry.occur_time_precision = precision.to_iso_precision();
     }
 
     if args.no_metadata {
@@ -1599,7 +1605,8 @@ fn build_time_with_precision(args: &LogArgs) -> Result<(DatumTime, datum_core::t
         .with_yesterday_count(args.time.yesterday as i64)
         .with_quick_count(args.time.quick as i64)
         .with_quick_precision(args.time.quick)
-        .with_timezone(tz_name);
+        .with_timezone(tz_name)
+        .with_full_day(args.time.full_day);
 
     if let Some(d) = &args.time.date {
         let da = parse_date_arg(d)?;

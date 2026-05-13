@@ -308,6 +308,73 @@ fn stacked_negative_offsets_subtract_correctly() {
     );
 }
 
+/// da-iyv3: live insert wires `args.time.full_day` through `TimeBuilder`
+/// and stamps the resulting precision onto `entry.occur_time_precision`.
+///   * `-D` → P1D + today 00:00 local
+///   * `-d -1` (no time) → P1D + yesterday 00:00 local
+///   * `-d -1 -t 14:00` → precision NULL + yesterday 14:00 local
+///   * `-D -t 14:00` → P1D + today 00:00 (full-day wins over clock)
+#[test]
+fn full_day_writes_precision_and_strips_clock() {
+    use chrono::{Local, NaiveTime};
+
+    let db = fresh_db();
+
+    // -D alone → P1D, today 00:00 local.
+    run_cli(&["occur", "today_full", "-D"], &db).expect("occur -D");
+    let e = &db.entries_for_field("today_full", None).unwrap()[0];
+    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    assert_eq!(
+        e.occur_time_precision.as_deref(),
+        Some("P1D"),
+        "-D stamps occur_time_precision=P1D",
+    );
+    assert_eq!(
+        local.time(),
+        NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+        "-D strips clock to 00:00 local",
+    );
+    assert_eq!(
+        local.date_naive(),
+        Local::now().date_naive(),
+        "-D anchors to today in local time",
+    );
+
+    // -d -1 (no time, no quick) → P1D, yesterday 00:00 local.
+    run_cli(&["occur", "yest_full", "-d", "-1"], &db).expect("occur -d -1");
+    let e = &db.entries_for_field("yest_full", None).unwrap()[0];
+    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    assert_eq!(
+        e.occur_time_precision.as_deref(),
+        Some("P1D"),
+        "-d -1 (no clock input) is a date-only event",
+    );
+    assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+
+    // -d -1 -t 14:00 → no precision (exact), yesterday 14:00 local.
+    run_cli(&["occur", "yest_clock", "-d", "-1", "-t", "14:00"], &db)
+        .expect("occur -d -1 -t 14:00");
+    let e = &db.entries_for_field("yest_clock", None).unwrap()[0];
+    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    assert!(
+        e.occur_time_precision.is_none(),
+        "explicit -t restores exact precision (NULL)",
+    );
+    assert_eq!(local.time(), NaiveTime::from_hms_opt(14, 0, 0).unwrap());
+
+    // -D -t 14:00 → full-day wins; clock is stripped, P1D recorded.
+    run_cli(&["occur", "full_overrides_clock", "-D", "-t", "14:00"], &db)
+        .expect("occur -D -t 14:00");
+    let e = &db.entries_for_field("full_overrides_clock", None).unwrap()[0];
+    let local = e.occur_time.as_ref().unwrap().utc.with_timezone(&Local);
+    assert_eq!(
+        e.occur_time_precision.as_deref(),
+        Some("P1D"),
+        "-D wins over clock per builder rule",
+    );
+    assert_eq!(local.time(), NaiveTime::from_hms_opt(0, 0, 0).unwrap());
+}
+
 /// TS #8: "can occur on a full day"
 ///
 /// Datum's `-D`/`--full-day` recorded a whole-day event. Daydumb now parses

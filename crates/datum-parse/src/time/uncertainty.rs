@@ -73,6 +73,24 @@ impl Uncertainty {
             unit: PrecisionUnit::Exact,
         }
     }
+
+    /// Render this uncertainty as the ISO-8601 duration string stored in
+    /// `entries.occur_time_precision`. Returns `None` for exact (no
+    /// uncertainty) so the column lands as NULL.
+    pub fn to_iso_precision(&self) -> Option<String> {
+        if self.seconds == 0 || matches!(self.unit, PrecisionUnit::Exact) {
+            return None;
+        }
+        match self.unit {
+            PrecisionUnit::Second => Some(format!("PT{}S", self.seconds)),
+            PrecisionUnit::Minute => Some(format!("PT{}M", (self.seconds / 60).max(1))),
+            PrecisionUnit::Hour => Some(format!("PT{}H", (self.seconds / 3600).max(1))),
+            PrecisionUnit::Date => Some(format!("P{}D", (self.seconds / 86_400).max(1))),
+            PrecisionUnit::Month => Some("P1M".to_string()),
+            PrecisionUnit::Year => Some("P1Y".to_string()),
+            PrecisionUnit::Exact => None,
+        }
+    }
 }
 
 /// Split an input string into its primary-time portion and an optional
