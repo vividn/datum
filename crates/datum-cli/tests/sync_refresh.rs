@@ -114,7 +114,6 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
         Verb::Point,
         Some(serde_json::json!(1)),
         None,
-        None,
         Some(t),
         None,
         device,

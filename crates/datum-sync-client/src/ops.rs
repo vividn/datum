@@ -245,7 +245,6 @@ mod tests {
             Verb::Point,
             Some(serde_json::json!(1)),
             None,
-            None,
             Some(t),
             None,
             "dev-1",

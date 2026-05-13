@@ -70,16 +70,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        Entry::new_legacy(
-            field,
-            Verb::Point,
-            Some(value),
-            extra,
-            None,
-            Some(t),
-            None,
-            "d1",
-        )
+        Entry::new_legacy(field, Verb::Point, Some(value), extra, Some(t), None, "d1")
     }
 
     fn run_grep(db: &datum_core::db::Db, patterns: &[&str], field: Option<&str>) -> Vec<Entry> {

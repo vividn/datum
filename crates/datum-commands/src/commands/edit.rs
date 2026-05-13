@@ -63,8 +63,6 @@ struct UserEditableEntry {
     #[serde(default)]
     data: Option<JsonValue>,
     #[serde(default)]
-    unit: Option<String>,
-    #[serde(default)]
     occur_time: Option<DatumTime>,
     #[serde(default)]
     occur_time_precision: Option<String>,
@@ -89,7 +87,6 @@ impl UserEditableEntry {
             dur: e.dur.clone(),
             following_state: e.following_state.clone(),
             data: e.data.clone(),
-            unit: e.unit.clone(),
             occur_time: e.occur_time.clone(),
             occur_time_precision: e.occur_time_precision.clone(),
             lat: e.lat,
@@ -112,7 +109,6 @@ impl UserEditableEntry {
         e.dur = self.dur;
         e.following_state = self.following_state;
         e.data = self.data;
-        e.unit = self.unit;
         e.occur_time = self.occur_time.clone();
         e.occur_time_precision = self.occur_time_precision;
         e.lat = self.lat;
@@ -255,7 +251,6 @@ mod tests {
             "dur": e.dur,
             "following_state": e.following_state,
             "data": e.data,
-            "unit": e.unit,
             "occur_time": serde_json::to_value(&e.occur_time).unwrap(),
             "occur_time_precision": e.occur_time_precision,
             "lat": e.lat,
@@ -304,7 +299,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        let e = Entry::new_legacy(field, verb, value, extra, None, Some(dt), None, "d1");
+        let e = Entry::new_legacy(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
         e
     }

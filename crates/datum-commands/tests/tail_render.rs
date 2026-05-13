@@ -61,11 +61,11 @@ fn dt(y: i32, mo: u32, d: u32, h: u32, m: u32) -> DatumTime {
 }
 
 fn entry_at(field: &str, verb: Verb, value: Option<serde_json::Value>, t: DatumTime) -> Entry {
-    Entry::new(field, verb, value, None, None, Some(t), None, "test-device")
+    Entry::new(field, verb, value, None, Some(t), None, "test-device")
 }
 
 fn entry_no_time(field: &str, verb: Verb, value: Option<serde_json::Value>) -> Entry {
-    Entry::new(field, verb, value, None, None, None, None, "test-device")
+    Entry::new(field, verb, value, None, None, None, "test-device")
 }
 
 #[test]

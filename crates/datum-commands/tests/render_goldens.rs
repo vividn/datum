@@ -138,7 +138,6 @@ fn entry(
         verb,
         value,
         None,
-        None,
         start,
         end,
         "test-device".to_string(),

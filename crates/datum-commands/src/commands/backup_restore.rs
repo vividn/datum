@@ -521,16 +521,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        Entry::new(
-            field,
-            Verb::Point,
-            Some(value),
-            extra,
-            None,
-            Some(t),
-            None,
-            "d1",
-        )
+        Entry::new(field, Verb::Point, Some(value), extra, Some(t), None, "d1")
     }
 
     fn seed_entries(db: &datum_core::db::Db) {
@@ -820,7 +811,6 @@ mod tests {
             "mood",
             Verb::Point,
             Some(serde_json::json!("happy")),
-            None,
             None,
             Some(t),
             None,

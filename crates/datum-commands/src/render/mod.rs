@@ -1240,9 +1240,6 @@ fn entry_summary_lines(e: &Entry) -> Vec<String> {
     if let Some(d) = &e.data {
         lines.push(format!("data={d}"));
     }
-    if let Some(u) = &e.unit {
-        lines.push(format!("unit={u}"));
-    }
     if let Some(t) = &e.start_time {
         lines.push(format!("start={}", t.utc.to_rfc3339()));
     }
@@ -1394,7 +1391,7 @@ mod tests {
 
     fn sample_entry(field: &str, verb: Verb, value: Option<JsonValue>) -> Entry {
         let t = DatumTime::now();
-        Entry::new(field, verb, value, None, None, Some(t), None, "d1")
+        Entry::new(field, verb, value, None, Some(t), None, "d1")
     }
 
     // ─── S4 visual parity tests ──────────────────────────────────────────────

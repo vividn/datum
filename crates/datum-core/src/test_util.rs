@@ -60,7 +60,6 @@ pub struct EntryBuilder {
     verb: Verb,
     value: Option<JsonValue>,
     data: Option<JsonValue>,
-    unit: Option<String>,
     start_time: Option<DatumTime>,
     end_time: Option<DatumTime>,
     device_id: String,
@@ -73,7 +72,6 @@ impl EntryBuilder {
             verb: Verb::Point,
             value: None,
             data: None,
-            unit: None,
             start_time: Some(next_default_time()),
             end_time: None,
             device_id: "test-device".to_string(),
@@ -92,11 +90,6 @@ impl EntryBuilder {
 
     pub fn extra_data(mut self, extra: JsonValue) -> Self {
         self.data = Some(extra);
-        self
-    }
-
-    pub fn unit(mut self, unit: impl Into<String>) -> Self {
-        self.unit = Some(unit.into());
         self
     }
 
@@ -156,7 +149,6 @@ impl EntryBuilder {
             self.verb,
             self.value,
             self.data,
-            self.unit,
             self.start_time,
             dur,
             self.device_id,
@@ -337,10 +329,6 @@ pub fn _assert_entry_field(entry: &Entry, field_name: &str, expected: &JsonValue
         "field" => serde_json::json!(entry.field),
         "verb" => serde_json::json!(entry.verb.to_string()),
         "value" | "state" => entry.state.clone().unwrap_or(JsonValue::Null),
-        "unit" => match &entry.unit {
-            Some(u) => serde_json::json!(u),
-            None => JsonValue::Null,
-        },
         "device_id" => serde_json::json!(entry.device_id),
         other => panic!("assert_entry_matches!: unknown field `{other}`"),
     };

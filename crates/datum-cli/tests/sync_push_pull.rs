@@ -110,7 +110,6 @@ fn make_entry(field: &str, offset_secs: i64, device: &str) -> Entry {
         Verb::Point,
         Some(serde_json::json!(1)),
         None,
-        None,
         Some(t),
         None,
         device,
@@ -357,7 +356,6 @@ fn pull_with_conflict_queues_to_conflict_table() {
         Verb::Switch,
         None,
         None,
-        None,
         Some(DatumTime {
             utc: base,
             offset_minutes: 0,
@@ -376,7 +374,6 @@ fn pull_with_conflict_queues_to_conflict_table() {
     let mut peer_start = Entry::new(
         "focus",
         Verb::Switch,
-        None,
         None,
         None,
         Some(DatumTime {

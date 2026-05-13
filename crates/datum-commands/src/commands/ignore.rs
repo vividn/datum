@@ -21,7 +21,6 @@ pub fn ignore(args: IgnoreArgs, db: &Db) -> Result<()> {
         Verb::Switch,
         Some(JsonValue::String(IGNORED_STATE_VALUE.to_string())),
         None,
-        None,
         Some(DatumTime::now()),
         None,
         device,

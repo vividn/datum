@@ -738,7 +738,6 @@ mod tests {
             Verb::Point,
             None,
             None,
-            None,
             Some(ts),
             None,
             "test-device".to_string(),

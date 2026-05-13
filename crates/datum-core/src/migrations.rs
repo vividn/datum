@@ -989,7 +989,6 @@ fn m8_to_9_track_ignore_unification(conn: &Connection) -> Result<()> {
             crate::entry::Verb::Switch,
             Some(serde_json::Value::String("IGNORED".to_string())),
             None,
-            None,
             Some(now_dt.clone()),
             None,
             "migration-v9",

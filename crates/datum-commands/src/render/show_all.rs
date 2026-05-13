@@ -27,15 +27,7 @@ use super::{paint, DIM, GRAY_FG};
 const KEY_WIDTH: usize = 25;
 
 const ID_COLS: &[&str] = &["hid", "slug", "content_hash"];
-const WHAT_COLS: &[&str] = &[
-    "field",
-    "verb",
-    "state",
-    "dur",
-    "following_state",
-    "data",
-    "unit",
-];
+const WHAT_COLS: &[&str] = &["field", "verb", "state", "dur", "following_state", "data"];
 const WHEN_COLS: &[&str] = &[
     "occur_time",
     "occur_time_offset",
@@ -127,7 +119,6 @@ fn render_column(col: &str, e: &Entry) -> String {
         },
         "following_state" => render_json_opt(e.following_state.as_ref()),
         "data" => render_json_opt(e.data.as_ref()),
-        "unit" => render_str_opt(e.unit.as_deref()),
         "occur_time" => match &e.occur_time {
             Some(t) => t.utc.to_rfc3339(),
             None => null_marker(),
@@ -221,7 +212,6 @@ mod tests {
             dur: None,
             following_state: None,
             data: None,
-            unit: None,
             occur_time: None,
             occur_time_precision: None,
             lat: None,

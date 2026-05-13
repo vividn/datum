@@ -39,7 +39,6 @@ fn insert(db: &Db, field: &str, verb: Verb, mins: i64) -> Entry {
         verb,
         Some(json!(mins)),
         None,
-        None,
         Some(t_at(mins)),
         None,
         "d1",
@@ -54,7 +53,6 @@ fn insert_with_extra(db: &Db, field: &str, mins: i64, extra: serde_json::Value) 
         Verb::Point,
         Some(json!(mins)),
         Some(extra),
-        None,
         Some(t_at(mins)),
         None,
         "d1",
@@ -138,22 +136,12 @@ fn tail_metric_occur_vs_modify() {
         Verb::Point,
         Some(json!(1)),
         None,
-        None,
         Some(t_at(60)),
         None,
         "d1",
     );
     // Entry with no time_start (a note) — only `modify` / `hybrid` include it.
-    let no_time = Entry::new(
-        "b",
-        Verb::Point,
-        Some(json!("x")),
-        None,
-        None,
-        None,
-        None,
-        "d1",
-    );
+    let no_time = Entry::new("b", Verb::Point, Some(json!("x")), None, None, None, "d1");
     db.insert_entry(&with_time).unwrap();
     db.insert_entry(&no_time).unwrap();
 
@@ -327,7 +315,6 @@ fn t06_defaults_to_hybrid() {
         None,
         None,
         None,
-        None,
         "d1",
     );
     db.insert_entry(&noteless).unwrap();
@@ -358,7 +345,6 @@ fn t07_metric_occur_only() {
         None,
         None,
         None,
-        None,
         "d1",
     );
     db.insert_entry(&note).unwrap();
@@ -384,7 +370,6 @@ fn t08_metric_modify() {
         "person",
         Verb::Point,
         Some(json!({"name": "john"})),
-        None,
         None,
         None,
         None,
@@ -482,7 +467,6 @@ fn t12_t_now_excludes_future() {
         Verb::Point,
         Some(json!("future")),
         None,
-        None,
         Some(DatumTime {
             utc: future_utc,
             offset_minutes: 0,
@@ -544,16 +528,7 @@ fn t14_timezone_aware_day_window() {
         offset_minutes: 13 * 60,
         timezone: "Pacific/Auckland".to_string(),
     };
-    let e = Entry::new(
-        "a",
-        Verb::Point,
-        Some(json!(1)),
-        None,
-        None,
-        Some(t),
-        None,
-        "d1",
-    );
+    let e = Entry::new("a", Verb::Point, Some(json!(1)), None, Some(t), None, "d1");
     db.insert_entry(&e).unwrap();
 
     let mut args = tail_args();

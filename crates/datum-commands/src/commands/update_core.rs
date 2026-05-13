@@ -521,7 +521,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        let e = Entry::new(field, verb, value, extra, None, Some(dt), None, "d1");
+        let e = Entry::new(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
         e
     }

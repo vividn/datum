@@ -186,8 +186,6 @@ pub struct Entry {
     pub following_state: Option<JsonValue>,
     /// Arbitrarily nested JSON. Individual leaf values may use {"v": x, "u": "unit"}.
     pub data: Option<JsonValue>,
-    /// Top-level unit for `state` (e.g. "cups", "kg").
-    pub unit: Option<String>,
 
     // --- When ---
     /// When the event occurred. Required at the schema level (occur_time
@@ -307,7 +305,6 @@ impl Entry {
         verb: Verb,
         state: Option<JsonValue>,
         data: Option<JsonValue>,
-        unit: Option<String>,
         occur_time: Option<DatumTime>,
         dur: Option<Dur>,
         device_id: impl Into<String>,
@@ -360,7 +357,6 @@ impl Entry {
             dur,
             following_state: None,
             data,
-            unit,
             occur_time,
             occur_time_precision: None,
             lat: None,
@@ -401,7 +397,6 @@ impl Entry {
         verb: Verb,
         value: Option<JsonValue>,
         data: Option<JsonValue>,
-        unit: Option<String>,
         start_time: Option<DatumTime>,
         end_time: Option<DatumTime>,
         device_id: impl Into<String>,
@@ -413,7 +408,7 @@ impl Entry {
             }
             _ => None,
         };
-        Self::new(field, verb, value, data, unit, start_time, dur, device_id)
+        Self::new(field, verb, value, data, start_time, dur, device_id)
     }
 
     /// Short hid — first [`SHORT_HID_LEN`] chars of the stored hid.
@@ -572,7 +567,6 @@ mod tests {
             Verb::Point,
             Some(serde_json::json!(2)),
             None,
-            Some("cups".to_string()),
             Some(t),
             None,
             "device-test",
@@ -618,7 +612,6 @@ mod tests {
             Verb::Switch,
             Some(serde_json::json!("happy")),
             None,
-            None,
             Some(t.clone()),
             None,
             "d1",
@@ -627,7 +620,6 @@ mod tests {
             "mood",
             Verb::Switch,
             Some(serde_json::json!("happy")),
-            None,
             None,
             Some(t.clone()),
             None,
@@ -639,7 +631,7 @@ mod tests {
     #[test]
     fn short_uid_is_first_five_of_hid() {
         let t = DatumTime::now();
-        let e = Entry::new("coffee", Verb::Point, None, None, None, Some(t), None, "d");
+        let e = Entry::new("coffee", Verb::Point, None, None, Some(t), None, "d");
         let uid = e.short_uid();
         assert_eq!(uid.len(), SHORT_HID_LEN);
         assert!(e.hid.starts_with(&uid));

@@ -85,7 +85,6 @@ mod tests {
             Verb::Point,
             Some(serde_json::json!(secs)),
             None,
-            None,
             Some(t),
             None,
             "d1",

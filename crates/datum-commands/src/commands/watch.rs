@@ -94,7 +94,6 @@ mod tests {
                 Verb::Point,
                 Some(JsonValue::String("x".into())),
                 None,
-                None,
                 Some(dt),
                 None,
                 "test",
@@ -118,7 +117,6 @@ mod tests {
         db.insert_entry(&Entry::new(
             "self_write",
             Verb::Point,
-            None,
             None,
             None,
             Some(dt),

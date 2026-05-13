@@ -145,7 +145,7 @@ fn make_occur(field: &str, offset_secs: i64, device: &str) -> Entry {
     // derive_verb classify it as Switch and the conflict detector would
     // fire SameStateRepeat on every subsequent same-state row, polluting
     // sync convergence assertions.
-    let mut e = Entry::new_legacy(field, Verb::Point, None, None, None, Some(t), None, device);
+    let mut e = Entry::new_legacy(field, Verb::Point, None, None, Some(t), None, device);
     e.create_time = at;
     e.modify_time = at;
     e
@@ -164,7 +164,6 @@ fn make_switch(field: &str, state: &str, offset_secs: i64, device: &str) -> Entr
         field,
         Verb::Switch,
         Some(serde_json::json!(state)),
-        None,
         None,
         Some(t),
         None,
@@ -206,7 +205,6 @@ fn make_block(
         Verb::Block,
         None,
         Some(data),
-        None,
         Some(t_start),
         Some(t_end),
         device,
@@ -904,7 +902,6 @@ fn s8_conflict_surface_and_resolve() {
         Verb::Switch,
         None,
         None,
-        None,
         Some(DatumTime {
             utc: base,
             offset_minutes: 0,
@@ -921,7 +918,6 @@ fn s8_conflict_surface_and_resolve() {
     let mut b_start = Entry::new_legacy(
         "focus",
         Verb::Switch,
-        None,
         None,
         None,
         Some(DatumTime {

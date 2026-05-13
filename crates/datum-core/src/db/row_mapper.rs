@@ -106,9 +106,6 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         dur,
         following_state,
         data,
-        // da-xvco: `unit` column was dropped in m22→m23. The Entry struct
-        // field survives until da-g3fz removes it; map it to None for now.
-        unit: None,
         occur_time: occur_time.clone(),
         occur_time_precision,
         lat: row.get("lat")?,

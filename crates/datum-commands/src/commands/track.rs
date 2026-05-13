@@ -24,7 +24,6 @@ pub fn track(args: TrackArgs, db: &Db) -> Result<()> {
         Verb::Switch,
         None,
         None,
-        None,
         Some(DatumTime::now()),
         None,
         device,

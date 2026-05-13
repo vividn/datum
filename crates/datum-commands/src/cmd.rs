@@ -393,10 +393,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         return Ok(());
     }
 
-    // `entry.unit` is no longer settable from the log path — `-u` is now
-    // the undo flag (handled above). The schema column survives for
-    // FieldSpec-derived defaults and import paths; pass `None` here.
-    let unit: Option<String> = None;
     let device = device_id()?;
 
     // Compute time_start, time_end, precision, and (for Action::Add) a shape
@@ -493,7 +489,6 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         Verb::Point,
         value,
         extra_data,
-        unit,
         time_start,
         time_end,
         device,
@@ -2199,7 +2194,7 @@ mod tests {
         use datum_core::{db::Db, entry::Entry, time::DatumTime};
         let db = Db::open_in_memory().unwrap();
         let t = DatumTime::now();
-        let entry = Entry::new_legacy("test", Verb::Point, None, None, None, Some(t), None, "dev");
+        let entry = Entry::new_legacy("test", Verb::Point, None, None, Some(t), None, "dev");
         let slug = entry.slug.clone();
         db.insert_entry(&entry).unwrap();
 
@@ -2568,7 +2563,6 @@ mod tests {
             Verb::Point,
             Some(serde_json::json!(secs_offset)),
             None,
-            None,
             Some(t),
             None,
             device,
@@ -2709,7 +2703,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        let e = Entry::new_legacy(field, verb, value, extra, None, Some(dt), None, "d1");
+        let e = Entry::new_legacy(field, verb, value, extra, Some(dt), None, "d1");
         db.insert_entry(&e).unwrap();
         e
     }
@@ -2969,7 +2963,6 @@ mod tests {
                 "gym",
                 Verb::Point,
                 Some(serde_json::json!(v)),
-                None,
                 None,
                 Some(dt),
                 None,
@@ -3241,7 +3234,6 @@ mod tests {
             Verb::Switch,
             None,
             None,
-            None,
             Some(start),
             Some(end),
             device,
@@ -3350,7 +3342,7 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        Entry::new_legacy(field, Verb::Point, None, None, None, Some(t), None, device)
+        Entry::new_legacy(field, Verb::Point, None, None, Some(t), None, device)
     }
 
     #[test]
@@ -3704,7 +3696,6 @@ mod tests {
             Verb::Switch,
             Some(serde_json::json!("happy")),
             None,
-            None,
             Some(dt),
             None,
             "d1",
@@ -3747,7 +3738,6 @@ mod tests {
             "focus",
             Verb::Switch,
             Some(serde_json::json!("on")),
-            None,
             None,
             Some(dt),
             None,

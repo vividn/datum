@@ -212,7 +212,6 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             verb,
             state,
             data_blob,
-            None, // unit — legacy datum stored unit annotations inside data values
             occur_time,
             dur_in.clone(),
             device.clone(),

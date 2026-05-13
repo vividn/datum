@@ -165,7 +165,6 @@ mod tests {
             Verb::Point,
             None,
             None,
-            None,
             Some(seed_dt("2024-01-01T10:00:00Z")),
             None,
             "d1",
@@ -204,7 +203,6 @@ mod tests {
             Verb::Point,
             None,
             None,
-            None,
             Some(seed_dt("2024-01-01T10:00:00Z")),
             None,
             "d1",
@@ -241,7 +239,6 @@ mod tests {
         let e = Entry::new(
             "nap",
             Verb::Point,
-            None,
             None,
             None,
             Some(seed_dt("2024-01-01T10:00:00Z")),
