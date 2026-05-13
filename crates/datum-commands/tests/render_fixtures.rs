@@ -641,6 +641,51 @@ fn future_timestamp_is_underlined() {
     );
 }
 
+/// da-5uph: an entry with `occur_time_precision = P1D` is a date-only
+/// row. `format_info_line` must lead with the bare local date — no
+/// `HH:MM:SS`, no zone offset, no relative-day prefix wrapping the
+/// clock — so the user sees what they logged, not a synthetic
+/// `00:00:00` stamp.
+#[test]
+fn p1d_info_line_is_date_only() {
+    let _g = no_color_scope();
+    let mut e = entry(
+        "birthday",
+        Verb::Point,
+        None,
+        Some(fixed_time(0, 0, 0)),
+        None,
+    );
+    e.occur_time_precision = Some("P1D".to_string());
+    let ctx = RenderContext::default();
+    let out = strip_ansi(&format_info_line(&e, None, &ctx));
+    assert!(
+        out.starts_with("2026-04-22"),
+        "P1D info-line must start with bare date: {out:?}"
+    );
+    assert!(
+        !out.contains("00:00:00"),
+        "P1D info-line must omit clock part: {out:?}"
+    );
+    assert!(out.contains(" birthday "), "field badge present: {out:?}");
+}
+
+/// da-5uph: a row without `occur_time_precision` (i.e. NULL → exact-
+/// second) keeps the full `HH:MM:SS` + offset rendering — the new
+/// behaviour is scoped to P1D only.
+#[test]
+fn full_precision_info_line_keeps_clock() {
+    let _g = no_color_scope();
+    let e = entry("ping", Verb::Point, None, Some(fixed_time(14, 30, 0)), None);
+    // precision left as None — exact-second.
+    let ctx = RenderContext::default();
+    let out = strip_ansi(&format_info_line(&e, None, &ctx));
+    assert!(
+        out.contains("14:30:00"),
+        "exact-second info-line must show clock: {out:?}"
+    );
+}
+
 // Manual visual inspection: see `tests/goldens/terminal/fxNN_*.ansi` —
 // `cat` renders the colored bytes directly. The goldens harness in
 // `tests/render_goldens.rs` (da-8qwy) covers regression detection.

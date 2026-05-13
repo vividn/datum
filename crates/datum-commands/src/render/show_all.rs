@@ -119,8 +119,17 @@ fn render_column(col: &str, e: &Entry) -> String {
         },
         "following_state" => render_json_opt(e.following_state.as_ref()),
         "data" => render_json_opt(e.data.as_ref()),
+        // da-5uph: P1D rows render as a bare local date — engineers
+        // scanning the show-all dump shouldn't see a synthetic 00:00:00
+        // UTC stamp for what the user logged as a date-only entry.
         "occur_time" => match &e.occur_time {
-            Some(t) => t.utc.to_rfc3339(),
+            Some(t) => {
+                if e.occur_time_precision.as_deref() == Some("P1D") {
+                    t.local_time().format("%Y-%m-%d").to_string()
+                } else {
+                    t.utc.to_rfc3339()
+                }
+            }
             None => null_marker(),
         },
         "occur_time_offset" => match &e.occur_time {
@@ -302,6 +311,51 @@ mod tests {
         assert!(
             plain.contains("MOMENT"),
             "dur Moment must serialize to MOMENT:\n{plain}"
+        );
+    }
+
+    /// da-5uph: a P1D row's `occur_time` renders as `YYYY-MM-DD` in the
+    /// entry's local zone — never as the synthetic `00:00:00 UTC` stamp
+    /// the column would emit if it ignored precision.
+    #[test]
+    fn occur_time_p1d_renders_as_bare_date() {
+        let mut e = empty_entry();
+        e.occur_time = Some(datum_core::time::DatumTime {
+            utc: chrono::DateTime::parse_from_rfc3339("2026-05-12T19:00:00Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            offset_minutes: 5 * 60,
+            timezone: "Asia/Karachi".to_string(),
+        });
+        e.occur_time_precision = Some("P1D".to_string());
+        let plain = strip_ansi(&format_show_all(&e));
+        // Local in +5h is 2026-05-13 — the date the user logged.
+        assert!(
+            plain.contains("2026-05-13"),
+            "P1D occur_time should show local date:\n{plain}"
+        );
+        assert!(
+            !plain.contains("19:00") && !plain.contains("T19:"),
+            "P1D occur_time must omit clock:\n{plain}"
+        );
+    }
+
+    /// da-5uph: exact-second rows (precision `None` or `PT1S`) keep
+    /// rendering as RFC3339 — the change is scoped to `P1D`.
+    #[test]
+    fn occur_time_non_p1d_keeps_rfc3339() {
+        let mut e = empty_entry();
+        e.occur_time = Some(datum_core::time::DatumTime {
+            utc: chrono::DateTime::parse_from_rfc3339("2026-05-13T09:15:30Z")
+                .unwrap()
+                .with_timezone(&chrono::Utc),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        });
+        let plain = strip_ansi(&format_show_all(&e));
+        assert!(
+            plain.contains("2026-05-13T09:15:30"),
+            "non-P1D occur_time should show full datetime:\n{plain}"
         );
     }
 }

@@ -390,22 +390,35 @@ pub(crate) fn format_field_badge(field: &str, spec: Option<&FieldSpec>) -> Strin
 /// [`format_relative_day_prefix`]), a gray relative-day prefix (`-1d`,
 /// `2026-04-15`, etc.) is prepended so day-axis context isn't lost when
 /// scanning across rows.
-pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime) -> String {
+///
+/// `precision` is the row's `occur_time_precision`. When it is `Some("P1D")`
+/// the row is a date-only entry (per da-fc0l) and the stamp degrades to the
+/// bare local date `YYYY-MM-DD` — no clock, no offset, no relative-day
+/// prefix. Any other value (including `None` for exact-second rows) renders
+/// the full datetime.
+pub(crate) fn format_timestamp(t: &DatumTime, now: &DatumTime, precision: Option<&str>) -> String {
     // Render in the row's own timezone — "today" is the row's local day,
     // not the host's. See da-n1q acceptance criteria.
     let local = t.local_time();
-    let base = format!(
-        "{:02}:{:02}:{:02}",
-        local.hour(),
-        local.minute(),
-        local.second()
-    );
-    let offset = compress_tz_offset(&local.format("%z").to_string());
-    let tz = paint(GRAY_FG, &offset);
-    let stamp = format!("{base}{tz}");
-    let composed = match format_relative_day_prefix(t, now) {
-        Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
-        None => stamp,
+    let composed = if precision == Some("P1D") {
+        // da-5uph: P1D rows have no meaningful time-of-day. Show the bare
+        // local date; no relative-day prefix needed since the date itself
+        // is on-screen.
+        local.format("%Y-%m-%d").to_string()
+    } else {
+        let base = format!(
+            "{:02}:{:02}:{:02}",
+            local.hour(),
+            local.minute(),
+            local.second()
+        );
+        let offset = compress_tz_offset(&local.format("%z").to_string());
+        let tz = paint(GRAY_FG, &offset);
+        let stamp = format!("{base}{tz}");
+        match format_relative_day_prefix(t, now) {
+            Some(prefix) => format!("{} {stamp}", paint(GRAY_FG, &prefix)),
+            None => stamp,
+        }
     };
     if t.utc > Utc::now() && color_enabled() {
         format!("{UNDERLINE}{composed}{RESET}")
@@ -476,20 +489,22 @@ pub fn format_info_line_at(
     now: &DatumTime,
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
+    let precision = entry.occur_time_precision.as_deref();
     if let Some(t) = &entry.start_time {
-        parts.push(format_timestamp(t, now));
+        parts.push(format_timestamp(t, now, precision));
     } else if let Some(t) = &entry.end_time {
-        parts.push(format_timestamp(t, now));
+        parts.push(format_timestamp(t, now, precision));
     } else {
         // Hybrid fallback: row has no occur_time, so render create_time
         // prefixed by a gray 'c' — same convention the table renderer
         // applies via `format_gray_prefix("c", ...)` in the
-        // `time_hybrid` extractor (render/mod.rs).
+        // `time_hybrid` extractor (render/mod.rs). create_time is a
+        // wall-clock instant, never date-only.
         let synth = synthesize_local_datumtime(entry.create_time);
         parts.push(format!(
             "{}{}",
             paint(GRAY_FG, "c"),
-            format_timestamp(&synth, now)
+            format_timestamp(&synth, now, None)
         ));
     }
     parts.push(format_field_badge(&entry.field, spec));
@@ -648,13 +663,13 @@ mod tests {
         std::env::set_var("NO_COLOR", "1");
         let target = dt(2026, 4, 19);
         let now = dt(2026, 4, 22);
-        let out = format_timestamp(&target, &now);
+        let out = format_timestamp(&target, &now, None);
         assert!(
             out.starts_with("-3d "),
             "expected '-3d ' prefix, got {out:?}"
         );
         let target_old = dt(2024, 12, 13);
-        let out_old = format_timestamp(&target_old, &now);
+        let out_old = format_timestamp(&target_old, &now, None);
         assert!(
             out_old.starts_with("2024-12-13 "),
             "expected ISO-date prefix, got {out_old:?}"
@@ -677,11 +692,60 @@ mod tests {
             offset_minutes: 0,
             timezone: "UTC".to_string(),
         };
-        let out = format_timestamp(&target, &now);
+        let out = format_timestamp(&target, &now, None);
         assert!(
             out.starts_with("09:15:30"),
             "today rows must not carry a prefix: {out:?}"
         );
+        std::env::remove_var("DATUM_COLOR");
+        std::env::remove_var("NO_COLOR");
+    }
+
+    /// da-5uph: P1D precision degrades the stamp to a bare local date.
+    /// No clock, no offset suffix, no relative-day prefix.
+    #[test]
+    fn timestamp_p1d_renders_as_bare_local_date() {
+        std::env::set_var("DATUM_COLOR", "0");
+        std::env::set_var("NO_COLOR", "1");
+        // 2026-04-22 00:00 UTC in a +5h zone is 2026-04-22 05:00 local — the
+        // displayed date is the local one, mirroring start-of-day stripping.
+        let target = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 0, 0, 0).unwrap(),
+            offset_minutes: 5 * 60,
+            timezone: "Asia/Karachi".to_string(),
+        };
+        let now = dt(2026, 4, 22);
+        let out = format_timestamp(&target, &now, Some("P1D"));
+        assert_eq!(out, "2026-04-22");
+        // Also: a far-past P1D row gets the bare date, never a relative-day
+        // prefix wrapping a clock part.
+        let old = dt(2024, 12, 13);
+        let out_old = format_timestamp(&old, &now, Some("P1D"));
+        assert_eq!(out_old, "2024-12-13");
+        std::env::remove_var("DATUM_COLOR");
+        std::env::remove_var("NO_COLOR");
+    }
+
+    /// da-5uph: precision other than `P1D` (including `None`) keeps the
+    /// full datetime rendering.
+    #[test]
+    fn timestamp_non_p1d_precision_keeps_clock() {
+        std::env::set_var("DATUM_COLOR", "0");
+        std::env::set_var("NO_COLOR", "1");
+        let target = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 9, 15, 30).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let now = DatumTime {
+            utc: Utc.with_ymd_and_hms(2026, 4, 22, 17, 0, 0).unwrap(),
+            offset_minutes: 0,
+            timezone: "UTC".to_string(),
+        };
+        let out_none = format_timestamp(&target, &now, None);
+        assert!(out_none.starts_with("09:15:30"), "got {out_none:?}");
+        let out_sec = format_timestamp(&target, &now, Some("PT1S"));
+        assert_eq!(out_sec, out_none, "PT1S behaves like None");
         std::env::remove_var("DATUM_COLOR");
         std::env::remove_var("NO_COLOR");
     }
@@ -708,7 +772,7 @@ mod tests {
             offset_minutes: 2 * 60,
             timezone: "Europe/Berlin".to_string(),
         };
-        let out = format_timestamp(&ny_target, &berlin_now);
+        let out = format_timestamp(&ny_target, &berlin_now, None);
         assert!(
             out.contains("06:00:00"),
             "NY-stored row must render as NY wall-clock 06:00:00, got {out:?}"

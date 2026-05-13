@@ -226,17 +226,20 @@ pub(crate) fn extract_with_context_at(
         &short_hid(&entry.hid),
     ));
 
+    let occur_precision = entry.occur_time_precision.as_deref();
     let occur = entry
         .start_time
         .as_ref()
-        .map(|t| self::action::format_timestamp(t, now));
+        .map(|t| self::action::format_timestamp(t, now, occur_precision));
     let create = Some(self::action::format_timestamp(
         &self::action::synthesize_local_datumtime(entry.create_time),
         now,
+        None,
     ));
     let modify = Some(self::action::format_timestamp(
         &self::action::synthesize_local_datumtime(entry.modify_time),
         now,
+        None,
     ));
     let hybrid = occur.clone().or_else(|| {
         Some(format_gray_prefix(
@@ -244,6 +247,7 @@ pub(crate) fn extract_with_context_at(
             self::action::format_timestamp(
                 &self::action::synthesize_local_datumtime(entry.create_time),
                 now,
+                None,
             ),
         ))
     });
@@ -1009,7 +1013,14 @@ pub fn render_now_view(
                 let entry_time = entry.start_time.as_ref().or(entry.end_time.as_ref());
                 let time_str = match entry_time {
                     None => String::new(),
-                    Some(t) => format_now_time(t, &now_dt, now, is_active, &entry.verb),
+                    Some(t) => format_now_time(
+                        t,
+                        &now_dt,
+                        now,
+                        is_active,
+                        &entry.verb,
+                        entry.occur_time_precision.as_deref(),
+                    ),
                 };
 
                 let row = NowRow {
@@ -1137,7 +1148,14 @@ fn format_now_time(
     now_utc: chrono::DateTime<chrono::Utc>,
     is_active: bool,
     verb: &Verb,
+    precision: Option<&str>,
 ) -> String {
+    // da-5uph: P1D entries have no meaningful time-of-day. Show the bare
+    // local date — `@HH:MM` or `Nm ago` makes no sense when the user
+    // logged a date-only event.
+    if precision == Some("P1D") {
+        return t.local_time().format("%Y-%m-%d").to_string();
+    }
     if let Some(prefix) = self::action::format_relative_day_prefix(t, now_dt) {
         let local = t.local_time();
         return format!("{prefix} {}", local.format("%H:%M"));

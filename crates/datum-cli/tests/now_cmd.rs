@@ -310,6 +310,55 @@ fn render_old_stopped_field_uses_iso_date_prefix() {
     );
 }
 
+// ─── da-5uph: P1D entries render as a bare date in the now-view ─────────────
+
+/// A P1D (date-only) entry should surface in the now-view as the bare
+/// local date — no `@HH:MM`, no `Nm ago`, no relative-day-plus-clock
+/// hybrid. The user logged a date; show the date.
+#[test]
+fn render_p1d_entry_shows_bare_date_in_last_seen_column() {
+    let now = DatumTime::now();
+    // Pin the date to today in the local zone, then strip the clock to
+    // start-of-day — mirrors what the insert path stores for `-D` rows.
+    let local_today = now
+        .utc
+        .with_timezone(&chrono::Local)
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    let local_today_utc = local_today
+        .and_local_timezone(chrono::Local)
+        .single()
+        .expect("ambiguous local time")
+        .with_timezone(&chrono::Utc);
+    let day_start = DatumTime {
+        utc: local_today_utc,
+        offset_minutes: now.offset_minutes,
+        timezone: now.timezone.clone(),
+    };
+    let tf = [tracked("birthday")];
+    let mut latest = HashMap::new();
+    let mut e = entry_builder("birthday")
+        .verb(Verb::Point)
+        .time_start(day_start)
+        .build();
+    e.occur_time_precision = Some("P1D".to_string());
+    latest.insert("birthday".to_string(), e);
+
+    let out = render_now_view(&tf, &latest, &HashMap::new(), &HashMap::new(), false);
+    let plain = strip_ansi(&out);
+
+    let expected = local_today.format("%Y-%m-%d").to_string();
+    assert!(
+        plain.contains(&expected),
+        "P1D row must show bare date {expected:?}, got:\n{plain}"
+    );
+    assert!(
+        !plain.contains("@00:") && !plain.contains("00:00:00"),
+        "P1D row must not show the synthetic 00:00 clock, got:\n{plain}"
+    );
+}
+
 // ─── Gated on A0: per-field spec color ───────────────────────────────────────
 
 #[test]
