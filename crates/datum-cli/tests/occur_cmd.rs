@@ -319,8 +319,8 @@ fn stacked_negative_offsets_subtract_correctly() {
 fn full_day_flag_accepted() {
     let db = fresh_db();
 
-    run_cli(&["occur", "event", "-D"], &db).expect("-D is accepted on occur");
-    run_cli(&["occur", "happening", "--full-day"], &db).expect("--full-day is accepted on occur");
+    run_cli(&["occur", "shortflag", "-D"], &db).expect("-D is accepted on occur");
+    run_cli(&["occur", "longflag", "--full-day"], &db).expect("--full-day is accepted on occur");
 
     // `-d DATE` without `-t` anchors at the local instant corresponding to
     // "now's time of day on that date". We only assert that the entry lands
