@@ -72,6 +72,10 @@ pub fn run(argv: Vec<String>) -> Result<()> {
 }
 
 fn dispatch_single(cli: Cli) -> Result<()> {
+    if matches!(&cli.command, Command::Repl) {
+        return repl::run(cli.db.as_deref());
+    }
+
     if matches!(&cli.command, Command::Config(_) | Command::Sync(_)) {
         let placeholder = datum_core::db::Db::open_in_memory()?;
         return cmd::dispatch(cli, &placeholder);

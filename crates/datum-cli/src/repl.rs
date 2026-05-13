@@ -1,4 +1,4 @@
-//! Interactive REPL — invoked when `datum` is run with no arguments.
+//! Interactive REPL — invoked when `datum` is run with no subcommand.
 //!
 //! Each line is shell-split and dispatched through the same alias →
 //! parser → command path as a fresh `datum` invocation, but against a
@@ -13,8 +13,11 @@ use rustyline::DefaultEditor;
 
 const PROMPT: &str = "datum> ";
 
-pub fn run() -> Result<()> {
-    let resolved = config::resolve_db(None)?;
+/// Run the REPL against `db_hint` (the global `--db` value from argv, if
+/// any). `None` resolves the default DB from config, matching plain
+/// `datum` with no flags.
+pub fn run(db_hint: Option<&str>) -> Result<()> {
+    let resolved = config::resolve_db(db_hint)?;
     if resolved.created_new {
         if let Some(name) = resolved.name.as_deref() {
             eprintln!(

@@ -191,6 +191,13 @@ fn normalize_shared_occur_time(
 pub fn dispatch(cli: Cli, db: &Db) -> Result<()> {
     use crate::commands;
     match cli.command {
+        // Repl is intercepted by the binary entry point before dispatch
+        // (see `datum-cli::dispatch_single`). Reaching here means a
+        // bare-flag invocation was routed into in-process dispatch — error
+        // out instead of pretending to do work.
+        Command::Repl => Err(anyhow::anyhow!(
+            "no subcommand given — `datum` with only global flags is REPL-only"
+        )),
         Command::Occur(args) => run_log_with_alias(args, db, commands::occur::occur),
         Command::Start(args) => run_log_with_alias(args, db, commands::start::start),
         Command::Stop(args) => run_log_with_alias(args, db, commands::end::stop),

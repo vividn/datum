@@ -121,9 +121,13 @@ fn parse_tail(tail: &[&str]) -> Result<Cli> {
     let mut i = 0;
     let sub_idx = loop {
         let Some(tok) = tail.get(i) else {
-            return Err(ParseError::InvalidArg(
-                "missing subcommand — try `datum --help`".into(),
-            ));
+            // No subcommand after consuming global flags: drop into the
+            // REPL with whatever global context (e.g. `--db NAME`) the
+            // caller supplied. `dm` and `dm --db finance` both land here.
+            return Ok(Cli {
+                db,
+                command: Command::Repl,
+            });
         };
         match split_flag(tok) {
             FlagSplit::LongAttached("db", v) => {
@@ -2520,6 +2524,38 @@ mod tests {
     fn occur_with_global_db_flag() {
         let cli = parse_argv(&argv(&["--db", "work", "occur", "coffee"])).unwrap();
         assert_eq!(cli.db.as_deref(), Some("work"));
+    }
+
+    #[test]
+    fn bare_invocation_is_repl() {
+        let cli = parse_argv(&argv(&[])).unwrap();
+        assert!(matches!(cli.command, Command::Repl));
+        assert!(cli.db.is_none());
+    }
+
+    #[test]
+    fn db_flag_without_subcommand_is_repl() {
+        // da-g6nl: `dm --db finance` should enter REPL with the DB hint,
+        // not error on a missing subcommand.
+        let cli = parse_argv(&argv(&["--db", "finance"])).unwrap();
+        assert!(matches!(cli.command, Command::Repl));
+        assert_eq!(cli.db.as_deref(), Some("finance"));
+    }
+
+    #[test]
+    fn db_flag_eq_form_without_subcommand_is_repl() {
+        let cli = parse_argv(&argv(&["--db=finance"])).unwrap();
+        assert!(matches!(cli.command, Command::Repl));
+        assert_eq!(cli.db.as_deref(), Some("finance"));
+    }
+
+    #[test]
+    fn db_flag_with_subcommand_still_dispatches() {
+        // Counterpart: `--db NAME` followed by a real verb still runs
+        // that verb against the named DB.
+        let cli = parse_argv(&argv(&["--db", "finance", "get", "xyz"])).unwrap();
+        assert!(matches!(cli.command, Command::Get(_)));
+        assert_eq!(cli.db.as_deref(), Some("finance"));
     }
 
     #[test]

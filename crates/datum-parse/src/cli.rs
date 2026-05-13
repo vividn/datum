@@ -20,6 +20,11 @@ pub struct Cli {
 
 #[derive(Debug)]
 pub enum Command {
+    /// No subcommand given — drop into the interactive REPL. Carries no
+    /// args because every global flag (`--db`, etc.) already lives on
+    /// the outer [`Cli`]. Reached when argv has only global flags (or is
+    /// empty after argv[0]).
+    Repl,
     Occur(LogArgs),
     Start(LogArgs),
     Stop(LogArgs),
