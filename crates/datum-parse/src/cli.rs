@@ -905,11 +905,26 @@ pub struct NowviewArgs {
     /// Pixel height of the time-axis strip. Default 15.
     pub time_axis_height: f64,
     /// Output file. Extension picks format: .svg / .png / .html. None →
-    /// SVG to stdout.
+    /// terminal output (per da-57dj), routed through the
+    /// `nowview_terminal` visual band-stack renderer.
     pub output_file: Option<String>,
     /// Watch mode: redraw on DB change (≈500ms) plus a 60s periodic
     /// refresh so the clock keeps advancing on an idle DB.
     pub watch: bool,
+    // Terminal-mode controls (only consulted when `output_file` is None).
+    // Per da-57dj `dm nowview` defaults to rendering a pure visual band
+    // stack in the terminal — no field/state labels, only colored bands
+    // plus an `hh:mm` footer.
+    /// Time window for terminal Flow mode. None → vertical Snapshot mode
+    /// (current state only). `Some("30m")` → horizontal flow across the
+    /// last 30 minutes with a dashed yellow now-marker at the right edge.
+    pub window: Option<String>,
+    /// Override terminal width in cells. None → auto-detect via `$COLUMNS`.
+    pub cols: Option<u16>,
+    /// Override terminal height in rows. None → auto-detect via `$LINES`.
+    pub rows: Option<u16>,
+    /// Force-disable ANSI color in the terminal render. Mirrors `NO_COLOR`.
+    pub no_color: bool,
 }
 
 impl NowviewArgs {
@@ -925,6 +940,10 @@ impl NowviewArgs {
             time_axis_height: 22.0,
             output_file: None,
             watch: false,
+            window: None,
+            cols: None,
+            rows: None,
+            no_color: false,
         }
     }
 }

@@ -204,6 +204,68 @@ fn nowview_rejects_terminal_flag_after_split() {
     );
 }
 
+/// da-57dj: `dm nowview` (no `--output-file`) defaults to a pure visual
+/// terminal band stack. The dispatch path must succeed without error
+/// (rendering itself is covered by `nowview_terminal`'s unit tests). The
+/// `--cols`/`--rows`/`--no-color` knobs must parse cleanly.
+#[test]
+fn nowview_terminal_snapshot_dispatches() {
+    let db = fresh_db();
+    let now = Utc::now();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(serde_json::json!("focused"))
+        .time_start_utc(now - Duration::minutes(15))
+        .insert(&db);
+
+    run_cli(
+        &["nowview", "--cols", "20", "--rows", "12", "--no-color"],
+        &db,
+    )
+    .expect("nowview terminal snapshot dispatch");
+}
+
+/// da-57dj: `dm nowview --window 30m` selects horizontal Flow mode (no
+/// `--output-file`). Verifies the new `--window` flag parses + dispatches.
+#[test]
+fn nowview_terminal_flow_dispatches() {
+    let db = fresh_db();
+    let now = Utc::now();
+    entry_builder("mood")
+        .verb(Verb::Switch)
+        .value(serde_json::json!("focused"))
+        .time_start_utc(now - Duration::minutes(10))
+        .insert(&db);
+
+    run_cli(
+        &[
+            "nowview",
+            "--window",
+            "30m",
+            "--cols",
+            "40",
+            "--rows",
+            "11",
+            "--no-color",
+        ],
+        &db,
+    )
+    .expect("nowview terminal flow dispatch");
+}
+
+/// `--window 0m` and other zero/negative durations must be rejected with
+/// a clear error (so users don't silently get a degenerate render).
+#[test]
+fn nowview_terminal_rejects_zero_window() {
+    let db = fresh_db();
+    let err = run_cli(&["nowview", "--window", "0m"], &db).unwrap_err();
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("--window") || msg.contains("positive"),
+        "expected positive-window error, got: {msg}"
+    );
+}
+
 #[test]
 fn nowview_no_field_data_still_renders_envelope() {
     let db = fresh_db();

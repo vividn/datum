@@ -67,7 +67,7 @@ pub fn now(args: NowArgs, db: &Db) -> Result<()> {
 fn print_now_band(args: &NowArgs, db: &Db) {
     use std::io::IsTerminal;
 
-    use datum_layout::nowview_terminal::{render_nowview_terminal, TerminalConfig};
+    use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
 
     use crate::commands::nowview::{build_fields, format_local_hh_mm};
 
@@ -75,7 +75,7 @@ fn print_now_band(args: &NowArgs, db: &Db) {
     const NOW_WIDTH_MINUTES: f64 = 5.0;
 
     let end = Utc::now();
-    let fields = match build_fields(db, end, HISTORY_MINUTES) {
+    let fields = match build_fields(db, end, HISTORY_MINUTES, false) {
         Ok(f) => f,
         Err(_) => return, // never block the state list on a band-render error
     };
@@ -87,8 +87,10 @@ fn print_now_band(args: &NowArgs, db: &Db) {
         history_minutes: HISTORY_MINUTES,
         now_width_minutes: NOW_WIDTH_MINUTES,
         cols,
+        rows: 0,
         use_color,
         current_time_label: format_local_hh_mm(end),
+        mode: RenderMode::InlineBand,
     };
     let band = render_nowview_terminal(&fields, &cfg);
     println!("{band}");

@@ -58,11 +58,36 @@ pub struct NowviewPoint {
 }
 
 /// One field's data for the nowview window.
+///
+/// The `y_frac`, `height_frac`, `z_index`, and `default_colors` fields are
+/// consumed by the visual terminal modes (Snapshot / Flow in
+/// [`crate::nowview_terminal::RenderMode`]) so bands can be ordered by spec
+/// position and painted with a fallback color when no block is active at
+/// "now". Callers that only need the labeled inline band can leave them at
+/// their defaults — the `InlineBand` renderer doesn't read them.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NowviewField {
     pub field: String,
     pub blocks: Vec<NowviewBlock>,
     pub points: Vec<NowviewPoint>,
+    /// Spec-resolved `y` position in `[0, 1]`. Visual modes sort bands
+    /// top-to-bottom by this value (ties broken by `z_index`).
+    #[serde(default)]
+    pub y_frac: f64,
+    /// Spec-resolved band height as a fraction of the plot area. Visual
+    /// modes scale each band's row count by this.
+    #[serde(default)]
+    pub height_frac: f64,
+    /// Spec-resolved render order. Defaults to `y_frac` when the spec
+    /// leaves it unset.
+    #[serde(default)]
+    pub z_index: f64,
+    /// Hex fill color(s) to paint when no block / point covers the
+    /// rendered timestamp. Single-element for solid colors; multi-element
+    /// for parallel-state defaults (rare). Empty → renderer falls back to
+    /// the empty-cell shading.
+    #[serde(default)]
+    pub default_colors: Vec<String>,
 }
 
 /// One entry in the current-state panel rendered to the right of the

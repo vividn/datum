@@ -55,6 +55,20 @@ const PANEL_DEFAULT_WIDTH_BUMP: f64 = 120.0;
 
 /// Typed entry point — the dispatcher in `cmd.rs` calls this.
 pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
+    // Per da-57dj: no `--output-file` → render a pure visual band stack to
+    // the terminal. With `--window` we emit the horizontal Flow layout,
+    // otherwise the vertical Snapshot of each tracked field's current
+    // state. SVG/PNG/HTML remain the file-output formats.
+    if args.output_file.is_none() {
+        if args.watch {
+            let periodic = nowview_terminal_periodic_refresh(stdout_is_tty());
+            return crate::commands::watch::watch_loop(db, periodic, || {
+                render_terminal_once(&args, db)
+            });
+        }
+        return render_terminal_once(&args, db);
+    }
+
     if args.watch {
         // Re-render whenever an external `datum` write bumps the SQLite
         // data_version (≈500ms latency). nowview always shows "now", so the
@@ -66,6 +80,96 @@ pub fn nowview(args: NowviewArgs, db: &Db) -> Result<()> {
     } else {
         render_once(&args, db)
     }
+}
+
+/// Periodic-refresh cadence for the terminal nowview: piped → 60s so the
+/// clock stays fresh; interactive TTY → DB-change only so we don't flood
+/// the screen with redraws.
+fn nowview_terminal_periodic_refresh(stdout_is_tty: bool) -> Option<std::time::Duration> {
+    if stdout_is_tty {
+        None
+    } else {
+        Some(std::time::Duration::from_secs(60))
+    }
+}
+
+/// Render the pure-visual terminal nowview once: vertical Snapshot by
+/// default, horizontal Flow when `--window <duration>` was passed.
+fn render_terminal_once(args: &NowviewArgs, db: &Db) -> Result<()> {
+    use std::io::IsTerminal;
+
+    use datum_layout::nowview_terminal::{render_nowview_terminal, RenderMode, TerminalConfig};
+
+    let end = Utc::now();
+
+    let (mode, history_minutes) = match args.window.as_deref() {
+        Some(s) => {
+            let m = duration_minutes(s).with_context(|| format!("invalid --window: '{s}'"))?;
+            if m <= 0.0 {
+                anyhow::bail!("--window must be positive (got {m} minutes)");
+            }
+            (RenderMode::Flow, m)
+        }
+        None => (RenderMode::Snapshot, 0.0),
+    };
+
+    // Snapshot doesn't sample history, but build_fields still wants a
+    // positive window for its lookback buffer — use 1m for Snapshot so the
+    // active block (if any) lands inside the lookback.
+    let lookback = if history_minutes > 0.0 {
+        history_minutes
+    } else {
+        1.0
+    };
+
+    let fields = build_fields(db, end, lookback, /* include_empty = */ true)?;
+
+    let cols = args.cols.unwrap_or_else(detect_terminal_cols);
+    let rows = args.rows.unwrap_or_else(detect_terminal_rows);
+    let use_color =
+        !args.no_color && std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal();
+
+    let cfg = TerminalConfig {
+        end_ms: end.timestamp_millis(),
+        history_minutes,
+        now_width_minutes: 0.0,
+        cols,
+        rows,
+        use_color,
+        current_time_label: format_local_hh_mm(end),
+        mode,
+    };
+
+    let out = render_nowview_terminal(&fields, &cfg);
+    println!("{out}");
+    Ok(())
+}
+
+/// Auto-detect terminal width. Falls back to 40 (matches Snapshot's
+/// reference width ~80px / 2 cells per pixel).
+fn detect_terminal_cols() -> u16 {
+    if let Ok(s) = std::env::var("COLUMNS") {
+        if let Ok(n) = s.parse::<u16>() {
+            if n >= 4 {
+                return n;
+            }
+        }
+    }
+    40
+}
+
+/// Auto-detect terminal height for the visual band stack. Falls back to
+/// 24 (a typical default). Bigger windows give taller bands; narrower
+/// windows just compress the data area.
+fn detect_terminal_rows() -> u16 {
+    if let Ok(s) = std::env::var("LINES") {
+        if let Ok(n) = s.parse::<u16>() {
+            if n >= 3 {
+                return n;
+            }
+        }
+    }
+    24
 }
 
 fn stdout_is_tty() -> bool {
@@ -356,15 +460,21 @@ pub(crate) fn build_dayview_fields(
 }
 
 /// Build the per-field input list for the *terminal* renderer (used by
-/// `datum now`'s nowview band). Returns the simpler `NowviewField` shape —
-/// no positioning data — since the terminal renderer divides rows evenly
-/// and sorts alphabetically.
+/// `datum now`'s nowview band). Returns the simpler `NowviewField` shape
+/// since the terminal renderer divides rows evenly and sorts alphabetically.
 ///
 /// Exposed crate-wide so `cmd_now` can reuse the exact same data shape.
+///
+/// `include_empty` keeps tracked fields with no blocks or points in the
+/// result — used by `dm nowview`'s visual band stack so every tracked
+/// field gets a band painted in its spec default color (per da-57dj).
+/// `datum now` passes `false` to preserve its long-standing behavior of
+/// hiding fields with no current data.
 pub(crate) fn build_fields(
     db: &Db,
     end: DateTime<Utc>,
     history_minutes: f64,
+    include_empty: bool,
 ) -> Result<Vec<NowviewField>> {
     let day_end_ms = end.timestamp_millis();
 
@@ -415,14 +525,29 @@ pub(crate) fn build_fields(
             db,
         );
 
-        if blocks.is_empty() && points.is_empty() {
+        if !include_empty && blocks.is_empty() && points.is_empty() {
             continue;
         }
+
+        let resolved = match &spec {
+            Some(s) => s.presentation.resolve_position(&field),
+            None => FieldSpec::new(field.clone(), datum_core::action::Action::Occur)
+                .presentation
+                .resolve_position(&field),
+        };
+
+        // Per-field fallback color — single hex unless the field has a
+        // saved parallel-state default (rare).
+        let default_colors = vec![rgb_to_hex(field_rgb(&field, spec.as_ref()))];
 
         out.push(NowviewField {
             field,
             blocks,
             points,
+            y_frac: resolved.y,
+            height_frac: resolved.height,
+            z_index: resolved.z_index,
+            default_colors,
         });
     }
     Ok(out)
@@ -1133,7 +1258,7 @@ mod tests {
         ))
         .unwrap();
 
-        let fields = build_fields(&db, now, 60.0).unwrap();
+        let fields = build_fields(&db, now, 60.0, false).unwrap();
         assert!(fields.iter().all(|f| f.field != "background_telemetry"));
     }
 
