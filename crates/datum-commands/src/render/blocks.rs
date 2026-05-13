@@ -163,9 +163,19 @@ fn render_parallel_block(items: &[JsonValue], spec: Option<&FieldSpec>) -> Strin
 /// caller-supplied key (e.g. `"format=audio"`); when `key` is empty we
 /// hash by the rendered value alone, which is the simple-state case
 /// inside a parallel block.
+///
+/// Special case: the `.id` field hashes by the bare string value (no
+/// `key=` prefix, no surrounding quotes) so the second-line `.id` chip
+/// matches the main-line `{id}` chip — both routes feed `state_rgb`
+/// the same input. See `colors::structured_state_rgb` for the main path.
 fn render_value_chip(key: &str, value: &JsonValue, spec: Option<&FieldSpec>) -> String {
     let body = render_value_body(value);
-    let hash_key = if key.is_empty() {
+    let hash_key = if key == "id" {
+        match value.as_str() {
+            Some(id) => id.to_string(),
+            None => body.clone(),
+        }
+    } else if key.is_empty() {
         body.clone()
     } else {
         format!("{key}={body}")
@@ -421,6 +431,33 @@ mod tests {
         assert_ne!(
             audio_ansi, video_ansi,
             "format=audio vs format=video must hash differently"
+        );
+        std::env::remove_var("DATUM_COLOR");
+    }
+
+    // da-bjuv ── `.id` chip on the state second line must use the same
+    // hash input as the main-line `{id}` chip; the previous `id="bob"`
+    // form pulled the surrounding quotes into the hash and produced a
+    // different colour from the main chip's `state_rgb("bob")`.
+    #[test]
+    fn id_chip_hash_matches_main_render_id_hash() {
+        use super::super::colors::{state_rgb, structured_state_rgb};
+        std::env::set_var("DATUM_COLOR", "1");
+        std::env::remove_var("NO_COLOR");
+        let chip = render_value_chip("id", &json!("bob"), None);
+        let expected_bg = state_rgb("bob", None).bg();
+        let main_bg = structured_state_rgb(
+            json!({"id": "bob", "format": "audio"}).as_object().unwrap(),
+            None,
+        )
+        .bg();
+        assert!(
+            chip.starts_with(&expected_bg),
+            "second-line .id chip must hash by bare id: bg={expected_bg:?} chip={chip:?}"
+        );
+        assert_eq!(
+            expected_bg, main_bg,
+            "second-line .id chip and main {{id}} chip must share bg"
         );
         std::env::remove_var("DATUM_COLOR");
     }
