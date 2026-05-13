@@ -5,6 +5,7 @@
 //! [`InterpolationContext`]; everything else falls through to a dot-path
 //! lookup against `extra_data`. `\%` is a literal `%`.
 
+use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
 
 use crate::entry::{Entry, Verb};
@@ -36,6 +37,12 @@ pub struct InterpolationContext<'a> {
     /// da-5ns.4: column-bound `occur_time`. `%occur_time%` formats this as
     /// `YYYY-MM-DDTHH:MM:SS.sssZ` (matching the default-slug builder).
     pub occur_time: Option<&'a DatumTime>,
+    /// da-xbjy: `%create_time%` renders this and auto-appends `'c'`
+    /// (deliberate divergence from datum, which required the user to write
+    /// the literal suffix).
+    pub create_time: Option<&'a DateTime<Utc>>,
+    /// da-xbjy: `%modify_time%` renders this and auto-appends `'m'`.
+    pub modify_time: Option<&'a DateTime<Utc>>,
 }
 
 impl<'a> InterpolationContext<'a> {
@@ -53,6 +60,8 @@ impl<'a> InterpolationContext<'a> {
             dur: entry.dur.as_ref().map(crate::dur::Dur::to_storage_string),
             following_state: entry.following_state.as_ref(),
             occur_time: entry.occur_time.as_ref(),
+            create_time: Some(&entry.create_time),
+            modify_time: Some(&entry.modify_time),
         }
     }
 }
@@ -124,7 +133,32 @@ fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
             .occur_time
             .map(|t| t.utc.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
             .unwrap_or_default(),
+        // da-xbjy: auto-suffix `c` / `m` (deliberate divergence from datum).
+        // The suffix is appended to the rendered value, not the key, and only
+        // when the value is non-empty so missing-key delimiter collapsing
+        // still works.
+        "create_time" => suffix_when_present(
+            ctx.create_time
+                .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+            'c',
+        ),
+        "modify_time" => suffix_when_present(
+            ctx.modify_time
+                .map(|t| t.format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()),
+            'm',
+        ),
         _ => lookup_extra_data(ctx.extra_data, key).unwrap_or_default(),
+    }
+}
+
+fn suffix_when_present(rendered: Option<String>, suffix: char) -> String {
+    match rendered {
+        Some(s) if !s.is_empty() => {
+            let mut out = s;
+            out.push(suffix);
+            out
+        }
+        _ => String::new(),
     }
 }
 
@@ -190,6 +224,8 @@ mod tests {
             dur: None,
             following_state: None,
             occur_time: None,
+            create_time: None,
+            modify_time: None,
         }
     }
 
@@ -220,6 +256,8 @@ mod tests {
             dur: None,
             following_state: None,
             occur_time: None,
+            create_time: None,
+            modify_time: None,
         };
         let got = interpolate("%field%:%state%", &switch_ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "mood:focused");
@@ -259,6 +297,8 @@ mod tests {
             dur: None,
             following_state: None,
             occur_time: None,
+            create_time: None,
+            modify_time: None,
         };
         let got = interpolate("%field%:%srcLang%:%pos%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "word:pt:verb");
@@ -277,6 +317,94 @@ mod tests {
         let ctx = occur_ctx("f", None, "u");
         let got = interpolate(r"100\% of %field%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "100% of f");
+    }
+
+    // da-xbjy: %create_time% / %modify_time% auto-append c / m suffixes.
+    fn ctx_with_times<'a>(
+        create: Option<&'a DateTime<Utc>>,
+        modify: Option<&'a DateTime<Utc>>,
+    ) -> InterpolationContext<'a> {
+        InterpolationContext {
+            field: "f",
+            verb: &Verb::Point,
+            value: None,
+            extra_data: None,
+            uid: "u",
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: None,
+            create_time: create,
+            modify_time: modify,
+        }
+    }
+
+    #[test]
+    fn interpolate_create_time_auto_suffix_c() {
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = ctx_with_times(Some(&t), None);
+        let got = interpolate("%create_time%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+    }
+
+    #[test]
+    fn interpolate_modify_time_auto_suffix_m() {
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = ctx_with_times(None, Some(&t));
+        let got = interpolate("%modify_time%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zm");
+    }
+
+    #[test]
+    fn interpolate_occur_time_has_no_suffix() {
+        let dt: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let occur = DatumTime::from_utc_and_tz(dt, "UTC").unwrap();
+        let ctx = InterpolationContext {
+            field: "f",
+            verb: &Verb::Point,
+            value: None,
+            extra_data: None,
+            uid: "u",
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: Some(&occur),
+            create_time: None,
+            modify_time: None,
+        };
+        let got = interpolate("%occur_time%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Z");
+    }
+
+    #[test]
+    fn interpolate_create_time_composes_with_other_keys() {
+        let extra = serde_json::json!({"a": "x"});
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = InterpolationContext {
+            field: "f",
+            verb: &Verb::Point,
+            value: None,
+            extra_data: Some(&extra),
+            uid: "u",
+            state: None,
+            dur: None,
+            following_state: None,
+            occur_time: None,
+            create_time: Some(&t),
+            modify_time: None,
+        };
+        let got = interpolate("%a%__%create_time%", &ctx, "__");
+        assert_eq!(got, "x__2026-05-13T15:00:00.000Zc");
+    }
+
+    #[test]
+    fn interpolate_create_time_missing_collapses_without_orphan_suffix() {
+        // When create_time is unset, the rendered value must be empty so the
+        // delimiter-collapse step trims cleanly — we must NOT emit a bare
+        // 'c' that would survive the trim.
+        let ctx = ctx_with_times(None, None);
+        let got = interpolate("%field%:%create_time%:%uid%", &ctx, DEFAULT_ID_DELIMITER);
+        assert_eq!(got, "f:u");
     }
 
     #[test]
