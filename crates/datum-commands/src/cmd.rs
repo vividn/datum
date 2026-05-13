@@ -2046,8 +2046,40 @@ pub(crate) fn resolve_batch(
 
 pub(crate) fn parse_update_payload(
     args: &UpdateArgs,
-) -> Result<(Option<JsonValue>, Option<JsonValue>)> {
+) -> Result<(String, Option<JsonValue>, Option<JsonValue>)> {
     use datum_parse::input::data_args::{handle_data_args, DataArgs};
+
+    // da-sk5c: rewire the leading positional through the same slot-fill
+    // discipline datum's updateCmd.ts gets from `flexiblePositional`.
+    // Whatever argparse caught as the first positional joins the rest of
+    // the stream and the FIRST bare (non-`KEY=VALUE`) token wins the id
+    // slot — so `dm update <quickId> some=data` and `dm update some=data
+    // <quickId>` are interchangeable. KEY=VALUE tokens flow through to
+    // the payload regardless of position; if no bare positional is
+    // supplied, `_LAST_WITH_PROTECTION` is the default.
+    //
+    // The id is split off *before* the rest enters `handle_data_args` so
+    // its raw string survives intact (the data pipeline's `infer_type`
+    // would otherwise rewrite e.g. `gym:a,gym:b,` into a JSON array,
+    // collapsing daydumb's compound-id comma syntax — datum's TS form
+    // never had a compound-id path, so the TS rewiring never had to care).
+    let mut resolved_id: Option<String> = None;
+    let mut positionals: Vec<String> = Vec::with_capacity(1 + args.rest.len());
+    let mut consider = |tok: String| {
+        if resolved_id.is_none() && !tok.contains('=') {
+            resolved_id = Some(tok);
+        } else {
+            positionals.push(tok);
+        }
+    };
+    if let Some(id) = &args.id_or_slug {
+        consider(id.clone());
+    }
+    for r in &args.rest {
+        consider(r.clone());
+    }
+    let resolved_id = resolved_id
+        .unwrap_or_else(|| datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN.to_string());
 
     // Same composition shape as `parse_log_args` — the only difference is
     // there are no `-K` slug-keys in update (slug stays put) and no `-K`
@@ -2082,9 +2114,9 @@ pub(crate) fn parse_update_payload(
 
     data_args
         .data
-        .reserve(injected_immediates.len() + args.rest.len());
+        .reserve(injected_immediates.len() + positionals.len());
     data_args.data.extend(injected_immediates);
-    data_args.data.extend(args.rest.iter().cloned());
+    data_args.data.extend(positionals);
     data_args.remainder = Some(PRIMARY_VALUE_KEY.to_string());
 
     let mut datum_data = handle_data_args(&data_args).map_err(anyhow::Error::from)?;
@@ -2105,8 +2137,15 @@ pub(crate) fn parse_update_payload(
     // drops the key from the existing entry in `combine_extra`. handle_data_args
     // turns an empty value into "remove from payload"; on the update path that
     // erases the signal, so we re-introduce a String("") for each such token
-    // so `is_empty_string` downstream still fires.
-    for token in args.rest.iter().chain(args.keys.iter()) {
+    // so `is_empty_string` downstream still fires. The id_or_slug positional
+    // joins the chain here because the flex rewiring above means argparse's
+    // "first positional" can itself be a `key=` drop sentinel.
+    for token in args
+        .id_or_slug
+        .iter()
+        .chain(args.rest.iter())
+        .chain(args.keys.iter())
+    {
         if let Some((k, v)) = token.split_once('=') {
             if v.is_empty() && !k.is_empty() {
                 datum_data.insert(k.to_string(), JsonValue::String(String::new()));
@@ -2119,7 +2158,7 @@ pub(crate) fn parse_update_payload(
     } else {
         Some(JsonValue::Object(datum_data))
     };
-    Ok((value, extra_data))
+    Ok((resolved_id, value, extra_data))
 }
 
 // ─── Why ─────────────────────────────────────────────────────────────────────

@@ -125,17 +125,12 @@ pub fn update_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let (payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
+    let (pattern, payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
     let output = args.output();
-
-    let pattern = args
-        .id_or_slug
-        .as_deref()
-        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
 
     let outcome = update_with_strategy(
         UpdateRequest {
-            id_or_slug: pattern,
+            id_or_slug: &pattern,
             payload_value,
             payload_extra,
             strategy,
@@ -171,12 +166,9 @@ pub fn update_batch_from_args(
         .transpose()?
         .unwrap_or(default_strategy);
 
-    let pattern = args
-        .id_or_slug
-        .as_deref()
-        .unwrap_or(datum_core::ids::resolve::LAST_WITH_PROTECTION_TOKEN);
+    let (pattern, payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
     let (entries, token_errors) =
-        crate::cmd::resolve_batch(db, pattern, crate::cmd::BatchMode::LiveOrTombstone);
+        crate::cmd::resolve_batch(db, &pattern, crate::cmd::BatchMode::LiveOrTombstone);
 
     if entries.is_empty() {
         if let Some((_, err)) = token_errors.into_iter().next() {
@@ -202,7 +194,6 @@ pub fn update_batch_from_args(
         }
     }
 
-    let (payload_value, payload_extra) = crate::cmd::parse_update_payload(&args)?;
     let output = args.output();
 
     if args.dry_run {
@@ -1063,6 +1054,72 @@ mod tests {
 
         assert_eq!(outcome.old_slug.as_deref(), Some(e.slug.as_str()));
         assert_eq!(outcome.entry.slug, "task:doing");
+    }
+
+    #[test]
+    fn flexible_positional_id_after_keyvalue() {
+        // da-sk5c: the acceptance scenario — `alias abc "update some=data"`
+        // expands to `update some=data <quickId>`, where argparse catches
+        // `some=data` as the leading positional. The flex rewiring must
+        // route `<quickId>` to the id slot and `some=data` to the payload,
+        // not the other way around.
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "task",
+            Verb::Point,
+            None,
+            Some(serde_json::json!({"reps": 10})),
+        );
+
+        // id_or_slug is "some=data" (argparse's first positional), rest is
+        // [slug] — i.e. the user typed `update some=data <slug>`.
+        let mut args = update_args("some=data", vec![&e.slug]);
+        // Sanity: the test helper put the key=value token in id_or_slug
+        // exactly as argparse would after seeing `update some=data <slug>`.
+        assert_eq!(args.id_or_slug.as_deref(), Some("some=data"));
+
+        args.strategy = Some(ConflictStrategyArg::Update);
+        update_from_args(args, UpdateStrategy::Replace, &db).unwrap();
+
+        let after = db.get_entry(&e.slug).unwrap();
+        let data = after.data.as_ref().unwrap();
+        assert_eq!(
+            data["some"],
+            serde_json::json!("data"),
+            "key=value payload landed under data.some"
+        );
+        assert_eq!(
+            data["reps"],
+            serde_json::json!(10),
+            "untouched keys preserved (Replace is shallow per-top-level-key)"
+        );
+    }
+
+    #[test]
+    fn flexible_positional_id_before_keyvalue() {
+        // The natural-order companion: `update <slug> some=data`. With the
+        // flex rewiring both orderings collapse to the same payload.
+        let db = Db::open_in_memory().unwrap();
+        let e = seed_entry(
+            &db,
+            "task",
+            Verb::Point,
+            None,
+            Some(serde_json::json!({"reps": 10})),
+        );
+
+        update_from_args(
+            update_args(&e.slug, vec!["some=data"]),
+            UpdateStrategy::Replace,
+            &db,
+        )
+        .unwrap();
+
+        let after = db.get_entry(&e.slug).unwrap();
+        let data = after.data.as_ref().unwrap();
+        assert_eq!(data["some"], serde_json::json!("data"));
+        assert_eq!(data["reps"], serde_json::json!(10));
     }
 
     #[test]
