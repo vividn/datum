@@ -247,6 +247,7 @@ mod tests {
     use super::*;
     use crate::dur::Dur;
     use crate::entry::Verb;
+    use crate::ids::Slug;
     use crate::time::DatumTime;
     use chrono::TimeZone;
     use serde_json::json;
@@ -529,6 +530,112 @@ mod tests {
             )
             .unwrap();
         assert_eq!(surviving_slug, seed_slug.0);
+    }
+
+    // ── Section O — da-ga8b: (field, occur_time) partial UNIQUE ──────
+
+    /// A custom slug that bypasses the field-occur slug template still
+    /// trips the partial UNIQUE on `(field, occur_time)` when a live row
+    /// already occupies that pair. The error must name the existing hid
+    /// and the colliding field + occur_time.
+    #[test]
+    fn field_occurtime_collision_surfaces_named_diagnostic() {
+        let db = Db::open_in_memory().unwrap();
+        let seed = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("money")));
+        let seed_hid = seed.hid.0.clone();
+        db.insert_entry(&seed).unwrap();
+
+        // Distinct slug + distinct state → distinct content_hash, but the
+        // same (field, occur_time) as the seed. The new partial UNIQUE
+        // must fire.
+        let mut intruder = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("work")));
+        intruder.slug = Slug("custom-id-K".to_string());
+        let err = db.insert_entry(&intruder).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            matches!(err, DatumError::Duplicate(_)),
+            "expected Duplicate, got {err:?}"
+        );
+        assert!(
+            msg.contains("entry collides with"),
+            "expected diagnostic prefix: {msg}"
+        );
+        assert!(msg.contains(&seed_hid), "must name existing hid: {msg}");
+        assert!(
+            msg.contains("project") && msg.contains("2026-05-13T09:00:00"),
+            "must include field + occur_time: {msg}"
+        );
+
+        // The intruder must NOT have been written.
+        let live_count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(live_count, 1);
+    }
+
+    /// Soft-deleting a row releases the (field, occur_time) slot — a
+    /// fresh insert at the same identity succeeds because the partial
+    /// UNIQUE filters tombstones (`deleted_at IS NULL`).
+    #[test]
+    fn field_occurtime_constraint_releases_on_tombstone() {
+        let db = Db::open_in_memory().unwrap();
+        let seed = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("money")));
+        let seed_slug = seed.slug.clone();
+        db.insert_entry(&seed).unwrap();
+        // Soft-delete the seed row.
+        db.conn()
+            .execute(
+                "UPDATE entries SET deleted_at = ?1 WHERE slug = ?2",
+                rusqlite::params!["2026-05-13T10:00:00Z", seed_slug.0],
+            )
+            .unwrap();
+
+        // Re-insert with a custom slug at the same (field, occur_time) —
+        // must succeed because the tombstoned row no longer holds the
+        // slot.
+        let mut replay = entry_at("project", "2026-05-13T09:00:00Z", Some(json!("work")));
+        replay.slug = Slug("after-tombstone".to_string());
+        db.insert_entry(&replay).unwrap();
+
+        let live_count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(live_count, 1);
+    }
+
+    /// Different fields at the same `occur_time` remain independent — the
+    /// constraint is scoped to `(field, occur_time)`, not `occur_time`.
+    /// This regression-guards against a future widening of the index.
+    #[test]
+    fn field_occurtime_constraint_does_not_block_different_fields() {
+        let db = Db::open_in_memory().unwrap();
+        let a = entry_at("body", "2026-05-13T09:00:00Z", Some(json!("vertical")));
+        let b = entry_at(
+            "environment",
+            "2026-05-13T09:00:00Z",
+            Some(json!("outside")),
+        );
+        db.insert_entry(&a).unwrap();
+        db.insert_entry(&b).unwrap();
+        let live_count: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM entries WHERE deleted_at IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(live_count, 2);
     }
 
     // ── Section N — _LAST after multi ────────────────────────────────

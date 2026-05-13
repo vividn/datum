@@ -140,6 +140,7 @@ fn every_pair_has_a_roundtrip_test() {
         (21, 22),
         (22, 23),
         (23, 24),
+        (24, 25),
     ];
     assert_eq!(
         covered.len(),
@@ -965,6 +966,76 @@ fn roundtrip_v23_to_v24_id_field_structure_indexes() {
     // Down: indexes are gone; rows still present.
     assert!(!index_exists(conn, "entries_id_structure"));
     assert!(!index_exists(conn, "entries_field_structure"));
+    let row_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(row_count, 2);
+}
+
+/// da-ga8b: v24→v25 adds the partial UNIQUE on `(field, occur_time)`
+/// over live rows. The pre-check refuses to land the index if any live
+/// collisions exist; on a clean DB the index appears and a subsequent
+/// custom-id same-instant insert errors out. Down drops the index and
+/// the previously-rejected insert can land.
+#[test]
+fn roundtrip_v24_to_v25_field_occurtime_unique() {
+    let db = fresh_at(24);
+    let conn = db.conn();
+    assert!(!index_exists(conn, "entries_field_occurtime"));
+
+    // Seed a baseline row at v=24 (no constraint yet). Use direct SQL
+    // because `Db::insert_entry` writes via the v=CURRENT shape — and
+    // we want to land the row exactly at v=24.
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id)
+         VALUES
+            ('hidbase00000', 'project:2026-05-13T09:00Z', 'cbase', 'project',
+             'switch', '2026-05-13T09:00:00Z',
+             '2026-05-13T09:00:00Z', '2026-05-13T09:00:00Z', 'd')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 24);
+
+    // Up: the partial UNIQUE index exists and a same-instant custom-slug
+    // insert is now rejected.
+    assert!(index_exists(conn, "entries_field_occurtime"));
+    let err = conn
+        .execute(
+            "INSERT INTO entries
+                (hid, slug, content_hash, field, verb, occur_time,
+                 create_time, modify_time, device_id)
+             VALUES
+                ('hidcustom001', 'custom-id-K', 'ccustom', 'project',
+                 'switch', '2026-05-13T09:00:00Z',
+                 '2026-05-13T09:00:00Z', '2026-05-13T09:00:00Z', 'd')",
+            [],
+        )
+        .unwrap_err();
+    let msg = format!("{err}");
+    assert!(
+        msg.contains("UNIQUE constraint failed"),
+        "expected UNIQUE constraint failure, got: {msg}"
+    );
+
+    apply_one_down(conn, 25);
+
+    // Down: the index is gone; the previously-rejected row now lands.
+    assert!(!index_exists(conn, "entries_field_occurtime"));
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id)
+         VALUES
+            ('hidcustom001', 'custom-id-K', 'ccustom', 'project',
+             'switch', '2026-05-13T09:00:00Z',
+             '2026-05-13T09:00:00Z', '2026-05-13T09:00:00Z', 'd')",
+        [],
+    )
+    .unwrap();
     let row_count: i64 = conn
         .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
         .unwrap();

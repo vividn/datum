@@ -353,17 +353,21 @@ fn suffixed_slug(base: &str) -> Slug {
 }
 
 /// Which uniqueness constraint a SQLite ConstraintViolation tripped: the
-/// `entries.slug` UNIQUE index, or the `entries.hid` PRIMARY KEY.
+/// `entries.slug` UNIQUE index, the `entries.hid` PRIMARY KEY, or the
+/// `entries_field_occurtime` partial UNIQUE index over `(field, occur_time)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CollisionKind {
     Slug,
     Hid,
+    FieldOccurTime,
 }
 
-/// Inspect a rusqlite error and decide whether it's a slug or hid collision.
-/// SQLite's constraint-violation message names the offending column (e.g.
-/// `UNIQUE constraint failed: entries.slug`), which is the cheapest way to
-/// tell the two apart without a second query.
+/// Inspect a rusqlite error and decide which collision it represents.
+/// SQLite's constraint-violation message names the offending column or
+/// index (e.g. `UNIQUE constraint failed: entries.slug` for column-level
+/// indexes, or `UNIQUE constraint failed: entries.field, entries.occur_time`
+/// for the multi-column partial index), which is the cheapest way to tell
+/// them apart without a second query.
 fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
     let rusqlite::Error::SqliteFailure(e, msg) = err else {
         return None;
@@ -372,13 +376,40 @@ fn collision_kind(err: &rusqlite::Error) -> Option<CollisionKind> {
         return None;
     }
     let msg = msg.as_deref().unwrap_or("");
-    if msg.contains("entries.slug") {
+    // Order matters: the (field, occur_time) message contains "entries.field"
+    // and "entries.occur_time" together — check the multi-column form first
+    // so a same-instant collision is not misclassified as a slug collision.
+    if msg.contains("entries.field") && msg.contains("entries.occur_time") {
+        Some(CollisionKind::FieldOccurTime)
+    } else if msg.contains("entries.slug") {
         Some(CollisionKind::Slug)
     } else if msg.contains("entries.hid") {
         Some(CollisionKind::Hid)
     } else {
         None
     }
+}
+
+/// Look up the `hid` of the live row that currently occupies
+/// `(field, occur_time)` for diagnostic messages on a partial-unique
+/// collision. Returns `None` if no live row matches (which would mean
+/// the index was tripped by a race the surrounding tx already rolled
+/// back — surface the diagnostic without a hid in that case).
+fn fetch_field_occur_collider(
+    conn: &Connection,
+    field: &str,
+    occur_time: &str,
+) -> Result<Option<String>> {
+    let hid: Option<String> = conn
+        .query_row(
+            "SELECT hid FROM entries \
+             WHERE field = ?1 AND occur_time = ?2 AND deleted_at IS NULL \
+             LIMIT 1",
+            params![field, occur_time],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(hid)
 }
 
 /// Deep-merge `incoming` into `existing` for use by [`ConflictStrategy::Merge`].
@@ -606,6 +637,24 @@ pub(crate) fn raw_insert(conn: &Connection, entry: &Entry) -> Result<(Slug, Hid)
                         return Err(DatumError::Duplicate(format!(
                             "Entry already exists with slug {}",
                             entry.slug
+                        )));
+                    }
+                    Some(CollisionKind::FieldOccurTime) => {
+                        // da-ga8b: a different slug already occupies
+                        // (field, occur_time) for a live row. Two
+                        // state-changes at the same instant for the same
+                        // field are semantically undefined, so surface a
+                        // clear diagnostic naming the existing hid.
+                        let occur_str = entry
+                            .occur_time
+                            .as_ref()
+                            .map(|t| t.utc.to_rfc3339())
+                            .unwrap_or_else(|| entry.create_time.to_rfc3339());
+                        let collider = fetch_field_occur_collider(conn, &entry.field, &occur_str)?
+                            .unwrap_or_else(|| "<unknown>".to_string());
+                        return Err(DatumError::Duplicate(format!(
+                            "entry collides with {collider} on field={}, occur_time={occur_str}",
+                            entry.field,
                         )));
                     }
                     Some(CollisionKind::Hid) => {

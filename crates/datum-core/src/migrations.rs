@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 24;
+pub const CURRENT_SCHEMA_VERSION: u32 = 25;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -202,6 +202,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: partial indexes on id_structure / field_structure (NOT NULL) — drift-detection support for `dm check slugs` (da-b423)",
         apply: m23_to_24_id_field_structure_indexes,
         down: down_24_to_23_id_field_structure_indexes,
+    },
+    Migration {
+        from: 24,
+        to: 25,
+        summary: "entries: partial UNIQUE on (field, occur_time) WHERE occur_time IS NOT NULL AND deleted_at IS NULL — block same-instant state-changes (da-ga8b)",
+        apply: m24_to_25_field_occurtime_unique,
+        down: down_25_to_24_field_occurtime_unique,
     },
 ];
 
@@ -479,6 +486,64 @@ fn down_24_to_23_id_field_structure_indexes(conn: &Connection) -> Result<()> {
         "DROP INDEX IF EXISTS entries_id_structure;
          DROP INDEX IF EXISTS entries_field_structure;",
     )?;
+    Ok(())
+}
+
+/// da-ga8b: add a partial UNIQUE index on `(field, occur_time)` over live
+/// rows so two state-changes for the same field at the same exact instant
+/// are blocked even when custom id templates produce distinct slugs.
+///
+/// **Pre-check.** Scans existing live rows for `(field, occur_time)`
+/// collisions BEFORE creating the index. If any exist, the migration
+/// fails with a diagnostic listing the offending hids so the operator can
+/// resolve the dirty data (manually delete or retime one of each pair)
+/// and re-run. The pre-check filters tombstones so soft-deleted rows
+/// don't block the upgrade.
+fn m24_to_25_field_occurtime_unique(conn: &Connection) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT field, occur_time, GROUP_CONCAT(hid, ',') \
+         FROM entries \
+         WHERE occur_time IS NOT NULL AND deleted_at IS NULL \
+         GROUP BY field, occur_time \
+         HAVING COUNT(*) > 1 \
+         ORDER BY field, occur_time",
+    )?;
+    let collisions: Vec<(String, String, String)> = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    drop(stmt);
+
+    if !collisions.is_empty() {
+        let mut diag = String::from(
+            "v24→v25 migration aborted: (field, occur_time) collisions exist in live entries. \
+             Resolve the offending rows (delete or retime one of each group) before re-running:",
+        );
+        for (field, occur_time, hids) in &collisions {
+            diag.push_str(&format!(
+                "\n  field={field} occur_time={occur_time} hids=[{hids}]"
+            ));
+        }
+        return Err(DatumError::Other(diag));
+    }
+
+    conn.execute_batch(
+        "CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime \
+            ON entries (field, occur_time) \
+            WHERE occur_time IS NOT NULL AND deleted_at IS NULL;",
+    )?;
+    Ok(())
+}
+
+/// Reverse of [`m24_to_25_field_occurtime_unique`]. Index-only; no data
+/// is touched.
+fn down_25_to_24_field_occurtime_unique(conn: &Connection) -> Result<()> {
+    conn.execute_batch("DROP INDEX IF EXISTS entries_field_occurtime;")?;
     Ok(())
 }
 
@@ -2425,6 +2490,123 @@ mod tests {
         // Idempotent — re-running is a no-op.
         let again = migrate_to_current(&conn).unwrap();
         assert!(again.is_empty());
+    }
+
+    /// da-ga8b: v24→v25 creates the partial UNIQUE on `(field, occur_time)`
+    /// over a live, collision-free DB. The new index must exist and be
+    /// flagged UNIQUE in `sqlite_master`. Re-running migrate_to_current is
+    /// a no-op (the CREATE is `IF NOT EXISTS`).
+    #[test]
+    fn m24_to_25_creates_partial_unique_on_clean_db() {
+        let db = Db::open_in_memory().unwrap();
+        // Fresh DB is already at CURRENT_SCHEMA_VERSION; the index exists.
+        let n: i64 = db
+            .conn()
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type='index' AND name='entries_field_occurtime'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1, "fresh DB must carry the field/occur_time index");
+
+        // Re-running is a no-op.
+        let again = migrate_to_current(db.conn()).unwrap();
+        assert!(again.is_empty());
+    }
+
+    /// da-ga8b: v24→v25 fails cleanly when live rows already collide on
+    /// `(field, occur_time)`. The error message lists each offending
+    /// group with field, occur_time, and the hids.
+    #[test]
+    fn m24_to_25_aborts_with_diagnostic_on_dirty_db() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        // Minimal v24-shape entries table: only the columns the pre-check
+        // and CREATE INDEX care about. We bypass the schema's full DDL
+        // (and the slug UNIQUE constraint) to plant the dirty rows.
+        conn.execute_batch(
+            "CREATE TABLE entries (
+                hid          TEXT PRIMARY KEY,
+                slug         TEXT NOT NULL,
+                field        TEXT NOT NULL,
+                occur_time   TEXT,
+                deleted_at   TEXT
+             );",
+        )
+        .unwrap();
+        // Two distinct hids/slugs sharing the same (field, occur_time).
+        conn.execute(
+            "INSERT INTO entries (hid, slug, field, occur_time, deleted_at) VALUES \
+             ('hidA000000001', 'project:2026-05-13T09:00Z', 'project', '2026-05-13T09:00:00Z', NULL), \
+             ('hidB000000002', 'custom-id-B',               'project', '2026-05-13T09:00:00Z', NULL)",
+            [],
+        )
+        .unwrap();
+        set_schema_version(&conn, 24).unwrap();
+
+        let err = migrate_to_current(&conn).unwrap_err();
+        let msg = format!("{err}");
+        assert!(
+            msg.contains("v24→v25"),
+            "diagnostic must name the failing step: {msg}"
+        );
+        assert!(
+            msg.contains("project") && msg.contains("2026-05-13T09:00:00Z"),
+            "diagnostic must include field + occur_time: {msg}"
+        );
+        assert!(
+            msg.contains("hidA000000001") && msg.contains("hidB000000002"),
+            "diagnostic must list the offending hids: {msg}"
+        );
+
+        // Tx rolled back: schema_version still at 24 and the index is absent.
+        assert_eq!(read_schema_version(&conn).unwrap(), Some(24));
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master \
+                 WHERE type='index' AND name='entries_field_occurtime'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 0, "failed migration must not leave the index behind");
+    }
+
+    /// da-ga8b: the pre-check filters tombstoned rows, so soft-delete +
+    /// re-insert at the same (field, occur_time) does not block the
+    /// migration.
+    #[test]
+    fn m24_to_25_ignores_tombstones() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        ensure_meta_table(&conn).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE entries (
+                hid          TEXT PRIMARY KEY,
+                slug         TEXT NOT NULL,
+                field        TEXT NOT NULL,
+                occur_time   TEXT,
+                deleted_at   TEXT
+             );",
+        )
+        .unwrap();
+        // Live row + tombstoned row at the same (field, occur_time) is fine.
+        conn.execute(
+            "INSERT INTO entries (hid, slug, field, occur_time, deleted_at) VALUES \
+             ('hidA000000001', 'a', 'mood', '2026-05-13T09:00:00Z', NULL), \
+             ('hidB000000002', 'b', 'mood', '2026-05-13T09:00:00Z', '2026-05-13T10:00:00Z')",
+            [],
+        )
+        .unwrap();
+        set_schema_version(&conn, 24).unwrap();
+
+        let applied = migrate_to_current(&conn).unwrap();
+        assert!(applied.iter().any(|s| s.contains("v24→v25")));
+        assert_eq!(
+            read_schema_version(&conn).unwrap(),
+            Some(CURRENT_SCHEMA_VERSION)
+        );
     }
 
     /// da-9u9.1: `infer_legacy_version` returns the correct resume point

@@ -1,4 +1,4 @@
--- datum SQLite schema (v20 — time-shape pivot, da-5ns).
+-- datum SQLite schema (v25 — partial UNIQUE on (field, occur_time), da-ga8b).
 --
 -- Time-shape pivot 2026-05-01: the entries table reverts from the
 -- start_time/end_time/entry_shape/intent shape to the original datum
@@ -104,6 +104,17 @@ CREATE TABLE IF NOT EXISTS entries (
 -- Unique slug — the human-facing id. Prevents accidental slug collisions on
 -- write and makes slug→hid lookups single-hop.
 CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);
+
+-- da-ga8b: partial UNIQUE on (field, occur_time). Slug uniqueness catches
+-- the default case where occur_time appears in the slug template, but
+-- custom ids (`-K`, `--id`, or `spec.id_template`) can produce distinct
+-- slugs that still share the same (field, occur_time) — semantically two
+-- state-changes for the same field at the same exact instant, which is
+-- undefined. The partial filter excludes tombstones so the soft-delete +
+-- re-insert pattern still works.
+CREATE UNIQUE INDEX IF NOT EXISTS entries_field_occurtime
+    ON entries (field, occur_time)
+    WHERE occur_time IS NOT NULL AND deleted_at IS NULL;
 
 -- Field-scoped tail queries: most reads are "last N entries for field F" so
 -- a composite (field, occur_time DESC) index lets them avoid a sort.
