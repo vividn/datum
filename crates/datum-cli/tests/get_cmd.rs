@@ -120,10 +120,10 @@ fn get_standard_show_emits_exists_marker() {
     let _ = std::fs::remove_file(&db);
 }
 
-/// da-d5b: `dm get -A <id>` dumps full entry metadata as JSON below the
-/// standard EXISTS header. Asserts both the header and the metadata
-/// fields the bead enumerates (raw_input, parser_version, content_hash,
-/// device_id, etc.) surface in the output.
+/// da-d5b / da-l41v: `dm get -A <id>` renders the grouped engineering
+/// view — every schema column visible under a section heading that
+/// mirrors `schema.sql`. Asserts both the EXISTS header and a sample of
+/// columns/groups surface.
 #[test]
 fn get_show_all_dumps_full_metadata() {
     let db = tmp_db_path();
@@ -137,20 +137,27 @@ fn get_show_all_dumps_full_metadata() {
         stdout.contains("EXISTS"),
         "expected EXISTS marker in -A output, got: {stdout:?}",
     );
-    // Full metadata dump as pretty JSON — every Entry field reachable.
-    for key in [
-        "\"hid\"",
-        "\"slug\"",
-        "\"content_hash\"",
-        "\"raw_input\"",
-        "\"parser_version\"",
-        "\"create_time\"",
-        "\"modify_time\"",
-        "\"device_id\"",
+    // da-l41v: schema-grouped output — every column appears as a row
+    // under its section heading, no JSON-quoted keys.
+    for heading in ["Identity", "What", "When", "Where", "Bookkeeping", "Intent"] {
+        assert!(
+            stdout.contains(heading),
+            "expected section heading {heading} in -A output, got: {stdout:?}",
+        );
+    }
+    for col in [
+        "hid",
+        "slug",
+        "content_hash",
+        "raw_input",
+        "parser_version",
+        "create_time",
+        "modify_time",
+        "device_id",
     ] {
         assert!(
-            stdout.contains(key),
-            "expected {key} in -A output, got: {stdout:?}",
+            stdout.contains(col),
+            "expected schema column {col} in -A output, got: {stdout:?}",
         );
     }
 
@@ -171,9 +178,11 @@ fn get_show_all_long_form_works() {
         stdout.contains("EXISTS"),
         "expected EXISTS marker, got: {stdout:?}",
     );
+    // da-l41v: grouped view — assert one heading + one column rather
+    // than the old JSON-quoted dump shape.
     assert!(
-        stdout.contains("\"raw_input\""),
-        "expected JSON metadata dump, got: {stdout:?}",
+        stdout.contains("Identity") && stdout.contains("raw_input"),
+        "expected grouped -A view (Identity heading + raw_input column), got: {stdout:?}",
     );
 
     let _ = std::fs::remove_file(&db);

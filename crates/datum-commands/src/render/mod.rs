@@ -14,6 +14,7 @@ pub mod action;
 pub(crate) mod blocks;
 pub mod characters;
 pub mod colors;
+pub mod show_all;
 
 pub use self::action::{
     format_info_line, format_info_line_at, format_relative_day_prefix, format_state_group,
@@ -358,9 +359,10 @@ pub fn show_action_with_context(
         }
     }
     if args.show == Show::All {
-        if let Ok(j) = serde_json::to_string_pretty(entry) {
-            println!("{j}");
-        }
+        // da-l41v: schema-grouped engineering view — one section per
+        // schema.sql comment divider, every column visible (NULL when
+        // unset) so the output doubles as a column-by-column reference.
+        println!("{}", self::show_all::format_show_all(entry));
     }
 
     if let Some(fmt) = &args.format_string {
