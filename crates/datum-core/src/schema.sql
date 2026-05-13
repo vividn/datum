@@ -134,6 +134,19 @@ CREATE INDEX IF NOT EXISTS entries_occur_time
     ON entries (occur_time, slug)
     WHERE deleted_at IS NULL;
 
+-- Drift-detection partial indexes (da-b423). Back `dm check slugs` scans
+-- that need to walk just the rows with a non-NULL template. Selectivity
+-- is asymmetric: almost every row carries `id_structure` (default
+-- `%occur_time%` / `%create_time%` template), while `field_structure` is
+-- set only when the user writes a templated field like
+-- `word__%srcLang%`. Splitting into two partial indexes lets the planner
+-- pick the tiny one for `field_structure` scans without paying the cost
+-- of the near-full-table version.
+CREATE INDEX IF NOT EXISTS entries_id_structure
+    ON entries (hid) WHERE id_structure IS NOT NULL;
+CREATE INDEX IF NOT EXISTS entries_field_structure
+    ON entries (hid) WHERE field_structure IS NOT NULL;
+
 -- Field specs: single source of truth for a field's schema, tracking state,
 -- colors, allowed states, id template, and derived aliases. Stored as a JSON
 -- blob so the shape can evolve without migrations. `kit_id` is NULL for

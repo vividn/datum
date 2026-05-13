@@ -139,6 +139,7 @@ fn every_pair_has_a_roundtrip_test() {
         (20, 21),
         (21, 22),
         (22, 23),
+        (23, 24),
     ];
     assert_eq!(
         covered.len(),
@@ -878,6 +879,96 @@ fn roundtrip_v22_to_v23_unit_drop_dur_precision_add() {
         unit_after.is_none(),
         "unit re-added with NULL after rebuild"
     );
+}
+
+/// da-b423: v23→v24 adds two partial indexes on `entries` to back
+/// `dm check slugs` drift detection — one keyed by `id_structure IS NOT
+/// NULL` (near-full), one by `field_structure IS NOT NULL` (sparse).
+/// Index-only change; no data is touched. Down drops both indexes.
+#[test]
+fn roundtrip_v23_to_v24_id_field_structure_indexes() {
+    let db = fresh_at(23);
+    let conn = db.conn();
+
+    // v=23: neither partial index exists yet.
+    assert!(!index_exists(conn, "entries_id_structure"));
+    assert!(!index_exists(conn, "entries_field_structure"));
+
+    // Seed two rows: one with id_structure set, one with both
+    // id_structure and field_structure set, so the EXPLAIN below has
+    // matching rows to consider against the partial index.
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id, id_structure)
+         VALUES
+            ('hids', 'f:ids', 'cids', 'f', 'point',
+             '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z',
+             '2026-05-01T00:00:00Z', 'd', '%occur_time%')",
+        [],
+    )
+    .unwrap();
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, occur_time,
+             create_time, modify_time, device_id,
+             id_structure, field_structure)
+         VALUES
+            ('hfs', 'f:fs', 'cfs', 'word__pt', 'point',
+             '2026-05-01T00:00:01Z', '2026-05-01T00:00:01Z',
+             '2026-05-01T00:00:01Z', 'd',
+             '%occur_time%', 'word__%srcLang%')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 23);
+
+    // Up: both partial indexes exist; rows survive untouched.
+    assert!(index_exists(conn, "entries_id_structure"));
+    assert!(index_exists(conn, "entries_field_structure"));
+    let row_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(row_count, 2);
+
+    // Planner picks the partial index for the matching scan. The exact
+    // EXPLAIN text varies between SQLite builds, so just assert the
+    // index name appears in the plan.
+    let plan_field: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN
+                SELECT hid FROM entries WHERE field_structure IS NOT NULL",
+            [],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan_field.contains("entries_field_structure"),
+        "expected partial index entries_field_structure in plan, got: {plan_field}"
+    );
+    let plan_id: String = conn
+        .query_row(
+            "EXPLAIN QUERY PLAN
+                SELECT hid FROM entries WHERE id_structure IS NOT NULL",
+            [],
+            |r| r.get(3),
+        )
+        .unwrap();
+    assert!(
+        plan_id.contains("entries_id_structure"),
+        "expected partial index entries_id_structure in plan, got: {plan_id}"
+    );
+
+    apply_one_down(conn, 24);
+
+    // Down: indexes are gone; rows still present.
+    assert!(!index_exists(conn, "entries_id_structure"));
+    assert!(!index_exists(conn, "entries_field_structure"));
+    let row_count: i64 = conn
+        .query_row("SELECT COUNT(*) FROM entries", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(row_count, 2);
 }
 
 #[test]

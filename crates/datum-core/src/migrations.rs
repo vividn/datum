@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 23;
+pub const CURRENT_SCHEMA_VERSION: u32 = 24;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -195,6 +195,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: drop vestigial `unit` column (da-qnn9); add nullable `dur_precision` column (da-df27) — ISO-8601 duration string capturing the granularity at which `dur` is meaningful",
         apply: m22_to_23_unit_drop_dur_precision_add,
         down: down_23_to_22_unit_drop_dur_precision_add,
+    },
+    Migration {
+        from: 23,
+        to: 24,
+        summary: "entries: partial indexes on id_structure / field_structure (NOT NULL) — drift-detection support for `dm check slugs` (da-b423)",
+        apply: m23_to_24_id_field_structure_indexes,
+        down: down_24_to_23_id_field_structure_indexes,
     },
 ];
 
@@ -438,6 +445,41 @@ fn down_23_to_22_unit_drop_dur_precision_add(conn: &Connection) -> Result<()> {
     rebuild_entries_v23(
         conn, /* with_unit = */ true, /* with_dur_precision = */ false,
     )
+}
+
+/// da-b423: add two partial indexes to `entries` to back drift-detection
+/// scans by `dm check slugs`:
+///
+/// - `entries_id_structure`    — `(hid) WHERE id_structure IS NOT NULL`
+/// - `entries_field_structure` — `(hid) WHERE field_structure IS NOT NULL`
+///
+/// Selectivity is asymmetric: almost every row carries `id_structure`
+/// (default `%occur_time%` / `%create_time%` template), while
+/// `field_structure` is set only when the user writes a templated field
+/// like `word__%srcLang%`. Two separate partial indexes let the planner
+/// pick a tiny one for `field_structure` scans without paying for the
+/// full-table version.
+///
+/// Additive + idempotent — `CREATE INDEX IF NOT EXISTS` lets a
+/// half-applied or already-applied DB run safely.
+fn m23_to_24_id_field_structure_indexes(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS entries_id_structure \
+            ON entries (hid) WHERE id_structure IS NOT NULL;
+         CREATE INDEX IF NOT EXISTS entries_field_structure \
+            ON entries (hid) WHERE field_structure IS NOT NULL;",
+    )?;
+    Ok(())
+}
+
+/// Reverse of [`m23_to_24_id_field_structure_indexes`]. Index-only
+/// changes; no data is touched.
+fn down_24_to_23_id_field_structure_indexes(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS entries_id_structure;
+         DROP INDEX IF EXISTS entries_field_structure;",
+    )?;
+    Ok(())
 }
 
 /// Rebuild `entries` to a specific (unit, dur_precision) shape,
