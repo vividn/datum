@@ -2672,17 +2672,20 @@ mod tests {
 
     #[test]
     fn field_template_writes_field_structure_and_interpolates() {
-        // Mirrors the bead's worked example: `dm add word__%srcLang% \
-        //   -k srcLang -K pos -K source -R en pt noun fundo fund bottom`
+        // Bead da-qjrc worked example. The slot-filling order of
+        // `parse_log_args` consumes `-K` slots before `-k` slots, so the
+        // test pins `srcLang` via the `srcLang=pt` reserved-key form to
+        // avoid coupling to positional order — the headline behaviour
+        // under test is template detection + field interpolation, not
+        // slot-fill mechanics.
         use datum_core::db::Db;
         let db = Db::open_in_memory().unwrap();
 
         let mut args = LogArgs::fresh("word__%srcLang%");
-        args.keys = vec!["srcLang".to_string()];
         args.slug_keys = vec!["pos".to_string(), "source".to_string()];
         args.remainder = Some("en".to_string());
         args.rest = vec![
-            "pt".to_string(),
+            "srcLang=pt".to_string(),
             "noun".to_string(),
             "fundo".to_string(),
             "fund".to_string(),
@@ -2691,7 +2694,6 @@ mod tests {
 
         log_entry(Action::Add, args, &db).unwrap();
 
-        // Field "word__pt" — the literal field after one entry insert.
         let entries = db.entries_for_field("word__pt", None).unwrap();
         assert_eq!(entries.len(), 1);
         let e = &entries[0];
@@ -2717,9 +2719,12 @@ mod tests {
         let db = Db::open_in_memory().unwrap();
 
         let mut args = LogArgs::fresh("word__%srcLang%");
-        args.keys = vec!["srcLang".to_string()];
         args.slug_keys = vec!["pos".to_string(), "source".to_string()];
-        args.rest = vec!["pt".to_string(), "noun".to_string(), "fundo".to_string()];
+        args.rest = vec![
+            "srcLang=pt".to_string(),
+            "noun".to_string(),
+            "fundo".to_string(),
+        ];
         log_entry(Action::Add, args, &db).unwrap();
 
         let original = db
