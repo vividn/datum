@@ -16,7 +16,7 @@ use crate::error::{DatumError, Result};
 /// lifts the previous version to the new one. The invariant is that a DB
 /// at any version in `[1, CURRENT_SCHEMA_VERSION]` can be migrated to the
 /// current shape by walking [`MIGRATIONS`] in order.
-pub const CURRENT_SCHEMA_VERSION: u32 = 22;
+pub const CURRENT_SCHEMA_VERSION: u32 = 23;
 
 /// A single forward migration between two adjacent schema versions.
 ///
@@ -188,6 +188,13 @@ pub const MIGRATIONS: &[Migration] = &[
         summary: "entries: rewrite legacy verb strings ('occur'/'add'→'point'; 'start'/'stop'→'switch' with state canonicalization). field_specs: legacy default_verb names already match Action's serde so no JSON rewrite needed (da-8y2q.2)",
         apply: m21_to_22_verb_canonicalize,
         down: down_22_to_21_verb_canonicalize,
+    },
+    Migration {
+        from: 22,
+        to: 23,
+        summary: "entries: drop vestigial `unit` column (da-qnn9); add nullable `dur_precision` column (da-df27) — ISO-8601 duration string capturing the granularity at which `dur` is meaningful",
+        apply: m22_to_23_unit_drop_dur_precision_add,
+        down: down_23_to_22_unit_drop_dur_precision_add,
     },
 ];
 
@@ -395,6 +402,184 @@ fn down_22_to_21_verb_canonicalize(conn: &Connection) -> Result<()> {
          UPDATE entries SET verb = 'occur'
             WHERE verb = 'point';",
     )?;
+    Ok(())
+}
+
+/// da-qnn9 + da-df27: drop the vestigial `unit` column and add the new
+/// nullable `dur_precision` column to `entries`. Bundled into one
+/// migration because both are schema column changes on the same table
+/// and the project's pre-v1 hard-cut policy permits a single step.
+///
+/// SQLite's `ALTER TABLE … DROP COLUMN` re-parses the stored CREATE
+/// statement and trips on the inline `--` comments embedded in
+/// schema.sql, so the migration uses the standard 12-step rebuild
+/// pattern (create new table without `unit` and with `dur_precision`,
+/// copy stored columns over, drop old, rename). Rows are preserved.
+///
+/// Idempotent: if the table already lacks `unit` and already has
+/// `dur_precision`, the migration is a no-op.
+fn m22_to_23_unit_drop_dur_precision_add(conn: &Connection) -> Result<()> {
+    let has_unit = has_column(conn, "entries", "unit")?;
+    let has_dur_precision = has_column(conn, "entries", "dur_precision")?;
+    if !has_unit && has_dur_precision {
+        return Ok(());
+    }
+    rebuild_entries_v23(
+        conn, /* with_unit = */ false, /* with_dur_precision = */ true,
+    )
+}
+
+/// Reverse v22→v23: re-add the `unit` column and drop `dur_precision`
+/// via table rebuild. Surviving rows have `unit = NULL` — the forward
+/// step does not preserve the dropped column's data because the column
+/// is vestigial. Pre-v1 hard-cut; this down step exists for the
+/// chain-test harness.
+fn down_23_to_22_unit_drop_dur_precision_add(conn: &Connection) -> Result<()> {
+    rebuild_entries_v23(
+        conn, /* with_unit = */ true, /* with_dur_precision = */ false,
+    )
+}
+
+/// Rebuild `entries` to a specific (unit, dur_precision) shape,
+/// preserving all stored rows. Used by m22_to_23 (forward + down).
+/// Indexes and the `following_state`/`dur` CHECK are recreated.
+fn rebuild_entries_v23(conn: &Connection, with_unit: bool, with_dur_precision: bool) -> Result<()> {
+    let mut cols: Vec<&str> = vec![
+        "hid TEXT NOT NULL PRIMARY KEY",
+        "slug TEXT NOT NULL",
+        "content_hash TEXT NOT NULL",
+        "field TEXT NOT NULL",
+        "state TEXT",
+        "dur TEXT",
+        "following_state TEXT",
+        "verb TEXT NOT NULL DEFAULT 'point'",
+        "data TEXT",
+    ];
+    if with_unit {
+        cols.push("unit TEXT");
+    }
+    cols.push("occur_time TEXT NOT NULL");
+    cols.push("occur_time_offset INTEGER");
+    cols.push("occur_time_tz TEXT");
+    cols.push("occur_time_precision TEXT");
+    if with_dur_precision {
+        cols.push("dur_precision TEXT");
+    }
+    cols.push("lat REAL");
+    cols.push("lon REAL");
+    cols.push("location TEXT");
+    cols.push("create_time TEXT NOT NULL");
+    cols.push("modify_time TEXT NOT NULL");
+    cols.push("device_id TEXT NOT NULL");
+    cols.push("deleted_at TEXT");
+    cols.push("id_structure TEXT");
+    cols.push("field_structure TEXT");
+    cols.push("raw_input TEXT NOT NULL DEFAULT ''");
+    cols.push("alias_chain TEXT");
+    cols.push("parser_version INTEGER NOT NULL DEFAULT 1");
+    cols.push("user_asserted_last_state TEXT");
+    cols.push("extra_metadata TEXT");
+    cols.push("CHECK (following_state IS NULL OR dur IS NOT NULL)");
+
+    let create = format!("CREATE TABLE entries__new ({});", cols.join(", "));
+
+    // Stored columns common to both shapes — drive the column list of
+    // both the INSERT target and the SELECT source.
+    let mut common: Vec<&str> = vec![
+        "hid",
+        "slug",
+        "content_hash",
+        "field",
+        "state",
+        "dur",
+        "following_state",
+        "verb",
+        "data",
+    ];
+    let pre_has_unit = has_column(conn, "entries", "unit")?;
+    let pre_has_dur_precision = has_column(conn, "entries", "dur_precision")?;
+    let copy_unit = with_unit && pre_has_unit;
+    let copy_dur_precision = with_dur_precision && pre_has_dur_precision;
+    if copy_unit {
+        common.push("unit");
+    }
+    common.push("occur_time");
+    common.push("occur_time_offset");
+    common.push("occur_time_tz");
+    common.push("occur_time_precision");
+    if copy_dur_precision {
+        common.push("dur_precision");
+    }
+    common.extend([
+        "lat",
+        "lon",
+        "location",
+        "create_time",
+        "modify_time",
+        "device_id",
+        "deleted_at",
+        "id_structure",
+        "field_structure",
+        "raw_input",
+        "alias_chain",
+        "parser_version",
+        "user_asserted_last_state",
+        "extra_metadata",
+    ]);
+
+    // Target column list mirrors the source order. When the target carries
+    // a column the source lacks (e.g. forward step that adds dur_precision
+    // to an old v=22 row), we fill it with NULL via a SELECT literal so the
+    // positional INSERT lines up.
+    let mut target_cols = common.clone();
+    let mut select_exprs: Vec<String> = common.iter().map(|c| (*c).to_string()).collect();
+    if with_unit && !copy_unit {
+        target_cols.push("unit");
+        select_exprs.push("NULL".to_string());
+    }
+    if with_dur_precision && !copy_dur_precision {
+        target_cols.push("dur_precision");
+        select_exprs.push("NULL".to_string());
+    }
+
+    let copy = format!(
+        "INSERT INTO entries__new ({}) SELECT {} FROM entries;",
+        target_cols.join(", "),
+        select_exprs.join(", "),
+    );
+
+    let mut sql = String::new();
+    sql.push_str("DROP INDEX IF EXISTS entries_slug;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_field_occur;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_live_field_occur;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_content_hash;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_verb;\n");
+    sql.push_str("DROP INDEX IF EXISTS entries_occur_time;\n");
+    sql.push_str(&create);
+    sql.push_str(&copy);
+    sql.push_str("DROP TABLE entries;\n");
+    sql.push_str("ALTER TABLE entries__new RENAME TO entries;\n");
+    sql.push_str("CREATE UNIQUE INDEX IF NOT EXISTS entries_slug ON entries (slug);\n");
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_field_occur \
+            ON entries (field, occur_time DESC);\n",
+    );
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_live_field_occur \
+            ON entries (field, occur_time) \
+            WHERE deleted_at IS NULL;\n",
+    );
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_content_hash \
+            ON entries (content_hash);\n",
+    );
+    sql.push_str("CREATE INDEX IF NOT EXISTS entries_verb ON entries (verb);\n");
+    sql.push_str(
+        "CREATE INDEX IF NOT EXISTS entries_occur_time \
+            ON entries (occur_time, slug) \
+            WHERE deleted_at IS NULL;\n",
+    );
+    conn.execute_batch(&sql)?;
     Ok(())
 }
 
@@ -1714,6 +1899,16 @@ pub fn infer_legacy_version(conn: &Connection) -> Result<u32> {
     // presence pins the DB at v=20.
     if has_column(conn, "aliases", "derived_from_field")? {
         return Ok(20);
+    }
+    // m22_to_23: entries.unit was dropped (and entries.dur_precision
+    // added) at v=23. A legacy v=22 DB still carries `unit` post-
+    // schema.sql because `CREATE TABLE IF NOT EXISTS` no-ops on the
+    // existing v=22 entries shape; its presence pins the DB at v=22 so
+    // the runner walks the rebuild forward. Pre-v22 verb canonicalization
+    // (m21→m22) is an in-place UPDATE with no structural footprint, so
+    // we do not probe for it here.
+    if has_column(conn, "entries", "unit")? {
+        return Ok(22);
     }
     // All column-add features present → DB is already at current shape.
     // Idempotent re-runs are CREATE/INDEX-IF-NOT-EXISTS and will no-op.

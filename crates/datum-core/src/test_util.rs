@@ -472,7 +472,6 @@ mod tests {
         let db = fresh_db();
         let built = entry_builder("coffee")
             .value(serde_json::json!(2))
-            .unit("cups")
             .insert(&db);
 
         let fetched = db.get_entry(&built.slug).unwrap();
@@ -482,7 +481,6 @@ mod tests {
             field: "coffee",
             verb: "switch",
             state: 2,
-            unit: "cups",
             device_id: "test-device",
         );
         crate::assert_count!(db, "coffee", 1);

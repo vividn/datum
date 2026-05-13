@@ -43,7 +43,6 @@ CREATE TABLE IF NOT EXISTS entries (
     -- detects drift between stored and re-derived values.
     verb            TEXT NOT NULL DEFAULT 'point',
     data            TEXT,                        -- JSON (nested, may use {v,u} unit annotations)
-    unit            TEXT,                        -- top-level unit for value
 
     -- When
     occur_time           TEXT NOT NULL,          -- ISO 8601 UTC, required
@@ -53,6 +52,10 @@ CREATE TABLE IF NOT EXISTS entries (
     -- "P1D", "P1W"). Replaces the v3-era (precision INTEGER seconds,
     -- precision_unit TEXT) pair.
     occur_time_precision TEXT,
+    -- ISO 8601 duration string capturing the granularity at which
+    -- `dur` is meaningful (e.g. "PT1M" for minute-resolution). NULL =
+    -- unspecified; the renderer falls back to the full `dur` value.
+    dur_precision        TEXT,
 
     -- Where
     lat             REAL,

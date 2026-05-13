@@ -138,6 +138,7 @@ fn every_pair_has_a_roundtrip_test() {
         (19, 20),
         (20, 21),
         (21, 22),
+        (22, 23),
     ];
     assert_eq!(
         covered.len(),
@@ -807,6 +808,76 @@ fn roundtrip_v21_to_v22_verb_canonicalize() {
         "non-bool state stays as switch (no legacy verb to map back to)",
     );
     assert_eq!(read("hpoint"), ("occur".to_string(), None));
+}
+
+/// da-qnn9 + da-df27: v22→v23 drops the vestigial `entries.unit` column
+/// and adds the nullable `entries.dur_precision` column via a table
+/// rebuild. Pre-v1 hard-cut: the dropped column's data does not survive,
+/// and the reverse fills `unit` with NULL.
+#[test]
+fn roundtrip_v22_to_v23_unit_drop_dur_precision_add() {
+    let db = fresh_at(22);
+    let conn = db.conn();
+
+    // v=22 entries shape: unit column present, dur_precision absent.
+    assert!(column_exists(conn, "entries", "unit"));
+    assert!(!column_exists(conn, "entries", "dur_precision"));
+
+    // Seed a v=22 row carrying a `unit` value, to confirm rows survive
+    // the rebuild even though the unit data itself is dropped.
+    conn.execute(
+        "INSERT INTO entries
+            (hid, slug, content_hash, field, verb, state, unit, occur_time,
+             create_time, modify_time, device_id)
+         VALUES
+            ('hu', 'f:u', 'cu', 'f', 'point', NULL, 'cups',
+             '2026-05-01T00:00:00Z', '2026-05-01T00:00:00Z',
+             '2026-05-01T00:00:00Z', 'd')",
+        [],
+    )
+    .unwrap();
+
+    apply_one_up(conn, 22);
+
+    // Up: `unit` is gone, `dur_precision` is present (and NULL on
+    // surviving rows). The seeded row's hid persists.
+    assert!(!column_exists(conn, "entries", "unit"));
+    assert!(column_exists(conn, "entries", "dur_precision"));
+    let dp: Option<String> = conn
+        .query_row(
+            "SELECT dur_precision FROM entries WHERE hid = 'hu'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert!(
+        dp.is_none(),
+        "dur_precision defaults to NULL on legacy rows"
+    );
+
+    // Indexes were recreated by the rebuild.
+    assert!(index_exists(conn, "entries_slug"));
+    assert!(index_exists(conn, "entries_field_occur"));
+    assert!(index_exists(conn, "entries_live_field_occur"));
+    assert!(index_exists(conn, "entries_content_hash"));
+    assert!(index_exists(conn, "entries_verb"));
+    assert!(index_exists(conn, "entries_occur_time"));
+
+    apply_one_down(conn, 23);
+
+    // Down: `unit` is back (NULL — pre-v1 hard-cut, the original value
+    // is not preserved), `dur_precision` is gone, the row still exists.
+    assert!(column_exists(conn, "entries", "unit"));
+    assert!(!column_exists(conn, "entries", "dur_precision"));
+    let unit_after: Option<String> = conn
+        .query_row("SELECT unit FROM entries WHERE hid = 'hu'", [], |r| {
+            r.get(0)
+        })
+        .unwrap();
+    assert!(
+        unit_after.is_none(),
+        "unit re-added with NULL after rebuild"
+    );
 }
 
 #[test]

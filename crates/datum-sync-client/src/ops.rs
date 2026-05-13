@@ -143,7 +143,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
     tx.execute(
         r#"INSERT INTO entries (
             hid, slug, content_hash, field,
-            verb, state, dur, following_state, data, unit,
+            verb, state, dur, following_state, data,
             occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
             lat, lon, location,
             create_time, modify_time, device_id,
@@ -152,13 +152,13 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             extra_metadata
         ) VALUES (
             ?1, ?2, ?3, ?4,
-            ?5, ?6, ?7, ?8, ?9, ?10,
-            ?11, ?12, ?13, ?14,
-            ?15, ?16, ?17,
-            ?18, ?19, ?20,
-            ?21, ?22, ?23,
-            ?24, ?25, ?26,
-            ?27
+            ?5, ?6, ?7, ?8, ?9,
+            ?10, ?11, ?12, ?13,
+            ?14, ?15, ?16,
+            ?17, ?18, ?19,
+            ?20, ?21, ?22,
+            ?23, ?24, ?25,
+            ?26
         )
         ON CONFLICT(slug) DO UPDATE SET
             hid             = excluded.hid,
@@ -169,7 +169,6 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             dur             = excluded.dur,
             following_state = excluded.following_state,
             data            = excluded.data,
-            unit            = excluded.unit,
             occur_time      = excluded.occur_time,
             occur_time_offset = excluded.occur_time_offset,
             occur_time_tz   = excluded.occur_time_tz,
@@ -200,7 +199,6 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
                 .map(datum_core::dur::Dur::to_storage_string),
             entry.following_state.as_ref().map(|v| v.to_string()),
             entry.data.as_ref().map(|v| v.to_string()),
-            entry.unit,
             occur_str,
             occur_offset,
             occur_tz,
