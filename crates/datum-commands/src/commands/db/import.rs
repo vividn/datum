@@ -24,6 +24,7 @@ use crate::{
 pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     let backup_path = args.resolved_path()?.to_string();
     let dry_run = args.dry_run;
+    let skip_log_path = args.skip_log.clone();
 
     let content = std::fs::read_to_string(&backup_path)
         .with_context(|| format!("Reading backup file: {}", backup_path))?;
@@ -35,11 +36,17 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         .context("Backup JSON missing 'docs' array")?;
 
     let device = device_id()?;
-    let mut skipped = 0usize;
     let mut points = 0usize;
     let mut blocks = 0usize;
     let mut dur_parse_warnings = 0usize;
     let mut entries: Vec<Entry> = Vec::with_capacity(docs.len());
+    // Parallel to `entries`: the source `_id` for each entry, so we can
+    // attribute `Ignored` (dedup) outcomes back to their original IDs.
+    let mut entry_doc_ids: Vec<String> = Vec::with_capacity(docs.len());
+    // (reason, id, detail) — id is the source `_id` (or a synthetic
+    // <missing-_id at #N> if absent). detail is an optional explanation
+    // (the derive_verb error message for `invalid-shape`).
+    let mut skipped_records: Vec<(SkipReason, String, Option<String>)> = Vec::new();
     // Stable provenance timestamp pulled from the backup file itself, not
     // the wall clock at import time. Two imports of the same backup file
     // produce the same _import marker → identical content_hash → dedup.
@@ -47,14 +54,15 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     // idempotency (every re-import of that source uses "" too).
     let backup_time = backup["backupTime"].as_str().unwrap_or("").to_string();
 
-    for doc in docs {
+    for (doc_idx, doc) in docs.iter().enumerate() {
         let data = &doc["data"];
         let meta = &doc["meta"];
+        let doc_id = doc_id_or_synthetic(doc, doc_idx);
 
         let field = match data["field"].as_str() {
             Some(f) => f.to_string(),
             None => {
-                skipped += 1;
+                skipped_records.push((SkipReason::NoField, doc_id, None));
                 continue;
             }
         };
@@ -139,7 +147,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // the real verb from raw `(state_in, dur_in, None)`.
         if let Err(e) = derive_verb(state_in.clone(), dur_in.as_ref(), None) {
             eprintln!("warning: skipping {}: {}", field, e);
-            skipped += 1;
+            skipped_records.push((SkipReason::InvalidShape, doc_id, Some(e.to_string())));
             continue;
         }
         let state = state_in.clone();
@@ -248,6 +256,7 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
             println!("[dry-run] would import: {}", entry.slug);
         }
         entries.push(entry);
+        entry_doc_ids.push(doc_id);
     }
 
     let imported = if dry_run {
@@ -260,11 +269,15 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         // behavior; skipped rows also retract their point/block tally.
         let outcomes = db.insert_entries_bulk(&entries, ConflictStrategy::Ignore)?;
         let mut inserted = 0usize;
-        for (entry, outcome) in entries.iter().zip(outcomes.iter()) {
+        for ((entry, outcome), doc_id) in entries
+            .iter()
+            .zip(outcomes.iter())
+            .zip(entry_doc_ids.iter())
+        {
             match outcome {
                 InsertOutcome::Inserted { .. } => inserted += 1,
                 InsertOutcome::Ignored { .. } => {
-                    skipped += 1;
+                    skipped_records.push((SkipReason::Duplicate, doc_id.clone(), None));
                     match entry.entry_shape {
                         datum_core::entry::EntryShape::Block => {
                             blocks = blocks.saturating_sub(1);
@@ -278,13 +291,15 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         inserted
     };
 
+    let skipped = skipped_records.len();
+    let breakdown = skip_breakdown(&skipped_records);
     if dry_run {
         println!(
-            "[dry-run] Migration summary: {imported} would import ({points} point, {blocks} block), {skipped} skipped."
+            "[dry-run] Migration summary: {imported} would import ({points} point, {blocks} block), {skipped} skipped{breakdown}."
         );
     } else {
         println!(
-            "Migration complete: {imported} imported ({points} point, {blocks} block), {skipped} skipped."
+            "Migration complete: {imported} imported ({points} point, {blocks} block), {skipped} skipped{breakdown}."
         );
         if imported > 0 {
             // Bulk-load fast path skipped per-row conflict detection.
@@ -295,6 +310,85 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     }
     if dur_parse_warnings > 0 {
         println!("({dur_parse_warnings} dur values could not be parsed; literals preserved in extra_data.)");
+    }
+    if let Some(path) = skip_log_path.as_deref() {
+        write_skip_log(path, &backup_path, &skipped_records)
+            .with_context(|| format!("writing skip log: {path}"))?;
+        if skipped > 0 {
+            println!("(skipped IDs written to {path})");
+        }
+    } else if skipped > 0 {
+        println!("(pass --skip-log <path> to dump the full list of skipped IDs for triage.)");
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SkipReason {
+    /// Source doc had no `data.field` — can't be imported.
+    NoField,
+    /// `derive_verb` rejected the (state, dur) shape.
+    InvalidShape,
+    /// Already present in the target DB (content_hash dedup).
+    Duplicate,
+}
+
+impl SkipReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            SkipReason::NoField => "no-field",
+            SkipReason::InvalidShape => "invalid-shape",
+            SkipReason::Duplicate => "duplicate",
+        }
+    }
+}
+
+fn doc_id_or_synthetic(doc: &JsonValue, idx: usize) -> String {
+    doc["_id"]
+        .as_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| format!("<missing-_id at #{idx}>"))
+}
+
+fn skip_breakdown(records: &[(SkipReason, String, Option<String>)]) -> String {
+    if records.is_empty() {
+        return String::new();
+    }
+    let (mut nf, mut inv, mut dup) = (0usize, 0usize, 0usize);
+    for (r, _, _) in records {
+        match r {
+            SkipReason::NoField => nf += 1,
+            SkipReason::InvalidShape => inv += 1,
+            SkipReason::Duplicate => dup += 1,
+        }
+    }
+    let mut parts = Vec::new();
+    if dup > 0 {
+        parts.push(format!("{dup} duplicate"));
+    }
+    if inv > 0 {
+        parts.push(format!("{inv} invalid-shape"));
+    }
+    if nf > 0 {
+        parts.push(format!("{nf} no-field"));
+    }
+    format!(" ({})", parts.join(", "))
+}
+
+fn write_skip_log(
+    path: &str,
+    backup_path: &str,
+    records: &[(SkipReason, String, Option<String>)],
+) -> std::io::Result<()> {
+    use std::io::Write as _;
+    let mut f = std::fs::File::create(path)?;
+    writeln!(f, "# datum db import skip log")?;
+    writeln!(f, "# backup: {backup_path}")?;
+    writeln!(f, "# generated: {}", chrono::Utc::now().to_rfc3339())?;
+    writeln!(f, "# format: <reason>\\t<id>\\t<detail>")?;
+    for (reason, id, detail) in records {
+        let detail = detail.as_deref().unwrap_or("");
+        writeln!(f, "{}\t{}\t{}", reason.as_str(), id, detail)?;
     }
     Ok(())
 }

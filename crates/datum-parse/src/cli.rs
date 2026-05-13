@@ -251,6 +251,10 @@ pub struct DbImportArgs {
     pub backup_file: Option<String>,
     pub backup_file_positional: Option<String>,
     pub dry_run: bool,
+    /// `--skip-log <path>` — write the full list of skipped docs (with
+    /// reason and original id) to this file for triage. The summary always
+    /// reports a reason-grouped count; this flag persists the detail.
+    pub skip_log: Option<String>,
 }
 
 // ─── Logging commands (occur/start/stop/switch/add) ──────────────────────

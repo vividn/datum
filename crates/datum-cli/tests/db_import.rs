@@ -769,3 +769,110 @@ fn import_3day_fixture_columns_are_well_formed() {
             });
     }
 }
+
+// ─── 17. --skip-log writes triage-able list of skipped IDs (da-9oj2) ─
+
+#[test]
+fn skip_log_records_duplicates_and_no_field_docs() {
+    let db = fresh_db();
+    // Two docs: one valid, one missing `field` (must be skipped as
+    // `no-field` on first import).
+    let f = write_backup(serde_json::json!([
+        {
+            "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+            "data": {
+                "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"},
+                "field": "brushteeth"
+            },
+            "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+        },
+        {
+            "_id": "orphan:no-field-here",
+            "data": {
+                "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"}
+            },
+            "meta": {"humanId": "b", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+        }
+    ]));
+
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let log_path = log.path().to_str().unwrap().to_string();
+    // First import: 1 valid, 1 no-field skip.
+    run_cli(
+        &[
+            "db",
+            "import",
+            "--skip-log",
+            &log_path,
+            f.path().to_str().unwrap(),
+        ],
+        &db,
+    )
+    .unwrap();
+    let body = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        body.contains("no-field\torphan:no-field-here"),
+        "skip log must list no-field doc by _id; got:\n{body}",
+    );
+    assert!(
+        !body.contains("duplicate"),
+        "no duplicates on first import; got:\n{body}",
+    );
+
+    // Second import: original now dedups, no-field still skipped.
+    run_cli(
+        &[
+            "db",
+            "import",
+            "--skip-log",
+            &log_path,
+            f.path().to_str().unwrap(),
+        ],
+        &db,
+    )
+    .unwrap();
+    let body = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        body.contains("duplicate\tbrushteeth:2025-01-08T23:53:08.259Z"),
+        "re-import must record dedup skip by source _id; got:\n{body}",
+    );
+    assert!(
+        body.contains("no-field\torphan:no-field-here"),
+        "no-field skip must persist across re-import; got:\n{body}",
+    );
+}
+
+#[test]
+fn skip_log_includes_header_and_uses_synthetic_id_when_missing() {
+    let db = fresh_db();
+    // No `_id` and no `field` — both no-field skip AND synthetic-id path.
+    let f = write_backup(serde_json::json!([{
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 0, "tz": "UTC"}
+        },
+        "meta": {"humanId": "a", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 0, "tz": "UTC"}}
+    }]));
+
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let log_path = log.path().to_str().unwrap().to_string();
+    run_cli(
+        &[
+            "db",
+            "import",
+            "--skip-log",
+            &log_path,
+            f.path().to_str().unwrap(),
+        ],
+        &db,
+    )
+    .unwrap();
+    let body = std::fs::read_to_string(&log_path).unwrap();
+    assert!(
+        body.starts_with("# datum db import skip log"),
+        "got:\n{body}"
+    );
+    assert!(
+        body.contains("<missing-_id at #0>"),
+        "synthetic id used when source has no _id; got:\n{body}",
+    );
+}

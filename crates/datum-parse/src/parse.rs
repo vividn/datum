@@ -1443,6 +1443,15 @@ fn parse_db_import(tail: &[&str]) -> Result<DbImportArgs> {
                 out.dry_run = true;
                 i += 1;
             }
+            FlagSplit::Long("skip-log") => {
+                let (v, ni) = take_value(tail, i, None, "--skip-log")?;
+                out.skip_log = Some(v.to_string());
+                i = ni;
+            }
+            FlagSplit::LongAttached("skip-log", v) => {
+                out.skip_log = Some(v.to_string());
+                i += 1;
+            }
             f => return Err(unknown_flag(f)),
         }
     }
