@@ -2707,6 +2707,19 @@ mod tests {
         assert!(msg.contains("unknown checker"), "got: {msg}");
         assert!(msg.contains("verbs"), "hint must list known names: {msg}");
         assert!(msg.contains("aliases"), "hint must list known names: {msg}");
+        assert!(msg.contains("slugs"), "hint must list known names: {msg}");
+    }
+
+    #[test]
+    fn check_positional_slugs_only() {
+        let cli = parse_argv(&argv(&["check", "slugs", "--fix"])).unwrap();
+        match cli.command {
+            Command::Check(a) => {
+                assert_eq!(a.checkers, vec!["slugs".to_string()]);
+                assert!(a.fix);
+            }
+            _ => panic!(),
+        }
     }
 
     #[test]

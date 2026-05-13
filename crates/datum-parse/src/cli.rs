@@ -811,7 +811,7 @@ pub struct CheckArgs {
 /// Checker names accepted as `dm check <NAME>...` positionals. Kept in the
 /// parse crate so both the parser (typo validation) and the command
 /// dispatcher (which-categories-to-run) read from the same source.
-pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases"];
+pub const KNOWN_CHECKERS: &[&str] = &["verbs", "aliases", "slugs"];
 
 /// Render orientation for `datum dayview`, named by time-axis direction.
 /// Mirrors [`datum_layout::dayview::Orientation`] so callers don't need a

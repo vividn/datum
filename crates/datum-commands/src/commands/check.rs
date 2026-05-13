@@ -6,6 +6,8 @@
 use anyhow::Result;
 use datum_core::db::Db;
 use datum_core::derive_verb;
+use datum_core::field_spec::{self, InterpolationContext};
+use datum_core::ids::Slug;
 use datum_parse::alias::{shell_split, KNOWN_SUBCOMMANDS, MAX_ALIAS_HOPS};
 use datum_parse::cli::KNOWN_CHECKERS;
 use serde::Serialize;
@@ -38,6 +40,7 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
 
     let run_verbs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "verbs");
     let run_aliases = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "aliases");
+    let run_slugs = args.checkers.is_empty() || args.checkers.iter().any(|c| c == "slugs");
     let run_default_battery = args.checkers.is_empty();
 
     let mut issues: Vec<Issue> = Vec::new();
@@ -54,6 +57,14 @@ pub fn check(args: CheckArgs, db: &Db) -> Result<()> {
     if run_aliases {
         let alias_report = collect_alias_drift(db, args.fix)?;
         issues.extend(alias_report.issues);
+    }
+    if run_slugs {
+        let delim = crate::config::resolve_id_delimiter(None);
+        let slug_report = collect_slug_drift(db, &delim)?;
+        if args.fix {
+            apply_slug_fixes(db, &slug_report.fixes, &delim)?;
+        }
+        issues.extend(slug_report.issues);
     }
     let report = Report {
         issues,
@@ -253,6 +264,130 @@ fn collect_verb_drift(db: &Db) -> Result<VerbReport> {
 fn apply_verb_fixes(db: &Db, fixes: &[VerbFix]) -> Result<()> {
     for fix in fixes {
         db.set_entry_verb(&fix.slug, &fix.expected_verb)?;
+    }
+    Ok(())
+}
+
+/// One drifted row queued for `--fix` to rewrite. Carries the existing
+/// slug so the rekey path can find the row, and the recomputed slug so
+/// the fix is deterministic from the pre-fix scan.
+#[derive(Debug, Clone)]
+struct SlugFix {
+    existing: Slug,
+}
+
+#[derive(Debug, Default)]
+struct SlugReport {
+    issues: Vec<Issue>,
+    fixes: Vec<SlugFix>,
+}
+
+/// Walk every live entry and compare its stored `slug` to the slug
+/// recomputed from the row's templates:
+///
+/// * `field = interpolate(field_structure, ctx, delim)` if
+///   `field_structure` is set, else the stored `field`.
+/// * `body  = interpolate(id_structure, ctx, delim)` if `id_structure`
+///   is set, else `None` and the row is skipped (no template to
+///   recompute against).
+/// * `expected = "<field>:<body>"`.
+///
+/// A row drifts when `stored_slug != expected`. Drifted rows are
+/// accumulated into `fixes` so `--fix` can rekey them in a single pass.
+/// Tombstones are skipped — they are historical rows and re-deriving
+/// their slug would produce a meaningless rekey.
+fn collect_slug_drift(db: &Db, delim: &str) -> Result<SlugReport> {
+    let entries = db.all_entries()?;
+
+    let mut drift_count: usize = 0;
+    let mut drift_example: Option<IssueExample> = None;
+    let mut fixes: Vec<SlugFix> = Vec::new();
+
+    for e in &entries {
+        if e.deleted_at.is_some() {
+            continue;
+        }
+        // Skip rows that carry no structure at all — there is nothing to
+        // recompute the slug against.
+        if e.id_structure.is_none() && e.field_structure.is_none() {
+            continue;
+        }
+        let uid = e.short_uid();
+        let ctx = InterpolationContext::from_entry(e, &uid);
+
+        let expected_field = match &e.field_structure {
+            Some(tmpl) => field_spec::interpolate(tmpl, &ctx, delim),
+            None => e.field.clone(),
+        };
+        let Some(id_tmpl) = e.id_structure.as_ref() else {
+            // field_structure-only rows can still drift on the field
+            // half; build the slug body from the existing stored body
+            // (everything after the first `:`). If the stored slug has
+            // no `:` the row is malformed — skip it.
+            let Some((_, body)) = e.slug.as_str().split_once(':') else {
+                continue;
+            };
+            let expected = format!("{expected_field}:{body}");
+            let stored = e.slug.to_string();
+            if stored != expected {
+                drift_count += 1;
+                if drift_example.is_none() {
+                    drift_example = Some(IssueExample {
+                        id: Some(stored.clone()),
+                        field: Some(e.field.clone()),
+                        detail: Some(format!("stored={stored}  expected={expected}")),
+                    });
+                }
+                fixes.push(SlugFix {
+                    existing: e.slug.clone(),
+                });
+            }
+            continue;
+        };
+        let body = field_spec::interpolate(id_tmpl, &ctx, delim);
+        let expected = format!("{expected_field}:{body}");
+        let stored = e.slug.to_string();
+        if stored != expected {
+            drift_count += 1;
+            if drift_example.is_none() {
+                drift_example = Some(IssueExample {
+                    id: Some(stored.clone()),
+                    field: Some(e.field.clone()),
+                    detail: Some(format!("stored={stored}  expected={expected}")),
+                });
+            }
+            fixes.push(SlugFix {
+                existing: e.slug.clone(),
+            });
+        }
+    }
+
+    let mut issues = Vec::new();
+    if drift_count > 0 {
+        issues.push(Issue {
+            severity: Severity::Error,
+            category: "slug_drift",
+            message: format!(
+                "{} entr{} have a stored slug that disagrees with its templated id/field structure",
+                drift_count,
+                if drift_count == 1 { "y" } else { "ies" },
+            ),
+            count: drift_count,
+            example: drift_example,
+        });
+    }
+
+    Ok(SlugReport { issues, fixes })
+}
+
+/// Rekey each drifted row by re-running the standard auto-reinterp
+/// path. This mirrors the update path (`save_existing_entry_with_auto_reinterp`)
+/// so the fix produces the same slug a future write would, and so
+/// history rows are stamped consistently. `hid` is preserved.
+fn apply_slug_fixes(db: &Db, fixes: &[SlugFix], delim: &str) -> Result<()> {
+    for fix in fixes {
+        let entry = db.get_entry(&fix.existing)?;
+        db.save_existing_entry_with_auto_reinterp(&fix.existing, entry, delim)?;
     }
     Ok(())
 }
@@ -1274,6 +1409,215 @@ mod tests {
         assert!(
             !report.issues.iter().any(|i| i.category == "alias_orphan"),
             "positional-headed alias must not be orphan: {:?}",
+            report.issues,
+        );
+    }
+
+    // ─── da-noz9: slug drift detection + --fix ──────────────────────────
+
+    /// A row whose stored slug doesn't match `interpolate(id_structure)`
+    /// is flagged as `slug_drift` with the expected severity, count, and
+    /// example detail.
+    #[test]
+    fn slug_drift_detected_when_stored_slug_disagrees() {
+        let db = Db::open_in_memory().unwrap();
+        let mut entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        // Mirror the cmd.rs insert path: a row with an occur_time gets
+        // `id_structure = "%occur_time%"` and slug `field:<occur_time>`.
+        entry.id_structure = Some("%occur_time%".to_string());
+        entry.slug = Slug(format!("mood:{}", entry.short_uid()));
+        entry.field_structure = None;
+        // The checker will recompute the body from `%occur_time%` and
+        // discover it disagrees with the `short_uid` body we wrote here.
+        // (The point is just to land a row whose stored slug differs from
+        // its template-derived slug; the exact corruption shape doesn't
+        // matter.)
+        db.insert_entry(&entry).unwrap();
+
+        let report = collect_slug_drift(&db, ":").unwrap();
+        let issue = report
+            .issues
+            .iter()
+            .find(|i| i.category == "slug_drift")
+            .expect("slug_drift issue must be reported");
+        assert_eq!(issue.severity, Severity::Error);
+        assert_eq!(issue.count, 1);
+        let example = issue.example.as_ref().unwrap();
+        let detail = example.detail.as_deref().unwrap();
+        assert!(detail.contains("stored=mood:"), "got: {detail}");
+        assert!(detail.contains("expected=mood:"), "got: {detail}");
+        assert_eq!(report.fixes.len(), 1);
+    }
+
+    /// `--fix` rewrites a drifted slug back to the template-derived
+    /// value, and a re-run of the check finds no drift. The row's `hid`
+    /// is preserved.
+    #[test]
+    fn slug_fix_rekeys_drifted_row_to_template() {
+        let db = Db::open_in_memory().unwrap();
+        let mut entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("calm")),
+            None,
+            Some(t_at("2024-01-02T08:00:00+00:00")),
+            None,
+            "d1",
+        );
+        entry.id_structure = Some("%occur_time%".to_string());
+        // Hand-corrupt: the slug body is `short_uid`, but the template
+        // expects `%occur_time%`. The expected slug after fix is
+        // `mood:<formatted occur_time>`.
+        entry.slug = Slug(format!("mood:{}", entry.short_uid()));
+        let hid_before = entry.hid.clone();
+        db.insert_entry(&entry).unwrap();
+
+        // Pre-fix: drift detected.
+        let report = collect_slug_drift(&db, ":").unwrap();
+        assert_eq!(report.fixes.len(), 1, "pre-fix run must queue one fix");
+
+        // Apply the fix.
+        apply_slug_fixes(&db, &report.fixes, ":").unwrap();
+
+        // Post-fix: no drift, row's hid preserved, slug matches the
+        // template-derived value.
+        let report2 = collect_slug_drift(&db, ":").unwrap();
+        assert!(
+            !report2.issues.iter().any(|i| i.category == "slug_drift"),
+            "post-fix drift must be zero, got issues: {:?}",
+            report2.issues,
+        );
+        let row = db.get_entry(&hid_before).unwrap();
+        assert_eq!(row.hid, hid_before, "hid must survive the rekey");
+        assert!(
+            row.slug.as_str().starts_with("mood:2024-01-02T08"),
+            "post-fix slug body must be the rendered occur_time, got: {}",
+            row.slug,
+        );
+    }
+
+    /// `dm check slugs` narrows the report to the slug-drift category —
+    /// other categories (e.g. `unknown_field`) are excluded.
+    #[test]
+    fn check_slugs_only_narrows_to_slug_category() {
+        let db = Db::open_in_memory().unwrap();
+        let mut entry = Entry::new_legacy(
+            "ghost",
+            Verb::Switch,
+            Some(serde_json::json!("x")),
+            None,
+            Some(t_at("2024-03-04T05:00:00+00:00")),
+            None,
+            "d1",
+        );
+        entry.id_structure = Some("%occur_time%".to_string());
+        entry.slug = Slug(format!("ghost:{}", entry.short_uid()));
+        db.insert_entry(&entry).unwrap();
+
+        let report = collect_slug_drift(&db, ":").unwrap();
+        for issue in &report.issues {
+            assert_eq!(
+                issue.category, "slug_drift",
+                "unexpected category in `check slugs` run: {}",
+                issue.category,
+            );
+        }
+        assert!(
+            report.issues.iter().any(|i| i.category == "slug_drift"),
+            "slug_drift must be present"
+        );
+    }
+
+    /// Tombstoned rows are skipped — slug drift on a soft-deleted row is
+    /// historical and not actionable.
+    #[test]
+    fn slug_drift_skips_tombstoned_rows() {
+        let db = Db::open_in_memory().unwrap();
+        let mut entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(t_at("2024-01-01T10:00:00+00:00")),
+            None,
+            "d1",
+        );
+        entry.id_structure = Some("%occur_time%".to_string());
+        entry.slug = Slug(format!("mood:{}", entry.short_uid()));
+        let slug = entry.slug.clone();
+        db.insert_entry(&entry).unwrap();
+        db.soft_delete_entry(&slug).unwrap();
+
+        let report = collect_slug_drift(&db, ":").unwrap();
+        assert!(
+            !report.issues.iter().any(|i| i.category == "slug_drift"),
+            "tombstoned rows must not contribute to drift count, got: {:?}",
+            report.issues,
+        );
+        assert!(report.fixes.is_empty());
+    }
+
+    /// Rows with no `id_structure` and no `field_structure` are skipped
+    /// — there is no template to recompute the slug from.
+    #[test]
+    fn slug_drift_skips_rows_without_structure() {
+        let db = Db::open_in_memory().unwrap();
+        // Entry::new_legacy leaves id_structure/field_structure as None.
+        let entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(DatumTime::now()),
+            None,
+            "d1",
+        );
+        db.insert_entry(&entry).unwrap();
+
+        let report = collect_slug_drift(&db, ":").unwrap();
+        assert!(
+            report.issues.is_empty(),
+            "rows without templates must produce no drift, got: {:?}",
+            report.issues,
+        );
+        assert!(report.fixes.is_empty());
+    }
+
+    /// A clean DB whose stored slugs already match their templates
+    /// produces no slug-drift issues.
+    #[test]
+    fn slug_check_clean_db_emits_nothing() {
+        let db = Db::open_in_memory().unwrap();
+        let occur = t_at("2024-05-06T07:08:09+00:00");
+        let mut entry = Entry::new_legacy(
+            "mood",
+            Verb::Switch,
+            Some(serde_json::json!("happy")),
+            None,
+            Some(occur.clone()),
+            None,
+            "d1",
+        );
+        entry.id_structure = Some("%occur_time%".to_string());
+        // Mirror cmd.rs: slug body is the interpolated id_structure.
+        let uid = entry.short_uid();
+        let ctx = InterpolationContext::from_entry(&entry, &uid);
+        let body = field_spec::interpolate("%occur_time%", &ctx, ":");
+        entry.slug = Slug(format!("mood:{body}"));
+        db.insert_entry(&entry).unwrap();
+
+        let report = collect_slug_drift(&db, ":").unwrap();
+        assert!(
+            report.issues.is_empty(),
+            "clean db must yield no slug-drift issues, got: {:?}",
             report.issues,
         );
     }
