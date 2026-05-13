@@ -4,6 +4,11 @@
 //! bound state/dur/following_state/occur_time keys come from the
 //! [`InterpolationContext`]; everything else falls through to a dot-path
 //! lookup against `extra_data`. `\%` is a literal `%`.
+//!
+//! A leading `?` (`%?key%`) marks the placeholder as optional. Missing keys
+//! always render as the empty string and the surrounding delimiters collapse,
+//! so `%?key%` and `%key%` produce identical output today; the `?` documents
+//! intent and reserves a hook for a future strict-required mode.
 
 use chrono::{DateTime, Utc};
 use serde_json::Value as JsonValue;
@@ -102,6 +107,7 @@ fn split_raw_and_fields(template: &str) -> Vec<String> {
 }
 
 fn lookup_field(key: &str, ctx: &InterpolationContext) -> String {
+    let key = key.strip_prefix('?').unwrap_or(key);
     match key {
         "" => String::new(),
         "field" => ctx.field.to_string(),
@@ -404,6 +410,54 @@ mod tests {
         // 'c' that would survive the trim.
         let ctx = ctx_with_times(None, None);
         let got = interpolate("%field%:%create_time%:%uid%", &ctx, DEFAULT_ID_DELIMITER);
+        assert_eq!(got, "f:u");
+    }
+
+    // da-aq67: `%?key%` optional placeholder — missing keys render empty and
+    // the surrounding delimiters collapse.
+    #[test]
+    fn interpolate_optional_missing_renders_empty() {
+        let ctx = occur_ctx("f", None, "u");
+        let got = interpolate("%?missing%", &ctx, "__");
+        assert_eq!(got, "");
+    }
+
+    #[test]
+    fn interpolate_optional_missing_strips_trailing_delimiter() {
+        let extra = serde_json::json!({"a": "a"});
+        let ctx = occur_ctx("f", Some(&extra), "u");
+        let got = interpolate("%a%__%?b%", &ctx, "__");
+        assert_eq!(got, "a");
+    }
+
+    #[test]
+    fn interpolate_optional_missing_collapses_inner_delimiter() {
+        let extra = serde_json::json!({"a": "a", "c": "c"});
+        let ctx = occur_ctx("f", Some(&extra), "u");
+        let got = interpolate("%a%__%?b%__%c%", &ctx, "__");
+        assert_eq!(got, "a__c");
+    }
+
+    #[test]
+    fn interpolate_optional_present_renders_value() {
+        let extra = serde_json::json!({"a": "a", "b": "B", "c": "c"});
+        let ctx = occur_ctx("f", Some(&extra), "u");
+        let got = interpolate("%a%__%?b%__%c%", &ctx, "__");
+        assert_eq!(got, "a__B__c");
+    }
+
+    #[test]
+    fn interpolate_optional_create_time_keeps_c_suffix_when_present() {
+        let t: DateTime<Utc> = "2026-05-13T15:00:00Z".parse().unwrap();
+        let ctx = ctx_with_times(Some(&t), None);
+        let got = interpolate("%?create_time%", &ctx, "__");
+        assert_eq!(got, "2026-05-13T15:00:00.000Zc");
+    }
+
+    #[test]
+    fn interpolate_optional_create_time_absent_drops_cleanly() {
+        let ctx = ctx_with_times(None, None);
+        let got = interpolate("%field%:%?create_time%:%uid%", &ctx, DEFAULT_ID_DELIMITER);
         assert_eq!(got, "f:u");
     }
 
