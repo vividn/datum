@@ -876,3 +876,204 @@ fn skip_log_includes_header_and_uses_synthetic_id_when_missing() {
         "synthetic id used when source has no _id; got:\n{body}",
     );
 }
+
+// ─── 18. meta.humanId → entry.hid (da-o7o3) ───────────────────────────
+// During a parallel-run migration, the user wants `dm get <humanId>` to
+// resolve the same conceptual doc in both the legacy datum store and
+// daydumb. Importer must lift `meta.humanId` into the entry's `hid`
+// column rather than generating a fresh one.
+
+#[test]
+fn import_preserves_source_humanid_as_hid() {
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "brushteeth"
+        },
+        "meta": {
+            "humanId": "abc123def456",
+            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+        }
+    }]));
+
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let e = &db.all_entries().unwrap()[0];
+    assert_eq!(
+        e.hid, "abc123def456",
+        "entry.hid must mirror source meta.humanId",
+    );
+    // Quick-id lookup by full and prefix forms resolves the imported row.
+    let by_full = db.get_entry("abc123def456").expect("get by full humanId");
+    assert_eq!(by_full.slug, e.slug);
+    let by_prefix = db.resolve_prefix("abc").expect("resolve by humanId prefix");
+    assert_eq!(by_prefix.slug, e.slug);
+}
+
+#[test]
+fn import_without_humanid_generates_fresh_hid() {
+    // Backwards-compat: legacy / corrupt docs lacking meta.humanId still
+    // import cleanly with an auto-generated 12-char base36 hid.
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "brushteeth"
+        },
+        "meta": {
+            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+        }
+    }]));
+
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+
+    let e = &db.all_entries().unwrap()[0];
+    assert_eq!(
+        e.hid.len(),
+        datum_core::entry::HID_LEN,
+        "missing humanId → freshly generated 12-char hid",
+    );
+    assert!(
+        e.hid.chars().all(|c| c.is_ascii_alphanumeric()),
+        "auto-generated hid stays base36",
+    );
+}
+
+#[test]
+fn import_with_empty_humanid_generates_fresh_hid() {
+    // Empty string is treated as "no humanId" — same path as the key
+    // being absent. Avoids surfacing a corrupt zero-length hid in the DB.
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "brushteeth"
+        },
+        "meta": {
+            "humanId": "",
+            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+        }
+    }]));
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    let e = &db.all_entries().unwrap()[0];
+    assert_eq!(e.hid.len(), datum_core::entry::HID_LEN);
+    assert_ne!(e.hid, "", "empty humanId must not become an empty hid");
+}
+
+#[test]
+fn import_collision_with_existing_row_errors_and_preserves_existing() {
+    // Existing entry with hid=X exists in the DB; a fresh import declares
+    // meta.humanId=X for a different content. Must error before any write,
+    // leaving the existing row intact.
+    use datum_core::test_util::entry_builder;
+
+    let db = fresh_db();
+    let preexisting = entry_builder("coffee")
+        .verb(Verb::Point)
+        .value(serde_json::json!(null))
+        .insert(&db);
+    let stolen_hid = preexisting.hid.clone();
+
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "Europe/Berlin"},
+            "field": "brushteeth"
+        },
+        "meta": {
+            "humanId": stolen_hid.as_str(),
+            "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "Europe/Berlin"}
+        }
+    }]));
+
+    let err = run_cli(&["db", "import", f.path().to_str().unwrap()], &db)
+        .expect_err("collision must surface as error");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("hid collision"),
+        "error message must mention the collision; got: {msg}",
+    );
+    assert!(
+        msg.contains(stolen_hid.as_str()),
+        "error message must include the colliding hid; got: {msg}",
+    );
+    assert!(
+        msg.contains("brushteeth:2025-01-08T23:53:08.259Z"),
+        "error message must name the source doc that triggered it; got: {msg}",
+    );
+
+    // Existing row untouched, importing row never landed.
+    let entries = db.all_entries().unwrap();
+    assert_eq!(entries.len(), 1, "no new row written on collision");
+    assert_eq!(entries[0].slug, preexisting.slug);
+    assert_eq!(entries[0].hid, preexisting.hid);
+}
+
+#[test]
+fn import_in_batch_humanid_duplicate_with_distinct_content_errors() {
+    // Two source docs declare the same humanId but produce different
+    // content. Must error — even if neither row currently exists in the
+    // target DB, only one of them can claim the hid.
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([
+        {
+            "_id": "brushteeth:2025-01-08T08:00:00.000Z",
+            "data": {
+                "occurTime": {"utc": "2025-01-08T08:00:00.000Z", "o": 0, "tz": "UTC"},
+                "field": "brushteeth"
+            },
+            "meta": {"humanId": "dup", "createTime": {"utc": "2025-01-08T08:00:00.500Z", "o": 0, "tz": "UTC"}}
+        },
+        {
+            "_id": "floss:2025-01-08T09:00:00.000Z",
+            "data": {
+                "occurTime": {"utc": "2025-01-08T09:00:00.000Z", "o": 0, "tz": "UTC"},
+                "field": "floss"
+            },
+            "meta": {"humanId": "dup", "createTime": {"utc": "2025-01-08T09:00:00.500Z", "o": 0, "tz": "UTC"}}
+        }
+    ]));
+    let err = run_cli(&["db", "import", f.path().to_str().unwrap()], &db)
+        .expect_err("in-batch dup with distinct content must error");
+    let msg = format!("{err:#}");
+    assert!(msg.contains("hid collision"), "got: {msg}");
+    assert!(msg.contains("dup"), "got: {msg}");
+    // Nothing should have landed.
+    assert_eq!(db.all_entries().unwrap().len(), 0);
+}
+
+#[test]
+fn import_reimport_with_same_humanid_and_same_content_is_idempotent() {
+    // Re-importing the same backup file: every doc has the same humanId AND
+    // the same content_hash, so the bulk path's content_hash dedup absorbs
+    // them. The pre-flight collision check must NOT trip here (same content
+    // is benign).
+    let db = fresh_db();
+    let f = write_backup(serde_json::json!([{
+        "_id": "brushteeth:2025-01-08T23:53:08.259Z",
+        "data": {
+            "occurTime": {"utc": "2025-01-08T23:53:08.259Z", "o": 1, "tz": "UTC"},
+            "field": "brushteeth"
+        },
+        "meta": {"humanId": "stable42", "createTime": {"utc": "2025-01-08T23:53:08.569Z", "o": 1, "tz": "UTC"}}
+    }]));
+
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db).unwrap();
+    let after_first = db.all_entries().unwrap();
+    assert_eq!(after_first.len(), 1);
+    assert_eq!(after_first[0].hid, "stable42");
+
+    run_cli(&["db", "import", f.path().to_str().unwrap()], &db)
+        .expect("re-import must be idempotent, not a collision error");
+    let after_second = db.all_entries().unwrap();
+    assert_eq!(
+        after_second.len(),
+        1,
+        "still exactly one row after re-import"
+    );
+    assert_eq!(after_second[0].hid, "stable42");
+}

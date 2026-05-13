@@ -7,11 +7,14 @@
 //! path; source backups are self-consistent so this is fine, with a manual
 //! `datum conflicts list` recommended post-import.
 
+use std::collections::HashMap;
+
 use anyhow::{Context, Result};
 use datum_core::{
     db::{ConflictStrategy, Db, InsertOutcome},
     derive_verb,
     entry::{Entry, Verb},
+    ids::Hid,
     time::DatumTime,
 };
 use serde_json::Value as JsonValue;
@@ -43,6 +46,10 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
     // Parallel to `entries`: the source `_id` for each entry, so we can
     // attribute `Ignored` (dedup) outcomes back to their original IDs.
     let mut entry_doc_ids: Vec<String> = Vec::with_capacity(docs.len());
+    // Parallel to `entries`: the hid lifted from `meta.humanId`, or `None`
+    // when the source had no humanId and the entry kept its auto-generated
+    // hid. Drives the pre-flight collision check below.
+    let mut source_human_ids: Vec<Option<String>> = Vec::with_capacity(docs.len());
     // (reason, id, detail) — id is the source `_id` (or a synthetic
     // <missing-_id at #N> if absent). detail is an optional explanation
     // (the derive_verb error message for `invalid-shape`).
@@ -234,7 +241,21 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         entry.raw_input = String::new();
         entry.alias_chain = None;
         entry.extra_metadata = extra_metadata;
+        // Preserve the source doc's `meta.humanId` as our `hid` so the same
+        // doc is addressable by the same handle in both systems during a
+        // parallel-run migration. Treat absent / empty as "no source hid"
+        // and keep the freshly-generated hid from `Entry::new`. Collision
+        // handling is deferred to a pre-flight check below.
+        let source_human_id = meta
+            .get("humanId")
+            .and_then(|v| v.as_str())
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string());
+        if let Some(ref h) = source_human_id {
+            entry.hid = Hid::from(h.as_str());
+        }
         // Recompute hash after overriding columns that participate in it.
+        // (hid is not part of content_hash; recompute remains correct.)
         entry.content_hash = entry.expected_content_hash();
 
         // Tally based on dur shape (matches user-facing summary semantics:
@@ -256,6 +277,54 @@ pub fn import(args: DbImportArgs, db: &Db) -> Result<()> {
         }
         entries.push(entry);
         entry_doc_ids.push(doc_id);
+        source_human_ids.push(source_human_id);
+    }
+
+    // Pre-flight: detect hid collisions for entries that lifted their hid
+    // from `meta.humanId`. Two flavors:
+    //   - In-batch: two source docs declare the same humanId but produce
+    //     distinct content. (Same content with same humanId is a benign
+    //     duplicate that content_hash dedup will absorb at insert time.)
+    //   - With existing DB: an already-stored entry uses this hid for a
+    //     different content. Same content → re-import, handled by
+    //     content_hash dedup on the bulk path.
+    // Either case errors before any write so the existing row stays intact.
+    let mut seen_in_batch: HashMap<&str, (&str, &str)> = HashMap::new();
+    for ((entry, doc_id), source_hid) in entries
+        .iter()
+        .zip(entry_doc_ids.iter())
+        .zip(source_human_ids.iter())
+    {
+        let Some(incoming_hid) = source_hid.as_deref() else {
+            continue;
+        };
+        if let Some((prior_doc, prior_hash)) =
+            seen_in_batch.insert(incoming_hid, (doc_id.as_str(), entry.content_hash.as_str()))
+        {
+            if prior_hash != entry.content_hash {
+                anyhow::bail!(
+                    "hid collision in backup: source docs '{}' and '{}' both declare meta.humanId='{}' with different content; refusing to import (fix the source to deduplicate)",
+                    prior_doc,
+                    doc_id,
+                    incoming_hid,
+                );
+            }
+        }
+        match db.get_entry(incoming_hid) {
+            Ok(existing) => {
+                if existing.content_hash != entry.content_hash {
+                    anyhow::bail!(
+                        "hid collision: source doc '{}' preserves meta.humanId='{}' but an existing entry (slug={}) already uses that hid for different content; refusing to overwrite (remove or re-key the existing row, then re-run import)",
+                        doc_id,
+                        incoming_hid,
+                        existing.slug,
+                    );
+                }
+                // Same content → re-import; content_hash dedup will skip it.
+            }
+            Err(datum_core::error::DatumError::NotFound(_)) => { /* free */ }
+            Err(e) => return Err(e.into()),
+        }
     }
 
     let imported = if dry_run {
