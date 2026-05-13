@@ -274,8 +274,7 @@ pub struct DbImportArgs {
 pub struct LogArgs {
     pub field_or_verb: String,
     pub rest: Vec<String>,
-    /// `-y/-q/-d/-t/-z/-T` — composed timing concern. `-D/--full-day` is
-    /// not exposed for logging verbs; the parser strips that spec.
+    /// `-y/-q/-d/-t/-z/-T/-D` — composed timing concern.
     pub time: TimeArgs,
     /// `--dur` / `-m/--moment` — composed duration concern.
     pub duration: DurationArgs,

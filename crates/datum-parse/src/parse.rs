@@ -467,12 +467,8 @@ fn fold_args_with_pre<'a, P: 'static>(
 /// since da-e2e exposed the composed bags publicly.
 fn log_args_registry() -> Vec<LiftedSpec<LogArgs>> {
     let mut r: Vec<LiftedSpec<LogArgs>> = Vec::new();
-    // Time concern (-y/-q/-d/-t/-z/-T). `-D/--full-day` is intentionally
-    // omitted; logging verbs don't expose it today.
+    // Time concern (-y/-q/-d/-t/-z/-T/-D).
     for spec in input::time_args::FLAG_SPECS {
-        if spec.short == Some('D') {
-            continue;
-        }
         r.push(lift(|p: &mut LogArgs| &mut p.time, spec));
     }
     // Duration concern (--dur, -m).

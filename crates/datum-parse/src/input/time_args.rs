@@ -141,8 +141,7 @@ impl TimeArgs {
 ///
 /// `parse.rs` lifts these onto a per-command target via
 /// [`crate::input::flag_registry::lift`]. Commands that don't accept all
-/// of these (e.g. logging verbs don't expose `-D/--full-day` today) pick
-/// the relevant subset at registry-build time.
+/// of these pick the relevant subset at registry-build time.
 pub static FLAG_SPECS: &[FlagSpec<TimeArgs>] = &[
     FlagSpec {
         short: Some('y'),

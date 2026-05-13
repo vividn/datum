@@ -10,8 +10,9 @@
 //!     `-z +3`, `-z Europe/Berlin`) are adapted to use local-zone interpretation.
 //!   * `--no-metadata`/`-M` ships with P1 (da-wsax) — the TS case is ported as
 //!     a structural skip that documents the future wiring target.
-//!   * `-D`/`--full-day` has no daydumb equivalent (entries are always
-//!     instant-anchored); the TS case is ported as a structural skip.
+//!   * `-D`/`--full-day` is parsed (da-rsj4); the date-only behavior itself
+//!     is plumbed downstream in da-fc0l.2/.3/.4. The TS case is ported as
+//!     a flag-acceptance check plus the current `-d DATE` analog.
 //!   * Datum's `%fieldStructure` interpolated the stored `field` itself;
 //!     daydumb lacks that but does template the slug via `--id`, so the
 //!     "composite field" TS case maps to slug interpolation via `--id`.
@@ -309,30 +310,22 @@ fn stacked_negative_offsets_subtract_correctly() {
 
 /// TS #8: "can occur on a full day"
 ///
-/// Datum's `-D`/`--full-day` recorded a whole-day event (`occurTime.utc =
-/// "2024-04-23"` with no time component). Daydumb has no full-day mode:
-/// entries are always anchored to an instant, and `time_start.utc` is
-/// always a full `DateTime<Utc>`. The ported case asserts the current
-/// contract — `-D` and `--full-day` are not recognized, and bare `occur`
-/// with `-d DATE` anchors to the start of that local day when no `-t` is
-/// supplied.
+/// Datum's `-D`/`--full-day` recorded a whole-day event. Daydumb now parses
+/// `-D`/`--full-day` on logging verbs (da-rsj4) — downstream plumbing that
+/// drops the clock component from `time_start` is tracked in da-fc0l.2/.3/.4.
+/// For now this case locks in the flag-acceptance contract and the `-d DATE`
+/// analog, which already anchors to the requested calendar day in local time.
 #[test]
-fn full_day_flag_not_supported() {
+fn full_day_flag_accepted() {
     let db = fresh_db();
 
-    assert!(
-        run_cli(&["occur", "event", "-D"], &db).is_err(),
-        "-D must not silently succeed",
-    );
-    assert!(
-        run_cli(&["occur", "happening", "--full-day"], &db).is_err(),
-        "--full-day must not silently succeed",
-    );
+    run_cli(&["occur", "event", "-D"], &db).expect("-D is accepted on occur");
+    run_cli(&["occur", "happening", "--full-day"], &db).expect("--full-day is accepted on occur");
 
-    // Current full-day analog: `-d DATE` without `-t` anchors at the local
-    // instant corresponding to "now's time of day on that date".
-    // We only assert that the entry lands on the requested calendar date in
-    // local time (avoiding timezone-induced off-by-one near midnight).
+    // `-d DATE` without `-t` anchors at the local instant corresponding to
+    // "now's time of day on that date". We only assert that the entry lands
+    // on the requested calendar date in local time (avoiding timezone-induced
+    // off-by-one near midnight).
     run_cli(&["occur", "event", "-d", "2024-04-23"], &db).expect("occur -d DATE");
     let e = &db.entries_for_field("event", None).unwrap()[0];
     let local_date = e
