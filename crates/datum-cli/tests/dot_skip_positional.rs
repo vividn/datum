@@ -102,15 +102,15 @@ fn switch_dot_in_dur_slot_skips_duration() {
     assert!(e.dur.is_none(), "`.` in dur slot leaves duration unset");
 }
 
-/// `start abc state .` — `.` in the dur slot on start is a skip too.
-/// Start's right-walking peeler already declines non-duration tokens
-/// silently, so this case mostly exercises that the data-args layer also
-/// drops the trailing `.` rather than smuggling it into extra_data.
+/// Per da-ixrk, `start` no longer accepts a non-duration positional like
+/// `active` — state on start is always `true` (or `state=<v>`). The dot
+/// in the duration slot stays a skip when paired with an explicit state
+/// keyword.
 #[test]
 fn start_dot_in_dur_slot_skips_duration() {
     let db = fresh_db();
 
-    run_cli(&["start", "project", "active", "."], &db).expect("dot in dur slot");
+    run_cli(&["start", "project", "state=active", "."], &db).expect("dot in dur slot");
 
     let e = &db.entries_for_field("project", None).unwrap()[0];
     assert_eq!(e.state.as_ref(), Some(&json!("active")));

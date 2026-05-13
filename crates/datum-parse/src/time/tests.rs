@@ -49,6 +49,32 @@ fn test_parse_iso_duration() {
 }
 
 #[test]
+fn test_parse_duration_compound() {
+    // da-ixrk: compound forms must parse, not fall through to "state".
+    assert_eq!(
+        parse_duration("10m30s").unwrap(),
+        Duration::seconds(10 * 60 + 30),
+    );
+    assert_eq!(parse_duration("1h30m").unwrap(), Duration::minutes(90));
+    assert_eq!(
+        parse_duration("1h30m45s").unwrap(),
+        Duration::seconds(3600 + 30 * 60 + 45),
+    );
+    assert_eq!(
+        parse_duration("2d4h").unwrap(),
+        Duration::seconds(2 * 86400 + 4 * 3600),
+    );
+}
+
+#[test]
+fn test_parse_duration_invalid() {
+    assert!(parse_duration("abc").is_err());
+    assert!(parse_duration("10m30").is_err()); // trailing bare number in compound
+    assert!(parse_duration("10x").is_err()); // unknown unit
+    assert!(parse_duration("").is_err());
+}
+
+#[test]
 fn parse_uncertainty_plus_minus_unicode() {
     let t = parse_time_arg("1513±5").unwrap();
     assert_eq!(

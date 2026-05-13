@@ -89,3 +89,22 @@ regions") and da-uuu (obsidian, state.rs perf rework). Polecats
 touching `state.rs`, switch rendering, or color-mode handling should
 run this test early so a regen lands in the same diff.
 
+## render::tests color-env races (parallel chip / same-id color tests)
+
+**Tests:**
+- `crates/datum-commands/src/render/mod.rs::render::tests::parallel_simple_states_chipped_separately_in_main_line`
+- `crates/datum-commands/src/render/mod.rs::render::tests::same_structured_state_id_gets_same_color_across_entries`
+
+**Type:** ENV_DEPENDENT
+**Symptom:** chip output rendered without truecolor escapes (e.g.
+`" vertical,sit "` instead of bg-painted) or two same-id chips
+disagree on background color, when run alongside other render tests
+in parallel.
+**Recommended action:** Retry once; or re-run with `--test-threads=1`.
+Both pass deterministically when single-threaded.
+**Last seen:** 2026-05-13
+**Notes:** Root cause is process-global `std::env::set_var` racing
+between render::tests that toggle `DATUM_COLOR`/`NO_COLOR` via
+`ScopedEnv`. Filed as da-92vv. Tripped on jasper / da-ixrk; no render
+code changed.
+

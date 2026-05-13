@@ -283,13 +283,19 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
         extract_switch_trailing_reserved(&mut args)?;
     }
 
-    // da-l3f3: For start/stop, state is optional (defaults to `true`), so a
-    // lone bare-numeric positional is the duration, not the state. Restore
-    // original-datum positional-duration: peel a trailing bare positional
-    // that parses as a duration into args.duration. With two positionals,
-    // the last (if duration-parsable) is dur and the earlier is state:
-    // `dm start abc sit 3` → state="sit", dur=PT3M.
-    if matches!(action, Action::Start | Action::Stop) {
+    // da-ixrk: `start` never coerces a positional into state — state is
+    // always `true` (or whatever `state=<v>` reserved-column sets). Any
+    // bare positional must be a duration (or the `.` skip sentinel); a
+    // non-duration positional is rejected so user typos like
+    // `start work sit` don't silently produce a "sit" state.
+    if matches!(action, Action::Start) {
+        extract_start_strict_duration(&mut args)?;
+    }
+    // da-l3f3: For stop, state is optional (defaults to `false`), so a
+    // lone bare positional that parses as a duration is the duration,
+    // not the state. With two positionals, the trailing duration-parsable
+    // one is dur and the earlier one is state.
+    if matches!(action, Action::Stop) {
         extract_start_stop_trailing_duration(&mut args, action)?;
     }
 
@@ -1067,6 +1073,49 @@ pub(crate) fn extract_start_stop_trailing_duration(
     }
     let dur = args.rest.remove(idx);
     args.duration.duration = Some(dur);
+    Ok(())
+}
+
+/// da-ixrk: strict positional handling for `Action::Start`. State on start
+/// is always `true` (or the explicit `state=<v>` reserved column); a bare
+/// positional may never become state. The only bare positionals accepted
+/// after `field` are a duration (peeled into `args.duration.duration`) or
+/// the `.` / `\.` skip sentinel (left in place for downstream handling).
+/// Anything else is rejected so typos like `start work sit` don't silently
+/// land an unintended state.
+pub(crate) fn extract_start_strict_duration(args: &mut LogArgs) -> Result<()> {
+    let mut duration_idx: Option<usize> = None;
+    for (i, token) in args.rest.iter().enumerate() {
+        if token.contains('=') {
+            continue;
+        }
+        if token == "." || token == r"\." {
+            continue;
+        }
+        if parse_duration(token).is_ok() {
+            if let Some(prev) = duration_idx {
+                anyhow::bail!(
+                    "start: only one duration positional allowed (got `{}` and `{}`)",
+                    args.rest[prev],
+                    token,
+                );
+            }
+            duration_idx = Some(i);
+            continue;
+        }
+        anyhow::bail!(
+            "start: positional `{token}` is not a duration. `start` always sets \
+             state=true; use `state=<v>` to set an explicit state, or pass a \
+             duration like `30m` / `10m30s` / `--dur 30m`."
+        );
+    }
+    if let Some(idx) = duration_idx {
+        if args.duration.duration.is_some() {
+            anyhow::bail!("start: trailing duration positional conflicts with --dur");
+        }
+        let dur = args.rest.remove(idx);
+        args.duration.duration = Some(dur);
+    }
     Ok(())
 }
 

@@ -192,22 +192,22 @@ fn start_extras_do_not_imply_duration() {
 
 /// TS #7: "can skip the duration if the duration is given as . or ''".
 ///
-/// Datum treated bare `.` / `''` as "skip duration". Per da-l3f3, daydumb
-/// peels a *parsable* trailing duration positional into `dur`; a positional
-/// that does not parse as a duration falls through to state. So
-/// `start field reqVal1` lands as state=`reqVal1`, dur=null.
+/// Per da-ixrk, `start` never coerces a positional into state — state is
+/// always `true`. A non-duration positional like `reqVal1` is rejected so
+/// a typo can't silently land a bogus state. Use `state=<v>` to set an
+/// explicit state.
 #[test]
-fn non_duration_positional_lands_as_state() {
+fn non_duration_positional_is_rejected() {
     let db = fresh_db();
 
-    run_cli(&["start", "field", "reqVal1"], &db).expect("start with value");
-
-    let entry = &db.entries_for_field("field", None).unwrap()[0];
-    assert_entry_matches!(entry, field: "field", verb: "switch", value: "reqVal1");
+    let err = run_cli(&["start", "field", "reqVal1"], &db)
+        .expect_err("non-duration positional must be rejected on start");
+    let msg = format!("{err:#}");
     assert!(
-        entry.dur.is_none(),
-        "non-duration positional does not derive a dur",
+        msg.contains("not a duration") || msg.contains("state=true"),
+        "error should explain start never coerces state, got: {msg}",
     );
+    assert_count!(db, "field", 0);
 }
 
 /// TS #8: "throws an error if the duration supplied is invalid".
@@ -305,30 +305,64 @@ fn start_bare_numeric_positional_is_duration() {
     assert_eq!(entry.state.as_ref(), Some(&json!(true)));
 }
 
-/// `dm start abc sit` → state="sit", dur=null. A non-duration positional
-/// stays as state.
+/// Per da-ixrk: `dm start abc sit` is rejected. State on start is always
+/// `true`; positionals can never become state. Use `state=sit` instead.
 #[test]
-fn start_non_duration_positional_is_state() {
+fn start_non_duration_positional_errors() {
     let db = fresh_db();
 
-    run_cli(&["start", "abc", "sit"], &db).expect("start abc sit");
-
-    let entry = &db.entries_for_field("abc", None).unwrap()[0];
-    assert_eq!(entry.state.as_ref(), Some(&json!("sit")));
-    assert!(entry.dur.is_none());
+    let err = run_cli(&["start", "abc", "sit"], &db)
+        .expect_err("non-duration positional must be rejected");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("not a duration"),
+        "error should mention duration: {msg}",
+    );
+    assert_count!(db, "abc", 0);
 }
 
-/// `dm start abc sit 3` → state="sit", dur=3 minutes. Two positionals:
-/// the trailing duration-parsable one is dur, the earlier one is state.
+/// Per da-ixrk: two bare positionals on start is rejected. Explicit state
+/// must be set via `state=<v>`; a bare positional must be a duration.
 #[test]
-fn start_state_then_duration_positional() {
+fn start_two_bare_positionals_errors() {
     let db = fresh_db();
 
-    run_cli(&["start", "abc", "sit", "3"], &db).expect("start abc sit 3");
+    let err =
+        run_cli(&["start", "abc", "sit", "3"], &db).expect_err("`sit` is non-duration; rejected");
+    let msg = format!("{err:#}");
+    assert!(
+        msg.contains("not a duration"),
+        "error should mention duration: {msg}",
+    );
+    assert_count!(db, "abc", 0);
+}
+
+/// Per da-ixrk: `state=<v>` is the explicit channel for setting a
+/// non-default state on start. Combined with a duration positional, it
+/// should produce state="sit", dur=3min, no errors.
+#[test]
+fn start_explicit_state_keyword_plus_duration() {
+    let db = fresh_db();
+
+    run_cli(&["start", "abc", "state=sit", "3"], &db).expect("start abc state=sit 3");
 
     let entry = &db.entries_for_field("abc", None).unwrap()[0];
     assert_eq!(entry.state.as_ref(), Some(&json!("sit")));
     assert_eq!(entry.duration_seconds(), Some(3 * 60));
+}
+
+/// da-ixrk regression: `dm start work 10m30s` must parse `10m30s` as a
+/// compound duration (10 min + 30 sec = 630 sec), not coerce it into
+/// state. State stays at the default `true`.
+#[test]
+fn start_compound_duration_positional() {
+    let db = fresh_db();
+
+    run_cli(&["start", "work", "10m30s"], &db).expect("start work 10m30s");
+
+    let entry = &db.entries_for_field("work", None).unwrap()[0];
+    assert_eq!(entry.state.as_ref(), Some(&json!(true)));
+    assert_eq!(entry.duration_seconds(), Some(10 * 60 + 30));
 }
 
 /// `dm stop abc 3` mirrors start: trailing numeric is duration. For stop,

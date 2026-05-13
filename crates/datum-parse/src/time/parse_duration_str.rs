@@ -13,6 +13,8 @@ use crate::time::uncertainty::Uncertainty;
 ///   "5m"/"5min" → 5 minutes
 ///   "2h"       → 2 hours
 ///   "1d"       → 1 day
+///   "10m30s"   → 10 minutes 30 seconds (compound)
+///   "1h30m"    → 1 hour 30 minutes (compound)
 ///   "1:30"     → 1 hour 30 min
 ///   "1:15:30"  → 1h 15m 30s
 ///   "PT5M"     → ISO 8601
@@ -66,24 +68,70 @@ pub fn parse_duration(s: &str) -> Result<Duration> {
         };
     }
 
-    // Named unit suffixes
-    let (num_str, unit) = split_unit(s);
-    let n: f64 = num_str
-        .parse()
-        .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
-    let secs = match unit {
-        "s" | "sec" | "second" | "seconds" => (n) as i64,
-        "m" | "min" | "minute" | "minutes" => (n * 60.0) as i64,
-        "h" | "hr" | "hour" | "hours" => (n * 3600.0) as i64,
-        "d" | "day" | "days" => (n * 86400.0) as i64,
-        "" => (n * 60.0) as i64, // default: minutes
-        _ => {
-            return Err(ParseError::InvalidTime(format!(
-                "Unknown duration unit: '{unit}'"
-            )))
+    parse_compound_duration(s)
+}
+
+/// Parse one-or-more `<number><unit>` segments. A single trailing bare
+/// number (no unit) defaults to minutes for back-compat with `"5"`.
+fn parse_compound_duration(s: &str) -> Result<Duration> {
+    if s.is_empty() {
+        return Err(ParseError::InvalidTime(s.to_string()));
+    }
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    let mut total_secs: i64 = 0;
+    let mut segments = 0;
+
+    while i < bytes.len() {
+        let num_start = i;
+        // Optional leading sign (only on the first segment).
+        if segments == 0 && (bytes[i] == b'-' || bytes[i] == b'+') {
+            i += 1;
         }
-    };
-    Ok(Duration::seconds(secs))
+        let digits_start = i;
+        while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
+            i += 1;
+        }
+        if i == digits_start {
+            return Err(ParseError::InvalidTime(s.to_string()));
+        }
+        let num_str = &s[num_start..i];
+        let n: f64 = num_str
+            .parse()
+            .map_err(|_| ParseError::InvalidTime(s.to_string()))?;
+
+        let unit_start = i;
+        while i < bytes.len() && (bytes[i] as char).is_alphabetic() {
+            i += 1;
+        }
+        let unit = &s[unit_start..i];
+
+        let secs = match unit {
+            "s" | "sec" | "second" | "seconds" => n as i64,
+            "m" | "min" | "minute" | "minutes" => (n * 60.0) as i64,
+            "h" | "hr" | "hour" | "hours" => (n * 3600.0) as i64,
+            "d" | "day" | "days" => (n * 86400.0) as i64,
+            "" => {
+                // Bare number is only allowed as the entire input (default: minutes).
+                if segments != 0 || i != bytes.len() {
+                    return Err(ParseError::InvalidTime(s.to_string()));
+                }
+                (n * 60.0) as i64
+            }
+            _ => {
+                return Err(ParseError::InvalidTime(format!(
+                    "Unknown duration unit: '{unit}'"
+                )))
+            }
+        };
+        total_secs += secs;
+        segments += 1;
+    }
+
+    if segments == 0 {
+        return Err(ParseError::InvalidTime(s.to_string()));
+    }
+    Ok(Duration::seconds(total_secs))
 }
 
 /// Precision produced by `n` stacked `-q` flags. The offset scaling is
