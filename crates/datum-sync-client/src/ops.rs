@@ -145,6 +145,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             hid, slug, content_hash, field,
             verb, state, dur, following_state, data,
             occur_time, occur_time_offset, occur_time_tz, occur_time_precision,
+            dur_precision,
             lat, lon, location,
             create_time, modify_time, device_id,
             deleted_at, id_structure, field_structure,
@@ -154,11 +155,12 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             ?1, ?2, ?3, ?4,
             ?5, ?6, ?7, ?8, ?9,
             ?10, ?11, ?12, ?13,
-            ?14, ?15, ?16,
-            ?17, ?18, ?19,
-            ?20, ?21, ?22,
-            ?23, ?24, ?25,
-            ?26
+            ?14,
+            ?15, ?16, ?17,
+            ?18, ?19, ?20,
+            ?21, ?22, ?23,
+            ?24, ?25, ?26,
+            ?27
         )
         ON CONFLICT(slug) DO UPDATE SET
             hid             = excluded.hid,
@@ -173,6 +175,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             occur_time_offset = excluded.occur_time_offset,
             occur_time_tz   = excluded.occur_time_tz,
             occur_time_precision = excluded.occur_time_precision,
+            dur_precision   = excluded.dur_precision,
             lat             = excluded.lat,
             lon             = excluded.lon,
             location        = excluded.location,
@@ -203,6 +206,7 @@ fn upsert_lww(tx: &rusqlite::Transaction<'_>, entry: &Entry) -> Result<()> {
             occur_offset,
             occur_tz,
             entry.occur_time_precision,
+            entry.dur_precision,
             entry.lat,
             entry.lon,
             entry.location.as_deref(),

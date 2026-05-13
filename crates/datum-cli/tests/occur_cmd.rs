@@ -783,3 +783,59 @@ fn switch_dry_run_does_not_insert() {
         .expect("switch dry-run must succeed");
     assert_count!(db, "project", 0);
 }
+
+/// da-i5vs acceptance: `dm occur foo dur_precision=PT30M dur=PT1H30M`
+/// routes both reserved keys to columns. `dur` ends up as the ISO-8601
+/// duration; `dur_precision` lands on `Entry.dur_precision` rather than
+/// `data`.
+#[test]
+fn occur_routes_dur_precision_reserved_key_to_column() {
+    let db = fresh_db();
+    run_cli(&["occur", "foo", "dur_precision=PT30M", "dur=PT1H30M"], &db)
+        .expect("occur with reserved keys must dispatch");
+
+    assert_count!(db, "foo", 1);
+    let entry = &db.entries_for_field("foo", None).unwrap()[0];
+    assert_eq!(
+        entry.dur_precision.as_deref(),
+        Some("PT30M"),
+        "dur_precision= must land on the column, not data",
+    );
+    assert_eq!(
+        entry
+            .dur
+            .as_ref()
+            .map(datum_core::dur::Dur::to_storage_string)
+            .as_deref(),
+        Some("PT1H30M"),
+        "dur= still routes to the dur column",
+    );
+    assert!(
+        entry.data.is_none()
+            || !entry
+                .data
+                .as_ref()
+                .and_then(|d| d.as_object())
+                .map(|o| o.contains_key("dur_precision"))
+                .unwrap_or(false),
+        "dur_precision must NOT leak into data: {:?}",
+        entry.data,
+    );
+}
+
+/// da-i5vs: bare `unit=foo` is no longer a reserved column key — the
+/// vestigial `unit` column was dropped (da-d0vs / da-xvco). It now lands
+/// in `data` like any other ad-hoc key.
+#[test]
+fn occur_unit_key_lands_in_data() {
+    let db = fresh_db();
+    run_cli(&["occur", "weight", "unit=kg"], &db).expect("occur weight unit=kg must dispatch");
+
+    let entry = &db.entries_for_field("weight", None).unwrap()[0];
+    let data = entry.data.as_ref().expect("unit= should land in data");
+    assert_eq!(
+        data.get("unit").and_then(|v| v.as_str()),
+        Some("kg"),
+        "unit= must fall through to data: {data:?}",
+    );
+}

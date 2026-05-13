@@ -332,6 +332,7 @@ fn roundtrip_v8_to_v9_track_ignore_unification() {
              occur_time_offset    INTEGER,
              occur_time_tz        TEXT,
              occur_time_precision TEXT,
+             dur_precision        TEXT,
              lat             REAL,
              lon             REAL,
              location        TEXT,

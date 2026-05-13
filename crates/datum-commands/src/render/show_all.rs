@@ -33,6 +33,7 @@ const WHEN_COLS: &[&str] = &[
     "occur_time_offset",
     "occur_time_tz",
     "occur_time_precision",
+    "dur_precision",
 ];
 const WHERE_COLS: &[&str] = &["lat", "lon", "location"];
 const BOOK_COLS: &[&str] = &["create_time", "modify_time", "device_id", "deleted_at"];
@@ -141,6 +142,7 @@ fn render_column(col: &str, e: &Entry) -> String {
             None => null_marker(),
         },
         "occur_time_precision" => render_str_opt(e.occur_time_precision.as_deref()),
+        "dur_precision" => render_str_opt(e.dur_precision.as_deref()),
         "lat" => match e.lat {
             Some(v) => v.to_string(),
             None => null_marker(),
@@ -219,6 +221,7 @@ mod tests {
             verb: Verb::Point,
             state: None,
             dur: None,
+            dur_precision: None,
             following_state: None,
             data: None,
             occur_time: None,
@@ -337,6 +340,23 @@ mod tests {
         assert!(
             !plain.contains("19:00") && !plain.contains("T19:"),
             "P1D occur_time must omit clock:\n{plain}"
+        );
+    }
+
+    /// da-i5vs: `dur_precision` is part of the grouped "When" view so
+    /// `-A` surfaces it alongside `occur_time_precision`. NULL when unset.
+    #[test]
+    fn dur_precision_renders_in_when_group() {
+        let mut e = empty_entry();
+        e.dur_precision = Some("PT1M".to_string());
+        let plain = strip_ansi(&format_show_all(&e));
+        assert!(
+            plain.contains("dur_precision"),
+            "dur_precision column missing from -A:\n{plain}"
+        );
+        assert!(
+            plain.contains("PT1M"),
+            "dur_precision value missing from -A:\n{plain}"
         );
     }
 

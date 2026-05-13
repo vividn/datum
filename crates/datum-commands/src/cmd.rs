@@ -518,6 +518,9 @@ pub(crate) fn log_entry(action: Action, mut args: LogArgs, db: &Db) -> Result<()
     if let Some(d) = reserved.dur {
         entry.dur = Some(d);
     }
+    if let Some(dp) = reserved.dur_precision {
+        entry.dur_precision = Some(dp);
+    }
     if let Some(fs) = reserved.following_state {
         entry.following_state = Some(fs);
     }
@@ -1447,6 +1450,7 @@ impl AddTemporalHints {
 pub(crate) struct ReservedColumns {
     pub(crate) state: Option<JsonValue>,
     pub(crate) dur: Option<datum_core::dur::Dur>,
+    pub(crate) dur_precision: Option<String>,
     pub(crate) following_state: Option<JsonValue>,
     pub(crate) occur_time: Option<JsonValue>,
 }
@@ -1483,6 +1487,14 @@ pub(crate) fn extract_reserved_columns(
                 datum_core::dur::Dur::parse(&s)
                     .ok_or_else(|| anyhow::anyhow!("invalid dur value: {s:?}"))?,
             );
+        }
+    }
+    if let Some(v) = obj.remove("dur_precision") {
+        // `dur_precision=null` is a sentinel for "clear precision".
+        if v.is_null() || matches!(v.as_str(), Some("null")) {
+            // intentionally drop — leave entry.dur_precision as None.
+        } else {
+            out.dur_precision = Some(json_to_raw_token(&v));
         }
     }
     if let Some(v) = obj.remove("following_state") {

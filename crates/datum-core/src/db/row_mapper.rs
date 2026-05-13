@@ -50,6 +50,7 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         row.get("occur_time_tz")?,
     );
     let occur_time_precision: Option<String> = row.get("occur_time_precision")?;
+    let dur_precision: Option<String> = row.get("dur_precision")?;
 
     let create_time: DateTime<Utc> =
         row.get::<_, String>("create_time")?
@@ -104,6 +105,7 @@ pub(super) fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<Entry> {
         verb,
         state: state.clone(),
         dur,
+        dur_precision,
         following_state,
         data,
         occur_time: occur_time.clone(),

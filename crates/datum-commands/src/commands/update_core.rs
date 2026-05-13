@@ -348,6 +348,9 @@ fn apply_mutation(
     if let Some(d) = reserved.dur {
         updated.dur = Some(d);
     }
+    if let Some(dp) = reserved.dur_precision {
+        updated.dur_precision = Some(dp);
+    }
     if let Some(fs) = reserved.following_state {
         updated.following_state = Some(fs);
     }

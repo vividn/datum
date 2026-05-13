@@ -59,6 +59,8 @@ struct UserEditableEntry {
     #[serde(default)]
     dur: Option<datum_core::dur::Dur>,
     #[serde(default)]
+    dur_precision: Option<String>,
+    #[serde(default)]
     following_state: Option<JsonValue>,
     #[serde(default)]
     data: Option<JsonValue>,
@@ -85,6 +87,7 @@ impl UserEditableEntry {
             verb: e.verb,
             state: e.state.clone(),
             dur: e.dur.clone(),
+            dur_precision: e.dur_precision.clone(),
             following_state: e.following_state.clone(),
             data: e.data.clone(),
             occur_time: e.occur_time.clone(),
@@ -107,6 +110,7 @@ impl UserEditableEntry {
         e.verb = self.verb;
         e.state = self.state.clone();
         e.dur = self.dur;
+        e.dur_precision = self.dur_precision;
         e.following_state = self.following_state;
         e.data = self.data;
         e.occur_time = self.occur_time.clone();

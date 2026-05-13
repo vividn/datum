@@ -180,6 +180,11 @@ pub struct Entry {
     /// wire format and SQL TEXT column round-trip unchanged.
     #[serde(default)]
     pub dur: Option<Dur>,
+    /// ISO-8601 duration string capturing the granularity at which `dur`
+    /// is meaningful (e.g. `"PT1M"` for minute-resolution). `None` =
+    /// unspecified.
+    #[serde(default)]
+    pub dur_precision: Option<String>,
     /// Trailing-edge state for switch-style verbs. Only meaningful when
     /// `dur` is set (the SQL CHECK enforces this).
     #[serde(default)]
@@ -355,6 +360,7 @@ impl Entry {
             verb,
             state: state.clone(),
             dur,
+            dur_precision: None,
             following_state: None,
             data,
             occur_time,
