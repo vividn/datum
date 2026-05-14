@@ -7,7 +7,6 @@ export function generateId(): string {
 
 export function buildSlug(field: string, time?: DatumTime): string {
 	if (time) {
-		// Format: field:2024-03-16T09:15Z
 		const dt = new Date(time.utc);
 		const iso = dt.toISOString().replace(/\.\d{3}Z$/, 'Z');
 		return `${field}:${iso}`;

@@ -7,10 +7,8 @@ function isVerb(s: string): s is InputVerb {
 }
 
 function parseValue(s: string): unknown {
-	// Try number first
 	const num = Number(s);
 	if (!isNaN(num) && s.trim() !== '') return num;
-	// Try boolean
 	if (s === 'true') return true;
 	if (s === 'false') return false;
 	return s;
@@ -40,7 +38,9 @@ export function parseInput(input: string): ParsedInput | null {
 	let timeAbsolute: string | undefined;
 	let i = 0;
 
-	// Detect verb and field (order-independent)
+	// datum CLI accepts both verb-first ("switch mood happy") and field-first
+	// ("mood switch happy") syntax; resolve which order this input uses before
+	// consuming the rest.
 	if (isVerb(tokens[0])) {
 		verb = tokens[0];
 		field = tokens[1] ?? '';
@@ -50,7 +50,6 @@ export function parseInput(input: string): ParsedInput | null {
 		verb = tokens[1];
 		i = 2;
 	} else {
-		// bare field or "field value..."
 		field = tokens[0];
 		verb = 'occur';
 		i = 1;
@@ -58,11 +57,9 @@ export function parseInput(input: string): ParsedInput | null {
 
 	if (!field) return null;
 
-	// Parse remaining tokens
 	while (i < tokens.length) {
 		const tok = tokens[i];
 
-		// Time flags
 		if (tok === '-q') {
 			timeOffset = -15;
 			i++;
@@ -92,7 +89,6 @@ export function parseInput(input: string): ParsedInput | null {
 			continue;
 		}
 
-		// key=value extra data
 		const kv = parseKV(tok);
 		if (kv) {
 			data[kv.key] = kv.val;
@@ -104,14 +100,15 @@ export function parseInput(input: string): ParsedInput | null {
 		i++;
 	}
 
-	// Parse state and unit from stateTokens
 	let state: unknown;
 	if (stateTokens.length === 0) {
 		state = undefined;
 	} else if (stateTokens.length === 1) {
 		state = parseValue(stateTokens[0]);
 	} else {
-		// Last token might be a unit if value is numeric
+		// Treat exactly two trailing tokens as a (number, unit) pair (e.g.
+		// "weight 75kg" → state=75, unit="kg"). Anything else collapses to a
+		// space-joined free-text state — units only attach to numeric values.
 		const maybeNum = parseValue(stateTokens[0]);
 		if (typeof maybeNum === 'number' && stateTokens.length === 2) {
 			state = maybeNum;
